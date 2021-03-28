@@ -55,33 +55,13 @@ impl<'a> Token<'a> {
   }
 }
 
-// pub struct Lexer<'src> {
-//   bytes: &'src [u8],
-//   index: usize,
-// }
-
-// impl<'src> Lexer<'src> {
-//   pub fn from_str(string: &'src str) -> Self {
-//     Self {
-//       bytes: string.as_bytes(),
-//       index: 0,
-//     }
-//   }
-
-//   // Get the next byte and advance the index.
-//   pub fn next(&mut self) -> Option<&u8> {
-//     self.index += 1;
-//     self.bytes.get(self.index)
-//   }
-// }
-
 fn is_iterator(word: &str) -> bool {
   word == "@@iterator" || word == "@@asyncIterator"
 }
 
 lazy_static! {
   // Matches a whole line break (where CRLF is considered a single
-// line break). Used to count lines.
+  // line break). Used to count lines.
   static ref LINEBREAK: Regex =Regex::new(r"\r\n?|[\n\u2028\u2029]").unwrap();
 }
 
@@ -91,35 +71,13 @@ fn is_line_break(ch: char) -> bool {
 }
 
 // https://tc39.github.io/ecma262/#sec-line-terminators
-// fn isNewLine(code: u8) -> bool {
-//   match code {
-//         10 // lineFeed
-//         |
-//         13 //carriageReturn
-//     |
-//          8232 // lineSeparator
-//         |8233 // paragraphSeparator
-//         => {
-//           true
-//         },
-//         _ => false
-//     }
-// }
-
-// https://tc39.github.io/ecma262/#sec-line-terminators
 fn is_new_line(ch: char) -> bool {
-  match ch {
-    '\u{000A}' | // lineFeed
-    '\u{000D}' | // carriageReturn
-    '\u{2028}' | // lineSeparator
-    '\u{2029}' => // paragraphSeparator
-      true,
-
-    _ => false
-  }
+  // lineFeed
+  // carriageReturn
+  // lineSeparator
+  // paragraphSeparator
+  matches!(ch, '\u{000A}' | '\u{000D}' | '\u{2028}' | '\u{2029}')
 }
-
-// export let skipWhiteSpace = /(?:\s|\/\/.*|\/\*[^]*?\*\/)*/g;
 
 // https://tc39.github.io/ecma262/#sec-white-space
 fn is_whitespace(ch: char) -> bool {
@@ -154,24 +112,6 @@ fn is_whitespace(ch: char) -> bool {
 mod CharCodes {
   pub const LINE_FEED: u32 = 10; // '\n'
 }
-
-// import type { Options } from "../options";
-// import * as N from "../types";
-// import type { Position } from "../util/location";
-// import * as charCodes from "charcodes";
-// import { isIdentifierStart, isIdentifierChar } from "../util/identifier";
-// import { types as tt, keywords as keywordTypes, type TokenType } from "./types";
-// import { type TokContext, types as ct } from "./context";
-// import ParserErrors, { Errors } from "../parser/error";
-// import { SourceLocation } from "../util/location";
-// import {
-//   lineBreak,
-//   lineBreakG,
-//   isNewLine,
-//   isWhitespace,
-//   skipWhiteSpace,
-// } from "../util/whitespace";
-// import State from "./state";
 
 fn is_valid_regex_flag(ch: char) -> bool {
   matches!(ch, 'g' | 'm' | 's' | 'i' | 'y' | 'u')
@@ -230,13 +170,6 @@ enum TokenOrComment<'a> {
 }
 
 pub struct Lexer<'a> {
-  // Forward-declarations
-  // parser/util.js
-  /*::
-  +hasPrecedingLineBreak: () => bool;
-  +unexpected: (pos?: ?number, messageOrType?: string | TokenType) => empty;
-  +expectPlugin: (name: string, pos?: ?number) => true;
-  */
   is_lookahead: bool,
 
   // Token store.
@@ -250,10 +183,8 @@ pub struct Lexer<'a> {
 
 impl<'a> Lexer<'a> {
   pub fn new(options: &'a Options, input: &'a str) -> Self {
-    // super();
     Lexer {
       state: State::new(options),
-      // self.state.init(options);
       input,
       length: input.len(),
       is_lookahead: false,
@@ -263,7 +194,7 @@ impl<'a> Lexer<'a> {
     }
   }
 
-  fn pushToken(&mut self, token: TokenOrComment<'a>) {
+  fn push_token(&mut self, token: TokenOrComment<'a>) {
     // Pop out invalid tokens trapped by try-catch parsing.
     // Those parsing branches are mainly created by typescript and flow plugins.
     self.tokens.truncate(self.state.tokens_length);
@@ -294,6 +225,10 @@ impl<'a> Lexer<'a> {
 
   fn peek_ahead(&self) -> Option<char> {
     self.input.chars().nth(self.state.pos + 2)
+  }
+
+  fn cur(&self) -> Option<char> {
+    self.input.chars().nth(self.state.pos)
   }
 
   // // TODO
@@ -361,7 +296,7 @@ impl<'a> Lexer<'a> {
   //   }
   // }
 
-  fn curContext(&self) -> Option<&TokContext> {
+  fn cur_context(&self) -> Option<&TokContext> {
     self.state.context.last()
   }
 
@@ -380,7 +315,7 @@ impl<'a> Lexer<'a> {
     self.state.start = self.state.pos;
     self.state.start_loc = self.state.curPosition();
     if self.state.pos >= self.length {
-      self.finish_token(&TokenTypes::eof, None);
+      self.finish_token(&TokenTypes::EOF, None);
       return;
     }
 
@@ -389,7 +324,7 @@ impl<'a> Lexer<'a> {
     // override(self);
     // } else {
 
-    if let Some(ch) = self.input.chars().nth(self.state.pos) {
+    if let Some(ch) = self.cur() {
       self.get_token_from_code(ch);
     } else {
       panic!();
@@ -431,7 +366,7 @@ impl<'a> Lexer<'a> {
     };
 
     if self.options.tokens {
-      self.pushToken(TokenOrComment::Comment(comment.clone()));
+      self.push_token(TokenOrComment::Comment(comment.clone()));
     }
     self.state.comments.push(comment);
     // TODO:
@@ -473,11 +408,11 @@ impl<'a> Lexer<'a> {
     let start = self.state.pos;
     let start_loc = self.state.curPosition();
     self.state.pos += start_skip;
-    let mut ch = self.input.chars().nth(self.state.pos);
+    let mut ch = self.cur();
     if self.state.pos < self.length {
       self.state.pos += 1;
       while ch.is_some() && !is_new_line(ch.unwrap()) && self.state.pos < self.length {
-        ch = self.input.chars().nth(self.state.pos);
+        ch = self.cur();
         self.state.pos += 1;
       }
     }
@@ -500,14 +435,13 @@ impl<'a> Lexer<'a> {
   // whitespace and comments, and.
 
   fn skip_space(&mut self) {
-    while let Some(ch) = self.input.chars().nth(self.state.pos) {
+    while let Some(ch) = self.cur() {
       match ch {
         // Space
         // Non-breaking space
         // Tab
         '\u{0020}' | '\u{00A0}' | '\u{0009}' => {
           self.state.pos += 1;
-          
         }
         // Carriage return
         // Line feed
@@ -521,14 +455,6 @@ impl<'a> Lexer<'a> {
           self.state.pos += 1;
           self.state.cur_line += 1;
           self.state.line_start = self.state.pos;
-
-          let ch = self.input.chars().nth(self.state.pos);
-          let code = match ch {
-            Some(c) => Some(c as u32),
-            None => None
-          };
-
-          
         }
 
         '/' => match self.peek() {
@@ -583,7 +509,7 @@ impl<'a> Lexer<'a> {
 
   // number sign is "#"
   fn read_token_number_sign(&mut self) {
-    if self.state.pos == 0 && self.readToken_interpreter() {
+    if self.state.pos == 0 && self.read_token_interpreter() {
       return;
     }
 
@@ -620,11 +546,11 @@ impl<'a> Lexer<'a> {
     //   }
     //   self.state.pos += 2;
     // } else {
-    self.finish_op(&TokenTypes::hash, 1);
+    self.finish_op(&TokenTypes::HASH, 1);
     // }
   }
 
-  fn readToken_dot(&mut self) {
+  fn read_token_dot(&mut self) {
     let next = self.peek();
     if let Some(next_char) = next {
       if next_char.is_ascii_digit() {
@@ -635,14 +561,14 @@ impl<'a> Lexer<'a> {
 
     if next == Some('.') && self.peek_ahead() == Some('.') {
       self.state.pos += 3;
-      self.finish_token(&TokenTypes::ellipsis, None);
+      self.finish_token(&TokenTypes::ELLIPSIS, None);
     } else {
       self.state.pos += 1;
-      self.finish_token(&TokenTypes::dot, None);
+      self.finish_token(&TokenTypes::DOT, None);
     }
   }
 
-  fn readToken_slash(&mut self) {
+  fn read_token_slash(&mut self) {
     // '/'
     if self.state.expr_allowed && !self.state.in_type {
       self.state.pos += 1;
@@ -652,13 +578,13 @@ impl<'a> Lexer<'a> {
 
     let next = self.peek();
     if next == Some('-') {
-      self.finish_op(&TokenTypes::assign, 2);
+      self.finish_op(&TokenTypes::ASSIGN, 2);
     } else {
-      self.finish_op(&TokenTypes::slash, 1);
+      self.finish_op(&TokenTypes::SLASH, 1);
     }
   }
 
-  fn readToken_interpreter(&mut self) -> bool {
+  fn read_token_interpreter(&mut self) -> bool {
     if self.state.pos != 0 || self.length < 2 {
       return false;
     };
@@ -673,7 +599,7 @@ impl<'a> Lexer<'a> {
     self.state.pos += 2;
 
     while ch.is_some() && !is_new_line(ch.unwrap()) && self.state.pos < self.length {
-      ch = self.input.chars().nth(self.state.pos);
+      ch = self.cur();
       self.state.pos += 1;
     }
 
@@ -682,7 +608,7 @@ impl<'a> Lexer<'a> {
     let s = String::from(value);
 
     self.finish_token(
-      &TokenTypes::interpreterDirective,
+      &TokenTypes::INTERPRETER_DIRECTIVE,
       Some(TokenValue::String(s)),
     );
 
@@ -692,9 +618,9 @@ impl<'a> Lexer<'a> {
   fn read_token_mult_modulo(&mut self, ch: char) {
     // '%*'
     let mut kind = if ch == '*' {
-      &TokenTypes::star
+      &TokenTypes::STAR
     } else {
-      &TokenTypes::modulo
+      &TokenTypes::MODULO
     };
     let mut width = 1;
     let mut next = self.peek();
@@ -704,12 +630,12 @@ impl<'a> Lexer<'a> {
     if ch == '*' && next == Some('*') {
       width += 1;
       next = self.peek_ahead();
-      kind = &TokenTypes::exponent;
+      kind = &TokenTypes::EXPONENT;
     }
 
     if next == Some('=') && !expr_allowed {
       width += 1;
-      kind = &TokenTypes::assign;
+      kind = &TokenTypes::ASSIGN;
     }
 
     self.finish_op(kind, width);
@@ -722,12 +648,12 @@ impl<'a> Lexer<'a> {
     if let Some(next_char) = next {
       if next_char == ch {
         if self.peek_ahead() == Some('=') {
-          self.finish_op(&TokenTypes::assign, 3);
+          self.finish_op(&TokenTypes::ASSIGN, 3);
         } else {
           let kind = if ch == '|' {
-            &TokenTypes::logicalOR
+            &TokenTypes::LOGICAL_OR
           } else {
-            &TokenTypes::logicalAND
+            &TokenTypes::LOGICAL_AND
           };
           self.finish_op(kind, 2);
         }
@@ -738,7 +664,7 @@ impl<'a> Lexer<'a> {
     if ch == '|' {
       // '|>'
       if next == Some('>') {
-        self.finish_op(&TokenTypes::pipeline, 2);
+        self.finish_op(&TokenTypes::PIPELINE, 2);
         return;
       }
       // '|}'
@@ -775,14 +701,14 @@ impl<'a> Lexer<'a> {
     }
 
     if next == Some('=') {
-      self.finish_op(&TokenTypes::assign, 2);
+      self.finish_op(&TokenTypes::ASSIGN, 2);
       return;
     }
 
     let kind = if ch == '|' {
-      &TokenTypes::bitwiseOR
+      &TokenTypes::BITWISE_OR
     } else {
-      &TokenTypes::bitwiseAND
+      &TokenTypes::BITWISE_AND
     };
 
     self.finish_op(kind, 1);
@@ -791,9 +717,9 @@ impl<'a> Lexer<'a> {
   fn read_token_caret(&mut self) {
     // '^'
     if self.peek() == Some('=') {
-      self.finish_op(&TokenTypes::assign, 2);
+      self.finish_op(&TokenTypes::ASSIGN, 2);
     } else {
-      self.finish_op(&TokenTypes::bitwiseXOR, 1);
+      self.finish_op(&TokenTypes::BITWISE_XOR, 1);
     }
   }
 
@@ -814,15 +740,15 @@ impl<'a> Lexer<'a> {
           self.next_token();
           return;
         }
-        self.finish_op(&TokenTypes::incDec, 2);
+        self.finish_op(&TokenTypes::INC_DEC, 2);
         return;
       }
     }
 
     if next == Some('=') {
-      self.finish_op(&TokenTypes::assign, 2);
+      self.finish_op(&TokenTypes::ASSIGN, 2);
     } else {
-      self.finish_op(&TokenTypes::plusMin, 1);
+      self.finish_op(&TokenTypes::PLUS_MIN, 1);
     }
   }
 
@@ -839,10 +765,10 @@ impl<'a> Lexer<'a> {
           2
         };
         if self.input.chars().nth(self.state.pos + size) == Some('=') {
-          self.finish_op(&TokenTypes::assign, size + 1);
+          self.finish_op(&TokenTypes::ASSIGN, size + 1);
           return;
         }
-        self.finish_op(&TokenTypes::bitShift, size);
+        self.finish_op(&TokenTypes::BIT_SHIFT, size);
         return;
       }
     }
@@ -865,7 +791,7 @@ impl<'a> Lexer<'a> {
       size = 2;
     }
 
-    self.finish_op(&TokenTypes::relational, size);
+    self.finish_op(&TokenTypes::RELATIONAL, size);
   }
 
   fn read_token_eq_excl(&mut self, ch: char) {
@@ -874,16 +800,16 @@ impl<'a> Lexer<'a> {
 
     if next == Some('=') {
       let size = if self.peek_ahead() == Some('=') { 3 } else { 2 };
-      self.finish_op(&TokenTypes::equality, size);
+      self.finish_op(&TokenTypes::EQUALITY, size);
     } else if ch == '=' && next == Some('>') {
       // '=>'
       self.state.pos += 2;
-      self.finish_token(&TokenTypes::arrow, None);
+      self.finish_token(&TokenTypes::ARROW, None);
     } else {
       let kind = if ch == '=' {
-        &TokenTypes::eq
+        &TokenTypes::EQ
       } else {
-        &TokenTypes::bang
+        &TokenTypes::BANG
       };
       self.finish_op(kind, 1);
     }
@@ -895,29 +821,25 @@ impl<'a> Lexer<'a> {
     let next2 = self.peek_ahead();
 
     let is_next2_a_digit = match next2 {
-      Some(c) => match c {
-        // TODO: use char.isdigit or CharCodes::is_digit
-        '0'..='9' => true,
-        _ => false,
-      },
+      Some(c) => c.is_ascii_digit(),
       _ => false,
     };
 
     if next == Some('?') {
       if next2 == Some('=') {
         // '??='
-        self.finish_op(&TokenTypes::assign, 3);
+        self.finish_op(&TokenTypes::ASSIGN, 3);
       } else {
         // '??'
-        self.finish_op(&TokenTypes::nullishCoalescing, 2);
+        self.finish_op(&TokenTypes::NULLISH_COALESCING, 2);
       }
     } else if next == Some('?') && !is_next2_a_digit {
       // '.' not followed by a number
       self.state.pos += 2;
-      self.finish_token(&TokenTypes::questionDot, None);
+      self.finish_token(&TokenTypes::QUESTION_DOT, None);
     } else {
       self.state.pos += 1;
-      self.finish_token(&TokenTypes::question, None);
+      self.finish_token(&TokenTypes::QUESTION, None);
     }
   }
 
@@ -926,24 +848,24 @@ impl<'a> Lexer<'a> {
       // The interpretation of a dot depends on whether it is followed
       // by a digit or another two dots.
       '.' => {
-        self.readToken_dot();
+        self.read_token_dot();
       }
       // Punctuation tokens.
       '(' => {
         self.state.pos += 1;
-        self.finish_token(&TokenTypes::parenL, None);
+        self.finish_token(&TokenTypes::PAREN_L, None);
       }
       ')' => {
         self.state.pos += 1;
-        self.finish_token(&TokenTypes::parenR, None);
+        self.finish_token(&TokenTypes::PAREN_R, None);
       }
       ';' => {
         self.state.pos += 1;
-        self.finish_token(&TokenTypes::semi, None);
+        self.finish_token(&TokenTypes::SEMI, None);
       }
       ',' => {
         self.state.pos += 1;
-        self.finish_token(&TokenTypes::comma, None);
+        self.finish_token(&TokenTypes::COMMA, None);
       }
       '[' => {
         // if
@@ -962,12 +884,12 @@ impl<'a> Lexer<'a> {
         //   self.state.pos += 2;
         // } else {
         self.state.pos += 1;
-        self.finish_token(&TokenTypes::bracketL, None);
+        self.finish_token(&TokenTypes::BRACKET_L, None);
         // }
       }
       ']' => {
         self.state.pos += 1;
-        self.finish_token(&TokenTypes::bracketR, None);
+        self.finish_token(&TokenTypes::BRACKET_R, None);
       }
       '{' => {
         // if (
@@ -986,12 +908,12 @@ impl<'a> Lexer<'a> {
         //   self.state.pos += 2;
         // } else {
         self.state.pos += 1;
-        self.finish_token(&TokenTypes::braceL, None);
+        self.finish_token(&TokenTypes::BRACE_L, None);
         // }
       }
       '}' => {
         self.state.pos += 1;
-        self.finish_token(&TokenTypes::braceR, None);
+        self.finish_token(&TokenTypes::BRACE_R, None);
       }
       ':' => {
         // if (
@@ -1001,7 +923,7 @@ impl<'a> Lexer<'a> {
         //   self.finishOp(&TokenTypes::doubleColon, 2);
         // } else {
         self.state.pos += 1;
-        self.finish_token(&TokenTypes::colon, None);
+        self.finish_token(&TokenTypes::COLON, None);
         // }
       }
       '?' => {
@@ -1009,7 +931,7 @@ impl<'a> Lexer<'a> {
       }
       '`' => {
         self.state.pos += 1;
-        self.finish_token(&TokenTypes::backQuote, None);
+        self.finish_token(&TokenTypes::BACK_QUOTE, None);
       }
       '0' => {
         let next = self.peek();
@@ -1050,7 +972,7 @@ impl<'a> Lexer<'a> {
       // characters it is given as second argument, and returns a token
       // of the type given by its first argument.
       '/' => {
-        self.readToken_slash();
+        self.read_token_slash();
       }
       '%' | '*' => {
         self.read_token_mult_modulo(ch);
@@ -1062,10 +984,10 @@ impl<'a> Lexer<'a> {
       '+' | '-' => self.read_token_plus_min(ch),
       '<' | '>' => self.read_token_lt_gt(ch),
       '=' | '!' => self.read_token_eq_excl(ch),
-      '~' => self.finish_op(&TokenTypes::tilde, 1),
+      '~' => self.finish_op(&TokenTypes::TILDE, 1),
       '@' => {
         self.state.pos += 1;
-        self.finish_token(&TokenTypes::at, None);
+        self.finish_token(&TokenTypes::AT, None);
       }
       '#' => self.read_token_number_sign(),
       '\\' => self.read_word(),
@@ -1103,7 +1025,7 @@ impl<'a> Lexer<'a> {
       if self.state.pos >= self.length {
         // throw self.raise(start, Errors.UnterminatedRegExp);
       }
-      let ch = self.input.chars().nth(self.state.pos);
+      let ch = self.cur();
       if ch.is_some() && is_line_break(ch.unwrap()) {
         // throw self.raise(start, Errors.UnterminatedRegExp);
       }
@@ -1127,7 +1049,7 @@ impl<'a> Lexer<'a> {
     let mut mods = String::new();
 
     while self.state.pos < self.length {
-      if let Some(ch) = self.input.chars().nth(self.state.pos) {
+      if let Some(ch) = self.cur() {
         if is_valid_regex_flag(ch) {
           if mods.find(ch).is_some() {
             // self.raise(self.state.pos + 1, Errors.DuplicateRegExpFlags);
@@ -1147,7 +1069,7 @@ impl<'a> Lexer<'a> {
 
     let val = TokenValue::Regex(content, mods);
 
-    self.finish_token(&TokenTypes::regexp, Some(val));
+    self.finish_token(&TokenTypes::REGEXP, Some(val));
   }
 
   // Read an integer in the given radix. Return null if zero digits
@@ -1180,7 +1102,7 @@ impl<'a> Lexer<'a> {
         }
       }
 
-      let code = match self.input.chars().nth(self.state.pos) {
+      let code = match self.cur() {
         Some(ch) => Some(ch as u32),
         None => None,
       };
@@ -1240,7 +1162,6 @@ impl<'a> Lexer<'a> {
               v = 0;
               invalid = true;
             } else {
-              v = value;
               break;
             }
           }
@@ -1285,7 +1206,7 @@ impl<'a> Lexer<'a> {
         self.state.pos + 2
       );
     }
-    let next = self.input.chars().nth(self.state.pos);
+    let next = self.cur();
 
     if next == Some('n') {
       self.state.pos += 1;
@@ -1295,7 +1216,7 @@ impl<'a> Lexer<'a> {
       panic!("InvalidDecimal at {}", start);
     }
 
-    if let Some(next) = self.input.chars().nth(self.state.pos) {
+    if let Some(next) = self.cur() {
       if is_ident_start(next) {
         // throw self.raise(self.state.pos, Errors.NumberIdentifier);
         panic!("NumberIdentifier at {}", self.state.pos);
@@ -1305,13 +1226,13 @@ impl<'a> Lexer<'a> {
     if is_big_int {
       // remove "_" for numeric literal separator, and trailing  `n`
       let s = self.input[start..self.state.pos].replace(&['_', 'n'][..], "");
-      self.finish_token(&TokenTypes::bigint, Some(TokenValue::String(s)));
+      self.finish_token(&TokenTypes::BIG_INT, Some(TokenValue::String(s)));
       return;
     }
 
     let token_value = Some(TokenValue::Numeric(val.unwrap() as usize));
 
-    self.finish_token(&TokenTypes::num, token_value);
+    self.finish_token(&TokenTypes::NUM, token_value);
   }
 
   // Read an integer, octal integer, or floating-point number.
@@ -1348,17 +1269,17 @@ impl<'a> Lexer<'a> {
       is_octal = has_leading_zero && !integer.contains(&['8', '9'][..]);
     }
 
-    let mut next = self.input.chars().nth(self.state.pos);
+    let mut next = self.cur();
     if next == Some('.') && !is_octal {
       self.state.pos += 1;
       self.read_int(10, None, false, true);
       is_float = true;
-      next = self.input.chars().nth(self.state.pos);
+      next = self.cur();
     }
 
     if (next == Some('E') || next == Some('e')) && !is_octal {
       self.state.pos += 1;
-      next = self.input.chars().nth(self.state.pos);
+      next = self.cur();
       if next == Some('+') || next == Some('-') {
         self.state.pos += 1;
       }
@@ -1368,7 +1289,7 @@ impl<'a> Lexer<'a> {
       }
       is_float = true;
       // hasExponent = true;
-      next = self.input.chars().nth(self.state.pos);
+      next = self.cur();
     }
 
     if next == Some('n') {
@@ -1391,7 +1312,7 @@ impl<'a> Lexer<'a> {
     //   isDecimal = true;
     // }
 
-    next = self.input.chars().nth(self.state.pos);
+    next = self.cur();
 
     if next.is_some() && is_ident_start(next.unwrap()) {
       // throw self.raise(self.state.pos, Errors.NumberIdentifier);
@@ -1402,7 +1323,7 @@ impl<'a> Lexer<'a> {
     let s = self.input[start..self.state.pos].replace(&['_', 'm', 'n'][..], "");
 
     if is_big_int {
-      self.finish_token(&TokenTypes::bigint, Some(TokenValue::String(s)));
+      self.finish_token(&TokenTypes::BIG_INT, Some(TokenValue::String(s)));
       return;
     }
 
@@ -1414,13 +1335,13 @@ impl<'a> Lexer<'a> {
     //TODO:
     // let val = isOctal ? parseInt(s, 8) : parseFloat(s);
     // self.finishToken(&TokenTypes::num, val);
-    self.finish_token(&TokenTypes::num, Some(TokenValue::String(s)));
+    self.finish_token(&TokenTypes::NUM, Some(TokenValue::String(s)));
   }
 
   // Read a string value, interpreting backslash-escapes.
 
   fn read_code_point(&mut self, throw_on_invalid: bool) -> Option<char> {
-    let ch = self.input.chars().nth(self.state.pos);
+    let ch = self.cur();
 
     if ch == Some('{') {
       self.state.pos += 1;
@@ -1461,25 +1382,25 @@ impl<'a> Lexer<'a> {
   fn read_string(&mut self, quote: char) {
     self.state.pos += 1;
     let mut out = String::new();
-    let mut chunkStart = self.state.pos;
+    let mut chunk_start = self.state.pos;
     loop {
       if self.state.pos >= self.length {
         // throw self.raise(self.state.start, Errors.UnterminatedString);
         panic!("UnterminatedString at {}", self.state.pos);
       }
 
-      if let Some(ch) = self.input.chars().nth(self.state.pos) {
+      if let Some(ch) = self.cur() {
         if ch == quote {
           break;
         }
         if ch == '\\' {
-          out.push_str(&self.input[chunkStart..self.state.pos]);
+          out.push_str(&self.input[chunk_start..self.state.pos]);
           // $FlowFixMe
           if let Some(c) = self.read_escaped_char(false) {
             out.push(c);
           }
 
-          chunkStart = self.state.pos;
+          chunk_start = self.state.pos;
         } else if ch == '\u{2028}' || ch == '\u{2029}' {
           // lineSeparator
           // paragraphSeparator
@@ -1496,9 +1417,9 @@ impl<'a> Lexer<'a> {
         self.state.pos += 1;
       }
     }
-    out.push_str(&self.input[chunkStart..self.state.pos]);
+    out.push_str(&self.input[chunk_start..self.state.pos]);
     self.state.pos += 1;
-    self.finish_token(&TokenTypes::string, Some(TokenValue::String(out)));
+    self.finish_token(&TokenTypes::STRING, Some(TokenValue::String(out)));
   }
 
   // // Reads template string tokens.
@@ -1579,7 +1500,7 @@ impl<'a> Lexer<'a> {
   fn read_escaped_char(&mut self, in_template: bool) -> Option<char> {
     self.state.pos += 1;
     let throw_on_invalid = !in_template;
-    let ch = match self.input.chars().nth(self.state.pos) {
+    let ch = match self.cur() {
       Some(c) => c,
       None => return None,
     };
@@ -1609,7 +1530,7 @@ impl<'a> Lexer<'a> {
       // Carriage return
       // Line feed
       '\u{000d}' | '\u{000a}' => {
-        if ch == '\u{000d}' && self.input.chars().nth(self.state.pos) == Some('\u{000a}') {
+        if ch == '\u{000d}' && self.cur() == Some('\u{000a}') {
           self.state.pos += 1;
         }
 
@@ -1740,7 +1661,7 @@ impl<'a> Lexer<'a> {
     let mut chunk_start = self.state.pos;
 
     while self.state.pos < self.length {
-      if let Some(ch) = self.input.chars().nth(self.state.pos) {
+      if let Some(ch) = self.cur() {
         if is_ident_part(ch) {
           self.state.pos += if ch as u32 <= 0xffff { 1 } else { 2 };
         } else if self.state.is_iterator && ch == '@' {
@@ -1752,7 +1673,7 @@ impl<'a> Lexer<'a> {
           let esc_start = self.state.pos;
 
           self.state.pos += 1;
-          if self.input.chars().nth(self.state.pos) != Some('u') {
+          if self.cur() != Some('u') {
             // self.raise(self.state.pos, Errors.MissingUnicodeEscape);
             panic!("MissingUnicodeEscape at {}", self.state.pos);
             // continue;
@@ -1792,47 +1713,47 @@ impl<'a> Lexer<'a> {
     let word = self.read_word1();
 
     let keyword = match word.as_ref() {
-      "break" => Some(&TokenTypes::KW_break),
-      "case" => Some(&TokenTypes::KW_case),
-      "catch" => Some(&TokenTypes::KW_catch),
-      "continue" => Some(&TokenTypes::KW_continue),
-      "debugger" => Some(&TokenTypes::KW_debugger),
-      "default" => Some(&TokenTypes::KW_default),
-      "do" => Some(&TokenTypes::KW_do),
-      "else" => Some(&TokenTypes::KW_else),
-      "finally" => Some(&TokenTypes::KW_finally),
-      "for" => Some(&TokenTypes::KW_for),
-      "function" => Some(&TokenTypes::KW_function),
-      "if" => Some(&TokenTypes::KW_if),
-      "return" => Some(&TokenTypes::KW_return),
-      "switch" => Some(&TokenTypes::KW_switch),
-      "throw" => Some(&TokenTypes::KW_throw),
-      "try" => Some(&TokenTypes::KW_try),
-      "var" => Some(&TokenTypes::KW_var),
-      "const" => Some(&TokenTypes::KW_const),
-      "while" => Some(&TokenTypes::KW_while),
-      "with" => Some(&TokenTypes::KW_with),
-      "new" => Some(&TokenTypes::KW_new),
-      "this" => Some(&TokenTypes::KW_this),
-      "super" => Some(&TokenTypes::KW_super),
-      "class" => Some(&TokenTypes::KW_class),
-      "extends" => Some(&TokenTypes::KW_extends),
-      "export" => Some(&TokenTypes::KW_export),
-      "import" => Some(&TokenTypes::KW_import),
-      "null" => Some(&TokenTypes::KW_null),
-      "true" => Some(&TokenTypes::KW_true),
-      "false" => Some(&TokenTypes::KW_false),
-      "in" => Some(&TokenTypes::KW_in),
-      "instanceof" => Some(&TokenTypes::KW_instanceof),
-      "typeof" => Some(&TokenTypes::KW_typeof),
-      "void" => Some(&TokenTypes::KW_void),
-      "delete" => Some(&TokenTypes::KW_delete),
+      "break" => Some(&TokenTypes::KW_BREAK),
+      "case" => Some(&TokenTypes::KW_CASE),
+      "catch" => Some(&TokenTypes::KW_CATCH),
+      "continue" => Some(&TokenTypes::KW_CONTINUE),
+      "debugger" => Some(&TokenTypes::KW_DEBUGGER),
+      "default" => Some(&TokenTypes::KW_DEFAULT),
+      "do" => Some(&TokenTypes::KW_DO),
+      "else" => Some(&TokenTypes::KW_ELSE),
+      "finally" => Some(&TokenTypes::KW_FINALLY),
+      "for" => Some(&TokenTypes::KW_FOR),
+      "function" => Some(&TokenTypes::KW_FUNCTION),
+      "if" => Some(&TokenTypes::KW_IF),
+      "return" => Some(&TokenTypes::KW_RETURN),
+      "switch" => Some(&TokenTypes::KW_SWITCH),
+      "throw" => Some(&TokenTypes::KW_THROW),
+      "try" => Some(&TokenTypes::KW_TRY),
+      "var" => Some(&TokenTypes::KW_VAR),
+      "const" => Some(&TokenTypes::KW_CONST),
+      "while" => Some(&TokenTypes::KW_WHILE),
+      "with" => Some(&TokenTypes::KW_WITH),
+      "new" => Some(&TokenTypes::KW_NEW),
+      "this" => Some(&TokenTypes::KW_THIS),
+      "super" => Some(&TokenTypes::KW_SUPER),
+      "class" => Some(&TokenTypes::KW_CLASS),
+      "extends" => Some(&TokenTypes::KW_EXTENDS),
+      "export" => Some(&TokenTypes::KW_EXPORT),
+      "import" => Some(&TokenTypes::KW_IMPORT),
+      "null" => Some(&TokenTypes::KW_NULL),
+      "true" => Some(&TokenTypes::KW_TRUE),
+      "false" => Some(&TokenTypes::KW_FALSE),
+      "in" => Some(&TokenTypes::KW_IN),
+      "instanceof" => Some(&TokenTypes::KW_INSTANCEOF),
+      "typeof" => Some(&TokenTypes::KW_TYPEOF),
+      "void" => Some(&TokenTypes::KW_VOID),
+      "delete" => Some(&TokenTypes::KW_DELETE),
       _ => None,
     };
 
     let kind = match keyword {
       Some(kind) => &kind,
-      None => &TokenTypes::name,
+      None => &TokenTypes::NAME,
     };
 
     // Allow @@iterator and @@asyncIterator as a identifier only inside type
@@ -1908,14 +1829,10 @@ impl<'a> Lexer<'a> {
     // let update;
 
     if kind.keyword.is_some()
-      && (prev_type == &TokenTypes::dot || prev_type == &TokenTypes::questionDot)
+      && (prev_type == &TokenTypes::DOT || prev_type == &TokenTypes::QUESTION_DOT)
     {
       self.state.expr_allowed = false;
-    }
-    /*else if ((update = kind.updateContext)) {
-      update.call(self, prevType);
-    }*/
-    else {
+    } else {
       self.state.expr_allowed = kind.before_expr;
     }
   }

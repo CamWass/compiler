@@ -208,7 +208,7 @@ impl<'a> State<'a> {
             comment_previous_node: None,
             pos: 0,
             line_start: 0,
-            kind: &TokenTypes::eof,
+            kind: &TokenTypes::EOF,
             value: None,
             start: 0,
             end: 0,

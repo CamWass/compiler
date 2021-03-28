@@ -36,7 +36,7 @@ fn main() {
         lex.next_token();
         println!("{:#?} {:#?}", lex.state.kind, lex.state.value);
 
-        if lex.state.kind == &TokenTypes::eof {
+        if lex.state.kind == &TokenTypes::EOF {
             break;
         }
     }
