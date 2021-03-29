@@ -68,7 +68,6 @@ pub struct TokenType<'a> {
 //     }
 // }
 
-
 pub mod TokenTypes {
     use super::*;
 
