@@ -4,16 +4,8 @@
 // #![allow(non_snake_case)]
 // #![allow(unused_macros)]
 
-#[macro_use]
-mod macros;
-mod context;
-pub mod lexer;
-mod parser;
-pub mod token;
-
 use global_common::{input::StringInput, BytePos, Pos};
 use parser::Parser;
-pub use parser::Tokens;
 use std::fs;
 
 fn main() {
