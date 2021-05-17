@@ -1,8 +1,5 @@
-use crate::{
-    ast::*,
-    parser::{Parser, Tokens},
-    token::{Keyword, Word},
-};
+use super::*;
+use crate::token::{Keyword, Word};
 use either::Either;
 use global_common::BytePos;
 use swc_atoms::js_word;

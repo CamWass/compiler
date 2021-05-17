@@ -4,12 +4,8 @@
 // #![allow(non_snake_case)]
 // #![allow(unused_macros)]
 
-use std::fs;
-
 #[macro_use]
 mod macros;
-#[macro_use]
-pub mod ast;
 mod context;
 pub mod lexer;
 mod parser;
@@ -18,6 +14,7 @@ pub mod token;
 use global_common::{input::StringInput, BytePos, Pos};
 use parser::Parser;
 pub use parser::Tokens;
+use std::fs;
 
 fn main() {
     let data = fs::read_to_string("foo.js").expect("Unable to read file");

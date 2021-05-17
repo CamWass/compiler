@@ -45,7 +45,7 @@ pub fn ast_node(
 
             item.quote_with(smart_quote!(Vars { input }, {
                 #[derive(
-                    ::from_variant::FromVariant, ::global_common::Spanned, Clone, Debug, PartialEq,
+                    ::global_common::FromVariant, ::global_common::Spanned, Clone, Debug, PartialEq,
                 )]
                 input
             }))

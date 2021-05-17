@@ -1,10 +1,7 @@
 //! Parser for object literal.
 
-use crate::{
-    ast::*,
-    parser::{class_and_fn::is_not_this, util::ParseObject, Context, Parser, Tokens},
-    token::{Token, Word},
-};
+use super::{class_and_fn::is_not_this, util::ParseObject, *};
+use crate::token::{Token, Word};
 use global_common::{Span, Spanned};
 use swc_atoms::js_word;
 
@@ -142,7 +139,6 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
         }
 
         if self.input.eat(&tok!('*')) {
-
             let name = self.parse_prop_name();
             let function = self.parse_fn_args_body(
                 // no decorator in an object literal

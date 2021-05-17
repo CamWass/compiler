@@ -1,6 +1,5 @@
 use super::*;
 use crate::{
-    ast::*,
     parser::{pat::PatType, util::ExprExt},
     token::{AssignOpToken, Token, Word},
 };

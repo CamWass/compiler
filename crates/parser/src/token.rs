@@ -1,5 +1,4 @@
 pub(crate) use self::{AssignOpToken::*, BinOpToken::*, Keyword::*, Token::*};
-pub(crate) use crate::ast::{AssignOp as AssignOpToken, BinaryOp};
 use enum_kind::Kind;
 use global_common::{Span, Spanned};
 use num_bigint::BigInt as BigIntValue;
@@ -8,8 +7,10 @@ use std::{
     fmt::{self, Debug, Display, Formatter},
 };
 use swc_atoms::{js_word, JsWord};
+pub(crate) use ast::AssignOp as AssignOpToken;
+use ast::BinaryOp;
 
-#[derive( Kind, Clone, PartialEq)]
+#[derive(Kind, Clone, PartialEq)]
 #[kind(functions(starts_expr = "bool", before_expr = "bool"))]
 pub enum Token {
     /// Identifier, "null", "true", "false".
@@ -368,7 +369,7 @@ impl Debug for Word {
 }
 
 /// Keywords
-#[derive( Kind, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Kind, Clone, Copy, PartialEq, Eq, Hash)]
 #[kind(function(before_expr = "bool", starts_expr = "bool"))]
 pub enum Keyword {
     /// Spec says this might be identifier.

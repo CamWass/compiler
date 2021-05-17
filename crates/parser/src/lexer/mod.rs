@@ -3,7 +3,8 @@ mod number;
 mod state;
 mod util;
 
-use crate::{context::Context, op, token::*};
+use crate::{context::Context, token::*};
+use ast::op;
 use global_common::{input::Input, BytePos, Pos};
 use identifier::{is_ident_part, is_ident_start};
 use state::State;

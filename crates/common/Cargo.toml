@@ -10,3 +10,4 @@ ast_node = {version = "0.1.0", path = "../../macros/ast_node"}
 eq_ignore_macros = {version = "0.1", path = "../../macros/eq_ignore"}
 string_cache = "0.8.1"
 either = "1.6.1"
+from_variant = "0.1.3"

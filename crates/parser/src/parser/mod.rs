@@ -10,7 +10,8 @@ mod statement;
 mod util;
 
 pub use self::input::Tokens;
-use crate::{ast::*, context::Context, lexer::Lexer, token::Token};
+use crate::{context::Context, lexer::Lexer, token::Token};
+use ast::*;
 use global_common::{input::Input, BytePos};
 use input::Buffer;
 use swc_atoms::JsWord;
@@ -81,8 +82,7 @@ impl<I: Tokens> Parser<I> {
         let start = self.input.cur_pos();
         let shebang = self.parse_shebang();
 
-        let body: Vec<ModuleItem> =
-            self.parse_block_body(true, true, None);
+        let body: Vec<ModuleItem> = self.parse_block_body(true, true, None);
         let has_module_item = body.iter().any(|item| match item {
             ModuleItem::ModuleDecl(..) => true,
             _ => false,

@@ -1,6 +1,5 @@
-use super::{input::Tokens, pat::PatType, Parser};
+use super::{input::Tokens, pat::PatType, *};
 use crate::{
-    ast::*,
     context::Context,
     token::{Token, Word},
 };
@@ -159,7 +158,7 @@ impl<'a, I: Tokens> Parser<I> {
             return self.handle_import_export(top_level, decorators);
         }
 
-        From::from(self.parse_stmt_content(start, include_decl,  decorators))
+        From::from(self.parse_stmt_content(start, include_decl, decorators))
     }
 
     // TODO: use 'context' system from babel's version of this.
@@ -281,7 +280,6 @@ impl<'a, I: Tokens> Parser<I> {
             _ => {}
         }
 
-   
         // Handle async function foo() {}
         if self.input.is(&tok!("async"))
             && self.input.peeked_is(&tok!("function"))

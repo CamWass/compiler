@@ -1,11 +1,6 @@
 //! 13.3.3 Destructuring Binding Patterns
-use crate::{
-    ast::*,
-    parser::{
-         expression::PatOrExprOrSpread, util::ExprExt, Parser, Tokens,
-    },
-    token::{AssignOpToken, Word},
-};
+use super::{expression::PatOrExprOrSpread, util::ExprExt, *};
+use crate::token::{AssignOpToken, Word};
 use global_common::{BytePos, Span, Spanned};
 use swc_atoms::js_word;
 
@@ -501,7 +496,7 @@ impl<'a, I: Tokens> Parser<I> {
                 }
 
                 _ => {
-                    self.check_assign_target(&expr/*, true*/);
+                    self.check_assign_target(&expr /*, true*/);
                 }
             }
         }

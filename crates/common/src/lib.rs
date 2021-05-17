@@ -3,6 +3,7 @@ pub use self::{
     pos::{BytePos, CharPos, Pos, Span, Spanned, DUMMY_SP},
 };
 pub use ast_node::{ast_node, Spanned};
+pub use from_variant::FromVariant;
 pub use eq_ignore_macros::{EqIgnoreSpan, TypeEq};
 use std::fmt::Debug;
 
