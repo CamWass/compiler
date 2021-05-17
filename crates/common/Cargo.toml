@@ -1,0 +1,12 @@
+[package]
+name = "global_common"
+version = "0.1.0"
+authors = ["Campbell <campbell.wass@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+num-bigint = "0.2"
+ast_node = {version = "0.1.0", path = "../../macros/ast_node"}
+eq_ignore_macros = {version = "0.1", path = "../../macros/eq_ignore"}
+string_cache = "0.8.1"
+either = "1.6.1"

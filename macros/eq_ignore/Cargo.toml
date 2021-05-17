@@ -1,0 +1,15 @@
+[package]
+description = "Macros for EqIgnoreSpan and TypeEq."
+edition = "2018"
+license = "Apache-2.0/MIT"
+name = "eq_ignore_macros"
+version = "0.1.0"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+pmutil = "0.5.3"
+proc-macro2 = "1.0.24"
+quote = "1.0.7"
+syn = {version = "1.0.54", features = ["full"]}

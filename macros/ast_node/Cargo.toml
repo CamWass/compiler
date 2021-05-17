@@ -1,0 +1,20 @@
+[package]
+description = "Macros for ast nodes."
+edition = "2018"
+license = "Apache-2.0/MIT"
+name = "ast_node"
+version = "0.1.0"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+darling = "0.10"
+pmutil = "0.5.1"
+proc-macro2 = "1"
+quote = "1"
+macro_common = {version = "0.1.0", path = "../common"}
+
+[dependencies.syn]
+features = ["derive", "fold", "parsing", "printing"]
+version = "1"
