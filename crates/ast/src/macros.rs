@@ -159,3 +159,12 @@ macro_rules! op {
         $crate::AssignOp::NullishAssign
     };
 }
+
+macro_rules! test_de {
+    ($name:ident, $T:path, $s:literal) => {
+        #[test]
+        fn $name() {
+            let _var: $T = ::serde_json::from_str(&$s).expect("failed to parse json");
+        }
+    };
+}

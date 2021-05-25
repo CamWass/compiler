@@ -17,3 +17,6 @@ quote = "1"
 [dependencies.syn]
 features = ["full", "parsing", "printing", "extra-traits"]
 version = "1"
+
+[dev-dependencies]
+serde = "1"

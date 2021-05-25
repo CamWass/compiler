@@ -21,14 +21,17 @@ pub use self::{
     source_map::{FileLines, FileLoader, FilePathMapping, SourceMap, SpanSnippetError},
     syntax_pos::{LineCol, Pos},
 };
-pub use ast_node::{ast_node, Spanned};
+pub use ast_node::{ast_node, ast_serde, DeserializeEnum, Spanned};
 pub use eq_ignore_macros::{EqIgnoreSpan, TypeEq};
 pub use from_variant::FromVariant;
+pub use global_visit::chain;
+use serde::Serialize;
 use std::fmt::Debug;
-pub use visit::chain;
+#[doc(hidden)]
+pub mod private;
 
 /// A trait for ast nodes.
-pub trait AstNode: Debug + PartialEq + Clone + Spanned {
+pub trait AstNode: Debug + PartialEq + Clone + Spanned + Serialize {
     const TYPE: &'static str;
 }
 

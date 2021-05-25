@@ -28,6 +28,8 @@ use syn::{self, *};
 ///# Output
 ///
 ///  - `pub fn as_str(&self) -> &'static str`
+///  - `impl serde::Serialize`
+///  - `impl serde::Deserialize`
 ///  - `impl FromStr`
 ///  - `impl Debug`
 ///  - `impl Display`
@@ -38,6 +40,7 @@ use syn::{self, *};
 ///```
 /// #[macro_use]
 /// extern crate string_enum;
+/// extern crate serde;
 ///
 /// #[derive(StringEnum)]
 /// pub enum Tokens {
@@ -68,6 +71,9 @@ pub fn derive_string_enum(input: proc_macro::TokenStream) -> proc_macro::TokenSt
 
     make_as_str(&input).to_tokens(&mut tts);
     make_from_str(&input).to_tokens(&mut tts);
+
+    make_serialize(&input).to_tokens(&mut tts);
+    make_deserialize(&input).to_tokens(&mut tts);
 
     derive_fmt(&input, quote_spanned!(call_site() => std::fmt::Debug)).to_tokens(&mut tts);
     derive_fmt(&input, quote_spanned!(call_site() => std::fmt::Display)).to_tokens(&mut tts);
@@ -272,4 +278,55 @@ fn make_as_str(i: &DeriveInput) -> ItemImpl {
 
 fn make_as_str_ident() -> Ident {
     Ident::new("as_str", call_site())
+}
+
+fn make_serialize(i: &DeriveInput) -> ItemImpl {
+    Quote::new_call_site()
+        .quote_with(smart_quote!(Vars { Type: &i.ident }, {
+            impl ::serde::Serialize for Type {
+                fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+                where
+                    S: ::serde::Serializer,
+                {
+                    serializer.serialize_str(self.as_str())
+                }
+            }
+        }))
+        .parse::<ItemImpl>()
+        .with_generics(i.generics.clone())
+}
+
+fn make_deserialize(i: &DeriveInput) -> ItemImpl {
+    Quote::new_call_site()
+        .quote_with(smart_quote!(Vars { Type: &i.ident }, {
+            impl<'de> ::serde::Deserialize<'de> for Type {
+                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+                where
+                    D: ::serde::Deserializer<'de>,
+                {
+                    struct StrVisitor;
+
+                    impl<'de> ::serde::de::Visitor<'de> for StrVisitor {
+                        type Value = Type;
+
+                        fn expecting(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+                            // TODO: List strings
+                            write!(f, "one of (TODO)")
+                        }
+
+                        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+                        where
+                            E: ::serde::de::Error,
+                        {
+                            // TODO
+                            value.parse().map_err(|()| E::unknown_variant(value, &[]))
+                        }
+                    }
+
+                    deserializer.deserialize_str(StrVisitor)
+                }
+            }
+        }))
+        .parse::<ItemImpl>()
+        .with_generics(i.generics.clone())
 }

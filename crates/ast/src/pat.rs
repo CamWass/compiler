@@ -1,6 +1,7 @@
-use super::ident::BindingIdent;
-use super::{expr::Expr, ident::Ident, prop::PropName, typescript::TsTypeAnn, Invalid};
+use crate::ident::BindingIdent;
+use crate::{expr::Expr, ident::Ident, prop::PropName, typescript::TsTypeAnn, Invalid};
 use global_common::{ast_node, EqIgnoreSpan, Span};
+use is_macro::Is;
 
 impl From<Ident> for Pat {
     fn from(i: Ident) -> Self {
@@ -9,21 +10,28 @@ impl From<Ident> for Pat {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash, Is, EqIgnoreSpan)]
 pub enum Pat {
+    #[tag("Identifier")]
     Ident(BindingIdent),
 
+    #[tag("ArrayPattern")]
     Array(ArrayPat),
 
+    #[tag("RestElement")]
     Rest(RestPat),
 
+    #[tag("ObjectPattern")]
     Object(ObjectPat),
 
+    #[tag("AssignmentPattern")]
     Assign(AssignPat),
 
+    #[tag("Invalid")]
     Invalid(Invalid),
 
     /// Only for for-in / for-of loops. This is *syntactically* valid.
+    #[tag("*")]
     Expr(Box<Expr>),
 }
 
@@ -32,11 +40,14 @@ pub enum Pat {
 pub struct ArrayPat {
     pub span: Span,
 
+    #[serde(rename = "elements")]
     pub elems: Vec<Option<Pat>>,
 
     /// Only in an ambient context
+    #[serde(rename = "optional")]
     pub optional: bool,
 
+    #[serde(default, rename = "typeAnnotation")]
     pub type_ann: Option<TsTypeAnn>,
 }
 
@@ -45,11 +56,14 @@ pub struct ArrayPat {
 pub struct ObjectPat {
     pub span: Span,
 
+    #[serde(rename = "properties")]
     pub props: Vec<ObjectPatProp>,
 
     /// Only in an ambient context
+    #[serde(rename = "optional")]
     pub optional: bool,
 
+    #[serde(default, rename = "typeAnnotation")]
     pub type_ann: Option<TsTypeAnn>,
 }
 
@@ -62,6 +76,7 @@ pub struct AssignPat {
 
     pub right: Box<Expr>,
 
+    #[serde(default, rename = "typeAnnotation")]
     pub type_ann: Option<TsTypeAnn>,
 }
 
@@ -71,20 +86,26 @@ pub struct AssignPat {
 pub struct RestPat {
     pub span: Span,
 
+    #[serde(rename = "rest")]
     pub dot3_token: Span,
 
+    #[serde(rename = "argument")]
     pub arg: Box<Pat>,
 
+    #[serde(default, rename = "typeAnnotation")]
     pub type_ann: Option<TsTypeAnn>,
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash, Is, EqIgnoreSpan)]
 pub enum ObjectPatProp {
+    #[tag("KeyValuePatternProperty")]
     KeyValue(KeyValuePatProp),
 
+    #[tag("AssignmentPatternProperty")]
     Assign(AssignPatProp),
 
+    #[tag("RestElement")]
     Rest(RestPat),
 }
 
@@ -105,5 +126,6 @@ pub struct AssignPatProp {
     pub span: Span,
     pub key: Ident,
 
+    #[serde(default)]
     pub value: Option<Box<Expr>>,
 }

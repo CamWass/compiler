@@ -924,7 +924,9 @@ impl<'a, I: Tokens> Parser<I> {
 
 #[ast_node]
 pub(in crate::parser) enum PatOrExprOrSpread {
+    #[tag("*")]
     Pat(Pat),
+    #[tag("*")]
     ExprOrSpread(ExprOrSpread),
 }
 

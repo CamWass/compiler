@@ -1,5 +1,5 @@
+pub use global_visit::*;
 use std::borrow::Cow;
-pub use visit::*;
 
 /// A named compiler pass.
 pub trait CompilerPass {

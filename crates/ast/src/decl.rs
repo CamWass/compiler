@@ -1,4 +1,4 @@
-use super::{
+use crate::{
     class::Class,
     expr::Expr,
     function::Function,
@@ -7,28 +7,39 @@ use super::{
     typescript::{TsEnumDecl, TsInterfaceDecl, TsModuleDecl, TsTypeAliasDecl},
 };
 use global_common::{ast_node, EqIgnoreSpan, Span};
+use is_macro::Is;
 use string_enum::StringEnum;
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash, Is, EqIgnoreSpan)]
 pub enum Decl {
+    #[tag("ClassDeclaration")]
     Class(ClassDecl),
-
+    #[tag("FunctionDeclaration")]
+    #[is(name = "fn_decl")]
     Fn(FnDecl),
+    #[tag("VariableDeclaration")]
     Var(VarDecl),
+    #[tag("TsInterfaceDeclaration")]
     TsInterface(TsInterfaceDecl),
+    #[tag("TsTypeAliasDeclaration")]
     TsTypeAlias(TsTypeAliasDecl),
+    #[tag("TsEnumDeclaration")]
     TsEnum(TsEnumDecl),
+    #[tag("TsModuleDeclaration")]
     TsModule(TsModuleDecl),
 }
 
 #[ast_node("FunctionDeclaration")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct FnDecl {
+    #[serde(rename = "identifier")]
     pub ident: Ident,
 
+    #[serde(default)]
     pub declare: bool,
 
+    #[serde(flatten)]
     #[span]
     pub function: Function,
 }
@@ -36,10 +47,13 @@ pub struct FnDecl {
 #[ast_node("ClassDeclaration")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ClassDecl {
+    #[serde(rename = "identifier")]
     pub ident: Ident,
 
+    #[serde(default)]
     pub declare: bool,
 
+    #[serde(flatten)]
     #[span]
     pub class: Class,
 }
@@ -48,10 +62,13 @@ pub struct ClassDecl {
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct VarDecl {
     pub span: Span,
+
     pub kind: VarDeclKind,
 
+    #[serde(default)]
     pub declare: bool,
 
+    #[serde(rename = "declarations")]
     pub decls: Vec<VarDeclarator>,
 }
 
@@ -69,11 +86,14 @@ pub enum VarDeclKind {
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct VarDeclarator {
     pub span: Span,
+    #[serde(rename = "id")]
     pub name: Pat,
 
     /// Initialization expression.
+    #[serde(default)]
     pub init: Option<Box<Expr>>,
 
     /// Typescript only
+    #[serde(default)]
     pub definite: bool,
 }

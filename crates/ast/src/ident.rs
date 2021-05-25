@@ -1,12 +1,19 @@
-use super::typescript::TsTypeAnn;
-use global_common::{ast_node, EqIgnoreSpan, Span, Spanned};
+use crate::typescript::TsTypeAnn;
+use global_common::ast_node;
+use global_common::EqIgnoreSpan;
+use global_common::Span;
+use global_common::Spanned;
+use serde::Deserialize;
+use serde::Serialize;
 use swc_atoms::JsWord;
 
 /// Identifer used as a pattern.
-#[derive(Spanned, Clone, Debug, PartialEq, Eq, Hash, EqIgnoreSpan)]
+#[derive(Spanned, Clone, Debug, PartialEq, Eq, Hash, EqIgnoreSpan, Serialize, Deserialize)]
 pub struct BindingIdent {
     #[span]
+    #[serde(flatten)]
     pub id: Ident,
+    #[serde(default, rename = "typeAnnotation")]
     pub type_ann: Option<TsTypeAnn>,
 }
 
@@ -21,10 +28,32 @@ impl From<Ident> for BindingIdent {
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct Ident {
     pub span: Span,
+    #[serde(rename = "value")]
     pub sym: JsWord,
 
     /// TypeScript only. Used in case of an optional parameter.
+    #[serde(default)]
     pub optional: bool,
+}
+
+#[cfg(feature = "arbitrary")]
+impl arbitrary::Arbitrary for Ident {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
+        let span = u.arbitrary()?;
+        let sym = u.arbitrary::<String>()?;
+        if sym.is_empty() {
+            return Err(arbitrary::Error::NotEnoughData);
+        }
+        let sym = sym.into();
+
+        let optional = u.arbitrary()?;
+
+        Ok(Self {
+            span,
+            sym,
+            optional,
+        })
+    }
 }
 
 #[ast_node("PrivateName")]
@@ -147,5 +176,5 @@ pub trait IdentExt: AsRef<str> {
     }
 }
 
-// impl IdentExt for JsWord {}
+impl IdentExt for JsWord {}
 impl IdentExt for Ident {}

@@ -1,19 +1,10 @@
-#[macro_use]
-pub mod macros;
-mod class;
-mod decl;
-mod expr;
-mod function;
-mod ident;
-mod jsx;
-mod lit;
-mod module;
-mod module_decl;
-mod operators;
-mod pat;
-mod prop;
-mod stmt;
-mod typescript;
+#![deny(unreachable_patterns)]
+#![deny(missing_copy_implementations)]
+#![deny(missing_debug_implementations)]
+#![deny(trivial_casts)]
+#![deny(trivial_numeric_casts)]
+#![deny(unreachable_pub)]
+// #![deny(variant_size_differences)]
 
 pub use self::{
     class::{
@@ -74,6 +65,23 @@ pub use self::{
     },
 };
 use global_common::{ast_node, EqIgnoreSpan, Span};
+
+#[macro_use]
+mod macros;
+mod class;
+mod decl;
+mod expr;
+mod function;
+mod ident;
+mod jsx;
+mod lit;
+mod module;
+mod module_decl;
+mod operators;
+mod pat;
+mod prop;
+mod stmt;
+mod typescript;
 
 /// Represents a invalid node.
 #[ast_node("Invalid")]
