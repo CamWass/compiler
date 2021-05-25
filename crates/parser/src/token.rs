@@ -1,4 +1,7 @@
 pub(crate) use self::{AssignOpToken::*, BinOpToken::*, Keyword::*, Token::*};
+use crate::error::Error;
+pub(crate) use ast::AssignOp as AssignOpToken;
+use ast::BinaryOp;
 use enum_kind::Kind;
 use global_common::{Span, Spanned};
 use num_bigint::BigInt as BigIntValue;
@@ -7,8 +10,6 @@ use std::{
     fmt::{self, Debug, Display, Formatter},
 };
 use swc_atoms::{js_word, JsWord};
-pub(crate) use ast::AssignOp as AssignOpToken;
-use ast::BinaryOp;
 
 #[derive(Kind, Clone, PartialEq)]
 #[kind(functions(starts_expr = "bool", before_expr = "bool"))]
@@ -134,7 +135,7 @@ pub enum Token {
     JSXTagEnd,
 
     Shebang(JsWord),
-    // Error(Error),
+    Error(Error),
 }
 
 #[derive(Kind, Debug, Clone, Copy, Eq, PartialEq, Hash)]
@@ -614,7 +615,7 @@ impl Debug for Token {
             JSXTagStart => write!(f, "< (jsx tag start)")?,
             JSXTagEnd => write!(f, "> (jsx tag end)")?,
             Shebang(_) => write!(f, "#!")?,
-            // Token::Error(_) => write!(f, "<lexing error>")?,
+            Token::Error(_) => write!(f, "<lexing error>")?,
         }
 
         Ok(())

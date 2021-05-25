@@ -1,6 +1,8 @@
 use crate::{
     context::Context,
+    error::Error,
     lexer::TokenContexts,
+    parser::Parser,
     token::{Token, TokenAndSpan},
 };
 use global_common::{BytePos, Span, DUMMY_SP};
@@ -18,22 +20,22 @@ pub trait Tokens: Clone + Iterator<Item = TokenAndSpan> {
     fn token_context_mut(&mut self) -> &mut TokenContexts;
     fn set_token_context(&mut self, _c: TokenContexts);
 
-    // /// Implementors should use Rc<RefCell<Vec<Error>>>.
-    // ///
-    // /// It is required because parser should backtrack while parsing typescript
-    // /// code.
-    // fn add_error(&self, error: Error);
+    /// Implementors should use Rc<RefCell<Vec<Error>>>.
+    ///
+    /// It is required because parser should backtrack while parsing typescript
+    /// code.
+    fn add_error(&self, error: Error);
 
-    // /// Add an error which is valid syntax in script mode.
-    // ///
-    // /// This errors should be dropped if it's not a module.
-    // ///
-    // /// Implementor should check for if [Context].module, and buffer errors if
-    // /// module is false. Also, implementors should move errors to the error
-    // /// buffer on set_ctx if the parser mode become module mode.
-    // fn add_module_mode_error(&self, error: Error);
+    /// Add an error which is valid syntax in script mode.
+    ///
+    /// This errors should be dropped if it's not a module.
+    ///
+    /// Implementor should check for if [Context].module, and buffer errors if
+    /// module is false. Also, implementors should move errors to the error
+    /// buffer on set_ctx if the parser mode become module mode.
+    fn add_module_mode_error(&self, error: Error);
 
-    // fn take_errors(&mut self) -> Vec<Error>;
+    fn take_errors(&mut self) -> Vec<Error>;
 }
 
 /// This struct is responsible for managing current token and peeked token.
@@ -47,14 +49,14 @@ pub struct Buffer<I: Tokens> {
     next: Option<TokenAndSpan>,
 }
 
-// impl<I: Tokens> Parser<I> {
-//     pub fn input(&mut self) -> &mut I {
-//         &mut self.input.iter
-//     }
-//     pub(crate) fn input_ref(&self) -> &I {
-//         &self.input.iter
-//     }
-// }
+impl<I: Tokens> Parser<I> {
+    pub fn input(&mut self) -> &mut I {
+        &mut self.input.iter
+    }
+    pub(crate) fn input_ref(&self) -> &I {
+        &self.input.iter
+    }
+}
 
 impl<I: Tokens> Buffer<I> {
     pub fn new(lexer: I) -> Self {
@@ -203,7 +205,7 @@ impl<I: Tokens> Buffer<I> {
             .map(|item| item.span)
             .unwrap_or(self.prev_span);
 
-        Span::new(data.lo, data.hi)
+        Span::new(data.lo, data.hi, data.ctxt)
     }
 
     /// Returns last byte position of previous token.

@@ -1,12 +1,12 @@
 use super::*;
-use crate::{ context::Context, token::Token};
+use crate::{context::Context, token::Token};
 use global_common::Span;
 use std::ops::{Deref, DerefMut};
 
 pub trait ParseObject<Obj> {
     type Prop;
-    fn make_object(&mut self, span: Span, props: Vec<Self::Prop>) -> Obj;
-    fn parse_object_prop(&mut self) -> Self::Prop;
+    fn make_object(&mut self, span: Span, props: Vec<Self::Prop>) -> PResult<Obj>;
+    fn parse_object_prop(&mut self) -> PResult<Self::Prop>;
 }
 
 pub struct WithState<'w, I: 'w + Tokens> {
@@ -176,7 +176,6 @@ impl<'a, I: Tokens> Parser<I> {
         self.with_ctx(ctx)
     }
 
-
     /// Original context is restored when returned guard is dropped.
     pub(super) fn include_in_expr(&mut self, include_in_expr: bool) -> WithCtx<I> {
         let ctx = Context {
@@ -193,16 +192,5 @@ impl<'a, I: Tokens> Parser<I> {
         F: FnOnce(&mut Self) -> Ret,
     {
         f(self)
-    }
-
-    // Test whether a semicolon can be inserted at the current position.
-    pub(super) fn can_insert_semicolon(&mut self) -> bool {
-        self.input.cur().is_none()
-            || self.input.is(&tok!('}'))
-            || self.input.had_line_break_before_cur()
-    }
-
-    pub(super) fn is_line_terminator(&mut self) -> bool {
-        self.input.eat(&tok!(';')) || self.can_insert_semicolon()
     }
 }

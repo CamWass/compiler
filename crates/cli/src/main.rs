@@ -1,55 +1,50 @@
-// #![allow(unused_imports)]
-// #![allow(dead_code)]
-// #![allow(unused_variables)]
-// #![allow(non_snake_case)]
-// #![allow(unused_macros)]
-
-use global_common::{input::StringInput, BytePos, Pos};
+use ast::Program;
+use global_common::{
+    errors::{ColorConfig, Handler},
+    input::StringInput,
+    sync::Lrc,
+    SourceMap,
+};
 use parser::Parser;
-use std::fs;
+use std::path::Path;
 
 fn main() {
-    let data = fs::read_to_string("foo.js").expect("Unable to read file");
+    let cm = Lrc::<SourceMap>::default();
+    let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
 
-    // let mut num_of_chars = 0;
+    let fm = cm
+        .load_file(Path::new("foo.js"))
+        .expect("failed to load file");
 
-    // println!("Chars are:");
-    // for (i, ch) in data.char_indices() {
-    //     println!("{}: {:?}", i, ch);
-    //     num_of_chars += 1;
-    // }
+    let mut parser = Parser::new(StringInput::from(&*fm));
 
-    // println!("\nNum of chars: {}\n", num_of_chars);
+    let is_module = true;
+    let program = if is_module {
+        let m = parser.parse_module();
 
-    let input = StringInput::new(&data, BytePos(0), BytePos::from_usize(data.len()));
+        for e in parser.take_errors() {
+            e.into_diagnostic(&handler).emit();
+        }
 
-    // let opts = Options::default();
+        m.map_err(|e| {
+            e.into_diagnostic(&handler).emit();
 
-    // let lex = Lexer::new(input);
+            // std::error::Error("failed to parse module")
+        })
+        .map(Program::Module)
+    } else {
+        let s = parser.parse_script();
 
-    let mut p = Parser::new(input);
+        for e in parser.take_errors() {
+            e.into_diagnostic(&handler).emit();
+        }
 
-    let r = p.parse_program();
+        s.map_err(|e| {
+            e.into_diagnostic(&handler).emit();
+            // Error::msg("failed to parse module")
+        })
+        .map(Program::Script)
+    };
 
-    println!("{:#?}", r);
-
-    // for token in lex {
-    //     println!("{:#?}", token.token);
-    // }
-
-    // while let Some(_) = lex.cur() {
-    //     lex.next_token();
-    //     // println!("{:#?}", lex.state.token_type);
-    // }
-
-    // lex.next_token();
-    // println!("{:#?} {:#?}", lex.state.kind, lex.state.value);
-
-    // let mut parser = Parser::new(&data, false);
-
-    // print!("{:?}", lex.next());
-
-    // while let Some(token) = parser.lexer.next() {
-    //     print!("{:?}, ", token);
-    // }
+    println!("{:#?}", program);
 }

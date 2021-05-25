@@ -1,7 +1,8 @@
 use super::Lexer;
-use crate::{token::*, context::Context, Tokens};
+use crate::{context::Context, error::Error, token::*, Tokens};
 use enum_kind::Kind;
 use global_common::{input::Input, BytePos};
+use std::mem::take;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TokenType {
@@ -77,10 +78,10 @@ impl From<&Token> for TokenType {
 
 impl<I: Input> Tokens for Lexer<I> {
     fn set_ctx(&mut self, ctx: Context) {
-        // if ctx.module && !self.module_errors.borrow().is_empty() {
-        //     let mut module_errors = self.module_errors.borrow_mut();
-        //     self.errors.borrow_mut().append(&mut *module_errors);
-        // }
+        if ctx.module && !self.module_errors.borrow().is_empty() {
+            let mut module_errors = self.module_errors.borrow_mut();
+            self.errors.borrow_mut().append(&mut *module_errors);
+        }
         self.ctx = ctx
     }
 
@@ -110,21 +111,21 @@ impl<I: Input> Tokens for Lexer<I> {
         self.state.context = c;
     }
 
-    // fn add_error(&self, error: Error) {
-    //     self.errors.borrow_mut().push(error);
-    // }
+    fn add_error(&self, error: Error) {
+        self.errors.borrow_mut().push(error);
+    }
 
-    // fn take_errors(&mut self) -> Vec<Error> {
-    //     take(&mut self.errors.borrow_mut())
-    // }
+    fn take_errors(&mut self) -> Vec<Error> {
+        take(&mut self.errors.borrow_mut())
+    }
 
-    // fn add_module_mode_error(&self, error: Error) {
-    //     if self.ctx.module {
-    //         self.add_error(error);
-    //         return;
-    //     }
-    //     self.module_errors.borrow_mut().push(error);
-    // }
+    fn add_module_mode_error(&self, error: Error) {
+        if self.ctx.module {
+            self.add_error(error);
+            return;
+        }
+        self.module_errors.borrow_mut().push(error);
+    }
 }
 
 /// The algorithm used to determine whether a regexp can appear at a
@@ -229,21 +230,14 @@ impl TokenContexts {
 
 #[derive(Clone)]
 pub struct State {
-    pub cur_line: usize,
-
-    pub is_iterator: bool,
-
     /// Whether a line break exists between previous token and new token.
     pub had_line_break: bool,
-
-    pub line_start: BytePos,
 
     pub token_type: Option<TokenType>,
 
     pub start: BytePos,
 
     // Position information for the previous token
-    pub last_tok_start: BytePos,
     pub last_tok_end: BytePos,
 
     // The context stack is used to superficially track syntactic
@@ -261,14 +255,10 @@ pub struct State {
 impl State {
     pub fn new() -> Self {
         Self {
-            cur_line: 1,
-            is_iterator: false,
             had_line_break: false,
-            line_start: BytePos(0),
             token_type: None,
             start: BytePos(0),
 
-            last_tok_start: BytePos(0),
             last_tok_end: BytePos(0),
             context: TokenContexts(vec![TokenContext::BraceStmt]),
             is_expr_allowed: true,
@@ -315,8 +305,7 @@ impl State {
             _ => false,
         };
 
-        if is_next_keyword && prev == Some(TokenType::Dot)
-        {
+        if is_next_keyword && prev == Some(TokenType::Dot) {
             false
         } else {
             match *next {

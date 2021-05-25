@@ -9,17 +9,40 @@ macro_rules! span {
             start.0,
             end.0
         );
-        ::global_common::Span::new(start, end)
+        ::global_common::Span::new(start, end, ::global_common::SyntaxContext::empty())
     }};
 }
 
 /// cur!($parser, required:bool)
 macro_rules! cur {
-    ($parser:expr, true) => {{
+    ($parser:expr, $required:expr) => {{
+        let pos = $parser.input.last_pos();
+        let last = Span::new(pos, pos, Default::default());
+        let is_err_token = match $parser.input.cur() {
+            Some(&$crate::token::Token::Error(..)) => true,
+            _ => false,
+        };
+        if is_err_token {
+            match $parser.input.bump() {
+                $crate::token::Token::Error(e) => {
+                    return Err(e);
+                }
+                _ => unreachable!(),
+            }
+        }
+
         match $parser.input.cur() {
-            Some(c) => c,
+            Some(c) => Ok(c),
             None => {
-                panic!("Unexpected eof at {:?}", $parser.input.last_pos());
+                if $required {
+                    let err = crate::error::Error {
+                        error: Box::new((last, crate::error::SyntaxError::Eof)),
+                    };
+                    return Err(err);
+                }
+                Err(crate::error::Error {
+                    error: Box::new((last, crate::error::SyntaxError::Eof)),
+                })
             }
         }
     }};
@@ -85,7 +108,6 @@ macro_rules! is_one_of {
 ///     if token has data like string.
 macro_rules! eat {
     ($parser:expr, ';') => {{
-        // log::trace!("eat(';'): cur={:?}", cur!($parser, false));
         match $parser.input.cur() {
             Some(&Token::Semi) => {
                 $parser.input.bump();
@@ -106,19 +128,39 @@ macro_rules! eat {
     }};
 }
 
-macro_rules! peek_or_panic {
-    ($parser:expr) => {{
-        let pos = $parser.input.cur_pos();
-        let last = Span::new(pos, pos);
-        match $parser.input.peek() {
-            Some(c) => c,
-            None => {
-                panic!("Unexpected eof at {:?}", last);
-            }
+macro_rules! eat_exact {
+    ($parser:expr, $t:tt) => {{
+        if is_exact!($parser, $t) {
+            $parser.input.bump();
+            true
+        } else {
+            false
         }
     }};
 }
 
+macro_rules! peek {
+    ($parser:expr) => {{
+        debug_assert!(
+            $parser.input.knows_cur(),
+            "parser should not call peek() without knowing current token.
+Current token is {:?}",
+            cur!($parser, false),
+        );
+
+        let pos = $parser.input.cur_pos();
+        let last = Span::new(pos, pos, Default::default());
+        match $parser.input.peek() {
+            Some(c) => Ok(c),
+            None => {
+                let err = crate::error::Error {
+                    error: Box::new((last, crate::error::SyntaxError::Eof)),
+                };
+                Err(err)
+            }
+        }
+    }};
+}
 /// Returns true on eof.
 macro_rules! eof {
     ($parser:expr) => {
@@ -127,28 +169,31 @@ macro_rules! eof {
 }
 
 macro_rules! unexpected {
-    ($parser:expr, $expected:expr) => {{
-        panic!(
-            "Unexpected token at {:?}. Expected '{:?}', found '{:?}'",
+    ($parser:expr, $expected:literal) => {{
+        let got = $parser.input.dump_cur();
+        syntax_error!(
+            $parser,
             $parser.input.cur_span(),
-            $expected,
-            $parser.input.dump_cur()
-        );
-    }};
-    ($parser:expr) => {{
-        panic!(
-            "Unexpected token '{:?}' at {:?}",
-            $parser.input.dump_cur(),
-            $parser.input.cur_span()
-        );
+            SyntaxError::Unexpected {
+                got,
+                expected: $expected
+            }
+        )
     }};
 }
 
 /// This handles automatic semicolon insertion.
 macro_rules! expect {
     ($parser:expr, $t:tt) => {{
+        const TOKEN: &Token = &tok!($t);
         if !eat!($parser, $t) {
-            unexpected!($parser, &tok!($t));
+            let cur = $parser.input.dump_cur();
+            dbg!($t);
+            syntax_error!(
+                $parser,
+                $parser.input.cur_span(),
+                SyntaxError::Expected(TOKEN, cur)
+            )
         }
     }};
 }
@@ -156,8 +201,13 @@ macro_rules! expect {
 macro_rules! expect_exact {
     ($parser:expr, $t:tt) => {{
         const TOKEN: &Token = &tok!($t);
-        if !$parser.input.eat(TOKEN) {
-            unexpected!($parser, TOKEN);
+        if !eat_exact!($parser, $t) {
+            let cur = $parser.input.dump_cur();
+            syntax_error!(
+                $parser,
+                $parser.input.cur_span(),
+                SyntaxError::Expected(TOKEN, cur)
+            )
         }
     }};
 }
@@ -166,28 +216,28 @@ macro_rules! return_if_arrow {
     ($parser:expr, $expr:expr) => {{
         match $parser.state.potential_arrow_start {
             Some(start) if $expr.span().lo == start && matches!(*$expr, Expr::Arrow { .. }) => {
-                return $expr
+                return Ok($expr)
             }
             _ => {}
         };
     }};
 }
 
-/// Consume a semicolon, or, failing that, see if we are allowed to
-/// pretend that there is a semicolon at self position.
-macro_rules! semicolon {
-    ($parser:expr, $allow_asi:expr) => {{
-        if ($allow_asi && !$parser.is_line_terminator())
-            || (!$allow_asi && !$parser.input.eat(&tok!(';')))
-        {
-            // self.raise(self.lexer.state.last_tok_end, Errors.MissingSemicolon);
-            panic!("MissingSemicolon at {:?}", $parser.input.cur_span());
+macro_rules! make_error {
+    ($parser:expr, $span:expr, $err:expr) => {{
+        crate::error::Error {
+            error: Box::new(($span, $err)),
         }
     }};
-    ($parser:expr) => {{
-        if !$parser.is_line_terminator() {
-            // self.raise(self.lexer.state.last_tok_end, Errors.MissingSemicolon);
-            panic!("MissingSemicolon at {:?}", $parser.input.cur_span());
-        }
+}
+
+macro_rules! syntax_error {
+    ($parser:expr, $err:expr) => {
+        syntax_error!($parser, $parser.input.cur_span(), $err)
+    };
+
+    ($parser:expr, $span:expr, $err:expr) => {{
+        let err = make_error!($parser, $span, $err);
+        return Err(err.into());
     }};
 }

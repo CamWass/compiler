@@ -3,21 +3,29 @@ mod number;
 mod state;
 mod util;
 
-use crate::{context::Context, token::*};
+use crate::{
+    context::Context,
+    error::{Error, SyntaxError},
+    token::*,
+};
 use ast::op;
-use global_common::{input::Input, BytePos, Pos};
+use global_common::{input::Input, BytePos, Span};
 use identifier::{is_ident_part, is_ident_start};
 use state::State;
 pub use state::{TokenContext, TokenContexts};
-use std::iter::FusedIterator;
+use std::{cell::RefCell, iter::FusedIterator, rc::Rc};
 use swc_atoms::JsWord;
-use util::{char_bytes, char_literals, is_iterator, is_line_break, is_valid_regex_flag};
+use util::{char_bytes, char_literals, is_line_break, is_valid_regex_flag};
+
+pub(crate) type LexResult<T> = Result<T, Error>;
 
 #[derive(Clone)]
 pub struct Lexer<I: Input> {
-    state: State,
-    input: I,
     pub(crate) ctx: Context,
+    input: I,
+    state: State,
+    errors: Rc<RefCell<Vec<Error>>>,
+    module_errors: Rc<RefCell<Vec<Error>>>,
 }
 
 impl<I: Input> FusedIterator for Lexer<I> {}
@@ -25,33 +33,39 @@ impl<I: Input> FusedIterator for Lexer<I> {}
 impl<I: Input> Iterator for Lexer<I> {
     type Item = TokenAndSpan;
     fn next(&mut self) -> Option<Self::Item> {
-        self.state.last_tok_start = self.state.start;
-        self.state.had_line_break = false;
+        let mut start = self.cur_pos();
 
-        // Skip the space after the previous token, so that the next one's
-        // `start` will point to the right position.
-        if self.state.can_skip_space() {
-            self.skip_space();
+        let res = (|| -> Result<Option<_>, _> {
+            self.state.had_line_break = false;
+
+            // Skip the space after the previous token, so that the next one's
+            // `start` will point to the right position.
+            if self.state.can_skip_space() {
+                self.skip_space()?;
+                start = self.input.cur_pos();
+            };
+
+            self.state.start = start;
+
+            self.read_token()
+        })();
+
+        let token = match res.map_err(Token::Error).map_err(Some) {
+            Ok(t) => t,
+            Err(e) => e,
         };
-
-        let start = self.cur_pos();
-        self.state.start = start;
-
-        let token = self.read_token();
 
         if let Some(ref token) = token {
             self.state.update(start, &token);
             self.state.last_tok_end = self.last_pos();
         }
 
-        let span = self.span(start);
-
         token.map(|token| {
             // Attach span to token.
             TokenAndSpan {
                 token,
                 had_line_break: self.state.had_line_break,
-                span,
+                span: self.span(start),
             }
         })
     }
@@ -63,65 +77,67 @@ impl<I: Input> Lexer<I> {
             state: State::new(),
             input,
             ctx: Default::default(),
+            errors: Default::default(),
+            module_errors: Default::default(),
         }
     }
 
-    fn read_token(&mut self) -> Option<Token> {
+    fn read_token(&mut self) -> LexResult<Option<Token>> {
         let ch = match self.cur() {
             Some(c) => c,
             None => {
-                return None;
+                return Ok(None);
             }
         };
 
         match ch {
             // The interpretation of a dot depends on whether it is followed
             // by a digit or another two dots.
-            '.' => Some(self.read_token_dot()),
+            '.' => self.read_token_dot(),
             // Punctuation tokens.
             '(' => {
                 self.bump();
-                Some(LParen)
+                Ok(Some(LParen))
             }
             ')' => {
                 self.bump();
-                Some(RParen)
+                Ok(Some(RParen))
             }
             ';' => {
                 self.bump();
-                Some(Semi)
+                Ok(Some(Semi))
             }
             ',' => {
                 self.bump();
-                Some(Comma)
+                Ok(Some(Comma))
             }
             '[' => {
                 self.bump();
-                Some(LBracket)
+                Ok(Some(LBracket))
             }
             ']' => {
                 self.bump();
-                Some(RBracket)
+                Ok(Some(RBracket))
             }
             '{' => {
                 self.bump();
-                Some(LBrace)
+                Ok(Some(LBrace))
             }
             '}' => {
                 self.bump();
-                Some(RBrace)
+                Ok(Some(RBrace))
             }
             ':' => {
                 self.bump();
-                Some(Colon)
+                Ok(Some(Colon))
             }
-            '?' => Some(self.read_token_question()),
+            '?' => self.read_token_question(),
             '`' => {
                 self.bump();
-                Some(BackQuote)
+                Ok(Some(BackQuote))
             }
             '0' => {
-                Some(match self.peek() {
+                (match self.peek() {
                     // '0x', '0X' - hex number
                     Some('x') | Some('X') => self.read_radix_number(16),
                     // '0o', '0O' - octal number
@@ -131,79 +147,68 @@ impl<I: Input> Lexer<I> {
 
                     _ => self.read_number(false),
                 })
+                .map(Some)
             }
             // Anything else beginning with a digit is an integer, octal
             // number, or float.
-            '1'..='9' => Some(self.read_number(false)),
+            '1'..='9' => self.read_number(false).map(Some),
 
             // Quotes produce strings.
-            '"' | '\'' => Some(self.read_string(ch)),
+            '"' | '\'' => self.read_string(ch).map(Some),
 
-            '/' => Some(self.read_token_slash()),
-            '%' | '*' => Some(self.read_token_mult_modulo(ch)),
-            '|' | '&' => Some(self.read_token_pipe_amp(ch)),
-            '^' => Some(self.read_token_caret()),
+            '/' => self.read_token_slash().map(Some),
+            '%' | '*' => self.read_token_mult_modulo(ch).map(Some),
+            '|' | '&' => self.read_token_pipe_amp(ch).map(Some),
+            '^' => self.read_token_caret().map(Some),
             '+' | '-' => self.read_token_plus_min(ch),
             '<' | '>' => self.read_token_lt_gt(ch),
-            '=' | '!' => Some(self.read_token_eq_excl(ch)),
+            '=' | '!' => self.read_token_eq_excl(ch).map(Some),
             '~' => {
                 self.bump();
-                Some(tok!('~'))
+                Ok(Some(tok!('~')))
             }
             '@' => {
                 self.bump();
-                Some(At)
+                Ok(Some(At))
             }
             '#' => self.read_token_number_sign(),
             // Identifier or keyword. '\uXXXX' sequences are allowed in
             // identifiers, so '\' also dispatches to that.
-            ch if ch == '\\' || is_ident_start(ch) => Some(self.read_ident_or_keyword()),
+            ch if ch == '\\' || is_ident_start(ch) => self.read_ident_or_keyword().map(Some),
+
+            // unexpected character
             _ => {
-                // throw self.raise(
-                //   self.state.pos,
-                //   Errors.InvalidOrUnexpectedToken,
-                //   String.fromCodePoint(code),
-                // );
-                panic!(
-                    "InvalidOrUnexpectedToken `{:#?}` at position {:?}",
-                    std::char::from_u32(ch.into()),
-                    self.cur_pos()
-                );
+                self.input.bump();
+                let start = self.cur_pos();
+                self.error_span(pos_span(start), SyntaxError::UnexpectedChar { c: ch })?
             }
         }
     }
 
-    fn read_token_number_sign(&mut self) -> Option<Token> {
+    fn read_token_number_sign(&mut self) -> LexResult<Option<Token>> {
         debug_assert!(self.cur() == Some('#'));
 
         if self.input.is_at_start() && self.read_token_interpreter() {
-            return None;
-        }
-
-        if let Some(next_char) = self.peek() {
-            if next_char.is_ascii_digit() {
-                panic!("UnexpectedDigitAfterHash at {:?}", self.cur_pos());
-                // throw self.raise(self.state.pos, Errors.UnexpectedDigitAfterHash);
-            }
+            return Ok(None);
         }
 
         self.bump(); // '#'
-        Some(tok!('#'))
+        Ok(Some(tok!('#')))
     }
 
-    fn read_token_dot(&mut self) -> Token {
+    fn read_token_dot(&mut self) -> LexResult<Option<Token>> {
         debug_assert!(self.cur() == Some('.'));
 
         let next = match self.peek() {
             Some(next) => next,
             None => {
                 self.bump(); // '.'
-                return tok!('.');
+                return Ok(Some(tok!('.')));
             }
         };
 
         if next.is_ascii_digit() {
-            return self.read_number(true);
+            return self.read_number(true).map(Some);
         }
 
         self.bump(); // 1st '.'
@@ -211,13 +216,13 @@ impl<I: Input> Lexer<I> {
         if next == '.' && self.peek_ahead() == Some('.') {
             self.bump(); // 2nd '.'
             self.bump(); // 3rd '.'
-            tok!("...")
+            Ok(Some(tok!("...")))
         } else {
-            tok!('.')
+            Ok(Some(tok!('.')))
         }
     }
 
-    fn read_token_slash(&mut self) -> Token {
+    fn read_token_slash(&mut self) -> LexResult<Token> {
         debug_assert_eq!(self.cur(), Some('/'));
 
         // Regex
@@ -229,9 +234,9 @@ impl<I: Input> Lexer<I> {
         self.bump();
 
         if self.eat(b'=') {
-            tok!("/=")
+            Ok(tok!("/="))
         } else {
-            tok!('/')
+            Ok(tok!('/'))
         }
     }
 
@@ -259,7 +264,7 @@ impl<I: Input> Lexer<I> {
         false
     }
 
-    fn read_token_mult_modulo(&mut self, ch: char) -> Token {
+    fn read_token_mult_modulo(&mut self, ch: char) -> LexResult<Token> {
         debug_assert!(ch == '*' || ch == '%');
         debug_assert!(self.cur() == Some(ch));
 
@@ -283,10 +288,10 @@ impl<I: Input> Lexer<I> {
             }
         }
 
-        token
+        Ok(token)
     }
 
-    fn read_token_pipe_amp(&mut self, ch: char) -> Token {
+    fn read_token_pipe_amp(&mut self, ch: char) -> LexResult<Token> {
         debug_assert!(ch == '|' || ch == '&');
         debug_assert!(self.cur() == Some(ch));
 
@@ -297,11 +302,11 @@ impl<I: Input> Lexer<I> {
         if self.is(b'=') {
             self.bump();
 
-            return AssignOp(match token {
+            return Ok(AssignOp(match token {
                 BitAnd => BitAndAssign,
                 BitOr => BitOrAssign,
                 _ => unreachable!(),
-            });
+            }));
         }
 
         // '||', '&&'
@@ -310,38 +315,40 @@ impl<I: Input> Lexer<I> {
 
             if self.is(b'=') {
                 self.bump();
-                return AssignOp(match token {
+                return Ok(AssignOp(match token {
                     BitAnd => op!("&&="),
                     BitOr => op!("||="),
                     _ => unreachable!(),
-                });
+                }));
             }
 
-            return BinOp(match token {
+            return Ok(BinOp(match token {
                 BitAnd => LogicalAnd,
                 BitOr => LogicalOr,
                 _ => unreachable!(),
-            });
+            }));
         }
 
-        BinOp(token)
+        Ok(BinOp(token))
     }
 
-    fn read_token_caret(&mut self) -> Token {
+    fn read_token_caret(&mut self) -> LexResult<Token> {
         debug_assert!(self.cur() == Some('^'));
         // Bitwise xor
         self.bump(); // '^'
         if self.is(b'=') {
             self.bump(); // '='
-            AssignOp(BitXorAssign)
+            Ok(AssignOp(BitXorAssign))
         } else {
-            BinOp(BitXor)
+            Ok(BinOp(BitXor))
         }
     }
 
-    fn read_token_plus_min(&mut self, ch: char) -> Option<Token> {
+    fn read_token_plus_min(&mut self, ch: char) -> LexResult<Option<Token>> {
         debug_assert!(ch == '+' || ch == '-');
         debug_assert!(self.cur() == Some(ch));
+
+        let start = self.input.cur_pos();
 
         self.bump(); // '+' or '-'
 
@@ -351,31 +358,39 @@ impl<I: Input> Lexer<I> {
 
             // Handle '-->' line comment
             if !self.ctx.module
+            // TODO: reassess this line:
                 && (self.state.had_line_break || self.state.last_tok_end == BytePos(0))
                 && ch == '-'
                 && self.eat(b'>')
             {
+                self.emit_module_mode_error(start, SyntaxError::LegacyCommentInModule);
                 self.skip_line_comment(0);
-                self.skip_space();
+                self.skip_space()?;
                 self.read_token()
             } else if ch == '+' {
-                Some(PlusPlus)
+                Ok(Some(PlusPlus))
             } else {
-                Some(MinusMinus)
+                Ok(Some(MinusMinus))
             }
         } else if self.is(b'=') {
             // '+=', '-='
             self.bump();
-            Some(AssignOp(if ch == '+' { AddAssign } else { SubAssign }))
+            Ok(Some(AssignOp(if ch == '+' {
+                AddAssign
+            } else {
+                SubAssign
+            })))
         } else {
             // '+', '-'
-            Some(BinOp(if ch == '+' { Add } else { Sub }))
+            Ok(Some(BinOp(if ch == '+' { Add } else { Sub })))
         }
     }
 
-    fn read_token_lt_gt(&mut self, ch: char) -> Option<Token> {
+    fn read_token_lt_gt(&mut self, ch: char) -> LexResult<Option<Token>> {
         debug_assert!(ch == '<' || ch == '>');
         debug_assert!(self.cur() == Some(ch));
+
+        let start = self.cur_pos();
 
         self.bump(); // '<' or '>'
 
@@ -387,7 +402,9 @@ impl<I: Input> Lexer<I> {
             && self.peek_ahead() == Some('-')
         {
             self.skip_line_comment(4);
-            self.skip_space();
+            self.skip_space()?;
+            self.emit_module_mode_error(start, SyntaxError::LegacyCommentInModule);
+
             return self.read_token();
         }
 
@@ -418,10 +435,10 @@ impl<I: Input> Lexer<I> {
             BinOp(op)
         };
 
-        Some(token)
+        Ok(Some(token))
     }
 
-    fn read_token_eq_excl(&mut self, ch: char) -> Token {
+    fn read_token_eq_excl(&mut self, ch: char) -> LexResult<Token> {
         debug_assert!(ch == '=' || ch == '!');
         debug_assert!(self.cur() == Some(ch));
 
@@ -435,33 +452,33 @@ impl<I: Input> Lexer<I> {
                 self.bump();
                 if ch == '!' {
                     // '!=='
-                    BinOp(NotEqEq)
+                    Ok(BinOp(NotEqEq))
                 } else {
                     // '==='
-                    BinOp(EqEqEq)
+                    Ok(BinOp(EqEqEq))
                 }
             } else if ch == '!' {
                 // '!='
-                BinOp(NotEq)
+                Ok(BinOp(NotEq))
             } else {
                 // '=='
-                BinOp(EqEq)
+                Ok(BinOp(EqEq))
             }
         } else if ch == '=' && self.is(b'>') {
             // "=>"
             self.bump();
 
-            Arrow
+            Ok(Arrow)
         } else if ch == '!' {
             // '!'
-            Bang
+            Ok(Bang)
         } else {
             // '='
-            AssignOp(Assign)
+            Ok(AssignOp(Assign))
         }
     }
 
-    fn read_token_question(&mut self) -> Token {
+    fn read_token_question(&mut self) -> LexResult<Option<Token>> {
         debug_assert!(self.cur() == Some('?'));
 
         self.bump(); // '?'
@@ -473,18 +490,16 @@ impl<I: Input> Lexer<I> {
                 self.bump(); // 2nd '?'
                 if next == Some('=') {
                     self.bump(); // '='
-                    tok!("??=")
+                    Ok(Some(tok!("??=")))
                 } else {
-                    tok!("??")
+                    Ok(Some(tok!("??")))
                 }
             }
-            _ => {
-                tok!('?')
-            }
+            _ => Ok(Some(tok!('?'))),
         }
     }
 
-    fn read_regexp(&mut self) -> Token {
+    fn read_regexp(&mut self) -> LexResult<Token> {
         debug_assert!(self.cur() == Some('/'));
 
         let start = self.cur_pos();
@@ -497,8 +512,7 @@ impl<I: Input> Lexer<I> {
         while let Some(ch) = self.cur() {
             if is_line_break(ch) {
                 // Regex literal cannot span multiple lines
-                // throw self.raise(start, Errors.UnterminatedRegExp);
-                panic!("UnterminatedRegExp at {:?}", start);
+                self.error(start, SyntaxError::UnterminatedRegxp)?;
             }
 
             if escaped {
@@ -518,10 +532,12 @@ impl<I: Input> Lexer<I> {
 
         if !self.is(b'/') {
             // Reached end of input without seeing closing '/'
-            panic!("UnterminatedRegExp at {:?}", start);
+            self.error(start, SyntaxError::UnterminatedRegxp)?;
         }
 
-        let content = self.input.slice_to_cur(start.to_usize() + 1).into();
+        let content_start = start + BytePos(1);
+
+        let content = self.input.slice_to_cur(content_start).into();
 
         self.bump(); // '/'
 
@@ -545,48 +561,44 @@ impl<I: Input> Lexer<I> {
             mods.push(ch);
         }
 
-        Regex(content, mods.into())
+        Ok(Regex(content, mods.into()))
     }
 
-    fn read_code_point(&mut self) -> char {
+    fn read_code_point(&mut self) -> LexResult<char> {
         debug_assert!(self.cur().is_some() && self.cur().unwrap().is_digit(16));
 
         let start = self.cur_pos();
-        let val = self.read_int_u32(16, 0, false);
+        let val = self.read_int_u32(16, 0, false)?;
 
         if let Some(val) = val {
             if 0x0010_FFFF >= val {
                 if let Some(ch) = std::char::from_u32(val) {
-                    return ch;
+                    return Ok(ch);
                 }
             }
         }
 
-        // self.raise(codePos, Errors.InvalidCodePoint);
-        panic!("InvalidCodePoint at {:?}", start);
+        self.error(start, SyntaxError::InvalidCodePoint)?
     }
 
-    fn read_unicode_escape(&mut self) -> char {
+    fn read_unicode_escape(&mut self, start: BytePos) -> LexResult<char> {
         debug_assert!(self.is(b'{') || (self.cur().is_some() && self.cur().unwrap().is_digit(16)));
 
         if self.eat(b'{') {
-            let code_pos = self.cur_pos();
-
-            let ch = self.read_code_point();
+            let ch = self.read_code_point()?;
 
             if !self.eat(b'}') {
-                // self.raise(codePos, Errors.InvalidCodePoint);
-                panic!("InvalidCodePoint at {:?}", code_pos);
+                self.error(start, SyntaxError::InvalidUnicodeEscape)?
             }
 
-            ch
+            Ok(ch)
         } else {
-            self.read_hex_char(4)
+            self.read_hex_char(start, 4)
         }
     }
 
     /// See https://tc39.github.io/ecma262/#sec-literals-string-literals
-    fn read_string(&mut self, quote: char) -> Token {
+    fn read_string(&mut self, quote: char) -> LexResult<Token> {
         debug_assert!(quote == '\'' || quote == '"');
         debug_assert!(self.cur() == Some(quote));
 
@@ -601,9 +613,9 @@ impl<I: Input> Lexer<I> {
             if ch == quote {
                 break;
             } else if ch == '\\' {
-                out.push_str(self.input.slice_to_cur(chunk_start.to_usize()));
+                out.push_str(self.input.slice_to_cur(chunk_start));
 
-                if let Some(c) = self.read_escaped_char() {
+                if let Some(c) = self.read_escaped_char()? {
                     out.push(c);
                 }
 
@@ -614,11 +626,10 @@ impl<I: Input> Lexer<I> {
                 || ch == char_literals::PARAGRAPH_SEPARATOR
             {
                 self.bump();
-                self.state.cur_line += 1;
-                self.state.line_start = self.cur_pos();
             } else if is_line_break(ch) {
-                // throw self.raise(self.state.start, Errors.UnterminatedString);
-                panic!("UnterminatedString at {:?}", self.cur_pos());
+                // String literals cannot span multiple lines.
+                let pos = self.cur_pos();
+                self.error(pos, SyntaxError::UnterminatedStrLit)?
             } else {
                 self.bump();
             }
@@ -626,15 +637,15 @@ impl<I: Input> Lexer<I> {
 
         if !self.is(quote as u8) {
             // Reached end of input without seeing closing quote (' or ")
-            panic!("UnterminatedRegExp at {:?}", start);
+            self.error(start, SyntaxError::UnterminatedStrLit)?
         }
 
-        out.push_str(self.input.slice_to_cur(chunk_start.to_usize()));
+        out.push_str(self.input.slice_to_cur(chunk_start));
         self.bump(); // ' or "
-        Token::Str {
+        Ok(Token::Str {
             value: out.into(),
             has_escape,
-        }
+        })
     }
 
     // // Reads template string tokens.
@@ -704,40 +715,39 @@ impl<I: Input> Lexer<I> {
     // }
 
     // Used to read escaped characters
-    fn read_escaped_char(&mut self) -> Option<char> {
+    fn read_escaped_char(&mut self) -> LexResult<Option<char>> {
         debug_assert!(self.cur() == Some('\\'));
+
+        let start = self.cur_pos();
         self.bump(); // '\'
         let ch = match self.cur() {
             Some(c) => c,
-            None => return None,
+            None => self.error_span(pos_span(start), SyntaxError::InvalidStrEscape)?,
         };
         self.bump();
 
         match ch {
             // Line feed
-            'n' => Some('\n'),
+            'n' => Ok(Some('\n')),
             // Carriage return
-            'r' => Some('\r'),
-            'x' => Some(self.read_hex_char(2)),
-            'u' => Some(self.read_unicode_escape()),
+            'r' => Ok(Some('\r')),
+            'x' => self.read_hex_char(start, 2).map(Some),
+            'u' => self.read_unicode_escape(start).map(Some),
             // Tab
-            't' => Some('\t'),
+            't' => Ok(Some('\t')),
             // Backspace
-            'b' => Some(char_literals::BACKSPACE),
+            'b' => Ok(Some(char_literals::BACKSPACE)),
             // Vertical tab
-            'v' => Some(char_literals::LINE_TABULATION),
-            'f' => Some(char_literals::FORM_FEED),
+            'v' => Ok(Some(char_literals::LINE_TABULATION)),
+            'f' => Ok(Some(char_literals::FORM_FEED)),
             char_literals::CARRIAGE_RETURN | char_literals::LINE_FEED => {
                 if ch == char_literals::CARRIAGE_RETURN && self.is(char_bytes::LINE_FEED) {
                     self.bump();
                 }
 
-                self.state.line_start = self.cur_pos();
-                self.state.cur_line += 1;
-
-                None
+                Ok(None)
             }
-            char_literals::LINE_SEPARATOR | char_literals::PARAGRAPH_SEPARATOR => None,
+            char_literals::LINE_SEPARATOR | char_literals::PARAGRAPH_SEPARATOR => Ok(None),
             '8' | '9' => {
                 todo!();
                 // if in_template {
@@ -768,7 +778,7 @@ impl<I: Input> Lexer<I> {
                         self.bump();
                         v
                     }
-                    _ => return None,
+                    _ => return Ok(None),
                 };
 
                 match self.cur().and_then(|c| c.to_digit(8)) {
@@ -776,7 +786,7 @@ impl<I: Input> Lexer<I> {
                         value = value * 8 + v;
                         self.bump();
                     }
-                    _ => unsafe { return Some(std::char::from_u32_unchecked(value)) },
+                    _ => unsafe { return Ok(Some(std::char::from_u32_unchecked(value))) },
                 }
 
                 match self.cur().and_then(|c| c.to_digit(8)) {
@@ -784,7 +794,7 @@ impl<I: Input> Lexer<I> {
                         value = value * 8 + v;
                         self.bump();
                     }
-                    _ => unsafe { return Some(std::char::from_u32_unchecked(value)) },
+                    _ => unsafe { return Ok(Some(std::char::from_u32_unchecked(value))) },
                 }
 
                 // TODO:
@@ -802,31 +812,30 @@ impl<I: Input> Lexer<I> {
                 //     }
                 //   }
 
-                unsafe { return Some(std::char::from_u32_unchecked(value)) };
+                unsafe { return Ok(Some(std::char::from_u32_unchecked(value))) };
             }
-            _ => Some(ch),
+            _ => Ok(Some(ch)),
         }
     }
 
     // Used to read character escape sequences ('\x', '\u').
-    fn read_hex_char(&mut self, len: u8) -> char {
+    fn read_hex_char(&mut self, start: BytePos, len: u8) -> LexResult<char> {
         debug_assert!(self.cur().is_some() && self.cur().unwrap().is_digit(16));
         debug_assert!(len == 2 || len == 4);
 
-        let val = self.read_int_u32(16, len, false);
+        let val = self.read_int_u32(16, len, false)?;
 
         if let Some(val) = val {
             if let Some(ch) = std::char::from_u32(val) {
-                return ch;
+                return Ok(ch);
             }
         }
 
-        // self.raise(codePos, Errors.InvalidEscapeSequence);
-        panic!("InvalidEscapeSequence at {:?}", self.cur_pos());
+        self.error(start, SyntaxError::ExpectedHexChars { count: len })?
     }
 
     // Read an identifier, and return it as a string.
-    fn read_word(&mut self) -> (JsWord, bool) {
+    fn read_word(&mut self) -> LexResult<(JsWord, bool)> {
         debug_assert!(
             self.cur() == Some('\\')
                 || (self.cur().is_some() && is_ident_start(self.cur().unwrap()))
@@ -840,7 +849,7 @@ impl<I: Input> Lexer<I> {
         let start = self.cur_pos();
 
         while let Some(ch) = self.cur() {
-            if is_ident_part(ch) || (self.state.is_iterator && ch == '@') {
+            if is_ident_part(ch) {
                 self.bump();
                 word.push(ch);
             } else if ch == '\\' {
@@ -849,15 +858,13 @@ impl<I: Input> Lexer<I> {
                 let esc_start = self.cur_pos();
 
                 self.bump(); // '\'
-                if self.cur() != Some('u') {
-                    // self.raise(self.state.pos, Errors.MissingUnicodeEscape);
-                    panic!("MissingUnicodeEscape at {:?}", self.cur_pos());
-                    // continue;
+                if !self.is(b'u') {
+                    self.error_span(pos_span(esc_start), SyntaxError::ExpectedUnicodeEscape)?
                 }
 
                 self.bump(); // 'u'
 
-                let ch = self.read_unicode_escape();
+                let ch = self.read_unicode_escape(esc_start)?;
 
                 let valid = if self.cur_pos() == start {
                     is_ident_start(ch)
@@ -866,8 +873,7 @@ impl<I: Input> Lexer<I> {
                 };
 
                 if !valid {
-                    // self.raise(escStart, Errors.EscapedCharNotAnIdentifier);
-                    panic!("EscapedCharNotAnIdentifier at {:?}", esc_start);
+                    self.emit_error(esc_start, SyntaxError::InvalidIdentChar);
                 }
 
                 word.push(ch);
@@ -877,19 +883,16 @@ impl<I: Input> Lexer<I> {
         }
 
         if word.is_empty() {
-            (
-                JsWord::from(self.input.slice_to_cur(start.to_usize())),
-                contains_esc,
-            )
+            Ok((JsWord::from(self.input.slice_to_cur(start)), contains_esc))
         } else {
-            (JsWord::from(word), contains_esc)
+            Ok((JsWord::from(word), contains_esc))
         }
     }
 
     // Read an identifier or keyword token. Will check for reserved
     // words when necessary.
     // See https://tc39.github.io/ecma262/#sec-names-and-keywords
-    fn read_ident_or_keyword(&mut self) -> Token {
+    fn read_ident_or_keyword(&mut self) -> LexResult<Token> {
         debug_assert!(
             self.cur() == Some('\\')
                 || (self.cur().is_some() && is_ident_start(self.cur().unwrap()))
@@ -897,14 +900,7 @@ impl<I: Input> Lexer<I> {
 
         let start = self.cur_pos();
 
-        let (text, contains_esc) = self.read_word();
-
-        // TODO: find test cases for this:
-        // Allow @@iterator and @@asyncIterator as a identifier only inside type
-        if self.state.is_iterator && (!is_iterator(&text)/* || !self.state.in_type*/) {
-            // self.raise(self.state.pos, Errors.InvalidIdentifier, word);
-            panic!("InvalidIdentifier '{}' at {:?}", &text, self.cur_pos());
-        }
+        let (text, contains_esc) = self.read_word()?;
 
         let word = Word::from(text);
 
@@ -913,18 +909,20 @@ impl<I: Input> Lexer<I> {
         // should know context or parser should handle this error. Our approach to this
         // problem is former one.
         if contains_esc && self.ctx.is_reserved(&word) {
-            // self.error(
-            //     start,
-            //     SyntaxError::EscapeInReservedWord { word: word.into() },
-            // )?
-            // self.raise(self.state.start, Errors.InvalidEscapedReservedWord, kw);
-            panic!("InvalidEscapedReservedWord '{:?}' at {:?}", word, start);
+            self.error(
+                start,
+                SyntaxError::EscapeInReservedWord { word: word.into() },
+            )?
         } else {
-            Word(word)
+            Ok(Word(word))
         }
     }
 
     pub fn set_expr_allowed(&mut self, allow: bool) {
         self.state.is_expr_allowed = allow;
     }
+}
+
+fn pos_span(p: BytePos) -> Span {
+    Span::new(p, p, Default::default())
 }

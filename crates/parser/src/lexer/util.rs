@@ -1,9 +1,9 @@
-use super::Lexer;
-use global_common::{input::Input, BytePos, Span};
-
-pub fn is_iterator(word: &str) -> bool {
-    word == "@@iterator" || word == "@@asyncIterator"
-}
+use super::{LexResult, Lexer};
+use crate::{
+    error::{Error, SyntaxError},
+    Tokens,
+};
+use global_common::{input::Input, BytePos, Span, SyntaxContext};
 
 /// See https://tc39.github.io/ecma262/#sec-line-terminators
 pub fn is_line_break(ch: char) -> bool {
@@ -93,7 +93,11 @@ impl<I: Input> Lexer<I> {
             end.0
         );
 
-        Span { lo: start, hi: end }
+        Span {
+            lo: start,
+            hi: end,
+            ctxt: SyntaxContext::empty(),
+        }
     }
 
     pub(super) fn bump(&mut self) {
@@ -118,15 +122,88 @@ impl<I: Input> Lexer<I> {
         self.input.peek_ahead()
     }
 
-    pub(super) fn cur_pos(&self) -> BytePos {
+    pub(super) fn cur_pos(&mut self) -> BytePos {
         self.input.cur_pos()
     }
     pub(super) fn last_pos(&self) -> BytePos {
         self.input.last_pos()
     }
 
+    /// Shorthand for `let span = self.span(start); self.error_span(span)`
+    #[cold]
+    #[inline(never)]
+    pub(super) fn error<T>(&mut self, start: BytePos, kind: SyntaxError) -> LexResult<T> {
+        let span = self.span(start);
+        self.error_span(Span::new(span.lo, span.hi, span.ctxt), kind)
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub(super) fn error_span<T>(&mut self, span: Span, kind: SyntaxError) -> LexResult<T> {
+        Err(Error {
+            error: Box::new((span, kind)),
+        })
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub(super) fn emit_error(&mut self, start: BytePos, kind: SyntaxError) {
+        let span = self.span(start);
+        self.emit_error_span(Span::new(span.lo, span.hi, span.ctxt), kind)
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub(super) fn emit_error_span(&mut self, span: Span, kind: SyntaxError) {
+        let err = Error {
+            error: Box::new((span, kind)),
+        };
+        self.errors.borrow_mut().push(err);
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub(super) fn emit_strict_mode_error(&mut self, start: BytePos, kind: SyntaxError) {
+        let span = self.span(start);
+        self.emit_strict_mode_error_span(Span::new(span.lo, span.hi, span.ctxt), kind)
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub(super) fn emit_strict_mode_error_span(&mut self, span: Span, kind: SyntaxError) {
+        if self.ctx.strict {
+            self.emit_error_span(span, kind);
+            return;
+        }
+
+        let err = Error {
+            error: Box::new((span, kind)),
+        };
+
+        self.add_module_mode_error(err);
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub(super) fn emit_module_mode_error(&mut self, start: BytePos, kind: SyntaxError) {
+        let span = self.span(start);
+        self.emit_module_mode_error_span(Span::new(span.lo, span.hi, span.ctxt), kind)
+    }
+
+    /// Some codes are valid in a strict mode script  but invalid in module
+    /// code.
+    #[cold]
+    #[inline(never)]
+    pub(super) fn emit_module_mode_error_span(&mut self, span: Span, kind: SyntaxError) {
+        let err = Error {
+            error: Box::new((span, kind)),
+        };
+
+        self.add_module_mode_error(err);
+    }
+
     /// Expects current char to be '/' and next char to be '*'.
-    pub(super) fn skip_block_comment(&mut self) {
+    pub(super) fn skip_block_comment(&mut self) -> LexResult<()> {
         let start = self.cur_pos();
 
         debug_assert_eq!(self.cur(), Some('/'));
@@ -139,7 +216,7 @@ impl<I: Input> Lexer<I> {
             if ch == '*' && self.peek() == Some('/') {
                 self.bump(); // '*'
                 self.bump(); // '/'
-                return;
+                return Ok(());
             }
 
             if is_line_break(ch) {
@@ -149,7 +226,7 @@ impl<I: Input> Lexer<I> {
             self.bump();
         }
 
-        panic!("UnterminatedComment at {:?}", start);
+        self.error(start, SyntaxError::UnterminatedBlockComment)?
     }
 
     pub(super) fn skip_line_comment(&mut self, start_skip: usize) {
@@ -169,7 +246,7 @@ impl<I: Input> Lexer<I> {
     /// Skip comments or whitespaces.
     ///
     /// See https://tc39.github.io/ecma262/#sec-white-space
-    pub(super) fn skip_space(&mut self) {
+    pub(super) fn skip_space(&mut self) -> LexResult<()> {
         while let Some(ch) = self.cur() {
             match ch {
                 char_literals::SPACE
@@ -191,19 +268,21 @@ impl<I: Input> Lexer<I> {
                         self.skip_line_comment(2);
                     }
                     Some('*') => {
-                        self.skip_block_comment();
+                        self.skip_block_comment()?;
                     }
-                    _ => return,
+                    _ => return Ok(()),
                 },
 
                 _ => {
                     if is_whitespace(ch) {
                         self.bump();
                     } else {
-                        return;
+                        return Ok(());
                     }
                 }
             }
         }
+
+        Ok(())
     }
 }

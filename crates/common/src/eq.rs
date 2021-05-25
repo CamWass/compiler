@@ -1,6 +1,6 @@
-use crate::{BytePos, Span};
+use crate::{BytePos, Span, SyntaxContext};
 use num_bigint::BigInt;
-use std::{borrow::Cow, cell::RefCell, cmp::PartialEq, rc::Rc, sync::Arc};
+use std::{cell::RefCell, cmp::PartialEq, rc::Rc, sync::Arc};
 use string_cache::Atom;
 
 /// Derive with `#[derive(EqIgnoreSpan)]`.
@@ -13,12 +13,6 @@ impl EqIgnoreSpan for Span {
     #[inline]
     fn eq_ignore_span(&self, _: &Self) -> bool {
         true
-    }
-}
-
-impl<'a> EqIgnoreSpan for Cow<'a, str> {
-    fn eq_ignore_span(&self, other: &Self) -> bool {
-        self == other
     }
 }
 
@@ -113,8 +107,7 @@ macro_rules! eq {
     };
 }
 
-// eq!(SyntaxContext, BytePos);
-eq!(BytePos);
+eq!(SyntaxContext, BytePos);
 eq!(bool);
 eq!(usize, u8, u16, u32, u64, u128);
 eq!(isize, i8, i16, i32, i64, i128);

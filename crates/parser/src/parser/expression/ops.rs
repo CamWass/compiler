@@ -5,33 +5,30 @@ use global_common::Spanned;
 
 impl<'a, I: Tokens> Parser<I> {
     /// Name from spec: 'LogicalORExpression'
-    pub(super) fn parse_bin_expr(&mut self) -> Box<Expr> {
-        // trace_cur!(self, parse_bin_expr);
+    pub(super) fn parse_bin_expr(&mut self) -> PResult<Box<Expr>> {
 
-        // let ctx = self.ctx();
+        let ctx = self.ctx();
 
-        // let left = match self.parse_unary_expr() {
-        //     Ok(v) => v,
-        //     Err(err) => {
-        //         trace_cur!(self, parse_bin_expr__recovery_unary_err);
+        let left = match self.parse_unary_expr() {
+            Ok(v) => v,
+            Err(err) => {
 
-        //         match cur!(self, true) {
-        //             &Word(Word::Keyword(Keyword::In)) if ctx.include_in_expr => {
-        //                 self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
+                match cur!(self, true)? {
+                    &Word(Word::Keyword(Keyword::In)) if ctx.include_in_expr => {
+                        self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
 
-        //                 Box::new(Expr::Invalid(Invalid { span: err.span() }))
-        //             }
-        //             &Word(Word::Keyword(Keyword::InstanceOf)) | &Token::BinOp(..) => {
-        //                 self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
+                        Box::new(Expr::Invalid(Invalid { span: err.span() }))
+                    }
+                    &Word(Word::Keyword(Keyword::InstanceOf)) | &Token::BinOp(..) => {
+                        self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
 
-        //                 Box::new(Expr::Invalid(Invalid { span: err.span() }))
-        //             }
-        //             _ => return Err(err),
-        //         }
-        //     }
-        // };
+                        Box::new(Expr::Invalid(Invalid { span: err.span() }))
+                    }
+                    _ => return Err(err),
+                }
+            }
+        };
 
-        let left =  self.parse_unary_expr();
 
         return_if_arrow!(self, left);
         self.parse_bin_op_recursively(left, 0)
@@ -48,9 +45,9 @@ impl<'a, I: Tokens> Parser<I> {
         &mut self,
         mut left: Box<Expr>,
         mut min_prec: u8,
-    ) -> Box<Expr> {
+    ) -> PResult<Box<Expr>> {
         loop {
-            let (next_left, next_prec) = self.parse_bin_op_recursively_inner(left, min_prec);
+            let (next_left, next_prec) = self.parse_bin_op_recursively_inner(left, min_prec)?;
 
             match &*next_left {
                 Expr::Bin(BinExpr {
@@ -66,8 +63,7 @@ impl<'a, I: Tokens> Parser<I> {
                     ..
                 }) => match &**left {
                     Expr::Bin(BinExpr { op: op!("??"), .. }) => {
-                        // self.emit_err(*span, SyntaxError::NullishCoalescingWithLogicalOp);
-                        panic!("NullishCoalescingWithLogicalOp at {:?}", *span);
+                        self.emit_err(*span, SyntaxError::NullishCoalescingWithLogicalOp);
                     }
 
                     _ => {}
@@ -77,7 +73,7 @@ impl<'a, I: Tokens> Parser<I> {
 
             min_prec = match next_prec {
                 Some(v) => v,
-                None => return next_left,
+                None => return Ok(next_left),
             };
 
             left = next_left;
@@ -89,70 +85,32 @@ impl<'a, I: Tokens> Parser<I> {
         &mut self,
         left: Box<Expr>,
         min_prec: u8,
-    ) -> (Box<Expr>, Option<u8>) {
-        // const PREC_OF_IN: u8 = 7;
+    ) -> PResult<(Box<Expr>, Option<u8>)> {
 
-        // if self.input.syntax().typescript()
-        //     && PREC_OF_IN > min_prec
-        //     && !self.input.had_line_break_before_cur()
-        //     && is!(self, "as")
-        // {
-        //     let start = left.span().lo();
-        //     let expr = left;
-        //     let node = if peeked_is!(self, "const") {
-        //         self.input.bump(); // as
-        //         let _ = cur!(self, false);
-        //         self.input.bump(); // const
-        //         Box::new(Expr::TsConstAssertion(TsConstAssertion {
-        //             span: span!(self, start),
-        //             expr,
-        //         }))
-        //     } else {
-        //         let type_ann = self.next_then_parse_ts_type();
-        //         Box::new(Expr::TsAs(TsAsExpr {
-        //             span: span!(self, start),
-        //             expr,
-        //             type_ann,
-        //         }))
-        //     };
-
-        //     return self.parse_bin_op_recursively_inner(node, min_prec);
-        // }
 
         let ctx = self.ctx();
         // Return left on eof
         let word = match self.input.cur() {
             Some(cur) => cur,
-            _ => return (left, None),
+            _ => return Ok((left, None)),
         };
         let op = match *word {
             Word(Word::Keyword(Keyword::In)) if ctx.include_in_expr => op!("in"),
             Word(Word::Keyword(Keyword::InstanceOf)) => op!("instanceof"),
             Token::BinOp(op) => op.into(),
             _ => {
-                return (left, None);
+                return Ok((left, None));
             }
         };
 
 
         if op.precedence() <= min_prec {
-            // trace!(
-            //     "returning {:?} without parsing {:?} because min_prec={}, prec={}",
-            //     left,
-            //     op,
-            //     min_prec,
-            //     op.precedence()
-            // );
 
-            return (left, None);
+
+            return Ok((left, None));
         }
         self.input.bump();
-        // trace!(
-        //     "parsing binary op {:?} min_prec={}, prec={}",
-        //     op,
-        //     min_prec,
-        //     op.precedence()
-        // );
+  
 
         match *left {
             // This is invalid syntax.
@@ -161,21 +119,20 @@ impl<'a, I: Tokens> Parser<I> {
                 // returning "unexpected token '**'" on next.
                 // But it's not useful error message.
 
-                // syntax_error!(
-                //     self,
-                //     SyntaxError::UnaryInExp {
-                //         // FIXME: Use display
-                //         left: format!("{:?}", left),
-                //         left_span: left.span(),
-                //     }
-                // )
-                panic!("UnaryInExp");
+                syntax_error!(
+                    self,
+                    SyntaxError::UnaryInExp {
+                        // FIXME: Use display
+                        left: format!("{:?}", left),
+                        left_span: left.span(),
+                    }
+                )
             }
             _ => {}
         }
 
         let right = {
-            let left_of_right = self.parse_unary_expr();
+            let left_of_right = self.parse_unary_expr()?;
             self.parse_bin_op_recursively(
                 left_of_right,
                 if op == op!("**") {
@@ -185,7 +142,7 @@ impl<'a, I: Tokens> Parser<I> {
                     op.precedence()
                 },
             )
-        };
+        }?;
         /* this check is for all ?? operators
          * a ?? b && c for this example
          * b && c => This is considered as a logical expression in the ast tree
@@ -201,54 +158,36 @@ impl<'a, I: Tokens> Parser<I> {
         if op == op!("??") {
             match *left {
                 Expr::Bin(BinExpr { span, op, .. }) if op == op!("&&") || op == op!("||") => {
-                    // self.emit_err(span, SyntaxError::NullishCoalescingWithLogicalOp);
-                    panic!("NullishCoalescingWithLogicalOp at {:?}", span);
+                    self.emit_err(span, SyntaxError::NullishCoalescingWithLogicalOp);
                 }
                 _ => {}
             }
 
             match *right {
                 Expr::Bin(BinExpr { span, op, .. }) if op == op!("&&") || op == op!("||") => {
-                    // self.emit_err(span, SyntaxError::NullishCoalescingWithLogicalOp);
-                    panic!("NullishCoalescingWithLogicalOp at {:?}", span);
+                    self.emit_err(span, SyntaxError::NullishCoalescingWithLogicalOp);
                 }
                 _ => {}
             }
         }
 
         let node = Box::new(Expr::Bin(BinExpr {
-            span: Span::new(left.span().lo(), right.span().hi()),
+            span: Span::new(left.span().lo(), right.span().hi(), Default::default()),
             op,
             left,
             right,
         }));
 
-        return (node, Some(min_prec));
+        return Ok((node, Some(min_prec)));
     }
 
     /// Parse unary expression and update expression.
     ///
     /// spec: 'UnaryExpression'
-    pub(in crate::parser) fn parse_unary_expr(&mut self) -> Box<Expr> {
-        // trace_cur!(self, parse_unary_expr);
+    pub(in crate::parser) fn parse_unary_expr(&mut self) -> PResult<Box<Expr>> {
         let start = self.input.cur_pos();
 
-        // if !self.input.syntax().jsx() && self.input.syntax().typescript() && eat!(self, '<') {
-        //     if eat!(self, "const") {
-        //         expect!(self, '>');
-        //         let expr = self.parse_unary_expr();
-        //         return Ok(Box::new(Expr::TsConstAssertion(TsConstAssertion {
-        //             span: span!(self, start),
-        //             expr,
-        //         })));
-        //     }
-
-        //     return self
-        //         .parse_ts_type_assertion(start)
-        //         .map(Expr::from)
-        //         .map(Box::new);
-        // }
-
+ 
         // Parse update expression
         if is!(self, "++") || is!(self, "--") {
             let op = if self.input.bump() == tok!("++") {
@@ -257,16 +196,16 @@ impl<'a, I: Tokens> Parser<I> {
                 op!("--")
             };
 
-            let arg = self.parse_unary_expr();
-            let span = Span::new(start, arg.span().hi());
+            let arg = self.parse_unary_expr()?;
+            let span = Span::new(start, arg.span().hi(), Default::default());
             self.check_assign_target(&arg/*, false*/);
 
-            return Box::new(Expr::Update(UpdateExpr {
+            return Ok(Box::new(Expr::Update(UpdateExpr {
                 span,
                 prefix: true,
                 op,
                 arg,
-            }));
+            })));
         }
 
         // Parse unary expression
@@ -281,51 +220,33 @@ impl<'a, I: Tokens> Parser<I> {
                 tok!('!') => op!("!"),
                 _ => unreachable!(),
             };
-            // let arg_start = self.input.cur_pos() - BytePos(1);
-            // let arg = match self.parse_unary_expr() {
-            //     Ok(expr) => expr,
-            //     Err(err) => {
-            //         self.emit_error(err);
-            //         Box::new(Expr::Invalid(Invalid {
-            //             span: Span::new(arg_start, arg_start, Default::default()),
-            //         }))
-            //     }
-            // };
-            let arg = self.parse_unary_expr();
+            let arg_start = self.input.cur_pos() - BytePos(1);
+            let arg = match self.parse_unary_expr() {
+                Ok(expr) => expr,
+                Err(err) => {
+                    self.emit_error(err);
+                    Box::new(Expr::Invalid(Invalid {
+                        span: Span::new(arg_start, arg_start, Default::default()),
+                    }))
+                }
+            };
 
             if op == op!("delete") {
                 match *arg {
                     Expr::Ident(ref i) => {
-                        // self.emit_strict_mode_err(i.span, SyntaxError::TS1102)
-                        panic!("TS1102 at {:?}", i.span);
+                        self.emit_strict_mode_err(i.span, SyntaxError::TS1102)
                     },
                     _ => {}
                 }
             }
 
-            // if self.input.syntax().typescript() && op == op!("delete") {
-            //     fn unwrap_paren(e: &Expr) -> &Expr {
-            //         match *e {
-            //             Expr::Paren(ref p) => unwrap_paren(&p.expr),
-            //             _ => e,
-            //         }
-            //     }
-            //     match &*arg {
-            //         Expr::Member(..) => {}
-            //         Expr::OptChain(e)
-            //             if match &*e.expr {
-            //                 Expr::Member(..) => true,
-            //                 _ => false,
-            //             } => {}
-            //         _ => self.emit_err(unwrap_paren(&arg).span(), SyntaxError::TS2703),
-            //     }
-            // }
+ 
 
-            return Box::new(Expr::Unary(UnaryExpr {
-                span: Span::new(start, arg.span().hi()),
+            return Ok(Box::new(Expr::Unary(UnaryExpr {
+                span: Span::new(start, arg.span().hi(), Default::default()),
                 op,
                 arg,
-            }));
+            })));
         }
 
         // if (self.ctx().in_async || self.syntax().top_level_await()) && is!(self, "await") {
@@ -337,12 +258,12 @@ impl<'a, I: Tokens> Parser<I> {
         }
 
         // UpdateExpression
-        let expr = self.parse_lhs_expr();
+        let expr = self.parse_lhs_expr()?;
         return_if_arrow!(self, expr);
 
         // Line terminator isn't allowed here.
         if self.input.had_line_break_before_cur() {
-            return expr;
+            return Ok(expr);
         }
 
         if is_one_of!(self, "++", "--") {
@@ -354,37 +275,36 @@ impl<'a, I: Tokens> Parser<I> {
                 op!("--")
             };
 
-            return Box::new(Expr::Update(UpdateExpr {
+            return Ok(Box::new(Expr::Update(UpdateExpr {
                 span: span!(self, expr.span().lo()),
                 prefix: false,
                 op,
                 arg: expr,
-            }));
+            })));
         }
-        expr
+        Ok(expr)
     }
 
-    pub(crate) fn parse_await_expr(&mut self) -> Box<Expr> {
+    pub(crate) fn parse_await_expr(&mut self) -> PResult<Box<Expr>> {
         let start = self.input.cur_pos();
 
         self.assert_and_bump(&tok!("await"));
 
         if is!(self, '*') {
-            // syntax_error!(self, SyntaxError::AwaitStar);
-            panic!("AwaitStar at {:?}", self.input.cur_span());
+            syntax_error!(self, SyntaxError::AwaitStar);
         }
 
         if is_one_of!(self, ')', ']') && !self.ctx().in_async {
-            return Box::new(Expr::Ident(Ident::new(
+            return Ok(Box::new(Expr::Ident(Ident::new(
                 js_word!("await"),
                 span!(self, start),
-            )));
+            ))));
         }
 
-        let arg = self.parse_unary_expr();
-        Box::new(Expr::Await(AwaitExpr {
+        let arg = self.parse_unary_expr()?;
+        Ok(Box::new(Expr::Await(AwaitExpr {
             span: span!(self, start),
             arg,
-        }))
+        })))
     }
 }

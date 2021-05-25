@@ -1,5 +1,7 @@
-use crate::{pos::BytePos, Pos};
+use crate::syntax_pos::{BytePos, Pos, SourceFile};
 use std::str;
+
+pub type SourceFileInput<'a> = StringInput<'a>;
 
 /// Implementation of [Input].
 #[derive(Clone)]
@@ -14,6 +16,14 @@ pub struct StringInput<'a> {
 }
 
 impl<'a> StringInput<'a> {
+    /// `start` and `end` can be arbitrary value, but start should be less than
+    /// or equal to end.
+    ///
+    ///
+    /// `swc` get this value from [SourceMap] because code generator depends on
+    /// some methods of [SourceMap].
+    /// If you are not going to use methods from
+    /// [SourceMap], you may use any value.
     pub fn new(src: &'a str, start: BytePos, end: BytePos) -> Self {
         assert!(start <= end);
 
@@ -24,6 +34,17 @@ impl<'a> StringInput<'a> {
             iter: src.char_indices(),
             orig_start: start,
         }
+    }
+}
+
+/// Creates an [Input] from [SourceFile]. This is an alias for
+///
+/// ```ignore
+///    StringInput::new(&fm.src, fm.start_pos, fm.end_pos)
+/// ```
+impl<'a> From<&'a SourceFile> for StringInput<'a> {
+    fn from(fm: &'a SourceFile) -> Self {
+        StringInput::new(&fm.src, fm.start_pos, fm.end_pos)
     }
 }
 
@@ -57,7 +78,7 @@ impl<'a> Input for StringInput<'a> {
         self.orig_start == self.last_pos
     }
 
-    fn cur_pos(&self) -> BytePos {
+    fn cur_pos(&mut self) -> BytePos {
         self.iter
             .clone()
             .next()
@@ -71,8 +92,25 @@ impl<'a> Input for StringInput<'a> {
     }
 
     #[inline]
-    fn slice_to_cur(&mut self, start: usize) -> &str {
-        &self.orig[start..self.cur_pos().to_usize()]
+    fn slice(&mut self, start: BytePos, end: BytePos) -> &str {
+        assert!(start <= end, "Cannot slice {:?}..{:?}", start, end);
+        let s = self.orig;
+
+        let start_idx = (start - self.orig_start).0 as usize;
+        let end_idx = (end - self.orig_start).0 as usize;
+
+        let ret = &s[start_idx..end_idx];
+
+        self.iter = s[end_idx..].char_indices();
+        self.last_pos = end;
+        self.start_pos = end;
+
+        ret
+    }
+
+    #[inline]
+    fn slice_to_cur(&mut self, start: BytePos) -> &str {
+        &self.orig[start.to_usize()..self.cur_pos().to_usize()]
     }
 
     fn uncons_while<F>(&mut self, mut pred: F) -> &str
@@ -151,11 +189,13 @@ pub trait Input: Clone {
 
     fn is_at_start(&self) -> bool;
 
-    fn cur_pos(&self) -> BytePos;
+    fn cur_pos(&mut self) -> BytePos;
 
     fn last_pos(&self) -> BytePos;
 
-    fn slice_to_cur(&mut self, start: usize) -> &str;
+    fn slice(&mut self, start: BytePos, end: BytePos) -> &str;
+
+    fn slice_to_cur(&mut self, start: BytePos) -> &str;
 
     /// Takes items from stream, testing each one with predicate. returns the
     /// range of items which passed predicate.
@@ -189,4 +229,115 @@ pub trait Input: Clone {
             false
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{FileName, FilePathMapping, SourceMap};
+    use std::sync::Arc;
+
+    fn with_test_sess<F>(src: &str, f: F)
+    where
+        F: FnOnce(StringInput<'_>),
+    {
+        let cm = Arc::new(SourceMap::new(FilePathMapping::empty()));
+        let fm = cm.new_source_file(FileName::Real("testing".into()), src.into());
+
+        f((&*fm).into())
+    }
+
+    #[test]
+    fn src_input_slice_1() {
+        let _ = with_test_sess("foo/d", |mut i| {
+            assert_eq!(i.slice(BytePos(0), BytePos(1)), "f");
+            assert_eq!(i.last_pos, BytePos(1));
+            assert_eq!(i.start_pos, BytePos(1));
+            assert_eq!(i.cur(), Some('o'));
+
+            assert_eq!(i.slice(BytePos(1), BytePos(3)), "oo");
+            assert_eq!(i.slice(BytePos(0), BytePos(3)), "foo");
+            assert_eq!(i.last_pos, BytePos(3));
+            assert_eq!(i.start_pos, BytePos(3));
+            assert_eq!(i.cur(), Some('/'));
+        });
+    }
+
+    #[test]
+    fn src_input_reset_to_1() {
+        let _ = with_test_sess("foad", |mut i| {
+            assert_eq!(i.slice(BytePos(0), BytePos(2)), "fo");
+            assert_eq!(i.last_pos, BytePos(2));
+            assert_eq!(i.start_pos, BytePos(2));
+            assert_eq!(i.cur(), Some('a'));
+            i.reset_to(BytePos(0));
+
+            assert_eq!(i.cur(), Some('f'));
+            assert_eq!(i.last_pos, BytePos(0));
+            assert_eq!(i.start_pos, BytePos(0));
+        });
+    }
+
+    #[test]
+    fn src_input_smoke_01() {
+        let _ = with_test_sess("foo/d", |mut i| {
+            assert_eq!(i.cur_pos(), BytePos(0));
+            assert_eq!(i.last_pos, BytePos(0));
+            assert_eq!(i.start_pos, BytePos(0));
+            assert_eq!(i.uncons_while(|c| c.is_alphabetic()), "foo");
+
+            // assert_eq!(i.cur_pos(), BytePos(4));
+            assert_eq!(i.last_pos, BytePos(3));
+            assert_eq!(i.start_pos, BytePos(3));
+            assert_eq!(i.cur(), Some('/'));
+
+            i.bump();
+            assert_eq!(i.last_pos, BytePos(4));
+            assert_eq!(i.cur(), Some('d'));
+
+            i.bump();
+            assert_eq!(i.last_pos, BytePos(5));
+            assert_eq!(i.cur(), None);
+        });
+    }
+
+    #[test]
+    fn src_input_find_01() {
+        let _ = with_test_sess("foo/d", |mut i| {
+            assert_eq!(i.cur_pos(), BytePos(0));
+            assert_eq!(i.last_pos, BytePos(0));
+            assert_eq!(i.start_pos, BytePos(0));
+
+            assert_eq!(i.find(|c| c == '/'), Some(BytePos(4)));
+            assert_eq!(i.start_pos, BytePos(4));
+            assert_eq!(i.last_pos, BytePos(4));
+            assert_eq!(i.cur(), Some('d'));
+        });
+    }
+
+    //    #[test]
+    //    fn src_input_smoke_02() {
+    //        let _ = crate::with_test_sess("℘℘/℘℘", | mut i| {
+    //            assert_eq!(i.iter.as_str(), "℘℘/℘℘");
+    //            assert_eq!(i.cur_pos(), BytePos(0));
+    //            assert_eq!(i.last_pos, BytePos(0));
+    //            assert_eq!(i.start_pos, BytePos(0));
+    //            assert_eq!(i.uncons_while(|c| c.is_ident_part()), "℘℘");
+    //
+    //            assert_eq!(i.iter.as_str(), "/℘℘");
+    //            assert_eq!(i.last_pos, BytePos(6));
+    //            assert_eq!(i.start_pos, BytePos(6));
+    //            assert_eq!(i.cur(), Some('/'));
+    //            i.bump();
+    //            assert_eq!(i.last_pos, BytePos(7));
+    //            assert_eq!(i.start_pos, BytePos(6));
+    //
+    //            assert_eq!(i.iter.as_str(), "℘℘");
+    //            assert_eq!(i.uncons_while(|c| c.is_ident_part()), "℘℘");
+    //            assert_eq!(i.last_pos, BytePos(13));
+    //            assert_eq!(i.start_pos, BytePos(13));
+    //
+    //            Ok(())
+    //        });
+    //    }
 }

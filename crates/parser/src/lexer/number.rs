@@ -3,8 +3,11 @@
 //!
 //! See https://tc39.github.io/ecma262/#sec-literals-numeric-literals
 
-use super::{is_ident_start, Lexer};
-use crate::token::{BigInt, Num, Token};
+use super::{is_ident_start, pos_span, LexResult, Lexer};
+use crate::{
+    error::SyntaxError,
+    token::{BigInt, Num, Token},
+};
 use global_common::{input::Input, BytePos};
 use num_bigint::BigInt as BigIntValue;
 use std::{fmt::Write, iter::FusedIterator};
@@ -87,7 +90,7 @@ impl<I: Input> Lexer<I> {
         // to be populated.
         raw: &mut String,
         allow_num_separator: bool,
-    ) -> Ret
+    ) -> LexResult<Ret>
     where
         F: FnMut(Ret, u8, u32) -> (Ret, bool),
         Ret: Copy + Default,
@@ -111,15 +114,20 @@ impl<I: Input> Lexer<I> {
                     || is_forbidden_numeric_separator_sibling(prev, radix)
                     || is_forbidden_numeric_separator_sibling(next, radix)
                 {
+                    // TODO: possible use babel's error
                     // self.raise(self.state.pos, Errors.UnexpectedNumericSeparator);
-                    panic!("UnexpectedNumericSeparator at {:?}", start);
+                    self.emit_error(
+                        start,
+                        SyntaxError::NumericSeparatorIsAllowedOnlyBetweenTwoDigits,
+                    );
                 }
 
                 if !allow_num_separator {
+                    // TODO: possible use babel's error
                     // self.raise(self.state.pos, Errors.NumericSeparatorInEscapeSequence);
-                    panic!(
-                        "NumericSeparatorInEscapeSequence at {:?}",
-                        self.cur_pos()
+                    self.emit_error(
+                        start,
+                        SyntaxError::NumericSeparatorIsAllowedOnlyBetweenTwoDigits,
                     );
                 }
 
@@ -131,7 +139,7 @@ impl<I: Input> Lexer<I> {
             let val = if let Some(val) = c.to_digit(radix as u32) {
                 val
             } else {
-                return total;
+                return Ok(total);
             };
 
             raw.push(c);
@@ -140,22 +148,24 @@ impl<I: Input> Lexer<I> {
             let (t, cont) = op(total, radix, val);
             total = t;
             if !cont {
-                return total;
+                return Ok(total);
             }
             prev = Some(c);
         }
 
-        total
+        Ok(total)
     }
 
     /// This can read long integers like
     /// "13612536612375123612312312312312312312312".
-    fn read_number_no_dot(&mut self, radix: u8) -> f64 {
+    fn read_number_no_dot(&mut self, radix: u8) -> LexResult<f64> {
         debug_assert!(
             radix == 2 || radix == 8 || radix == 10 || radix == 16,
             "radix for read_number_no_dot should be one of 2, 8, 10, 16, but got {}",
             radix
         );
+
+        let start = self.cur_pos();
 
         let mut read_any = false;
 
@@ -170,23 +180,20 @@ impl<I: Input> Lexer<I> {
         );
 
         if !read_any {
-            panic!(
-                "InvalidDigit with radix '{}' at pos {:#?}",
-                radix,
-                self.cur_pos()
-            );
+            self.error(start, SyntaxError::ExpectedDigit { radix })?;
         }
         res
     }
 
     /// This can read long integers like
     /// "13612536612375123612312312312312312312312".
-    fn read_number_no_dot_as_str(&mut self, radix: u8) -> (f64, BigIntValue) {
+    fn read_number_no_dot_as_str(&mut self, radix: u8) -> LexResult<(f64, BigIntValue)> {
         debug_assert!(
             radix == 2 || radix == 8 || radix == 10 || radix == 16,
             "radix for read_number_no_dot should be one of 2, 8, 10, 16, but got {}",
             radix
         );
+        let start = self.cur_pos();
 
         let mut read_any = false;
 
@@ -200,17 +207,13 @@ impl<I: Input> Lexer<I> {
             },
             &mut raw,
             true,
-        );
+        )?;
 
         if !read_any {
-            panic!(
-                "InvalidDigit with radix '{}' at pos {:#?}",
-                radix,
-                self.cur_pos()
-            );
+            self.error(start, SyntaxError::ExpectedDigit { radix })?;
         }
 
-        (
+        Ok((
             val,
             // TODO: this seems inefficient; we have a string, convert it to
             // bytes, and then pass it to BigIntValue::parse_bytes which converts
@@ -218,19 +221,21 @@ impl<I: Input> Lexer<I> {
             // Bigint from a string.
             BigIntValue::parse_bytes(&raw.as_bytes(), radix as _)
                 .expect("failed to parse string as a bigint"),
-        )
+        ))
     }
 
     /// Ensure that an identifier does not directly follow a number.
-    fn ensure_not_ident(&mut self) {
-        if let Some(ch) = self.cur() {
-            if is_ident_start(ch) {
-                panic!("NumberIdentifier at {:#?}", self.cur_pos());
+    fn ensure_not_ident(&mut self) -> LexResult<()> {
+        match self.cur() {
+            Some(ch) if is_ident_start(ch) => {
+                let span = pos_span(self.cur_pos());
+                self.error_span(span, SyntaxError::IdentAfterNum)?
             }
+            _ => Ok(()),
         }
     }
 
-    pub(super) fn read_radix_number(&mut self, radix: u8) -> Token {
+    pub(super) fn read_radix_number(&mut self, radix: u8) -> LexResult<Token> {
         debug_assert!(
             radix == 2 || radix == 8 || radix == 16,
             "radix should be one of 2, 8, 16, but got {}",
@@ -241,16 +246,16 @@ impl<I: Input> Lexer<I> {
         self.bump(); // 0
         self.bump(); // x
 
-        let (val, s) = self.read_number_no_dot_as_str(radix);
+        let (val, s) = self.read_number_no_dot_as_str(radix)?;
 
         let is_big_int = self.eat(b'n');
 
-        self.ensure_not_ident();
+        self.ensure_not_ident()?;
 
         if is_big_int {
-            BigInt(s)
+            Ok(BigInt(s))
         } else {
-            Num(val)
+            Ok(Num(val))
         }
     }
 
@@ -264,7 +269,7 @@ impl<I: Input> Lexer<I> {
         len: u8,
         raw: &mut String,
         allow_num_separator: bool,
-    ) -> Option<f64> {
+    ) -> LexResult<Option<f64>> {
         let mut count = 0;
         let v = self.read_digits(
             radix,
@@ -275,11 +280,11 @@ impl<I: Input> Lexer<I> {
             },
             raw,
             allow_num_separator,
-        );
+        )?;
         if len != 0 && count != len {
-            None
+            Ok(None)
         } else {
-            v
+            Ok(v)
         }
     }
 
@@ -289,7 +294,7 @@ impl<I: Input> Lexer<I> {
         radix: u8,
         len: u8,
         allow_num_separator: bool,
-    ) -> Option<u32> {
+    ) -> LexResult<Option<u32>> {
         let mut count = 0;
         let v = self.read_digits(
             radix,
@@ -300,28 +305,25 @@ impl<I: Input> Lexer<I> {
             },
             &mut String::new(),
             allow_num_separator,
-        );
+        )?;
         if len != 0 && count != len {
-            None
+            Ok(None)
         } else {
-            v
+            Ok(v)
         }
     }
 
-    fn make_legacy_octal(&mut self, start: BytePos/*, val: f64*/) -> f64 {
-        self.ensure_not_ident();
+    fn make_legacy_octal(&mut self, start: BytePos, val: f64) -> LexResult<f64> {
+        self.ensure_not_ident()?;
 
-        // if self.syntax.typescript() && self.target >= JscTarget::Es5 {
-        //     self.emit_error(start, SyntaxError::TS1085);
-        // }
-        // self.emit_strict_mode_error(start, SyntaxError::LegacyOctal);
-        panic!("LegacyOctal at {:#?}", start);
+     
+        self.emit_strict_mode_error(start, SyntaxError::LegacyOctal);
 
-        // return val;
+        return Ok(val);
     }
 
     /// Reads an integer, octal integer, or floating-point number
-    pub(super) fn read_number(&mut self, starts_with_dot: bool) -> Token {
+    pub(super) fn read_number(&mut self, starts_with_dot: bool) -> LexResult<Token> {
         debug_assert!(self.cur().is_some());
         if starts_with_dot {
             debug_assert_eq!(
@@ -339,11 +341,11 @@ impl<I: Input> Lexer<I> {
             0f64
         } else {
             // Use read_number_no_dot to support long numbers.
-            let (val, s) = self.read_number_no_dot_as_str(10);
+            let (val, s) = self.read_number_no_dot_as_str(10)?;
             if self.cur() == Some('n') {
                 self.bump();
                 // TODO: do we need to check ensure_not_ident()?
-                return BigInt(s);
+                return Ok(BigInt(s));
             }
             if starts_with_zero {
                 // TODO(swc): I guess it would be okay if I don't use -ffast-math
@@ -359,8 +361,7 @@ impl<I: Input> Lexer<I> {
                     if start.0 != self.last_pos().0 - 1 {
                         // `-1` is utf 8 length of `0`
 
-                        // return self.make_legacy_octal(start, 0f64).map(Either::Left);
-                        return Num(self.make_legacy_octal(start/*, 0f64*/));
+                        return self.make_legacy_octal(start, 0f64).map(Num);
                     }
                 } else {
                     // strict mode hates non-zero decimals starting with zero.
@@ -372,19 +373,16 @@ impl<I: Input> Lexer<I> {
                         // if it contains '8' or '9', it's decimal.
                         if d.clone().any(|v| v == 8 || v == 9) {
                             // Continue parsing
-                            // self.emit_strict_mode_error(start, SyntaxError::LegacyDecimal);
-                            panic!("LegacyDecimal at {:#?}", start);
+                            self.emit_strict_mode_error(start, SyntaxError::LegacyDecimal);
                         } else {
                             // It's Legacy octal, and we should reinterpret value.
-                            // let val = u64::from_str_radix(&val.to_string(), 8)
-                            //     .expect("Does this can really happen?");
-                            // let val = val
-                            //     .to_string()
-                            //     .parse()
-                            //     .expect("failed to parse numeric value as f64");
-                            // return self.make_legacy_octal(start, val).map(Either::Left);
-                            // return Num(self.make_legacy_octal(start, val));
-                            self.make_legacy_octal(start);
+                            let val = u64::from_str_radix(&val.to_string(), 8)
+                                .expect("Does this can really happen?");
+                            let val = val
+                                .to_string()
+                                .parse()
+                                .expect("failed to parse numeric value as f64");
+                            return self.make_legacy_octal(start, val).map(Num);
                         }
                     }
                 }
@@ -409,7 +407,7 @@ impl<I: Input> Lexer<I> {
 
             let mut raw = String::new();
             // Read numbers after dot
-            let dec_val = self.read_int(10, 0, &mut raw, true);
+            let dec_val = self.read_int(10, 0, &mut raw, true)?;
 
             val = {
                 // TODO: is it possible/worthwhile to pre-allocate this using
@@ -438,7 +436,8 @@ impl<I: Input> Lexer<I> {
             let next = match self.cur() {
                 Some(next) => next,
                 None => {
-                    panic!("InvalidOrMissingExponent at {:#?}", self.cur_pos());
+                    let pos = self.cur_pos();
+                    self.error(pos, SyntaxError::NumLitTerminatedWithExp)?
                 }
             };
 
@@ -449,7 +448,7 @@ impl<I: Input> Lexer<I> {
                 true
             };
 
-            let exp = self.read_number_no_dot(10);
+            let exp = self.read_number_no_dot(10)?;
             let flag = if positive { '+' } else { '-' };
             // TODO(swc):
             val = format!("{}e{}{}", val, flag, exp)
@@ -457,8 +456,8 @@ impl<I: Input> Lexer<I> {
                 .expect("failed to parse float literal");
         }
 
-        self.ensure_not_ident();
+        self.ensure_not_ident()?;
 
-        Num(val)
+        Ok(Num(val))
     }
 }

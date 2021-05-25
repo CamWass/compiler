@@ -1,0 +1,10 @@
+[package]
+edition = "2018"
+license = "Apache-2.0/MIT"
+name = "visit"
+version = "0.1.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+either = "1.5.3"
