@@ -3,8 +3,8 @@
 extern crate proc_macro;
 
 use darling;
-use pmutil::{smart_quote, Quote, ToTokensExt};
 use macro_common::prelude::*;
+use pmutil::{smart_quote, Quote, ToTokensExt};
 use syn::{self, *};
 
 mod ast_node_macro;

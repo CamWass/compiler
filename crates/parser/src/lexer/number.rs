@@ -316,7 +316,6 @@ impl<I: Input> Lexer<I> {
     fn make_legacy_octal(&mut self, start: BytePos, val: f64) -> LexResult<f64> {
         self.ensure_not_ident()?;
 
-     
         self.emit_strict_mode_error(start, SyntaxError::LegacyOctal);
 
         return Ok(val);

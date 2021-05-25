@@ -98,7 +98,6 @@ impl<'a, I: Tokens> Parser<I> {
                     if !cond.is_valid_simple_assignment_target(self.ctx().strict) {
                         self.emit_err(cond.span(), SyntaxError::NotSimpleAssign)
                     }
-              
 
                     // TODO(swc):
                     PatOrExpr::Expr(cond)
@@ -120,7 +119,6 @@ impl<'a, I: Tokens> Parser<I> {
 
     /// Spec: 'ConditionalExpression'
     fn parse_cond_expr(&mut self) -> PResult<Box<Expr>> {
-
         let start = self.input.cur_pos();
 
         let test = self.parse_bin_expr()?;
@@ -154,7 +152,6 @@ impl<'a, I: Tokens> Parser<I> {
     /// Parse a primary expression or arrow function
     #[allow(clippy::cognitive_complexity)]
     pub(super) fn parse_primary_expr(&mut self) -> PResult<Box<Expr>> {
-
         let _ = self.input.cur();
         let start = self.input.cur_pos();
 
@@ -649,7 +646,6 @@ impl<'a, I: Tokens> Parser<I> {
 
     /// `is_new_expr`: true iff we are parsing production 'NewExpression'.
     fn parse_member_expr_or_new_expr(&mut self, is_new_expr: bool) -> PResult<Box<Expr>> {
-
         let start = self.input.cur_pos();
         if self.input.eat(&tok!("new")) {
             let span_of_new = span!(self, start);
@@ -786,10 +782,7 @@ impl<'a, I: Tokens> Parser<I> {
             _ => false,
         });
 
-
         let return_type = None;
-
-  
 
         // we parse arrow function at here, to handle it efficiently.
         if has_pattern || return_type.is_some() || is!(self, "=>") {

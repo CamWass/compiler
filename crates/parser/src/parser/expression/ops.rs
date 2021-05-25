@@ -6,29 +6,24 @@ use global_common::Spanned;
 impl<'a, I: Tokens> Parser<I> {
     /// Name from spec: 'LogicalORExpression'
     pub(super) fn parse_bin_expr(&mut self) -> PResult<Box<Expr>> {
-
         let ctx = self.ctx();
 
         let left = match self.parse_unary_expr() {
             Ok(v) => v,
-            Err(err) => {
+            Err(err) => match cur!(self, true)? {
+                &Word(Word::Keyword(Keyword::In)) if ctx.include_in_expr => {
+                    self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
 
-                match cur!(self, true)? {
-                    &Word(Word::Keyword(Keyword::In)) if ctx.include_in_expr => {
-                        self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
-
-                        Box::new(Expr::Invalid(Invalid { span: err.span() }))
-                    }
-                    &Word(Word::Keyword(Keyword::InstanceOf)) | &Token::BinOp(..) => {
-                        self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
-
-                        Box::new(Expr::Invalid(Invalid { span: err.span() }))
-                    }
-                    _ => return Err(err),
+                    Box::new(Expr::Invalid(Invalid { span: err.span() }))
                 }
-            }
-        };
+                &Word(Word::Keyword(Keyword::InstanceOf)) | &Token::BinOp(..) => {
+                    self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
 
+                    Box::new(Expr::Invalid(Invalid { span: err.span() }))
+                }
+                _ => return Err(err),
+            },
+        };
 
         return_if_arrow!(self, left);
         self.parse_bin_op_recursively(left, 0)
@@ -86,8 +81,6 @@ impl<'a, I: Tokens> Parser<I> {
         left: Box<Expr>,
         min_prec: u8,
     ) -> PResult<(Box<Expr>, Option<u8>)> {
-
-
         let ctx = self.ctx();
         // Return left on eof
         let word = match self.input.cur() {
@@ -103,14 +96,10 @@ impl<'a, I: Tokens> Parser<I> {
             }
         };
 
-
         if op.precedence() <= min_prec {
-
-
             return Ok((left, None));
         }
         self.input.bump();
-  
 
         match *left {
             // This is invalid syntax.
@@ -187,7 +176,6 @@ impl<'a, I: Tokens> Parser<I> {
     pub(in crate::parser) fn parse_unary_expr(&mut self) -> PResult<Box<Expr>> {
         let start = self.input.cur_pos();
 
- 
         // Parse update expression
         if is!(self, "++") || is!(self, "--") {
             let op = if self.input.bump() == tok!("++") {
@@ -198,7 +186,7 @@ impl<'a, I: Tokens> Parser<I> {
 
             let arg = self.parse_unary_expr()?;
             let span = Span::new(start, arg.span().hi(), Default::default());
-            self.check_assign_target(&arg/*, false*/);
+            self.check_assign_target(&arg /*, false*/);
 
             return Ok(Box::new(Expr::Update(UpdateExpr {
                 span,
@@ -210,7 +198,7 @@ impl<'a, I: Tokens> Parser<I> {
 
         // Parse unary expression
         if is_one_of!(self, "delete", "void", "typeof", '+', '-', '~', '!') {
-            let op = match self.input.bump(){
+            let op = match self.input.bump() {
                 tok!("delete") => op!("delete"),
                 tok!("void") => op!("void"),
                 tok!("typeof") => op!("typeof"),
@@ -233,14 +221,10 @@ impl<'a, I: Tokens> Parser<I> {
 
             if op == op!("delete") {
                 match *arg {
-                    Expr::Ident(ref i) => {
-                        self.emit_strict_mode_err(i.span, SyntaxError::TS1102)
-                    },
+                    Expr::Ident(ref i) => self.emit_strict_mode_err(i.span, SyntaxError::TS1102),
                     _ => {}
                 }
             }
-
- 
 
             return Ok(Box::new(Expr::Unary(UnaryExpr {
                 span: Span::new(start, arg.span().hi(), Default::default()),
@@ -267,9 +251,9 @@ impl<'a, I: Tokens> Parser<I> {
         }
 
         if is_one_of!(self, "++", "--") {
-            self.check_assign_target(&expr/*, false*/);
+            self.check_assign_target(&expr /*, false*/);
 
-            let op = if self.input.bump()== tok!("++") {
+            let op = if self.input.bump() == tok!("++") {
                 op!("++")
             } else {
                 op!("--")

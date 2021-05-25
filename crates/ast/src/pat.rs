@@ -2,7 +2,7 @@ use super::ident::BindingIdent;
 use super::{expr::Expr, ident::Ident, prop::PropName, typescript::TsTypeAnn, Invalid};
 use global_common::{ast_node, EqIgnoreSpan, Span};
 
-impl  From<Ident> for Pat {
+impl From<Ident> for Pat {
     fn from(i: Ident) -> Self {
         BindingIdent::from(i).into()
     }

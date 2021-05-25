@@ -97,7 +97,6 @@ impl<'a, I: Tokens> Parser<I> {
         Self: StmtLikeParser<'a, Type>,
         Type: IsDirective + From<Stmt>,
     {
-
         let old_ctx = self.ctx();
 
         let mut stmts = vec![];
@@ -613,7 +612,7 @@ impl<'a, I: Tokens> Parser<I> {
         // optional arguments, we eagerly look for a semicolon or the
         // possibility to insert one.
 
-        let arg = if is!(self, ';'){
+        let arg = if is!(self, ';') {
             None
         } else {
             let arg = self.include_in_expr(true).parse_expr().map(Some)?;

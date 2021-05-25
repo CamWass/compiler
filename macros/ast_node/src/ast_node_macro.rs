@@ -1,5 +1,5 @@
-use pmutil::{smart_quote, Quote};
 use macro_common::prelude::*;
+use pmutil::{smart_quote, Quote};
 use syn::{
     self,
     parse::{Parse, ParseStream},

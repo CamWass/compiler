@@ -293,7 +293,10 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
 
                                 if !params.is_empty() {
                                     if let Pat::Rest(..) = params[0].pat {
-                                        parser.emit_err(params[0].span(), SyntaxError::RestPatInSetter);
+                                        parser.emit_err(
+                                            params[0].span(),
+                                            SyntaxError::RestPatInSetter,
+                                        );
                                     }
                                 }
 
@@ -324,9 +327,13 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                                     span: span!(self, start),
                                     key,
                                     body,
-                                    param: params.into_iter().map(|param| param.pat).next().unwrap_or_else(
-                                        || Pat::Invalid(Invalid { span: key_span }),
-                                    ),
+                                    param: params
+                                        .into_iter()
+                                        .map(|param| param.pat)
+                                        .next()
+                                        .unwrap_or_else(|| {
+                                            Pat::Invalid(Invalid { span: key_span })
+                                        }),
                                 })))
                             },
                         ),

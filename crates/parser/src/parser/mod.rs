@@ -62,7 +62,6 @@ impl<I: Tokens> Parser<I> {
     // }
 
     pub fn parse_script(&mut self) -> PResult<Script> {
-
         let ctx = Context {
             module: false,
             ..self.ctx()

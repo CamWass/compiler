@@ -43,7 +43,6 @@ impl<'a, I: Tokens> Parser<I> {
 
         expect!(self, "import");
 
-
         // Handle import 'mod.js'
         let str_start = self.input.cur_pos();
         if let Some(&Token::Str { .. }) = self.input.cur() {
@@ -218,7 +217,6 @@ impl<'a, I: Tokens> Parser<I> {
         self.assert_and_bump(&tok!("export"));
         let _ = cur!(self, true);
 
-
         let mut has_star = false;
         let mut export_ns = None;
         let ns_export_specifier_start = self.input.cur_pos();
@@ -246,8 +244,6 @@ impl<'a, I: Tokens> Parser<I> {
         }
 
         if !type_only && export_ns.is_none() && eat!(self, "default") {
-
-
             if is!(self, "class") {
                 let class_start = self.input.cur_pos();
                 let decl = self.parse_default_class(start, class_start, decorators)?;
@@ -282,9 +278,7 @@ impl<'a, I: Tokens> Parser<I> {
             self.parse_async_fn_decl(decorators)?
         } else if !type_only && is!(self, "function") {
             self.parse_fn_decl(decorators)?
-        }
-
-        else if !type_only
+        } else if !type_only
             && (is!(self, "var")
                 || is!(self, "const")
                 || (is!(self, "let"))
@@ -443,7 +437,11 @@ impl IsDirective for ModuleItem {
 }
 
 impl<'a, I: Tokens> StmtLikeParser<'a, ModuleItem> for Parser<I> {
-    fn handle_import_export(&mut self, top_level: bool, decorators: Vec<Decorator>) -> PResult<ModuleItem> {
+    fn handle_import_export(
+        &mut self,
+        top_level: bool,
+        decorators: Vec<Decorator>,
+    ) -> PResult<ModuleItem> {
         if !top_level {
             syntax_error!(self, SyntaxError::NonTopLevelImportExport);
         }

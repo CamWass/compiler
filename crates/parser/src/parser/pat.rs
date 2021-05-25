@@ -33,7 +33,6 @@ impl<'a, I: Tokens> Parser<I> {
     }
 
     pub(super) fn parse_binding_pat_or_ident(&mut self) -> PResult<Pat> {
-
         match *cur!(self, true)? {
             tok!("yield") | Word(..) => self.parse_binding_ident().map(Pat::from),
             tok!('[') => self.parse_array_binding_pat(),

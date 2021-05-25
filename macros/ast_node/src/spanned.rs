@@ -1,6 +1,6 @@
 use darling::FromField;
-use pmutil::{smart_quote, Quote, ToTokensExt};
 use macro_common::prelude::*;
+use pmutil::{smart_quote, Quote, ToTokensExt};
 use syn::*;
 
 #[derive(Debug, FromField)]

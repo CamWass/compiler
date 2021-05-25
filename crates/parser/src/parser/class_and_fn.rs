@@ -36,7 +36,10 @@ impl<'a, I: Tokens> Parser<I> {
         self.parse_fn(Some(start), decorators)
     }
 
-    pub(super) fn parse_default_fn(&mut self, decorators: Vec<Decorator>) -> PResult<ExportDefaultDecl> {
+    pub(super) fn parse_default_fn(
+        &mut self,
+        decorators: Vec<Decorator>,
+    ) -> PResult<ExportDefaultDecl> {
         self.parse_fn(None, decorators)
     }
 
@@ -89,7 +92,7 @@ impl<'a, I: Tokens> Parser<I> {
             let (super_class, super_type_params) = if parser.input.eat(&tok!("extends")) {
                 let super_class = parser.parse_lhs_expr().map(Some)?;
                 let super_type_params = None;
-     
+
                 (super_class, super_type_params)
             } else {
                 (None, None)
@@ -103,7 +106,6 @@ impl<'a, I: Tokens> Parser<I> {
             };
 
             let implements = vec![];
-   
 
             expect!(parser, '{');
             let body = parser
@@ -251,7 +253,6 @@ impl<'a, I: Tokens> Parser<I> {
     // }
 
     fn parse_class_member(&mut self) -> PResult<ClassMember> {
-
         let start = self.input.cur_pos();
         let decorators = self.parse_decorators(false)?;
         let declare = false;
@@ -390,14 +391,12 @@ impl<'a, I: Tokens> Parser<I> {
         let is_override = false;
         let readonly = None;
 
-
         if is_static && is_override {
             self.emit_err(
                 self.input.prev_span(),
                 SyntaxError::TS1243(js_word!("static"), js_word!("override")),
             );
         }
-
 
         if eat!(self, '*') {
             // generator method
@@ -437,10 +436,8 @@ impl<'a, I: Tokens> Parser<I> {
         };
         let is_optional = false;
 
-
         if self.is_class_method()? {
             // handle a(){} / get(){} / set(){} / async(){}
-
 
             if readonly.is_some() {
                 syntax_error!(self, span!(self, start), SyntaxError::ReadOnlyMethod);
@@ -448,12 +445,9 @@ impl<'a, I: Tokens> Parser<I> {
             let is_constructor = is_constructor(&key);
 
             if is_constructor {
-
                 expect!(self, '(');
                 let params = self.parse_constructor_params()?;
                 expect!(self, ')');
-
-              
 
                 let ctx = Context {
                     span_of_fn_name: Some(key.span()),
@@ -461,11 +455,9 @@ impl<'a, I: Tokens> Parser<I> {
                 };
                 let body: Option<_> = self.with_ctx(ctx).parse_fn_body(false, false)?;
 
-
                 if let Some(static_token) = static_token {
                     self.emit_err(static_token, SyntaxError::TS1089(js_word!("static")))
                 }
-
 
                 return Ok(ClassMember::Constructor(Constructor {
                     span: span!(self, start),
@@ -602,7 +594,10 @@ impl<'a, I: Tokens> Parser<I> {
 
                             if !params.is_empty() {
                                 if let Pat::Rest(..) = params[0].pat {
-                                    parser.emit_err(params[0].pat.span(), SyntaxError::RestPatInSetter);
+                                    parser.emit_err(
+                                        params[0].pat.span(),
+                                        SyntaxError::RestPatInSetter,
+                                    );
                                 }
                             }
 
@@ -644,8 +639,6 @@ impl<'a, I: Tokens> Parser<I> {
         is_abstract: bool,
         is_override: bool,
     ) -> PResult<ClassMember> {
-      
-
         if is_constructor(&key) {
             syntax_error!(self, key.span(), SyntaxError::PropertyNamedConstructor);
         }
@@ -664,7 +657,6 @@ impl<'a, I: Tokens> Parser<I> {
         };
         self.with_ctx(ctx).parse_with(|parser| {
             let value = if is!(parser, '=') {
-
                 parser.assert_and_bump(&tok!('='));
                 Some(parser.parse_assignment_expr()?)
             } else {
@@ -675,7 +667,7 @@ impl<'a, I: Tokens> Parser<I> {
                 parser.emit_err(parser.input.cur_span(), SyntaxError::TS1005);
             }
 
-           Ok(match key {
+            Ok(match key {
                 Either::Left(key) => PrivateProp {
                     span: span!(parser, start),
                     key,
@@ -734,7 +726,11 @@ impl<'a, I: Tokens> Parser<I> {
         Ok(is_one_of!(self, '=', ';', '}'))
     }
 
-    fn parse_fn<T>(&mut self, start_of_async: Option<BytePos>, decorators: Vec<Decorator>) -> PResult<T>
+    fn parse_fn<T>(
+        &mut self,
+        start_of_async: Option<BytePos>,
+        decorators: Vec<Decorator>,
+    ) -> PResult<T>
     where
         T: OutputType,
         Self: MaybeOptionalIdentParser<T::Ident>,
@@ -820,7 +816,6 @@ impl<'a, I: Tokens> Parser<I> {
         };
 
         self.with_ctx(ctx).parse_with(|parser| {
-
             let type_params = None;
 
             expect!(parser, '(');
@@ -830,7 +825,9 @@ impl<'a, I: Tokens> Parser<I> {
                 // in_generator: prev_in_generator,
                 ..parser.ctx()
             };
-            let params = parser.with_ctx(arg_ctx).parse_with(|mut parser| parse_args(&mut parser))?;
+            let params = parser
+                .with_ctx(arg_ctx)
+                .parse_with(|mut parser| parse_args(&mut parser))?;
 
             expect!(parser, ')');
 
@@ -838,7 +835,6 @@ impl<'a, I: Tokens> Parser<I> {
             let return_type = None;
 
             let body: Option<_> = parser.parse_fn_body(is_async, is_generator)?;
-
 
             Ok(Function {
                 span: span!(parser, start),
@@ -865,8 +861,6 @@ impl<'a, I: Tokens> Parser<I> {
     where
         Self: FnBodyParser<T>,
     {
-  
-
         let ctx = Context {
             in_async: is_async,
             in_generator: is_generator,
@@ -904,7 +898,6 @@ impl<'a, I: Tokens> Parser<I> {
     where
         F: FnOnce(&mut Self) -> PResult<Vec<Param>>,
     {
-
         let is_static = static_token.is_some();
         let ctx = Context {
             span_of_fn_name: Some(key.span()),
@@ -913,7 +906,6 @@ impl<'a, I: Tokens> Parser<I> {
         let function = self.with_ctx(ctx).parse_with(|parser| {
             parser.parse_fn_args_body(decorators, start, parse_args, is_async, is_generator)
         })?;
-
 
         match key {
             Either::Left(key) => Ok(PrivateMethod {
@@ -1078,7 +1070,6 @@ impl<I: Tokens> FnBodyParser<BlockStmtOrExpr> for Parser<I> {
 
 impl<I: Tokens> FnBodyParser<Option<BlockStmt>> for Parser<I> {
     fn parse_fn_body_inner(&mut self) -> PResult<Option<BlockStmt>> {
-
         self.include_in_expr(true).parse_block(true).map(Some)
     }
 }

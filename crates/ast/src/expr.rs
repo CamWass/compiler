@@ -19,23 +19,23 @@ use global_common::{ast_node, EqIgnoreSpan, Span, Spanned, DUMMY_SP};
 
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
-pub enum Expr  {
+pub enum Expr {
     This(ThisExpr),
 
-    Array(ArrayLit ),
+    Array(ArrayLit),
 
-    Object(ObjectLit ),
+    Object(ObjectLit),
 
-    Fn(FnExpr ),
+    Fn(FnExpr),
 
-    Unary(UnaryExpr ),
+    Unary(UnaryExpr),
 
     /// `++v`, `--v`, `v++`, `v--`
-    Update(UpdateExpr ),
+    Update(UpdateExpr),
 
-    Bin(BinExpr ),
+    Bin(BinExpr),
 
-    Assign(AssignExpr ),
+    Assign(AssignExpr),
 
     //
     // Logical {
@@ -48,59 +48,59 @@ pub enum Expr  {
     /// computed (a[b]) member expression and property is an Expression. If
     /// computed is false, the node corresponds to a static (a.b) member
     /// expression and property is an Identifier.
-    Member(MemberExpr ),
+    Member(MemberExpr),
 
     /// true ? 'a' : 'b'
-    Cond(CondExpr ),
+    Cond(CondExpr),
 
-    Call(CallExpr ),
+    Call(CallExpr),
 
     /// `new Cat()`
-    New(NewExpr ),
+    New(NewExpr),
 
-    Seq(SeqExpr ),
+    Seq(SeqExpr),
 
-    Ident(Ident ),
+    Ident(Ident),
 
-    Lit(Lit ),
+    Lit(Lit),
 
-    Tpl(Tpl ),
+    Tpl(Tpl),
 
-    TaggedTpl(TaggedTpl ),
+    TaggedTpl(TaggedTpl),
 
-    Arrow(ArrowExpr ),
+    Arrow(ArrowExpr),
 
-    Class(ClassExpr ),
+    Class(ClassExpr),
 
-    Yield(YieldExpr ),
+    Yield(YieldExpr),
 
-    MetaProp(MetaPropExpr ),
+    MetaProp(MetaPropExpr),
 
-    Await(AwaitExpr ),
+    Await(AwaitExpr),
 
-    Paren(ParenExpr ),
+    Paren(ParenExpr),
 
-    JSXMember(JSXMemberExpr ),
+    JSXMember(JSXMemberExpr),
 
-    JSXNamespacedName(JSXNamespacedName ),
+    JSXNamespacedName(JSXNamespacedName),
 
     JSXEmpty(JSXEmptyExpr),
 
-    JSXElement(Box<JSXElement >),
+    JSXElement(Box<JSXElement>),
 
-    JSXFragment(JSXFragment ),
+    JSXFragment(JSXFragment),
 
-    TsTypeAssertion(TsTypeAssertion ),
+    TsTypeAssertion(TsTypeAssertion),
 
-    TsConstAssertion(TsConstAssertion ),
+    TsConstAssertion(TsConstAssertion),
 
-    TsNonNull(TsNonNullExpr ),
+    TsNonNull(TsNonNullExpr),
 
-    TsAs(TsAsExpr ),
+    TsAs(TsAsExpr),
 
-    PrivateName(PrivateName ),
+    PrivateName(PrivateName),
 
-    OptChain(OptChainExpr ),
+    OptChain(OptChainExpr),
 
     Invalid(Invalid),
 }
@@ -114,15 +114,15 @@ pub struct ThisExpr {
 /// Array literal.
 #[ast_node("ArrayExpression")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
-pub struct ArrayLit  {
+pub struct ArrayLit {
     pub span: Span,
-    pub elems: Vec<Option<ExprOrSpread >>,
+    pub elems: Vec<Option<ExprOrSpread>>,
 }
 
 /// Object literal.
 #[ast_node("ObjectExpression")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
-pub struct ObjectLit  {
+pub struct ObjectLit {
     pub span: Span,
     pub props: Vec<PropOrSpread>,
 }

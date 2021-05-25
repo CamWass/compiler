@@ -2,9 +2,9 @@
 
 extern crate proc_macro;
 
+use macro_common::prelude::*;
 use pmutil::{smart_quote, Quote};
 use quote::quote_spanned;
-use macro_common::prelude::*;
 use syn::{self, *};
 
 /// Creates `.as_str()` and then implements `Debug` and `Display` using it.
