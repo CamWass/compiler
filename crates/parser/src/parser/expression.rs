@@ -8,6 +8,7 @@ use global_common::{ast_node, Span, Spanned};
 use swc_atoms::js_word;
 
 mod ops;
+mod verifier;
 
 // A recursive descent parser operates by defining functions for all
 // syntactic elements, and recursively calling those, each function
@@ -913,12 +914,6 @@ impl<'a, I: Tokens> Parser<I> {
                 expr: seq_expr,
             })))
         }
-    }
-
-    // TODO: replace this with whatever babel uses:
-    pub(super) fn verify_expr(&mut self, expr: Box<Expr>) -> PResult<Box<Expr>> {
-        // todo!();
-        Ok(expr)
     }
 }
 
