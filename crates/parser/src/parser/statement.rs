@@ -602,10 +602,6 @@ impl<'a, I: Tokens> Parser<I> {
     fn parse_return_stmt(&mut self) -> PResult<Stmt> {
         let start = self.input.cur_pos();
 
-        if !self.ctx().in_function {
-            self.emit_err(span!(self, start), SyntaxError::ReturnNotAllowed);
-        }
-
         self.assert_and_bump(&tok!("return"));
 
         // In `return` (and `break`/`continue`), the keywords with
@@ -619,6 +615,10 @@ impl<'a, I: Tokens> Parser<I> {
             expect!(self, ';');
             arg
         };
+
+        if !self.ctx().in_function {
+            self.emit_err(span!(self, start), SyntaxError::ReturnNotAllowed);
+        }
 
         Ok(Stmt::Return(ReturnStmt {
             span: span!(self, start),
