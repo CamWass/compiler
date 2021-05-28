@@ -50,17 +50,17 @@ impl<'a> From<&'a SourceFile> for StringInput<'a> {
 
 impl<'a> Input for StringInput<'a> {
     #[inline]
-    fn cur(&mut self) -> Option<char> {
+    fn cur(&self) -> Option<char> {
         self.iter.clone().nth(0).map(|i| i.1)
     }
 
     #[inline]
-    fn peek(&mut self) -> Option<char> {
+    fn peek(&self) -> Option<char> {
         self.iter.clone().nth(1).map(|i| i.1)
     }
 
     #[inline]
-    fn peek_ahead(&mut self) -> Option<char> {
+    fn peek_ahead(&self) -> Option<char> {
         self.iter.clone().nth(2).map(|i| i.1)
     }
 
@@ -172,7 +172,7 @@ impl<'a> Input for StringInput<'a> {
     }
 
     #[inline]
-    fn is_byte(&mut self, c: u8) -> bool {
+    fn is_byte(&self, c: u8) -> bool {
         if self.iter.as_str().len() == 0 {
             false
         } else {
@@ -182,9 +182,9 @@ impl<'a> Input for StringInput<'a> {
 }
 
 pub trait Input: Clone {
-    fn cur(&mut self) -> Option<char>;
-    fn peek(&mut self) -> Option<char>;
-    fn peek_ahead(&mut self) -> Option<char>;
+    fn cur(&self) -> Option<char>;
+    fn peek(&self) -> Option<char>;
+    fn peek_ahead(&self) -> Option<char>;
     fn bump(&mut self);
 
     fn is_at_start(&self) -> bool;
@@ -214,7 +214,7 @@ pub trait Input: Clone {
 
     /// Implementors can override the method to make it faster.
     #[inline]
-    fn is_byte(&mut self, c: u8) -> bool {
+    fn is_byte(&self, c: u8) -> bool {
         match self.cur() {
             Some(ch) => ch == c as char,
             _ => false,

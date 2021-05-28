@@ -104,7 +104,7 @@ impl<I: Input> Lexer<I> {
         self.input.bump()
     }
 
-    pub(super) fn is(&mut self, c: u8) -> bool {
+    pub(super) fn is(&self, c: u8) -> bool {
         self.input.is_byte(c)
     }
 
@@ -112,17 +112,17 @@ impl<I: Input> Lexer<I> {
         self.input.eat_byte(c)
     }
 
-    pub(super) fn cur(&mut self) -> Option<char> {
+    pub(super) fn cur(&self) -> Option<char> {
         self.input.cur()
     }
-    pub(super) fn peek(&mut self) -> Option<char> {
+    pub(super) fn peek(&self) -> Option<char> {
         self.input.peek()
     }
-    pub(super) fn peek_ahead(&mut self) -> Option<char> {
+    pub(super) fn peek_ahead(&self) -> Option<char> {
         self.input.peek_ahead()
     }
 
-    pub(super) fn cur_pos(&mut self) -> BytePos {
+    pub(super) fn cur_pos(&self) -> BytePos {
         self.input.cur_pos()
     }
     pub(super) fn last_pos(&self) -> BytePos {
