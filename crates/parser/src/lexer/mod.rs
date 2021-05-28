@@ -713,8 +713,8 @@ impl<I: Input> Lexer<I> {
                 let first_digit = value;
 
                 macro_rules! check {
-                    () => {{
-                        if value > 0 || self.is(b'8') || self.is(b'9') {
+                    ($more_than_one_digit:literal) => {{
+                        if value > 0 || $more_than_one_digit || self.is(b'8') || self.is(b'9') {
                             invalid_escape!();
                         }
                     }};
@@ -726,7 +726,7 @@ impl<I: Input> Lexer<I> {
                         self.bump();
                     }
                     _ => unsafe {
-                        check!();
+                        check!(false);
 
                         //  Spec: OctalDigit [lookahead ∉ OctalDigit]
                         return Ok(Some(std::char::from_u32_unchecked(value)));
@@ -749,7 +749,7 @@ impl<I: Input> Lexer<I> {
                         }
                     }
                     _ => unsafe {
-                        check!();
+                        check!(true);
 
                         // Spec: ZeroToThree OctalDigit [lookahead ∉ OctalDigit]
                         return Ok(Some(std::char::from_u32_unchecked(value)));
@@ -757,7 +757,7 @@ impl<I: Input> Lexer<I> {
                 }
 
                 unsafe {
-                    check!();
+                    check!(true);
 
                     // Spec:
                     // FourToSeven OctalDigit
