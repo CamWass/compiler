@@ -590,8 +590,6 @@ impl<I: Input> Lexer<I> {
     }
 
     fn read_unicode_escape(&mut self, start: BytePos) -> LexResult<char> {
-        debug_assert!(self.is(b'{') || (self.cur().is_some() && self.cur().unwrap().is_digit(16)));
-
         if self.eat(b'{') {
             let ch = self.read_code_point()?;
 
@@ -769,7 +767,6 @@ impl<I: Input> Lexer<I> {
 
     // Used to read character escape sequences ('\x', '\u').
     fn read_hex_char(&mut self, start: BytePos, len: u8) -> LexResult<char> {
-        debug_assert!(self.cur().is_some() && self.cur().unwrap().is_digit(16));
         debug_assert!(len == 2 || len == 4);
 
         let val = self.read_int_u32(16, len, false)?;
