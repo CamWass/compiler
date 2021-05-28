@@ -1,5 +1,5 @@
 use super::Lexer;
-use crate::{context::Context, error::Error, token::*, Tokens};
+use crate::{context::Context, error::Error, token::*, Tokens, JscTarget};
 use enum_kind::Kind;
 use global_common::{input::Input, BytePos};
 use std::mem::take;
@@ -92,9 +92,9 @@ impl<I: Input> Tokens for Lexer<I> {
     // fn syntax(&self) -> Syntax {
     //     self.syntax
     // }
-    // fn target(&self) -> JscTarget {
-    //     self.target
-    // }
+    fn target(&self) -> JscTarget {
+        self.target
+    }
 
     fn set_expr_allowed(&mut self, allow: bool) {
         self.set_expr_allowed(allow)
@@ -274,6 +274,13 @@ impl State {
             .unwrap_or(false)
     }
 
+    pub fn last_was_tpl_element(&self) -> bool {
+        match self.token_type {
+            Some(TokenType::Template) => true,
+            _ => false,
+        }
+    }
+
     pub fn update(&mut self, start: BytePos, next: &Token) {
         let prev = self.token_type.take();
         self.token_type = Some(TokenType::from(next));
@@ -377,12 +384,6 @@ impl State {
                 }
 
                 tok!('{') => {
-                    // let cur = context.current();
-                    // if syntax.jsx() && cur == Some(TokenContext::JSXOpeningTag) {
-                    //     context.push(TokenContext::BraceExpr)
-                    // } else if syntax.jsx() && cur == Some(TokenContext::JSXExpr) {
-                    //     context.push(TokenContext::TplQuasi);
-                    // } else {
                     let next_ctxt = if context.is_brace_block(prev, had_line_break, is_expr_allowed)
                     {
                         TokenContext::BraceStmt
@@ -390,7 +391,7 @@ impl State {
                         TokenContext::BraceExpr
                     };
                     context.push(next_ctxt);
-                    // }
+
                     true
                 }
 

@@ -235,8 +235,7 @@ impl<'a, I: Tokens> Parser<I> {
 
                 tok!('`') => {
                     // parse template literal
-                    todo!();
-                    // return Box::new(Expr::Tpl(self.parse_tpl()));
+                    return Ok(Box::new(Expr::Tpl(self.parse_tpl()?)));
                 }
 
                 tok!('(') => {
@@ -477,9 +476,8 @@ impl<'a, I: Tokens> Parser<I> {
             ExprOrSuper::Expr(expr) => {
                 // MemberExpression[?Yield, ?Await] TemplateLiteral[?Yield, ?Await, +Tagged]
                 if is!(self, '`') {
-                    todo!();
-                    // let tpl = self.parse_tagged_tpl(expr, None);
-                    // return (Box::new(Expr::TaggedTpl(tpl)), true);
+                    let tpl = self.parse_tagged_tpl(expr, None)?;
+                    return Ok((Box::new(Expr::TaggedTpl(tpl)), true));
                 }
 
                 Ok((expr, false))
@@ -914,6 +912,103 @@ impl<'a, I: Tokens> Parser<I> {
                 expr: seq_expr,
             })))
         }
+    }
+
+    #[allow(clippy::vec_box)]
+    fn parse_tpl_elements(&mut self) -> PResult<(Vec<Box<Expr>>, Vec<TplElement>)> {
+
+        let mut exprs = vec![];
+
+        let cur_elem = self.parse_tpl_element()?;
+        let mut is_tail = cur_elem.tail;
+        let mut quasis = vec![cur_elem];
+
+        while !is_tail {
+            expect!(self, "${");
+            exprs.push(self.include_in_expr(true).parse_expr()?);
+            expect!(self, '}');
+            let elem = self.parse_tpl_element()?;
+            is_tail = elem.tail;
+            quasis.push(elem);
+        }
+
+        Ok((exprs, quasis))
+    }
+
+    fn parse_tagged_tpl(
+        &mut self,
+        tag: Box<Expr>,
+        type_params: Option<TsTypeParamInstantiation>,
+    ) -> PResult<TaggedTpl> {
+        let tagged_tpl_start = tag.span().lo();
+
+        let tpl = self.parse_tpl()?;
+
+        let span = span!(self, tagged_tpl_start);
+        Ok(TaggedTpl {
+            span,
+            tag,
+            type_params,
+            tpl,
+        })
+    }
+
+    pub(super) fn parse_tpl(&mut self) -> PResult<Tpl> {
+        let start = self.input.cur_pos();
+
+        self.assert_and_bump(&tok!('`'));
+
+        let (exprs, quasis) = self.parse_tpl_elements()?;
+
+        expect!(self, '`');
+
+        let span = span!(self, start);
+        Ok(Tpl {
+            span,
+            exprs,
+            quasis,
+        })
+    }
+
+    pub(super) fn parse_tpl_element(&mut self) -> PResult<TplElement> {
+        let start = self.input.cur_pos();
+
+        let (raw, cooked) = match *cur!(self, true)? {
+            Token::Template { .. } => match self.input.bump() {
+                Token::Template {
+                    raw,
+                    cooked,
+                    has_escape,
+                } => (
+                    Str {
+                        span: span!(self, start),
+                        value: raw,
+                        has_escape,
+                        kind: StrKind::Normal {
+                            contains_quote: false,
+                        },
+                    },
+                    cooked.map(|cooked| Str {
+                        span: span!(self, start),
+                        value: cooked,
+                        has_escape,
+                        kind: StrKind::Normal {
+                            contains_quote: false,
+                        },
+                    }),
+                ),
+                _ => unreachable!(),
+            },
+            _ => unexpected!(self, "template token"),
+        };
+        let tail = is!(self, '`');
+        Ok(TplElement {
+            span: span!(self, start),
+            raw,
+            tail,
+
+            cooked,
+        })
     }
 }
 

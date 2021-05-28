@@ -7,6 +7,7 @@ use crate::{
     context::Context,
     error::{Error, SyntaxError},
     token::*,
+    JscTarget,
 };
 use ast::op;
 use global_common::{input::Input, BytePos, Span};
@@ -24,6 +25,7 @@ pub struct Lexer<I: Input> {
     pub(crate) ctx: Context,
     input: I,
     state: State,
+    pub(crate) target: JscTarget,
     errors: Rc<RefCell<Vec<Error>>>,
     module_errors: Rc<RefCell<Vec<Error>>>,
 }
@@ -47,7 +49,14 @@ impl<I: Input> Iterator for Lexer<I> {
 
             self.state.start = start;
 
-            self.read_token()
+            if let Some(TokenContext::Tpl {
+                start: start_pos_of_tpl,
+            }) = self.state.context.current()
+            {
+                self.read_tmpl_token(start_pos_of_tpl).map(Some)
+            } else {
+                self.read_token()
+            }
         })();
 
         let token = match res.map_err(Token::Error).map_err(Some) {
@@ -72,10 +81,11 @@ impl<I: Input> Iterator for Lexer<I> {
 }
 
 impl<I: Input> Lexer<I> {
-    pub fn new(input: I) -> Self {
+    pub fn new(target: JscTarget, input: I) -> Self {
         Lexer {
             state: State::new(),
             input,
+            target,
             ctx: Default::default(),
             errors: Default::default(),
             module_errors: Default::default(),
@@ -648,73 +658,8 @@ impl<I: Input> Lexer<I> {
         })
     }
 
-    // // Reads template string tokens.
-
-    // readTmplToken(): void {
-    //   let out = "",
-    //     chunkStart = self.state.pos,
-    //     containsInvalid = false;
-    //   for (;;) {
-    //     if (self.state.pos >= self.length) {
-    //       throw self.raise(self.state.start, Errors.UnterminatedTemplate);
-    //     }
-    //     const ch = self.input.charCodeAt(self.state.pos);
-    //     if (
-    //       ch === charCodes.graveAccent ||
-    //       (ch === charCodes.dollarSign &&
-    //         self.input.charCodeAt(self.state.pos + 1) ===
-    //           charCodes.leftCurlyBrace)
-    //     ) {
-    //       if (self.state.pos === self.state.start && self.match(&TokenTypes::template)) {
-    //         if (ch === charCodes.dollarSign) {
-    //           self.state.pos += 2;
-    //           self.finishToken(&TokenTypes::dollarBraceL);
-    //           return;
-    //         } else {
-    //           self.state.pos += 1;
-    //           self.finishToken(&TokenTypes::backQuote);
-    //           return;
-    //         }
-    //       }
-    //       out += self.input.slice(chunkStart, self.state.pos);
-    //       self.finishToken(&TokenTypes::template, containsInvalid ? null : out);
-    //       return;
-    //     }
-    //     if (ch === charCodes.backslash) {
-    //       out += self.input.slice(chunkStart, self.state.pos);
-    //       const escaped = self.readEscapedChar(true);
-    //       if (escaped === null) {
-    //         containsInvalid = true;
-    //       } else {
-    //         out += escaped;
-    //       }
-    //       chunkStart = self.state.pos;
-    //     } else if (isNewLine(ch)) {
-    //       out += self.input.slice(chunkStart, self.state.pos);
-    //       self.state.pos += 1;
-    //       switch (ch) {
-    //         case charCodes.carriageReturn:
-    //           if (self.input.charCodeAt(self.state.pos) === charCodes.lineFeed) {
-    //             self.state.pos += 1;
-    //           }
-    //         // fall through
-    //         case charCodes.lineFeed:
-    //           out += "\n";
-    //           break;
-    //         default:
-    //           out += String.fromCharCode(ch);
-    //           break;
-    //       }
-    //       ++self.state.curLine;
-    //       self.state.lineStart = self.state.pos;
-    //       chunkStart = self.state.pos;
-    //     } else {
-    //       self.state.pos += 1;
-    //     }
-    //   }
-    // }
-
-    // Used to read escaped characters
+    // Used to read escaped characters.
+    // TODO: handle templates
     fn read_escaped_char(&mut self) -> LexResult<Option<char>> {
         debug_assert!(self.cur() == Some('\\'));
 
@@ -916,6 +861,125 @@ impl<I: Input> Lexer<I> {
         } else {
             Ok(Word(word))
         }
+    }
+
+    // TODO: Verify that the raw value is spec compliant/look at swc/babel's implementations.
+    fn read_tmpl_token(&mut self, start_of_tpl: BytePos) -> LexResult<Token> {
+        enum CookedType {
+            None,
+            SameAsRaw,
+            DifferentFromRaw(String),
+        }
+
+        let start = self.cur_pos();
+        let mut cooked_chunk_start = start;
+
+        let mut has_escape = false;
+        let mut cooked = CookedType::SameAsRaw;
+
+        while let Some(c) = self.cur() {
+            if c == '`' || (c == '$' && self.peek() == Some('{')) {
+                if start == self.cur_pos() && self.state.last_was_tpl_element() {
+                    if c == '$' {
+                        self.bump();
+                        self.bump();
+                        return Ok(tok!("${"));
+                    } else {
+                        self.bump();
+                        return Ok(tok!('`'));
+                    }
+                }
+
+                let raw = self.input.slice_to_cur(start);
+
+                let cooked = match cooked {
+                    CookedType::SameAsRaw => Some(raw.into()),
+                    CookedType::DifferentFromRaw(ref mut existing_cooked) => {
+                        let chunk = self.input.slice_to_cur(cooked_chunk_start);
+                        existing_cooked.push_str(chunk);
+                        Some(JsWord::from(existing_cooked.as_str()))
+                    },
+                    CookedType::None => None,
+                };
+
+                // TODO(swc): Handle error
+                return Ok(Template {
+                    cooked,
+                    raw: raw.into(),
+                    has_escape,
+                });
+            }
+
+            if c == '\\' {
+                has_escape = true;
+
+                match cooked {
+                    CookedType::SameAsRaw => {
+                        let new_cooked = String::from(self.input.slice_to_cur(start));
+
+                        cooked = CookedType::DifferentFromRaw(new_cooked);
+                    }
+                    CookedType::DifferentFromRaw(ref mut existing_cooked) => {
+                        let new_chunk = self.input.slice_to_cur(cooked_chunk_start);
+                        existing_cooked.push_str(new_chunk);
+                    }
+                    _ => {}
+                }
+
+                match self.read_escaped_char() {
+                    Ok(Some(s)) => match cooked {
+                        CookedType::DifferentFromRaw(ref mut existing_cooked) => {
+                            existing_cooked.push(s);
+
+                            cooked_chunk_start = self.cur_pos();
+                        }
+                        _ => {}
+                    },
+                    Ok(None) => {}
+                    Err(error) => {
+                        if self.target < JscTarget::Es2018 {
+                            return Err(error);
+                        } else {
+                            cooked = CookedType::None;
+                        }
+                    }
+                }
+            } else if is_line_break(c) {
+                self.state.had_line_break = true;
+                if c == '\r' && self.peek() == Some('\n') {
+                    match cooked {
+                        CookedType::SameAsRaw => {
+                            let mut new_cooked = String::from(self.input.slice_to_cur(start));
+                            new_cooked.push('\n');
+
+                            cooked = CookedType::DifferentFromRaw(new_cooked);
+                        }
+                        CookedType::DifferentFromRaw(ref mut existing_cooked) => {
+                            let new_chunk = self.input.slice_to_cur(cooked_chunk_start);
+                            existing_cooked.push_str(new_chunk);
+                            existing_cooked.push('\n');
+                        }
+                        _ => {}
+                    }
+
+                    self.bump(); // '\r'
+                    self.bump(); // '\n'
+
+                    match cooked {
+                        CookedType::DifferentFromRaw(..) => {
+                            cooked_chunk_start = self.cur_pos();
+                        }
+                        _ => {}
+                    }
+                } else {
+                    self.bump();
+                }
+            } else {
+                self.bump();
+            }
+        }
+
+        self.error(start_of_tpl, SyntaxError::UnterminatedTpl)?
     }
 
     pub fn set_expr_allowed(&mut self, allow: bool) {

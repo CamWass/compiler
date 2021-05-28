@@ -1,3 +1,6 @@
+pub use self::parser::*;
+pub use ast::EsVersion as JscTarget;
+
 #[macro_use]
 mod macros;
 mod context;
@@ -6,4 +9,4 @@ pub mod lexer;
 mod parser;
 pub mod token;
 
-pub use self::parser::*;
+

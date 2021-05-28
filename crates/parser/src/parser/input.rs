@@ -4,6 +4,7 @@ use crate::{
     lexer::TokenContexts,
     parser::Parser,
     token::{Token, TokenAndSpan},
+    JscTarget
 };
 use global_common::{BytePos, Span, DUMMY_SP};
 
@@ -13,7 +14,7 @@ pub trait Tokens: Clone + Iterator<Item = TokenAndSpan> {
     fn set_ctx(&mut self, ctx: Context);
     fn ctx(&self) -> Context;
     // fn syntax(&self) -> Syntax;
-    // fn target(&self) -> JscTarget;
+    fn target(&self) -> JscTarget;
 
     fn set_expr_allowed(&mut self, allow: bool);
     fn token_context(&self) -> &TokenContexts;

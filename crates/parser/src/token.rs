@@ -66,9 +66,8 @@ pub enum Token {
     #[kind(starts_expr)]
     BackQuote,
     Template {
-        // raw: JsWord,
-        raw: String,
-        // cooked: Option<JsWord>,
+        raw: JsWord,
+        cooked: Option<JsWord>,
         has_escape: bool,
     },
     /// ':'

@@ -78,7 +78,7 @@ impl<'a> Input for StringInput<'a> {
         self.orig_start == self.last_pos
     }
 
-    fn cur_pos(&mut self) -> BytePos {
+    fn cur_pos(&self) -> BytePos {
         self.iter
             .clone()
             .next()
@@ -109,7 +109,7 @@ impl<'a> Input for StringInput<'a> {
     }
 
     #[inline]
-    fn slice_to_cur(&mut self, start: BytePos) -> &str {
+    fn slice_to_cur(&self, start: BytePos) -> &str {
         &self.orig[start.to_usize()..self.cur_pos().to_usize()]
     }
 
@@ -189,13 +189,15 @@ pub trait Input: Clone {
 
     fn is_at_start(&self) -> bool;
 
-    fn cur_pos(&mut self) -> BytePos;
+    fn cur_pos(&self) -> BytePos;
 
     fn last_pos(&self) -> BytePos;
 
     fn slice(&mut self, start: BytePos, end: BytePos) -> &str;
 
-    fn slice_to_cur(&mut self, start: BytePos) -> &str;
+    /// Returns a slice of the input from `start` up to, but not including, the
+    /// current character.
+    fn slice_to_cur(&self, start: BytePos) -> &str;
 
     /// Takes items from stream, testing each one with predicate. returns the
     /// range of items which passed predicate.

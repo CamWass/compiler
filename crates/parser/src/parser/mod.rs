@@ -14,7 +14,7 @@ use crate::{
     context::Context,
     error::{Error, SyntaxError},
     lexer::Lexer,
-    token::Token,
+    token::Token
 };
 use ast::*;
 use global_common::{input::Input, BytePos, Span};
@@ -40,7 +40,7 @@ pub struct Parser<I: Tokens> {
 
 impl<I: Input> Parser<Lexer<I>> {
     pub fn new(input: I) -> Self {
-        Self::new_from(Lexer::new(input))
+        Self::new_from(Lexer::new(Default::default(), input))
     }
 }
 
