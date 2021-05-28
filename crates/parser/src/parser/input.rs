@@ -235,10 +235,10 @@ impl<I: Tokens> Buffer<I> {
     // pub fn syntax(&self) -> Syntax {
     //     self.iter.syntax()
     // }
-    // #[inline]
-    // pub fn target(&self) -> JscTarget {
-    //     self.iter.target()
-    // }
+    #[inline]
+    pub fn target(&self) -> JscTarget {
+        self.iter.target()
+    }
 
     // #[inline]
     // pub(crate) fn set_expr_allowed(&mut self, allow: bool) {

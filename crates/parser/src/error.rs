@@ -75,6 +75,8 @@ pub enum SyntaxError {
         /// Number of expected characters.
         count: u8,
     },
+    InvalidEscapeInTemplate,
+    InvalidNumericEscapeInStrict,
     NumLitTerminatedWithExp,
     LegacyCommentInModule,
 
@@ -270,6 +272,10 @@ impl SyntaxError {
             SyntaxError::InvalidCodePoint => "Invalid unicode code point".into(),
             SyntaxError::ExpectedHexChars { count } => {
                 format!("Expected {} hex characters", count).into()
+            }
+            SyntaxError::InvalidEscapeInTemplate => "Invalid escape sequence in template".into(),
+            SyntaxError::InvalidNumericEscapeInStrict => {
+                "The only valid numeric escape in strict mode is '\\0'".into()
             }
             SyntaxError::LegacyCommentInModule => {
                 "Legacy comments cannot be used in module code".into()

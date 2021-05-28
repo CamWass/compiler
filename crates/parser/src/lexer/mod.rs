@@ -625,7 +625,7 @@ impl<I: Input> Lexer<I> {
             } else if ch == '\\' {
                 out.push_str(self.input.slice_to_cur(chunk_start));
 
-                if let Some(c) = self.read_escaped_char()? {
+                if let Some(c) = self.read_escaped_char(false)? {
                     out.push(c);
                 }
 
@@ -660,7 +660,7 @@ impl<I: Input> Lexer<I> {
 
     // Used to read escaped characters.
     // TODO: handle templates
-    fn read_escaped_char(&mut self) -> LexResult<Option<char>> {
+    fn read_escaped_char(&mut self, in_template: bool) -> LexResult<Option<char>> {
         debug_assert!(self.cur() == Some('\\'));
 
         let start = self.cur_pos();
@@ -670,6 +670,16 @@ impl<I: Input> Lexer<I> {
             None => self.error_span(pos_span(start), SyntaxError::InvalidStrEscape)?,
         };
         self.bump();
+
+        macro_rules! invalid_escape {
+            () => {{
+                if in_template {
+                    self.error(start, SyntaxError::InvalidEscapeInTemplate)?
+                } else {
+                    self.emit_strict_mode_error(start, SyntaxError::InvalidNumericEscapeInStrict);
+                }
+            }};
+        }
 
         match ch {
             // Line feed
@@ -694,70 +704,66 @@ impl<I: Input> Lexer<I> {
             }
             char_literals::LINE_SEPARATOR | char_literals::PARAGRAPH_SEPARATOR => Ok(None),
             '8' | '9' => {
-                todo!();
-                // if in_template {
-                //     None
-                // } else {
-                //     // self.recordStrictModeErrors(
-                //     //   self.state.pos - 1,
-                //     //   Errors.StrictNumericEscape,
-                //     // );
-                //     panic!()
-                // }
+                invalid_escape!();
+                Ok(None)
             }
             '0'..='7' => {
-                // let codePos = self.state.pos - 1;
+                let mut value = ch as u32 - '0' as u32;
 
-                //   let first_c = if ch == '0' {
-                //     match self.peek() {
-                //         Some(next) if next.is_digit(8) => ch,
-                //         // \0 is not an octal literal nor decimal literal.
-                //         _ => return Ok(Some('\u{0000}'.into())),
-                //     }
-                // } else {
-                //     ch
-                // };
+                let first_digit = value;
 
-                let mut value = match ch.to_digit(8) {
+                macro_rules! check {
+                    () => {{
+                        if value > 0 || self.is(b'8') || self.is(b'9') {
+                            invalid_escape!();
+                        }
+                    }};
+                }
+
+                match self.cur().and_then(|c| c.to_digit(8)) {
                     Some(v) => {
+                        value = value * 8 + v;
                         self.bump();
-                        v
                     }
-                    _ => return Ok(None),
+                    _ => unsafe {
+                        check!();
+
+                        //  Spec: OctalDigit [lookahead ∉ OctalDigit]
+                        return Ok(Some(std::char::from_u32_unchecked(value)));
+                    },
+                }
+
+                match self.cur().and_then(|c| c.to_digit(8)) {
+                    Some(v) => {
+                        if first_digit > 3 {
+                            // Spec: FourToSeven OctalDigit
+                            // At this point we have a 3 digit octal number,
+                            // with 4, 5, 6, or 7 as the first digit. The
+                            // largest octal escape allowed is 377 (255 decimal).
+                            // So, at this point we know the number is too
+                            // large, and we don't include the third digit.
+                        } else {
+                            // Spec: ZeroToThree OctalDigit OctalDigit
+                            value = value * 8 + v;
+                            self.bump();
+                        }
+                    }
+                    _ => unsafe {
+                        check!();
+
+                        // Spec: ZeroToThree OctalDigit [lookahead ∉ OctalDigit]
+                        return Ok(Some(std::char::from_u32_unchecked(value)));
+                    },
+                }
+
+                unsafe {
+                    check!();
+
+                    // Spec:
+                    // FourToSeven OctalDigit
+                    // ZeroToThree OctalDigit OctalDigit
+                    return Ok(Some(std::char::from_u32_unchecked(value)));
                 };
-
-                match self.cur().and_then(|c| c.to_digit(8)) {
-                    Some(v) => {
-                        value = value * 8 + v;
-                        self.bump();
-                    }
-                    _ => unsafe { return Ok(Some(std::char::from_u32_unchecked(value))) },
-                }
-
-                match self.cur().and_then(|c| c.to_digit(8)) {
-                    Some(v) => {
-                        value = value * 8 + v;
-                        self.bump();
-                    }
-                    _ => unsafe { return Ok(Some(std::char::from_u32_unchecked(value))) },
-                }
-
-                // TODO:
-                //  let next_char_is_8_or_9 = match self.peek() {
-                //    Some(c) if c=='8' || c=='9' => true,
-                //    _ => false
-                //  };
-                //   if (
-                //     octalStr !== "0" || next_char_is_8_or_9
-                //   ) {
-                //     if (inTemplate) {
-                //       return null;
-                //     } else {
-                //       self.recordStrictModeErrors(codePos, Errors.StrictNumericEscape);
-                //     }
-                //   }
-
-                unsafe { return Ok(Some(std::char::from_u32_unchecked(value))) };
             }
             _ => Ok(Some(ch)),
         }
@@ -898,7 +904,7 @@ impl<I: Input> Lexer<I> {
                         let chunk = self.input.slice_to_cur(cooked_chunk_start);
                         existing_cooked.push_str(chunk);
                         Some(JsWord::from(existing_cooked.as_str()))
-                    },
+                    }
                     CookedType::None => None,
                 };
 
@@ -926,7 +932,7 @@ impl<I: Input> Lexer<I> {
                     _ => {}
                 }
 
-                match self.read_escaped_char() {
+                match self.read_escaped_char(true) {
                     Ok(Some(s)) => match cooked {
                         CookedType::DifferentFromRaw(ref mut existing_cooked) => {
                             existing_cooked.push(s);
@@ -936,12 +942,8 @@ impl<I: Input> Lexer<I> {
                         _ => {}
                     },
                     Ok(None) => {}
-                    Err(error) => {
-                        if self.target < JscTarget::Es2018 {
-                            return Err(error);
-                        } else {
-                            cooked = CookedType::None;
-                        }
+                    Err(..) => {
+                        cooked = CookedType::None;
                     }
                 }
             } else if is_line_break(c) {

@@ -2,6 +2,7 @@ use super::*;
 use crate::{
     parser::{pat::PatType, util::ExprExt},
     token::{AssignOpToken, Token, Word},
+    JscTarget,
 };
 use either::Either;
 use global_common::{ast_node, Span, Spanned};
@@ -235,7 +236,7 @@ impl<'a, I: Tokens> Parser<I> {
 
                 tok!('`') => {
                     // parse template literal
-                    return Ok(Box::new(Expr::Tpl(self.parse_tpl()?)));
+                    return Ok(Box::new(Expr::Tpl(self.parse_tpl(false)?)));
                 }
 
                 tok!('(') => {
@@ -915,11 +916,13 @@ impl<'a, I: Tokens> Parser<I> {
     }
 
     #[allow(clippy::vec_box)]
-    fn parse_tpl_elements(&mut self) -> PResult<(Vec<Box<Expr>>, Vec<TplElement>)> {
-
+    fn parse_tpl_elements(
+        &mut self,
+        is_tagged: bool,
+    ) -> PResult<(Vec<Box<Expr>>, Vec<TplElement>)> {
         let mut exprs = vec![];
 
-        let cur_elem = self.parse_tpl_element()?;
+        let cur_elem = self.parse_tpl_element(is_tagged)?;
         let mut is_tail = cur_elem.tail;
         let mut quasis = vec![cur_elem];
 
@@ -927,7 +930,7 @@ impl<'a, I: Tokens> Parser<I> {
             expect!(self, "${");
             exprs.push(self.include_in_expr(true).parse_expr()?);
             expect!(self, '}');
-            let elem = self.parse_tpl_element()?;
+            let elem = self.parse_tpl_element(is_tagged)?;
             is_tail = elem.tail;
             quasis.push(elem);
         }
@@ -942,7 +945,7 @@ impl<'a, I: Tokens> Parser<I> {
     ) -> PResult<TaggedTpl> {
         let tagged_tpl_start = tag.span().lo();
 
-        let tpl = self.parse_tpl()?;
+        let tpl = self.parse_tpl(true)?;
 
         let span = span!(self, tagged_tpl_start);
         Ok(TaggedTpl {
@@ -953,12 +956,12 @@ impl<'a, I: Tokens> Parser<I> {
         })
     }
 
-    pub(super) fn parse_tpl(&mut self) -> PResult<Tpl> {
+    pub(super) fn parse_tpl(&mut self, is_tagged: bool) -> PResult<Tpl> {
         let start = self.input.cur_pos();
 
         self.assert_and_bump(&tok!('`'));
 
-        let (exprs, quasis) = self.parse_tpl_elements()?;
+        let (exprs, quasis) = self.parse_tpl_elements(is_tagged)?;
 
         expect!(self, '`');
 
@@ -970,7 +973,7 @@ impl<'a, I: Tokens> Parser<I> {
         })
     }
 
-    pub(super) fn parse_tpl_element(&mut self) -> PResult<TplElement> {
+    pub(super) fn parse_tpl_element(&mut self, is_tagged: bool) -> PResult<TplElement> {
         let start = self.input.cur_pos();
 
         let (raw, cooked) = match *cur!(self, true)? {
@@ -1001,6 +1004,17 @@ impl<'a, I: Tokens> Parser<I> {
             },
             _ => unexpected!(self, "template token"),
         };
+
+        if cooked.is_none() {
+            if !is_tagged || self.input.target() < JscTarget::Es2018 {
+                syntax_error!(
+                    self,
+                    span!(self, start),
+                    SyntaxError::InvalidEscapeInTemplate
+                )
+            }
+        }
+
         let tail = is!(self, '`');
         Ok(TplElement {
             span: span!(self, start),
