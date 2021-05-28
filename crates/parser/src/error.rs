@@ -32,7 +32,10 @@ impl Error {
 
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
+// TODO: order
 pub enum SyntaxError {
+    DuplicateRegExpFlags,
+    MalformedRegExpFlags,
     Eof,
     DeclNotAllowed,
 
@@ -231,8 +234,15 @@ pub enum SyntaxError {
 impl SyntaxError {
     #[cold]
     #[inline(never)]
+    // TODO: sort
     pub fn msg(&self) -> Cow<'static, str> {
         match self {
+            SyntaxError::DuplicateRegExpFlags => {
+                "Duplicate regular expression flag".into()
+            }
+            SyntaxError::MalformedRegExpFlags => {
+                "Invalid regular expression flag".into()
+            }
             SyntaxError::PrivateNameInInterface => {
                 "private names are now allowed in interface".into()
             }

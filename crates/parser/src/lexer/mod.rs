@@ -557,12 +557,10 @@ impl<I: Input> Lexer<I> {
         while let Some(ch) = self.cur() {
             if is_valid_regex_flag(ch) {
                 if mods.find(ch).is_some() {
-                    // self.raise(self.state.pos + 1, Errors.DuplicateRegExpFlags);
-                    panic!("DuplicateRegExpFlags at {:?}", self.cur_pos() + BytePos(1));
+                    self.error(self.cur_pos(), SyntaxError::DuplicateRegExpFlags)?
                 }
             } else if is_ident_part(ch) || ch == '\\' {
-                // self.raise(self.state.pos + 1, Errors.MalformedRegExpFlags);
-                panic!("MalformedRegExpFlags at {:?}", self.cur_pos() + BytePos(1));
+                self.error(self.cur_pos(), SyntaxError::MalformedRegExpFlags)?
             } else {
                 break;
             }
