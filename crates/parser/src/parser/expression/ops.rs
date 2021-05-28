@@ -10,6 +10,8 @@ impl<'a, I: Tokens> Parser<I> {
 
         let ctx = self.ctx();
 
+        let potential_arrow_start = self.state.potential_arrow_start;
+
         let left = match self.parse_unary_expr() {
             Ok(v) => v,
             Err(err) => {
@@ -31,7 +33,7 @@ impl<'a, I: Tokens> Parser<I> {
             }
         };
 
-        return_if_arrow!(self, left);
+        return_if_arrow!(potential_arrow_start, left);
         self.parse_bin_op_recursively(left, 0)
     }
 
@@ -249,9 +251,11 @@ impl<'a, I: Tokens> Parser<I> {
             return self.parse_await_expr();
         }
 
+        let potential_arrow_start = self.state.potential_arrow_start;
+
         // UpdateExpression
         let expr = self.parse_lhs_expr()?;
-        return_if_arrow!(self, expr);
+        return_if_arrow!(potential_arrow_start, expr);
 
         // Line terminator isn't allowed here.
         if self.input.had_line_break_before_cur() {

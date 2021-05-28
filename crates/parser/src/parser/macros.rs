@@ -213,10 +213,10 @@ macro_rules! expect_exact {
 }
 
 macro_rules! return_if_arrow {
-    ($parser:expr, $expr:expr) => {{
-        match $parser.state.potential_arrow_start {
+    ($potential_arrow_start:expr, $expr:expr) => {{
+        match $potential_arrow_start {
             Some(start) if $expr.span().lo == start && matches!(*$expr, Expr::Arrow { .. }) => {
-                return Ok($expr)
+                return Ok($expr);
             }
             _ => {}
         };

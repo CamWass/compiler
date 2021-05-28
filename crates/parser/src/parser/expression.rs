@@ -78,10 +78,12 @@ impl<'a, I: Tokens> Parser<I> {
             _ => None,
         };
 
+        let potential_arrow_start = self.state.potential_arrow_start;
+
         // Try to parse conditional expression.
         let cond = self.parse_cond_expr()?;
 
-        return_if_arrow!(self, cond);
+        return_if_arrow!(potential_arrow_start, cond);
 
         match *cond {
             // if cond is conditional expression but not left-hand-side expression,
@@ -133,8 +135,10 @@ impl<'a, I: Tokens> Parser<I> {
 
         let start = self.input.cur_pos();
 
+        let potential_arrow_start = self.state.potential_arrow_start;
+
         let test = self.parse_bin_expr()?;
-        return_if_arrow!(self, test);
+        return_if_arrow!(potential_arrow_start, test);
 
         if eat!(self, '?') {
             let ctx = Context {
@@ -518,8 +522,10 @@ impl<'a, I: Tokens> Parser<I> {
             return self.parse_subscripts(obj, false);
         }
 
+        let potential_arrow_start = self.state.potential_arrow_start;
+
         let callee = self.parse_new_expr()?;
-        return_if_arrow!(self, callee);
+        return_if_arrow!(potential_arrow_start, callee);
 
         let type_args = None;
 
@@ -602,15 +608,8 @@ impl<'a, I: Tokens> Parser<I> {
 
             let start = self.input.cur_pos();
             self.state.potential_arrow_start = Some(start);
-            let modifier_start = start;
-
-            let has_modifier = false;
 
             let arg = self.include_in_expr(true).parse_expr_or_spread()?;
-
-            if has_modifier {
-                self.emit_err(span!(self, modifier_start), SyntaxError::TS2369);
-            }
 
             items.push(PatOrExprOrSpread::ExprOrSpread(arg));
 
@@ -681,9 +680,11 @@ impl<'a, I: Tokens> Parser<I> {
                 unexpected!(self, "target")
             }
 
+            let potential_arrow_start = self.state.potential_arrow_start;
+
             // 'NewExpression' allows new call without paren.
             let callee = self.parse_member_expr_or_new_expr(is_new_expr)?;
-            return_if_arrow!(self, callee);
+            return_if_arrow!(potential_arrow_start, callee);
 
             let type_args = None;
 
@@ -719,8 +720,11 @@ impl<'a, I: Tokens> Parser<I> {
             });
             return self.parse_subscripts(base, true);
         }
+
+        let potential_arrow_start = self.state.potential_arrow_start;
+
         let obj = self.parse_primary_expr()?;
-        return_if_arrow!(self, obj);
+        return_if_arrow!(potential_arrow_start, obj);
 
         self.parse_subscripts(ExprOrSuper::Expr(obj), true)
     }
