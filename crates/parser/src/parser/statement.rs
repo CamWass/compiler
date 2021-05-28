@@ -744,12 +744,8 @@ impl<'a, I: Tokens> Parser<I> {
         let start = self.input.cur_pos();
 
         Ok(if self.input.eat(&tok!("catch")) {
-            let mut param = None;
+            let param = self.parse_catch_param()?;
 
-            if self.input.eat(&tok!('(')) {
-                param = self.parse_catch_param()?;
-                expect!(self, ')');
-            }
             self.parse_block(false)
                 .map(|body| CatchClause {
                     span: span!(self, start),
