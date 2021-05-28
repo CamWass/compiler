@@ -6,6 +6,8 @@ use swc_atoms::js_word;
 
 impl<'a, I: Tokens> Parser<I> {
     pub(super) fn parse_opt_binding_ident(&mut self) -> PResult<Option<BindingIdent>> {
+        trace_cur!(self, parse_opt_binding_ident);
+
         if is!(self, BindingIdent) {
             self.parse_binding_ident().map(Some)
         } else {
@@ -17,6 +19,8 @@ impl<'a, I: Tokens> Parser<I> {
     ///
     /// spec: `BindingIdentifier`
     pub(super) fn parse_binding_ident(&mut self) -> PResult<BindingIdent> {
+        trace_cur!(self, parse_binding_ident);
+
         // "yield" and "await" is **lexically** accepted.
         let ident = self.parse_ident(true, true)?;
         if ident.sym == js_word!("arguments") || ident.sym == js_word!("eval") {
@@ -33,6 +37,8 @@ impl<'a, I: Tokens> Parser<I> {
     }
 
     pub(super) fn parse_binding_pat_or_ident(&mut self) -> PResult<Pat> {
+        trace_cur!(self, parse_binding_pat_or_ident);
+
         match *cur!(self, true)? {
             tok!("yield") | Word(..) => self.parse_binding_ident().map(Pat::from),
             tok!('[') => self.parse_array_binding_pat(),
@@ -49,6 +55,8 @@ impl<'a, I: Tokens> Parser<I> {
 
     /// babel: `parseBindingAtom`
     pub(super) fn parse_binding_element(&mut self) -> PResult<Pat> {
+        trace_cur!(self, parse_binding_element);
+        
         let start = self.input.cur_pos();
         let left = self.parse_binding_pat_or_ident()?;
 

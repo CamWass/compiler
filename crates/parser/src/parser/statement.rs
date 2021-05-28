@@ -97,6 +97,8 @@ impl<'a, I: Tokens> Parser<I> {
         Self: StmtLikeParser<'a, Type>,
         Type: IsDirective + From<Stmt>,
     {
+        trace_cur!(self, parse_block_body);
+
         let old_ctx = self.ctx();
 
         let mut stmts = vec![];
@@ -137,10 +139,12 @@ impl<'a, I: Tokens> Parser<I> {
     }
 
     pub fn parse_stmt(&mut self, top_level: bool) -> PResult<Stmt> {
+        trace_cur!(self, parse_stmt);
         self.parse_stmt_like(false, top_level)
     }
 
     fn parse_stmt_list_item(&mut self, top_level: bool) -> PResult<Stmt> {
+        trace_cur!(self, parse_stmt_list_item);
         self.parse_stmt_like(true, top_level)
     }
 
@@ -150,6 +154,7 @@ impl<'a, I: Tokens> Parser<I> {
         Self: StmtLikeParser<'a, Type>,
         Type: IsDirective + From<Stmt>,
     {
+        trace_cur!(self, parse_stmt_like);
         let start = self.input.cur_pos();
         let decorators = self.parse_decorators(true)?;
 
@@ -168,6 +173,7 @@ impl<'a, I: Tokens> Parser<I> {
         include_decl: bool,
         decorators: Vec<Decorator>,
     ) -> PResult<Stmt> {
+        trace_cur!(self, parse_stmt_content);
         // Most types of statements are recognized by the keyword they
         // start with. Many are trivial to parse, some require a bit of
         // complexity.

@@ -253,6 +253,8 @@ impl<'a, I: Tokens> Parser<I> {
     // }
 
     fn parse_class_member(&mut self) -> PResult<ClassMember> {
+        trace_cur!(self, parse_class_member);
+
         let start = self.input.cur_pos();
         let decorators = self.parse_decorators(false)?;
         let declare = false;
@@ -426,6 +428,7 @@ impl<'a, I: Tokens> Parser<I> {
             );
         }
 
+        trace_cur!(self, parse_class_member_with_is_static__normal_class_member);
         let key = if readonly.is_some() && is_one_of!(self, '!', ':') {
             Either::Right(PropName::Ident(Ident::new(
                 "readonly".into(),
@@ -438,6 +441,8 @@ impl<'a, I: Tokens> Parser<I> {
 
         if self.is_class_method()? {
             // handle a(){} / get(){} / set(){} / async(){}
+
+            trace_cur!(self, parse_class_member_with_is_static__normal_class_method);
 
             if readonly.is_some() {
                 syntax_error!(self, span!(self, start), SyntaxError::ReadOnlyMethod);
@@ -809,6 +814,8 @@ impl<'a, I: Tokens> Parser<I> {
     where
         F: FnOnce(&mut Self) -> PResult<Vec<Param>>,
     {
+        trace_cur!(self, parse_fn_args_body);
+
         let ctx = Context {
             in_async: is_async,
             in_generator: is_generator,
@@ -898,6 +905,8 @@ impl<'a, I: Tokens> Parser<I> {
     where
         F: FnOnce(&mut Self) -> PResult<Vec<Param>>,
     {
+        trace_cur!(self, make_method);
+
         let is_static = static_token.is_some();
         let ctx = Context {
             span_of_fn_name: Some(key.span()),
