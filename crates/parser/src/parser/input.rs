@@ -4,7 +4,7 @@ use crate::{
     lexer::TokenContexts,
     parser::Parser,
     token::{Token, TokenAndSpan},
-    JscTarget
+    JscTarget,
 };
 use global_common::{BytePos, Span, DUMMY_SP};
 

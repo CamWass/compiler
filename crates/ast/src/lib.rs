@@ -64,8 +64,8 @@ pub use self::{
         TsTypeQuery, TsTypeQueryExpr, TsTypeRef, TsUnionOrIntersectionType, TsUnionType,
     },
 };
-use serde::{Deserialize, Serialize};
 use global_common::{ast_node, EqIgnoreSpan, Span};
+use serde::{Deserialize, Serialize};
 
 #[macro_use]
 mod macros;

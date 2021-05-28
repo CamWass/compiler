@@ -237,12 +237,8 @@ impl SyntaxError {
     // TODO: sort
     pub fn msg(&self) -> Cow<'static, str> {
         match self {
-            SyntaxError::DuplicateRegExpFlags => {
-                "Duplicate regular expression flag".into()
-            }
-            SyntaxError::MalformedRegExpFlags => {
-                "Invalid regular expression flag".into()
-            }
+            SyntaxError::DuplicateRegExpFlags => "Duplicate regular expression flag".into(),
+            SyntaxError::MalformedRegExpFlags => "Invalid regular expression flag".into(),
             SyntaxError::PrivateNameInInterface => {
                 "private names are now allowed in interface".into()
             }

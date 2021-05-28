@@ -56,7 +56,7 @@ impl<'a, I: Tokens> Parser<I> {
     /// babel: `parseBindingAtom`
     pub(super) fn parse_binding_element(&mut self) -> PResult<Pat> {
         trace_cur!(self, parse_binding_element);
-        
+
         let start = self.input.cur_pos();
         let left = self.parse_binding_pat_or_ident()?;
 

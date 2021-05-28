@@ -14,7 +14,7 @@ use crate::{
     context::Context,
     error::{Error, SyntaxError},
     lexer::Lexer,
-    token::Token
+    token::Token,
 };
 use ast::*;
 use global_common::{input::Input, BytePos, Span};
@@ -63,7 +63,7 @@ impl<I: Tokens> Parser<I> {
 
     pub fn parse_script(&mut self) -> PResult<Script> {
         trace_cur!(self, parse_script);
-        
+
         let ctx = Context {
             module: false,
             ..self.ctx()
