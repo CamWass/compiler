@@ -575,8 +575,6 @@ impl<I: Input> Lexer<I> {
     }
 
     fn read_code_point(&mut self) -> LexResult<char> {
-        debug_assert!(self.cur().is_some() && self.cur().unwrap().is_digit(16));
-
         let start = self.cur_pos();
         let val = self.read_int_u32(16, 0, false)?;
 
