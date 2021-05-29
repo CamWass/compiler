@@ -223,7 +223,7 @@ impl<I: Input> Lexer<I> {
 
         self.bump(); // 1st '.'
 
-        if next == '.' && self.peek_ahead() == Some('.') {
+        if next == '.' && self.peek() == Some('.') {
             self.bump(); // 2nd '.'
             self.bump(); // 3rd '.'
             Ok(Some(tok!("...")))
