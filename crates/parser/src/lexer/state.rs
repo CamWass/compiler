@@ -255,7 +255,7 @@ pub struct State {
 impl State {
     pub fn new() -> Self {
         Self {
-            had_line_break: false,
+            had_line_break: true,
             token_type: None,
             start: BytePos(0),
 

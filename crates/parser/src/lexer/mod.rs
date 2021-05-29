@@ -38,8 +38,6 @@ impl<I: Input> Iterator for Lexer<I> {
         let mut start = self.cur_pos();
 
         let res = (|| -> Result<Option<_>, _> {
-            self.state.had_line_break = false;
-
             // Skip the space after the previous token, so that the next one's
             // `start` will point to the right position.
             if self.state.can_skip_space() {
@@ -69,11 +67,14 @@ impl<I: Input> Iterator for Lexer<I> {
             self.state.last_tok_end = self.last_pos();
         }
 
+        let had_line_break = self.state.had_line_break;
+        self.state.had_line_break = false;
+
         token.map(|token| {
             // Attach span to token.
             TokenAndSpan {
                 token,
-                had_line_break: self.state.had_line_break,
+                had_line_break,
                 span: self.span(start),
             }
         })
