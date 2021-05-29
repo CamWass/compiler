@@ -460,10 +460,6 @@ impl<'a, I: Tokens> Parser<I> {
                 };
                 let body: Option<_> = self.with_ctx(ctx).parse_fn_body(false, false)?;
 
-                if let Some(static_token) = static_token {
-                    self.emit_err(static_token, SyntaxError::TS1089(js_word!("static")))
-                }
-
                 return Ok(ClassMember::Constructor(Constructor {
                     span: span!(self, start),
                     accessibility,
