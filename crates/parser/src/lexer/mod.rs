@@ -368,12 +368,7 @@ impl<I: Input> Lexer<I> {
             self.bump();
 
             // Handle '-->' line comment
-            if !self.ctx.module
-            // TODO: reassess this line:
-                && (self.state.had_line_break || self.state.last_tok_end == BytePos(0))
-                && ch == '-'
-                && self.eat(b'>')
-            {
+            if self.state.had_line_break && ch == '-' && self.eat(b'>') {
                 self.emit_module_mode_error(start, SyntaxError::LegacyCommentInModule);
                 self.skip_line_comment(0);
                 self.skip_space()?;
@@ -406,13 +401,9 @@ impl<I: Input> Lexer<I> {
         self.bump(); // '<' or '>'
 
         // `<!--`, an XML-style comment that should be interpreted as a line comment
-        if !self.ctx.module
-            && ch == '<'
-            && self.is(b'!')
-            && self.peek() == Some('-')
-            && self.peek_ahead() == Some('-')
+        if ch == '<' && self.is(b'!') && self.peek() == Some('-') && self.peek_ahead() == Some('-')
         {
-            self.skip_line_comment(4);
+            self.skip_line_comment(3);
             self.skip_space()?;
             self.emit_module_mode_error(start, SyntaxError::LegacyCommentInModule);
 
