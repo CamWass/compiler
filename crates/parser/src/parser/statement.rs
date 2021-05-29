@@ -55,6 +55,13 @@ pub(super) trait StmtLikeParser<'a, Type: IsDirective> {
     ) -> PResult<Type>;
 }
 
+#[derive(PartialEq, Eq)]
+pub enum StmtParseCtx {
+    IfOrLabel,
+    Other,
+    None,
+}
+
 impl<'a, I: Tokens> StmtLikeParser<'a, Stmt> for Parser<I> {
     fn handle_import_export(&mut self, _: bool, _: Vec<Decorator>) -> PResult<Stmt> {
         let start = self.input.cur_pos();
@@ -106,7 +113,7 @@ impl<'a, I: Tokens> Parser<I> {
             let c = self.input.cur();
             c != end
         } {
-            let stmt = self.parse_stmt_like(true, top_level)?;
+            let stmt = self.parse_stmt_like(StmtParseCtx::None, top_level)?;
             if allow_directives {
                 allow_directives = false;
                 if stmt.is_use_strict() {
@@ -138,18 +145,18 @@ impl<'a, I: Tokens> Parser<I> {
         Ok(stmts)
     }
 
-    pub fn parse_stmt(&mut self, top_level: bool) -> PResult<Stmt> {
+    pub fn parse_stmt(&mut self, parse_ctx: StmtParseCtx, top_level: bool) -> PResult<Stmt> {
         trace_cur!(self, parse_stmt);
-        self.parse_stmt_like(false, top_level)
+        self.parse_stmt_like(parse_ctx, top_level)
     }
 
     fn parse_stmt_list_item(&mut self, top_level: bool) -> PResult<Stmt> {
         trace_cur!(self, parse_stmt_list_item);
-        self.parse_stmt_like(true, top_level)
+        self.parse_stmt_like(StmtParseCtx::None, top_level)
     }
 
     /// Parse a statement, declaration or module item.
-    fn parse_stmt_like<Type>(&mut self, include_decl: bool, top_level: bool) -> PResult<Type>
+    fn parse_stmt_like<Type>(&mut self, parse_ctx: StmtParseCtx, top_level: bool) -> PResult<Type>
     where
         Self: StmtLikeParser<'a, Type>,
         Type: IsDirective + From<Stmt>,
@@ -162,15 +169,13 @@ impl<'a, I: Tokens> Parser<I> {
             return self.handle_import_export(top_level, decorators);
         }
 
-        self.parse_stmt_content(start, include_decl, decorators)
+        self.parse_stmt_content(start, parse_ctx, decorators)
             .map(From::from)
     }
-
-    // TODO: use 'context' system from babel's version of this.
     fn parse_stmt_content(
         &mut self,
         start: BytePos,
-        include_decl: bool,
+        parse_ctx: StmtParseCtx,
         decorators: Vec<Decorator>,
     ) -> PResult<Stmt> {
         trace_cur!(self, parse_stmt_content);
@@ -211,25 +216,18 @@ impl<'a, I: Tokens> Parser<I> {
                 return self.parse_for_stmt();
             }
             tok!("function") => {
-                if !include_decl {
-                    self.emit_err(self.input.cur_span(), SyntaxError::DeclNotAllowed);
-                    // TODO: below message is more specific than above
-                    // panic!(
-                    //     "Function declaration not permitted at {:?}",
-                    //     self.input.cur_span()
-                    // );
+                if parse_ctx != StmtParseCtx::None {
+                    if self.ctx().strict {
+                        syntax_error!(self, SyntaxError::StrictFunction);
+                    } else if parse_ctx == StmtParseCtx::Other {
+                        syntax_error!(self, SyntaxError::SloppyFunction);
+                    }
                 }
-
                 return self.parse_fn_decl(decorators).map(Stmt::from);
             }
             tok!("class") => {
-                if !include_decl {
-                    self.emit_err(self.input.cur_span(), SyntaxError::DeclNotAllowed);
-                    // TODO: below message is more specific than above
-                    // panic!(
-                    //     "Class declaration not permitted at {:?}",
-                    //     self.input.cur_span()
-                    // );
+                if parse_ctx != StmtParseCtx::None {
+                    syntax_error!(self, SyntaxError::UnexpectedClassInSingleStatementCtx);
                 }
                 return self
                     .parse_class_decl(start, start, decorators)
@@ -254,12 +252,20 @@ impl<'a, I: Tokens> Parser<I> {
                 let v = self.parse_var_stmt(false)?;
                 return Ok(Stmt::Decl(Decl::Var(v)));
             }
-            tok!("const") if include_decl => {
+            tok!("const") => {
+                if parse_ctx != StmtParseCtx::None {
+                    syntax_error!(self, SyntaxError::UnexpectedLexicalDeclaration);
+                }
+
                 let v = self.parse_var_stmt(false)?;
                 return Ok(Stmt::Decl(Decl::Var(v)));
             }
             // 'let' can start an identifier reference.
-            tok!("let") if include_decl => {
+            tok!("let") => {
+                if parse_ctx != StmtParseCtx::None {
+                    syntax_error!(self, SyntaxError::UnexpectedLexicalDeclaration);
+                }
+
                 let strict = self.ctx().strict;
                 let is_keyword = match self.input.peek() {
                     Some(t) => t.follows_keyword_let(strict),
@@ -416,7 +422,10 @@ impl<'a, I: Tokens> Parser<I> {
             ..self.ctx()
         };
 
-        let body = self.with_ctx(ctx).parse_stmt(false).map(Box::new)?;
+        let body = self
+            .with_ctx(ctx)
+            .parse_stmt(StmtParseCtx::Other, false)
+            .map(Box::new)?;
 
         expect!(self, "while");
         let test = self.parse_header_expr()?;
@@ -456,7 +465,10 @@ impl<'a, I: Tokens> Parser<I> {
             is_continue_allowed: true,
             ..self.ctx()
         };
-        let body = self.with_ctx(ctx).parse_stmt(false).map(Box::new)?;
+        let body = self
+            .with_ctx(ctx)
+            .parse_stmt(StmtParseCtx::Other, false)
+            .map(Box::new)?;
 
         let span = span!(self, start);
         Ok(match head {
@@ -584,15 +596,14 @@ impl<'a, I: Tokens> Parser<I> {
         self.assert_and_bump(&tok!("if"));
 
         let test = self.parse_header_expr()?;
-        let consequent = {
-            // Annex B
-            if !self.ctx().strict && is!(self, "function") {
-                // TODO: report error?
-            }
-            self.parse_stmt(false).map(Box::new)?
-        };
+        let consequent = self
+            .parse_stmt(StmtParseCtx::IfOrLabel, false)
+            .map(Box::new)?;
         let alternate = if self.input.eat(&tok!("else")) {
-            Some(self.parse_stmt(false).map(Box::new)?)
+            Some(
+                self.parse_stmt(StmtParseCtx::IfOrLabel, false)
+                    .map(Box::new)?,
+            )
         } else {
             None
         };
@@ -960,7 +971,10 @@ impl<'a, I: Tokens> Parser<I> {
             is_continue_allowed: true,
             ..self.ctx()
         };
-        let body = self.with_ctx(ctx).parse_stmt(false).map(Box::new)?;
+        let body = self
+            .with_ctx(ctx)
+            .parse_stmt(StmtParseCtx::Other, false)
+            .map(Box::new)?;
 
         Ok(Stmt::While(WhileStmt {
             span: span!(self, start),
@@ -985,7 +999,10 @@ impl<'a, I: Tokens> Parser<I> {
             in_function: true,
             ..self.ctx()
         };
-        let body = self.with_ctx(ctx).parse_stmt(false).map(Box::new)?;
+        let body = self
+            .with_ctx(ctx)
+            .parse_stmt(StmtParseCtx::Other, false)
+            .map(Box::new)?;
 
         Ok(Stmt::With(WithStmt {
             span: span!(self, start),
@@ -1039,7 +1056,7 @@ impl<'a, I: Tokens> Parser<I> {
 
                 f.into()
             } else {
-                parser.parse_stmt(false)?
+                parser.parse_stmt(StmtParseCtx::IfOrLabel, false)?
             });
 
             {

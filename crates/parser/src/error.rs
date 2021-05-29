@@ -34,10 +34,13 @@ impl Error {
 #[non_exhaustive]
 // TODO: order
 pub enum SyntaxError {
+    UnexpectedClassInSingleStatementCtx,
+    SloppyFunction,
+    StrictFunction,
+    UnexpectedLexicalDeclaration,
     DuplicateRegExpFlags,
     MalformedRegExpFlags,
     Eof,
-    DeclNotAllowed,
 
     PrivateNameInInterface,
 
@@ -237,6 +240,18 @@ impl SyntaxError {
     // TODO: sort
     pub fn msg(&self) -> Cow<'static, str> {
         match self {
+            SyntaxError::UnexpectedClassInSingleStatementCtx => {
+                "Class cannot appear in a single-statement context".into()
+            }
+            SyntaxError::SloppyFunction => {
+                "In non-strict mode code, functions can only be declared at top level, inside a block, or as the body of an if statement".into()
+            }
+            SyntaxError::StrictFunction => {
+                "In strict mode code, functions can only be declared at top level or inside a block".into()
+            }
+            SyntaxError::UnexpectedLexicalDeclaration => {
+                "Lexical declaration cannot appear in a single-statement context".into()
+            }
             SyntaxError::DuplicateRegExpFlags => "Duplicate regular expression flag".into(),
             SyntaxError::MalformedRegExpFlags => "Invalid regular expression flag".into(),
             SyntaxError::PrivateNameInInterface => {
@@ -449,7 +464,6 @@ impl SyntaxError {
             SyntaxError::TS2703 => {
                 "The operand of a delete operator must be a property reference.".into()
             }
-            SyntaxError::DeclNotAllowed => "Declaration is now allowed".into(),
             SyntaxError::InvalidSuperCall => "Invalid `super()`".into(),
             SyntaxError::InvalidSuper => "Invalid access to super".into(),
             SyntaxError::ArrowNotAllowed => "An arrow function is not allowed here".into(),

@@ -66,13 +66,6 @@ const IGNORED_PASS_TESTS: &[&str] = &[
     "e1387fe892984e2b.js",
     "e71c1d5f0b6b833c.js",
     "e8ea384458526db0.js",
-    // We don't implement Annex B fully.
-    "1c1e2a43fe5515b6.js",
-    "3dabeca76119d501.js",
-    "52aeec7b8da212a2.js",
-    "59ae0289778b80cd.js",
-    "a4d62a651f69d815.js",
-    "c06df922631aeabc.js",
     // Wrong test - strict mode
     "8f8bfb27569ac008.js",
     "ce569e89a005c02a.js",
