@@ -24,8 +24,16 @@ mod common;
 const IGNORED_PASS_TESTS: &[&str] = &[
     // Temporarily ignored
     "431ecef8c85d4d24.js",
+    // Temporarily ignored. Appears to result from incorrect lexing of number
+    // literals.
+    // Sources:
+    // Pass: 1000000000000000000000000000000
+    // Pass-explicit: 1e30;
+    // The first is lexed to a value of "999999999999999900000000000000.0" while
+    // the second produces "1000000000000000000000000000000.0" (which appears to be correct).
+    // For the test to pass, the values must be identical.
     "8386fbff927a9e0e.js",
-    // Stack size (Stupid parens)
+    // Stack size (Excessive parens)
     "6b5e7e125097d439.js",
     "714be6d28082eaa7.js",
     "882910de7dd1aef9.js",
@@ -107,19 +115,74 @@ fn error_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
         "d28e80d99f819136.js",
         "92b6af54adef3624.js",
         "ef2d369cccc5386c.js",
-        // Temporarily ignore tests for using octal escape before use strict
+        // Temporarily ignore tests for using octal escape before use strict.
+        // TODO: these may already be fixed
         "147fa078a7436e0e.js",
         "15a6123f6b825c38.js",
         "3bc2b27a7430f818.js",
         // Temporarily ignored
-        "2fa321f0374c7017.js",
         "3dbb6e166b14a6c0.js",
-        "66e383bfd18e66ab.js",
-        "78c215fabdf13bae.js",
-        "bf49ec8d96884562.js",
-        "e4a43066905a597b.js",
-        "98204d734f8c72b3.js",
+        // Temporarily ignored. Further information:
+        // Source: var _𖫵 = 11;
+        // We currently produce lexer errors, which results in incorrect parsing/errors.
+        // Babel's output:
+        // "Unexpected character"
+        // Firefox's output:
+        // "SyntaxError: illegal character U+16AF5"
+        // Chrome's output:
+        // "SyntaxError: Invalid or unexpected token"
+        // SWC's output (which appears unhelpful/incorrect):
+        // "error: Expected a semicolon"
+        "2fa321f0374c7017.js",
+        // Temporarily ignored. Further information:
+        // These tests appear be valid javascript and should be pass tests
+        // rather than fail ones. Try running them in browser consoles.
         "ef81b93cf9bdb4ec.js",
+        "98204d734f8c72b3.js",
+        //
+        //
+        // The following tests are temporarily ignored. They appear to contain
+        // invalid regexps, so correctly failing them will require some level
+        // of regex validation in the lexer.
+        //
+        //
+        // Source: /{*/u;
+        // It looks like this test is right to fail.
+        // Firefox's output:
+        // "SyntaxError: raw bracket is not allowed in regular expression with unicode flag"
+        // Chrome's output:
+        // "SyntaxError: Invalid regular expression: /{*/: Lone quantifier brackets"
+        // Babel does not throw an error (which appear to be incorrect behaviour)
+        "78c215fabdf13bae.js",
+        // Source: /(?!.){0,}?/u
+        // It looks like this test is right to fail.
+        // Firefox's output:
+        // "SyntaxError: invalid quantifier in regular expression"
+        // Chrome's output:
+        // "SyntaxError: Invalid regular expression: /(?!.){0,}?/: Invalid quantifier"
+        // Babel does not throw an error (which appear to be incorrect behaviour)
+        "bf49ec8d96884562.js",
+        // Source: /}?/u;
+        // It looks like this test is right to fail.
+        // Firefox's output:
+        // "SyntaxError: raw bracket is not allowed in regular expression with unicode flag"
+        // Chrome's output:
+        // "SyntaxError: Invalid regular expression: /}?/: Lone quantifier brackets"
+        // Babel does not throw an error (which appear to be incorrect behaviour)
+        "e4a43066905a597b.js",
+        // Source code: /\1/u
+        // It appears as though "\1" is a decimal escape that refers to a
+        // capturing group by index. When the "u" flag is set, an error is
+        // thrown if the value of the escape does not match the index of a
+        // capturing group.
+        // Examples to try in JS console of a browser:
+        // /\1/u;
+        // /\1/s;
+        // /()\1/u;
+        // /()\2/u;
+        // /()\2/;
+        // Possibly related: the " AtomEscape :: DecimalEscape" section of https://tc39.es/ecma262/#sec-patterns-static-semantics-early-errors
+        "66e383bfd18e66ab.js",
     ];
 
     let root = {
