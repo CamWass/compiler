@@ -617,10 +617,10 @@ impl<'a, I: Tokens> Parser<I> {
         let arg = if is!(self, ';') {
             None
         } else {
-            let arg = self.include_in_expr(true).parse_expr().map(Some)?;
-            expect!(self, ';');
-            arg
+            self.include_in_expr(true).parse_expr().map(Some)?
         };
+
+        expect!(self, ';');
 
         if !self.ctx().in_function {
             self.emit_err(span!(self, start), SyntaxError::ReturnNotAllowed);
