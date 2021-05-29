@@ -225,7 +225,7 @@ macro_rules! return_if_arrow {
 
 macro_rules! trace_cur {
     ($p:expr, $name:ident) => {{
-        println!("{}: {:?}", stringify!($name), $p.input.cur());
+        // println!("{}: {:?}", stringify!($name), $p.input.cur());
     }};
 }
 
