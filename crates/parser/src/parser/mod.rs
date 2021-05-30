@@ -11,7 +11,7 @@ mod util;
 
 pub use self::input::Tokens;
 use crate::{
-    context::Context,
+    context::{Context, YesNoMaybe},
     error::{Error, SyntaxError},
     lexer::Lexer,
     token::Token,
@@ -65,7 +65,7 @@ impl<I: Tokens> Parser<I> {
         trace_cur!(self, parse_script);
 
         let ctx = Context {
-            module: false,
+            module: YesNoMaybe::No,
             ..self.ctx()
         };
         self.set_ctx(ctx);
@@ -81,56 +81,40 @@ impl<I: Tokens> Parser<I> {
         })
     }
 
-    // /// Returns [Module] if it's a module and returns [Script] if it's not a
-    // /// module.
-    // ///
-    // /// Note: This is not perfect yet. It means, some strict mode violations may
-    // /// not be reported even if the method returns [Module].
-    // pub fn parse_program(&mut self) -> PResult<Program> {
-    //     let start = self.input.cur_pos();
-    //     let shebang = self.parse_shebang()?;
+    /// Returns [Module] if it's a module and returns [Script] if it's not a
+    /// module.
+    pub fn parse_program(&mut self) -> PResult<Program> {
+        let start = self.input.cur_pos();
+        let shebang = self.parse_shebang()?;
 
-    //     let body: Vec<ModuleItem> = self.parse_block_body(true, true, None)?;
-    //     let has_module_item = body.iter().any(|item| match item {
-    //         ModuleItem::ModuleDecl(..) => true,
-    //         _ => false,
-    //     });
-    //     if has_module_item && !self.ctx().module {
-    //         let ctx = Context {
-    //             module: true,
-    //             strict: true,
-    //             ..self.ctx()
-    //         };
-    //         // Emit buffered strict mode / module code violations
-    //         self.input.set_ctx(ctx);
-    //     }
+        let body: Vec<ModuleItem> = self.parse_block_body(true, true, None)?;
 
-    //     Ok(if has_module_item {
-    //         Program::Module(Module {
-    //             span: span!(self, start),
-    //             body,
-    //             shebang,
-    //         })
-    //     } else {
-    //         let body = body
-    //             .into_iter()
-    //             .map(|item| match item {
-    //                 ModuleItem::ModuleDecl(_) => unreachable!("Module is handled above"),
-    //                 ModuleItem::Stmt(stmt) => stmt,
-    //             })
-    //             .collect();
-    //         Program::Script(Script {
-    //             span: span!(self, start),
-    //             body,
-    //             shebang,
-    //         })
-    //     })
-    // }
+        Ok(if !self.ctx().is_module() {
+            let body = body
+                .into_iter()
+                .map(|item| match item {
+                    ModuleItem::ModuleDecl(_) => unreachable!("Module is handled above"),
+                    ModuleItem::Stmt(stmt) => stmt,
+                })
+                .collect();
+            Program::Script(Script {
+                span: span!(self, start),
+                body,
+                shebang,
+            })
+        } else {
+            Program::Module(Module {
+                span: span!(self, start),
+                body,
+                shebang,
+            })
+        })
+    }
 
     pub fn parse_module(&mut self) -> PResult<Module> {
         let ctx = Context {
-            module: true,
-            strict: true,
+            module: YesNoMaybe::Yes,
+            strict: YesNoMaybe::Yes,
             ..self.ctx()
         };
         // Module code is always in strict mode
@@ -188,6 +172,6 @@ impl<I: Tokens> Parser<I> {
         let error = Error {
             error: Box::new((span, error)),
         };
-        self.input_ref().add_module_mode_error(error);
+        self.input_ref().add_strict_mode_error(error);
     }
 }

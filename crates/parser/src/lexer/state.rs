@@ -1,5 +1,10 @@
 use super::Lexer;
-use crate::{context::Context, error::Error, token::*, JscTarget, Tokens};
+use crate::{
+    context::{Context, YesNoMaybe},
+    error::Error,
+    token::*,
+    JscTarget, Tokens,
+};
 use enum_kind::Kind;
 use global_common::{input::Input, BytePos};
 use std::mem::take;
@@ -78,10 +83,16 @@ impl From<&Token> for TokenType {
 
 impl<I: Input> Tokens for Lexer<I> {
     fn set_ctx(&mut self, ctx: Context) {
-        if ctx.module && !self.module_errors.borrow().is_empty() {
+        if ctx.is_module() && !self.module_errors.borrow().is_empty() {
             let mut module_errors = self.module_errors.borrow_mut();
             self.errors.borrow_mut().append(&mut *module_errors);
         }
+
+        if ctx.is_strict() && !self.strict_errors.borrow().is_empty() {
+            let mut strict_errors = self.strict_errors.borrow_mut();
+            self.errors.borrow_mut().append(&mut *strict_errors);
+        }
+
         self.ctx = ctx
     }
 
@@ -120,11 +131,39 @@ impl<I: Input> Tokens for Lexer<I> {
     }
 
     fn add_module_mode_error(&self, error: Error) {
-        if self.ctx.module {
-            self.add_error(error);
-            return;
+        match self.ctx.module {
+            YesNoMaybe::Yes => {
+                // Definitely in a module, immediately add error.
+                self.add_error(error);
+            }
+            YesNoMaybe::No => {
+                // Definitely not in a module, discard error.
+            }
+            YesNoMaybe::Maybe => {
+                // Not yet sure if we are in a module, buffer error.
+                self.module_errors.borrow_mut().push(error);
+            }
         }
-        self.module_errors.borrow_mut().push(error);
+    }
+
+    fn add_strict_mode_error(&self, error: Error) {
+        match self.ctx.strict {
+            YesNoMaybe::Yes => {
+                // Definitely in strict mode, immediately add error.
+                self.add_error(error);
+            }
+            YesNoMaybe::No => {
+                // Definitely not in strict mode, discard error.
+            }
+            YesNoMaybe::Maybe => {
+                // Not yet sure if we are in strict mode, buffer error.
+                self.strict_errors.borrow_mut().push(error);
+            }
+        }
+    }
+
+    fn clear_strict_mode_errors(&mut self) {
+        self.strict_errors.borrow_mut().clear();
     }
 }
 

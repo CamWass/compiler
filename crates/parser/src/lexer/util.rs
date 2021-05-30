@@ -171,7 +171,7 @@ impl<I: Input> Lexer<I> {
     #[cold]
     #[inline(never)]
     pub(super) fn emit_strict_mode_error_span(&mut self, span: Span, kind: SyntaxError) {
-        if self.ctx.strict {
+        if self.ctx.is_strict() {
             self.emit_error_span(span, kind);
             return;
         }
@@ -180,7 +180,7 @@ impl<I: Input> Lexer<I> {
             error: Box::new((span, kind)),
         };
 
-        self.add_module_mode_error(err);
+        self.add_strict_mode_error(err);
     }
 
     #[cold]
@@ -190,8 +190,7 @@ impl<I: Input> Lexer<I> {
         self.emit_module_mode_error_span(Span::new(span.lo, span.hi, span.ctxt), kind)
     }
 
-    /// Some codes are valid in a strict mode script  but invalid in module
-    /// code.
+    /// Some code is valid in a strict mode script but invalid in a module.
     #[cold]
     #[inline(never)]
     pub(super) fn emit_module_mode_error_span(&mut self, span: Span, kind: SyntaxError) {

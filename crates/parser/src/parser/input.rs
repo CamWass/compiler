@@ -27,14 +27,30 @@ pub trait Tokens: Clone + Iterator<Item = TokenAndSpan> {
     /// code.
     fn add_error(&self, error: Error);
 
-    /// Add an error which is valid syntax in script mode.
+    /// Add an error for code which is only invalid in module mode.
     ///
-    /// This errors should be dropped if it's not a module.
-    ///
-    /// Implementor should check for if [Context].module, and buffer errors if
-    /// module is false. Also, implementors should move errors to the error
-    /// buffer on set_ctx if the parser mode become module mode.
+    /// If [Context].module is true, implementers should immediately move the
+    /// error to the general error buffer.
+    /// If it is false, implementers should buffer the error until they are certain
+    /// whether they are parsing a module or not. If they are parsing a module,
+    /// the buffered strict errors should be moved to the general error buffer.
+    /// If they are parsing a script, they should discard all buffered module errors.
     fn add_module_mode_error(&self, error: Error);
+
+    /// Add an error for a strict mode violation.
+    ///
+    /// If [Context].strict is true, implementers should immediately move the
+    /// error to the general error buffer.
+    /// If it is false, implementers should buffer the error until they are certain
+    /// whether the current block of code is in strict mode or not. If they are
+    /// certain it is strict, the buffered strict errors should be moved to the
+    /// general error buffer. If they are certain it is **NOT** strict, they
+    /// should discard all buffered strict errors.
+    fn add_strict_mode_error(&self, error: Error);
+
+    /// Discards buffered strict mode errors. Implementers should call this
+    /// whenever they enter a scope that could contain strict mode directives.
+    fn clear_strict_mode_errors(&mut self);
 
     fn take_errors(&mut self) -> Vec<Error>;
 }
@@ -238,6 +254,12 @@ impl<I: Tokens> Buffer<I> {
     #[inline]
     pub fn target(&self) -> JscTarget {
         self.iter.target()
+    }
+
+    /// Discards buffered strict mode errors.
+    #[inline]
+    pub(crate) fn clear_strict_mode_errors(&mut self) {
+        self.iter.clear_strict_mode_errors();
     }
 
     // #[inline]

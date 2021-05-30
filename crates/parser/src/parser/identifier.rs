@@ -108,7 +108,7 @@ impl<'a, I: Tokens> Parser<I> {
             match w {
                 // It is a Syntax Error if the goal symbol of the syntactic grammar is Module
                 // and the StringValue of IdentifierName is "await".
-                Word::Keyword(Keyword::Await) if parser.ctx().module => {
+                Word::Keyword(Keyword::Await) if parser.ctx().is_module() => {
                     syntax_error!(parser, parser.input.prev_span(), SyntaxError::ExpectedIdent)
                 }
                 Word::Keyword(Keyword::Let) => Ok(js_word!("let")),

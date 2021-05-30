@@ -1,5 +1,8 @@
 use super::*;
-use crate::{context::Context, token::Token};
+use crate::{
+    context::{Context, YesNoMaybe},
+    token::Token,
+};
 use global_common::Span;
 use std::ops::{Deref, DerefMut};
 
@@ -58,10 +61,10 @@ pub(super) trait ExprExt {
     fn as_expr(&self) -> &Expr;
 
     /// "IsValidSimpleAssignmentTarget" from spec.
-    fn is_valid_simple_assignment_target(&self, strict: bool) -> bool {
+    fn is_valid_simple_assignment_target(&self, strict: YesNoMaybe) -> bool {
         match *self.as_expr() {
             Expr::Ident(Ident { ref sym, .. }) => {
-                if strict && (&*sym == "arguments" || &*sym == "eval") {
+                if strict == YesNoMaybe::Yes && (&*sym == "arguments" || &*sym == "eval") {
                     return false;
                 }
                 true
@@ -170,7 +173,7 @@ impl<'a, I: Tokens> Parser<I> {
 
     pub(super) fn strict_mode(&mut self) -> WithCtx<I> {
         let ctx = Context {
-            strict: true,
+            strict: YesNoMaybe::Yes,
             ..self.ctx()
         };
         self.with_ctx(ctx)

@@ -1,4 +1,5 @@
 use super::*;
+use crate::context::YesNoMaybe;
 
 impl<'a, I: Tokens> Parser<I> {
     #[allow(clippy::cognitive_complexity)]
@@ -31,11 +32,11 @@ impl<'a, I: Tokens> Parser<I> {
 
         // It's now import statement
 
-        if !self.ctx().module {
+        if !self.ctx().is_module() {
             // Switch to module mode
             let ctx = Context {
-                module: true,
-                strict: true,
+                module: YesNoMaybe::Yes,
+                strict: YesNoMaybe::Yes,
                 ..self.ctx()
             };
             self.set_ctx(ctx);
@@ -203,11 +204,11 @@ impl<'a, I: Tokens> Parser<I> {
 
     #[allow(clippy::cognitive_complexity)]
     fn parse_export(&mut self, decorators: Vec<Decorator>) -> PResult<ModuleDecl> {
-        if !self.ctx().module {
+        if !self.ctx().is_module() {
             // Switch to module mode
             let ctx = Context {
-                module: true,
-                strict: true,
+                module: YesNoMaybe::Yes,
+                strict: YesNoMaybe::Yes,
                 ..self.ctx()
             };
             self.set_ctx(ctx);
@@ -285,10 +286,7 @@ impl<'a, I: Tokens> Parser<I> {
                     && self
                         .input
                         .peek()
-                        .map(|t| {
-                            // module code is always in strict mode.
-                            t.follows_keyword_let(true)
-                        })
+                        .map(|t| t.follows_keyword_let())
                         .unwrap_or(false))
         {
             self.parse_var_stmt(false).map(Decl::Var)?

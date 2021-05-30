@@ -39,6 +39,15 @@ pub(super) trait IsDirective {
             _ => false,
         }
     }
+    fn is_valid_directive(&self) -> bool {
+        match self.as_ref() {
+            Some(&Stmt::Expr(ref expr)) => match *expr.expr {
+                Expr::Lit(Lit::Str(Str { .. })) => true,
+                _ => false,
+            },
+            _ => false,
+        }
+    }
 }
 
 impl IsDirective for Stmt {
@@ -108,6 +117,18 @@ impl<'a, I: Tokens> Parser<I> {
 
         let old_ctx = self.ctx();
 
+        if allow_directives && old_ctx.strict == YesNoMaybe::No {
+            let ctx = Context {
+                strict: YesNoMaybe::Maybe,
+                ..old_ctx
+            };
+            self.set_ctx(ctx);
+        }
+
+        if !top_level {
+            self.input.clear_strict_mode_errors();
+        }
+
         let mut stmts = vec![];
         while {
             let c = self.input.cur();
@@ -115,22 +136,39 @@ impl<'a, I: Tokens> Parser<I> {
         } {
             let stmt = self.parse_stmt_like(StmtParseCtx::None, top_level)?;
             if allow_directives {
-                allow_directives = false;
-                if stmt.is_use_strict() {
-                    let ctx = Context {
-                        strict: true,
-                        ..old_ctx
-                    };
-                    self.set_ctx(ctx);
+                if stmt.is_valid_directive() {
+                    if stmt.is_use_strict() {
+                        let ctx = Context {
+                            strict: YesNoMaybe::Yes,
+                            ..old_ctx
+                        };
+                        self.set_ctx(ctx);
 
-                    if self.input.knows_cur() && !is!(self, ';') {
-                        unreachable!(
-                            "'use strict'; directive requires parser.input.cur to be empty or \
-                             '}}', but current token was: {:?}",
-                            self.input.cur()
-                        )
+                        if self.input.knows_cur() && !is!(self, ';') {
+                            unreachable!(
+                                "'use strict'; directive requires parser.input.cur to be empty or \
+                                 '}}', but current token was: {:?}",
+                                self.input.cur()
+                            )
+                        }
+                    }
+                } else {
+                    allow_directives = false;
+
+                    if self.ctx().strict == YesNoMaybe::Maybe {
+                        let ctx = Context {
+                            strict: YesNoMaybe::No,
+                            ..self.ctx()
+                        };
+                        self.set_ctx(ctx);
                     }
                 }
+            } else if self.ctx().strict == YesNoMaybe::Maybe {
+                let ctx = Context {
+                    strict: YesNoMaybe::No,
+                    ..self.ctx()
+                };
+                self.set_ctx(ctx);
             }
 
             stmts.push(stmt);
@@ -140,7 +178,9 @@ impl<'a, I: Tokens> Parser<I> {
             self.input.bump();
         }
 
-        self.set_ctx(old_ctx);
+        if !top_level {
+            self.set_ctx(old_ctx);
+        }
 
         Ok(stmts)
     }
@@ -217,7 +257,7 @@ impl<'a, I: Tokens> Parser<I> {
             }
             tok!("function") => {
                 if parse_ctx != StmtParseCtx::None {
-                    if self.ctx().strict {
+                    if self.ctx().is_strict() {
                         syntax_error!(self, SyntaxError::StrictFunction);
                     } else if parse_ctx == StmtParseCtx::Other {
                         syntax_error!(self, SyntaxError::SloppyFunction);
@@ -266,9 +306,8 @@ impl<'a, I: Tokens> Parser<I> {
                     syntax_error!(self, SyntaxError::UnexpectedLexicalDeclaration);
                 }
 
-                let strict = self.ctx().strict;
                 let is_keyword = match self.input.peek() {
-                    Some(t) => t.follows_keyword_let(strict),
+                    Some(t) => t.follows_keyword_let(),
                     _ => false,
                 };
 
@@ -508,10 +547,8 @@ impl<'a, I: Tokens> Parser<I> {
     }
 
     fn parse_for_head(&mut self) -> PResult<ForHead> {
-        let strict = self.ctx().strict;
-
         if is_one_of!(self, "const", "var")
-            || (self.input.is(&tok!("let")) && peek!(self)?.follows_keyword_let(strict))
+            || (self.input.is(&tok!("let")) && peek!(self)?.follows_keyword_let())
         {
             let decl = self.parse_var_stmt(true)?;
 

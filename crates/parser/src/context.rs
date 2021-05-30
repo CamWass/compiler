@@ -2,12 +2,25 @@ use crate::token::{Keyword, Word};
 use global_common::Span;
 use swc_atoms::{js_word, JsWord};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum YesNoMaybe {
+    Yes,
+    No,
+    Maybe,
+}
+
+impl Default for YesNoMaybe {
+    fn default() -> Self {
+        Self::Maybe
+    }
+}
+
 /// Syntactic context.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Context {
     /// Is in module code?
-    pub module: bool,
-    pub strict: bool,
+    pub module: YesNoMaybe,
+    pub strict: YesNoMaybe,
     pub include_in_expr: bool,
     /// If true, await expression is parsed, and "await" is treated as a
     /// keyword.
@@ -44,11 +57,19 @@ pub struct Context {
 }
 
 impl Context {
+    #[inline]
+    pub(crate) fn is_strict(&self) -> bool {
+        self.strict == YesNoMaybe::Yes
+    }
+    #[inline]
+    pub(crate) fn is_module(&self) -> bool {
+        self.module == YesNoMaybe::Yes
+    }
     pub(crate) fn is_reserved(self, word: &Word) -> bool {
         match *word {
-            Word::Keyword(Keyword::Let) => self.strict,
-            Word::Keyword(Keyword::Await) => self.in_async || self.strict,
-            Word::Keyword(Keyword::Yield) => self.in_generator || self.strict,
+            Word::Keyword(Keyword::Let) => self.is_strict(),
+            Word::Keyword(Keyword::Await) => self.in_async || self.is_strict(),
+            Word::Keyword(Keyword::Yield) => self.in_generator || self.is_strict(),
 
             Word::Null
             | Word::True
@@ -95,7 +116,7 @@ impl Context {
             | Word::Ident(js_word!("interface"))
             | Word::Ident(js_word!("private"))
             | Word::Ident(js_word!("public"))
-                if self.strict =>
+                if self.is_strict() =>
             {
                 true
             }
@@ -106,9 +127,9 @@ impl Context {
 
     pub fn is_reserved_word(self, word: &JsWord) -> bool {
         match *word {
-            js_word!("let") => self.strict,
-            js_word!("await") => self.in_async || self.strict,
-            js_word!("yield") => self.in_generator || self.strict,
+            js_word!("let") => self.is_strict(),
+            js_word!("await") => self.in_async || self.is_strict(),
+            js_word!("yield") => self.in_generator || self.is_strict(),
 
             js_word!("null")
             | js_word!("true")
@@ -155,7 +176,7 @@ impl Context {
             | js_word!("interface")
             | js_word!("private")
             | js_word!("public")
-                if self.strict =>
+                if self.is_strict() =>
             {
                 true
             }

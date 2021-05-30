@@ -28,6 +28,7 @@ pub struct Lexer<I: Input> {
     pub(crate) target: JscTarget,
     errors: Rc<RefCell<Vec<Error>>>,
     module_errors: Rc<RefCell<Vec<Error>>>,
+    strict_errors: Rc<RefCell<Vec<Error>>>,
 }
 
 impl<I: Input> FusedIterator for Lexer<I> {}
@@ -90,6 +91,7 @@ impl<I: Input> Lexer<I> {
             ctx: Default::default(),
             errors: Default::default(),
             module_errors: Default::default(),
+            strict_errors: Default::default(),
         }
     }
 
