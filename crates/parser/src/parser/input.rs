@@ -48,9 +48,8 @@ pub trait Tokens: Clone + Iterator<Item = TokenAndSpan> {
     /// should discard all buffered strict errors.
     fn add_strict_mode_error(&self, error: Error);
 
-    /// Discards buffered strict mode errors. Implementers should call this
-    /// whenever they enter a scope that could contain strict mode directives.
-    fn clear_strict_mode_errors(&mut self);
+    /// Converts buffered strict mode errors into module errors.
+    fn convert_strict_mode_errors_to_module_errors(&mut self);
 
     fn take_errors(&mut self) -> Vec<Error>;
 }
@@ -256,10 +255,10 @@ impl<I: Tokens> Buffer<I> {
         self.iter.target()
     }
 
-    /// Discards buffered strict mode errors.
+    /// Converts buffered strict mode errors into module errors.
     #[inline]
-    pub(crate) fn clear_strict_mode_errors(&mut self) {
-        self.iter.clear_strict_mode_errors();
+    pub(crate) fn convert_strict_mode_errors_to_module_errors(&mut self) {
+        self.iter.convert_strict_mode_errors_to_module_errors();
     }
 
     // #[inline]

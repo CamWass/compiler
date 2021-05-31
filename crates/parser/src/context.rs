@@ -15,12 +15,24 @@ impl Default for YesNoMaybe {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum YesMaybe {
+    Yes,
+    Maybe,
+}
+
+impl Default for YesMaybe {
+    fn default() -> Self {
+        Self::Maybe
+    }
+}
+
 /// Syntactic context.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Context {
     /// Is in module code?
     pub module: YesNoMaybe,
-    pub strict: YesNoMaybe,
+    pub strict: YesMaybe,
     pub include_in_expr: bool,
     /// If true, await expression is parsed, and "await" is treated as a
     /// keyword.
@@ -59,7 +71,7 @@ pub struct Context {
 impl Context {
     #[inline]
     pub(crate) fn is_strict(&self) -> bool {
-        self.strict == YesNoMaybe::Yes
+        self.strict == YesMaybe::Yes
     }
     #[inline]
     pub(crate) fn is_module(&self) -> bool {

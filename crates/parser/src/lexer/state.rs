@@ -1,6 +1,6 @@
 use super::Lexer;
 use crate::{
-    context::{Context, YesNoMaybe},
+    context::{Context, YesMaybe, YesNoMaybe},
     error::Error,
     token::*,
     JscTarget, Tokens,
@@ -148,22 +148,32 @@ impl<I: Input> Tokens for Lexer<I> {
 
     fn add_strict_mode_error(&self, error: Error) {
         match self.ctx.strict {
-            YesNoMaybe::Yes => {
+            YesMaybe::Yes => {
                 // Definitely in strict mode, immediately add error.
                 self.add_error(error);
             }
-            YesNoMaybe::No => {
-                // Definitely not in strict mode, discard error.
-            }
-            YesNoMaybe::Maybe => {
+            YesMaybe::Maybe => {
                 // Not yet sure if we are in strict mode, buffer error.
                 self.strict_errors.borrow_mut().push(error);
             }
         }
     }
 
-    fn clear_strict_mode_errors(&mut self) {
-        self.strict_errors.borrow_mut().clear();
+    fn convert_strict_mode_errors_to_module_errors(&mut self) {
+        // Even once we have stopped parsing directives, we still can not be
+        // certain of strict mode because we may later discover that we are
+        // paring a module, which requires us to reinterpret the code using
+        // strict mode. Therefore, rather than discarding any trapped strict
+        // mode errors, we convert them into module errors. The logic above, in
+        // add_module_mode_error, will decide whether to discard, buffer, or add
+        // the error to the main error buffer, depending on if we are certain
+        // whether we are paring a module or not.
+
+        let mut strict_errors = self.strict_errors.borrow_mut();
+
+        for error in strict_errors.drain(..) {
+            self.add_module_mode_error(error);
+        }
     }
 }
 

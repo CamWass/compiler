@@ -1,6 +1,6 @@
 use super::{input::Tokens, pat::PatType, *};
 use crate::{
-    context::Context,
+    context::{Context, YesMaybe},
     token::{Token, Word},
 };
 use global_common::{BytePos, Span, Spanned};
@@ -105,7 +105,7 @@ impl<'a, I: Tokens> StmtLikeParser<'a, Stmt> for Parser<I> {
 impl<'a, I: Tokens> Parser<I> {
     pub(super) fn parse_block_body<Type>(
         &mut self,
-        mut allow_directives: bool,
+        allow_directives: bool,
         top_level: bool,
         end: Option<&Token>,
     ) -> PResult<Vec<Type>>
@@ -117,17 +117,8 @@ impl<'a, I: Tokens> Parser<I> {
 
         let old_ctx = self.ctx();
 
-        if allow_directives && old_ctx.strict == YesNoMaybe::No {
-            let ctx = Context {
-                strict: YesNoMaybe::Maybe,
-                ..old_ctx
-            };
-            self.set_ctx(ctx);
-        }
-
-        if !top_level {
-            self.input.clear_strict_mode_errors();
-        }
+        let mut parsed_non_directive = false;
+        let mut has_strict_mode_directive = false;
 
         let mut stmts = vec![];
         while {
@@ -135,40 +126,37 @@ impl<'a, I: Tokens> Parser<I> {
             c != end
         } {
             let stmt = self.parse_stmt_like(StmtParseCtx::None, top_level)?;
-            if allow_directives {
+
+            if allow_directives && !parsed_non_directive {
                 if stmt.is_valid_directive() {
-                    if stmt.is_use_strict() {
+                    if !has_strict_mode_directive && stmt.is_use_strict() {
+                        has_strict_mode_directive = true;
+
                         let ctx = Context {
-                            strict: YesNoMaybe::Yes,
+                            strict: YesMaybe::Yes,
                             ..old_ctx
                         };
                         self.set_ctx(ctx);
-
-                        if self.input.knows_cur() && !is!(self, ';') {
-                            unreachable!(
-                                "'use strict'; directive requires parser.input.cur to be empty or \
-                                 '}}', but current token was: {:?}",
-                                self.input.cur()
-                            )
-                        }
                     }
                 } else {
-                    allow_directives = false;
+                    parsed_non_directive = true;
 
-                    if self.ctx().strict == YesNoMaybe::Maybe {
-                        let ctx = Context {
-                            strict: YesNoMaybe::No,
-                            ..self.ctx()
-                        };
-                        self.set_ctx(ctx);
-                    }
+                    // Once we have stopped parsing directives, we know that
+                    // strict mode will not change within the block, and we have
+                    // a good idea of whether we are in strict mode or not.
+                    // However, there may be strict mode errors that were
+                    // buffered while we were still uncertain of strict mode.
+                    // Just because we have not encountered a "use strict"
+                    // directive does not guarantee that the code is not in
+                    // strict mode - we may later encounter a module declaration
+                    // (import/export), which requires us to reinterpret the
+                    // code using strict mode. Therefore, rather than discarding
+                    // the strict mode errors, we convert the strict mode errors
+                    // into module errors. This way they can later be emitted,
+                    // if necessary.
+
+                    self.input.convert_strict_mode_errors_to_module_errors();
                 }
-            } else if self.ctx().strict == YesNoMaybe::Maybe {
-                let ctx = Context {
-                    strict: YesNoMaybe::No,
-                    ..self.ctx()
-                };
-                self.set_ctx(ctx);
             }
 
             stmts.push(stmt);
@@ -1050,6 +1038,10 @@ impl<'a, I: Tokens> Parser<I> {
 
     pub(super) fn parse_block(&mut self, allow_directives: bool) -> PResult<BlockStmt> {
         let start = self.input.cur_pos();
+
+        if allow_directives {
+            self.input.convert_strict_mode_errors_to_module_errors();
+        }
 
         expect!(self, '{');
 

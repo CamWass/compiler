@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    context::{Context, YesNoMaybe},
+    context::{Context, YesMaybe},
     token::Token,
 };
 use global_common::Span;
@@ -61,10 +61,10 @@ pub(super) trait ExprExt {
     fn as_expr(&self) -> &Expr;
 
     /// "IsValidSimpleAssignmentTarget" from spec.
-    fn is_valid_simple_assignment_target(&self, strict: YesNoMaybe) -> bool {
+    fn is_valid_simple_assignment_target(&self, strict: YesMaybe) -> bool {
         match *self.as_expr() {
             Expr::Ident(Ident { ref sym, .. }) => {
-                if strict == YesNoMaybe::Yes && (&*sym == "arguments" || &*sym == "eval") {
+                if strict == YesMaybe::Yes && (&*sym == "arguments" || &*sym == "eval") {
                     return false;
                 }
                 true
@@ -173,7 +173,7 @@ impl<'a, I: Tokens> Parser<I> {
 
     pub(super) fn strict_mode(&mut self) -> WithCtx<I> {
         let ctx = Context {
-            strict: YesNoMaybe::Yes,
+            strict: YesMaybe::Yes,
             ..self.ctx()
         };
         self.with_ctx(ctx)

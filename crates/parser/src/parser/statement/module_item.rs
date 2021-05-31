@@ -1,5 +1,5 @@
 use super::*;
-use crate::context::YesNoMaybe;
+use crate::context::{YesMaybe, YesNoMaybe};
 
 impl<'a, I: Tokens> Parser<I> {
     #[allow(clippy::cognitive_complexity)]
@@ -36,7 +36,7 @@ impl<'a, I: Tokens> Parser<I> {
             // Switch to module mode
             let ctx = Context {
                 module: YesNoMaybe::Yes,
-                strict: YesNoMaybe::Yes,
+                strict: YesMaybe::Yes,
                 ..self.ctx()
             };
             self.set_ctx(ctx);
@@ -208,7 +208,7 @@ impl<'a, I: Tokens> Parser<I> {
             // Switch to module mode
             let ctx = Context {
                 module: YesNoMaybe::Yes,
-                strict: YesNoMaybe::Yes,
+                strict: YesMaybe::Yes,
                 ..self.ctx()
             };
             self.set_ctx(ctx);

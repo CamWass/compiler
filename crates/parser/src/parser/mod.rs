@@ -11,7 +11,7 @@ mod util;
 
 pub use self::input::Tokens;
 use crate::{
-    context::{Context, YesNoMaybe},
+    context::{Context, YesMaybe, YesNoMaybe},
     error::{Error, SyntaxError},
     lexer::Lexer,
     token::Token,
@@ -114,7 +114,7 @@ impl<I: Tokens> Parser<I> {
     pub fn parse_module(&mut self) -> PResult<Module> {
         let ctx = Context {
             module: YesNoMaybe::Yes,
-            strict: YesNoMaybe::Yes,
+            strict: YesMaybe::Yes,
             ..self.ctx()
         };
         // Module code is always in strict mode
