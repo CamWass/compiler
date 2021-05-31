@@ -22,9 +22,9 @@ use testing::{NormalizedOutput, StdErr};
 mod common;
 
 const IGNORED_PASS_TESTS: &[&str] = &[
-    // Temporarily ignored
+    // TODO: Temporarily ignored
     "431ecef8c85d4d24.js",
-    // Temporarily ignored. Appears to result from incorrect lexing of number
+    // TODO: Temporarily ignored. Appears to result from incorrect lexing of number
     // literals.
     // Sources:
     // Pass: 1000000000000000000000000000000
@@ -33,7 +33,7 @@ const IGNORED_PASS_TESTS: &[&str] = &[
     // the second produces "1000000000000000000000000000000.0" (which appears to be correct).
     // For the test to pass, the values must be identical.
     "8386fbff927a9e0e.js",
-    // Stack size (Excessive parens)
+    // TODO: Stack size (Excessive parens)
     "6b5e7e125097d439.js",
     "714be6d28082eaa7.js",
     "882910de7dd1aef9.js",
@@ -98,26 +98,35 @@ fn add_test<F: FnOnce() + Send + 'static>(
 
 fn error_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
     const IGNORED_ERROR_TESTS: &[&str] = &[
-        // Old (wrong) tests
+        // TODO: This test no longer exists (it was moved to pass)
         "569a2c1bad3beeb2.js",
+        // TODO: These tests involve "Binding member expression" and look like
+        // they are right to fail:
         "3b6f737a4ac948a8.js",
         "829d9261aa6cd22c.js",
         "b03ee881dce1a367.js",
-        "cb92787da5075fd1.js",
         "f0f498d6ae70038f.js",
-        // Wrong tests
-        "0d5e450f1da8a92a.js",
+        // TODO: This test involves "Binding member expression" and looks like
+        // it is right to fail, but needs to be checked for stack overflow:
+        "cb92787da5075fd1.js",
+        // TODO: These tests involve a trailing comma after a rest parameter,
+        // and look like they are right to fail:
         "346316bef54d805a.js",
         "976b6247ca78ab51.js",
         "ae0a7ac275bc9f5c.js",
+        "d28e80d99f819136.js",
+        // Wrong tests involving decimal escapes (such as "\8"); they should be
+        // pass tests.
+        "0d5e450f1da8a92a.js",
         "748656edbfb2d0bb.js",
         "79f882da06f88c9f.js",
-        "d28e80d99f819136.js",
         "92b6af54adef3624.js",
+        // TODO: This test involves the 'let' keyword on the LHS of a for-of
+        // loop, and looks like it is right to fail:
         "ef2d369cccc5386c.js",
-        // Temporarily ignored
+        // TODO: Temporarily ignored
         "3dbb6e166b14a6c0.js",
-        // Temporarily ignored. Further information:
+        // TODO: Temporarily ignored. Further information:
         // Source: var _𖫵 = 11;
         // We currently produce lexer errors, which results in incorrect parsing/errors.
         // Babel's output:
@@ -129,13 +138,13 @@ fn error_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
         // SWC's output (which appears unhelpful/incorrect):
         // "error: Expected a semicolon"
         "2fa321f0374c7017.js",
-        // Temporarily ignored. Further information:
+        // TODO: Temporarily ignored. Further information:
         // These tests appear be valid javascript and should be pass tests
         // rather than fail ones. Try running them in browser consoles.
         "ef81b93cf9bdb4ec.js",
         "98204d734f8c72b3.js",
         //
-        //
+        // TODO: 
         // The following tests are temporarily ignored. They appear to contain
         // invalid regexps, so correctly failing them will require some level
         // of regex validation in the lexer.
