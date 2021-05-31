@@ -98,8 +98,6 @@ fn add_test<F: FnOnce() + Send + 'static>(
 
 fn error_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
     const IGNORED_ERROR_TESTS: &[&str] = &[
-        // TODO: This test no longer exists (it was moved to pass)
-        "569a2c1bad3beeb2.js",
         // TODO: These tests involve "Binding member expression" and look like
         // they are right to fail:
         "3b6f737a4ac948a8.js",
