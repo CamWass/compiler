@@ -107,12 +107,6 @@ fn error_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
         // TODO: This test involves "Binding member expression" and looks like
         // it is right to fail, but needs to be checked for stack overflow:
         "cb92787da5075fd1.js",
-        // TODO: These tests involve a trailing comma after a rest parameter,
-        // and look like they are right to fail:
-        "346316bef54d805a.js",
-        "976b6247ca78ab51.js",
-        "ae0a7ac275bc9f5c.js",
-        "d28e80d99f819136.js",
         // Wrong tests involving decimal escapes (such as "\8"); they should be
         // pass tests.
         "0d5e450f1da8a92a.js",
@@ -142,7 +136,7 @@ fn error_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
         "ef81b93cf9bdb4ec.js",
         "98204d734f8c72b3.js",
         //
-        // TODO: 
+        // TODO:
         // The following tests are temporarily ignored. They appear to contain
         // invalid regexps, so correctly failing them will require some level
         // of regex validation in the lexer.

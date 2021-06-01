@@ -294,10 +294,6 @@ impl<'a, I: Tokens> Parser<I> {
 
             let param_start = self.input.cur_pos();
 
-            if !dot3_token.is_dummy() {
-                self.emit_err(dot3_token, SyntaxError::TS1014);
-            }
-
             let decorators = self.parse_decorators(false)?;
             let pat_start = self.input.cur_pos();
 
@@ -326,6 +322,14 @@ impl<'a, I: Tokens> Parser<I> {
                     arg: Box::new(pat),
                     type_ann,
                 });
+
+                if is!(self, ',') {
+                    if self.input.peeked_is(&tok!(')')) {
+                        syntax_error!(self, SyntaxError::CommaAfterRestElement);
+                    } else {
+                        syntax_error!(self, pat.span(), SyntaxError::NonLastRestParam);
+                    }
+                }
 
                 pat
             } else {
@@ -547,7 +551,8 @@ impl<'a, I: Tokens> Parser<I> {
             Expr::Ident(ident) => Ok(ident.into()),
             Expr::Member(..) => Ok(Pat::Expr(expr)),
             Expr::Array(ArrayLit {
-                elems: mut exprs, ..
+                elems: mut exprs,
+                span: array_span,
             }) => {
                 if exprs.is_empty() {
                     return Ok(Pat::Array(ArrayPat {
@@ -589,6 +594,19 @@ impl<'a, I: Tokens> Parser<I> {
                         }
                         None => params.push(None),
                     }
+                }
+
+                // Now that we are reparsing this array as a pattern, any commas
+                // we found directly after a spread element are now errors. We
+                // only bother tracking/reporting the first violation.
+                if let Some(trailing_comma_span) =
+                    self.state.trailing_commas_after_rest.get(&array_span)
+                {
+                    syntax_error!(
+                        self,
+                        *trailing_comma_span,
+                        SyntaxError::CommaAfterRestElement
+                    );
                 }
 
                 if count_of_trailing_comma == 0 {

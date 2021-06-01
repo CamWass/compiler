@@ -19,6 +19,7 @@ use crate::{
 use ast::*;
 use global_common::{input::Input, BytePos, Span};
 use input::Buffer;
+use std::collections::HashMap;
 use swc_atoms::JsWord;
 
 #[derive(Clone, Default)]
@@ -26,6 +27,12 @@ struct State {
     labels: Vec<JsWord>,
     /// Start position of an assignment expression.
     potential_arrow_start: Option<BytePos>,
+    /// Tracks the positions of commas that directly follow spread elements in arrays.
+    ///
+    /// For example: `[...a,]`
+    ///
+    /// Only tracks the first matching comma in an array.
+    trailing_commas_after_rest: HashMap<Span, Span>,
 }
 
 /// When error occurs, error is emitted and parser returns Err(()).

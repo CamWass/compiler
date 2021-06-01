@@ -351,6 +351,7 @@ impl<'a, I: Tokens> Parser<I> {
 
         self.assert_and_bump(&tok!('['));
         let mut elems = vec![];
+        let mut trailing_comma_span = None;
 
         while !eof!(self) && !is!(self, ']') {
             if is!(self, ',') {
@@ -358,19 +359,43 @@ impl<'a, I: Tokens> Parser<I> {
                 elems.push(None);
                 continue;
             }
-            elems.push(
-                self.include_in_expr(true)
-                    .parse_expr_or_spread()
-                    .map(Some)?,
-            );
+            let elem = self
+                .include_in_expr(true)
+                .parse_expr_or_spread()
+                .map(Some)?;
+
             if is!(self, ',') {
+                match elem {
+                    Some(ExprOrSpread {
+                        spread: Some(..), ..
+                    }) => {
+                        // We only care about the first trailing comma, so we
+                        // will only save this one if it's the first we have
+                        // encountered for this array. This prevents the last
+                        // trailing comma from being reported rather than the
+                        // first.
+                        if trailing_comma_span.is_none() {
+                            trailing_comma_span = Some(self.input.cur_span());
+                        }
+                    }
+                    _ => {}
+                }
                 expect!(self, ',');
             }
+
+            elems.push(elem);
         }
 
         expect!(self, ']');
 
         let span = span!(self, start);
+
+        if let Some(trailing_comma_span) = trailing_comma_span {
+            self.state
+                .trailing_commas_after_rest
+                .insert(span, trailing_comma_span);
+        }
+
         Ok(Box::new(Expr::Array(ArrayLit { span, elems })))
     }
 
@@ -582,12 +607,14 @@ impl<'a, I: Tokens> Parser<I> {
         expect!(self, '(');
 
         let mut first = true;
+        let mut current_item_has_spread = false;
         let mut items = vec![];
 
         // TODO(kdy1): optimize (once we parsed a pattern, we can parse everything else
         // as a pattern instead of reparsing)
         while !eof!(self) && !is!(self, ')') {
             if first {
+                // TODO: this appears to be incorrect. See: (async x => x, 1, y => y)(1);
                 if is!(self, "async") {
                     // https://github.com/swc-project/swc/issues/410
                     self.state.potential_arrow_start = Some(self.input.cur_pos());
@@ -599,6 +626,9 @@ impl<'a, I: Tokens> Parser<I> {
                     })]);
                 }
             } else {
+                if current_item_has_spread && is!(self, ',') {
+                    syntax_error!(self, SyntaxError::CommaAfterRestElement);
+                }
                 expect!(self, ',');
                 // Handle trailing comma.
                 if is!(self, ')') {
@@ -606,10 +636,16 @@ impl<'a, I: Tokens> Parser<I> {
                 }
             }
 
+            current_item_has_spread = false;
+
             let start = self.input.cur_pos();
             self.state.potential_arrow_start = Some(start);
 
             let arg = self.include_in_expr(true).parse_expr_or_spread()?;
+
+            if arg.spread.is_some() {
+                current_item_has_spread = true;
+            }
 
             items.push(PatOrExprOrSpread::ExprOrSpread(arg));
 
