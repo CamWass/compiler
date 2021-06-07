@@ -3,7 +3,7 @@ use ecma_visit::{noop_visit_type, Node, Visit, VisitWith};
 use global_common::{Span, Spanned, DUMMY_SP};
 
 impl<'a, I: Tokens> Parser<I> {
-    pub(in crate::parser) fn verify_expr(&mut self, expr: Box<Expr>) -> PResult<Box<Expr>> {
+    pub(in crate::parser) fn verify_expr(&mut self, expr: Box<Expr>) -> Box<Expr> {
         let mut v = Verifier { errors: vec![] };
 
         v.visit_expr(&expr, &Invalid { span: DUMMY_SP } as _);
@@ -12,7 +12,7 @@ impl<'a, I: Tokens> Parser<I> {
             self.emit_err(span, error);
         }
 
-        return Ok(expr);
+        expr
     }
 }
 

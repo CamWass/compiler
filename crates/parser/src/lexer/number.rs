@@ -90,7 +90,7 @@ impl<I: Input> Lexer<I> {
         // to be populated.
         raw: &mut String,
         allow_num_separator: bool,
-    ) -> LexResult<Ret>
+    ) -> Ret
     where
         F: FnMut(Ret, u8, u32) -> (Ret, bool),
         Ret: Copy + Default,
@@ -139,7 +139,7 @@ impl<I: Input> Lexer<I> {
             let val = if let Some(val) = c.to_digit(radix as u32) {
                 val
             } else {
-                return Ok(total);
+                return total;
             };
 
             raw.push(c);
@@ -148,12 +148,12 @@ impl<I: Input> Lexer<I> {
             let (t, cont) = op(total, radix, val);
             total = t;
             if !cont {
-                return Ok(total);
+                return total;
             }
             prev = Some(c);
         }
 
-        Ok(total)
+        total
     }
 
     /// This can read long integers like
@@ -182,7 +182,7 @@ impl<I: Input> Lexer<I> {
         if !read_any {
             self.error(start, SyntaxError::ExpectedDigit { radix })?;
         }
-        res
+        Ok(res)
     }
 
     /// This can read long integers like
@@ -207,7 +207,7 @@ impl<I: Input> Lexer<I> {
             },
             &mut raw,
             true,
-        )?;
+        );
 
         if !read_any {
             self.error(start, SyntaxError::ExpectedDigit { radix })?;
@@ -269,7 +269,7 @@ impl<I: Input> Lexer<I> {
         len: u8,
         raw: &mut String,
         allow_num_separator: bool,
-    ) -> LexResult<Option<f64>> {
+    ) -> Option<f64> {
         let mut count = 0;
         let v = self.read_digits(
             radix,
@@ -280,11 +280,11 @@ impl<I: Input> Lexer<I> {
             },
             raw,
             allow_num_separator,
-        )?;
+        );
         if len != 0 && count != len {
-            Ok(None)
+            None
         } else {
-            Ok(v)
+            v
         }
     }
 
@@ -294,7 +294,7 @@ impl<I: Input> Lexer<I> {
         radix: u8,
         len: u8,
         allow_num_separator: bool,
-    ) -> LexResult<Option<u32>> {
+    ) -> Option<u32> {
         let mut count = 0;
         let v = self.read_digits(
             radix,
@@ -305,11 +305,11 @@ impl<I: Input> Lexer<I> {
             },
             &mut String::new(),
             allow_num_separator,
-        )?;
+        );
         if len != 0 && count != len {
-            Ok(None)
+            None
         } else {
-            Ok(v)
+            v
         }
     }
 
@@ -318,7 +318,7 @@ impl<I: Input> Lexer<I> {
 
         self.emit_strict_mode_error(start, SyntaxError::LegacyOctal);
 
-        return Ok(val);
+        Ok(val)
     }
 
     /// Reads an integer, octal integer, or floating-point number
@@ -367,10 +367,10 @@ impl<I: Input> Lexer<I> {
                     // e.g. 08.1 is strict mode violation but 0.1 is valid float.
 
                     if val.fract() < 1e-10 {
-                        let d = digits(val.round() as u64, 10);
+                        let mut d = digits(val.round() as u64, 10);
 
                         // if it contains '8' or '9', it's decimal.
-                        if d.clone().any(|v| v == 8 || v == 9) {
+                        if d.any(|v| v == 8 || v == 9) {
                             // Continue parsing
                             self.emit_strict_mode_error(start, SyntaxError::LegacyDecimal);
                         } else {
@@ -406,7 +406,7 @@ impl<I: Input> Lexer<I> {
 
             let mut raw = String::new();
             // Read numbers after dot
-            let dec_val = self.read_int(10, 0, &mut raw, true)?;
+            let dec_val = self.read_int(10, 0, &mut raw, true);
 
             val = {
                 // TODO: is it possible/worthwhile to pre-allocate this using

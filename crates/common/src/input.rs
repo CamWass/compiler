@@ -51,7 +51,7 @@ impl<'a> From<&'a SourceFile> for StringInput<'a> {
 impl<'a> Input for StringInput<'a> {
     #[inline]
     fn cur(&self) -> Option<char> {
-        self.iter.clone().nth(0).map(|i| i.1)
+        self.iter.clone().next().map(|i| i.1)
     }
 
     #[inline]
@@ -173,7 +173,7 @@ impl<'a> Input for StringInput<'a> {
 
     #[inline]
     fn is_byte(&self, c: u8) -> bool {
-        if self.iter.as_str().len() == 0 {
+        if self.iter.as_str().is_empty() {
             false
         } else {
             self.iter.as_str().as_bytes()[0] == c

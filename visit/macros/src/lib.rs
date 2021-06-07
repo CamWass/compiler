@@ -71,10 +71,6 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
         };
 
         let mtd = make_method(mode, item, &mut types);
-        let mtd = match mtd {
-            Some(v) => v,
-            None => continue,
-        };
 
         methods.push(mtd);
     }
@@ -106,7 +102,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
         let sig = create_method_sig(mode, ty);
         let name = sig.ident.clone();
         let s = name.to_string();
-        if methods.iter().any(|m| m.sig.ident == &*s) {
+        if methods.iter().any(|m| m.sig.ident == *s) {
             continue;
         }
 
@@ -269,15 +265,13 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
                     stmts: Default::default(),
                 },
             }),
-        )
-        .clone();
+        );
 
         let arg_ty = v
             .sig
             .inputs
             .iter()
-            .skip(1)
-            .next()
+            .nth(1)
             .map(|v| match *v {
                 FnArg::Typed(ref pat) => &pat.ty,
                 _ => unreachable!(),
@@ -939,8 +933,8 @@ fn method_sig_from_ident(mode: Mode, v: &Ident) -> Signature {
 }
 
 /// Returns None if it's skipped.
-fn make_method(mode: Mode, e: &Item, types: &mut Vec<Type>) -> Option<TraitItemMethod> {
-    Some(match e {
+fn make_method(mode: Mode, e: &Item, types: &mut Vec<Type>) -> TraitItemMethod {
+    match e {
         Item::Struct(s) => {
             let type_name = &s.ident;
             types.push(Type::Path(TypePath {
@@ -1040,7 +1034,7 @@ fn make_method(mode: Mode, e: &Item, types: &mut Vec<Type>) -> Option<TraitItemM
             "proper error reporting for item other than struct / enum: {:?}",
             e
         ),
-    })
+    }
 }
 
 fn create_method_sig(mode: Mode, ty: &Type) -> Signature {
@@ -1098,7 +1092,7 @@ fn create_method_sig(mode: Mode, ty: &Type) -> Signature {
         Type::Infer(_) => unreachable!("infer type"),
         Type::Macro(_) => unimplemented!("type: macro"),
         Type::Never(_) => unreachable!("never type"),
-        Type::Paren(ty) => return create_method_sig(mode, &ty.elem),
+        Type::Paren(ty) => create_method_sig(mode, &ty.elem),
         Type::Path(p) => {
             let last = p.path.segments.last().unwrap();
             let ident = method_name(mode, ty);
@@ -1219,19 +1213,13 @@ fn create_method_sig(mode: Mode, ty: &Type) -> Signature {
             }
 
             match mode {
-                Mode::Fold => return mk_exact(mode, ident, ty),
-                Mode::VisitMut => {
-                    return mk_ref(mode, ident, ty, true);
-                }
-                Mode::Visit | Mode::VisitAll => {
-                    return mk_ref(mode, ident, ty, false);
-                }
+                Mode::Fold => mk_exact(mode, ident, ty),
+                Mode::VisitMut => mk_ref(mode, ident, ty, true),
+                Mode::Visit | Mode::VisitAll => mk_ref(mode, ident, ty, false),
             }
         }
         Type::Ptr(_) => unimplemented!("type: pointer"),
-        Type::Reference(ty) => {
-            return create_method_sig(mode, &ty.elem);
-        }
+        Type::Reference(ty) => create_method_sig(mode, &ty.elem),
         Type::Slice(_) => unimplemented!("type: slice"),
         Type::TraitObject(_) => unimplemented!("type: trait object"),
         Type::Tuple(_) => unimplemented!("type: trait tuple"),
@@ -1266,7 +1254,7 @@ fn create_method_body(mode: Mode, ty: &Type) -> Block {
         Type::Infer(_) => unreachable!("infer type"),
         Type::Macro(_) => unimplemented!("type: macro"),
         Type::Never(_) => unreachable!("never type"),
-        Type::Paren(ty) => return create_method_body(mode, &ty.elem),
+        Type::Paren(ty) => create_method_body(mode, &ty.elem),
         Type::Path(p) => {
             let last = p.path.segments.last().unwrap();
 
@@ -1297,27 +1285,21 @@ fn create_method_body(mode: Mode, ty: &Type) -> Block {
                                 GenericArgument::Type(arg) => {
                                     let ident = method_name(mode, arg);
 
-                                    match mode {
-                                        Mode::Fold => {
-                                            if let Some(..) = as_box(arg) {
-                                                return q!(
-                                                    Vars { ident },
-                                                    ({
-                                                        match n {
-                                                            Some(n) => Some(
-                                                                global_visit::util::map::Map::map(
-                                                                    n,
-                                                                    |n| _visitor.ident(n),
-                                                                ),
-                                                            ),
-                                                            None => None,
-                                                        }
-                                                    })
-                                                )
-                                                .parse();
-                                            }
-                                        }
-                                        _ => {}
+                                    if mode == Mode::Fold && as_box(arg).is_some() {
+                                        return q!(
+                                            Vars { ident },
+                                            ({
+                                                match n {
+                                                    Some(n) => Some(
+                                                        global_visit::util::map::Map::map(n, |n| {
+                                                            _visitor.ident(n)
+                                                        }),
+                                                    ),
+                                                    None => None,
+                                                }
+                                            })
+                                        )
+                                        .parse();
                                     }
 
                                     return match mode {
@@ -1461,9 +1443,7 @@ fn create_method_body(mode: Mode, ty: &Type) -> Block {
             }
         }
         Type::Ptr(_) => unimplemented!("type: pointer"),
-        Type::Reference(ty) => {
-            return create_method_body(mode, &ty.elem);
-        }
+        Type::Reference(ty) => create_method_body(mode, &ty.elem),
         Type::Slice(_) => unimplemented!("type: slice"),
         Type::TraitObject(_) => unimplemented!("type: trait object"),
         Type::Tuple(_) => unimplemented!("type: trait tuple"),
@@ -1491,17 +1471,12 @@ fn add_required(types: &mut Vec<Type>, ty: &Type) {
 }
 
 fn is_option(ty: &Type) -> bool {
-    match ty {
-        Type::Path(p) => {
-            let last = p.path.segments.last().unwrap();
+    if let Type::Path(p) = ty {
+        let last = p.path.segments.last().unwrap();
 
-            if !last.arguments.is_empty() {
-                if last.ident == "Option" {
-                    return true;
-                }
-            }
+        if !last.arguments.is_empty() && last.ident == "Option" {
+            return true;
         }
-        _ => {}
     }
 
     false
@@ -1512,27 +1487,22 @@ fn as_box(ty: &Type) -> Option<&Type> {
 }
 
 fn extract_generic<'a>(name: &str, ty: &'a Type) -> Option<&'a Type> {
-    match ty {
-        Type::Path(p) => {
-            let last = p.path.segments.last().unwrap();
+    if let Type::Path(p) = ty {
+        let last = p.path.segments.last().unwrap();
 
-            if !last.arguments.is_empty() {
-                if last.ident == name {
-                    match &last.arguments {
-                        PathArguments::AngleBracketed(tps) => {
-                            let arg = tps.args.first().unwrap();
+        if !last.arguments.is_empty() && last.ident == name {
+            match &last.arguments {
+                PathArguments::AngleBracketed(tps) => {
+                    let arg = tps.args.first().unwrap();
 
-                            match arg {
-                                GenericArgument::Type(arg) => return Some(arg),
-                                _ => unimplemented!("generic parameter other than type"),
-                            }
-                        }
-                        _ => unimplemented!("Box() -> T or Box without a type parameter"),
+                    match arg {
+                        GenericArgument::Type(arg) => return Some(arg),
+                        _ => unimplemented!("generic parameter other than type"),
                     }
                 }
+                _ => unimplemented!("Box() -> T or Box without a type parameter"),
             }
         }
-        _ => {}
     }
 
     None
@@ -1570,7 +1540,7 @@ fn method_name_as_str(mode: Mode, ty: &Type) -> String {
             if suffix(ty).to_plural() == suffix(ty) {
                 return format!("{}_vec", suffix(ty).to_plural());
             }
-            return format!("{}", suffix(ty).to_plural());
+            return suffix(ty).to_plural();
         }
         type_to_name(&ty).to_snake_case()
     }

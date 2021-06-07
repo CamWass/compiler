@@ -46,7 +46,7 @@ pub fn init() {
         }
     }
 
-    fn colored_level<'a>(level: log::Level) -> String {
+    fn colored_level(level: log::Level) -> String {
         match level {
             log::Level::Trace => Color::Cyan.paint("TRACE").to_string(),
             log::Level::Debug => Color::Blue.paint("DEBUG").to_string(),

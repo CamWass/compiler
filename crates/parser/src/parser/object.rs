@@ -261,8 +261,8 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                                  return_type,
                                  ..
                              }| {
-                                if type_params.is_some() {
-                                    self.emit_err(type_params.unwrap().span(), SyntaxError::TS1094);
+                                if let Some(type_params) = type_params {
+                                    self.emit_err(type_params.span(), SyntaxError::TS1094);
                                 }
 
                                 // if self.input.syntax().typescript()
@@ -318,8 +318,8 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                                  type_params,
                                  ..
                              }| {
-                                if type_params.is_some() {
-                                    self.emit_err(type_params.unwrap().span(), SyntaxError::TS1094);
+                                if let Some(type_params) = type_params {
+                                    self.emit_err(type_params.span(), SyntaxError::TS1094);
                                 }
 
                                 // debug_assert_eq!(params.len(), 1);

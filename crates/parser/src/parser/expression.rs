@@ -179,8 +179,8 @@ impl<'a, I: Tokens> Parser<I> {
             .map(|s| s == start)
             .unwrap_or(false);
 
-        match self.input.cur() {
-            Some(tok) => match tok {
+        if let Some(tok) = self.input.cur() {
+            match tok {
                 tok!("this") => {
                     self.input.bump();
                     return Ok(Box::new(Expr::This(ThisExpr {
@@ -260,8 +260,7 @@ impl<'a, I: Tokens> Parser<I> {
                 }
 
                 _ => {}
-            },
-            None => {}
+            }
         }
 
         let decorators = self.parse_decorators(false)?;
@@ -843,10 +842,9 @@ impl<'a, I: Tokens> Parser<I> {
         // expressions, we can parse both as expression.
 
         let paren_items = self.include_in_expr(true).parse_args_or_pats()?;
-        let has_pattern = paren_items.iter().any(|item| match item {
-            PatOrExprOrSpread::Pat(..) => true,
-            _ => false,
-        });
+        let has_pattern = paren_items
+            .iter()
+            .any(|item| matches!(item, PatOrExprOrSpread::Pat(..)));
 
         let return_type = None;
 
@@ -1077,14 +1075,12 @@ impl<'a, I: Tokens> Parser<I> {
             _ => unexpected!(self, "template token"),
         };
 
-        if cooked.is_none() {
-            if !is_tagged || self.input.target() < JscTarget::Es2018 {
-                syntax_error!(
-                    self,
-                    span!(self, start),
-                    SyntaxError::InvalidEscapeInTemplate
-                )
-            }
+        if cooked.is_none() && (!is_tagged || self.input.target() < JscTarget::Es2018) {
+            syntax_error!(
+                self,
+                span!(self, start),
+                SyntaxError::InvalidEscapeInTemplate
+            )
         }
 
         let tail = is!(self, '`');

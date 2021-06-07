@@ -175,7 +175,7 @@ impl<'a, I: Tokens> Parser<I> {
             right,
         }));
 
-        return Ok((node, Some(min_prec)));
+        Ok((node, Some(min_prec)))
     }
 
     /// Parse unary expression and update expression.
@@ -230,9 +230,8 @@ impl<'a, I: Tokens> Parser<I> {
             };
 
             if op == op!("delete") {
-                match *arg {
-                    Expr::Ident(ref i) => self.emit_strict_mode_err(i.span, SyntaxError::TS1102),
-                    _ => {}
+                if let Expr::Ident(ref i) = *arg {
+                    self.emit_strict_mode_err(i.span, SyntaxError::TS1102)
                 }
             }
 

@@ -262,7 +262,7 @@ impl<'a, I: Tokens> Parser<I> {
 
         if declare && accessibility.is_none() {
             // Handle declare(){}
-            if self.is_class_method()? {
+            if self.is_class_method() {
                 let key = Either::Right(PropName::Ident(Ident::new(
                     js_word!("declare"),
                     span!(self, start),
@@ -284,7 +284,7 @@ impl<'a, I: Tokens> Parser<I> {
                         kind: MethodKind::Method,
                     },
                 );
-            } else if self.is_class_property()? {
+            } else if self.is_class_property() {
                 // Property named `declare`
 
                 let key = Either::Right(PropName::Ident(Ident::new(
@@ -320,7 +320,7 @@ impl<'a, I: Tokens> Parser<I> {
 
         if let Some(static_token) = static_token {
             // Handle static(){}
-            if self.is_class_method()? {
+            if self.is_class_method() {
                 let key = Either::Right(PropName::Ident(Ident::new(
                     js_word!("static"),
                     static_token,
@@ -343,7 +343,7 @@ impl<'a, I: Tokens> Parser<I> {
                         kind: MethodKind::Method,
                     },
                 );
-            } else if self.is_class_property()? {
+            } else if self.is_class_property() {
                 // Property named `static`
 
                 let key = Either::Right(PropName::Ident(Ident::new(
@@ -429,17 +429,15 @@ impl<'a, I: Tokens> Parser<I> {
         }
 
         trace_cur!(self, parse_class_member_with_is_static__normal_class_member);
-        let key = if readonly.is_some() && is_one_of!(self, '!', ':') {
-            Either::Right(PropName::Ident(Ident::new(
-                "readonly".into(),
-                readonly.unwrap(),
-            )))
-        } else {
-            self.parse_class_prop_name()?
+        let key = match readonly {
+            Some(readonly) if is_one_of!(self, '!', ':') => {
+                Either::Right(PropName::Ident(Ident::new("readonly".into(), readonly)))
+            }
+            _ => self.parse_class_prop_name()?,
         };
         let is_optional = false;
 
-        if self.is_class_method()? {
+        if self.is_class_method() {
             // handle a(){} / get(){} / set(){} / async(){}
 
             trace_cur!(self, parse_class_member_with_is_static__normal_class_method);
@@ -491,7 +489,7 @@ impl<'a, I: Tokens> Parser<I> {
             }
         }
 
-        if self.is_class_property()? {
+        if self.is_class_property() {
             return self.make_property(
                 start,
                 decorators,
@@ -687,10 +685,7 @@ impl<'a, I: Tokens> Parser<I> {
                 .into(),
                 Either::Right(key) => ClassProp {
                     span: span!(parser, start),
-                    computed: match key {
-                        PropName::Computed(..) => true,
-                        _ => false,
-                    },
+                    computed: matches!(key, PropName::Computed(..)),
                     key: match key {
                         PropName::Ident(i) => Box::new(Expr::Ident(i)),
                         PropName::Str(s) => Box::new(Expr::Lit(Lit::Str(s))),
@@ -715,16 +710,16 @@ impl<'a, I: Tokens> Parser<I> {
         })
     }
 
-    fn is_class_method(&mut self) -> PResult<bool> {
-        Ok(is!(self, '('))
+    fn is_class_method(&mut self) -> bool {
+        is!(self, '(')
         // || (self.input.syntax().typescript() && is!(self, '<'))
         // || (self.input.syntax().typescript() && is!(self, JSXTagStart))
     }
 
-    fn is_class_property(&mut self) -> PResult<bool> {
+    fn is_class_property(&mut self) -> bool {
         // (self.input.syntax().typescript() && is_one_of!(self, '!', ':'))
         //     || is_one_of!(self, '=', ';', '}')
-        Ok(is_one_of!(self, '=', ';', '}'))
+        is_one_of!(self, '=', ';', '}')
     }
 
     fn parse_fn<T>(

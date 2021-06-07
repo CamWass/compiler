@@ -355,7 +355,7 @@ impl<'a, I: Tokens> Parser<I> {
                 }
                 Box::new(Expr::Ident(ident))
             }
-            _ => self.verify_expr(expr)?,
+            _ => self.verify_expr(expr),
         };
         if let Expr::Ident(ref ident) = *expr {
             if *ident.sym == js_word!("interface") && self.input.had_line_break_before_cur() {
@@ -370,14 +370,13 @@ impl<'a, I: Tokens> Parser<I> {
             }
         }
 
-        match *expr {
-            Expr::Ident(Ident { ref sym, span, .. }) => match *sym {
+        if let Expr::Ident(Ident { ref sym, span, .. }) = *expr {
+            match *sym {
                 js_word!("enum") | js_word!("interface") => {
                     self.emit_strict_mode_err(span, SyntaxError::InvalidIdentInStrict);
                 }
                 _ => {}
-            },
-            _ => {}
+            }
         }
 
         if eat!(self, ';') {
@@ -386,18 +385,14 @@ impl<'a, I: Tokens> Parser<I> {
                 expr,
             }))
         } else {
-            match *cur!(self, false)? {
-                Token::BinOp(..) => {
-                    self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
-                    let expr = self.parse_bin_op_recursively(expr, 0)?;
-                    return Ok(ExprStmt {
-                        span: span!(self, start),
-                        expr,
-                    }
-                    .into());
+            if let Token::BinOp(..) = *cur!(self, false)? {
+                self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
+                let expr = self.parse_bin_op_recursively(expr, 0)?;
+                return Ok(ExprStmt {
+                    span: span!(self, start),
+                    expr,
                 }
-
-                _ => {}
+                .into());
             }
 
             syntax_error!(
@@ -414,12 +409,10 @@ impl<'a, I: Tokens> Parser<I> {
             } else if !self.ctx().is_break_allowed {
                 self.emit_err(span, SyntaxError::TS1105);
             }
-        } else {
-            if !self.ctx().is_continue_allowed {
-                self.emit_err(span, SyntaxError::TS1115);
-            } else if label.is_some() && !self.state.labels.contains(&label.as_ref().unwrap().sym) {
-                self.emit_err(span, SyntaxError::TS1107);
-            }
+        } else if !self.ctx().is_continue_allowed {
+            self.emit_err(span, SyntaxError::TS1115);
+        } else if label.is_some() && !self.state.labels.contains(&label.as_ref().unwrap().sym) {
+            self.emit_err(span, SyntaxError::TS1107);
         }
     }
 
@@ -582,7 +575,7 @@ impl<'a, I: Tokens> Parser<I> {
 
         expect_exact!(self, ';');
 
-        let init = self.verify_expr(init)?;
+        let init = self.verify_expr(init);
         self.parse_normal_for_head(Some(VarDeclOrExpr::Expr(init)))
     }
 
@@ -890,15 +883,13 @@ impl<'a, I: Tokens> Parser<I> {
             decls.push(self.with_ctx(ctx).parse_var_declarator(for_loop)?);
         }
 
-        if !for_loop {
-            if !eat!(self, ';') {
-                self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
+        if !for_loop && !eat!(self, ';') {
+            self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
 
-                let _ = self.parse_expr();
+            let _ = self.parse_expr();
 
-                while !eat!(self, ';') {
-                    self.input.bump();
-                }
+            while !eat!(self, ';') {
+                self.input.bump();
             }
         }
 
@@ -954,7 +945,7 @@ impl<'a, I: Tokens> Parser<I> {
         let init = if !for_loop || !is_one_of!(self, "in", "of") {
             if self.input.eat(&tok!('=')) {
                 let expr = self.parse_assignment_expr()?;
-                let expr = self.verify_expr(expr)?;
+                let expr = self.verify_expr(expr);
 
                 Some(expr)
             } else {

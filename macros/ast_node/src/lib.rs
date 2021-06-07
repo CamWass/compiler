@@ -2,7 +2,6 @@
 
 extern crate proc_macro;
 
-use darling;
 use macro_common::prelude::*;
 use pmutil::{smart_quote, Quote, ToTokensExt};
 use syn::{self, *};
@@ -130,15 +129,13 @@ pub fn ast_serde(
                 }))
             });
 
-            let quote = item.quote_with(smart_quote!(Vars { input, serde_tag, serde_rename }, {
+            item.quote_with(smart_quote!(Vars { input, serde_tag, serde_rename }, {
                 #[derive(::serde::Serialize, ::serde::Deserialize)]
                 serde_tag
                 #[serde(rename_all = "camelCase")]
                 serde_rename
                 input
-            }));
-
-            quote
+            }))
         }
     };
 

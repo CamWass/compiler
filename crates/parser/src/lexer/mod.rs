@@ -144,7 +144,7 @@ impl<I: Input> Lexer<I> {
                 self.bump();
                 Ok(Some(Colon))
             }
-            '?' => self.read_token_question(),
+            '?' => Ok(Some(self.read_token_question())),
             '`' => {
                 self.bump();
                 Ok(Some(BackQuote))
@@ -170,12 +170,12 @@ impl<I: Input> Lexer<I> {
             '"' | '\'' => self.read_string(ch).map(Some),
 
             '/' => self.read_token_slash().map(Some),
-            '%' | '*' => self.read_token_mult_modulo(ch).map(Some),
-            '|' | '&' => self.read_token_pipe_amp(ch).map(Some),
-            '^' => self.read_token_caret().map(Some),
+            '%' | '*' => Ok(Some(self.read_token_mult_modulo(ch))),
+            '|' | '&' => Ok(Some(self.read_token_pipe_amp(ch))),
+            '^' => Ok(Some(self.read_token_caret())),
             '+' | '-' => self.read_token_plus_min(ch),
             '<' | '>' => self.read_token_lt_gt(ch),
-            '=' | '!' => self.read_token_eq_excl(ch).map(Some),
+            '=' | '!' => Ok(Some(self.read_token_eq_excl(ch))),
             '~' => {
                 self.bump();
                 Ok(Some(tok!('~')))
@@ -184,7 +184,7 @@ impl<I: Input> Lexer<I> {
                 self.bump();
                 Ok(Some(At))
             }
-            '#' => self.read_token_number_sign(),
+            '#' => Ok(self.read_token_number_sign()),
             // Identifier or keyword. '\uXXXX' sequences are allowed in
             // identifiers, so '\' also dispatches to that.
             ch if ch == '\\' || is_ident_start(ch) => self.read_ident_or_keyword().map(Some),
@@ -198,15 +198,15 @@ impl<I: Input> Lexer<I> {
         }
     }
 
-    fn read_token_number_sign(&mut self) -> LexResult<Option<Token>> {
+    fn read_token_number_sign(&mut self) -> Option<Token> {
         debug_assert!(self.cur() == Some('#'));
 
         if self.input.is_at_start() && self.read_token_interpreter() {
-            return Ok(None);
+            return None;
         }
 
         self.bump(); // '#'
-        Ok(Some(tok!('#')))
+        Some(tok!('#'))
     }
 
     fn read_token_dot(&mut self) -> LexResult<Option<Token>> {
@@ -277,7 +277,7 @@ impl<I: Input> Lexer<I> {
         false
     }
 
-    fn read_token_mult_modulo(&mut self, ch: char) -> LexResult<Token> {
+    fn read_token_mult_modulo(&mut self, ch: char) -> Token {
         debug_assert!(ch == '*' || ch == '%');
         debug_assert!(self.cur() == Some(ch));
 
@@ -301,10 +301,10 @@ impl<I: Input> Lexer<I> {
             }
         }
 
-        Ok(token)
+        token
     }
 
-    fn read_token_pipe_amp(&mut self, ch: char) -> LexResult<Token> {
+    fn read_token_pipe_amp(&mut self, ch: char) -> Token {
         debug_assert!(ch == '|' || ch == '&');
         debug_assert!(self.cur() == Some(ch));
 
@@ -315,11 +315,11 @@ impl<I: Input> Lexer<I> {
         if self.is(b'=') {
             self.bump();
 
-            return Ok(AssignOp(match token {
+            return AssignOp(match token {
                 BitAnd => BitAndAssign,
                 BitOr => BitOrAssign,
                 _ => unreachable!(),
-            }));
+            });
         }
 
         // '||', '&&'
@@ -328,32 +328,32 @@ impl<I: Input> Lexer<I> {
 
             if self.is(b'=') {
                 self.bump();
-                return Ok(AssignOp(match token {
+                return AssignOp(match token {
                     BitAnd => op!("&&="),
                     BitOr => op!("||="),
                     _ => unreachable!(),
-                }));
+                });
             }
 
-            return Ok(BinOp(match token {
+            return BinOp(match token {
                 BitAnd => LogicalAnd,
                 BitOr => LogicalOr,
                 _ => unreachable!(),
-            }));
+            });
         }
 
-        Ok(BinOp(token))
+        BinOp(token)
     }
 
-    fn read_token_caret(&mut self) -> LexResult<Token> {
+    fn read_token_caret(&mut self) -> Token {
         debug_assert!(self.cur() == Some('^'));
         // Bitwise xor
         self.bump(); // '^'
         if self.is(b'=') {
             self.bump(); // '='
-            Ok(AssignOp(BitXorAssign))
+            AssignOp(BitXorAssign)
         } else {
-            Ok(BinOp(BitXor))
+            BinOp(BitXor)
         }
     }
 
@@ -442,7 +442,7 @@ impl<I: Input> Lexer<I> {
         Ok(Some(token))
     }
 
-    fn read_token_eq_excl(&mut self, ch: char) -> LexResult<Token> {
+    fn read_token_eq_excl(&mut self, ch: char) -> Token {
         debug_assert!(ch == '=' || ch == '!');
         debug_assert!(self.cur() == Some(ch));
 
@@ -456,33 +456,33 @@ impl<I: Input> Lexer<I> {
                 self.bump();
                 if ch == '!' {
                     // '!=='
-                    Ok(BinOp(NotEqEq))
+                    BinOp(NotEqEq)
                 } else {
                     // '==='
-                    Ok(BinOp(EqEqEq))
+                    BinOp(EqEqEq)
                 }
             } else if ch == '!' {
                 // '!='
-                Ok(BinOp(NotEq))
+                BinOp(NotEq)
             } else {
                 // '=='
-                Ok(BinOp(EqEq))
+                BinOp(EqEq)
             }
         } else if ch == '=' && self.is(b'>') {
             // "=>"
             self.bump();
 
-            Ok(Arrow)
+            Arrow
         } else if ch == '!' {
             // '!'
-            Ok(Bang)
+            Bang
         } else {
             // '='
-            Ok(AssignOp(Assign))
+            AssignOp(Assign)
         }
     }
 
-    fn read_token_question(&mut self) -> LexResult<Option<Token>> {
+    fn read_token_question(&mut self) -> Token {
         debug_assert!(self.cur() == Some('?'));
 
         self.bump(); // '?'
@@ -494,12 +494,12 @@ impl<I: Input> Lexer<I> {
                 self.bump(); // 2nd '?'
                 if next == Some('=') {
                     self.bump(); // '='
-                    Ok(Some(tok!("??=")))
+                    tok!("??=")
                 } else {
-                    Ok(Some(tok!("??")))
+                    tok!("??")
                 }
             }
-            _ => Ok(Some(tok!('?'))),
+            _ => tok!('?'),
         }
     }
 
@@ -568,7 +568,7 @@ impl<I: Input> Lexer<I> {
 
     fn read_code_point(&mut self) -> LexResult<char> {
         let start = self.cur_pos();
-        let val = self.read_int_u32(16, 0, false)?;
+        let val = self.read_int_u32(16, 0, false);
 
         if let Some(val) = val {
             if 0x0010_FFFF >= val {
@@ -750,8 +750,8 @@ impl<I: Input> Lexer<I> {
                     // Spec:
                     // FourToSeven OctalDigit
                     // ZeroToThree OctalDigit OctalDigit
-                    return Ok(Some(std::char::from_u32_unchecked(value)));
-                };
+                    Ok(Some(std::char::from_u32_unchecked(value)))
+                }
             }
             _ => Ok(Some(ch)),
         }
@@ -761,7 +761,7 @@ impl<I: Input> Lexer<I> {
     fn read_hex_char(&mut self, start: BytePos, len: u8) -> LexResult<char> {
         debug_assert!(len == 2 || len == 4);
 
-        let val = self.read_int_u32(16, len, false)?;
+        let val = self.read_int_u32(16, len, false);
 
         if let Some(val) = val {
             if let Some(ch) = std::char::from_u32(val) {
@@ -920,14 +920,13 @@ impl<I: Input> Lexer<I> {
                 }
 
                 match self.read_escaped_char(true) {
-                    Ok(Some(s)) => match cooked {
-                        CookedType::DifferentFromRaw(ref mut existing_cooked) => {
+                    Ok(Some(s)) => {
+                        if let CookedType::DifferentFromRaw(ref mut existing_cooked) = cooked {
                             existing_cooked.push(s);
 
                             cooked_chunk_start = self.cur_pos();
                         }
-                        _ => {}
-                    },
+                    }
                     Ok(None) => {}
                     Err(..) => {
                         cooked = CookedType::None;
@@ -954,11 +953,8 @@ impl<I: Input> Lexer<I> {
                     self.bump(); // '\r'
                     self.bump(); // '\n'
 
-                    match cooked {
-                        CookedType::DifferentFromRaw(..) => {
-                            cooked_chunk_start = self.cur_pos();
-                        }
-                        _ => {}
+                    if let CookedType::DifferentFromRaw(..) = cooked {
+                        cooked_chunk_start = self.cur_pos();
                     }
                 } else {
                     self.bump();
