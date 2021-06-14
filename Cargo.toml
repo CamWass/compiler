@@ -3,3 +3,12 @@ members = [
   "crates/*",
   "macros/*"
 ]
+
+[profile.release]
+codegen-units = 1
+lto = true
+debug = true
+
+[profile.bench]
+codegen-units = 1
+debug = true
