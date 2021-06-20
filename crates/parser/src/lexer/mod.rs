@@ -620,46 +620,51 @@ impl<I: Input> Lexer<I> {
         let start = self.cur_pos();
         self.bump(); // ' or "
 
-        let mut out = String::new();
-        let mut chunk_start = self.cur_pos();
+        self.with_buf(|lexer, out| {
+            let mut has_escape = false;
 
-        let mut has_escape = false;
-        while let Some(ch) = self.cur() {
-            if ch == quote {
-                break;
-            } else if ch == '\\' {
-                out.push_str(self.input.slice_to_cur(chunk_start));
-
-                if let Some(c) = self.read_escaped_char(false)? {
-                    out.push(c);
+            while let Some(ch) = {
+                // Optimization
+                {
+                    let s = lexer.input.uncons_while(|ch| {
+                        ch != quote
+                            && ch != '\\'
+                            && ch != char_literals::LINE_FEED
+                            && ch != char_literals::CARRIAGE_RETURN
+                    });
+                    out.push_str(s);
                 }
-
-                has_escape = true;
-
-                chunk_start = self.cur_pos();
-            } else if ch == char_literals::LINE_SEPARATOR
-                || ch == char_literals::PARAGRAPH_SEPARATOR
-            {
-                self.bump();
-            } else if is_line_break(ch) {
-                // String literals cannot span multiple lines.
-                let pos = self.cur_pos();
-                self.error(pos, SyntaxError::UnterminatedStrLit)?
-            } else {
-                self.bump();
+                lexer.cur()
+            } {
+                match ch {
+                    ch if ch == quote => {
+                        lexer.bump(); // ' or "
+                        return Ok(Token::Str {
+                            value: out.as_str().into(),
+                            has_escape,
+                        });
+                    }
+                    '\\' => {
+                        if let Some(s) = lexer.read_escaped_char(false)? {
+                            out.push(s);
+                        }
+                        has_escape = true
+                    }
+                    char_literals::LINE_FEED | char_literals::CARRIAGE_RETURN => {
+                        // String literals cannot span multiple lines.
+                        // LINE_SEPARATOR and PARAGRAPH_SEPARATOR are permitted.
+                        let pos = lexer.cur_pos();
+                        lexer.error(pos, SyntaxError::UnterminatedStrLit)?
+                    }
+                    _ => {
+                        out.push(ch);
+                        lexer.bump();
+                    }
+                }
             }
-        }
 
-        if !self.is(quote as u8) {
-            // Reached end of input without seeing closing quote (' or ")
-            self.error(start, SyntaxError::UnterminatedStrLit)?
-        }
-
-        out.push_str(self.input.slice_to_cur(chunk_start));
-        self.bump(); // ' or "
-        Ok(Token::Str {
-            value: out.into(),
-            has_escape,
+            // Reached end of input without seeing closing quote.
+            lexer.error(start, SyntaxError::UnterminatedStrLit)?
         })
     }
 
