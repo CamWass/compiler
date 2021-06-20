@@ -20,7 +20,9 @@ fn bench(c: &mut Criterion) {
     ];
 
     let mut group = c.benchmark_group("lexer");
-    group.measurement_time(Duration::from_secs(20)).sample_size(200);
+    group
+        .measurement_time(Duration::from_secs(20))
+        .sample_size(200);
     for Bench(id, src) in benches.iter() {
         group.throughput(Throughput::Bytes(src.len() as u64));
 
