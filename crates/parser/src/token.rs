@@ -284,6 +284,53 @@ impl From<JsWord> for Word {
         }
     }
 }
+
+impl From<&str> for Word {
+    fn from(s: &str) -> Self {
+        match s {
+            "null" => Word::Null,
+            "true" => Word::True,
+            "false" => Word::False,
+            "await" => Await.into(),
+            "break" => Break.into(),
+            "case" => Case.into(),
+            "catch" => Catch.into(),
+            "continue" => Continue.into(),
+            "debugger" => Debugger.into(),
+            "default" => Default_.into(),
+            "do" => Do.into(),
+            "export" => Export.into(),
+            "else" => Else.into(),
+            "finally" => Finally.into(),
+            "for" => For.into(),
+            "function" => Function.into(),
+            "if" => If.into(),
+            "return" => Return.into(),
+            "switch" => Switch.into(),
+            "throw" => Throw.into(),
+            "try" => Try.into(),
+            "var" => Var.into(),
+            "let" => Let.into(),
+            "const" => Const.into(),
+            "while" => While.into(),
+            "with" => With.into(),
+            "new" => New.into(),
+            "this" => This.into(),
+            "super" => Super.into(),
+            "class" => Class.into(),
+            "extends" => Extends.into(),
+            "import" => Import.into(),
+            "yield" => Yield.into(),
+            "in" => In.into(),
+            "instanceof" => InstanceOf.into(),
+            "typeof" => TypeOf.into(),
+            "void" => Void.into(),
+            "delete" => Delete.into(),
+            _ => Word::Ident(s.into()),
+        }
+    }
+}
+
 impl From<Keyword> for Word {
     fn from(kwd: Keyword) -> Self {
         Word::Keyword(kwd)

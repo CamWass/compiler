@@ -14,7 +14,7 @@ use global_common::{input::Input, BytePos, Span};
 use identifier::{is_ident_part, is_ident_start};
 use state::State;
 pub use state::{TokenContext, TokenContexts};
-use std::{cell::RefCell, iter::FusedIterator, rc::Rc};
+use std::{cell::RefCell, iter::FusedIterator, mem, rc::Rc};
 use swc_atoms::JsWord;
 use util::{char_bytes, char_literals, is_line_break, is_valid_regex_flag};
 
@@ -29,6 +29,7 @@ pub struct Lexer<I: Input> {
     errors: Rc<RefCell<Vec<Error>>>,
     module_errors: Rc<RefCell<Vec<Error>>>,
     strict_errors: Rc<RefCell<Vec<Error>>>,
+    buf: String,
 }
 
 impl<I: Input> FusedIterator for Lexer<I> {}
@@ -92,12 +93,28 @@ impl<I: Input> Lexer<I> {
             errors: Default::default(),
             module_errors: Default::default(),
             strict_errors: Default::default(),
+            buf: String::with_capacity(16),
         }
+    }
+
+    /// Utility method to reuse buffer.
+    fn with_buf<F, Ret>(&mut self, op: F) -> LexResult<Ret>
+    where
+        F: FnOnce(&mut Lexer<I>, &mut String) -> LexResult<Ret>,
+    {
+        let mut buf = mem::take(&mut self.buf);
+        buf.clear();
+
+        let res = op(self, &mut buf);
+
+        self.buf = buf;
+
+        res
     }
 
     fn read_token(&mut self) -> LexResult<Option<Token>> {
         let ch = match self.cur() {
-            Some(c) => c,
+            Some(ch) => ch,
             None => {
                 return Ok(None);
             }
@@ -264,8 +281,8 @@ impl<I: Input> Lexer<I> {
         self.bump(); // '#'
         if self.is(b'!') {
             self.bump(); // '!'
-            while let Some(c) = self.cur() {
-                if is_line_break(c) {
+            while let Some(ch) = self.cur() {
+                if is_line_break(ch) {
                     return true;
                 } else {
                     self.bump();
@@ -654,7 +671,7 @@ impl<I: Input> Lexer<I> {
         let start = self.cur_pos();
         self.bump(); // '\'
         let ch = match self.cur() {
-            Some(c) => c,
+            Some(ch) => ch,
             None => self.error_span(pos_span(start), SyntaxError::InvalidStrEscape)?,
         };
         self.bump();
@@ -708,7 +725,7 @@ impl<I: Input> Lexer<I> {
                     }};
                 }
 
-                match self.cur().and_then(|c| c.to_digit(8)) {
+                match self.cur().and_then(|ch| ch.to_digit(8)) {
                     Some(v) => {
                         value = value * 8 + v;
                         self.bump();
@@ -721,7 +738,7 @@ impl<I: Input> Lexer<I> {
                     },
                 }
 
-                match self.cur().and_then(|c| c.to_digit(8)) {
+                match self.cur().and_then(|ch| ch.to_digit(8)) {
                     Some(v) => {
                         if first_digit > 3 {
                             // Spec: FourToSeven OctalDigit
@@ -772,59 +789,70 @@ impl<I: Input> Lexer<I> {
         self.error(start, SyntaxError::ExpectedHexChars { count: len })?
     }
 
-    // Read an identifier, and return it as a string.
-    fn read_word(&mut self) -> LexResult<(JsWord, bool)> {
+    // Read an identifier.
+    fn read_word(&mut self) -> LexResult<(Word, bool)> {
         debug_assert!(
             self.cur() == Some('\\')
                 || (self.cur().is_some() && is_ident_start(self.cur().unwrap()))
         );
 
-        // TODO: push chunks of source text into String rather than one char at a
-        // time. These chunk would be between any escape sequences (like babel).
+        let mut first = true;
 
-        let mut word = String::new();
-        let mut contains_esc = false;
-        let start = self.cur_pos();
+        self.with_buf(|lexer, buf| {
+            let mut has_escape = false;
 
-        while let Some(ch) = self.cur() {
-            if is_ident_part(ch) {
-                self.bump();
-                word.push(ch);
-            } else if ch == '\\' {
-                contains_esc = true;
-
-                let esc_start = self.cur_pos();
-
-                self.bump(); // '\'
-                if !self.is(b'u') {
-                    self.error_span(pos_span(esc_start), SyntaxError::ExpectedUnicodeEscape)?
+            while let Some(ch) = {
+                // Optimization
+                {
+                    let s = lexer.input.uncons_while(|ch| is_ident_part(ch));
+                    if !s.is_empty() {
+                        first = false;
+                    }
+                    buf.push_str(s)
                 }
 
-                self.bump(); // 'u'
+                lexer.cur()
+            } {
+                match ch {
+                    // unicode escape
+                    '\\' => {
+                        let start = lexer.cur_pos();
 
-                let ch = self.read_unicode_escape(esc_start)?;
+                        lexer.bump(); // '\'
 
-                let valid = if self.cur_pos() == start {
-                    is_ident_start(ch)
-                } else {
-                    is_ident_part(ch)
-                };
+                        if !lexer.is(b'u') {
+                            lexer.error_span(pos_span(start), SyntaxError::ExpectedUnicodeEscape)?
+                        }
 
-                if !valid {
-                    self.emit_error(esc_start, SyntaxError::InvalidIdentChar);
+                        lexer.bump(); // 'u'
+
+                        let ch = lexer.read_unicode_escape(start)?;
+
+                        let valid = if first {
+                            is_ident_start(ch)
+                        } else {
+                            is_ident_part(ch)
+                        };
+
+                        if !valid {
+                            lexer.emit_error(start, SyntaxError::InvalidIdentChar);
+                        }
+
+                        buf.push(ch);
+
+                        has_escape = true;
+                    }
+
+                    _ => {
+                        break;
+                    }
                 }
-
-                word.push(ch);
-            } else {
-                break;
+                first = false;
             }
-        }
+            let value = Word::from(buf.as_str());
 
-        if word.is_empty() {
-            Ok((JsWord::from(self.input.slice_to_cur(start)), contains_esc))
-        } else {
-            Ok((JsWord::from(word), contains_esc))
-        }
+            Ok((value, has_escape))
+        })
     }
 
     // Read an identifier or keyword token. Will check for reserved
@@ -838,15 +866,13 @@ impl<I: Input> Lexer<I> {
 
         let start = self.cur_pos();
 
-        let (text, contains_esc) = self.read_word()?;
-
-        let word = Word::from(text);
+        let (word, has_esc) = self.read_word()?;
 
         // Note: ctx is store in lexer because of this error.
         // 'await' and 'yield' may have semantic of reserved word, which means lexer
         // should know context or parser should handle this error. Our approach to this
         // problem is former one.
-        if contains_esc && self.ctx.is_reserved(&word) {
+        if has_esc && self.ctx.is_reserved(&word) {
             self.error(
                 start,
                 SyntaxError::EscapeInReservedWord { word: word.into() },
