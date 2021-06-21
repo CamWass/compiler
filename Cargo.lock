@@ -160,8 +160,35 @@ name = "cli"
 version = "0.1.0"
 dependencies = [
  "ast",
+ "codegen",
  "global_common",
  "parser",
+]
+
+[[package]]
+name = "codegen"
+version = "0.1.0"
+dependencies = [
+ "ast",
+ "bitflags",
+ "codegen_macros",
+ "global_common",
+ "num-bigint",
+ "parser",
+ "sourcemap",
+ "swc_atoms",
+ "testing",
+]
+
+[[package]]
+name = "codegen_macros"
+version = "0.1.0"
+dependencies = [
+ "macro_common",
+ "pmutil",
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

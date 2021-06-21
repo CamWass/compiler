@@ -1,0 +1,21 @@
+[package]
+edition = "2018"
+license = "Apache-2.0/MIT"
+name = "codegen_macros"
+repository = "https://github.com/swc-project/swc.git"
+version = "0.1.0"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+pmutil = "0.5.1"
+proc-macro2 = "1"
+macro_common = {version = "0.1.0", path = "../../../macros/common"}
+
+[dependencies.syn]
+features = ["fold"]
+version = "1"
+
+[dependencies.quote]
+version = "1"

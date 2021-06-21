@@ -1284,6 +1284,7 @@ define!({
         pub span: Span,
         pub decorators: Vec<Decorator>,
         pub accessibility: Option<Accessibility>,
+        pub is_override: bool,
         pub readonly: bool,
         pub param: TsParamPropParam,
     }
@@ -1632,6 +1633,7 @@ define!({
         pub span: Span,
         pub declare: bool,
         pub is_export: bool,
+        pub is_type_only: bool,
         pub id: Ident,
         pub module_ref: TsModuleRef,
     }
