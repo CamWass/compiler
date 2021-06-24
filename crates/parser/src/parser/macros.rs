@@ -53,7 +53,7 @@ macro_rules! cur {
 /// Returns bool.
 macro_rules! is {
     ($parser:expr, BindingIdent) => {{
-        let ctx = $parser.ctx();
+        let ctx = $parser.ctx;
         match $parser.input.cur() {
             Some(&Word(ref w)) => !ctx.is_reserved_word(&w.cow()),
             _ => false,
@@ -61,7 +61,7 @@ macro_rules! is {
     }};
 
     ($parser:expr, IdentRef) => {{
-        let ctx = $parser.ctx();
+        let ctx = $parser.ctx;
         match $parser.input.cur() {
             Some(&Word(ref w)) => !ctx.is_reserved_word(&w.cow()),
             _ => false,
@@ -188,7 +188,6 @@ macro_rules! expect {
         const TOKEN: &Token = &tok!($t);
         if !eat!($parser, $t) {
             let cur = $parser.input.dump_cur();
-            dbg!($t);
             syntax_error!(
                 $parser,
                 $parser.input.cur_span(),

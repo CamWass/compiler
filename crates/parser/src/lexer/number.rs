@@ -8,7 +8,7 @@ use crate::{
     error::SyntaxError,
     token::{BigInt, Num, Token},
 };
-use global_common::{input::Input, BytePos};
+use global_common::{input::Input, BytePos, Span};
 use num_bigint::BigInt as BigIntValue;
 use std::{fmt::Write, iter::FusedIterator};
 
@@ -79,7 +79,13 @@ fn digits(value: u64, radix: u64) -> impl Iterator<Item = u64> + Clone + 'static
     Digits::new(value, radix)
 }
 
-impl<I: Input> Lexer<I> {
+impl<I: Input, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
+    Lexer<I, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
+where
+    ErrorEmitter: FnMut(Span, SyntaxError),
+    ModuleErrorEmitter: FnMut(Span, SyntaxError),
+    StrictErrorEmitter: FnMut(Span, SyntaxError),
+{
     /// `op`- |total, radix, value| -> (total * radix + value, continue)
     fn read_digits<F, Ret>(
         &mut self,

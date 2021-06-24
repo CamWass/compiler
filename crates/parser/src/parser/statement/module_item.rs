@@ -1,7 +1,7 @@
 use super::*;
 use crate::context::{YesMaybe, YesNoMaybe};
 
-impl<'a, I: Tokens> Parser<I> {
+impl Parser {
     #[allow(clippy::cognitive_complexity)]
     fn parse_import(&mut self) -> PResult<ModuleItem> {
         let start = self.input.cur_pos();
@@ -32,12 +32,12 @@ impl<'a, I: Tokens> Parser<I> {
 
         // It's now import statement
 
-        if !self.ctx().is_module() {
+        if !self.ctx.is_module() {
             // Switch to module mode
             let ctx = Context {
                 module: YesNoMaybe::Yes,
                 strict: YesMaybe::Yes,
-                ..self.ctx()
+                ..self.ctx
             };
             self.set_ctx(ctx);
         }
@@ -174,7 +174,7 @@ impl<'a, I: Tokens> Parser<I> {
                 //
                 // 'ImportedBinding'
                 // 'IdentifierName' as 'ImportedBinding'
-                if self.ctx().is_reserved_word(&orig_name.sym) {
+                if self.ctx.is_reserved_word(&orig_name.sym) {
                     syntax_error!(self, orig_name.span, SyntaxError::ReservedWordInImport)
                 }
 
@@ -197,19 +197,19 @@ impl<'a, I: Tokens> Parser<I> {
         let ctx = Context {
             in_async: false,
             in_generator: false,
-            ..self.ctx()
+            ..self.ctx
         };
         Ok(self.with_ctx(ctx).parse_binding_ident()?.id)
     }
 
     #[allow(clippy::cognitive_complexity)]
     fn parse_export(&mut self, decorators: Vec<Decorator>) -> PResult<ModuleDecl> {
-        if !self.ctx().is_module() {
+        if !self.ctx.is_module() {
             // Switch to module mode
             let ctx = Context {
                 module: YesNoMaybe::Yes,
                 strict: YesMaybe::Yes,
-                ..self.ctx()
+                ..self.ctx
             };
             self.set_ctx(ctx);
         }
@@ -434,7 +434,7 @@ impl IsDirective for ModuleItem {
     }
 }
 
-impl<'a, I: Tokens> StmtLikeParser<'a, ModuleItem> for Parser<I> {
+impl<'a> StmtLikeParser<'a, ModuleItem> for Parser {
     fn handle_import_export(
         &mut self,
         top_level: bool,

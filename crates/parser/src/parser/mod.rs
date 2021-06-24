@@ -9,15 +9,15 @@ mod pat;
 mod statement;
 mod util;
 
-pub use self::input::Tokens;
 use crate::{
     context::{Context, YesMaybe, YesNoMaybe},
     error::{Error, SyntaxError},
     lexer::Lexer,
     token::Token,
+    JscTarget,
 };
 use ast::*;
-use global_common::{input::Input, BytePos, Span};
+use global_common::{input::StringInput, BytePos, Span};
 use input::Buffer;
 use std::collections::HashMap;
 use swc_atoms::JsWord;
@@ -38,42 +38,76 @@ struct State {
 /// When error occurs, error is emitted and parser returns Err(()).
 pub type PResult<T> = Result<T, Error>;
 
-pub struct Parser<I: Tokens> {
-    /// [false] while backtracking
-    emit_err: bool,
+pub struct Parser {
     state: State,
-    input: Buffer<I>,
+    input: Buffer,
+    ctx: Context,
+    target: JscTarget,
+
+    /// Buffer for errors that are invalid in all contexts.
+    errors: Vec<Error>,
+    /// Buffer for errors that are only invalid in module code.
+    module_errors: Vec<Error>,
+    /// Buffer for errors that are invalid in strict mode.
+    strict_errors: Vec<Error>,
 }
 
-impl<I: Input> Parser<Lexer<I>> {
-    pub fn new(input: I) -> Self {
-        Self::new_from(Lexer::new(Default::default(), input))
-    }
-}
+impl Parser {
+    pub fn new(input: StringInput) -> Self {
+        let mut errors = Vec::new();
+        let mut module_errors = Vec::new();
+        let mut strict_errors = Vec::new();
 
-impl<I: Tokens> Parser<I> {
-    pub fn new_from(input: I) -> Self {
+        let mk_error = |span, kind| Error {
+            error: Box::new((span, kind)),
+        };
+
+        let mut lexer = Lexer::new(
+            Default::default(),
+            input,
+            |span, kind| {
+                errors.push(mk_error(span, kind));
+            },
+            |span, kind| {
+                module_errors.push(mk_error(span, kind));
+            },
+            |span, kind| {
+                strict_errors.push(mk_error(span, kind));
+            },
+        );
+
+        let mut tokens = Vec::new();
+
+        while let Some(token_and_span) = lexer.next() {
+            match token_and_span.token {
+                Token::Error(..) => {
+                    tokens.push(token_and_span);
+                    break;
+                }
+                _ => {
+                    tokens.push(token_and_span);
+                }
+            }
+        }
+
         Parser {
-            emit_err: true,
             state: Default::default(),
-            input: Buffer::new(input),
+            input: Buffer::new(tokens),
+            ctx: Default::default(),
+            target: Default::default(),
+
+            errors,
+            module_errors,
+            strict_errors,
         }
     }
-
-    pub fn take_errors(&mut self) -> Vec<Error> {
-        self.input().take_errors()
-    }
-
-    // pub(crate) fn target(&self) -> JscTarget {
-    //     self.input.target()
-    // }
 
     pub fn parse_script(&mut self) -> PResult<Script> {
         trace_cur!(self, parse_script);
 
         let ctx = Context {
             module: YesNoMaybe::No,
-            ..self.ctx()
+            ..self.ctx
         };
         self.set_ctx(ctx);
 
@@ -96,7 +130,7 @@ impl<I: Tokens> Parser<I> {
 
         let body: Vec<ModuleItem> = self.parse_block_body(true, true, None)?;
 
-        Ok(if !self.ctx().is_module() {
+        Ok(if !self.ctx.is_module() {
             let body = body
                 .into_iter()
                 .map(|item| match item {
@@ -122,7 +156,7 @@ impl<I: Tokens> Parser<I> {
         let ctx = Context {
             module: YesNoMaybe::Yes,
             strict: YesMaybe::Yes,
-            ..self.ctx()
+            ..self.ctx
         };
         // Module code is always in strict mode
         self.set_ctx(ctx);
@@ -145,40 +179,5 @@ impl<I: Tokens> Parser<I> {
             },
             _ => Ok(None),
         }
-    }
-
-    fn ctx(&self) -> Context {
-        self.input.get_ctx()
-    }
-
-    #[cold]
-    fn emit_err(&self, span: Span, error: SyntaxError) {
-        if !self.emit_err {
-            return;
-        }
-
-        self.emit_error(Error {
-            error: Box::new((span, error)),
-        })
-    }
-
-    #[cold]
-    fn emit_error(&self, error: Error) {
-        if !self.emit_err {
-            return;
-        }
-
-        self.input_ref().add_error(error);
-    }
-
-    #[cold]
-    fn emit_strict_mode_err(&self, span: Span, error: SyntaxError) {
-        if !self.emit_err {
-            return;
-        }
-        let error = Error {
-            error: Box::new((span, error)),
-        };
-        self.input_ref().add_strict_mode_error(error);
     }
 }

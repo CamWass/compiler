@@ -2,14 +2,14 @@ use super::*;
 use ecma_visit::{noop_visit_type, Node, Visit, VisitWith};
 use global_common::{Span, Spanned, DUMMY_SP};
 
-impl<'a, I: Tokens> Parser<I> {
+impl Parser {
     pub(in crate::parser) fn verify_expr(&mut self, expr: Box<Expr>) -> Box<Expr> {
         let mut v = Verifier { errors: vec![] };
 
         v.visit_expr(&expr, &Invalid { span: DUMMY_SP } as _);
 
         for (span, error) in v.errors {
-            self.emit_err(span, error);
+            self.emit_error_span(span, error);
         }
 
         expr

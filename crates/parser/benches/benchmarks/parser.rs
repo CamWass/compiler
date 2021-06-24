@@ -1,6 +1,6 @@
 use criterion::{black_box, criterion_group, Criterion, Throughput};
 use global_common::{input::StringInput, sync::Lrc, FileName, FilePathMapping, SourceMap};
-use parser::{lexer::Lexer, Parser};
+use parser::Parser;
 use std::time::Duration;
 
 struct Bench(&'static str, &'static str);
@@ -31,8 +31,7 @@ fn bench(c: &mut Criterion) {
 
         group.bench_with_input(*id, &fm, |b, f| {
             b.iter(|| {
-                let lexer = Lexer::new(Default::default(), StringInput::from(&**f));
-                let mut parser = Parser::new_from(lexer);
+                let mut parser = Parser::new(StringInput::from(&**f));
                 black_box(parser.parse_module())
             })
         });

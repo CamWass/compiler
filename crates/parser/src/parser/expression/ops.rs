@@ -3,12 +3,12 @@ use super::*;
 use crate::token::Keyword;
 use global_common::Spanned;
 
-impl<'a, I: Tokens> Parser<I> {
+impl Parser {
     /// Name from spec: 'LogicalORExpression'
     pub(super) fn parse_bin_expr(&mut self) -> PResult<Box<Expr>> {
         trace_cur!(self, parse_bin_expr);
 
-        let ctx = self.ctx();
+        let include_in_expr = self.ctx.include_in_expr;
 
         let potential_arrow_start = self.state.potential_arrow_start;
 
@@ -18,13 +18,13 @@ impl<'a, I: Tokens> Parser<I> {
                 trace_cur!(self, parse_bin_expr__recovery_unary_err);
 
                 match cur!(self, true)? {
-                    &Word(Word::Keyword(Keyword::In)) if ctx.include_in_expr => {
-                        self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
+                    &Word(Word::Keyword(Keyword::In)) if include_in_expr => {
+                        self.emit_error_span(self.input.cur_span(), SyntaxError::TS1109);
 
                         Box::new(Expr::Invalid(Invalid { span: err.span() }))
                     }
                     &Word(Word::Keyword(Keyword::InstanceOf)) | &Token::BinOp(..) => {
-                        self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
+                        self.emit_error_span(self.input.cur_span(), SyntaxError::TS1109);
 
                         Box::new(Expr::Invalid(Invalid { span: err.span() }))
                     }
@@ -66,7 +66,7 @@ impl<'a, I: Tokens> Parser<I> {
                     ..
                 }) => match &**left {
                     Expr::Bin(BinExpr { op: op!("??"), .. }) => {
-                        self.emit_err(*span, SyntaxError::NullishCoalescingWithLogicalOp);
+                        self.emit_error_span(*span, SyntaxError::NullishCoalescingWithLogicalOp);
                     }
 
                     _ => {}
@@ -89,14 +89,13 @@ impl<'a, I: Tokens> Parser<I> {
         left: Box<Expr>,
         min_prec: u8,
     ) -> PResult<(Box<Expr>, Option<u8>)> {
-        let ctx = self.ctx();
         // Return left on eof
         let word = match self.input.cur() {
             Some(cur) => cur,
             _ => return Ok((left, None)),
         };
         let op = match *word {
-            Word(Word::Keyword(Keyword::In)) if ctx.include_in_expr => op!("in"),
+            Word(Word::Keyword(Keyword::In)) if self.ctx.include_in_expr => op!("in"),
             Word(Word::Keyword(Keyword::InstanceOf)) => op!("instanceof"),
             Token::BinOp(op) => op.into(),
             _ => {
@@ -155,14 +154,14 @@ impl<'a, I: Tokens> Parser<I> {
         if op == op!("??") {
             match *left {
                 Expr::Bin(BinExpr { span, op, .. }) if op == op!("&&") || op == op!("||") => {
-                    self.emit_err(span, SyntaxError::NullishCoalescingWithLogicalOp);
+                    self.emit_error_span(span, SyntaxError::NullishCoalescingWithLogicalOp);
                 }
                 _ => {}
             }
 
             match *right {
                 Expr::Bin(BinExpr { span, op, .. }) if op == op!("&&") || op == op!("||") => {
-                    self.emit_err(span, SyntaxError::NullishCoalescingWithLogicalOp);
+                    self.emit_error_span(span, SyntaxError::NullishCoalescingWithLogicalOp);
                 }
                 _ => {}
             }
@@ -222,7 +221,7 @@ impl<'a, I: Tokens> Parser<I> {
             let arg = match self.parse_unary_expr() {
                 Ok(expr) => expr,
                 Err(err) => {
-                    self.emit_error(err);
+                    self.add_error(err);
                     Box::new(Expr::Invalid(Invalid {
                         span: Span::new(arg_start, arg_start, Default::default()),
                     }))
@@ -231,7 +230,7 @@ impl<'a, I: Tokens> Parser<I> {
 
             if op == op!("delete") {
                 if let Expr::Ident(ref i) = *arg {
-                    self.emit_strict_mode_err(i.span, SyntaxError::TS1102)
+                    self.emit_strict_mode_error_span(i.span, SyntaxError::TS1102)
                 }
             }
 
@@ -242,7 +241,7 @@ impl<'a, I: Tokens> Parser<I> {
             })));
         }
 
-        // if (self.ctx().in_async || self.syntax().top_level_await()) && is!(self, "await") {
+        // if (self.ctx.in_async || self.syntax().top_level_await()) && is!(self, "await") {
         //     return self.parse_await_expr();
         // }
 
@@ -289,7 +288,7 @@ impl<'a, I: Tokens> Parser<I> {
             syntax_error!(self, SyntaxError::AwaitStar);
         }
 
-        if is_one_of!(self, ')', ']') && !self.ctx().in_async {
+        if is_one_of!(self, ')', ']') && !self.ctx.in_async {
             return Ok(Box::new(Expr::Ident(Ident::new(
                 js_word!("await"),
                 span!(self, start),

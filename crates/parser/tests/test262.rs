@@ -5,8 +5,7 @@ extern crate test;
 use ast::*;
 use common::Normalizer;
 use ecma_visit::FoldWith;
-use global_common::input::StringInput;
-use parser::{lexer::Lexer, PResult, Parser};
+use parser::{PResult, Parser};
 use std::{
     env,
     fs::{read_dir, File},
@@ -363,7 +362,7 @@ fn parse_module<'a>(file_name: &Path) -> Result<Module, NormalizedOutput> {
 
 fn with_parser<F, Ret>(file_name: &Path, f: F) -> Result<Ret, StdErr>
 where
-    F: FnOnce(&mut Parser<Lexer<StringInput<'_>>>) -> PResult<Ret>,
+    F: FnOnce(&mut Parser) -> PResult<Ret>,
 {
     let output = ::testing::run_test(false, |cm, handler| {
         let fm = cm

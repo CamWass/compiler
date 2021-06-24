@@ -4,7 +4,7 @@ use either::Either;
 use global_common::BytePos;
 use swc_atoms::js_word;
 
-impl<'a, I: Tokens> Parser<I> {
+impl Parser {
     pub(super) fn parse_maybe_private_name(&mut self) -> PResult<Either<PrivateName, Ident>> {
         let is_private = is!(self, '#');
 
@@ -37,7 +37,7 @@ impl<'a, I: Tokens> Parser<I> {
 
     /// LabelIdentifier
     pub(super) fn parse_label_ident(&mut self) -> PResult<Ident> {
-        let ctx = self.ctx();
+        let ctx = self.ctx;
 
         self.parse_ident(!ctx.in_generator, !ctx.in_async)
     }
@@ -81,7 +81,10 @@ impl<'a, I: Tokens> Parser<I> {
             // "package", "private", "protected",  "public", "static", or "yield".
             match w {
                 Word::Ident(js_word!("enum")) => {
-                    parser.emit_err(parser.input.prev_span(), SyntaxError::InvalidIdentInStrict);
+                    parser.emit_error_span(
+                        parser.input.prev_span(),
+                        SyntaxError::InvalidIdentInStrict,
+                    );
                 }
                 Word::Keyword(Keyword::Yield)
                 | Word::Ident(js_word!("static"))
@@ -92,7 +95,7 @@ impl<'a, I: Tokens> Parser<I> {
                 | Word::Ident(js_word!("private"))
                 | Word::Ident(js_word!("protected"))
                 | Word::Ident(js_word!("public")) => {
-                    parser.emit_strict_mode_err(
+                    parser.emit_strict_mode_error_span(
                         parser.input.prev_span(),
                         SyntaxError::InvalidIdentInStrict,
                     );
@@ -108,7 +111,7 @@ impl<'a, I: Tokens> Parser<I> {
             match w {
                 // It is a Syntax Error if the goal symbol of the syntactic grammar is Module
                 // and the StringValue of IdentifierName is "await".
-                Word::Keyword(Keyword::Await) if parser.ctx().is_module() => {
+                Word::Keyword(Keyword::Await) if parser.ctx.is_module() => {
                     syntax_error!(parser, parser.input.prev_span(), SyntaxError::ExpectedIdent)
                 }
                 Word::Keyword(Keyword::Let) => Ok(js_word!("let")),
@@ -128,12 +131,12 @@ impl<'a, I: Tokens> Parser<I> {
 pub(super) trait MaybeOptionalIdentParser<Ident> {
     fn parse_maybe_opt_binding_ident(&mut self) -> PResult<Ident>;
 }
-impl<I: Tokens> MaybeOptionalIdentParser<Ident> for Parser<I> {
+impl MaybeOptionalIdentParser<Ident> for Parser {
     fn parse_maybe_opt_binding_ident(&mut self) -> PResult<Ident> {
         self.parse_binding_ident().map(|i| i.id)
     }
 }
-impl<I: Tokens> MaybeOptionalIdentParser<Option<Ident>> for Parser<I> {
+impl MaybeOptionalIdentParser<Option<Ident>> for Parser {
     fn parse_maybe_opt_binding_ident(&mut self) -> PResult<Option<Ident>> {
         self.parse_opt_binding_ident().map(|opt| opt.map(|i| i.id))
     }

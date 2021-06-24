@@ -29,7 +29,7 @@ mod verifier;
 //
 // [opp]: http://en.wikipedia.org/wiki/Operator-precedence_parser
 
-impl<'a, I: Tokens> Parser<I> {
+impl Parser {
     // https://tc39.es/ecma262/#prod-Expression
     pub(super) fn parse_expr(&mut self) -> PResult<Box<Expr>> {
         trace_cur!(self, parse_expr);
@@ -67,7 +67,7 @@ impl<'a, I: Tokens> Parser<I> {
     fn parse_assignment_expr_base(&mut self) -> PResult<Box<Expr>> {
         trace_cur!(self, parse_assignment_expr_base);
 
-        if self.ctx().in_generator && is!(self, "yield") {
+        if self.ctx.in_generator && is!(self, "yield") {
             return self.parse_yield_expr();
         }
 
@@ -107,8 +107,8 @@ impl<'a, I: Tokens> Parser<I> {
                 } else {
                     //It is an early Reference Error if IsValidSimpleAssignmentTarget of
                     // LeftHandSideExpression is false.
-                    if !cond.is_valid_simple_assignment_target(self.ctx().strict) {
-                        self.emit_err(cond.span(), SyntaxError::NotSimpleAssign)
+                    if !cond.is_valid_simple_assignment_target(self.ctx.strict) {
+                        self.emit_error_span(cond.span(), SyntaxError::NotSimpleAssign)
                     }
 
                     // TODO(swc):
@@ -144,13 +144,13 @@ impl<'a, I: Tokens> Parser<I> {
             let ctx = Context {
                 in_cond_expr: true,
                 include_in_expr: true,
-                ..self.ctx()
+                ..self.ctx
             };
             let cons = self.with_ctx(ctx).parse_assignment_expr()?;
             expect!(self, ':');
             let ctx = Context {
                 in_cond_expr: true,
-                ..self.ctx()
+                ..self.ctx
             };
             let alt = self.with_ctx(ctx).parse_assignment_expr()?;
             let span = Span::new(start, alt.span().hi(), Default::default());
@@ -277,7 +277,7 @@ impl<'a, I: Tokens> Parser<I> {
             let id = self.parse_ident_name()?;
             match id.sym {
                 //                    js_word!("eval") | js_word!("arguments") => {
-                //                        self.emit_err(id.span,
+                //                        self.emit_error_span(id.span,
                 // SyntaxError::EvalAndArgumentsInStrict)
                 // }
                 js_word!("yield")
@@ -288,7 +288,7 @@ impl<'a, I: Tokens> Parser<I> {
                 | js_word!("private")
                 | js_word!("protected")
                 | js_word!("public") => {
-                    self.emit_strict_mode_err(
+                    self.emit_strict_mode_error_span(
                         self.input.prev_span(),
                         SyntaxError::InvalidIdentInStrict,
                     );
@@ -881,13 +881,13 @@ impl<'a, I: Tokens> Parser<I> {
                 BlockStmtOrExpr::BlockStmt(..) => match self.input.cur() {
                     Some(&Token::BinOp(..)) => {
                         // ) is required
-                        self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
+                        self.emit_error_span(self.input.cur_span(), SyntaxError::TS1005);
                         // let errored_expr =
                         //     self.parse_bin_op_recursively(Box::new(arrow_expr.into()), 0);
 
                         // if !is!(self, ';') {
                         //     // ; is required
-                        //     self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
+                        //     self.emit_error_span(self.input.cur_span(), SyntaxError::TS1005);
                         // }
 
                         // return Ok(errored_expr);
@@ -1075,7 +1075,7 @@ impl<'a, I: Tokens> Parser<I> {
             _ => unexpected!(self, "template token"),
         };
 
-        if cooked.is_none() && (!is_tagged || self.input.target() < JscTarget::Es2018) {
+        if cooked.is_none() && (!is_tagged || self.target < JscTarget::Es2018) {
             syntax_error!(
                 self,
                 span!(self, start),
@@ -1104,18 +1104,18 @@ pub(in crate::parser) enum PatOrExprOrSpread {
 
 /// simple leaf methods.
 
-impl<'a, I: Tokens> Parser<I> {
+impl Parser {
     fn parse_yield_expr(&mut self) -> PResult<Box<Expr>> {
         let start = self.input.cur_pos();
 
         self.assert_and_bump(&tok!("yield"));
-        debug_assert!(self.ctx().in_generator);
+        debug_assert!(self.ctx.in_generator);
 
         // Spec says
         // YieldExpression cannot be used within the FormalParameters of a generator
         // function because any expressions that are part of FormalParameters are
         // evaluated before the resulting generator object is in a resumable state.
-        if self.ctx().in_parameters {
+        if self.ctx.in_parameters {
             syntax_error!(self, self.input.prev_span(), SyntaxError::YieldParamInGen)
         }
 
@@ -1204,8 +1204,8 @@ impl<'a, I: Tokens> Parser<I> {
     }
 
     pub(super) fn check_assign_target(&mut self, expr: &Expr /*, deny_call: bool*/) {
-        if !expr.is_valid_simple_assignment_target(self.ctx().strict) {
-            self.emit_err(expr.span(), SyntaxError::TS2406);
+        if !expr.is_valid_simple_assignment_target(self.ctx.strict) {
+            self.emit_error_span(expr.span(), SyntaxError::TS2406);
         }
     }
 }

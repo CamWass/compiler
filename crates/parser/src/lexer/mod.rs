@@ -4,7 +4,6 @@ mod state;
 mod util;
 
 use crate::{
-    context::Context,
     error::{Error, SyntaxError},
     token::*,
     JscTarget,
@@ -14,27 +13,45 @@ use global_common::{input::Input, BytePos, Span};
 use identifier::{is_ident_part, is_ident_start};
 use state::State;
 pub use state::{TokenContext, TokenContexts};
-use std::{cell::RefCell, iter::FusedIterator, mem, rc::Rc};
+use std::{iter::FusedIterator, mem};
 use swc_atoms::JsWord;
 use util::{char_bytes, char_literals, is_line_break, is_valid_regex_flag};
 
 pub(crate) type LexResult<T> = Result<T, Error>;
 
 #[derive(Clone)]
-pub struct Lexer<I: Input> {
-    pub(crate) ctx: Context,
+pub struct Lexer<I: Input, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
+where
+    ErrorEmitter: FnMut(Span, SyntaxError),
+    ModuleErrorEmitter: FnMut(Span, SyntaxError),
+    StrictErrorEmitter: FnMut(Span, SyntaxError),
+{
     input: I,
     state: State,
     pub(crate) target: JscTarget,
-    errors: Rc<RefCell<Vec<Error>>>,
-    module_errors: Rc<RefCell<Vec<Error>>>,
-    strict_errors: Rc<RefCell<Vec<Error>>>,
     buf: String,
+
+    error_emitter: ErrorEmitter,
+    module_error_emitter: ModuleErrorEmitter,
+    strict_error_emitter: StrictErrorEmitter,
 }
 
-impl<I: Input> FusedIterator for Lexer<I> {}
+impl<I: Input, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter> FusedIterator
+    for Lexer<I, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
+where
+    ErrorEmitter: FnMut(Span, SyntaxError),
+    ModuleErrorEmitter: FnMut(Span, SyntaxError),
+    StrictErrorEmitter: FnMut(Span, SyntaxError),
+{
+}
 
-impl<I: Input> Iterator for Lexer<I> {
+impl<I: Input, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter> Iterator
+    for Lexer<I, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
+where
+    ErrorEmitter: FnMut(Span, SyntaxError),
+    ModuleErrorEmitter: FnMut(Span, SyntaxError),
+    StrictErrorEmitter: FnMut(Span, SyntaxError),
+{
     type Item = TokenAndSpan;
     fn next(&mut self) -> Option<Self::Item> {
         let mut start = self.cur_pos();
@@ -83,16 +100,27 @@ impl<I: Input> Iterator for Lexer<I> {
     }
 }
 
-impl<I: Input> Lexer<I> {
-    pub fn new(target: JscTarget, input: I) -> Self {
+impl<I: Input, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
+    Lexer<I, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
+where
+    ErrorEmitter: FnMut(Span, SyntaxError),
+    ModuleErrorEmitter: FnMut(Span, SyntaxError),
+    StrictErrorEmitter: FnMut(Span, SyntaxError),
+{
+    pub fn new(
+        target: JscTarget,
+        input: I,
+        error_emitter: ErrorEmitter,
+        module_error_emitter: ModuleErrorEmitter,
+        strict_error_emitter: StrictErrorEmitter,
+    ) -> Self {
         Lexer {
             state: State::new(),
             input,
             target,
-            ctx: Default::default(),
-            errors: Default::default(),
-            module_errors: Default::default(),
-            strict_errors: Default::default(),
+            error_emitter,
+            module_error_emitter,
+            strict_error_emitter,
             buf: String::with_capacity(16),
         }
     }
@@ -100,7 +128,10 @@ impl<I: Input> Lexer<I> {
     /// Utility method to reuse buffer.
     fn with_buf<F, Ret>(&mut self, op: F) -> LexResult<Ret>
     where
-        F: FnOnce(&mut Lexer<I>, &mut String) -> LexResult<Ret>,
+        F: FnOnce(
+            &mut Lexer<I, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>,
+            &mut String,
+        ) -> LexResult<Ret>,
     {
         let mut buf = mem::take(&mut self.buf);
         buf.clear();
@@ -873,18 +904,54 @@ impl<I: Input> Lexer<I> {
 
         let (word, has_esc) = self.read_word()?;
 
-        // Note: ctx is store in lexer because of this error.
-        // 'await' and 'yield' may have semantic of reserved word, which means lexer
-        // should know context or parser should handle this error. Our approach to this
-        // problem is former one.
-        if has_esc && self.ctx.is_reserved(&word) {
-            self.error(
-                start,
-                SyntaxError::EscapeInReservedWord { word: word.into() },
-            )?
-        } else {
-            Ok(Word(word))
+        if has_esc {
+            match word {
+                Word::Null
+                | Word::True
+                | Word::False
+                | Word::Keyword(Keyword::Break)
+                | Word::Keyword(Keyword::Case)
+                | Word::Keyword(Keyword::Catch)
+                | Word::Keyword(Keyword::Continue)
+                | Word::Keyword(Keyword::Debugger)
+                | Word::Keyword(Keyword::Default_)
+                | Word::Keyword(Keyword::Do)
+                | Word::Keyword(Keyword::Export)
+                | Word::Keyword(Keyword::Else)
+                | Word::Keyword(Keyword::Finally)
+                | Word::Keyword(Keyword::For)
+                | Word::Keyword(Keyword::Function)
+                | Word::Keyword(Keyword::If)
+                | Word::Keyword(Keyword::Return)
+                | Word::Keyword(Keyword::Switch)
+                | Word::Keyword(Keyword::Throw)
+                | Word::Keyword(Keyword::Try)
+                | Word::Keyword(Keyword::Var)
+                | Word::Keyword(Keyword::Const)
+                | Word::Keyword(Keyword::While)
+                | Word::Keyword(Keyword::With)
+                | Word::Keyword(Keyword::New)
+                | Word::Keyword(Keyword::This)
+                | Word::Keyword(Keyword::Super)
+                | Word::Keyword(Keyword::Class)
+                | Word::Keyword(Keyword::Extends)
+                | Word::Keyword(Keyword::Import)
+                | Word::Keyword(Keyword::In)
+                | Word::Keyword(Keyword::InstanceOf)
+                | Word::Keyword(Keyword::TypeOf)
+                | Word::Keyword(Keyword::Void)
+                | Word::Keyword(Keyword::Delete) => {
+                    return self.error(
+                        start,
+                        SyntaxError::EscapeInReservedWord { word: word.into() },
+                    )?
+                }
+
+                _ => {}
+            }
         }
+
+        Ok(Word(word))
     }
 
     // TODO: Verify that the raw value is spec compliant/look at swc/babel's implementations.
@@ -996,10 +1063,6 @@ impl<I: Input> Lexer<I> {
         }
 
         self.error(start_of_tpl, SyntaxError::UnterminatedTpl)?
-    }
-
-    pub fn set_expr_allowed(&mut self, allow: bool) {
-        self.state.is_expr_allowed = allow;
     }
 }
 

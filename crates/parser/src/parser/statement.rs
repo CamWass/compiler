@@ -1,4 +1,4 @@
-use super::{input::Tokens, pat::PatType, *};
+use super::{pat::PatType, *};
 use crate::{
     context::{Context, YesMaybe},
     token::{Token, Word},
@@ -71,7 +71,7 @@ pub enum StmtParseCtx {
     None,
 }
 
-impl<'a, I: Tokens> StmtLikeParser<'a, Stmt> for Parser<I> {
+impl<'a> StmtLikeParser<'a, Stmt> for Parser {
     fn handle_import_export(&mut self, _: bool, _: Vec<Decorator>) -> PResult<Stmt> {
         let start = self.input.cur_pos();
         if is!(self, "import") {
@@ -102,7 +102,7 @@ impl<'a, I: Tokens> StmtLikeParser<'a, Stmt> for Parser<I> {
     }
 }
 
-impl<'a, I: Tokens> Parser<I> {
+impl<'a> Parser {
     pub(super) fn parse_block_body<Type>(
         &mut self,
         allow_directives: bool,
@@ -115,7 +115,7 @@ impl<'a, I: Tokens> Parser<I> {
     {
         trace_cur!(self, parse_block_body);
 
-        let old_ctx = self.ctx();
+        let old_ctx = self.ctx;
 
         let mut parsed_non_directive = false;
         let mut has_strict_mode_directive = false;
@@ -140,22 +140,6 @@ impl<'a, I: Tokens> Parser<I> {
                     }
                 } else {
                     parsed_non_directive = true;
-
-                    // Once we have stopped parsing directives, we know that
-                    // strict mode will not change within the block, and we have
-                    // a good idea of whether we are in strict mode or not.
-                    // However, there may be strict mode errors that were
-                    // buffered while we were still uncertain of strict mode.
-                    // Just because we have not encountered a "use strict"
-                    // directive does not guarantee that the code is not in
-                    // strict mode - we may later encounter a module declaration
-                    // (import/export), which requires us to reinterpret the
-                    // code using strict mode. Therefore, rather than discarding
-                    // the strict mode errors, we convert the strict mode errors
-                    // into module errors. This way they can later be emitted,
-                    // if necessary.
-
-                    self.input.convert_strict_mode_errors_to_module_errors();
                 }
             }
 
@@ -164,6 +148,10 @@ impl<'a, I: Tokens> Parser<I> {
 
         if end.is_some() {
             self.input.bump();
+        }
+
+        if self.ctx.is_strict() {
+            self.emit_preceding_strict_errors();
         }
 
         if !top_level {
@@ -245,7 +233,7 @@ impl<'a, I: Tokens> Parser<I> {
             }
             tok!("function") => {
                 if parse_ctx != StmtParseCtx::None {
-                    if self.ctx().is_strict() {
+                    if self.ctx.is_strict() {
                         syntax_error!(self, SyntaxError::StrictFunction);
                     } else if parse_ctx == StmtParseCtx::Other {
                         syntax_error!(self, SyntaxError::SloppyFunction);
@@ -359,7 +347,7 @@ impl<'a, I: Tokens> Parser<I> {
         };
         if let Expr::Ident(ref ident) = *expr {
             if *ident.sym == js_word!("interface") && self.input.had_line_break_before_cur() {
-                self.emit_strict_mode_err(ident.span, SyntaxError::InvalidIdentInStrict);
+                self.emit_strict_mode_error_span(ident.span, SyntaxError::InvalidIdentInStrict);
 
                 eat!(self, ';');
 
@@ -373,7 +361,7 @@ impl<'a, I: Tokens> Parser<I> {
         if let Expr::Ident(Ident { ref sym, span, .. }) = *expr {
             match *sym {
                 js_word!("enum") | js_word!("interface") => {
-                    self.emit_strict_mode_err(span, SyntaxError::InvalidIdentInStrict);
+                    self.emit_strict_mode_error_span(span, SyntaxError::InvalidIdentInStrict);
                 }
                 _ => {}
             }
@@ -386,7 +374,7 @@ impl<'a, I: Tokens> Parser<I> {
             }))
         } else {
             if let Token::BinOp(..) = *cur!(self, false)? {
-                self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
+                self.emit_error_span(self.input.cur_span(), SyntaxError::TS1005);
                 let expr = self.parse_bin_op_recursively(expr, 0)?;
                 return Ok(ExprStmt {
                     span: span!(self, start),
@@ -402,17 +390,17 @@ impl<'a, I: Tokens> Parser<I> {
         }
     }
 
-    fn verify_break_continue(&self, is_break: bool, label: &Option<Ident>, span: Span) {
+    fn verify_break_continue(&mut self, is_break: bool, label: &Option<Ident>, span: Span) {
         if is_break {
             if label.is_some() && !self.state.labels.contains(&label.as_ref().unwrap().sym) {
-                self.emit_err(span, SyntaxError::TS1116);
-            } else if !self.ctx().is_break_allowed {
-                self.emit_err(span, SyntaxError::TS1105);
+                self.emit_error_span(span, SyntaxError::TS1116);
+            } else if !self.ctx.is_break_allowed {
+                self.emit_error_span(span, SyntaxError::TS1105);
             }
-        } else if !self.ctx().is_continue_allowed {
-            self.emit_err(span, SyntaxError::TS1115);
+        } else if !self.ctx.is_continue_allowed {
+            self.emit_error_span(span, SyntaxError::TS1115);
         } else if label.is_some() && !self.state.labels.contains(&label.as_ref().unwrap().sym) {
-            self.emit_err(span, SyntaxError::TS1107);
+            self.emit_error_span(span, SyntaxError::TS1107);
         }
     }
 
@@ -439,7 +427,7 @@ impl<'a, I: Tokens> Parser<I> {
         let ctx = Context {
             is_break_allowed: true,
             is_continue_allowed: true,
-            ..self.ctx()
+            ..self.ctx
         };
 
         let body = self
@@ -483,7 +471,7 @@ impl<'a, I: Tokens> Parser<I> {
         let ctx = Context {
             is_break_allowed: true,
             is_continue_allowed: true,
-            ..self.ctx()
+            ..self.ctx
         };
         let body = self
             .with_ctx(ctx)
@@ -536,7 +524,10 @@ impl<'a, I: Tokens> Parser<I> {
             if is_one_of!(self, "of", "in") {
                 if decl.decls.len() > 1 {
                     for excess_decl in decl.decls.iter().skip(1) {
-                        self.emit_err(excess_decl.name.span(), SyntaxError::TooManyVarInForInHead);
+                        self.emit_error_span(
+                            excess_decl.name.span(),
+                            SyntaxError::TooManyVarInForInHead,
+                        );
                     }
                     // TODO: is the following error more accurate/descriptive than the above one?
 
@@ -547,7 +538,7 @@ impl<'a, I: Tokens> Parser<I> {
                     // );
                     // panic!("Too many variable declarations in for in/of head. Expected 1 declaration, found {}. {:?}", decl.decls.len(), span_of_excess_decls);
                 } else if decl.decls[0].init.is_some() {
-                    self.emit_err(
+                    self.emit_error_span(
                         decl.decls[0].name.span(),
                         SyntaxError::VarInitializerInForInHead,
                     );
@@ -651,8 +642,8 @@ impl<'a, I: Tokens> Parser<I> {
 
         expect!(self, ';');
 
-        if !self.ctx().in_function {
-            self.emit_err(span!(self, start), SyntaxError::ReturnNotAllowed);
+        if !self.ctx.in_function {
+            self.emit_error_span(span!(self, start), SyntaxError::ReturnNotAllowed);
         }
 
         Ok(Stmt::Return(ReturnStmt {
@@ -674,7 +665,7 @@ impl<'a, I: Tokens> Parser<I> {
 
         let ctx = Context {
             is_break_allowed: true,
-            ..self.ctx()
+            ..self.ctx
         };
 
         self.with_ctx(ctx).parse_with(|parser| {
@@ -687,7 +678,7 @@ impl<'a, I: Tokens> Parser<I> {
 
                 let ctx = Context {
                     in_case_cond: true,
-                    ..parser.ctx()
+                    ..parser.ctx
                 };
 
                 let test = if is_case {
@@ -761,7 +752,7 @@ impl<'a, I: Tokens> Parser<I> {
         if handler.is_none() && finalizer.is_none() {
             // self.raise(node.start, Errors.NoCatchOrFinally);
             // TODO: is the babel's error message more descriptive than this:
-            self.emit_err(
+            self.emit_error_span(
                 Span::new(catch_start, catch_start, Default::default()),
                 SyntaxError::TS1005,
             );
@@ -810,11 +801,11 @@ impl<'a, I: Tokens> Parser<I> {
             // if self.syntax().typescript() && eat!(self, ':') {
             //     let ctx = Context {
             //         in_type: true,
-            //         ..self.ctx()
+            //         ..self.ctx
             //     };
 
             //     let ty = self.with_ctx(ctx).parse_with(|p| p.parse_ts_type());
-            //     // self.emit_err(ty.span(), SyntaxError::TS1196);
+            //     // self.emit_error_span(ty.span(), SyntaxError::TS1196);
 
             //     match &mut pat {
             //         Pat::Ident(BindingIdent { type_ann, .. })
@@ -859,10 +850,10 @@ impl<'a, I: Tokens> Parser<I> {
             let ctx = if should_include_in {
                 Context {
                     include_in_expr: true,
-                    ..self.ctx()
+                    ..self.ctx
                 }
             } else {
-                self.ctx()
+                self.ctx
             };
 
             // Handle
@@ -876,7 +867,7 @@ impl<'a, I: Tokens> Parser<I> {
                 } else {
                     prev_span
                 };
-                self.emit_err(span, SyntaxError::TS1009);
+                self.emit_error_span(span, SyntaxError::TS1009);
                 break;
             }
 
@@ -884,7 +875,7 @@ impl<'a, I: Tokens> Parser<I> {
         }
 
         if !for_loop && !eat!(self, ';') {
-            self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
+            self.emit_error_span(self.input.cur_span(), SyntaxError::TS1005);
 
             let _ = self.parse_expr();
 
@@ -951,7 +942,7 @@ impl<'a, I: Tokens> Parser<I> {
             } else {
                 // Destructuring bindings require initializers, but
                 // typescript allows `declare` vars not to have initializers.
-                if self.ctx().in_declare {
+                if self.ctx.in_declare {
                     None
                 } else {
                     match name {
@@ -985,7 +976,7 @@ impl<'a, I: Tokens> Parser<I> {
         let ctx = Context {
             is_break_allowed: true,
             is_continue_allowed: true,
-            ..self.ctx()
+            ..self.ctx
         };
         let body = self
             .with_ctx(ctx)
@@ -1002,7 +993,7 @@ impl<'a, I: Tokens> Parser<I> {
     fn parse_with_stmt(&mut self) -> PResult<Stmt> {
         {
             let span = self.input.cur_span();
-            self.emit_strict_mode_err(span, SyntaxError::WithInStrict);
+            self.emit_strict_mode_error_span(span, SyntaxError::WithInStrict);
         }
 
         let start = self.input.cur_pos();
@@ -1013,7 +1004,7 @@ impl<'a, I: Tokens> Parser<I> {
 
         let ctx = Context {
             in_function: true,
-            ..self.ctx()
+            ..self.ctx
         };
         let body = self
             .with_ctx(ctx)
@@ -1031,7 +1022,19 @@ impl<'a, I: Tokens> Parser<I> {
         let start = self.input.cur_pos();
 
         if allow_directives {
-            self.input.convert_strict_mode_errors_to_module_errors();
+            // Before we enter a block that may be in strict mode, we clear any
+            // preceding strict mode errors. We do this because, if they have
+            // not been emitted at this point, they can't have been generated in
+            // strict mode code, and are thus irrelevant. We clear them so we
+            // don't accidentally emit them if the block we are about to parse
+            // is in strict mode.
+            // However, if we later encounter a module declaration (import/export)
+            // we must reinterpret all of the code in strict mode, meaning
+            // previously innocuous strict mode errors must now be emitted.
+            // For this reason, rather than dropping preceding strict mode
+            // errors, we convert them to module errors and buffer them, so they
+            // can later be emitted, if necessary.
+            self.convert_preceding_strict_mode_errors_to_module_errors();
         }
 
         expect!(self, '{');
@@ -1045,13 +1048,20 @@ impl<'a, I: Tokens> Parser<I> {
     fn parse_labelled_stmt(&mut self, label: Ident) -> PResult<Stmt> {
         let ctx = Context {
             is_break_allowed: true,
-            ..self.ctx()
+            ..self.ctx
         };
 
         self.with_ctx(ctx).parse_with(|parser| {
-            for existing_label in &parser.state.labels {
-                if label.sym == *existing_label {
-                    parser.emit_err(label.span, SyntaxError::DuplicateLabel(label.sym.clone()));
+            if !parser.state.labels.is_empty() {
+                let mut errors = Vec::new();
+                for existing_label in &parser.state.labels {
+                    if label.sym == *existing_label {
+                        errors.push((label.span, SyntaxError::DuplicateLabel(label.sym.clone())));
+                    }
+                }
+
+                for (span, kind) in errors {
+                    parser.emit_error_span(span, kind);
                 }
             }
 
