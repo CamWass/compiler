@@ -3,7 +3,7 @@
 extern crate test;
 
 use codegen::{self, Emitter};
-use global_common::{FileName, input::StringInput};
+use global_common::{input::StringInput, FileName};
 use parser::Parser;
 use std::hint::black_box;
 use test::Bencher;

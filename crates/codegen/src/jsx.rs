@@ -1,8 +1,8 @@
 use super::{Emitter, Result};
 use crate::list::ListFormat;
+use ast::*;
 use codegen_macros::emitter;
 use global_common::Spanned;
-use ast::*;
 
 impl<'a> Emitter<'a> {
     #[emitter]
