@@ -1,4 +1,3 @@
-use ast::Program;
 use global_common::{
     errors::{ColorConfig, Handler},
     input::StringInput,
@@ -6,45 +5,63 @@ use global_common::{
     SourceMap,
 };
 use parser::Parser;
-use std::path::Path;
+use std::{env, path::Path};
 
 fn main() {
+    let args: Vec<String> = env::args().collect();
+
+    let filename = &args[1];
+
     let cm = Lrc::<SourceMap>::default();
     let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
 
     let fm = cm
-        .load_file(Path::new("foo.js"))
+        .load_file(Path::new(filename))
         .expect("failed to load file");
 
     let mut parser = Parser::new(StringInput::from(&*fm));
 
-    let is_module = true;
-    let program = if is_module {
-        let m = parser.parse_module();
+    let res = parser.parse_program();
 
-        for e in parser.take_errors() {
-            e.into_diagnostic(&handler).emit();
-        }
+    let mut error = false;
 
-        m.map_err(|e| {
-            e.into_diagnostic(&handler).emit();
+    for e in parser.take_errors() {
+        e.into_diagnostic(&handler).emit();
+        error = true;
+    }
 
-            // std::error::Error("failed to parse module")
-        })
-        .map(Program::Module)
+    if let Err(e) = res {
+        e.into_diagnostic(&handler).emit();
+        error = true;
+    }
+
+    if error {
+        println!("\n\n\nFailed to parsed");
     } else {
-        let s = parser.parse_script();
+        // println!("{:#?}", p);
+        println!("\n\n\nSuccessfully parsed");
+        // let src = {
+        //     let mut buf = vec![];
+        //     {
+        //         let mut emitter = Emitter {
+        //             cfg: codegen::Config { minify: true },
+        //             comments: None,
+        //             cm: cm.clone(),
+        //             wr: Box::new(codegen::text_writer::JsWriter::new(
+        //                 cm.clone(),
+        //                 "\n",
+        //                 &mut buf,
+        //                 None,
+        //             )),
+        //         };
 
-        for e in parser.take_errors() {
-            e.into_diagnostic(&handler).emit();
-        }
+        //         p.emit_with(&mut emitter)
+        //             .expect("failed to emit module");
+        //     }
+        //     // Invalid utf8 is valid in javascript world.
+        //     String::from_utf8(buf).expect("invalid utf8 characeter detected")
+        // };
 
-        s.map_err(|e| {
-            e.into_diagnostic(&handler).emit();
-            // Error::msg("failed to parse module")
-        })
-        .map(Program::Script)
-    };
-
-    println!("{:#?}", program);
+        // fs::write("out.js", src).expect("failed to write file");
+    }
 }
