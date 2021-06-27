@@ -678,15 +678,12 @@ impl<'a> Parser {
 
                 let ctx = Context {
                     in_case_cond: true,
+                    include_in_expr: true,
                     ..parser.ctx
                 };
 
                 let test = if is_case {
-                    parser
-                        .with_ctx(ctx)
-                        .include_in_expr(true)
-                        .parse_expr()
-                        .map(Some)?
+                    parser.with_ctx(ctx).parse_expr().map(Some)?
                 } else {
                     if let Some(previous) = span_of_previous_default {
                         syntax_error!(parser, SyntaxError::MultipleDefault { previous });
