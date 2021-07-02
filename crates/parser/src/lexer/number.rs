@@ -8,35 +8,60 @@ use crate::{
     error::SyntaxError,
     token::{BigInt, Num, Token},
 };
-use global_common::{input::Input, BytePos, Span};
+use global_common::{BytePos, Span};
 use num_bigint::BigInt as BigIntValue;
 use std::{fmt::Write, iter::FusedIterator};
 
-fn is_forbidden_numeric_separator_sibling(c: Option<char>, radix: u8) -> bool {
-    if c.is_none() {
-        return false;
-    }
-
-    let c = c.unwrap();
-
-    if radix == 16 {
-        // These characters are forbidden from being an immediate sibling of
-        // a NumericLiteralSeparator '_' in hex numbers.
-        matches!(c, '.' | 'X' | '_' | 'x')
-    } else {
-        // These characters are forbidden from being an immediate sibling of
-        // a NumericLiteralSeparator '_' in decimal, binary, and octal numbers.
-        matches!(c, '.' | 'B' | 'E' | 'O' | '_' | 'b' | 'e' | 'o')
+fn is_forbidden_numeric_separator_sibling(b: Option<u8>, radix: u8) -> bool {
+    match b {
+        Some(b) => {
+            if radix == 16 {
+                // These characters are forbidden from being an immediate sibling of
+                // a NumericLiteralSeparator '_' in hex numbers.
+                matches!(b, b'.' | b'X' | b'_' | b'x')
+            } else {
+                // These characters are forbidden from being an immediate sibling of
+                // a NumericLiteralSeparator '_' in decimal, binary, and octal numbers.
+                matches!(b, b'.' | b'B' | b'E' | b'O' | b'_' | b'b' | b'e' | b'o')
+            }
+        }
+        None => false,
     }
 }
 
-fn is_allowed_numeric_separator_siblings(c: Option<char>, radix: u8) -> bool {
-    if c.is_none() {
-        return false;
-    }
+fn is_allowed_numeric_separator_siblings(b: Option<u8>, radix: u8) -> bool {
+    debug_assert!(
+        radix == 2 || radix == 8 || radix == 10 || radix == 16,
+        "radix should be one of 2, 8, 10, 16, but got {}",
+        radix
+    );
 
-    // Only valid digits in the given radix are valid numeric separator siblings.
-    c.unwrap().is_digit(radix as u32)
+    match b {
+        Some(b) => {
+            // Only valid digits in the given radix are valid numeric separator siblings.
+
+            match radix {
+                10 => {
+                    matches!(b, b'0'..=b'9')
+                }
+                2 => {
+                    matches!(b, b'0' | b'1')
+                }
+                8 => {
+                    matches!(b, b'0'..=b'7')
+                }
+                16 => {
+                    matches!(b, b'0'..=b'F')
+                }
+                _ => unsafe {
+                    // Safety: This function is only called with a fixed set of
+                    // radices, as checked above.
+                    core::hint::unreachable_unchecked();
+                },
+            }
+        }
+        None => false,
+    }
 }
 
 fn digits(value: u64, radix: u64) -> impl Iterator<Item = u64> + Clone + 'static {
@@ -79,8 +104,8 @@ fn digits(value: u64, radix: u64) -> impl Iterator<Item = u64> + Clone + 'static
     Digits::new(value, radix)
 }
 
-impl<I: Input, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
-    Lexer<I, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
+impl<ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
+    Lexer<'_, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
 where
     ErrorEmitter: FnMut(Span, SyntaxError),
     ModuleErrorEmitter: FnMut(Span, SyntaxError),
@@ -111,10 +136,11 @@ where
 
         let mut total: Ret = Default::default();
 
-        let mut prev = None;
         while let Some(c) = self.cur() {
             if c == '_' {
-                let next = self.peek();
+                let next = self.peek_nth(1);
+
+                let prev = self.prev_byte();
 
                 if !is_allowed_numeric_separator_siblings(next, radix)
                     || is_forbidden_numeric_separator_sibling(prev, radix)
@@ -138,7 +164,7 @@ where
                 }
 
                 // Ignore this '_' character
-                self.bump();
+                self.advance(1);
                 continue;
             }
 
@@ -156,7 +182,6 @@ where
             if !cont {
                 return total;
             }
-            prev = Some(c);
         }
 
         total
@@ -247,10 +272,9 @@ where
             "radix should be one of 2, 8, 16, but got {}",
             radix
         );
-        debug_assert_eq!(self.cur(), Some('0'));
+        debug_assert!(self.is(b'0'));
 
-        self.bump(); // 0
-        self.bump(); // x
+        self.advance(2); // 0 followed by one of x, X, o, O, b, B
 
         let (val, s) = self.read_number_no_dot_as_str(radix)?;
 
@@ -331,15 +355,14 @@ where
     pub(super) fn read_number(&mut self, starts_with_dot: bool) -> LexResult<Token> {
         debug_assert!(self.cur().is_some());
         if starts_with_dot {
-            debug_assert_eq!(
-                self.cur(),
-                Some('.'),
+            debug_assert!(
+                self.is(b'.'),
                 "read_number(starts_with_dot = true) expects current char to be '.'"
             );
         }
         let start = self.cur_pos();
 
-        let starts_with_zero = self.cur().unwrap() == '0';
+        let starts_with_zero = self.is(b'0');
 
         let val = if starts_with_dot {
             // first char is '.'
@@ -347,8 +370,7 @@ where
         } else {
             // Use read_number_no_dot to support long numbers.
             let (val, s) = self.read_number_no_dot_as_str(10)?;
-            if self.cur() == Some('n') {
-                self.bump();
+            if self.eat(b'n') {
                 // TODO: do we need to check ensure_not_ident()?
                 return Ok(BigInt(s));
             }
@@ -363,7 +385,7 @@ where
                     // e.g. `0` is decimal (so it can be part of float)
                     //
                     // e.g. `000` is octal
-                    if start.0 != self.last_pos().0 - 1 {
+                    if start.0 != self.cur_pos().0 - 1 {
                         // `-1` is utf 8 length of `0`
 
                         return self.make_legacy_octal(start, 0f64).map(Num);
@@ -403,8 +425,7 @@ where
         //  `0.a`, `08.a`, `102.a` are invalid.
         //
         // `.1.a`, `.1e-4.a` are valid,
-        if self.cur() == Some('.') {
-            self.bump();
+        if self.eat(b'.') {
             if starts_with_dot {
                 debug_assert!(self.cur().is_some());
                 debug_assert!(self.cur().unwrap().is_digit(10));
@@ -438,7 +459,7 @@ where
         // 1e+2 = 100
         // 1e-2 = 0.01
         if self.eat(b'e') || self.eat(b'E') {
-            let next = match self.cur() {
+            let next = match self.cur_byte() {
                 Some(next) => next,
                 None => {
                     let pos = self.cur_pos();
@@ -446,9 +467,9 @@ where
                 }
             };
 
-            let positive = if next == '+' || next == '-' {
-                self.bump(); // remove '+', '-'
-                next == '+'
+            let positive = if next == b'+' || next == b'-' {
+                self.advance(1); // remove '+', '-'
+                next == b'+'
             } else {
                 true
             };

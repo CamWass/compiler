@@ -38,7 +38,6 @@ pub trait AstNode: Debug + PartialEq + Clone + Spanned + Serialize {
 pub mod comments;
 mod eq;
 pub mod errors;
-pub mod input;
 pub mod iter;
 pub mod macros;
 pub mod pass;

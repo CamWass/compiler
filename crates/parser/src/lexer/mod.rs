@@ -9,7 +9,7 @@ use crate::{
     JscTarget,
 };
 use ast::op;
-use global_common::{input::Input, BytePos, Span};
+use global_common::{BytePos, Span};
 use identifier::{is_ident_part, is_ident_start};
 use state::State;
 pub use state::{TokenContext, TokenContexts};
@@ -20,13 +20,15 @@ use util::{char_bytes, char_literals, is_line_break, is_valid_regex_flag};
 pub(crate) type LexResult<T> = Result<T, Error>;
 
 #[derive(Clone)]
-pub struct Lexer<I: Input, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
+pub struct Lexer<'src, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
 where
     ErrorEmitter: FnMut(Span, SyntaxError),
     ModuleErrorEmitter: FnMut(Span, SyntaxError),
     StrictErrorEmitter: FnMut(Span, SyntaxError),
 {
-    input: I,
+    cur: usize,
+    bytes: &'src [u8],
+
     state: State,
     pub(crate) target: JscTarget,
     buf: String,
@@ -36,8 +38,8 @@ where
     strict_error_emitter: StrictErrorEmitter,
 }
 
-impl<I: Input, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter> FusedIterator
-    for Lexer<I, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
+impl<ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter> FusedIterator
+    for Lexer<'_, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
 where
     ErrorEmitter: FnMut(Span, SyntaxError),
     ModuleErrorEmitter: FnMut(Span, SyntaxError),
@@ -45,8 +47,8 @@ where
 {
 }
 
-impl<I: Input, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter> Iterator
-    for Lexer<I, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
+impl<ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter> Iterator
+    for Lexer<'_, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
 where
     ErrorEmitter: FnMut(Span, SyntaxError),
     ModuleErrorEmitter: FnMut(Span, SyntaxError),
@@ -61,7 +63,7 @@ where
             // `start` will point to the right position.
             if self.state.can_skip_space() {
                 self.skip_space()?;
-                start = self.input.cur_pos();
+                start = self.cur_pos();
             };
 
             self.state.start = start;
@@ -83,7 +85,7 @@ where
 
         if let Some(ref token) = token {
             self.state.update(start, &token);
-            self.state.last_tok_end = self.last_pos();
+            self.state.last_tok_end = self.cur_pos();
         }
 
         let had_line_break = self.state.had_line_break;
@@ -100,8 +102,8 @@ where
     }
 }
 
-impl<I: Input, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
-    Lexer<I, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
+impl<'src, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
+    Lexer<'src, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
 where
     ErrorEmitter: FnMut(Span, SyntaxError),
     ModuleErrorEmitter: FnMut(Span, SyntaxError),
@@ -109,14 +111,16 @@ where
 {
     pub fn new(
         target: JscTarget,
-        input: I,
+        input: &'src str,
         error_emitter: ErrorEmitter,
         module_error_emitter: ModuleErrorEmitter,
         strict_error_emitter: StrictErrorEmitter,
     ) -> Self {
         Lexer {
+            cur: 0,
+            bytes: input.as_bytes(),
+
             state: State::new(),
-            input,
             target,
             error_emitter,
             module_error_emitter,
@@ -129,7 +133,7 @@ where
     fn with_buf<F, Ret>(&mut self, op: F) -> LexResult<Ret>
     where
         F: FnOnce(
-            &mut Lexer<I, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>,
+            &mut Lexer<'_, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>,
             &mut String,
         ) -> LexResult<Ret>,
     {
@@ -144,67 +148,67 @@ where
     }
 
     fn read_token(&mut self) -> LexResult<Option<Token>> {
-        let ch = match self.cur() {
+        let b = match self.cur_byte() {
             Some(ch) => ch,
             None => {
                 return Ok(None);
             }
         };
 
-        match ch {
+        match b {
             // The interpretation of a dot depends on whether it is followed
             // by a digit or another two dots.
-            '.' => self.read_token_dot(),
+            b'.' => self.read_token_dot(),
             // Punctuation tokens.
-            '(' => {
-                self.bump();
+            b'(' => {
+                self.advance(1);
                 Ok(Some(LParen))
             }
-            ')' => {
-                self.bump();
+            b')' => {
+                self.advance(1);
                 Ok(Some(RParen))
             }
-            ';' => {
-                self.bump();
+            b';' => {
+                self.advance(1);
                 Ok(Some(Semi))
             }
-            ',' => {
-                self.bump();
+            b',' => {
+                self.advance(1);
                 Ok(Some(Comma))
             }
-            '[' => {
-                self.bump();
+            b'[' => {
+                self.advance(1);
                 Ok(Some(LBracket))
             }
-            ']' => {
-                self.bump();
+            b']' => {
+                self.advance(1);
                 Ok(Some(RBracket))
             }
-            '{' => {
-                self.bump();
+            b'{' => {
+                self.advance(1);
                 Ok(Some(LBrace))
             }
-            '}' => {
-                self.bump();
+            b'}' => {
+                self.advance(1);
                 Ok(Some(RBrace))
             }
-            ':' => {
-                self.bump();
+            b':' => {
+                self.advance(1);
                 Ok(Some(Colon))
             }
-            '?' => Ok(Some(self.read_token_question())),
-            '`' => {
-                self.bump();
+            b'?' => Ok(Some(self.read_token_question())),
+            b'`' => {
+                self.advance(1);
                 Ok(Some(BackQuote))
             }
-            '0' => {
-                (match self.peek() {
+            b'0' => {
+                (match self.peek_nth(1) {
                     // '0x', '0X' - hex number
-                    Some('x') | Some('X') => self.read_radix_number(16),
+                    Some(b'x') | Some(b'X') => self.read_radix_number(16),
                     // '0o', '0O' - octal number
-                    Some('o') | Some('O') => self.read_radix_number(8),
+                    Some(b'o') | Some(b'O') => self.read_radix_number(8),
                     // '0b', '0B' - binary number
-                    Some('b') | Some('B') => self.read_radix_number(2),
+                    Some(b'b') | Some(b'B') => self.read_radix_number(2),
 
                     _ => self.read_number(false),
                 })
@@ -212,58 +216,69 @@ where
             }
             // Anything else beginning with a digit is an integer, octal
             // number, or float.
-            '1'..='9' => self.read_number(false).map(Some),
+            b'1'..=b'9' => self.read_number(false).map(Some),
 
             // Quotes produce strings.
-            '"' | '\'' => self.read_string(ch).map(Some),
+            b'"' | b'\'' => self.read_string(b).map(Some),
 
-            '/' => self.read_token_slash().map(Some),
-            '%' | '*' => Ok(Some(self.read_token_mult_modulo(ch))),
-            '|' | '&' => Ok(Some(self.read_token_pipe_amp(ch))),
-            '^' => Ok(Some(self.read_token_caret())),
-            '+' | '-' => self.read_token_plus_min(ch),
-            '<' | '>' => self.read_token_lt_gt(ch),
-            '=' | '!' => Ok(Some(self.read_token_eq_excl(ch))),
-            '~' => {
-                self.bump();
+            b'/' => self.read_token_slash().map(Some),
+            b'%' | b'*' => Ok(Some(self.read_token_mult_modulo(b))),
+            b'|' | b'&' => Ok(Some(self.read_token_pipe_amp(b))),
+            b'^' => Ok(Some(self.read_token_caret())),
+            b'+' | b'-' => self.read_token_plus_min(b),
+            b'<' | b'>' => self.read_token_lt_gt(b),
+            b'=' | b'!' => Ok(Some(self.read_token_eq_excl(b))),
+            b'~' => {
+                self.advance(1);
                 Ok(Some(tok!('~')))
             }
-            '@' => {
-                self.bump();
+            b'@' => {
+                self.advance(1);
                 Ok(Some(At))
             }
-            '#' => Ok(self.read_token_number_sign()),
+            b'#' => Ok(self.read_token_number_sign()),
             // Identifier or keyword. '\uXXXX' sequences are allowed in
             // identifiers, so '\' also dispatches to that.
-            ch if ch == '\\' || is_ident_start(ch) => self.read_ident_or_keyword().map(Some),
+            b'a'..=b'z' | b'A'..=b'Z' | b'$' | b'_' | b'\\' => {
+                self.read_ident_or_keyword().map(Some)
+            }
 
-            // unexpected character
             _ => {
-                self.input.bump();
-                let start = self.cur_pos();
-                self.error_span(pos_span(start), SyntaxError::UnexpectedChar { c: ch })?
+                let ch = self.cur_unchecked();
+
+                if is_ident_start(ch) {
+                    // Identifier or keyword.
+                    self.read_ident_or_keyword().map(Some)
+                } else {
+                    // unexpected character
+                    self.bump();
+                    let start = self.cur_pos();
+                    self.error_span(pos_span(start), SyntaxError::UnexpectedChar { c: ch })?
+                }
             }
         }
     }
 
     fn read_token_number_sign(&mut self) -> Option<Token> {
-        debug_assert!(self.cur() == Some('#'));
+        debug_assert!(self.is(b'#'));
 
-        if self.input.is_at_start() && self.read_token_interpreter() {
+        if self.is_at_start() && self.read_token_interpreter() {
             return None;
         }
 
-        self.bump(); // '#'
+        debug_assert!(self.is(b'#'));
+
+        self.advance(1); // '#'
         Some(tok!('#'))
     }
 
     fn read_token_dot(&mut self) -> LexResult<Option<Token>> {
-        debug_assert!(self.cur() == Some('.'));
+        debug_assert!(self.is(b'.'));
 
-        let next = match self.peek() {
+        let next = match self.peek_nth(1) {
             Some(next) => next,
             None => {
-                self.bump(); // '.'
+                self.advance(1); // '.'
                 return Ok(Some(tok!('.')));
             }
         };
@@ -272,19 +287,17 @@ where
             return self.read_number(true).map(Some);
         }
 
-        self.bump(); // 1st '.'
-
-        if next == '.' && self.peek() == Some('.') {
-            self.bump(); // 2nd '.'
-            self.bump(); // 3rd '.'
+        if next == b'.' && self.peek_nth(1) == Some(b'.') {
+            self.advance(3); // "..."
             Ok(Some(tok!("...")))
         } else {
+            self.advance(1); // "."
             Ok(Some(tok!('.')))
         }
     }
 
     fn read_token_slash(&mut self) -> LexResult<Token> {
-        debug_assert_eq!(self.cur(), Some('/'));
+        debug_assert!(self.is(b'/'));
 
         // Regex
         if self.state.is_expr_allowed {
@@ -292,7 +305,7 @@ where
         }
 
         // Divide operator
-        self.bump();
+        self.advance(1); // '/'
 
         if self.eat(b'=') {
             Ok(tok!("/="))
@@ -302,16 +315,15 @@ where
     }
 
     fn read_token_interpreter(&mut self) -> bool {
-        debug_assert!(self.cur() == Some('#'));
+        debug_assert!(self.is(b'#'));
 
-        if !self.input.is_at_start() {
+        if !self.is_at_start() {
             return false;
         }
 
         let start = self.cur_pos();
-        self.bump(); // '#'
-        if self.is(b'!') {
-            self.bump(); // '!'
+        self.advance(1); // '#'
+        if self.eat(b'!') {
             while let Some(ch) = self.cur() {
                 if is_line_break(ch) {
                     return true;
@@ -321,26 +333,24 @@ where
             }
         }
 
-        self.input.reset_to(start);
+        self.reset_to(start);
         false
     }
 
-    fn read_token_mult_modulo(&mut self, ch: char) -> Token {
-        debug_assert!(ch == '*' || ch == '%');
-        debug_assert!(self.cur() == Some(ch));
+    fn read_token_mult_modulo(&mut self, ch: u8) -> Token {
+        debug_assert!(ch == b'*' || ch == b'%');
+        debug_assert!(self.is(ch));
 
-        let is_mul = ch == '*';
-        self.bump();
+        let is_mul = ch == b'*';
+        self.advance(1); // '*' or '%'
         let mut token = if is_mul { BinOp(Mul) } else { BinOp(Mod) };
 
         // check for **
-        if is_mul && self.is(b'*') {
-            self.bump();
+        if is_mul && self.eat(b'*') {
             token = BinOp(Exp)
         }
 
-        if self.is(b'=') {
-            self.bump();
+        if self.eat(b'=') {
             token = match token {
                 BinOp(Mul) => AssignOp(MulAssign),
                 BinOp(Mod) => AssignOp(ModAssign),
@@ -352,17 +362,15 @@ where
         token
     }
 
-    fn read_token_pipe_amp(&mut self, ch: char) -> Token {
-        debug_assert!(ch == '|' || ch == '&');
-        debug_assert!(self.cur() == Some(ch));
+    fn read_token_pipe_amp(&mut self, ch: u8) -> Token {
+        debug_assert!(ch == b'|' || ch == b'&');
+        debug_assert!(self.is(ch));
 
-        self.bump();
-        let token = if ch == '&' { BitAnd } else { BitOr };
+        self.advance(1); // '|' or '&'
+        let token = if ch == b'&' { BitAnd } else { BitOr };
 
         // '|=', '&='
-        if self.is(b'=') {
-            self.bump();
-
+        if self.eat(b'=') {
             return AssignOp(match token {
                 BitAnd => BitAndAssign,
                 BitOr => BitOrAssign,
@@ -371,11 +379,8 @@ where
         }
 
         // '||', '&&'
-        if self.is(ch as u8) {
-            self.bump();
-
-            if self.is(b'=') {
-                self.bump();
+        if self.eat(ch) {
+            if self.eat(b'=') {
                 return AssignOp(match token {
                     BitAnd => op!("&&="),
                     BitOr => op!("||="),
@@ -394,64 +399,64 @@ where
     }
 
     fn read_token_caret(&mut self) -> Token {
-        debug_assert!(self.cur() == Some('^'));
+        debug_assert!(self.is(b'^'));
         // Bitwise xor
-        self.bump(); // '^'
-        if self.is(b'=') {
-            self.bump(); // '='
+        self.advance(1); // '^'
+        if self.eat(b'=') {
             AssignOp(BitXorAssign)
         } else {
             BinOp(BitXor)
         }
     }
 
-    fn read_token_plus_min(&mut self, ch: char) -> LexResult<Option<Token>> {
-        debug_assert!(ch == '+' || ch == '-');
-        debug_assert!(self.cur() == Some(ch));
+    fn read_token_plus_min(&mut self, ch: u8) -> LexResult<Option<Token>> {
+        debug_assert!(ch == b'+' || ch == b'-');
+        debug_assert!(self.is(ch));
 
-        let start = self.input.cur_pos();
+        let start = self.cur_pos();
 
-        self.bump(); // '+' or '-'
+        self.advance(1); // '+' or '-'
 
-        if self.is(ch as u8) {
+        if self.eat(ch) {
             // '++', '--'
-            self.bump();
 
             // Handle '-->' line comment
-            if self.state.had_line_break && ch == '-' && self.eat(b'>') {
+            if self.state.had_line_break && ch == b'-' && self.eat(b'>') {
                 self.emit_module_mode_error(start, SyntaxError::LegacyCommentInModule);
                 self.skip_line_comment(0);
                 self.skip_space()?;
                 self.read_token()
-            } else if ch == '+' {
+            } else if ch == b'+' {
                 Ok(Some(PlusPlus))
             } else {
                 Ok(Some(MinusMinus))
             }
-        } else if self.is(b'=') {
+        } else if self.eat(b'=') {
             // '+=', '-='
-            self.bump();
-            Ok(Some(AssignOp(if ch == '+' {
+            Ok(Some(AssignOp(if ch == b'+' {
                 AddAssign
             } else {
                 SubAssign
             })))
         } else {
             // '+', '-'
-            Ok(Some(BinOp(if ch == '+' { Add } else { Sub })))
+            Ok(Some(BinOp(if ch == b'+' { Add } else { Sub })))
         }
     }
 
-    fn read_token_lt_gt(&mut self, ch: char) -> LexResult<Option<Token>> {
-        debug_assert!(ch == '<' || ch == '>');
-        debug_assert!(self.cur() == Some(ch));
+    fn read_token_lt_gt(&mut self, ch: u8) -> LexResult<Option<Token>> {
+        debug_assert!(ch == b'<' || ch == b'>');
+        debug_assert!(self.is(ch));
 
         let start = self.cur_pos();
 
-        self.bump(); // '<' or '>'
+        self.advance(1); // '<' or '>'
 
         // `<!--`, an XML-style comment that should be interpreted as a line comment
-        if ch == '<' && self.is(b'!') && self.peek() == Some('-') && self.peek_ahead() == Some('-')
+        if ch == b'<'
+            && self.is(b'!')
+            && self.peek_nth(1) == Some(b'-')
+            && self.peek_nth(2) == Some(b'-')
         {
             self.skip_line_comment(3);
             self.skip_space()?;
@@ -460,16 +465,14 @@ where
             return self.read_token();
         }
 
-        let mut op = if ch == '<' { Lt } else { Gt };
+        let mut op = if ch == b'<' { Lt } else { Gt };
 
         // '<<', '>>'
-        if self.is(ch as u8) {
-            self.bump();
-            op = if ch == '<' { LShift } else { RShift };
+        if self.eat(ch) {
+            op = if ch == b'<' { LShift } else { RShift };
 
             //'>>>'
-            if ch == '>' && self.is(ch as u8) {
-                self.bump();
+            if ch == b'>' && self.eat(ch) {
                 op = ZeroFillRShift;
             }
         }
@@ -490,38 +493,35 @@ where
         Ok(Some(token))
     }
 
-    fn read_token_eq_excl(&mut self, ch: char) -> Token {
-        debug_assert!(ch == '=' || ch == '!');
-        debug_assert!(self.cur() == Some(ch));
+    fn read_token_eq_excl(&mut self, ch: u8) -> Token {
+        debug_assert!(ch == b'=' || ch == b'!');
+        debug_assert!(self.is(ch));
 
-        self.bump(); // '=' or '!'
+        self.advance(1); // '=' or '!'
 
-        if self.is(b'=') {
+        if self.eat(b'=') {
             // "=="
-            self.bump();
 
-            if self.is(b'=') {
-                self.bump();
-                if ch == '!' {
+            if self.eat(b'=') {
+                if ch == b'!' {
                     // '!=='
                     BinOp(NotEqEq)
                 } else {
                     // '==='
                     BinOp(EqEqEq)
                 }
-            } else if ch == '!' {
+            } else if ch == b'!' {
                 // '!='
                 BinOp(NotEq)
             } else {
                 // '=='
                 BinOp(EqEq)
             }
-        } else if ch == '=' && self.is(b'>') {
+        } else if ch == b'=' && self.eat(b'>') {
             // "=>"
-            self.bump();
 
             Arrow
-        } else if ch == '!' {
+        } else if ch == b'!' {
             // '!'
             Bang
         } else {
@@ -531,32 +531,28 @@ where
     }
 
     fn read_token_question(&mut self) -> Token {
-        debug_assert!(self.cur() == Some('?'));
+        debug_assert!(self.is(b'?'));
 
-        self.bump(); // '?'
-
-        let next = self.peek();
-
-        match self.cur() {
-            Some('?') => {
-                self.bump(); // 2nd '?'
-                if next == Some('=') {
-                    self.bump(); // '='
-                    tok!("??=")
-                } else {
-                    tok!("??")
-                }
+        if self.peek_nth(1) == Some(b'?') {
+            if self.peek_nth(2) == Some(b'=') {
+                self.advance(3); // '??='
+                tok!("??=")
+            } else {
+                self.advance(2); // '??'
+                tok!("??")
             }
-            _ => tok!('?'),
+        } else {
+            self.advance(1); // '?'
+            tok!('?')
         }
     }
 
     fn read_regexp(&mut self) -> LexResult<Token> {
-        debug_assert!(self.cur() == Some('/'));
+        debug_assert!(self.is(b'/'));
 
         let start = self.cur_pos();
 
-        self.bump();
+        self.advance(1); // '/'
 
         let mut escaped = false;
         let mut in_class = false;
@@ -589,9 +585,9 @@ where
 
         let content_start = start + BytePos(1);
 
-        let content = self.input.slice_to_cur(content_start).into();
+        let content = self.slice_to_cur(content_start).into();
 
-        self.bump(); // '/'
+        self.advance(1); // '/'
 
         // 6 is the number of valid flags.
         let mut mods = String::with_capacity(6);
@@ -644,12 +640,12 @@ where
     }
 
     /// See https://tc39.github.io/ecma262/#sec-literals-string-literals
-    fn read_string(&mut self, quote: char) -> LexResult<Token> {
-        debug_assert!(quote == '\'' || quote == '"');
-        debug_assert!(self.cur() == Some(quote));
+    fn read_string(&mut self, quote: u8) -> LexResult<Token> {
+        debug_assert!(quote == b'\'' || quote == b'"');
+        debug_assert!(self.is(quote));
 
         let start = self.cur_pos();
-        self.bump(); // ' or "
+        self.advance(1); // ' or "
 
         self.with_buf(|lexer, out| {
             let mut has_escape = false;
@@ -657,39 +653,38 @@ where
             while let Some(ch) = {
                 // Optimization
                 {
-                    let s = lexer.input.uncons_while(|ch| {
-                        ch != quote
-                            && ch != '\\'
-                            && ch != char_literals::LINE_FEED
-                            && ch != char_literals::CARRIAGE_RETURN
+                    let s = lexer.uncons_while_byte(|b| {
+                        b != quote
+                            && b != b'\\'
+                            && b != char_bytes::LINE_FEED
+                            && b != char_bytes::CARRIAGE_RETURN
                     });
                     out.push_str(s);
                 }
-                lexer.cur()
+                lexer.cur_byte()
             } {
                 match ch {
                     ch if ch == quote => {
-                        lexer.bump(); // ' or "
+                        lexer.advance(1); // ' or "
                         return Ok(Token::Str {
                             value: out.as_str().into(),
                             has_escape,
                         });
                     }
-                    '\\' => {
+                    b'\\' => {
                         if let Some(s) = lexer.read_escaped_char(false)? {
                             out.push(s);
                         }
                         has_escape = true
                     }
-                    char_literals::LINE_FEED | char_literals::CARRIAGE_RETURN => {
+                    char_bytes::LINE_FEED | char_bytes::CARRIAGE_RETURN => {
                         // String literals cannot span multiple lines.
                         // LINE_SEPARATOR and PARAGRAPH_SEPARATOR are permitted.
                         let pos = lexer.cur_pos();
                         lexer.error(pos, SyntaxError::UnterminatedStrLit)?
                     }
                     _ => {
-                        out.push(ch);
-                        lexer.bump();
+                        out.push(lexer.next_char());
                     }
                 }
             }
@@ -702,10 +697,10 @@ where
     // Used to read escaped characters.
     // TODO: handle templates
     fn read_escaped_char(&mut self, in_template: bool) -> LexResult<Option<char>> {
-        debug_assert!(self.cur() == Some('\\'));
+        debug_assert!(self.is(b'\\'));
 
         let start = self.cur_pos();
-        self.bump(); // '\'
+        self.advance(1); // '\'
         let ch = match self.cur() {
             Some(ch) => ch,
             None => self.error_span(pos_span(start), SyntaxError::InvalidStrEscape)?,
@@ -736,13 +731,14 @@ where
             // Vertical tab
             'v' => Ok(Some(char_literals::LINE_TABULATION)),
             'f' => Ok(Some(char_literals::FORM_FEED)),
-            char_literals::CARRIAGE_RETURN | char_literals::LINE_FEED => {
-                if ch == char_literals::CARRIAGE_RETURN && self.is(char_bytes::LINE_FEED) {
-                    self.bump();
+            char_literals::CARRIAGE_RETURN => {
+                if self.is(char_bytes::LINE_FEED) {
+                    self.advance(1);
                 }
 
                 Ok(None)
             }
+            char_literals::LINE_FEED => Ok(None),
             char_literals::LINE_SEPARATOR | char_literals::PARAGRAPH_SEPARATOR => Ok(None),
             '8' | '9' => {
                 invalid_escape!();
@@ -764,7 +760,7 @@ where
                 match self.cur().and_then(|ch| ch.to_digit(8)) {
                     Some(v) => {
                         value = value * 8 + v;
-                        self.bump();
+                        self.advance(1);
                     }
                     _ => unsafe {
                         check!(false);
@@ -786,7 +782,7 @@ where
                         } else {
                             // Spec: ZeroToThree OctalDigit OctalDigit
                             value = value * 8 + v;
-                            self.bump();
+                            self.advance(1);
                         }
                     }
                     _ => unsafe {
@@ -828,8 +824,7 @@ where
     // Read an identifier.
     fn read_word(&mut self) -> LexResult<(Word, bool)> {
         debug_assert!(
-            self.cur() == Some('\\')
-                || (self.cur().is_some() && is_ident_start(self.cur().unwrap()))
+            self.is(b'\\') || (self.cur().is_some() && is_ident_start(self.cur().unwrap()))
         );
 
         let mut first = true;
@@ -840,27 +835,25 @@ where
             while let Some(ch) = {
                 // Optimization
                 {
-                    let s = lexer.input.uncons_while(|ch| is_ident_part(ch));
+                    let s = lexer.uncons_while_chars(|ch| is_ident_part(ch));
                     if !s.is_empty() {
                         first = false;
                     }
                     buf.push_str(s)
                 }
 
-                lexer.cur()
+                lexer.cur_byte()
             } {
                 match ch {
                     // unicode escape
-                    '\\' => {
+                    b'\\' => {
                         let start = lexer.cur_pos();
 
-                        lexer.bump(); // '\'
+                        lexer.advance(1); // '\'
 
-                        if !lexer.is(b'u') {
+                        if !lexer.eat(b'u') {
                             lexer.error_span(pos_span(start), SyntaxError::ExpectedUnicodeEscape)?
                         }
-
-                        lexer.bump(); // 'u'
 
                         let ch = lexer.read_unicode_escape(start)?;
 
@@ -896,8 +889,7 @@ where
     // See https://tc39.github.io/ecma262/#sec-names-and-keywords
     fn read_ident_or_keyword(&mut self) -> LexResult<Token> {
         debug_assert!(
-            self.cur() == Some('\\')
-                || (self.cur().is_some() && is_ident_start(self.cur().unwrap()))
+            self.is(b'\\') || (self.cur().is_some() && is_ident_start(self.cur().unwrap()))
         );
 
         let start = self.cur_pos();
@@ -968,25 +960,24 @@ where
         let mut has_escape = false;
         let mut cooked = CookedType::SameAsRaw;
 
-        while let Some(c) = self.cur() {
-            if c == '`' || (c == '$' && self.peek() == Some('{')) {
+        while let Some(c) = self.cur_byte() {
+            if c == b'`' || (c == b'$' && self.peek_nth(1) == Some(b'{')) {
                 if start == self.cur_pos() && self.state.last_was_tpl_element() {
-                    if c == '$' {
-                        self.bump();
-                        self.bump();
+                    if c == b'$' {
+                        self.advance(2); // '${'
                         return Ok(tok!("${"));
                     } else {
-                        self.bump();
+                        self.advance(1); // '`'
                         return Ok(tok!('`'));
                     }
                 }
 
-                let raw = self.input.slice_to_cur(start);
+                let raw = self.slice_to_cur(start);
 
                 let cooked = match cooked {
                     CookedType::SameAsRaw => Some(raw.into()),
                     CookedType::DifferentFromRaw(ref mut existing_cooked) => {
-                        let chunk = self.input.slice_to_cur(cooked_chunk_start);
+                        let chunk = self.slice_to_cur(cooked_chunk_start);
                         existing_cooked.push_str(chunk);
                         Some(JsWord::from(existing_cooked.as_str()))
                     }
@@ -1001,17 +992,17 @@ where
                 });
             }
 
-            if c == '\\' {
+            if c == b'\\' {
                 has_escape = true;
 
                 match cooked {
                     CookedType::SameAsRaw => {
-                        let new_cooked = String::from(self.input.slice_to_cur(start));
+                        let new_cooked = String::from(self.slice_to_cur(start));
 
                         cooked = CookedType::DifferentFromRaw(new_cooked);
                     }
                     CookedType::DifferentFromRaw(ref mut existing_cooked) => {
-                        let new_chunk = self.input.slice_to_cur(cooked_chunk_start);
+                        let new_chunk = self.slice_to_cur(cooked_chunk_start);
                         existing_cooked.push_str(new_chunk);
                     }
                     _ => {}
@@ -1030,26 +1021,25 @@ where
                         cooked = CookedType::None;
                     }
                 }
-            } else if is_line_break(c) {
+            } else if is_line_break(self.cur_unchecked()) {
                 self.state.had_line_break = true;
-                if c == '\r' && self.peek() == Some('\n') {
+                if c == b'\r' && self.peek_nth(1) == Some(b'\n') {
                     match cooked {
                         CookedType::SameAsRaw => {
-                            let mut new_cooked = String::from(self.input.slice_to_cur(start));
+                            let mut new_cooked = String::from(self.slice_to_cur(start));
                             new_cooked.push('\n');
 
                             cooked = CookedType::DifferentFromRaw(new_cooked);
                         }
                         CookedType::DifferentFromRaw(ref mut existing_cooked) => {
-                            let new_chunk = self.input.slice_to_cur(cooked_chunk_start);
+                            let new_chunk = self.slice_to_cur(cooked_chunk_start);
                             existing_cooked.push_str(new_chunk);
                             existing_cooked.push('\n');
                         }
                         _ => {}
                     }
 
-                    self.bump(); // '\r'
-                    self.bump(); // '\n'
+                    self.advance(2); // '\r\n'
 
                     if let CookedType::DifferentFromRaw(..) = cooked {
                         cooked_chunk_start = self.cur_pos();

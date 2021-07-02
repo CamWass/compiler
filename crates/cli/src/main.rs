@@ -1,6 +1,5 @@
 use global_common::{
     errors::{ColorConfig, Handler},
-    input::StringInput,
     sync::Lrc,
     SourceMap,
 };
@@ -19,7 +18,7 @@ fn main() {
         .load_file(Path::new(filename))
         .expect("failed to load file");
 
-    let mut parser = Parser::new(StringInput::from(&*fm));
+    let mut parser = Parser::new(&fm.src);
 
     let res = parser.parse_program();
 

@@ -3,7 +3,7 @@
 extern crate test;
 
 use codegen::{self, Emitter};
-use global_common::{input::StringInput, FileName};
+use global_common::FileName;
 use parser::Parser;
 use std::hint::black_box;
 use test::Bencher;
@@ -88,7 +88,7 @@ fn bench_emitter(b: &mut Bencher, s: &str) {
     let _ = ::testing::run_test(true, |cm, handler| {
         b.iter(|| {
             let fm = cm.new_source_file(FileName::Anon, s.into());
-            let mut parser = Parser::new(StringInput::from(&*fm));
+            let mut parser = Parser::new(&fm.src);
             let mut src_map_buf = vec![];
             let module = parser
                 .parse_module()

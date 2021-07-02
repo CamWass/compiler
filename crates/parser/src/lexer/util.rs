@@ -1,6 +1,6 @@
 use super::{LexResult, Lexer};
 use crate::error::{Error, SyntaxError};
-use global_common::{input::Input, BytePos, Span, SyntaxContext};
+use global_common::{BytePos, Pos, Span, SyntaxContext};
 
 /// See https://tc39.github.io/ecma262/#sec-line-terminators
 pub fn is_line_break(ch: char) -> bool {
@@ -74,21 +74,195 @@ pub mod char_literals {
 
 pub mod char_bytes {
     pub const LINE_FEED: u8 = 10;
+    pub const CARRIAGE_RETURN: u8 = 13;
 }
 
 pub fn is_valid_regex_flag(ch: char) -> bool {
     matches!(ch, 'g' | 'm' | 's' | 'i' | 'y' | 'u')
 }
 
-impl<I: Input, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
-    Lexer<I, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
+impl<ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
+    Lexer<'_, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
+where
+    ErrorEmitter: FnMut(Span, SyntaxError),
+    ModuleErrorEmitter: FnMut(Span, SyntaxError),
+    StrictErrorEmitter: FnMut(Span, SyntaxError),
+{
+    /// Returns the remaining portion of the input as a str.
+    #[inline(always)]
+    fn as_str(&self) -> &str {
+        debug_assert!(unsafe {
+            std::str::from_utf8(&self.bytes.get_unchecked(self.cur..)).is_ok()
+        });
+
+        // Safety: We know this is safe because we require the input to the lexer
+        // to be valid utf8 and cur always points to a character boundary.
+        unsafe { std::str::from_utf8_unchecked(&self.bytes.get_unchecked(self.cur..)) }
+    }
+
+    /// Gets the current char in the input.
+    #[inline]
+    pub(super) fn cur(&self) -> Option<char> {
+        self.as_str().chars().next()
+    }
+
+    /// Gets the current char in the input without checking if it exists.
+    /// It is undefined behaviour to call this at the end of the input.
+    #[inline]
+    pub(super) fn cur_unchecked(&self) -> char {
+        debug_assert!(self.cur().is_some());
+
+        match self.cur() {
+            Some(c) => c,
+            None => {
+                // Safety: the caller is required to only call this when they
+                // know we are not at the end of the input. This means that
+                // there will always be a least one byte remaining, and since
+                // all strings must be valid UTF-8, the remaining byte(s) will
+                // always constitute a valid character.
+                unsafe {
+                    core::hint::unreachable_unchecked();
+                }
+            }
+        }
+    }
+
+    // Get the next char and advance the cursor.
+    #[inline]
+    pub(super) fn next_char(&mut self) -> char {
+        debug_assert!(self.cur().is_some());
+
+        let char = self.cur_unchecked();
+        self.cur += char.len_utf8();
+        char
+    }
+
+    #[inline]
+    pub(super) fn cur_byte(&mut self) -> Option<u8> {
+        self.bytes.get(self.cur).copied()
+    }
+
+    #[inline]
+    pub(super) fn prev_byte(&mut self) -> Option<u8> {
+        self.bytes.get(self.cur - 1).copied()
+    }
+
+    #[inline]
+    pub(super) fn peek_nth(&self, n: usize) -> Option<u8> {
+        self.bytes.get(self.cur + n).copied()
+    }
+
+    #[inline]
+    pub(super) fn advance(&mut self, amount: usize) {
+        self.cur += amount;
+    }
+
+    #[inline]
+    pub(super) fn bump(&mut self) {
+        debug_assert!(self.cur().is_some());
+
+        let char = self.cur_unchecked();
+
+        self.cur += char.len_utf8();
+    }
+
+    #[inline]
+    pub(super) fn is_at_start(&self) -> bool {
+        self.cur == 0
+    }
+
+    #[inline]
+    pub(super) fn cur_pos(&self) -> BytePos {
+        BytePos::from_usize(self.cur)
+    }
+
+    #[inline]
+    pub(super) fn slice_to_cur(&self, start: BytePos) -> &str {
+        std::str::from_utf8(&self.bytes[start.to_usize()..self.cur]).unwrap()
+    }
+
+    pub(super) fn uncons_while_chars<F>(&mut self, mut pred: F) -> &str
+    where
+        F: FnMut(char) -> bool,
+    {
+        debug_assert!(unsafe {
+            std::str::from_utf8(&self.bytes.get_unchecked(self.cur..)).is_ok()
+        });
+
+        // Safety: We know this is safe because we require the input to the lexer
+        // to be valid utf8 and cur always points to a character boundary.
+        let s = unsafe { std::str::from_utf8_unchecked(&self.bytes.get_unchecked(self.cur..)) };
+
+        let mut last = 0;
+
+        for c in s.chars() {
+            if pred(c) {
+                last += c.len_utf8();
+            } else {
+                break;
+            }
+        }
+        let ret = &s[..last];
+
+        self.cur += last;
+
+        ret
+    }
+
+    pub(super) fn uncons_while_byte<F>(&mut self, mut pred: F) -> &str
+    where
+        F: FnMut(u8) -> bool,
+    {
+        let start = self.cur;
+
+        for &b in self.bytes[self.cur..].iter() {
+            if pred(b) {
+                self.cur += 1;
+            } else {
+                break;
+            }
+        }
+
+        debug_assert!(unsafe {
+            std::str::from_utf8(&self.bytes.get_unchecked(start..self.cur)).is_ok()
+        });
+
+        unsafe { std::str::from_utf8_unchecked(&self.bytes.get_unchecked(start..self.cur)) }
+    }
+
+    #[inline]
+    pub(super) fn reset_to(&mut self, to: BytePos) {
+        self.cur = to.to_usize();
+    }
+
+    #[inline]
+    pub(super) fn is(&self, c: u8) -> bool {
+        match self.bytes.get(self.cur).copied() {
+            Some(ch) if ch == c => true,
+            _ => false,
+        }
+    }
+
+    #[inline]
+    pub(super) fn eat(&mut self, c: u8) -> bool {
+        if self.is(c) {
+            self.cur += 1;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+impl<ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
+    Lexer<'_, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
 where
     ErrorEmitter: FnMut(Span, SyntaxError),
     ModuleErrorEmitter: FnMut(Span, SyntaxError),
     StrictErrorEmitter: FnMut(Span, SyntaxError),
 {
     pub(super) fn span(&self, start: BytePos) -> Span {
-        let end = self.last_pos();
+        let end = self.cur_pos();
         debug_assert!(
             start <= end,
             "assertion failed: (span.start <= span.end). start = {}, end = {}",
@@ -101,35 +275,6 @@ where
             hi: end,
             ctxt: SyntaxContext::empty(),
         }
-    }
-
-    pub(super) fn bump(&mut self) {
-        self.input.bump()
-    }
-
-    pub(super) fn is(&self, c: u8) -> bool {
-        self.input.is_byte(c)
-    }
-
-    pub(super) fn eat(&mut self, c: u8) -> bool {
-        self.input.eat_byte(c)
-    }
-
-    pub(super) fn cur(&self) -> Option<char> {
-        self.input.cur()
-    }
-    pub(super) fn peek(&self) -> Option<char> {
-        self.input.peek()
-    }
-    pub(super) fn peek_ahead(&self) -> Option<char> {
-        self.input.peek_ahead()
-    }
-
-    pub(super) fn cur_pos(&self) -> BytePos {
-        self.input.cur_pos()
-    }
-    pub(super) fn last_pos(&self) -> BytePos {
-        self.input.last_pos()
     }
 
     /// Shorthand for `let span = self.span(start); self.error_span(span)`
@@ -173,16 +318,14 @@ where
     pub(super) fn skip_block_comment(&mut self) -> LexResult<()> {
         let start = self.cur_pos();
 
-        debug_assert_eq!(self.cur(), Some('/'));
-        debug_assert_eq!(self.peek(), Some('*'));
+        debug_assert!(self.is(b'/'));
+        debug_assert_eq!(self.peek_nth(1), Some(b'*'));
 
-        self.bump();
-        self.bump();
+        self.advance(2); // "/*"
 
         while let Some(ch) = self.cur() {
-            if ch == '*' && self.peek() == Some('/') {
-                self.bump(); // '*'
-                self.bump(); // '/'
+            if ch == '*' && self.peek_nth(1) == Some(b'/') {
+                self.advance(2); // "*/"
                 return Ok(());
             }
 
@@ -196,10 +339,8 @@ where
         self.error(start, SyntaxError::UnterminatedBlockComment)?
     }
 
-    pub(super) fn skip_line_comment(&mut self, start_skip: usize) {
-        for _ in 0..start_skip {
-            self.bump();
-        }
+    pub(super) fn skip_line_comment(&mut self, start_skip_bytes: usize) {
+        self.advance(start_skip_bytes);
 
         while let Some(ch) = self.cur() {
             self.bump();
@@ -230,11 +371,11 @@ where
                     self.state.had_line_break = true;
                 }
 
-                '/' => match self.input.peek() {
-                    Some('/') => {
+                '/' => match self.peek_nth(1) {
+                    Some(b'/') => {
                         self.skip_line_comment(2);
                     }
-                    Some('*') => {
+                    Some(b'*') => {
                         self.skip_block_comment()?;
                     }
                     _ => return Ok(()),

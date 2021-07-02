@@ -2,7 +2,7 @@ use self::parser::Parser;
 use super::*;
 use crate::config::Config;
 use crate::text_writer::omit_trailing_semi;
-use global_common::{comments::SingleThreadedComments, input::StringInput, FileName, SourceMap};
+use global_common::{comments::SingleThreadedComments, FileName, SourceMap};
 use parser;
 use std::{
     fmt::{self, Debug, Display, Formatter},
@@ -64,7 +64,7 @@ fn parse_then_emit(from: &str, cfg: Config, target: EsVersion) -> String {
 
         let comments = Default::default();
         let res = {
-            let mut parser = Parser::new(StringInput::from(&*src));
+            let mut parser = Parser::new(&src.src);
             let res = parser
                 .parse_module()
                 .map_err(|e| e.into_diagnostic(handler).emit());

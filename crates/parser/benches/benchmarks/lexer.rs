@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, Criterion, Throughput};
-use global_common::{input::StringInput, sync::Lrc, FileName, FilePathMapping, SourceMap};
+use global_common::{sync::Lrc, FileName, FilePathMapping, SourceMap};
 use parser::lexer::Lexer;
 use std::time::Duration;
 
@@ -33,7 +33,7 @@ fn bench(c: &mut Criterion) {
             b.iter(|| {
                 let lexer = Lexer::new(
                     Default::default(),
-                    StringInput::from(&**f),
+                    &f.src,
                     |span, kind| {
                         black_box((span, kind));
                     },

@@ -369,7 +369,7 @@ where
             .load_file(file_name)
             .unwrap_or_else(|e| panic!("failed to load {}: {}", file_name.display(), e));
 
-        let mut p = Parser::new((&*fm).into());
+        let mut p = Parser::new(&fm.src);
 
         let res = f(&mut p).map_err(|e| e.into_diagnostic(handler).emit());
 

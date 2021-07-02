@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, Criterion, Throughput};
-use global_common::{input::StringInput, sync::Lrc, FileName, FilePathMapping, SourceMap};
+use global_common::{sync::Lrc, FileName, FilePathMapping, SourceMap};
 use parser::Parser;
 use std::time::Duration;
 
@@ -31,7 +31,7 @@ fn bench(c: &mut Criterion) {
 
         group.bench_with_input(*id, &fm, |b, f| {
             b.iter(|| {
-                let mut parser = Parser::new(StringInput::from(&**f));
+                let mut parser = Parser::new(&f.src);
                 black_box(parser.parse_module())
             })
         });

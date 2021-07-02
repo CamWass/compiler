@@ -17,7 +17,7 @@ use crate::{
     JscTarget,
 };
 use ast::*;
-use global_common::{input::StringInput, BytePos, Span};
+use global_common::{BytePos, Span};
 use input::Buffer;
 use std::collections::HashMap;
 use swc_atoms::JsWord;
@@ -53,7 +53,7 @@ pub struct Parser {
 }
 
 impl Parser {
-    pub fn new(input: StringInput) -> Self {
+    pub fn new(input: &str) -> Self {
         let mut errors = Vec::new();
         let mut module_errors = Vec::new();
         let mut strict_errors = Vec::new();
