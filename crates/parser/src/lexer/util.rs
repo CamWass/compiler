@@ -1,4 +1,4 @@
-use super::{LexResult, Lexer};
+use super::{Dispatch, LexResult, Lexer, DISPATCHER};
 use crate::error::{Error, SyntaxError};
 use global_common::{BytePos, Pos, Span, SyntaxContext};
 
@@ -13,15 +13,12 @@ pub fn is_line_break(ch: char) -> bool {
     )
 }
 
+// Checks if the char is a whitespace char that spans multiple utf8 bytes.
 // https://tc39.github.io/ecma262/#sec-white-space
-pub fn is_whitespace(ch: char) -> bool {
+pub fn is_multi_byte_whitespace(ch: char) -> bool {
     matches!(
         ch,
-        char_literals::CHARACTER_TABULATION
-            | char_literals::LINE_TABULATION
-            | char_literals::FORM_FEED
-            | char_literals::SPACE
-            | char_literals::NON_BREAKING_SPACE
+        char_literals::NON_BREAKING_SPACE
             | char_literals::OGHAM_SPACE_MARK
             | char_literals::EN_QUAD
             | char_literals::EM_QUAD
@@ -41,16 +38,26 @@ pub fn is_whitespace(ch: char) -> bool {
     )
 }
 
+// Checks if the byte is the first utf8 byte of a unicode whitespace char.
+// Used for short circuiting whitespace checks.
+fn is_unicode_whitespace_start(byte: u8) -> bool {
+    matches!(
+        byte,
+        0xC2 //   NBSP
+        | 0xEF // BOM
+        | 0xE1 // Ogham space mark
+        | 0xE2 // En quad .. Hair space, narrow no break space, mathematical space
+        | 0xE3 // Ideographic space
+    )
+}
 pub mod char_literals {
     pub const BACKSPACE: char = '\u{0008}';
-    pub const SPACE: char = '\u{0020}';
     pub const LINE_FEED: char = '\u{000a}';
     pub const LINE_SEPARATOR: char = '\u{2028}';
     pub const CARRIAGE_RETURN: char = '\u{000d}';
     pub const FORM_FEED: char = '\u{000c}';
     pub const PARAGRAPH_SEPARATOR: char = '\u{2029}';
     pub const NON_BREAKING_SPACE: char = '\u{00a0}';
-    pub const CHARACTER_TABULATION: char = '\u{0009}';
     pub const LINE_TABULATION: char = '\u{000b}';
     pub const OGHAM_SPACE_MARK: char = '\u{1680}';
     pub const EN_QUAD: char = '\u{2000}';
@@ -355,23 +362,15 @@ where
     ///
     /// See https://tc39.github.io/ecma262/#sec-white-space
     pub(super) fn skip_space(&mut self) -> LexResult<()> {
-        while let Some(ch) = self.cur() {
-            match ch {
-                char_literals::SPACE
-                | char_literals::NON_BREAKING_SPACE
-                | char_literals::CHARACTER_TABULATION => {
-                    self.bump();
+        while let Some(byte) = self.cur_byte() {
+            match DISPATCHER[byte as usize] {
+                Dispatch::WHS => {
+                    if byte == char_bytes::LINE_FEED || byte == char_bytes::CARRIAGE_RETURN {
+                        self.state.had_line_break = true;
+                    }
+                    self.advance(1);
                 }
-
-                char_literals::CARRIAGE_RETURN
-                | char_literals::LINE_FEED
-                | char_literals::LINE_SEPARATOR
-                | char_literals::PARAGRAPH_SEPARATOR => {
-                    self.bump();
-                    self.state.had_line_break = true;
-                }
-
-                '/' => match self.peek_nth(1) {
+                Dispatch::SLH => match self.peek_nth(1) {
                     Some(b'/') => {
                         self.skip_line_comment(2);
                     }
@@ -380,14 +379,27 @@ where
                     }
                     _ => return Ok(()),
                 },
+                Dispatch::UNI => {
+                    // Try to short circuit the branch by checking the first
+                    // byte of the potential unicode space.
+                    if byte > 0xC1 && is_unicode_whitespace_start(byte) {
+                        let ch = self.cur_unchecked();
 
-                _ => {
-                    if is_whitespace(ch) {
-                        self.bump();
+                        if ch == char_literals::LINE_SEPARATOR
+                            || ch == char_literals::PARAGRAPH_SEPARATOR
+                        {
+                            self.state.had_line_break = true;
+                            self.cur += ch.len_utf8();
+                        } else if is_multi_byte_whitespace(ch) {
+                            self.cur += ch.len_utf8();
+                        } else {
+                            return Ok(());
+                        }
                     } else {
                         return Ok(());
                     }
                 }
+                _ => return Ok(()),
             }
         }
 

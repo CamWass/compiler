@@ -155,53 +155,64 @@ where
             }
         };
 
-        match b {
+        // A lookup table of `byte -> fn(l: &mut Lexer) -> Token` is slower than
+        // this approach. The speed difference comes from the difference in
+        // table size - a function pointer takes 64 (usize) bits, resulting in a
+        // 64 * 256 = 16kb table vs a repr(u8) enum variant which takes 8 bits,
+        // resulting in a 8 * 256 = 2kb table. The smaller table more easily
+        // fits into the cpu cache, while the 16kb table will be ejected from
+        // the cache more often leading to slowdowns. The smaller table also
+        // allows for more aggressive optimizations regarding how to map the
+        // match to instructions.
+        let dispatched = Self::lookup(b);
+
+        match dispatched {
             // The interpretation of a dot depends on whether it is followed
             // by a digit or another two dots.
-            b'.' => self.read_token_dot(),
+            PRD => self.read_token_dot(),
             // Punctuation tokens.
-            b'(' => {
+            PNO => {
                 self.advance(1);
                 Ok(Some(LParen))
             }
-            b')' => {
+            PNC => {
                 self.advance(1);
                 Ok(Some(RParen))
             }
-            b';' => {
+            SEM => {
                 self.advance(1);
                 Ok(Some(Semi))
             }
-            b',' => {
+            COM => {
                 self.advance(1);
                 Ok(Some(Comma))
             }
-            b'[' => {
+            BTO => {
                 self.advance(1);
                 Ok(Some(LBracket))
             }
-            b']' => {
+            BTC => {
                 self.advance(1);
                 Ok(Some(RBracket))
             }
-            b'{' => {
+            BEO => {
                 self.advance(1);
                 Ok(Some(LBrace))
             }
-            b'}' => {
+            BEC => {
                 self.advance(1);
                 Ok(Some(RBrace))
             }
-            b':' => {
+            COL => {
                 self.advance(1);
                 Ok(Some(Colon))
             }
-            b'?' => Ok(Some(self.read_token_question())),
-            b'`' => {
+            QST => Ok(Some(self.read_token_question())),
+            TPL => {
                 self.advance(1);
                 Ok(Some(BackQuote))
             }
-            b'0' => {
+            ZER => {
                 (match self.peek_nth(1) {
                     // '0x', '0X' - hex number
                     Some(b'x') | Some(b'X') => self.read_radix_number(16),
@@ -216,32 +227,30 @@ where
             }
             // Anything else beginning with a digit is an integer, octal
             // number, or float.
-            b'1'..=b'9' => self.read_number(false).map(Some),
+            DIG => self.read_number(false).map(Some),
 
             // Quotes produce strings.
-            b'"' | b'\'' => self.read_string(b).map(Some),
+            QOT => self.read_string(b).map(Some),
 
-            b'/' => self.read_token_slash().map(Some),
-            b'%' | b'*' => Ok(Some(self.read_token_mult_modulo(b))),
-            b'|' | b'&' => Ok(Some(self.read_token_pipe_amp(b))),
-            b'^' => Ok(Some(self.read_token_caret())),
-            b'+' | b'-' => self.read_token_plus_min(b),
-            b'<' | b'>' => self.read_token_lt_gt(b),
-            b'=' | b'!' => Ok(Some(self.read_token_eq_excl(b))),
-            b'~' => {
+            SLH => self.read_token_slash().map(Some),
+            PRC | MUL => Ok(Some(self.read_token_mult_modulo(b))),
+            PIP | AMP => Ok(Some(self.read_token_pipe_amp(b))),
+            CRT => Ok(Some(self.read_token_caret())),
+            PLS | MIN => self.read_token_plus_min(b),
+            LSS | MOR => self.read_token_lt_gt(b),
+            EQL | EXL => Ok(Some(self.read_token_eq_excl(b))),
+            TLD => {
                 self.advance(1);
                 Ok(Some(tok!('~')))
             }
-            b'@' => {
+            AT_ => {
                 self.advance(1);
                 Ok(Some(At))
             }
-            b'#' => Ok(self.read_token_number_sign()),
+            HAS => Ok(self.read_token_number_sign()),
             // Identifier or keyword. '\uXXXX' sequences are allowed in
             // identifiers, so '\' also dispatches to that.
-            b'a'..=b'z' | b'A'..=b'Z' | b'$' | b'_' | b'\\' => {
-                self.read_ident_or_keyword().map(Some)
-            }
+            IDT | BSL => self.read_ident_or_keyword().map(Some),
 
             _ => {
                 let ch = self.cur_unchecked();
@@ -1054,7 +1063,77 @@ where
 
         self.error(start_of_tpl, SyntaxError::UnterminatedTpl)?
     }
+
+    fn lookup(byte: u8) -> Dispatch {
+        // Safety: The lookup table maps all values of u8, so its impossible for
+        // a u8 to be out of bounds.
+        unsafe { *DISPATCHER.get_unchecked(byte as usize) }
+    }
 }
+
+// Every handler a byte coming in could be mapped to.
+#[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub(self) enum Dispatch {
+    ERR,
+    WHS,
+    EXL,
+    QOT,
+    IDT,
+    HAS,
+    PRC,
+    AMP,
+    PNO,
+    PNC,
+    MUL,
+    PLS,
+    COM,
+    MIN,
+    PRD,
+    SLH,
+    ZER,
+    DIG,
+    COL,
+    SEM,
+    LSS,
+    EQL,
+    MOR,
+    QST,
+    AT_,
+    BTO,
+    BSL,
+    BTC,
+    CRT,
+    TPL,
+    BEO,
+    PIP,
+    BEC,
+    TLD,
+    UNI,
+}
+use Dispatch::*;
+
+// A lookup table mapping any incoming byte to a handler function.
+pub(self) static DISPATCHER: [Dispatch; 256] = [
+    //0    1    2    3    4    5    6    7    8    9    A    B    C    D    E    F
+    ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, WHS, WHS, WHS, WHS, WHS, ERR, ERR, // 0
+    ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, // 1
+    WHS, EXL, QOT, HAS, IDT, PRC, AMP, QOT, PNO, PNC, MUL, PLS, COM, MIN, PRD, SLH, // 2
+    ZER, DIG, DIG, DIG, DIG, DIG, DIG, DIG, DIG, DIG, COL, SEM, LSS, EQL, MOR, QST, // 3
+    AT_, IDT, IDT, IDT, IDT, IDT, IDT, IDT, IDT, IDT, IDT, IDT, IDT, IDT, IDT, IDT, // 4
+    IDT, IDT, IDT, IDT, IDT, IDT, IDT, IDT, IDT, IDT, IDT, BTO, BSL, BTC, CRT, IDT, // 5
+    TPL, IDT, IDT, IDT, IDT, IDT, IDT, IDT, IDT, IDT, IDT, IDT, IDT, IDT, IDT, IDT, // 6
+    IDT, IDT, IDT, IDT, IDT, IDT, IDT, IDT, IDT, IDT, IDT, BEO, PIP, BEC, TLD, ERR, // 7
+    UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, // 8
+    UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, // 9
+    UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, // A
+    UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, // B
+    UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, // C
+    UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, // D
+    UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, // E
+    UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, UNI, // F
+];
 
 fn pos_span(p: BytePos) -> Span {
     Span::new(p, p, Default::default())
