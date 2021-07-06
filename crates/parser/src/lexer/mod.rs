@@ -66,7 +66,6 @@ where
                 start = self.cur_pos();
             };
 
-            self.state.start = start;
 
             if let Some(TokenContext::Tpl {
                 start: start_pos_of_tpl,
@@ -85,7 +84,6 @@ where
 
         if let Some(ref token) = token {
             self.state.update(start, &token);
-            self.state.last_tok_end = self.cur_pos();
         }
 
         let had_line_break = self.state.had_line_break;

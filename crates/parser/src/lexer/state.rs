@@ -179,23 +179,13 @@ pub struct State {
     /// Whether a line break exists between previous token and new token.
     pub had_line_break: bool,
 
-    pub token_type: Option<TokenType>,
-
-    pub start: BytePos,
-
-    // Position information for the previous token
-    pub last_tok_end: BytePos,
+    token_type: Option<TokenType>,
 
     // The context stack is used to superficially track syntactic
     // context to predict whether a regular expression is allowed in a
     // given position.
     pub context: TokenContexts,
     pub is_expr_allowed: bool,
-
-    // Used to signal to callers of `read_word` whether the word
-    // contained any escape sequences. This is needed because words with
-    // escape sequences must not be interpreted as keywords.
-    pub contains_esc: bool,
 }
 
 impl State {
@@ -203,12 +193,9 @@ impl State {
         Self {
             had_line_break: true,
             token_type: None,
-            start: BytePos(0),
 
-            last_tok_end: BytePos(0),
             context: TokenContexts(vec![TokenContext::BraceStmt]),
             is_expr_allowed: true,
-            contains_esc: false,
         }
     }
 
