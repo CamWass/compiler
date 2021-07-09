@@ -64,7 +64,7 @@ fn parse_then_emit(from: &str, cfg: Config, target: EsVersion) -> String {
 
         let comments = Default::default();
         let res = {
-            let mut parser = Parser::new(&src.src);
+            let mut parser = Parser::new(Default::default(), &src.src);
             let res = parser
                 .parse_module()
                 .map_err(|e| e.into_diagnostic(handler).emit());

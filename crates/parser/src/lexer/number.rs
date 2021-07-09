@@ -7,8 +7,9 @@ use super::{is_ident_start, pos_span, LexResult, Lexer};
 use crate::{
     error::SyntaxError,
     token::{BigInt, Num, Token},
+    JscTarget,
 };
-use global_common::{BytePos, Span};
+use global_common::BytePos;
 use num_bigint::BigInt as BigIntValue;
 use std::{fmt::Write, iter::FusedIterator};
 
@@ -104,13 +105,7 @@ fn digits(value: u64, radix: u64) -> impl Iterator<Item = u64> + Clone + 'static
     Digits::new(value, radix)
 }
 
-impl<ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
-    Lexer<'_, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
-where
-    ErrorEmitter: FnMut(Span, SyntaxError),
-    ModuleErrorEmitter: FnMut(Span, SyntaxError),
-    StrictErrorEmitter: FnMut(Span, SyntaxError),
-{
+impl Lexer<'_> {
     /// `op`- |total, radix, value| -> (total * radix + value, continue)
     fn read_digits<F, Ret>(
         &mut self,
@@ -346,6 +341,9 @@ where
     fn make_legacy_octal(&mut self, start: BytePos, val: f64) -> LexResult<f64> {
         self.ensure_not_ident()?;
 
+        if self.syntax.typescript() && self.target >= JscTarget::Es5 {
+            self.emit_error(start, SyntaxError::TS1085);
+        }
         self.emit_strict_mode_error(start, SyntaxError::LegacyOctal);
 
         Ok(val)

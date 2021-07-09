@@ -31,7 +31,7 @@ fn bench(c: &mut Criterion) {
 
         group.bench_with_input(*id, &fm, |b, f| {
             b.iter(|| {
-                let mut parser = Parser::new(&f.src);
+                let mut parser = Parser::new(Default::default(), &f.src);
                 black_box(parser.parse_module())
             })
         });

@@ -1,16 +1,17 @@
 //! Parser for object literal.
 
 use super::{class_and_fn::is_not_this, util::ParseObject, *};
-use crate::token::{Token, Word};
-use global_common::{Span, Spanned};
+use global_common::Spanned;
 use swc_atoms::js_word;
 
-impl Parser {
+impl<I: Tokens> Parser<I> {
     /// Parse a object literal or object pattern.
     pub(super) fn parse_object<T>(&mut self) -> PResult<T>
     where
         Self: ParseObject<T>,
     {
+        trace_cur!(self, parse_object);
+
         let start = self.input.cur_pos();
         self.assert_and_bump(&tok!('{'));
 
@@ -39,7 +40,7 @@ impl Parser {
     pub(super) fn parse_prop_name(&mut self) -> PResult<PropName> {
         self.with_ctx(Context {
             in_property_name: true,
-            ..self.ctx
+            ..self.ctx()
         })
         .parse_with(|parser| {
             let start = parser.input.cur_pos();
@@ -76,8 +77,27 @@ impl Parser {
                 },
                 tok!('[') => {
                     parser.input.bump();
+                    let inner_start = parser.input.cur_pos();
 
-                    let expr = parser.include_in_expr(true).parse_assignment_expr()?;
+                    let mut expr = parser.include_in_expr(true).parse_assignment_expr()?;
+
+                    if parser.syntax().typescript() && is!(parser, ',') {
+                        let mut exprs = vec![expr];
+
+                        while eat!(parser, ',') {
+                            exprs.push(parser.include_in_expr(true).parse_assignment_expr()?);
+                        }
+
+                        parser.emit_err(span!(parser, inner_start), SyntaxError::TS1171);
+
+                        expr = Box::new(
+                            SeqExpr {
+                                span: span!(parser, inner_start),
+                                exprs,
+                            }
+                            .into(),
+                        );
+                    }
 
                     expect!(parser, ']');
 
@@ -97,7 +117,7 @@ impl Parser {
     }
 }
 
-impl ParseObject<Box<Expr>> for Parser {
+impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
     type Prop = PropOrSpread;
 
     fn make_object(&mut self, span: Span, props: Vec<Self::Prop>) -> PResult<Box<Expr>> {
@@ -106,6 +126,8 @@ impl ParseObject<Box<Expr>> for Parser {
 
     /// spec: 'PropertyDefinition'
     fn parse_object_prop(&mut self) -> PResult<Self::Prop> {
+        trace_cur!(self, parse_object_prop);
+
         let start = self.input.cur_pos();
         // Parse as 'MethodDefinition'
 
@@ -137,31 +159,30 @@ impl ParseObject<Box<Expr>> for Parser {
                 });
         }
 
-        // let has_modifiers = self.eat_any_ts_modifier();
-        let has_modifiers = false;
+        let has_modifiers = self.eat_any_ts_modifier()?;
         let modifiers_span = self.input.prev_span();
 
         let key = self.parse_prop_name()?;
 
-        // if self.input.syntax().typescript()
-        //     && !is_one_of!(self, '(', '[', ':', ',', '?', '=', '*', IdentName)
-        //     && !(self.input.syntax().typescript() && is!(self, '<'))
-        //     && !(is!(self, '}')
-        //         && match key {
-        //             PropName::Ident(..) => true,
-        //             _ => false,
-        //         })
-        // {
-        //     panic!("TS1005 at {:?}", self.input.cur_span());
-        //     // self.emit_error_span(self.input.cur_span(), SyntaxError::TS1005);
-        //     // return PropOrSpread::Prop(Box::new(Prop::KeyValue(KeyValueProp {
-        //     //     key,
-        //     //     value: Box::new(Expr::Invalid(Invalid {
-        //     //         span: span!(self, start),
-        //     //     })),
-        //     // })));
-        // }
+        if self.input.syntax().typescript()
+            && !is_one_of!(self, '(', '[', ':', ',', '?', '=', '*', IdentName, Str, Num)
+            && !(self.input.syntax().typescript() && is!(self, '<'))
+            && !(is!(self, '}')
+                && match key {
+                    PropName::Ident(..) => true,
+                    _ => false,
+                })
+        {
+            trace_cur!(self, parse_object_prop_error);
 
+            self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
+            return Ok(PropOrSpread::Prop(Box::new(Prop::KeyValue(KeyValueProp {
+                key,
+                value: Box::new(Expr::Invalid(Invalid {
+                    span: span!(self, start),
+                })),
+            }))));
+        }
         //
         // {[computed()]: a,}
         // { 'a': a, }
@@ -176,9 +197,7 @@ impl ParseObject<Box<Expr>> for Parser {
         }
 
         // Handle `a(){}` (and async(){} / get(){} / set(){})
-        if
-        /*(self.input.syntax().typescript() && is!(self, '<')) ||*/
-        is!(self, '(') {
+        if (self.input.syntax().typescript() && is!(self, '<')) || is!(self, '(') {
             return self
                 .parse_fn_args_body(
                     // no decorator in an object literal
@@ -199,15 +218,14 @@ impl ParseObject<Box<Expr>> for Parser {
         };
 
         if self.input.eat(&tok!('?')) {
-            self.emit_error_span(self.input.prev_span(), SyntaxError::TS1162);
+            self.emit_err(self.input.prev_span(), SyntaxError::TS1162);
         }
 
         // `ident` from parse_prop_name is parsed as 'IdentifierName'
         // It means we should check for invalid expressions like { for, }
         if is_one_of!(self, '=', ',', '}') {
-            let is_reserved_word = { self.ctx.is_reserved_word(&ident.sym) };
-            if is_reserved_word {
-                self.emit_error_span(ident.span, SyntaxError::ReservedWordInObjShorthandOrPat);
+            if self.ctx().is_reserved_word(&ident.sym) {
+                self.emit_err(ident.span, SyntaxError::ReservedWordInObjShorthandOrPat);
             }
 
             if self.input.eat(&tok!('=')) {
@@ -227,8 +245,10 @@ impl ParseObject<Box<Expr>> for Parser {
 
         match ident.sym {
             js_word!("get") | js_word!("set") | js_word!("async") => {
+                trace_cur!(self, parse_object_prop__after_accessor);
+
                 if has_modifiers {
-                    self.emit_error_span(modifiers_span, SyntaxError::TS1042);
+                    self.emit_err(modifiers_span, SyntaxError::TS1042);
                 }
 
                 let is_generator = ident.sym == js_word!("async") && self.input.eat(&tok!('*'));
@@ -245,7 +265,7 @@ impl ParseObject<Box<Expr>> for Parser {
                                 let params = parser.parse_formal_params()?;
 
                                 if params.iter().filter(|param| is_not_this(param)).count() != 0 {
-                                    parser.emit_error_span(key_span, SyntaxError::TS1094);
+                                    parser.emit_err(key_span, SyntaxError::TS1094);
                                 }
 
                                 Ok(params)
@@ -261,14 +281,14 @@ impl ParseObject<Box<Expr>> for Parser {
                                  ..
                              }| {
                                 if let Some(type_params) = type_params {
-                                    self.emit_error_span(type_params.span(), SyntaxError::TS1094);
+                                    self.emit_err(type_params.span(), SyntaxError::TS1094);
                                 }
 
-                                // if self.input.syntax().typescript()
-                                //     && self.input.target() == JscTarget::Es3
-                                // {
-                                //     self.emit_error_span(key_span, SyntaxError::TS1056);
-                                // }
+                                if self.input.syntax().typescript()
+                                    && self.input.target() == JscTarget::Es3
+                                {
+                                    self.emit_err(key_span, SyntaxError::TS1056);
+                                }
 
                                 PropOrSpread::Prop(Box::new(Prop::Getter(GetterProp {
                                     span: span!(self, start),
@@ -287,23 +307,23 @@ impl ParseObject<Box<Expr>> for Parser {
                                 let params = parser.parse_formal_params()?;
 
                                 if params.iter().filter(|param| is_not_this(param)).count() != 1 {
-                                    parser.emit_error_span(key_span, SyntaxError::TS1094);
+                                    parser.emit_err(key_span, SyntaxError::TS1094);
                                 }
 
                                 if !params.is_empty() {
                                     if let Pat::Rest(..) = params[0].pat {
-                                        parser.emit_error_span(
+                                        parser.emit_err(
                                             params[0].span(),
                                             SyntaxError::RestPatInSetter,
                                         );
                                     }
                                 }
 
-                                // if p.input.syntax().typescript()
-                                //     && p.input.target() == JscTarget::Es3
-                                // {
-                                //     p.emit_error_span(key_span, SyntaxError::TS1056);
-                                // }
+                                if parser.input.syntax().typescript()
+                                    && parser.input.target() == JscTarget::Es3
+                                {
+                                    parser.emit_err(key_span, SyntaxError::TS1056);
+                                }
 
                                 Ok(params)
                             },
@@ -318,7 +338,7 @@ impl ParseObject<Box<Expr>> for Parser {
                                  ..
                              }| {
                                 if let Some(type_params) = type_params {
-                                    self.emit_error_span(type_params.span(), SyntaxError::TS1094);
+                                    self.emit_err(type_params.span(), SyntaxError::TS1094);
                                 }
 
                                 // debug_assert_eq!(params.len(), 1);
@@ -352,22 +372,21 @@ impl ParseObject<Box<Expr>> for Parser {
                 }
             }
             _ => {
-                unexpected!(self, "... , *,  (, [, :, , ?, = or an identifier")
-                // if self.input.syntax().typescript() {
-                //     unexpected!(
-                //         self,
-                //         "... , *,  (, [, :, , ?, =, an identifier, public, protected, private, \
-                //          readonly, <."
-                //     )
-                // } else {
-                //     unexpected!(self, "... , *,  (, [, :, , ?, = or an identifier")
-                // }
+                if self.input.syntax().typescript() {
+                    unexpected!(
+                        self,
+                        "... , *,  (, [, :, , ?, =, an identifier, public, protected, private, \
+                         readonly, <."
+                    )
+                } else {
+                    unexpected!(self, "... , *,  (, [, :, , ?, = or an identifier")
+                }
             }
         }
     }
 }
 
-impl ParseObject<Pat> for Parser {
+impl<I: Tokens> ParseObject<Pat> for Parser<I> {
     type Prop = ObjectPatProp;
 
     fn make_object(&mut self, span: Span, props: Vec<Self::Prop>) -> PResult<Pat> {
@@ -384,16 +403,14 @@ impl ParseObject<Pat> for Parser {
             }
 
             if let ObjectPatProp::Rest(..) = p {
-                // if self.syntax().early_errors() {
-                //     syntax_error!(self, p.span(), SyntaxError::NonLastRestParam)
-                // }
-                syntax_error!(self, p.span(), SyntaxError::NonLastRestParam)
+                if self.syntax().early_errors() {
+                    syntax_error!(self, p.span(), SyntaxError::NonLastRestParam)
+                }
             }
         }
 
-        // let optional =
-        //     (self.input.syntax().dts() || self.ctx.in_declare) && self.input.eat(&tok!('?'));
-        let optional = false;
+        let optional =
+            (self.input.syntax().dts() || self.ctx().in_declare) && self.input.eat(&tok!('?'));
 
         Ok(Pat::Object(ObjectPat {
             span,
@@ -437,8 +454,8 @@ impl ParseObject<Pat> for Parser {
                 .parse_assignment_expr()
                 .map(Some)?
         } else {
-            if self.ctx.is_reserved_word(&key.sym) {
-                self.emit_error_span(key.span, SyntaxError::ReservedWordInObjShorthandOrPat);
+            if self.ctx().is_reserved_word(&key.sym) {
+                self.emit_err(key.span, SyntaxError::ReservedWordInObjShorthandOrPat);
             }
 
             None

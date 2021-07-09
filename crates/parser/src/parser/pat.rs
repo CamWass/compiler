@@ -1,14 +1,14 @@
 //! 13.3.3 Destructuring Binding Patterns
 use super::{expression::PatOrExprOrSpread, util::ExprExt, *};
-use crate::token::{AssignOpToken, Word};
-use global_common::{BytePos, Span, Spanned};
+use crate::token::AssignOpToken;
+use global_common::Spanned;
 use swc_atoms::js_word;
 
-impl Parser {
+impl<I: Tokens> Parser<I> {
     pub(super) fn parse_opt_binding_ident(&mut self) -> PResult<Option<BindingIdent>> {
         trace_cur!(self, parse_opt_binding_ident);
 
-        if is!(self, BindingIdent) {
+        if is!(self, BindingIdent) || (self.input.syntax().typescript() && is!(self, "this")) {
             self.parse_binding_ident().map(Some)
         } else {
             Ok(None)
@@ -24,13 +24,13 @@ impl Parser {
         // "yield" and "await" is **lexically** accepted.
         let ident = self.parse_ident(true, true)?;
         if ident.sym == js_word!("arguments") || ident.sym == js_word!("eval") {
-            self.emit_strict_mode_error_span(ident.span, SyntaxError::EvalAndArgumentsInStrict);
+            self.emit_strict_mode_err(ident.span, SyntaxError::EvalAndArgumentsInStrict);
         }
-        if self.ctx.in_async && ident.sym == js_word!("await") {
-            self.emit_error_span(ident.span, SyntaxError::ExpectedIdent);
+        if self.ctx().in_async && ident.sym == js_word!("await") {
+            self.emit_err(ident.span, SyntaxError::ExpectedIdent);
         }
-        if self.ctx.in_generator && ident.sym == js_word!("yield") {
-            self.emit_error_span(ident.span, SyntaxError::ExpectedIdent);
+        if self.ctx().in_generator && ident.sym == js_word!("yield") {
+            self.emit_err(ident.span, SyntaxError::ExpectedIdent);
         }
 
         Ok(ident.into())
@@ -63,8 +63,8 @@ impl Parser {
         if self.input.eat(&tok!('=')) {
             let right = self.include_in_expr(true).parse_assignment_expr()?;
 
-            if self.ctx.in_declare {
-                self.emit_error_span(span!(self, start), SyntaxError::TS2371);
+            if self.ctx().in_declare {
+                self.emit_err(span!(self, start), SyntaxError::TS2371);
             }
 
             return Ok(Pat::Assign(AssignPat {
@@ -118,9 +118,7 @@ impl Parser {
         }
 
         expect!(self, ']');
-        let optional = false;
-        // let optional =
-        //     (self.input.syntax().dts() || self.ctx.in_declare) && self.input.eat(&tok!('?'));
+        let optional = (self.input.syntax().dts() || self.ctx().in_declare) && eat!(self, '?');
 
         Ok(Pat::Array(ArrayPat {
             span: span!(self, start),
@@ -130,22 +128,22 @@ impl Parser {
         }))
     }
 
-    // pub(super) fn eat_any_ts_modifier(&mut self) -> bool {
-    //     let has_modifier = self.syntax().typescript()
-    //         && match *cur!(self, false)? {
-    //             Word(Word::Ident(js_word!("public")))
-    //             | Word(Word::Ident(js_word!("protected")))
-    //             | Word(Word::Ident(js_word!("private")))
-    //             | Word(Word::Ident(js_word!("readonly"))) => true,
-    //             _ => false,
-    //         }
-    //         && (peeked_is!(self, IdentName) || peeked_is!(self, '{') || peeked_is!(self, '['));
-    //     if has_modifier {
-    //         let _ = self.parse_ts_modifier(&["public", "protected", "private", "readonly"]);
-    //     }
+    pub(super) fn eat_any_ts_modifier(&mut self) -> PResult<bool> {
+        let has_modifier = self.syntax().typescript()
+            && match *cur!(self, false)? {
+                Word(Word::Ident(js_word!("public")))
+                | Word(Word::Ident(js_word!("protected")))
+                | Word(Word::Ident(js_word!("private")))
+                | Word(Word::Ident(js_word!("readonly"))) => true,
+                _ => false,
+            }
+            && (peeked_is!(self, IdentName) || peeked_is!(self, '{') || peeked_is!(self, '['));
+        if has_modifier {
+            let _ = self.parse_ts_modifier(&["public", "protected", "private", "readonly"]);
+        }
 
-    //     return has_modifier;
-    // }
+        return Ok(has_modifier);
+    }
 
     /// spec: 'FormalParameter'
     ///
@@ -153,18 +151,89 @@ impl Parser {
     pub(super) fn parse_formal_param_pat(&mut self) -> PResult<Pat> {
         let start = self.input.cur_pos();
 
-        let pat = self.parse_binding_element()?;
-        let opt = false;
+        let has_modifier = self.eat_any_ts_modifier()?;
+
+        let pat_start = self.input.cur_pos();
+        let mut pat = self.parse_binding_element()?;
+        let mut opt = false;
+
+        if self.input.syntax().typescript() {
+            if eat!(self, '?') {
+                match pat {
+                    Pat::Ident(BindingIdent {
+                        id:
+                            Ident {
+                                ref mut optional, ..
+                            },
+                        ..
+                    })
+                    | Pat::Array(ArrayPat {
+                        ref mut optional, ..
+                    })
+                    | Pat::Object(ObjectPat {
+                        ref mut optional, ..
+                    }) => {
+                        *optional = true;
+                        opt = true;
+                    }
+                    _ if self.input.syntax().dts() || self.ctx().in_declare => {}
+                    _ => {
+                        syntax_error!(
+                            self,
+                            self.input.prev_span(),
+                            SyntaxError::TsBindingPatCannotBeOptional
+                        );
+                    }
+                }
+            }
+
+            match pat {
+                Pat::Array(ArrayPat {
+                    ref mut type_ann,
+                    ref mut span,
+                    ..
+                })
+                | Pat::Ident(BindingIdent {
+                    ref mut type_ann,
+                    id: Ident { ref mut span, .. },
+                    ..
+                })
+                | Pat::Object(ObjectPat {
+                    ref mut type_ann,
+                    ref mut span,
+                    ..
+                })
+                | Pat::Rest(RestPat {
+                    ref mut type_ann,
+                    ref mut span,
+                    ..
+                }) => {
+                    let new_type_ann = self.try_parse_ts_type_ann()?;
+                    if new_type_ann.is_some() {
+                        *span = Span::new(pat_start, self.input.prev_span().hi, Default::default());
+                    }
+                    *type_ann = new_type_ann;
+                }
+                Pat::Assign(AssignPat { ref mut span, .. }) => {
+                    if let Some(_) = self.try_parse_ts_type_ann()? {
+                        *span = Span::new(pat_start, self.input.prev_span().hi, Default::default());
+                        self.emit_err(*span, SyntaxError::TSTypeAnnotationAfterAssign);
+                    }
+                }
+                Pat::Invalid(..) => {}
+                _ => unreachable!("invalid syntax: Pat: {:?}", pat),
+            }
+        }
 
         let pat = if self.input.eat(&tok!('=')) {
             // `=` cannot follow optional parameter.
             if opt {
-                self.emit_error_span(pat.span(), SyntaxError::TS1015);
+                self.emit_err(pat.span(), SyntaxError::TS1015);
             }
 
             let right = self.parse_assignment_expr()?;
-            if self.ctx.in_declare {
-                self.emit_error_span(span!(self, start), SyntaxError::TS2371);
+            if self.ctx().in_declare {
+                self.emit_err(span!(self, start), SyntaxError::TS2371);
             }
 
             Pat::Assign(AssignPat {
@@ -176,6 +245,11 @@ impl Parser {
         } else {
             pat
         };
+
+        if has_modifier {
+            self.emit_err(span!(self, start), SyntaxError::TS2369);
+            return Ok(pat);
+        }
 
         Ok(pat)
     }
@@ -203,13 +277,12 @@ impl Parser {
                 let dot3_token = span!(self, pat_start);
 
                 let pat = self.parse_binding_pat_or_ident()?;
-                let type_ann = None;
-                // let type_ann = if self.input.syntax().typescript() && self.input.is(&tok!(':')) {
-                //     let cur_pos = self.input.cur_pos();
-                //     Some(self.parse_ts_type_ann(/* eat_colon */ true, cur_pos))
-                // } else {
-                //     None
-                // };
+                let type_ann = if self.input.syntax().typescript() && self.input.is(&tok!(':')) {
+                    let cur_pos = self.input.cur_pos();
+                    Some(self.parse_ts_type_ann(true, cur_pos)?)
+                } else {
+                    None
+                };
 
                 let pat = Pat::Rest(RestPat {
                     span: span!(self, pat_start),
@@ -236,16 +309,16 @@ impl Parser {
         param_start: BytePos,
         decorators: Vec<Decorator>,
     ) -> PResult<ParamOrTsParamProp> {
-        let (accessibility, readonly, is_override) = (None, false, false);
-        // let (accessibility, readonly) = if self.input.syntax().typescript() {
-        //     let accessibility = self.parse_access_modifier();
-        //     (
-        //         accessibility,
-        //         self.parse_ts_modifier(&["readonly"]).is_some(),
-        //     )
-        // } else {
-        //     (None, false)
-        // };
+        let (accessibility, is_override, readonly) = if self.input.syntax().typescript() {
+            let accessibility = self.parse_access_modifier()?;
+            (
+                accessibility,
+                self.parse_ts_modifier(&["override"])?.is_some(),
+                self.parse_ts_modifier(&["readonly"])?.is_some(),
+            )
+        } else {
+            (None, false, false)
+        };
         if accessibility == None && !is_override && !readonly {
             let pat = self.parse_formal_param_pat()?;
             Ok(ParamOrTsParamProp::Param(Param {
@@ -305,7 +378,7 @@ impl Parser {
 
                 if self.input.eat(&tok!('=')) {
                     let right = self.parse_assignment_expr()?;
-                    self.emit_error_span(pat.span(), SyntaxError::TS1048);
+                    self.emit_err(pat.span(), SyntaxError::TS1048);
                     pat = AssignPat {
                         span: span!(self, pat_start),
                         left: Box::new(pat),
@@ -315,7 +388,13 @@ impl Parser {
                     .into();
                 }
 
-                let type_ann = None;
+                let type_ann = if self.input.syntax().typescript() && is!(self, ':') {
+                    let cur_pos = self.input.cur_pos();
+                    let ty = self.parse_ts_type_ann(true, cur_pos)?;
+                    Some(ty)
+                } else {
+                    None
+                };
 
                 let pat = Pat::Rest(RestPat {
                     span: span!(self, pat_start),
@@ -330,6 +409,10 @@ impl Parser {
                     } else {
                         syntax_error!(self, pat.span(), SyntaxError::NonLastRestParam);
                     }
+                }
+
+                if self.syntax().typescript() && eat!(self, '?') {
+                    self.emit_err(self.input.prev_span(), SyntaxError::TS1047);
                 }
 
                 pat
@@ -372,7 +455,7 @@ impl PatType {
     }
 }
 
-impl Parser {
+impl<I: Tokens> Parser<I> {
     /// This does not return 'rest' pattern because non-last parameter cannot be
     /// rest.
     pub(super) fn reparse_expr_as_pat(&mut self, pat_ty: PatType, expr: Box<Expr>) -> PResult<Pat> {
@@ -390,7 +473,7 @@ impl Parser {
                 }
 
                 _ => {
-                    self.check_assign_target(&expr /*, true*/);
+                    self.check_assign_target(&expr, true);
                 }
             }
         }
@@ -404,7 +487,7 @@ impl Parser {
         expr: Box<Expr>,
     ) -> PResult<Pat> {
         // In dts, we do not reparse.
-        // debug_assert!(!self.input.syntax().dts());
+        debug_assert!(!self.input.syntax().dts());
 
         let span = expr.span();
 
@@ -451,8 +534,8 @@ impl Parser {
                 | Expr::Fn(..)
                 | Expr::Class(..)
                 | Expr::Tpl(..) => {
-                    if !expr.is_valid_simple_assignment_target(self.ctx.strict) {
-                        self.emit_error_span(span, SyntaxError::NotSimpleAssign)
+                    if !expr.is_valid_simple_assignment_target(self.ctx().strict) {
+                        self.emit_err(span, SyntaxError::NotSimpleAssign)
                     }
                     match *expr {
                         Expr::Ident(i) => return Ok(i.into()),
@@ -465,13 +548,13 @@ impl Parser {
                 // It's special because of optional initializer
                 Expr::Assign(..) => {}
 
-                _ => self.emit_error_span(span, SyntaxError::InvalidPat),
+                _ => self.emit_err(span, SyntaxError::InvalidPat),
             }
         }
 
         match *expr {
             Expr::Paren(..) => {
-                self.emit_error_span(span, SyntaxError::InvalidPat);
+                self.emit_err(span, SyntaxError::InvalidPat);
                 Ok(Pat::Invalid(Invalid { span }))
             }
             Expr::Assign(
@@ -588,7 +671,9 @@ impl Parser {
                                 spread: Some(..), ..
                             },
                         ) => {
-                            syntax_error!(self, expr.span(), SyntaxError::NonLastRestParam)
+                            if self.syntax().early_errors() {
+                                syntax_error!(self, expr.span(), SyntaxError::NonLastRestParam)
+                            }
                         }
                         Some(ExprOrSpread { expr, .. }) => {
                             params.push(self.reparse_expr_as_pat(pat_ty.element(), expr).map(Some)?)
@@ -618,7 +703,7 @@ impl Parser {
                             spread: Some(dot3_token),
                             expr,
                         }) => {
-                            // TODO: is BindingPat correct?
+                            // TODO(swc): is BindingPat correct?
                             let expr_span = expr.span();
                             self.reparse_expr_as_pat(pat_ty.element(), expr)
                                 .map(|pat| {
@@ -632,10 +717,10 @@ impl Parser {
                                 .map(Some)?
                         }
                         Some(ExprOrSpread { expr, .. }) => {
-                            // TODO: is BindingPat correct?
+                            // TODO(swc): is BindingPat correct?
                             self.reparse_expr_as_pat(pat_ty.element(), expr).map(Some)?
                         }
-                        // TODO: syntax error if last element is ellison and ...rest exists.
+                        // TODO(swc): syntax error if last element is ellison and ...rest exists.
                         None => None,
                     };
                     params.push(last);
@@ -651,17 +736,17 @@ impl Parser {
             // Invalid patterns.
             // Note that assignment expression with '=' is valid, and handled above.
             Expr::Lit(..) | Expr::Assign(..) => {
-                self.emit_error_span(span, SyntaxError::InvalidPat);
+                self.emit_err(span, SyntaxError::InvalidPat);
                 Ok(Pat::Invalid(Invalid { span }))
             }
 
-            Expr::Yield(..) if self.ctx.in_generator => {
-                self.emit_error_span(span, SyntaxError::InvalidPat);
+            Expr::Yield(..) if self.ctx().in_generator => {
+                self.emit_err(span, SyntaxError::InvalidPat);
                 Ok(Pat::Invalid(Invalid { span }))
             }
 
             _ => {
-                self.emit_error_span(span, SyntaxError::InvalidPat);
+                self.emit_err(span, SyntaxError::InvalidPat);
 
                 Ok(Pat::Invalid(Invalid { span }))
             }
@@ -687,7 +772,9 @@ impl Parser {
                     spread: Some(..), ..
                 })
                 | PatOrExprOrSpread::Pat(Pat::Rest(..)) => {
-                    syntax_error!(self, expr.span(), SyntaxError::NonLastRestParam)
+                    if self.syntax().early_errors() {
+                        syntax_error!(self, expr.span(), SyntaxError::NonLastRestParam)
+                    }
                 }
                 PatOrExprOrSpread::ExprOrSpread(ExprOrSpread {
                     spread: None, expr, ..

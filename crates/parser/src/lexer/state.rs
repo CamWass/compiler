@@ -1,4 +1,10 @@
-use crate::token::*;
+use super::Lexer;
+use crate::{
+    context::{Context, YesMaybe, YesNoMaybe},
+    error::Error,
+    token::*,
+    JscTarget, Syntax, Tokens,
+};
 use enum_kind::Kind;
 use global_common::BytePos;
 
@@ -70,6 +76,102 @@ impl From<&Token> for TokenType {
                     _ => false,
                 },
             },
+        }
+    }
+}
+
+impl Tokens for Lexer<'_> {
+    fn set_ctx(&mut self, ctx: Context) {
+        if ctx.is_module() && !self.module_errors.borrow().is_empty() {
+            let mut module_errors = self.module_errors.borrow_mut();
+            self.errors.borrow_mut().append(&mut *module_errors);
+        }
+
+        if ctx.is_strict() && !self.strict_errors.borrow().is_empty() {
+            let mut strict_errors = self.strict_errors.borrow_mut();
+            self.errors.borrow_mut().append(&mut *strict_errors);
+        }
+
+        self.ctx = ctx
+    }
+
+    fn ctx(&self) -> Context {
+        self.ctx
+    }
+
+    fn syntax(&self) -> Syntax {
+        self.syntax
+    }
+    fn target(&self) -> JscTarget {
+        self.target
+    }
+
+    fn set_expr_allowed(&mut self, allow: bool) {
+        self.set_expr_allowed(allow)
+    }
+
+    fn token_context(&self) -> &TokenContexts {
+        &self.state.context
+    }
+    fn token_context_mut(&mut self) -> &mut TokenContexts {
+        &mut self.state.context
+    }
+
+    fn set_token_context(&mut self, c: TokenContexts) {
+        self.state.context = c;
+    }
+
+    fn add_error(&self, error: Error) {
+        self.errors.borrow_mut().push(error);
+    }
+
+    fn take_errors(&mut self) -> Vec<Error> {
+        std::mem::take(&mut self.errors.borrow_mut())
+    }
+
+    fn add_module_mode_error(&self, error: Error) {
+        match self.ctx.module {
+            YesNoMaybe::Yes => {
+                // Definitely in a module, immediately add error.
+                self.add_error(error);
+            }
+            YesNoMaybe::No => {
+                // Definitely not in a module, discard error.
+            }
+            YesNoMaybe::Maybe => {
+                // Not yet sure if we are in a module, buffer error.
+                self.module_errors.borrow_mut().push(error);
+            }
+        }
+    }
+
+    fn add_strict_mode_error(&self, error: Error) {
+        match self.ctx.strict {
+            YesMaybe::Yes => {
+                // Definitely in strict mode, immediately add error.
+                self.add_error(error);
+            }
+            YesMaybe::Maybe => {
+                // Not yet sure if we are in strict mode, buffer error.
+                self.strict_errors.borrow_mut().push(error);
+            }
+        }
+    }
+
+    fn convert_strict_mode_errors_to_module_errors(&mut self) {
+        // Even once we have stopped parsing directives, we still can not be
+        // certain of strict mode because we may later discover that we are
+        // paring a module, which requires us to reinterpret the code using
+        // strict mode. Therefore, rather than discarding any trapped strict
+        // mode errors, we convert them into module errors. The logic above, in
+        // add_module_mode_error, will decide whether to discard, buffer, or add
+        // the error to the main error buffer, depending on if we are certain
+        // whether we are paring a module or not.
+
+        let mut strict_errors = self.strict_errors.borrow_mut();
+
+        for error in strict_errors.drain(..) {
+            self.add_module_mode_error(error);
         }
     }
 }

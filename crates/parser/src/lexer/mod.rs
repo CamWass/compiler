@@ -4,56 +4,41 @@ mod state;
 mod util;
 
 use crate::{
+    context::Context,
     error::{Error, SyntaxError},
     token::*,
-    JscTarget,
+    JscTarget, Syntax,
 };
 use ast::op;
 use global_common::{BytePos, Span};
 use identifier::{is_ident_part, is_ident_start};
 use state::State;
 pub use state::{TokenContext, TokenContexts};
-use std::{iter::FusedIterator, mem};
+use std::{cell::RefCell, iter::FusedIterator, rc::Rc};
 use swc_atoms::JsWord;
 use util::{char_bytes, char_literals, is_line_break, is_valid_regex_flag};
 
 pub(crate) type LexResult<T> = Result<T, Error>;
 
 #[derive(Clone)]
-pub struct Lexer<'src, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
-where
-    ErrorEmitter: FnMut(Span, SyntaxError),
-    ModuleErrorEmitter: FnMut(Span, SyntaxError),
-    StrictErrorEmitter: FnMut(Span, SyntaxError),
-{
+pub struct Lexer<'src> {
     cur: usize,
     bytes: &'src [u8],
 
+    pub(crate) ctx: Context,
     state: State,
+    pub(crate) syntax: Syntax,
     pub(crate) target: JscTarget,
     buf: String,
 
-    error_emitter: ErrorEmitter,
-    module_error_emitter: ModuleErrorEmitter,
-    strict_error_emitter: StrictErrorEmitter,
+    errors: Rc<RefCell<Vec<Error>>>,
+    module_errors: Rc<RefCell<Vec<Error>>>,
+    strict_errors: Rc<RefCell<Vec<Error>>>,
 }
 
-impl<ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter> FusedIterator
-    for Lexer<'_, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
-where
-    ErrorEmitter: FnMut(Span, SyntaxError),
-    ModuleErrorEmitter: FnMut(Span, SyntaxError),
-    StrictErrorEmitter: FnMut(Span, SyntaxError),
-{
-}
+impl FusedIterator for Lexer<'_> {}
 
-impl<ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter> Iterator
-    for Lexer<'_, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
-where
-    ErrorEmitter: FnMut(Span, SyntaxError),
-    ModuleErrorEmitter: FnMut(Span, SyntaxError),
-    StrictErrorEmitter: FnMut(Span, SyntaxError),
-{
+impl Iterator for Lexer<'_> {
     type Item = TokenAndSpan;
     fn next(&mut self) -> Option<Self::Item> {
         let mut start = self.cur_pos();
@@ -66,15 +51,22 @@ where
                 start = self.cur_pos();
             };
 
-
             if let Some(TokenContext::Tpl {
                 start: start_pos_of_tpl,
             }) = self.state.context.current()
             {
-                self.read_tmpl_token(start_pos_of_tpl).map(Some)
-            } else {
-                self.read_token()
+                return self.read_tmpl_token(start_pos_of_tpl).map(Some);
             }
+
+            if self.syntax.typescript() && self.ctx.in_type {
+                if self.eat(b'<') {
+                    return Ok(Some(tok!('<')));
+                } else if self.eat(b'>') {
+                    return Ok(Some(tok!('>')));
+                }
+            }
+
+            self.read_token()
         })();
 
         let token = match res.map_err(Token::Error).map_err(Some) {
@@ -100,29 +92,19 @@ where
     }
 }
 
-impl<'src, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
-    Lexer<'src, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
-where
-    ErrorEmitter: FnMut(Span, SyntaxError),
-    ModuleErrorEmitter: FnMut(Span, SyntaxError),
-    StrictErrorEmitter: FnMut(Span, SyntaxError),
-{
-    pub fn new(
-        target: JscTarget,
-        input: &'src str,
-        error_emitter: ErrorEmitter,
-        module_error_emitter: ModuleErrorEmitter,
-        strict_error_emitter: StrictErrorEmitter,
-    ) -> Self {
+impl<'src> Lexer<'src> {
+    pub fn new(syntax: Syntax, target: JscTarget, input: &'src str) -> Self {
         Lexer {
             cur: 0,
             bytes: input.as_bytes(),
 
             state: State::new(),
+            syntax,
             target,
-            error_emitter,
-            module_error_emitter,
-            strict_error_emitter,
+            ctx: Default::default(),
+            errors: Default::default(),
+            module_errors: Default::default(),
+            strict_errors: Default::default(),
             buf: String::with_capacity(16),
         }
     }
@@ -130,12 +112,9 @@ where
     /// Utility method to reuse buffer.
     fn with_buf<F, Ret>(&mut self, op: F) -> LexResult<Ret>
     where
-        F: FnOnce(
-            &mut Lexer<'_, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>,
-            &mut String,
-        ) -> LexResult<Ret>,
+        F: FnOnce(&mut Lexer<'_>, &mut String) -> LexResult<Ret>,
     {
-        let mut buf = mem::take(&mut self.buf);
+        let mut buf = std::mem::take(&mut self.buf);
         buf.clear();
 
         let res = op(self, &mut buf);
@@ -903,54 +882,18 @@ where
 
         let (word, has_esc) = self.read_word()?;
 
-        if has_esc {
-            match word {
-                Word::Null
-                | Word::True
-                | Word::False
-                | Word::Keyword(Keyword::Break)
-                | Word::Keyword(Keyword::Case)
-                | Word::Keyword(Keyword::Catch)
-                | Word::Keyword(Keyword::Continue)
-                | Word::Keyword(Keyword::Debugger)
-                | Word::Keyword(Keyword::Default_)
-                | Word::Keyword(Keyword::Do)
-                | Word::Keyword(Keyword::Export)
-                | Word::Keyword(Keyword::Else)
-                | Word::Keyword(Keyword::Finally)
-                | Word::Keyword(Keyword::For)
-                | Word::Keyword(Keyword::Function)
-                | Word::Keyword(Keyword::If)
-                | Word::Keyword(Keyword::Return)
-                | Word::Keyword(Keyword::Switch)
-                | Word::Keyword(Keyword::Throw)
-                | Word::Keyword(Keyword::Try)
-                | Word::Keyword(Keyword::Var)
-                | Word::Keyword(Keyword::Const)
-                | Word::Keyword(Keyword::While)
-                | Word::Keyword(Keyword::With)
-                | Word::Keyword(Keyword::New)
-                | Word::Keyword(Keyword::This)
-                | Word::Keyword(Keyword::Super)
-                | Word::Keyword(Keyword::Class)
-                | Word::Keyword(Keyword::Extends)
-                | Word::Keyword(Keyword::Import)
-                | Word::Keyword(Keyword::In)
-                | Word::Keyword(Keyword::InstanceOf)
-                | Word::Keyword(Keyword::TypeOf)
-                | Word::Keyword(Keyword::Void)
-                | Word::Keyword(Keyword::Delete) => {
-                    return self.error(
-                        start,
-                        SyntaxError::EscapeInReservedWord { word: word.into() },
-                    )?
-                }
-
-                _ => {}
-            }
+        // Note: ctx is stored in lexer because of this error.
+        // 'await' and 'yield' may have semantic of reserved word, which means lexer
+        // should know context or parser should handle this error. Our approach to this
+        // problem is former one.
+        if has_esc && self.ctx.is_reserved(&word) {
+            self.error(
+                start,
+                SyntaxError::EscapeInReservedWord { word: word.into() },
+            )?
+        } else {
+            Ok(Word(word))
         }
-
-        Ok(Word(word))
     }
 
     // TODO: Verify that the raw value is spec compliant/look at swc/babel's implementations.
@@ -1066,6 +1009,10 @@ where
         // Safety: The lookup table maps all values of u8, so its impossible for
         // a u8 to be out of bounds.
         unsafe { *DISPATCHER.get_unchecked(byte as usize) }
+    }
+
+    pub fn set_expr_allowed(&mut self, allow: bool) {
+        self.state.is_expr_allowed = allow;
     }
 }
 

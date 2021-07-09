@@ -56,7 +56,7 @@ impl IsDirective for Stmt {
     }
 }
 
-pub(super) trait StmtLikeParser<'a, Type: IsDirective> {
+pub(super) trait StmtLikeParser<Type: IsDirective> {
     fn handle_import_export(
         &mut self,
         top_level: bool,
@@ -71,10 +71,10 @@ pub enum StmtParseCtx {
     None,
 }
 
-impl<'a> StmtLikeParser<'a, Stmt> for Parser {
+impl<I: Tokens> StmtLikeParser<Stmt> for Parser<I> {
     fn handle_import_export(&mut self, _: bool, _: Vec<Decorator>) -> PResult<Stmt> {
         let start = self.input.cur_pos();
-        if is!(self, "import") {
+        if self.input.syntax().dynamic_import() && is!(self, "import") {
             let expr = self.parse_expr()?;
 
             eat!(self, ';');
@@ -86,7 +86,10 @@ impl<'a> StmtLikeParser<'a, Stmt> for Parser {
             .into());
         }
 
-        if is!(self, "import") && self.input.peeked_is(&tok!('.')) {
+        if self.input.syntax().import_meta()
+            && is!(self, "import")
+            && self.input.peeked_is(&tok!('.'))
+        {
             let expr = self.parse_expr()?;
 
             eat!(self, ';');
@@ -102,7 +105,7 @@ impl<'a> StmtLikeParser<'a, Stmt> for Parser {
     }
 }
 
-impl<'a> Parser {
+impl<I: Tokens> Parser<I> {
     pub(super) fn parse_block_body<Type>(
         &mut self,
         allow_directives: bool,
@@ -110,12 +113,12 @@ impl<'a> Parser {
         end: Option<&Token>,
     ) -> PResult<Vec<Type>>
     where
-        Self: StmtLikeParser<'a, Type>,
+        Self: StmtLikeParser<Type>,
         Type: IsDirective + From<Stmt>,
     {
         trace_cur!(self, parse_block_body);
 
-        let old_ctx = self.ctx;
+        let old_ctx = self.ctx();
 
         let mut parsed_non_directive = false;
         let mut has_strict_mode_directive = false;
@@ -150,10 +153,6 @@ impl<'a> Parser {
             self.input.bump();
         }
 
-        if self.ctx.is_strict() {
-            self.emit_preceding_strict_errors();
-        }
-
         if !top_level {
             self.set_ctx(old_ctx);
         }
@@ -174,7 +173,7 @@ impl<'a> Parser {
     /// Parse a statement, declaration or module item.
     fn parse_stmt_like<Type>(&mut self, parse_ctx: StmtParseCtx, top_level: bool) -> PResult<Type>
     where
-        Self: StmtLikeParser<'a, Type>,
+        Self: StmtLikeParser<Type>,
         Type: IsDirective + From<Stmt>,
     {
         trace_cur!(self, parse_stmt_like);
@@ -185,19 +184,44 @@ impl<'a> Parser {
             return self.handle_import_export(top_level, decorators);
         }
 
-        self.parse_stmt_content(start, parse_ctx, decorators)
+        self.parse_stmt_content(start, parse_ctx, top_level, decorators)
             .map(From::from)
     }
     fn parse_stmt_content(
         &mut self,
         start: BytePos,
         parse_ctx: StmtParseCtx,
+        top_level: bool,
         decorators: Vec<Decorator>,
     ) -> PResult<Stmt> {
         trace_cur!(self, parse_stmt_content);
+
         // Most types of statements are recognized by the keyword they
         // start with. Many are trivial to parse, some require a bit of
         // complexity.
+
+        if top_level && is!(self, "await") {
+            let valid = self.target() >= JscTarget::Es2017 && self.syntax().top_level_await();
+
+            if !valid {
+                self.emit_err(self.input.cur_span(), SyntaxError::TopLevelAwait);
+            }
+
+            let expr = self.parse_await_expr()?;
+            eat!(self, ';');
+
+            let span = span!(self, start);
+            return Ok(Stmt::Expr(ExprStmt { span, expr }));
+        }
+
+        if self.input.syntax().typescript() && is!(self, "const") && peeked_is!(self, "enum") {
+            self.assert_and_bump(&tok!("const"));
+            self.assert_and_bump(&tok!("enum"));
+            return self
+                .parse_ts_enum_decl(start, true)
+                .map(Decl::from)
+                .map(Stmt::from);
+        }
 
         match cur!(self, true)? {
             tok!("break") | tok!("continue") => {
@@ -233,7 +257,7 @@ impl<'a> Parser {
             }
             tok!("function") => {
                 if parse_ctx != StmtParseCtx::None {
-                    if self.ctx.is_strict() {
+                    if self.ctx().is_strict() {
                         syntax_error!(self, SyntaxError::StrictFunction);
                     } else if parse_ctx == StmtParseCtx::Other {
                         syntax_error!(self, SyntaxError::SloppyFunction);
@@ -260,6 +284,31 @@ impl<'a> Parser {
             }
             tok!("throw") => {
                 return self.parse_throw_stmt();
+            }
+            // Error recovery
+            tok!("catch") => {
+                let span = self.input.cur_span();
+                self.emit_err(span, SyntaxError::TS1005);
+
+                let _ = self.parse_catch_clause();
+                let _ = self.parse_finally_block();
+
+                return Ok(Stmt::Expr(ExprStmt {
+                    span,
+                    expr: Box::new(Expr::Invalid(Invalid { span })),
+                }));
+            }
+            // Error recovery
+            tok!("finally") => {
+                let span = self.input.cur_span();
+                self.emit_err(span, SyntaxError::TS1005);
+
+                let _ = self.parse_finally_block();
+
+                return Ok(Stmt::Expr(ExprStmt {
+                    span,
+                    expr: Box::new(Expr::Invalid(Invalid { span })),
+                }));
             }
             tok!("try") => {
                 return self.parse_try_stmt();
@@ -316,6 +365,7 @@ impl<'a> Parser {
             && self.input.peeked_is(&tok!("function"))
             && !self.input.has_linebreak_between_cur_and_peeked()
         {
+            // TODO: what's this?
             // if context.is_some() {
             //     // self.raise(
             //     //     self.lexer.state.start,
@@ -347,7 +397,7 @@ impl<'a> Parser {
         };
         if let Expr::Ident(ref ident) = *expr {
             if *ident.sym == js_word!("interface") && self.input.had_line_break_before_cur() {
-                self.emit_strict_mode_error_span(ident.span, SyntaxError::InvalidIdentInStrict);
+                self.emit_strict_mode_err(ident.span, SyntaxError::InvalidIdentInStrict);
 
                 eat!(self, ';');
 
@@ -356,13 +406,37 @@ impl<'a> Parser {
                     expr,
                 }));
             }
+
+            if self.input.syntax().typescript() {
+                if let Some(decl) = self.parse_ts_expr_stmt(decorators, ident.clone())? {
+                    return Ok(Stmt::Decl(decl));
+                }
+            }
         }
 
         if let Expr::Ident(Ident { ref sym, span, .. }) = *expr {
             match *sym {
                 js_word!("enum") | js_word!("interface") => {
-                    self.emit_strict_mode_error_span(span, SyntaxError::InvalidIdentInStrict);
+                    self.emit_strict_mode_err(span, SyntaxError::InvalidIdentInStrict);
                 }
+                _ => {}
+            }
+        }
+
+        if self.syntax().typescript() {
+            match *expr {
+                Expr::Ident(ref i) => match i.sym {
+                    js_word!("public") | js_word!("static") | js_word!("abstract") => {
+                        if eat!(self, "interface") {
+                            self.emit_err(i.span, SyntaxError::TS2427);
+                            return self
+                                .parse_ts_interface_decl(start)
+                                .map(Decl::from)
+                                .map(Stmt::from);
+                        }
+                    }
+                    _ => {}
+                },
                 _ => {}
             }
         }
@@ -374,7 +448,7 @@ impl<'a> Parser {
             }))
         } else {
             if let Token::BinOp(..) = *cur!(self, false)? {
-                self.emit_error_span(self.input.cur_span(), SyntaxError::TS1005);
+                self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
                 let expr = self.parse_bin_op_recursively(expr, 0)?;
                 return Ok(ExprStmt {
                     span: span!(self, start),
@@ -390,17 +464,17 @@ impl<'a> Parser {
         }
     }
 
-    fn verify_break_continue(&mut self, is_break: bool, label: &Option<Ident>, span: Span) {
+    fn verify_break_continue(&self, is_break: bool, label: &Option<Ident>, span: Span) {
         if is_break {
             if label.is_some() && !self.state.labels.contains(&label.as_ref().unwrap().sym) {
-                self.emit_error_span(span, SyntaxError::TS1116);
-            } else if !self.ctx.is_break_allowed {
-                self.emit_error_span(span, SyntaxError::TS1105);
+                self.emit_err(span, SyntaxError::TS1116);
+            } else if !self.ctx().is_break_allowed {
+                self.emit_err(span, SyntaxError::TS1105);
             }
-        } else if !self.ctx.is_continue_allowed {
-            self.emit_error_span(span, SyntaxError::TS1115);
+        } else if !self.ctx().is_continue_allowed {
+            self.emit_err(span, SyntaxError::TS1115);
         } else if label.is_some() && !self.state.labels.contains(&label.as_ref().unwrap().sym) {
-            self.emit_error_span(span, SyntaxError::TS1107);
+            self.emit_err(span, SyntaxError::TS1107);
         }
     }
 
@@ -427,7 +501,7 @@ impl<'a> Parser {
         let ctx = Context {
             is_break_allowed: true,
             is_continue_allowed: true,
-            ..self.ctx
+            ..self.ctx()
         };
 
         let body = self
@@ -471,7 +545,7 @@ impl<'a> Parser {
         let ctx = Context {
             is_break_allowed: true,
             is_continue_allowed: true,
-            ..self.ctx
+            ..self.ctx()
         };
         let body = self
             .with_ctx(ctx)
@@ -524,10 +598,7 @@ impl<'a> Parser {
             if is_one_of!(self, "of", "in") {
                 if decl.decls.len() > 1 {
                     for excess_decl in decl.decls.iter().skip(1) {
-                        self.emit_error_span(
-                            excess_decl.name.span(),
-                            SyntaxError::TooManyVarInForInHead,
-                        );
+                        self.emit_err(excess_decl.name.span(), SyntaxError::TooManyVarInForInHead);
                     }
                     // TODO: is the following error more accurate/descriptive than the above one?
 
@@ -537,11 +608,30 @@ impl<'a> Parser {
                     //     Default::default(),
                     // );
                     // panic!("Too many variable declarations in for in/of head. Expected 1 declaration, found {}. {:?}", decl.decls.len(), span_of_excess_decls);
-                } else if decl.decls[0].init.is_some() {
-                    self.emit_error_span(
-                        decl.decls[0].name.span(),
-                        SyntaxError::VarInitializerInForInHead,
-                    );
+                } else {
+                    if decl.decls[0].init.is_some() {
+                        self.emit_err(
+                            decl.decls[0].name.span(),
+                            SyntaxError::VarInitializerInForInHead,
+                        );
+                    }
+
+                    if self.syntax().typescript() {
+                        let type_ann = match decl.decls[0].name {
+                            Pat::Ident(ref v) => Some(&v.type_ann),
+                            Pat::Array(ref v) => Some(&v.type_ann),
+                            Pat::Assign(ref v) => Some(&v.type_ann),
+                            Pat::Rest(ref v) => Some(&v.type_ann),
+                            Pat::Object(ref v) => Some(&v.type_ann),
+                            _ => None,
+                        };
+
+                        if let Some(type_ann) = type_ann {
+                            if type_ann.is_some() {
+                                self.emit_err(decl.decls[0].name.span(), SyntaxError::TS2483);
+                            }
+                        }
+                    }
                 }
 
                 return self.parse_for_each_head(VarDeclOrPat::VarDecl(decl));
@@ -559,7 +649,18 @@ impl<'a> Parser {
 
         // for (a of b)
         if is_one_of!(self, "of", "in") {
+            let is_in = is!(self, "in");
+
             let pat = self.reparse_expr_as_pat(PatType::AssignPat, init)?;
+
+            // for ({} in foo) is invalid
+            if self.input.syntax().typescript() && is_in {
+                match pat {
+                    Pat::Ident(..) => {}
+                    Pat::Expr(..) => {}
+                    ref v => self.emit_err(v.span(), SyntaxError::TS2491),
+                }
+            }
 
             return self.parse_for_each_head(VarDeclOrPat::Pat(pat));
         }
@@ -604,7 +705,25 @@ impl<'a> Parser {
 
         self.assert_and_bump(&tok!("if"));
 
-        let test = self.parse_header_expr()?;
+        // TODO: let test = self.parse_header_expr()?;
+
+        expect!(self, '(');
+        let test = self.include_in_expr(true).parse_expr()?;
+        if !eat!(self, ')') {
+            self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
+
+            let span = span!(self, start);
+            return Ok(Stmt::If(IfStmt {
+                span,
+                test,
+                cons: Box::new(Stmt::Expr(ExprStmt {
+                    span,
+                    expr: Box::new(Expr::Invalid(Invalid { span })),
+                })),
+                alt: Default::default(),
+            }));
+        }
+
         let consequent = self
             .parse_stmt(StmtParseCtx::IfOrLabel, false)
             .map(Box::new)?;
@@ -642,10 +761,9 @@ impl<'a> Parser {
 
         expect!(self, ';');
 
-        if !self.ctx.in_function {
-            self.emit_error_span(span!(self, start), SyntaxError::ReturnNotAllowed);
+        if !self.ctx().in_function {
+            self.emit_err(span!(self, start), SyntaxError::ReturnNotAllowed);
         }
-
         Ok(Stmt::Return(ReturnStmt {
             span: span!(self, start),
             arg,
@@ -665,7 +783,7 @@ impl<'a> Parser {
 
         let ctx = Context {
             is_break_allowed: true,
-            ..self.ctx
+            ..self.ctx()
         };
 
         self.with_ctx(ctx).parse_with(|parser| {
@@ -679,7 +797,7 @@ impl<'a> Parser {
                 let ctx = Context {
                     in_case_cond: true,
                     include_in_expr: true,
-                    ..parser.ctx
+                    ..parser.ctx()
                 };
 
                 let test = if is_case {
@@ -723,6 +841,7 @@ impl<'a> Parser {
         self.assert_and_bump(&tok!("throw"));
 
         if self.input.had_line_break_before_cur() {
+            // TODO(swc): Suggest throw arg;
             syntax_error!(self, SyntaxError::LineBreakInThrow);
         }
 
@@ -749,7 +868,7 @@ impl<'a> Parser {
         if handler.is_none() && finalizer.is_none() {
             // self.raise(node.start, Errors.NoCatchOrFinally);
             // TODO: is the babel's error message more descriptive than this:
-            self.emit_error_span(
+            self.emit_err(
                 Span::new(catch_start, catch_start, Default::default()),
                 SyntaxError::TS1005,
             );
@@ -789,36 +908,39 @@ impl<'a> Parser {
         })
     }
 
+    /// Optional since es2019
     fn parse_catch_param(&mut self) -> PResult<Option<Pat>> {
         if eat!(self, '(') {
-            let pat = self.parse_binding_pat_or_ident()?;
+            let mut pat = self.parse_binding_pat_or_ident()?;
 
-            // let type_ann_start = self.input.cur_pos();
+            let type_ann_start = self.input.cur_pos();
 
-            // if self.syntax().typescript() && eat!(self, ':') {
-            //     let ctx = Context {
-            //         in_type: true,
-            //         ..self.ctx
-            //     };
+            if self.syntax().typescript() && eat!(self, ':') {
+                let ctx = Context {
+                    in_type: true,
+                    ..self.ctx()
+                };
 
-            //     let ty = self.with_ctx(ctx).parse_with(|p| p.parse_ts_type());
-            //     // self.emit_error_span(ty.span(), SyntaxError::TS1196);
+                let ty = self
+                    .with_ctx(ctx)
+                    .parse_with(|parser| parser.parse_ts_type())?;
+                // self.emit_err(ty.span(), SyntaxError::TS1196);
 
-            //     match &mut pat {
-            //         Pat::Ident(BindingIdent { type_ann, .. })
-            //         | Pat::Array(ArrayPat { type_ann, .. })
-            //         | Pat::Rest(RestPat { type_ann, .. })
-            //         | Pat::Object(ObjectPat { type_ann, .. })
-            //         | Pat::Assign(AssignPat { type_ann, .. }) => {
-            //             *type_ann = Some(TsTypeAnn {
-            //                 span: span!(self, type_ann_start),
-            //                 type_ann: ty,
-            //             });
-            //         }
-            //         Pat::Invalid(_) => {}
-            //         Pat::Expr(_) => {}
-            //     }
-            // }
+                match &mut pat {
+                    Pat::Ident(BindingIdent { type_ann, .. })
+                    | Pat::Array(ArrayPat { type_ann, .. })
+                    | Pat::Rest(RestPat { type_ann, .. })
+                    | Pat::Object(ObjectPat { type_ann, .. })
+                    | Pat::Assign(AssignPat { type_ann, .. }) => {
+                        *type_ann = Some(TsTypeAnn {
+                            span: span!(self, type_ann_start),
+                            type_ann: ty,
+                        });
+                    }
+                    Pat::Invalid(_) => {}
+                    Pat::Expr(_) => {}
+                }
+            }
             expect!(self, ')');
             Ok(Some(pat))
         } else {
@@ -837,6 +959,40 @@ impl<'a> Parser {
         let var_span = span!(self, start);
         let should_include_in = kind != VarDeclKind::Var || !for_loop;
 
+        if self.syntax().typescript() && for_loop {
+            let res = if is_one_of!(self, "in", "of") {
+                self.ts_look_ahead(|parser| {
+                    if !eat!(parser, "of") && !eat!(parser, "in") {
+                        return Ok(false);
+                    }
+
+                    parser.parse_assignment_expr()?;
+                    expect!(parser, ')');
+
+                    Ok(true)
+                })
+            } else {
+                Ok(false)
+            };
+
+            match res {
+                Ok(true) => {
+                    let pos = var_span.hi();
+                    let span = Span::new(pos, pos, Default::default());
+                    self.emit_err(span, SyntaxError::TS1123);
+
+                    return Ok(VarDecl {
+                        span: span!(self, start),
+                        kind,
+                        declare: false,
+                        decls: vec![],
+                    });
+                }
+                Err(..) => {}
+                _ => {}
+            }
+        }
+
         let mut decls = vec![];
         let mut first = true;
         while first || self.input.eat(&tok!(',')) {
@@ -847,10 +1003,10 @@ impl<'a> Parser {
             let ctx = if should_include_in {
                 Context {
                     include_in_expr: true,
-                    ..self.ctx
+                    ..self.ctx()
                 }
             } else {
-                self.ctx
+                self.ctx()
             };
 
             // Handle
@@ -864,7 +1020,7 @@ impl<'a> Parser {
                 } else {
                     prev_span
                 };
-                self.emit_error_span(span, SyntaxError::TS1009);
+                self.emit_err(span, SyntaxError::TS1009);
                 break;
             }
 
@@ -872,7 +1028,7 @@ impl<'a> Parser {
         }
 
         if !for_loop && !eat!(self, ';') {
-            self.emit_error_span(self.input.cur_span(), SyntaxError::TS1005);
+            self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
 
             let _ = self.parse_expr();
 
@@ -892,44 +1048,43 @@ impl<'a> Parser {
     fn parse_var_declarator(&mut self, for_loop: bool) -> PResult<VarDeclarator> {
         let start = self.input.cur_pos();
 
-        let name = self.parse_binding_pat_or_ident()?;
+        let mut name = self.parse_binding_pat_or_ident()?;
 
-        let definite = false;
-        // let definite = if self.input.syntax().typescript() {
-        //     match name {
-        //         Pat::Ident(..) => eat!(self, '!'),
-        //         _ => false,
-        //     }
-        // } else {
-        //     false
-        // };
+        let definite = if self.input.syntax().typescript() {
+            match name {
+                Pat::Ident(..) => eat!(self, '!'),
+                _ => false,
+            }
+        } else {
+            false
+        };
 
         // Typescript extension
-        // if self.input.syntax().typescript() && is!(self, ':') {
-        //     let type_annotation = self.try_parse_ts_type_ann()?;
-        //     match name {
-        //         Pat::Array(ArrayPat {
-        //             ref mut type_ann, ..
-        //         })
-        //         | Pat::Assign(AssignPat {
-        //             ref mut type_ann, ..
-        //         })
-        //         | Pat::Ident(BindingIdent {
-        //             ref mut type_ann, ..
-        //         })
-        //         | Pat::Object(ObjectPat {
-        //             ref mut type_ann, ..
-        //         })
-        //         | Pat::Rest(RestPat {
-        //             ref mut type_ann, ..
-        //         }) => {
-        //             *type_ann = type_annotation;
-        //         }
-        //         _ => unreachable!("invalid syntax: Pat: {:?}", name),
-        //     }
-        // }
+        if self.input.syntax().typescript() && is!(self, ':') {
+            let type_annotation = self.try_parse_ts_type_ann()?;
+            match name {
+                Pat::Array(ArrayPat {
+                    ref mut type_ann, ..
+                })
+                | Pat::Assign(AssignPat {
+                    ref mut type_ann, ..
+                })
+                | Pat::Ident(BindingIdent {
+                    ref mut type_ann, ..
+                })
+                | Pat::Object(ObjectPat {
+                    ref mut type_ann, ..
+                })
+                | Pat::Rest(RestPat {
+                    ref mut type_ann, ..
+                }) => {
+                    *type_ann = type_annotation;
+                }
+                _ => unreachable!("invalid syntax: Pat: {:?}", name),
+            }
+        }
 
-        //FIXME: This is wrong. Should check in/of only on first loop.
+        //FIXME(swc): This is wrong. Should check in/of only on first loop.
         let init = if !for_loop || !is_one_of!(self, "in", "of") {
             if self.input.eat(&tok!('=')) {
                 let expr = self.parse_assignment_expr()?;
@@ -939,7 +1094,7 @@ impl<'a> Parser {
             } else {
                 // Destructuring bindings require initializers, but
                 // typescript allows `declare` vars not to have initializers.
-                if self.ctx.in_declare {
+                if self.ctx().in_declare {
                     None
                 } else {
                     match name {
@@ -973,7 +1128,7 @@ impl<'a> Parser {
         let ctx = Context {
             is_break_allowed: true,
             is_continue_allowed: true,
-            ..self.ctx
+            ..self.ctx()
         };
         let body = self
             .with_ctx(ctx)
@@ -988,9 +1143,14 @@ impl<'a> Parser {
     }
 
     fn parse_with_stmt(&mut self) -> PResult<Stmt> {
+        if self.syntax().typescript() {
+            let span = self.input.cur_span();
+            self.emit_err(span, SyntaxError::TS2410);
+        }
+
         {
             let span = self.input.cur_span();
-            self.emit_strict_mode_error_span(span, SyntaxError::WithInStrict);
+            self.emit_strict_mode_err(span, SyntaxError::WithInStrict);
         }
 
         let start = self.input.cur_pos();
@@ -1001,7 +1161,7 @@ impl<'a> Parser {
 
         let ctx = Context {
             in_function: true,
-            ..self.ctx
+            ..self.ctx()
         };
         let body = self
             .with_ctx(ctx)
@@ -1019,19 +1179,7 @@ impl<'a> Parser {
         let start = self.input.cur_pos();
 
         if allow_directives {
-            // Before we enter a block that may be in strict mode, we clear any
-            // preceding strict mode errors. We do this because, if they have
-            // not been emitted at this point, they can't have been generated in
-            // strict mode code, and are thus irrelevant. We clear them so we
-            // don't accidentally emit them if the block we are about to parse
-            // is in strict mode.
-            // However, if we later encounter a module declaration (import/export)
-            // we must reinterpret all of the code in strict mode, meaning
-            // previously innocuous strict mode errors must now be emitted.
-            // For this reason, rather than dropping preceding strict mode
-            // errors, we convert them to module errors and buffer them, so they
-            // can later be emitted, if necessary.
-            self.convert_preceding_strict_mode_errors_to_module_errors();
+            self.input.convert_strict_mode_errors_to_module_errors();
         }
 
         expect!(self, '{');
@@ -1045,23 +1193,15 @@ impl<'a> Parser {
     fn parse_labelled_stmt(&mut self, label: Ident) -> PResult<Stmt> {
         let ctx = Context {
             is_break_allowed: true,
-            ..self.ctx
+            ..self.ctx()
         };
 
         self.with_ctx(ctx).parse_with(|parser| {
-            if !parser.state.labels.is_empty() {
-                let mut errors = Vec::new();
-                for existing_label in &parser.state.labels {
-                    if label.sym == *existing_label {
-                        errors.push((label.span, SyntaxError::DuplicateLabel(label.sym.clone())));
-                    }
-                }
-
-                for (span, kind) in errors {
-                    parser.emit_error_span(span, kind);
+            for existing_label in &parser.state.labels {
+                if label.sym == *existing_label {
+                    parser.emit_err(label.span, SyntaxError::DuplicateLabel(label.sym.clone()));
                 }
             }
-
             parser.state.labels.push(label.sym.clone());
 
             let body = Box::new(if parser.input.is(&tok!("function")) {
@@ -1075,9 +1215,7 @@ impl<'a> Parser {
                                 ..
                             },
                         ..
-                    }) => {
-                        syntax_error!(parser, span, SyntaxError::LabelledGenerator)
-                    }
+                    }) => syntax_error!(p, span, SyntaxError::LabelledGenerator),
                     _ => {}
                 }
 

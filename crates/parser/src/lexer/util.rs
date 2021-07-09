@@ -1,5 +1,8 @@
 use super::{Dispatch, LexResult, Lexer, DISPATCHER};
-use crate::error::{Error, SyntaxError};
+use crate::{
+    error::{Error, SyntaxError},
+    Tokens,
+};
 use global_common::{BytePos, Pos, Span, SyntaxContext};
 
 /// See https://tc39.github.io/ecma262/#sec-line-terminators
@@ -88,13 +91,7 @@ pub fn is_valid_regex_flag(ch: char) -> bool {
     matches!(ch, 'g' | 'm' | 's' | 'i' | 'y' | 'u')
 }
 
-impl<ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
-    Lexer<'_, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
-where
-    ErrorEmitter: FnMut(Span, SyntaxError),
-    ModuleErrorEmitter: FnMut(Span, SyntaxError),
-    StrictErrorEmitter: FnMut(Span, SyntaxError),
-{
+impl Lexer<'_> {
     /// Returns the remaining portion of the input as a str.
     #[inline(always)]
     fn as_str(&self) -> &str {
@@ -261,13 +258,7 @@ where
     }
 }
 
-impl<ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
-    Lexer<'_, ErrorEmitter, ModuleErrorEmitter, StrictErrorEmitter>
-where
-    ErrorEmitter: FnMut(Span, SyntaxError),
-    ModuleErrorEmitter: FnMut(Span, SyntaxError),
-    StrictErrorEmitter: FnMut(Span, SyntaxError),
-{
+impl Lexer<'_> {
     pub(super) fn span(&self, start: BytePos) -> Span {
         let end = self.cur_pos();
         debug_assert!(
@@ -304,21 +295,56 @@ where
     #[inline(never)]
     pub(super) fn emit_error(&mut self, start: BytePos, kind: SyntaxError) {
         let span = self.span(start);
-        (self.error_emitter)(Span::new(span.lo, span.hi, span.ctxt), kind)
+        self.emit_error_span(Span::new(span.lo, span.hi, span.ctxt), kind)
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub(super) fn emit_error_span(&mut self, span: Span, kind: SyntaxError) {
+        let err = Error {
+            error: Box::new((span, kind)),
+        };
+        self.errors.borrow_mut().push(err);
     }
 
     #[cold]
     #[inline(never)]
     pub(super) fn emit_strict_mode_error(&mut self, start: BytePos, kind: SyntaxError) {
         let span = self.span(start);
-        (self.strict_error_emitter)(Span::new(span.lo, span.hi, span.ctxt), kind)
+        self.emit_strict_mode_error_span(Span::new(span.lo, span.hi, span.ctxt), kind)
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub(super) fn emit_strict_mode_error_span(&mut self, span: Span, kind: SyntaxError) {
+        if self.ctx.is_strict() {
+            self.emit_error_span(span, kind);
+            return;
+        }
+
+        let err = Error {
+            error: Box::new((span, kind)),
+        };
+
+        self.add_strict_mode_error(err);
     }
 
     #[cold]
     #[inline(never)]
     pub(super) fn emit_module_mode_error(&mut self, start: BytePos, kind: SyntaxError) {
         let span = self.span(start);
-        (self.module_error_emitter)(Span::new(span.lo, span.hi, span.ctxt), kind)
+        self.emit_module_mode_error_span(Span::new(span.lo, span.hi, span.ctxt), kind)
+    }
+
+    /// Some code is valid in a strict mode script but invalid in a module.
+    #[cold]
+    #[inline(never)]
+    pub(super) fn emit_module_mode_error_span(&mut self, span: Span, kind: SyntaxError) {
+        let err = Error {
+            error: Box::new((span, kind)),
+        };
+
+        self.add_module_mode_error(err);
     }
 
     /// Expects current char to be '/' and next char to be '*'.

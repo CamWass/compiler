@@ -3,7 +3,7 @@ use global_common::{
     sync::Lrc,
     SourceMap,
 };
-use parser::Parser;
+use parser::{EsConfig, Parser, Syntax, TsConfig};
 use std::{env, path::Path};
 
 fn main() {
@@ -11,14 +11,24 @@ fn main() {
 
     let filename = &args[1];
 
+    let path = Path::new(filename);
+
+    let syntax = match path.extension().and_then(|s| s.to_str()) {
+        Some("js") => Syntax::Es(EsConfig {
+            ..Default::default()
+        }),
+        Some("ts") => Syntax::Typescript(TsConfig {
+            ..Default::default()
+        }),
+        _ => panic!(),
+    };
+
     let cm = Lrc::<SourceMap>::default();
     let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
 
-    let fm = cm
-        .load_file(Path::new(filename))
-        .expect("failed to load file");
+    let fm = cm.load_file(path).expect("failed to load file");
 
-    let mut parser = Parser::new(&fm.src);
+    let mut parser = Parser::new(syntax, &fm.src);
 
     let res = parser.parse_program();
 
@@ -29,10 +39,14 @@ fn main() {
         error = true;
     }
 
-    if let Err(e) = res {
-        e.into_diagnostic(&handler).emit();
-        error = true;
-    }
+    let p = match res {
+        Ok(p) => p,
+        Err(e) => {
+            e.into_diagnostic(&handler).emit();
+            println!("\n\n\nFailed to parsed");
+            return;
+        }
+    };
 
     if error {
         println!("\n\n\nFailed to parsed");

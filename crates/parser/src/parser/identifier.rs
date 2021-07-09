@@ -1,10 +1,10 @@
+//! 12.1 Identifiers
 use super::*;
-use crate::token::{Keyword, Word};
+use crate::token::Keyword;
 use either::Either;
-use global_common::BytePos;
 use swc_atoms::js_word;
 
-impl Parser {
+impl<I: Tokens> Parser<I> {
     pub(super) fn parse_maybe_private_name(&mut self) -> PResult<Either<PrivateName, Ident>> {
         let is_private = is!(self, '#');
 
@@ -35,9 +35,16 @@ impl Parser {
         })
     }
 
+    /// IdentifierReference
+    pub(super) fn parse_ident_ref(&mut self) -> PResult<Ident> {
+        let ctx = self.ctx();
+
+        self.parse_ident(!ctx.in_generator, !ctx.in_async)
+    }
+
     /// LabelIdentifier
     pub(super) fn parse_label_ident(&mut self) -> PResult<Ident> {
-        let ctx = self.ctx;
+        let ctx = self.ctx();
 
         self.parse_ident(!ctx.in_generator, !ctx.in_async)
     }
@@ -81,10 +88,7 @@ impl Parser {
             // "package", "private", "protected",  "public", "static", or "yield".
             match w {
                 Word::Ident(js_word!("enum")) => {
-                    parser.emit_error_span(
-                        parser.input.prev_span(),
-                        SyntaxError::InvalidIdentInStrict,
-                    );
+                    parser.emit_err(parser.input.prev_span(), SyntaxError::InvalidIdentInStrict);
                 }
                 Word::Keyword(Keyword::Yield)
                 | Word::Ident(js_word!("static"))
@@ -95,7 +99,7 @@ impl Parser {
                 | Word::Ident(js_word!("private"))
                 | Word::Ident(js_word!("protected"))
                 | Word::Ident(js_word!("public")) => {
-                    parser.emit_strict_mode_error_span(
+                    parser.emit_strict_mode_err(
                         parser.input.prev_span(),
                         SyntaxError::InvalidIdentInStrict,
                     );
@@ -103,16 +107,22 @@ impl Parser {
                 _ => {}
             }
 
-            //TODO
+            //TODO(swc)
             // Spec:
             // It is a Syntax Error if StringValue of IdentifierName is the same String
             // value as the StringValue of any ReservedWord except for yield or await.
 
             match w {
+                Word::Keyword(Keyword::Await) if parser.input.syntax().typescript() => {
+                    Ok(js_word!("await"))
+                }
                 // It is a Syntax Error if the goal symbol of the syntactic grammar is Module
                 // and the StringValue of IdentifierName is "await".
-                Word::Keyword(Keyword::Await) if parser.ctx.is_module() => {
+                Word::Keyword(Keyword::Await) if parser.ctx().is_module() => {
                     syntax_error!(parser, parser.input.prev_span(), SyntaxError::ExpectedIdent)
+                }
+                Word::Keyword(Keyword::This) if parser.input.syntax().typescript() => {
+                    Ok(js_word!("this"))
                 }
                 Word::Keyword(Keyword::Let) => Ok(js_word!("let")),
                 Word::Ident(ident) => Ok(ident),
@@ -131,12 +141,12 @@ impl Parser {
 pub(super) trait MaybeOptionalIdentParser<Ident> {
     fn parse_maybe_opt_binding_ident(&mut self) -> PResult<Ident>;
 }
-impl MaybeOptionalIdentParser<Ident> for Parser {
+impl<I: Tokens> MaybeOptionalIdentParser<Ident> for Parser<I> {
     fn parse_maybe_opt_binding_ident(&mut self) -> PResult<Ident> {
         self.parse_binding_ident().map(|i| i.id)
     }
 }
-impl MaybeOptionalIdentParser<Option<Ident>> for Parser {
+impl<I: Tokens> MaybeOptionalIdentParser<Option<Ident>> for Parser<I> {
     fn parse_maybe_opt_binding_ident(&mut self) -> PResult<Option<Ident>> {
         self.parse_opt_binding_ident().map(|opt| opt.map(|i| i.id))
     }

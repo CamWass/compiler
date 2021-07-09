@@ -53,7 +53,7 @@ macro_rules! cur {
 /// Returns bool.
 macro_rules! is {
     ($parser:expr, BindingIdent) => {{
-        let ctx = $parser.ctx;
+        let ctx = $parser.ctx();
         match $parser.input.cur() {
             Some(&Word(ref w)) => !ctx.is_reserved_word(&w.cow()),
             _ => false,
@@ -61,16 +61,30 @@ macro_rules! is {
     }};
 
     ($parser:expr, IdentRef) => {{
-        let ctx = $parser.ctx;
+        let ctx = $parser.ctx();
         match $parser.input.cur() {
             Some(&Word(ref w)) => !ctx.is_reserved_word(&w.cow()),
             _ => false,
         }
     }};
 
-    ($parser:expr,IdentName) => {{
+    ($parser:expr, IdentName) => {{
         match $parser.input.cur() {
             Some(&Word(..)) => true,
+            _ => false,
+        }
+    }};
+
+    ($parser:expr, Str) => {{
+        match $parser.input.cur() {
+            Some(&Token::Str { .. }) => true,
+            _ => false,
+        }
+    }};
+
+    ($parser:expr, Num) => {{
+        match $parser.input.cur() {
+            Some(&Token::Num { .. }) => true,
             _ => false,
         }
     }};
@@ -100,6 +114,42 @@ macro_rules! is_one_of {
             || is!($parser, $t)
         )*
     }};
+}
+
+macro_rules! peeked_is {
+    ($parser:expr, BindingIdent) => {{
+        let ctx = $parser.ctx();
+        match peek!($parser) {
+            Ok(&Word(ref w)) => !ctx.is_reserved_word(&w.cow()),
+            _ => false,
+        }
+    }};
+
+    ($parser:expr, IdentRef) => {{
+        let ctx = $parser.ctx();
+        match peek!($parser) {
+            Ok(&Word(ref w)) => !ctx.is_reserved_word(&w.cow()),
+            _ => false,
+        }
+    }};
+
+    ($parser:expr, IdentName) => {{
+        match peek!($parser) {
+            Ok(&Word(..)) => true,
+            _ => false,
+        }
+    }};
+
+    ($parser:expr, ';') => {{
+        compile_error!("peeked_is!(self, ';') is invalid");
+    }};
+
+    ($parser:expr, $t:tt) => {
+        match peek!($parser).ok() {
+            Some(&tok!($t)) => true,
+            _ => false,
+        }
+    };
 }
 
 /// This handles automatic semicolon insertion.
@@ -161,6 +211,15 @@ Current token is {:?}",
         }
     }};
 }
+
+macro_rules! store {
+    ($parser:expr, $t:tt) => {{
+        const TOKEN: Token = tok!($t);
+
+        $parser.input.store(TOKEN);
+    }};
+}
+
 /// Returns true on eof.
 macro_rules! eof {
     ($parser:expr) => {
@@ -223,8 +282,8 @@ macro_rules! return_if_arrow {
 }
 
 macro_rules! trace_cur {
-    ($p:expr, $name:ident) => {{
-        // println!("{}: {:?}", stringify!($name), $p.input.cur());
+    ($parser:expr, $name:ident) => {{
+        // println!("{}: {:?}", stringify!($name), $parser.input.cur());
     }};
 }
 

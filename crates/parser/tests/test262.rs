@@ -5,7 +5,7 @@ extern crate test;
 use ast::*;
 use common::Normalizer;
 use ecma_visit::FoldWith;
-use parser::{PResult, Parser};
+use parser::{lexer::Lexer, PResult, Parser};
 use std::{
     env,
     fs::{read_dir, File},
@@ -362,14 +362,14 @@ fn parse_module<'a>(file_name: &Path) -> Result<Module, NormalizedOutput> {
 
 fn with_parser<F, Ret>(file_name: &Path, f: F) -> Result<Ret, StdErr>
 where
-    F: FnOnce(&mut Parser) -> PResult<Ret>,
+    F: FnOnce(&mut Parser<Lexer<'_>>) -> PResult<Ret>,
 {
     let output = ::testing::run_test(false, |cm, handler| {
         let fm = cm
             .load_file(file_name)
             .unwrap_or_else(|e| panic!("failed to load {}: {}", file_name.display(), e));
 
-        let mut p = Parser::new(&fm.src);
+        let mut p = Parser::new(Default::default(), &fm.src);
 
         let res = f(&mut p).map_err(|e| e.into_diagnostic(handler).emit());
 
