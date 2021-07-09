@@ -1,7 +1,7 @@
 use super::{pat::PatType, util::ExprExt, *};
 use crate::{lexer::TokenContext, token::AssignOpToken};
 use either::Either;
-use global_common::{ast_node, Spanned};
+use global_common::{ast_node, Pos, Spanned};
 use swc_atoms::js_word;
 
 mod ops;
@@ -1101,11 +1101,16 @@ impl<I: Tokens> Parser<I> {
         if self.input.eat(&tok!("new")) {
             let span_of_new = span!(self, start);
             if self.input.eat(&tok!('.')) {
-                let start_of_target = self.input.cur_pos();
                 if self.input.eat(&tok!("target")) {
+                    let span_of_target = self.input.cur_span();
+
+                    if word_contains_escape(&span_of_target, "target") {
+                        syntax_error!(self, span_of_target, SyntaxError::EscapeInNewTarget);
+                    }
+
                     let expr = Box::new(Expr::MetaProp(MetaPropExpr {
                         meta: Ident::new(js_word!("new"), span_of_new),
-                        prop: Ident::new(js_word!("target"), span!(self, start_of_target)),
+                        prop: Ident::new(js_word!("target"), span_of_target),
                     }));
 
                     return self.parse_subscripts(ExprOrSuper::Expr(expr), true);
@@ -1538,6 +1543,12 @@ impl<I: Tokens> Parser<I> {
             cooked,
         })
     }
+}
+
+/// Checks if the given span contains an escape sequence by comparing it's
+/// length against that of the passed reference word.
+fn word_contains_escape(span: &Span, word: &'static str) -> bool {
+    span.hi.to_usize() - span.lo.to_usize() != word.len()
 }
 
 #[ast_node]

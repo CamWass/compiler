@@ -115,8 +115,6 @@ fn error_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
         // TODO: This test involves the 'let' keyword on the LHS of a for-of
         // loop, and looks like it is right to fail:
         "ef2d369cccc5386c.js",
-        // TODO: Temporarily ignored
-        "3dbb6e166b14a6c0.js",
         // TODO: Temporarily ignored. Further information:
         // Source: var _𖫵 = 11;
         // We currently produce lexer errors, which results in incorrect parsing/errors.

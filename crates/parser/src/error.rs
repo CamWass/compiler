@@ -34,6 +34,8 @@ impl Error {
 #[non_exhaustive]
 // TODO: order
 pub enum SyntaxError {
+    /// e.g. `new.\u0074arget` is not allowed
+    EscapeInNewTarget,
     UnexpectedClassInSingleStatementCtx,
     SloppyFunction,
     StrictFunction,
@@ -240,6 +242,9 @@ impl SyntaxError {
     // TODO: sort
     pub fn msg(&self) -> Cow<'static, str> {
         match self {
+            SyntaxError::EscapeInNewTarget => {
+                "'new.target' must not contain escaped characters".into()
+            }
             SyntaxError::UnexpectedClassInSingleStatementCtx => {
                 "Class cannot appear in a single-statement context".into()
             }
