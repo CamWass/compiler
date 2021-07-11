@@ -159,9 +159,13 @@ dependencies = [
 name = "cli"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "ast",
+ "codegen",
  "global_common",
  "parser",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -1,5 +1,6 @@
 pub use self::parser::*;
 pub use ast::EsVersion as JscTarget;
+use serde::{Deserialize, Serialize};
 
 #[macro_use]
 mod macros;
@@ -9,10 +10,13 @@ pub mod lexer;
 mod parser;
 pub mod token;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[serde(deny_unknown_fields, tag = "syntax")]
 pub enum Syntax {
     /// Standard
+    #[serde(rename = "ecmascript")]
     Es(EsConfig),
+    #[serde(rename = "typescript")]
     Typescript(TsConfig),
 }
 
@@ -147,47 +151,66 @@ impl Syntax {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct TsConfig {
+    #[serde(default)]
     pub tsx: bool,
 
+    #[serde(default)]
     pub decorators: bool,
 
+    #[serde(default)]
     pub dynamic_import: bool,
 
     /// `.d.ts`
+    #[serde(skip, default)]
     pub dts: bool,
 
+    #[serde(skip, default)]
     pub no_early_errors: bool,
 
     /// Stage 3.
+    #[serde(default)]
     pub import_assertions: bool,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct EsConfig {
+    #[serde(default)]
     pub jsx: bool,
 
+    #[serde(rename = "classPrivateProperty")]
+    #[serde(default)]
     pub class_private_props: bool,
 
     /// Enable decorators.
+    #[serde(default)]
     pub decorators: bool,
 
     /// babel: `decorators.decoratorsBeforeExport`
     ///
     /// Effective only if `decorator` is true.
+    #[serde(rename = "decoratorsBeforeExport")]
+    #[serde(default)]
     pub decorators_before_export: bool,
 
+    #[serde(default)]
     pub export_default_from: bool,
 
+    #[serde(default)]
     pub dynamic_import: bool,
 
     /// Stage 3.
+    #[serde(default)]
     pub import_meta: bool,
 
     /// Stage 3.
+    #[serde(default)]
     pub top_level_await: bool,
 
     /// Stage 3.
+    #[serde(default)]
     pub import_assertions: bool,
 }
