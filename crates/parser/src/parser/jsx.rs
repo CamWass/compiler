@@ -2,9 +2,9 @@ use super::*;
 use either::Either;
 use global_common::{Span, Spanned, SyntaxContext};
 
-impl<I: Tokens> Parser<I> {
+impl<'ast, I: Tokens> Parser<'ast, I> {
     /// Parse next token as JSX identifier
-    pub(super) fn parse_jsx_ident(&mut self) -> PResult<Ident> {
+    pub(super) fn parse_jsx_ident(&mut self) -> PResult<&'ast Ident> {
         debug_assert!(self.input.syntax().jsx());
 
         let ctx = self.ctx();
@@ -12,7 +12,15 @@ impl<I: Tokens> Parser<I> {
             Token::JSXName { .. } => match self.input.bump() {
                 Token::JSXName { name } => {
                     let span = self.input.prev_span();
-                    Ok(Ident::new(name, span))
+                    let ident = alloc!(
+                        self,
+                        Ident {
+                            sym: name,
+                            span,
+                            optional: false
+                        }
+                    );
+                    Ok(ident)
                 }
                 _ => unreachable!(),
             },
@@ -22,7 +30,7 @@ impl<I: Tokens> Parser<I> {
     }
 
     /// Parse namespaced identifier.
-    pub(super) fn parse_jsx_namespaced_name(&mut self) -> PResult<JSXAttrName> {
+    pub(super) fn parse_jsx_namespaced_name(&mut self) -> PResult<JSXAttrName<'ast>> {
         debug_assert!(self.input.syntax().jsx());
 
         let ns = self.parse_jsx_ident()?;
@@ -31,15 +39,13 @@ impl<I: Tokens> Parser<I> {
         }
 
         let name = self.parse_jsx_ident()?;
-        Ok(JSXAttrName::JSXNamespacedName(JSXNamespacedName {
-            ns,
-            name,
-        }))
+        let namespaced_name = alloc!(self, JSXNamespacedName { ns, name });
+        Ok(JSXAttrName::JSXNamespacedName(namespaced_name))
     }
 
     /// Parses element name in any form - namespaced, member or single
     /// identifier.
-    pub(super) fn parse_jsx_element_name(&mut self) -> PResult<JSXElementName> {
+    pub(super) fn parse_jsx_element_name(&mut self) -> PResult<JSXElementName<'ast>> {
         debug_assert!(self.input.syntax().jsx());
 
         let mut node = match self.parse_jsx_namespaced_name()? {
@@ -48,14 +54,18 @@ impl<I: Tokens> Parser<I> {
         };
         while eat!(self, '.') {
             let prop = self.parse_jsx_ident()?;
-            let new_node = JSXElementName::JSXMemberExpr(JSXMemberExpr {
-                obj: match node {
-                    JSXElementName::Ident(i) => JSXObject::Ident(i),
-                    JSXElementName::JSXMemberExpr(i) => JSXObject::JSXMemberExpr(Box::new(i)),
-                    _ => unimplemented!("JSXNamespacedName -> JSXObject"),
-                },
-                prop,
-            });
+            let expr = alloc!(
+                self,
+                JSXMemberExpr {
+                    obj: match node {
+                        JSXElementName::Ident(i) => JSXObject::Ident(i),
+                        JSXElementName::JSXMemberExpr(i) => JSXObject::JSXMemberExpr(i),
+                        _ => unimplemented!("JSXNamespacedName -> JSXObject"),
+                    },
+                    prop,
+                }
+            );
+            let new_node = JSXElementName::JSXMemberExpr(expr);
             node = new_node;
         }
         Ok(node)
@@ -64,7 +74,7 @@ impl<I: Tokens> Parser<I> {
     /// Parses any type of JSX attribute value.
     ///
     /// TODO(kdy1): Change return type to JSXAttrValue
-    pub(super) fn parse_jsx_attr_value(&mut self) -> PResult<JSXAttrValue> {
+    pub(super) fn parse_jsx_attr_value(&mut self) -> PResult<JSXAttrValue<'ast>> {
         debug_assert!(self.input.syntax().jsx());
 
         let start = self.input.cur_pos();
@@ -88,7 +98,7 @@ impl<I: Tokens> Parser<I> {
                 let expr = self.parse_jsx_element()?;
                 match expr {
                     Either::Left(n) => Ok(JSXAttrValue::JSXFragment(n)),
-                    Either::Right(n) => Ok(JSXAttrValue::JSXElement(Box::new(n))),
+                    Either::Right(n) => Ok(JSXAttrValue::JSXElement(n)),
                 }
             }
 
@@ -99,17 +109,20 @@ impl<I: Tokens> Parser<I> {
     /// JSXEmptyExpression is unique type since it doesn't actually parse
     /// anything, and so it should start at the end of last read token (left
     /// brace) and finish at the beginning of the next one (right brace).
-    pub(super) fn parse_jsx_empty_expr(&mut self) -> PResult<JSXEmptyExpr> {
+    pub(super) fn parse_jsx_empty_expr(&mut self) -> PResult<&'ast JSXEmptyExpr> {
         debug_assert!(self.input.syntax().jsx());
         let start = self.input.cur_pos();
 
-        Ok(JSXEmptyExpr {
-            span: Span::new(start, start, SyntaxContext::empty()),
-        })
+        Ok(alloc!(
+            self,
+            JSXEmptyExpr {
+                span: Span::new(start, start, SyntaxContext::empty()),
+            }
+        ))
     }
 
     /// Parse JSX spread child
-    pub(super) fn parse_jsx_spread_child(&mut self) -> PResult<JSXSpreadChild> {
+    pub(super) fn parse_jsx_spread_child(&mut self) -> PResult<&'ast JSXSpreadChild<'ast>> {
         debug_assert!(self.input.syntax().jsx());
         let start = self.input.cur_pos();
         expect!(self, '{');
@@ -117,14 +130,17 @@ impl<I: Tokens> Parser<I> {
         let expr = self.parse_expr()?;
         expect!(self, '}');
 
-        Ok(JSXSpreadChild {
-            span: span!(self, start),
-            expr,
-        })
+        Ok(alloc!(
+            self,
+            JSXSpreadChild {
+                span: span!(self, start),
+                expr,
+            }
+        ))
     }
 
     /// Parses JSX expression enclosed into curly brackets.
-    pub(super) fn parse_jsx_expr_container(&mut self) -> PResult<JSXExprContainer> {
+    pub(super) fn parse_jsx_expr_container(&mut self) -> PResult<&'ast JSXExprContainer<'ast>> {
         debug_assert!(self.input.syntax().jsx());
 
         let start = self.input.cur_pos();
@@ -135,14 +151,17 @@ impl<I: Tokens> Parser<I> {
             self.parse_expr().map(JSXExpr::Expr)?
         };
         expect!(self, '}');
-        Ok(JSXExprContainer {
-            span: span!(self, start),
-            expr,
-        })
+        Ok(alloc!(
+            self,
+            JSXExprContainer {
+                span: span!(self, start),
+                expr,
+            }
+        ))
     }
 
     /// Parses following JSX attribute name-value pair.
-    pub(super) fn parse_jsx_attr(&mut self) -> PResult<JSXAttrOrSpread> {
+    pub(super) fn parse_jsx_attr(&mut self) -> PResult<JSXAttrOrSpread<'ast>> {
         debug_assert!(self.input.syntax().jsx());
         let start = self.input.cur_pos();
 
@@ -152,7 +171,8 @@ impl<I: Tokens> Parser<I> {
             let dot3_token = span!(self, dot3_start);
             let expr = self.parse_assignment_expr()?;
             expect!(self, '}');
-            return Ok(SpreadElement { dot3_token, expr }.into());
+            let spread = alloc!(self, SpreadElement { dot3_token, expr });
+            return Ok(JSXAttrOrSpread::SpreadElement(spread));
         }
 
         let name = self.parse_jsx_namespaced_name()?;
@@ -162,25 +182,33 @@ impl<I: Tokens> Parser<I> {
             None
         };
 
-        Ok(JSXAttr {
-            span: span!(self, start),
-            name,
-            value,
-        }
-        .into())
+        let attr = alloc!(
+            self,
+            JSXAttr {
+                span: span!(self, start),
+                name,
+                value,
+            }
+        );
+
+        Ok(JSXAttrOrSpread::JSXAttr(attr))
     }
 
     /// Parses JSX opening tag starting after "<".
     pub(super) fn parse_jsx_opening_element_at(
         &mut self,
         start: BytePos,
-    ) -> PResult<Either<JSXOpeningFragment, JSXOpeningElement>> {
+    ) -> PResult<Either<&'ast JSXOpeningFragment, &'ast JSXOpeningElement<'ast>>> {
         debug_assert!(self.input.syntax().jsx());
 
         if eat!(self, JSXTagEnd) {
-            return Ok(Either::Left(JSXOpeningFragment {
-                span: span!(self, start),
-            }));
+            let fragment = alloc!(
+                self,
+                JSXOpeningFragment {
+                    span: span!(self, start),
+                }
+            );
+            return Ok(Either::Left(fragment));
         }
 
         let name = self.parse_jsx_element_name()?;
@@ -192,8 +220,8 @@ impl<I: Tokens> Parser<I> {
     pub(super) fn parse_jsx_opening_element_after_name(
         &mut self,
         start: BytePos,
-        name: JSXElementName,
-    ) -> PResult<JSXOpeningElement> {
+        name: JSXElementName<'ast>,
+    ) -> PResult<&'ast JSXOpeningElement<'ast>> {
         debug_assert!(self.input.syntax().jsx());
 
         let type_args = if self.input.syntax().typescript() && is!(self, '<') {
@@ -215,34 +243,45 @@ impl<I: Tokens> Parser<I> {
         if !eat!(self, JSXTagEnd) & !(self.ctx().in_forced_jsx_context && eat!(self, '>')) {
             unexpected!(self, "> (jsx closing tag)");
         }
-        Ok(JSXOpeningElement {
-            span: span!(self, start),
-            name,
-            attrs,
-            self_closing,
-            type_args,
-        })
+        Ok(alloc!(
+            self,
+            JSXOpeningElement {
+                span: span!(self, start),
+                name,
+                attrs,
+                self_closing,
+                type_args,
+            }
+        ))
     }
 
     /// Parses JSX closing tag starting after "</".
     fn parse_jsx_closing_element_at(
         &mut self,
         start: BytePos,
-    ) -> PResult<Either<JSXClosingFragment, JSXClosingElement>> {
+    ) -> PResult<Either<&'ast JSXClosingFragment, &'ast JSXClosingElement<'ast>>> {
         debug_assert!(self.input.syntax().jsx());
 
         if eat!(self, JSXTagEnd) {
-            return Ok(Either::Left(JSXClosingFragment {
-                span: span!(self, start),
-            }));
+            let fragment = alloc!(
+                self,
+                JSXClosingFragment {
+                    span: span!(self, start),
+                }
+            );
+            return Ok(Either::Left(fragment));
         }
 
         let name = self.parse_jsx_element_name()?;
         expect!(self, JSXTagEnd);
-        Ok(Either::Right(JSXClosingElement {
-            span: span!(self, start),
-            name,
-        }))
+        let elem = alloc!(
+            self,
+            JSXClosingElement {
+                span: span!(self, start),
+                name,
+            }
+        );
+        Ok(Either::Right(elem))
     }
 
     /// Parses entire JSX element, including it"s opening tag
@@ -252,7 +291,7 @@ impl<I: Tokens> Parser<I> {
     pub(super) fn parse_jsx_element_at(
         &mut self,
         start_pos: BytePos,
-    ) -> PResult<Either<JSXFragment, JSXElement>> {
+    ) -> PResult<Either<&'ast JSXFragment<'ast>, &'ast JSXElement<'ast>>> {
         debug_assert!(self.input.syntax().jsx());
 
         let _ = cur!(self, true);
@@ -295,7 +334,7 @@ impl<I: Tokens> Parser<I> {
 
                             children.push(p.parse_jsx_element_at(start).map(|e| match e {
                                 Either::Left(e) => JSXElementChild::from(e),
-                                Either::Right(e) => JSXElementChild::from(Box::new(e)),
+                                Either::Right(e) => JSXElementChild::from(e),
                             })?);
                         }
                         Token::JSXText { .. } => {
@@ -329,18 +368,30 @@ impl<I: Tokens> Parser<I> {
                         }
                     );
                 }
-                (Either::Left(opening), Some(Either::Left(closing))) => Either::Left(JSXFragment {
-                    span,
-                    opening,
-                    children,
-                    closing,
-                }),
-                (Either::Right(opening), None) => Either::Right(JSXElement {
-                    span,
-                    opening,
-                    children,
-                    closing: None,
-                }),
+                (Either::Left(opening), Some(Either::Left(closing))) => {
+                    let fragment = alloc!(
+                        self,
+                        JSXFragment {
+                            span,
+                            opening,
+                            children,
+                            closing,
+                        }
+                    );
+                    Either::Left(fragment)
+                }
+                (Either::Right(opening), None) => {
+                    let elem = alloc!(
+                        self,
+                        JSXElement {
+                            span,
+                            opening,
+                            children,
+                            closing: None,
+                        }
+                    );
+                    Either::Right(elem)
+                }
                 (Either::Right(opening), Some(Either::Right(closing))) => {
                     if get_qualified_jsx_name(&closing.name)
                         != get_qualified_jsx_name(&opening.name)
@@ -353,12 +404,16 @@ impl<I: Tokens> Parser<I> {
                             }
                         );
                     }
-                    Either::Right(JSXElement {
-                        span,
-                        opening,
-                        children,
-                        closing: Some(closing),
-                    })
+                    let elem = alloc!(
+                        self,
+                        JSXElement {
+                            span,
+                            opening,
+                            children,
+                            closing: Some(closing),
+                        }
+                    );
+                    Either::Right(elem)
                 }
                 _ => unreachable!(),
             })
@@ -368,7 +423,9 @@ impl<I: Tokens> Parser<I> {
     /// Parses entire JSX element from current position.
     ///
     /// babel: `jsxParseElement`
-    pub(super) fn parse_jsx_element(&mut self) -> PResult<Either<JSXFragment, JSXElement>> {
+    pub(super) fn parse_jsx_element(
+        &mut self,
+    ) -> PResult<Either<&'ast JSXFragment<'ast>, &'ast JSXElement<'ast>>> {
         debug_assert!(self.input.syntax().jsx());
         debug_assert!({
             match *cur!(self, true)? {
@@ -382,7 +439,7 @@ impl<I: Tokens> Parser<I> {
         self.parse_jsx_element_at(start_pos)
     }
 
-    pub(super) fn parse_jsx_text(&mut self) -> PResult<JSXText> {
+    pub(super) fn parse_jsx_text(&mut self) -> PResult<&'ast JSXText> {
         debug_assert!(self.input.syntax().jsx());
         debug_assert!({
             match cur!(self, false) {
@@ -408,7 +465,7 @@ trait IsFragment {
     fn is_fragment(&self) -> bool;
 }
 
-impl IsFragment for Either<JSXOpeningFragment, JSXOpeningElement> {
+impl<'ast> IsFragment for Either<&'ast JSXOpeningFragment, &'ast JSXOpeningElement<'ast>> {
     fn is_fragment(&self) -> bool {
         match *self {
             Either::Left(..) => true,
@@ -417,7 +474,7 @@ impl IsFragment for Either<JSXOpeningFragment, JSXOpeningElement> {
     }
 }
 
-impl IsFragment for Either<JSXClosingFragment, JSXClosingElement> {
+impl<'ast> IsFragment for Either<&'ast JSXClosingFragment, &'ast JSXClosingElement<'ast>> {
     fn is_fragment(&self) -> bool {
         match *self {
             Either::Left(..) => true,
@@ -431,8 +488,8 @@ impl<T: IsFragment> IsFragment for Option<T> {
     }
 }
 
-fn get_qualified_jsx_name(name: &JSXElementName) -> JsWord {
-    fn get_qualified_obj_name(obj: &JSXObject) -> JsWord {
+fn get_qualified_jsx_name<'ast>(name: JSXElementName<'ast>) -> JsWord {
+    fn get_qualified_obj_name<'ast>(obj: JSXObject<'ast>) -> JsWord {
         match *obj {
             JSXObject::Ident(ref i) => i.sym.clone(),
             JSXObject::JSXMemberExpr(ref member) => format!(
@@ -445,11 +502,11 @@ fn get_qualified_jsx_name(name: &JSXElementName) -> JsWord {
     }
     match *name {
         JSXElementName::Ident(ref i) => i.sym.clone(),
-        JSXElementName::JSXNamespacedName(JSXNamespacedName { ref ns, ref name }) => {
-            format!("{}:{}", ns.sym, name.sym).into()
-        }
-        JSXElementName::JSXMemberExpr(JSXMemberExpr { ref obj, ref prop }) => {
-            format!("{}.{}", get_qualified_obj_name(obj), prop.sym).into()
-        }
+        JSXElementName::JSXNamespacedName(JSXNamespacedName {
+            ref ns, ref name, ..
+        }) => format!("{}:{}", ns.sym, name.sym).into(),
+        JSXElementName::JSXMemberExpr(JSXMemberExpr {
+            ref obj, ref prop, ..
+        }) => format!("{}.{}", get_qualified_obj_name(obj), prop.sym).into(),
     }
 }

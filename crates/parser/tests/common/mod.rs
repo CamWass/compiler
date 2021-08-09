@@ -1,4 +1,4 @@
-use ast::*;
+use ast2::*;
 use ecma_visit::{Fold, FoldWith};
 use global_common::Span;
 

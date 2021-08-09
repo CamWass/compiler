@@ -46,6 +46,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "15af2628f6890fe2609a3b91bef4c83450512802e59489f9c1cb1fa5df064a61"
 
 [[package]]
+name = "arena"
+version = "0.0.0"
+dependencies = [
+ "smallvec",
+]
+
+[[package]]
+name = "arrayvec"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be4dc07131ffa69b8072d35f5007352af944213cde02545e2103680baed38fcd"
+
+[[package]]
 name = "ast"
 version = "0.1.0"
 dependencies = [
@@ -59,7 +72,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "ast2"
+version = "0.1.0"
+dependencies = [
+ "ast_node2",
+ "global_common",
+ "index",
+ "is-macro",
+ "num-bigint",
+ "string_enum2",
+ "swc_atoms",
+]
+
+[[package]]
 name = "ast_node"
+version = "0.1.0"
+dependencies = [
+ "darling",
+ "macro_common",
+ "pmutil",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "ast_node2"
 version = "0.1.0"
 dependencies = [
  "darling",
@@ -192,6 +230,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "context"
+version = "0.1.0"
+dependencies = [
+ "arena",
+ "ast2",
+ "global_common",
+ "index",
 ]
 
 [[package]]
@@ -534,6 +582,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f7280c75fb2e2fc47080ec80ccc481376923acb04501957fc38f935c3de5088"
 
 [[package]]
+name = "index"
+version = "0.0.0"
+dependencies = [
+ "arrayvec",
+]
+
+[[package]]
 name = "is-macro"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -703,7 +758,9 @@ dependencies = [
 name = "parser"
 version = "0.1.0"
 dependencies = [
- "ast",
+ "ast2",
+ "ast_node2",
+ "context",
  "criterion",
  "ecma_visit",
  "either",
@@ -1049,6 +1106,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cbce6d4507c7e4a3962091436e56e95290cb71fa302d0d270e32130b75fbff27"
 
 [[package]]
+name = "smallvec"
+version = "1.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe0f37c9e8f3c5a4a66ad655a93c74daac4ad00c441533bf5c6e7990bb42604e"
+
+[[package]]
 name = "sourcemap"
 version = "6.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1098,6 +1161,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "serde",
+ "syn",
+]
+
+[[package]]
+name = "string_enum2"
+version = "0.1.0"
+dependencies = [
+ "macro_common",
+ "pmutil",
+ "proc-macro2",
+ "quote",
  "syn",
 ]
 

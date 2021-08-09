@@ -1,5 +1,5 @@
 pub use self::parser::*;
-pub use ast::EsVersion as JscTarget;
+pub use ast2::EsVersion as JscTarget;
 use serde::{Deserialize, Serialize};
 
 #[macro_use]

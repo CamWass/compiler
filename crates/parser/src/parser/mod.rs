@@ -18,11 +18,12 @@ use crate::{
     token::{Token, Word},
     JscTarget, Syntax,
 };
-use ast::*;
+use ast2::*;
+use context::AstContext;
 use global_common::{BytePos, Span};
 use input::Buffer;
 pub use input::Tokens;
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 use swc_atoms::JsWord;
 
 #[derive(Clone, Default)]
@@ -43,25 +44,27 @@ pub type PResult<T> = Result<T, Error>;
 
 /// EcmaScript parser.
 #[derive(Clone)]
-pub struct Parser<I: Tokens> {
+pub struct Parser<'ast, I: Tokens> {
     /// [false] while backtracking
     emit_err: bool,
     state: State,
     input: Buffer<I>,
+    ast: &'ast mut AstContext<'ast>,
 }
 
-impl<'src> Parser<Lexer<'src>> {
-    pub fn new(syntax: Syntax, input: &'src str) -> Self {
-        Self::new_from(Lexer::new(syntax, Default::default(), input))
+impl<'ast, 'src> Parser<'ast, Lexer<'src>> {
+    pub fn new(ast_context: &'ast mut AstContext<'ast>, syntax: Syntax, input: &'src str) -> Self {
+        Self::new_from(ast_context, Lexer::new(syntax, Default::default(), input))
     }
 }
 
-impl<I: Tokens> Parser<I> {
-    pub fn new_from(input: I) -> Self {
+impl<'ast, I: Tokens> Parser<'ast, I> {
+    pub fn new_from(ast_context: &'ast mut AstContext<'ast>, input: I) -> Self {
         Parser {
             emit_err: true,
             state: Default::default(),
             input: Buffer::new(input),
+            ast: ast_context,
         }
     }
 
@@ -73,7 +76,7 @@ impl<I: Tokens> Parser<I> {
         self.input.target()
     }
 
-    pub fn parse_script(&mut self) -> PResult<Script> {
+    pub fn parse_script(&mut self) -> PResult<&'ast Script> {
         trace_cur!(self, parse_script);
 
         let ctx = Context {
@@ -86,14 +89,19 @@ impl<I: Tokens> Parser<I> {
 
         let shebang = self.parse_shebang()?;
 
-        self.parse_block_body(true, true, None).map(|body| Script {
-            span: span!(self, start),
-            body,
-            shebang,
+        self.parse_block_body(true, true, None).map(|body| {
+            alloc!(
+                self,
+                Script {
+                    span: span!(self, start),
+                    body,
+                    shebang,
+                }
+            )
         })
     }
 
-    pub fn parse_typescript_module(&mut self) -> PResult<Module> {
+    pub fn parse_typescript_module(&mut self) -> PResult<&'ast Module> {
         trace_cur!(self, parse_typescript_module);
 
         debug_assert!(self.syntax().typescript());
@@ -110,10 +118,15 @@ impl<I: Tokens> Parser<I> {
         let start = self.input.cur_pos();
         let shebang = self.parse_shebang()?;
 
-        self.parse_block_body(true, true, None).map(|body| Module {
-            span: span!(self, start),
-            body,
-            shebang,
+        self.parse_block_body(true, true, None).map(|body| {
+            alloc!(
+                self,
+                Module {
+                    span: span!(self, start),
+                    body,
+                    shebang,
+                }
+            )
         })
     }
 
@@ -133,17 +146,28 @@ impl<I: Tokens> Parser<I> {
                     ModuleItem::Stmt(stmt) => stmt,
                 })
                 .collect();
-            Program::Script(Script {
-                span: span!(self, start),
-                body,
-                shebang,
-            })
+
+            let script = alloc!(
+                self,
+                Script {
+                    span: span!(self, start),
+                    body,
+                    shebang,
+                }
+            );
+
+            Program::Script(script)
         } else {
-            Program::Module(Module {
-                span: span!(self, start),
-                body,
-                shebang,
-            })
+            let module = alloc!(
+                self,
+                Module {
+                    span: span!(self, start),
+                    body,
+                    shebang,
+                }
+            );
+
+            Program::Module(module)
         })
     }
 
@@ -159,10 +183,15 @@ impl<I: Tokens> Parser<I> {
         let start = self.input.cur_pos();
         let shebang = self.parse_shebang()?;
 
-        self.parse_block_body(true, true, None).map(|body| Module {
-            span: span!(self, start),
-            body,
-            shebang,
+        self.parse_block_body(true, true, None).map(|body| {
+            alloc!(
+                self,
+                Module {
+                    span: span!(self, start),
+                    body,
+                    shebang,
+                }
+            )
         })
     }
 

@@ -1,7 +1,7 @@
 pub(crate) use self::{AssignOpToken::*, BinOpToken::*, Keyword::*, Token::*};
 use crate::error::Error;
-pub(crate) use ast::AssignOp as AssignOpToken;
-use ast::BinaryOp;
+pub(crate) use ast2::AssignOp as AssignOpToken;
+use ast2::BinaryOp;
 use enum_kind::Kind;
 use global_common::{Span, Spanned};
 use num_bigint::BigInt as BigIntValue;

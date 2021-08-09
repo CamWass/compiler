@@ -4,8 +4,10 @@ use crate::token::Keyword;
 use either::Either;
 use swc_atoms::js_word;
 
-impl<I: Tokens> Parser<I> {
-    pub(super) fn parse_maybe_private_name(&mut self) -> PResult<Either<PrivateName, Ident>> {
+impl<'ast, I: Tokens> Parser<'ast, I> {
+    pub(super) fn parse_maybe_private_name(
+        &mut self,
+    ) -> PResult<Either<&'ast PrivateName<'ast>, &'ast Ident>> {
         let is_private = is!(self, '#');
 
         if is_private {
@@ -15,7 +17,7 @@ impl<I: Tokens> Parser<I> {
         }
     }
 
-    pub(super) fn parse_private_name(&mut self) -> PResult<PrivateName> {
+    pub(super) fn parse_private_name(&mut self) -> PResult<&'ast PrivateName<'ast>> {
         let start = self.input.cur_pos();
         self.assert_and_bump(&tok!('#'));
 
@@ -29,21 +31,25 @@ impl<I: Tokens> Parser<I> {
         }
 
         let id = self.parse_ident_name()?;
-        Ok(PrivateName {
-            span: span!(self, start),
-            id,
-        })
+        let name = alloc!(
+            self,
+            PrivateName {
+                span: span!(self, start),
+                id,
+            }
+        );
+        Ok(name)
     }
 
     /// IdentifierReference
-    pub(super) fn parse_ident_ref(&mut self) -> PResult<Ident> {
+    pub(super) fn parse_ident_ref(&mut self) -> PResult<&'ast Ident> {
         let ctx = self.ctx();
 
         self.parse_ident(!ctx.in_generator, !ctx.in_async)
     }
 
     /// LabelIdentifier
-    pub(super) fn parse_label_ident(&mut self) -> PResult<Ident> {
+    pub(super) fn parse_label_ident(&mut self) -> PResult<&'ast Ident> {
         let ctx = self.ctx();
 
         self.parse_ident(!ctx.in_generator, !ctx.in_async)
@@ -51,7 +57,7 @@ impl<I: Tokens> Parser<I> {
 
     /// Use this when spec says "IdentifierName".
     /// This allows idents like `catch`.
-    pub(super) fn parse_ident_name(&mut self) -> PResult<Ident> {
+    pub(super) fn parse_ident_name(&mut self) -> PResult<&'ast Ident> {
         let start = self.input.cur_pos();
 
         let w = match cur!(self, true) {
@@ -62,13 +68,26 @@ impl<I: Tokens> Parser<I> {
             _ => syntax_error!(self, SyntaxError::ExpectedIdent),
         };
 
-        Ok(Ident::new(w.into(), span!(self, start)))
+        let ident = alloc!(
+            self,
+            Ident {
+                sym: w.into(),
+                span: span!(self, start),
+                optional: false
+            }
+        );
+
+        Ok(ident)
     }
 
     /// Identifier
     ///
     /// In strict mode, "yield" is SyntaxError if matched.
-    pub(super) fn parse_ident(&mut self, incl_yield: bool, incl_await: bool) -> PResult<Ident> {
+    pub(super) fn parse_ident(
+        &mut self,
+        incl_yield: bool,
+        incl_await: bool,
+    ) -> PResult<&'ast Ident> {
         trace_cur!(self, parse_ident);
 
         let start = self.input.cur_pos();
@@ -134,20 +153,42 @@ impl<I: Tokens> Parser<I> {
             }
         })?;
 
-        Ok(Ident::new(word, span!(self, start)))
+        let ident = alloc!(
+            self,
+            Ident {
+                sym: word,
+                span: span!(self, start),
+                optional: false
+            }
+        );
+
+        Ok(ident)
+    }
+
+    pub(super) fn ident_to_binding_ident(
+        &mut self,
+        ident: &'ast Ident,
+    ) -> &'ast BindingIdent<'ast> {
+        alloc!(
+            self,
+            BindingIdent {
+                id: ident,
+                type_ann: None
+            }
+        )
     }
 }
 
 pub(super) trait MaybeOptionalIdentParser<Ident> {
     fn parse_maybe_opt_binding_ident(&mut self) -> PResult<Ident>;
 }
-impl<I: Tokens> MaybeOptionalIdentParser<Ident> for Parser<I> {
-    fn parse_maybe_opt_binding_ident(&mut self) -> PResult<Ident> {
+impl<'ast, I: Tokens> MaybeOptionalIdentParser<&'ast Ident> for Parser<'ast, I> {
+    fn parse_maybe_opt_binding_ident(&mut self) -> PResult<&'ast Ident> {
         self.parse_binding_ident().map(|i| i.id)
     }
 }
-impl<I: Tokens> MaybeOptionalIdentParser<Option<Ident>> for Parser<I> {
-    fn parse_maybe_opt_binding_ident(&mut self) -> PResult<Option<Ident>> {
+impl<'ast, I: Tokens> MaybeOptionalIdentParser<Option<&'ast Ident>> for Parser<'ast, I> {
+    fn parse_maybe_opt_binding_ident(&mut self) -> PResult<Option<&'ast Ident>> {
         self.parse_opt_binding_ident().map(|opt| opt.map(|i| i.id))
     }
 }

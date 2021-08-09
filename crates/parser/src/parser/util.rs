@@ -12,57 +12,55 @@ pub trait ParseObject<Obj> {
     fn parse_object_prop(&mut self) -> PResult<Self::Prop>;
 }
 
-pub struct WithState<'w, I: Tokens> {
-    inner: &'w mut Parser<I>,
+pub struct WithState<'ast, 'w, I: Tokens> {
+    inner: &'w mut Parser<'ast, I>,
     orig_state: State,
 }
-impl<I: Tokens> Deref for WithState<'_, I> {
-    type Target = Parser<I>;
+impl<'ast, I: Tokens> Deref for WithState<'ast, '_, I> {
+    type Target = Parser<'ast, I>;
 
-    fn deref(&self) -> &Parser<I> {
+    fn deref(&self) -> &Parser<'ast, I> {
         &self.inner
     }
 }
-impl<I: Tokens> DerefMut for WithState<'_, I> {
-    fn deref_mut(&mut self) -> &mut Parser<I> {
+impl<'ast, I: Tokens> DerefMut for WithState<'ast, '_, I> {
+    fn deref_mut(&mut self) -> &mut Parser<'ast, I> {
         &mut self.inner
     }
 }
-impl<I: Tokens> Drop for WithState<'_, I> {
+impl<'ast, I: Tokens> Drop for WithState<'ast, '_, I> {
     fn drop(&mut self) {
         std::mem::swap(&mut self.inner.state, &mut self.orig_state);
     }
 }
 
-pub struct WithCtx<'w, I: Tokens> {
-    inner: &'w mut Parser<I>,
+pub struct WithCtx<'ast, 'w, I: Tokens> {
+    inner: &'w mut Parser<'ast, I>,
     orig_ctx: Context,
 }
-impl<I: Tokens> Deref for WithCtx<'_, I> {
-    type Target = Parser<I>;
+impl<'ast, I: Tokens> Deref for WithCtx<'ast, '_, I> {
+    type Target = Parser<'ast, I>;
 
-    fn deref(&self) -> &Parser<I> {
+    fn deref(&self) -> &Parser<'ast, I> {
         &self.inner
     }
 }
-impl<I: Tokens> DerefMut for WithCtx<'_, I> {
-    fn deref_mut(&mut self) -> &mut Parser<I> {
+impl<'ast, I: Tokens> DerefMut for WithCtx<'ast, '_, I> {
+    fn deref_mut(&mut self) -> &mut Parser<'ast, I> {
         &mut self.inner
     }
 }
 
-impl<I: Tokens> Drop for WithCtx<'_, I> {
+impl<'ast, I: Tokens> Drop for WithCtx<'ast, '_, I> {
     fn drop(&mut self) {
         self.inner.set_ctx(self.orig_ctx);
     }
 }
 
 pub(super) trait ExprExt {
-    fn as_expr(&self) -> &Expr;
-
     /// "IsValidSimpleAssignmentTarget" from spec.
     fn is_valid_simple_assignment_target(&self, strict: YesMaybe) -> bool {
-        match *self.as_expr() {
+        match *self {
             Expr::Ident(Ident { ref sym, .. }) => {
                 if strict == YesMaybe::Yes && (&*sym == "arguments" || &*sym == "eval") {
                     return false;
@@ -125,18 +123,9 @@ pub(super) trait ExprExt {
     }
 }
 
-impl ExprExt for Box<Expr> {
-    fn as_expr(&self) -> &Expr {
-        &*self
-    }
-}
-impl ExprExt for Expr {
-    fn as_expr(&self) -> &Expr {
-        self
-    }
-}
+impl ExprExt for Expr<'_> {}
 
-impl<I: Tokens> Parser<I> {
+impl<'ast, I: Tokens> Parser<'ast, I> {
     pub(super) fn assert_and_bump(&mut self, token: &Token) {
         debug_assert!(
             self.input.is(token),
@@ -149,7 +138,7 @@ impl<I: Tokens> Parser<I> {
     }
 
     /// Original context is restored when returned guard is dropped.
-    pub(super) fn with_ctx(&mut self, ctx: Context) -> WithCtx<I> {
+    pub(super) fn with_ctx(&mut self, ctx: Context) -> WithCtx<'ast, '_, I> {
         let orig_ctx = self.ctx();
         self.set_ctx(ctx);
         WithCtx {
@@ -159,7 +148,7 @@ impl<I: Tokens> Parser<I> {
     }
 
     /// Original state is restored when returned guard is dropped.
-    pub(super) fn with_state(&mut self, state: State) -> WithState<I> {
+    pub(super) fn with_state(&mut self, state: State) -> WithState<'ast, '_, I> {
         let orig_state = std::mem::replace(&mut self.state, state);
         WithState {
             orig_state,
@@ -172,7 +161,7 @@ impl<I: Tokens> Parser<I> {
     }
 
     /// Original context is restored when returned guard is dropped.
-    pub(super) fn strict_mode(&mut self) -> WithCtx<I> {
+    pub(super) fn strict_mode(&mut self) -> WithCtx<'ast, '_, I> {
         let ctx = Context {
             strict: YesMaybe::Yes,
             ..self.ctx()
@@ -181,7 +170,7 @@ impl<I: Tokens> Parser<I> {
     }
 
     /// Original context is restored when returned guard is dropped.
-    pub(super) fn in_type(&mut self) -> WithCtx<I> {
+    pub(super) fn in_type(&mut self) -> WithCtx<'ast, '_, I> {
         let ctx = Context {
             in_type: true,
             ..self.ctx()
@@ -190,7 +179,7 @@ impl<I: Tokens> Parser<I> {
     }
 
     /// Original context is restored when returned guard is dropped.
-    pub(super) fn include_in_expr(&mut self, include_in_expr: bool) -> WithCtx<I> {
+    pub(super) fn include_in_expr(&mut self, include_in_expr: bool) -> WithCtx<'ast, '_, I> {
         let ctx = Context {
             include_in_expr,
             ..self.ctx()

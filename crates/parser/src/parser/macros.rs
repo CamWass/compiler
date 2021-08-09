@@ -1,3 +1,18 @@
+macro_rules! alloc {
+    ($parser:expr, $name:ident {$($field:ident $(: $t:expr)?),* $(,)?}) => {{
+        let obj = $name { $($field $(:$t)?),* , node_id: $parser.ast.map.next_index()};
+
+
+        let r = $parser.ast.arena.alloc(obj);
+
+        let node = ::ast2::Node::$name(r);
+
+        $parser.ast.map.push(node);
+
+        r
+    }};
+}
+
 macro_rules! span {
     ($parser:expr, $start:expr) => {{
         let start: ::global_common::BytePos = $start;

@@ -9,7 +9,7 @@ use crate::{
     token::*,
     JscTarget, Syntax,
 };
-use ast::op;
+use ast2::op;
 use global_common::{BytePos, Span};
 use identifier::{is_ident_part, is_ident_start};
 use state::State;

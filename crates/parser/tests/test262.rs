@@ -2,7 +2,7 @@
 
 extern crate test;
 
-use ast::*;
+use ast2::*;
 use common::Normalizer;
 use ecma_visit::FoldWith;
 use parser::{lexer::Lexer, PResult, Parser};

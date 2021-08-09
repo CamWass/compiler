@@ -5,33 +5,39 @@ use global_common::{Spanned, SyntaxContext};
 use swc_atoms::js_word;
 
 /// Parser for function expression and function declaration.
-impl<I: Tokens> Parser<I> {
-    pub(super) fn parse_async_fn_expr(&mut self) -> PResult<Box<Expr>> {
+impl<'ast, I: Tokens> Parser<'ast, I> {
+    pub(super) fn parse_async_fn_expr(&mut self) -> PResult<Expr<'ast>> {
         let start = self.input.cur_pos();
         expect!(self, "async");
         self.parse_fn(None, Some(start), vec![])
     }
 
     /// Parse function expression
-    pub(super) fn parse_fn_expr(&mut self) -> PResult<Box<Expr>> {
+    pub(super) fn parse_fn_expr(&mut self) -> PResult<Expr<'ast>> {
         self.parse_fn(None, None, vec![])
     }
 
-    pub(super) fn parse_async_fn_decl(&mut self, decorators: Vec<Decorator>) -> PResult<Decl> {
+    pub(super) fn parse_async_fn_decl(
+        &mut self,
+        decorators: Vec<&'ast Decorator>,
+    ) -> PResult<Decl<'ast>> {
         let start = self.input.cur_pos();
         expect!(self, "async");
         self.parse_fn(None, Some(start), decorators)
     }
 
-    pub(super) fn parse_fn_decl(&mut self, decorators: Vec<Decorator>) -> PResult<Decl> {
+    pub(super) fn parse_fn_decl(
+        &mut self,
+        decorators: Vec<&'ast Decorator>,
+    ) -> PResult<Decl<'ast>> {
         self.parse_fn(None, None, decorators)
     }
 
     pub(super) fn parse_default_async_fn(
         &mut self,
         start: BytePos,
-        decorators: Vec<Decorator>,
-    ) -> PResult<ExportDefaultDecl> {
+        decorators: Vec<&'ast Decorator>,
+    ) -> PResult<&'ast ExportDefaultDecl<'ast>> {
         let start_of_async = self.input.cur_pos();
         expect!(self, "async");
         self.parse_fn(Some(start), Some(start_of_async), decorators)
@@ -40,8 +46,8 @@ impl<I: Tokens> Parser<I> {
     pub(super) fn parse_default_fn(
         &mut self,
         start: BytePos,
-        decorators: Vec<Decorator>,
-    ) -> PResult<ExportDefaultDecl> {
+        decorators: Vec<&'ast Decorator>,
+    ) -> PResult<&'ast ExportDefaultDecl<'ast>> {
         self.parse_fn(Some(start), None, decorators)
     }
 
@@ -49,16 +55,16 @@ impl<I: Tokens> Parser<I> {
         &mut self,
         start: BytePos,
         class_start: BytePos,
-        decorators: Vec<Decorator>,
-    ) -> PResult<Decl> {
+        decorators: Vec<&'ast Decorator>,
+    ) -> PResult<Decl<'ast>> {
         self.parse_class(start, class_start, decorators)
     }
 
     pub(super) fn parse_class_expr(
         &mut self,
         start: BytePos,
-        decorators: Vec<Decorator>,
-    ) -> PResult<Box<Expr>> {
+        decorators: Vec<&'ast Decorator>,
+    ) -> PResult<Expr<'ast>> {
         self.parse_class(start, start, decorators)
     }
 
@@ -66,8 +72,8 @@ impl<I: Tokens> Parser<I> {
         &mut self,
         start: BytePos,
         class_start: BytePos,
-        decorators: Vec<Decorator>,
-    ) -> PResult<ExportDefaultDecl> {
+        decorators: Vec<&'ast Decorator>,
+    ) -> PResult<&'ast ExportDefaultDecl<'ast>> {
         self.parse_class(start, class_start, decorators)
     }
 
@@ -75,11 +81,11 @@ impl<I: Tokens> Parser<I> {
         &mut self,
         start: BytePos,
         class_start: BytePos,
-        decorators: Vec<Decorator>,
+        decorators: Vec<&'ast Decorator<'ast>>,
     ) -> PResult<T>
     where
-        T: OutputType,
-        Self: MaybeOptionalIdentParser<T::Ident>,
+        T: OutputType<'ast>,
+        Self: MaybeOptionalIdentParser<T::Identifier>,
     {
         self.strict_mode().parse_with(|parser| {
             expect!(parser, "class");
@@ -169,9 +175,8 @@ impl<I: Tokens> Parser<I> {
                 .parse_class_body()?;
             expect!(parser, '}');
             let end = parser.input.last_pos();
-            Ok(T::finish_class(
-                span!(parser, start),
-                ident,
+            let class = alloc!(
+                parser,
                 Class {
                     span: Span::new(class_start, end, Default::default()),
                     decorators,
@@ -181,12 +186,16 @@ impl<I: Tokens> Parser<I> {
                     super_type_params,
                     body,
                     implements,
-                },
-            ))
+                }
+            );
+            Ok(T::finish_class(parser, span!(parser, start), ident, class))
         })
     }
 
-    pub(super) fn parse_decorators(&mut self, allow_export: bool) -> PResult<Vec<Decorator>> {
+    pub(super) fn parse_decorators(
+        &mut self,
+        allow_export: bool,
+    ) -> PResult<Vec<&'ast Decorator<'ast>>> {
         if !self.syntax().decorators() {
             return Ok(vec![]);
         }
@@ -217,7 +226,7 @@ impl<I: Tokens> Parser<I> {
         Ok(decorators)
     }
 
-    fn parse_decorator(&mut self) -> PResult<Decorator> {
+    fn parse_decorator(&mut self) -> PResult<&'ast Decorator<'ast>> {
         let start = self.input.cur_pos();
 
         self.assert_and_bump(&tok!('@'));
@@ -227,22 +236,22 @@ impl<I: Tokens> Parser<I> {
             expect!(self, ')');
             expr
         } else {
-            let mut expr = self
-                .parse_ident(false, false)
-                .map(Expr::from)
-                .map(Box::new)?;
+            let mut expr = self.parse_ident(false, false).map(Expr::from)?;
 
             while eat!(self, '.') {
                 let ident = self.parse_ident(true, true)?;
 
                 let span = Span::new(start, expr.span().hi(), Default::default());
 
-                expr = Box::new(Expr::Member(MemberExpr {
-                    span,
-                    obj: ExprOrSuper::Expr(expr),
-                    computed: false,
-                    prop: Box::new(Expr::Ident(ident)),
-                }));
+                expr = Expr::Member(alloc!(
+                    self,
+                    MemberExpr {
+                        span,
+                        obj: ExprOrSuper::Expr(expr),
+                        computed: false,
+                        prop: Expr::Ident(ident),
+                    }
+                ));
             }
 
             expr
@@ -250,13 +259,18 @@ impl<I: Tokens> Parser<I> {
 
         let expr = self.parse_maybe_decorator_args(expr)?;
 
-        Ok(Decorator {
-            span: span!(self, start),
-            expr,
-        })
+        let decorator = alloc!(
+            self,
+            Decorator {
+                span: span!(self, start),
+                expr,
+            }
+        );
+
+        Ok(decorator)
     }
 
-    fn parse_maybe_decorator_args(&mut self, expr: Box<Expr>) -> PResult<Box<Expr>> {
+    fn parse_maybe_decorator_args(&mut self, expr: Expr<'ast>) -> PResult<Expr<'ast>> {
         let type_args = if self.syntax().typescript() && is!(self, '<') {
             Some(self.parse_ts_type_args()?)
         } else {
@@ -268,22 +282,31 @@ impl<I: Tokens> Parser<I> {
         }
 
         let args = self.parse_args(false)?;
-        Ok(Box::new(Expr::Call(CallExpr {
-            span: span!(self, expr.span().lo()),
-            callee: ExprOrSuper::Expr(expr),
-            args,
-            type_args: None,
-        })))
+        let call = alloc!(
+            self,
+            CallExpr {
+                span: span!(self, expr.span().lo()),
+                callee: ExprOrSuper::Expr(expr),
+                args,
+                type_args: None,
+            }
+        );
+        Ok(Expr::Call(call))
     }
 
-    fn parse_class_body(&mut self) -> PResult<Vec<ClassMember>> {
+    fn parse_class_body(&mut self) -> PResult<Vec<ClassMember<'ast>>> {
         let mut elems = vec![];
         while !eof!(self) && !is!(self, '}') {
             if self.input.eat(&tok!(';')) {
                 let span = self.input.prev_span();
-                elems.push(ClassMember::Empty(EmptyStmt {
-                    span: Span::new(span.lo, span.hi, SyntaxContext::empty()),
-                }));
+                let expr = alloc!(
+                    self,
+                    EmptyStmt {
+                        span: Span::new(span.lo, span.hi, SyntaxContext::empty()),
+                    }
+                );
+
+                elems.push(ClassMember::Empty(expr));
                 continue;
             }
 
@@ -303,7 +326,7 @@ impl<I: Tokens> Parser<I> {
             }))
     }
 
-    fn parse_class_member(&mut self) -> PResult<ClassMember> {
+    fn parse_class_member(&mut self) -> PResult<ClassMember<'ast>> {
         trace_cur!(self, parse_class_member);
 
         let start = self.input.cur_pos();
@@ -320,10 +343,15 @@ impl<I: Tokens> Parser<I> {
         let declare_token = if declare {
             // Handle declare(){}
             if self.is_class_method()? {
-                let key = Either::Right(PropName::Ident(Ident::new(
-                    js_word!("declare"),
-                    span!(self, start),
-                )));
+                let ident = alloc!(
+                    self,
+                    Ident {
+                        sym: js_word!("declare"),
+                        span: span!(self, start),
+                        optional: false
+                    }
+                );
+                let key = Either::Right(PropName::Ident(ident));
                 let is_optional = self.syntax().typescript() && eat!(self, '?');
                 return self.make_method(
                     |parser| parser.parse_unique_formal_params(),
@@ -344,10 +372,15 @@ impl<I: Tokens> Parser<I> {
             } else if self.is_class_property()? {
                 // Property named `declare`
 
-                let key = Either::Right(PropName::Ident(Ident::new(
-                    js_word!("declare"),
-                    span!(self, start),
-                )));
+                let ident = alloc!(
+                    self,
+                    Ident {
+                        sym: js_word!("declare"),
+                        span: span!(self, start),
+                        optional: false
+                    }
+                );
+                let key = Either::Right(PropName::Ident(ident));
                 let is_optional = self.syntax().typescript() && eat!(self, '?');
                 return self.make_property(
                     start,
@@ -380,10 +413,15 @@ impl<I: Tokens> Parser<I> {
         if let Some(static_token) = static_token {
             // Handle static(){}
             if self.is_class_method()? {
-                let key = Either::Right(PropName::Ident(Ident::new(
-                    js_word!("static"),
-                    static_token,
-                )));
+                let ident = alloc!(
+                    self,
+                    Ident {
+                        sym: js_word!("static"),
+                        span: static_token,
+                        optional: false
+                    }
+                );
+                let key = Either::Right(PropName::Ident(ident));
                 let is_optional = self.syntax().typescript() && eat!(self, '?');
                 return self.make_method(
                     |parser| parser.parse_unique_formal_params(),
@@ -404,10 +442,15 @@ impl<I: Tokens> Parser<I> {
             } else if self.is_class_property()? {
                 // Property named `static`
 
-                let key = Either::Right(PropName::Ident(Ident::new(
-                    js_word!("static"),
-                    static_token,
-                )));
+                let ident = alloc!(
+                    self,
+                    Ident {
+                        sym: js_word!("static"),
+                        span: static_token,
+                        optional: false
+                    }
+                );
+                let key = Either::Right(PropName::Ident(ident));
                 let is_optional = self.syntax().typescript() && eat!(self, '?');
                 return self.make_property(
                     start,
@@ -442,8 +485,8 @@ impl<I: Tokens> Parser<I> {
         declare_token: Option<Span>,
         accessibility: Option<Accessibility>,
         static_token: Option<Span>,
-        decorators: Vec<Decorator>,
-    ) -> PResult<ClassMember> {
+        decorators: Vec<&'ast Decorator<'ast>>,
+    ) -> PResult<ClassMember<'ast>> {
         let mut is_static = static_token.is_some();
 
         let mut is_abstract = false;
@@ -552,10 +595,15 @@ impl<I: Tokens> Parser<I> {
 
         trace_cur!(self, parse_class_member_with_is_static__normal_class_member);
         let key = if readonly.is_some() && is_one_of!(self, '!', ':') {
-            Either::Right(PropName::Ident(Ident::new(
-                "readonly".into(),
-                readonly.unwrap(),
-            )))
+            let ident = alloc!(
+                self,
+                Ident {
+                    sym: "readonly".into(),
+                    span: readonly.unwrap(),
+                    optional: false
+                }
+            );
+            Either::Right(PropName::Ident(ident))
         } else {
             self.parse_class_prop_name()?
         };
@@ -656,17 +704,22 @@ impl<I: Tokens> Parser<I> {
                     }
                 }
 
-                return Ok(ClassMember::Constructor(Constructor {
-                    span: span!(self, start),
-                    accessibility,
-                    key: match key {
-                        Either::Right(key) => key,
-                        _ => unreachable!("is_constructor() returns false for PrivateName"),
-                    },
-                    is_optional,
-                    params,
-                    body,
-                }));
+                let constructor = alloc!(
+                    self,
+                    Constructor {
+                        span: span!(self, start),
+                        accessibility,
+                        key: match key {
+                            Either::Right(key) => key,
+                            _ => unreachable!("is_constructor() returns false for PrivateName"),
+                        },
+                        is_optional,
+                        params,
+                        body,
+                    }
+                );
+
+                return Ok(ClassMember::Constructor(constructor));
             } else {
                 return self.make_method(
                     |parser| parser.parse_formal_params(),
@@ -832,9 +885,9 @@ impl<I: Tokens> Parser<I> {
     fn make_property(
         &mut self,
         start: BytePos,
-        decorators: Vec<Decorator>,
+        decorators: Vec<&'ast Decorator>,
         accessibility: Option<Accessibility>,
-        key: Either<PrivateName, PropName>,
+        key: Either<&'ast PrivateName, PropName>,
         is_static: bool,
         is_optional: bool,
         readonly: bool,
@@ -871,45 +924,55 @@ impl<I: Tokens> Parser<I> {
             }
 
             Ok(match key {
-                Either::Left(key) => PrivateProp {
-                    span: span!(parser, start),
-                    key,
-                    value,
-                    is_static,
-                    decorators,
-                    accessibility,
-                    is_abstract,
-                    is_optional,
-                    is_override,
-                    readonly,
-                    definite,
-                    type_ann,
-                    computed: false,
+                Either::Left(key) => {
+                    let prop = alloc!(
+                        self,
+                        PrivateProp {
+                            span: span!(parser, start),
+                            key,
+                            value,
+                            is_static,
+                            decorators,
+                            accessibility,
+                            is_abstract,
+                            is_optional,
+                            is_override,
+                            readonly,
+                            definite,
+                            type_ann,
+                            computed: false,
+                        }
+                    );
+                    ClassMember::PrivateProp(prop)
                 }
-                .into(),
-                Either::Right(key) => ClassProp {
-                    span: span!(parser, start),
-                    computed: matches!(key, PropName::Computed(..)),
-                    key: match key {
-                        PropName::Ident(i) => Box::new(Expr::Ident(i)),
-                        PropName::Str(s) => Box::new(Expr::Lit(Lit::Str(s))),
-                        PropName::Num(n) => Box::new(Expr::Lit(Lit::Num(n))),
-                        PropName::BigInt(b) => Box::new(Expr::Lit(Lit::BigInt(b))),
-                        PropName::Computed(e) => e.expr,
-                    },
-                    value,
-                    is_static,
-                    decorators,
-                    accessibility,
-                    is_abstract,
-                    is_optional,
-                    is_override,
-                    readonly,
-                    declare,
-                    definite,
-                    type_ann,
+                Either::Right(key) => {
+                    let prop = alloc!(
+                        self,
+                        ClassProp {
+                            span: span!(parser, start),
+                            computed: matches!(key, PropName::Computed(..)),
+                            key: match key {
+                                PropName::Ident(i) => Expr::Ident(i),
+                                PropName::Str(s) => Expr::Lit(Lit::Str(s)),
+                                PropName::Num(n) => Expr::Lit(Lit::Num(n)),
+                                PropName::BigInt(b) => Expr::Lit(Lit::BigInt(b)),
+                                PropName::Computed(e) => e.expr,
+                            },
+                            value,
+                            is_static,
+                            decorators,
+                            accessibility,
+                            is_abstract,
+                            is_optional,
+                            is_override,
+                            readonly,
+                            declare,
+                            definite,
+                            type_ann,
+                        }
+                    );
+                    ClassMember::ClassProp(prop)
                 }
-                .into(),
             })
         })
     }
@@ -929,12 +992,12 @@ impl<I: Tokens> Parser<I> {
         &mut self,
         start_of_output_type: Option<BytePos>,
         start_of_async: Option<BytePos>,
-        decorators: Vec<Decorator>,
+        decorators: Vec<&'ast Decorator>,
     ) -> PResult<T>
     where
-        T: OutputType,
-        Self: MaybeOptionalIdentParser<T::Ident>,
-        T::Ident: Spanned,
+        T: OutputType<'ast>,
+        Self: MaybeOptionalIdentParser<T::Identifier>,
+        T::Identifier: Spanned,
     {
         let start = start_of_async.unwrap_or(self.input.cur_pos());
         self.assert_and_bump(&tok!("function"));
@@ -992,6 +1055,7 @@ impl<I: Tokens> Parser<I> {
             // let body = p.parse_fn_body(is_async, is_generator)?;
 
             Ok(T::finish_fn(
+                parser,
                 span!(parser, start_of_output_type.unwrap_or(start)),
                 ident,
                 f,
@@ -1002,14 +1066,14 @@ impl<I: Tokens> Parser<I> {
     /// `parse_args` closure should not eat '(' or ')'.
     pub(super) fn parse_fn_args_body<F>(
         &mut self,
-        decorators: Vec<Decorator>,
+        decorators: Vec<&'ast Decorator<'ast>>,
         start: BytePos,
         parse_args: F,
         is_async: bool,
         is_generator: bool,
-    ) -> PResult<Function>
+    ) -> PResult<&'ast Function<'ast>>
     where
-        F: FnOnce(&mut Self) -> PResult<Vec<Param>>,
+        F: FnOnce(&mut Self) -> PResult<Vec<&'ast Param<'ast>>>,
     {
         trace_cur!(self, parse_fn_args_body);
 
@@ -1088,20 +1152,27 @@ impl<I: Tokens> Parser<I> {
                 }
             }
 
-            Ok(Function {
-                span: span!(parser, start),
-                decorators,
-                type_params,
-                params,
-                body,
-                is_async,
-                is_generator,
-                return_type,
-            })
+            let function = alloc!(
+                self,
+                Function {
+                    span: span!(parser, start),
+                    decorators,
+                    type_params,
+                    params,
+                    body,
+                    is_async,
+                    is_generator,
+                    return_type,
+                }
+            );
+
+            Ok(function)
         })
     }
 
-    fn parse_class_prop_name(&mut self) -> PResult<Either<PrivateName, PropName>> {
+    fn parse_class_prop_name(
+        &mut self,
+    ) -> PResult<Either<&'ast PrivateName<'ast>, PropName<'ast>>> {
         if is!(self, '#') {
             self.parse_private_name().map(Either::Left)
         } else {
@@ -1137,7 +1208,7 @@ impl<I: Tokens> Parser<I> {
     }
 }
 
-impl<I: Tokens> Parser<I> {
+impl<'ast, I: Tokens> Parser<'ast, I> {
     fn make_method<F>(
         &mut self,
         parse_args: F,
@@ -1153,10 +1224,10 @@ impl<I: Tokens> Parser<I> {
             kind,
             is_async,
             is_generator,
-        }: MakeMethodArgs,
-    ) -> PResult<ClassMember>
+        }: MakeMethodArgs<'ast>,
+    ) -> PResult<ClassMember<'ast>>
     where
-        F: FnOnce(&mut Self) -> PResult<Vec<Param>>,
+        F: FnOnce(&mut Self) -> PResult<Vec<&'ast Param<'ast>>>,
     {
         trace_cur!(self, make_method);
 
@@ -1179,34 +1250,44 @@ impl<I: Tokens> Parser<I> {
         }
 
         match key {
-            Either::Left(key) => Ok(PrivateMethod {
-                span: span!(self, start),
+            Either::Left(key) => {
+                let method = alloc!(
+                    self,
+                    PrivateMethod {
+                        span: span!(self, start),
 
-                accessibility,
-                is_abstract,
-                is_optional,
-                is_override,
+                        accessibility,
+                        is_abstract,
+                        is_optional,
+                        is_override,
 
-                is_static,
-                key,
-                function,
-                kind,
+                        is_static,
+                        key,
+                        function,
+                        kind,
+                    }
+                );
+                Ok(ClassMember::PrivateMethod(method))
             }
-            .into()),
-            Either::Right(key) => Ok(ClassMethod {
-                span: span!(self, start),
+            Either::Right(key) => {
+                let method = alloc!(
+                    self,
+                    ClassMethod {
+                        span: span!(self, start),
 
-                accessibility,
-                is_abstract,
-                is_optional,
-                is_override,
+                        accessibility,
+                        is_abstract,
+                        is_optional,
+                        is_override,
 
-                is_static,
-                key,
-                function,
-                kind,
+                        is_static,
+                        key,
+                        function,
+                        kind,
+                    }
+                );
+                Ok(ClassMember::Method(method))
             }
-            .into()),
         }
     }
 }
@@ -1215,7 +1296,7 @@ trait IsInvalidClassName {
     fn invalid_class_name(&self) -> Option<Span>;
 }
 
-impl IsInvalidClassName for Ident {
+impl<'ast> IsInvalidClassName for &'ast Ident {
     fn invalid_class_name(&self) -> Option<Span> {
         match self.sym {
             js_word!("any") => Some(self.span),
@@ -1223,9 +1304,9 @@ impl IsInvalidClassName for Ident {
         }
     }
 }
-impl IsInvalidClassName for Option<Ident> {
+impl<'ast> IsInvalidClassName for Option<&'ast Ident> {
     fn invalid_class_name(&self) -> Option<Span> {
-        if let Some(ref i) = self.as_ref() {
+        if let Some(i) = self {
             return i.invalid_class_name();
         }
 
@@ -1233,10 +1314,10 @@ impl IsInvalidClassName for Option<Ident> {
     }
 }
 
-trait OutputType {
-    type Ident: IsInvalidClassName;
+trait OutputType<'ast> {
+    type Identifier: IsInvalidClassName;
 
-    fn is_constructor(ident: &Self::Ident) -> bool;
+    fn is_constructor(ident: &Self::Identifier) -> bool;
 
     /// From babel..
     ///
@@ -1252,14 +1333,24 @@ trait OutputType {
         false
     }
 
-    fn finish_fn(span: Span, ident: Self::Ident, f: Function) -> Self;
-    fn finish_class(span: Span, ident: Self::Ident, class: Class) -> Self;
+    fn finish_fn<I: Tokens>(
+        parser: &mut Parser<'ast, I>,
+        span: Span,
+        ident: Self::Identifier,
+        f: &'ast Function<'ast>,
+    ) -> Self;
+    fn finish_class<I: Tokens>(
+        parser: &mut Parser<'ast, I>,
+        span: Span,
+        ident: Self::Identifier,
+        class: &'ast Class,
+    ) -> Self;
 }
 
-impl OutputType for Box<Expr> {
-    type Ident = Option<Ident>;
+impl<'ast> OutputType<'ast> for Expr<'ast> {
+    type Identifier = Option<&'ast Ident>;
 
-    fn is_constructor(ident: &Self::Ident) -> bool {
+    fn is_constructor(ident: &Self::Identifier) -> bool {
         match *ident {
             Some(ref i) => i.sym == js_word!("constructor"),
             _ => false,
@@ -1270,58 +1361,106 @@ impl OutputType for Box<Expr> {
         true
     }
 
-    fn finish_fn(_: Span, ident: Option<Ident>, function: Function) -> Self {
-        Box::new(Expr::Fn(FnExpr { ident, function }))
+    fn finish_fn<I: Tokens>(
+        parser: &mut Parser<'ast, I>,
+        _: Span,
+        ident: Option<&'ast Ident>,
+        function: &'ast Function,
+    ) -> Self {
+        let expr = alloc!(parser, FnExpr { ident, function });
+        Expr::Fn(expr)
     }
-    fn finish_class(_: Span, ident: Option<Ident>, class: Class) -> Self {
-        Box::new(Expr::Class(ClassExpr { ident, class }))
+    fn finish_class<I: Tokens>(
+        parser: &mut Parser<'ast, I>,
+        _: Span,
+        ident: Option<&'ast Ident>,
+        class: &'ast Class,
+    ) -> Self {
+        let expr = alloc!(parser, ClassExpr { ident, class });
+        Expr::Class(expr)
     }
 }
 
-impl OutputType for ExportDefaultDecl {
-    type Ident = Option<Ident>;
+impl<'ast> OutputType<'ast> for &'ast ExportDefaultDecl<'ast> {
+    type Identifier = Option<&'ast Ident>;
 
-    fn is_constructor(ident: &Self::Ident) -> bool {
+    fn is_constructor(ident: &Self::Identifier) -> bool {
         match *ident {
             Some(ref i) => i.sym == js_word!("constructor"),
             _ => false,
         }
     }
 
-    fn finish_fn(span: Span, ident: Option<Ident>, function: Function) -> Self {
-        ExportDefaultDecl {
-            span,
-            decl: DefaultDecl::Fn(FnExpr { ident, function }),
-        }
+    fn finish_fn<I: Tokens>(
+        parser: &mut Parser<'ast, I>,
+        span: Span,
+        ident: Option<&'ast Ident>,
+        function: &'ast Function,
+    ) -> Self {
+        let decl = alloc!(parser, FnExpr { ident, function });
+        alloc!(
+            parser,
+            ExportDefaultDecl {
+                span,
+                decl: DefaultDecl::Fn(decl),
+            }
+        )
     }
-    fn finish_class(span: Span, ident: Option<Ident>, class: Class) -> Self {
-        ExportDefaultDecl {
-            span,
-            decl: DefaultDecl::Class(ClassExpr { ident, class }),
-        }
+    fn finish_class<I: Tokens>(
+        parser: &mut Parser<'ast, I>,
+        span: Span,
+        ident: Option<&'ast Ident>,
+        class: &'ast Class,
+    ) -> Self {
+        let decl = alloc!(parser, ClassExpr { ident, class });
+        alloc!(
+            parser,
+            ExportDefaultDecl {
+                span,
+                decl: DefaultDecl::Class(decl),
+            }
+        )
     }
 }
 
-impl OutputType for Decl {
-    type Ident = Ident;
+impl<'ast> OutputType<'ast> for Decl<'ast> {
+    type Identifier = &'ast Ident;
 
-    fn is_constructor(i: &Self::Ident) -> bool {
+    fn is_constructor(i: &Self::Identifier) -> bool {
         i.sym == js_word!("constructor")
     }
 
-    fn finish_fn(_: Span, ident: Ident, function: Function) -> Self {
-        Decl::Fn(FnDecl {
-            declare: false,
-            ident,
-            function,
-        })
+    fn finish_fn<I: Tokens>(
+        parser: &mut Parser<'ast, I>,
+        _: Span,
+        ident: &'ast Ident,
+        function: &'ast Function,
+    ) -> Self {
+        let decl = alloc!(
+            parser,
+            FnDecl {
+                declare: false,
+                ident,
+                function,
+            }
+        );
+        Decl::Fn(decl)
     }
-    fn finish_class(_: Span, ident: Ident, class: Class) -> Self {
-        Decl::Class(ClassDecl {
-            declare: false,
-            ident,
-            class,
-        })
+    fn finish_class<I: Tokens>(
+        parser: &mut Parser<'ast, I>,
+        _: Span,
+        ident: &'ast Ident,
+        class: &'ast Class,
+    ) -> Self {
+        let decl = alloc!(
+            parser,
+            ClassDecl {
+                declare: false,
+                ident,
+                class,
+            }
+        );
+        Decl::Class(decl)
     }
 }
 
@@ -1329,8 +1468,8 @@ pub(super) trait FnBodyParser<Body> {
     fn parse_fn_body_inner(&mut self) -> PResult<Body>;
 }
 
-impl<I: Tokens> FnBodyParser<BlockStmtOrExpr> for Parser<I> {
-    fn parse_fn_body_inner(&mut self) -> PResult<BlockStmtOrExpr> {
+impl<'ast, I: Tokens> FnBodyParser<BlockStmtOrExpr<'ast>> for Parser<'ast, I> {
+    fn parse_fn_body_inner(&mut self) -> PResult<BlockStmtOrExpr<'ast>> {
         if self.input.is(&tok!('{')) {
             self.parse_block(false).map(BlockStmtOrExpr::BlockStmt)
         } else {
@@ -1339,13 +1478,13 @@ impl<I: Tokens> FnBodyParser<BlockStmtOrExpr> for Parser<I> {
     }
 }
 
-impl<I: Tokens> FnBodyParser<Option<BlockStmt>> for Parser<I> {
-    fn parse_fn_body_inner(&mut self) -> PResult<Option<BlockStmt>> {
+impl<'ast, I: Tokens> FnBodyParser<Option<&'ast BlockStmt<'ast>>> for Parser<'ast, I> {
+    fn parse_fn_body_inner(&mut self) -> PResult<Option<&'ast BlockStmt<'ast>>> {
         self.include_in_expr(true).parse_block(true).map(Some)
     }
 }
 
-fn is_constructor(key: &Either<PrivateName, PropName>) -> bool {
+fn is_constructor(key: &Either<&PrivateName, &PropName>) -> bool {
     match *key {
         Either::Right(PropName::Ident(Ident {
             sym: js_word!("constructor"),
@@ -1372,15 +1511,15 @@ pub(crate) fn is_not_this(param: &Param) -> bool {
     }
 }
 
-struct MakeMethodArgs {
+struct MakeMethodArgs<'ast> {
     start: BytePos,
     accessibility: Option<Accessibility>,
     is_abstract: bool,
     static_token: Option<Span>,
-    decorators: Vec<Decorator>,
+    decorators: Vec<&'ast Decorator<'ast>>,
     is_optional: bool,
     is_override: bool,
-    key: Either<PrivateName, PropName>,
+    key: Either<&'ast PrivateName<'ast>, PropName<'ast>>,
     kind: MethodKind,
     is_async: bool,
     is_generator: bool,

@@ -1,9 +1,9 @@
 use super::*;
 use crate::context::{YesMaybe, YesNoMaybe};
 
-impl<I: Tokens> Parser<I> {
+impl<'ast, I: Tokens> Parser<'ast, I> {
     #[allow(clippy::cognitive_complexity)]
-    fn parse_import(&mut self) -> PResult<ModuleItem> {
+    fn parse_import(&mut self) -> PResult<ModuleItem<'ast>> {
         let start = self.input.cur_pos();
 
         if self.input.peeked_is(&tok!('.')) {
@@ -11,11 +11,15 @@ impl<I: Tokens> Parser<I> {
 
             eat!(self, ';');
 
-            return Ok(Stmt::Expr(ExprStmt {
-                span: span!(self, start),
-                expr,
-            })
-            .into());
+            let expr = alloc!(
+                self,
+                ExprStmt {
+                    span: span!(self, start),
+                    expr,
+                }
+            );
+
+            return Ok(ModuleItem::Stmt(Stmt::Expr(expr)));
         }
 
         if self.input.syntax().dynamic_import() && self.input.peeked_is(&tok!('(')) {
@@ -23,11 +27,15 @@ impl<I: Tokens> Parser<I> {
 
             eat!(self, ';');
 
-            return Ok(Stmt::Expr(ExprStmt {
-                span: span!(self, start),
-                expr,
-            })
-            .into());
+            let expr = alloc!(
+                self,
+                ExprStmt {
+                    span: span!(self, start),
+                    expr,
+                }
+            );
+
+            return Ok(ModuleItem::Stmt(Stmt::Expr(expr)));
         }
 
         // It's now import statement
@@ -55,25 +63,34 @@ impl<I: Tokens> Parser<I> {
         let str_start = self.input.cur_pos();
         if let Some(&Token::Str { .. }) = self.input.cur() {
             let src = match self.input.bump() {
-                Token::Str { value, has_escape } => Str {
-                    span: span!(self, str_start),
-                    value,
-                    has_escape,
-                    kind: StrKind::Normal {
-                        contains_quote: true,
-                    },
-                },
+                Token::Str { value, has_escape } => alloc!(
+                    self,
+                    Str {
+                        span: span!(self, str_start),
+                        value,
+                        has_escape,
+                        kind: StrKind::Normal {
+                            contains_quote: true,
+                        },
+                    }
+                ),
                 _ => unreachable!(),
             };
+
             expect!(self, ';');
-            return Ok(ModuleDecl::Import(ImportDecl {
-                span: span!(self, start),
-                src,
-                specifiers: vec![],
-                type_only: false,
-                asserts: None,
-            }))
-            .map(ModuleItem::from);
+
+            let decl = alloc!(
+                self,
+                ImportDecl {
+                    span: span!(self, start),
+                    src,
+                    specifiers: vec![],
+                    type_only: false,
+                    asserts: None,
+                }
+            );
+
+            return Ok(ModuleDecl::Import(decl)).map(ModuleItem::from);
         }
 
         let type_only = self.input.syntax().typescript()
@@ -99,10 +116,16 @@ impl<I: Tokens> Parser<I> {
             if !is!(self, "from") {
                 expect!(self, ',');
             }
-            specifiers.push(ImportSpecifier::Default(ImportDefaultSpecifier {
-                span: local.span,
-                local,
-            }));
+
+            let specifier = alloc!(
+                self,
+                ImportDefaultSpecifier {
+                    span: local.span,
+                    local,
+                }
+            );
+
+            specifiers.push(ImportSpecifier::Default(specifier));
         }
 
         {
@@ -110,10 +133,16 @@ impl<I: Tokens> Parser<I> {
             if eat!(self, '*') {
                 expect!(self, "as");
                 let local = self.parse_imported_binding()?;
-                specifiers.push(ImportSpecifier::Namespace(ImportStarAsSpecifier {
-                    span: span!(self, import_spec_start),
-                    local,
-                }));
+
+                let specifier = alloc!(
+                    self,
+                    ImportStarAsSpecifier {
+                        span: span!(self, import_spec_start),
+                        local,
+                    }
+                );
+
+                specifiers.push(ImportSpecifier::Namespace(specifier));
             } else if eat!(self, '{') {
                 let mut first = true;
                 while !eof!(self) && !is!(self, '}') {
@@ -134,14 +163,17 @@ impl<I: Tokens> Parser<I> {
             let str_start = self.input.cur_pos();
             let src = match *cur!(self, true)? {
                 Token::Str { .. } => match self.input.bump() {
-                    Token::Str { value, has_escape } => Str {
-                        value,
-                        has_escape,
-                        span: span!(self, str_start),
-                        kind: StrKind::Normal {
-                            contains_quote: true,
-                        },
-                    },
+                    Token::Str { value, has_escape } => alloc!(
+                        self,
+                        Str {
+                            value,
+                            has_escape,
+                            span: span!(self, str_start),
+                            kind: StrKind::Normal {
+                                contains_quote: true,
+                            },
+                        }
+                    ),
                     _ => unreachable!(),
                 },
                 _ => unexpected!(self, "a string literal"),
@@ -153,7 +185,7 @@ impl<I: Tokens> Parser<I> {
             && !self.input.had_line_break_before_cur()
             && eat!(self, "assert")
         {
-            match *self.parse_object::<Box<Expr>>()? {
+            match *self.parse_object::<Expr>()? {
                 Expr::Object(v) => Some(v),
                 _ => unreachable!(),
             }
@@ -163,18 +195,22 @@ impl<I: Tokens> Parser<I> {
 
         expect!(self, ';');
 
-        Ok(ModuleDecl::Import(ImportDecl {
-            span: span!(self, start),
-            specifiers,
-            src,
-            type_only,
-            asserts,
-        }))
-        .map(ModuleItem::from)
+        let decl = alloc!(
+            self,
+            ImportDecl {
+                span: span!(self, start),
+                specifiers,
+                src,
+                type_only,
+                asserts,
+            }
+        );
+
+        Ok(ModuleDecl::Import(decl)).map(ModuleItem::from)
     }
 
     /// Parse `foo`, `foo2 as bar` in `import { foo, foo2 as bar }`
-    fn parse_import_specifier(&mut self) -> PResult<ImportSpecifier> {
+    fn parse_import_specifier(&mut self) -> PResult<ImportSpecifier<'ast>> {
         let start = self.input.cur_pos();
         match self.input.cur() {
             Some(&Word(..)) => {
@@ -182,11 +218,17 @@ impl<I: Tokens> Parser<I> {
 
                 if eat!(self, "as") {
                     let local = self.parse_binding_ident()?.id;
-                    return Ok(ImportSpecifier::Named(ImportNamedSpecifier {
-                        span: Span::new(start, local.span.hi(), Default::default()),
-                        local,
-                        imported: Some(orig_name),
-                    }));
+
+                    let specifier = alloc!(
+                        self,
+                        ImportNamedSpecifier {
+                            span: Span::new(start, local.span.hi(), Default::default()),
+                            local,
+                            imported: Some(orig_name),
+                        }
+                    );
+
+                    return Ok(ImportSpecifier::Named(specifier));
                 }
 
                 // Handle difference between
@@ -198,21 +240,27 @@ impl<I: Tokens> Parser<I> {
                 }
 
                 let local = orig_name;
-                Ok(ImportSpecifier::Named(ImportNamedSpecifier {
-                    span: span!(self, start),
-                    local,
-                    imported: None,
-                }))
+
+                let specifier = alloc!(
+                    self,
+                    ImportNamedSpecifier {
+                        span: span!(self, start),
+                        local,
+                        imported: None,
+                    }
+                );
+
+                Ok(ImportSpecifier::Named(specifier))
             }
             _ => unexpected!(self, "an identifier"),
         }
     }
 
-    fn parse_imported_default_binding(&mut self) -> PResult<Ident> {
+    fn parse_imported_default_binding(&mut self) -> PResult<&'ast Ident> {
         self.parse_imported_binding()
     }
 
-    fn parse_imported_binding(&mut self) -> PResult<Ident> {
+    fn parse_imported_binding(&mut self) -> PResult<&'ast Ident> {
         let ctx = Context {
             in_async: false,
             in_generator: false,
@@ -222,7 +270,10 @@ impl<I: Tokens> Parser<I> {
     }
 
     #[allow(clippy::cognitive_complexity)]
-    fn parse_export(&mut self, decorators: Vec<Decorator>) -> PResult<ModuleDecl> {
+    fn parse_export(
+        &mut self,
+        decorators: Vec<&'ast Decorator<'ast>>,
+    ) -> PResult<ModuleDecl<'ast>> {
         if !self.ctx().is_module() {
             // Switch to module mode
             let ctx = Context {
@@ -244,10 +295,14 @@ impl<I: Tokens> Parser<I> {
         if declare {
             // TODO(swc): Remove
             if let Some(decl) = self.try_parse_ts_declare(after_export_start, decorators.clone())? {
-                return Ok(ModuleDecl::ExportDecl(ExportDecl {
-                    span: span!(self, start),
-                    decl,
-                }));
+                let decl = alloc!(
+                    self,
+                    ExportDecl {
+                        span: span!(self, start),
+                        decl,
+                    }
+                );
+                return Ok(ModuleDecl::ExportDecl(decl));
             }
         }
 
@@ -258,10 +313,15 @@ impl<I: Tokens> Parser<I> {
             };
             // TODO(swc): remove clone
             if let Some(decl) = self.try_parse_ts_export_decl(decorators.clone(), sym) {
-                return Ok(ModuleDecl::ExportDecl(ExportDecl {
-                    span: span!(self, start),
-                    decl,
-                }));
+                let decl = alloc!(
+                    self,
+                    ExportDecl {
+                        span: span!(self, start),
+                        decl,
+                    }
+                );
+
+                return Ok(ModuleDecl::ExportDecl(decl));
             }
         }
 
@@ -277,11 +337,15 @@ impl<I: Tokens> Parser<I> {
                 // `export = x;`
                 let expr = self.parse_expr()?;
                 expect!(self, ';');
-                return Ok(TsExportAssignment {
-                    span: span!(self, start),
-                    expr,
-                }
-                .into());
+
+                let export = alloc!(
+                    self,
+                    TsExportAssignment {
+                        span: span!(self, start),
+                        expr,
+                    }
+                );
+                return Ok(ModuleDecl::TsExportAssignment(export));
             }
 
             if eat!(self, "as") {
@@ -290,11 +354,16 @@ impl<I: Tokens> Parser<I> {
                 expect!(self, "namespace");
                 let id = self.parse_ident(false, false)?;
                 expect!(self, ';');
-                return Ok(TsNamespaceExportDecl {
-                    span: span!(self, start),
-                    id,
-                }
-                .into());
+
+                let export = alloc!(
+                    self,
+                    TsNamespaceExportDecl {
+                        span: span!(self, start),
+                        id,
+                    }
+                );
+
+                return Ok(ModuleDecl::TsNamespaceExport(export));
             }
         }
 
@@ -308,18 +377,26 @@ impl<I: Tokens> Parser<I> {
             has_star = true;
             if is!(self, "from") {
                 let (src, asserts) = self.parse_from_clause_and_semi()?;
-                return Ok(ModuleDecl::ExportAll(ExportAll {
-                    span: span!(self, start),
-                    src,
-                    asserts,
-                }));
+                let export = alloc!(
+                    self,
+                    ExportAll {
+                        span: span!(self, start),
+                        src,
+                        asserts,
+                    }
+                );
+                return Ok(ModuleDecl::ExportAll(export));
             }
             if eat!(self, "as") {
                 let name = self.parse_ident_name()?;
-                export_ns = Some(ExportSpecifier::Namespace(ExportNamespaceSpecifier {
-                    span: span!(self, ns_export_specifier_start),
-                    name,
-                }));
+                let specifier = alloc!(
+                    self,
+                    ExportNamespaceSpecifier {
+                        span: span!(self, ns_export_specifier_start),
+                        name,
+                    }
+                );
+                export_ns = Some(ExportSpecifier::Namespace(specifier));
             }
         }
 
@@ -355,11 +432,14 @@ impl<I: Tokens> Parser<I> {
                     let decl = self
                         .parse_ts_interface_decl(interface_start)
                         .map(DefaultDecl::from)?;
-                    return Ok(ExportDefaultDecl {
-                        span: span!(self, start),
-                        decl,
-                    }
-                    .into());
+                    let export = alloc!(
+                        self,
+                        ExportDefaultDecl {
+                            span: span!(self, start),
+                            decl,
+                        }
+                    );
+                    return Ok(ModuleDecl::ExportDefaultDecl(export));
                 }
             }
 
@@ -379,14 +459,26 @@ impl<I: Tokens> Parser<I> {
             } else if self.input.syntax().export_default_from()
                 && (is!(self, "from") || (is!(self, ',') && peeked_is!(self, '{')))
             {
-                export_default = Some(Ident::new("default".into(), self.input.prev_span()))
+                let ident = alloc!(
+                    self,
+                    Ident {
+                        sym: "default".into(),
+                        span: self.input.prev_span(),
+                        optional: false
+                    }
+                );
+                export_default = Some(ident)
             } else {
                 let expr = self.include_in_expr(true).parse_assignment_expr()?;
                 expect!(self, ';');
-                return Ok(ModuleDecl::ExportDefaultExpr(ExportDefaultExpr {
-                    span: span!(self, start),
-                    expr,
-                }));
+                let export = alloc!(
+                    self,
+                    ExportDefaultExpr {
+                        span: span!(self, start),
+                        expr,
+                    }
+                );
+                return Ok(ModuleDecl::ExportDefaultExpr(export));
             }
         }
 
@@ -413,10 +505,14 @@ impl<I: Tokens> Parser<I> {
                 .parse_ts_enum_decl(start, true)
                 .map(Decl::from)
                 .map(|decl| {
-                    ModuleDecl::ExportDecl(ExportDecl {
-                        span: span!(self, start),
-                        decl,
-                    })
+                    let export = alloc!(
+                        self,
+                        ExportDecl {
+                            span: span!(self, start),
+                            decl,
+                        }
+                    );
+                    ModuleDecl::ExportDecl(export)
                 });
         } else if !type_only
             && (is!(self, "var")
@@ -436,13 +532,17 @@ impl<I: Tokens> Parser<I> {
             if is!(self, "from") {
                 if let Some(s) = export_ns {
                     let (src, asserts) = self.parse_from_clause_and_semi()?;
-                    return Ok(ModuleDecl::ExportNamed(NamedExport {
-                        span: Span::new(start, src.span.hi(), Default::default()),
-                        specifiers: vec![s],
-                        src: Some(src),
-                        type_only,
-                        asserts,
-                    }));
+                    let export = alloc!(
+                        self,
+                        NamedExport {
+                            span: Span::new(start, src.span.hi(), Default::default()),
+                            specifiers: vec![s],
+                            src: Some(src),
+                            type_only,
+                            asserts,
+                        }
+                    );
+                    return Ok(ModuleDecl::ExportNamed(export));
                 }
             }
 
@@ -459,27 +559,34 @@ impl<I: Tokens> Parser<I> {
 
             if is!(self, "from") {
                 if let Some(default) = default {
+                    let default = alloc!(self, ExportDefaultSpecifier { exported: default });
                     let (src, asserts) = self.parse_from_clause_and_semi()?;
-                    return Ok(ModuleDecl::ExportNamed(NamedExport {
-                        span: Span::new(start, src.span.hi(), Default::default()),
-                        specifiers: vec![ExportSpecifier::Default(ExportDefaultSpecifier {
-                            exported: default,
-                        })],
-                        src: Some(src),
-                        type_only,
-                        asserts,
-                    }));
+                    let export = alloc!(
+                        self,
+                        NamedExport {
+                            span: Span::new(start, src.span.hi(), Default::default()),
+                            specifiers: vec![ExportSpecifier::Default(default)],
+                            src: Some(src),
+                            type_only,
+                            asserts,
+                        }
+                    );
+                    return Ok(ModuleDecl::ExportNamed(export));
                 }
             }
 
             if has_star && export_ns.is_none() {
                 // improve error message for `export * from foo`
                 let (src, asserts) = self.parse_from_clause_and_semi()?;
-                return Ok(ModuleDecl::ExportAll(ExportAll {
-                    span: Span::new(start, src.span.hi(), Default::default()),
-                    src,
-                    asserts,
-                }));
+                let export = alloc!(
+                    self,
+                    ExportAll {
+                        span: Span::new(start, src.span.hi(), Default::default()),
+                        src,
+                        asserts,
+                    }
+                );
+                return Ok(ModuleDecl::ExportAll(export));
             }
 
             let has_ns = export_ns.is_some();
@@ -494,9 +601,8 @@ impl<I: Tokens> Parser<I> {
                 specifiers.push(s)
             }
             if let Some(default) = default {
-                specifiers.push(ExportSpecifier::Default(ExportDefaultSpecifier {
-                    exported: default,
-                }))
+                let export = alloc!(self, ExportDefaultSpecifier { exported: default });
+                specifiers.push(ExportSpecifier::Default(export));
             }
             let mut first = true;
             while is_one_of!(self, ',', IdentName) {
@@ -530,22 +636,31 @@ impl<I: Tokens> Parser<I> {
                 Some(v) => (Some(v.0), v.1),
                 None => (None, None),
             };
-            return Ok(ModuleDecl::ExportNamed(NamedExport {
-                span: span!(self, start),
-                specifiers,
-                src,
-                type_only,
-                asserts,
-            }));
+            let export = alloc!(
+                self,
+                NamedExport {
+                    span: span!(self, start),
+                    specifiers,
+                    src,
+                    type_only,
+                    asserts,
+                }
+            );
+            return Ok(ModuleDecl::ExportNamed(export));
         };
 
-        Ok(ModuleDecl::ExportDecl(ExportDecl {
-            span: span!(self, start),
-            decl,
-        }))
+        let export = alloc!(
+            self,
+            ExportDecl {
+                span: span!(self, start),
+                decl,
+            }
+        );
+
+        Ok(ModuleDecl::ExportDecl(export))
     }
 
-    fn parse_named_export_specifier(&mut self) -> PResult<ExportNamedSpecifier> {
+    fn parse_named_export_specifier(&mut self) -> PResult<&'ast ExportNamedSpecifier<'ast>> {
         let start = self.input.cur_pos();
 
         let orig = self.parse_ident_name()?;
@@ -556,28 +671,38 @@ impl<I: Tokens> Parser<I> {
             None
         };
 
-        Ok(ExportNamedSpecifier {
-            span: span!(self, start),
-            orig,
-            exported,
-        })
+        let export = alloc!(
+            self,
+            ExportNamedSpecifier {
+                span: span!(self, start),
+                orig,
+                exported,
+            }
+        );
+
+        Ok(export)
     }
 
     /// Parses `from 'foo.js' assert {};`
-    fn parse_from_clause_and_semi(&mut self) -> PResult<(Str, Option<ObjectLit>)> {
+    fn parse_from_clause_and_semi(
+        &mut self,
+    ) -> PResult<(&'ast Str, Option<&'ast ObjectLit<'ast>>)> {
         expect!(self, "from");
 
         let str_start = self.input.cur_pos();
         let src = match *cur!(self, true)? {
             Token::Str { .. } => match self.input.bump() {
-                Token::Str { value, has_escape } => Str {
-                    value,
-                    has_escape,
-                    span: span!(self, str_start),
-                    kind: StrKind::Normal {
-                        contains_quote: true,
-                    },
-                },
+                Token::Str { value, has_escape } => alloc!(
+                    self,
+                    Str {
+                        value,
+                        has_escape,
+                        span: span!(self, str_start),
+                        kind: StrKind::Normal {
+                            contains_quote: true,
+                        },
+                    }
+                ),
                 _ => unreachable!(),
             },
             _ => unexpected!(self, "a string literal"),
@@ -587,7 +712,7 @@ impl<I: Tokens> Parser<I> {
             && !self.input.had_line_break_before_cur()
             && eat!(self, "assert")
         {
-            match *self.parse_object::<Box<Expr>>()? {
+            match *self.parse_object::<Expr>()? {
                 Expr::Object(v) => Some(v),
                 _ => unreachable!(),
             }
@@ -599,7 +724,7 @@ impl<I: Tokens> Parser<I> {
     }
 }
 
-impl IsDirective for ModuleItem {
+impl<'ast> IsDirective for ModuleItem<'ast> {
     fn as_ref(&self) -> Option<&Stmt> {
         match *self {
             ModuleItem::Stmt(ref s) => Some(s),
@@ -608,12 +733,12 @@ impl IsDirective for ModuleItem {
     }
 }
 
-impl<I: Tokens> StmtLikeParser<ModuleItem> for Parser<I> {
+impl<'ast, I: Tokens> StmtLikeParser<'ast, ModuleItem<'ast>> for Parser<'ast, I> {
     fn handle_import_export(
         &mut self,
         top_level: bool,
-        decorators: Vec<Decorator>,
-    ) -> PResult<ModuleItem> {
+        decorators: Vec<&'ast Decorator<'ast>>,
+    ) -> PResult<ModuleItem<'ast>> {
         if !top_level {
             syntax_error!(self, SyntaxError::NonTopLevelImportExport);
         }
