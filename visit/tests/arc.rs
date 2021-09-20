@@ -1,10 +1,5 @@
 use global_visit::define;
-use std::{any::Any, sync::Arc};
-
-/// Visitable nodes.
-pub trait Node: Any {}
-
-impl<T: ?Sized> Node for T where T: Any {}
+use std::sync::Arc;
 
 pub struct Item {
     pub item: Option<Arc<Item>>,
@@ -32,8 +27,8 @@ define!({
 
 struct Panic;
 
-impl Visit for Panic {
-    fn visit_item(&mut self, _: &Item, _parent: &dyn Node) {
+impl Visit<'_> for Panic {
+    fn visit_item(&mut self, _: &Item) {
         panic!("Success")
     }
 }

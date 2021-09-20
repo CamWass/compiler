@@ -1,6 +1,8 @@
-use anyhow::{bail, Context, Error, Result};
-use codegen::{self, Emitter, Node};
+use anyhow::{bail, Error, Result};
+use ast::*;
+use compiler::Compiler;
 use config::load_config;
+use ecma_visit::{noop_visit_type, Visit, VisitWith};
 use global_common::{
     errors::{ColorConfig, Handler},
     sync::Lrc,
@@ -10,6 +12,42 @@ use parser::{Parser, Syntax};
 use std::{env, path::Path};
 
 mod config;
+
+// struct ImportAssertions;
+
+// impl VisitMut for ImportAssertions {
+//     noop_visit_mut_type!();
+
+//     fn visit_mut_import_decl(&mut self, n: &mut ImportDecl) {
+//         n.asserts = None;
+//     }
+
+//     fn visit_mut_var_decl(&mut self, var: &mut VarDecl) {
+//         var.decls.visit_mut_with(self);
+
+//         if let VarDeclKind::Const = var.kind {
+//             for decl in &mut var.decls {
+//                 let ident = Ident::new("bread".into(), DUMMY_SP);
+//                 decl.name = Pat::Ident(BindingIdent::from(ident));
+//             }
+//         }
+//     }
+// }
+
+struct TestVisitor;
+
+impl<'ast> Visit<'ast> for TestVisitor {
+    noop_visit_type!();
+
+    fn visit_if_stmt(&mut self, node: &'ast IfStmt) {
+        println!("Visited if_stmt");
+        node.visit_children_with(self);
+    }
+
+    fn visit_number(&mut self, node: &'ast Number) {
+        println!("Visited number: {}", node.value);
+    }
+}
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -44,7 +82,7 @@ fn main() -> Result<()> {
         error = true;
     }
 
-    let program = program.map_err(|e| {
+    let mut program = program.map_err(|e| {
         e.into_diagnostic(&handler).emit();
         Error::msg("Failed to parse")
     })?;
@@ -53,30 +91,48 @@ fn main() -> Result<()> {
         bail!("Failed to parse");
     }
 
-    println!("\n\n\nSuccessfully parsed");
+    // println!("\n\n\nSuccessfully parsed");
 
-    let src = {
-        let mut buf = vec![];
-        {
-            let mut emitter = Emitter {
-                cfg: codegen::Config { minify: false },
-                comments: None,
-                cm: cm.clone(),
-                wr: Box::new(codegen::text_writer::JsWriter::new(
-                    cm.clone(),
-                    "\n",
-                    &mut buf,
-                    None,
-                )),
-            };
+    // println!("{:#?}", p);
 
-            program
-                .emit_with(&mut emitter)
-                .context("Failed to emit module")?;
-        }
-        // Invalid utf8 is valid in javascript world.
-        String::from_utf8(buf).expect("Invalid utf8 character detected")
-    };
+    let mut c = Compiler::new();
 
-    std::fs::write("out.js", src).context("Failed to write file")
+    c.analyse(&mut program);
+
+    // let mut a = ImportAssertions {};
+
+    // program.visit_mut_with(&mut a);
+
+    // let mut v = TestVisitor{};
+
+    // program.visit_with(&mut v);
+
+    // println!("{:#?}", program);
+
+    Ok(())
+
+    // let src = {
+    //     let mut buf = vec![];
+    //     {
+    //         let mut emitter = Emitter {
+    //             cfg: codegen::Config { minify: false },
+    //             comments: None,
+    //             cm: cm.clone(),
+    //             wr: Box::new(codegen::text_writer::JsWriter::new(
+    //                 cm.clone(),
+    //                 "\n",
+    //                 &mut buf,
+    //                 None,
+    //             )),
+    //         };
+
+    //         program
+    //             .emit_with(&mut emitter)
+    //             .context("Failed to emit module")?;
+    //     }
+    //     // Invalid utf8 is valid in javascript world.
+    //     String::from_utf8(buf).expect("Invalid utf8 character detected")
+    // };
+
+    // std::fs::write("out.js", src).context("Failed to write file")
 }

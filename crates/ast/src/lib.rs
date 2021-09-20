@@ -34,6 +34,7 @@ pub use self::{
         ImportDecl, ImportDefaultSpecifier, ImportNamedSpecifier, ImportSpecifier,
         ImportStarAsSpecifier, ModuleDecl, NamedExport,
     },
+    node::AstNode,
     operators::{AssignOp, BinaryOp, UnaryOp, UpdateOp},
     pat::{
         ArrayPat, AssignPat, AssignPatProp, KeyValuePatProp, ObjectPat, ObjectPatProp, Pat, RestPat,
@@ -78,6 +79,7 @@ mod jsx;
 mod lit;
 mod module;
 mod module_decl;
+mod node;
 mod operators;
 mod pat;
 mod prop;

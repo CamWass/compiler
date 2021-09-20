@@ -268,6 +268,12 @@ pub struct SwitchCase {
     pub cons: Vec<Stmt>,
 }
 
+impl SwitchCase {
+    pub fn is_default(&self) -> bool {
+        self.test.is_none()
+    }
+}
+
 #[ast_node("CatchClause")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct CatchClause {

@@ -1,0 +1,19 @@
+[package]
+description = "String based enum."
+edition = "2018"
+license = "Apache-2.0/MIT"
+name = "string_enum2"
+version = "0.1.0"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+macro_common = {version = "0.1.0", path = "../common"}
+pmutil = "0.5.1"
+proc-macro2 = "1"
+quote = "1"
+
+[dependencies.syn]
+features = ["full", "parsing", "printing", "extra-traits"]
+version = "1"

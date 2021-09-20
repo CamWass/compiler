@@ -1,0 +1,20 @@
+[package]
+name = "compiler"
+version = "0.1.0"
+authors = ["Campbell <campbell.wass@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+arena = {path= "../arena"}
+ast = {path = "../ast"}
+fxhash = "0.2.1"
+global_common = {path = "../common", features = ["tty-emitter", "sourcemap"]}
+ecma_visit = {path = "../visit"}
+petgraph = "0.6.0"
+swc_atoms = "0.2.6"
+im-rc = "15.0.0"
+v = {path = "../../macros/v"}
+ast2 = {path = "../ast2"}
+index = {path = "../index"}
