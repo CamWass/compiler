@@ -1289,9 +1289,6 @@ impl<I: Tokens> Parser<I> {
                 readonly,
                 key,
                 optional,
-                init: None,
-                type_params: None,
-                params: vec![],
                 type_ann,
             }))
         }

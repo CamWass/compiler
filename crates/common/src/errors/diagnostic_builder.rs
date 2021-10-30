@@ -185,34 +185,35 @@ impl<'a> DiagnosticBuilder<'a> {
                                                   msg: &str,
                                                   ) -> &mut Self);
 
-    #[deprecated(note = "Use `span_suggestion_short_with_applicability`")]
-    forward!(pub fn span_suggestion_short(
-                                      &mut self,
-                                      sp: Span,
-                                      msg: &str,
-                                      suggestion: String,
-                                      ) -> &mut Self);
+    // TODO:
+    // #[deprecated(note = "Use `span_suggestion_short_with_applicability`")]
+    // forward!(pub fn span_suggestion_short(
+    //                                   &mut self,
+    //                                   sp: Span,
+    //                                   msg: &str,
+    //                                   suggestion: String,
+    //                                   ) -> &mut Self);
 
-    #[deprecated(note = "Use `multipart_suggestion_with_applicability`")]
-    forward!(pub fn multipart_suggestion(
-        &mut self,
-        msg: &str,
-        suggestion: Vec<(Span, String)>,
-    ) -> &mut Self);
+    // #[deprecated(note = "Use `multipart_suggestion_with_applicability`")]
+    // forward!(pub fn multipart_suggestion(
+    //     &mut self,
+    //     msg: &str,
+    //     suggestion: Vec<(Span, String)>,
+    // ) -> &mut Self);
 
-    #[deprecated(note = "Use `span_suggestion_with_applicability`")]
-    forward!(pub fn span_suggestion(&mut self,
-                                    sp: Span,
-                                    msg: &str,
-                                    suggestion: String,
-                                    ) -> &mut Self);
+    // #[deprecated(note = "Use `span_suggestion_with_applicability`")]
+    // forward!(pub fn span_suggestion(&mut self,
+    //                                 sp: Span,
+    //                                 msg: &str,
+    //                                 suggestion: String,
+    //                                 ) -> &mut Self);
 
-    #[deprecated(note = "Use `span_suggestions_with_applicability`")]
-    forward!(pub fn span_suggestions(&mut self,
-                                     sp: Span,
-                                     msg: &str,
-                                     suggestions: Vec<String>,
-                                     ) -> &mut Self);
+    // #[deprecated(note = "Use `span_suggestions_with_applicability`")]
+    // forward!(pub fn span_suggestions(&mut self,
+    //                                  sp: Span,
+    //                                  msg: &str,
+    //                                  suggestions: Vec<String>,
+    //                                  ) -> &mut Self);
 
     pub fn multipart_suggestion_with_applicability(
         &mut self,

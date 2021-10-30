@@ -130,6 +130,7 @@ pub struct PrivateProp {
     #[serde(default)]
     pub decorators: Vec<Decorator>,
 
+    // TODO: this is always set to false by parser. Remove.
     #[serde(default)]
     pub computed: bool,
 

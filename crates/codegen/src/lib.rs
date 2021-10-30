@@ -1,5 +1,7 @@
 #![recursion_limit = "1024"]
 #![allow(unused_variables)]
+// TODO: temp
+#![allow(warnings)]
 
 pub use self::config::Config;
 use self::{

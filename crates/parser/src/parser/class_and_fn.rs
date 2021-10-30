@@ -1341,6 +1341,10 @@ impl<I: Tokens> FnBodyParser<BlockStmtOrExpr> for Parser<I> {
 
 impl<I: Tokens> FnBodyParser<Option<BlockStmt>> for Parser<I> {
     fn parse_fn_body_inner(&mut self) -> PResult<Option<BlockStmt>> {
+        // allow omitting body and allow placing `{` on next line
+        if self.input.syntax().typescript() && !is!(self, '{') && eat!(self, ';') {
+            return Ok(None);
+        }
         self.include_in_expr(true).parse_block(true).map(Some)
     }
 }

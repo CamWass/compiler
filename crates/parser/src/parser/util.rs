@@ -145,6 +145,8 @@ impl<I: Tokens> Parser<I> {
             self.input.cur()
         );
 
+        let _ = self.input.cur();
+
         self.input.bump();
     }
 

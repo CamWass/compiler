@@ -684,23 +684,10 @@ impl<'a> Emitter<'a> {
             punct!("?");
         }
 
-        emit!(n.type_params);
-
-        // punct!("(");
-        // self.emit_list(n.span, Some(&n.params), ListFormat::Parameters)?;
-        // punct!(")");
-
         if let Some(type_ann) = &n.type_ann {
             punct!(":");
             formatting_space!();
             emit!(type_ann);
-        }
-
-        if let Some(init) = &n.init {
-            formatting_space!();
-            punct!("=");
-            formatting_space!();
-            emit!(init);
         }
     }
 

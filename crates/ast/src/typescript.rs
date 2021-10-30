@@ -159,13 +159,8 @@ pub struct TsPropertySignature {
     pub key: Box<Expr>,
     pub computed: bool,
     pub optional: bool,
-    #[serde(default)]
-    pub init: Option<Box<Expr>>,
-    pub params: Vec<TsFnParam>,
     #[serde(default, rename = "typeAnnotation")]
     pub type_ann: Option<TsTypeAnn>,
-    #[serde(default)]
-    pub type_params: Option<TsTypeParamDecl>,
 }
 
 #[ast_node("TsGetterSignature")]

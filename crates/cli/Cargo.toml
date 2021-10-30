@@ -9,6 +9,7 @@ edition = "2018"
 [dependencies]
 anyhow = "1"
 ast = {path = "../ast"}
+compiler = {path = "../compiler"}
 global_common = {path = "../common", features = ["tty-emitter", "sourcemap"]}
 parser = {path = "../parser"}
 codegen = {path = "../codegen"}
