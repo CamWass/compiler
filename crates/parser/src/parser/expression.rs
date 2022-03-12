@@ -376,7 +376,7 @@ impl<I: Tokens> Parser<I> {
             if can_be_arrow && id.sym == js_word!("async") && is!(self, BindingIdent) {
                 // async a => body
                 let arg = self.parse_binding_ident().map(Pat::from)?;
-                let params = vec![arg];
+                let params = vec![arg.into()];
                 expect!(self, "=>");
                 let body = self.parse_fn_body(true, false)?;
 
@@ -385,7 +385,6 @@ impl<I: Tokens> Parser<I> {
                     body,
                     params,
                     is_async: true,
-                    is_generator: false,
                     return_type: None,
                     type_params: None,
                 })));
@@ -393,7 +392,7 @@ impl<I: Tokens> Parser<I> {
                 && !self.input.had_line_break_before_cur()
                 && self.input.eat(&tok!("=>"))
             {
-                let params = vec![id.into()];
+                let params = vec![Pat::from(id).into()];
                 let body = self.parse_fn_body(false, false)?;
 
                 return Ok(Box::new(Expr::Arrow(ArrowExpr {
@@ -401,7 +400,6 @@ impl<I: Tokens> Parser<I> {
                     body,
                     params,
                     is_async: false,
-                    is_generator: false,
                     // TODO(swc):
                     return_type: None,
                     // TODO(swc):
@@ -442,9 +440,7 @@ impl<I: Tokens> Parser<I> {
 
             if is!(self, ',') {
                 match elem {
-                    Some(ExprOrSpread {
-                        spread: Some(..), ..
-                    }) => {
+                    Some(ExprOrSpread::Spread(_)) => {
                         // We only care about the first trailing comma, so we
                         // will only save this one if it's the first we have
                         // encountered for this array. This prevents the last
@@ -828,10 +824,9 @@ impl<I: Tokens> Parser<I> {
                     self.state.potential_arrow_start = Some(self.input.cur_pos());
                     let expr = self.parse_assignment_expr()?;
                     expect!(self, ')');
-                    return Ok(vec![PatOrExprOrSpread::ExprOrSpread(ExprOrSpread {
+                    return Ok(vec![PatOrExprOrSpread::ExprOrSpread(ExprOrSpread::Expr(
                         expr,
-                        spread: None,
-                    })]);
+                    ))]);
                 }
             } else {
                 if current_item_has_spread && is!(self, ',') {
@@ -877,13 +872,18 @@ impl<I: Tokens> Parser<I> {
                         expr
                     };
 
-                    ExprOrSpread { spread, expr }
+                    match spread {
+                        Some(dot3_token) => {
+                            ExprOrSpread::Spread(SpreadElement { dot3_token, expr })
+                        }
+                        None => ExprOrSpread::Expr(expr),
+                    }
                 } else {
                     self.include_in_expr(true).parse_expr_or_spread()?
                 }
             };
 
-            if arg.spread.is_some() {
+            if matches!(arg, ExprOrSpread::Spread(_)) {
                 current_item_has_spread = true;
             }
 
@@ -896,11 +896,13 @@ impl<I: Tokens> Parser<I> {
                     {
                         self.assert_and_bump(&tok!('?'));
                         let _ = cur!(self, false);
-                        if arg.spread.is_some() {
+                        if current_item_has_spread {
                             self.emit_err(self.input.prev_span(), SyntaxError::TS1047);
                         }
-                        match *arg.expr {
-                            Expr::Ident(..) => {}
+                        match &arg {
+                            ExprOrSpread::Spread(SpreadElement { expr, .. })
+                            | ExprOrSpread::Expr(expr)
+                                if matches!(expr.as_ref(), Expr::Ident(_)) => {}
                             _ => {
                                 syntax_error!(
                                     self,
@@ -910,12 +912,8 @@ impl<I: Tokens> Parser<I> {
                             }
                         }
                         true
-                    } else if match arg {
-                        ExprOrSpread { spread: None, .. } => true,
-                        _ => false,
-                    } {
+                    } else if let ExprOrSpread::Expr(test) = arg {
                         expect!(self, '?');
-                        let test = arg.expr;
                         let ctx = Context {
                             in_cond_expr: true,
                             include_in_expr: true,
@@ -929,16 +927,13 @@ impl<I: Tokens> Parser<I> {
                         };
                         let alt = self.with_ctx(ctx).parse_assignment_expr()?;
 
-                        arg = ExprOrSpread {
-                            spread: None,
-                            expr: Box::new(Expr::Cond(CondExpr {
-                                span: Span::new(start, alt.span().hi(), Default::default()),
+                        arg = ExprOrSpread::Expr(Box::new(Expr::Cond(CondExpr {
+                            span: Span::new(start, alt.span().hi(), Default::default()),
 
-                                test,
-                                cons,
-                                alt,
-                            })),
-                        };
+                            test,
+                            cons,
+                            alt,
+                        })));
 
                         false
                     } else {
@@ -958,14 +953,21 @@ impl<I: Tokens> Parser<I> {
                 //     self.emit_err(self.input.prev_span(), SyntaxError::TS1047)
                 // }
 
-                let mut pat = self.reparse_expr_as_pat(PatType::BindingPat, arg.expr)?;
+                let (expr, spread) = match arg {
+                    ExprOrSpread::Spread(SpreadElement { dot3_token, expr }) => {
+                        (expr, Some(dot3_token))
+                    }
+                    ExprOrSpread::Expr(expr) => (expr, None),
+                };
+
+                let mut pat = self.reparse_expr_as_pat(PatType::BindingPat, expr)?;
                 if optional {
                     match pat {
                         Pat::Ident(ref mut i) => i.id.optional = true,
                         _ => unreachable!(),
                     }
                 }
-                if let Some(span) = arg.spread {
+                if let Some(span) = spread {
                     if let Some(rest_span) = rest_span {
                         if self.syntax().early_errors() {
                             // Rest pattern must be last one.
@@ -1050,9 +1052,11 @@ impl<I: Tokens> Parser<I> {
             // https://github.com/swc-project/swc/issues/433
             if first && self.input.eat(&tok!("=>")) && {
                 debug_assert_eq!(items.len(), 1);
-                match items[0] {
-                    PatOrExprOrSpread::ExprOrSpread(ExprOrSpread { ref expr, .. })
-                    | PatOrExprOrSpread::Pat(Pat::Expr(ref expr)) => match **expr {
+                match &items[0] {
+                    PatOrExprOrSpread::ExprOrSpread(
+                        ExprOrSpread::Spread(SpreadElement { expr, .. }) | ExprOrSpread::Expr(expr),
+                    )
+                    | PatOrExprOrSpread::Pat(Pat::Expr(expr)) => match **expr {
                         Expr::Ident(..) => true,
                         _ => false,
                     },
@@ -1063,27 +1067,26 @@ impl<I: Tokens> Parser<I> {
                 let params = self
                     .parse_paren_items_as_params(items)?
                     .into_iter()
+                    .map(|p| p.into())
                     .collect();
 
                 let body: BlockStmtOrExpr = self.parse_fn_body(false, false)?;
                 expect!(self, ')');
                 let span = span!(self, start);
 
-                return Ok(vec![PatOrExprOrSpread::ExprOrSpread(ExprOrSpread {
-                    expr: Box::new(
+                return Ok(vec![PatOrExprOrSpread::ExprOrSpread(ExprOrSpread::Expr(
+                    Box::new(
                         ArrowExpr {
                             span,
                             body,
                             is_async: false,
-                            is_generator: false,
                             params,
                             type_params: None,
                             return_type: None,
                         }
                         .into(),
                     ),
-                    spread: None,
-                })]);
+                ))]);
             }
 
             first = false;
@@ -1231,13 +1234,13 @@ impl<I: Tokens> Parser<I> {
         let start = self.input.cur_pos();
 
         if self.input.eat(&tok!("...")) {
-            let spread = Some(span!(self, start));
+            let dot3_token = span!(self, start);
             self.include_in_expr(true)
                 .parse_assignment_expr()
-                .map(|expr| ExprOrSpread { spread, expr })
+                .map(|expr| ExprOrSpread::Spread(SpreadElement { dot3_token, expr }))
         } else {
             self.parse_assignment_expr()
-                .map(|expr| ExprOrSpread { spread: None, expr })
+                .map(|expr| ExprOrSpread::Expr(expr))
         }
     }
 
@@ -1273,6 +1276,7 @@ impl<I: Tokens> Parser<I> {
                 let params = p
                     .parse_paren_items_as_params(items_ref.clone())?
                     .into_iter()
+                    .map(|p| p.into())
                     .collect();
 
                 let body = p.parse_fn_body(async_span.is_some(), false)?;
@@ -1280,7 +1284,6 @@ impl<I: Tokens> Parser<I> {
                 Ok(Some(Box::new(Expr::Arrow(ArrowExpr {
                     span: span!(p, expr_start),
                     is_async: async_span.is_some(),
-                    is_generator: false,
                     params,
                     body,
                     return_type: Some(return_type),
@@ -1318,13 +1321,13 @@ impl<I: Tokens> Parser<I> {
             let params = self
                 .parse_paren_items_as_params(paren_items)?
                 .into_iter()
+                .map(|p| p.into())
                 .collect();
 
             let body: BlockStmtOrExpr = self.parse_fn_body(async_span.is_some(), false)?;
             let arrow_expr = ArrowExpr {
                 span: span!(self, expr_start),
                 is_async: async_span.is_some(),
-                is_generator: false,
                 params,
                 body,
                 return_type,
@@ -1389,11 +1392,10 @@ impl<I: Tokens> Parser<I> {
         // ParenthesizedExpression cannot contain spread.
         if expr_or_spreads.len() == 1 {
             let expr = match expr_or_spreads.into_iter().next().unwrap() {
-                ExprOrSpread {
-                    spread: Some(..),
-                    ref expr,
-                } => syntax_error!(self, expr.span(), SyntaxError::SpreadInParenExpr),
-                ExprOrSpread { expr, .. } => expr,
+                ExprOrSpread::Spread(s) => {
+                    syntax_error!(self, s.expr.span(), SyntaxError::SpreadInParenExpr)
+                }
+                ExprOrSpread::Expr(e) => e,
             };
             Ok(Box::new(Expr::Paren(ParenExpr {
                 span: span!(self, expr_start),
@@ -1405,11 +1407,10 @@ impl<I: Tokens> Parser<I> {
             let mut exprs = Vec::with_capacity(expr_or_spreads.len());
             for expr in expr_or_spreads {
                 match expr {
-                    ExprOrSpread {
-                        spread: Some(..),
-                        ref expr,
-                    } => syntax_error!(self, expr.span(), SyntaxError::SpreadInParenExpr),
-                    ExprOrSpread { expr, .. } => exprs.push(expr),
+                    ExprOrSpread::Spread(_) => {
+                        syntax_error!(self, expr.span(), SyntaxError::SpreadInParenExpr)
+                    }
+                    ExprOrSpread::Expr(e) => exprs.push(e),
                 }
             }
             debug_assert!(exprs.len() >= 2);
@@ -1556,6 +1557,7 @@ pub(in crate::parser) enum PatOrExprOrSpread {
     #[tag("*")]
     Pat(Pat),
     #[tag("*")]
+    // TODO: maybe flatten
     ExprOrSpread(ExprOrSpread),
 }
 

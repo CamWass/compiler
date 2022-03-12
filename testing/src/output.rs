@@ -1,8 +1,7 @@
 use crate::paths;
-use pretty_assertions::assert_eq;
 use std::{
     fmt,
-    fs::{create_dir_all, remove_file, File},
+    fs::{create_dir_all, File},
     io::Read,
     ops::Deref,
     path::Path,
@@ -68,51 +67,48 @@ impl NormalizedOutput {
             path.to_path_buf()
         });
 
-        let expected = File::open(&path)
-            .map(|mut file| {
-                let mut buf = String::new();
-                file.read_to_string(&mut buf).unwrap();
-                buf
-            })
-            .unwrap_or_else(|_| {
-                // If xxx.stderr file does not exist, stderr should be empty.
-                String::new()
-            });
-
-        let path_for_actual = paths::test_results_dir().join("ui").join(
-            path.strip_prefix(&paths::manifest_dir())
+        let expected: NormalizedOutput = NormalizedOutput(
+            File::open(&path)
+                .map(|mut file| {
+                    let mut buf = String::new();
+                    file.read_to_string(&mut buf).unwrap();
+                    buf
+                })
                 .unwrap_or_else(|_| {
-                    unreachable!(
-                        "failed to strip prefix: CARGO_MANIFEST_DIR\nPath: {}\nManifest dir: {}",
-                        path.display(),
-                        paths::manifest_dir().display()
-                    )
-                }),
+                    // If xxx.stderr file does not exist, stderr should be empty.
+                    String::new()
+                })
+                .replace("\r\n", "\n"),
         );
-        eprintln!("{}:{}", path.display(), path_for_actual.display());
-        if self.0 == expected {
-            let _ = remove_file(path_for_actual);
+
+        if expected == self {
             return Ok(());
         }
-        create_dir_all(path_for_actual.parent().unwrap()).expect("failed to run `mkdir -p`");
 
-        let diff = Diff {
-            expected: NormalizedOutput(expected),
-            actual: self.clone(),
-        };
-        if std::env::var("UPDATE").unwrap_or(String::from("0")) == "0" {
-            assert_eq!(diff.expected, diff.actual, "Actual:\n{}", diff.actual);
-            return Err(diff);
+        eprintln!("Comparing output to {}", path.display());
+        create_dir_all(path.parent().unwrap()).expect("failed to run `mkdir -p`");
+
+        if std::env::var("UPDATE").unwrap_or(String::from("0")) == "1" {
+            crate::write_to_file(&path, &self.0);
+
+            eprintln!(
+                "Assertion failed: \nActual file printed to {}",
+                path.display()
+            );
         }
 
-        // ::write_to_file(&path_for_actual, &self.0);
-        crate::write_to_file(&path, &self.0);
+        if self.0.lines().count() <= 5 {
+            assert_eq!(expected, self, "Actual:\n{}", self);
+        }
 
-        eprintln!(
-            "Assertion failed: \nActual file printed to {}",
-            path_for_actual.display()
-        );
+        let diff = Diff {
+            expected,
+            actual: self,
+        };
 
+        pretty_assertions::assert_eq!(diff.expected, diff.actual, "Actual:\n{}", diff.actual);
+
+        // Actually unreachable.
         Err(diff)
     }
 }
@@ -184,8 +180,8 @@ fn adjust_canonicalization<P: AsRef<Path>>(p: P) -> String {
 fn adjust_canonicalization<P: AsRef<Path>>(p: P) -> String {
     const VERBATIM_PREFIX: &str = r#"\\?\"#;
     let p = p.as_ref().display().to_string();
-    if let Some(stripped) = p.strip_prefix(VERBATIM_PREFIX) {
-        stripped.to_string()
+    if p.starts_with(VERBATIM_PREFIX) {
+        p[VERBATIM_PREFIX.len()..].to_string()
     } else {
         p
     }

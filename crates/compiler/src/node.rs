@@ -1,9 +1,97 @@
 use global_common::Spanned;
 
 use crate::ast;
+use crate::{Visit, VisitWith};
 use std::fmt;
 use std::ops::Deref;
 use std::rc::Rc;
+
+#[derive(PartialEq, Eq, Clone)]
+pub enum Parameter {
+    Param(Rc<Param>),
+    ParamWithoutDecorators(Rc<ParamWithoutDecorators>),
+    TsAmbientParam(Rc<TsAmbientParam>),
+    TsParamProp(Rc<TsParamProp>),
+}
+
+impl Parameter {
+    pub fn parent(&self) -> BoundNode {
+        match self {
+            Parameter::Param(p) => p.parent.clone().unwrap(),
+            Parameter::ParamWithoutDecorators(p) => p.parent.clone().unwrap(),
+            Parameter::TsAmbientParam(p) => p.parent.clone().unwrap(),
+            Parameter::TsParamProp(p) => p.parent.clone().unwrap(),
+        }
+    }
+    pub fn pat(&self) -> ast::Pat {
+        match self {
+            Parameter::Param(p) => p.pat.clone(),
+            Parameter::ParamWithoutDecorators(p) => p.pat.clone(),
+            Parameter::TsAmbientParam(p) => p.pat.clone().into(),
+            Parameter::TsParamProp(p) => p.param.clone().into(),
+        }
+    }
+}
+
+macro_rules! impl_parameter {
+    ($ident:ident, $ty:ty) => {
+        impl From<Rc<$ty>> for Parameter {
+            fn from(param: Rc<$ty>) -> Self {
+                Self::$ident(param)
+            }
+        }
+        impl PartialEq<&Rc<ast::$ident>> for Parameter {
+            fn eq(&self, other: &&Rc<ast::$ident>) -> bool {
+                match self {
+                    Self::$ident(p) => &p.node == *other,
+                    _ => false,
+                }
+            }
+        }
+    };
+}
+impl_parameter!(Param, Param);
+impl_parameter!(ParamWithoutDecorators, ParamWithoutDecorators);
+impl_parameter!(TsAmbientParam, TsAmbientParam);
+impl_parameter!(TsParamProp, TsParamProp);
+
+impl From<Parameter> for BoundNode {
+    fn from(param: Parameter) -> Self {
+        match param {
+            Parameter::Param(n) => n.into(),
+            Parameter::ParamWithoutDecorators(n) => n.into(),
+            Parameter::TsAmbientParam(n) => n.into(),
+            Parameter::TsParamProp(n) => n.into(),
+        }
+    }
+}
+
+pub trait IsRestParam {
+    fn is_rest_param(&self) -> bool;
+}
+
+impl IsRestParam for Parameter {
+    fn is_rest_param(&self) -> bool {
+        match self {
+            Parameter::Param(p) => matches!(p.pat, ast::Pat::Rest(_)),
+            Parameter::ParamWithoutDecorators(p) => matches!(p.pat, ast::Pat::Rest(_)),
+            Parameter::TsAmbientParam(p) => matches!(p.pat, ast::TsAmbientParamPat::Rest(_)),
+            Parameter::TsParamProp(_) => false,
+        }
+    }
+}
+
+impl IsRestParam for BoundNode {
+    fn is_rest_param(&self) -> bool {
+        match self {
+            BoundNode::Param(p) => matches!(p.pat, ast::Pat::Rest(_)),
+            BoundNode::ParamWithoutDecorators(p) => matches!(p.pat, ast::Pat::Rest(_)),
+            BoundNode::TsAmbientParam(p) => matches!(p.pat, ast::TsAmbientParamPat::Rest(_)),
+            BoundNode::TsParamProp(_) => false,
+            _ => false,
+        }
+    }
+}
 
 pub trait Bind {
     fn bind(&self, parent: BoundNode) -> BoundNode {
@@ -200,15 +288,6 @@ impl Bind for ast::ParamOrTsParamProp {
     }
 }
 
-impl Bind for ast::PropOrSpread {
-    fn bind_to_opt_parent(&self, parent: Option<BoundNode>) -> BoundNode {
-        match self {
-            ast::PropOrSpread::Spread(n) => n.bind_to_opt_parent(parent),
-            ast::PropOrSpread::Prop(n) => n.bind_to_opt_parent(parent),
-        }
-    }
-}
-
 impl Bind for ast::Prop {
     fn bind_to_opt_parent(&self, parent: Option<BoundNode>) -> BoundNode {
         match self {
@@ -218,6 +297,7 @@ impl Bind for ast::Prop {
             ast::Prop::Getter(p) => p.bind_to_opt_parent(parent),
             ast::Prop::Setter(p) => p.bind_to_opt_parent(parent),
             ast::Prop::Method(p) => p.bind_to_opt_parent(parent),
+            ast::Prop::Spread(p) => p.bind_to_opt_parent(parent),
         }
     }
 }
@@ -327,13 +407,13 @@ impl Bind for ast::TsTypeElement {
     }
 }
 
-impl Bind for ast::TsFnParam {
+impl Bind for ast::TsAmbientParamPat {
     fn bind_to_opt_parent(&self, parent: Option<BoundNode>) -> BoundNode {
         match self {
-            ast::TsFnParam::Ident(p) => p.bind_to_opt_parent(parent),
-            ast::TsFnParam::Array(p) => p.bind_to_opt_parent(parent),
-            ast::TsFnParam::Rest(p) => p.bind_to_opt_parent(parent),
-            ast::TsFnParam::Object(p) => p.bind_to_opt_parent(parent),
+            ast::TsAmbientParamPat::Ident(p) => p.bind_to_opt_parent(parent),
+            ast::TsAmbientParamPat::Array(p) => p.bind_to_opt_parent(parent),
+            ast::TsAmbientParamPat::Rest(p) => p.bind_to_opt_parent(parent),
+            ast::TsAmbientParamPat::Object(p) => p.bind_to_opt_parent(parent),
         }
     }
 }
@@ -386,6 +466,149 @@ impl Bind for ast::TsLit {
     }
 }
 
+impl Bind for ast::JSXObject {
+    fn bind_to_opt_parent(&self, parent: Option<BoundNode>) -> BoundNode {
+        match self {
+            ast::JSXObject::JSXMemberExpr(n) => n.bind_to_opt_parent(parent),
+            ast::JSXObject::Ident(n) => n.bind_to_opt_parent(parent),
+        }
+    }
+}
+
+impl Bind for ast::JSXExpr {
+    fn bind_to_opt_parent(&self, parent: Option<BoundNode>) -> BoundNode {
+        match self {
+            ast::JSXExpr::JSXEmptyExpr(n) => n.bind_to_opt_parent(parent),
+            ast::JSXExpr::Expr(n) => n.bind_to_opt_parent(parent),
+        }
+    }
+}
+
+impl Bind for ast::JSXElementName {
+    fn bind_to_opt_parent(&self, parent: Option<BoundNode>) -> BoundNode {
+        match self {
+            ast::JSXElementName::Ident(n) => n.bind_to_opt_parent(parent),
+            ast::JSXElementName::JSXMemberExpr(n) => n.bind_to_opt_parent(parent),
+            ast::JSXElementName::JSXNamespacedName(n) => n.bind_to_opt_parent(parent),
+        }
+    }
+}
+
+impl Bind for ast::JSXAttrOrSpread {
+    fn bind_to_opt_parent(&self, parent: Option<BoundNode>) -> BoundNode {
+        match self {
+            ast::JSXAttrOrSpread::JSXAttr(n) => n.bind_to_opt_parent(parent),
+            ast::JSXAttrOrSpread::SpreadElement(n) => n.bind_to_opt_parent(parent),
+        }
+    }
+}
+
+impl Bind for ast::JSXAttrName {
+    fn bind_to_opt_parent(&self, parent: Option<BoundNode>) -> BoundNode {
+        match self {
+            ast::JSXAttrName::Ident(n) => n.bind_to_opt_parent(parent),
+            ast::JSXAttrName::JSXNamespacedName(n) => n.bind_to_opt_parent(parent),
+        }
+    }
+}
+
+impl Bind for ast::JSXAttrValue {
+    fn bind_to_opt_parent(&self, parent: Option<BoundNode>) -> BoundNode {
+        match self {
+            ast::JSXAttrValue::Lit(n) => n.bind_to_opt_parent(parent),
+            ast::JSXAttrValue::JSXExprContainer(n) => n.bind_to_opt_parent(parent),
+            ast::JSXAttrValue::JSXElement(n) => n.bind_to_opt_parent(parent),
+            ast::JSXAttrValue::JSXFragment(n) => n.bind_to_opt_parent(parent),
+        }
+    }
+}
+
+impl Bind for ast::JSXElementChild {
+    fn bind_to_opt_parent(&self, parent: Option<BoundNode>) -> BoundNode {
+        match self {
+            ast::JSXElementChild::JSXText(n) => n.bind_to_opt_parent(parent),
+            ast::JSXElementChild::JSXExprContainer(n) => n.bind_to_opt_parent(parent),
+            ast::JSXElementChild::JSXSpreadChild(n) => n.bind_to_opt_parent(parent),
+            ast::JSXElementChild::JSXElement(n) => n.bind_to_opt_parent(parent),
+            ast::JSXElementChild::JSXFragment(n) => n.bind_to_opt_parent(parent),
+        }
+    }
+}
+
+impl Bind for ast::DefaultDecl {
+    fn bind_to_opt_parent(&self, parent: Option<BoundNode>) -> BoundNode {
+        match self {
+            ast::DefaultDecl::Class(n) => n.bind_to_opt_parent(parent),
+            ast::DefaultDecl::Fn(n) => n.bind_to_opt_parent(parent),
+            ast::DefaultDecl::TsInterfaceDecl(n) => n.bind_to_opt_parent(parent),
+        }
+    }
+}
+
+impl Bind for ast::ImportSpecifier {
+    fn bind_to_opt_parent(&self, parent: Option<BoundNode>) -> BoundNode {
+        match self {
+            ast::ImportSpecifier::Named(n) => n.bind_to_opt_parent(parent),
+            ast::ImportSpecifier::Default(n) => n.bind_to_opt_parent(parent),
+            ast::ImportSpecifier::Namespace(n) => n.bind_to_opt_parent(parent),
+        }
+    }
+}
+
+impl Bind for ast::ExportSpecifier {
+    fn bind_to_opt_parent(&self, parent: Option<BoundNode>) -> BoundNode {
+        match self {
+            ast::ExportSpecifier::Namespace(n) => n.bind_to_opt_parent(parent),
+            ast::ExportSpecifier::Default(n) => n.bind_to_opt_parent(parent),
+            ast::ExportSpecifier::Named(n) => n.bind_to_opt_parent(parent),
+        }
+    }
+}
+
+impl Bind for ast::TsParamPropParam {
+    fn bind_to_opt_parent(&self, parent: Option<BoundNode>) -> BoundNode {
+        match self {
+            ast::TsParamPropParam::Ident(n) => n.bind_to_opt_parent(parent),
+            ast::TsParamPropParam::Assign(n) => n.bind_to_opt_parent(parent),
+        }
+    }
+}
+
+impl Bind for ast::TsTypeQueryExpr {
+    fn bind_to_opt_parent(&self, parent: Option<BoundNode>) -> BoundNode {
+        match self {
+            ast::TsTypeQueryExpr::TsEntityName(n) => n.bind_to_opt_parent(parent),
+            ast::TsTypeQueryExpr::Import(n) => n.bind_to_opt_parent(parent),
+        }
+    }
+}
+
+impl Bind for ast::TsEnumMemberId {
+    fn bind_to_opt_parent(&self, parent: Option<BoundNode>) -> BoundNode {
+        match self {
+            ast::TsEnumMemberId::Ident(n) => n.bind_to_opt_parent(parent),
+            ast::TsEnumMemberId::Str(n) => n.bind_to_opt_parent(parent),
+        }
+    }
+}
+
+impl Bind for ast::TsModuleRef {
+    fn bind_to_opt_parent(&self, parent: Option<BoundNode>) -> BoundNode {
+        match self {
+            ast::TsModuleRef::TsEntityName(n) => n.bind_to_opt_parent(parent),
+            ast::TsModuleRef::TsExternalModuleRef(n) => n.bind_to_opt_parent(parent),
+        }
+    }
+}
+
+impl Bind for ast::ExprOrSpread {
+    fn bind_to_opt_parent(&self, parent: Option<BoundNode>) -> BoundNode {
+        match self {
+            ast::ExprOrSpread::Spread(n) => n.bind_to_opt_parent(parent),
+            ast::ExprOrSpread::Expr(n) => n.bind_to_opt_parent(parent),
+        }
+    }
+}
 // impl Bind for ast:: {
 //     fn bind_to_opt_parent(&self, parent: Option<BoundNode>) -> BoundNode {
 //         match self {
@@ -394,37 +617,58 @@ impl Bind for ast::TsLit {
 //     }
 // }
 
-macro_rules! make_enum {
-    ($name:ident, [$($field:ident,)*]) => {
+macro_rules! make {
+    ($($field:ident,)*) => {
         // Enum declaration:
-        #[derive(PartialEq, Eq, Hash, Clone, Debug)]
-        pub enum $name {
+        #[derive(PartialEq, Eq, Hash, Clone)]
+        pub enum BoundNode {
             $($field(Rc<$field>),)*
+        }
+        #[derive(PartialEq, Eq, Hash, Clone)]
+        pub enum Node {
+            $($field(Rc<ast::$field>),)*
         }
 
         // Enum impls:
 
-        // impl fmt::Debug for $name {
-        //     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        //         // let (name, span) = match self {
-        //         //     $(
-        //         //         $name::$field(a) => (stringify!($field), a.span()),
-        //         //     )*
-        //         // };
-        //         // f.write_fmt(format_args!("({}, {:?})", name, span))
+        impl fmt::Debug for BoundNode {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                // let (name, span) = match self {
+                //     $(
+                //         BoundNode::$field(a) => (stringify!($field), a.span()),
+                //     )*
+                // };
+                // f.write_fmt(format_args!("({}, {:?})", name, span))
 
-        //         // todo!();
+                // todo!();
 
-        //          match self {
-        //             $(
-        //                 $name::$field(_) => f.write_str(stringify!($field)),
-        //             )*
-        //         }
+                //  match self {
+                //     $(
+                //         BoundNode::$field(_) => f.write_str(stringify!($field)),
+                //     )*
+                // }
 
-        //     }
-        // }
+                match self {
+                    $(
+                        BoundNode::$field(_) => f.write_fmt(format_args!("({}, {:?})", stringify!($field), self.span())),
+                    )*
+                }
 
-        impl $name {
+            }
+        }
+
+        impl fmt::Debug for Node {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                match self {
+                    $(
+                        Node::$field(_) => f.write_fmt(format_args!("({}, {:?})", stringify!($field), self.span())),
+                    )*
+                }
+
+            }
+        }
+
+        impl BoundNode {
             pub fn parent(&self) -> Option<Self> {
                 match self {
                     $(
@@ -432,29 +676,56 @@ macro_rules! make_enum {
                     )*
                 }
             }
+            pub fn visit_with<V:Visit>(&self, visitor: &mut V) {
+                match self {
+                    $(
+                        Self::$field(node) => {node.node.visit_with(visitor, node.parent.clone())},
+                    )*
+                }
+            }
         }
 
-        // Structs and struct impls:
+        $(
+            impl From<Rc<$field>> for BoundNode {
+                fn from(other: Rc<$field>) -> BoundNode {
+                    BoundNode::$field(other)
+                }
+            }
+
+            impl From<Rc<$field>> for Node {
+                fn from(other: Rc<$field>) -> Node {
+                    Node::$field(other.node.clone())
+                }
+            }
+
+            impl From<Rc<ast::$field>> for Node {
+                fn from(other: Rc<ast::$field>) -> Node {
+                    Node::$field(other)
+                }
+            }
+        )*
+
+        // Node structs and impls:
         $(
             impl Bind for Rc<ast::$field> {
                 fn bind_to_opt_parent(&self, parent: Option<BoundNode>) -> BoundNode {
                     BoundNode::$field(Rc::new($field {
                         node: self.clone(),
-                        parent: parent,
+                        parent,
                     }))
                 }
             }
 
-            impl From<Rc<$field>> for $name {
-                fn from(other: Rc<$field>) -> $name {
-                    $name::$field(other)
-                }
-            }
-
-            #[derive(PartialEq, Hash)]
+            #[derive(PartialEq, Hash, Debug)]
             pub struct $field {
                 pub node: Rc<ast::$field>,
-                pub parent: Option<$name>,
+                pub parent: Option<BoundNode>,
+            }
+
+            impl $field {
+                pub fn new(node: Rc<ast::$field>, parent: Option<BoundNode>) -> Rc<Self> {
+                    Rc::new(Self {node, parent})
+                }
             }
 
             impl Eq for $field {}
@@ -467,362 +738,567 @@ macro_rules! make_enum {
                 }
             }
 
-            impl fmt::Debug for $field {
-                fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    f.write_str(stringify!($field))
+            // impl fmt::Debug for $field {
+            //     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            //         f.write_str(stringify!($field))
+            //     }
+            // }
+        )*
+
+        impl From<BoundNode> for Node {
+            fn from(other: BoundNode) -> Node {
+                match other {
+                    $(
+                        BoundNode::$field(node) => {Node::$field(node.node.clone())},
+                    )*
                 }
             }
-        )*
+        }
     };
 }
 
-make_enum!(
-    BoundNode,
-    [
-        // class
-        Class,
-        ClassProp,
-        PrivateProp,
-        ClassMethod,
-        PrivateMethod,
-        Constructor,
-        Decorator,
-        // decl
-        FnDecl,
-        ClassDecl,
-        VarDecl,
-        VarDeclarator,
-        // Expr
-        ThisExpr,
-        ArrayLit,
-        ObjectLit,
-        SpreadElement,
-        UnaryExpr,
-        UpdateExpr,
-        BinExpr,
-        FnExpr,
-        ClassExpr,
-        AssignExpr,
-        MemberExpr,
-        CondExpr,
-        CallExpr,
-        NewExpr,
-        SeqExpr,
-        ArrowExpr,
-        YieldExpr,
-        MetaPropExpr,
-        AwaitExpr,
-        Tpl,
-        TaggedTpl,
-        TplElement,
-        ParenExpr,
-        Super,
-        ExprOrSpread,
-        OptChainExpr,
-        // function
-        Function,
-        Param,
-        //ident
-        BindingIdent,
-        Ident,
-        PrivateName,
-        //jsx
-        JSXMemberExpr,
-        JSXNamespacedName,
-        JSXEmptyExpr,
-        JSXExprContainer,
-        JSXSpreadChild,
-        JSXOpeningElement,
-        JSXClosingElement,
-        JSXAttr,
-        JSXText,
-        JSXElement,
-        JSXFragment,
-        JSXOpeningFragment,
-        JSXClosingFragment,
-        //lib
-        Invalid,
-        // Lit
-        Str,
-        Bool,
-        Null,
-        Number,
-        BigInt,
-        Regex,
-        // module_decl
-        ExportDefaultExpr,
-        ExportDecl,
-        ImportDecl,
-        ExportAll,
-        NamedExport,
-        ExportDefaultDecl,
-        ImportDefaultSpecifier,
-        ImportStarAsSpecifier,
-        ImportNamedSpecifier,
-        ExportNamespaceSpecifier,
-        ExportDefaultSpecifier,
-        ExportNamedSpecifier,
-        //module
-        Script,
-        Module,
-        //pat
-        ArrayPat,
-        ObjectPat,
-        AssignPat,
-        RestPat,
-        KeyValuePatProp,
-        AssignPatProp,
-        //prop
-        KeyValueProp,
-        AssignProp,
-        GetterProp,
-        SetterProp,
-        MethodProp,
-        ComputedPropName,
-        //stmt
-        BlockStmt,
-        ExprStmt,
-        EmptyStmt,
-        DebuggerStmt,
-        WithStmt,
-        ReturnStmt,
-        LabeledStmt,
-        BreakStmt,
-        ContinueStmt,
-        IfStmt,
-        SwitchStmt,
-        ThrowStmt,
-        TryStmt,
-        WhileStmt,
-        DoWhileStmt,
-        ForStmt,
-        ForInStmt,
-        ForOfStmt,
-        SwitchCase,
-        CatchClause,
-        // typescript
-        TsTypeAnn,
-        TsTypeParamDecl,
-        TsTypeParam,
-        TsTypeParamInstantiation,
-        TsParamProp,
-        TsQualifiedName,
-        TsCallSignatureDecl,
-        TsConstructSignatureDecl,
-        TsPropertySignature,
-        TsGetterSignature,
-        TsSetterSignature,
-        TsMethodSignature,
-        TsIndexSignature,
-        TsKeywordType,
-        TsThisType,
-        TsFnType,
-        TsConstructorType,
-        TsTypeRef,
-        TsTypePredicate,
-        TsTypeQuery,
-        TsImportType,
-        TsTypeLit,
-        TsArrayType,
-        TsTupleType,
-        TsTupleElement,
-        TsOptionalType,
-        TsRestType,
-        TsUnionType,
-        TsIntersectionType,
-        TsConditionalType,
-        TsInferType,
-        TsParenthesizedType,
-        TsTypeOperator,
-        TsIndexedAccessType,
-        TsMappedType,
-        TsLitType,
-        TsTplLitType,
-        TsInterfaceDecl,
-        TsInterfaceBody,
-        TsExprWithTypeArgs,
-        TsTypeAliasDecl,
-        TsEnumDecl,
-        TsEnumMember,
-        TsModuleDecl,
-        TsModuleBlock,
-        TsNamespaceDecl,
-        TsImportEqualsDecl,
-        TsExternalModuleRef,
-        TsExportAssignment,
-        TsNamespaceExportDecl,
-        TsAsExpr,
-        TsTypeAssertion,
-        TsNonNullExpr,
-        TsConstAssertion,
-    ]
+make!(
+    // class
+    Class,
+    ClassProp,
+    PrivateProp,
+    ClassMethod,
+    PrivateMethod,
+    Constructor,
+    Decorator,
+    // decl
+    FnDecl,
+    ClassDecl,
+    VarDecl,
+    VarDeclarator,
+    // Expr
+    ThisExpr,
+    ArrayLit,
+    ObjectLit,
+    SpreadElement,
+    UnaryExpr,
+    UpdateExpr,
+    BinExpr,
+    FnExpr,
+    ClassExpr,
+    AssignExpr,
+    MemberExpr,
+    CondExpr,
+    CallExpr,
+    NewExpr,
+    SeqExpr,
+    ArrowExpr,
+    YieldExpr,
+    MetaPropExpr,
+    AwaitExpr,
+    Tpl,
+    TaggedTpl,
+    TplElement,
+    ParenExpr,
+    Super,
+    OptChainExpr,
+    // function
+    Function,
+    Param,
+    ParamWithoutDecorators,
+    //ident
+    BindingIdent,
+    Ident,
+    PrivateName,
+    //jsx
+    JSXMemberExpr,
+    JSXNamespacedName,
+    JSXEmptyExpr,
+    JSXExprContainer,
+    JSXSpreadChild,
+    JSXOpeningElement,
+    JSXClosingElement,
+    JSXAttr,
+    JSXText,
+    JSXElement,
+    JSXFragment,
+    JSXOpeningFragment,
+    JSXClosingFragment,
+    //lib
+    Invalid,
+    // Lit
+    Str,
+    Bool,
+    Null,
+    Number,
+    BigInt,
+    Regex,
+    // module_decl
+    ExportDefaultExpr,
+    ExportDecl,
+    ImportDecl,
+    ExportAll,
+    NamedExport,
+    ExportDefaultDecl,
+    ImportDefaultSpecifier,
+    ImportStarAsSpecifier,
+    ImportNamedSpecifier,
+    ExportNamespaceSpecifier,
+    ExportDefaultSpecifier,
+    ExportNamedSpecifier,
+    //module
+    Script,
+    Module,
+    //pat
+    ArrayPat,
+    ObjectPat,
+    AssignPat,
+    RestPat,
+    KeyValuePatProp,
+    AssignPatProp,
+    //prop
+    KeyValueProp,
+    AssignProp,
+    GetterProp,
+    SetterProp,
+    MethodProp,
+    ComputedPropName,
+    SpreadAssignment,
+    //stmt
+    BlockStmt,
+    ExprStmt,
+    EmptyStmt,
+    DebuggerStmt,
+    WithStmt,
+    ReturnStmt,
+    LabeledStmt,
+    BreakStmt,
+    ContinueStmt,
+    IfStmt,
+    SwitchStmt,
+    ThrowStmt,
+    TryStmt,
+    WhileStmt,
+    DoWhileStmt,
+    ForStmt,
+    ForInStmt,
+    ForOfStmt,
+    SwitchCase,
+    CatchClause,
+    // typescript
+    TsTypeAnn,
+    TsTypeParamDecl,
+    TsTypeParam,
+    TsTypeParamInstantiation,
+    TsParamProp,
+    TsQualifiedName,
+    TsCallSignatureDecl,
+    TsConstructSignatureDecl,
+    TsPropertySignature,
+    TsGetterSignature,
+    TsSetterSignature,
+    TsMethodSignature,
+    TsIndexSignature,
+    TsKeywordType,
+    TsThisType,
+    TsAmbientParam,
+    TsFnType,
+    TsConstructorType,
+    TsTypeRef,
+    TsTypePredicate,
+    TsTypeQuery,
+    TsImportType,
+    TsTypeLit,
+    TsArrayType,
+    TsTupleType,
+    TsTupleElement,
+    TsOptionalType,
+    TsRestType,
+    TsUnionType,
+    TsIntersectionType,
+    TsConditionalType,
+    TsInferType,
+    TsParenthesizedType,
+    TsTypeOperator,
+    TsIndexedAccessType,
+    TsMappedType,
+    TsLitType,
+    TsTplLitType,
+    TsInterfaceDecl,
+    TsInterfaceBody,
+    TsExprWithTypeArgs,
+    TsTypeAliasDecl,
+    TsEnumDecl,
+    TsEnumMember,
+    TsModuleDecl,
+    TsModuleBlock,
+    TsNamespaceDecl,
+    TsImportEqualsDecl,
+    TsExternalModuleRef,
+    TsExportAssignment,
+    TsNamespaceExportDecl,
+    TsAsExpr,
+    TsTypeAssertion,
+    TsNonNullExpr,
+    TsConstAssertion,
 );
 
-impl BoundNode {
-    pub fn span(&self) -> Option<global_common::Span> {
-        match self {
-            BoundNode::Class(n) => Some(n.span),
-            BoundNode::ClassProp(n) => Some(n.span),
-            BoundNode::PrivateProp(n) => Some(n.span),
-            BoundNode::ClassMethod(n) => Some(n.span),
-            BoundNode::PrivateMethod(n) => Some(n.span),
-            BoundNode::Constructor(n) => Some(n.span),
-            BoundNode::Decorator(n) => Some(n.span),
-            BoundNode::FnDecl(_) => None,
-            BoundNode::ClassDecl(_) => None,
-            BoundNode::VarDecl(n) => Some(n.span),
-            BoundNode::VarDeclarator(n) => Some(n.span),
-            BoundNode::ThisExpr(n) => Some(n.span),
-            BoundNode::ArrayLit(n) => Some(n.span),
-            BoundNode::ObjectLit(n) => Some(n.span),
-            BoundNode::SpreadElement(_) => None,
-            BoundNode::UnaryExpr(n) => Some(n.span),
-            BoundNode::UpdateExpr(n) => Some(n.span),
-            BoundNode::BinExpr(n) => Some(n.span),
-            BoundNode::FnExpr(_) => None,
-            BoundNode::ClassExpr(_) => None,
-            BoundNode::AssignExpr(n) => Some(n.span),
-            BoundNode::MemberExpr(n) => Some(n.span),
-            BoundNode::CondExpr(n) => Some(n.span),
-            BoundNode::CallExpr(n) => Some(n.span),
-            BoundNode::NewExpr(n) => Some(n.span),
-            BoundNode::SeqExpr(n) => Some(n.span),
-            BoundNode::ArrowExpr(n) => Some(n.span),
-            BoundNode::YieldExpr(n) => Some(n.span),
-            BoundNode::MetaPropExpr(_) => None,
-            BoundNode::AwaitExpr(n) => Some(n.span),
-            BoundNode::Tpl(n) => Some(n.span),
-            BoundNode::TaggedTpl(n) => Some(n.span),
-            BoundNode::TplElement(n) => Some(n.span),
-            BoundNode::ParenExpr(n) => Some(n.span),
-            BoundNode::Super(n) => Some(n.span),
-            BoundNode::ExprOrSpread(_) => None,
-            BoundNode::OptChainExpr(n) => Some(n.span),
-            BoundNode::Function(n) => Some(n.span),
-            BoundNode::Param(n) => Some(n.span),
-            BoundNode::BindingIdent(_) => None,
-            BoundNode::Ident(n) => Some(n.span),
-            BoundNode::PrivateName(n) => Some(n.span),
-            BoundNode::JSXMemberExpr(_) => None,
-            BoundNode::JSXNamespacedName(_) => None,
-            BoundNode::JSXEmptyExpr(n) => Some(n.span),
-            BoundNode::JSXExprContainer(n) => Some(n.span),
-            BoundNode::JSXSpreadChild(n) => Some(n.span),
-            BoundNode::JSXOpeningElement(n) => Some(n.span),
-            BoundNode::JSXClosingElement(n) => Some(n.span),
-            BoundNode::JSXAttr(n) => Some(n.span),
-            BoundNode::JSXText(n) => Some(n.span),
-            BoundNode::JSXElement(n) => Some(n.span),
-            BoundNode::JSXFragment(n) => Some(n.span),
-            BoundNode::JSXOpeningFragment(n) => Some(n.span),
-            BoundNode::JSXClosingFragment(n) => Some(n.span),
-            BoundNode::Invalid(n) => Some(n.span),
-            BoundNode::Str(n) => Some(n.span),
-            BoundNode::Bool(n) => Some(n.span),
-            BoundNode::Null(n) => Some(n.span),
-            BoundNode::Number(n) => Some(n.span),
-            BoundNode::BigInt(n) => Some(n.span),
-            BoundNode::Regex(n) => Some(n.span),
-            BoundNode::ExportDefaultExpr(n) => Some(n.span),
-            BoundNode::ExportDecl(n) => Some(n.span),
-            BoundNode::ImportDecl(n) => Some(n.span),
-            BoundNode::ExportAll(n) => Some(n.span),
-            BoundNode::NamedExport(n) => Some(n.span),
-            BoundNode::ExportDefaultDecl(n) => Some(n.span),
-            BoundNode::ImportDefaultSpecifier(n) => Some(n.span),
-            BoundNode::ImportStarAsSpecifier(n) => Some(n.span),
-            BoundNode::ImportNamedSpecifier(n) => Some(n.span),
-            BoundNode::ExportNamespaceSpecifier(n) => Some(n.span),
-            BoundNode::ExportDefaultSpecifier(_) => None,
-            BoundNode::ExportNamedSpecifier(n) => Some(n.span),
-            BoundNode::Script(n) => Some(n.span),
-            BoundNode::Module(n) => Some(n.span),
-            BoundNode::ArrayPat(n) => Some(n.span),
-            BoundNode::ObjectPat(n) => Some(n.span),
-            BoundNode::AssignPat(n) => Some(n.span),
-            BoundNode::RestPat(n) => Some(n.span),
-            BoundNode::KeyValuePatProp(_) => None,
-            BoundNode::AssignPatProp(n) => Some(n.span),
-            BoundNode::KeyValueProp(_) => None,
-            BoundNode::AssignProp(_) => None,
-            BoundNode::GetterProp(n) => Some(n.span),
-            BoundNode::SetterProp(n) => Some(n.span),
-            BoundNode::MethodProp(_) => None,
-            BoundNode::ComputedPropName(n) => Some(n.span),
-            BoundNode::BlockStmt(n) => Some(n.span),
-            BoundNode::ExprStmt(n) => Some(n.span),
-            BoundNode::EmptyStmt(n) => Some(n.span),
-            BoundNode::DebuggerStmt(n) => Some(n.span),
-            BoundNode::WithStmt(n) => Some(n.span),
-            BoundNode::ReturnStmt(n) => Some(n.span),
-            BoundNode::LabeledStmt(n) => Some(n.span),
-            BoundNode::BreakStmt(n) => Some(n.span),
-            BoundNode::ContinueStmt(n) => Some(n.span),
-            BoundNode::IfStmt(n) => Some(n.span),
-            BoundNode::SwitchStmt(n) => Some(n.span),
-            BoundNode::ThrowStmt(n) => Some(n.span),
-            BoundNode::TryStmt(n) => Some(n.span),
-            BoundNode::WhileStmt(n) => Some(n.span),
-            BoundNode::DoWhileStmt(n) => Some(n.span),
-            BoundNode::ForStmt(n) => Some(n.span),
-            BoundNode::ForInStmt(n) => Some(n.span),
-            BoundNode::ForOfStmt(n) => Some(n.span),
-            BoundNode::SwitchCase(n) => Some(n.span),
-            BoundNode::CatchClause(n) => Some(n.span),
-            BoundNode::TsTypeAnn(n) => Some(n.span),
-            BoundNode::TsTypeParamDecl(n) => Some(n.span),
-            BoundNode::TsTypeParam(n) => Some(n.span),
-            BoundNode::TsTypeParamInstantiation(n) => Some(n.span),
-            BoundNode::TsParamProp(n) => Some(n.span),
-            BoundNode::TsQualifiedName(_) => None,
-            BoundNode::TsCallSignatureDecl(n) => Some(n.span),
-            BoundNode::TsConstructSignatureDecl(n) => Some(n.span),
-            BoundNode::TsPropertySignature(n) => Some(n.span),
-            BoundNode::TsGetterSignature(n) => Some(n.span),
-            BoundNode::TsSetterSignature(n) => Some(n.span),
-            BoundNode::TsMethodSignature(n) => Some(n.span),
-            BoundNode::TsIndexSignature(n) => Some(n.span),
-            BoundNode::TsKeywordType(n) => Some(n.span),
-            BoundNode::TsThisType(n) => Some(n.span),
-            BoundNode::TsFnType(n) => Some(n.span),
-            BoundNode::TsConstructorType(n) => Some(n.span),
-            BoundNode::TsTypeRef(n) => Some(n.span),
-            BoundNode::TsTypePredicate(n) => Some(n.span),
-            BoundNode::TsTypeQuery(n) => Some(n.span),
-            BoundNode::TsImportType(n) => Some(n.span),
-            BoundNode::TsTypeLit(n) => Some(n.span),
-            BoundNode::TsArrayType(n) => Some(n.span),
-            BoundNode::TsTupleType(n) => Some(n.span),
-            BoundNode::TsTupleElement(n) => Some(n.span),
-            BoundNode::TsOptionalType(n) => Some(n.span),
-            BoundNode::TsRestType(n) => Some(n.span),
-            BoundNode::TsUnionType(n) => Some(n.span),
-            BoundNode::TsIntersectionType(n) => Some(n.span),
-            BoundNode::TsConditionalType(n) => Some(n.span),
-            BoundNode::TsInferType(n) => Some(n.span),
-            BoundNode::TsParenthesizedType(n) => Some(n.span),
-            BoundNode::TsTypeOperator(n) => Some(n.span),
-            BoundNode::TsIndexedAccessType(n) => Some(n.span),
-            BoundNode::TsMappedType(n) => Some(n.span),
-            BoundNode::TsLitType(n) => Some(n.span),
-            BoundNode::TsTplLitType(n) => Some(n.span),
-            BoundNode::TsInterfaceDecl(n) => Some(n.span),
-            BoundNode::TsInterfaceBody(n) => Some(n.span),
-            BoundNode::TsExprWithTypeArgs(n) => Some(n.span),
-            BoundNode::TsTypeAliasDecl(n) => Some(n.span),
-            BoundNode::TsEnumDecl(n) => Some(n.span),
-            BoundNode::TsEnumMember(n) => Some(n.span),
-            BoundNode::TsModuleDecl(n) => Some(n.span),
-            BoundNode::TsModuleBlock(n) => Some(n.span),
-            BoundNode::TsNamespaceDecl(n) => Some(n.span),
-            BoundNode::TsImportEqualsDecl(n) => Some(n.span),
-            BoundNode::TsExternalModuleRef(n) => Some(n.span),
-            BoundNode::TsExportAssignment(n) => Some(n.span),
-            BoundNode::TsNamespaceExportDecl(n) => Some(n.span),
-            BoundNode::TsAsExpr(n) => Some(n.span),
-            BoundNode::TsTypeAssertion(n) => Some(n.span),
-            BoundNode::TsNonNullExpr(n) => Some(n.span),
-            BoundNode::TsConstAssertion(n) => Some(n.span),
+macro_rules! impl_span {
+    ($ty:ty) => {
+        impl $ty {
+            pub fn span(&self) -> global_common::Span {
+                match self {
+                    Self::Class(n) => n.span,
+                    Self::ClassProp(n) => n.span,
+                    Self::PrivateProp(n) => n.span,
+                    Self::ClassMethod(n) => n.span,
+                    Self::PrivateMethod(n) => n.span,
+                    Self::Constructor(n) => n.span,
+                    Self::Decorator(n) => n.span,
+                    Self::FnDecl(n) => n.function.span,
+                    Self::ClassDecl(c) => c.class.span,
+                    Self::VarDecl(n) => n.span,
+                    Self::VarDeclarator(n) => n.span,
+                    Self::ThisExpr(n) => n.span,
+                    Self::ArrayLit(n) => n.span,
+                    Self::ObjectLit(n) => n.span,
+                    Self::SpreadElement(n) => n.dot3_token.with_hi(n.expr.span().hi()),
+                    Self::UnaryExpr(n) => n.span,
+                    Self::UpdateExpr(n) => n.span,
+                    Self::BinExpr(n) => n.span,
+                    Self::FnExpr(n) => n.function.span,
+                    Self::ClassExpr(c) => c.class.span,
+                    Self::AssignExpr(n) => n.span,
+                    Self::MemberExpr(n) => n.span,
+                    Self::CondExpr(n) => n.span,
+                    Self::CallExpr(n) => n.span,
+                    Self::NewExpr(n) => n.span,
+                    Self::SeqExpr(n) => n.span,
+                    Self::ArrowExpr(n) => n.span,
+                    Self::YieldExpr(n) => n.span,
+                    Self::MetaPropExpr(n) => n.meta.span.with_hi(n.prop.span.hi()),
+                    Self::AwaitExpr(n) => n.span,
+                    Self::Tpl(n) => n.span,
+                    Self::TaggedTpl(n) => n.span,
+                    Self::TplElement(n) => n.span,
+                    Self::ParenExpr(n) => n.span,
+                    Self::Super(n) => n.span,
+                    Self::OptChainExpr(n) => n.span,
+                    Self::Function(n) => n.span,
+                    Self::Param(n) => n.span,
+                    Self::ParamWithoutDecorators(n) => n.pat.span(),
+                    Self::BindingIdent(n) => n.id.span,
+                    Self::Ident(n) => n.span,
+                    Self::PrivateName(n) => n.span,
+                    Self::JSXMemberExpr(_) => todo!("JSXMemberExpr"),
+                    Self::JSXNamespacedName(_) => todo!("JSXNamespacedName"),
+                    Self::JSXEmptyExpr(n) => n.span,
+                    Self::JSXExprContainer(n) => n.span,
+                    Self::JSXSpreadChild(n) => n.span,
+                    Self::JSXOpeningElement(n) => n.span,
+                    Self::JSXClosingElement(n) => n.span,
+                    Self::JSXAttr(n) => n.span,
+                    Self::JSXText(n) => n.span,
+                    Self::JSXElement(n) => n.span,
+                    Self::JSXFragment(n) => n.span,
+                    Self::JSXOpeningFragment(n) => n.span,
+                    Self::JSXClosingFragment(n) => n.span,
+                    Self::Invalid(n) => n.span,
+                    Self::Str(n) => n.span,
+                    Self::Bool(n) => n.span,
+                    Self::Null(n) => n.span,
+                    Self::Number(n) => n.span,
+                    Self::BigInt(n) => n.span,
+                    Self::Regex(n) => n.span,
+                    Self::ExportDefaultExpr(n) => n.span,
+                    Self::ExportDecl(n) => n.span,
+                    Self::ImportDecl(n) => n.span,
+                    Self::ExportAll(n) => n.span,
+                    Self::NamedExport(n) => n.span,
+                    Self::ExportDefaultDecl(n) => n.span,
+                    Self::ImportDefaultSpecifier(n) => n.span,
+                    Self::ImportStarAsSpecifier(n) => n.span,
+                    Self::ImportNamedSpecifier(n) => n.span,
+                    Self::ExportNamespaceSpecifier(n) => n.span,
+                    Self::ExportDefaultSpecifier(_) => todo!("ExportDefaultSpecifier"),
+                    Self::ExportNamedSpecifier(n) => n.span,
+                    Self::Script(n) => n.span,
+                    Self::Module(n) => n.span,
+                    Self::ArrayPat(n) => n.span,
+                    Self::ObjectPat(n) => n.span,
+                    Self::AssignPat(n) => n.span,
+                    Self::RestPat(n) => n.span,
+                    Self::KeyValuePatProp(n) => n.key.span().with_hi(n.value.span().hi()),
+                    Self::AssignPatProp(n) => n.span,
+                    Self::KeyValueProp(n) => n.key.span().with_hi(n.value.span().hi()),
+                    Self::AssignProp(n) => n.key.span.with_hi(n.value.span().hi()),
+                    Self::GetterProp(n) => n.span,
+                    Self::SetterProp(n) => n.span,
+                    Self::MethodProp(n) => n.function.span,
+                    Self::ComputedPropName(n) => n.span,
+                    Self::SpreadAssignment(n) => n.dot3_token.with_hi(n.expr.span().hi()),
+                    Self::BlockStmt(n) => n.span,
+                    Self::ExprStmt(n) => n.span,
+                    Self::EmptyStmt(n) => n.span,
+                    Self::DebuggerStmt(n) => n.span,
+                    Self::WithStmt(n) => n.span,
+                    Self::ReturnStmt(n) => n.span,
+                    Self::LabeledStmt(n) => n.span,
+                    Self::BreakStmt(n) => n.span,
+                    Self::ContinueStmt(n) => n.span,
+                    Self::IfStmt(n) => n.span,
+                    Self::SwitchStmt(n) => n.span,
+                    Self::ThrowStmt(n) => n.span,
+                    Self::TryStmt(n) => n.span,
+                    Self::WhileStmt(n) => n.span,
+                    Self::DoWhileStmt(n) => n.span,
+                    Self::ForStmt(n) => n.span,
+                    Self::ForInStmt(n) => n.span,
+                    Self::ForOfStmt(n) => n.span,
+                    Self::SwitchCase(n) => n.span,
+                    Self::CatchClause(n) => n.span,
+                    Self::TsTypeAnn(n) => n.span,
+                    Self::TsTypeParamDecl(n) => n.span,
+                    Self::TsTypeParam(n) => n.span,
+                    Self::TsTypeParamInstantiation(n) => n.span,
+                    Self::TsParamProp(n) => n.span,
+                    Self::TsQualifiedName(n) => n.left.span().with_hi(n.right.span.hi()),
+                    Self::TsCallSignatureDecl(n) => n.span,
+                    Self::TsConstructSignatureDecl(n) => n.span,
+                    Self::TsPropertySignature(n) => n.span,
+                    Self::TsGetterSignature(n) => n.span,
+                    Self::TsSetterSignature(n) => n.span,
+                    Self::TsMethodSignature(n) => n.span,
+                    Self::TsIndexSignature(n) => n.span,
+                    Self::TsKeywordType(n) => n.span,
+                    Self::TsThisType(n) => n.span,
+                    Self::TsAmbientParam(n) => n.pat.span(),
+                    Self::TsFnType(n) => n.span,
+                    Self::TsConstructorType(n) => n.span,
+                    Self::TsTypeRef(n) => n.span,
+                    Self::TsTypePredicate(n) => n.span,
+                    Self::TsTypeQuery(n) => n.span,
+                    Self::TsImportType(n) => n.span,
+                    Self::TsTypeLit(n) => n.span,
+                    Self::TsArrayType(n) => n.span,
+                    Self::TsTupleType(n) => n.span,
+                    Self::TsTupleElement(n) => n.span,
+                    Self::TsOptionalType(n) => n.span,
+                    Self::TsRestType(n) => n.span,
+                    Self::TsUnionType(n) => n.span,
+                    Self::TsIntersectionType(n) => n.span,
+                    Self::TsConditionalType(n) => n.span,
+                    Self::TsInferType(n) => n.span,
+                    Self::TsParenthesizedType(n) => n.span,
+                    Self::TsTypeOperator(n) => n.span,
+                    Self::TsIndexedAccessType(n) => n.span,
+                    Self::TsMappedType(n) => n.span,
+                    Self::TsLitType(n) => n.span,
+                    Self::TsTplLitType(n) => n.span,
+                    Self::TsInterfaceDecl(n) => n.span,
+                    Self::TsInterfaceBody(n) => n.span,
+                    Self::TsExprWithTypeArgs(n) => n.span,
+                    Self::TsTypeAliasDecl(n) => n.span,
+                    Self::TsEnumDecl(n) => n.span,
+                    Self::TsEnumMember(n) => n.span,
+                    Self::TsModuleDecl(n) => n.span,
+                    Self::TsModuleBlock(n) => n.span,
+                    Self::TsNamespaceDecl(n) => n.span,
+                    Self::TsImportEqualsDecl(n) => n.span,
+                    Self::TsExternalModuleRef(n) => n.span,
+                    Self::TsExportAssignment(n) => n.span,
+                    Self::TsNamespaceExportDecl(n) => n.span,
+                    Self::TsAsExpr(n) => n.span,
+                    Self::TsTypeAssertion(n) => n.span,
+                    Self::TsNonNullExpr(n) => n.span,
+                    Self::TsConstAssertion(n) => n.span,
+                }
+            }
+        }
+    };
+}
+
+impl_span!(BoundNode);
+impl_span!(Node);
+
+impl From<ast::Pat> for Node {
+    fn from(other: ast::Pat) -> Self {
+        match other {
+            ast::Pat::Ident(n) => Node::BindingIdent(n),
+            ast::Pat::Array(n) => Node::ArrayPat(n),
+            ast::Pat::Rest(n) => Node::RestPat(n),
+            ast::Pat::Object(n) => Node::ObjectPat(n),
+            ast::Pat::Assign(n) => Node::AssignPat(n),
+            ast::Pat::Invalid(n) => Node::Invalid(n),
+            ast::Pat::Expr(n) => Node::from(n),
         }
     }
 }
+
+impl From<ast::Expr> for Node {
+    fn from(other: ast::Expr) -> Self {
+        match other {
+            ast::Expr::This(n) => Node::ThisExpr(n),
+            ast::Expr::Array(n) => Node::ArrayLit(n),
+            ast::Expr::Object(n) => Node::ObjectLit(n),
+            ast::Expr::Fn(n) => Node::FnExpr(n),
+            ast::Expr::Unary(n) => Node::UnaryExpr(n),
+            ast::Expr::Update(n) => Node::UpdateExpr(n),
+            ast::Expr::Bin(n) => Node::BinExpr(n),
+            ast::Expr::Assign(n) => Node::AssignExpr(n),
+            ast::Expr::Member(n) => Node::MemberExpr(n),
+            ast::Expr::Cond(n) => Node::CondExpr(n),
+            ast::Expr::Call(n) => Node::CallExpr(n),
+            ast::Expr::New(n) => Node::NewExpr(n),
+            ast::Expr::Seq(n) => Node::SeqExpr(n),
+            ast::Expr::Ident(n) => Node::Ident(n),
+            ast::Expr::Lit(n) => Node::from(n),
+            ast::Expr::Tpl(n) => Node::Tpl(n),
+            ast::Expr::TaggedTpl(n) => Node::TaggedTpl(n),
+            ast::Expr::Arrow(n) => Node::ArrowExpr(n),
+            ast::Expr::Class(n) => Node::ClassExpr(n),
+            ast::Expr::Yield(n) => Node::YieldExpr(n),
+            ast::Expr::MetaProp(n) => Node::MetaPropExpr(n),
+            ast::Expr::Await(n) => Node::AwaitExpr(n),
+            ast::Expr::Paren(n) => Node::ParenExpr(n),
+            ast::Expr::JSXMember(n) => Node::JSXMemberExpr(n),
+            ast::Expr::JSXNamespacedName(n) => Node::JSXNamespacedName(n),
+            ast::Expr::JSXEmpty(n) => Node::JSXEmptyExpr(n),
+            ast::Expr::JSXElement(n) => Node::JSXElement(n),
+            ast::Expr::JSXFragment(n) => Node::JSXFragment(n),
+            ast::Expr::TsTypeAssertion(n) => Node::TsTypeAssertion(n),
+            ast::Expr::TsConstAssertion(n) => Node::TsConstAssertion(n),
+            ast::Expr::TsNonNull(n) => Node::TsNonNullExpr(n),
+            ast::Expr::TsAs(n) => Node::TsAsExpr(n),
+            ast::Expr::PrivateName(n) => Node::PrivateName(n),
+            ast::Expr::OptChain(n) => Node::OptChainExpr(n),
+            ast::Expr::Invalid(n) => Node::Invalid(n),
+        }
+    }
+}
+
+impl From<ast::Lit> for Node {
+    fn from(other: ast::Lit) -> Self {
+        match other {
+            ast::Lit::Str(n) => Node::Str(n),
+            ast::Lit::Bool(n) => Node::Bool(n),
+            ast::Lit::Null(n) => Node::Null(n),
+            ast::Lit::Num(n) => Node::Number(n),
+            ast::Lit::BigInt(n) => Node::BigInt(n),
+            ast::Lit::Regex(n) => Node::Regex(n),
+            ast::Lit::JSXText(n) => Node::JSXText(n),
+        }
+    }
+}
+
+impl From<ast::ParamOrTsParamProp> for Node {
+    fn from(other: ast::ParamOrTsParamProp) -> Self {
+        match other {
+            ast::ParamOrTsParamProp::TsParamProp(n) => Node::TsParamProp(n),
+            ast::ParamOrTsParamProp::Param(n) => Node::Param(n),
+        }
+    }
+}
+
+impl From<ast::BlockStmtOrExpr> for Node {
+    fn from(other: ast::BlockStmtOrExpr) -> Self {
+        match other {
+            ast::BlockStmtOrExpr::BlockStmt(n) => Node::BlockStmt(n),
+            ast::BlockStmtOrExpr::Expr(n) => Node::from(n),
+        }
+    }
+}
+
+impl From<ast::Prop> for Node {
+    fn from(other: ast::Prop) -> Self {
+        match other {
+            ast::Prop::Shorthand(n) => Node::Ident(n),
+            ast::Prop::KeyValue(n) => Node::KeyValueProp(n),
+            ast::Prop::Assign(n) => Node::AssignProp(n),
+            ast::Prop::Getter(n) => Node::GetterProp(n),
+            ast::Prop::Setter(n) => Node::SetterProp(n),
+            ast::Prop::Method(n) => Node::MethodProp(n),
+            ast::Prop::Spread(n) => Node::SpreadAssignment(n),
+        }
+    }
+}
+
+impl From<ast::ExprOrSuper> for Node {
+    fn from(other: ast::ExprOrSuper) -> Self {
+        match other {
+            ast::ExprOrSuper::Super(n) => Node::Super(n),
+            ast::ExprOrSuper::Expr(n) => Node::from(n),
+        }
+    }
+}
+
+impl From<ast::TsAmbientParamPat> for Node {
+    fn from(other: ast::TsAmbientParamPat) -> Self {
+        match other {
+            ast::TsAmbientParamPat::Ident(n) => Node::BindingIdent(n),
+            ast::TsAmbientParamPat::Array(n) => Node::ArrayPat(n),
+            ast::TsAmbientParamPat::Rest(n) => Node::RestPat(n),
+            ast::TsAmbientParamPat::Object(n) => Node::ObjectPat(n),
+        }
+    }
+}
+impl From<ast::TsType> for Node {
+    fn from(other: ast::TsType) -> Self {
+        match other {
+            ast::TsType::TsKeywordType(n) => Node::TsKeywordType(n),
+            ast::TsType::TsThisType(n) => Node::TsThisType(n),
+            ast::TsType::TsFnOrConstructorType(n) => Node::from(n),
+            ast::TsType::TsTypeRef(n) => Node::TsTypeRef(n),
+            ast::TsType::TsTypeQuery(n) => Node::TsTypeQuery(n),
+            ast::TsType::TsTypeLit(n) => Node::TsTypeLit(n),
+            ast::TsType::TsArrayType(n) => Node::TsArrayType(n),
+            ast::TsType::TsTupleType(n) => Node::TsTupleType(n),
+            ast::TsType::TsOptionalType(n) => Node::TsOptionalType(n),
+            ast::TsType::TsRestType(n) => Node::TsRestType(n),
+            ast::TsType::TsUnionOrIntersectionType(n) => Node::from(n),
+            ast::TsType::TsConditionalType(n) => Node::TsConditionalType(n),
+            ast::TsType::TsInferType(n) => Node::TsInferType(n),
+            ast::TsType::TsParenthesizedType(n) => Node::TsParenthesizedType(n),
+            ast::TsType::TsTypeOperator(n) => Node::TsTypeOperator(n),
+            ast::TsType::TsIndexedAccessType(n) => Node::TsIndexedAccessType(n),
+            ast::TsType::TsMappedType(n) => Node::TsMappedType(n),
+            ast::TsType::TsLitType(n) => Node::TsLitType(n),
+            ast::TsType::TsTypePredicate(n) => Node::TsTypePredicate(n),
+            ast::TsType::TsImportType(n) => Node::TsImportType(n),
+        }
+    }
+}
+impl From<ast::TsFnOrConstructorType> for Node {
+    fn from(other: ast::TsFnOrConstructorType) -> Self {
+        match other {
+            ast::TsFnOrConstructorType::TsFnType(n) => Node::TsFnType(n),
+            ast::TsFnOrConstructorType::TsConstructorType(n) => Node::TsConstructorType(n),
+        }
+    }
+}
+impl From<ast::TsUnionOrIntersectionType> for Node {
+    fn from(other: ast::TsUnionOrIntersectionType) -> Self {
+        match other {
+            ast::TsUnionOrIntersectionType::TsUnionType(n) => Node::TsUnionType(n),
+            ast::TsUnionOrIntersectionType::TsIntersectionType(n) => Node::TsIntersectionType(n),
+        }
+    }
+}
+impl From<ast::TsEntityName> for Node {
+    fn from(other: ast::TsEntityName) -> Self {
+        match other {
+            ast::TsEntityName::TsQualifiedName(n) => Node::TsQualifiedName(n),
+            ast::TsEntityName::Ident(n) => Node::Ident(n),
+        }
+    }
+}
+impl From<ast::ExprOrSpread> for Node {
+    fn from(other: ast::ExprOrSpread) -> Self {
+        match other {
+            ast::ExprOrSpread::Spread(n) => Node::SpreadElement(n),
+            ast::ExprOrSpread::Expr(n) => Node::from(n),
+        }
+    }
+}
+// impl From<ast::> for Node {
+//     fn from(other: ast::) -> Self {
+//         match other {
+
+//         }
+//     }
+// }

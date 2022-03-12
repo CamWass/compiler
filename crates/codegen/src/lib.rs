@@ -659,7 +659,7 @@ impl<'a> Emitter<'a> {
 
         let space = !self.cfg.minify
             || match node.params.as_slice() {
-                [Pat::Ident(_)] => true,
+                [ParamWithoutDecorators { pat: Pat::Ident(_) }] => true,
                 _ => false,
             };
 
@@ -671,13 +671,10 @@ impl<'a> Emitter<'a> {
                 formatting_space!();
             }
         }
-        if node.is_generator {
-            punct!("*")
-        }
 
         let parens = !self.cfg.minify
             || match node.params.as_slice() {
-                [Pat::Ident(_)] => false,
+                [ParamWithoutDecorators { pat: Pat::Ident(_) }] => false,
                 _ => true,
             };
 
@@ -1295,13 +1292,10 @@ impl<'a> Emitter<'a> {
 
     #[emitter]
     fn emit_expr_or_spread(&mut self, node: &ExprOrSpread) -> Result {
-        self.emit_leading_comments_of_span(node.span(), false)?;
-
-        if node.spread.is_some() {
-            punct!("...");
+        match node {
+            ExprOrSpread::Spread(n) => emit!(n),
+            ExprOrSpread::Expr(n) => emit!(n),
         }
-
-        emit!(node.expr);
     }
 
     #[emitter]
@@ -1356,6 +1350,7 @@ impl<'a> Emitter<'a> {
             Prop::Getter(ref n) => emit!(n),
             Prop::Setter(ref n) => emit!(n),
             Prop::Method(ref n) => emit!(n),
+            Prop::Spread(ref n) => emit!(n),
         }
     }
 
@@ -1425,6 +1420,14 @@ impl<'a> Emitter<'a> {
         formatting_space!();
         // TODO
         self.emit_fn_trailing(&node.function)?;
+    }
+
+    #[emitter]
+    fn emit_spread_assignment(&mut self, node: &SpreadAssignment) -> Result {
+        self.emit_leading_comments_of_span(node.span(), false)?;
+
+        punct!("...");
+        emit!(node.expr)
     }
 
     #[emitter]
@@ -1732,6 +1735,13 @@ impl<'a> Emitter<'a> {
     }
 
     #[emitter]
+    fn emit_param_without_decorators(&mut self, node: &ParamWithoutDecorators) -> Result {
+        self.emit_leading_comments_of_span(node.span(), false)?;
+
+        emit!(node.pat);
+    }
+
+    #[emitter]
     fn emit_pat(&mut self, node: &Pat) -> Result {
         match *node {
             Pat::Array(ref n) => emit!(n),
@@ -1755,14 +1765,6 @@ impl<'a> Emitter<'a> {
             punct!(":");
             formatting_space!();
             emit!(type_ann);
-        }
-    }
-
-    #[emitter]
-    fn emit_prop_or_spread(&mut self, node: &PropOrSpread) -> Result {
-        match *node {
-            PropOrSpread::Prop(ref n) => emit!(n),
-            PropOrSpread::Spread(ref n) => emit!(n),
         }
     }
 

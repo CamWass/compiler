@@ -1,6 +1,11 @@
 use crate::{BytePos, Span, SyntaxContext};
 use num_bigint::BigInt;
-use std::{cell::RefCell, cmp::PartialEq, rc::Rc, sync::Arc};
+use std::{
+    cell::{Cell, RefCell},
+    cmp::PartialEq,
+    rc::Rc,
+    sync::Arc,
+};
 use string_cache::Atom;
 
 /// Derive with `#[derive(EqIgnoreSpan)]`.
@@ -39,6 +44,15 @@ where
                 .iter()
                 .zip(other.iter())
                 .all(|(a, b)| a.eq_ignore_span(b))
+    }
+}
+
+impl<T> EqIgnoreSpan for Cell<T>
+where
+    T: EqIgnoreSpan + Copy,
+{
+    fn eq_ignore_span(&self, other: &Self) -> bool {
+        self.get().eq_ignore_span(&other.get())
     }
 }
 

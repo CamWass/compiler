@@ -1194,7 +1194,7 @@ impl<I: Tokens> Parser<I> {
         id.type_ann = Some(type_ann);
 
         expect!(self, ']');
-        let params = vec![TsFnParam::Ident(id)];
+        let params = vec![TsAmbientParamPat::Ident(id).into()];
 
         let ty = self.try_parse_ts_type_ann()?;
         let type_ann = if let Some(ty) = ty { Some(ty) } else { None };
@@ -1753,7 +1753,7 @@ impl<I: Tokens> Parser<I> {
     /// `tsParseBindingListForSignature`
     ///
     /// Eats ')` at the end but does not eat `(` at start.
-    fn parse_ts_binding_list_for_signature(&mut self) -> PResult<Vec<TsFnParam>> {
+    fn parse_ts_binding_list_for_signature(&mut self) -> PResult<Vec<TsAmbientParam>> {
         debug_assert!(self.syntax().typescript());
 
         let params = self.parse_formal_params()?;
@@ -1761,10 +1761,10 @@ impl<I: Tokens> Parser<I> {
 
         for param in params {
             let item = match param.pat {
-                Pat::Ident(pat) => TsFnParam::Ident(pat),
-                Pat::Array(pat) => TsFnParam::Array(pat),
-                Pat::Object(pat) => TsFnParam::Object(pat),
-                Pat::Rest(pat) => TsFnParam::Rest(pat),
+                Pat::Ident(pat) => TsAmbientParamPat::Ident(pat).into(),
+                Pat::Array(pat) => TsAmbientParamPat::Array(pat).into(),
+                Pat::Object(pat) => TsAmbientParamPat::Object(pat).into(),
+                Pat::Rest(pat) => TsAmbientParamPat::Rest(pat).into(),
                 _ => unexpected!(
                     self,
                     "an identifier, [ for an array pattern, { for an object patter or ... for a \
@@ -2389,7 +2389,7 @@ impl<I: Tokens> Parser<I> {
                 let params = p
                     .parse_formal_params()?
                     .into_iter()
-                    .map(|p| p.pat)
+                    .map(|p| p.pat.into())
                     .collect();
                 expect!(p, ')');
                 let return_type = p.try_parse_ts_type_or_type_predicate_ann()?;
@@ -2412,14 +2412,12 @@ impl<I: Tokens> Parser<I> {
             ..self.ctx()
         };
         self.with_ctx(ctx).parse_with(|p| {
-            let is_generator = false;
             let is_async = true;
             let body = p.parse_fn_body(true, false)?;
             Ok(Some(ArrowExpr {
                 span: span!(p, start),
                 body,
                 is_async,
-                is_generator,
                 type_params: Some(type_params),
                 params,
                 return_type,

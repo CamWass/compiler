@@ -1,32 +1,31 @@
 use ast;
 use ast_convert::define;
-use global_common::Span;
+use global_common::{EqIgnoreSpan, Span, Spanned};
 use num_bigint::BigInt as BigIntValue;
-use std::cell::Cell;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 use swc_atoms::JsWord;
+
+// See: https://stackoverflow.com/a/39639200/
+fn integer_decode(val: f64) -> (u64, i16, i8) {
+    let bits = val.to_bits();
+    let sign: i8 = if bits >> 63 == 0 { 1 } else { -1 };
+    let mut exponent: i16 = ((bits >> 52) & 0x7ff) as i16;
+    let mantissa = if exponent == 0 {
+        (bits & 0xfffffffffffff) << 1
+    } else {
+        (bits & 0xfffffffffffff) | 0x10000000000000
+    };
+
+    exponent -= 1023 + 52;
+    (mantissa, exponent, sign)
+}
 
 impl Eq for Number {}
 
 #[allow(clippy::derive_hash_xor_eq)]
 impl Hash for Number {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        // See: https://stackoverflow.com/a/39639200/
-        fn integer_decode(val: f64) -> (u64, i16, i8) {
-            let bits = val.to_bits();
-            let sign: i8 = if bits >> 63 == 0 { 1 } else { -1 };
-            let mut exponent: i16 = ((bits >> 52) & 0x7ff) as i16;
-            let mantissa = if exponent == 0 {
-                (bits & 0xfffffffffffff) << 1
-            } else {
-                (bits & 0xfffffffffffff) | 0x10000000000000
-            };
-
-            exponent -= 1023 + 52;
-            (mantissa, exponent, sign)
-        }
-
         self.span.hash(state);
         integer_decode(self.value).hash(state);
     }
@@ -35,6 +34,137 @@ impl Hash for Number {
 impl From<Expr> for ExprOrSuper {
     fn from(expr: Expr) -> ExprOrSuper {
         ExprOrSuper::Expr(expr)
+    }
+}
+
+impl From<TsAmbientParamPat> for Pat {
+    fn from(other: TsAmbientParamPat) -> Self {
+        match other {
+            TsAmbientParamPat::Ident(n) => Pat::Ident(n),
+            TsAmbientParamPat::Array(n) => Pat::Array(n),
+            TsAmbientParamPat::Rest(n) => Pat::Rest(n),
+            TsAmbientParamPat::Object(n) => Pat::Object(n),
+        }
+    }
+}
+
+impl From<TsParamPropParam> for Pat {
+    fn from(other: TsParamPropParam) -> Self {
+        match other {
+            TsParamPropParam::Ident(n) => Pat::Ident(n),
+            TsParamPropParam::Assign(n) => Pat::Assign(n),
+        }
+    }
+}
+
+impl Spanned for Expr {
+    fn span(&self) -> Span {
+        match self {
+            Expr::This(n) => n.span,
+            Expr::Array(n) => n.span,
+            Expr::Object(n) => n.span,
+            Expr::Fn(n) => n.function.span,
+            Expr::Unary(n) => n.span,
+            Expr::Update(n) => n.span,
+            Expr::Bin(n) => n.span,
+            Expr::Assign(n) => n.span,
+            Expr::Member(n) => n.span,
+            Expr::Cond(n) => n.span,
+            Expr::Call(n) => n.span,
+            Expr::New(n) => n.span,
+            Expr::Seq(n) => n.span,
+            Expr::Ident(n) => n.span,
+            Expr::Lit(n) => n.span(),
+            Expr::Tpl(n) => n.span,
+            Expr::TaggedTpl(n) => n.span,
+            Expr::Arrow(n) => n.span,
+            Expr::Class(n) => n.class.span,
+            Expr::Yield(n) => n.span,
+            Expr::MetaProp(_) => todo!(),
+            Expr::Await(n) => n.span,
+            Expr::Paren(n) => n.span,
+            Expr::JSXMember(_) => todo!(),
+            Expr::JSXNamespacedName(_) => todo!(),
+            Expr::JSXEmpty(n) => n.span,
+            Expr::JSXElement(n) => n.span,
+            Expr::JSXFragment(n) => n.span,
+            Expr::TsTypeAssertion(n) => n.span,
+            Expr::TsConstAssertion(n) => n.span,
+            Expr::TsNonNull(n) => n.span,
+            Expr::TsAs(n) => n.span,
+            Expr::PrivateName(n) => n.span,
+            Expr::OptChain(n) => n.span,
+            Expr::Invalid(n) => n.span,
+        }
+    }
+}
+
+impl Spanned for Lit {
+    fn span(&self) -> Span {
+        match self {
+            Lit::Str(n) => n.span,
+            Lit::Bool(n) => n.span,
+            Lit::Null(n) => n.span,
+            Lit::Num(n) => n.span,
+            Lit::BigInt(n) => n.span,
+            Lit::Regex(n) => n.span,
+            Lit::JSXText(n) => n.span,
+        }
+    }
+}
+
+impl Spanned for PropName {
+    fn span(&self) -> Span {
+        match self {
+            PropName::Ident(n) => n.span,
+            PropName::Str(n) => n.span,
+            PropName::Num(n) => n.span,
+            PropName::BigInt(n) => n.span,
+            PropName::Computed(n) => n.span,
+        }
+    }
+}
+
+impl Spanned for Pat {
+    fn span(&self) -> Span {
+        match self {
+            Pat::Ident(n) => n.id.span,
+            Pat::Array(n) => n.span,
+            Pat::Rest(n) => n.span,
+            Pat::Object(n) => n.span,
+            Pat::Assign(n) => n.span,
+            Pat::Invalid(n) => n.span,
+            Pat::Expr(n) => n.span(),
+        }
+    }
+}
+
+impl Spanned for TsEntityName {
+    fn span(&self) -> Span {
+        match self {
+            TsEntityName::TsQualifiedName(n) => n.left.span().with_hi(n.right.span.hi()),
+            TsEntityName::Ident(n) => n.span,
+        }
+    }
+}
+
+impl Spanned for TsAmbientParamPat {
+    fn span(&self) -> Span {
+        match self {
+            TsAmbientParamPat::Ident(n) => n.id.span,
+            TsAmbientParamPat::Array(n) => n.span,
+            TsAmbientParamPat::Rest(n) => n.span,
+            TsAmbientParamPat::Object(n) => n.span,
+        }
+    }
+}
+
+impl Spanned for Program {
+    fn span(&self) -> Span {
+        match self {
+            Program::Module(n) => n.span,
+            Program::Script(n) => n.span,
+        }
     }
 }
 
@@ -212,11 +342,7 @@ define!({
     }
     pub struct ObjectLit {
         pub span: Span,
-        pub props: Vec<PropOrSpread>,
-    }
-    pub enum PropOrSpread {
-        Spread(SpreadElement),
-        Prop(Box<Prop>),
+        pub props: Vec<Prop>,
     }
     pub struct SpreadElement {
         pub dot3_token: Span,
@@ -283,10 +409,9 @@ define!({
     }
     pub struct ArrowExpr {
         pub span: Span,
-        pub params: Vec<Pat>,
+        pub params: Vec<ParamWithoutDecorators>,
         pub body: BlockStmtOrExpr,
         pub is_async: bool,
-        pub is_generator: bool,
         pub type_params: Option<TsTypeParamDecl>,
         pub return_type: Option<TsTypeAnn>,
     }
@@ -331,9 +456,9 @@ define!({
     pub struct Super {
         pub span: Span,
     }
-    pub struct ExprOrSpread {
-        pub spread: Option<Span>,
-        pub expr: Box<Expr>,
+    pub enum ExprOrSpread {
+        Spread(SpreadElement),
+        Expr(Box<Expr>),
     }
     pub enum BlockStmtOrExpr {
         BlockStmt(BlockStmt),
@@ -361,6 +486,9 @@ define!({
     pub struct Param {
         pub span: Span,
         pub decorators: Vec<Decorator>,
+        pub pat: Pat,
+    }
+    pub struct ParamWithoutDecorators {
         pub pat: Pat,
     }
     pub enum ParamOrTsParamProp {
@@ -731,6 +859,7 @@ define!({
         Getter(GetterProp),
         Setter(SetterProp),
         Method(MethodProp),
+        Spread(SpreadAssignment),
     }
     pub struct KeyValueProp {
         pub key: PropName,
@@ -749,7 +878,7 @@ define!({
     pub struct SetterProp {
         pub span: Span,
         pub key: PropName,
-        pub param: Pat,
+        pub param: ParamWithoutDecorators,
         pub body: Option<BlockStmt>,
     }
     pub struct MethodProp {
@@ -765,6 +894,10 @@ define!({
     }
     pub struct ComputedPropName {
         pub span: Span,
+        pub expr: Box<Expr>,
+    }
+    pub struct SpreadAssignment {
+        pub dot3_token: Span,
         pub expr: Box<Expr>,
     }
     pub struct BlockStmt {
@@ -942,13 +1075,13 @@ define!({
     }
     pub struct TsCallSignatureDecl {
         pub span: Span,
-        pub params: Vec<TsFnParam>,
+        pub params: Vec<TsAmbientParam>,
         pub type_ann: Option<TsTypeAnn>,
         pub type_params: Option<TsTypeParamDecl>,
     }
     pub struct TsConstructSignatureDecl {
         pub span: Span,
-        pub params: Vec<TsFnParam>,
+        pub params: Vec<TsAmbientParam>,
         pub type_ann: Option<TsTypeAnn>,
         pub type_params: Option<TsTypeParamDecl>,
     }
@@ -976,7 +1109,7 @@ define!({
         pub key: Box<Expr>,
         pub computed: bool,
         pub optional: bool,
-        pub param: TsFnParam,
+        pub param: TsAmbientParam,
     }
     pub struct TsMethodSignature {
         pub span: Span,
@@ -984,12 +1117,12 @@ define!({
         pub key: Box<Expr>,
         pub computed: bool,
         pub optional: bool,
-        pub params: Vec<TsFnParam>,
+        pub params: Vec<TsAmbientParam>,
         pub type_ann: Option<TsTypeAnn>,
         pub type_params: Option<TsTypeParamDecl>,
     }
     pub struct TsIndexSignature {
-        pub params: Vec<TsFnParam>,
+        pub params: Vec<TsAmbientParam>,
         pub type_ann: Option<TsTypeAnn>,
         pub readonly: bool,
         pub is_static: bool,
@@ -1043,7 +1176,10 @@ define!({
     pub struct TsThisType {
         pub span: Span,
     }
-    pub enum TsFnParam {
+    pub struct TsAmbientParam {
+        pub pat: TsAmbientParamPat,
+    }
+    pub enum TsAmbientParamPat {
         Ident(BindingIdent),
         Array(ArrayPat),
         Rest(RestPat),
@@ -1051,13 +1187,13 @@ define!({
     }
     pub struct TsFnType {
         pub span: Span,
-        pub params: Vec<TsFnParam>,
+        pub params: Vec<TsAmbientParam>,
         pub type_params: Option<TsTypeParamDecl>,
         pub type_ann: TsTypeAnn,
     }
     pub struct TsConstructorType {
         pub span: Span,
-        pub params: Vec<TsFnParam>,
+        pub params: Vec<TsAmbientParam>,
         pub type_params: Option<TsTypeParamDecl>,
         pub type_ann: TsTypeAnn,
         pub is_abstract: bool,

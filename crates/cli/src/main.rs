@@ -65,7 +65,7 @@ fn main() -> Result<()> {
     let cm = Lrc::<SourceMap>::default();
     let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
 
-    let lib = create_program("es5.d.ts", &config, cm.clone(), &handler)?;
+    let lib = create_program("lib.es5.d.ts", &config, cm.clone(), &handler)?;
     let program = create_program(entry_file, &config, cm.clone(), &handler)?;
 
     let compiler = Compiler {};

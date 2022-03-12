@@ -3,9 +3,10 @@ use crate::node::*;
 use crate::types::*;
 use crate::utils::*;
 use crate::SourceFile;
-use ahash::AHashMap;
+use ahash::{AHashMap};
 use bitflags::bitflags;
 use index::vec::IndexVec;
+use std::hash::Hash;
 use std::mem;
 use std::rc::Rc;
 use swc_atoms::JsWord;
@@ -56,6 +57,7 @@ pub struct BindResult {
     pub node_data: AHashMap<BoundNode, NodeData>,
     pub flow_nodes: IndexVec<FlowNodeId, FlowNode>,
     pub symbols: IndexVec<SymbolId, Symbol>,
+    pub symbol_tables: IndexVec<SymbolTableId, SymbolTable>,
 }
 
 // //todo:
@@ -82,19 +84,19 @@ pub struct BindResult {
 macro_rules! declare_symbol {
     ($binder:ident, $symbol_table:expr, $parent:expr, $node:expr, $includes:expr, $excludes:expr, $is_replaced_by_method:expr, $is_computed_name:expr) => {{
         let name = $binder.f($node.clone(), $parent, $is_computed_name);
-        let exisiting_symbol = $symbol_table.get(&name).copied();
+        let symbol_table = $symbol_table;
         let symbol = $binder.declareSymbol(
+            symbol_table,
             name.clone(),
-            exisiting_symbol,
             $parent,
             $node.clone(),
             $includes,
             $excludes,
             $is_replaced_by_method,
         );
-        if Some(symbol) != exisiting_symbol {
-            $symbol_table.insert(name.clone(), symbol);
-        }
+        // if Some(symbol) != exisiting_symbol {
+        //     $symbol_table.insert(name.clone(), symbol);
+        // }
         symbol
     }};
 }
@@ -133,7 +135,7 @@ pub struct Binder<'a> {
     pub hasExplicitReturn: bool,
 
     // state used for emit helpers
-    emitFlags: NodeFlags,
+    // emitFlags: NodeFlags,
 
     // If this file is an external module, then it is automatically in strict-mode according to
     // ES6.  If it is not an external module, then we'll determine if it is in strict mode or
@@ -151,14 +153,14 @@ pub struct Binder<'a> {
     // Symbol: new (flags: SymbolFlags, name: __String) => Symbol;
     // classifiableNames: Set<__String>;
     pub unreachableFlow: FlowNodeId,
-    reportedUnreachableFlow: FlowNodeId,
+    // reportedUnreachableFlow: FlowNodeId,
     ///////////////////////////////////////////////////
 
     //////////////////// Ours: ////////////////////
-    // node_flags: FxHashMap<BoundNode, NodeFlags>,
     pub node_data: AHashMap<BoundNode, NodeData>,
     pub flow_nodes: IndexVec<FlowNodeId, FlowNode>,
     pub symbols: IndexVec<SymbolId, Symbol>,
+    pub symbol_tables: IndexVec<SymbolTableId, SymbolTable>,
     ///////////////////////////////////////////////////
 }
 
@@ -201,18 +203,19 @@ impl<'a> Binder<'a> {
             activeLabelStack: Vec::new(),
             hasExplicitReturn: false,
 
-            emitFlags: NodeFlags::None,
+            // emitFlags: NodeFlags::None,
 
             inStrictMode: false,
 
             inAssignmentPattern: false,
 
             unreachableFlow,
-            reportedUnreachableFlow,
+            // reportedUnreachableFlow,
 
             node_data: Default::default(),
             flow_nodes,
             symbols: Default::default(),
+            symbol_tables: Default::default(),
         }
     }
 
@@ -233,6 +236,7 @@ impl<'a> Binder<'a> {
             node_data: binder.node_data,
             flow_nodes: binder.flow_nodes,
             symbols: binder.symbols,
+            symbol_tables: binder.symbol_tables,
         }
     }
 
@@ -298,22 +302,22 @@ impl<'a> Binder<'a> {
 
         symbol.declarations_mut().push_if_unique(node.clone());
 
-        // if symbolFlags.intersects(
-        //     SymbolFlags::Class | SymbolFlags::Enum | SymbolFlags::Module | SymbolFlags::Variable,
-        // ) && !symbol.exports
-        // {
-        //     symbol.exports = createSymbolTable();
-        // }
+        if symbolFlags.intersects(
+            SymbolFlags::Class | SymbolFlags::Enum | SymbolFlags::Module | SymbolFlags::Variable,
+        ) && symbol.exports().is_none()
+        {
+            *symbol.exports_mut() = Some(self.symbol_tables.push(SymbolTable::default()));
+        }
 
-        // if symbolFlags.intersects(
-        //     SymbolFlags::Class
-        //         | SymbolFlags::Interface
-        //         | SymbolFlags::TypeLiteral
-        //         | SymbolFlags::ObjectLiteral,
-        // ) && !symbol.members
-        // {
-        //     symbol.members = createSymbolTable();
-        // }
+        if symbolFlags.intersects(
+            SymbolFlags::Class
+                | SymbolFlags::Interface
+                | SymbolFlags::TypeLiteral
+                | SymbolFlags::ObjectLiteral,
+        ) && symbol.members().is_none()
+        {
+            *symbol.members_mut() = Some(self.symbol_tables.push(SymbolTable::default()));
+        }
 
         // On merge of const enum module with class or function, reset const enum only flag (namespaces will already recalculate)
         if symbol.constEnumOnlyModule()
@@ -337,7 +341,7 @@ impl<'a> Binder<'a> {
         //     return (node as ExportAssignment).isExportEquals ? InternalSymbolName.ExportEquals : InternalSymbolName.Default;
         // }
 
-        if let Some(name) = getNameOfDeclaration(node.clone()) {
+        if let Some(name) = getNameOfDeclaration(&node) {
             // TODO:
             // if isAmbientModule(node) {
             //     const moduleName = getTextOfIdentifierOrLiteral(name as Identifier | StringLiteral);
@@ -406,11 +410,11 @@ impl<'a> Binder<'a> {
             BoundNode::TsIndexSignature(_) => InternalSymbolName::Index.into(),
             // TODO:
             // BoundNode::ExportDeclaration(_) => InternalSymbolName::ExportStar.into(),
-            // BoundNode::SourceFile(_) => {
-            //     // json file should behave as
-            //     // module.exports = ...
-            //     InternalSymbolName::ExportEquals.into()
-            // }
+            BoundNode::Script(_) | BoundNode::Module(_) => {
+                // json file should behave as
+                // module.exports = ...
+                InternalSymbolName::ExportEquals.into()
+            }
             // BoundNode::BinExpr(_) => {
             //     if (getAssignmentDeclarationKind(node as BinaryExpression)
             //         == AssignmentDeclarationKind.ModuleExports)
@@ -475,8 +479,8 @@ impl<'a> Binder<'a> {
     /// @param excludes - The flags which node cannot be declared alongside in a symbol table. Used to report forbidden declarations.
     fn declareSymbol(
         &mut self,
+        symbol_table: SymbolTableId,
         name: JsWord,
-        existing_symbol: Option<SymbolId>,
         parent: Option<SymbolId>,
         node: BoundNode,
         includes: SymbolFlags,
@@ -519,7 +523,7 @@ impl<'a> Binder<'a> {
         //         classifiableNames.add(name);
         //     }
 
-        let symbol = if let Some(sym_id) = existing_symbol {
+        let symbol = if let Some(&sym_id) = self.symbol_tables[symbol_table].get(&name) {
             let unwrapped_symbol = &self.symbols[sym_id];
             if isReplaceableByMethod && !unwrapped_symbol.isReplaceableByMethod() {
                 // A symbol already exists, so don't add this as a declaration.
@@ -610,6 +614,7 @@ impl<'a> Binder<'a> {
             }
         } else {
             let s = self.createSymbol(SymbolFlags::None, name.clone());
+            self.symbol_tables[symbol_table].insert(name, s);
             if isReplaceableByMethod {
                 *self.symbols[s].isReplaceableByMethod_mut() = true
             };
@@ -640,7 +645,7 @@ impl<'a> Binder<'a> {
             None => unreachable!("symbol must be declared within a container"),
         };
 
-        let container_symbol_id = self.node_data(container_node.clone()).symbol.unwrap();
+        // let container_symbol_id = self.node_data(container_node.clone()).symbol.unwrap();
 
         // todo:
         let hasExportModifier = false;
@@ -699,14 +704,56 @@ impl<'a> Binder<'a> {
                         .flags
                         .intersects(NodeFlags::ExportContext))
             {
-                if self.node_data(container_node.clone()).locals.is_empty()
-                // || (hasSyntacticModifier(node, ModifierFlags::Default)
-                //     && !self.getDeclarationName(node))
-                {
-                    // No local symbol for an unnamed default!
+                let container_symbol_id = self.node_data(container_node.clone()).symbol.unwrap();
+
+                if let Some(locals) = self.node_data(container_node.clone()).locals {
+                    // TODO:
+                    // if hasSyntacticModifier(node, ModifierFlags::Default) && !self.getDeclarationName(node)
+                    // {
+                    //     // No local symbol for an unnamed default!
+                    //     return declare_symbol!(
+                    //         self,
+                    //         self.symbols[container_symbol_id].exports_mut(),
+                    //         Some(container_symbol_id),
+                    //         node,
+                    //         symbolFlags,
+                    //         symbolExcludes,
+                    //         false,
+                    //         false
+                    //     );
+                    // }
+                    let exportKind = if symbolFlags.intersects(SymbolFlags::Value) {
+                        SymbolFlags::ExportValue
+                    } else {
+                        SymbolFlags::None
+                    };
+                    let local = declare_symbol!(
+                        self,
+                        locals,
+                        None,
+                        node,
+                        exportKind,
+                        symbolExcludes,
+                        false,
+                        false
+                    );
+
+                    *self.symbols[local].exportSymbol_mut() = Some(declare_symbol!(
+                        self,
+                        self.symbols[container_symbol_id].exports().unwrap(),
+                        Some(container_symbol_id),
+                        node,
+                        symbolFlags,
+                        symbolExcludes,
+                        false,
+                        false
+                    ));
+                    self.node_data_mut(node).localSymbol = Some(local);
+                    return local;
+                } else {
                     return declare_symbol!(
                         self,
-                        self.symbols[container_symbol_id].exports_mut(),
+                        self.symbols[container_symbol_id].exports().unwrap(),
                         Some(container_symbol_id),
                         node,
                         symbolFlags,
@@ -715,38 +762,10 @@ impl<'a> Binder<'a> {
                         false
                     );
                 }
-                let exportKind = if symbolFlags.intersects(SymbolFlags::Value) {
-                    SymbolFlags::ExportValue
-                } else {
-                    SymbolFlags::None
-                };
-                let local = declare_symbol!(
-                    self,
-                    self.node_data_mut(container_node.clone()).locals,
-                    None,
-                    node,
-                    exportKind,
-                    symbolExcludes,
-                    false,
-                    false
-                );
-
-                *self.symbols[local].exportSymbol_mut() = Some(declare_symbol!(
-                    self,
-                    self.symbols[container_symbol_id].exports_mut(),
-                    Some(container_symbol_id),
-                    node,
-                    symbolFlags,
-                    symbolExcludes,
-                    false,
-                    false
-                ));
-                self.node_data_mut(node).localSymbol = Some(local);
-                return local;
             } else {
                 return declare_symbol!(
                     self,
-                    self.node_data_mut(container_node.clone()).locals,
+                    self.node_data(container_node.clone()).locals.unwrap(),
                     None,
                     node,
                     symbolFlags,
@@ -794,14 +813,15 @@ impl<'a> Binder<'a> {
                 self.thisParentContainer = self.container.clone();
             }
             self.blockScopeContainer = Some(node.clone());
-            // if containerFlags.intersects(ContainerFlags::HasLocals) {
-            //     container.locals = createSymbolTable();
-            // }
+            if container_flags.intersects(ContainerFlags::HasLocals) {
+                self.node_data_mut(node.clone()).locals =
+                    Some(self.symbol_tables.push(SymbolTable::default()));
+            }
             self.addToContainerChain(node.clone());
             self.container = Some(node.clone());
         } else if container_flags.intersects(ContainerFlags::IsBlockScopedContainer) {
             self.blockScopeContainer = Some(node.clone());
-            // self.blockScopeContainer.locals = undefined;
+            self.node_data_mut(node.clone()).locals = None;
         }
 
         if container_flags.intersects(ContainerFlags::IsControlFlowContainer) {
@@ -812,37 +832,30 @@ impl<'a> Binder<'a> {
             let save_exception_target = self.currentExceptionTarget;
             // let saveActiveLabelList = self.activeLabelList;
             let saveHasExplicitReturn = self.hasExplicitReturn;
-            let isIIFE = if let BoundNode::ArrowExpr(ref e) = node {
-                if !e.is_async
-                    && !e.is_generator
+            let isIIFE = if let BoundNode::FnExpr(e) = &node {
+                !e.function.is_async
+                    && !e.function.is_generator
                     && getImmediatelyInvokedFunctionExpression(node.clone()).is_some()
-                {
-                    true
-                } else {
-                    false
-                }
+            } else if let BoundNode::ArrowExpr(e) = &node {
+                !e.is_async && getImmediatelyInvokedFunctionExpression(node.clone()).is_some()
             } else {
                 false
             };
             // A non-async, non-generator IIFE is considered part of the containing control flow. Return statements behave
             // similarly to break statements that exit to a label just past the statement body.
             if !isIIFE {
-                self.currentFlow = self.alloc_flow_node(FlowNode {
-                    flags: FlowFlags::Start,
-                    id: None,
-                    kind: FlowNodeKind::None,
-                });
+                let mut flow_start = FlowStart { node: None };
                 if container_flags.intersects(
                     ContainerFlags::IsFunctionExpression
                         | ContainerFlags::IsObjectLiteralOrClassExpressionMethodOrAccessor,
                 ) {
-                    todo!();
-                    // self.currentFlow.node = node as FunctionExpression
-                    //     | ArrowFunction
-                    //     | MethodDeclaration
-                    //     | GetAccessorDeclaration
-                    //     | SetAccessorDeclaration;
+                    flow_start.node = Some(node.clone());
                 }
+                self.currentFlow = self.alloc_flow_node(FlowNode {
+                    flags: FlowFlags::Start,
+                    id: None,
+                    kind: FlowNodeKind::FlowStart(flow_start),
+                });
             }
             // We create a return control flow graph for IIFEs and constructors. For constructors
             // we use the return control flow graph in strict property initialization checks.
@@ -1111,27 +1124,52 @@ impl<'a> Binder<'a> {
         // execution/evaluation order (same as tsc).
         match &node {
             BoundNode::ClassDecl(c) => {
-                let ast::Class {
-                    decorators,
-                    type_params,
-                    super_class,
-                    super_type_params,
-                    implements,
-                    body,
-                    is_abstract: _,
-                    span: _,
-                    cached_hash: _,
-                } = c.class.as_ref();
+                // let ast::Class {
+                //     decorators,
+                //     type_params,
+                //     super_class,
+                //     super_type_params,
+                //     implements,
+                //     body,
+                //     is_abstract: _,
+                //     span: _,
+                //     cached_hash: _,
+                // } = c.class.as_ref();
 
-                bind_vec!(self, decorators, node.clone());
+                // bind_vec!(self, decorators, node.clone());
+                // bind!(self, c.ident, node.clone());
+                // bind_opt!(self, type_params, node.clone());
+                // bind_opt!(self, super_class, node.clone());
+                // bind_opt!(self, super_type_params, node.clone());
+                // bind_vec!(self, implements, node.clone());
+                // bind_vec!(self, body, node.clone());
                 bind!(self, c.ident, node.clone());
-                bind_opt!(self, type_params, node.clone());
-                bind_opt!(self, super_class, node.clone());
-                bind_opt!(self, super_type_params, node.clone());
-                bind_vec!(self, implements, node.clone());
-                bind_vec!(self, body, node.clone());
+                bind!(self, c.class, node.clone());
             }
             BoundNode::ClassExpr(c) => {
+                // let ast::Class {
+                //     decorators,
+                //     type_params,
+                //     super_class,
+                //     super_type_params,
+                //     implements,
+                //     body,
+                //     is_abstract: _,
+                //     span: _,
+                //     cached_hash: _,
+                // } = c.class.as_ref();
+
+                // bind_vec!(self, decorators, node.clone());
+                // bind_opt!(self, c.ident, node.clone());
+                // bind_opt!(self, type_params, node.clone());
+                // bind_opt!(self, super_class, node.clone());
+                // bind_opt!(self, super_type_params, node.clone());
+                // bind_vec!(self, implements, node.clone());
+                // bind_vec!(self, body, node.clone());
+                bind_opt!(self, c.ident, node.clone());
+                bind!(self, c.class, node.clone());
+            }
+            BoundNode::Class(c) => {
                 let ast::Class {
                     decorators,
                     type_params,
@@ -1142,10 +1180,9 @@ impl<'a> Binder<'a> {
                     is_abstract: _,
                     span: _,
                     cached_hash: _,
-                } = c.class.as_ref();
+                } = c.node.as_ref();
 
                 bind_vec!(self, decorators, node.clone());
-                bind_opt!(self, c.ident, node.clone());
                 bind_opt!(self, type_params, node.clone());
                 bind_opt!(self, super_class, node.clone());
                 bind_opt!(self, super_type_params, node.clone());
@@ -1200,70 +1237,72 @@ impl<'a> Binder<'a> {
                 bind_opt!(self, value, node.clone());
             }
             BoundNode::ClassMethod(m) => {
-                let ast::ClassMethod {
-                    span: _,
-                    key,
-                    function,
-                    kind: _,
-                    is_static: _,
-                    accessibility: _,
-                    is_abstract: _,
-                    is_optional: _,
-                    is_override: _,
-                    cached_hash: _,
-                } = m.node.as_ref();
+                // let ast::ClassMethod {
+                //     span: _,
+                //     key,
+                //     function,
+                //     kind: _,
+                //     is_static: _,
+                //     accessibility: _,
+                //     is_abstract: _,
+                //     is_optional: _,
+                //     is_override: _,
+                //     cached_hash: _,
+                // } = m.node.as_ref();
 
-                let ast::Function {
-                    params,
-                    decorators,
-                    span: _,
-                    body,
-                    is_generator: _,
-                    is_async: _,
-                    type_params,
-                    return_type,
-                    cached_hash: _,
-                } = function.as_ref();
+                // let ast::Function {
+                //     params,
+                //     decorators,
+                //     span: _,
+                //     body,
+                //     is_generator: _,
+                //     is_async: _,
+                //     type_params,
+                //     return_type,
+                //     cached_hash: _,
+                // } = function.as_ref();
 
-                bind_vec!(self, decorators, node.clone());
-                bind!(self, key, node.clone());
-                bind_opt!(self, type_params, node.clone());
-                bind_vec!(self, params, node.clone());
-                bind_opt!(self, return_type, node.clone());
-                bind_opt!(self, body, node.clone());
+                // bind_vec!(self, decorators, node.clone());
+                // bind!(self, key, node.clone());
+                // bind_opt!(self, type_params, node.clone());
+                // bind_vec!(self, params, node.clone());
+                // bind_opt!(self, return_type, node.clone());
+                // bind_opt!(self, body, node.clone());
+                bind!(self, m.node.function, node.clone());
             }
             BoundNode::PrivateMethod(m) => {
-                let ast::PrivateMethod {
-                    span: _,
-                    key,
-                    function,
-                    kind: _,
-                    is_static: _,
-                    accessibility: _,
-                    is_abstract: _,
-                    is_optional: _,
-                    is_override: _,
-                    cached_hash: _,
-                } = m.node.as_ref();
+                // let ast::PrivateMethod {
+                //     span: _,
+                //     key,
+                //     function,
+                //     kind: _,
+                //     is_static: _,
+                //     accessibility: _,
+                //     is_abstract: _,
+                //     is_optional: _,
+                //     is_override: _,
+                //     cached_hash: _,
+                // } = m.node.as_ref();
 
-                let ast::Function {
-                    params,
-                    decorators,
-                    span: _,
-                    body,
-                    is_generator: _,
-                    is_async: _,
-                    type_params,
-                    return_type,
-                    cached_hash: _,
-                } = function.as_ref();
+                // let ast::Function {
+                //     params,
+                //     decorators,
+                //     span: _,
+                //     body,
+                //     is_generator: _,
+                //     is_async: _,
+                //     type_params,
+                //     return_type,
+                //     cached_hash: _,
+                // } = function.as_ref();
 
-                bind_vec!(self, decorators, node.clone());
-                bind!(self, key, node.clone());
-                bind_opt!(self, type_params, node.clone());
-                bind_vec!(self, params, node.clone());
-                bind_opt!(self, return_type, node.clone());
-                bind_opt!(self, body, node.clone());
+                // bind_vec!(self, decorators, node.clone());
+                // bind!(self, key, node.clone());
+                // bind_opt!(self, type_params, node.clone());
+                // bind_vec!(self, params, node.clone());
+                // bind_opt!(self, return_type, node.clone());
+                // bind_opt!(self, body, node.clone());
+                bind!(self, m.node.function, node.clone());
             }
             BoundNode::Constructor(c) => {
                 let ast::Constructor {
@@ -1289,24 +1328,26 @@ impl<'a> Binder<'a> {
                     cached_hash: _,
                 } = f.node.as_ref();
 
-                let ast::Function {
-                    params,
-                    decorators,
-                    span: _,
-                    body,
-                    is_generator: _,
-                    is_async: _,
-                    type_params,
-                    return_type,
-                    cached_hash: _,
-                } = function.as_ref();
+                // let ast::Function {
+                //     params,
+                //     decorators,
+                //     span: _,
+                //     body,
+                //     is_generator: _,
+                //     is_async: _,
+                //     type_params,
+                //     return_type,
+                //     cached_hash: _,
+                // } = function.as_ref();
 
-                bind_vec!(self, decorators, node.clone());
+                // bind_vec!(self, decorators, node.clone());
+                // bind!(self, ident, node.clone());
+                // bind_opt!(self, type_params, node.clone());
+                // bind_vec!(self, params, node.clone());
+                // bind_opt!(self, return_type, node.clone());
+                // bind_opt!(self, body, node.clone());
                 bind!(self, ident, node.clone());
-                bind_opt!(self, type_params, node.clone());
-                bind_vec!(self, params, node.clone());
-                bind_opt!(self, return_type, node.clone());
-                bind_opt!(self, body, node.clone());
+                bind!(self, function, node.clone());
             }
             BoundNode::VarDecl(v) => bind_vec!(self, v.decls, node.clone()),
             // BoundNode::VarDeclarator(v) => {
@@ -1328,24 +1369,26 @@ impl<'a> Binder<'a> {
                     cached_hash: _,
                 } = f.node.as_ref();
 
-                let ast::Function {
-                    params,
-                    decorators,
-                    span: _,
-                    body,
-                    is_generator: _,
-                    is_async: _,
-                    type_params,
-                    return_type,
-                    cached_hash: _,
-                } = function.as_ref();
+                // let ast::Function {
+                //     params,
+                //     decorators,
+                //     span: _,
+                //     body,
+                //     is_generator: _,
+                //     is_async: _,
+                //     type_params,
+                //     return_type,
+                //     cached_hash: _,
+                // } = function.as_ref();
 
-                bind_vec!(self, decorators, node.clone());
+                // bind_vec!(self, decorators, node.clone());
+                // bind_opt!(self, ident, node.clone());
+                // bind_opt!(self, type_params, node.clone());
+                // bind_vec!(self, params, node.clone());
+                // bind_opt!(self, return_type, node.clone());
+                // bind_opt!(self, body, node.clone());
                 bind_opt!(self, ident, node.clone());
-                bind_opt!(self, type_params, node.clone());
-                bind_vec!(self, params, node.clone());
-                bind_opt!(self, return_type, node.clone());
-                bind_opt!(self, body, node.clone());
+                bind!(self, function, node.clone());
             }
             BoundNode::AssignExpr(e) => {
                 bind!(self, e.left, node.clone());
@@ -1380,11 +1423,34 @@ impl<'a> Binder<'a> {
             BoundNode::TplElement(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
             BoundNode::ParenExpr(e) => bind!(self, e.expr, node.clone()),
             BoundNode::Super(_) => {}
-            BoundNode::ExprOrSpread(e) => bind!(self, e.expr, node.clone()),
             BoundNode::OptChainExpr(e) => bind!(self, e.expr, node.clone()),
-            BoundNode::Function(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
+            BoundNode::Function(n) => {
+                let ast::Function {
+                    params,
+                    decorators,
+                    span: _,
+                    body,
+                    is_generator: _,
+                    is_async: _,
+                    type_params,
+                    return_type,
+                    cached_hash: _,
+                } = n.node.as_ref();
+
+                bind_vec!(self, decorators, node.clone());
+                bind_opt!(self, type_params, node.clone());
+                bind_vec!(self, params, node.clone());
+                bind_opt!(self, return_type, node.clone());
+                bind_opt!(self, body, node.clone());
+            }
             BoundNode::Param(p) => {
                 bind_vec!(self, p.decorators, node.clone());
+                bind!(self, p.pat, node.clone());
+            }
+            BoundNode::ParamWithoutDecorators(p) => {
+                bind!(self, p.pat, node.clone());
+            }
+            BoundNode::TsAmbientParam(p) => {
                 bind!(self, p.pat, node.clone());
             }
             BoundNode::BindingIdent(b) => {
@@ -1393,8 +1459,8 @@ impl<'a> Binder<'a> {
             }
             BoundNode::Ident(_) => {}
             BoundNode::PrivateName(p) => bind!(self, p.id, node.clone()),
-            BoundNode::JSXMemberExpr(n) => todo!("temp: node: {:?}", &node),
-            BoundNode::JSXNamespacedName(n) => todo!("temp: node: {:?}", &node),
+            BoundNode::JSXMemberExpr(_) => todo!("temp: node: {:?}", &node),
+            BoundNode::JSXNamespacedName(_) => todo!("temp: node: {:?}", &node),
             BoundNode::JSXEmptyExpr(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
             BoundNode::JSXExprContainer(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
             BoundNode::JSXSpreadChild(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
@@ -1435,7 +1501,7 @@ impl<'a> Binder<'a> {
             BoundNode::ExportNamespaceSpecifier(n) => {
                 todo!("temp: node: {:?}, span: {:?}", &node, n.span)
             }
-            BoundNode::ExportDefaultSpecifier(n) => todo!("temp: node: {:?}", &node),
+            BoundNode::ExportDefaultSpecifier(_) => todo!("temp: node: {:?}", &node),
             BoundNode::ExportNamedSpecifier(n) => {
                 todo!("temp: node: {:?}, span: {:?}", &node, n.span)
             }
@@ -1446,13 +1512,13 @@ impl<'a> Binder<'a> {
                 bind!(self, p.arg, node.clone());
                 bind_opt!(self, p.type_ann, node.clone());
             }
-            BoundNode::KeyValuePatProp(n) => todo!("temp: node: {:?}", &node),
+            BoundNode::KeyValuePatProp(_) => todo!("temp: node: {:?}", &node),
             BoundNode::AssignPatProp(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
             // BoundNode::KeyValueProp(_) => todo!(),
-            BoundNode::AssignProp(n) => todo!("temp: node: {:?}", &node),
+            BoundNode::AssignProp(_) => todo!("temp: node: {:?}", &node),
             BoundNode::GetterProp(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
             BoundNode::SetterProp(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
-            BoundNode::MethodProp(n) => todo!("temp: node: {:?}", &node),
+            BoundNode::MethodProp(_) => todo!("temp: node: {:?}", &node),
             BoundNode::ComputedPropName(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
             BoundNode::EmptyStmt(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
             BoundNode::DebuggerStmt(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
@@ -1466,7 +1532,10 @@ impl<'a> Binder<'a> {
                 bind_opt!(self, p.default, node.clone());
             }
             BoundNode::TsTypeParamInstantiation(i) => bind_vec!(self, i.params, node.clone()),
-            BoundNode::TsParamProp(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
+            BoundNode::TsParamProp(n) => {
+                bind_vec!(self, n.decorators, node.clone());
+                bind!(self, n.param, node.clone());
+            }
             BoundNode::TsQualifiedName(n) => {
                 bind!(self, n.left, node.clone());
                 bind!(self, n.right, node.clone());
@@ -1498,7 +1567,7 @@ impl<'a> Binder<'a> {
                 bind_opt!(self, s.type_ann, node.clone());
             }
             BoundNode::TsKeywordType(_) => {}
-            BoundNode::TsThisType(n) => {}
+            BoundNode::TsThisType(_) => {}
             BoundNode::TsFnType(f) => {
                 bind_opt!(self, f.type_params, node.clone());
                 bind_vec!(self, f.params, node.clone());
@@ -1607,16 +1676,16 @@ impl<'a> Binder<'a> {
         if !(antecedent.flags.intersects(FlowFlags::Unreachable))
             && !label.antecedents.contains(&antecedent_id)
         {
-            label.antecedents.push(antecedent_id);
+            Rc::make_mut(&mut label.antecedents).push(antecedent_id);
             self.setFlowNodeReferenced(antecedent_id);
         }
     }
 
     fn createFlowCondition(
         &mut self,
-        flags: FlowFlags,
-        antecedent: FlowNodeId,
-        expression: Option<ast::Expr>,
+        _flags: FlowFlags,
+        _antecedent: FlowNodeId,
+        _expression: Option<ast::Expr>,
     ) -> FlowNodeId {
         todo!();
         // if (antecedent.flags & FlowFlags.Unreachable) {
@@ -1672,19 +1741,19 @@ impl<'a> Binder<'a> {
         id
     }
 
-    fn createFlowArrayMutation(&mut self, antecedent: FlowNodeId, node: BoundNode) -> FlowNodeId {
-        self.setFlowNodeReferenced(antecedent);
-        let node = FlowNode {
-            flags: FlowFlags::ArrayMutation,
-            id: None,
-            kind: FlowNodeKind::FlowArrayMutation(FlowArrayMutation { antecedent, node }),
-        };
-        let id = self.alloc_flow_node(node);
-        if let Some(currentExceptionTarget) = self.currentExceptionTarget {
-            self.addAntecedent(currentExceptionTarget, id);
-        }
-        id
-    }
+    // fn createFlowArrayMutation(&mut self, antecedent: FlowNodeId, node: BoundNode) -> FlowNodeId {
+    //     self.setFlowNodeReferenced(antecedent);
+    //     let node = FlowNode {
+    //         flags: FlowFlags::ArrayMutation,
+    //         id: None,
+    //         kind: FlowNodeKind::FlowArrayMutation(FlowArrayMutation { antecedent, node }),
+    //     };
+    //     let id = self.alloc_flow_node(node);
+    //     if let Some(currentExceptionTarget) = self.currentExceptionTarget {
+    //         self.addAntecedent(currentExceptionTarget, id);
+    //     }
+    //     id
+    // }
 
     fn createFlowCall(&mut self, antecedent: FlowNodeId, node: Rc<CallExpr>) -> FlowNodeId {
         self.setFlowNodeReferenced(antecedent);
@@ -2002,7 +2071,7 @@ impl<'a> Binder<'a> {
                         $($name.len() +)+ 0
                     );
 
-                    $(antecedents.extend($name);)+
+                    $(antecedents.extend($name.iter());)+
 
                     antecedents
                 }};
@@ -2202,17 +2271,17 @@ impl<'a> Binder<'a> {
         self.currentFlow = self.finishFlowLabel(post_statement_label);
     }
 
-    fn bindDestructuringTargetFlow(&mut self, node: ast::Expr) {
-        todo!();
-        // match node {
-        //     ast::Expr::Assign(e) if e.op == ast::AssignOp::Assign => {
-        //         self.bindAssignmentTargetFlow(e.left)
-        //     }
-        //     _ => self.bindAssignmentTargetFlow(node),
-        // }
-    }
+    // fn bindDestructuringTargetFlow(&mut self, node: ast::Expr) {
+    //     todo!();
+    //     // match node {
+    //     //     ast::Expr::Assign(e) if e.op == ast::AssignOp::Assign => {
+    //     //         self.bindAssignmentTargetFlow(e.left)
+    //     //     }
+    //     //     _ => self.bindAssignmentTargetFlow(node),
+    //     // }
+    // }
 
-    fn bindAssignmentTargetFlow(&mut self, node: ast::Expr) {
+    fn bindAssignmentTargetFlow(&mut self, _node: ast::Expr) {
         todo!();
         // if isNarrowableReference(node) {
         //     self.currentFlow =
@@ -2241,48 +2310,48 @@ impl<'a> Binder<'a> {
         // }
     }
 
-    fn bindLogicalLikeExpression(
-        &mut self,
-        node: ast::Expr,
-        trueTarget: FlowNodeId,
-        falseTarget: FlowNodeId,
-    ) {
-        todo!();
-        // assert_id_is_for_flow_label!(self, trueTarget);
-        // assert_id_is_for_flow_label!(self, falseTarget);
+    // fn bindLogicalLikeExpression(
+    //     &mut self,
+    //     node: ast::Expr,
+    //     trueTarget: FlowNodeId,
+    //     falseTarget: FlowNodeId,
+    // ) {
+    //     todo!();
+    //     // assert_id_is_for_flow_label!(self, trueTarget);
+    //     // assert_id_is_for_flow_label!(self, falseTarget);
 
-        // let preRightLabel = self.alloc_flow_node(FlowNode::new_branch_label());
-        // match node {
-        //     ast::Expr::Bin(e) if e.op = ast::BinaryOp::LogicalAnd => self.bindCondition(node.left, preRightLabel, falseTarget),
-        //     ast::Expr::Assign(e) if e.op == ast::AssignOp::AndAssign => self.bindCondition(node.left, preRightLabel, falseTarget),
-        //     _ =>self.bindCondition(node.left, trueTarget, preRightLabel)
-        // }
-        // if node.op == ast::BinaryOp::LogicalAnd
-        //     || node.op == SyntaxKind.AmpersandAmpersandEqualsToken
-        // {
-        //     self.bindCondition(node.left, preRightLabel, falseTarget);
-        // } else {
-        //     self.bindCondition(node.left, trueTarget, preRightLabel);
-        // }
-        // self.currentFlow = self.finishFlowLabel(preRightLabel);
-        // self.bind(node.operatorToken);
+    //     // let preRightLabel = self.alloc_flow_node(FlowNode::new_branch_label());
+    //     // match node {
+    //     //     ast::Expr::Bin(e) if e.op = ast::BinaryOp::LogicalAnd => self.bindCondition(node.left, preRightLabel, falseTarget),
+    //     //     ast::Expr::Assign(e) if e.op == ast::AssignOp::AndAssign => self.bindCondition(node.left, preRightLabel, falseTarget),
+    //     //     _ =>self.bindCondition(node.left, trueTarget, preRightLabel)
+    //     // }
+    //     // if node.op == ast::BinaryOp::LogicalAnd
+    //     //     || node.op == SyntaxKind.AmpersandAmpersandEqualsToken
+    //     // {
+    //     //     self.bindCondition(node.left, preRightLabel, falseTarget);
+    //     // } else {
+    //     //     self.bindCondition(node.left, trueTarget, preRightLabel);
+    //     // }
+    //     // self.currentFlow = self.finishFlowLabel(preRightLabel);
+    //     // self.bind(node.operatorToken);
 
-        // if isLogicalOrCoalescingAssignmentOperator(node.operatorToken.kind) {
-        //     self.doWithConditionalBranches(bind, node.right, trueTarget, falseTarget);
-        //     self.bindAssignmentTargetFlow(node.left);
+    //     // if isLogicalOrCoalescingAssignmentOperator(node.operatorToken.kind) {
+    //     //     self.doWithConditionalBranches(bind, node.right, trueTarget, falseTarget);
+    //     //     self.bindAssignmentTargetFlow(node.left);
 
-        //     self.addAntecedent(
-        //         trueTarget,
-        //         self.createFlowCondition(FlowFlags::TrueCondition, self.currentFlow, node),
-        //     );
-        //     self.addAntecedent(
-        //         falseTarget,
-        //         self.createFlowCondition(FlowFlags::FalseCondition, self.currentFlow, node),
-        //     );
-        // } else {
-        //     self.bindCondition(node.right, trueTarget, falseTarget);
-        // }
-    }
+    //     //     self.addAntecedent(
+    //     //         trueTarget,
+    //     //         self.createFlowCondition(FlowFlags::TrueCondition, self.currentFlow, node),
+    //     //     );
+    //     //     self.addAntecedent(
+    //     //         falseTarget,
+    //     //         self.createFlowCondition(FlowFlags::FalseCondition, self.currentFlow, node),
+    //     //     );
+    //     // } else {
+    //     //     self.bindCondition(node.right, trueTarget, falseTarget);
+    //     // }
+    // }
 
     fn bindUnaryExpressionFlow(&mut self, node: Rc<UnaryExpr>) {
         if node.op == ast::UnaryOp::Bang {
@@ -2614,7 +2683,7 @@ impl<'a> Binder<'a> {
 
                 // TODO: static blocks:
                 // || isClassStaticBlockDeclaration(node.parent)
-                if isFunctionLike(&node.parent) {
+                if isFunctionLike(node.parent.as_ref()) {
                     ContainerFlags::None
                 } else {
                     ContainerFlags::IsBlockScopedContainer
@@ -2665,7 +2734,7 @@ impl<'a> Binder<'a> {
                 let container_symbol_id = container_symbol_id.unwrap();
                 declare_symbol!(
                     self,
-                    self.symbols[container_symbol_id].exports_mut(),
+                    self.symbols[container_symbol_id].exports().unwrap(),
                     Some(container_symbol_id),
                     node,
                     symbolFlags,
@@ -2688,7 +2757,7 @@ impl<'a> Binder<'a> {
                 let container_symbol_id = container_symbol_id.unwrap();
                 declare_symbol!(
                     self,
-                    self.symbols[container_symbol_id].members_mut(),
+                    self.symbols[container_symbol_id].members().unwrap(),
                     Some(container_symbol_id),
                     node,
                     symbolFlags,
@@ -2730,7 +2799,7 @@ impl<'a> Binder<'a> {
                 // the type checker walks up the containers, checking them for matching names.
                 declare_symbol!(
                     self,
-                    self.node_data_mut(container_node.clone()).locals,
+                    self.node_data(container_node.clone()).locals.unwrap(),
                     None,
                     node,
                     symbolFlags,
@@ -2758,7 +2827,7 @@ impl<'a> Binder<'a> {
         if isStatic(&node) {
             declare_symbol!(
                 self,
-                self.symbols[container_symbol_id].exports_mut(),
+                self.symbols[container_symbol_id].exports().unwrap(),
                 Some(container_symbol_id),
                 node,
                 symbolFlags,
@@ -2769,7 +2838,7 @@ impl<'a> Binder<'a> {
         } else {
             declare_symbol!(
                 self,
-                self.symbols[container_symbol_id].members_mut(),
+                self.symbols[container_symbol_id].members().unwrap(),
                 Some(container_symbol_id),
                 node,
                 symbolFlags,
@@ -2788,10 +2857,11 @@ impl<'a> Binder<'a> {
     ) -> SymbolId {
         match self.program() {
             ast::Program::Module(_) => self.declareModuleMember(node, symbolFlags, symbolExcludes),
-            ast::Program::Script(_) => {
+            ast::Program::Script(s) => {
+                let locals = self.node_data(s.bind_to_opt_parent(None)).locals.unwrap();
                 declare_symbol!(
                     self,
-                    self.node_data_mut(node.clone()).locals,
+                    locals,
                     None,
                     node,
                     symbolFlags,
@@ -2828,7 +2898,7 @@ impl<'a> Binder<'a> {
         } else {
             let state = self.declareModuleSymbol(node.clone(), module);
             if state != ModuleInstanceState::NonInstantiated {
-                let symbol = self.node_data_mut(node).symbol.unwrap();
+                let symbol = self.node_data(node).symbol.unwrap();
                 let symbol = &mut self.symbols[symbol];
                 // if module was already merged with some function, class or non-const enum, treat it as non-const-enum-only
                 *symbol.constEnumOnlyModule_mut() = !(symbol.flags().contains(SymbolFlags::Function | SymbolFlags::Class | SymbolFlags::RegularEnum))
@@ -2880,9 +2950,8 @@ impl<'a> Binder<'a> {
         let typeLiteralSymbol =
             self.createSymbol(SymbolFlags::TypeLiteral, InternalSymbolName::Type.into());
         self.addDeclarationToSymbol(typeLiteralSymbol, node, SymbolFlags::TypeLiteral);
-        self.symbols[typeLiteralSymbol]
-            .members_mut()
-            .insert(symbol_name, symbol);
+        let members = new_ahash_map![(symbol_name, symbol)];
+        *self.symbols[typeLiteralSymbol].members_mut() = Some(self.symbol_tables.push(members));
     }
 
     fn bindObjectLiteralExpression(&mut self, node: BoundNode) {
@@ -2961,12 +3030,12 @@ impl<'a> Binder<'a> {
         symbolFlags: SymbolFlags,
         symbolExcludes: SymbolFlags,
     ) {
-        let block_scope_container_node = match &self.blockScopeContainer {
+        let container_node = match &self.blockScopeContainer {
             Some(c) => c.clone(),
             None => unreachable!("symbol must be declared within a container"),
         };
 
-        match block_scope_container_node {
+        match container_node {
             BoundNode::TsModuleDecl(_) | BoundNode::Module(_) => {
                 self.declareModuleMember(node, symbolFlags, symbolExcludes);
                 return;
@@ -2981,18 +3050,19 @@ impl<'a> Binder<'a> {
             _ => {}
         }
 
-        // TODO: is this necessary?
-        if self
-            .node_data(block_scope_container_node.clone())
-            .locals
-            .is_empty()
-        {
-            self.addToContainerChain(block_scope_container_node.clone());
-        }
+        let locals = match self.node_data(container_node.clone()).locals {
+            Some(locals) => locals,
+            None => {
+                self.addToContainerChain(container_node.clone());
+                let locals = self.symbol_tables.push(SymbolTable::default());
+                self.node_data_mut(container_node.clone()).locals = Some(locals);
+                locals
+            }
+        };
+
         declare_symbol!(
             self,
-            self.node_data_mut(block_scope_container_node.clone())
-                .locals,
+            locals,
             None,
             node,
             symbolFlags,
@@ -3211,15 +3281,24 @@ impl<'a> Binder<'a> {
                 return self.bindTypeParameter(node.clone(), p.clone());
             }
             BoundNode::Param(ref p) => {
-                return self.bindParameter(node.clone(), p.clone());
+                return self.bindParameter(p.clone().into());
+            }
+            BoundNode::ParamWithoutDecorators(ref p) => {
+                return self.bindParameter(p.clone().into());
+            }
+            BoundNode::TsAmbientParam(ref p) => {
+                return self.bindParameter(p.clone().into());
+            }
+            BoundNode::TsParamProp(ref p) => {
+                return self.bindParameter(p.clone().into());
             }
             BoundNode::VarDeclarator(ref v) => {
                 return self.bindVariableDeclaration(node.clone(), v.clone());
             }
-            BoundNode::BindingIdent(_) | BoundNode::RestPat(_) | BoundNode::AssignPat(_) => {
-                self.node_data_mut(node.clone()).flowNode = Some(self.currentFlow);
-                self.bindBindingElement(node);
-            }
+            // BoundNode::BindingIdent(_) | BoundNode::RestPat(_) | BoundNode::AssignPat(_) => {
+            //     self.node_data_mut(node.clone()).flowNode = Some(self.currentFlow);
+            //     self.bindBindingElement(node);
+            // }
             BoundNode::ClassProp(_)
             | BoundNode::PrivateProp(_)
             | BoundNode::TsPropertySignature(_) => {
@@ -3230,7 +3309,7 @@ impl<'a> Binder<'a> {
             BoundNode::KeyValueProp(ref prop) => {
                 self.bindPropertyOrMethodOrAccessor(
                     node.clone(),
-                    matches!(prop.key, ast::PropName::Computed(ref n) if isDynamicName(&n.expr)),
+                    matches!(prop.key, ast::PropName::Computed(ref n) if hasDynamicName(&n.expr.bind_to_opt_parent(None))),
                     SymbolFlags::Property,
                     SymbolFlags::PropertyExcludes,
                 );
@@ -3281,7 +3360,7 @@ impl<'a> Binder<'a> {
 
                 self.bindPropertyOrMethodOrAccessor(
                     node.clone(),
-                    matches!(m.key, ast::PropName::Computed(ref n) if isDynamicName(&n.expr)),
+                    matches!(m.key, ast::PropName::Computed(ref n) if hasDynamicName(&n.expr.bind_to_opt_parent(None))),
                     symbol_flags,
                     symbol_excludes,
                 );
@@ -3293,7 +3372,7 @@ impl<'a> Binder<'a> {
                 // members with the same name.
                 self.bindPropertyOrMethodOrAccessor(
                     node.clone(),
-                    matches!(prop.key, ast::PropName::Computed(ref n) if isDynamicName(&n.expr)),
+                    matches!(prop.key, ast::PropName::Computed(ref n) if hasDynamicName(&n.expr.bind_to_opt_parent(None))),
                     SymbolFlags::Method,
                     SymbolFlags::PropertyExcludes,
                 );
@@ -3304,7 +3383,7 @@ impl<'a> Binder<'a> {
 
                 self.bindPropertyOrMethodOrAccessor(
                     node.clone(),
-                    isDynamicName(&s.key),
+                    hasDynamicName(&s.key.bind(node.clone())),
                     symbol_flags,
                     SymbolFlags::MethodExcludes,
                 );
@@ -3322,7 +3401,7 @@ impl<'a> Binder<'a> {
             BoundNode::GetterProp(ref prop) => {
                 self.bindPropertyOrMethodOrAccessor(
                     node.clone(),
-                    matches!(prop.key, ast::PropName::Computed(ref n) if isDynamicName(&n.expr)),
+                    matches!(prop.key, ast::PropName::Computed(ref n) if hasDynamicName(&n.expr.bind_to_opt_parent(None))),
                     SymbolFlags::GetAccessor,
                     SymbolFlags::GetAccessorExcludes,
                 );
@@ -3330,7 +3409,7 @@ impl<'a> Binder<'a> {
             BoundNode::SetterProp(ref prop) => {
                 self.bindPropertyOrMethodOrAccessor(
                     node.clone(),
-                    matches!(prop.key, ast::PropName::Computed(ref n) if isDynamicName(&n.expr)),
+                    matches!(prop.key, ast::PropName::Computed(ref n) if hasDynamicName(&n.expr.bind_to_opt_parent(None))),
                     SymbolFlags::SetAccessor,
                     SymbolFlags::SetAccessorExcludes,
                 );
@@ -3354,42 +3433,51 @@ impl<'a> Binder<'a> {
             BoundNode::ObjectLit(_) => {
                 self.bindObjectLiteralExpression(node);
             }
-            BoundNode::FnExpr(_) | BoundNode::ArrowExpr(_) => {
-                todo!();
-                // return bindFunctionExpression(node as FunctionExpression);
+            BoundNode::FnExpr(ref f) => {
+                return self
+                    .bindFunctionExpression(node.clone(), f.ident.as_ref().map(|i| i.sym.clone()));
+            }
+            BoundNode::ArrowExpr(_) => {
+                return self.bindFunctionExpression(node, None);
             }
 
-            BoundNode::CallExpr(_) => {
-                todo!();
-                // let assignmentKind = getAssignmentDeclarationKind(node as CallExpression);
-                // match assignmentKind {
-                //      AssignmentDeclarationKind::ObjectDefinePropertyValue(_) => {
-                //         return bindObjectDefinePropertyAssignment(node as BindableObjectDefinePropertyCall);
-                //      }
-                //      AssignmentDeclarationKind::ObjectDefinePropertyExports(_) => {
-                //         return bindObjectDefinePropertyExport(node as BindableObjectDefinePropertyCall);
-                //      }
-                //      AssignmentDeclarationKind::ObjectDefinePrototypeProperty(_) => {
-                //         return bindObjectDefinePrototypeProperty(node as BindableObjectDefinePropertyCall);
-                //      }
-                //      AssignmentDeclarationKind::None(_) => {
-                //         // Nothing to do
-                //      }
-                //     _ => {
-                //         return panic!("Unknown call expression assignment declaration kind");
-                //     }
-                // }
+            BoundNode::CallExpr(c) => {
+                let assignmentKind = getAssignmentDeclarationKind(&ast::Expr::Call(c.node.clone()));
+                match assignmentKind {
+                    AssignmentDeclarationKind::ObjectDefinePropertyValue => {
+                        todo!();
+                        // return self.bindObjectDefinePropertyAssignment(
+                        //     node as BindableObjectDefinePropertyCall,
+                        // );
+                    }
+                    AssignmentDeclarationKind::ObjectDefinePropertyExports => {
+                        todo!();
+                        // return self.bindObjectDefinePropertyExport(
+                        //     node as BindableObjectDefinePropertyCall,
+                        // );
+                    }
+                    AssignmentDeclarationKind::ObjectDefinePrototypeProperty => {
+                        todo!();
+                        // return self.bindObjectDefinePrototypeProperty(
+                        //     node as BindableObjectDefinePropertyCall,
+                        // );
+                    }
+                    AssignmentDeclarationKind::None => {
+                        // Nothing to do
+                    }
+                    _ => unreachable!("Unknown call expression assignment declaration kind"),
+                }
+                //todo:
                 // if isInJSFile(node) {
-                //     bindCallExpression(node as CallExpression);
+                //     self.bindCallExpression(node.clone(), c.clone());
                 // }
             }
 
             // Members of classes, interfaces, and modules
             BoundNode::ClassExpr(_) | BoundNode::ClassDecl(_) => {
-                todo!();
-                // // All classes are automatically in strict mode in ES6.
-                // inStrictMode = true;
-                // return bindClassLikeDeclaration(node as ClassLikeDeclaration);
+                // All classes are automatically in strict mode in ES6.
+                self.inStrictMode = true;
+                return self.bindClassLikeDeclaration(node);
             }
             BoundNode::TsInterfaceDecl(_) => {
                 return self.bindBlockScopedDeclaration(
@@ -3479,9 +3567,15 @@ impl<'a> Binder<'a> {
 
     fn bindPropertyWorker(&mut self, node: BoundNode) {
         let (has_dynamic_name, optional) = match &node {
-            BoundNode::ClassProp(p) => (p.computed && isDynamicName(&p.key), p.is_optional),
+            BoundNode::ClassProp(p) => (
+                p.computed && hasDynamicName(&p.key.bind(node.clone())),
+                p.is_optional,
+            ),
             BoundNode::PrivateProp(p) => (false, p.is_optional),
-            BoundNode::TsPropertySignature(s) => (s.computed && isDynamicName(&s.key), s.optional),
+            BoundNode::TsPropertySignature(s) => (
+                s.computed && hasDynamicName(&s.key.bind(node.clone())),
+                s.optional,
+            ),
             _ => unreachable!(),
         };
 
@@ -3489,7 +3583,7 @@ impl<'a> Binder<'a> {
         symbol_flags.set(SymbolFlags::Optional, optional);
 
         self.bindPropertyOrMethodOrAccessor(
-            node.clone(),
+            node,
             has_dynamic_name,
             symbol_flags,
             SymbolFlags::PropertyExcludes,
@@ -3550,13 +3644,78 @@ impl<'a> Binder<'a> {
     // addLateBoundAssignmentDeclarationToSymbol
     // bindSpecialPropertyDeclaration
     // bindPrototypeAssignment
-    // bindObjectDefinePrototypeProperty
+
+    // fn bindObjectDefinePrototypeProperty(&mut self, node: BindableObjectDefinePropertyCall) {
+    //     todo!();
+    //     // let namespaceSymbol = self.lookupSymbolForPropertyAccess(
+    //     //     (node.arguments[0] as PropertyAccessExpression).expression as EntityNameExpression,
+    //     // );
+    //     // if namespaceSymbol && namespaceSymbol.valueDeclaration {
+    //     //     // Ensure the namespace symbol becomes class-like
+    //     //     self.addDeclarationToSymbol(
+    //     //         namespaceSymbol,
+    //     //         namespaceSymbol.valueDeclaration,
+    //     //         SymbolFlags::Class,
+    //     //     );
+    //     // }
+    //     // self.bindPotentiallyNewExpandoMemberToNamespace(
+    //     //     node,
+    //     //     namespaceSymbol,
+    //     //     /*isPrototypeProperty*/ true,
+    //     // );
+    // }
+
     // bindPrototypePropertyAssignment
     // bindObjectDefinePropertyAssignment
     // bindSpecialPropertyAssignment
     // bindStaticPropertyAssignment
     // bindPotentiallyMissingNamespaces
-    // bindPotentiallyNewExpandoMemberToNamespace
+
+    // fn bindPotentiallyNewExpandoMemberToNamespace(declaration: BindableStaticAccessExpression | CallExpression, namespaceSymbol: Option<SymbolId>, isPrototypeProperty: bool) {
+    //     if !namespaceSymbol || !isExpandoSymbol(namespaceSymbol) {
+    //         return;
+    //     }
+
+    //     // Set up the members collection if it doesn't exist already
+    //     let symbolTable = if isPrototypeProperty {
+    //         (namespaceSymbol.members || (namespaceSymbol.members = createSymbolTable()))}else{
+    //         (namespaceSymbol.exports || (namespaceSymbol.exports = createSymbolTable()))};
+
+    //     let mut includes = SymbolFlags::None;
+    //     let mut excludes = SymbolFlags::None;
+    //     // Method-like
+    //     if isFunctionLikeDeclaration(getAssignedExpandoInitializer(declaration).unwrap()) {
+    //         includes = SymbolFlags::Method;
+    //         excludes = SymbolFlags::MethodExcludes;
+    //     }
+    //     // Maybe accessor-like
+    //     else if (isCallExpression(declaration) && isBindableObjectDefinePropertyCall(declaration)) {
+    //         // if (some(declaration.arguments[2].properties, p => {
+    //         //     const id = getNameOfDeclaration(p);
+    //         //     return !!id && isIdentifier(id) && idText(id) == "set";
+    //         // })) {
+    //         //     // We mix in `SymbolFlags::Property` so in the checker `getTypeOfVariableParameterOrProperty` is used for this
+    //         //     // symbol, instead of `getTypeOfAccessor` (which will assert as there is no real accessor declaration)
+    //         //     includes |= SymbolFlags::SetAccessor | SymbolFlags::Property;
+    //         //     excludes |= SymbolFlags::SetAccessorExcludes;
+    //         // }
+    //         // if (some(declaration.arguments[2].properties, p => {
+    //         //     const id = getNameOfDeclaration(p);
+    //         //     return !!id && isIdentifier(id) && idText(id) == "get";
+    //         // })) {
+    //         //     includes |= SymbolFlags::GetAccessor | SymbolFlags::Property;
+    //         //     excludes |= SymbolFlags::GetAccessorExcludes;
+    //         // }
+    //     }
+
+    //     if includes == SymbolFlags::None {
+    //         includes = SymbolFlags::Property;
+    //         excludes = SymbolFlags::PropertyExcludes;
+    //     }
+
+    //     declareSymbol(symbolTable, namespaceSymbol, declaration, includes | SymbolFlags::Assignment, excludes & ~SymbolFlags::Assignment);
+    // }
+
     // isTopLevelNamespaceAssignment
     // bindPropertyAssignment
     // isExpandoSymbol
@@ -3564,7 +3723,62 @@ impl<'a> Binder<'a> {
     // lookupSymbolForPropertyAccess
     // forEachIdentifierInEntityName
     // bindCallExpression
-    // bindClassLikeDeclaration
+
+    fn bindClassLikeDeclaration(&mut self, node: BoundNode) {
+        match &node {
+            BoundNode::ClassDecl(_) => {
+                self.bindBlockScopedDeclaration(
+                    node.clone(),
+                    SymbolFlags::Class,
+                    SymbolFlags::ClassExcludes,
+                );
+            }
+            BoundNode::ClassExpr(class) => {
+                let bindingName = class
+                    .ident
+                    .as_ref()
+                    .map(|i| i.sym.clone())
+                    .unwrap_or_else(|| InternalSymbolName::Class.into());
+                self.bindAnonymousDeclaration(node.clone(), SymbolFlags::Class, bindingName);
+                // // Add name of class expression into the map for semantic classifier
+                // if (node.name) {
+                //     classifiableNames.add(node.name.escapedText);
+                // }
+            }
+            _ => unreachable!(),
+        }
+
+        let symbol = self.node_data(node).symbol.unwrap();
+
+        // TypeScript 1.0 spec (April 2014): 8.4
+        // Every class automatically contains a static property member named 'prototype', the
+        // type of which is an instantiation of the class type with type Any supplied as a type
+        // argument for each type parameter. It is an error to explicitly declare a static
+        // property member with the name 'prototype'.
+        //
+        // Note: we check for this here because this class may be merging into a module.  The
+        // module might have an exported variable called 'prototype'.  We can't allow that as
+        // that would clash with the built-in 'prototype' for the class.
+        let prototypeSymbol = self.createSymbol(
+            SymbolFlags::Property | SymbolFlags::Prototype,
+            "prototype".into(),
+        );
+        let symbolExport = self.symbols[symbol].exports().unwrap();
+        let symbolExport = self.symbol_tables[symbolExport].get(&"prototype".into());
+        if let Some(_) = symbolExport {
+            todo!();
+            // if (node.name) {
+            //     setParent(node.name, node);
+            // }
+            // file.bindDiagnostics.push(createDiagnosticForNode(symbolExport.declarations![0], Diagnostics.Duplicate_identifier_0, symbolName(prototypeSymbol)));
+        }
+
+        self.symbol_tables[self.symbols[symbol].exports_mut().unwrap()]
+            .insert("prototype".into(), prototypeSymbol);
+
+        *self.symbols[prototypeSymbol].parent_mut() = Some(symbol);
+    }
+
     // bindEnumDeclaration
 
     fn bindVariableDeclaration(&mut self, node: BoundNode, decl: Rc<VarDeclarator>) {
@@ -3603,52 +3817,52 @@ impl<'a> Binder<'a> {
         }
     }
 
-    fn bindBindingElement(&mut self, node: BoundNode) {
-        // if (inStrictMode) {
-        //     checkStrictModeEvalOrArguments(node, node.name);
-        // }
+    // fn bindBindingElement(&mut self, node: BoundNode) {
+    //     // if (inStrictMode) {
+    //     //     checkStrictModeEvalOrArguments(node, node.name);
+    //     // }
 
-        if !matches!(node, BoundNode::ObjectPat(_) | BoundNode::ArrayPat(_)) {
-            // TODO:
-            // if isInJSFile(node) && isRequireVariableDeclaration(node) && !getJSDocTypeTag(node) {
-            //     self.declareSymbolAndAddToSymbolTable(
-            //         node as Declaration,
-            //         SymbolFlags::Alias,
-            //         SymbolFlags::AliasExcludes,
-            //     );
-            // } else
-            if isBlockOrCatchScoped(node.clone()) {
-                self.bindBlockScopedDeclaration(
-                    node,
-                    SymbolFlags::BlockScopedVariable,
-                    SymbolFlags::BlockScopedVariableExcludes,
-                );
-            } else if isParameterDeclaration(node.clone()) {
-                // It is safe to walk up parent chain to find whether the node is a destructuring parameter declaration
-                // because its parent chain has already been set up, since parents are set before descending into children.
-                //
-                // If node is a binding element in parameter declaration, we need to use ParameterExcludes.
-                // Using ParameterExcludes flag allows the compiler to report an error on duplicate identifiers in Parameter Declaration
-                // For example:
-                //      function foo([a,a]) {} // Duplicate Identifier error
-                //      function bar(a,a) {}   // Duplicate Identifier error, parameter declaration in this case is handled in bindParameter
-                //                             // which correctly set excluded symbols
-                self.declareSymbolAndAddToSymbolTable(
-                    node,
-                    SymbolFlags::FunctionScopedVariable,
-                    SymbolFlags::ParameterExcludes,
-                );
-            } else {
-                self.declareSymbolAndAddToSymbolTable(
-                    node,
-                    SymbolFlags::FunctionScopedVariable,
-                    SymbolFlags::FunctionScopedVariableExcludes,
-                );
-            }
-        }
-    }
+    //     if !matches!(node, BoundNode::ObjectPat(_) | BoundNode::ArrayPat(_)) {
+    //         // TODO:
+    //         // if isInJSFile(node) && isRequireVariableDeclaration(node) && !getJSDocTypeTag(node) {
+    //         //     self.declareSymbolAndAddToSymbolTable(
+    //         //         node as Declaration,
+    //         //         SymbolFlags::Alias,
+    //         //         SymbolFlags::AliasExcludes,
+    //         //     );
+    //         // } else
+    //         if isBlockOrCatchScoped(node.clone()) {
+    //             self.bindBlockScopedDeclaration(
+    //                 node,
+    //                 SymbolFlags::BlockScopedVariable,
+    //                 SymbolFlags::BlockScopedVariableExcludes,
+    //             );
+    //         } else if isParameterDeclaration(node.clone()) {
+    //             // It is safe to walk up parent chain to find whether the node is a destructuring parameter declaration
+    //             // because its parent chain has already been set up, since parents are set before descending into children.
+    //             //
+    //             // If node is a binding element in parameter declaration, we need to use ParameterExcludes.
+    //             // Using ParameterExcludes flag allows the compiler to report an error on duplicate identifiers in Parameter Declaration
+    //             // For example:
+    //             //      function foo([a,a]) {} // Duplicate Identifier error
+    //             //      function bar(a,a) {}   // Duplicate Identifier error, parameter declaration in this case is handled in bindParameter
+    //             //                             // which correctly set excluded symbols
+    //             self.declareSymbolAndAddToSymbolTable(
+    //                 node,
+    //                 SymbolFlags::FunctionScopedVariable,
+    //                 SymbolFlags::ParameterExcludes,
+    //             );
+    //         } else {
+    //             self.declareSymbolAndAddToSymbolTable(
+    //                 node,
+    //                 SymbolFlags::FunctionScopedVariable,
+    //                 SymbolFlags::FunctionScopedVariableExcludes,
+    //             );
+    //         }
+    //     }
+    // }
 
-    fn bindParameter(&mut self, node: BoundNode, param: Rc<Param> /* | JSDocParameterTag*/) {
+    fn bindParameter(&mut self, param: Parameter /* | JSDocParameterTag*/) {
         // if (node.kind === SyntaxKind.JSDocParameterTag && container.kind !== SyntaxKind.JSDocSignature) {
         //     return;
         // }
@@ -3658,30 +3872,32 @@ impl<'a> Binder<'a> {
         //     checkStrictModeEvalOrArguments(node, node.name);
         // }
 
-        match param.pat {
+        match param.pat() {
             ast::Pat::Array(_) | ast::Pat::Object(_) => {
-                let parent_fn = match node.parent() {
-                    Some(BoundNode::Function(f)) => f,
-                    _ => unreachable!(),
+                let index_in_parent = match param.parent() {
+                    BoundNode::PrivateMethod(n) => {
+                        n.function.params.iter().position(|p| param == p)
+                    }
+                    BoundNode::ClassMethod(n) => n.function.params.iter().position(|p| param == p),
+                    BoundNode::MethodProp(n) => n.function.params.iter().position(|p| param == p),
+                    BoundNode::FnExpr(n) => n.function.params.iter().position(|p| param == p),
+                    BoundNode::ArrowExpr(n) => n.params.iter().position(|p| param == p),
+                    _ => todo!(),
                 };
-
-                let index_in_parent = parent_fn
-                    .params
-                    .iter()
-                    .position(|p| p == &param.node)
-                    .unwrap();
                 let mut name = String::with_capacity(8);
                 name.push_str("__");
-                name.push_str(index_in_parent.to_string().as_str());
+                name.push_str(index_in_parent.unwrap().to_string().as_str());
+                // TODO: remove clone():
                 self.bindAnonymousDeclaration(
-                    node,
+                    param.clone().into(),
                     SymbolFlags::FunctionScopedVariable,
                     name.into(),
                 );
             }
             ast::Pat::Ident(_) | ast::Pat::Rest(_) | ast::Pat::Assign(_) => {
+                // TODO: remove clone():
                 self.declareSymbolAndAddToSymbolTable(
-                    node,
+                    param.clone().into(),
                     SymbolFlags::FunctionScopedVariable,
                     SymbolFlags::ParameterExcludes,
                 );
@@ -3689,13 +3905,13 @@ impl<'a> Binder<'a> {
             _ => unreachable!(),
         }
 
-        // TODO: param props
         // If this is a property-parameter, then also declare the property symbol into the
         // containing class.
-        // if isParameterPropertyDeclaration(node, node.parent) {
-        //     const classDeclaration = node.parent.parent;
-        //     declareSymbol(classDeclaration.symbol.members!, classDeclaration.symbol, node, SymbolFlags.Property | (node.questionToken ? SymbolFlags.Optional : SymbolFlags.None), SymbolFlags.PropertyExcludes);
-        // }
+        if let Parameter::TsParamProp(_) = param {
+            todo!();
+            // const classDeclaration = node.parent.parent;
+            // declareSymbol(classDeclaration.symbol.members!, classDeclaration.symbol, node, SymbolFlags.Property | (node.questionToken ? SymbolFlags.Optional : SymbolFlags.None), SymbolFlags.PropertyExcludes);
+        }
     }
 
     fn bindFunctionDeclaration(&mut self, node: BoundNode) {
@@ -3719,20 +3935,17 @@ impl<'a> Binder<'a> {
         // }
     }
 
-    // TODO:
-    // fn bindFunctionExpression(&mut self, node: FunctionExpression) {
-    //     if (!file.isDeclarationFile && !(node.flags & NodeFlags.Ambient)) {
-    //         if (isAsyncFunction(node)) {
-    //             emitFlags |= NodeFlags.HasAsyncFunctions;
-    //         }
-    //     }
-    //     if (currentFlow) {
-    //         node.flowNode = currentFlow;
-    //     }
-    //     checkStrictModeFunctionName(node);
-    //     const bindingName = node.name ? node.name.escapedText : InternalSymbolName.Function;
-    //     return bindAnonymousDeclaration(node, SymbolFlags.Function, bindingName);
-    // }
+    fn bindFunctionExpression(&mut self, node: BoundNode, name: Option<JsWord>) {
+        // if (!file.isDeclarationFile && !(node.flags & NodeFlags.Ambient)) {
+        //     if (isAsyncFunction(node)) {
+        //         emitFlags |= NodeFlags.HasAsyncFunctions;
+        //     }
+        // }
+        self.node_data_mut(node.clone()).flowNode = Some(self.currentFlow);
+        // self.checkStrictModeFunctionName(node);
+        let bindingName = name.unwrap_or_else(|| InternalSymbolName::Function.into());
+        self.bindAnonymousDeclaration(node, SymbolFlags::Function, bindingName);
+    }
 
     fn bindPropertyOrMethodOrAccessor(
         &mut self,
@@ -3774,9 +3987,17 @@ impl<'a> Binder<'a> {
         // else
         if let parent @ BoundNode::TsInferType(_) = node.parent().unwrap() {
             if let Some(container) = getInferTypeContainer(parent) {
+                let locals = match self.node_data(container.clone()).locals {
+                    Some(locals) => locals,
+                    None => {
+                        let locals = self.symbol_tables.push(SymbolTable::default());
+                        self.node_data_mut(container.clone()).locals = Some(locals);
+                        locals
+                    }
+                };
                 declare_symbol!(
                     self,
-                    self.node_data_mut(container.clone()).locals,
+                    locals,
                     None,
                     node,
                     SymbolFlags::TypeParameter,
@@ -3807,7 +4028,7 @@ impl<'a> Binder<'a> {
     //     return instanceState === ModuleInstanceState::Instantiated || (instanceState === ModuleInstanceState::ConstEnumOnly && shouldPreserveConstEnums(options));
     // }
 
-    fn checkUnreachable(&mut self, node: &BoundNode) -> bool {
+    fn checkUnreachable(&mut self, _node: &BoundNode) -> bool {
         if !self.flow_nodes[self.currentFlow]
             .flags
             .intersects(FlowFlags::Unreachable)
@@ -4002,7 +4223,7 @@ fn getModuleInstanceStateWorker(
 //     // return !!body && body.statements.some(s => isExportDeclaration(s) || isExportAssignment(s));
 // }
 
-fn setExportContextFlag(node: BoundNode /*node: Mutable<ModuleDeclaration | SourceFile>*/) {
+fn setExportContextFlag(_node: BoundNode /*node: Mutable<ModuleDeclaration | SourceFile>*/) {
     // TODO:
     // A declaration source file or ambient module declaration that contains no export declarations (but possibly regular
     // declarations with export modifiers) is an export context in which declarations are implicitly exported.
@@ -4027,50 +4248,50 @@ fn getInferTypeContainer(mut node: BoundNode) -> Option<BoundNode> {
     None
 }
 
-fn isStatementCondition(node: &BoundNode) -> bool {
-    if let Some(parent) = node.parent() {
-        match parent {
-            BoundNode::IfStmt(ref s) => s.test.bind(parent.clone()) == *node,
-            BoundNode::WhileStmt(ref s) => s.test.bind(parent.clone()) == *node,
-            BoundNode::DoWhileStmt(ref s) => s.test.bind(parent.clone()) == *node,
-            BoundNode::ForStmt(ref s) => match &s.test {
-                Some(test) => test.bind(parent.clone()) == *node,
-                None => false,
-            },
-            BoundNode::CondExpr(ref s) => s.test.bind(parent.clone()) == *node,
-            _ => false,
-        }
-    } else {
-        false
-    }
-}
+// fn isStatementCondition(node: &BoundNode) -> bool {
+//     if let Some(parent) = node.parent() {
+//         match parent {
+//             BoundNode::IfStmt(ref s) => s.test.bind(parent.clone()) == *node,
+//             BoundNode::WhileStmt(ref s) => s.test.bind(parent.clone()) == *node,
+//             BoundNode::DoWhileStmt(ref s) => s.test.bind(parent.clone()) == *node,
+//             BoundNode::ForStmt(ref s) => match &s.test {
+//                 Some(test) => test.bind(parent.clone()) == *node,
+//                 None => false,
+//             },
+//             BoundNode::CondExpr(ref s) => s.test.bind(parent.clone()) == *node,
+//             _ => false,
+//         }
+//     } else {
+//         false
+//     }
+// }
 
-fn isLogicalExpression(mut node: BoundNode) -> bool {
-    loop {
-        match node {
-            BoundNode::ParenExpr(ref expr) => {
-                node = expr.expr.bind(node.clone());
-            }
-            BoundNode::UnaryExpr(ref expr) if expr.op == ast::UnaryOp::Bang => {
-                node = expr.arg.bind(node.clone());
-            }
-            BoundNode::BinExpr(expr)
-                if matches!(
-                    expr.op,
-                    ast::BinaryOp::LogicalAnd
-                        | ast::BinaryOp::LogicalOr
-                        | ast::BinaryOp::NullishCoalescing
-                ) =>
-            {
-                return true
-            }
-            _ => return false,
-        }
-    }
-}
+// fn isLogicalExpression(mut node: BoundNode) -> bool {
+//     loop {
+//         match node {
+//             BoundNode::ParenExpr(ref expr) => {
+//                 node = expr.expr.bind(node.clone());
+//             }
+//             BoundNode::UnaryExpr(ref expr) if expr.op == ast::UnaryOp::Bang => {
+//                 node = expr.arg.bind(node.clone());
+//             }
+//             BoundNode::BinExpr(expr)
+//                 if matches!(
+//                     expr.op,
+//                     ast::BinaryOp::LogicalAnd
+//                         | ast::BinaryOp::LogicalOr
+//                         | ast::BinaryOp::NullishCoalescing
+//                 ) =>
+//             {
+//                 return true
+//             }
+//             _ => return false,
+//         }
+//     }
+// }
 
 fn isLogicalAssignmentExpression(node: BoundNode) -> bool {
-    let node = skipParentheses(node);
+    let node = skipParenthesesOfNode(node);
     if let BoundNode::AssignExpr(expr) = node {
         isLogicalOrCoalescingAssignmentOperator(expr.op)
     } else {
@@ -4078,32 +4299,32 @@ fn isLogicalAssignmentExpression(node: BoundNode) -> bool {
     }
 }
 
-fn isTopLevelLogicalExpression(mut node: BoundNode) -> bool {
-    loop {
-        match node.parent() {
-            Some(parent @ BoundNode::ParenExpr(_)) => node = parent,
-            Some(ref parent @ BoundNode::UnaryExpr(ref e)) if e.op == ast::UnaryOp::Bang => {
-                node = parent.clone()
-            }
-            _ => break,
-        }
-    }
+// fn isTopLevelLogicalExpression(mut node: BoundNode) -> bool {
+//     loop {
+//         match node.parent() {
+//             Some(parent @ BoundNode::ParenExpr(_)) => node = parent,
+//             Some(ref parent @ BoundNode::UnaryExpr(ref e)) if e.op == ast::UnaryOp::Bang => {
+//                 node = parent.clone()
+//             }
+//             _ => break,
+//         }
+//     }
 
-    return !isStatementCondition(&node)
-        && !node
-            .parent()
-            .map(|parent| isLogicalAssignmentExpression(parent))
-            .unwrap_or_default()
-        && !node
-            .parent()
-            .map(|parent| isLogicalExpression(parent))
-            .unwrap_or_default()
-        && !(if let Some(ref parent_node @ BoundNode::OptChainExpr(ref opt)) = node.parent() {
-            opt.expr.bind_to_opt_parent(parent_node.parent()) == node
-        } else {
-            false
-        });
-}
+//     return !isStatementCondition(&node)
+//         && !node
+//             .parent()
+//             .map(|parent| isLogicalAssignmentExpression(parent))
+//             .unwrap_or_default()
+//         && !node
+//             .parent()
+//             .map(|parent| isLogicalExpression(parent))
+//             .unwrap_or_default()
+//         && !(if let Some(ref parent_node @ BoundNode::OptChainExpr(ref opt)) = node.parent() {
+//             opt.expr.bind_to_opt_parent(parent_node.parent()) == node
+//         } else {
+//             false
+//         });
+// }
 
 fn isNarrowingExpression(expr: &ast::Expr) -> bool {
     match expr {
@@ -4164,8 +4385,8 @@ fn containsNarrowableReference(expr: &ast::ExprOrSuper) -> bool {
 
 fn hasNarrowableArgument(expr: &ast::CallExpr) -> bool {
     for arg in &expr.args {
-        if arg.spread.is_none() {
-            if containsNarrowableReference(&arg.expr.clone().into()) {
+        if let ast::ExprOrSpread::Expr(e) = arg {
+            if containsNarrowableReference(&e.clone().into()) {
                 return true;
             }
         }
@@ -4178,12 +4399,12 @@ fn hasNarrowableArgument(expr: &ast::CallExpr) -> bool {
     false
 }
 
-fn isNarrowingTypeofOperands(expr1: &ast::Expr, expr2: &ast::Expr) -> bool {
+fn isNarrowingTypeofOperands(_expr1: &ast::Expr,_expr2: &ast::Expr) -> bool {
     todo!();
     // return isTypeOfExpression(expr1) && isNarrowableOperand(expr1.expression) && isStringLiteralLike(expr2);
 }
 
-fn isNarrowingBinaryExpression(expr: &ast::BinExpr) -> bool {
+fn isNarrowingBinaryExpression(_expr: &ast::BinExpr) -> bool {
     todo!();
     // switch (expr.operatorToken.kind) {
     //     case SyntaxKind.EqualsToken:
@@ -4207,21 +4428,21 @@ fn isNarrowingBinaryExpression(expr: &ast::BinExpr) -> bool {
     // return false;
 }
 
-fn isNarrowableOperand(expr: &ast::Expr) -> bool {
-    todo!();
-    // switch (expr.kind) {
-    //     case SyntaxKind.ParenthesizedExpression:
-    //         return isNarrowableOperand((expr as ParenthesizedExpression).expression);
-    //     case SyntaxKind.BinaryExpression:
-    //         switch ((expr as BinaryExpression).operatorToken.kind) {
-    //             case SyntaxKind.EqualsToken:
-    //                 return isNarrowableOperand((expr as BinaryExpression).left);
-    //             case SyntaxKind.CommaToken:
-    //                 return isNarrowableOperand((expr as BinaryExpression).right);
-    //         }
-    // }
-    // return containsNarrowableReference(expr);
-}
+// fn isNarrowableOperand(expr: &ast::Expr) -> bool {
+//     todo!();
+//     // switch (expr.kind) {
+//     //     case SyntaxKind.ParenthesizedExpression:
+//     //         return isNarrowableOperand((expr as ParenthesizedExpression).expression);
+//     //     case SyntaxKind.BinaryExpression:
+//     //         switch ((expr as BinaryExpression).operatorToken.kind) {
+//     //             case SyntaxKind.EqualsToken:
+//     //                 return isNarrowableOperand((expr as BinaryExpression).left);
+//     //             case SyntaxKind.CommaToken:
+//     //                 return isNarrowableOperand((expr as BinaryExpression).right);
+//     //         }
+//     // }
+//     // return containsNarrowableReference(expr);
+// }
 
 // TODO: pub only for testing
 pub struct ActiveLabel {

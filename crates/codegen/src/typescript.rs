@@ -219,13 +219,22 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    // TODO: is this correct:
     #[emitter]
-    fn emit_ts_fn_param(&mut self, n: &TsFnParam) -> Result {
+    fn emit_ts_ambient_param(&mut self, n: &TsAmbientParam) -> Result {
+        self.emit_leading_comments_of_span(n.span(), false)?;
+
+        emit!(n.pat);
+    }
+
+    // TODO: is this correct:
+    #[emitter]
+    fn emit_ts_ambient_param_pat(&mut self, n: &TsAmbientParamPat) -> Result {
         match n {
-            TsFnParam::Ident(n) => emit!(n),
-            TsFnParam::Array(n) => emit!(n),
-            TsFnParam::Rest(n) => emit!(n),
-            TsFnParam::Object(n) => emit!(n),
+            TsAmbientParamPat::Ident(n) => emit!(n),
+            TsAmbientParamPat::Array(n) => emit!(n),
+            TsAmbientParamPat::Rest(n) => emit!(n),
+            TsAmbientParamPat::Object(n) => emit!(n),
         }
     }
 

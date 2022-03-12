@@ -22,7 +22,6 @@ use crate::{
     rustc_data_structures::stable_hasher::StableHasher,
     sync::{Lock, LockGuard, Lrc, MappedLockGuard},
 };
-use log::debug;
 #[cfg(feature = "sourcemap")]
 use sourcemap::SourceMapBuilder;
 use std::{
@@ -35,6 +34,7 @@ use std::{
     path::{Path, PathBuf},
     sync::atomic::{AtomicUsize, Ordering::SeqCst},
 };
+use tracing::debug;
 
 // _____________________________________________________________________________
 // SourceFile, MultiByteChar, FileName, FileLines

@@ -1,6 +1,6 @@
 extern crate proc_macro;
 
-use fxhash::FxHashSet;
+use ahash::AHashSet;
 use inflector::Inflector;
 use macro_common::{call_site, def_site};
 use pmutil::{q, Quote};
@@ -29,7 +29,7 @@ pub fn define(tts: proc_macro::TokenStream) -> proc_macro::TokenStream {
     proc_macro2::TokenStream::from(q).into()
 }
 
-fn convert_ty(struct_names: &FxHashSet<String>, ty: &Type) -> Type {
+fn convert_ty(struct_names: &AHashSet<String>, ty: &Type) -> Type {
     if let Type::Path(p) = ty {
         let last = p.path.segments.last().unwrap();
 
@@ -97,12 +97,13 @@ fn make_hash_impl(s: &ItemStruct) -> ItemImpl {
         {
             impl Hash for ty {
                 fn hash<H: Hasher>(&self, state: &mut H) {
-                    if let Some(cached) = self.cached_hash_field_name.get() {
-                        state.write_u32(cached);
-                    } else {
-                        default_block;
-                        self.cached_hash_field_name.set(Some(state.finish() as u32));
-                    }
+                    state.write_u32(self.cached_hash_field_name);
+                    // if let Some(cached) = self.cached_hash_field_name.get() {
+                    //     state.write_u32(cached);
+                    // } else {
+                    //     default_block;
+                    //     self.cached_hash_field_name.set(Some(state.finish() as u32));
+                    // }
                 }
             }
         }
@@ -114,12 +115,12 @@ fn make(stmts: Vec<Stmt>) -> Quote {
     let mut types = vec![];
     let mut methods = vec![];
 
-    let mut root_struct_names =
-        FxHashSet::with_capacity_and_hasher(stmts.len(), Default::default());
+    let mut root_struct_names = AHashSet::with_capacity_and_hasher(stmts.len(), Default::default());
 
-    let mut root_names = FxHashSet::with_capacity_and_hasher(stmts.len(), Default::default());
+    let mut root_names = AHashSet::with_capacity_and_hasher(stmts.len(), Default::default());
 
     let mut tokens = q!({});
+    let mut special_tokens = q!({});
 
     for stmt in &stmts {
         match stmt {
@@ -162,13 +163,15 @@ fn make(stmts: Vec<Stmt>) -> Quote {
                         }),
                         ident: Some(Ident::new(CACHED_HASH_FIELD_NAME.into(), call_site())),
                         colon_token: Some(Default::default()),
-                        ty: q!({ Cell<Option<u32>> }).parse(),
+                        ty: q!({ u32 }).parse(),
                     };
 
                     match &mut s.fields {
                         Fields::Named(fields) => fields.named.push(cached_hash_field),
                         _ => unreachable!(),
                     }
+
+                    special_tokens.push_tokens(&s);
 
                     // Can't derive Hash or Eq when struct conatians float.
                     if contains_float {
@@ -177,7 +180,7 @@ fn make(stmts: Vec<Stmt>) -> Quote {
                             style: AttrStyle::Outer,
                             bracket_token: def_site(),
                             path: q!({ derive }).parse(),
-                            tokens: q!({ (PartialEq, Clone, Debug) }).parse(),
+                            tokens: q!({ (PartialEq, Clone, Debug, EqIgnoreSpan) }).parse(),
                         });
                         needs_hash_impl = false;
                     } else {
@@ -193,7 +196,7 @@ fn make(stmts: Vec<Stmt>) -> Quote {
                             style: AttrStyle::Outer,
                             bracket_token: def_site(),
                             path: q!({ derive }).parse(),
-                            tokens: q!({ (PartialEq, Eq, Clone, Debug) }).parse(),
+                            tokens: q!({ (PartialEq, Eq, Clone, Debug, EqIgnoreSpan) }).parse(),
                         });
                         needs_hash_impl = true;
                     }
@@ -226,6 +229,8 @@ fn make(stmts: Vec<Stmt>) -> Quote {
                         }
                     }
 
+                    special_tokens.push_tokens(&e);
+
                     if e.variants.iter().all(|v| v.fields.is_empty()) {
                         // We can derive Copy for fieldless enums:
                         e.attrs.push(Attribute {
@@ -233,7 +238,8 @@ fn make(stmts: Vec<Stmt>) -> Quote {
                             style: AttrStyle::Outer,
                             bracket_token: def_site(),
                             path: q!({ derive }).parse(),
-                            tokens: q!({ (PartialEq, Eq, Hash, Copy, Clone, Debug) }).parse(),
+                            tokens: q!({ (PartialEq, Eq, Hash, Copy, Clone, Debug, EqIgnoreSpan) })
+                                .parse(),
                         });
                     } else {
                         e.attrs.push(Attribute {
@@ -241,7 +247,8 @@ fn make(stmts: Vec<Stmt>) -> Quote {
                             style: AttrStyle::Outer,
                             bracket_token: def_site(),
                             path: q!({ derive }).parse(),
-                            tokens: q!({ (PartialEq, Eq, Hash, Clone, Debug) }).parse(),
+                            tokens: q!({ (PartialEq, Eq, Hash, Clone, Debug, EqIgnoreSpan) })
+                                .parse(),
                         });
                     }
 
@@ -257,6 +264,15 @@ fn make(stmts: Vec<Stmt>) -> Quote {
             }
             _ => unimplemented!("error reporting for something other than Item"),
         }
+    }
+
+    {
+        let mut q = Quote::new_call_site();
+        q.push_tokens(&special_tokens);
+
+        let res: proc_macro::TokenStream = proc_macro2::TokenStream::from(q).into();
+
+        std::fs::write("temp.rs", res.to_string()).expect("foooo");
     }
 
     // let mut ref_methods = vec![];
@@ -333,8 +349,18 @@ fn make_arm_from_struct(in_path: &Path, out_path: &Path, variant: &Fields, is_st
     let mut stmts = vec![];
     let mut fields: Punctuated<FieldValue, Token![,]> = Default::default();
 
+    let mut f64_indices = AHashSet::default();
+
     for (i, field) in variant.iter().enumerate() {
         let ty = &field.ty;
+
+        if let Type::Path(p) = ty {
+            let ident = &p.path.segments.last().as_ref().unwrap().ident;
+
+            if ident == "f64" {
+                f64_indices.insert(i);
+            }
+        }
 
         let binding_ident = field
             .ident
@@ -397,11 +423,51 @@ fn make_arm_from_struct(in_path: &Path, out_path: &Path, variant: &Fields, is_st
 
     // Append return statement
     if is_struct {
+        let mut default_block = Block {
+            brace_token: Default::default(),
+            stmts: Vec::with_capacity(fields.len()),
+        };
+
+        for (i, f) in fields.iter().enumerate() {
+            // Floats cannot be hashed directly:
+            if f64_indices.contains(&i) {
+                default_block.stmts.push(
+                    q!(
+                        Vars {
+                            name: f.member.clone()
+                        },
+                        {
+                            std::hash::Hash::hash(&integer_decode(name), &mut s);
+                        }
+                    )
+                    .parse(),
+                );
+            } else {
+                default_block.stmts.push(
+                    q!(
+                        Vars {
+                            name: f.member.clone()
+                        },
+                        {
+                            std::hash::Hash::hash(&name, &mut s);
+                        }
+                    )
+                    .parse(),
+                );
+            }
+        }
         let cached_hash_field = FieldValue {
             attrs: vec![],
             member: Member::Named(Ident::new(CACHED_HASH_FIELD_NAME.into(), call_site())),
             colon_token: Some(Default::default()),
-            expr: q!({ Cell::new(None) }).parse(),
+            expr: q!(Vars{
+                default_block
+            },{{
+                let mut s = ahash::AHasher::default();
+                default_block
+                std::hash::Hasher::finish(&s) as u32
+            }})
+            .parse(),
         };
         stmts.push(
             q!(
@@ -413,8 +479,8 @@ fn make_arm_from_struct(in_path: &Path, out_path: &Path, variant: &Fields, is_st
                 {
                     //
                     return Rc::new(Path {
-                        fields,
                         cached_hash_field,
+                        fields,
                     });
                 }
             )
@@ -621,8 +687,8 @@ fn make_root_type_fn(e: &Item, types: &mut Vec<Type>) -> ItemFn {
 }
 
 fn fn_sig_for_sub_type(
-    top_level_names: &FxHashSet<String>,
-    struct_names: &FxHashSet<String>,
+    top_level_names: &AHashSet<String>,
+    struct_names: &AHashSet<String>,
     ty: &Type,
 ) -> Signature {
     fn mk_exact(ident: Ident, in_ty: &Type, out_ty: &Type) -> Signature {
@@ -645,7 +711,7 @@ fn fn_sig_for_sub_type(
         }
     }
 
-    fn get_ast_type(top_level_names: &FxHashSet<String>, ty: &Type) -> Type {
+    fn get_ast_type(top_level_names: &AHashSet<String>, ty: &Type) -> Type {
         if let Type::Path(p) = ty {
             let last = p.path.segments.last().unwrap();
 

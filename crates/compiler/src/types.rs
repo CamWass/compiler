@@ -1,12 +1,23 @@
 use crate::ast;
 use crate::node::*;
-use crate::types_composition::*;
-use ahash::AHashMap;
+use crate::Checker;
+use ahash::{AHashMap, AHashSet};
 use bitflags::bitflags;
 use std::convert::TryFrom;
+use std::fmt::Debug;
 use std::hash::Hash;
+use std::hash::Hasher;
 use std::rc::Rc;
 use swc_atoms::JsWord;
+
+// TODO: use a hash (u64) instead of string:
+pub type TypeRelationTable = AHashMap<String, RelationComparisonResult>;
+
+index::newtype_index! {
+    pub struct TypeRelationTableId {
+        DEBUG_FORMAT = "SymbolTableId({})"
+    }
+}
 
 // TODO:
 // remove #[derive(Default)] from bitflags. Use ::empty() instead.
@@ -14,6 +25,77 @@ use swc_atoms::JsWord;
 index::newtype_index! {
     pub struct SymbolMergeId {
         DEBUG_FORMAT = "SymbolMergeId({})"
+    }
+}
+
+#[derive(PartialEq, Eq)]
+pub enum UnionReduction {
+    None,
+    Literal,
+    Subtype,
+}
+
+bitflags! {
+    pub struct ContextFlags: u8 {
+        const None           = 0;
+        const Signature      = 1 << 0; // Obtaining contextual signature
+        const NoConstraints  = 1 << 1; // Don't obtain type variable constraints
+        const Completions    = 1 << 2; // Ignore inference to current node and parent nodes out to the containing call for completions
+        const SkipBindingPatterns = 1 << 3; // Ignore contextual types applied by binding patterns
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum TypePredicate {
+    ThisTypePredicate {
+        ty: TypeId,
+    },
+    IdentifierTypePredicate {
+        parameterName: JsWord,
+        parameterIndex: usize,
+        ty: TypeId,
+    },
+    AssertsThisTypePredicate {
+        ty: Option<TypeId>,
+    },
+    AssertsIdentifierTypePredicate {
+        parameterName: JsWord,
+        parameterIndex: usize,
+        ty: Option<TypeId>,
+    },
+}
+
+impl TypePredicate {
+    pub fn new_identifier_type_predicate(
+        parameterName: JsWord,
+        parameterIndex: usize,
+        ty: TypeId,
+    ) -> Self {
+        Self::IdentifierTypePredicate {
+            parameterName,
+            parameterIndex,
+            ty,
+        }
+    }
+
+    pub fn ty(&self) -> Option<TypeId> {
+        match self {
+            TypePredicate::ThisTypePredicate { ty } => Some(*ty),
+            TypePredicate::IdentifierTypePredicate { ty, .. } => Some(*ty),
+            TypePredicate::AssertsThisTypePredicate { ty } => *ty,
+            TypePredicate::AssertsIdentifierTypePredicate { ty, .. } => *ty,
+        }
+    }
+
+    pub fn parameterIndex(&self) -> Option<usize> {
+        match self {
+            TypePredicate::ThisTypePredicate { .. } => None,
+            TypePredicate::IdentifierTypePredicate { parameterIndex, .. } => Some(*parameterIndex),
+            TypePredicate::AssertsThisTypePredicate { .. } => None,
+            TypePredicate::AssertsIdentifierTypePredicate { parameterIndex, .. } => {
+                Some(*parameterIndex)
+            }
+        }
     }
 }
 
@@ -120,69 +202,97 @@ index::newtype_index! {
 
 #[derive(Clone, Debug)]
 pub struct BaseSymbol {
-    pub flags: SymbolFlags,                  // Symbol flags
-    pub escapedName: JsWord,                 // Name of symbol
-    pub declarations: Vec<BoundNode>,        // Declarations associated with this symbol
-    pub valueDeclaration: Option<BoundNode>, // First value declaration of the symbol
-    pub members: SymbolTable,                // Class, interface or object literal instance members
-    pub exports: SymbolTable,                // Module exports
-    pub globalExports: SymbolTable,          // Conditional global UMD exports
+    pub flags: SymbolFlags,                   // Symbol flags
+    pub escapedName: JsWord,                  // Name of symbol
+    pub declarations: Vec<BoundNode>,         // Declarations associated with this symbol
+    pub valueDeclaration: Option<BoundNode>,  // First value declaration of the symbol
+    pub members: Option<SymbolTableId>,       // Class, interface or object literal instance members
+    pub exports: Option<SymbolTableId>,       // Module exports
+    pub globalExports: Option<SymbolTableId>, // Conditional global UMD exports
     // id: Option<SymbolId>,             // Unique id (used to look up SymbolLinks)
     pub mergeId: Option<SymbolMergeId>, // Merge id (used to look up merged symbol)
     pub parent: Option<SymbolId>,       // Parent symbol
     pub exportSymbol: Option<SymbolId>, // Exported symbol associated with this symbol
     pub constEnumOnlyModule: bool, // True if module contains only const enums or other modules with only const enums
-    pub isReferenced: Option<SymbolFlags>, // True if the symbol is referenced elsewhere. Keeps track of the meaning of a reference in case a symbol is both a type parameter and parameter.
+    pub isReferenced: SymbolFlags, // True if the symbol is referenced elsewhere. Keeps track of the meaning of a reference in case a symbol is both a type parameter and parameter.
     pub isReplaceableByMethod: bool, // Can this Javascript class property be replaced by a method symbol?
     pub isAssigned: bool,            // True if the symbol is a parameter with assignments
                                      // assignmentDeclarationMembers: Option<ESMap<number, Declaration>>, // detected late-bound assignment declarations associated with the symbol
+}
+
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+pub struct SymbolLinksAccessibleChainCacheKey {
+    useOnlyExternalAliasing: bool,
+    firstRelevantLocation: Option<BoundNode>,
+    meaning: SymbolFlags,
+}
+
+impl SymbolLinksAccessibleChainCacheKey {
+    pub fn new(
+        useOnlyExternalAliasing: bool,
+        firstRelevantLocation: Option<BoundNode>,
+        meaning: SymbolFlags,
+    ) -> Self {
+        Self {
+            useOnlyExternalAliasing,
+            firstRelevantLocation,
+            meaning,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum BoundNodeOrFalse {
+    BoundNode(BoundNode),
+    False,
 }
 
 #[derive(Default, Debug)]
 pub struct SymbolLinks {
     pub kind: SymbolLinksKind,
     // immediateTarget?: Symbol;                   // Immediate target of an alias. May be another alias. Do not access directly, use `checker.getImmediateAliasedSymbol` instead.
-    // target?: Symbol;                            // Resolved (non-alias) target of an alias
-    pub ty: Option<TypeId>, // Type of value symbol
-                            // writeType?: Type;                           // Type of value symbol in write contexts
-                            // nameType?: Type;                            // Type associated with a late-bound symbol
-                            // uniqueESSymbolType?: Type;                  // UniqueESSymbol type for a symbol
-                            // declaredType?: Type;                        // Type of class, interface, enum, type alias, or type parameter
-                            // typeParameters?: TypeParameter[];           // Type parameters of type alias (undefined if non-generic)
-                            // outerTypeParameters?: TypeParameter[];      // Outer type parameters of anonymous object type
-                            // instantiations?: ESMap<string, Type>;       // Instantiations of generic type alias (undefined if non-generic)
-                            // aliasSymbol?: Symbol;                       // Alias associated with generic type alias instantiation
-                            // aliasTypeArguments?: readonly Type[]        // Alias type arguments (if any)
-                            // inferredClassSymbol?: ESMap<SymbolId, TransientSymbol>; // Symbol of an inferred ES5 constructor function
-                            // mapper?: TypeMapper;                        // Type mapper for instantiation alias
-                            // referenced?: boolean;                       // True if alias symbol has been referenced as a value that can be emitted
-                            // constEnumReferenced?: boolean;              // True if alias symbol resolves to a const enum and is referenced as a value ('referenced' will be false)
-                            // containingType?: UnionOrIntersectionType;   // Containing union or intersection type for synthetic property
-                            // leftSpread?: Symbol;                        // Left source for synthetic spread property
-                            // rightSpread?: Symbol;                       // Right source for synthetic spread property
-                            // syntheticOrigin?: Symbol;                   // For a property on a mapped or spread type, points back to the original property
-                            // isDiscriminantProperty?: boolean;           // True if discriminant synthetic property
-                            // resolvedExports?: SymbolTable;              // Resolved exports of module or combined early- and late-bound static members of a class.
-                            // resolvedMembers?: SymbolTable;              // Combined early- and late-bound members of a symbol
-                            // exportsChecked?: boolean;                   // True if exports of external module have been checked
-                            // typeParametersChecked?: boolean;            // True if type parameters of merged class and interface declarations have been checked.
-                            // isDeclarationWithCollidingName?: boolean;   // True if symbol is block scoped redeclaration
-                            // bindingElement?: BindingElement;            // Binding element associated with property symbol
-                            // exportsSomeValue?: boolean;                 // True if module exports some value (not just types)
-                            // enumKind?: EnumKind;                        // Enum declaration classification
-                            // originatingImport?: ImportDeclaration | ImportCall; // Import declaration which produced the symbol, present if the symbol is marked as uncallable but had call signatures in `resolveESModuleSymbol`
-                            // lateSymbol?: Symbol;                        // Late-bound symbol for a computed property
-                            // specifierCache?: ESMap<string, string>;     // For symbols corresponding to external modules, a cache of incoming path -> module specifier name mappings
-                            // extendedContainers?: Symbol[];              // Containers (other than the parent) which this symbol is aliased in
-                            // extendedContainersByFile?: ESMap<NodeId, Symbol[]>; // Containers (other than the parent) which this symbol is aliased in
-                            // variances?: VarianceFlags[];                // Alias symbol type argument variance cache
-                            // deferralConstituents?: Type[];              // Calculated list of constituents for a deferred type
-                            // deferralParent?: Type;                      // Source union/intersection of a deferred type
-                            // cjsExportMerged?: Symbol;                   // Version of the symbol with all non export= exports merged with the export= target
-                            // typeOnlyDeclaration?: TypeOnlyAliasDeclaration | false; // First resolved alias declaration that makes the symbol only usable in type constructs
-                            // isConstructorDeclaredProperty?: boolean;    // Property declared through 'this.x = ...' assignment in constructor
-                            // tupleLabelDeclaration?: NamedTupleMember | ParameterDeclaration; // Declaration associated with the tuple's label
-                            // accessibleChainCache?: ESMap<string, Symbol[] | undefined>;
+    pub target: Option<SymbolId>, // Resolved (non-alias) target of an alias
+    pub ty: Option<TypeId>,       // Type of value symbol
+    // writeType?: Type;                           // Type of value symbol in write contexts
+    pub nameType: Option<TypeId>, // Type associated with a late-bound symbol
+    // uniqueESSymbolType?: Type;                  // UniqueESSymbol type for a symbol
+    pub declaredType: Option<TypeId>, // Type of class, interface, enum, type alias, or type parameter
+    // typeParameters?: TypeParameter[];           // Type parameters of type alias (undefined if non-generic)
+    // outerTypeParameters?: TypeParameter[];      // Outer type parameters of anonymous object type
+    // instantiations?: ESMap<string, Type>;       // Instantiations of generic type alias (undefined if non-generic)
+    // aliasSymbol?: Symbol;                       // Alias associated with generic type alias instantiation
+    // aliasTypeArguments?: readonly Type[]        // Alias type arguments (if any)
+    // inferredClassSymbol?: ESMap<SymbolId, TransientSymbol>; // Symbol of an inferred ES5 constructor function
+    pub mapper: Option<Rc<TypeMapper>>, // Type mapper for instantiation alias
+    // referenced?: boolean;                       // True if alias symbol has been referenced as a value that can be emitted
+    // constEnumReferenced?: boolean;              // True if alias symbol resolves to a const enum and is referenced as a value ('referenced' will be false)
+    // containingType?: UnionOrIntersectionType;   // Containing union or intersection type for synthetic property
+    // leftSpread?: Symbol;                        // Left source for synthetic spread property
+    // rightSpread?: Symbol;                       // Right source for synthetic spread property
+    // syntheticOrigin?: Symbol;                   // For a property on a mapped or spread type, points back to the original property
+    // isDiscriminantProperty?: boolean;           // True if discriminant synthetic property
+    pub resolvedExports: Option<SymbolTableId>, // Resolved exports of module or combined early- and late-bound static members of a class.
+    pub resolvedMembers: Option<SymbolTableId>, // Combined early- and late-bound members of a symbol
+    // exportsChecked?: boolean;                   // True if exports of external module have been checked
+    // typeParametersChecked?: boolean;            // True if type parameters of merged class and interface declarations have been checked.
+    // isDeclarationWithCollidingName?: boolean;   // True if symbol is block scoped redeclaration
+    // bindingElement?: BindingElement;            // Binding element associated with property symbol
+    // exportsSomeValue?: boolean;                 // True if module exports some value (not just types)
+    // enumKind?: EnumKind;                        // Enum declaration classification
+    // originatingImport?: ImportDeclaration | ImportCall; // Import declaration which produced the symbol, present if the symbol is marked as uncallable but had call signatures in `resolveESModuleSymbol`
+    pub lateSymbol: Option<SymbolId>, // Late-bound symbol for a computed property
+    // specifierCache?: ESMap<string, string>;     // For symbols corresponding to external modules, a cache of incoming path -> module specifier name mappings
+    // extendedContainers?: Symbol[];              // Containers (other than the parent) which this symbol is aliased in
+    // extendedContainersByFile?: ESMap<NodeId, Symbol[]>; // Containers (other than the parent) which this symbol is aliased in
+    // variances?: VarianceFlags[];                // Alias symbol type argument variance cache
+    // deferralConstituents?: Type[];              // Calculated list of constituents for a deferred type
+    // deferralParent?: Type;                      // Source union/intersection of a deferred type
+    // cjsExportMerged?: Symbol;                   // Version of the symbol with all non export= exports merged with the export= target
+    pub typeOnlyDeclaration: Option<BoundNodeOrFalse>, // First resolved alias declaration that makes the symbol only usable in type constructs
+    pub isConstructorDeclaredProperty: Option<bool>, // Property declared through 'this.x = ...' assignment in constructor
+    pub tupleLabelDeclaration: Option<BoundNode>, // Declaration associated with the tuple's label
+    // TODO: RC<Vec<_>> maybe?
+    pub accessibleChainCache: AHashMap<SymbolLinksAccessibleChainCacheKey, Option<Vec<SymbolId>>>,
 }
 
 bitflags! {
@@ -230,22 +340,22 @@ pub struct ReverseMappedSymbol {
 
 #[derive(Debug)]
 pub struct TransientSymbol {
-    pub flags: SymbolFlags,                  // Symbol flags
-    pub escapedName: JsWord,                 // Name of symbol
-    pub declarations: Vec<BoundNode>,        // Declarations associated with this symbol
-    pub valueDeclaration: Option<BoundNode>, // First value declaration of the symbol
-    pub members: SymbolTable,                // Class, interface or object literal instance members
-    pub exports: SymbolTable,                // Module exports
-    pub globalExports: SymbolTable,          // Conditional global UMD exports
+    pub flags: SymbolFlags,                   // Symbol flags
+    pub escapedName: JsWord,                  // Name of symbol
+    pub declarations: Vec<BoundNode>,         // Declarations associated with this symbol
+    pub valueDeclaration: Option<BoundNode>,  // First value declaration of the symbol
+    pub members: Option<SymbolTableId>,       // Class, interface or object literal instance members
+    pub exports: Option<SymbolTableId>,       // Module exports
+    pub globalExports: Option<SymbolTableId>, // Conditional global UMD exports
     // id: Option<SymbolId>,             // Unique id (used to look up SymbolLinks)
     pub mergeId: Option<SymbolMergeId>, // Merge id (used to look up merged symbol)
     pub parent: Option<SymbolId>,       // Parent symbol
     pub exportSymbol: Option<SymbolId>, // Exported symbol associated with this symbol
     pub constEnumOnlyModule: bool, // True if module contains only const enums or other modules with only const enums
-    pub isReferenced: Option<SymbolFlags>, // True if the symbol is referenced elsewhere. Keeps track of the meaning of a reference in case a symbol is both a type parameter and parameter.
+    pub isReferenced: SymbolFlags, // True if the symbol is referenced elsewhere. Keeps track of the meaning of a reference in case a symbol is both a type parameter and parameter.
     pub isReplaceableByMethod: bool, // Can this Javascript class property be replaced by a method symbol?
     pub isAssigned: bool,            // True if the symbol is a parameter with assignments
-    // assignmentDeclarationMembers: Option<ESMap<number, Declaration>>, // detected late-bound assignment declarations associated with the symbol
+    pub assignmentDeclarationMembers: AHashMap<usize, BoundNode>, // detected late-bound assignment declarations associated with the symbol
     pub symbol_links: SymbolLinks,
     pub check_flags: CheckFlags,
 }
@@ -269,22 +379,26 @@ pub enum Symbol {
     TransientSymbol(TransientSymbol),
 }
 
-impl Symbol {
+impl Symbol
+// where
+//     F: FnMut(&mut Checker<F, TC>, TypeId) -> bool,
+//     TC: FnMut(&mut Checker<F, TC>, TypeId, TypeId, bool) -> Ternary,
+{
     pub fn new_base_symbol(flags: SymbolFlags, escapedName: JsWord) -> Symbol {
         Symbol::Base(BaseSymbol {
             flags,
             escapedName,
-            declarations: Vec::new(),
+            declarations: Default::default(),
             valueDeclaration: None,
-            members: SymbolTable::default(),
-            exports: SymbolTable::default(),
-            globalExports: SymbolTable::default(),
+            members: None,
+            exports: None,
+            globalExports: None,
             // id: Option<SymbolId>,
             mergeId: None,
             parent: None,
             exportSymbol: None,
             constEnumOnlyModule: false,
-            isReferenced: None,
+            isReferenced: SymbolFlags::default(),
             isReplaceableByMethod: false,
             isAssigned: false,
         })
@@ -298,19 +412,19 @@ impl Symbol {
         Symbol::TransientSymbol(TransientSymbol {
             flags,
             escapedName,
-            declarations: Vec::new(),
+            declarations: Default::default(),
             valueDeclaration: None,
-            members: SymbolTable::default(),
-            exports: SymbolTable::default(),
-            globalExports: SymbolTable::default(),
+            members: None,
+            exports: None,
+            globalExports: None,
             mergeId: None,
             parent: None,
             exportSymbol: None,
             constEnumOnlyModule: false,
-            isReferenced: None,
+            isReferenced: SymbolFlags::default(),
             isReplaceableByMethod: false,
             isAssigned: false,
-
+            assignmentDeclarationMembers: AHashMap::default(),
             symbol_links: SymbolLinks::default(),
             check_flags,
         })
@@ -330,10 +444,10 @@ impl Symbol {
         }
     }
 
-    pub fn flags(&self) -> &SymbolFlags {
+    pub fn flags(&self) -> SymbolFlags {
         match self {
-            Symbol::Base(s) => &s.flags,
-            Symbol::TransientSymbol(s) => &s.flags,
+            Symbol::Base(s) => s.flags,
+            Symbol::TransientSymbol(s) => s.flags,
         }
     }
 
@@ -386,42 +500,42 @@ impl Symbol {
         }
     }
 
-    pub fn members(&self) -> &SymbolTable {
+    pub fn members(&self) -> &Option<SymbolTableId> {
         match self {
             Symbol::Base(s) => &s.members,
             Symbol::TransientSymbol(s) => &s.members,
         }
     }
 
-    pub fn members_mut(&mut self) -> &mut SymbolTable {
+    pub fn members_mut(&mut self) -> &mut Option<SymbolTableId> {
         match self {
             Symbol::Base(s) => &mut s.members,
             Symbol::TransientSymbol(s) => &mut s.members,
         }
     }
 
-    pub fn exports(&self) -> &SymbolTable {
+    pub fn exports(&self) -> &Option<SymbolTableId> {
         match self {
             Symbol::Base(s) => &s.exports,
             Symbol::TransientSymbol(s) => &s.exports,
         }
     }
 
-    pub fn exports_mut(&mut self) -> &mut SymbolTable {
+    pub fn exports_mut(&mut self) -> &mut Option<SymbolTableId> {
         match self {
             Symbol::Base(s) => &mut s.exports,
             Symbol::TransientSymbol(s) => &mut s.exports,
         }
     }
 
-    pub fn globalExports(&self) -> &SymbolTable {
+    pub fn globalExports(&self) -> &Option<SymbolTableId> {
         match self {
             Symbol::Base(s) => &s.globalExports,
             Symbol::TransientSymbol(s) => &s.globalExports,
         }
     }
 
-    pub fn globalExports_mut(&mut self) -> &mut SymbolTable {
+    pub fn globalExports_mut(&mut self) -> &mut Option<SymbolTableId> {
         match self {
             Symbol::Base(s) => &mut s.globalExports,
             Symbol::TransientSymbol(s) => &mut s.globalExports,
@@ -484,14 +598,14 @@ impl Symbol {
         }
     }
 
-    pub fn isReferenced(&self) -> Option<SymbolFlags> {
+    pub fn isReferenced(&self) -> SymbolFlags {
         match self {
             Symbol::Base(s) => s.isReferenced,
             Symbol::TransientSymbol(s) => s.isReferenced,
         }
     }
 
-    pub fn isReferenced_mut(&mut self) -> &mut Option<SymbolFlags> {
+    pub fn isReferenced_mut(&mut self) -> &mut SymbolFlags {
         match self {
             Symbol::Base(s) => &mut s.isReferenced,
             Symbol::TransientSymbol(s) => &mut s.isReferenced,
@@ -525,8 +639,16 @@ impl Symbol {
             Symbol::TransientSymbol(s) => &mut s.isAssigned,
         }
     }
+
+    pub fn assignmentDeclarationMembers(&self) -> Option<&AHashMap<usize, BoundNode>> {
+        match self {
+            Symbol::Base(_) => None,
+            Symbol::TransientSymbol(s) => Some(&s.assignmentDeclarationMembers),
+        }
+    }
 }
 
+// TODO: add these to a forked version of swc_atoms
 pub mod InternalSymbolName {
     /// Call signatures.
     pub const Call: &'static str = "__call";
@@ -573,63 +695,74 @@ pub mod InternalSymbolName {
 
 pub type SymbolTable = AHashMap<JsWord, SymbolId>;
 
-// export const enum NodeCheckFlags {
-//     TypeChecked                              = 0x00000001,  // Node has been type checked
-//     LexicalThis                              = 0x00000002,  // Lexical 'this' reference
-//     CaptureThis                              = 0x00000004,  // Lexical 'this' used in body
-//     CaptureNewTarget                         = 0x00000008,  // Lexical 'new.target' used in body
-//     SuperInstance                            = 0x00000100,  // Instance 'super' reference
-//     SuperStatic                              = 0x00000200,  // Static 'super' reference
-//     ContextChecked                           = 0x00000400,  // Contextual types have been assigned
-//     AsyncMethodWithSuper                     = 0x00000800,  // An async method that reads a value from a member of 'super'.
-//     AsyncMethodWithSuperBinding              = 0x00001000,  // An async method that assigns a value to a member of 'super'.
-//     CaptureArguments                         = 0x00002000,  // Lexical 'arguments' used in body
-//     EnumValuesComputed                       = 0x00004000,  // Values for enum members have been computed, and any errors have been reported for them.
-//     LexicalModuleMergesWithClass             = 0x00008000,  // Instantiated lexical module declaration is merged with a previous class declaration.
-//     LoopWithCapturedBlockScopedBinding       = 0x00010000,  // Loop that contains block scoped variable captured in closure
-//     ContainsCapturedBlockScopeBinding        = 0x00020000,  // Part of a loop that contains block scoped variable captured in closure
-//     CapturedBlockScopedBinding               = 0x00040000,  // Block-scoped binding that is captured in some function
-//     BlockScopedBindingInLoop                 = 0x00080000,  // Block-scoped binding with declaration nested inside iteration statement
-//     ClassWithBodyScopedClassBinding          = 0x00100000,  // Decorated class that contains a binding to itself inside of the class body.
-//     BodyScopedClassBinding                   = 0x00200000,  // Binding to a decorated class inside of the class's body.
-//     NeedsLoopOutParameter                    = 0x00400000,  // Block scoped binding whose value should be explicitly copied outside of the converted loop
-//     AssignmentsMarked                        = 0x00800000,  // Parameter assignments have been marked
-//     ClassWithConstructorReference            = 0x01000000,  // Class that contains a binding to its constructor inside of the class body.
-//     ConstructorReferenceInClass              = 0x02000000,  // Binding to a class constructor inside of the class's body.
-//     ContainsClassWithPrivateIdentifiers      = 0x04000000,  // Marked on all block-scoped containers containing a class with private identifiers.
-//     ContainsSuperPropertyInStaticInitializer = 0x08000000,  // Marked on all block-scoped containers containing a static initializer with 'super.x' or 'super[x]'.
-// }
-
-// export interface NodeLinks {
-//     flags: NodeCheckFlags;              // Set of flags specific to Node
-//     resolvedType?: Type;                // Cached type of type node
-//     resolvedEnumType?: Type;            // Cached constraint type from enum jsdoc tag
-//     resolvedSignature?: Signature;      // Cached signature of signature node or call expression
-//     resolvedSymbol?: Symbol;            // Cached name resolution result
-//     resolvedIndexInfo?: IndexInfo;      // Cached indexing info resolution result
-//     effectsSignature?: Signature;       // Signature with possible control flow effects
-//     enumMemberValue?: string | number;  // Constant value of enum member
-//     isVisible?: boolean;                // Is this node visible
-//     containsArgumentsReference?: boolean; // Whether a function-like declaration contains an 'arguments' reference
-//     hasReportedStatementInAmbientContext?: boolean; // Cache boolean if we report statements in ambient context
-//     jsxFlags: JsxFlags;                 // flags for knowing what kind of element/attributes we're dealing with
-//     resolvedJsxElementAttributesType?: Type; // resolved element attributes type of a JSX openinglike element
-//     resolvedJsxElementAllAttributesType?: Type; // resolved all element attributes type of a JSX openinglike element
-//     resolvedJSDocType?: Type;           // Resolved type of a JSDoc type reference
-//     switchTypes?: Type[];               // Cached array of switch case expression types
-//     jsxNamespace?: Symbol | false;      // Resolved jsx namespace symbol for this node
-//     jsxImplicitImportContainer?: Symbol | false; // Resolved module symbol the implicit jsx import of this file should refer to
-//     contextFreeType?: Type;             // Cached context-free type used by the first pass of inference; used when a function's return is partially contextually sensitive
-//     deferredNodes?: ESMap<NodeId, Node>; // Set of nodes whose checking has been deferred
-//     capturedBlockScopeBindings?: Symbol[]; // Block-scoped bindings captured beneath this part of an IterationStatement
-//     outerTypeParameters?: TypeParameter[]; // Outer type parameters of anonymous object type
-//     isExhaustive?: boolean;             // Is node an exhaustive switch statement
-//     skipDirectInference?: true;         // Flag set by the API `getContextualType` call on a node when `Completions` is passed to force the checker to skip making inferences to a node's type
-//     declarationRequiresScopeChange?: boolean; // Set by `useOuterVariableScopeInParameter` in checker when downlevel emit would change the name resolution scope inside of a parameter.
-//     serializedTypes?: ESMap<string, TypeNode & {truncating?: boolean, addedLength: number}>; // Collection of types serialized at this location
-// }
+index::newtype_index! {
+    pub struct SymbolTableId {
+        DEBUG_FORMAT = "SymbolTableId({})"
+    }
+}
 
 bitflags! {
+    #[derive(Default)]
+    pub struct NodeCheckFlags: u32 {
+        const TypeChecked                              = 0x00000001;  // Node has been type checked
+        const LexicalThis                              = 0x00000002;  // Lexical 'this' reference
+        const CaptureThis                              = 0x00000004;  // Lexical 'this' used in body
+        const CaptureNewTarget                         = 0x00000008;  // Lexical 'new.target' used in body
+        const SuperInstance                            = 0x00000100;  // Instance 'super' reference
+        const SuperStatic                              = 0x00000200;  // Static 'super' reference
+        const ContextChecked                           = 0x00000400;  // Contextual types have been assigned
+        const AsyncMethodWithSuper                     = 0x00000800;  // An async method that reads a value from a member of 'super'.
+        const AsyncMethodWithSuperBinding              = 0x00001000;  // An async method that assigns a value to a member of 'super'.
+        const CaptureArguments                         = 0x00002000;  // Lexical 'arguments' used in body
+        const EnumValuesComputed                       = 0x00004000;  // Values for enum members have been computed, and any errors have been reported for them.
+        const LexicalModuleMergesWithClass             = 0x00008000;  // Instantiated lexical module declaration is merged with a previous class declaration.
+        const LoopWithCapturedBlockScopedBinding       = 0x00010000;  // Loop that contains block scoped variable captured in closure
+        const ContainsCapturedBlockScopeBinding        = 0x00020000;  // Part of a loop that contains block scoped variable captured in closure
+        const CapturedBlockScopedBinding               = 0x00040000;  // Block-scoped binding that is captured in some function
+        const BlockScopedBindingInLoop                 = 0x00080000;  // Block-scoped binding with declaration nested inside iteration statement
+        const ClassWithBodyScopedClassBinding          = 0x00100000;  // Decorated class that contains a binding to itself inside of the class body.
+        const BodyScopedClassBinding                   = 0x00200000;  // Binding to a decorated class inside of the class's body.
+        const NeedsLoopOutParameter                    = 0x00400000;  // Block scoped binding whose value should be explicitly copied outside of the converted loop
+        const AssignmentsMarked                        = 0x00800000;  // Parameter assignments have been marked
+        const ClassWithConstructorReference            = 0x01000000;  // Class that contains a binding to its constructor inside of the class body.
+        const ConstructorReferenceInClass              = 0x02000000;  // Binding to a class constructor inside of the class's body.
+        const ContainsClassWithPrivateIdentifiers      = 0x04000000;  // Marked on all block-scoped containers containing a class with private identifiers.
+        const ContainsSuperPropertyInStaticInitializer = 0x08000000;  // Marked on all block-scoped containers containing a static initializer with 'super.x' or 'super[x]'.
+    }
+}
+
+#[derive(Default)]
+pub struct NodeLinks {
+    pub flags: NodeCheckFlags,        // Set of flags specific to Node
+    pub resolvedType: Option<TypeId>, // Cached type of type node
+    //     resolvedEnumType?: Type;            // Cached constraint type from enum jsdoc tag
+    pub resolvedSignature: Option<SignatureId>, // Cached signature of signature node or call expression
+    pub resolvedSymbol: Option<SymbolId>,       // Cached name resolution result
+    //     resolvedIndexInfo?: IndexInfo;      // Cached indexing info resolution result
+    //     effectsSignature?: Signature;       // Signature with possible control flow effects
+    //     enumMemberValue?: string | number;  // Constant value of enum member
+    //     isVisible?: boolean;                // Is this node visible
+    //     containsArgumentsReference?: boolean; // Whether a function-like declaration contains an 'arguments' reference
+    //     hasReportedStatementInAmbientContext?: boolean; // Cache boolean if we report statements in ambient context
+    //     jsxFlags: JsxFlags;                 // flags for knowing what kind of element/attributes we're dealing with
+    //     resolvedJsxElementAttributesType?: Type; // resolved element attributes type of a JSX openinglike element
+    //     resolvedJsxElementAllAttributesType?: Type; // resolved all element attributes type of a JSX openinglike element
+    //     resolvedJSDocType?: Type;           // Resolved type of a JSDoc type reference
+    //     switchTypes?: Type[];               // Cached array of switch case expression types
+    //     jsxNamespace?: Symbol | false;      // Resolved jsx namespace symbol for this node
+    //     jsxImplicitImportContainer?: Symbol | false; // Resolved module symbol the implicit jsx import of this file should refer to
+    //     contextFreeType?: Type;             // Cached context-free type used by the first pass of inference; used when a function's return is partially contextually sensitive
+    pub deferredNodes: AHashSet<BoundNode>, // Set of nodes whose checking has been deferred
+    //     capturedBlockScopeBindings?: Symbol[]; // Block-scoped bindings captured beneath this part of an IterationStatement
+    pub outerTypeParameters: Option<Rc<Vec<TypeId>>>, // Outer type parameters of anonymous object type
+    //     isExhaustive?: boolean;             // Is node an exhaustive switch statement
+    //     skipDirectInference?: true;         // Flag set by the API `getContextualType` call on a node when `Completions` is passed to force the checker to skip making inferences to a node's type
+    pub declarationRequiresScopeChange: Option<bool>, // Set by `useOuterVariableScopeInParameter` in checker when downlevel emit would change the name resolution scope inside of a parameter.
+                                                      //     serializedTypes?: ESMap<string, TypeNode & {truncating?: boolean, addedLength: number}>; // Collection of types serialized at this location
+}
+
+bitflags! {
+    #[derive(Default)]
     pub struct TypeFlags :u32 {
         const Any             = 1 << 0;
         const Unknown         = 1 << 1;
@@ -665,36 +798,36 @@ bitflags! {
         const Nullable = Self::Undefined.bits | Self::Null.bits;
         const Literal = Self::StringLiteral.bits | Self::NumberLiteral.bits | Self::BigIntLiteral.bits | Self::BooleanLiteral.bits;
         const Unit = Self::Literal.bits | Self::UniqueESSymbol.bits | Self::Nullable.bits;
-        // const StringOrNumberLiteral = StringLiteral | NumberLiteral;
-        // const StringOrNumberLiteralOrUnique = StringLiteral | NumberLiteral | UniqueESSymbol;
-        // const DefinitelyFalsy = StringLiteral | NumberLiteral | BigIntLiteral | BooleanLiteral | Void | Undefined | Null;
-        // const PossiblyFalsy = DefinitelyFalsy | String | Number | BigInt | Boolean;
-        // const Intrinsic = Any | Unknown | String | Number | BigInt | Boolean | BooleanLiteral | ESSymbol | Void | Undefined | Null | Never | NonPrimitive;
-        // const Primitive = String | Number | BigInt | Boolean | Enum | EnumLiteral | ESSymbol | Void | Undefined | Null | Literal | UniqueESSymbol;
-        // const StringLike = String | StringLiteral | TemplateLiteral | StringMapping;
-        // const NumberLike = Number | NumberLiteral | Enum;
-        // const BigIntLike = BigInt | BigIntLiteral;
-        // const BooleanLike = Boolean | BooleanLiteral;
-        // const EnumLike = Enum | EnumLiteral;
-        // const ESSymbolLike = ESSymbol | UniqueESSymbol;
-        // const VoidLike = Void | Undefined;
-        // const DisjointDomains = NonPrimitive | StringLike | NumberLike | BigIntLike | BooleanLike | ESSymbolLike | VoidLike | Null;
-        // const UnionOrIntersection = Union | Intersection;
-        // const StructuredType = Object | Union | Intersection;
-        // const TypeVariable = TypeParameter | IndexedAccess;
-        // const InstantiableNonPrimitive = TypeVariable | Conditional | Substitution;
-        // const InstantiablePrimitive = Index | TemplateLiteral | StringMapping;
-        // const Instantiable = InstantiableNonPrimitive | InstantiablePrimitive;
-        // const StructuredOrInstantiable = StructuredType | Instantiable;
-        // const ObjectFlagsType = Any | Nullable | Never | Object | Union | Intersection;
-        // const Simplifiable = IndexedAccess | Conditional;
-        // const Singleton = Any | Unknown | String | Number | Boolean | BigInt | ESSymbol | Void | Undefined | Null | Never | NonPrimitive;
-        // // 'Narrowable' types are types where narrowing actually narrows.
-        // // This *should* be every type other than null, undefined, void, and never
-        // const Narrowable = Any | Unknown | StructuredOrInstantiable | StringLike | NumberLike | BigIntLike | BooleanLike | ESSymbol | UniqueESSymbol | NonPrimitive;
-        // const NotPrimitiveUnion = Any | Unknown | Enum | Void | Never | Object | Intersection | Instantiable;
-        // // The following flags are aggregated during union and intersection type construction
-        // const IncludesMask = Any | Unknown | Primitive | Never | Object | Union | Intersection | NonPrimitive | TemplateLiteral;
+        const StringOrNumberLiteral = Self::StringLiteral.bits | Self::NumberLiteral.bits;
+        const StringOrNumberLiteralOrUnique = Self::StringLiteral.bits | Self::NumberLiteral.bits | Self::UniqueESSymbol.bits;
+        const DefinitelyFalsy = Self::StringLiteral.bits | Self::NumberLiteral.bits | Self::BigIntLiteral.bits | Self::BooleanLiteral.bits | Self::Void.bits | Self::Undefined.bits | Self::Null.bits;
+        const PossiblyFalsy = Self::DefinitelyFalsy.bits | Self::String.bits | Self::Number.bits | Self::BigInt.bits | Self::Boolean.bits;
+        const Intrinsic = Self::Any.bits | Self::Unknown.bits | Self::String.bits | Self::Number.bits | Self::BigInt.bits | Self::Boolean.bits | Self::BooleanLiteral.bits | Self::ESSymbol.bits | Self::Void.bits | Self::Undefined.bits | Self::Null.bits | Self::Never.bits | Self::NonPrimitive.bits;
+        const Primitive = Self::String.bits | Self::Number.bits | Self::BigInt.bits | Self::Boolean.bits | Self::Enum.bits | Self::EnumLiteral.bits | Self::ESSymbol.bits | Self::Void.bits | Self::Undefined.bits | Self::Null.bits | Self::Literal.bits | Self::UniqueESSymbol.bits;
+        const StringLike = Self::String.bits | Self::StringLiteral.bits | Self::TemplateLiteral.bits | Self::StringMapping.bits;
+        const NumberLike = Self::Number.bits | Self::NumberLiteral.bits | Self::Enum.bits;
+        const BigIntLike = Self::BigInt.bits | Self::BigIntLiteral.bits;
+        const BooleanLike = Self::Boolean.bits | Self::BooleanLiteral.bits;
+        const EnumLike = Self::Enum.bits | Self::EnumLiteral.bits;
+        const ESSymbolLike = Self::ESSymbol.bits | Self::UniqueESSymbol.bits;
+        const VoidLike = Self::Void.bits | Self::Undefined.bits;
+        const DisjointDomains = Self::NonPrimitive.bits | Self::StringLike.bits | Self::NumberLike.bits | Self::BigIntLike.bits | Self::BooleanLike.bits | Self::ESSymbolLike.bits | Self::VoidLike.bits | Self::Null.bits;
+        const UnionOrIntersection = Self::Union.bits | Self::Intersection.bits;
+        const StructuredType = Self::Object.bits | Self::Union.bits | Self::Intersection.bits;
+        const TypeVariable = Self::TypeParameter.bits | Self::IndexedAccess.bits;
+        const InstantiableNonPrimitive = Self::TypeVariable.bits | Self::Conditional.bits | Self::Substitution.bits;
+        const InstantiablePrimitive = Self::Index.bits | Self::TemplateLiteral.bits | Self::StringMapping.bits;
+        const Instantiable = Self::InstantiableNonPrimitive.bits | Self::InstantiablePrimitive.bits;
+        const StructuredOrInstantiable = Self::StructuredType.bits | Self::Instantiable.bits;
+        const ObjectFlagsType = Self::Any.bits | Self::Nullable.bits | Self::Never.bits | Self::Object.bits | Self::Union.bits | Self::Intersection.bits;
+        const Simplifiable = Self::IndexedAccess.bits | Self::Conditional.bits;
+        const Singleton = Self::Any.bits | Self::Unknown.bits | Self::String.bits | Self::Number.bits | Self::Boolean.bits | Self::BigInt.bits | Self::ESSymbol.bits | Self::Void.bits | Self::Undefined.bits | Self::Null.bits | Self::Never.bits | Self::NonPrimitive.bits;
+        // 'Narrowable' types are types where narrowing actually narrows.
+        // This *should* be every type other than null, undefined, void, and never
+        const Narrowable = Self::Any.bits | Self::Unknown.bits | Self::StructuredOrInstantiable.bits | Self::StringLike.bits | Self::NumberLike.bits | Self::BigIntLike.bits | Self::BooleanLike.bits | Self::ESSymbol.bits | Self::UniqueESSymbol.bits | Self::NonPrimitive.bits;
+        const NotPrimitiveUnion = Self::Any.bits | Self::Unknown.bits | Self::Enum.bits | Self::Void.bits | Self::Never.bits | Self::Object.bits | Self::Intersection.bits | Self::Instantiable.bits;
+        // The following flags are aggregated during union and intersection type construction
+        const IncludesMask = Self::Any.bits | Self::Unknown.bits | Self::Primitive.bits | Self::Never.bits | Self::Object.bits | Self::Union.bits | Self::Intersection.bits | Self::NonPrimitive.bits | Self::TemplateLiteral.bits;
         // The following flags are used for different purposes during union and intersection type construction
         const IncludesMissingType = Self::TypeParameter.bits;
         const IncludesNonWideningType = Self::Index.bits;
@@ -706,6 +839,39 @@ bitflags! {
 index::newtype_index! {
     pub struct TypeId {
         DEBUG_FORMAT = "TypeId({})"
+    }
+}
+
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
+pub struct TypeList(pub u64);
+
+impl TypeList {
+    pub fn new(types: Option<&Vec<TypeId>>) -> Self {
+        let mut s = ahash::AHasher::default();
+        types.hash(&mut s);
+        Self(s.finish())
+        // TODO: is the following needed/more correct than above
+        // let result = "";
+        // if (types) {
+        //     const length = types.length;
+        //     let i = 0;
+        //     while (i < length) {
+        //         const startId = types[i].id;
+        //         let count = 1;
+        //         while (i + count < length && types[i + count].id === startId + count) {
+        //             count++;
+        //         }
+        //         if (result.length) {
+        //             result += ",";
+        //         }
+        //         result += startId;
+        //         if (count > 1) {
+        //             result += ":" + count;
+        //         }
+        //         i += count;
+        //     }
+        // }
+        // return result;
     }
 }
 
@@ -857,6 +1023,7 @@ bitflags! {
     /// Types included in TypeFlags.ObjectFlagsType have an objectFlags property. Some ObjectFlags
     /// are specific to certain types and reuse the same bit position. Those ObjectFlags require a check
     /// for a certain TypeFlags value to determine their meaning.
+    #[derive(Default)]
     pub struct ObjectFlags : u32{
         const Class            = 1 << 0;  // Class
         const Interface        = 1 << 1;  // Interface
@@ -1277,12 +1444,14 @@ pub enum JsxReferenceKind {
     Mixed,
 }
 
+#[derive(PartialEq, Eq, Clone, Copy)]
 pub enum SignatureKind {
     Call,
     Construct,
 }
 
 bitflags! {
+    #[derive(Default)]
     pub struct SignatureFlags: u8 {
         const None = 0;
 
@@ -1311,31 +1480,37 @@ index::newtype_index! {
     }
 }
 
+#[derive(Default, Debug)]
+pub struct OptionalCallSignatureCache {
+    pub inner: Option<SignatureId>,
+    pub outer: Option<SignatureId>,
+}
+
+#[derive(Default, Debug)]
 pub struct Signature {
-    flags: SignatureFlags,
-    declaration: Option<BoundNode>,  // Originating declaration
-    typeParameters: Vec<TypeId>,     // Type parameters (undefined if non-generic)
-    parameters: Vec<SymbolId>,       // Parameters
-    thisParameter: Option<SymbolId>, // symbol of this-type parameter
+    pub flags: SignatureFlags,
+    pub declaration: Option<BoundNode>,  // Originating declaration
+    pub typeParameters: Rc<Vec<TypeId>>, // Type parameters (undefined if non-generic)
+    pub parameters: Rc<Vec<SymbolId>>,   // Parameters
+    pub thisParameter: Option<SymbolId>, // symbol of this-type parameter
     // See comment in `instantiateSignature` for why these are set lazily.
-    resolvedReturnType: Option<TypeId>, // Lazily set by `getReturnTypeOfSignature`.
+    pub resolvedReturnType: Option<TypeId>, // Lazily set by `getReturnTypeOfSignature`.
     // Lazily set by `getTypePredicateOfSignature`.
     // `undefined` indicates a type predicate that has not yet been computed.
     // Uses a special `noTypePredicate` sentinel value to indicate that there is no type predicate. This looks like a TypePredicate at runtime to avoid polymorphism.
-    // TODO:
-    // resolvedTypePredicate: Option<TypePredicate>,
-    minArgumentCount: usize, // Number of non-optional parameters
-    resolvedMinArgumentCount: Option<usize>, // Number of non-optional parameters (excluding trailing `void`)
-    target: Option<SignatureId>,             // Instantiation target
-    mapper: Option<TypeMapper>,              // Instantiation mapper
-    compositeSignatures: Vec<SignatureId>, // Underlying signatures of a union/intersection signature
-    compositeKind: Option<TypeFlags>, // TypeFlags.Union if the underlying signatures are from union members, otherwise TypeFlags.Intersection
-    erasedSignatureCache: Option<SignatureId>, // Erased version of signature (deferred)
-    canonicalSignatureCache: Option<SignatureId>, // Canonical version of signature (deferred)
-    baseSignatureCache: Option<SignatureId>, // Base version of signature (deferred)
-    // optionalCallSignatureCache?: { inner?: Signature, outer?: Signature }, // Optional chained call version of signature (deferred)
-    isolatedSignatureType: Option<TypeId>, // A manufactured type that just contains the signature for purposes of signature comparison
-                                           // instantiations?: ESMap<string, Signature>,    // Generic signature instantiation cache
+    pub resolvedTypePredicate: Option<TypePredicate>,
+    pub minArgumentCount: usize, // Number of non-optional parameters
+    pub resolvedMinArgumentCount: Option<usize>, // Number of non-optional parameters (excluding trailing `void`)
+    pub target: Option<SignatureId>,             // Instantiation target
+    pub mapper: Option<Rc<TypeMapper>>,          // Instantiation mapper
+    pub compositeSignatures: Rc<Vec<SignatureId>>, // Underlying signatures of a union/intersection signature
+    pub compositeKind: Option<TypeFlags>, // TypeFlags.Union if the underlying signatures are from union members, otherwise TypeFlags.Intersection
+    pub erasedSignatureCache: Option<SignatureId>, // Erased version of signature (deferred)
+    pub canonicalSignatureCache: Option<SignatureId>, // Canonical version of signature (deferred)
+    pub baseSignatureCache: Option<SignatureId>, // Base version of signature (deferred)
+    pub optionalCallSignatureCache: OptionalCallSignatureCache, // Optional chained call version of signature (deferred)
+    pub isolatedSignatureType: Option<TypeId>, // A manufactured type that just contains the signature for purposes of signature comparison
+    pub instantiations: AHashMap<TypeList, SignatureId>, // Generic signature instantiation cache
 }
 
 pub enum IndexKind {
@@ -1345,33 +1520,43 @@ pub enum IndexKind {
 
 #[derive(Debug)]
 pub struct IndexInfo {
-    keyType: TypeId,
-    ty: TypeId,
-    isReadonly: bool,
-    declaration: Rc<TsIndexSignature>,
+    pub keyType: TypeId,
+    pub ty: TypeId,
+    pub isReadonly: bool,
+    pub declaration: Option<Rc<TsIndexSignature>>,
 }
 
-/* @internal */
-pub enum TypeMapKind {
-    Simple,
-    Array,
-    Function,
-    Composite,
-    Merged,
+index::newtype_index! {
+    pub struct IndexInfoId {
+        DEBUG_FORMAT = "IndexInfoId({})"
+    }
 }
 
-// TODO: probably can't use Rc's here:
-#[derive(Debug)]
+// pub enum TypeMapKind {
+//     Simple,
+//     Array,
+//     Function,
+//     Composite,
+//     Merged,
+// }
+
 pub enum TypeMapper {
     Simple {
         source: TypeId,
         target: TypeId,
     },
     Array {
-        sources: Vec<TypeId>,
-        targets: Vec<TypeId>,
+        sources: Rc<Vec<TypeId>>,
+        targets: Option<Rc<Vec<TypeId>>>,
     },
-    Function {/*func: (t: Type) => Type*/},
+    Function {
+        // func: Box<dyn FnMut(&mut Checker, TypeId) -> TypeId + Debug>,
+        func: Box<dyn Fn(&mut Checker, TypeId) -> TypeId>,
+    },
+    // CompositeOrMerged {
+    //     mapper1: Rc<TypeMapper>,
+    //     mapper2: Rc<TypeMapper>,
+    // },
     Composite {
         mapper1: Rc<TypeMapper>,
         mapper2: Rc<TypeMapper>,
@@ -1382,36 +1567,180 @@ pub enum TypeMapper {
     },
 }
 
-// export const enum InferencePriority {
-//     NakedTypeVariable            = 1 << 0,  // Naked type variable in union or intersection type
-//     SpeculativeTuple             = 1 << 1,  // Speculative tuple inference
-//     SubstituteSource             = 1 << 2,  // Source of inference originated within a substitution type's substitute
-//     HomomorphicMappedType        = 1 << 3,  // Reverse inference for homomorphic mapped type
-//     PartialHomomorphicMappedType = 1 << 4,  // Partial reverse inference for homomorphic mapped type
-//     MappedTypeConstraint         = 1 << 5,  // Reverse inference for mapped type
-//     ContravariantConditional     = 1 << 6,  // Conditional type in contravariant position
-//     ReturnType                   = 1 << 7,  // Inference made from return type of generic function
-//     LiteralKeyof                 = 1 << 8,  // Inference made from a string literal to a keyof T
-//     NoConstraints                = 1 << 9,  // Don't infer from constraints of instantiable types
-//     AlwaysStrict                 = 1 << 10,  // Always use strict rules for contravariant inferences
-//     MaxValue                     = 1 << 11, // Seed for inference priority tracking
+impl Debug for TypeMapper {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Simple { source, target } => f
+                .debug_struct("Simple")
+                .field("source", source)
+                .field("target", target)
+                .finish(),
+            Self::Array { sources, targets } => f
+                .debug_struct("Array")
+                .field("sources", sources)
+                .field("targets", targets)
+                .finish(),
+            Self::Function { .. } => f
+                .debug_struct("Function")
+                .field("func", &"[closure]")
+                .finish(),
+            Self::Composite { mapper1, mapper2 } => f
+                .debug_struct("Composite")
+                .field("mapper1", mapper1)
+                .field("mapper2", mapper2)
+                .finish(),
+            Self::Merged { mapper1, mapper2 } => f
+                .debug_struct("Merged")
+                .field("mapper1", mapper1)
+                .field("mapper2", mapper2)
+                .finish(),
+        }
+    }
+}
 
-//     PriorityImpliesCombination = ReturnType | MappedTypeConstraint | LiteralKeyof,  // These priorities imply that the resulting type should be a combination of all candidates
-//     Circularity = -1,  // Inference circularity (value less than all other priorities)
-// }
+impl TypeMapper {
+    pub fn makeUnaryTypeMapper(source: TypeId, target: TypeId) -> Rc<TypeMapper> {
+        Rc::new(TypeMapper::Simple { source, target })
+    }
 
-// pub struct InferenceInfo {
-//     typeParameter: TypeParameter;            // Type parameter for which inferences are being made
-//     candidates: Type[] | undefined;          // Candidates in covariant positions (or undefined)
-//     contraCandidates: Type[] | undefined;    // Candidates in contravariant positions (or undefined)
-//     inferredType?: Type;                     // Cache for resolved inferred type
-//     priority?: InferencePriority;            // Priority of current inference set
-//     topLevel: boolean;                       // True if all inferences are to top level occurrences
-//     isFixed: boolean;                        // True if inferences are fixed
-//     impliedArity?: number;
+    pub fn makeArrayTypeMapper(
+        sources: Rc<Vec<TypeId>>,
+        targets: Option<Rc<Vec<TypeId>>>,
+    ) -> Rc<TypeMapper> {
+        debug_assert!(targets.is_none() || targets.as_ref().unwrap().len() == sources.len());
+        Rc::new(TypeMapper::Array { sources, targets })
+    }
+
+    pub fn makeFunctionTypeMapper(
+        func: impl Fn(&mut Checker, TypeId) -> TypeId + 'static,
+    ) -> Rc<TypeMapper> {
+        Rc::new(TypeMapper::Function {
+            func: Box::new(func),
+        })
+    }
+
+    // pub fn makeCompositeTypeMapper(kind: TypeMapKind.Composite | TypeMapKind.Merged, mapper1: TypeMapper, mapper2: TypeMapper): TypeMapper {
+    //     return { kind, mapper1, mapper2 };
+    // }
+
+    /**
+     * Maps forward-references to later types parameters to the empty object type.
+     * This is used during inference when instantiating type parameter defaults.
+     */
+    pub fn createBackreferenceMapper(context: InferenceContextId, index: usize) -> Rc<TypeMapper> {
+        TypeMapper::makeFunctionTypeMapper(move |checker, t| {
+            let pos = checker.inference_contexts[context]
+                .inferences
+                .iter()
+                .position(|info| info.typeParameter == t);
+            if pos.is_some() && pos.unwrap() >= index {
+                checker.unknownType
+            } else {
+                t
+            }
+        })
+    }
+
+    pub fn combineTypeMappers(
+        mapper1: Option<Rc<TypeMapper>>,
+        mapper2: Rc<TypeMapper>,
+    ) -> Rc<TypeMapper> {
+        if let Some(mapper1) = mapper1 {
+            Rc::new(TypeMapper::Composite { mapper1, mapper2 })
+        } else {
+            mapper2
+        }
+    }
+
+    pub fn mergeTypeMappers(
+        mapper1: Option<Rc<TypeMapper>>,
+        mapper2: Rc<TypeMapper>,
+    ) -> Rc<TypeMapper> {
+        if let Some(mapper1) = mapper1 {
+            Rc::new(TypeMapper::Merged { mapper1, mapper2 })
+        } else {
+            mapper2
+        }
+    }
+}
+
+// bitflags! {
+//     pub struct InferencePriority {
+//         NakedTypeVariable            = 1 << 0,  // Naked type variable in union or intersection type
+//         SpeculativeTuple             = 1 << 1,  // Speculative tuple inference
+//         SubstituteSource             = 1 << 2,  // Source of inference originated within a substitution type's substitute
+//         HomomorphicMappedType        = 1 << 3,  // Reverse inference for homomorphic mapped type
+//         PartialHomomorphicMappedType = 1 << 4,  // Partial reverse inference for homomorphic mapped type
+//         MappedTypeConstraint         = 1 << 5,  // Reverse inference for mapped type
+//         ContravariantConditional     = 1 << 6,  // Conditional type in contravariant position
+//         ReturnType                   = 1 << 7,  // Inference made from return type of generic function
+//         LiteralKeyof                 = 1 << 8,  // Inference made from a string literal to a keyof T
+//         NoConstraints                = 1 << 9,  // Don't infer from constraints of instantiable types
+//         AlwaysStrict                 = 1 << 10,  // Always use strict rules for contravariant inferences
+//         MaxValue                     = 1 << 11, // Seed for inference priority tracking
+
+//         PriorityImpliesCombination = ReturnType | MappedTypeConstraint | LiteralKeyof,  // These priorities imply that the resulting type should be a combination of all candidates
+//         Circularity = -1,  // Inference circularity (value less than all other priorities)
+//     }
 // }
 
 bitflags! {
+    pub struct InferencePriority: u16 {
+        const Circularity                  = 0;       // Inference circularity (value less than all other priorities)
+        const Default                      = 1 << 0;
+        const NakedTypeVariable            = 1 << 1;  // Naked type variable in union or intersection type
+        const SpeculativeTuple             = 1 << 2;  // Speculative tuple inference
+        const SubstituteSource             = 1 << 3;  // Source of inference originated within a substitution type's substitute
+        const HomomorphicMappedType        = 1 << 4;  // Reverse inference for homomorphic mapped type
+        const PartialHomomorphicMappedType = 1 << 5;  // Partial reverse inference for homomorphic mapped type
+        const MappedTypeConstraint         = 1 << 6;  // Reverse inference for mapped type
+        const ContravariantConditional     = 1 << 7;  // Conditional type in contravariant position
+        const ReturnType                   = 1 << 8;  // Inference made from return type of generic function
+        const LiteralKeyof                 = 1 << 9;  // Inference made from a string literal to a keyof T
+        const NoConstraints                = 1 << 10; // Don't infer from constraints of instantiable types
+        const AlwaysStrict                 = 1 << 11; // Always use strict rules for contravariant inferences
+        const MaxValue                     = 1 << 12; // Seed for inference priority tracking
+
+        // These priorities imply that the resulting type should be a combination of all candidates
+        const PriorityImpliesCombination = Self::ReturnType.bits | Self::MappedTypeConstraint.bits | Self::LiteralKeyof.bits;
+    }
+}
+
+impl Default for InferencePriority {
+    fn default() -> Self {
+        Self::Default
+    }
+}
+
+#[derive(Clone)]
+pub struct InferenceInfo {
+    pub typeParameter: TypeId, // Type parameter for which inferences are being made
+    pub candidates: Option<Vec<TypeId>>, // Candidates in covariant positions (or undefined)
+    pub contraCandidates: Option<Vec<TypeId>>, // Candidates in contravariant positions (or undefined)
+    pub inferredType: Option<TypeId>,          // Cache for resolved inferred type
+    pub priority: Option<InferencePriority>,   // Priority of current inference set
+    pub topLevel: bool, // True if all inferences are to top level occurrences
+    pub isFixed: bool,  // True if inferences are fixed
+    pub impliedArity: Option<usize>,
+}
+
+impl InferenceInfo {
+    pub fn new(typeParameter: TypeId) -> Self {
+        Self {
+            typeParameter,
+            candidates: None,
+            contraCandidates: None,
+            inferredType: None,
+            priority: None,
+            topLevel: true,
+            isFixed: false,
+            impliedArity: None,
+        }
+    }
+}
+
+bitflags! {
+    #[derive(Default)]
     pub struct InferenceFlags: u8 {
         const None            =      0;  // No special inference behaviors
         const NoDefault       = 1 << 0;  // Infer unknownType for no inferences (otherwise anyType or emptyObjectType)
@@ -1420,21 +1749,81 @@ bitflags! {
     }
 }
 
-/**
- * Ternary values are defined such that
- * x & y picks the lesser in the order False < Unknown < Maybe < True, and
- * x | y picks the greater in the order False < Unknown < Maybe < True.
- * Generally, Ternary.Maybe is used as the result of a relation that depends on itself, and
- * Ternary.Unknown is used as the result of a variance check that depends on itself. We make
- * a distinction because we don't want to cache circular variance check results.
- */
-/* @internal */
-// export const enum Ternary {
-//     False = 0,
-//     Unknown = 1,
-//     Maybe = 3,
-//     True = -1
+/// Ternary values are defined such that
+/// `x & y` picks the lesser in the order `False < Unknown < Maybe < True`, and
+/// `x | y` picks the greater in the order `False < Unknown < Maybe < True`.
+/// Generally, `Ternary::Maybe` is used as the result of a relation that depends on itself, and
+/// `Ternary::Unknown` is used as the result of a variance check that depends on itself. We make
+/// a distinction because we don't want to cache circular variance check results.
+#[derive(PartialEq, Eq)]
+pub enum Ternary {
+    False = 0,
+    Unknown = 1,
+    Maybe = 3,
+    True = -1,
+}
+
+// /* @internal */
+// export type TypeComparer = (s: Type, t: Type, reportErrors?: boolean) => Ternary;
+
+// pub enum TypeComparer {
+//     CompareTypesAssignable,
+//     IsRelatedToWorker,
+//     CompareTypes,
 // }
+
+pub struct InferenceContext {
+    pub inferences: Vec<InferenceInfo>, // Inferences made for each type parameter
+    pub signature: Option<SignatureId>, // Generic signature for which inferences are made (if any)
+    pub flags: InferenceFlags,          // Inference flags
+    /// Type comparer function.
+    /// `fn f(checker: &mut Checker, source: TypeId, target: TypeId, report_errors: bool) -> Ternary`
+    pub compareTypes: fn(&mut Checker, TypeId, TypeId, bool) -> Ternary,
+    pub mapper: Rc<TypeMapper>,          // Mapper that fixes inferences
+    pub nonFixingMapper: Rc<TypeMapper>, // Mapper that doesn't fix inferences
+    pub returnMapper: Option<Rc<TypeMapper>>, // Type mapper for inferences from return types (if any)
+    pub inferredTypeParameters: Option<Rc<Vec<TypeId>>>, // Inferred type parameters for function result
+}
+
+index::newtype_index! {
+    pub struct InferenceContextId {
+        DEBUG_FORMAT = "InferenceContextId({})"
+    }
+}
+
+pub struct WideningContext {
+    pub parent: Option<Rc<WideningContext>>, // Parent context
+    pub propertyName: Option<JsWord>,        // Name of property in parent
+    pub siblings: Option<Vec<TypeId>>,       // Types of siblings
+    pub resolvedProperties: Option<Vec<SymbolId>>, // Properties occurring in sibling object literals
+}
+
+#[derive(PartialEq, Eq)]
+pub enum AssignmentDeclarationKind {
+    None,
+    /// exports.name = expr
+    /// module.exports.name = expr
+    ExportsProperty,
+    /// module.exports = expr
+    ModuleExports,
+    /// className.prototype.name = expr
+    PrototypeProperty,
+    /// this.name = expr
+    ThisProperty,
+    // F.name = expr
+    Property,
+    // F.prototype = { ... }
+    Prototype,
+    // Object.defineProperty(x, 'name', { value: any, writable?: boolean (false by default) });
+    // Object.defineProperty(x, 'name', { get: Function, set: Function });
+    // Object.defineProperty(x, 'name', { get: Function });
+    // Object.defineProperty(x, 'name', { set: Function });
+    ObjectDefinePropertyValue,
+    // Object.defineProperty(exports || module.exports, 'name', ...);
+    ObjectDefinePropertyExports,
+    // Object.defineProperty(Foo.prototype, 'name', ...);
+    ObjectDefinePrototypeProperty,
+}
 
 bitflags! {
     #[derive(Default)]
@@ -1535,13 +1924,17 @@ pub struct NodeData {
     // parent: Node;                                // Parent node (initialized by binding)
     // pub original?: Node;                      // The original node if this is an updated node.
     pub symbol: Option<SymbolId>, // Symbol declared by node (initialized by binding)
-    pub locals: SymbolTable,      // Locals associated with node (initialized by binding)
+    pub locals: Option<SymbolTableId>, // Locals associated with node (initialized by binding)
     pub nextContainer: Option<BoundNode>, // Next container in declaration order (initialized by binding)
     pub localSymbol: Option<SymbolId>, // Local symbol declared by node (initialized by binding only for exported nodes)
     pub flowNode: Option<FlowNodeId>,  // Associated FlowNode (initialized by binding)
-                                       // pub emitNode?: EmitNode;                  // Associated EmitNode (initialized by transforms)
-                                       // pub contextualType?: Type;                // Used to temporarily assign a contextual type during overload resolution
-                                       // pub inferenceContext?: InferenceContext;  // Inference context for contextual type
+    // pub emitNode?: EmitNode;                  // Associated EmitNode (initialized by transforms)
+    pub contextualType: Option<TypeId>, // Used to temporarily assign a contextual type during overload resolution
+    pub inferenceContext: Option<InferenceContextId>, // Inference context for contextual type
+
+    // FunctionLikeDeclarationBase:
+    pub endFlowNode: Option<FlowNodeId>,
+    pub returnFlowNode: Option<FlowNodeId>,
 }
 
 // bitflags! {
@@ -1576,26 +1969,37 @@ pub struct NodeData {
 // }
 
 bitflags! {
-    // NOTE: Ensure this is up-to-date with src/debug/debug.ts
-pub struct FlowFlags: u16 {
-    const Unreachable    = 1 << 0;  // Unreachable code
-    const Start          = 1 << 1;  // Start of flow graph
-    const BranchLabel    = 1 << 2;  // Non-looping junction
-    const LoopLabel      = 1 << 3;  // Looping junction
-    const Assignment     = 1 << 4;  // Assignment
-    const TrueCondition  = 1 << 5;  // Condition known to be true
-    const FalseCondition = 1 << 6;  // Condition known to be false
-    const SwitchClause   = 1 << 7;  // Switch statement clause
-    const ArrayMutation  = 1 << 8;  // Potential array mutation
-    const Call           = 1 << 9;  // Potential assertion call
-    const ReduceLabel    = 1 << 10; // Temporarily reduce antecedents of label
-    const Referenced     = 1 << 11; // Referenced as antecedent once
-    const Shared         = 1 << 12; // Referenced as antecedent more than once
+    pub struct RelationComparisonResult: u8 {
+        const Succeeded           = 1 << 0; // Should be truthy
+        const Failed              = 1 << 1;
+        const Reported            = 1 << 2;
 
-    const Label = Self::BranchLabel.bits | Self::LoopLabel.bits;
-    const Condition = Self::TrueCondition.bits | Self::FalseCondition.bits;
+        const ReportsUnmeasurable = 1 << 3;
+        const ReportsUnreliable   = 1 << 4;
+        const ReportsMask         = Self::ReportsUnmeasurable.bits | Self::ReportsUnreliable.bits;
+    }
 }
 
+bitflags! {
+    // NOTE: Ensure this is up-to-date with src/debug/debug.ts
+    pub struct FlowFlags: u16 {
+        const Unreachable    = 1 << 0;  // Unreachable code
+        const Start          = 1 << 1;  // Start of flow graph
+        const BranchLabel    = 1 << 2;  // Non-looping junction
+        const LoopLabel      = 1 << 3;  // Looping junction
+        const Assignment     = 1 << 4;  // Assignment
+        const TrueCondition  = 1 << 5;  // Condition known to be true
+        const FalseCondition = 1 << 6;  // Condition known to be false
+        const SwitchClause   = 1 << 7;  // Switch statement clause
+        const ArrayMutation  = 1 << 8;  // Potential array mutation
+        const Call           = 1 << 9;  // Potential assertion call
+        const ReduceLabel    = 1 << 10; // Temporarily reduce antecedents of label
+        const Referenced     = 1 << 11; // Referenced as antecedent once
+        const Shared         = 1 << 12; // Referenced as antecedent more than once
+
+        const Label = Self::BranchLabel.bits | Self::LoopLabel.bits;
+        const Condition = Self::TrueCondition.bits | Self::FalseCondition.bits;
+    }
 }
 
 index::newtype_index! {
@@ -1636,7 +2040,7 @@ impl FlowNodeKind {
 #[derive(Debug)]
 pub struct FlowNode {
     pub flags: FlowFlags,
-    // Node id used by flow type cache in checker
+    // TODO: Node id used by flow type cache in checker
     pub id: Option<u32>,
     pub kind: FlowNodeKind,
 }
@@ -1647,7 +2051,7 @@ impl FlowNode {
             flags: FlowFlags::BranchLabel,
             id: None,
             kind: FlowNodeKind::FlowLabel(FlowLabel {
-                antecedents: vec![],
+                antecedents: Default::default(),
             }),
         }
     }
@@ -1656,7 +2060,9 @@ impl FlowNode {
         Self {
             flags: FlowFlags::BranchLabel,
             id: None,
-            kind: FlowNodeKind::FlowLabel(FlowLabel { antecedents }),
+            kind: FlowNodeKind::FlowLabel(FlowLabel {
+                antecedents: Rc::new(antecedents),
+            }),
         }
     }
 
@@ -1665,14 +2071,14 @@ impl FlowNode {
             flags: FlowFlags::LoopLabel,
             id: None,
             kind: FlowNodeKind::FlowLabel(FlowLabel {
-                antecedents: vec![],
+                antecedents: Default::default(),
             }),
         }
     }
 
     pub fn new_reduce_label(
         target: FlowNodeId,
-        antecedents: Vec<FlowNodeId>,
+        antecedents: Rc<Vec<FlowNodeId>>,
         antecedent: FlowNodeId,
     ) -> Self {
         Self {
@@ -1680,34 +2086,37 @@ impl FlowNode {
             id: None,
             kind: FlowNodeKind::FlowReduceLabel(FlowReduceLabel {
                 target,
-                antecedents,
+                antecedents: antecedents,
                 antecedent,
             }),
         }
     }
 }
 
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
-pub enum FlowStartNode {
-    FunctionExpression(Rc<FnExpr>),
-    ArrowFunction(Rc<ArrowExpr>),
-    // MethodDeclaration(Rc<MethodDeclaration>),
-    // GetAccessorDeclaration(Rc<GetAccessorDeclaration>),
-    // SetAccessorDeclaration(Rc<SetAccessorDeclaration>),
-}
+// #[derive(Clone, Hash, PartialEq, Eq, Debug)]
+// pub enum FlowStartNode {
+//     FunctionExpr(Rc<FnExpr>),
+//     ArrowExpr(Rc<ArrowExpr>),
+//     ClassMethod(Rc<ClassMethod>),
+//     PrivateMethod(Rc<PrivateMethod>),
+//     MethodProp(Rc<MethodProp>),
+//     GetterProp(Rc<GetterProp>),
+//     SetterProp(Rc<SetterProp>),
+// }
 
 // FlowStart represents the start of a control flow. For a function expression or arrow
 // function, the node property references the function (which in turn has a flowNode
 // property for the containing control flow).
 #[derive(Hash, PartialEq, Eq, Debug)]
 pub struct FlowStart {
-    pub node: Option<FlowStartNode>,
+    // pub node: Option<FlowStartNode>,
+    pub node: Option<BoundNode>,
 }
 
 // FlowLabel represents a junction with multiple possible preceding control flows.
 #[derive(Hash, PartialEq, Eq, Debug)]
 pub struct FlowLabel {
-    pub antecedents: Vec<FlowNodeId>,
+    pub antecedents: Rc<Vec<FlowNodeId>>,
 }
 
 //todo:
@@ -1770,14 +2179,22 @@ pub struct FlowArrayMutation {
 #[derive(Hash, PartialEq, Eq, Debug)]
 pub struct FlowReduceLabel {
     pub target: FlowNodeId,
-    pub antecedents: Vec<FlowNodeId>,
+    pub antecedents: Rc<Vec<FlowNodeId>>,
     pub antecedent: FlowNodeId,
 }
 
-// pub enum FlowType {
-//     Type(Type),
-//     IncompleteType(IncompleteType),
-// }
+pub enum FlowType {
+    Type(TypeId),
+    IncompleteType(IncompleteType),
+}
+
+// Incomplete types occur during control flow analysis of loops. An IncompleteType
+// is distinguished from a regular type by a flags value of zero. Incomplete type
+// objects are internal to the getFlowTypeOfReference function and never escape it.
+pub struct IncompleteType {
+    // flags: TypeFlags,  // No flags set
+    pub ty: TypeId, // The type marked incomplete
+}
 
 // TODO:
 pub enum Declaration {
@@ -1809,6 +2226,9 @@ pub enum Declaration {
     // ModuleDeclaration(Rc<ModuleDeclaration>),
     // NamespaceExportDeclaration(Rc<NamespaceExportDeclaration>),
     Param(Rc<Param>),
+    ParamWithoutDecorators(Rc<ParamWithoutDecorators>),
+    TsAmbientParam(Rc<TsAmbientParam>),
+    TsParamProp(Rc<TsParamProp>),
     PrivateMethod(Rc<PrivateMethod>),
     PrivateProp(Rc<PrivateProp>),
     TsPropertySignature(Rc<TsPropertySignature>),
@@ -1846,6 +2266,9 @@ impl TryFrom<BoundNode> for Declaration {
             BoundNode::TsMethodSignature(n) => Ok(Declaration::TsMethodSignature(n)),
             BoundNode::MethodProp(n) => Ok(Declaration::MethodProp(n)),
             BoundNode::Param(n) => Ok(Declaration::Param(n)),
+            BoundNode::ParamWithoutDecorators(n) => Ok(Declaration::ParamWithoutDecorators(n)),
+            BoundNode::TsAmbientParam(n) => Ok(Declaration::TsAmbientParam(n)),
+            BoundNode::TsParamProp(n) => Ok(Declaration::TsParamProp(n)),
             BoundNode::PrivateMethod(n) => Ok(Declaration::PrivateMethod(n)),
             BoundNode::PrivateProp(n) => Ok(Declaration::PrivateProp(n)),
             BoundNode::TsPropertySignature(n) => Ok(Declaration::TsPropertySignature(n)),
@@ -1870,4 +2293,78 @@ pub enum ScriptTarget {
     ES2020,
     ES2021,
     ESNext,
+}
+
+bitflags! {
+    // NOTE: If modifying this enum, must modify `TypeFormatFlags` too!
+    pub struct NodeBuilderFlags: u32 {
+        const None                                    = 0;
+        // Options
+        const NoTruncation                            = 1 << 0;   // Don't truncate result
+        const WriteArrayAsGenericType                 = 1 << 1;   // Write Array<T> instead T[]
+        const GenerateNamesForShadowedTypeParams      = 1 << 2;   // When a type parameter T is shadowing another T, generate a name for it so it can still be referenced
+        const UseStructuralFallback                   = 1 << 3;   // When an alias cannot be named by its symbol, rather than report an error, fallback to a structural printout if possible
+        const ForbidIndexedAccessSymbolReferences     = 1 << 4;   // Forbid references like `I["a"]["b"]` - print `typeof I.a<x>.b<y>` instead
+        const WriteTypeArgumentsOfSignature           = 1 << 5;   // Write the type arguments instead of type parameters of the signature
+        const UseFullyQualifiedType                   = 1 << 6;   // Write out the fully qualified type name (eg. Module.Type, instead of Type)
+        const UseOnlyExternalAliasing                 = 1 << 7;   // Only use external aliases for a symbol
+        const SuppressAnyReturnType                   = 1 << 8;   // If the return type is any-like and can be elided, don't offer a return type.
+        const WriteTypeParametersInQualifiedName      = 1 << 9;
+        const MultilineObjectLiterals                 = 1 << 10;  // Always write object literals across multiple lines
+        const WriteClassExpressionAsTypeLiteral       = 1 << 11;  // Write class {} as { new(): {} } - used for mixin declaration emit
+        const UseTypeOfFunction                       = 1 << 12;  // Build using typeof instead of function type literal
+        const OmitParameterModifiers                  = 1 << 13;  // Omit modifiers on parameters
+        const UseAliasDefinedOutsideCurrentScope      = 1 << 14;  // Allow non-visible aliases
+        const UseSingleQuotesForStringLiteralType     = 1 << 28;  // Use single quotes for string literal type
+        const NoTypeReduction                         = 1 << 29;  // Don't call getReducedType
+        const NoUndefinedOptionalParameterType        = 1 << 30;  // Do not add undefined to optional parameter type
+
+        // Error handling
+        const AllowThisInObjectLiteral                = 1 << 15;
+        const AllowQualifiedNameInPlaceOfIdentifier    = 1 << 16;
+        /** @deprecated AllowQualifedNameInPlaceOfIdentifier. Use AllowQualifiedNameInPlaceOfIdentifier instead. */
+        const AllowQualifedNameInPlaceOfIdentifier    = Self::AllowQualifiedNameInPlaceOfIdentifier.bits;
+        const AllowAnonymousIdentifier                = 1 << 17;
+        const AllowEmptyUnionOrIntersection           = 1 << 18;
+        const AllowEmptyTuple                         = 1 << 19;
+        const AllowUniqueESSymbolType                 = 1 << 20;
+        const AllowEmptyIndexInfoType                 = 1 << 21;
+
+        // Errors (cont.)
+        const AllowNodeModulesRelativePaths           = 1 << 26;
+        const DoNotIncludeSymbolChain = 1 << 27;    // Skip looking up and printing an accessible symbol chain
+
+        const IgnoreErrors = Self::AllowThisInObjectLiteral.bits | Self::AllowQualifiedNameInPlaceOfIdentifier.bits | Self::AllowAnonymousIdentifier.bits | Self::AllowEmptyUnionOrIntersection.bits | Self::AllowEmptyTuple.bits | Self::AllowEmptyIndexInfoType.bits | Self::AllowNodeModulesRelativePaths.bits;
+
+        // State
+        const InObjectTypeLiteral                     = 1 << 22;
+        const InTypeAlias                             = 1 << 23;    // Writing type in type alias declaration
+        const InInitialEntityName                     = 1 << 24;    // Set when writing the LHS of an entity name or entity name expression
+    }
+}
+
+bitflags! {
+    pub struct SymbolFormatFlags: u8 {
+        const None = 0;
+
+        // Write symbols's type argument if it is instantiated symbol
+        // eg. class C<T> { p: T }   <-- Show p as C<T>.p here
+        //     var a: C<number>;
+        //     var p = a.p; <--- Here p is property of C<number> so show it as C<number>.p instead of just C.p
+        const WriteTypeParametersOrArguments = 1 << 0;
+
+        // Use only external alias information to get the symbol name in the given context
+        // eg.  module m { export class c { } } import x = m.c;
+        // When this flag is specified m.c will be used to refer to the class instead of alias symbol x
+        const UseOnlyExternalAliasing = 1 << 1;
+
+        // Build symbol name using any nodes needed, instead of just components of an entity name
+        const AllowAnyNodeKind = 1 << 2;
+
+        // Prefer aliases which are not directly visible
+        const UseAliasDefinedOutsideCurrentScope = 1 << 3;
+
+        // Skip building an accessible symbol chain
+        const DoNotIncludeSymbolChain = 1 << 4;
+    }
 }

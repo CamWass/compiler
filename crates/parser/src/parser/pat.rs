@@ -587,34 +587,28 @@ impl<I: Tokens> Parser<I> {
                         .map(|prop| {
                             let span = prop.span();
                             match prop {
-                                PropOrSpread::Prop(prop) => match *prop {
-                                    Prop::Shorthand(id) => {
-                                        Ok(ObjectPatProp::Assign(AssignPatProp {
-                                            span: id.span(),
-                                            key: id,
-                                            value: None,
-                                        }))
-                                    }
-                                    Prop::KeyValue(kv_prop) => {
-                                        Ok(ObjectPatProp::KeyValue(KeyValuePatProp {
-                                            key: kv_prop.key,
-                                            value: Box::new(self.reparse_expr_as_pat(
-                                                pat_ty.element(),
-                                                kv_prop.value,
-                                            )?),
-                                        }))
-                                    }
-                                    Prop::Assign(assign_prop) => {
-                                        Ok(ObjectPatProp::Assign(AssignPatProp {
-                                            span,
-                                            key: assign_prop.key,
-                                            value: Some(assign_prop.value),
-                                        }))
-                                    }
-                                    _ => syntax_error!(self, prop.span(), SyntaxError::InvalidPat),
-                                },
-
-                                PropOrSpread::Spread(SpreadElement { dot3_token, expr }) => {
+                                Prop::Shorthand(id) => Ok(ObjectPatProp::Assign(AssignPatProp {
+                                    span: id.span(),
+                                    key: id,
+                                    value: None,
+                                })),
+                                Prop::KeyValue(kv_prop) => {
+                                    Ok(ObjectPatProp::KeyValue(KeyValuePatProp {
+                                        key: kv_prop.key,
+                                        value: Box::new(self.reparse_expr_as_pat(
+                                            pat_ty.element(),
+                                            kv_prop.value,
+                                        )?),
+                                    }))
+                                }
+                                Prop::Assign(assign_prop) => {
+                                    Ok(ObjectPatProp::Assign(AssignPatProp {
+                                        span,
+                                        key: assign_prop.key,
+                                        value: Some(assign_prop.value),
+                                    }))
+                                }
+                                Prop::Spread(SpreadAssignment { dot3_token, expr }) => {
                                     Ok(ObjectPatProp::Rest(RestPat {
                                         span,
                                         dot3_token,
@@ -625,6 +619,7 @@ impl<I: Tokens> Parser<I> {
                                         type_ann: None,
                                     }))
                                 }
+                                _ => syntax_error!(self, prop.span(), SyntaxError::InvalidPat),
                             }
                         })
                         .collect::<PResult<_>>()?,
@@ -664,18 +659,12 @@ impl<I: Tokens> Parser<I> {
 
                 for expr in exprs.drain(..idx_of_rest_not_allowed) {
                     match expr {
-                        Some(
-                            expr
-                            @
-                            ExprOrSpread {
-                                spread: Some(..), ..
-                            },
-                        ) => {
+                        Some(ExprOrSpread::Spread(spread)) => {
                             if self.syntax().early_errors() {
-                                syntax_error!(self, expr.span(), SyntaxError::NonLastRestParam)
+                                syntax_error!(self, spread.span(), SyntaxError::NonLastRestParam)
                             }
                         }
-                        Some(ExprOrSpread { expr, .. }) => {
+                        Some(ExprOrSpread::Expr(expr)) => {
                             params.push(self.reparse_expr_as_pat(pat_ty.element(), expr).map(Some)?)
                         }
                         None => params.push(None),
@@ -699,10 +688,7 @@ impl<I: Tokens> Parser<I> {
                     let expr = exprs.into_iter().next().unwrap();
                     let last = match expr {
                         // Rest
-                        Some(ExprOrSpread {
-                            spread: Some(dot3_token),
-                            expr,
-                        }) => {
+                        Some(ExprOrSpread::Spread(SpreadElement { dot3_token, expr })) => {
                             // TODO(swc): is BindingPat correct?
                             let expr_span = expr.span();
                             self.reparse_expr_as_pat(pat_ty.element(), expr)
@@ -716,7 +702,7 @@ impl<I: Tokens> Parser<I> {
                                 })
                                 .map(Some)?
                         }
-                        Some(ExprOrSpread { expr, .. }) => {
+                        Some(ExprOrSpread::Expr(expr)) => {
                             // TODO(swc): is BindingPat correct?
                             self.reparse_expr_as_pat(pat_ty.element(), expr).map(Some)?
                         }
@@ -768,17 +754,15 @@ impl<I: Tokens> Parser<I> {
 
         for expr in exprs.drain(..len - 1) {
             match expr {
-                PatOrExprOrSpread::ExprOrSpread(ExprOrSpread {
-                    spread: Some(..), ..
-                })
+                PatOrExprOrSpread::ExprOrSpread(ExprOrSpread::Spread(_))
                 | PatOrExprOrSpread::Pat(Pat::Rest(..)) => {
                     if self.syntax().early_errors() {
                         syntax_error!(self, expr.span(), SyntaxError::NonLastRestParam)
                     }
                 }
-                PatOrExprOrSpread::ExprOrSpread(ExprOrSpread {
-                    spread: None, expr, ..
-                }) => params.push(self.reparse_expr_as_pat(pat_ty, expr)?),
+                PatOrExprOrSpread::ExprOrSpread(ExprOrSpread::Expr(expr)) => {
+                    params.push(self.reparse_expr_as_pat(pat_ty, expr)?)
+                }
                 PatOrExprOrSpread::Pat(pat) => params.push(pat),
             }
         }
@@ -787,10 +771,10 @@ impl<I: Tokens> Parser<I> {
         let expr = exprs.into_iter().next().unwrap();
         let last = match expr {
             // Rest
-            PatOrExprOrSpread::ExprOrSpread(ExprOrSpread {
-                spread: Some(dot3_token),
+            PatOrExprOrSpread::ExprOrSpread(ExprOrSpread::Spread(SpreadElement {
+                dot3_token,
                 expr,
-            }) => {
+            })) => {
                 let expr_span = expr.span();
                 self.reparse_expr_as_pat(pat_ty, expr).map(|pat| {
                     Pat::Rest(RestPat {
@@ -801,7 +785,7 @@ impl<I: Tokens> Parser<I> {
                     })
                 })?
             }
-            PatOrExprOrSpread::ExprOrSpread(ExprOrSpread { expr, .. }) => {
+            PatOrExprOrSpread::ExprOrSpread(ExprOrSpread::Expr(expr)) => {
                 self.reparse_expr_as_pat(pat_ty, expr)?
             }
             PatOrExprOrSpread::Pat(pat) => pat,

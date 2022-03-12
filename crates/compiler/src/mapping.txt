@@ -1,0 +1,10 @@
+MethodDeclaration -> PrivateMethod | ClassMethod | MethodProp
+BindingPattern -> ObjectPat | ArrayPat
+PropertyDeclaration -> ClassProp | PrivateProp
+// TODO:
+GetAccessor -> ClassMethod {kind: MethodKind::Getter} | PrivateMethod {kind: MethodKind::Getter} | GetterProp | TsGetterSignature
+// TODO:
+SetAccessor -> ClassMethod {kind: MethodKind::Setter} | PrivateMethod {kind: MethodKind::Setter} | SetterProp | TsSetterSignature
+PropertyAssignment -> KeyValueProp
+// TODO: our impl of this is definitly incorrect
+ParameterDeclaration -> Param | ParamWithoutDecorators | TsAmbientParam | TsParamProp

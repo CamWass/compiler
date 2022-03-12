@@ -2,7 +2,8 @@
 [build]
 rustflags = [
     "--cfg", "procmacro2_semver_exempt",
-    "-C", "target-feature=+sse2",
+    "-C", "target-feature=+sse2,+aes",
+    "-C", "target-cpu=native",
 ]
  
 rustdocflags = [
@@ -35,3 +36,6 @@ rustflags = [
 rustflags = [
     "--cfg", "procmacro2_semver_exempt",
 ]
+
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld"

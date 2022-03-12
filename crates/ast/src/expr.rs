@@ -13,7 +13,7 @@ use crate::{
         TsAsExpr, TsConstAssertion, TsNonNullExpr, TsTypeAnn, TsTypeAssertion, TsTypeParamDecl,
         TsTypeParamInstantiation,
     },
-    Invalid,
+    Invalid, ParamWithoutDecorators,
 };
 use global_common::EqIgnoreSpan;
 use global_common::{ast_node, Span, Spanned, DUMMY_SP};
@@ -175,18 +175,7 @@ pub struct ObjectLit {
     pub span: Span,
 
     #[serde(default, rename = "properties")]
-    pub props: Vec<PropOrSpread>,
-}
-
-#[ast_node]
-#[derive(Eq, Hash, Is, EqIgnoreSpan)]
-pub enum PropOrSpread {
-    /// Spread properties, e.g., `{a: 1, ...obj, b: 2}`.
-    #[tag("SpreadElement")]
-    Spread(SpreadElement),
-
-    #[tag("*")]
-    Prop(Box<Prop>),
+    pub props: Vec<Prop>,
 }
 
 #[ast_node("SpreadElement")]
@@ -349,15 +338,13 @@ pub struct SeqExpr {
 pub struct ArrowExpr {
     pub span: Span,
 
-    pub params: Vec<Pat>,
+    // TODO:
+    pub params: Vec<ParamWithoutDecorators>,
 
     pub body: BlockStmtOrExpr,
 
     #[serde(default, rename = "async")]
     pub is_async: bool,
-
-    #[serde(default, rename = "generator")]
-    pub is_generator: bool,
 
     #[serde(default, rename = "typeParameters")]
     pub type_params: Option<TsTypeParamDecl>,
@@ -459,23 +446,13 @@ pub struct Super {
     pub span: Span,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Eq, Hash, EqIgnoreSpan)]
-pub struct ExprOrSpread {
-    #[serde(default)]
-    pub spread: Option<Span>,
-
-    #[serde(rename = "expression")]
-    pub expr: Box<Expr>,
-}
-
-impl Spanned for ExprOrSpread {
-    fn span(&self) -> Span {
-        let expr = self.expr.span();
-        match self.spread {
-            Some(spread) => expr.with_lo(spread.lo()),
-            None => expr,
-        }
-    }
+#[ast_node]
+#[derive(Eq, Hash, Is, EqIgnoreSpan)]
+pub enum ExprOrSpread {
+    #[tag("SpreadElement")]
+    Spread(SpreadElement),
+    #[tag("*")]
+    Expr(Box<Expr>),
 }
 
 #[ast_node]

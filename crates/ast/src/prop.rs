@@ -3,9 +3,9 @@ use crate::{
     function::Function,
     ident::Ident,
     lit::{BigInt, Number, Str},
-    pat::Pat,
     stmt::BlockStmt,
     typescript::TsTypeAnn,
+    ParamWithoutDecorators,
 };
 use global_common::{ast_node, EqIgnoreSpan, Span};
 use is_macro::Is;
@@ -33,6 +33,10 @@ pub enum Prop {
 
     #[tag("MethodProperty")]
     Method(MethodProp),
+
+    /// Spread properties, e.g., `{a: 1, ...obj, b: 2}`.
+    #[tag("SpreadAssignment")]
+    Spread(SpreadAssignment),
 }
 
 #[ast_node("KeyValueProperty")]
@@ -69,7 +73,8 @@ pub struct GetterProp {
 pub struct SetterProp {
     pub span: Span,
     pub key: PropName,
-    pub param: Pat,
+    // TODO:
+    pub param: ParamWithoutDecorators,
     #[serde(default)]
     pub body: Option<BlockStmt>,
 }
@@ -106,5 +111,17 @@ pub struct ComputedPropName {
     /// Span including `[` and `]`.
     pub span: Span,
     #[serde(rename = "expression")]
+    pub expr: Box<Expr>,
+}
+
+#[ast_node("SpreadAssignment")]
+#[derive(Eq, Hash, EqIgnoreSpan)]
+pub struct SpreadAssignment {
+    #[serde(rename = "spread")]
+    #[span(lo)]
+    pub dot3_token: Span,
+
+    #[serde(rename = "arguments")]
+    #[span(hi)]
     pub expr: Box<Expr>,
 }

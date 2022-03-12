@@ -156,7 +156,7 @@ impl<I: Tokens> Buffer<I> {
         self.next.as_ref().map(|ts| &ts.token)
     }
 
-    // / Returns true on eof.
+    /// Returns true on eof.
     pub fn had_line_break_before_cur(&mut self) -> bool {
         self.cur();
 

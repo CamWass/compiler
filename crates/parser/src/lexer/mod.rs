@@ -897,6 +897,7 @@ impl<'src> Lexer<'src> {
     }
 
     // TODO: Verify that the raw value is spec compliant/look at swc/babel's implementations.
+    // TODO: use uncons_while
     fn read_tmpl_token(&mut self, start_of_tpl: BytePos) -> LexResult<Token> {
         enum CookedType {
             None,

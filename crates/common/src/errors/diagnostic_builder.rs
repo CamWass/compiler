@@ -10,12 +10,12 @@
 
 use super::{Applicability, Diagnostic, DiagnosticId, DiagnosticStyledString, Handler, Level};
 use crate::syntax_pos::{MultiSpan, Span};
-use log::debug;
 use std::{
     fmt::{self, Debug},
     ops::{Deref, DerefMut},
     thread::panicking,
 };
+use tracing::debug;
 
 /// Used for emitting structured error messages and other diagnostic
 /// information.

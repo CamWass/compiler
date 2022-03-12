@@ -1,5 +1,3 @@
-#![feature(test)]
-
 pub use self::output::{NormalizedOutput, StdErr, StdOut, TestOutput};
 use difference::Changeset;
 use global_common::{
@@ -10,19 +8,18 @@ use global_common::{
 use once_cell::sync::Lazy;
 pub use pretty_assertions::{assert_eq, assert_ne};
 use regex::Regex;
-use std::collections::HashMap;
-use std::env;
-use std::path::PathBuf;
-use std::sync::RwLock;
 use std::{
-    fmt,
-    fmt::Debug,
+    collections::HashMap,
+    env, fmt,
+    fmt::{Debug, Display, Formatter},
     fs::{create_dir_all, File},
     io::Write,
-    path::Path,
+    path::{Path, PathBuf},
+    sync::RwLock,
     thread,
 };
 pub use testing_macros::fixture;
+use tracing_subscriber::EnvFilter;
 
 #[macro_use]
 mod macros;
@@ -32,38 +29,18 @@ mod paths;
 mod string_errors;
 
 /// Configures logger
-pub fn init() {
-    use ansi_term::Color;
+#[must_use]
+pub fn init() -> tracing::subscriber::DefaultGuard {
+    let logger = tracing_subscriber::FmtSubscriber::builder()
+        .without_time()
+        .with_target(false)
+        .with_ansi(true)
+        .with_env_filter(EnvFilter::from_default_env())
+        .with_test_writer()
+        .pretty()
+        .finish();
 
-    struct Padded<T> {
-        value: T,
-        width: usize,
-    }
-
-    impl<T: fmt::Display> fmt::Display for Padded<T> {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            write!(f, "{: <width$}", self.value, width = self.width)
-        }
-    }
-
-    fn colored_level(level: log::Level) -> String {
-        match level {
-            log::Level::Trace => Color::Cyan.paint("TRACE").to_string(),
-            log::Level::Debug => Color::Blue.paint("DEBUG").to_string(),
-            log::Level::Info => Color::Green.paint("INFO ").to_string(),
-            log::Level::Warn => Color::Yellow.paint("WARN ").to_string(),
-            log::Level::Error => Color::Red.paint("ERROR").to_string(),
-        }
-    }
-
-    let _ = env_logger::Builder::from_default_env()
-        .is_test(true)
-        .format(|f, record| {
-            let level = colored_level(record.level());
-
-            writeln!(f, " {} > {}", level, record.args(),)
-        })
-        .try_init();
+    tracing::subscriber::set_default(logger)
 }
 
 pub fn find_executable(name: &str) -> Option<PathBuf> {
@@ -102,7 +79,7 @@ pub fn run_test<F, Ret>(treat_err_as_bug: bool, op: F) -> Result<Ret, StdErr>
 where
     F: FnOnce(Lrc<SourceMap>, &Handler) -> Result<Ret, ()>,
 {
-    init();
+    let _log = init();
 
     let cm = Lrc::new(SourceMap::new(FilePathMapping::empty()));
     let (handler, errors) = self::string_errors::new_handler(cm.clone(), treat_err_as_bug);
@@ -119,11 +96,31 @@ pub fn run_test2<F, Ret>(treat_err_as_bug: bool, op: F) -> Result<Ret, StdErr>
 where
     F: FnOnce(Lrc<SourceMap>, Handler) -> Result<Ret, ()>,
 {
-    init();
+    let _log = init();
 
     let cm = Lrc::new(SourceMap::new(FilePathMapping::empty()));
     let (handler, errors) = self::string_errors::new_handler(cm.clone(), treat_err_as_bug);
     let result = global_common::GLOBALS.set(&global_common::Globals::new(), || op(cm, handler));
+
+    match result {
+        Ok(res) => Ok(res),
+        Err(()) => Err(errors.into()),
+    }
+}
+
+/// Run test and print errors.
+pub fn run_test_with_source_map<F, Ret>(
+    cm: Lrc<SourceMap>,
+    treat_err_as_bug: bool,
+    op: F,
+) -> Result<Ret, StdErr>
+where
+    F: FnOnce(&Handler) -> Result<Ret, ()>,
+{
+    let _log = init();
+
+    let (handler, errors) = self::string_errors::new_handler(cm.clone(), treat_err_as_bug);
+    let result = global_common::GLOBALS.set(&global_common::Globals::new(), || op(&handler));
 
     match result {
         Ok(res) => Ok(res),
@@ -139,7 +136,7 @@ pub struct Tester {
 
 impl Tester {
     pub fn new() -> Self {
-        init();
+        let _log = init();
 
         Tester {
             cm: Lrc::new(SourceMap::new(FilePathMapping::empty())),
@@ -280,4 +277,16 @@ pub fn diff(l: &str, r: &str) -> String {
     let cs = Changeset::new(l, r, "\n");
 
     format!("{}", cs)
+}
+
+/// Used for assertions.
+///
+/// Prints string without escaping special characters on failure.
+#[derive(PartialEq, Eq)]
+pub struct DebugUsingDisplay<'a>(pub &'a str);
+
+impl<'a> Debug for DebugUsingDisplay<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(self.0, f)
+    }
 }

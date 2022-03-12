@@ -45,6 +45,19 @@ pub struct Param {
     pub pat: Pat,
 }
 
+#[ast_node("ParamWithoutDecorators")]
+#[derive(Eq, Hash, EqIgnoreSpan)]
+pub struct ParamWithoutDecorators {
+    #[span]
+    pub pat: Pat,
+}
+
+impl From<Pat> for ParamWithoutDecorators {
+    fn from(pat: Pat) -> Self {
+        Self { pat }
+    }
+}
+
 #[ast_node]
 #[derive(Eq, Hash, Is, EqIgnoreSpan)]
 pub enum ParamOrTsParamProp {

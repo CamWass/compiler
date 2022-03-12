@@ -1,0 +1,16 @@
+Where TSC uses readonly T[], we can use Rc<Vec<T>>. This will make cloning less expensive.
+In such cases maybe have a global empty Rc<Vec<_>> and clone it rather than create Vec::new() or Default::default(), reducing allocations.
+Rather than cloning the inner value of an Rc to create a modified copy, use RC::make_mut. This contains aditional optimisations to avoid cloning when possible.
+
+To find = assignments, TSC uses somthing like `isBinaryExpression(node) && node.operatorToken.kind === SyntaxKind.EqualsToken`.
+I have often ported this as `if let BoundNode::AssignExpr(assign) = node`, but this is incorrect. TSC's version only accepts assignments with the = operator,
+whil ours accepts any assignment expr, including `||=`, `+=`, etc.
+
+TODO: all occurances of "spread"
+
+add `debug_assert!(matches!(...))` to all functions where we have replaced a more specific type from TSC (e.g. `FunctionExpression | ArrowFunction`)
+with a less specific type (e.g. `BoundNode`).
+
+We use BindingIdent all over the place, which makes it hard to find BindingIdents used in Binding patterns (ObjectPat and ArrayPat).
+
+Ensure Visitors visit fields in the order of evaluation in ECMA/TSC:

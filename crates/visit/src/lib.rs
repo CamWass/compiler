@@ -201,7 +201,8 @@ macro_rules! noop_fold_type {
         noop_fold_type!(fold_ts_enum_member_id, TsEnumMemberId);
         noop_fold_type!(fold_ts_external_module_ref, TsExternalModuleRef);
         noop_fold_type!(fold_ts_fn_or_constructor_type, TsFnOrConstructorType);
-        noop_fold_type!(fold_ts_fn_param, TsFnParam);
+        noop_fold_type!(fold_ts_fn_param, TsAmbientParam);
+        noop_fold_type!(fold_ts_fn_param, TsAmbientParamPat);
         noop_fold_type!(fold_ts_fn_type, TsFnType);
         noop_fold_type!(fold_ts_import_equals_decl, TsImportEqualsDecl);
         noop_fold_type!(fold_ts_import_type, TsImportType);
@@ -276,7 +277,8 @@ macro_rules! noop_visit_type {
         noop_visit_type!(visit_ts_enum_member_id, TsEnumMemberId);
         noop_visit_type!(visit_ts_external_module_ref, TsExternalModuleRef);
         noop_visit_type!(visit_ts_fn_or_constructor_type, TsFnOrConstructorType);
-        noop_visit_type!(visit_ts_fn_param, TsFnParam);
+        noop_visit_type!(visit_ts_ambient_param, TsAmbientParam);
+        noop_visit_type!(visit_ts_ambient_param_pat, TsAmbientParamPat);
         noop_visit_type!(visit_ts_fn_type, TsFnType);
         noop_visit_type!(visit_ts_import_equals_decl, TsImportEqualsDecl);
         noop_visit_type!(visit_ts_import_type, TsImportType);
@@ -354,7 +356,8 @@ macro_rules! noop_visit_mut_type {
         noop_visit_mut_type!(visit_mut_ts_enum_member_id, TsEnumMemberId);
         noop_visit_mut_type!(visit_mut_ts_external_module_ref, TsExternalModuleRef);
         noop_visit_mut_type!(visit_mut_ts_fn_or_constructor_type, TsFnOrConstructorType);
-        noop_visit_mut_type!(visit_mut_ts_fn_param, TsFnParam);
+        noop_visit_mut_type!(visit_mut_ts_fn_param, TsAmbientParam);
+        noop_visit_mut_type!(visit_mut_ts_fn_param, TsAmbientParamPat);
         noop_visit_mut_type!(visit_mut_ts_fn_type, TsFnType);
         noop_visit_mut_type!(visit_mut_ts_import_equals_decl, TsImportEqualsDecl);
         noop_visit_mut_type!(visit_mut_ts_import_type, TsImportType);
@@ -585,11 +588,7 @@ define!({
     }
     pub struct ObjectLit {
         pub span: Span,
-        pub props: Vec<PropOrSpread>,
-    }
-    pub enum PropOrSpread {
-        Spread(SpreadElement),
-        Prop(Box<Prop>),
+        pub props: Vec<Prop>,
     }
     pub struct SpreadElement {
         pub dot3_token: Span,
@@ -656,10 +655,9 @@ define!({
     }
     pub struct ArrowExpr {
         pub span: Span,
-        pub params: Vec<Pat>,
+        pub params: Vec<ParamWithoutDecorators>,
         pub body: BlockStmtOrExpr,
         pub is_async: bool,
-        pub is_generator: bool,
         pub type_params: Option<TsTypeParamDecl>,
         pub return_type: Option<TsTypeAnn>,
     }
@@ -704,9 +702,9 @@ define!({
     pub struct Super {
         pub span: Span,
     }
-    pub struct ExprOrSpread {
-        pub spread: Option<Span>,
-        pub expr: Box<Expr>,
+    pub enum ExprOrSpread {
+        Spread(SpreadElement),
+        Expr(Box<Expr>),
     }
     pub enum BlockStmtOrExpr {
         BlockStmt(BlockStmt),
@@ -1100,6 +1098,7 @@ define!({
         Getter(GetterProp),
         Setter(SetterProp),
         Method(MethodProp),
+        Spread(SpreadAssignment),
     }
     pub struct KeyValueProp {
         pub key: PropName,
@@ -1118,12 +1117,16 @@ define!({
     pub struct SetterProp {
         pub span: Span,
         pub key: PropName,
-        pub param: Pat,
+        pub param: ParamWithoutDecorators,
         pub body: Option<BlockStmt>,
     }
     pub struct MethodProp {
         pub key: PropName,
         pub function: Function,
+    }
+    pub struct SpreadAssignment {
+        pub dot3_token: Span,
+        pub expr: Box<Expr>,
     }
     pub enum PropName {
         Ident(Ident),
@@ -1311,13 +1314,13 @@ define!({
     }
     pub struct TsCallSignatureDecl {
         pub span: Span,
-        pub params: Vec<TsFnParam>,
+        pub params: Vec<TsAmbientParam>,
         pub type_ann: Option<TsTypeAnn>,
         pub type_params: Option<TsTypeParamDecl>,
     }
     pub struct TsConstructSignatureDecl {
         pub span: Span,
-        pub params: Vec<TsFnParam>,
+        pub params: Vec<TsAmbientParam>,
         pub type_ann: Option<TsTypeAnn>,
         pub type_params: Option<TsTypeParamDecl>,
     }
@@ -1345,7 +1348,7 @@ define!({
         pub key: Box<Expr>,
         pub computed: bool,
         pub optional: bool,
-        pub param: TsFnParam,
+        pub param: TsAmbientParam,
     }
     pub struct TsMethodSignature {
         pub span: Span,
@@ -1353,12 +1356,12 @@ define!({
         pub key: Box<Expr>,
         pub computed: bool,
         pub optional: bool,
-        pub params: Vec<TsFnParam>,
+        pub params: Vec<TsAmbientParam>,
         pub type_ann: Option<TsTypeAnn>,
         pub type_params: Option<TsTypeParamDecl>,
     }
     pub struct TsIndexSignature {
-        pub params: Vec<TsFnParam>,
+        pub params: Vec<TsAmbientParam>,
         pub type_ann: Option<TsTypeAnn>,
         pub readonly: bool,
         pub is_static: bool,
@@ -1412,7 +1415,10 @@ define!({
     pub struct TsThisType {
         pub span: Span,
     }
-    pub enum TsFnParam {
+    pub struct TsAmbientParam {
+        pub pat: TsAmbientParamPat,
+    }
+    pub enum TsAmbientParamPat {
         Ident(BindingIdent),
         Array(ArrayPat),
         Rest(RestPat),
@@ -1420,13 +1426,13 @@ define!({
     }
     pub struct TsFnType {
         pub span: Span,
-        pub params: Vec<TsFnParam>,
+        pub params: Vec<TsAmbientParam>,
         pub type_params: Option<TsTypeParamDecl>,
         pub type_ann: TsTypeAnn,
     }
     pub struct TsConstructorType {
         pub span: Span,
-        pub params: Vec<TsFnParam>,
+        pub params: Vec<TsAmbientParam>,
         pub type_params: Option<TsTypeParamDecl>,
         pub type_ann: TsTypeAnn,
         pub is_abstract: bool,

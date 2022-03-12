@@ -198,7 +198,7 @@ impl StartsWithAlphaNum for Expr {
             },
 
             Expr::Arrow(ref expr) => match expr.params.as_slice() {
-                [p] => p.starts_with_alpha_num(),
+                [p] => p.pat.starts_with_alpha_num(),
                 _ => false,
             },
 
@@ -258,14 +258,9 @@ impl StartsWithAlphaNum for PatOrExpr {
 
 impl StartsWithAlphaNum for ExprOrSpread {
     fn starts_with_alpha_num(&self) -> bool {
-        match *self {
-            ExprOrSpread {
-                spread: Some(_), ..
-            } => false,
-            ExprOrSpread {
-                spread: None,
-                ref expr,
-            } => expr.starts_with_alpha_num(),
+        match self {
+            ExprOrSpread::Spread(_) => false,
+            ExprOrSpread::Expr(e) => e.starts_with_alpha_num(),
         }
     }
 }

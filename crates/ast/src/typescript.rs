@@ -70,6 +70,7 @@ pub struct TsParamProp {
     pub param: TsParamPropParam,
 }
 
+// TODO: maybe rename to TsParamPropPat
 #[ast_node]
 #[derive(Eq, Hash, Is, EqIgnoreSpan)]
 pub enum TsParamPropParam {
@@ -78,6 +79,15 @@ pub enum TsParamPropParam {
 
     #[tag("AssignmentPattern")]
     Assign(AssignPat),
+}
+
+impl From<TsParamPropParam> for Pat {
+    fn from(other: TsParamPropParam) -> Self {
+        match other {
+            TsParamPropParam::Ident(n) => Pat::Ident(n),
+            TsParamPropParam::Assign(n) => Pat::Assign(n),
+        }
+    }
 }
 
 #[ast_node("TsQualifiedName")]
@@ -133,7 +143,7 @@ pub enum TsTypeElement {
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsCallSignatureDecl {
     pub span: Span,
-    pub params: Vec<TsFnParam>,
+    pub params: Vec<TsAmbientParam>,
     #[serde(default, rename = "typeAnnotation")]
     pub type_ann: Option<TsTypeAnn>,
     #[serde(default)]
@@ -144,7 +154,7 @@ pub struct TsCallSignatureDecl {
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsConstructSignatureDecl {
     pub span: Span,
-    pub params: Vec<TsFnParam>,
+    pub params: Vec<TsAmbientParam>,
     #[serde(default, rename = "typeAnnotation")]
     pub type_ann: Option<TsTypeAnn>,
     #[serde(default)]
@@ -183,7 +193,7 @@ pub struct TsSetterSignature {
     pub key: Box<Expr>,
     pub computed: bool,
     pub optional: bool,
-    pub param: TsFnParam,
+    pub param: TsAmbientParam,
 }
 
 #[ast_node("TsMethodSignature")]
@@ -194,7 +204,7 @@ pub struct TsMethodSignature {
     pub key: Box<Expr>,
     pub computed: bool,
     pub optional: bool,
-    pub params: Vec<TsFnParam>,
+    pub params: Vec<TsAmbientParam>,
     #[serde(default)]
     pub type_ann: Option<TsTypeAnn>,
     #[serde(default)]
@@ -204,7 +214,7 @@ pub struct TsMethodSignature {
 #[ast_node("TsIndexSignature")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsIndexSignature {
-    pub params: Vec<TsFnParam>,
+    pub params: Vec<TsAmbientParam>,
     #[serde(default, rename = "typeAnnotation")]
     pub type_ann: Option<TsTypeAnn>,
 
@@ -372,9 +382,22 @@ pub struct TsThisType {
     pub span: Span,
 }
 
+#[ast_node("TsAmbientParam")]
+#[derive(Eq, Hash, EqIgnoreSpan)]
+pub struct TsAmbientParam {
+    #[span]
+    pub pat: TsAmbientParamPat,
+}
+
+impl From<TsAmbientParamPat> for TsAmbientParam {
+    fn from(pat: TsAmbientParamPat) -> Self {
+        Self { pat }
+    }
+}
+
 #[ast_node]
 #[derive(Eq, Hash, Is, EqIgnoreSpan)]
-pub enum TsFnParam {
+pub enum TsAmbientParamPat {
     #[tag("Identifier")]
     Ident(BindingIdent),
 
@@ -388,11 +411,22 @@ pub enum TsFnParam {
     Object(ObjectPat),
 }
 
+impl From<TsAmbientParamPat> for Pat {
+    fn from(other: TsAmbientParamPat) -> Self {
+        match other {
+            TsAmbientParamPat::Ident(n) => Pat::Ident(n),
+            TsAmbientParamPat::Array(n) => Pat::Array(n),
+            TsAmbientParamPat::Rest(n) => Pat::Rest(n),
+            TsAmbientParamPat::Object(n) => Pat::Object(n),
+        }
+    }
+}
+
 #[ast_node("TsFunctionType")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsFnType {
     pub span: Span,
-    pub params: Vec<TsFnParam>,
+    pub params: Vec<TsAmbientParam>,
 
     #[serde(default)]
     pub type_params: Option<TsTypeParamDecl>,
@@ -404,7 +438,7 @@ pub struct TsFnType {
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsConstructorType {
     pub span: Span,
-    pub params: Vec<TsFnParam>,
+    pub params: Vec<TsAmbientParam>,
     #[serde(default)]
     pub type_params: Option<TsTypeParamDecl>,
     #[serde(rename = "typeAnnotation")]
@@ -496,6 +530,7 @@ pub struct TsTupleType {
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsTupleElement {
     pub span: Span,
+    // TODO: is `label` unused?:
     /// `Ident` or `RestPat { arg: Ident }`
     pub label: Option<Pat>,
     pub ty: TsType,
