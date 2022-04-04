@@ -2,24 +2,42 @@ use crate::typescript::TsTypeAnn;
 use global_common::ast_node;
 use global_common::EqIgnoreSpan;
 use global_common::Span;
-use global_common::Spanned;
-use serde::Deserialize;
-use serde::Serialize;
 use swc_atoms::JsWord;
 
 /// Identifer used as a pattern.
-#[derive(Spanned, Clone, Debug, PartialEq, Eq, Hash, EqIgnoreSpan, Serialize, Deserialize)]
+#[ast_node("BindingIdentifier")]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct BindingIdent {
-    #[span]
-    #[serde(flatten)]
-    pub id: Ident,
+    pub span: Span,
+    #[serde(rename = "value")]
+    pub sym: JsWord,
+
+    /// TypeScript only. Used in case of an optional parameter.
+    #[serde(default)]
+    pub optional: bool,
+
     #[serde(default, rename = "typeAnnotation")]
     pub type_ann: Option<TsTypeAnn>,
 }
 
 impl From<Ident> for BindingIdent {
     fn from(id: Ident) -> Self {
-        Self { id, type_ann: None }
+        Self {
+            span: id.span,
+            sym: id.sym,
+            optional: id.optional,
+            type_ann: None,
+        }
+    }
+}
+
+impl From<BindingIdent> for Ident {
+    fn from(id: BindingIdent) -> Self {
+        Self {
+            span: id.span,
+            sym: id.sym,
+            optional: id.optional,
+        }
     }
 }
 

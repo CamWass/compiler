@@ -128,7 +128,7 @@ impl Spanned for PropName {
 impl Spanned for Pat {
     fn span(&self) -> Span {
         match self {
-            Pat::Ident(n) => n.id.span,
+            Pat::Ident(n) => n.span,
             Pat::Array(n) => n.span,
             Pat::Rest(n) => n.span,
             Pat::Object(n) => n.span,
@@ -151,7 +151,7 @@ impl Spanned for TsEntityName {
 impl Spanned for TsAmbientParamPat {
     fn span(&self) -> Span {
         match self {
-            TsAmbientParamPat::Ident(n) => n.id.span,
+            TsAmbientParamPat::Ident(n) => n.span,
             TsAmbientParamPat::Array(n) => n.span,
             TsAmbientParamPat::Rest(n) => n.span,
             TsAmbientParamPat::Object(n) => n.span,
@@ -497,7 +497,9 @@ define!({
     }
 
     pub struct BindingIdent {
-        pub id: Ident,
+        pub span: Span,
+        pub sym: JsWord,
+        pub optional: bool,
         pub type_ann: Option<TsTypeAnn>,
     }
 

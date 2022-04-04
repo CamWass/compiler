@@ -4904,25 +4904,25 @@ impl Checker {
                         BoundNode::PrivateProp(n) => n.is_optional,
                         BoundNode::TsPropertySignature(n) => n.optional,
                         BoundNode::Param(p) => match &p.pat {
-                            ast::Pat::Ident(n) => n.id.optional,
+                            ast::Pat::Ident(n) => n.optional,
                             ast::Pat::Array(n) => n.optional,
                             ast::Pat::Object(n) => n.optional,
                             _ => false,
                         },
                         BoundNode::ParamWithoutDecorators(p) => match &p.pat {
-                            ast::Pat::Ident(n) => n.id.optional,
+                            ast::Pat::Ident(n) => n.optional,
                             ast::Pat::Array(n) => n.optional,
                             ast::Pat::Object(n) => n.optional,
                             _ => false,
                         },
                         BoundNode::TsAmbientParam(p) => match &p.pat {
-                            ast::TsAmbientParamPat::Ident(n) => n.id.optional,
+                            ast::TsAmbientParamPat::Ident(n) => n.optional,
                             ast::TsAmbientParamPat::Array(n) => n.optional,
                             ast::TsAmbientParamPat::Object(n) => n.optional,
                             _ => false,
                         },
                         BoundNode::TsParamProp(p) => match &p.param {
-                            ast::TsParamPropParam::Ident(n) => n.id.optional,
+                            ast::TsParamPropParam::Ident(n) => n.optional,
                             _ => false,
                         },
                         /*|| isJSDocOptionalParameter(declaration) */
@@ -8325,7 +8325,7 @@ impl Checker {
                         .map(|p| match &p.pat {
                             ast::TsAmbientParamPat::Ident(n) => Param::new(
                                 p.bind(declaration.clone()),
-                                n.id.optional,
+                                n.optional,
                                 false,
                                 n.type_ann.clone(),
                             ),
@@ -8356,7 +8356,7 @@ impl Checker {
                 ($param:expr, $pat:expr) => {{
                     match &$pat {
                         ast::Pat::Ident(_n) => {
-                            Param::new($param, _n.id.optional, false, _n.type_ann.clone())
+                            Param::new($param, _n.optional, false, _n.type_ann.clone())
                         }
                         ast::Pat::Array(_n) => {
                             Param::new($param, _n.optional, true, _n.type_ann.clone())
@@ -8418,7 +8418,7 @@ impl Checker {
                         ast::ParamOrTsParamProp::TsParamProp(n) => match &n.param {
                             ast::TsParamPropParam::Ident(p) => Param::new(
                                 n.param.bind(declaration.clone()),
-                                p.id.optional,
+                                p.optional,
                                 true,
                                 p.type_ann.clone(),
                             ),
@@ -17023,7 +17023,7 @@ impl Checker {
         macro_rules! count_ts_fn_params {
             ($params:expr) => {
                 $params.iter().position(|p| match &p.pat {
-                    ast::TsAmbientParamPat::Ident(n) => n.id.optional,
+                    ast::TsAmbientParamPat::Ident(n) => n.optional,
                     ast::TsAmbientParamPat::Array(n) => n.optional,
                     ast::TsAmbientParamPat::Rest(_) => true,
                     ast::TsAmbientParamPat::Object(n) => n.optional,
@@ -17033,7 +17033,7 @@ impl Checker {
         macro_rules! check_pat {
             ($pat:expr) => {
                 match $pat {
-                    ast::Pat::Ident(n) => n.id.optional,
+                    ast::Pat::Ident(n) => n.optional,
                     ast::Pat::Array(n) => n.optional,
                     ast::Pat::Object(n) => n.optional,
                     ast::Pat::Rest(_) | ast::Pat::Assign(_) => true,
@@ -17062,7 +17062,7 @@ impl Checker {
             BoundNode::MethodProp(n) => count_params!(n.function.params),
             BoundNode::Constructor(n) => n.params.iter().position(|p| match p {
                 ast::ParamOrTsParamProp::TsParamProp(p) => match &p.param {
-                    ast::TsParamPropParam::Ident(n) => n.id.optional,
+                    ast::TsParamPropParam::Ident(n) => n.optional,
                     ast::TsParamPropParam::Assign(_) => true,
                 },
                 ast::ParamOrTsParamProp::Param(p) => check_pat!(&p.pat),

@@ -1449,7 +1449,15 @@ impl<'a> Emitter<'a> {
 
     #[emitter]
     fn emit_binding_ident(&mut self, ident: &BindingIdent) -> Result {
-        emit!(ident.id);
+        // TODO: Use write_symbol when ident is a symbol.
+        self.emit_leading_comments_of_span(ident.span, false)?;
+
+        // TODO: span
+        self.wr
+            .write_symbol(ident.span, &handle_invalid_unicodes(&ident.sym))?;
+        if ident.optional {
+            punct!("?");
+        }
 
         if let Some(ty) = &ident.type_ann {
             punct!(":");

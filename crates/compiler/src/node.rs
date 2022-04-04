@@ -982,7 +982,7 @@ macro_rules! impl_span {
                     Self::Function(n) => n.span,
                     Self::Param(n) => n.span,
                     Self::ParamWithoutDecorators(n) => n.pat.span(),
-                    Self::BindingIdent(n) => n.id.span,
+                    Self::BindingIdent(n) => n.span,
                     Self::Ident(n) => n.span,
                     Self::PrivateName(n) => n.span,
                     Self::JSXMemberExpr(_) => todo!("JSXMemberExpr"),

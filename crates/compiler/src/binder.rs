@@ -360,6 +360,7 @@ impl<'a> Binder<'a> {
             // }
 
             return match name {
+                DeclName::BindingIdent(i) => i.sym.clone(),
                 DeclName::Ident(i) => i.sym.clone(),
                 DeclName::String(s) => s.value.clone(),
                 DeclName::NoSubstitutionTemplate(t) => {
@@ -1454,7 +1455,6 @@ impl<'a> Binder<'a> {
                 bind!(self, p.pat, node.clone());
             }
             BoundNode::BindingIdent(b) => {
-                bind!(self, b.id, node.clone());
                 bind_opt!(self, b.type_ann, node.clone());
             }
             BoundNode::Ident(_) => {}

@@ -272,6 +272,7 @@ pub struct SwitchCase {
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct CatchClause {
     pub span: Span,
+    // TODO: ParamWithoutDecorators?
     /// es2019
     ///
     /// The param is null if the catch binding is omitted. E.g., try { foo() }

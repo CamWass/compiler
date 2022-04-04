@@ -1184,13 +1184,13 @@ impl<I: Tokens> Parser<I> {
         let type_ann_start = self.input.cur_pos();
 
         if eat!(self, ',') {
-            self.emit_err(id.id.span, SyntaxError::TS1096);
+            self.emit_err(id.span, SyntaxError::TS1096);
         } else {
             expect!(self, ':');
         }
 
         let type_ann = self.parse_ts_type_ann(false, type_ann_start)?;
-        id.id.span = span!(self, ident_start);
+        id.span = span!(self, ident_start);
         id.type_ann = Some(type_ann);
 
         expect!(self, ']');

@@ -143,11 +143,12 @@ pub(super) trait MaybeOptionalIdentParser<Ident> {
 }
 impl<I: Tokens> MaybeOptionalIdentParser<Ident> for Parser<I> {
     fn parse_maybe_opt_binding_ident(&mut self) -> PResult<Ident> {
-        self.parse_binding_ident().map(|i| i.id)
+        self.parse_binding_ident().map(Ident::from)
     }
 }
 impl<I: Tokens> MaybeOptionalIdentParser<Option<Ident>> for Parser<I> {
     fn parse_maybe_opt_binding_ident(&mut self) -> PResult<Option<Ident>> {
-        self.parse_opt_binding_ident().map(|opt| opt.map(|i| i.id))
+        self.parse_opt_binding_ident()
+            .map(|opt| opt.map(Ident::from))
     }
 }

@@ -377,7 +377,9 @@ define!({
         Param(Rc<Param>),
     }
     pub struct BindingIdent {
-        pub id: Rc<Ident>,
+        pub span: Span,
+        pub sym: JsWord,
+        pub optional: bool,
         pub type_ann: Option<Rc<TsTypeAnn>>,
         pub cached_hash: u8,
     }

@@ -740,7 +740,9 @@ define!({
     }
 
     pub struct BindingIdent {
-        pub id: Ident,
+        pub span: Span,
+        pub sym: JsWord,
+        pub optional: bool,
         pub type_ann: Option<TsTypeAnn>,
     }
 

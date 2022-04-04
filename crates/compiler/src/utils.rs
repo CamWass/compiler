@@ -420,6 +420,7 @@ pub fn isStatic(node: &BoundNode) -> bool {
 #[derive(Debug)]
 pub enum DeclName {
     Ident(Rc<ast::Ident>),
+    BindingIdent(Rc<ast::BindingIdent>),
     PrivateName(Rc<ast::PrivateName>),
     String(Rc<ast::Str>),
     NoSubstitutionTemplate(Rc<ast::Tpl>),
@@ -531,29 +532,29 @@ fn getNonAssignedNameOfDeclaration(declaration: &BoundNode) -> Option<DeclName> 
         // FunctionOrConstructorTypeNodeBase
         // JSDocFunctionType
         BoundNode::VarDeclarator(d) => match &d.name {
-            ast::Pat::Ident(i) => Some(DeclName::Ident(i.id.clone())),
+            ast::Pat::Ident(i) => Some(DeclName::BindingIdent(i.clone())),
             ast::Pat::Array(_) => todo!(),
             ast::Pat::Object(_) => todo!(),
             _ => unreachable!(),
         },
         BoundNode::Param(p) => match &p.pat {
-            ast::Pat::Ident(i) => Some(DeclName::Ident(i.id.clone())),
+            ast::Pat::Ident(i) => Some(DeclName::BindingIdent(i.clone())),
             _ => todo!(),
         },
         BoundNode::ParamWithoutDecorators(p) => match &p.pat {
-            ast::Pat::Ident(i) => Some(DeclName::Ident(i.id.clone())),
+            ast::Pat::Ident(i) => Some(DeclName::BindingIdent(i.clone())),
             _ => todo!(),
         },
         BoundNode::TsAmbientParam(p) => match &p.pat {
-            ast::TsAmbientParamPat::Ident(i) => Some(DeclName::Ident(i.id.clone())),
+            ast::TsAmbientParamPat::Ident(i) => Some(DeclName::BindingIdent(i.clone())),
             ast::TsAmbientParamPat::Rest(p) => match &p.arg {
-                ast::Pat::Ident(i) => Some(DeclName::Ident(i.id.clone())),
+                ast::Pat::Ident(i) => Some(DeclName::BindingIdent(i.clone())),
                 _ => todo!(),
             },
             _ => todo!(),
         },
         BoundNode::TsParamProp(p) => match &p.param {
-            ast::TsParamPropParam::Ident(i) => Some(DeclName::Ident(i.id.clone())),
+            ast::TsParamPropParam::Ident(i) => Some(DeclName::BindingIdent(i.clone())),
             _ => todo!(),
         },
         // TODO:
@@ -594,11 +595,11 @@ fn getNonAssignedNameOfDeclaration(declaration: &BoundNode) -> Option<DeclName> 
             ast::TsModuleName::Str(s) => Some(DeclName::String(s.clone())),
         },
         BoundNode::RestPat(p) => match &p.arg {
-            ast::Pat::Ident(i) => Some(DeclName::Ident(i.id.clone())),
+            ast::Pat::Ident(i) => Some(DeclName::BindingIdent(i.clone())),
             _ => todo!(),
         },
-        BoundNode::BindingIdent(i) => Some(DeclName::Ident(i.id.clone())),
-        BoundNode::TsTypeParam(p) => Some(DeclName::Ident(p.name.clone())),
+        BoundNode::BindingIdent(i) => Some(DeclName::BindingIdent(i.node.clone())),
+        BoundNode::TsTypeParamDecl(p) => Some(DeclName::Ident(p.name.clone())),
         BoundNode::TsFnType(_) => None,
         BoundNode::TsConstructorType(_) => None,
         BoundNode::TsCallSignatureDecl(_) => None,
@@ -696,6 +697,7 @@ fn isAssignmentDeclaration(decl: &BoundNode) -> bool {
         decl,
         BoundNode::BinExpr(_)
             | BoundNode::MemberExpr(_)
+            // TODO: BindingIdent?
             | BoundNode::Ident(_)
             | BoundNode::CallExpr(_)
     )
@@ -2779,7 +2781,7 @@ pub fn hasThisParameter(signature: &BoundNode) -> bool {
 
 pub fn parameterIsThisKeyword(parameter: &ast::Pat) -> bool {
     if let ast::Pat::Ident(i) = parameter {
-        return i.id.sym == js_word!("this");
+        return i.sym == js_word!("this");
     }
     false
 }

@@ -181,7 +181,7 @@ impl<I: Tokens> Parser<I> {
                 let orig_name = self.parse_ident_name()?;
 
                 if eat!(self, "as") {
-                    let local = self.parse_binding_ident()?.id;
+                    let local = Ident::from(self.parse_binding_ident()?);
                     return Ok(ImportSpecifier::Named(ImportNamedSpecifier {
                         span: Span::new(start, local.span.hi(), Default::default()),
                         local,
@@ -218,7 +218,7 @@ impl<I: Tokens> Parser<I> {
             in_generator: false,
             ..self.ctx()
         };
-        Ok(self.with_ctx(ctx).parse_binding_ident()?.id)
+        Ok(self.with_ctx(ctx).parse_binding_ident()?.into())
     }
 
     #[allow(clippy::cognitive_complexity)]
