@@ -2151,7 +2151,7 @@ impl Checker {
                                                         | BoundNode::ParamWithoutDecorators(_)
                                                         | BoundNode::TsAmbientParam(_)
                                                         | BoundNode::TsParamProp(_)
-                                                        | BoundNode::TsTypeParam(_)
+                                                        | BoundNode::TsTypeParamDecl(_)
                                                 )
                                         } else {
                                             // local types not visible outside the function body
@@ -2774,7 +2774,7 @@ impl Checker {
         container: &BoundNode,
     ) -> bool {
         for decl in self.symbols[symbol].declarations() {
-            if let BoundNode::TsTypeParam(param) = decl {
+            if let BoundNode::TsTypeParamDecl(param) = decl {
                 // TODO: JSdoc
                 // let parent = isJSDocTemplateTag(decl.parent) ? getJSDocHost(decl.parent) : decl.parent;
                 let parent = decl.parent().unwrap().parent();
@@ -7802,7 +7802,7 @@ impl Checker {
                     let type_param_symbol = self.types[typeParameter].get_symbol().clone();
                     let defaultDeclaration = type_param_symbol.and_then(|s| {
                         self.symbols[s].declarations().iter().find(
-                            |decl| matches!(decl, BoundNode::TsTypeParam(p) if p.default.is_some()),
+                            |decl| matches!(decl, BoundNode::TsTypeParamDecl(p) if p.default.is_some()),
                         )
                     });
                     let defaultType = if let Some(defaultDeclaration) = defaultDeclaration {
@@ -7849,7 +7849,7 @@ impl Checker {
             self.symbols[*sym]
                 .declarations()
                 .iter()
-                .any(|d| matches!(&d, BoundNode::TsTypeParam(p) if p.default.is_some()))
+                .any(|d| matches!(&d, BoundNode::TsTypeParamDecl(p) if p.default.is_some()))
         } else {
             false
         }
@@ -9227,7 +9227,7 @@ impl Checker {
                 .declarations()
                 .iter()
                 .find_map(|d| match d {
-                    BoundNode::TsTypeParam(p) => getBoundEffectiveConstraintOfTypeParameter(&p),
+                    BoundNode::TsTypeParamDecl(p) => getBoundEffectiveConstraintOfTypeParameter(&p),
                     _ => None,
                 })
         } else {
@@ -23070,7 +23070,7 @@ fn isThislessType(node: &Node) -> bool {
 }
 
 /** A type parameter is thisless if its constraint is thisless, or if it has no constraint. */
-fn isThislessTypeParameter(node: &ast::TsTypeParam) -> bool {
+fn isThislessTypeParameter(node: &ast::TsTypeParamDecl) -> bool {
     let constraint = getEffectiveConstraintOfTypeParameter(node);
     constraint
         .map(|c| isThislessType(&c.clone().into()))

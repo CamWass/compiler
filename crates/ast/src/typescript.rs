@@ -31,14 +31,6 @@ pub struct TsTypeAnn {
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsTypeParamDecl {
     pub span: Span,
-    #[serde(rename = "parameters")]
-    pub params: Vec<TsTypeParam>,
-}
-
-#[ast_node("TsTypeParameter")]
-#[derive(Eq, Hash, EqIgnoreSpan)]
-pub struct TsTypeParam {
-    pub span: Span,
     pub name: Ident,
 
     #[serde(default)]
@@ -147,7 +139,7 @@ pub struct TsCallSignatureDecl {
     #[serde(default, rename = "typeAnnotation")]
     pub type_ann: Option<TsTypeAnn>,
     #[serde(default)]
-    pub type_params: Option<TsTypeParamDecl>,
+    pub type_params: Option<Vec<TsTypeParamDecl>>,
 }
 
 #[ast_node("TsConstructSignatureDeclaration")]
@@ -158,7 +150,7 @@ pub struct TsConstructSignatureDecl {
     #[serde(default, rename = "typeAnnotation")]
     pub type_ann: Option<TsTypeAnn>,
     #[serde(default)]
-    pub type_params: Option<TsTypeParamDecl>,
+    pub type_params: Option<Vec<TsTypeParamDecl>>,
 }
 
 #[ast_node("TsPropertySignature")]
@@ -208,7 +200,7 @@ pub struct TsMethodSignature {
     #[serde(default)]
     pub type_ann: Option<TsTypeAnn>,
     #[serde(default)]
-    pub type_params: Option<TsTypeParamDecl>,
+    pub type_params: Option<Vec<TsTypeParamDecl>>,
 }
 
 #[ast_node("TsIndexSignature")]
@@ -429,7 +421,7 @@ pub struct TsFnType {
     pub params: Vec<TsAmbientParam>,
 
     #[serde(default)]
-    pub type_params: Option<TsTypeParamDecl>,
+    pub type_params: Option<Vec<TsTypeParamDecl>>,
     #[serde(rename = "typeAnnotation")]
     pub type_ann: TsTypeAnn,
 }
@@ -440,7 +432,7 @@ pub struct TsConstructorType {
     pub span: Span,
     pub params: Vec<TsAmbientParam>,
     #[serde(default)]
-    pub type_params: Option<TsTypeParamDecl>,
+    pub type_params: Option<Vec<TsTypeParamDecl>>,
     #[serde(rename = "typeAnnotation")]
     pub type_ann: TsTypeAnn,
     pub is_abstract: bool,
@@ -590,7 +582,7 @@ pub struct TsConditionalType {
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsInferType {
     pub span: Span,
-    pub type_param: TsTypeParam,
+    pub type_param: TsTypeParamDecl,
 }
 
 #[ast_node("TsParenthesizedType")]
@@ -697,7 +689,7 @@ pub struct TsMappedType {
     pub span: Span,
     #[serde(default)]
     pub readonly: Option<TruePlusMinus>,
-    pub type_param: TsTypeParam,
+    pub type_param: TsTypeParamDecl,
     #[serde(default, rename = "nameType")]
     pub name_type: Option<Box<TsType>>,
     #[serde(default)]
@@ -754,7 +746,7 @@ pub struct TsInterfaceDecl {
     pub id: Ident,
     pub declare: bool,
     #[serde(default)]
-    pub type_params: Option<TsTypeParamDecl>,
+    pub type_params: Option<Vec<TsTypeParamDecl>>,
     pub extends: Vec<TsExprWithTypeArgs>,
     pub body: TsInterfaceBody,
 }
@@ -783,7 +775,7 @@ pub struct TsTypeAliasDecl {
     pub declare: bool,
     pub id: Ident,
     #[serde(default)]
-    pub type_params: Option<TsTypeParamDecl>,
+    pub type_params: Option<Vec<TsTypeParamDecl>>,
     #[serde(rename = "typeAnnotation")]
     pub type_ann: Box<TsType>,
 }

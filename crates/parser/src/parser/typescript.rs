@@ -353,7 +353,7 @@ impl<I: Tokens> Parser<I> {
     }
 
     /// `tsParseTypeParameter`
-    fn parse_ts_type_param(&mut self) -> PResult<TsTypeParam> {
+    fn parse_ts_type_param(&mut self) -> PResult<TsTypeParamDecl> {
         debug_assert!(self.syntax().typescript());
 
         let start = self.input.cur_pos();
@@ -362,7 +362,7 @@ impl<I: Tokens> Parser<I> {
         let constraint = self.eat_then_parse_ts_type(&tok!("extends"))?;
         let default = self.eat_then_parse_ts_type(&tok!('='))?;
 
-        Ok(TsTypeParam {
+        Ok(TsTypeParamDecl {
             span: span!(self, start),
             name,
             constraint,
@@ -371,11 +371,9 @@ impl<I: Tokens> Parser<I> {
     }
 
     /// `tsParseTypeParameter`
-    pub(super) fn parse_ts_type_params(&mut self) -> PResult<TsTypeParamDecl> {
+    pub(super) fn parse_ts_type_params(&mut self) -> PResult<Vec<TsTypeParamDecl>> {
         self.in_type().parse_with(|p| {
             p.ts_in_no_context(|p| {
-                let start = p.input.cur_pos();
-
                 if !is!(p, '<') && !is!(p, JSXTagStart) {
                     unexpected!(p, "< (jsx tag start)")
                 }
@@ -388,10 +386,7 @@ impl<I: Tokens> Parser<I> {
                     true,
                 )?;
 
-                Ok(TsTypeParamDecl {
-                    span: span!(p, start),
-                    params,
-                })
+                Ok(params)
             })
         })
     }
@@ -1442,14 +1437,14 @@ impl<I: Tokens> Parser<I> {
     }
 
     /// `tsParseMappedTypeParameter`
-    fn parse_ts_mapped_type_param(&mut self) -> PResult<TsTypeParam> {
+    fn parse_ts_mapped_type_param(&mut self) -> PResult<TsTypeParamDecl> {
         debug_assert!(self.syntax().typescript());
 
         let start = self.input.cur_pos();
         let name = self.parse_ident_name()?;
         let constraint = Some(self.expect_then_parse_ts_type(&tok!("in"), "in")?);
 
-        Ok(TsTypeParam {
+        Ok(TsTypeParamDecl {
             span: span!(self, start),
             name,
             constraint,
@@ -1805,7 +1800,7 @@ impl<I: Tokens> Parser<I> {
     }
 
     /// `tsTryParseTypeParameters`
-    pub(super) fn try_parse_ts_type_params(&mut self) -> PResult<Option<TsTypeParamDecl>> {
+    pub(super) fn try_parse_ts_type_params(&mut self) -> PResult<Option<Vec<TsTypeParamDecl>>> {
         if is!(self, '<') {
             return self.parse_ts_type_params().map(Some);
         }
@@ -2016,7 +2011,7 @@ impl<I: Tokens> Parser<I> {
         let start = self.input.cur_pos();
         expect!(self, "infer");
         let type_param_name = self.parse_ident_name()?;
-        let type_param = TsTypeParam {
+        let type_param = TsTypeParamDecl {
             span: type_param_name.span(),
             name: type_param_name,
             constraint: None,

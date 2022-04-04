@@ -36,7 +36,15 @@ impl<'a> Emitter<'a> {
         keyword!("class");
         space!();
         emit!(node.ident);
-        emit!(node.class.type_params);
+        if let Some(type_params) = &node.class.type_params {
+            punct!("<");
+            self.emit_list(
+                node.class.span,
+                Some(type_params),
+                ListFormat::TypeParameters,
+            )?;
+            punct!(">");
+        }
 
         self.emit_class_trailing(&node.class)?;
     }

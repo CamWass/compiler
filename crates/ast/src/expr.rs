@@ -10,15 +10,15 @@ use crate::{
     prop::Prop,
     stmt::BlockStmt,
     typescript::{
-        TsAsExpr, TsConstAssertion, TsNonNullExpr, TsTypeAnn, TsTypeAssertion, TsTypeParamDecl,
+        TsAsExpr, TsConstAssertion, TsNonNullExpr, TsTypeAnn, TsTypeAssertion,
         TsTypeParamInstantiation,
     },
-    Invalid, ParamWithoutDecorators,
+    Invalid, ParamWithoutDecorators, TsTypeParamDecl,
 };
 use global_common::EqIgnoreSpan;
-use global_common::{ast_node, Span, Spanned, DUMMY_SP};
+use global_common::{ast_node, Span, DUMMY_SP};
 use is_macro::Is;
-use serde::{self, Deserialize, Serialize};
+use serde::{self};
 
 #[ast_node]
 #[derive(Eq, Hash, Is, EqIgnoreSpan)]
@@ -347,7 +347,7 @@ pub struct ArrowExpr {
     pub is_async: bool,
 
     #[serde(default, rename = "typeParameters")]
-    pub type_params: Option<TsTypeParamDecl>,
+    pub type_params: Option<Vec<TsTypeParamDecl>>,
 
     #[serde(default)]
     pub return_type: Option<TsTypeAnn>,

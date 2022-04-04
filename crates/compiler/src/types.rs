@@ -2235,7 +2235,7 @@ pub enum Declaration {
     SetterProp(Rc<SetterProp>),
     // ShorthandPropertyAssignment(Rc<ShorthandPropertyAssignment>),
     TsTypeAliasDecl(Rc<TsTypeAliasDecl>),
-    TsTypeParam(Rc<TsTypeParam>),
+    TsTypeParamDecl(Rc<TsTypeParamDecl>),
     VarDeclarator(Rc<VarDeclarator>),
     // JSDocTypedefTag(Rc<JSDocTypedefTag>),
     // JSDocCallbackTag(Rc<JSDocCallbackTag>),
@@ -2274,7 +2274,7 @@ impl TryFrom<BoundNode> for Declaration {
             BoundNode::TsPropertySignature(n) => Ok(Declaration::TsPropertySignature(n)),
             BoundNode::SetterProp(n) => Ok(Declaration::SetterProp(n)),
             BoundNode::TsTypeAliasDecl(n) => Ok(Declaration::TsTypeAliasDecl(n)),
-            BoundNode::TsTypeParam(n) => Ok(Declaration::TsTypeParam(n)),
+            BoundNode::TsTypeParamDecl(n) => Ok(Declaration::TsTypeParamDecl(n)),
             BoundNode::VarDeclarator(n) => Ok(Declaration::VarDeclarator(n)),
             _ => Err(()),
         }

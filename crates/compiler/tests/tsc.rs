@@ -700,7 +700,6 @@ impl Visit for SymbolWriter {
         [visit_catch_clause, CatchClause],
         [visit_ts_type_ann, TsTypeAnn],
         [visit_ts_type_param_decl, TsTypeParamDecl],
-        [visit_ts_type_param, TsTypeParam],
         [visit_ts_type_param_instantiation, TsTypeParamInstantiation],
         [visit_ts_param_prop, TsParamProp],
         [visit_ts_qualified_name, TsQualifiedName],

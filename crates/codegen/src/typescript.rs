@@ -39,7 +39,11 @@ impl<'a> Emitter<'a> {
     fn emit_ts_call_signature_decl(&mut self, n: &TsCallSignatureDecl) -> Result {
         self.emit_leading_comments_of_span(n.span(), false)?;
 
-        emit!(n.type_params);
+        if let Some(type_params) = &n.type_params {
+            punct!("<");
+            self.emit_list(n.span, Some(type_params), ListFormat::TypeParameters)?;
+            punct!(">");
+        }
 
         punct!("(");
         self.emit_list(n.span, Some(&n.params), ListFormat::Parameters)?;
@@ -107,7 +111,9 @@ impl<'a> Emitter<'a> {
         keyword!("new");
         space!();
         if let Some(type_params) = &n.type_params {
-            emit!(type_params);
+            punct!("<");
+            self.emit_list(n.span, Some(type_params), ListFormat::TypeParameters)?;
+            punct!(">");
         }
 
         punct!("(");
@@ -242,7 +248,11 @@ impl<'a> Emitter<'a> {
     fn emit_ts_fn_type(&mut self, n: &TsFnType) -> Result {
         self.emit_leading_comments_of_span(n.span(), false)?;
 
-        emit!(n.type_params);
+        if let Some(type_params) = &n.type_params {
+            punct!("<");
+            self.emit_list(n.span, Some(type_params), ListFormat::TypeParameters)?;
+            punct!(">");
+        }
 
         punct!("(");
         self.emit_list(n.span, Some(&n.params), ListFormat::Parameters)?;
@@ -343,7 +353,9 @@ impl<'a> Emitter<'a> {
         emit!(n.id);
 
         if let Some(type_params) = &n.type_params {
-            emit!(type_params);
+            punct!("<");
+            self.emit_list(n.span, Some(type_params), ListFormat::TypeParameters)?;
+            punct!(">");
         }
 
         if !n.extends.is_empty() {
@@ -529,7 +541,9 @@ impl<'a> Emitter<'a> {
         }
 
         if let Some(type_params) = &n.type_params {
-            emit!(type_params);
+            punct!("<");
+            self.emit_list(n.span, Some(type_params), ListFormat::TypeParameters)?;
+            punct!(">");
         }
 
         punct!("(");
@@ -818,7 +832,9 @@ impl<'a> Emitter<'a> {
 
         emit!(n.id);
         if let Some(type_params) = &n.type_params {
-            emit!(type_params);
+            punct!("<");
+            self.emit_list(n.span, Some(type_params), ListFormat::TypeParameters)?;
+            punct!(">");
         }
         formatting_space!();
 
@@ -935,7 +951,7 @@ impl<'a> Emitter<'a> {
     }
 
     #[emitter]
-    fn emit_ts_type_param(&mut self, n: &TsTypeParam) -> Result {
+    fn emit_ts_type_param_decl(&mut self, n: &TsTypeParamDecl) -> Result {
         self.emit_leading_comments_of_span(n.span(), false)?;
 
         emit!(n.name);
@@ -956,23 +972,11 @@ impl<'a> Emitter<'a> {
     }
 
     #[emitter]
-    fn emit_ts_type_param_decl(&mut self, n: &TsTypeParamDecl) -> Result {
-        self.emit_leading_comments_of_span(n.span(), false)?;
-
-        punct!("<");
-
-        self.emit_list(n.span, Some(&n.params), ListFormat::TypeParameters)?;
-
-        punct!(">");
-    }
-
-    #[emitter]
     fn emit_ts_type_param_instantiation(&mut self, n: &TsTypeParamInstantiation) -> Result {
         self.emit_leading_comments_of_span(n.span(), false)?;
 
         punct!("<");
         self.emit_list(n.span, Some(&n.params), ListFormat::TypeParameters)?;
-
         punct!(">");
     }
 

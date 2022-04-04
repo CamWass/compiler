@@ -213,10 +213,6 @@ pub fn isDeclarationName(name: BoundNode) -> bool {
     if !matches!(name, BoundNode::Script(_) | BoundNode::Module(_)) {
         if !isBindingPattern(&name) {
             if let Some(parent) = name.parent() {
-                if let BoundNode::TsTypeParamDecl(_) = parent {
-                    todo!();
-                    // return (node.parent && node.parent.kind !== SyntaxKind.JSDocTemplateTag) || isInJSFile(node);
-                }
                 // Shorthand property. e.g. `a` in `{ a, }`.
                 if let BoundNode::Ident(_) = name {
                     if let BoundNode::ObjectLit(_) = parent {
@@ -237,8 +233,16 @@ pub fn isDeclarationName(name: BoundNode) -> bool {
                     // BoundNode::JSDocTypedefTag(_)|
                     // BoundNode::JSDocCallbackTag(_)|
                     // BoundNode::JSDocPropertyTag(_)|
-                    // BoundNode::TsTypeParamDecl(_)|
                     // BoundNode::BindingIdent(n) => n.id.bind(parent.clone()) == name,
+                    BoundNode::TsTypeParamDecl(n) => {
+                        // TODO: jsdoc:
+                        // if !matches!(parent.parent(), Some(BoundNode::JSDocTemplateTag(_))) || isBoundNodeInJSFile(&parent) {
+                        //     n.name.bind(parent.clone()) == name
+                        // } else {
+                        //     false
+                        // }
+                        n.name.bind(parent.clone()) == name
+                    }
                     BoundNode::RestPat(n) => n.arg.bind(parent.clone()) == name,
                     BoundNode::AssignPat(n) => n.left.bind(parent.clone()) == name,
                     BoundNode::ClassDecl(n) => n.ident.bind(parent.clone()) == name,
@@ -598,7 +602,7 @@ fn getNonAssignedNameOfDeclaration(declaration: &BoundNode) -> Option<DeclName> 
             _ => todo!(),
         },
         BoundNode::BindingIdent(i) => Some(DeclName::Ident(i.id.clone())),
-        BoundNode::TsTypeParam(p) => Some(DeclName::Ident(p.name.clone())),
+        BoundNode::TsTypeParamDecl(p) => Some(DeclName::Ident(p.name.clone())),
         BoundNode::TsFnType(_) => None,
         BoundNode::TsConstructorType(_) => None,
         BoundNode::TsCallSignatureDecl(_) => None,
@@ -1579,10 +1583,6 @@ fn isPropertyNameLiteral(expr: &Expr) -> bool {
 }
 
 fn isDeclaration(node: &BoundNode) -> bool {
-    if let BoundNode::TsTypeParamDecl(_) = node {
-        todo!();
-        // return (node.parent && node.parent.kind !== SyntaxKind.JSDocTemplateTag) || isBoundNodeInJSFile(node);
-    }
     match node {
         // TODO:
         // BoundNode::ClassStaticBlockDeclaration(_)|
@@ -1597,9 +1597,12 @@ fn isDeclaration(node: &BoundNode) -> bool {
         // BoundNode::JSDocTypedefTag(_)|
         // BoundNode::JSDocCallbackTag(_)|
         // BoundNode::JSDocPropertyTag(_)|
-        // BoundNode::TsTypeParamDecl(_)|
+        BoundNode::TsTypeParamDecl(_) => {
+            // TODO: jsdoc:
+            // matches!(parent.parent(), Some(BoundNode::JSDocTemplateTag(_))) || isBoundNodeInJSFile(node)
+            true
+        }
         BoundNode::ArrowExpr(_)
-        | BoundNode::BindingIdent(_)
         | BoundNode::RestPat(_)
         | BoundNode::AssignPat(_)
         | BoundNode::ClassDecl(_)
@@ -1881,7 +1884,7 @@ pub fn isPartOfTypeNode(node: &BoundNode) -> bool {
             true
             // return !isExpressionWithTypeArgumentsInClassExtendsClause(node);
         }
-        BoundNode::TsTypeParam(_) => {
+        BoundNode::TsTypeParamDecl(_) => {
             matches!(
                 node.parent(),
                 Some(BoundNode::TsMappedType(_) | BoundNode::TsInferType(_))
@@ -1954,7 +1957,7 @@ pub fn isPartOfTypeNode(node: &BoundNode) -> bool {
                     true
                     // return !isExpressionWithTypeArgumentsInClassExtendsClause(node);
                 }
-                BoundNode::TsTypeParam(n) => {
+                BoundNode::TsTypeParamDecl(n) => {
                     Some(node) == n.constraint.as_ref().map(|t| t.bind(parent.clone()))
                 }
                 // TODO: jsdoc:
@@ -2243,7 +2246,6 @@ pub fn forEachReturnStatement(body: &BoundNode, visit_fn: impl FnMut(Rc<ReturnSt
             [visit_throw_stmt, ThrowStmt],
             [visit_ts_type_ann, TsTypeAnn],
             [visit_ts_type_param_decl, TsTypeParamDecl],
-            [visit_ts_type_param, TsTypeParam],
             [visit_ts_type_param_instantiation, TsTypeParamInstantiation],
             [visit_ts_param_prop, TsParamProp],
             [visit_ts_qualified_name, TsQualifiedName],
@@ -2405,9 +2407,8 @@ pub fn getBoundEffectiveTypeParameterDeclarations(node: BoundNode) -> Vec<BoundN
         ($type_param_parent:expr, $type_params:expr) => {{
             if let Some(type_params) = &$type_params {
                 return type_params
-                    .params
                     .iter()
-                    .map(|p| p.bind_to_opt_parent($type_param_parent))
+                    .map(|p| p.bind($type_param_parent))
                     .collect::<Vec<_>>();
             }
         }};
@@ -2420,106 +2421,40 @@ pub fn getBoundEffectiveTypeParameterDeclarations(node: BoundNode) -> Vec<BoundN
         // | BoundNode::JSDocSignature(_)
         // | BoundNode::JSDocFunctionType(_)
         BoundNode::TsCallSignatureDecl(n) => {
-            extract_type_params!(
-                n.type_params.as_ref().map(|p| p.bind(node.clone())),
-                n.type_params
-            )
+            extract_type_params!(node.clone(), n.type_params)
         }
         BoundNode::TsConstructSignatureDecl(n) => {
-            extract_type_params!(
-                n.type_params.as_ref().map(|p| p.bind(node.clone())),
-                n.type_params
-            )
+            extract_type_params!(node.clone(), n.type_params)
         }
-        BoundNode::TsMethodSignature(n) => extract_type_params!(
-            n.type_params.as_ref().map(|p| p.bind(node.clone())),
-            n.type_params
-        ),
-        BoundNode::TsFnType(n) => extract_type_params!(
-            n.type_params.as_ref().map(|p| p.bind(node.clone())),
-            n.type_params
-        ),
-        BoundNode::TsConstructorType(n) => extract_type_params!(
-            n.type_params.as_ref().map(|p| p.bind(node.clone())),
-            n.type_params
-        ),
+        BoundNode::TsMethodSignature(n) => extract_type_params!(node.clone(), n.type_params),
+        BoundNode::TsFnType(n) => extract_type_params!(node.clone(), n.type_params),
+        BoundNode::TsConstructorType(n) => extract_type_params!(node.clone(), n.type_params),
         BoundNode::FnDecl(n) => {
-            extract_type_params!(
-                n.function
-                    .type_params
-                    .as_ref()
-                    .map(|p| p.bind(n.function.bind(node.clone()))),
-                n.function.type_params
-            )
+            extract_type_params!(n.function.bind(node.clone()), n.function.type_params)
         }
         BoundNode::PrivateMethod(n) => {
-            extract_type_params!(
-                n.function
-                    .type_params
-                    .as_ref()
-                    .map(|p| p.bind(n.function.bind(node.clone()))),
-                n.function.type_params
-            )
+            extract_type_params!(n.function.bind(node.clone()), n.function.type_params)
         }
         BoundNode::ClassMethod(n) => {
-            extract_type_params!(
-                n.function
-                    .type_params
-                    .as_ref()
-                    .map(|p| p.bind(n.function.bind(node.clone()))),
-                n.function.type_params
-            )
+            extract_type_params!(n.function.bind(node.clone()), n.function.type_params)
         }
         BoundNode::MethodProp(n) => {
-            extract_type_params!(
-                n.function
-                    .type_params
-                    .as_ref()
-                    .map(|p| p.bind(n.function.bind(node.clone()))),
-                n.function.type_params
-            )
+            extract_type_params!(n.function.bind(node.clone()), n.function.type_params)
         }
         BoundNode::FnExpr(n) => {
-            extract_type_params!(
-                n.function
-                    .type_params
-                    .as_ref()
-                    .map(|p| p.bind(n.function.bind(node.clone()))),
-                n.function.type_params
-            )
+            extract_type_params!(n.function.bind(node.clone()), n.function.type_params)
         }
-        BoundNode::ArrowExpr(n) => extract_type_params!(
-            n.type_params.as_ref().map(|p| p.bind(node.clone())),
-            n.type_params
-        ),
+        BoundNode::ArrowExpr(n) => extract_type_params!(node.clone(), n.type_params),
         BoundNode::ClassDecl(n) => {
-            extract_type_params!(
-                n.class
-                    .type_params
-                    .as_ref()
-                    .map(|p| p.bind(n.class.bind(node.clone()))),
-                n.class.type_params
-            )
+            extract_type_params!(n.class.bind(node.clone()), n.class.type_params)
         }
         BoundNode::ClassExpr(n) => {
-            extract_type_params!(
-                n.class
-                    .type_params
-                    .as_ref()
-                    .map(|p| p.bind(n.class.bind(node.clone()))),
-                n.class.type_params
-            )
+            extract_type_params!(n.class.bind(node.clone()), n.class.type_params)
         }
         BoundNode::TsInterfaceDecl(n) => {
-            extract_type_params!(
-                n.type_params.as_ref().map(|p| p.bind(node.clone())),
-                n.type_params
-            )
+            extract_type_params!(node.clone(), n.type_params)
         }
-        BoundNode::TsTypeAliasDecl(n) => extract_type_params!(
-            n.type_params.as_ref().map(|p| p.bind(node.clone())),
-            n.type_params
-        ),
+        BoundNode::TsTypeAliasDecl(n) => extract_type_params!(node.clone(), n.type_params),
         _ => {}
     }
     // TODO: jsdoc:
@@ -2541,7 +2476,7 @@ pub fn getBoundEffectiveTypeParameterDeclarations(node: BoundNode) -> Vec<BoundN
  */
 pub fn getEffectiveTypeParameterDeclarations<'a>(
     node: &'a Node,
-) -> Option<&'a Vec<Rc<ast::TsTypeParam>>> {
+) -> Option<&'a Vec<Rc<ast::TsTypeParamDecl>>> {
     // TODO: jsdoc:
     // if isJSDocSignature(node) {
     //     return Vec::new();
@@ -2562,35 +2497,21 @@ pub fn getEffectiveTypeParameterDeclarations<'a>(
         // | BoundNode::JSDocCallbackTag(_)
         // | BoundNode::JSDocSignature(_)
         // | BoundNode::JSDocFunctionType(_)
-        Node::TsCallSignatureDecl(n) => extract_type_params!(n.type_params),
-        Node::TsConstructSignatureDecl(n) => extract_type_params!(n.type_params),
-        Node::TsMethodSignature(n) => extract_type_params!(n.type_params),
-        Node::TsFnType(n) => extract_type_params!(n.type_params),
-        Node::TsConstructorType(n) => extract_type_params!(n.type_params),
-        Node::FnDecl(n) => {
-            extract_type_params!(n.function.type_params)
-        }
-        Node::PrivateMethod(n) => {
-            extract_type_params!(n.function.type_params)
-        }
-        Node::ClassMethod(n) => {
-            extract_type_params!(n.function.type_params)
-        }
-        Node::MethodProp(n) => {
-            extract_type_params!(n.function.type_params)
-        }
-        Node::FnExpr(n) => {
-            extract_type_params!(n.function.type_params)
-        }
-        Node::ArrowExpr(n) => extract_type_params!(n.type_params),
-        Node::ClassDecl(n) => {
-            extract_type_params!(n.class.type_params)
-        }
-        Node::ClassExpr(n) => {
-            extract_type_params!(n.class.type_params)
-        }
-        Node::TsInterfaceDecl(n) => extract_type_params!(n.type_params),
-        Node::TsTypeAliasDecl(n) => extract_type_params!(n.type_params),
+        Node::TsCallSignatureDecl(n) => return n.type_params.as_ref(),
+        Node::TsConstructSignatureDecl(n) => return n.type_params.as_ref(),
+        Node::TsMethodSignature(n) => return n.type_params.as_ref(),
+        Node::TsFnType(n) => return n.type_params.as_ref(),
+        Node::TsConstructorType(n) => return n.type_params.as_ref(),
+        Node::FnDecl(n) => return n.function.type_params.as_ref(),
+        Node::PrivateMethod(n) => return n.function.type_params.as_ref(),
+        Node::ClassMethod(n) => return n.function.type_params.as_ref(),
+        Node::MethodProp(n) => return n.function.type_params.as_ref(),
+        Node::FnExpr(n) => return n.function.type_params.as_ref(),
+        Node::ArrowExpr(n) => return n.type_params.as_ref(),
+        Node::ClassDecl(n) => return n.class.type_params.as_ref(),
+        Node::ClassExpr(n) => return n.class.type_params.as_ref(),
+        Node::TsInterfaceDecl(n) => return n.type_params.as_ref(),
+        Node::TsTypeAliasDecl(n) => return n.type_params.as_ref(),
         _ => {}
     }
     // TODO: jsdoc:
@@ -3202,7 +3123,7 @@ pub fn walkUpParenthesizedExpressions(node: BoundNode) -> BoundNode {
     walkUp(node, |n| matches!(n, BoundNode::ParenExpr(_)))
 }
 
-pub fn getBoundEffectiveConstraintOfTypeParameter(node: &TsTypeParam) -> Option<BoundNode> {
+pub fn getBoundEffectiveConstraintOfTypeParameter(node: &TsTypeParamDecl) -> Option<BoundNode> {
     // todo: jsodc
     // if node.constraint {
     //     node.constraint
@@ -3215,7 +3136,7 @@ pub fn getBoundEffectiveConstraintOfTypeParameter(node: &TsTypeParam) -> Option<
         .as_ref()
         .map(|c| c.bind(node.parent.clone().unwrap()))
 }
-pub fn getEffectiveConstraintOfTypeParameter(node: &ast::TsTypeParam) -> Option<&ast::TsType> {
+pub fn getEffectiveConstraintOfTypeParameter(node: &ast::TsTypeParamDecl) -> Option<&ast::TsType> {
     // todo: jsodc
     // if node.constraint {
     //     node.constraint

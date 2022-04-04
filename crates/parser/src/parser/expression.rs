@@ -89,6 +89,7 @@ impl<I: Tokens> Parser<I> {
             && peeked_is!(self, IdentName)
         {
             let res = self.try_parse_ts(|p| {
+                let start = p.input.cur_pos();
                 let type_parameters = p.parse_ts_type_params()?;
                 let mut arrow = p.parse_assignment_expr_base()?;
                 match *arrow {
@@ -97,7 +98,7 @@ impl<I: Tokens> Parser<I> {
                         ref mut type_params,
                         ..
                     }) => {
-                        *span = Span::new(type_parameters.span.lo, span.hi, Default::default());
+                        *span = Span::new(start, span.hi, Default::default());
                         *type_params = Some(type_parameters);
                     }
                     _ => unexpected!(p, "("),

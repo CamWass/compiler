@@ -597,7 +597,7 @@ impl<I: Tokens> Parser<I> {
                         let type_params = self.try_parse_ts_type_params()?;
 
                         if let Some(type_params) = type_params {
-                            for param in type_params.params {
+                            for param in type_params {
                                 self.emit_err(param.span(), SyntaxError::TS1092);
                             }
                         }
@@ -767,8 +767,10 @@ impl<I: Tokens> Parser<I> {
                         |parser| {
                             let params = parser.parse_formal_params()?;
 
+                            // TODO: I think this iterates all of the params.
+                            // A short-circuting iter method might be better
                             if params.iter().filter(|param| is_not_this(param)).count() != 0 {
-                                parser.emit_err(key_span, SyntaxError::TS1094);
+                                parser.emit_err(key_span, SyntaxError::GetterParam);
                             }
 
                             Ok(params)
@@ -792,7 +794,7 @@ impl<I: Tokens> Parser<I> {
                             let params = parser.parse_formal_params()?;
 
                             if params.iter().filter(|param| is_not_this(param)).count() != 1 {
-                                parser.emit_err(key_span, SyntaxError::TS1094);
+                                parser.emit_err(key_span, SyntaxError::SetterParam);
                             }
 
                             if !params.is_empty() {

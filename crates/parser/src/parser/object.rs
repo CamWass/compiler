@@ -257,8 +257,10 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                             |parser| {
                                 let params = parser.parse_formal_params()?;
 
-                                if params.iter().filter(|param| is_not_this(param)).count() != 0 {
-                                    parser.emit_err(key_span, SyntaxError::TS1094);
+                                // TODO: I think this iterates all of the params.
+                                // A short-circuting iter method might be better
+                                if params.iter().filter(|p| is_not_this(p)).count() != 0 {
+                                    parser.emit_err(key_span, SyntaxError::GetterParam);
                                 }
 
                                 Ok(params)
@@ -268,15 +270,8 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                         )
                         .map(
                             |Function {
-                                 body,
-                                 type_params,
-                                 return_type,
-                                 ..
+                                 body, return_type, ..
                              }| {
-                                if let Some(type_params) = type_params {
-                                    self.emit_err(type_params.span(), SyntaxError::TS1094);
-                                }
-
                                 if self.input.syntax().typescript()
                                     && self.input.target() == JscTarget::Es3
                                 {
@@ -299,8 +294,8 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                             |parser| {
                                 let params = parser.parse_formal_params()?;
 
-                                if params.iter().filter(|param| is_not_this(param)).count() != 1 {
-                                    parser.emit_err(key_span, SyntaxError::TS1094);
+                                if params.iter().filter(|p| is_not_this(p)).count() != 1 {
+                                    parser.emit_err(key_span, SyntaxError::SetterParam);
                                 }
 
                                 if !params.is_empty() {
@@ -323,32 +318,21 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                             false,
                             false,
                         )
-                        .map(
-                            |Function {
-                                 params,
-                                 body,
-                                 type_params,
-                                 ..
-                             }| {
-                                if let Some(type_params) = type_params {
-                                    self.emit_err(type_params.span(), SyntaxError::TS1094);
-                                }
-
-                                // debug_assert_eq!(params.len(), 1);
-                                Prop::Setter(SetterProp {
-                                    span: span!(self, start),
-                                    key,
-                                    body,
-                                    param: params
-                                        .into_iter()
-                                        .map(|param| param.pat.into())
-                                        .next()
-                                        .unwrap_or_else(|| {
-                                            Pat::Invalid(Invalid { span: key_span }).into()
-                                        }),
-                                })
-                            },
-                        ),
+                        .map(|Function { params, body, .. }| {
+                            // debug_assert_eq!(params.len(), 1);
+                            Prop::Setter(SetterProp {
+                                span: span!(self, start),
+                                key,
+                                body,
+                                param: params
+                                    .into_iter()
+                                    .map(|param| param.pat.into())
+                                    .next()
+                                    .unwrap_or_else(|| {
+                                        Pat::Invalid(Invalid { span: key_span }).into()
+                                    }),
+                            })
+                        }),
                     js_word!("async") => self
                         .parse_fn_args_body(
                             // no decorator in an object literal

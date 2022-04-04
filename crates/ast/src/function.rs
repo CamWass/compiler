@@ -30,7 +30,7 @@ pub struct Function {
     pub is_async: bool,
 
     #[serde(default, rename = "typeParameters")]
-    pub type_params: Option<TsTypeParamDecl>,
+    pub type_params: Option<Vec<TsTypeParamDecl>>,
 
     #[serde(default)]
     pub return_type: Option<TsTypeAnn>,

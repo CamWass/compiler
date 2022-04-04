@@ -678,7 +678,11 @@ impl<'a> Emitter<'a> {
                 _ => true,
             };
 
-        emit!(node.type_params);
+        if let Some(type_params) = &node.type_params {
+            punct!("<");
+            self.emit_list(node.span, Some(type_params), ListFormat::TypeParameters)?;
+            punct!(">");
+        }
 
         if parens {
             punct!("(");
@@ -824,7 +828,15 @@ impl<'a> Emitter<'a> {
         if let Some(ref i) = node.ident {
             space!();
             emit!(i);
-            emit!(node.class.type_params);
+            if let Some(type_params) = &node.class.type_params {
+                punct!("<");
+                self.emit_list(
+                    node.class.span,
+                    Some(type_params),
+                    ListFormat::TypeParameters,
+                )?;
+                punct!(">");
+            }
         }
 
         self.emit_class_trailing(&node.class)?;
@@ -943,7 +955,13 @@ impl<'a> Emitter<'a> {
         }
 
         if let Some(type_params) = &n.function.type_params {
-            emit!(type_params);
+            punct!("<");
+            self.emit_list(
+                n.function.span,
+                Some(type_params),
+                ListFormat::TypeParameters,
+            )?;
+            punct!(">");
         }
 
         punct!("(");
@@ -1143,7 +1161,9 @@ impl<'a> Emitter<'a> {
     #[emitter]
     fn emit_fn_trailing(&mut self, node: &Function) -> Result {
         if let Some(type_params) = &node.type_params {
-            emit!(type_params);
+            punct!("<");
+            self.emit_list(node.span, Some(type_params), ListFormat::TypeParameters)?;
+            punct!(">");
         }
 
         punct!("(");

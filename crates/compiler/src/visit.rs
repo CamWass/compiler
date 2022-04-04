@@ -11,7 +11,7 @@ define!({
         pub body: Vec<ClassMember>,
         pub super_class: Option<Expr>,
         pub is_abstract: bool,
-        pub type_params: Option<Rc<TsTypeParamDecl>>,
+        pub type_params: Option<Vec<Rc<TsTypeParamDecl>>>,
         pub super_type_params: Option<Rc<TsTypeParamInstantiation>>,
         pub implements: Vec<Rc<TsExprWithTypeArgs>>,
         pub cached_hash: u8,
@@ -276,7 +276,7 @@ define!({
     pub struct ArrowExpr {
         pub span: Span,
         pub is_async: bool,
-        pub type_params: Option<Rc<TsTypeParamDecl>>,
+        pub type_params: Option<Vec<Rc<TsTypeParamDecl>>>,
         pub params: Vec<Pat>,
         pub return_type: Option<Rc<TsTypeAnn>>,
         pub body: BlockStmtOrExpr,
@@ -358,7 +358,7 @@ define!({
         pub body: Option<Rc<BlockStmt>>,
         pub is_generator: bool,
         pub is_async: bool,
-        pub type_params: Option<Rc<TsTypeParamDecl>>,
+        pub type_params: Option<Vec<Rc<TsTypeParamDecl>>>,
         pub return_type: Option<Rc<TsTypeAnn>>,
         pub cached_hash: u8,
     }
@@ -975,11 +975,6 @@ define!({
     }
     pub struct TsTypeParamDecl {
         pub span: Span,
-        pub params: Vec<Rc<TsTypeParam>>,
-        pub cached_hash: u8,
-    }
-    pub struct TsTypeParam {
-        pub span: Span,
         pub name: Rc<Ident>,
         pub constraint: Option<TsType>,
         pub default: Option<TsType>,
@@ -1023,14 +1018,14 @@ define!({
     }
     pub struct TsCallSignatureDecl {
         pub span: Span,
-        pub type_params: Option<Rc<TsTypeParamDecl>>,
+        pub type_params: Option<Vec<Rc<TsTypeParamDecl>>>,
         pub params: Vec<TsAmbientParam>,
         pub type_ann: Option<Rc<TsTypeAnn>>,
         pub cached_hash: u8,
     }
     pub struct TsConstructSignatureDecl {
         pub span: Span,
-        pub type_params: Option<Rc<TsTypeParamDecl>>,
+        pub type_params: Option<Vec<Rc<TsTypeParamDecl>>>,
         pub params: Vec<TsAmbientParam>,
         pub type_ann: Option<Rc<TsTypeAnn>>,
         pub cached_hash: u8,
@@ -1068,7 +1063,7 @@ define!({
         pub key: Expr,
         pub computed: bool,
         pub optional: bool,
-        pub type_params: Option<Rc<TsTypeParamDecl>>,
+        pub type_params: Option<Vec<Rc<TsTypeParamDecl>>>,
         pub params: Vec<TsAmbientParam>,
         pub type_ann: Option<Rc<TsTypeAnn>>,
         pub cached_hash: u8,
@@ -1143,14 +1138,14 @@ define!({
     }
     pub struct TsFnType {
         pub span: Span,
-        pub type_params: Option<Rc<TsTypeParamDecl>>,
+        pub type_params: Option<Vec<Rc<TsTypeParamDecl>>>,
         pub params: Vec<TsAmbientParam>,
         pub type_ann: Rc<TsTypeAnn>,
         pub cached_hash: u8,
     }
     pub struct TsConstructorType {
         pub span: Span,
-        pub type_params: Option<Rc<TsTypeParamDecl>>,
+        pub type_params: Option<Vec<Rc<TsTypeParamDecl>>>,
         pub params: Vec<TsAmbientParam>,
         pub type_ann: Rc<TsTypeAnn>,
         pub is_abstract: bool,
@@ -1244,7 +1239,7 @@ define!({
     }
     pub struct TsInferType {
         pub span: Span,
-        pub type_param: Rc<TsTypeParam>,
+        pub type_param: Rc<TsTypeParamDecl>,
         pub cached_hash: u8,
     }
     pub struct TsParenthesizedType {
@@ -1278,7 +1273,7 @@ define!({
     pub struct TsMappedType {
         pub span: Span,
         pub readonly: Option<TruePlusMinus>,
-        pub type_param: Rc<TsTypeParam>,
+        pub type_param: Rc<TsTypeParamDecl>,
         pub name_type: Option<TsType>,
         pub optional: Option<TruePlusMinus>,
         pub type_ann: Option<TsType>,
@@ -1306,7 +1301,7 @@ define!({
         pub span: Span,
         pub id: Rc<Ident>,
         pub declare: bool,
-        pub type_params: Option<Rc<TsTypeParamDecl>>,
+        pub type_params: Option<Vec<Rc<TsTypeParamDecl>>>,
         pub extends: Vec<Rc<TsExprWithTypeArgs>>,
         pub body: Rc<TsInterfaceBody>,
         pub cached_hash: u8,
@@ -1326,7 +1321,7 @@ define!({
         pub span: Span,
         pub declare: bool,
         pub id: Rc<Ident>,
-        pub type_params: Option<Rc<TsTypeParamDecl>>,
+        pub type_params: Option<Vec<Rc<TsTypeParamDecl>>>,
         pub type_ann: TsType,
         pub cached_hash: u8,
     }

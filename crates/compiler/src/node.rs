@@ -883,7 +883,6 @@ make!(
     // typescript
     TsTypeAnn,
     TsTypeParamDecl,
-    TsTypeParam,
     TsTypeParamInstantiation,
     TsParamProp,
     TsQualifiedName,
@@ -1054,7 +1053,6 @@ macro_rules! impl_span {
                     Self::CatchClause(n) => n.span,
                     Self::TsTypeAnn(n) => n.span,
                     Self::TsTypeParamDecl(n) => n.span,
-                    Self::TsTypeParam(n) => n.span,
                     Self::TsTypeParamInstantiation(n) => n.span,
                     Self::TsParamProp(n) => n.span,
                     Self::TsQualifiedName(n) => n.left.span().with_hi(n.right.span.hi()),

@@ -1183,7 +1183,7 @@ impl<'a> Binder<'a> {
                 } = c.node.as_ref();
 
                 bind_vec!(self, decorators, node.clone());
-                bind_opt!(self, type_params, node.clone());
+                bind_opt_vec!(self, type_params, node.clone());
                 bind_opt!(self, super_class, node.clone());
                 bind_opt!(self, super_type_params, node.clone());
                 bind_vec!(self, implements, node.clone());
@@ -1410,7 +1410,7 @@ impl<'a> Binder<'a> {
             }
             BoundNode::SeqExpr(e) => bind_vec!(self, e.exprs, node.clone()),
             BoundNode::ArrowExpr(e) => {
-                bind_opt!(self, e.type_params, node.clone());
+                bind_opt_vec!(self, e.type_params, node.clone());
                 bind_vec!(self, e.params, node.clone());
                 bind_opt!(self, e.return_type, node.clone());
                 bind!(self, e.body, node.clone());
@@ -1438,7 +1438,7 @@ impl<'a> Binder<'a> {
                 } = n.node.as_ref();
 
                 bind_vec!(self, decorators, node.clone());
-                bind_opt!(self, type_params, node.clone());
+                bind_opt_vec!(self, type_params, node.clone());
                 bind_vec!(self, params, node.clone());
                 bind_opt!(self, return_type, node.clone());
                 bind_opt!(self, body, node.clone());
@@ -1525,8 +1525,7 @@ impl<'a> Binder<'a> {
             BoundNode::WithStmt(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
             BoundNode::CatchClause(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
             BoundNode::TsTypeAnn(a) => bind!(self, a.type_ann, node.clone()),
-            BoundNode::TsTypeParamDecl(d) => bind_vec!(self, d.params, node.clone()),
-            BoundNode::TsTypeParam(p) => {
+            BoundNode::TsTypeParamDecl(p) => {
                 bind!(self, p.name, node.clone());
                 bind_opt!(self, p.constraint, node.clone());
                 bind_opt!(self, p.default, node.clone());
@@ -1541,12 +1540,12 @@ impl<'a> Binder<'a> {
                 bind!(self, n.right, node.clone());
             }
             BoundNode::TsCallSignatureDecl(s) => {
-                bind_opt!(self, s.type_params, node.clone());
+                bind_opt_vec!(self, s.type_params, node.clone());
                 bind_vec!(self, s.params, node.clone());
                 bind_opt!(self, s.type_ann, node.clone());
             }
             BoundNode::TsConstructSignatureDecl(s) => {
-                bind_opt!(self, s.type_params, node.clone());
+                bind_opt_vec!(self, s.type_params, node.clone());
                 bind_vec!(self, s.params, node.clone());
                 bind_opt!(self, s.type_ann, node.clone());
             }
@@ -1558,7 +1557,7 @@ impl<'a> Binder<'a> {
             BoundNode::TsSetterSignature(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
             BoundNode::TsMethodSignature(s) => {
                 bind!(self, s.key, node.clone());
-                bind_opt!(self, s.type_params, node.clone());
+                bind_opt_vec!(self, s.type_params, node.clone());
                 bind_vec!(self, s.params, node.clone());
                 bind_opt!(self, s.type_ann, node.clone());
             }
@@ -1569,12 +1568,12 @@ impl<'a> Binder<'a> {
             BoundNode::TsKeywordType(_) => {}
             BoundNode::TsThisType(_) => {}
             BoundNode::TsFnType(f) => {
-                bind_opt!(self, f.type_params, node.clone());
+                bind_opt_vec!(self, f.type_params, node.clone());
                 bind_vec!(self, f.params, node.clone());
                 bind!(self, f.type_ann, node.clone());
             }
             BoundNode::TsConstructorType(t) => {
-                bind_opt!(self, t.type_params, node.clone());
+                bind_opt_vec!(self, t.type_params, node.clone());
                 bind_vec!(self, t.params, node.clone());
                 bind!(self, t.type_ann, node.clone());
             }
@@ -1618,7 +1617,7 @@ impl<'a> Binder<'a> {
             BoundNode::TsTplLitType(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
             BoundNode::TsInterfaceDecl(i) => {
                 bind!(self, i.id, node.clone());
-                bind_opt!(self, i.type_params, node.clone());
+                bind_opt_vec!(self, i.type_params, node.clone());
                 bind_vec!(self, i.extends, node.clone());
                 bind!(self, i.body, node.clone());
             }
@@ -1629,7 +1628,7 @@ impl<'a> Binder<'a> {
             }
             BoundNode::TsTypeAliasDecl(a) => {
                 bind!(self, a.id, node.clone());
-                bind_opt!(self, a.type_params, node.clone());
+                bind_opt_vec!(self, a.type_params, node.clone());
                 bind!(self, a.type_ann, node.clone());
             }
             BoundNode::TsEnumDecl(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
@@ -3277,7 +3276,7 @@ impl<'a> Binder<'a> {
             BoundNode::TsTypePredicate(_) => {
                 // Binding the children will handle everything
             }
-            BoundNode::TsTypeParam(ref p) => {
+            BoundNode::TsTypeParamDecl(ref p) => {
                 return self.bindTypeParameter(node.clone(), p.clone());
             }
             BoundNode::Param(ref p) => {
@@ -3970,7 +3969,7 @@ impl<'a> Binder<'a> {
         }
     }
 
-    fn bindTypeParameter(&mut self, node: BoundNode, param: Rc<TsTypeParam>) {
+    fn bindTypeParameter(&mut self, node: BoundNode, param: Rc<TsTypeParamDecl>) {
         // TODO: jsdoc
         // if (isJSDocTemplateTag(node.parent)) {
         //     const container = getEffectiveContainerForJSDocTemplateTag(node.parent);

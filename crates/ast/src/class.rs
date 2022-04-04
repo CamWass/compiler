@@ -5,10 +5,9 @@ use crate::{
     prop::PropName,
     stmt::BlockStmt,
     typescript::{
-        Accessibility, TsExprWithTypeArgs, TsIndexSignature, TsTypeAnn, TsTypeParamDecl,
-        TsTypeParamInstantiation,
+        Accessibility, TsExprWithTypeArgs, TsIndexSignature, TsTypeAnn, TsTypeParamInstantiation,
     },
-    EmptyStmt,
+    EmptyStmt, TsTypeParamDecl,
 };
 use global_common::{ast_node, EqIgnoreSpan, Span};
 use is_macro::Is;
@@ -32,7 +31,7 @@ pub struct Class {
     pub is_abstract: bool,
 
     #[serde(default)]
-    pub type_params: Option<TsTypeParamDecl>,
+    pub type_params: Option<Vec<TsTypeParamDecl>>,
 
     #[serde(default)]
     pub super_type_params: Option<TsTypeParamInstantiation>,
