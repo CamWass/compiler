@@ -5,7 +5,6 @@ use crate::{
     typescript::{TsParamProp, TsTypeAnn, TsTypeParamDecl},
 };
 use global_common::{ast_node, EqIgnoreSpan, Span};
-use is_macro::Is;
 
 /// Common parts of function and method.
 #[ast_node]
@@ -59,7 +58,7 @@ impl From<Pat> for ParamWithoutDecorators {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, Is, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum ParamOrTsParamProp {
     #[tag("TsParameterProperty")]
     TsParamProp(TsParamProp),

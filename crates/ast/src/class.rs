@@ -10,7 +10,6 @@ use crate::{
     EmptyStmt, TsTypeParamDecl,
 };
 use global_common::{ast_node, EqIgnoreSpan, Span};
-use is_macro::Is;
 use serde::{Deserialize, Serialize};
 
 #[ast_node]
@@ -49,7 +48,7 @@ pub struct ExtendsClause {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, Is, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum ClassMember {
     #[tag("Constructor")]
     Constructor(Constructor),

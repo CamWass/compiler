@@ -7,16 +7,14 @@ use crate::{
     typescript::{TsEnumDecl, TsInterfaceDecl, TsModuleDecl, TsTypeAliasDecl},
 };
 use global_common::{ast_node, EqIgnoreSpan, Span};
-use is_macro::Is;
 use string_enum::StringEnum;
 
 #[ast_node]
-#[derive(Eq, Hash, Is, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum Decl {
     #[tag("ClassDeclaration")]
     Class(ClassDecl),
     #[tag("FunctionDeclaration")]
-    #[is(name = "fn_decl")]
     Fn(FnDecl),
     #[tag("VariableDeclaration")]
     Var(VarDecl),

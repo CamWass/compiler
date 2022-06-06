@@ -1028,7 +1028,7 @@ impl<'a> Emitter<'a> {
             punct!("=");
             formatting_space!();
 
-            if value.is_seq() {
+            if matches!(value.as_ref(), Expr::Seq(_)) {
                 punct!("(");
                 emit!(value);
                 punct!(")");
@@ -1071,7 +1071,7 @@ impl<'a> Emitter<'a> {
             punct!("=");
             formatting_space!();
 
-            if v.is_seq() {
+            if matches!(v.as_ref(), Expr::Seq(_)) {
                 punct!("(");
                 emit!(v);
                 punct!(")");

@@ -5,12 +5,11 @@ use crate::{
     typescript::TsTypeParamInstantiation,
 };
 use global_common::{ast_node, EqIgnoreSpan, Span};
-use is_macro::Is;
 use swc_atoms::JsWord;
 
 /// Used for `obj` property of `JSXMemberExpr`.
 #[ast_node]
-#[derive(Eq, Hash, Is, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 #[allow(variant_size_differences)]
 pub enum JSXObject {
     #[tag("JSXMemberExpression")]

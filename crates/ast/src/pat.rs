@@ -1,7 +1,6 @@
 use crate::ident::BindingIdent;
 use crate::{expr::Expr, ident::Ident, prop::PropName, typescript::TsTypeAnn, Invalid};
 use global_common::{ast_node, EqIgnoreSpan, Span};
-use is_macro::Is;
 
 impl From<Ident> for Pat {
     fn from(i: Ident) -> Self {
@@ -10,7 +9,7 @@ impl From<Ident> for Pat {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, Is, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum Pat {
     #[tag("Identifier")]
     Ident(BindingIdent),
@@ -97,7 +96,7 @@ pub struct RestPat {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, Is, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum ObjectPatProp {
     #[tag("KeyValuePatternProperty")]
     KeyValue(KeyValuePatProp),

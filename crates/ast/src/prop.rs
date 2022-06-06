@@ -8,10 +8,9 @@ use crate::{
     ParamWithoutDecorators,
 };
 use global_common::{ast_node, EqIgnoreSpan, Span};
-use is_macro::Is;
 
 #[ast_node]
-#[derive(Eq, Hash, Is, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum Prop {
     /// `a` in `{ a, }`
     #[tag("Identifier")]
@@ -89,7 +88,7 @@ pub struct MethodProp {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, Is, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum PropName {
     #[tag("Identifier")]
     Ident(Ident),

@@ -7,10 +7,9 @@ use crate::{
     ObjectLit,
 };
 use global_common::{ast_node, EqIgnoreSpan, Span};
-use is_macro::Is;
 
 #[ast_node]
-#[derive(Eq, Hash, Is, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum ModuleDecl {
     #[tag("ImportDeclaration")]
     Import(ImportDecl),
@@ -117,13 +116,12 @@ pub struct ExportDefaultDecl {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, Is, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum DefaultDecl {
     #[tag("ClassExpression")]
     Class(ClassExpr),
 
     #[tag("FunctionExpression")]
-    #[is(name = "fn_expr")]
     Fn(FnExpr),
 
     #[tag("TsInterfaceDeclaration")]
@@ -131,7 +129,7 @@ pub enum DefaultDecl {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, Is, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum ImportSpecifier {
     #[tag("ImportSpecifier")]
     Named(ImportNamedSpecifier),
@@ -172,7 +170,7 @@ pub struct ImportNamedSpecifier {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, Is, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum ExportSpecifier {
     #[tag("ExportNamespaceSpecifier")]
     Namespace(ExportNamespaceSpecifier),

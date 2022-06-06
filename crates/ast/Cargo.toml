@@ -6,7 +6,6 @@ edition = "2018"
 
 [dependencies]
 global_common = {version = "0.1.0", path = "../common"}
-is-macro = "0.1"
 num-bigint = {version = "0.2", features = ["serde"]}
 serde = {version = "1.0.88", features = ["derive"]}
 string_enum = {version = "0.1.0", path = "../../macros/string_enum"}

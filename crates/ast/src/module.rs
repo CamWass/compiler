@@ -1,10 +1,9 @@
 use crate::{module_decl::ModuleDecl, stmt::Stmt};
 use global_common::{ast_node, EqIgnoreSpan, Span};
-use is_macro::Is;
 use swc_atoms::JsWord;
 
 #[ast_node]
-#[derive(Eq, Hash, Is, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum Program {
     #[tag("Module")]
     Module(Module),
@@ -61,7 +60,7 @@ impl arbitrary::Arbitrary for Script {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, Is, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum ModuleItem {
     #[tag("ImportDeclaration")]
     #[tag("ExportDeclaration")]

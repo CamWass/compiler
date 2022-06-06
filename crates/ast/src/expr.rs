@@ -17,11 +17,10 @@ use crate::{
 };
 use global_common::EqIgnoreSpan;
 use global_common::{ast_node, Span, DUMMY_SP};
-use is_macro::Is;
 use serde::{self};
 
 #[ast_node]
-#[derive(Eq, Hash, Is, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum Expr {
     #[tag("ThisExpression")]
     This(ThisExpr),
@@ -33,7 +32,6 @@ pub enum Expr {
     Object(ObjectLit),
 
     #[tag("FunctionExpression")]
-    #[is(name = "fn_expr")]
     Fn(FnExpr),
 
     #[tag("UnaryExpression")]
@@ -102,14 +100,12 @@ pub enum Expr {
     Class(ClassExpr),
 
     #[tag("YieldExpression")]
-    #[is(name = "yield_expr")]
     Yield(YieldExpr),
 
     #[tag("MetaProperty")]
     MetaProp(MetaPropExpr),
 
     #[tag("AwaitExpression")]
-    #[is(name = "await_expr")]
     Await(AwaitExpr),
 
     #[tag("ParenthesisExpression")]
@@ -430,10 +426,9 @@ pub struct ParenExpr {
 
 #[ast_node]
 #[allow(variant_size_differences)]
-#[derive(Eq, Hash, Is, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum ExprOrSuper {
     #[tag("Super")]
-    #[is(name = "super_")]
     Super(Super),
 
     #[tag("*")]
@@ -447,7 +442,7 @@ pub struct Super {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, Is, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum ExprOrSpread {
     #[tag("SpreadElement")]
     Spread(SpreadElement),
@@ -456,7 +451,7 @@ pub enum ExprOrSpread {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, Is, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 #[allow(variant_size_differences)]
 pub enum BlockStmtOrExpr {
     #[tag("BlockStatement")]
@@ -466,7 +461,7 @@ pub enum BlockStmtOrExpr {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, Is, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum PatOrExpr {
     #[tag("ThisExpression")]
     #[tag("ArrayExpression")]

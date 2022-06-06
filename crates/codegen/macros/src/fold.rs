@@ -97,7 +97,7 @@ impl Fold for InjectSelf {
                 }
             }
 
-            "trace" | "debug" | "info" | "warn" | "error" => i,
+            "trace" | "debug" | "info" | "warn" | "error" | "matches" => i,
             //TODO
             "unimplemented" => i,
 
