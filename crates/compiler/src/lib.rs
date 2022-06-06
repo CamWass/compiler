@@ -9,7 +9,6 @@ pub mod ast;
 mod binder;
 mod checker;
 mod colors;
-mod custom;
 mod disambiguate;
 mod graph;
 mod ident;
@@ -176,16 +175,6 @@ impl Compiler {
                 libs: Vec::new(),
                 source: program.source.clone(),
             };
-
-            // let mut colours = custom::colors::color_collector::collect(&mut checker, &p);
-
-            // dbg!(&colours);
-
-            // custom::disambiguate::DisambiguateProperties::DisambiguateProperties::process(
-            //     &mut checker,
-            //     &p,
-            //     &mut colours,
-            // );
 
             let mut colours = colors::color_collector::collect(&mut checker, &p);
 
