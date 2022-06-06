@@ -27,6 +27,8 @@ use syn::Path;
 use syn::Stmt;
 use syn::Token;
 
+// TODO: remove TypeEq (unused)
+
 /// Derives `global_common::TypeEq`.
 ///
 /// - Field annotated with `#[use_eq]` will be compared using `==`.

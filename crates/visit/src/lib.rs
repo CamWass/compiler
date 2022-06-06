@@ -38,14 +38,14 @@ where
     A: Visit,
     B: Visit,
 {
-    fn visit_module(&mut self, n: &Module, _parent: &dyn Node) {
-        self.first.visit_module(n, _parent);
-        self.second.visit_module(n, _parent);
+    fn visit_module(&mut self, n: &Module) {
+        self.first.visit_module(n);
+        self.second.visit_module(n);
     }
 
-    fn visit_script(&mut self, n: &Script, _parent: &dyn Node) {
-        self.first.visit_script(n, _parent);
-        self.second.visit_script(n, _parent);
+    fn visit_script(&mut self, n: &Script) {
+        self.first.visit_script(n);
+        self.second.visit_script(n);
     }
 }
 
@@ -260,7 +260,7 @@ macro_rules! noop_fold_type {
 macro_rules! noop_visit_type {
     ($name:ident, $N:tt) => {
         #[inline]
-        fn $name(&mut self, _: &$crate::ast::$N, _: &dyn $crate::Node) {}
+        fn $name(&mut self, _: &$crate::ast::$N) {}
     };
     () => {
         noop_visit_type!(visit_accessibility, Accessibility);

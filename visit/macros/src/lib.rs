@@ -124,7 +124,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
             // &'_ mut V, Box<V>
             let block = match mode {
                 Mode::Visit | Mode::VisitAll => {
-                    q!(Vars { visit: &name }, ({ (**self).visit(n, _parent) })).parse()
+                    q!(Vars { visit: &name }, ({ (**self).visit(n) })).parse()
                 }
                 Mode::Fold | Mode::VisitMut => {
                     q!(Vars { visit: &name }, ({ (**self).visit(n) })).parse()
@@ -153,8 +153,8 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
                         Vars { visit: &name },
                         ({
                             match self {
-                                global_visit::Either::Left(v) => v.visit(n, _parent),
-                                global_visit::Either::Right(v) => v.visit(n, _parent),
+                                global_visit::Either::Left(v) => v.visit(n),
+                                global_visit::Either::Right(v) => v.visit(n),
                             }
                         })
                     )
@@ -186,7 +186,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
                         Vars { visit: &name },
                         ({
                             if self.enabled {
-                                self.visitor.visit(n, _parent)
+                                self.visitor.visit(n)
                             }
                         })
                     )
@@ -226,8 +226,8 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
                 block: q!(
                     Vars { visit: &name },
                     ({
-                        self.visitor.visit(n, _parent);
-                        visit(self, n, _parent);
+                        self.visitor.visit(n);
+                        visit(self, n);
                     })
                 )
                 .parse(),
@@ -256,7 +256,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
                 .parse(),
                 Mode::Visit => q!(Vars { fn_name: &fn_name }, {
                     {
-                        fn_name(self, n, _parent)
+                        fn_name(self, n)
                     }
                 })
                 .parse(),
@@ -318,11 +318,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
                 },
                 {
                     #[allow(unused_variables)]
-                    pub fn fn_name<V: ?Sized + Trait>(
-                        _visitor: &mut V,
-                        n: Type,
-                        _parent: &dyn Node,
-                    ) {
+                    pub fn fn_name<V: ?Sized + Trait>(_visitor: &mut V, n: Type) {
                         default_body
                     }
                 }
@@ -451,7 +447,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
         let trait_decl = match mode {
             Mode::Visit => q!({
                 pub trait VisitWith<V: Visit> {
-                    fn visit_with(&self, _parent: &dyn Node, v: &mut V);
+                    fn visit_with(&self, v: &mut V);
 
                     /// Visit children nodes of self with `v`
                     fn visit_children_with(&self, v: &mut V);
@@ -462,20 +458,19 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
                     V: Visit,
                     T: 'static + VisitWith<V>,
                 {
-                    fn visit_with(&self, _parent: &dyn Node, v: &mut V) {
-                        (**self).visit_with(_parent, v)
+                    fn visit_with(&self, v: &mut V) {
+                        (**self).visit_with(v)
                     }
 
                     /// Visit children nodes of self with `v`
                     fn visit_children_with(&self, v: &mut V) {
-                        let _parent = self as &dyn Node;
                         (**self).visit_children_with(v)
                     }
                 }
             }),
             Mode::VisitAll => q!({
                 pub trait VisitAllWith<V: VisitAll> {
-                    fn visit_all_with(&self, _parent: &dyn Node, v: &mut V);
+                    fn visit_all_with(&self, v: &mut V);
 
                     /// Visit children nodes of self with `v`
                     fn visit_all_children_with(&self, v: &mut V);
@@ -486,13 +481,12 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
                     V: VisitAll,
                     T: 'static + VisitAllWith<V>,
                 {
-                    fn visit_all_with(&self, _parent: &dyn Node, v: &mut V) {
-                        (**self).visit_all_with(_parent, v)
+                    fn visit_all_with(&self, v: &mut V) {
+                        (**self).visit_all_with(v)
                     }
 
                     /// Visit children nodes of self with `v`
                     fn visit_all_children_with(&self, v: &mut V) {
-                        let _parent = self as &dyn Node;
                         (**self).visit_all_children_with(v)
                     }
                 }
@@ -572,7 +566,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
                                 expr,
                                 method_name: &method_name
                             },
-                            { method_name(_visitor, expr, _parent) }
+                            { method_name(_visitor, expr) }
                         )
                         .parse()
                     });
@@ -586,12 +580,11 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
                         },
                         {
                             impl<V: Visit> VisitWith<V> for Type {
-                                fn visit_with(&self, _parent: &dyn Node, v: &mut V) {
+                                fn visit_with(&self, v: &mut V) {
                                     expr
                                 }
 
                                 fn visit_children_with(&self, _visitor: &mut V) {
-                                    let _parent = self as &dyn Node;
                                     default_body
                                 }
                             }
@@ -606,7 +599,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
                                 expr,
                                 method_name: &method_name
                             },
-                            { method_name(_visitor, expr, _parent) }
+                            { method_name(_visitor, expr) }
                         )
                         .parse()
                     });
@@ -620,14 +613,13 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
                         },
                         {
                             impl<V: VisitAll> VisitAllWith<V> for Type {
-                                fn visit_all_with(&self, _parent: &dyn Node, v: &mut V) {
+                                fn visit_all_with(&self, v: &mut V) {
                                     let mut all = ::global_visit::All { visitor: v };
                                     let mut v = &mut all;
                                     expr
                                 }
 
                                 fn visit_all_children_with(&self, _visitor: &mut V) {
-                                    let _parent = self as &dyn Node;
                                     let mut all = ::global_visit::All { visitor: _visitor };
                                     let mut _visitor = &mut all;
                                     default_body
@@ -769,7 +761,7 @@ fn visit_expr(mode: Mode, ty: &Type, visitor: &Expr, expr: Expr) -> Expr {
                 expr,
                 visit_name
             },
-            { visitor.visit_name(expr, _parent as _) }
+            { visitor.visit_name(expr) }
         )
         .parse(),
     })
@@ -899,16 +891,6 @@ fn method_sig(mode: Mode, ty: &Type) -> Signature {
 
                 Mode::Visit | Mode::VisitAll => {
                     p.push_value(q!(Vars { Type: ty }, { n: &Type }).parse());
-                }
-            }
-            match mode {
-                Mode::Fold | Mode::VisitMut => {
-                    // We can not provide parent node because it's child node is
-                    // part of the parent node.
-                }
-                Mode::Visit | Mode::VisitAll => {
-                    p.push_punct(def_site());
-                    p.push_value(q!(Vars {}, { _parent: &dyn Node }).parse());
                 }
             }
 
@@ -1053,13 +1035,6 @@ fn create_method_sig(mode: Mode, ty: &Type) -> Signature {
                 p.push_value(q!(Vars {}, { &mut self }).parse());
                 p.push_punct(def_site());
                 p.push_value(q!(Vars { Type: ty }, { n: Type }).parse());
-                match mode {
-                    Mode::Fold | Mode::VisitMut => {}
-                    Mode::Visit | Mode::VisitAll => {
-                        p.push_punct(def_site());
-                        p.push_value(q!(Vars {}, { _parent: &dyn Node }).parse());
-                    }
-                }
 
                 p
             },
@@ -1234,7 +1209,7 @@ fn create_method_body(mode: Mode, ty: &Type) -> Block {
             Mode::Visit | Mode::VisitAll => {
                 let visit = method_name(mode, ty);
 
-                return q!(Vars { visit }, ({ _visitor.visit(n, _parent) })).parse();
+                return q!(Vars { visit }, ({ _visitor.visit(n) })).parse();
             }
             Mode::VisitMut => {
                 return Block {
@@ -1329,7 +1304,7 @@ fn create_method_body(mode: Mode, ty: &Type) -> Block {
                                             Vars { ident },
                                             ({
                                                 match n {
-                                                    Some(n) => _visitor.ident(n, _parent),
+                                                    Some(n) => _visitor.ident(n),
                                                     None => {}
                                                 }
                                             })
@@ -1392,9 +1367,8 @@ fn create_method_body(mode: Mode, ty: &Type) -> Block {
                                             Mode::Visit | Mode::VisitAll => q!(
                                                 Vars { ident },
                                                 ({
-                                                    n.iter().for_each(|v| {
-                                                        _visitor.ident(v.as_ref(), _parent)
-                                                    })
+                                                    n.iter()
+                                                        .for_each(|v| _visitor.ident(v.as_ref()))
                                                 })
                                             )
                                             .parse(),
@@ -1420,10 +1394,7 @@ fn create_method_body(mode: Mode, ty: &Type) -> Block {
 
                                             Mode::Visit | Mode::VisitAll => q!(
                                                 Vars { ident },
-                                                ({
-                                                    n.iter()
-                                                        .for_each(|v| _visitor.ident(v, _parent))
-                                                })
+                                                ({ n.iter().for_each(|v| _visitor.ident(v)) })
                                             )
                                             .parse(),
                                         }
