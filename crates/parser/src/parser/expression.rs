@@ -310,7 +310,7 @@ impl<I: Tokens> Parser<I> {
                 tok!("null")
                 | tok!("true")
                 | tok!("false")
-                | Token::Num(..)
+                | Token::Num { .. }
                 | Token::BigInt(..)
                 | Token::Str { .. } => {
                     return Ok(Box::new(Expr::Lit(self.parse_lit()?)));
@@ -1645,10 +1645,11 @@ impl<I: Tokens> Parser<I> {
                 }),
                 _ => unreachable!(),
             },
-            Token::Num(..) => match self.input.bump() {
-                Token::Num(value) => Lit::Num(Number {
+            Token::Num { .. } => match self.input.bump() {
+                Token::Num { value, raw } => Lit::Num(Number {
                     span: span!(self, start),
                     value,
+                    raw: Some(raw),
                 }),
                 _ => unreachable!(),
             },

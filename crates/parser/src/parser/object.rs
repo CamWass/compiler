@@ -57,10 +57,11 @@ impl<I: Tokens> Parser<I> {
                     }),
                     _ => unreachable!(),
                 },
-                Token::Num(_) => match parser.input.bump() {
-                    Token::Num(value) => PropName::Num(Number {
+                Token::Num { .. } => match parser.input.bump() {
+                    Token::Num { value, raw } => PropName::Num(Number {
                         span: span!(parser, start),
                         value,
+                        raw: Some(raw),
                     }),
                     _ => unreachable!(),
                 },

@@ -655,6 +655,7 @@ define!({
     pub struct Number {
         pub span: Span,
         pub value: f64,
+        pub raw: Option<JsWord>,
     }
     pub enum StrKind {
         Normal { contains_quote: bool },

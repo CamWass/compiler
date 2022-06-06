@@ -543,6 +543,7 @@ define!({
     pub struct Number {
         pub span: Span,
         pub value: f64,
+        pub raw: Option<JsWord>,
         pub cached_hash: u8,
     }
     pub enum Program {

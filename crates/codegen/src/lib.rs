@@ -433,10 +433,13 @@ impl<'a> Emitter<'a> {
             }
             self.wr.write_str_lit(num.span, "Infinity")?;
         } else {
-            if num.value.is_sign_negative() && num.value == 0.0 {
-                self.wr.write_str_lit(num.span, "-0")?;
-            } else {
-                self.wr.write_str_lit(num.span, &format!("{}", num.value))?;
+            match &num.raw {
+                Some(raw) => {
+                    self.wr.write_str_lit(num.span, raw)?;
+                }
+                _ => {
+                    self.wr.write_str_lit(num.span, &num.value.to_string())?;
+                }
             }
         }
     }
@@ -626,24 +629,35 @@ impl<'a> Emitter<'a> {
     pub fn needs_2dots_for_property_access(&self, expr: &ExprOrSuper) -> bool {
         match *expr {
             ExprOrSuper::Expr(ref expr) => {
-                match **expr {
-                    Expr::Lit(Lit::Num(Number { span, value })) => {
-                        if value.fract() == 0.0 {
-                            return true;
-                        }
-                        if span.is_dummy() {
+                match expr.as_ref() {
+                    Expr::Lit(Lit::Num(Number { span, value, raw })) => {
+                        if value.is_nan() || value.is_infinite() {
                             return false;
                         }
+                        match raw {
+                            Some(raw) => {
+                                if raw.bytes().all(|c| c.is_ascii_digit()) {
+                                    // Legacy octal contains only digits, but `value` and `raw` are
+                                    // different
+                                    if !value.to_string().eq(raw.as_ref()) {
+                                        return false;
+                                    }
 
-                        // check if numeric literal is a decimal literal that was originally written
-                        // with a dot
-                        if let Ok(text) = self.cm.span_to_snippet(span) {
-                            if text.contains('.') {
-                                return false;
+                                    return true;
+                                }
+
+                                false
                             }
-                            text.starts_with('0') || text.ends_with(' ')
-                        } else {
-                            true
+                            _ => {
+                                let s = value.to_string();
+                                let bytes = s.as_bytes();
+
+                                if !bytes.contains(&b'.') && !bytes.contains(&b'e') {
+                                    return true;
+                                }
+
+                                false
+                            }
                         }
                     }
                     _ => false,

@@ -519,6 +519,7 @@ impl From<f64> for Expr {
         Expr::Lit(Lit::Num(Number {
             span: DUMMY_SP,
             value,
+            raw: None,
         }))
     }
 }

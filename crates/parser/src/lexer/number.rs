@@ -184,7 +184,7 @@ impl Lexer<'_> {
 
     /// This can read long integers like
     /// "13612536612375123612312312312312312312312".
-    fn read_number_no_dot(&mut self, radix: u8) -> LexResult<f64> {
+    fn read_number_no_dot(&mut self, radix: u8, raw: &mut String) -> LexResult<f64> {
         debug_assert!(
             radix == 2 || radix == 8 || radix == 10 || radix == 16,
             "radix for read_number_no_dot should be one of 2, 8, 10, 16, but got {}",
@@ -201,7 +201,7 @@ impl Lexer<'_> {
                 read_any = true;
                 (f64::mul_add(total, radix as f64, v as f64), true)
             },
-            &mut String::new(),
+            raw,
             true,
         );
 
@@ -213,7 +213,7 @@ impl Lexer<'_> {
 
     /// This can read long integers like
     /// "13612536612375123612312312312312312312312".
-    fn read_number_no_dot_as_str(&mut self, radix: u8) -> LexResult<(f64, BigIntValue)> {
+    fn read_number_no_dot_as_str(&mut self, radix: u8) -> LexResult<(f64, BigIntValue, String)> {
         debug_assert!(
             radix == 2 || radix == 8 || radix == 10 || radix == 16,
             "radix for read_number_no_dot should be one of 2, 8, 10, 16, but got {}",
@@ -247,6 +247,7 @@ impl Lexer<'_> {
             // Bigint from a string.
             BigIntValue::parse_bytes(&raw.as_bytes(), radix as _)
                 .expect("failed to parse string as a bigint"),
+            raw,
         ))
     }
 
@@ -269,9 +270,13 @@ impl Lexer<'_> {
         );
         debug_assert!(self.is(b'0'));
 
+        let start = self.cur_pos();
+
         self.advance(2); // 0 followed by one of x, X, o, O, b, B
 
-        let (val, s) = self.read_number_no_dot_as_str(radix)?;
+        let mut buffer = self.slice_to_cur(start).to_string();
+
+        let (value, s, raw) = self.read_number_no_dot_as_str(radix)?;
 
         let is_big_int = self.eat(b'n');
 
@@ -280,7 +285,11 @@ impl Lexer<'_> {
         if is_big_int {
             Ok(BigInt(s))
         } else {
-            Ok(Num(val))
+            buffer.push_str(&raw);
+            Ok(Num {
+                value,
+                raw: buffer.into(),
+            })
         }
     }
 
@@ -360,18 +369,24 @@ impl Lexer<'_> {
         }
         let start = self.cur_pos();
 
-        let starts_with_zero = self.is(b'0');
+        let mut raw_str = String::new();
 
         let val = if starts_with_dot {
             // first char is '.'
             0f64
         } else {
+            let starts_with_zero = self.is(b'0');
+
             // Use read_number_no_dot to support long numbers.
-            let (val, s) = self.read_number_no_dot_as_str(10)?;
+            let (val, s, raw) = self.read_number_no_dot_as_str(10)?;
+
             if self.eat(b'n') {
                 // TODO: do we need to check ensure_not_ident()?
                 return Ok(BigInt(s));
             }
+
+            raw_str.push_str(&raw);
+
             if starts_with_zero {
                 // TODO(swc): I guess it would be okay if I don't use -ffast-math
                 // (or something like that), but needs review.
@@ -386,7 +401,10 @@ impl Lexer<'_> {
                     if start.0 != self.cur_pos().0 - 1 {
                         // `-1` is utf 8 length of `0`
 
-                        return self.make_legacy_octal(start, 0f64).map(Num);
+                        return self.make_legacy_octal(start, 0f64).map(|v| Num {
+                            value: v,
+                            raw: raw.into(),
+                        });
                     }
                 } else {
                     // strict mode hates non-zero decimals starting with zero.
@@ -407,7 +425,10 @@ impl Lexer<'_> {
                                 .to_string()
                                 .parse()
                                 .expect("failed to parse numeric value as f64");
-                            return self.make_legacy_octal(start, val).map(Num);
+                            return self.make_legacy_octal(start, val).map(|v| Num {
+                                value: v,
+                                raw: raw.into(),
+                            });
                         }
                     }
                 }
@@ -424,6 +445,8 @@ impl Lexer<'_> {
         //
         // `.1.a`, `.1e-4.a` are valid,
         if self.eat(b'.') {
+            raw_str.push('.');
+
             if starts_with_dot {
                 debug_assert!(self.cur().is_some());
                 debug_assert!(self.cur().unwrap().is_digit(10));
@@ -432,6 +455,8 @@ impl Lexer<'_> {
             let mut raw = String::new();
             // Read numbers after dot
             let dec_val = self.read_int(10, 0, &mut raw, true);
+
+            raw_str.push_str(&raw);
 
             val = {
                 // TODO: is it possible/worthwhile to pre-allocate this using
@@ -456,7 +481,9 @@ impl Lexer<'_> {
         // 1e2 = 100
         // 1e+2 = 100
         // 1e-2 = 0.01
-        if self.eat(b'e') || self.eat(b'E') {
+        if let Some(e @ b'e' | e @ b'E') = self.cur_byte() {
+            self.advance(1); // 'e' or 'E'
+
             let next = match self.cur_byte() {
                 Some(next) => next,
                 None => {
@@ -465,14 +492,17 @@ impl Lexer<'_> {
                 }
             };
 
+            raw_str.push(e as char);
+
             let positive = if next == b'+' || next == b'-' {
                 self.advance(1); // remove '+', '-'
+                raw_str.push(next as char);
                 next == b'+'
             } else {
                 true
             };
 
-            let exp = self.read_number_no_dot(10)?;
+            let exp = self.read_number_no_dot(10, &mut raw_str)?;
             let flag = if positive { '+' } else { '-' };
             // TODO(swc):
             val = format!("{}e{}{}", val, flag, exp)
@@ -482,6 +512,9 @@ impl Lexer<'_> {
 
         self.ensure_not_ident()?;
 
-        Ok(Num(val))
+        Ok(Num {
+            value: val,
+            raw: raw_str.into(),
+        })
     }
 }

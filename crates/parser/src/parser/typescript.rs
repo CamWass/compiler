@@ -2,6 +2,7 @@ use super::*;
 use crate::lexer::TokenContexts;
 use either::Either;
 use global_common::{Spanned, SyntaxContext};
+use std::fmt::Write;
 use swc_atoms::js_word;
 
 impl<I: Tokens> Parser<I> {
@@ -585,7 +586,7 @@ impl<I: Tokens> Parser<I> {
                 Lit::Str(s) => TsEnumMemberId::Str(s),
                 _ => unreachable!(),
             })?,
-            Token::Num(v) => {
+            Token::Num { value, .. } => {
                 self.input.bump();
                 let span = span!(self, start);
 
@@ -594,7 +595,7 @@ impl<I: Tokens> Parser<I> {
 
                 TsEnumMemberId::Str(Str {
                     span,
-                    value: v.to_string().into(),
+                    value: value.to_string().into(),
                     has_escape: false,
                     kind: StrKind::Normal {
                         contains_quote: false,
@@ -1851,19 +1852,33 @@ impl<I: Tokens> Parser<I> {
             }
             tok!('-') => {
                 let start = self.input.cur_pos();
+
                 self.input.bump();
-                if match *cur!(self, true)? {
-                    Token::Num(..) => false,
-                    _ => true,
-                } {
+
+                if !matches!(*cur!(self, true)?, Token::Num { .. }) {
                     unexpected!(self, "a numeric literal")
                 }
+
                 let lit = self.parse_lit()?;
                 let lit = match lit {
-                    Lit::Num(num) => TsLit::Number(Number {
-                        span: num.span,
-                        value: -num.value,
-                    }),
+                    Lit::Num(Number { span, value, raw }) => {
+                        let mut new_raw = String::from("-");
+
+                        match raw {
+                            Some(raw) => {
+                                new_raw.push_str(&raw);
+                            }
+                            _ => {
+                                write!(new_raw, "{}", value).unwrap();
+                            }
+                        };
+
+                        TsLit::Number(Number {
+                            span,
+                            value: -value,
+                            raw: Some(new_raw.into()),
+                        })
+                    }
                     _ => unreachable!(),
                 };
 

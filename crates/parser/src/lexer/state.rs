@@ -64,7 +64,7 @@ impl From<&Token> for TokenType {
             _ => TokenType::Other {
                 before_expr: t.before_expr(),
                 can_have_trailing_comment: match *t {
-                    Token::Num(..)
+                    Token::Num { .. }
                     | Token::Str { .. }
                     | Token::Word(Word::Ident(..))
                     | Token::DollarLBrace
