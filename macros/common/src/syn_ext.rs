@@ -19,7 +19,7 @@ pub trait ItemImplExt {
     /// where_clause,
     /// },
     /// {
-    /// impl impl_generics ::global_common::AstNode for Type ty_generics
+    /// impl impl_generics TraitName for Type ty_generics
     /// where_clause {}
     /// }
     /// )).parse();
@@ -30,7 +30,7 @@ pub trait ItemImplExt {
     /// ```rust,ignore
     // let item = Quote::new(def_site::<Span>())
     ///     .quote_with(smart_quote!(Vars { Type: type_name }, {
-    ///         impl ::global_common::AstNode for Type {}
+    ///         impl TraitName for Type {}
     ///     }))
     ///     .parse::<ItemImpl>()
     ///     .with_generics(input.generics);

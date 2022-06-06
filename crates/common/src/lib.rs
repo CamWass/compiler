@@ -11,7 +11,7 @@
 #![deny(unused)]
 
 pub use self::{
-    eq::{EqIgnoreSpan, TypeEq},
+    eq::EqIgnoreSpan,
     errors::{SourceMapper, SourceMapperDyn},
     pos::{
         hygiene, BytePos, CharPos, FileName, Globals, Loc, LocWithOpt, Mark, MultiSpan, SourceFile,
@@ -22,18 +22,11 @@ pub use self::{
     syntax_pos::{LineCol, Pos},
 };
 pub use ast_node::{ast_node, ast_serde, DeserializeEnum, Spanned};
-pub use eq_ignore_macros::{EqIgnoreSpan, TypeEq};
+pub use eq_ignore_macros::EqIgnoreSpan;
 pub use from_variant::FromVariant;
 pub use global_visit::chain;
-use serde::Serialize;
-use std::fmt::Debug;
 #[doc(hidden)]
 pub mod private;
-
-/// A trait for ast nodes.
-pub trait AstNode: Debug + PartialEq + Clone + Spanned + Serialize {
-    const TYPE: &'static str;
-}
 
 pub mod chars;
 pub mod comments;

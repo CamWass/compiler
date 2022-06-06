@@ -207,28 +207,14 @@ pub fn ast_node(
                 }))
             });
 
-            let ast_node_impl = match args {
-                Some(ref args) => Some(ast_node_macro::expand_struct(args.clone(), input.clone())),
-                None => None,
-            };
-
-            let mut quote =
-                item.quote_with(smart_quote!(Vars { input, serde_tag, serde_rename }, {
-                    #[derive(::global_common::Spanned, Clone, Debug, PartialEq)]
-                    #[derive(::serde::Serialize, ::serde::Deserialize)]
-                    serde_tag
-                    #[serde(rename_all = "camelCase")]
-                    serde_rename
-                    input
-                }));
-
-            if let Some(items) = ast_node_impl {
-                for item in items {
-                    quote = quote.quote_with(smart_quote!(Vars { item }, { item }))
-                }
-            }
-
-            quote
+            item.quote_with(smart_quote!(Vars { input, serde_tag, serde_rename }, {
+                #[derive(::global_common::Spanned, Clone, Debug, PartialEq)]
+                #[derive(::serde::Serialize, ::serde::Deserialize)]
+                serde_tag
+                #[serde(rename_all = "camelCase")]
+                serde_rename
+                input
+            }))
         }
     };
 

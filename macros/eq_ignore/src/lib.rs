@@ -27,31 +27,6 @@ use syn::Path;
 use syn::Stmt;
 use syn::Token;
 
-// TODO: remove TypeEq (unused)
-
-/// Derives `global_common::TypeEq`.
-///
-/// - Field annotated with `#[use_eq]` will be compared using `==`.
-/// - Field annotated with `#[not_type]` will be ignored
-#[proc_macro_derive(TypeEq, attributes(not_type, use_eq, use_eq_ignore_span))]
-pub fn derive_type_eq(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    Deriver {
-        trait_name: Ident::new("TypeEq", Span::call_site()),
-        method_name: Ident::new("type_eq", Span::call_site()),
-        ignore_field: Box::new(|field| {
-            // Search for `#[not_type]`.
-            for attr in &field.attrs {
-                if attr.path.is_ident("not_type") {
-                    return true;
-                }
-            }
-
-            false
-        }),
-    }
-    .derive(item)
-}
-
 /// Derives `global_common::EqIgnoreSpan`.
 ///
 ///
@@ -208,7 +183,6 @@ impl Deriver {
             );
         }
 
-        // true && a.type_eq(&other.a) && b.type_eq(&other.b)
         let mut expr: Expr = q!({ true }).parse();
 
         for expr_el in exprs {

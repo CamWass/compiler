@@ -56,55 +56,12 @@ where
     }
 }
 
-/// Derive with `#[derive(TypeEq)]`.
-pub trait TypeEq {
-    /// **Note**: This method should return `true` for non-type values.
-    fn type_eq(&self, other: &Self) -> bool;
-}
-
-impl TypeEq for Span {
-    /// Always returns true
-    #[inline]
-    fn type_eq(&self, _: &Self) -> bool {
-        true
-    }
-}
-
-impl<T> TypeEq for Option<T>
-where
-    T: TypeEq,
-{
-    fn type_eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Some(l), Some(r)) => l.type_eq(r),
-            (None, None) => true,
-            _ => false,
-        }
-    }
-}
-
-impl<T> TypeEq for Vec<T>
-where
-    T: TypeEq,
-{
-    fn type_eq(&self, other: &Self) -> bool {
-        self.len() == other.len() && self.iter().zip(other.iter()).all(|(a, b)| a.type_eq(b))
-    }
-}
-
 /// Implement traits using PartialEq
 macro_rules! eq {
     ($T:ty) => {
         impl EqIgnoreSpan for $T {
             #[inline]
             fn eq_ignore_span(&self, other: &Self) -> bool {
-                self == other
-            }
-        }
-
-        impl TypeEq for $T {
-            #[inline]
-            fn type_eq(&self, other: &Self) -> bool {
                 self == other
             }
         }
@@ -135,13 +92,6 @@ impl<S: PartialEq> EqIgnoreSpan for Atom<S> {
     }
 }
 
-impl<S: PartialEq> TypeEq for Atom<S> {
-    #[inline]
-    fn type_eq(&self, other: &Self) -> bool {
-        self == other
-    }
-}
-
 macro_rules! deref {
     ($T:ident) => {
         impl<N> EqIgnoreSpan for $T<N>
@@ -153,18 +103,7 @@ macro_rules! deref {
                 (**self).eq_ignore_span(&**other)
             }
         }
-
-        impl<N> TypeEq for $T<N>
-        where
-            N: TypeEq,
-        {
-            #[inline]
-            fn type_eq(&self, other: &Self) -> bool {
-                (**self).type_eq(&**other)
-            }
-        }
     };
-
 
     (
         $(
@@ -189,16 +128,6 @@ where
     }
 }
 
-impl<'a, N> TypeEq for &'a N
-where
-    N: TypeEq,
-{
-    #[inline]
-    fn type_eq(&self, other: &Self) -> bool {
-        (**self).type_eq(&**other)
-    }
-}
-
 impl<N> EqIgnoreSpan for RefCell<N>
 where
     N: EqIgnoreSpan,
@@ -208,22 +137,8 @@ where
     }
 }
 
-impl<N> TypeEq for RefCell<N>
-where
-    N: TypeEq,
-{
-    fn type_eq(&self, other: &Self) -> bool {
-        self.borrow().type_eq(&*other.borrow())
-    }
-}
-
 impl EqIgnoreSpan for BigInt {
     fn eq_ignore_span(&self, other: &Self) -> bool {
-        self == other
-    }
-}
-impl TypeEq for BigInt {
-    fn type_eq(&self, other: &Self) -> bool {
         self == other
     }
 }
