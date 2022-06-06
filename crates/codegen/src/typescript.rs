@@ -528,13 +528,7 @@ impl<'a> Emitter<'a> {
             keyword!("readonly");
         }
 
-        if n.computed {
-            punct!("[");
-            emit!(n.key);
-            punct!("]");
-        } else {
-            emit!(n.key)
-        }
+        emit!(n.key);
 
         if n.optional {
             punct!("?");
@@ -695,13 +689,7 @@ impl<'a> Emitter<'a> {
             space!();
         }
 
-        if n.computed {
-            punct!("[");
-            emit!(n.key);
-            punct!("]");
-        } else {
-            emit!(n.key);
-        }
+        emit!(n.key);
 
         if n.optional {
             punct!("?");

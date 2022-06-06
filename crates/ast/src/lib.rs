@@ -8,8 +8,8 @@
 
 pub use self::{
     class::{
-        Class, ClassMember, ClassMethod, ClassProp, Constructor, Decorator, MethodKind,
-        PrivateMethod, PrivateProp,
+        Class, ClassMember, ClassMethod, ClassProp, Constructor, Decorator, ExtendsClause,
+        MethodKind, PrivateMethod, PrivateProp,
     },
     decl::{ClassDecl, Decl, FnDecl, VarDecl, VarDeclKind, VarDeclarator},
     expr::{
@@ -83,6 +83,9 @@ mod pat;
 mod prop;
 mod stmt;
 mod typescript;
+
+#[derive(PartialEq, Eq, Clone, Copy, Hash, EqIgnoreSpan, Serialize, Deserialize, Debug)]
+pub struct NodeId(pub u32);
 
 /// Represents a invalid node.
 #[ast_node("Invalid")]

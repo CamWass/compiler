@@ -10,20 +10,22 @@ use crate::{
     JscTarget, Syntax,
 };
 use ast::op;
-use global_common::{BytePos, Span};
+use global_common::{chars::char_literals, BytePos, SourceFile, Span};
 use identifier::{is_ident_part, is_ident_start};
 use state::State;
 pub use state::{TokenContext, TokenContexts};
 use std::{cell::RefCell, iter::FusedIterator, rc::Rc};
 use swc_atoms::JsWord;
-use util::{char_bytes, char_literals, is_line_break, is_valid_regex_flag};
+use util::{char_bytes, is_line_break, is_valid_regex_flag};
 
 pub(crate) type LexResult<T> = Result<T, Error>;
 
 #[derive(Clone)]
 pub struct Lexer<'src> {
+    /// Index of current byte in `self.bytes`.
     cur: usize,
     bytes: &'src [u8],
+    start_pos: BytePos,
 
     pub(crate) ctx: Context,
     state: State,
@@ -93,10 +95,11 @@ impl Iterator for Lexer<'_> {
 }
 
 impl<'src> Lexer<'src> {
-    pub fn new(syntax: Syntax, target: JscTarget, input: &'src str) -> Self {
+    pub fn new(syntax: Syntax, target: JscTarget, input: &'src SourceFile) -> Self {
         Lexer {
             cur: 0,
-            bytes: input.as_bytes(),
+            bytes: input.src.as_bytes(),
+            start_pos: input.start_pos,
 
             state: State::new(),
             syntax,
@@ -575,6 +578,7 @@ impl<'src> Lexer<'src> {
 
         self.advance(1); // '/'
 
+        // TODO: Use bit_flags?
         // 6 is the number of valid flags.
         let mut mods = String::with_capacity(6);
 

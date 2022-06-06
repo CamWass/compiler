@@ -844,17 +844,34 @@ impl<'a> Emitter<'a> {
 
     #[emitter]
     fn emit_class_trailing(&mut self, node: &Class) -> Result {
-        if node.super_class.is_some() {
+        if node.extends.is_some() {
             space!();
-            keyword!("extends");
+            emit!(node.extends);
+        }
+
+        if !node.implements.is_empty() {
             space!();
-            emit!(node.super_class);
+            keyword!("implements");
+            space!();
+            self.emit_list(
+                node.span,
+                Some(&node.implements),
+                ListFormat::HeritageClauseTypes,
+            )?;
         }
 
         formatting_space!();
         punct!("{");
         self.emit_list(node.span, Some(&node.body), ListFormat::ClassMembers)?;
         punct!("}");
+    }
+
+    #[emitter]
+    fn emit_extends_clause(&mut self, node: &ExtendsClause) -> Result {
+        keyword!("extends");
+        space!();
+        emit!(node.super_class);
+        emit!(node.super_type_params);
     }
 
     #[emitter]
@@ -1041,13 +1058,7 @@ impl<'a> Emitter<'a> {
             space!();
         }
 
-        if n.computed {
-            punct!("[");
-            emit!(n.key);
-            punct!("]");
-        } else {
-            emit!(n.key);
-        }
+        emit!(n.key);
 
         if let Some(ty) = &n.type_ann {
             punct!(":");
@@ -1109,7 +1120,6 @@ impl<'a> Emitter<'a> {
             PropName::Ident(ref n) => emit!(n),
             PropName::Str(ref n) => emit!(n),
             PropName::Num(ref n) => emit!(n),
-            PropName::BigInt(ref n) => emit!(n),
             PropName::Computed(ref n) => emit!(n),
         }
     }

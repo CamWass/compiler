@@ -1,7 +1,8 @@
-use global_common::Spanned;
+use global_common::{EqIgnoreSpan, Spanned};
 
 use crate::ast;
 use crate::{Visit, VisitWith};
+use std::convert::TryFrom;
 use std::fmt;
 use std::ops::Deref;
 use std::rc::Rc;
@@ -62,6 +63,19 @@ impl From<Parameter> for BoundNode {
             Parameter::ParamWithoutDecorators(n) => n.into(),
             Parameter::TsAmbientParam(n) => n.into(),
             Parameter::TsParamProp(n) => n.into(),
+        }
+    }
+}
+
+impl TryFrom<BoundNode> for Parameter {
+    type Error = ();
+    fn try_from(value: BoundNode) -> Result<Self, Self::Error> {
+        match value {
+            BoundNode::Param(p) => Ok(Parameter::Param(p)),
+            BoundNode::ParamWithoutDecorators(p) => Ok(Parameter::ParamWithoutDecorators(p)),
+            BoundNode::TsAmbientParam(p) => Ok(Parameter::TsAmbientParam(p)),
+            BoundNode::TsParamProp(p) => Ok(Parameter::TsParamProp(p)),
+            _ => Err(()),
         }
     }
 }
@@ -273,7 +287,6 @@ impl Bind for ast::PropName {
             ast::PropName::Ident(p) => p.bind_to_opt_parent(parent),
             ast::PropName::Str(p) => p.bind_to_opt_parent(parent),
             ast::PropName::Num(p) => p.bind_to_opt_parent(parent),
-            ast::PropName::BigInt(p) => p.bind_to_opt_parent(parent),
             ast::PropName::Computed(p) => p.bind_to_opt_parent(parent),
         }
     }
@@ -617,14 +630,19 @@ impl Bind for ast::ExprOrSpread {
 //     }
 // }
 
+// TODO: maybe make BoundNode = {
+//   node: Node,
+//   parent: Option<BouneNode>
+// }
+
 macro_rules! make {
     ($($field:ident,)*) => {
         // Enum declaration:
-        #[derive(PartialEq, Eq, Hash, Clone)]
+        #[derive(PartialEq, Eq, Hash, Clone, EqIgnoreSpan)]
         pub enum BoundNode {
             $($field(Rc<$field>),)*
         }
-        #[derive(PartialEq, Eq, Hash, Clone)]
+        #[derive(PartialEq, Eq, Hash, Clone, EqIgnoreSpan)]
         pub enum Node {
             $($field(Rc<ast::$field>),)*
         }
@@ -760,6 +778,7 @@ macro_rules! make {
 make!(
     // class
     Class,
+    ExtendsClause,
     ClassProp,
     PrivateProp,
     ClassMethod,
@@ -943,6 +962,7 @@ macro_rules! impl_span {
             pub fn span(&self) -> global_common::Span {
                 match self {
                     Self::Class(n) => n.span,
+                    Self::ExtendsClause(n) => n.span,
                     Self::ClassProp(n) => n.span,
                     Self::PrivateProp(n) => n.span,
                     Self::ClassMethod(n) => n.span,
@@ -1290,6 +1310,24 @@ impl From<ast::ExprOrSpread> for Node {
         match other {
             ast::ExprOrSpread::Spread(n) => Node::SpreadElement(n),
             ast::ExprOrSpread::Expr(n) => Node::from(n),
+        }
+    }
+}
+impl From<ast::PropName> for Node {
+    fn from(other: ast::PropName) -> Self {
+        match other {
+            ast::PropName::Ident(n) => Node::Ident(n),
+            ast::PropName::Str(n) => Node::Str(n),
+            ast::PropName::Num(n) => Node::Number(n),
+            ast::PropName::Computed(n) => Node::from(n),
+        }
+    }
+}
+impl From<ast::PatOrExpr> for Node {
+    fn from(other: ast::PatOrExpr) -> Self {
+        match other {
+            ast::PatOrExpr::Expr(n) => Node::from(n),
+            ast::PatOrExpr::Pat(n) => Node::from(n),
         }
     }
 }

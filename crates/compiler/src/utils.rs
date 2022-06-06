@@ -41,6 +41,89 @@ macro_rules! hash {
 
 pub use hash;
 
+fn walkUpBindingElementsAndPatterns(binding: &BoundNode) -> BoundNode {
+    let mut node = binding.parent();
+    while matches!(
+        node,
+        Some(
+            BoundNode::BindingIdent(_)
+                | BoundNode::ArrayPat(_)
+                | BoundNode::RestPat(_)
+                | BoundNode::ObjectPat(_)
+                | BoundNode::AssignPat(_)
+        )
+    ) {
+        node = node.unwrap().parent();
+    }
+    debug_assert!(matches!(
+        node,
+        Some(
+            BoundNode::VarDeclarator(_)
+                | BoundNode::Param(_)
+                | BoundNode::ParamWithoutDecorators(_)
+                | BoundNode::TsAmbientParam(_)
+                | BoundNode::TsParamProp(_)
+        )
+    ));
+    node.unwrap()
+}
+
+fn getCombinedFlags<T, F>(node: &BoundNode, getFlags: F) -> T
+where
+    T: std::ops::BitOrAssign,
+    F: Fn(&BoundNode) -> T,
+{
+    let mut node = if isBindingElement(node) {
+        walkUpBindingElementsAndPatterns(node)
+    } else {
+        node.clone()
+    };
+    let mut flags = getFlags(&node);
+    if matches!(node, BoundNode::VarDeclarator(_)) {
+        node = node.parent().unwrap();
+    }
+    if matches!(node, BoundNode::VarDecl(_)) {
+        flags |= getFlags(&node);
+    }
+    flags
+}
+
+pub fn getCombinedModifierFlags(node: &BoundNode) -> ModifierFlags {
+    getCombinedFlags(node, getEffectiveModifierFlags)
+}
+
+// Returns the node flags for this node and all relevant parent nodes.  This is done so that
+// nodes like variable declarations and binding elements can returned a view of their flags
+// that includes the modifiers from their container.  i.e. flags like export/declare aren't
+// stored on the variable declaration directly, but on the containing variable statement
+// (if it has one).  Similarly, flags for let/const are stored on the variable declaration
+// list.  By calling this function, all those flags are combined so that the client can treat
+// the node as if it actually had those flags.
+pub fn getCombinedNodeFlags(node: &BoundNode) -> NodeFlags {
+    // TODO:
+    // Flags that we currently care about (take from TSC's usage, bit janky could lead to bugs):
+    // NodeFlags::BlockScoped (which is just NodeFlags::Let | NodeFlags::Const)
+    // NodeFlags::Let
+    // NodeFlags::Const
+    // NodeFlags::Deprecated (currently we dont support this)
+    fn get_node_flags(n: &BoundNode) -> NodeFlags {
+        match n {
+            BoundNode::VarDecl(n) => match n.kind {
+                ast::VarDeclKind::Var => NodeFlags::empty(),
+                ast::VarDeclKind::Let => NodeFlags::Let,
+                ast::VarDeclKind::Const => NodeFlags::Const,
+            },
+            BoundNode::VarDeclarator(n) => NodeFlags::empty(),
+            BoundNode::ClassProp(n) => NodeFlags::empty(),
+            _ => {
+                dbg!(n);
+                todo!();
+            }
+        }
+    }
+    getCombinedFlags(node, |n| get_node_flags(n))
+}
+
 pub fn getSourceFileOfNode(node: BoundNode) -> BoundNode {
     findAncestor(Some(node), |n| {
         Some(matches!(n, BoundNode::Script(_) | BoundNode::Module(_)))
@@ -68,6 +151,17 @@ where
         node = n.parent();
     }
     None
+}
+
+pub fn isPropertyName(node: &BoundNode) -> bool {
+    matches!(
+        node,
+        BoundNode::Ident(_)
+            | BoundNode::PrivateName(_)
+            | BoundNode::Str(_)
+            | BoundNode::Number(_)
+            | BoundNode::ComputedPropName(_)
+    )
 }
 
 pub fn isFunctionLike(node: Option<&BoundNode>) -> bool {
@@ -184,6 +278,20 @@ bitflags! {
 //     // }
 //     // node
 // }
+
+/// Walks up parenthesized types.
+/// It returns both the outermost parenthesized type and its parent.
+/// If given node is not a parenthesiezd type, undefined is return as the former.
+pub fn walkUpParenthesizedTypesAndGetParentAndChild(
+    mut node: Option<BoundNode>,
+) -> (Option<Rc<TsParenthesizedType>>, BoundNode) {
+    let mut child = None;
+    while let Some(n @ BoundNode::TsParenthesizedType(c)) = &node {
+        child = Some(c.clone());
+        node = n.parent();
+    }
+    (child, node.unwrap())
+}
 
 pub fn skipParenthesesOfNode(mut node: BoundNode) -> BoundNode {
     while let BoundNode::ParenExpr(p) = &node {
@@ -411,7 +519,6 @@ pub fn isStatic(node: &BoundNode) -> bool {
     // TODO: static blocks
     // isClassElement(node) && hasStaticModifier(node) || isClassStaticBlockDeclaration(node)
     match node {
-        BoundNode::Constructor(_) => true,
         BoundNode::ClassMethod(m) => m.is_static,
         BoundNode::PrivateMethod(m) => m.is_static,
         BoundNode::ClassProp(p) => p.is_static,
@@ -421,27 +528,69 @@ pub fn isStatic(node: &BoundNode) -> bool {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum DeclName {
-    Ident(Rc<ast::Ident>),
-    PrivateName(Rc<ast::PrivateName>),
-    String(Rc<ast::Str>),
-    NoSubstitutionTemplate(Rc<ast::Tpl>),
-    Number(Rc<ast::Number>),
-    ComputedProperty(Expr),
-    ElementAccessExpression(Expr),
-    ArrayPt(Rc<ast::ArrayPat>),
-    ObjectPat(Rc<ast::ObjectPat>),
+    Ident(Rc<Ident>),
+    PrivateName(Rc<PrivateName>),
+    String(Rc<Str>),
+    NoSubstitutionTemplate(Rc<Tpl>),
+    Number(Rc<Number>),
+    ComputedProperty(Rc<ComputedPropName>),
+    ElementAccessExpression(Rc<MemberExpr>),
+    ArrayPat(Rc<ArrayPat>),
+    ObjectPat(Rc<ObjectPat>),
     EntityNameExpression(ast::TsEntityName),
 }
 
+impl From<DeclName> for Node {
+    fn from(other: DeclName) -> Self {
+        match other {
+            DeclName::Ident(n) => Node::Ident(n.node.clone()),
+            DeclName::PrivateName(n) => Node::PrivateName(n.node.clone()),
+            DeclName::String(n) => Node::Str(n.node.clone()),
+            DeclName::NoSubstitutionTemplate(n) => Node::Tpl(n.node.clone()),
+            DeclName::Number(n) => Node::Number(n.node.clone()),
+            DeclName::ComputedProperty(n) => Node::ComputedPropName(n.node.clone()),
+            DeclName::ElementAccessExpression(n) => Node::MemberExpr(n.node.clone()),
+            DeclName::ArrayPat(n) => Node::ArrayPat(n.node.clone()),
+            DeclName::ObjectPat(n) => Node::ObjectPat(n.node.clone()),
+            DeclName::EntityNameExpression(n) => Node::from(n),
+        }
+    }
+}
+
+impl DeclName {
+    fn from_prop_name(prop_name: &ast::PropName, parent: BoundNode) -> DeclName {
+        match prop_name {
+            ast::PropName::Ident(i) => DeclName::Ident(Ident::new(i.clone(), Some(parent))),
+            ast::PropName::Str(s) => DeclName::String(Str::new(s.clone(), Some(parent))),
+            ast::PropName::Num(n) => DeclName::Number(Number::new(n.clone(), Some(parent))),
+            ast::PropName::Computed(c) => {
+                DeclName::ComputedProperty(ComputedPropName::new(c.clone(), Some(parent)))
+            }
+        }
+    }
+}
+
 fn getNonAssignedNameOfDeclaration(declaration: &BoundNode) -> Option<DeclName> {
+    macro_rules! ident {
+        ($node:expr, $parent:expr) => {
+            Some(DeclName::Ident(Ident::new($node, Some($parent))))
+        };
+    }
+
+    macro_rules! prop_name_key {
+        ($node:ident) => {
+            Some(DeclName::from_prop_name(&$node.key, $node.clone().into()))
+        };
+    }
+
     // TODO: remove varient matches that map to None (e.g. TsIndexSignature's).
     // These are only here to prevent the 'unknown node' message during
     // development and can be removed in favour of the default branch, which
     // also returns None.
     match declaration {
-        BoundNode::Ident(i) => Some(DeclName::Ident(i.node.clone())),
+        BoundNode::Ident(i) => Some(DeclName::Ident(i.clone())),
         // TODO: JSDOC:
         // BoundNode::JSDocPropertyTag(_)|
         // BoundNode::JSDocParameterTag(_)=> {
@@ -497,7 +646,7 @@ fn getNonAssignedNameOfDeclaration(declaration: &BoundNode) -> Option<DeclName> 
         // }
         BoundNode::TsExportAssignment(e) => {
             if let Expr::Ident(i) = &e.expr {
-                Some(DeclName::Ident(i.clone()))
+                ident!(i.clone(), e.clone().into())
             } else {
                 None
             }
@@ -512,10 +661,10 @@ fn getNonAssignedNameOfDeclaration(declaration: &BoundNode) -> Option<DeclName> 
 
         // TODO:
         // MissingDeclaration
-        BoundNode::ClassDecl(decl) => Some(DeclName::Ident(decl.ident.clone())),
+        BoundNode::ClassDecl(decl) => ident!(decl.ident.clone(), decl.clone().into()),
         // TODO:
         // InterfaceDeclaration
-        BoundNode::TsInterfaceDecl(i) => Some(DeclName::Ident(i.id.clone())),
+        BoundNode::TsInterfaceDecl(i) => ident!(i.id.clone(), i.clone().into()),
 
         // TODO:
         // EnumDeclaration
@@ -535,29 +684,29 @@ fn getNonAssignedNameOfDeclaration(declaration: &BoundNode) -> Option<DeclName> 
         // FunctionOrConstructorTypeNodeBase
         // JSDocFunctionType
         BoundNode::VarDeclarator(d) => match &d.name {
-            ast::Pat::Ident(i) => Some(DeclName::Ident(i.id.clone())),
+            ast::Pat::Ident(i) => ident!(i.id.clone(), i.bind(d.clone().into())),
             ast::Pat::Array(_) => todo!(),
             ast::Pat::Object(_) => todo!(),
             _ => unreachable!(),
         },
         BoundNode::Param(p) => match &p.pat {
-            ast::Pat::Ident(i) => Some(DeclName::Ident(i.id.clone())),
+            ast::Pat::Ident(i) => ident!(i.id.clone(), i.bind(p.clone().into())),
             _ => todo!(),
         },
         BoundNode::ParamWithoutDecorators(p) => match &p.pat {
-            ast::Pat::Ident(i) => Some(DeclName::Ident(i.id.clone())),
+            ast::Pat::Ident(i) => ident!(i.id.clone(), i.bind(p.clone().into())),
             _ => todo!(),
         },
-        BoundNode::TsAmbientParam(p) => match &p.pat {
-            ast::TsAmbientParamPat::Ident(i) => Some(DeclName::Ident(i.id.clone())),
+        BoundNode::TsAmbientParam(d) => match &d.pat {
+            ast::TsAmbientParamPat::Ident(i) => ident!(i.id.clone(), i.bind(d.clone().into())),
             ast::TsAmbientParamPat::Rest(p) => match &p.arg {
-                ast::Pat::Ident(i) => Some(DeclName::Ident(i.id.clone())),
+                ast::Pat::Ident(i) => ident!(i.id.clone(), i.bind(p.bind(d.clone().into()))),
                 _ => todo!(),
             },
             _ => todo!(),
         },
         BoundNode::TsParamProp(p) => match &p.param {
-            ast::TsParamPropParam::Ident(i) => Some(DeclName::Ident(i.id.clone())),
+            ast::TsParamPropParam::Ident(i) => ident!(i.id.clone(), i.bind(p.clone().into())),
             _ => todo!(),
         },
         // TODO:
@@ -573,76 +722,31 @@ fn getNonAssignedNameOfDeclaration(declaration: &BoundNode) -> Option<DeclName> 
         // NamespaceExport
         // ImportSpecifier
         // ExportSpecifier
-        BoundNode::ClassProp(prop) => {
-            if prop.computed {
-                Some(DeclName::ComputedProperty(prop.key.clone()))
-            } else {
-                match &prop.key {
-                    Expr::Ident(i) => Some(DeclName::Ident(i.clone())),
-                    Expr::Lit(ast::Lit::Str(s)) => Some(DeclName::String(s.clone())),
-                    Expr::Lit(ast::Lit::Num(n)) => Some(DeclName::Number(n.clone())),
-                    Expr::Lit(ast::Lit::BigInt(_)) => todo!(),
-                    _ => unreachable!(),
-                }
-            }
-        }
-        BoundNode::ClassMethod(method) => match &method.key {
-            ast::PropName::Ident(i) => Some(DeclName::Ident(i.clone())),
-            ast::PropName::Str(s) => Some(DeclName::String(s.clone())),
-            ast::PropName::Num(n) => Some(DeclName::Number(n.clone())),
-            ast::PropName::BigInt(_) => todo!(),
-            ast::PropName::Computed(c) => Some(DeclName::ComputedProperty(c.expr.clone())),
-        },
+        BoundNode::ClassProp(d) => prop_name_key!(d),
+        BoundNode::ClassMethod(d) => prop_name_key!(d),
         BoundNode::TsModuleDecl(d) => match &d.id {
-            ast::TsModuleName::Ident(i) => Some(DeclName::Ident(i.clone())),
-            ast::TsModuleName::Str(s) => Some(DeclName::String(s.clone())),
+            ast::TsModuleName::Ident(i) => ident!(i.clone(), d.clone().into()),
+            ast::TsModuleName::Str(s) => Some(DeclName::String(Str::new(
+                s.clone(),
+                Some(d.clone().into()),
+            ))),
         },
         BoundNode::RestPat(p) => match &p.arg {
-            ast::Pat::Ident(i) => Some(DeclName::Ident(i.id.clone())),
+            ast::Pat::Ident(i) => ident!(i.id.clone(), i.bind(p.clone().into())),
             _ => todo!(),
         },
-        BoundNode::BindingIdent(i) => Some(DeclName::Ident(i.id.clone())),
-        BoundNode::TsTypeParamDecl(p) => Some(DeclName::Ident(p.name.clone())),
+        BoundNode::BindingIdent(i) => ident!(i.id.clone(), i.clone().into()),
+        BoundNode::TsTypeParamDecl(p) => ident!(p.name.clone(), p.clone().into()),
         BoundNode::TsFnType(_) => None,
         BoundNode::TsConstructorType(_) => None,
         BoundNode::TsCallSignatureDecl(_) => None,
         BoundNode::TsConstructSignatureDecl(_) => None,
         BoundNode::TsIndexSignature(_) => None,
-        BoundNode::TsPropertySignature(s) => {
-            if s.computed {
-                Some(DeclName::ComputedProperty(s.key.clone()))
-            } else {
-                match &s.key {
-                    Expr::Ident(i) => Some(DeclName::Ident(i.clone())),
-                    Expr::Lit(ast::Lit::Str(s)) => Some(DeclName::String(s.clone())),
-                    Expr::Lit(ast::Lit::Num(n)) => Some(DeclName::Number(n.clone())),
-                    Expr::Lit(ast::Lit::BigInt(_)) => todo!(),
-                    _ => unreachable!(),
-                }
-            }
-        }
-        BoundNode::TsMethodSignature(s) => {
-            if s.computed {
-                Some(DeclName::ComputedProperty(s.key.clone()))
-            } else {
-                match &s.key {
-                    Expr::Ident(i) => Some(DeclName::Ident(i.clone())),
-                    Expr::Lit(ast::Lit::Str(s)) => Some(DeclName::String(s.clone())),
-                    Expr::Lit(ast::Lit::Num(n)) => Some(DeclName::Number(n.clone())),
-                    Expr::Lit(ast::Lit::BigInt(_)) => todo!(),
-                    _ => unreachable!(),
-                }
-            }
-        }
-        BoundNode::TsTypeAliasDecl(a) => Some(DeclName::Ident(a.id.clone())),
-        BoundNode::KeyValueProp(p) => match &p.key {
-            ast::PropName::Ident(i) => Some(DeclName::Ident(i.clone())),
-            ast::PropName::Str(s) => Some(DeclName::String(s.clone())),
-            ast::PropName::Num(n) => Some(DeclName::Number(n.clone())),
-            ast::PropName::BigInt(_) => todo!(),
-            ast::PropName::Computed(c) => Some(DeclName::ComputedProperty(c.expr.clone())),
-        },
-        BoundNode::FnDecl(d) => Some(DeclName::Ident(d.ident.clone())),
+        BoundNode::TsPropertySignature(d) => prop_name_key!(d),
+        BoundNode::TsMethodSignature(d) => prop_name_key!(d),
+        BoundNode::TsTypeAliasDecl(a) => ident!(a.id.clone(), a.clone().into()),
+        BoundNode::KeyValueProp(d) => prop_name_key!(d),
+        BoundNode::FnDecl(d) => ident!(d.ident.clone(), d.clone().into()),
         _ => {
             println!("==============WARNING==============");
             println!(
@@ -841,10 +945,6 @@ fn isSignedNumericLiteral(node: &Expr) -> bool {
     false
 }
 
-// pub fn isDynamicName(name: &Expr) -> bool {
-//     !isStringOrNumericLiteralLike(name) && !isSignedNumericLiteral(name)
-// }
-
 /// Within a computed name, a name is dynamic if all of the following are true:
 ///   1. The declaration has a computed property name.
 ///   2. The computed name is *not* expressed as a StringLiteral.
@@ -853,21 +953,15 @@ fn isSignedNumericLiteral(node: &Expr) -> bool {
 ///      immediately followed by a NumericLiteral.
 pub fn hasDynamicName(declaration: &BoundNode) -> bool {
     let decl_name = getNameOfDeclaration(declaration);
-    if let Some(decl_name) = decl_name {
-        let expr = match decl_name {
-            DeclName::ComputedProperty(e) => e,
-            DeclName::ElementAccessExpression(e) => e,
-            _ => return false,
-        };
-        return !isStringOrNumericLiteralLike(&expr) && !isSignedNumericLiteral(&expr);
-    }
-    false
+    decl_name
+        .map(|n| isDynamicName(&n.into()))
+        .unwrap_or_default()
 }
 
-fn isDynamicName(name: DeclName) -> bool {
-    let expr = match &name {
-        DeclName::ComputedProperty(e) => e,
-        DeclName::ElementAccessExpression(e) => skipParenthesesOfExpr(e),
+fn isDynamicName(name: &Node) -> bool {
+    let expr = match name {
+        Node::ComputedPropName(e) => &e.expr,
+        Node::MemberExpr(e) => skipParenthesesOfExpr(&e.prop),
         _ => return false,
     };
     !isStringOrNumericLiteralLike(expr) && !isSignedNumericLiteral(expr)
@@ -934,6 +1028,13 @@ pub fn isGlobalScopeAugmentation(module: &TsModuleDecl) -> bool {
     module.global
 }
 
+/** Add an extra underscore to identifiers that start with two underscores to avoid issues with magic names like '__proto__' */
+pub fn escapeLeadingUnderscores(identifier: &JsWord) -> &JsWord {
+    identifier
+    // TODO:
+    // return (identifier.length >= 2 && identifier.charCodeAt(0) === CharacterCodes._ && identifier.charCodeAt(1) === CharacterCodes._ ? "_" + identifier : identifier) as __String;
+}
+
 /**
  * Remove extra underscore from escaped identifier text content.
  *
@@ -975,7 +1076,7 @@ pub fn isClassElement(node: &BoundNode) -> bool {
     )
 }
 
-fn isClassLike(node: &BoundNode) -> bool {
+pub fn isClassLike(node: &BoundNode) -> bool {
     matches!(node, BoundNode::ClassDecl(_) | BoundNode::ClassExpr(_))
 }
 
@@ -984,10 +1085,18 @@ pub fn isBindingPattern(node: &BoundNode) -> bool {
 }
 
 /** Get the initializer, taking into account defaulted Javascript initializers */
-fn getEffectiveInitializer(node: &BoundNode) -> Option<BoundNode> {
+pub fn getEffectiveInitializer(node: &BoundNode) -> Option<BoundNode> {
     let (name, initializer) = match node {
-        BoundNode::VarDeclarator(n) => (&n.name, n.init.as_ref().map(|i| i.bind(node.clone()))),
+        BoundNode::VarDeclarator(n) => (
+            Node::from(n.name.clone()),
+            n.init.as_ref().map(|i| i.bind(node.clone())),
+        ),
+        BoundNode::ClassProp(n) => (
+            Node::from(n.key.clone()),
+            n.value.as_ref().map(|i| i.bind(node.clone())),
+        ),
         _ => {
+            dbg!(node);
             todo!();
             // unreachable!();
         }
@@ -997,8 +1106,9 @@ fn getEffectiveInitializer(node: &BoundNode) -> Option<BoundNode> {
             if init_expr.op == ast::BinaryOp::LogicalOr
                 || init_expr.op == ast::BinaryOp::NullishCoalescing
             {
-                if isEntityNameExpression(&name.clone().into())
-                    && isSameEntityName(&ast::PatOrExpr::Pat(name.clone()), &init_expr.left)
+                let name_node = name.clone().into();
+                if isEntityNameExpression(&name_node)
+                    && isSameEntityName(&name_node, &init_expr.left.clone().into())
                 {
                     return Some(init_expr.right.bind(init.clone()));
                 }
@@ -1127,7 +1237,7 @@ fn getDefaultedExpandoInitializer(
         if init.op == ast::BinaryOp::LogicalOr || init.op == ast::BinaryOp::NullishCoalescing {
             let e =
                 getExpandoInitializer(init.right.bind(initializer.clone()), isPrototypeAssignment);
-            if e.is_some() && isSameEntityName(name, &init.left) {
+            if e.is_some() && isSameEntityName(&name.clone().into(), &init.left.clone().into()) {
                 return e;
             }
         }
@@ -1164,47 +1274,42 @@ fn getDefaultedExpandoInitializer(
  * var min = window.min || {}
  * my.app = self.my.app || class { }
  */
-pub fn isSameEntityName(name: &ast::PatOrExpr, initializer: &Expr) -> bool {
+pub fn isSameEntityName(name: &Node, initializer: &Node) -> bool {
     // TODO: pat::BindingIdent?
-    if let ast::PatOrExpr::Expr(name) = name {
-        if isPropertyNameLiteral(&name) && isPropertyNameLiteral(&initializer) {
-            // TODO: I think we need to use the node's text here, so [0] and ["0"] are
-            // treated as equal, like TSC possibly does.
-            return name.eq_ignore_span(&initializer);
-        }
-        if let Expr::Ident(name) = name {
-            if isLiteralLikeAccess(&initializer) {
-                let initializer = unwrap_as!(&initializer, Expr::Member(r), r);
-                if matches!(initializer.obj, ExprOrSuper::Expr(Expr::This(_)))
-                    || matches!(&initializer.obj, ExprOrSuper::Expr(Expr::Ident(i)) if i.sym == JsWord::from("window")||i.sym == JsWord::from("self")||i.sym == js_word!("global"))
-                {
-                    if let Expr::PrivateName(_) = initializer.prop {
-                        // TODO:
-                        panic!(
-                            "Unexpected PrivateIdentifier in name expression with literal-like access."
-                        );
-                    }
-                    return isSameEntityName(
-                        &ast::PatOrExpr::Expr(Expr::Ident(name.clone())),
-                        &initializer.prop,
+    if isPropertyNameLiteral(&name) && isPropertyNameLiteral(&initializer) {
+        // TODO: I think we need to use the node's text here, so [0] and ["0"] are
+        // treated as equal, like TSC possibly does.
+        return name.eq_ignore_span(&initializer);
+    }
+    if matches!(name, Node::Ident(_)) {
+        if isLiteralLikeAccess(&initializer) {
+            let initializer = unwrap_as!(&initializer, Node::MemberExpr(r), r);
+            if matches!(initializer.obj, ExprOrSuper::Expr(Expr::This(_)))
+                || matches!(&initializer.obj, ExprOrSuper::Expr(Expr::Ident(i)) if i.sym == JsWord::from("window")||i.sym == JsWord::from("self")||i.sym == js_word!("global"))
+            {
+                if let Expr::PrivateName(_) = initializer.prop {
+                    // TODO:
+                    panic!(
+                        "Unexpected PrivateIdentifier in name expression with literal-like access."
                     );
                 }
+                return isSameEntityName(name, &initializer.prop.clone().into());
             }
         }
-        if isLiteralLikeAccess(&name) && isLiteralLikeAccess(&initializer) {
-            let name = unwrap_as!(&name, Expr::Member(r), r);
-            let initializer = unwrap_as!(&initializer, Expr::Member(r), r);
-            return getElementOrPropertyAccessName(name)
-                == getElementOrPropertyAccessName(initializer)
-                && match (&name.obj, &initializer.obj) {
-                    (ExprOrSuper::Super(_), ExprOrSuper::Super(_)) => true,
-                    (ExprOrSuper::Expr(e1), ExprOrSuper::Expr(e2)) => {
-                        isSameEntityName(&ast::PatOrExpr::Expr(e1.clone()), e2)
-                    }
-                    _ => false,
-                };
-        }
     }
+    if isLiteralLikeAccess(&name) && isLiteralLikeAccess(&initializer) {
+        let name = unwrap_as!(&name, Node::MemberExpr(r), r);
+        let initializer = unwrap_as!(&initializer, Node::MemberExpr(r), r);
+        return getElementOrPropertyAccessName(name) == getElementOrPropertyAccessName(initializer)
+            && match (&name.obj, &initializer.obj) {
+                (ExprOrSuper::Super(_), ExprOrSuper::Super(_)) => true,
+                (ExprOrSuper::Expr(e1), ExprOrSuper::Expr(e2)) => {
+                    isSameEntityName(&e1.clone().into(), &e2.clone().into())
+                }
+                _ => false,
+            };
+    }
+
     false
 }
 
@@ -1336,8 +1441,8 @@ pub fn isBindableObjectDefinePropertyCall(expr: &ast::CallExpr) -> bool {
 }
 
 /// x.y OR x[0]
-pub fn isLiteralLikeAccess(expr: &Expr) -> bool {
-    if let Expr::Member(m) = expr {
+pub fn isLiteralLikeAccess(expr: &Node) -> bool {
+    if let Node::MemberExpr(m) = expr {
         !m.computed || isStringOrNumericLiteralLike(&m.prop)
     } else {
         false
@@ -1450,6 +1555,14 @@ fn getAssignmentDeclarationKindWorker(expr: &Expr) -> AssignmentDeclarationKind 
     }
 }
 
+pub fn isJSDocConstructSignature(node: &BoundNode) -> bool {
+    false
+    // TODO: jsdoc
+    // const param = isJSDocFunctionType(node) ? firstOrUndefined(node.parameters) : undefined;
+    // const name = tryCast(param && param.name, isIdentifier);
+    // return !!name && name.escapedText === "new";
+}
+
 fn isVoidZero(expr: &Expr) -> bool {
     if let Expr::Unary(expr) = expr {
         if expr.op == ast::UnaryOp::Void {
@@ -1527,7 +1640,7 @@ pub fn getAssignmentDeclarationPropertyAccessKind(
             return AssignmentDeclarationKind::ExportsProperty;
         }
         if isBindableStaticNameExpression(&lhs_expr.into(), true)
-            || (lhs.computed && isDynamicName(DeclName::ElementAccessExpression(lhs.prop.clone())))
+            || (lhs.computed && isDynamicName(&Node::MemberExpr(lhs.clone())))
         {
             // F.G...x = expr
             return AssignmentDeclarationKind::Property;
@@ -1552,6 +1665,190 @@ fn getInitializerOfAssignmentExpression(expr: &ast::AssignExpr) -> &Expr {
     expr
 }
 
+pub fn hasSyntacticModifier(node: &BoundNode, flags: ModifierFlags) -> bool {
+    !getSelectedSyntacticModifierFlags(node, flags).is_empty()
+}
+
+pub fn getSelectedEffectiveModifierFlags(node: &BoundNode, flags: ModifierFlags) -> ModifierFlags {
+    getEffectiveModifierFlags(node) & flags
+}
+
+pub fn getSelectedSyntacticModifierFlags(node: &BoundNode, flags: ModifierFlags) -> ModifierFlags {
+    getSyntacticModifierFlags(node) & flags
+}
+
+fn getModifierFlagsWorker(
+    node: &BoundNode,
+    includeJSDoc: bool,
+    alwaysIncludeJSDoc: bool,
+) -> ModifierFlags {
+    // TODO: flag caching, if necessary.
+    // TODO: jsdoc
+    // if (node.kind >= SyntaxKind.FirstToken && node.kind <= SyntaxKind.LastToken) {
+    //     return ModifierFlags::None;
+    // }
+
+    // if (!(node.modifierFlagsCache & ModifierFlags::HasComputedFlags)) {
+    //     node.modifierFlagsCache = getSyntacticModifierFlagsNoCache(node) | ModifierFlags::HasComputedFlags;
+    // }
+
+    // if (includeJSDoc && !(node.modifierFlagsCache & ModifierFlags::HasComputedJSDocModifiers) && (alwaysIncludeJSDoc || isInJSFile(node)) && node.parent) {
+    //     node.modifierFlagsCache |= getJSDocModifierFlagsNoCache(node) | ModifierFlags::HasComputedJSDocModifiers;
+    // }
+
+    // return node.modifierFlagsCache & ~(ModifierFlags::HasComputedFlags | ModifierFlags::HasComputedJSDocModifiers);
+
+    let mut flags = ModifierFlags::None;
+
+    if !flags.intersects(ModifierFlags::HasComputedFlags) {
+        flags = getSyntacticModifierFlagsNoCache(node) | ModifierFlags::HasComputedFlags;
+    }
+
+    if includeJSDoc
+        && !flags.intersects(ModifierFlags::HasComputedJSDocModifiers)
+        && (alwaysIncludeJSDoc || isBoundNodeInJSFile(node))
+        && node.parent().is_some()
+    {
+        todo!();
+        // flags|= getJSDocModifierFlagsNoCache(node) | ModifierFlags::HasComputedJSDocModifiers;
+    }
+
+    flags & !(ModifierFlags::HasComputedFlags | ModifierFlags::HasComputedJSDocModifiers)
+}
+
+/// Gets the effective ModifierFlags for the provided node, including JSDoc modifiers. The modifiers will be cached on the node to improve performance.
+pub fn getEffectiveModifierFlags(node: &BoundNode) -> ModifierFlags {
+    getModifierFlagsWorker(node, true, false)
+}
+
+/**
+ * Gets the ModifierFlags for syntactic modifiers on the provided node. The modifiers will be cached on the node to improve performance.
+ *
+ * NOTE: This function does not use `parent` pointers and will not include modifiers from JSDoc.
+ */
+fn getSyntacticModifierFlags(node: &BoundNode) -> ModifierFlags {
+    getModifierFlagsWorker(node, false, false)
+}
+
+/**
+ * Gets the ModifierFlags for syntactic modifiers on the provided node. The modifier flags cache on the node is ignored.
+ *
+ * NOTE: This function does not use `parent` pointers and will not include modifiers from JSDoc.
+ */
+fn getSyntacticModifierFlagsNoCache(node: &BoundNode) -> ModifierFlags {
+    match node {
+        BoundNode::TsPropertySignature(n) => {
+            let mut flags = ModifierFlags::empty();
+            flags.set(ModifierFlags::Readonly, n.readonly);
+            flags
+        }
+        BoundNode::ClassDecl(n) => {
+            let mut flags = ModifierFlags::empty();
+            flags.set(ModifierFlags::Ambient, n.declare);
+            flags.set(ModifierFlags::Abstract, n.class.is_abstract);
+            flags
+        }
+        BoundNode::Constructor(n) => match n.accessibility {
+            Some(ast::Accessibility::Public) => ModifierFlags::Public,
+            Some(ast::Accessibility::Protected) => ModifierFlags::Protected,
+            Some(ast::Accessibility::Private) => ModifierFlags::Private,
+            _ => ModifierFlags::empty(),
+        },
+        BoundNode::ClassMethod(n) => {
+            let mut flags = ModifierFlags::empty();
+            flags.set(ModifierFlags::Static, n.is_static);
+            flags.set(ModifierFlags::Abstract, n.is_abstract);
+            flags.set(ModifierFlags::Override, n.is_override);
+            if let Some(accessibility) = n.accessibility {
+                match accessibility {
+                    ast::Accessibility::Public => flags.insert(ModifierFlags::Public),
+                    ast::Accessibility::Private => flags.insert(ModifierFlags::Private),
+                    ast::Accessibility::Protected => flags.insert(ModifierFlags::Protected),
+                }
+            }
+            flags
+        }
+        BoundNode::ClassProp(n) => {
+            let mut flags = ModifierFlags::empty();
+            flags.set(ModifierFlags::Static, n.is_static);
+            flags.set(ModifierFlags::Abstract, n.is_abstract);
+            flags.set(ModifierFlags::Override, n.is_override);
+            flags.set(ModifierFlags::Readonly, n.readonly);
+            flags.set(ModifierFlags::Ambient, n.declare);
+            if let Some(accessibility) = n.accessibility {
+                match accessibility {
+                    ast::Accessibility::Public => flags.insert(ModifierFlags::Public),
+                    ast::Accessibility::Private => flags.insert(ModifierFlags::Private),
+                    ast::Accessibility::Protected => flags.insert(ModifierFlags::Protected),
+                }
+            }
+            flags
+        }
+        _ => {
+            dbg!(node);
+            todo!();
+        }
+    }
+    // TODO: jsdoc
+    // TODO: namespaces
+    // let flags = modifiersToFlags(node.modifiers);
+    // if (node.flags & NodeFlags.NestedNamespace || (node.kind == SyntaxKind.Identifier && (node as Identifier).isInJSDocNamespace)) {
+    //     flags |= ModifierFlags.Export;
+    // }
+    // return flags;
+}
+
+// fn modifiersToFlags(modifiers: readonly Modifier[] | undefined) {
+//     let flags = ModifierFlags.None;
+//     if (modifiers) {
+//         for (const modifier of modifiers) {
+//             flags |= modifierToFlag(modifier.kind);
+//         }
+//     }
+//     return flags;
+// }
+
+// fn modifierToFlag(token: SyntaxKind)-> ModifierFlags {
+//     switch (token) {
+//         case SyntaxKind.StaticKeyword: return ModifierFlags.Static;
+//         case SyntaxKind.PublicKeyword: return ModifierFlags.Public;
+//         case SyntaxKind.ProtectedKeyword: return ModifierFlags.Protected;
+//         case SyntaxKind.PrivateKeyword: return ModifierFlags.Private;
+//         case SyntaxKind.AbstractKeyword: return ModifierFlags.Abstract;
+//         case SyntaxKind.ExportKeyword: return ModifierFlags.Export;
+//         case SyntaxKind.DeclareKeyword: return ModifierFlags.Ambient;
+//         case SyntaxKind.ConstKeyword: return ModifierFlags.Const;
+//         case SyntaxKind.DefaultKeyword: return ModifierFlags.Default;
+//         case SyntaxKind.AsyncKeyword: return ModifierFlags.Async;
+//         case SyntaxKind.ReadonlyKeyword: return ModifierFlags.Readonly;
+//         case SyntaxKind.OverrideKeyword: return ModifierFlags.Override;
+//     }
+//     return ModifierFlags.None;
+// }
+
+pub struct ClassImplementingOrExtendingExprWithTypeArgs {
+    pub class: BoundNode,
+    pub isImplements: bool,
+}
+pub fn tryGetClassImplementingOrExtendingExpressionWithTypeArguments(
+    node: &BoundNode,
+) -> Option<ClassImplementingOrExtendingExprWithTypeArgs> {
+    if let Some(BoundNode::Class(class)) = node.parent() {
+        if matches!(node, BoundNode::TsExprWithTypeArgs(_)) {
+            return Some(ClassImplementingOrExtendingExprWithTypeArgs {
+                class: class.parent.clone().unwrap(),
+                isImplements: true,
+            });
+        } else if matches!(node, BoundNode::ExtendsClause(_)) {
+            return Some(ClassImplementingOrExtendingExprWithTypeArgs {
+                class: class.parent.clone().unwrap(),
+                isImplements: false,
+            });
+        }
+    }
+    None
+}
+
 pub fn isEntityNameExpression(node: &Node) -> bool {
     matches!(node, Node::Ident(_)) || isPropertyAccessEntityNameExpression(node)
 }
@@ -1574,15 +1871,24 @@ pub fn isPrototypeAccess(node: &Node) -> bool {
             .unwrap_or_default()
 }
 
-fn isPropertyNameLiteral(expr: &Expr) -> bool {
+pub fn isRightSideOfQualifiedNameOrPropertyAccess(node: &BoundNode) -> bool {
+    matches!(node.parent(), Some(BoundNode::TsQualifiedName(parent)) if Node::Ident(parent.right.clone()) == node.clone().into())
+        || matches!(node.parent(), Some(BoundNode::MemberExpr(parent)) if !parent.computed && Node::from(parent.prop.clone()) == node.clone().into())
+}
+
+fn isPropertyNameLiteral(expr: &Node) -> bool {
     match expr {
-        Expr::Ident(_) | Expr::Lit(ast::Lit::Str(_) | ast::Lit::Num(_)) => true,
-        Expr::Tpl(t) => t.exprs.is_empty(),
+        Node::Ident(_) | Node::Str(_) | Node::Number(_) => true,
+        Node::Tpl(t) => t.exprs.is_empty(),
         _ => false,
     }
 }
 
-fn isDeclaration(node: &BoundNode) -> bool {
+pub fn isKnownSymbol(symbol: &Symbol) -> bool {
+    symbol.escapedName().starts_with("__@")
+}
+
+pub fn isDeclaration(node: &BoundNode) -> bool {
     match node {
         // TODO:
         // BoundNode::ClassStaticBlockDeclaration(_)|
@@ -1711,18 +2017,18 @@ pub fn isExpressionNode(node: &BoundNode) -> bool {
         | BoundNode::YieldExpr(_)
         | BoundNode::AwaitExpr(_)
         | BoundNode::MetaPropExpr(_) => true,
-        BoundNode::TsQualifiedName(_) => {
-            todo!();
-            // let mut n = node.clone();
-            // while let Some(parent @ BoundNode::TsQualifiedName(_)) = n.parent() {
-            //     n = parent;
-            // }
-            // let parent = node.parent().unwrap();
-            // matches!(parent, BoundNode::TsTypeQuery(_))
-            //     || isJSDocLinkLike(parent)
-            //     || isJSDocNameReference(parent)
-            //     || isJSDocMemberName(parent)
-            //     || isJSXTagName(n)
+        BoundNode::TsQualifiedName(n) => {
+            let mut n = n.clone();
+            while let Some(BoundNode::TsQualifiedName(p)) = &n.parent {
+                n = p.clone();
+            }
+            let parent = n.parent.as_ref().unwrap();
+            matches!(parent, BoundNode::TsTypeQuery(_))
+            // TODO: jsdoc:
+                // || isJSDocLinkLike(parent)
+                // || isJSDocNameReference(parent)
+                // || isJSDocMemberName(parent)
+                // || isJSXTagName(n)
         }
         // TODO: JSdoc
         // BoundNode::JSDocMemberName(_) => {
@@ -1817,20 +2123,26 @@ pub fn isInExpressionContext(parent: BoundNode, expr: Expr) -> bool {
         // | BoundNode::JsxExpression(parent)
         // | BoundNode::JsxSpreadAttribute(parent)
         // | BoundNode::SpreadAssignment(parent) => true,
-        // BoundNode::ExpressionWithTypeArguments(parent) => {
-        //     (parent as ExpressionWithTypeArguments).expression == expr
-        //         && isExpressionWithTypeArgumentsInClassExtendsClause(parent)
-        // }
+        BoundNode::ExtendsClause(parent) => parent.super_class == expr,
         // BoundNode::ShorthandPropertyAssignment(parent) => {
         //     (parent as ShorthandPropertyAssignment).objectAssignmentInitializer == expr
         // }
         _ => {
             // dbg!(parent, expr);
-            // todo!()
+            // todo!();
             // TODO:
             isExpressionNode(&parent)
         }
     }
+}
+
+pub fn isDeclarationReadonly(declaration: &BoundNode) -> bool {
+    getCombinedModifierFlags(declaration).intersects(ModifierFlags::Readonly)
+        && !matches!(declaration, BoundNode::TsParamProp(_))
+}
+
+pub fn isVarConst(node: &BoundNode) -> bool {
+    getCombinedNodeFlags(node).intersects(NodeFlags::Const)
 }
 
 pub fn isImportCall(n: &BoundNode) -> bool {
@@ -1879,11 +2191,7 @@ pub fn isPartOfTypeNode(node: &BoundNode) -> bool {
             }
             _ => false,
         },
-        BoundNode::TsExprWithTypeArgs(_) => {
-            // TODO:
-            true
-            // return !isExpressionWithTypeArgumentsInClassExtendsClause(node);
-        }
+        BoundNode::TsExprWithTypeArgs(_) => true,
         BoundNode::TsTypeParamDecl(_) => {
             matches!(
                 node.parent(),
@@ -1952,11 +2260,7 @@ pub fn isPartOfTypeNode(node: &BoundNode) -> bool {
                 | BoundNode::TsTplLitType(_)
                 | BoundNode::TsImportType(_) => true,
 
-                BoundNode::TsExprWithTypeArgs(_) => {
-                    // TODO:
-                    true
-                    // return !isExpressionWithTypeArgumentsInClassExtendsClause(node);
-                }
+                BoundNode::TsExprWithTypeArgs(_) => true,
                 BoundNode::TsTypeParamDecl(n) => {
                     Some(node) == n.constraint.as_ref().map(|t| t.bind(parent.clone()))
                 }
@@ -2150,6 +2454,7 @@ pub fn forEachReturnStatement(body: &BoundNode, visit_fn: impl FnMut(Rc<ReturnSt
 
         generate_noop_visitors!([
             [visit_class, Class],
+            [visit_extends_clause, ExtendsClause],
             [visit_class_prop, ClassProp],
             [visit_private_prop, PrivateProp],
             [visit_class_method, ClassMethod],
@@ -2579,6 +2884,10 @@ pub fn getEffectiveTypeParameterDeclarations<'a>(
 //         //     || node !== node.parent.expression; // case 5
 //     }
 
+pub fn isConstTypeReference(node: &Node) -> bool {
+    matches!(node, Node::TsTypeRef(r) if matches!(&r.type_name, ast::TsEntityName::Ident(i) if i.sym == js_word!("const")) && r.type_params.is_none())
+}
+
 pub fn isValueSignatureDeclaration(node: &BoundNode) -> bool {
     matches!(
         node,
@@ -2635,13 +2944,6 @@ pub fn hasRestParameter(s: &BoundNode) -> bool {
 // }
 fn isRestParameter(node: ast::Pat) -> bool {
     matches!(node, ast::Pat::Rest(_))
-}
-
-pub fn getCheckFlags(symbol: &Symbol) -> CheckFlags {
-    match symbol {
-        Symbol::Base(_) => CheckFlags::default(),
-        Symbol::TransientSymbol(s) => s.check_flags,
-    }
 }
 
 pub fn isInTypeQuery(node: BoundNode) -> bool {
@@ -2801,6 +3103,7 @@ pub fn getEffectiveTypeAnnotationNode(node: &Node) -> Option<ast::TsType> {
         // Node::ParamWithoutDecorators(p) => getEffectiveTypeAnnotationNode(&p.pat.clone().into()),
         // Node::TsAmbientParam(p) => getEffectiveTypeAnnotationNode(&p.pat.clone().into()),
         // Node::TsParamPropParam(p) => getEffectiveTypeAnnotationNode(&p.param.clone().into()),
+        Node::VarDeclarator(n) => getEffectiveTypeAnnotationNode(&n.name.clone().into()),
         _ => {
             dbg!(node);
             todo!()
@@ -2825,6 +3128,8 @@ pub fn getBoundEffectiveTypeAnnotationNode(node: &BoundNode) -> Option<BoundNode
     if !isBoundNodeInJSFile(&node) && matches!(node, BoundNode::FnDecl(_)) {
         return None;
     }
+    // TODO: remove branches that just return None. They are there to avoid warning
+    // and can be replaced with the default branch.
     let ty = match node {
         BoundNode::BindingIdent(n) => n
             .type_ann
@@ -2856,7 +3161,17 @@ pub fn getBoundEffectiveTypeAnnotationNode(node: &BoundNode) -> Option<BoundNode
         BoundNode::TsAmbientParam(p) => {
             getBoundEffectiveTypeAnnotationNode(&p.pat.bind(node.clone()))
         }
-        // BoundNode::TsParamPropParam(p) => getBoundEffectiveTypeAnnotationNode(&p.param.bind(node.clone())),
+        BoundNode::TsParamProp(p) => {
+            getBoundEffectiveTypeAnnotationNode(&p.param.bind(node.clone()))
+        }
+        BoundNode::VarDeclarator(d) => {
+            getBoundEffectiveTypeAnnotationNode(&d.name.bind(node.clone()))
+        }
+        BoundNode::TsPropertySignature(s) => s
+            .type_ann
+            .as_ref()
+            .map(|t| t.type_ann.bind(t.bind(node.clone()))),
+        BoundNode::KeyValueProp(n) => None,
         _ => {
             dbg!(node);
             todo!()
@@ -2865,7 +3180,9 @@ pub fn getBoundEffectiveTypeAnnotationNode(node: &BoundNode) -> Option<BoundNode
     if ty.is_some() || !isBoundNodeInJSFile(&node) {
         return ty;
     }
-    todo!("jsdoc")
+    // TODO: jsdoc:
+    None
+    // todo!("jsdoc")
     // if isJSDocPropertyLikeTag(node) {
     //     node.typeExpression && node.typeExpression.ty
     // } else {
@@ -3016,6 +3333,12 @@ pub fn isInJSFile(_node: Option<&BoundNode>) -> bool {
     // TODO: js files
     false
     // return !!node && !!(node.flags & NodeFlags.JavaScriptFile);
+}
+
+pub fn isInJsonFile(node: Option<&BoundNode>) -> bool {
+    // TODO: json
+    false
+    // return !!node && !!(node.flags & NodeFlags.JsonFile);
 }
 
 pub fn isExternalOrCommonJsModule(file: &BoundNode) -> bool {
@@ -3284,49 +3607,31 @@ pub fn rangeEquals<T: PartialEq>(array1: &[T], array2: &[T], pos: usize, end: us
 }
 
 #[derive(PartialEq, Eq)]
-pub struct ExpressionWithTypeArguments {
+pub struct BoundExprWithTypeArgs {
     pub expr: BoundNode,
     pub type_args: Option<Rc<TsTypeParamInstantiation>>,
 }
 
-pub fn getEffectiveBaseTypeNode(node: BoundNode) -> Option<ExpressionWithTypeArguments> {
+pub fn getEffectiveBaseTypeNode(node: BoundNode) -> Option<BoundExprWithTypeArgs> {
     let baseType = match &node {
-        BoundNode::ClassDecl(n) => {
-            n.class
-                .super_class
-                .as_ref()
-                .map(|s| ExpressionWithTypeArguments {
-                    expr: s.bind(n.class.bind(node.clone())),
-                    type_args: n.class.super_type_params.as_ref().map(|t| {
-                        Rc::new(TsTypeParamInstantiation {
-                            node: t.clone(),
-                            parent: Some(n.class.bind(node.clone())),
-                        })
-                    }),
-                })
-        }
-        BoundNode::ClassExpr(n) => {
-            n.class
-                .super_class
-                .as_ref()
-                .map(|s| ExpressionWithTypeArguments {
-                    expr: s.bind(n.class.bind(node.clone())),
-                    type_args: n.class.super_type_params.as_ref().map(|t| {
-                        Rc::new(TsTypeParamInstantiation {
-                            node: t.clone(),
-                            parent: Some(n.class.bind(node.clone())),
-                        })
-                    }),
-                })
-        }
-        BoundNode::TsInterfaceDecl(n) => n.extends.first().map(|e| ExpressionWithTypeArguments {
-            expr: e.expr.bind(e.bind(node.clone())),
-            type_args: e.type_args.as_ref().map(|t| {
-                Rc::new(TsTypeParamInstantiation {
-                    node: t.clone(),
-                    parent: Some(e.bind(node.clone())),
-                })
+        BoundNode::ClassDecl(n) => n.class.extends.as_ref().map(|s| BoundExprWithTypeArgs {
+            expr: s.super_class.bind(s.bind(n.class.bind(node.clone()))),
+            type_args: s.super_type_params.as_ref().map(|t| {
+                TsTypeParamInstantiation::new(t.clone(), Some(s.bind(n.class.bind(node.clone()))))
             }),
+        }),
+        BoundNode::ClassExpr(n) => n.class.extends.as_ref().map(|s| BoundExprWithTypeArgs {
+            expr: s.super_class.bind(s.bind(n.class.bind(node.clone()))),
+            type_args: s.super_type_params.as_ref().map(|t| {
+                TsTypeParamInstantiation::new(t.clone(), Some(s.bind(n.class.bind(node.clone()))))
+            }),
+        }),
+        BoundNode::TsInterfaceDecl(n) => n.extends.first().map(|e| BoundExprWithTypeArgs {
+            expr: e.expr.bind(e.bind(node.clone())),
+            type_args: e
+                .type_args
+                .as_ref()
+                .map(|t| TsTypeParamInstantiation::new(t.clone(), Some(e.bind(node.clone())))),
         }),
         _ => None,
     };
@@ -3343,11 +3648,16 @@ pub fn getEffectiveBaseTypeNode(node: BoundNode) -> Option<ExpressionWithTypeArg
 
 /** True if has initializer node attached to it. */
 pub fn hasInitializer(node: &Node) -> bool {
+    getInitializer(node).is_some()
+}
+
+/** True if has initializer node attached to it. */
+pub fn getInitializer(node: &Node) -> Option<Node> {
     match node {
-        // Node::VarDeclarator(_) => todo!(),
+        Node::VarDeclarator(n) => n.init.as_ref().map(|i| i.clone().into()),
         // Node::ParameterDeclaration(_) => todo!(),
         // Node::BindingElement(_) => todo!(),
-        // Node::PropertyDeclaration(_) => todo!(),
+        Node::ClassProp(n) => n.value.as_ref().map(|i| i.clone().into()),
         // Node::PropertyAssignment(_) => todo!(),
         // Node::PropertySignature(_) => todo!(),
         // Node::JsxAttribute(_) => todo!(),
@@ -3356,7 +3666,61 @@ pub fn hasInitializer(node: &Node) -> bool {
         // Node::JSDocPropertyTag(_) => todo!(),
         // Node::JSDocParameterTag(_) => todo!(),
         // _ => unreachable!()
-        _ => todo!(),
+        _ => {
+            dbg!(node);
+            todo!();
+        }
+    }
+}
+
+// /** True if has initializer node attached to it. */
+// pub fn hasOnlyExpressionInitializer(node: &BoundNode)->bool {
+//     switch (node.kind) {
+//         case SyntaxKind.VariableDeclaration:
+//         case SyntaxKind.Parameter:
+//         case SyntaxKind.BindingElement:
+//         case SyntaxKind.PropertySignature:
+//         case SyntaxKind.PropertyDeclaration:
+//         case SyntaxKind.PropertyAssignment:
+//         case SyntaxKind.EnumMember:
+//             return true;
+//         default:
+//             return false;
+//     }
+// }
+
+/** True if has initializer node attached to it. */
+pub fn getOnlyExpressionInitializer(node: &BoundNode) -> Option<BoundNode> {
+    macro_rules! bind {
+        ($e:expr) => {
+            $e.bind(node.clone())
+        };
+    }
+    macro_rules! bind_opt {
+        ($e:expr) => {
+            $e.as_ref().map(|n| bind!(n))
+        };
+    }
+    match node {
+        BoundNode::VarDeclarator(n) => bind_opt!(n.init),
+        BoundNode::Param(n) => getOnlyExpressionInitializer(&bind!(n.pat)),
+        BoundNode::ParamWithoutDecorators(n) => getOnlyExpressionInitializer(&bind!(n.pat)),
+        BoundNode::TsAmbientParam(n) => getOnlyExpressionInitializer(&bind!(n.pat)),
+        BoundNode::TsParamProp(n) => getOnlyExpressionInitializer(&bind!(n.param)),
+        BoundNode::AssignPatProp(n) => bind_opt!(n.value),
+        BoundNode::AssignPat(n) => Some(bind!(n.right)),
+        BoundNode::ClassProp(n) => bind_opt!(n.value),
+        BoundNode::PrivateProp(n) => bind_opt!(n.value),
+        BoundNode::KeyValueProp(n) => Some(bind!(n.value)),
+        BoundNode::TsEnumMember(n) => bind_opt!(n.init),
+        _ => None,
+    }
+}
+
+pub fn getCheckFlags(symbol: &Symbol) -> CheckFlags {
+    match symbol {
+        Symbol::Base(_) => CheckFlags::default(),
+        Symbol::TransientSymbol(s) => s.check_flags,
     }
 }
 
@@ -3451,6 +3815,14 @@ fn reverseAccessKind(a: AccessKind) -> AccessKind {
     }
 }
 
+pub fn getClassLikeDeclarationOfSymbol(symbol: &Symbol) -> Option<BoundNode> {
+    symbol
+        .declarations()
+        .iter()
+        .find(|&d| isClassLike(d))
+        .cloned()
+}
+
 pub fn getEmitScriptTarget(_compilerOptions: &crate::CompilerOptions) -> ScriptTarget {
     // TODO:
     ScriptTarget::ESNext
@@ -3518,4 +3890,71 @@ pub fn binarySearchKey<T: Copy, U: Copy>(
     }
 
     !low
+}
+
+pub fn isTypeDeclarationName(name: &BoundNode) -> bool {
+    if let BoundNode::Ident(ident) = name {
+        let parent = name.parent().unwrap();
+        if isTypeDeclaration(&parent) {
+            return getNameOfDeclaration(&parent) == Some(DeclName::Ident(ident.clone()));
+        }
+    }
+    false
+}
+
+pub fn isTypeDeclaration(node: &BoundNode) -> bool {
+    match node {
+        // TODO: jsdoc:
+        // BoundNode::JSDocTypedefTag(_)|
+        // BoundNode::JSDocCallbackTag(_)|
+        // BoundNode::JSDocEnumTag(_)
+        BoundNode::TsTypeParamDecl(_)
+        | BoundNode::ClassDecl(_)
+        | BoundNode::TsInterfaceDecl(_)
+        | BoundNode::TsTypeAliasDecl(_)
+        | BoundNode::TsEnumDecl(_) => true,
+        // TODO: modules:
+        // BoundNode::ImportClause(i)=> i.isTypeOnly,
+        // BoundNode::ImportSpecifier(_)|
+        // BoundNode::ExportSpecifier(_)=> (node as ImportSpecifier | ExportSpecifier).parent.parent.isTypeOnly,
+        _ => false,
+    }
+}
+
+/** Given a symbol for a module, checks that it is a shorthand ambient module. */
+pub fn isShorthandAmbientModuleSymbol(moduleSymbol: &Symbol) -> bool {
+    isShorthandAmbientModule(moduleSymbol.valueDeclaration())
+}
+
+fn isShorthandAmbientModule(node: &Option<BoundNode>) -> bool {
+    // The only kind of module that can be missing a body is a shorthand ambient module.
+    matches!(node, Some(BoundNode::TsModuleDecl(d)) if d.body.is_none())
+}
+
+pub trait OptionalLength {
+    fn length(&self) -> usize;
+}
+
+impl<T> OptionalLength for Vec<T> {
+    fn length(&self) -> usize {
+        self.len()
+    }
+}
+
+impl<T> OptionalLength for Rc<T>
+where
+    T: OptionalLength,
+{
+    fn length(&self) -> usize {
+        self.as_ref().length()
+    }
+}
+
+impl<T> OptionalLength for Option<T>
+where
+    T: OptionalLength,
+{
+    fn length(&self) -> usize {
+        self.as_ref().map(|v| v.length()).unwrap_or_default()
+    }
 }

@@ -3,7 +3,7 @@ use crate::{
     error::{Error, SyntaxError},
     Tokens,
 };
-use global_common::{BytePos, Pos, Span, SyntaxContext};
+use global_common::{chars::char_literals, BytePos, Pos, Span, SyntaxContext};
 
 /// See https://tc39.github.io/ecma262/#sec-line-terminators
 pub fn is_line_break(ch: char) -> bool {
@@ -52,34 +52,6 @@ fn is_unicode_whitespace_start(byte: u8) -> bool {
         | 0xE2 // En quad .. Hair space, narrow no break space, mathematical space
         | 0xE3 // Ideographic space
     )
-}
-pub mod char_literals {
-    pub const BACKSPACE: char = '\u{0008}';
-    pub const LINE_FEED: char = '\u{000a}';
-    pub const LINE_SEPARATOR: char = '\u{2028}';
-    pub const CARRIAGE_RETURN: char = '\u{000d}';
-    pub const FORM_FEED: char = '\u{000c}';
-    pub const PARAGRAPH_SEPARATOR: char = '\u{2029}';
-    pub const NON_BREAKING_SPACE: char = '\u{00a0}';
-    pub const LINE_TABULATION: char = '\u{000b}';
-    pub const OGHAM_SPACE_MARK: char = '\u{1680}';
-    pub const EN_QUAD: char = '\u{2000}';
-    pub const EM_QUAD: char = '\u{2001}';
-    pub const EN_SPACE: char = '\u{2002}';
-    pub const EM_SPACE: char = '\u{2003}';
-    pub const THREE_PER_EM_SPACE: char = '\u{2004}';
-    pub const FOUR_PER_EM_SPACE: char = '\u{2005}';
-    pub const SIX_PER_EM_SPACE: char = '\u{2006}';
-    pub const FIGURE_SPACE: char = '\u{2007}';
-    pub const PUNCTUATION_SPACE: char = '\u{2008}';
-    pub const THIN_SPACE: char = '\u{2009}';
-    pub const HAIR_SPACE: char = '\u{200a}';
-    pub const ZERO_WIDTH_NON_JOINER: char = '\u{200c}';
-    pub const ZERO_WIDTH_JOINER: char = '\u{200d}';
-    pub const NARROW_NO_BREAK_SPACE: char = '\u{202f}';
-    pub const MEDIUM_MATHEMATICAL_SPACE: char = '\u{205f}';
-    pub const IDEOGRAPHIC_SPACE: char = '\u{3000}';
-    pub const ZERO_WIDTH_NO_BREAK_SPACE: char = '\u{feff}';
 }
 
 pub mod char_bytes {
@@ -172,12 +144,12 @@ impl Lexer<'_> {
 
     #[inline]
     pub(super) fn is_at_start(&self) -> bool {
-        self.cur == 0
+        self.cur_pos() == self.start_pos
     }
 
     #[inline]
     pub(super) fn cur_pos(&self) -> BytePos {
-        BytePos::from_usize(self.cur)
+        self.start_pos + BytePos::from_usize(self.cur)
     }
 
     #[inline]

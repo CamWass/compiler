@@ -201,8 +201,8 @@ macro_rules! noop_fold_type {
         noop_fold_type!(fold_ts_enum_member_id, TsEnumMemberId);
         noop_fold_type!(fold_ts_external_module_ref, TsExternalModuleRef);
         noop_fold_type!(fold_ts_fn_or_constructor_type, TsFnOrConstructorType);
-        noop_fold_type!(fold_ts_fn_param, TsAmbientParam);
-        noop_fold_type!(fold_ts_fn_param, TsAmbientParamPat);
+        noop_fold_type!(fold_ts_ambient_param, TsAmbientParam);
+        noop_fold_type!(fold_ts_ambient_param_pat, TsAmbientParamPat);
         noop_fold_type!(fold_ts_fn_type, TsFnType);
         noop_fold_type!(fold_ts_import_equals_decl, TsImportEqualsDecl);
         noop_fold_type!(fold_ts_import_type, TsImportType);
@@ -354,8 +354,8 @@ macro_rules! noop_visit_mut_type {
         noop_visit_mut_type!(visit_mut_ts_enum_member_id, TsEnumMemberId);
         noop_visit_mut_type!(visit_mut_ts_external_module_ref, TsExternalModuleRef);
         noop_visit_mut_type!(visit_mut_ts_fn_or_constructor_type, TsFnOrConstructorType);
-        noop_visit_mut_type!(visit_mut_ts_fn_param, TsAmbientParam);
-        noop_visit_mut_type!(visit_mut_ts_fn_param, TsAmbientParamPat);
+        noop_visit_mut_type!(visit_mut_ts_ambient_param, TsAmbientParam);
+        noop_visit_mut_type!(visit_mut_ts_ambient_param_pat, TsAmbientParamPat);
         noop_visit_mut_type!(visit_mut_ts_fn_type, TsFnType);
         noop_visit_mut_type!(visit_mut_ts_import_equals_decl, TsImportEqualsDecl);
         noop_visit_mut_type!(visit_mut_ts_import_type, TsImportType);
@@ -416,11 +416,16 @@ define!({
         pub span: Span,
         pub decorators: Vec<Decorator>,
         pub body: Vec<ClassMember>,
-        pub super_class: Option<Box<Expr>>,
         pub is_abstract: bool,
         pub type_params: Option<Vec<TsTypeParamDecl>>,
-        pub super_type_params: Option<TsTypeParamInstantiation>,
+        pub extends: Option<ExtendsClause>,
         pub implements: Vec<TsExprWithTypeArgs>,
+    }
+
+    pub struct ExtendsClause {
+        pub span: Span,
+        pub super_class: Box<Expr>,
+        pub super_type_params: Option<TsTypeParamInstantiation>,
     }
 
     pub enum ClassMember {
@@ -435,12 +440,11 @@ define!({
 
     pub struct ClassProp {
         pub span: Span,
-        pub key: Box<Expr>,
+        pub key: PropName,
         pub value: Option<Box<Expr>>,
         pub type_ann: Option<TsTypeAnn>,
         pub is_static: bool,
         pub decorators: Vec<Decorator>,
-        pub computed: bool,
         pub accessibility: Option<Accessibility>,
         pub is_abstract: bool,
         pub is_optional: bool,
@@ -456,7 +460,6 @@ define!({
         pub type_ann: Option<TsTypeAnn>,
         pub is_static: bool,
         pub decorators: Vec<Decorator>,
-        pub computed: bool,
         pub accessibility: Option<Accessibility>,
         pub is_abstract: bool,
         pub is_optional: bool,
@@ -488,7 +491,6 @@ define!({
     }
     pub struct Constructor {
         pub span: Span,
-        pub key: PropName,
         pub params: Vec<ParamOrTsParamProp>,
         pub body: Option<BlockStmt>,
         pub accessibility: Option<Accessibility>,
@@ -742,6 +744,7 @@ define!({
     }
 
     pub struct Ident {
+        pub node_id: NodeId,
         pub span: Span,
         pub sym: JsWord,
         pub optional: bool,
@@ -1129,7 +1132,6 @@ define!({
         Ident(Ident),
         Str(Str),
         Num(Number),
-        BigInt(BigInt),
         Computed(ComputedPropName),
     }
     pub struct ComputedPropName {
@@ -1320,8 +1322,7 @@ define!({
     pub struct TsPropertySignature {
         pub span: Span,
         pub readonly: bool,
-        pub key: Box<Expr>,
-        pub computed: bool,
+        pub key: PropName,
         pub optional: bool,
         pub type_ann: Option<TsTypeAnn>,
     }
@@ -1329,8 +1330,7 @@ define!({
     pub struct TsGetterSignature {
         pub span: Span,
         pub readonly: bool,
-        pub key: Box<Expr>,
-        pub computed: bool,
+        pub key: PropName,
         pub optional: bool,
         pub type_ann: Option<TsTypeAnn>,
     }
@@ -1338,16 +1338,14 @@ define!({
     pub struct TsSetterSignature {
         pub span: Span,
         pub readonly: bool,
-        pub key: Box<Expr>,
-        pub computed: bool,
+        pub key: PropName,
         pub optional: bool,
         pub param: TsAmbientParam,
     }
     pub struct TsMethodSignature {
         pub span: Span,
         pub readonly: bool,
-        pub key: Box<Expr>,
-        pub computed: bool,
+        pub key: PropName,
         pub optional: bool,
         pub params: Vec<TsAmbientParam>,
         pub type_ann: Option<TsTypeAnn>,

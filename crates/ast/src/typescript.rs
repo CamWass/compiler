@@ -1,6 +1,5 @@
 #![allow(clippy::vec_box)]
 #![allow(missing_copy_implementations)]
-use crate::BindingIdent;
 use crate::{
     class::Decorator,
     expr::Expr,
@@ -10,6 +9,7 @@ use crate::{
     pat::{ArrayPat, AssignPat, ObjectPat, Pat, RestPat},
     BigInt, TplElement,
 };
+use crate::{BindingIdent, PropName};
 use global_common::{ast_node, EqIgnoreSpan, Span};
 use is_macro::Is;
 use serde::{
@@ -158,8 +158,7 @@ pub struct TsConstructSignatureDecl {
 pub struct TsPropertySignature {
     pub span: Span,
     pub readonly: bool,
-    pub key: Box<Expr>,
-    pub computed: bool,
+    pub key: PropName,
     pub optional: bool,
     #[serde(default, rename = "typeAnnotation")]
     pub type_ann: Option<TsTypeAnn>,
@@ -170,8 +169,7 @@ pub struct TsPropertySignature {
 pub struct TsGetterSignature {
     pub span: Span,
     pub readonly: bool,
-    pub key: Box<Expr>,
-    pub computed: bool,
+    pub key: PropName,
     pub optional: bool,
     #[serde(default, rename = "typeAnnotation")]
     pub type_ann: Option<TsTypeAnn>,
@@ -182,8 +180,7 @@ pub struct TsGetterSignature {
 pub struct TsSetterSignature {
     pub span: Span,
     pub readonly: bool,
-    pub key: Box<Expr>,
-    pub computed: bool,
+    pub key: PropName,
     pub optional: bool,
     pub param: TsAmbientParam,
 }
@@ -193,8 +190,7 @@ pub struct TsSetterSignature {
 pub struct TsMethodSignature {
     pub span: Span,
     pub readonly: bool,
-    pub key: Box<Expr>,
-    pub computed: bool,
+    pub key: PropName,
     pub optional: bool,
     pub params: Vec<TsAmbientParam>,
     #[serde(default)]

@@ -5,6 +5,16 @@ use either::Either;
 use swc_atoms::js_word;
 
 impl<I: Tokens> Parser<I> {
+    pub(super) fn new_ident(&mut self, sym: JsWord, span: Span) -> Ident {
+        self.ident_id = NodeId(self.ident_id.0 + 1);
+        Ident {
+            node_id: self.ident_id,
+            span,
+            sym,
+            optional: false,
+        }
+    }
+
     pub(super) fn parse_maybe_private_name(&mut self) -> PResult<Either<PrivateName, Ident>> {
         let is_private = is!(self, '#');
 
@@ -62,7 +72,7 @@ impl<I: Tokens> Parser<I> {
             _ => syntax_error!(self, SyntaxError::ExpectedIdent),
         };
 
-        Ok(Ident::new(w.into(), span!(self, start)))
+        Ok(self.new_ident(w.into(), span!(self, start)))
     }
 
     /// Identifier
@@ -134,7 +144,7 @@ impl<I: Tokens> Parser<I> {
             }
         })?;
 
-        Ok(Ident::new(word, span!(self, start)))
+        Ok(self.new_ident(word, span!(self, start)))
     }
 }
 

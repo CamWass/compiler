@@ -91,7 +91,7 @@ fn add_test<F: FnOnce() + Send + 'static>(
             should_panic: No,
             allow_fail: false,
             compile_fail: Default::default(),
-            no_run: Default::default()
+            no_run: Default::default(),
         },
         testfn: DynTestFn(Box::new(f)),
     });
@@ -369,7 +369,7 @@ where
             .load_file(file_name)
             .unwrap_or_else(|e| panic!("failed to load {}: {}", file_name.display(), e));
 
-        let mut p = Parser::new(Default::default(), &fm.src);
+        let mut p = Parser::new(Default::default(), &fm);
 
         let res = f(&mut p).map_err(|e| e.into_diagnostic(handler).emit());
 

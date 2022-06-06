@@ -1,0 +1,1 @@
+dot -Tsvg colors.dot -o colors.svg & start colors.svg

@@ -1,4 +1,6 @@
+mod convert;
 mod flow;
+mod index_set;
 mod node_builder;
 
 use crate::ast;
@@ -10,12 +12,15 @@ use crate::utils::*;
 use crate::CompilerOptions;
 use crate::TypeCheckerHost;
 use crate::{Visit, VisitWith};
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use bitflags::bitflags;
+use convert::{ecma_number_to_string, ecma_string_to_number, is_numeric_literal_name};
 use index::vec::IndexVec;
+use index_set::IndexSet;
 use std::cmp;
 use std::collections::hash_map::Entry;
 use std::convert::TryFrom;
+use std::convert::TryInto;
 use std::hash::Hash;
 use std::hash::Hasher;
 use std::iter::FromIterator;
@@ -68,7 +73,7 @@ pub struct Checker {
     noImplicitThis: bool,
     useUnknownInCatchVariables: bool,
     keyofStringsOnly: bool,
-    // freshObjectLiteralFlag: bool,
+    freshObjectLiteralFlag: ObjectFlags,
     exactOptionalPropertyTypes: bool,
 
     // const checkBinaryExpression = createCheckBinaryExpression();
@@ -94,7 +99,7 @@ pub struct Checker {
     // }
     tupleTypes: AHashMap<TupleTypeKey, TypeId>,
     unionTypes: AHashMap<UnionTypeKey, TypeId>,
-    // const intersectionTypes = new Map<string, Type>();
+    intersectionTypes: AHashMap<IntersectionTypeKey, TypeId>,
     stringLiteralTypes: AHashMap<JsWord, TypeId>,
     // const numberLiteralTypes = new Map<number, NumberLiteralType>();
     // const bigIntLiteralTypes = new Map<string, BigIntLiteralType>();
@@ -102,15 +107,15 @@ pub struct Checker {
     // const indexedAccessTypes = new Map<string, IndexedAccessType>();
     // const templateLiteralTypes = new Map<string, TemplateLiteralType>();
     // const stringMappingTypes = new Map<string, StringMappingType>();
-    // const substitutionTypes = new Map<string, SubstitutionType>();
-    // const subtypeReductionCache = new Map<string, Type[]>();
+    substitutionTypes: AHashMap<SubstitutionTypeKey, TypeId>,
+    subtypeReductionCache: AHashMap<TypeList, Vec<TypeId>>,
     // const evolvingArrayTypes: EvolvingArrayType[] = [];
-    // const undefinedProperties: SymbolTable = new Map();
+    undefinedProperties: SymbolTable,
     unknownSymbol: SymbolId,
     resolvingSymbol: SymbolId,
     // const unresolvedSymbols = new Map<string, TransientSymbol>();
     // const errorTypes = new Map<string, Type>();
-    anyType: TypeId,
+    pub anyType: TypeId,
     autoType: TypeId,
     wildcardType: TypeId,
     errorType: TypeId,
@@ -123,27 +128,27 @@ pub struct Checker {
     undefinedWideningType: TypeId,
     optionalType: TypeId,
     missingType: TypeId,
-    nullType: TypeId,
+    pub nullType: TypeId,
     nullWideningType: TypeId,
-    stringType: TypeId,
-    numberType: TypeId,
-    bigintType: TypeId,
-    falseType: TypeId,
-    regularFalseType: TypeId,
-    trueType: TypeId,
-    regularTrueType: TypeId,
+    pub stringType: TypeId,
+    pub numberType: TypeId,
+    pub bigintType: TypeId,
+    pub falseType: TypeId,
+    pub regularFalseType: TypeId,
+    pub trueType: TypeId,
+    pub regularTrueType: TypeId,
     booleanType: Option<TypeId>,
-    esSymbolType: TypeId,
-    voidType: TypeId,
+    pub esSymbolType: TypeId,
+    pub voidType: TypeId,
     neverType: TypeId,
     silentNeverType: TypeId,
     nonInferrableType: TypeId,
     implicitNeverType: TypeId,
     unreachableNeverType: TypeId,
-    nonPrimitiveType: TypeId,
+    pub nonPrimitiveType: TypeId,
     // const stringOrNumberType = getUnionType([stringType, numberType]);
-    // stringNumberSymbolType: TypeId,
-    // keyofConstraintType: TypeId,
+    stringNumberSymbolType: Option<TypeId>,
+    keyofConstraintType: Option<TypeId>,
     // const numberOrBigIntType = getUnionType([numberType, bigintType]);
     // const templateConstraintType = getUnionType([stringType, numberType, booleanType, bigintType, nullType, undefinedType]) as UnionType;
 
@@ -248,7 +253,7 @@ pub struct Checker {
     anyArrayType: Option<TypeId>,
     autoArrayType: Option<TypeId>,
     anyReadonlyArrayType: Option<TypeId>,
-    // let deferredGlobalNonNullableTypeAlias: Symbol;
+    deferredGlobalNonNullableTypeAlias: Option<SymbolId>,
 
     // // The library files are only loaded when the feature is used.
     // // This allows users to just specify library files they want to used through --lib
@@ -286,9 +291,9 @@ pub struct Checker {
     sharedFlowCount: usize,
     flowAnalysisDisabled: bool,
     flowInvocationCount: usize,
-    lastFlowNode: Option<FlowNode>,
+    lastFlowNode: Option<FlowNodeId>,
     lastFlowNodeReachable: bool,
-    flowTypeCache: Option<Vec<TypeId>>,
+    flowTypeCache: AHashMap<BoundNode, TypeId>,
 
     // const emptyStringType = getStringLiteralType("");
     // const zeroType = getNumberLiteralType(0);
@@ -346,15 +351,19 @@ pub struct Checker {
     flow_nodes: IndexVec<FlowNodeId, FlowNode>,
     pub symbols: IndexVec<SymbolId, Symbol>,
 
-    types: IndexVec<TypeId, Type>,
+    pub types: IndexVec<TypeId, Type>,
     host: TypeCheckerHost,
     signatures: IndexVec<SignatureId, Signature>,
-    symbol_tables: IndexVec<SymbolTableId, SymbolTable>,
+    pub symbol_tables: IndexVec<SymbolTableId, SymbolTable>,
     // TODO: maybe rename to index_info?
     index_infos: IndexVec<IndexInfoId, IndexInfo>,
     produceDiagnostics: bool,
     type_relations: IndexVec<TypeRelationTableId, TypeRelationTable>,
     pub inference_contexts: IndexVec<InferenceContextId, InferenceContext>,
+    // ConditionalRoots need to be hashed, but contain a hashmap, so they can't impl Hash.
+    // To get around this, we use an IndexVec, and hash the IDs.
+    conditional_roots: IndexVec<ConditionalRootId, ConditionalRoot>,
+    widening_contexts: IndexVec<WideningContextId, WideningContext>,
     ///////////////////////////////////////////////
 }
 
@@ -420,7 +429,11 @@ impl Checker {
         let useUnknownInCatchVariables =
             compilerOptions.getStrictOptionValue("useUnknownInCatchVariables");
         let keyofStringsOnly = !!compilerOptions.keyofStringsOnly;
-        // let freshObjectLiteralFlag = compilerOptions.suppressExcessPropertyErrors ? 0 : ObjectFlags.FreshLiteral;
+        let freshObjectLiteralFlag = if compilerOptions.suppressExcessPropertyErrors {
+            ObjectFlags::empty()
+        } else {
+            ObjectFlags::FreshLiteral
+        };
         let exactOptionalPropertyTypes = compilerOptions.exactOptionalPropertyTypes();
 
         // const checkBinaryExpression = createCheckBinaryExpression();
@@ -466,7 +479,7 @@ impl Checker {
         // TODO: use with_capacity:
         let tupleTypes = Default::default();
         let unionTypes = Default::default();
-        // const intersectionTypes = new Map<string, Type>();
+        let intersectionTypes = Default::default();
         let stringLiteralTypes = Default::default();
         // const numberLiteralTypes = new Map<number, NumberLiteralType>();
         // const bigIntLiteralTypes = new Map<string, BigIntLiteralType>();
@@ -474,10 +487,10 @@ impl Checker {
         // const indexedAccessTypes = new Map<string, IndexedAccessType>();
         // const templateLiteralTypes = new Map<string, TemplateLiteralType>();
         // const stringMappingTypes = new Map<string, StringMappingType>();
-        // const substitutionTypes = new Map<string, SubstitutionType>();
-        // const subtypeReductionCache = new Map<string, Type[]>();
+        let substitutionTypes = Default::default();
+        let subtypeReductionCache = Default::default();
         // const evolvingArrayTypes: EvolvingArrayType[] = [];
-        // const undefinedProperties: SymbolTable = new Map();
+        let undefinedProperties = SymbolTable::new();
 
         let unknownSymbol = create_symbol!(SymbolFlags::Property, "unknown".into());
         let resolvingSymbol =
@@ -571,20 +584,6 @@ impl Checker {
             create_freshable_bool_types!(TypeFlags::BooleanLiteral, "false");
         let (regularTrueType, trueType) =
             create_freshable_bool_types!(TypeFlags::BooleanLiteral, "true");
-        // let booleanType = getUnionType([regularFalseType, regularTrueType]);
-        // let booleanType = {
-
-        //     let typeSet = vec![regularFalseType, regularTrueType];
-
-        //     let id = format_args!("{:?},{:?}", regularFalseType, regularTrueType);
-        //     let ty = createType(TypeFlags::Union) as UnionType;
-        //     ty.objectFlags = ObjectFlags::PrimitiveUnion;
-        //     ty.types = typeSet;
-        //     ty.flags |= TypeFlags::Boolean;
-        //     (ty as UnionType & IntrinsicType).intrinsicName = "boolean";
-        //     unionTypes.set(id, ty);
-        //     ty
-        // }
         let esSymbolType = create_intrinsic_type!(TypeFlags::ESSymbol, "symbol");
         let voidType = create_intrinsic_type!(TypeFlags::Void, "void");
         let neverType = create_intrinsic_type!(TypeFlags::Never, "never");
@@ -595,12 +594,6 @@ impl Checker {
         let unreachableNeverType = create_intrinsic_type!(TypeFlags::Never, "never");
         let nonPrimitiveType = create_intrinsic_type!(TypeFlags::NonPrimitive, "object");
         // const stringOrNumberType = getUnionType([stringType, numberType]);
-        // let stringNumberSymbolType = getUnionType([stringType, numberType, esSymbolType]);
-        // let keyofConstraintType = if keyofStringsOnly {
-        //     stringType
-        // } else {
-        //     stringNumberSymbolType
-        // };
         // const numberOrBigIntType = getUnionType([numberType, bigintType]);
         // const templateConstraintType = getUnionType([stringType, numberType, booleanType, bigintType, nullType, undefinedType]) as UnionType;
 
@@ -742,8 +735,6 @@ impl Checker {
         // let patternAmbientModules: PatternAmbientModule[];
         // let patternAmbientModuleAugmentations: ESMap<string, Symbol> | undefined;
 
-        // let deferredGlobalNonNullableTypeAlias: Symbol;
-
         // // The library files are only loaded when the feature is used.
         // // This allows users to just specify library files they want to used through --lib
         // // and they will not get an error from not having unrelated library files
@@ -850,7 +841,7 @@ impl Checker {
             noImplicitThis,
             useUnknownInCatchVariables,
             keyofStringsOnly,
-            // freshObjectLiteralFlag,
+            freshObjectLiteralFlag,
             exactOptionalPropertyTypes,
 
             // const checkBinaryExpression = createCheckBinaryExpression();
@@ -868,7 +859,7 @@ impl Checker {
 
             tupleTypes,
             unionTypes,
-            // const intersectionTypes = new Map<string, Type>();
+            intersectionTypes,
             stringLiteralTypes,
             // const numberLiteralTypes = new Map<number, NumberLiteralType>();
             // const bigIntLiteralTypes = new Map<string, BigIntLiteralType>();
@@ -876,10 +867,10 @@ impl Checker {
             // const indexedAccessTypes = new Map<string, IndexedAccessType>();
             // const templateLiteralTypes = new Map<string, TemplateLiteralType>();
             // const stringMappingTypes = new Map<string, StringMappingType>();
-            // const substitutionTypes = new Map<string, SubstitutionType>();
-            // const subtypeReductionCache = new Map<string, Type[]>();
+            substitutionTypes,
+            subtypeReductionCache,
             // const evolvingArrayTypes: EvolvingArrayType[] = [];
-            // const undefinedProperties: SymbolTable = new Map();
+            undefinedProperties,
             unknownSymbol,
             resolvingSymbol,
             // const unresolvedSymbols = new Map<string, TransientSymbol>();
@@ -916,8 +907,8 @@ impl Checker {
             unreachableNeverType,
             nonPrimitiveType,
             // const stringOrNumberType = getUnionType([stringType, numberType]);
-            // stringNumberSymbolType,
-            // keyofConstraintType,
+            stringNumberSymbolType: None,
+            keyofConstraintType: None,
             // const numberOrBigIntType = getUnionType([numberType, bigintType]);
             // const templateConstraintType = getUnionType([stringType, numberType, booleanType, bigintType, nullType, undefinedType]) as UnionType;
 
@@ -1004,7 +995,7 @@ impl Checker {
             anyArrayType: None,
             autoArrayType: None,
             anyReadonlyArrayType: None,
-            // let deferredGlobalNonNullableTypeAlias: Symbol;
+            deferredGlobalNonNullableTypeAlias: None,
 
             // let deferredGlobalESSymbolConstructorSymbol: Symbol | undefined;
             // let deferredGlobalESSymbolConstructorTypeSymbol: Symbol | undefined;
@@ -1041,7 +1032,7 @@ impl Checker {
             flowInvocationCount: 0,
             lastFlowNode: None,
             lastFlowNodeReachable: false,
-            flowTypeCache: None,
+            flowTypeCache: Default::default(),
 
             // const emptyStringType = getStringLiteralType("");
             // const zeroType = getNumberLiteralType(0);
@@ -1105,6 +1096,8 @@ impl Checker {
             index_infos,
             produceDiagnostics,
             inference_contexts: IndexVec::default(),
+            conditional_roots: IndexVec::default(),
+            widening_contexts: IndexVec::default(),
         };
 
         checker.initializeTypeChecker();
@@ -1157,6 +1150,16 @@ impl Checker {
     // getIndexInfosOfType,
     // getSignaturesOfType,
     // getIndexTypeOfType: (type, kind) => getIndexTypeOfType(type, kind === IndexKind.String ? stringType : numberType),
+    pub fn pubGetBaseTypes(&mut self, ty: TypeId) -> Option<Rc<Vec<TypeId>>> {
+        if self.types[ty]
+            .get_object_flags()
+            .intersects(ObjectFlags::ClassOrInterface)
+        {
+            Some(self.getBaseTypes(ty))
+        } else {
+            None
+        }
+    }
     // getBaseTypes,
     // getBaseTypeOfLiteralType,
     // getWidenedType,
@@ -1537,6 +1540,13 @@ impl Checker {
         self.booleanType.unwrap()
     }
 
+    fn stringNumberSymbolType(&self) -> TypeId {
+        self.stringNumberSymbolType.unwrap()
+    }
+    fn keyofConstraintType(&self) -> TypeId {
+        self.keyofConstraintType.unwrap()
+    }
+
     // TODO:
     // getResolvedSignatureWorker
     // TODO:
@@ -1886,7 +1896,7 @@ impl Checker {
         location: BoundNode,
         lastLocation: BoundNode,
     ) -> bool {
-        debug_assert!(isFunctionLikeDeclaration(&location));
+        debug_assert!(isFunctionLike(Some(&location)));
         let target = getEmitScriptTarget(&self.compilerOptions);
         // let functionLocation = match location {
         //     BoundNode::FnDecl(n) => n.function.body.as_ref().map(|b|(b, n.function.params)),
@@ -2295,7 +2305,12 @@ impl Checker {
                             meaning & SymbolFlags::ModuleMember,
                         );
                         if name != JsWord::from(InternalSymbolName::Default) && result.is_some() {
-                            todo!();
+                            if matches!(loc, BoundNode::Script(_) | BoundNode::Module(_)) {
+                                todo!("see below");
+                            } else {
+                                break;
+                            }
+                            // TODO: modules:
                             // if isSourceFile(loc)
                             //     && loc.commonJsModuleIndicator
                             //     && !result.declarations?.some(isJSDocTypeAlias)
@@ -2355,9 +2370,16 @@ impl Checker {
                     let members = self.symbols[decl_sym]
                         .members()
                         .unwrap_or(self.emptySymbols);
+
                     result = self.getSymbol(members, name.clone(), meaning & SymbolFlags::Type);
                     if let Some(res) = result {
-                        if self.isTypeParameterSymbolDeclaredInContainer(res, &loc) {
+                        let container = match &loc {
+                            BoundNode::ClassDecl(n) => n.class.bind(loc.clone()),
+                            BoundNode::ClassExpr(n) => n.class.bind(loc.clone()),
+                            BoundNode::TsInterfaceDecl(n) => loc.clone(),
+                            _ => unreachable!(),
+                        };
+                        if self.isTypeParameterSymbolDeclaredInContainer(res, &container) {
                             if let Some(lastLocation) = &lastLocation {
                                 if isStatic(lastLocation) {
                                     // TypeScript 1.0 spec (April 2014): 3.4.1
@@ -2386,34 +2408,25 @@ impl Checker {
                         }
                     }
                 }
-                BoundNode::TsExprWithTypeArgs(expr) => {
-                    todo!();
-                    // TODO: TSC's version of this block also handles the 'extends' (super class) of a class.
-                    // Ours only handles the 'extends' clause of interfaces. This is because TS uses 'ExpressionWithTypeArguments'
-                    // for class 'extends' and 'implements', as well as interface 'extends'. We use 'TsExprWithTypeArgs'
-                    // for class and interface 'implements', but use two fields for class 'extends':
-                    // pub super_class: Option<Box<Expr>>,
-                    // pub super_type_params: Option<TsTypeParamInstantiation>,
-
+                BoundNode::ExtendsClause(extends) => {
                     // The type parameters of a class are not in scope in the base class expression.
-                    // if lastLocation == Some(expr.expr.bind(loc)) {
-                    //     if let BoundNode::TsInterfaceDecl(interface) = loc.parent().unwrap() {
-                    //         let container = loc.parent.parent;
-                    //         if isClassLike(container) {
-                    //             result = self.getSymbol(
-                    //                 getSymbolOfNode(container).members.unwrap(),
-                    //                 name,
-                    //                 meaning & SymbolFlags::Type,
-                    //             );
-                    //             if result.is_some() {
-                    //                 if nameNotFoundMessage {
-                    //                     error(errorLocation, Diagnostics.Base_class_expressions_cannot_reference_class_type_parameters);
-                    //                 }
-                    //                 return None;
-                    //             }
-                    //         }
-                    //     }
-                    // }
+                    if lastLocation == Some(extends.super_class.bind(loc.clone())) {
+                        let class = extends.parent.as_ref().unwrap().parent().clone().unwrap();
+                        debug_assert!(matches!(
+                            class,
+                            BoundNode::ClassDecl(_) | BoundNode::ClassExpr(_)
+                        ));
+                        let class_symbol = self.getSymbolOfNode(class).unwrap();
+                        let members = self.symbols[class_symbol].members().clone().unwrap();
+                        result = self.getSymbol(members, name.clone(), meaning & SymbolFlags::Type);
+                        if result.is_some() {
+                            todo!();
+                            // if (nameNotFoundMessage) {
+                            //     error(errorLocation, Diagnostics.Base_class_expressions_cannot_reference_class_type_parameters);
+                            // }
+                            // return None;
+                        }
+                    }
                 }
                 // It is not legal to reference a class's own type parameters from a computed property name that
                 // belongs to the class. For example:
@@ -2777,8 +2790,8 @@ impl Checker {
             if let BoundNode::TsTypeParamDecl(param) = decl {
                 // TODO: JSdoc
                 // let parent = isJSDocTemplateTag(decl.parent) ? getJSDocHost(decl.parent) : decl.parent;
-                let parent = decl.parent().unwrap().parent();
-                if parent.as_ref() == Some(container) {
+                let parent = param.parent.as_ref().unwrap();
+                if parent == container {
                     // return !(isJSDocTemplateTag(decl.parent) && find((decl.parent.parent as JSDoc).tags!, isJSDocTypeAlias));
                     return true;
                 }
@@ -3393,11 +3406,10 @@ impl Checker {
     fn getExportsOfSymbol(&mut self, symbol: SymbolId) -> SymbolTableId {
         let flags = self.symbols[symbol].flags();
         if flags.intersects(SymbolFlags::LateBindingContainer) {
-            todo!();
-            // self.getResolvedMembersOrExportsOfSymbol(
-            //     symbol,
-            //     MembersOrExportsResolutionKind.resolvedExports,
-            // )
+            self.getResolvedMembersOrExportsOfSymbol(
+                symbol,
+                MembersOrExportsResolutionKind::ResolvedExports,
+            )
         } else if flags.intersects(SymbolFlags::Module) {
             self.getExportsOfModule(symbol)
         } else {
@@ -3853,9 +3865,6 @@ impl Checker {
     }
 
     // TODO:
-    // createOriginType
-
-    // TODO:
     // fn createIntrinsicType(
     //     &mut self,
     //     kind: TypeFlags,
@@ -3902,6 +3911,19 @@ impl Checker {
         //     (name as string).charCodeAt(2) !== CharacterCodes.hash;
     }
 
+    fn getNamedMembers(&mut self, members: SymbolTableId) -> Vec<SymbolId> {
+        // TODO: bad collect
+        let mut all_members = self.symbol_tables[members]
+            .values()
+            .copied()
+            .collect::<Vec<_>>();
+        all_members.retain(|&symbol| {
+            let id = self.symbols[symbol].escapedName();
+            !self.isReservedMemberName(id) && self.symbolIsValue(symbol)
+        });
+        all_members
+    }
+
     fn getNamedMembersOfSymbolTableId(&mut self, members: SymbolTableId) -> Vec<SymbolId> {
         // TODO: bad double collect:
         self.symbol_tables[members]
@@ -3934,8 +3956,16 @@ impl Checker {
             .collect()
     }
 
-    // TODO:
-    // getNamedOrIndexSignatureMembers
+    // TODO: maybe make call pass in the symbol table the members will be added to,
+    // so we can avoid the intermidaiary vec. Would also need to change `getNamedMembers`
+    fn getNamedOrIndexSignatureMembers(&mut self, members: SymbolTableId) -> Vec<SymbolId> {
+        let mut result = self.getNamedMembers(members);
+        let index = self.getIndexSymbolFromSymbolTable(members);
+        if let Some(index) = index {
+            result.push(index);
+        }
+        result
+    }
 
     fn setStructuredTypeMembers(
         &mut self,
@@ -3962,8 +3992,25 @@ impl Checker {
         ty
     }
 
-    // TODO:
-    // createAnonymousType
+    fn createAnonymousType(
+        &mut self,
+        symbol: Option<SymbolId>,
+        members: SymbolTableId,
+        callSignatures: Rc<Vec<SignatureId>>,
+        constructSignatures: Rc<Vec<SignatureId>>,
+        indexInfos: Rc<Vec<IndexInfoId>>,
+    ) -> TypeId {
+        // TODO: is this correct?
+        let ty = Type::AnonymousType(AnonymousType {
+            anonymous_type: Default::default(),
+            object_type_base: ObjectTypeBase::new(ObjectFlags::Anonymous),
+            type_base: TypeBase::new(TypeFlags::Object, symbol),
+        });
+        let ty = self.types.push(ty);
+        self.setStructuredTypeMembers(ty, members, callSignatures, constructSignatures, indexInfos);
+        ty
+    }
+
     // TODO:
     // getResolvedTypeWithoutAbstractConstructSignatures
 
@@ -4773,8 +4820,9 @@ impl Checker {
                 // unwrap_as!(target as TypeReference).resolvedTypeArguments.is_some()
             }
             TypeSystemPropertyName::ResolvedBaseTypes => {
-                todo!();
-                // unwrap_as!(target as InterfaceType).baseTypesResolved.is_some()
+                unwrap_as!(target, TypeSystemEntity::Type(t), &self.types[t])
+                    .unwrap_as_interface_type()
+                    .baseTypesResolved
             }
         }
     }
@@ -4791,8 +4839,25 @@ impl Checker {
 
     // TODO:
     // getDeclarationContainer
-    // TODO:
-    // getTypeOfPrototypeProperty
+
+    fn getTypeOfPrototypeProperty(&mut self, prototype: SymbolId) -> TypeId {
+        // TypeScript 1.0 spec (April 2014): 8.4
+        // Every class automatically contains a static property member named 'prototype',
+        // the type of which is an instantiation of the class type with type Any supplied as a type argument for each type parameter.
+        // It is an error to explicitly declare a static property member with the name 'prototype'.
+        let parent_sym = self.getParentOfSymbol(prototype).unwrap();
+        let classType = self.getDeclaredTypeOfSymbol(parent_sym);
+        if let Some(typeParameters) = &self.types[classType]
+            .unwrap_as_interface_type()
+            .typeParameters
+        {
+            let typeArguments = Rc::new(vec![self.anyType; typeParameters.len()]);
+            self.createTypeReference(classType, Some(typeArguments))
+        } else {
+            classType
+        }
+    }
+
     // TODO:
     // getTypeOfPropertyOfType
     // TODO:
@@ -4859,7 +4924,10 @@ impl Checker {
         includeOptionality: bool,
     ) -> Option<TypeId> {
         if matches!(declaration, BoundNode::VarDeclarator(_)) {
-            todo!();
+            if matches!(declaration.parent(), Some(parent) if matches!(parent.parent(), Some(BoundNode::ForInStmt(_)| BoundNode::ForOfStmt(_))))
+            {
+                todo!();
+            }
         }
         // A variable declared in a for..in statement is of type string, or of type keyof T when the
         // right hand expression is of a type parameter type.
@@ -4879,10 +4947,10 @@ impl Checker {
         //     // return checkRightHandSideOfForOf(forOfStatement) || anyType;
         // }
 
-        // if (isBindingPattern(declaration.parent)) {
-        //     todo!();
-        //     // return getTypeForBindingElement(declaration as BindingElement);
-        // }
+        if isBindingPattern(&declaration.parent().unwrap()) {
+            todo!();
+            // return getTypeForBindingElement(declaration as BindingElement);
+        }
 
         macro_rules! is_property {
             ($node:expr) => {
@@ -4947,9 +5015,12 @@ impl Checker {
             ));
         }
 
-        // if (noImplicitAny || isBoundNodeInJSFile(&declaration)) &&
+        if self.noImplicitAny || isBoundNodeInJSFile(&declaration) {
+            todo!("see below");
+        }
+        // if (self.noImplicitAny || isBoundNodeInJSFile(&declaration)) &&
         //     isVariableDeclaration(declaration) && !isBindingPattern(declaration.name) &&
-        //     !(getCombinedModifierFlags(declaration) & ModifierFlags.Export) && !(declaration.flags & NodeFlags.Ambient) {
+        //     !(getCombinedModifierFlags(declaration) & ModifierFlags::Export) && !(declaration.flags & NodeFlags.Ambient) {
         //         todo!();
         //     // If --noImplicitAny is on or the declaration is in a Javascript file,
         //     // use control flow tracked 'any' type for non-ambient, non-exported var or let variables with no
@@ -5028,17 +5099,22 @@ impl Checker {
 
         // Use the type of the initializer expression if one is present and the declaration is
         // not a parameter of a contextually typed function
-        // if (hasOnlyExpressionInitializer(declaration) && !!declaration.initializer) {
-        //     todo!();
-        //     // if (isBoundNodeInJSFile(declaration) && !isParameter(declaration)) {
-        //     //     const containerObjectType = getJSContainerObjectType(declaration, getSymbolOfNode(declaration), getDeclaredExpandoInitializer(declaration));
-        //     //     if (containerObjectType) {
-        //     //         return containerObjectType;
-        //     //     }
-        //     // }
-        //     // const type = widenTypeInferredFromInitializer(declaration, checkDeclarationInitializer(declaration));
-        //     // return addOptionality(type, isProperty, isOptional);
-        // }
+        if let Some(init) = getOnlyExpressionInitializer(&declaration) {
+            // TODO: js files:
+            // if isBoundNodeInJSFile(&declaration) && !isParameter(declaration) {
+            //     const containerObjectType = getJSContainerObjectType(declaration, getSymbolOfNode(declaration), getDeclaredExpandoInitializer(declaration));
+            //     if (containerObjectType) {
+            //         return containerObjectType;
+            //     }
+            // }
+            let ty = self.checkDeclarationInitializer(&declaration, None);
+            let ty = self.widenTypeInferredFromInitializer(&declaration, ty);
+            return Some(self.addOptionality(
+                ty,
+                is_property!(&declaration),
+                Some(is_optional!(&declaration)),
+            ));
+        }
 
         if matches!(
             declaration,
@@ -5051,14 +5127,14 @@ impl Checker {
             // if (!hasStaticModifier(declaration)) {
             //     const constructor = findConstructorDeclaration(declaration.parent);
             //     const type = constructor ? getFlowTypeInConstructor(declaration.symbol, constructor) :
-            //         getEffectiveModifierFlags(declaration) & ModifierFlags.Ambient ? getTypeOfPropertyInBaseClass(declaration.symbol) :
+            //         getEffectiveModifierFlags(declaration) & ModifierFlags::Ambient ? getTypeOfPropertyInBaseClass(declaration.symbol) :
             //         undefined;
             //     return type && addOptionality(type, /*isProperty*/ true, isOptional);
             // }
             // else {
             //     const staticBlocks = filter(declaration.parent.members, isClassStaticBlockDeclaration);
             //     const type = staticBlocks.length ? getFlowTypeInStaticBlocks(declaration.symbol, staticBlocks) :
-            //         getEffectiveModifierFlags(declaration) & ModifierFlags.Ambient ? getTypeOfPropertyInBaseClass(declaration.symbol) :
+            //         getEffectiveModifierFlags(declaration) & ModifierFlags::Ambient ? getTypeOfPropertyInBaseClass(declaration.symbol) :
             //         undefined;
             //     return type && addOptionality(type, /*isProperty*/ true, isOptional);
             // }
@@ -5078,11 +5154,11 @@ impl Checker {
         //     // return getTypeFromBindingPattern(declaration.name, /*includePatternInType*/ false, /*reportErrors*/ true);
         // }
 
-        dbg!(declaration);
-        todo!();
+        // dbg!(declaration);
+        // todo!();
 
         // No type specified and nothing can be inferred
-        // None
+        None
     }
 
     fn isConstructorDeclaredProperty(&mut self, symbol: SymbolId) -> bool {
@@ -5236,7 +5312,7 @@ impl Checker {
 
         // Report implicit any errors unless this is a private property within an ambient declaration
         if reportErrors {
-            todo!();
+            // TODO: error
             // if (!declarationBelongsToPrivateAmbientMember(declaration)) {
             //     reportImplicitAny(declaration, ty);
             // }
@@ -5277,8 +5353,7 @@ impl Checker {
             .flags()
             .intersects(SymbolFlags::Prototype)
         {
-            todo!();
-            // return self.getTypeOfPrototypeProperty(symbol);
+            return self.getTypeOfPrototypeProperty(symbol);
         }
         // CommonsJS require and module both have type any.
         if symbol == self.requireSymbol {
@@ -5384,9 +5459,9 @@ impl Checker {
             // ty = isBinaryExpression(declaration.parent) ?
             //     getWidenedTypeForAssignmentDeclaration(symbol) :
             //     tryGetTypeFromEffectiveTypeNode(declaration) || anyType;
-        } else if matches!(declaration, BoundNode::KeyValueProp(_)) {
-            todo!();
-            //  tryGetTypeFromEffectiveTypeNode(declaration) || checkPropertyAssignment(declaration)
+        } else if let BoundNode::KeyValueProp(p) = &declaration {
+            self.tryGetTypeFromEffectiveTypeNode(declaration.clone())
+                .unwrap_or_else(|| self.checkPropertyAssignment(&p, None))
         }
         /* TODO:  else if (isJsxAttribute(declaration)) {
             todo!();
@@ -5406,7 +5481,9 @@ impl Checker {
                 | BoundNode::TsPropertySignature(_)
                 | BoundNode::VarDeclarator(_)
         )
-        /* TODO:  || isBindingElement(declaration) || isJSDocPropertyLikeTag(declaration) */
+        // TODO:  || isBindingElement(declaration)
+        || matches!(declaration, BoundNode::RestPat(_))
+        // TODO:  || isJSDocPropertyLikeTag(declaration)
         {
             self.getWidenedTypeForVariableLikeDeclaration(
                 declaration,
@@ -5463,8 +5540,33 @@ impl Checker {
     // getTypeOfAccessorsWorker
     // TODO:
     // resolveTypeOfAccessors
-    // TODO:
-    // getBaseTypeVariableOfClass
+
+    fn getBaseTypeVariableOfClass(&mut self, symbol: SymbolId) -> Option<TypeId> {
+        let class_type = self.getDeclaredTypeOfClassOrInterface(symbol);
+        let baseConstructorType = self.getBaseConstructorTypeOfClass(class_type);
+        if self.types[baseConstructorType]
+            .get_flags()
+            .intersects(TypeFlags::TypeVariable)
+        {
+            Some(baseConstructorType)
+        } else if self.types[baseConstructorType]
+            .get_flags()
+            .intersects(TypeFlags::Intersection)
+        {
+            self.types[baseConstructorType]
+                .unwrap_as_union_or_intersection()
+                .types
+                .iter()
+                .find(|&&t| {
+                    self.types[t]
+                        .get_flags()
+                        .intersects(TypeFlags::TypeVariable)
+                })
+                .copied()
+        } else {
+            None
+        }
+    }
 
     fn getTypeOfFuncClassEnumModule(&mut self, mut symbol: SymbolId) -> TypeId {
         #[derive(Clone, Copy)]
@@ -5524,10 +5626,9 @@ impl Checker {
     fn getTypeOfFuncClassEnumModuleWorker(&mut self, symbol: SymbolId) -> TypeId {
         let declaration = self.symbols[symbol].valueDeclaration();
         if self.symbols[symbol].flags().intersects(SymbolFlags::Module) {
-            todo!();
-            // if isShorthandAmbientModuleSymbol(symbol) {
-            //     return self.anyType;
-            // }
+            if isShorthandAmbientModuleSymbol(&self.symbols[symbol]) {
+                return self.anyType;
+            }
         }
         if matches!(declaration, Some(BoundNode::BinExpr(_)))
             || matches!(declaration, Some(p@BoundNode::MemberExpr(_)) if matches!(p.parent(), Some(BoundNode::BinExpr(_))))
@@ -5539,7 +5640,12 @@ impl Checker {
             .flags()
             .intersects(SymbolFlags::ValueModule)
         {
-            todo!();
+            if matches!(
+                declaration,
+                Some(BoundNode::Script(_) | BoundNode::Module(_))
+            ) {
+                todo!();
+            }
             // if declaration && isSourceFile(declaration) && declaration.commonJsModuleIndicator {
             // let  resolvedModule = resolveExternalModuleSymbol(symbol);
             // if (resolvedModule != symbol) {
@@ -5566,9 +5672,12 @@ impl Checker {
             type_base: TypeBase::new(TypeFlags::Object, Some(symbol)),
         }));
         if self.symbols[symbol].flags().intersects(SymbolFlags::Class) {
-            todo!();
-            // let baseTypeVariable = getBaseTypeVariableOfClass(symbol);
-            // return if baseTypeVariable {getIntersectionType([ty, baseTypeVariable]) }else{ty};
+            let baseTypeVariable = self.getBaseTypeVariableOfClass(symbol);
+            return if let Some(baseTypeVariable) = baseTypeVariable {
+                self.getIntersectionType(&[ty, baseTypeVariable], None, None)
+            } else {
+                ty
+            };
         } else {
             return if self.strictNullChecks
                 && self.symbols[symbol]
@@ -5617,10 +5726,22 @@ impl Checker {
     // reportCircularityError
     // TODO:
     // getTypeOfSymbolWithDeferredType
-    // TODO:
-    // getSetAccessorTypeOfSymbol
 
-    fn getTypeOfSymbol(&mut self, symbol: SymbolId) -> TypeId {
+    fn getSetAccessorTypeOfSymbol(&mut self, symbol: SymbolId) -> TypeId {
+        if self.symbols[symbol]
+            .flags()
+            .intersects(SymbolFlags::Accessor)
+        {
+            todo!();
+            // const ty = self.getTypeOfSetAccessor(symbol);
+            // if (ty) {
+            //     return ty;
+            // }
+        }
+        self.getTypeOfSymbol(symbol)
+    }
+
+    pub fn getTypeOfSymbol(&mut self, symbol: SymbolId) -> TypeId {
         let checkFlags = getCheckFlags(&self.symbols[symbol]);
         if checkFlags.intersects(CheckFlags::DeferredType) {
             todo!();
@@ -5670,7 +5791,7 @@ impl Checker {
     // TODO:
     // isReferenceToType
 
-    fn getTargetType(&self, ty: TypeId) -> TypeId {
+    pub fn getTargetType(&self, ty: TypeId) -> TypeId {
         if self.types[ty]
             .get_object_flags()
             .intersects(ObjectFlags::Reference)
@@ -5775,7 +5896,7 @@ impl Checker {
                 | BoundNode::TsTypeAliasDecl(_)
                 | BoundNode::TsMappedType(_)
                 | BoundNode::TsConditionalType(_) => {
-                    let outerTypeParameters =
+                    let mut outerTypeParameters =
                         self.getOuterTypeParameters(node.clone(), includeThisTypes);
                     if let BoundNode::TsMappedType(n) = &node {
                         todo!();
@@ -5786,14 +5907,13 @@ impl Checker {
                         //     .push(type_param);
                         // return outerTypeParameters;
                     } else if let BoundNode::TsConditionalType(n) = &node {
-                        todo!();
-                        // let type_params = self.getInferTypeParameters(n);
-                        // if let Some(type_params) = type_params {
-                        //     outerTypeParameters
-                        //         .get_or_insert(Vec::default())
-                        //         .append(type_params);
-                        // }
-                        // return outerTypeParameters;
+                        let type_params = self.getInferTypeParameters(n.clone());
+                        if let Some(mut type_params) = type_params {
+                            outerTypeParameters
+                                .get_or_insert(Vec::default())
+                                .append(&mut type_params);
+                        }
+                        return outerTypeParameters;
                     }
                     let mut outerAndOwnTypeParameters = self.appendTypeParameters(
                         outerTypeParameters,
@@ -5874,7 +5994,7 @@ impl Checker {
     fn getLocalTypeParametersOfClassOrInterfaceOrTypeAlias(
         &mut self,
         symbol: SymbolId,
-    ) -> Option<Vec<TypeId>> {
+    ) -> Option<Rc<Vec<TypeId>>> {
         let mut result = None;
         // TODO: try to remove vec clone:
         for node in self.symbols[symbol].declarations().clone() {
@@ -5888,7 +6008,7 @@ impl Checker {
                     .appendTypeParameters(result, getBoundEffectiveTypeParameterDeclarations(node));
             }
         }
-        result
+        result.map(Rc::new)
     }
 
     // TODO:
@@ -5901,7 +6021,7 @@ impl Checker {
         if signatures.len() == 1 {
             let s = signatures[0];
             let sig = &self.signatures[s];
-            if sig.typeParameters.is_empty()
+            if sig.typeParameters.is_none()
                 && sig.parameters.len() == 1
                 && signatureHasRestParameter(sig)
             {
@@ -5932,7 +6052,7 @@ impl Checker {
         false
     }
 
-    fn getBaseTypeNodeOfClass(&self, ty: TypeId) -> Option<ExpressionWithTypeArguments> {
+    fn getBaseTypeNodeOfClass(&self, ty: TypeId) -> Option<BoundExprWithTypeArgs> {
         let sym = self.types[ty].get_symbol().unwrap();
         getEffectiveBaseTypeNode(self.symbols[sym].valueDeclaration().clone().unwrap())
     }
@@ -6103,11 +6223,13 @@ impl Checker {
                 .intersects(SymbolFlags::Class)
             && self.areAllOuterTypeParametersApplied(originalBaseType.unwrap())
         {
-            todo!();
-            // // When base constructor type is a class with no captured type arguments we know that the constructors all have the same type parameters as the
-            // // class and all return the instance type of the class. There is no need for further checks and we can apply the
-            // // type arguments in the same manner as a type reference to get the same error reporting experience.
-            // self.getTypeFromClassOrInterfaceReference(baseTypeNode, baseConstructorType.symbol)
+            // When base constructor type is a class with no captured type arguments we know that the constructors all have the same type parameters as the
+            // class and all return the instance type of the class. There is no need for further checks and we can apply the
+            // type arguments in the same manner as a type reference to get the same error reporting experience.
+            self.getTypeFromClassOrInterfaceReference(
+                baseTypeNode.expr,
+                self.types[baseConstructorType].get_symbol().unwrap(),
+            )
         } else if self.types[baseConstructorType]
             .get_flags()
             .intersects(TypeFlags::Any)
@@ -6382,9 +6504,8 @@ impl Checker {
             let outerTypeParameters = self
                 .getOuterTypeParametersOfClassOrInterface(symbol)
                 .map(|v| Rc::new(v));
-            let localTypeParameters = self
-                .getLocalTypeParametersOfClassOrInterfaceOrTypeAlias(symbol)
-                .map(|v| Rc::new(v));
+            let localTypeParameters =
+                self.getLocalTypeParametersOfClassOrInterfaceOrTypeAlias(symbol);
 
             let ty_id = self.types.next_index();
 
@@ -6463,8 +6584,69 @@ impl Checker {
         }
     }
 
-    // TODO:
-    // getDeclaredTypeOfTypeAlias
+    fn getDeclaredTypeOfTypeAlias(&mut self, symbol: SymbolId) -> TypeId {
+        match self.getSymbolLinks(symbol).declaredType {
+            Some(t) => t,
+            None => {
+                // Note that we use the links object as the target here because the symbol object is used as the unique
+                // identity for resolution of the 'type' property in SymbolLinks.
+                if !self.pushTypeResolution(
+                    TypeSystemEntity::Symbol(symbol),
+                    TypeSystemPropertyName::DeclaredType,
+                ) {
+                    return self.errorType;
+                }
+
+                let declaration = match self.symbols[symbol]
+                    .declarations()
+                    .iter()
+                    .find(|&d| isTypeAlias(d))
+                {
+                    Some(d) => d,
+                    None => unreachable!("Type alias symbol with no valid declaration found"),
+                };
+                let typeNode = match declaration {
+                    BoundNode::TsTypeAliasDecl(a) => a.type_ann.bind(a.clone().into()),
+                    // TODO: jsodc:
+                    // isJSDocTypeAlias(a) => a.typeExpression,
+                    _ => unreachable!("checked by isTypeAlias"),
+                };
+                // If typeNode is missing, we will error in checkJSDocTypedefTag.
+                // let ty = if let Some(typeNode) = typeNode {
+                //     self.getTypeFromTypeNode(typeNode)
+                // } else {
+                //     self.errorType
+                // };
+                let ty = self.getTypeFromTypeNode(typeNode);
+
+                if self.popTypeResolution() {
+                    let typeParameters =
+                        self.getLocalTypeParametersOfClassOrInterfaceOrTypeAlias(symbol);
+                    if typeParameters.is_some() {
+                        // Initialize the instantiation cache for generic type aliases. The declared type corresponds to
+                        // an instantiation of the type alias with the type parameters supplied as type arguments.
+                        let typeParameterListId =
+                            self.getTypeListId(typeParameters.as_ref().map(|v| v.as_ref()));
+                        let links = self.getSymbolLinksMut(symbol);
+                        links.typeParameters = typeParameters;
+                        links.instantiations.insert(typeParameterListId.0, ty);
+                    }
+                } else {
+                    todo!();
+                    // ty = errorType;
+                    // if (declaration.kind === SyntaxKind.JSDocEnumTag) {
+                    //     error(declaration.typeExpression.ty, Diagnostics.Type_alias_0_circularly_references_itself, symbolToString(symbol));
+                    // }
+                    // else {
+                    //     error(isNamedDeclaration(declaration) ? declaration.name : declaration || declaration, Diagnostics.Type_alias_0_circularly_references_itself, symbolToString(symbol));
+                    // }
+                }
+                self.getSymbolLinksMut(symbol).declaredType = Some(ty);
+                ty
+            }
+        }
+    }
+
     // TODO:
     // isStringConcatExpression
     // TODO:
@@ -6502,8 +6684,7 @@ impl Checker {
         if flags.intersects(SymbolFlags::Class | SymbolFlags::Interface) {
             Some(self.getDeclaredTypeOfClassOrInterface(symbol))
         } else if flags.intersects(SymbolFlags::TypeAlias) {
-            todo!();
-            // self.getDeclaredTypeOfTypeAlias(symbol)
+            Some(self.getDeclaredTypeOfTypeAlias(symbol))
         } else if flags.intersects(SymbolFlags::TypeParameter) {
             Some(self.getDeclaredTypeOfTypeParameter(symbol))
         } else if flags.intersects(SymbolFlags::Enum) {
@@ -6576,8 +6757,16 @@ impl Checker {
         self.symbol_tables.push(result)
     }
 
-    // TODO:
-    // addInheritedMembers
+    fn addInheritedMembers(&mut self, symbols: SymbolTableId, baseSymbols: Rc<Vec<SymbolId>>) {
+        for &s in baseSymbols.iter() {
+            let escpaed_name = self.symbols[s].escapedName();
+            if !self.symbol_tables[symbols].contains_key(escpaed_name)
+                && !self.isStaticPrivateIdentifierProperty(s)
+            {
+                self.symbol_tables[symbols].insert(escpaed_name.clone(), s);
+            }
+        }
+    }
 
     fn isStaticPrivateIdentifierProperty(&self, s: SymbolId) -> bool {
         self.symbols[s]
@@ -6657,12 +6846,12 @@ impl Checker {
      */
     fn isLateBindableName(&mut self, node: DeclName) -> bool {
         match node {
-            DeclName::ComputedProperty(expr) => {
+            DeclName::ComputedProperty(_) => {
                 todo!();
                 // isEntityNameExpression(&Node::from(expr))
                 //     && self.isTypeUsableAsPropertyName(self.checkComputedPropertyName(node))
             }
-            DeclName::ElementAccessExpression(expr) => {
+            DeclName::ElementAccessExpression(_) => {
                 todo!();
                 // isEntityNameExpression(&Node::from(expr))
                 //     && self.isTypeUsableAsPropertyName(self.checkExpressionCached(expr))
@@ -6691,8 +6880,21 @@ impl Checker {
 
     // TODO:
     // isNonBindableDynamicName
-    // TODO:
-    // getPropertyNameFromType
+
+    /**
+     * Gets the symbolic name for a member from its type.
+     */
+    fn getPropertyNameFromType(&self, ty: TypeId) -> JsWord {
+        match &self.types[ty] {
+            Type::UniqueESSymbolType(t) => t.escapedName.clone(),
+            Type::StringLiteralType(t) => escapeLeadingUnderscores(&t.value).clone(),
+            Type::NumberLiteralType(t) => {
+                escapeLeadingUnderscores(&JsWord::from(ecma_number_to_string(t.value))).clone()
+            }
+            _ => unreachable!(),
+        }
+    }
+
     // TODO:
     // addDeclarationToLateBoundSymbol
     // TODO:
@@ -6816,7 +7018,7 @@ impl Checker {
      *
      * For a description of late-binding, see `lateBindMember`.
      */
-    fn getMembersOfSymbol(&mut self, sym: SymbolId) -> SymbolTableId {
+    pub fn getMembersOfSymbol(&mut self, sym: SymbolId) -> SymbolTableId {
         if self.symbols[sym]
             .flags()
             .intersects(SymbolFlags::LateBindingContainer)
@@ -6954,7 +7156,7 @@ impl Checker {
             indexInfos = source.declaredIndexInfos.clone();
         } else {
             let mappingThisOnly = typeParameters.len() == 1;
-            let m = self.createTypeMapper(typeParameters, Some(typeArguments));
+            let m = self.createTypeMapper(typeParameters, Some(typeArguments.clone()));
             members = self.createInstantiatedSymbolTable(
                 self.types[source]
                     .unwrap_as_interface_type()
@@ -6982,20 +7184,62 @@ impl Checker {
         }
         let baseTypes = self.getBaseTypes(source);
         if !baseTypes.is_empty() {
-            todo!();
-            //     if (source.symbol && members == getMembersOfSymbol(source.symbol)) {
-            //         members = createSymbolTable(source.declaredProperties);
-            //     }
-            //     setStructuredTypeMembers(ty, members, callSignatures, constructSignatures, indexInfos);
-            //     const thisArgument = lastOrUndefined(typeArguments);
-            //     for (const baseType of baseTypes) {
-            //         const instantiatedBaseType = thisArgument ? getTypeWithThisArgument(instantiateType(baseType, mapper), thisArgument) : baseType;
-            //         addInheritedMembers(members, getPropertiesOfType(instantiatedBaseType));
-            //         callSignatures = concatenate(callSignatures, getSignaturesOfType(instantiatedBaseType, SignatureKind::Call));
-            //         constructSignatures = concatenate(constructSignatures, getSignaturesOfType(instantiatedBaseType, SignatureKind::Construct));
-            //         const inheritedIndexInfos = instantiatedBaseType !== anyType ? getIndexInfosOfType(instantiatedBaseType) : [createIndexInfo(stringType, anyType, /*isReadonly*/ false)];
-            //         indexInfos = concatenate(indexInfos, filter(inheritedIndexInfos, info => !findIndexInfo(indexInfos, info.keyType)));
-            //     }
+            if let Some(source_sym) = self.types[source].get_symbol() {
+                if members == self.getMembersOfSymbol(*source_sym) {
+                    todo!();
+                    // members = self.createSymbolTable(source.declaredProperties);
+                }
+            }
+
+            self.setStructuredTypeMembers(
+                ty,
+                members,
+                callSignatures.clone(),
+                constructSignatures.clone(),
+                indexInfos.clone(),
+            );
+            let thisArgument = typeArguments.last();
+            for &baseType in baseTypes.iter() {
+                let instantiatedBaseType = if let Some(thisArgument) = thisArgument {
+                    let ty = self.instantiateType(baseType, mapper.clone());
+                    self.getTypeWithThisArgument(ty, Some(*thisArgument), false)
+                } else {
+                    baseType
+                };
+                let base_props = self.getPropertiesOfType(instantiatedBaseType).clone();
+                self.addInheritedMembers(members, base_props);
+                Rc::make_mut(&mut callSignatures).extend(
+                    self.getSignaturesOfType(instantiatedBaseType, SignatureKind::Call)
+                        .iter(),
+                );
+                Rc::make_mut(&mut constructSignatures).extend(
+                    self.getSignaturesOfType(instantiatedBaseType, SignatureKind::Construct)
+                        .iter(),
+                );
+                if instantiatedBaseType != self.anyType {
+                    let inheritedIndexInfos = self.getIndexInfosOfType(instantiatedBaseType);
+                    for &inheritedIndexInfo in inheritedIndexInfos.iter() {
+                        if self
+                            .findIndexInfo(
+                                &indexInfos,
+                                self.index_infos[inheritedIndexInfo].keyType,
+                            )
+                            .is_none()
+                        {
+                            Rc::make_mut(&mut indexInfos).push(inheritedIndexInfo);
+                        }
+                    }
+                } else {
+                    let inheritedIndexInfo =
+                        self.createIndexInfo(self.stringType, self.anyType, false, None);
+                    if self
+                        .findIndexInfo(&indexInfos, self.index_infos[inheritedIndexInfo].keyType)
+                        .is_none()
+                    {
+                        Rc::make_mut(&mut indexInfos).push(inheritedIndexInfo);
+                    }
+                };
+            }
         }
         self.setStructuredTypeMembers(ty, members, callSignatures, constructSignatures, indexInfos);
     }
@@ -7042,7 +7286,7 @@ impl Checker {
         let sig = Signature {
             flags,
             declaration,
-            typeParameters: typeParameters.unwrap_or_default(),
+            typeParameters,
             parameters,
             thisParameter,
             resolvedReturnType,
@@ -7072,8 +7316,19 @@ impl Checker {
         self.signatures.push(result)
     }
 
-    // TODO:
-    // createUnionSignature
+    fn createUnionSignature(
+        &mut self,
+        signature: SignatureId,
+        unionSignatures: Rc<Vec<SignatureId>>,
+    ) -> SignatureId {
+        let mut result_id = self.cloneSignature(signature);
+        let mut result = &mut self.signatures[result_id];
+        result.compositeSignatures = unionSignatures;
+        result.compositeKind = Some(TypeFlags::Union);
+        result.target = None;
+        result.mapper = None;
+        result_id
+    }
 
     fn getOptionalCallSignature(
         &mut self,
@@ -7116,27 +7371,235 @@ impl Checker {
 
     // TODO:
     // getExpandedParameters
-    // TODO:
-    // getDefaultConstructSignatures
-    // TODO:
-    // findMatchingSignature
-    // TODO:
-    // findMatchingSignatures
-    // TODO:
-    // getUnionSignatures
+
+    fn getDefaultConstructSignatures(&mut self, classType: TypeId) -> Vec<SignatureId> {
+        let baseConstructorType = self.getBaseConstructorTypeOfClass(classType);
+        let baseSignatures =
+            self.getSignaturesOfType(baseConstructorType, SignatureKind::Construct);
+        let class_sym = self.types[classType].get_symbol().unwrap();
+        let declaration = getClassLikeDeclarationOfSymbol(&self.symbols[class_sym]);
+        let isAbstract = declaration
+            .map(|d| hasSyntacticModifier(&d, ModifierFlags::Abstract))
+            .unwrap_or_default();
+        if baseSignatures.is_empty() {
+            return vec![self.createSignature(
+                None,
+                self.types[classType]
+                    .unwrap_as_interface_type()
+                    .localTypeParameters
+                    .clone(),
+                None,
+                Default::default(),
+                Some(classType),
+                /*resolvedTypePredicate undefined ,*/ 0,
+                if isAbstract {
+                    SignatureFlags::Abstract
+                } else {
+                    SignatureFlags::None
+                },
+            )];
+        }
+        let baseTypeNode = &self.getBaseTypeNodeOfClass(classType).unwrap().expr;
+        let isJavaScript = isBoundNodeInJSFile(baseTypeNode);
+        let typeArguments = self.typeArgumentsFromTypeReferenceNode(baseTypeNode);
+        let typeArgCount = typeArguments.length();
+        let mut result = Vec::new();
+        for &baseSig in baseSignatures.iter() {
+            let minTypeArgumentCount =
+                self.getMinTypeArgumentCount(self.signatures[baseSig].typeParameters.clone());
+            let typeParamCount = self.signatures[baseSig].typeParameters.length();
+            if isJavaScript
+                || typeArgCount >= minTypeArgumentCount && typeArgCount <= typeParamCount
+            {
+                let sig = if typeParamCount != 0 {
+                    let typeArguments = self.fillMissingTypeArguments(
+                        typeArguments.clone(),
+                        self.signatures[baseSig].typeParameters.clone(),
+                        minTypeArgumentCount,
+                        isJavaScript,
+                    );
+                    self.createSignatureInstantiation(baseSig, typeArguments)
+                } else {
+                    self.cloneSignature(baseSig)
+                };
+                self.signatures[sig].typeParameters = self.types[classType]
+                    .unwrap_as_interface_type()
+                    .localTypeParameters
+                    .clone();
+                self.signatures[sig].resolvedReturnType = Some(classType);
+                self.signatures[sig].flags = if isAbstract {
+                    self.signatures[sig].flags | SignatureFlags::Abstract
+                } else {
+                    self.signatures[sig].flags & !SignatureFlags::Abstract
+                };
+                result.push(sig);
+            }
+        }
+        result
+    }
+
+    fn findMatchingSignature(
+        &mut self,
+        signatureList: &[SignatureId],
+        signature: SignatureId,
+        partialMatch: bool,
+        ignoreThisTypes: bool,
+        ignoreReturnTypes: bool,
+    ) -> Option<SignatureId> {
+        // TODO: iter.find?
+        for &s in signatureList.iter() {
+            if self.compareSignaturesIdentical(
+                s,
+                signature,
+                partialMatch,
+                ignoreThisTypes,
+                ignoreReturnTypes,
+                |checker, s, t| {
+                    if partialMatch {
+                        todo!();
+                        // checker.compareTypesSubtypeOf(s, t)
+                    } else {
+                        todo!();
+                        // checker.compareTypesIdentical(s, t)
+                    }
+                },
+            ) != Ternary::False
+            {
+                return Some(s);
+            }
+        }
+        None
+    }
+
+    fn findMatchingSignatures(
+        &mut self,
+        signatureLists: &[Rc<Vec<SignatureId>>],
+        signature: SignatureId,
+        listIndex: usize,
+    ) -> Vec<SignatureId> {
+        if self.signatures[signature].typeParameters.is_some() {
+            todo!();
+            // We require an exact match for generic signatures, so we only return signatures from the first
+            // signature list and only if they have exact matches in the other signature lists.
+            // if (listIndex > 0) {
+            //     return undefined;
+            // }
+            // for (let i = 1; i < signatureLists.length; i++) {
+            //     if (!findMatchingSignature(signatureLists[i], signature, /*partialMatch*/ false, /*ignoreThisTypes*/ false, /*ignoreReturnTypes*/ false)) {
+            //         return undefined;
+            //     }
+            // }
+            // return [signature];
+        }
+        let mut result = Vec::new();
+        for (i, signatureList) in signatureLists.iter().enumerate() {
+            // Allow matching non-generic signatures to have excess parameters and different return types.
+            // Prefer matching this types if possible.
+            let found = if i == listIndex {
+                Some(signature)
+            } else {
+                self.findMatchingSignature(&signatureList, signature, true, false, true)
+            };
+            if let Some(found) = found {
+                result.push_if_unique(found);
+            } else {
+                return Vec::new();
+            }
+        }
+        result
+    }
+
+    // The signatures of a union type are those signatures that are present in each of the constituent types.
+    // Generic signatures must match exactly, but non-generic signatures are allowed to have extra optional
+    // parameters and may differ in return types. When signatures differ in return types, the resulting return
+    // type is the union of the constituent return types.
+    fn getUnionSignatures(&mut self, signatureLists: &[Rc<Vec<SignatureId>>]) -> Vec<SignatureId> {
+        #[derive(PartialEq)]
+        enum OverloadSet {
+            None,
+            Single(usize),
+            Multiple,
+        }
+        let mut result = Vec::new();
+        let mut indexWithLengthOverOne = OverloadSet::None;
+        for (i, signatureList) in signatureLists.iter().enumerate() {
+            if signatureList.is_empty() {
+                return Vec::new();
+            };
+            if signatureList.len() > 1 {
+                indexWithLengthOverOne = if indexWithLengthOverOne == OverloadSet::None {
+                    OverloadSet::Single(i)
+                } else {
+                    OverloadSet::Multiple
+                };
+            }
+            for &signature in signatureList.iter() {
+                // Only process signatures with parameter lists that aren't already in the result list
+                if result.is_empty()
+                    || self
+                        .findMatchingSignature(&result, signature, false, false, true)
+                        .is_none()
+                {
+                    let unionSignatures = self.findMatchingSignatures(signatureLists, signature, i);
+                    if !unionSignatures.is_empty() {
+                        let mut s = signature;
+                        // Union the result types when more than one signature matches
+                        if unionSignatures.len() > 1 {
+                            let thisParameter = self.signatures[signature].thisParameter;
+                            let firstThisParameterOfUnionSignatures = unionSignatures
+                                .iter()
+                                .find_map(|&sig| self.signatures[sig].thisParameter);
+                            if let Some(firstThisParameterOfUnionSignatures) =
+                                firstThisParameterOfUnionSignatures
+                            {
+                                todo!();
+                                // let thisType = getIntersectionType(mapDefined(unionSignatures, sig => sig.thisParameter && getTypeOfSymbol(sig.thisParameter)));
+                                // thisParameter = createSymbolWithType(firstThisParameterOfUnionSignatures, thisType);
+                            }
+                            s = self.createUnionSignature(signature, Rc::new(unionSignatures));
+                            self.signatures[s].thisParameter = thisParameter;
+                        }
+                        result.push(s);
+                    }
+                }
+            }
+        }
+        if result.is_empty() && indexWithLengthOverOne != OverloadSet::Multiple {
+            todo!();
+            // // No sufficiently similar signature existed to subsume all the other signatures in the union - time to see if we can make a single
+            // // signature that handles all over them. We only do this when there are overloads in only one constituent.
+            // // (Overloads are conditional in nature and having overloads in multiple constituents would necessitate making a power set of
+            // // signatures from the type, whose ordering would be non-obvious)
+            // const masterList = signatureLists[indexWithLengthOverOne !== undefined ? indexWithLengthOverOne : 0];
+            // let results: Signature[] | undefined = masterList.slice();
+            // for (const signatures of signatureLists) {
+            //     if (signatures !== masterList) {
+            //         const signature = signatures[0];
+            //         Debug.assert(!!signature, "getUnionSignatures bails early on empty signature lists and should not have empty lists on second pass");
+            //         results = !!signature.typeParameters && some(results, s => !!s.typeParameters && !compareTypeParametersIdentical(signature.typeParameters, s.typeParameters)) ? undefined : map(results, sig => combineSignaturesOfUnionMembers(sig, signature));
+            //         if (!results) {
+            //             break;
+            //         }
+            //     }
+            // }
+            // result = results;
+        }
+        result
+    }
 
     fn compareTypeParametersIdentical(
         &mut self,
-        sourceParams: Rc<Vec<TypeId>>,
-        targetParams: Rc<Vec<TypeId>>,
+        sourceParams: Option<Rc<Vec<TypeId>>>,
+        targetParams: Option<Rc<Vec<TypeId>>>,
     ) -> bool {
-        if sourceParams.len() != targetParams.len() {
+        if sourceParams.length() != targetParams.length() {
             return false;
         }
 
-        if sourceParams.is_empty() || targetParams.is_empty() {
-            return true;
-        }
+        let (sourceParams, targetParams) = match (sourceParams, targetParams) {
+            (Some(sourceParams), Some(targetParams)) => (sourceParams, targetParams),
+            _ => return true,
+        };
 
         let mapper = self.createTypeMapper(targetParams.clone(), Some(sourceParams.clone()));
         for (&source, &target) in sourceParams.iter().zip(targetParams.iter()) {
@@ -7169,10 +7632,70 @@ impl Checker {
     // combineUnionParameters
     // TODO:
     // combineSignaturesOfUnionMembers
-    // TODO:
-    // getUnionIndexInfos
-    // TODO:
-    // resolveUnionTypeMembers
+
+    fn getUnionIndexInfos(&mut self, types: Rc<Vec<TypeId>>) -> Vec<IndexInfoId> {
+        let sourceInfos = self.getIndexInfosOfType(types[0]);
+        let mut result = Vec::new();
+        for &info in sourceInfos.iter() {
+            let indexType = self.index_infos[info].keyType;
+            if types
+                .iter()
+                .all(|&t| self.getIndexInfoOfType(t, indexType).is_some())
+            {
+                let mapped_types = types
+                    .iter()
+                    .map(|&t| self.getIndexTypeOfType(t, indexType).unwrap())
+                    // TODO: bad collect
+                    .collect::<Vec<_>>();
+                let ty = self.getUnionType(&mapped_types, None, None, None, None);
+                let isReadonly = types.iter().any(|&t| {
+                    let info = self.getIndexInfoOfType(t, indexType).unwrap();
+                    self.index_infos[info].isReadonly
+                });
+                result.push(self.createIndexInfo(indexType, ty, isReadonly, None));
+            }
+        }
+        return result;
+
+        Vec::new()
+    }
+
+    fn resolveUnionTypeMembers(&mut self, ty: TypeId) {
+        let types = self.types[ty]
+            .unwrap_as_union_or_intersection()
+            .types
+            .clone();
+        // The members and properties collections are empty for union types. To get all properties of a union
+        // type use getPropertiesOfType (only the language service uses this).
+        // TODO: bad collect:
+        let callSignatures = types
+            .iter()
+            .map(|&t| {
+                if t == self.globalFunctionType() {
+                    // TODO: unnedded alloc?
+                    Rc::new(vec![self.unknownSignature])
+                } else {
+                    self.getSignaturesOfType(t, SignatureKind::Call)
+                }
+            })
+            .collect::<Vec<_>>();
+        let callSignatures = self.getUnionSignatures(&callSignatures);
+        // TODO: bad collect:
+        let constructSignatures = types
+            .iter()
+            .map(|&t| self.getSignaturesOfType(t, SignatureKind::Construct))
+            .collect::<Vec<_>>();
+        let constructSignatures = self.getUnionSignatures(&constructSignatures);
+        let indexInfos = self.getUnionIndexInfos(types);
+        self.setStructuredTypeMembers(
+            ty,
+            self.emptySymbols,
+            Rc::new(callSignatures),
+            Rc::new(constructSignatures),
+            Rc::new(indexInfos),
+        );
+    }
+
     // TODO:
     // intersectTypes
     // TODO:
@@ -7267,17 +7790,16 @@ impl Checker {
             // Combinations of function, class, enum and module
             let mut members = self.emptySymbols;
             if self.symbols[symbol].exports().is_some() {
-                todo!();
-                // members = getExportsOfSymbol(symbol);
-                // if (symbol == globalThisSymbol) {
-                //     const varsOnly = new Map<string, Symbol>() as SymbolTable;
-                //     members.forEach(p => {
-                //         if (!(p.flags & SymbolFlags::BlockScoped)) {
-                //             varsOnly.set(p.escapedName, p);
-                //         }
-                //     });
-                //     members = varsOnly;
-                // }
+                members = self.getExportsOfSymbol(symbol);
+                if symbol == self.globalThisSymbol {
+                    let mut varsOnly = SymbolTable::default();
+                    for &p in self.symbol_tables[members].values() {
+                        if !self.symbols[p].flags().intersects(SymbolFlags::BlockScoped) {
+                            varsOnly.insert(self.symbols[p].escapedName().clone(), p);
+                        }
+                    }
+                    members = self.symbol_tables.push(varsOnly);
+                }
             }
             self.setStructuredTypeMembers(
                 ty,
@@ -7288,20 +7810,26 @@ impl Checker {
             );
             let mut baseConstructorIndexInfo = None;
             if self.symbols[symbol].flags().intersects(SymbolFlags::Class) {
-                todo!();
-                // const classType = getDeclaredTypeOfClassOrInterface(symbol);
-                // const baseConstructorType = getBaseConstructorTypeOfClass(classType);
-                // if (baseConstructorType.flags & (TypeFlags::Object | TypeFlags::Intersection | TypeFlags::TypeVariable)) {
-                //     members = createSymbolTable(getNamedOrIndexSignatureMembers(members));
-                //     addInheritedMembers(members, getPropertiesOfType(baseConstructorType));
-                // }
-                // else if (baseConstructorType === anyType) {
-                //     baseConstructorIndexInfo = createIndexInfo(stringType, anyType, /*isReadonly*/ false);
-                // }
+                let classType = self.getDeclaredTypeOfClassOrInterface(symbol);
+                let baseConstructorType = self.getBaseConstructorTypeOfClass(classType);
+                if self.types[baseConstructorType].get_flags().intersects(
+                    TypeFlags::Object | TypeFlags::Intersection | TypeFlags::TypeVariable,
+                ) {
+                    let new_members = SymbolTable::from_iter(
+                        self.getNamedOrIndexSignatureMembers(members)
+                            .iter()
+                            .map(|&s| (self.symbols[s].escapedName().clone(), s)),
+                    );
+                    members = self.symbol_tables.push(new_members);
+                    let base_props = self.getPropertiesOfType(baseConstructorType);
+                    self.addInheritedMembers(members, base_props);
+                } else if baseConstructorType == self.anyType {
+                    baseConstructorIndexInfo =
+                        Some(self.createIndexInfo(self.stringType, self.anyType, false, None));
+                }
             }
 
-            let indexInfos = if let Some(indexSymbol) =
-                getIndexSymbolFromSymbolTable(&self.symbol_tables[members])
+            let indexInfos = if let Some(indexSymbol) = self.getIndexSymbolFromSymbolTable(members)
             {
                 Some(Rc::new(self.getIndexInfosOfIndexSymbol(indexSymbol)))
             } else {
@@ -7352,20 +7880,33 @@ impl Checker {
             }
             // And likewise for construct signatures for classes
             if self.symbols[symbol].flags().intersects(SymbolFlags::Class) {
-                todo!();
-                // const classType = getDeclaredTypeOfClassOrInterface(symbol);
-                // let constructSignatures = symbol.members ? getSignaturesOfSymbol(symbol.members.get(InternalSymbolName.Constructor)) : emptyArray;
-                // if (symbol.flags & SymbolFlags::Function) {
-                //     constructSignatures = addRange(constructSignatures.slice(), mapDefined(
-                //         ty.callSignatures,
-                //         sig => isJSConstructor(sig.declaration) ?
-                //             createSignature(sig.declaration, sig.typeParameters, sig.thisParameter, sig.parameters, classType, /*resolvedTypePredicate*/ undefined, sig.minArgumentCount, sig.flags & SignatureFlags.PropagatingFlags) :
-                //             undefined));
-                // }
-                // if (!constructSignatures.length) {
-                //     constructSignatures = getDefaultConstructSignatures(classType);
-                // }
-                // ty.constructSignatures = constructSignatures;
+                let classType = self.getDeclaredTypeOfClassOrInterface(symbol);
+                let mut constructSignatures = if let Some(members) = self.symbols[symbol].members()
+                {
+                    let constructor_sym = self.symbol_tables[*members]
+                        .get(&JsWord::from(InternalSymbolName::Constructor))
+                        .copied();
+                    self.getSignaturesOfSymbol(constructor_sym)
+                } else {
+                    Vec::new()
+                };
+                if self.symbols[symbol]
+                    .flags()
+                    .intersects(SymbolFlags::Function)
+                {
+                    todo!();
+                    // constructSignatures = addRange(constructSignatures.slice(), mapDefined(
+                    //     ty.callSignatures,
+                    //     sig => isJSConstructor(sig.declaration) ?
+                    //         createSignature(sig.declaration, sig.typeParameters, sig.thisParameter, sig.parameters, classType, /*resolvedTypePredicate*/ undefined, sig.minArgumentCount, sig.flags & SignatureFlags.PropagatingFlags) :
+                    //         undefined));
+                }
+                if constructSignatures.is_empty() {
+                    constructSignatures = self.getDefaultConstructSignatures(classType);
+                }
+                self.types[ty]
+                    .unwrap_object_type_base_mut()
+                    .constructSignatures = Rc::new(constructSignatures);
             }
         }
     }
@@ -7400,10 +7941,36 @@ impl Checker {
         }
     }
 
-    // TODO:
-    // getConstraintTypeFromMappedType
-    // TODO:
-    // getNameTypeFromMappedType
+    fn getConstraintTypeFromMappedType(&mut self, ty: TypeId) -> TypeId {
+        match unwrap_as!(&self.types[ty], Type::MappedType(t), t).constraintType {
+            Some(constraintType) => constraintType,
+            None => {
+                let type_param = self.getTypeParameterFromMappedType(ty);
+                let constraintType = self
+                    .getConstraintOfTypeParameter(type_param)
+                    .unwrap_or(self.errorType);
+                unwrap_as!(&mut self.types[ty], Type::MappedType(t), t).constraintType =
+                    Some(constraintType);
+                constraintType
+            }
+        }
+    }
+
+    fn getNameTypeFromMappedType(&mut self, ty: TypeId) -> Option<TypeId> {
+        let t = unwrap_as!(&self.types[ty], Type::MappedType(t), t);
+        if let Some(name_type_node) = &t.declaration.name_type {
+            if t.nameType.is_none() {
+                let mapper = t.anonymous_type.mapper.clone();
+                let nameType =
+                    self.getTypeFromTypeNode(name_type_node.bind(t.declaration.clone().into()));
+                let nameType = self.instantiateType(nameType, mapper);
+                unwrap_as!(&mut self.types[ty], Type::MappedType(t), t).nameType = Some(nameType);
+            }
+            unwrap_as!(&self.types[ty], Type::MappedType(t), t).nameType
+        } else {
+            None
+        }
+    }
     // TODO:
     // getTemplateTypeFromMappedType
     // TODO:
@@ -7438,10 +8005,7 @@ impl Checker {
     fn resolveStructuredTypeMembers(&mut self, ty: TypeId) -> TypeId {
         let type_flags = self.types[ty].get_flags();
         if !matches!(self.types[ty], Type::ResolvedType(_))
-            || unwrap_as!(&self.types[ty], Type::ResolvedType(t), t)
-                .object_type_base
-                .members
-                .is_none()
+            || self.types[ty].unwrap_object_type_base().members.is_none()
         {
             if type_flags.intersects(TypeFlags::Object) {
                 let object_flags = self.types[ty].get_object_flags();
@@ -7459,8 +8023,7 @@ impl Checker {
                     // resolveMappedTypeMembers(ty as MappedType);
                 }
             } else if type_flags.intersects(TypeFlags::Union) {
-                todo!();
-                // resolveUnionTypeMembers(ty as UnionType);
+                self.resolveUnionTypeMembers(ty);
             } else if type_flags.intersects(TypeFlags::Intersection) {
                 todo!();
                 // resolveIntersectionTypeMembers(ty as IntersectionType);
@@ -7538,7 +8101,7 @@ impl Checker {
         }
     }
 
-    fn getPropertiesOfType(&mut self, mut ty: TypeId) -> Rc<Vec<SymbolId>> {
+    pub fn getPropertiesOfType(&mut self, mut ty: TypeId) -> Rc<Vec<SymbolId>> {
         ty = self.getReducedApparentType(ty);
         if self.types[ty]
             .get_flags()
@@ -7554,8 +8117,30 @@ impl Checker {
     // isTypeInvalidDueToUnionDiscriminant
     // TODO:
     // getAllPossiblePropertiesOfTypes
-    // TODO:
-    // getConstraintOfType
+
+    pub fn getConstraintOfType(&mut self, ty: TypeId) -> Option<TypeId> {
+        // TODO: debug_assert!(type is InstantiableType | UnionOrIntersectionType);
+        if self.types[ty]
+            .get_flags()
+            .intersects(TypeFlags::TypeParameter)
+        {
+            self.getConstraintOfTypeParameter(ty)
+        } else if self.types[ty]
+            .get_flags()
+            .intersects(TypeFlags::IndexedAccess)
+        {
+            todo!();
+            // self.getConstraintOfIndexedAccess(ty)
+        } else if self.types[ty]
+            .get_flags()
+            .intersects(TypeFlags::Conditional)
+        {
+            todo!();
+            // self.getConstraintOfConditionalType(ty)
+        } else {
+            self.getBaseConstraintOfType(ty)
+        }
+    }
 
     fn getConstraintOfTypeParameter(&mut self, typeParameter: TypeId) -> Option<TypeId> {
         if self.hasNonCircularBaseConstraint(typeParameter) {
@@ -7600,8 +8185,7 @@ impl Checker {
             };
         }
         if type_flags.intersects(TypeFlags::Index) {
-            todo!()
-            // self.keyofConstraintType
+            self.keyofConstraintType
         } else {
             None
         }
@@ -7713,31 +8297,40 @@ impl Checker {
                     constraint
                 }
             } else if type_flags.intersects(TypeFlags::UnionOrIntersection) {
-                todo!();
-                // const types = (t as UnionOrIntersectionType).types;
-                // const baseTypes: Type[] = [];
-                // let different = false;
-                // for (const ty of types) {
-                //     const baseType = getBaseConstraint(ty);
-                //     if (baseType) {
-                //         if (baseType !== ty) {
-                //             different = true;
-                //         }
-                //         baseTypes.push(baseType);
-                //     }
-                //     else {
-                //         different = true;
-                //     }
-                // }
-                // if (!different) {
-                //     return t;
-                // }
-                // t.flags & TypeFlags::Union && baseTypes.length === types.length ? getUnionType(baseTypes) :
-                //     t.flags & TypeFlags::Intersection && baseTypes.length ? getIntersectionType(baseTypes) :
-                //     undefined
+                let types = checker.types[t]
+                    .unwrap_as_union_or_intersection()
+                    .types
+                    .clone();
+                let mut baseTypes = Vec::new();
+                let mut different = false;
+                for &ty in types.iter() {
+                    if let Some(baseType) = getBaseConstraint(checker, stack, ty) {
+                        if baseType != ty {
+                            different = true;
+                        }
+                        baseTypes.push(baseType);
+                    } else {
+                        different = true;
+                    }
+                }
+                if !different {
+                    return Some(t);
+                }
+                if checker.types[t].get_flags().intersects(TypeFlags::Union)
+                    && baseTypes.len() == types.len()
+                {
+                    Some(checker.getUnionType(&baseTypes, None, None, None, None))
+                } else if checker.types[t]
+                    .get_flags()
+                    .intersects(TypeFlags::Intersection)
+                    && !baseTypes.is_empty()
+                {
+                    Some(checker.getIntersectionType(&baseTypes, None, None))
+                } else {
+                    None
+                }
             } else if type_flags.intersects(TypeFlags::Index) {
-                todo!();
-                // checker.keyofConstraintType
+                checker.keyofConstraintType
             } else if type_flags.intersects(TypeFlags::TemplateLiteral) {
                 todo!();
                 // const types = (t as TemplateLiteralType).types;
@@ -7865,7 +8458,7 @@ impl Checker {
      * boolean, and symbol primitive types, return the corresponding object types. Otherwise return the
      * type itself.
      */
-    fn getApparentType(&mut self, ty: TypeId) -> TypeId {
+    pub fn getApparentType(&mut self, ty: TypeId) -> TypeId {
         let t = if self.types[ty]
             .get_flags()
             .intersects(TypeFlags::Instantiable)
@@ -7899,8 +8492,7 @@ impl Checker {
         } else if ty_flags.intersects(TypeFlags::NonPrimitive) {
             self.emptyObjectType
         } else if ty_flags.intersects(TypeFlags::Index) {
-            todo!();
-            // self.keyofConstraintType
+            self.keyofConstraintType()
         } else if ty_flags.intersects(TypeFlags::Unknown) && !self.strictNullChecks {
             self.emptyObjectType
         } else {
@@ -7918,12 +8510,352 @@ impl Checker {
         self.getReducedType(apparent)
     }
 
-    // TODO:
-    // createUnionOrIntersectionProperty
-    // TODO:
-    // getUnionOrIntersectionProperty
-    // TODO:
-    // getPropertyOfUnionOrIntersectionType
+    fn createUnionOrIntersectionProperty(
+        &mut self,
+        containingType: TypeId,
+        name: &JsWord,
+        skipObjectFunctionPropertyAugment: bool,
+    ) -> Option<SymbolId> {
+        let mut singleProp = None;
+        let mut propSet = None;
+        // TODO: remove type ann
+        let mut indexTypes: Vec<TypeId> = Vec::new();
+        let isUnion = self.types[containingType]
+            .get_flags()
+            .intersects(TypeFlags::Union);
+        // Flags we want to propagate to the result if they exist in all source symbols
+        let mut optionalFlag = if isUnion {
+            SymbolFlags::None
+        } else {
+            SymbolFlags::Optional
+        };
+        let mut syntheticFlag = CheckFlags::SyntheticMethod;
+        let mut checkFlags = if isUnion {
+            CheckFlags::empty()
+        } else {
+            CheckFlags::Readonly
+        };
+        let mut mergedInstantiations = false;
+        for &current in self.types[containingType]
+            .unwrap_as_union_or_intersection()
+            .types
+            .clone()
+            .iter()
+        {
+            let ty = self.getApparentType(current);
+            if !(self.isErrorType(ty) || self.types[ty].get_flags().intersects(TypeFlags::Never)) {
+                let prop = self.getPropertyOfType(ty, &name, skipObjectFunctionPropertyAugment);
+                let modifiers = if let Some(prop) = prop {
+                    self.getDeclarationModifierFlagsFromSymbol(prop, false)
+                } else {
+                    ModifierFlags::empty()
+                };
+                if let Some(prop) = prop {
+                    if isUnion {
+                        optionalFlag |= self.symbols[prop].flags() & SymbolFlags::Optional;
+                    } else {
+                        optionalFlag &= self.symbols[prop].flags();
+                    }
+                    if singleProp.is_none() {
+                        singleProp = Some(prop);
+                    } else if prop != singleProp.unwrap() {
+                        let singleProp = singleProp.unwrap();
+                        let isInstantiation = self.getTargetSymbol(prop).unwrap_or(prop)
+                            == self.getTargetSymbol(singleProp).unwrap_or(singleProp);
+                        // If the symbols are instances of one another with identical types - consider the symbols
+                        // equivalent and just use the first one, which thus allows us to avoid eliding private
+                        // members when intersecting a (this-)instantiations of a class with it's raw base or another instance
+                        if isInstantiation
+                            && self.compareProperties(singleProp, prop, |a, b| {
+                                if a == b {
+                                    Ternary::True
+                                } else {
+                                    Ternary::False
+                                }
+                            }) == Ternary::True
+                        {
+                            todo!();
+                            // If we merged instantiations of a generic type, we replicate the symbol parent resetting behavior we used
+                            // to do when we recorded multiple distinct symbols so that we still get, eg, `Array<T>.length` printed
+                            // back and not `Array<string>.length` when we're looking at a `.length` access on a `string[] | number[]`
+                            // mergedInstantiations = !!singleProp.parent && !!length(getLocalTypeParametersOfClassOrInterfaceOrTypeAlias(singleProp.parent));
+                        } else {
+                            if propSet.is_none() {
+                                let mut set = AHashSet::with_capacity(2);
+                                set.insert(singleProp);
+                                propSet = Some(set);
+                            }
+                            if !propSet.as_ref().unwrap().contains(&prop) {
+                                propSet.as_mut().unwrap().insert(prop);
+                            }
+                        }
+                    }
+                    if isUnion && self.isReadonlySymbol(prop) {
+                        checkFlags |= CheckFlags::Readonly;
+                    } else if !isUnion && !self.isReadonlySymbol(prop) {
+                        checkFlags &= !CheckFlags::Readonly;
+                    }
+                    let mut new_check_flags = CheckFlags::empty();
+                    new_check_flags.set(
+                        CheckFlags::ContainsProtected,
+                        modifiers.intersects(ModifierFlags::Protected),
+                    );
+                    new_check_flags.set(
+                        CheckFlags::ContainsPrivate,
+                        modifiers.intersects(ModifierFlags::Private),
+                    );
+                    new_check_flags.set(
+                        CheckFlags::ContainsStatic,
+                        modifiers.intersects(ModifierFlags::Static),
+                    );
+                    new_check_flags.set(
+                        CheckFlags::ContainsPublic,
+                        !modifiers.intersects(ModifierFlags::NonPublicAccessibilityModifier),
+                    );
+                    checkFlags |= new_check_flags;
+                    if !self.isPrototypeProperty(prop) {
+                        syntheticFlag = CheckFlags::SyntheticProperty;
+                    }
+                } else if isUnion {
+                    todo!();
+                    // const indexInfo = !isLateBoundName(name) && getApplicableIndexInfoForName(ty, name);
+                    // if (indexInfo) {
+                    //     checkFlags |= CheckFlags.WritePartial | (indexInfo.isReadonly ? CheckFlags.Readonly : 0);
+                    //     indexTypes = append(indexTypes, isTupleType(ty) ? getRestTypeOfTupleType(ty) || undefinedType : indexInfo.ty);
+                    // }
+                    // else if (isObjectLiteralType(ty) && !(getObjectFlags(ty) & ObjectFlags.ContainsSpread)) {
+                    //     checkFlags |= CheckFlags.WritePartial;
+                    //     indexTypes = append(indexTypes, undefinedType);
+                    // }
+                    // else {
+                    //     checkFlags |= CheckFlags.ReadPartial;
+                    // }
+                }
+            }
+        }
+        if singleProp.is_none()
+            || isUnion
+                && (propSet.is_some() || checkFlags.intersects(CheckFlags::Partial))
+                && checkFlags
+                    .intersects(CheckFlags::ContainsPrivate | CheckFlags::ContainsProtected)
+        {
+            // No property was found, or, in a union, a property has a private or protected declaration in one
+            // constituent, but is missing or has a different declaration in another constituent.
+            return None;
+        }
+        if propSet.is_none()
+            && !checkFlags.intersects(CheckFlags::ReadPartial)
+            && indexTypes.is_empty()
+        {
+            todo!();
+            // if (mergedInstantiations) {
+            //     // No symbol from a union/intersection should have a `.parent` set (since unions/intersections don't act as symbol parents)
+            //     // Unless that parent is "reconstituted" from the "first value declaration" on the symbol (which is likely different than its instantiated parent!)
+            //     // They also have a `.containingType` set, which affects some services endpoints behavior, like `getRootSymbol`
+            //     const clone = createSymbolWithType(singleProp, (singleProp as TransientSymbol).type);
+            //     clone.parent = singleProp.valueDeclaration?.symbol?.parent;
+            //     clone.containingType = containingType;
+            //     clone.mapper = (singleProp as TransientSymbol).mapper;
+            //     return clone;
+            // }
+            // else {
+            //     return singleProp;
+            // }
+        }
+        let prop_counts = if let Some(propSet) = &propSet {
+            propSet.len()
+        } else {
+            // 1 for singleProp
+            1
+        };
+        // let props = if let Some(propSet) = propSet {
+        //     propSet.values().collect()
+        // } else {
+        //     vec![singleProp.unwrap()]
+        // };
+        let mut declarations = Vec::new();
+        let mut firstType = None;
+        let mut nameType = None;
+        let mut propTypes = Vec::with_capacity(prop_counts);
+        let mut firstValueDeclaration = None;
+        let mut hasNonUniformValueDeclaration = false;
+        let mut handle_prop = |prop| {
+            if firstValueDeclaration.is_none() {
+                firstValueDeclaration = self.symbols[prop].valueDeclaration().clone();
+            } else if self.symbols[prop].valueDeclaration().is_some()
+                && self.symbols[prop].valueDeclaration() != &firstValueDeclaration
+            {
+                hasNonUniformValueDeclaration = true;
+            }
+            declarations.extend(self.symbols[prop].declarations().iter().cloned());
+            let ty = self.getTypeOfSymbol(prop);
+            if firstType.is_none() {
+                firstType = Some(ty);
+                nameType = self.getSymbolLinks(prop).nameType;
+            } else if ty != firstType.unwrap() {
+                checkFlags |= CheckFlags::HasNonUniformType;
+            }
+            if self.isLiteralType(ty) || self.isPatternLiteralType(ty) {
+                checkFlags |= CheckFlags::HasLiteralType;
+            }
+            if self.types[ty].get_flags().intersects(TypeFlags::Never) {
+                checkFlags |= CheckFlags::HasNeverType;
+            }
+            propTypes.push(ty);
+        };
+        let prop_counts = if let Some(propSet) = propSet {
+            for prop in propSet {
+                handle_prop(prop);
+            }
+        } else {
+            handle_prop(singleProp.unwrap());
+        };
+
+        // for prop in props {
+        //     if firstValueDeclaration.is_none() {
+        //         firstValueDeclaration = self.symbols[prop].valueDeclaration().clone();
+        //     } else if self.symbols[prop].valueDeclaration().is_some()
+        //         && self.symbols[prop].valueDeclaration() != &firstValueDeclaration
+        //     {
+        //         hasNonUniformValueDeclaration = true;
+        //     }
+        //     declarations.extend(self.symbols[prop].declarations().iter().cloned());
+        //     let ty = self.getTypeOfSymbol(prop);
+        //     if firstType.is_none() {
+        //         firstType = Some(ty);
+        //         nameType = self.getSymbolLinks(prop).nameType;
+        //     } else if ty != firstType.unwrap() {
+        //         checkFlags |= CheckFlags::HasNonUniformType;
+        //     }
+        //     if self.isLiteralType(ty) || self.isPatternLiteralType(ty) {
+        //         checkFlags |= CheckFlags::HasLiteralType;
+        //     }
+        //     if self.types[ty].get_flags().intersects(TypeFlags::Never) {
+        //         checkFlags |= CheckFlags::HasNeverType;
+        //     }
+        //     propTypes.push(ty);
+        // }
+        propTypes.extend(indexTypes.iter().copied());
+        let result_id = self.createSymbol(
+            SymbolFlags::Property | optionalFlag,
+            name.clone(),
+            Some(syntheticFlag | checkFlags),
+        );
+        let result = self.symbols[result_id].as_transient_symbol_mut();
+        result.symbol_links.containingType = Some(containingType);
+        if !hasNonUniformValueDeclaration && firstValueDeclaration.is_some() {
+            result.valueDeclaration = firstValueDeclaration.clone();
+
+            let firstValueDeclaration_sym = self
+                .node_data(firstValueDeclaration.unwrap())
+                .symbol
+                .unwrap();
+            // Inherit information about parent type.
+            if self.symbols[firstValueDeclaration_sym].parent().is_some() {
+                self.symbols[result_id].as_transient_symbol_mut().parent =
+                    self.symbols[firstValueDeclaration_sym].parent();
+            }
+        }
+        let result = self.symbols[result_id].as_transient_symbol_mut();
+        result.declarations = declarations;
+        result.symbol_links.nameType = nameType;
+        if propTypes.len() > 2 {
+            // When `propTypes` has the potential to explode in size when normalized, defer normalization until absolutely needed
+            result.check_flags |= CheckFlags::DeferredType;
+            result.symbol_links.deferralParent = Some(containingType);
+            result.symbol_links.deferralConstituents = propTypes;
+        } else {
+            self.symbols[result_id]
+                .as_transient_symbol_mut()
+                .symbol_links
+                .ty = Some(if isUnion {
+                self.getUnionType(&propTypes, None, None, None, None)
+            } else {
+                self.getIntersectionType(&propTypes, None, None)
+            });
+        }
+        Some(result_id)
+    }
+
+    // Return the symbol for a given property in a union or intersection type, or undefined if the property
+    // does not exist in any constituent type. Note that the returned property may only be present in some
+    // constituents, in which case the isPartial flag is set when the containing type is union type. We need
+    // these partial properties when identifying discriminant properties, but otherwise they are filtered out
+    // and do not appear to be present in the union type.
+    fn getUnionOrIntersectionProperty(
+        &mut self,
+        ty: TypeId,
+        name: &JsWord,
+        skipObjectFunctionPropertyAugment: bool,
+    ) -> Option<SymbolId> {
+        let t = self.types[ty].unwrap_as_union_or_intersection();
+        let mut property = if t
+            .propertyCacheWithoutObjectFunctionPropertyAugment
+            .map(|c| self.symbol_tables[c].contains_key(name))
+            .unwrap_or_default()
+            || !skipObjectFunctionPropertyAugment
+        {
+            t.propertyCache
+                .and_then(|c| self.symbol_tables[c].get(name).copied())
+        } else {
+            None
+        };
+        if property.is_none() {
+            property =
+                self.createUnionOrIntersectionProperty(ty, name, skipObjectFunctionPropertyAugment);
+            if let Some(property) = property {
+                let properties = if skipObjectFunctionPropertyAugment {
+                    match self.types[ty]
+                        .unwrap_as_union_or_intersection()
+                        .propertyCacheWithoutObjectFunctionPropertyAugment
+                    {
+                        Some(cache) => cache,
+                        None => {
+                            let cache = self.symbol_tables.push(SymbolTable::with_capacity(1));
+                            self.types[ty]
+                                .unwrap_as_union_or_intersection_mut()
+                                .propertyCacheWithoutObjectFunctionPropertyAugment = Some(cache);
+                            cache
+                        }
+                    }
+                } else {
+                    match self.types[ty]
+                        .unwrap_as_union_or_intersection()
+                        .propertyCache
+                    {
+                        Some(cache) => cache,
+                        None => {
+                            let cache = self.symbol_tables.push(SymbolTable::with_capacity(1));
+                            self.types[ty]
+                                .unwrap_as_union_or_intersection_mut()
+                                .propertyCache = Some(cache);
+                            cache
+                        }
+                    }
+                };
+                self.symbol_tables[properties].insert(name.clone(), property);
+            }
+        }
+        property
+    }
+
+    fn getPropertyOfUnionOrIntersectionType(
+        &mut self,
+        ty: TypeId,
+        name: &JsWord,
+        skipObjectFunctionPropertyAugment: bool,
+    ) -> Option<SymbolId> {
+        let property =
+            self.getUnionOrIntersectionProperty(ty, name, skipObjectFunctionPropertyAugment);
+        // We need to filter out partial properties in union types
+        if property.is_some()
+            && !getCheckFlags(&self.symbols[property.unwrap()]).intersects(CheckFlags::ReadPartial)
+        {
+            property
+        } else {
+            None
+        }
+    }
 
     /**
      * Return the reduced form of the given type. For a union type, it is a union of the normalized constituent types.
@@ -7980,8 +8912,8 @@ impl Checker {
         let type_flags = self.types[ty].get_flags();
         if type_flags.intersects(TypeFlags::Object) {
             let resolved = self.resolveStructuredTypeMembers(ty);
-            let members = unwrap_as!(&self.types[resolved], Type::ResolvedType(t), t)
-                .object_type_base
+            let members = self.types[resolved]
+                .unwrap_object_type_base()
                 .members
                 .unwrap();
             if let Some(symbol) = self.symbol_tables[members].get(name).copied() {
@@ -8018,12 +8950,11 @@ impl Checker {
             return self.getPropertyOfObjectType(self.globalObjectType(), name);
         }
         if type_flags.intersects(TypeFlags::UnionOrIntersection) {
-            todo!();
-            // return getPropertyOfUnionOrIntersectionType(
-            //     ty,
-            //     name,
-            //     skipObjectFunctionPropertyAugment,
-            // );
+            return self.getPropertyOfUnionOrIntersectionType(
+                ty,
+                name,
+                skipObjectFunctionPropertyAugment,
+            );
         }
         None
     }
@@ -8113,7 +9044,7 @@ impl Checker {
         self.isTypeAssignableTo(source, target)
             || target == self.stringType && self.isTypeAssignableTo(source, self.numberType)
             || target == self.numberType
-                && matches!(&self.types[source], Type::StringLiteralType(t) if isNumericLiteralName(&t.value))
+                && matches!(&self.types[source], Type::StringLiteralType(t) if is_numeric_literal_name(&t.value))
     }
 
     fn getIndexInfosOfStructuredType(&mut self, ty: TypeId) -> Rc<Vec<IndexInfoId>> {
@@ -8226,7 +9157,7 @@ impl Checker {
     ) -> Option<Rc<Vec<TypeId>>> {
         if let Some(typeParameters) = typeParameters {
             let numTypeParameters = typeParameters.len();
-            let numTypeArguments = typeArguments.as_ref().map(|v| v.len()).unwrap_or_default();
+            let numTypeArguments = typeArguments.length();
             if isJavaScriptImplicitAny
                 || (numTypeArguments >= minTypeArgumentCount
                     && numTypeArguments <= numTypeParameters)
@@ -8236,9 +9167,21 @@ impl Checker {
                 } else {
                     Rc::new(Vec::new())
                 };
+
+                // Note: In the following, TSC iterates over the range numTypeArguments..numTypeParameters, and indexes into `result`.
+                // However, this range can sometimes be out of bounds (e.g. if a class' only tpe param is a default and an instantiation supplies 0).
+                // TSC doesn't appear to explicitly handle this, but because javascript allows out of bounds assignment, it implicitly works.
+                // Our code below has to handle it explicitly using get_mut.
+
                 // Map invalid forward references in default types to the error type
                 for i in numTypeArguments..numTypeParameters {
-                    Rc::make_mut(&mut result)[i] = self.errorType;
+                    let mut r = Rc::make_mut(&mut result);
+                    match r.get_mut(i) {
+                        Some(v) => *v = self.errorType,
+                        None => {
+                            r.push(self.errorType);
+                        }
+                    }
                 }
                 let baseDefaultType = self.getDefaultTypeArgumentType(isJavaScriptImplicitAny);
                 for i in numTypeArguments..numTypeParameters {
@@ -8250,15 +9193,26 @@ impl Checker {
                     {
                         defaultType = Some(self.anyType);
                     }
-                    Rc::make_mut(&mut result)[i] = if let Some(defaultType) = defaultType {
-                        todo!();
-                        // self.instantiateType(
-                        //     defaultType,
-                        //     Some(self.createTypeMapper(typeParameters.clone(), Some(result))),
-                        // )
+
+                    let defaultType = if let Some(defaultType) = defaultType {
+                        self.instantiateType(
+                            defaultType,
+                            // TODO: this might be wrong; each default type gets its own copy of the result,
+                            // which won't include the remapping in the following iterations.
+                            Some(
+                                self.createTypeMapper(typeParameters.clone(), Some(result.clone())),
+                            ),
+                        )
                     } else {
                         baseDefaultType
                     };
+                    let mut r = Rc::make_mut(&mut result);
+                    match r.get_mut(i) {
+                        Some(v) => *v = defaultType,
+                        None => {
+                            r.push(defaultType);
+                        }
+                    }
                 }
                 Rc::make_mut(&mut result).truncate(typeParameters.len());
                 return Some(result);
@@ -8295,6 +9249,7 @@ impl Checker {
                 flags.insert(SignatureFlags::IsUntypedSignatureInJSFile);
             }
 
+            #[derive(Debug)]
             struct Param {
                 node: BoundNode,
                 is_optional: bool,
@@ -8417,13 +9372,13 @@ impl Checker {
                     .map(|p| match p {
                         ast::ParamOrTsParamProp::TsParamProp(n) => match &n.param {
                             ast::TsParamPropParam::Ident(p) => Param::new(
-                                n.param.bind(declaration.clone()),
+                                n.bind(declaration.clone()),
                                 p.id.optional,
                                 true,
                                 p.type_ann.clone(),
                             ),
                             ast::TsParamPropParam::Assign(p) => Param::new(
-                                n.param.bind(declaration.clone()),
+                                n.bind(declaration.clone()),
                                 true,
                                 true,
                                 p.type_ann.clone(),
@@ -8552,8 +9507,12 @@ impl Checker {
             //     }
             // }
 
-            let classType = if let BoundNode::Constructor(_) = declaration {
-                let parent_class = declaration.parent().unwrap();
+            let classType = if let BoundNode::Constructor(c) = &declaration {
+                let parent_class = c.parent.as_ref().unwrap().parent().unwrap();
+                debug_assert!(matches!(
+                    parent_class,
+                    BoundNode::ClassDecl(_) | BoundNode::ClassExpr(_)
+                ));
                 let sym = self.node_data(parent_class).symbol.unwrap();
                 let sym = self.getMergedSymbol(sym);
                 Some(self.getDeclaredTypeOfClassOrInterface(sym))
@@ -8721,12 +9680,11 @@ impl Checker {
                         self.noTypePredicate.clone()
                     }
                 } else if !self.signatures[signature].compositeSignatures.is_empty() {
-                    todo!();
-                    // self.getUnionOrIntersectionTypePredicate(
-                    //     self.signatures[signature].compositeSignatures,
-                    //     self.signatures[signature].compositeKind,
-                    // )
-                    // .unwrap_or(self.noTypePredicate)
+                    self.getUnionOrIntersectionTypePredicate(
+                        &self.signatures[signature].compositeSignatures.clone(),
+                        self.signatures[signature].compositeKind,
+                    )
+                    .unwrap_or(self.noTypePredicate.clone())
                 } else {
                     let decl = &self.signatures[signature].declaration;
                     let ty = decl
@@ -8802,8 +9760,18 @@ impl Checker {
         }
     }
 
-    // TODO:
-    // getUnionOrIntersectionType
+    fn getUnionOrIntersectionType(
+        &mut self,
+        types: &[TypeId],
+        kind: Option<TypeFlags>,
+        unionReduction: Option<UnionReduction>,
+    ) -> TypeId {
+        if kind != Some(TypeFlags::Intersection) {
+            self.getUnionType(types, unionReduction, None, None, None)
+        } else {
+            self.getIntersectionType(types, None, None)
+        }
+    }
 
     fn getReturnTypeOfSignature(&mut self, signature: SignatureId) -> TypeId {
         match self.signatures[signature].resolvedReturnType {
@@ -8819,18 +9787,18 @@ impl Checker {
                     let ty = self.getReturnTypeOfSignature(target);
                     self.instantiateType(ty, self.signatures[signature].mapper.clone())
                 } else if !self.signatures[signature].compositeSignatures.is_empty() {
-                    todo!();
-                    // self.instantiateType(
-                    //     self.getUnionOrIntersectionType(
-                    //         map(
-                    //             compositeSignatures,
-                    //             getReturnTypeOfSignature,
-                    //         ),
-                    //         self.signatures[signature].compositeKind,
-                    //         UnionReduction::Subtype,
-                    //     ),
-                    //     self.signatures[signature].mapper,
-                    // )
+                    let types = self.signatures[signature]
+                        .compositeSignatures
+                        .clone()
+                        .iter()
+                        .map(|&s| self.getReturnTypeOfSignature(s))
+                        .collect::<Vec<_>>();
+                    let ty = self.getUnionOrIntersectionType(
+                        &types,
+                        self.signatures[signature].compositeKind,
+                        Some(UnionReduction::Subtype),
+                    );
+                    self.instantiateType(ty, self.signatures[signature].mapper.clone())
                 } else {
                     fn signature_declaration_has_body(decl: &Option<BoundNode>) -> bool {
                         if let Some(decl) = decl {
@@ -8909,10 +9877,12 @@ impl Checker {
 
     fn getReturnTypeFromAnnotation(&mut self, declaration: &BoundNode) -> Option<TypeId> {
         if matches!(declaration, BoundNode::Constructor(_)) {
-            let sym = self
-                .node_data(declaration.parent().unwrap())
-                .symbol
-                .unwrap();
+            let parent_class = declaration.parent().unwrap().parent().unwrap();
+            debug_assert!(matches!(
+                parent_class,
+                BoundNode::ClassDecl(_) | BoundNode::ClassExpr(_)
+            ));
+            let sym = self.node_data(parent_class).symbol.unwrap();
             let sym = self.getMergedSymbol(sym);
             return Some(self.getDeclaredTypeOfClassOrInterface(sym));
         }
@@ -8968,13 +9938,13 @@ impl Checker {
     ) -> SignatureId {
         let typeArguments = self.fillMissingTypeArguments(
             typeArguments,
-            Some(self.signatures[signature].typeParameters.clone()),
-            self.getMinTypeArgumentCount(Some(self.signatures[signature].typeParameters.clone())),
+            self.signatures[signature].typeParameters.clone(),
+            self.getMinTypeArgumentCount(self.signatures[signature].typeParameters.clone()),
             isJavascript,
         );
         let instantiatedSignature =
             self.getSignatureInstantiationWithoutFillingInTypeArguments(signature, typeArguments);
-        if let Some(inferredTypeParameters) = inferredTypeParameters {
+        if inferredTypeParameters.is_some() {
             let ty = self.getReturnTypeOfSignature(instantiatedSignature);
             let returnSignature = self.getSingleCallOrConstructSignature(ty);
             if let Some(returnSignature) = returnSignature {
@@ -9021,12 +9991,12 @@ impl Checker {
         signature: SignatureId,
         typeArguments: Option<Rc<Vec<TypeId>>>,
     ) -> Rc<TypeMapper> {
-        let typeParameters = self.signatures[signature].typeParameters.clone();
+        let typeParameters = self.signatures[signature].typeParameters.clone().unwrap();
         self.createTypeMapper(typeParameters, typeArguments)
     }
 
     fn getErasedSignature(&mut self, signature: SignatureId) -> SignatureId {
-        if !self.signatures[signature].typeParameters.is_empty() {
+        if self.signatures[signature].typeParameters.is_some() {
             match self.signatures[signature].erasedSignatureCache {
                 Some(sig) => sig,
                 None => {
@@ -9044,7 +10014,7 @@ impl Checker {
         // Create an instantiation of the signature where all type arguments are the any type.
         self.instantiateSignature(
             signature,
-            self.createTypeEraser(self.signatures[signature].typeParameters.clone()),
+            self.createTypeEraser(self.signatures[signature].typeParameters.clone().unwrap()),
             true,
         )
     }
@@ -9055,8 +10025,7 @@ impl Checker {
     // createCanonicalSignature
 
     fn getBaseSignature(&mut self, signature: SignatureId) -> SignatureId {
-        let typeParameters = &self.signatures[signature].typeParameters;
-        if !typeParameters.is_empty() {
+        if let Some(typeParameters) = self.signatures[signature].typeParameters.clone() {
             if let Some(baseSignatureCache) = self.signatures[signature].baseSignatureCache {
                 return baseSignatureCache;
             }
@@ -9071,11 +10040,9 @@ impl Checker {
                     })
                     .collect(),
             ));
-            let baseConstraintMapper =
-                self.createTypeMapper(self.signatures[signature].typeParameters.clone(), targets);
+            let baseConstraintMapper = self.createTypeMapper(typeParameters.clone(), targets);
             let mut baseConstraints = Rc::new(
-                self.signatures[signature]
-                    .typeParameters
+                typeParameters
                     .clone()
                     .iter()
                     .map(|tp| self.instantiateType(*tp, Some(baseConstraintMapper.clone())))
@@ -9083,7 +10050,7 @@ impl Checker {
             );
             // Run N type params thru the immediate constraint mapper up to N times
             // This way any noncircular interdependent type parameters are definitely resolved to their external dependencies
-            for _ in 0..self.signatures[signature].typeParameters.len() - 1 {
+            for _ in 0..typeParameters.len() - 1 {
                 baseConstraints =
                     self.instantiateTypes(baseConstraints, baseConstraintMapper.clone());
             }
@@ -9091,10 +10058,7 @@ impl Checker {
             baseConstraints = self.instantiateTypes(baseConstraints, typeEraser);
             let base_sig = self.instantiateSignature(
                 signature,
-                self.createTypeMapper(
-                    self.signatures[signature].typeParameters.clone(),
-                    Some(baseConstraints),
-                ),
+                self.createTypeMapper(typeParameters, Some(baseConstraints)),
                 true,
             );
             self.signatures[signature].baseSignatureCache = Some(base_sig);
@@ -9139,7 +10103,13 @@ impl Checker {
     fn getIndexSymbol(&mut self, symbol: SymbolId) -> Option<SymbolId> {
         self.symbols[symbol]
             .members()
-            .and_then(|members| getIndexSymbolFromSymbolTable(&self.symbol_tables[members]))
+            .and_then(|members| self.getIndexSymbolFromSymbolTable(members))
+    }
+
+    fn getIndexSymbolFromSymbolTable(&self, symbolTable: SymbolTableId) -> Option<SymbolId> {
+        self.symbol_tables[symbolTable]
+            .get(&JsWord::from(InternalSymbolName::Index))
+            .copied()
     }
 
     fn createIndexInfo(
@@ -9242,65 +10212,138 @@ impl Checker {
         if let Some(sym) = self.types[typeParameter].get_symbol() {
             for declaration in self.symbols[*sym].declarations() {
                 if let Some(parent @ BoundNode::TsInferType(p)) = &declaration.parent() {
-                    todo!();
-                    // // When an 'infer T' declaration is immediately contained in a type reference node
-                    // // (such as 'Foo<infer T>'), T's constraint is inferred from the constraint of the
-                    // // corresponding type parameter in 'Foo'. When multiple 'infer T' declarations are
-                    // // present, we form an intersection of the inferred constraint types.
-                    // const [childTypeParameter = declaration.parent, grandParent] = walkUpParenthesizedTypesAndGetParentAndChild(declaration.parent.parent);
-                    // if (grandParent.kind === SyntaxKind.TypeReference) {
-                    //     const typeReference = grandParent as TypeReferenceNode;
-                    //     const typeParameters = getTypeParametersForTypeReference(typeReference);
-                    //     if (typeParameters) {
-                    //         const index = typeReference.typeArguments!.indexOf(childTypeParameter as TypeNode);
-                    //         if (index < typeParameters.length) {
-                    //             const declaredConstraint = getConstraintOfTypeParameter(typeParameters[index]);
-                    //             if (declaredConstraint) {
-                    //                 // Type parameter constraints can reference other type parameters so
-                    //                 // constraints need to be instantiated. If instantiation produces the
-                    //                 // type parameter itself, we discard that inference. For example, in
-                    //                 //   type Foo<T extends string, U extends T> = [T, U];
-                    //                 //   type Bar<T> = T extends Foo<infer X, infer X> ? Foo<X, X> : T;
-                    //                 // the instantiated constraint for U is X, so we discard that inference.
-                    //                 const mapper = createTypeMapper(typeParameters, getEffectiveTypeArguments(typeReference, typeParameters));
-                    //                 const constraint = instantiateType(declaredConstraint, mapper);
-                    //                 if (constraint !== typeParameter) {
-                    //                     inferences = append(inferences, constraint);
-                    //                 }
-                    //             }
-                    //         }
-                    //     }
+                    // When an 'infer T' declaration is immediately contained in a type reference node
+                    // (such as 'Foo<infer T>'), T's constraint is inferred from the constraint of the
+                    // corresponding type parameter in 'Foo'. When multiple 'infer T' declarations are
+                    // present, we form an intersection of the inferred constraint types.
+                    let (childTypeParameter, grandParent) =
+                        walkUpParenthesizedTypesAndGetParentAndChild(
+                            declaration.parent().and_then(|p| p.parent()),
+                        );
+                    let childTypeParameter = childTypeParameter
+                        .map(BoundNode::TsParenthesizedType)
+                        .unwrap_or_else(|| declaration.parent().unwrap());
+                    if let BoundNode::TsTypeRef(typeReference) = grandParent {
+                        todo!();
+                        // let typeParameters = self.getTypeParametersForTypeReference(typeReference);
+                        // if (typeParameters) {
+                        //     let index = typeReference
+                        //         .typeArguments
+                        //         .unwrap()
+                        //         .indexOf(childTypeParameter as TypeNode);
+                        //     if (index < typeParameters.length) {
+                        //         let declaredConstraint =
+                        //             self.getConstraintOfTypeParameter(typeParameters[index]);
+                        //         if (declaredConstraint) {
+                        //             // Type parameter constraints can reference other type parameters so
+                        //             // constraints need to be instantiated. If instantiation produces the
+                        //             // type parameter itself, we discard that inference. For example, in
+                        //             //   type Foo<T extends string, U extends T> = [T, U];
+                        //             //   type Bar<T> = T extends Foo<infer X, infer X> ? Foo<X, X> : T;
+                        //             // the instantiated constraint for U is X, so we discard that inference.
+                        //             let mapper = self.createTypeMapper(
+                        //                 typeParameters,
+                        //                 self.getEffectiveTypeArguments(
+                        //                     typeReference,
+                        //                     typeParameters,
+                        //                 ),
+                        //             );
+                        //             let constraint =
+                        //                 self.instantiateType(declaredConstraint, mapper);
+                        //             if (constraint != typeParameter) {
+                        //                 inferences.push(constraint);
+                        //             }
+                        //         }
+                        //     }
+                        // }
+                    }
+                    // When an 'infer T' declaration is immediately contained in a rest parameter declaration, a rest type
+                    // or a named rest tuple element, we infer an 'unknown[]' constraint.
+                    else if {
+                        // The following is a VERY conservative error.
+                        let parent = declaration.parent().unwrap();
+                        let grandParent = parent.parent();
+                        matches!(
+                            parent,
+                            BoundNode::Param(_)
+                                | BoundNode::ParamWithoutDecorators(_)
+                                | BoundNode::TsAmbientParam(_)
+                                | BoundNode::TsParamProp(_)
+                                | BoundNode::TsRestType(_)
+                                | BoundNode::TsTupleElement(_)
+                                | BoundNode::TsTupleType(_)
+                                | BoundNode::RestPat(_)
+                                | BoundNode::SpreadAssignment(_)
+                                | BoundNode::SpreadElement(_)
+                        ) || matches!(
+                            grandParent,
+                            Some(
+                                BoundNode::Param(_)
+                                    | BoundNode::ParamWithoutDecorators(_)
+                                    | BoundNode::TsAmbientParam(_)
+                                    | BoundNode::TsParamProp(_)
+                                    | BoundNode::TsRestType(_)
+                                    | BoundNode::TsTupleElement(_)
+                                    | BoundNode::TsTupleType(_)
+                                    | BoundNode::RestPat(_)
+                                    | BoundNode::SpreadAssignment(_)
+                                    | BoundNode::SpreadElement(_)
+                            )
+                        )
+                    } {
+                        todo!("see below");
+                    }
+                    // else if grandParent.kind == SyntaxKind.Parameter
+                    //     && (grandParent as ParameterDeclaration).dotDotDotToken
+                    //     || grandParent.kind == SyntaxKind.RestType
+                    //     || grandParent.kind == SyntaxKind.NamedTupleMember
+                    //         && (grandParent as NamedTupleMember).dotDotDotToken
+                    // {
+                    //     todo!();
+                    //     // inferences.push(createArrayType(self.unknownType));
                     // }
-                    // // When an 'infer T' declaration is immediately contained in a rest parameter declaration, a rest type
-                    // // or a named rest tuple element, we infer an 'unknown[]' constraint.
-                    // else if (grandParent.kind === SyntaxKind.Parameter && (grandParent as ParameterDeclaration).dotDotDotToken ||
-                    //     grandParent.kind === SyntaxKind.RestType ||
-                    //     grandParent.kind === SyntaxKind.NamedTupleMember && (grandParent as NamedTupleMember).dotDotDotToken) {
-                    //     inferences = append(inferences, createArrayType(unknownType));
+                    // When an 'infer T' declaration is immediately contained in a string template type, we infer a 'string'
+                    // constraint.
+                    else if matches!(declaration.parent(), Some(BoundNode::TsTplLitType(_)))
+                        || matches!(
+                            declaration.parent().and_then(|p| p.parent()),
+                            Some(BoundNode::TsTplLitType(_))
+                        )
+                    {
+                        todo!("see below");
+                    }
+                    // else if (grandParent.kind == SyntaxKind.TemplateLiteralTypeSpan) {
+                    //     inferences.push(self.stringType);
                     // }
-                    // // When an 'infer T' declaration is immediately contained in a string template type, we infer a 'string'
-                    // // constraint.
-                    // else if (grandParent.kind === SyntaxKind.TemplateLiteralTypeSpan) {
-                    //     inferences = append(inferences, stringType);
-                    // }
-                    // // When an 'infer T' declaration is in the constraint position of a mapped type, we infer a 'keyof any'
-                    // // constraint.
-                    // else if (grandParent.kind === SyntaxKind.TypeParameter && grandParent.parent.kind === SyntaxKind.MappedType) {
-                    //     inferences = append(inferences, keyofConstraintType);
-                    // }
-                    // // When an 'infer T' declaration is the template of a mapped type, and that mapped type is the extends
-                    // // clause of a conditional whose check type is also a mapped type, give it a constraint equal to the template
-                    // // of the check type's mapped type
-                    // else if (grandParent.kind === SyntaxKind.MappedType && (grandParent as MappedTypeNode).type &&
-                    //     skipParentheses((grandParent as MappedTypeNode).type!) === declaration.parent && grandParent.parent.kind === SyntaxKind.ConditionalType &&
-                    //     (grandParent.parent as ConditionalTypeNode).extendsType === grandParent && (grandParent.parent as ConditionalTypeNode).checkType.kind === SyntaxKind.MappedType &&
-                    //     ((grandParent.parent as ConditionalTypeNode).checkType as MappedTypeNode).type) {
-                    //     const checkMappedType = (grandParent.parent as ConditionalTypeNode).checkType as MappedTypeNode;
-                    //     const nodeType = getTypeFromTypeNode(checkMappedType.type!);
-                    //     inferences = append(inferences, instantiateType(nodeType,
-                    //         makeUnaryTypeMapper(getDeclaredTypeOfTypeParameter(getSymbolOfNode(checkMappedType.typeParameter)), checkMappedType.typeParameter.constraint ? getTypeFromTypeNode(checkMappedType.typeParameter.constraint) : keyofConstraintType)
-                    //     ));
-                    // }
+                    // When an 'infer T' declaration is in the constraint position of a mapped type, we infer a 'keyof any'
+                    // constraint.
+                    else if matches!(grandParent, BoundNode::TsTypeParamDecl(_) if matches!(grandParent.parent(), Some(BoundNode::TsMappedType(_))))
+                    {
+                        inferences.push(self.keyofConstraintType());
+                    }
+                    // When an 'infer T' declaration is the template of a mapped type, and that mapped type is the extends
+                    // clause of a conditional whose check type is also a mapped type, give it a constraint equal to the template
+                    // of the check type's mapped type
+                    else if let BoundNode::TsMappedType(t) = grandParent {
+                        todo!();
+                        // if  (grandParent as MappedTypeNode).ty
+                        // && skipParentheses((grandParent as MappedTypeNode).ty.unwrap())
+                        //     == declaration.parent
+                        // && grandParent.parent.kind == SyntaxKind.ConditionalType
+                        // && (grandParent.parent as ConditionalTypeNode).extendsType == grandParent
+                        // && (grandParent.parent as ConditionalTypeNode).checkType.kind
+                        //     == SyntaxKind.MappedType
+                        // && ((grandParent.parent as ConditionalTypeNode).checkType
+                        //     as MappedTypeNode)
+                        //     .ty {
+                        //         todo!();
+                        //         // const checkMappedType = (grandParent.parent as ConditionalTypeNode).checkType as MappedTypeNode;
+                        //         // const nodeType = getTypeFromTypeNode(checkMappedType.type!);
+                        //         // inferences = append(inferences, instantiateType(nodeType,
+                        //         //     makeUnaryTypeMapper(getDeclaredTypeOfTypeParameter(getSymbolOfNode(checkMappedType.typeParameter)), checkMappedType.typeParameter.constraint ? getTypeFromTypeNode(checkMappedType.typeParameter.constraint) : keyofConstraintType)
+                        //         // ));
+                        //     }
+                    }
                 }
             }
         }
@@ -9422,7 +10465,7 @@ impl Checker {
     // that care about the presence of such types at arbitrary depth in a containing type.
     fn getPropagatingFlagsOfTypes(
         &self,
-        types: Rc<Vec<TypeId>>,
+        types: &Rc<Vec<TypeId>>,
         excludeKinds: TypeFlags,
     ) -> ObjectFlags {
         let mut result = ObjectFlags::empty();
@@ -9449,9 +10492,8 @@ impl Checker {
             None => {
                 let mut objectFlags = ObjectFlags::Reference;
                 if let Some(typeArguments) = &typeArguments {
-                    objectFlags.insert(
-                        self.getPropagatingFlagsOfTypes(typeArguments.clone(), TypeFlags::empty()),
-                    )
+                    objectFlags
+                        .insert(self.getPropagatingFlagsOfTypes(typeArguments, TypeFlags::empty()))
                 }
                 let ty = TypeReference {
                     type_reference: TypeReferenceBase {
@@ -9488,9 +10530,7 @@ impl Checker {
     ) -> TypeId {
         if aliasSymbol.is_none() {
             aliasSymbol = self.getAliasSymbolForTypeNode(&node);
-            let localAliasTypeArguments = self
-                .getTypeArgumentsForAliasSymbol(aliasSymbol)
-                .map(|v| Rc::new(v));
+            let localAliasTypeArguments = self.getTypeArgumentsForAliasSymbol(aliasSymbol);
             aliasTypeArguments = if let Some(mapper) = &mapper {
                 self.instantiateTypesOptional(localAliasTypeArguments, mapper.clone())
             } else {
@@ -9625,18 +10665,39 @@ impl Checker {
                 //     return errorType;
                 // }
             }
+            let typeParameters = typeParameters.clone();
             if matches!(node, BoundNode::TsTypeRef(_)) {
                 if self.isDeferredTypeReferenceNode(&node, numTypeArguments != typeParameters.len())
                 {
-                    return self.createDeferredTypeReference(ty, node, None, None, None);
+                    return self.createDeferredTypeReference(ty, node.clone(), None, None, None);
                 }
             }
             // In a type reference, the outer type parameters of the referenced class or interface are automatically
             // supplied as type arguments and the type reference only specifies arguments for the local type parameters
             // of the class or interface.
-            todo!();
-            // let typeArguments = concatenate(ty.outerTypeParameters, fillMissingTypeArguments(typeArgumentsFromTypeReferenceNode(node), typeParameters, minTypeArgumentCount, isJs));
-            // return createTypeReference(ty as GenericType, typeArguments);
+            let outerTypeParameters = self.types[ty]
+                .unwrap_as_interface_type()
+                .outerTypeParameters
+                .clone();
+            let typeArguments = self.typeArgumentsFromTypeReferenceNode(&node);
+            let typeArguments = self.fillMissingTypeArguments(
+                typeArguments,
+                Some(typeParameters.clone()),
+                minTypeArgumentCount,
+                isJs,
+            );
+            let typeArguments = match (outerTypeParameters, typeArguments) {
+                (Some(outerTypeParameters), Some(typeArguments)) => {
+                    let mut new = Vec::new();
+                    new.extend(outerTypeParameters.iter());
+                    new.extend(typeArguments.iter());
+                    Some(Rc::new(new))
+                }
+                (Some(outerTypeParameters), None) => Some(outerTypeParameters.clone()),
+                (None, Some(typeArguments)) => Some(typeArguments.clone()),
+                _ => Some(Rc::new(Vec::new())),
+            };
+            return self.createTypeReference(ty, typeArguments);
         }
         if self.checkNoTypeArguments(node, Some(symbol)) {
             ty
@@ -9645,12 +10706,135 @@ impl Checker {
         }
     }
 
-    // TODO:
-    // getTypeAliasInstantiation
-    // TODO:
-    // getTypeFromTypeAliasReference
-    // TODO:
-    // isLocalTypeAlias
+    fn getTypeAliasInstantiation(
+        &mut self,
+        symbol: SymbolId,
+        typeArguments: Option<Rc<Vec<TypeId>>>,
+        aliasSymbol: Option<SymbolId>,
+        aliasTypeArguments: Option<Rc<Vec<TypeId>>>,
+    ) -> TypeId {
+        let ty = self.getDeclaredTypeOfSymbol(symbol);
+        if ty == self.intrinsicMarkerType
+            && get_intrinsic_type_kind(self.symbols[symbol].escapedName()).is_some()
+            && typeArguments.is_some()
+            && typeArguments.as_ref().unwrap().len() == 1
+        {
+            todo!();
+            // return self.getStringMappingType(symbol, typeArguments.unwrap()[0]);
+        }
+        let typeParameters = self.getSymbolLinks(symbol).typeParameters.clone().unwrap();
+        let make_instantiation_cache_key = || {
+            let type_list_id = self.getTypeListId(typeArguments.as_ref().map(|v| v.as_ref()));
+            let alias_id =
+                self.getAliasId(aliasSymbol, aliasTypeArguments.as_ref().map(|v| v.as_ref()));
+            hash![type_list_id, alias_id]
+        };
+        let id = make_instantiation_cache_key();
+        match self.getSymbolLinks(symbol).instantiations.get(&id) {
+            Some(instantiation) => *instantiation,
+            None => {
+                let targets = self.fillMissingTypeArguments(
+                    typeArguments,
+                    Some(typeParameters.clone()),
+                    self.getMinTypeArgumentCount(Some(typeParameters.clone())),
+                    isInJSFile(self.symbols[symbol].valueDeclaration().as_ref()),
+                );
+                let mapper = self.createTypeMapper(typeParameters, targets);
+                let instantiation =
+                    self.instantiateTypeWithAlias(ty, mapper, aliasSymbol, aliasTypeArguments);
+                self.getSymbolLinksMut(symbol)
+                    .instantiations
+                    .insert(id, instantiation);
+                instantiation
+            }
+        }
+    }
+
+    /**
+     * Get type from reference to type alias. When a type alias is generic, the declared type of the type alias may include
+     * references to the type parameters of the alias. We replace those with the actual type arguments by instantiating the
+     * declared type. Instantiations are cached using the type identities of the type arguments as the key.
+     */
+    fn getTypeFromTypeAliasReference(&mut self, node: &BoundNode, symbol: SymbolId) -> TypeId {
+        if getCheckFlags(&self.symbols[symbol]).intersects(CheckFlags::Unresolved) {
+            todo!();
+            // let typeArguments = self.typeArgumentsFromTypeReferenceNode(node);
+            // let id = self.getAliasId(Some(symbol), typeArguments);
+            // let errorType = self.errorTypes.get(id);
+            // if !errorType {
+            //     todo!();
+            //     // errorType = createIntrinsicType(TypeFlags::Any, "error");
+            //     // errorType.aliasSymbol = symbol;
+            //     // errorType.aliasTypeArguments = typeArguments;
+            //     // errorTypes.set(id, errorType);
+            // }
+            // return errorType;
+        }
+        let ty = self.getDeclaredTypeOfSymbol(symbol);
+        if let Some(typeParameters) = self.getSymbolLinks(symbol).typeParameters.clone() {
+            // TODO: maybe create a util method for extracting the type args from a node.
+            // Something like fn getTypeArguments(node: BoundNode) -> Option<&Vec<_>>
+            // TODO: remove type ann
+            let numTypeArguments = match node {
+                BoundNode::TsTypeRef(n) => n
+                    .type_params
+                    .as_ref()
+                    .map(|i| i.params.len())
+                    .unwrap_or_default(),
+                _ => {
+                    dbg!(node);
+                    todo!()
+                }
+            };
+            // let numTypeArguments = node.typeArguments.len();
+            let minTypeArgumentCount = self.getMinTypeArgumentCount(Some(typeParameters.clone()));
+            if numTypeArguments < minTypeArgumentCount || numTypeArguments > typeParameters.len() {
+                todo!();
+                // error(node,
+                //     minTypeArgumentCount === typeParameters.length ?
+                //         Diagnostics.Generic_type_0_requires_1_type_argument_s :
+                //         Diagnostics.Generic_type_0_requires_between_1_and_2_type_arguments,
+                //     symbolToString(symbol),
+                //     minTypeArgumentCount,
+                //     typeParameters.length);
+                // return errorType;
+            }
+            // We refrain from associating a local type alias with an instantiation of a top-level type alias
+            // because the local alias may end up being referenced in an inferred return type where it is not
+            // accessible--which in turn may lead to a large structural expansion of the type when generating
+            // a .d.ts file. See #43622 for an example.
+            let aliasSymbol = self.getAliasSymbolForTypeNode(node);
+            let newAliasSymbol = if aliasSymbol.is_some()
+                && (self.isLocalTypeAlias(symbol) || !self.isLocalTypeAlias(aliasSymbol.unwrap()))
+            {
+                aliasSymbol
+            } else {
+                None
+            };
+            let typeArguments = self.typeArgumentsFromTypeReferenceNode(node);
+            let aliasTypeArguments = self.getTypeArgumentsForAliasSymbol(newAliasSymbol);
+            return self.getTypeAliasInstantiation(
+                symbol,
+                typeArguments,
+                newAliasSymbol,
+                aliasTypeArguments,
+            );
+        }
+        if self.checkNoTypeArguments(node.clone(), Some(symbol)) {
+            ty
+        } else {
+            self.errorType
+        }
+    }
+
+    fn isLocalTypeAlias(&self, symbol: SymbolId) -> bool {
+        let declaration = self.symbols[symbol]
+            .declarations()
+            .iter()
+            .find(|&d| isTypeAlias(d));
+        declaration.and_then(|d| getContainingFunction(d)).is_some()
+    }
+
     // TODO:
     // getTypeReferenceName
     // TODO:
@@ -9660,19 +10844,20 @@ impl Checker {
         dbg!(name);
         todo!();
         // let ident = match name {
+        //     BoundNode::Ident(n) =>n,
         //     BoundNode::TsQualifiedName(n) => n.right,
         //     BoundNode::MemberExpr(n) if !n.computed => unwrap_as!(n.prop, ast::Expr::Ident(i),i),
-        //     _ => todo!()
+        //     _ => unreachable!()
         // };
         // // const identifier = name.kind === SyntaxKind.QualifiedName ? name.right :
         // //     name.kind === SyntaxKind.PropertyAccessExpression ? name.name :
         // //     name;
         // let text = identifier.sym;
         // if (text) {
-        //     const parentSymbol = name.kind === SyntaxKind.QualifiedName ? getUnresolvedSymbolForEntityName(name.left) :
+        //     let parentSymbol = name.kind === SyntaxKind.QualifiedName ? getUnresolvedSymbolForEntityName(name.left) :
         //         name.kind === SyntaxKind.PropertyAccessExpression ? getUnresolvedSymbolForEntityName(name.expression) :
         //         undefined;
-        //     const path = parentSymbol ? `${getSymbolPath(parentSymbol)}.${text}` : text as string;
+        //     let path = parentSymbol ? `${getSymbolPath(parentSymbol)}.${text}` : text as string;
         //     let result = unresolvedSymbols.get(path);
         //     if (!result) {
         //         unresolvedSymbols.set(path, result = createSymbol(SymbolFlags::TypeAlias, text, CheckFlags.Unresolved));
@@ -9723,8 +10908,7 @@ impl Checker {
             .flags()
             .intersects(SymbolFlags::TypeAlias)
         {
-            todo!();
-            // return self.getTypeFromTypeAliasReference(node, symbol);
+            return self.getTypeFromTypeAliasReference(&node, symbol);
         }
         // Get type from reference to named type that cannot be generic (enum or type parameter)
         let res = self.tryGetDeclaredTypeOfSymbol(symbol);
@@ -9752,16 +10936,69 @@ impl Checker {
 
     // TODO:
     // getTypeFromJSDocValueReference
-    // TODO:
-    // getSubstitutionType
-    // TODO:
-    // isUnaryTupleTypeNode
-    // TODO:
-    // getImpliedConstraint
+
+    fn getSubstitutionType(&mut self, baseType: TypeId, substitute: TypeId) -> TypeId {
+        if self.types[substitute]
+            .get_flags()
+            .intersects(TypeFlags::AnyOrUnknown)
+            || substitute == baseType
+        {
+            return baseType;
+        }
+        let id = SubstitutionTypeKey::new(baseType, substitute);
+        match self.substitutionTypes.get(&id) {
+            Some(cached) => *cached,
+            None => {
+                let result = SubstitutionType {
+                    instantiable_type: InstantiableType::default(),
+                    type_base: TypeBase::new(TypeFlags::Substitution, None),
+                    objectFlags: ObjectFlags::default(),
+                    baseType,
+                    substitute,
+                };
+                let result = self.types.push(Type::SubstitutionType(result));
+                self.substitutionTypes.insert(id, result);
+                result
+            }
+        }
+    }
+
+    fn getImpliedConstraint(
+        &mut self,
+        ty: TypeId,
+        checkNode: BoundNode,
+        extendsNode: BoundNode,
+    ) -> Option<TypeId> {
+        fn isUnaryTupleTypeNode(node: &BoundNode) -> Option<&Rc<TsTupleType>> {
+            if let BoundNode::TsTupleType(tuple) = node {
+                if tuple.elem_types.len() == 1 {
+                    return Some(&tuple);
+                }
+            }
+            None
+        }
+
+        if let (Some(check_tuple), Some(extends_tuple)) = (
+            isUnaryTupleTypeNode(&checkNode),
+            isUnaryTupleTypeNode(&extendsNode),
+        ) {
+            self.getImpliedConstraint(
+                ty,
+                check_tuple.elem_types[0].bind(check_tuple.clone().into()),
+                extends_tuple.elem_types[0].bind(extends_tuple.clone().into()),
+            )
+        } else if {
+            let check_node_ty = self.getTypeFromTypeNode(checkNode);
+            self.getActualTypeVariable(check_node_ty) == ty
+        } {
+            Some(self.getTypeFromTypeNode(extendsNode))
+        } else {
+            None
+        }
+    }
 
     fn getConditionalFlowTypeOfType(&mut self, ty: TypeId, node: BoundNode) -> TypeId {
-        // TODO: remove type ann:
-        let mut constraints: Vec<TypeId> = Vec::new();
+        let mut constraints = Vec::new();
         let mut covariant = true;
         let mut node = Some(node);
         while let Some(n) = node {
@@ -9792,12 +11029,14 @@ impl Checker {
                 {
                     if let BoundNode::TsConditionalType(p) = parent {
                         if n == p.true_type.bind(parent.clone()) {
-                            todo!();
-                            // let constraint =
-                            //     self.getImpliedConstraint(ty, p.check_type, p.extends_type);
-                            // if let Some(constraint) = constraint {
-                            //     constraints.push(constraint);
-                            // }
+                            let constraint = self.getImpliedConstraint(
+                                ty,
+                                p.check_type.bind(parent.clone()),
+                                p.extends_type.bind(parent.clone()),
+                            );
+                            if let Some(constraint) = constraint {
+                                constraints.push(constraint);
+                            }
                         }
                     }
                 }
@@ -9805,10 +11044,9 @@ impl Checker {
             node = parent;
         }
         if !constraints.is_empty() {
-            todo!();
-            // constraints.push(ty);
-            // let intersection = self.getIntersectionType(constraints);
-            // self.getSubstitutionType(ty, intersection)
+            constraints.push(ty);
+            let intersection = self.getIntersectionType(&constraints, None, None);
+            self.getSubstitutionType(ty, intersection)
         } else {
             ty
         }
@@ -9824,6 +11062,12 @@ impl Checker {
                 .as_ref()
                 .map(|p| !p.params.is_empty())
                 .unwrap_or_default(),
+            BoundNode::TsExprWithTypeArgs(n) => n
+                .type_args
+                .as_ref()
+                .map(|p| !p.params.is_empty())
+                .unwrap_or_default(),
+            BoundNode::Ident(_) => false,
             _ => {
                 dbg!(&node);
                 todo!()
@@ -9890,8 +11134,24 @@ impl Checker {
         }
     }
 
-    // TODO:
-    // typeArgumentsFromTypeReferenceNode
+    fn typeArgumentsFromTypeReferenceNode(&mut self, node: &BoundNode) -> Option<Rc<Vec<TypeId>>> {
+        let type_args = match node {
+            BoundNode::TsTypeRef(t) => t.type_params.as_ref(),
+            BoundNode::Ident(_) => None,
+            _ => {
+                dbg!(node);
+                todo!()
+            }
+        };
+        type_args.map(|args| {
+            Rc::new(
+                args.params
+                    .iter()
+                    .map(|arg| self.getTypeFromTypeNode(arg.bind(node.clone())))
+                    .collect(),
+            )
+        })
+    }
     // TODO:
     // getTypeFromTypeQueryNode
 
@@ -10456,8 +11716,6 @@ impl Checker {
     // getTypeFromOptionalTypeNode
     // TODO:
     // getTypeId
-    // TODO:
-    // insertType
 
     fn addTypeToUnion(
         &mut self,
@@ -10495,6 +11753,7 @@ impl Checker {
                 };
             } else {
                 // TODO: this whole block (and binarySearchKey's impl) is very janky. Try to refactor using Vec::binary_search.
+                // See `insertType`
                 let len = typeSet.len();
                 let index = if len != 0 && ty > typeSet[len - 1] {
                     !(len as isize)
@@ -10523,8 +11782,78 @@ impl Checker {
         includes
     }
 
-    // TODO:
-    // removeSubtypes
+    fn removeSubtypes(&mut self, types: Vec<TypeId>, hasObjectTypes: bool) -> Option<Vec<TypeId>> {
+        let id = self.getTypeListId(Some(&types));
+        let cached = self.subtypeReductionCache.get(&id);
+        if cached.is_some() {
+            return cached.cloned();
+        }
+        // We assume that redundant primitive types have already been removed from the types array and that there
+        // are no any and unknown types in the array. Thus, the only possible supertypes for primitive types are empty
+        // object types, and if none of those are present we can exclude primitive types from the subtype check.
+        let hasEmptyObject = hasObjectTypes
+            && types.iter().any(|&t| {
+                self.types[t].get_flags().intersects(TypeFlags::Object)
+                    && !self.isGenericMappedType(t)
+                    && {
+                        let resolved = self.resolveStructuredTypeMembers(t);
+                        self.isEmptyResolvedType(resolved)
+                    }
+            });
+        let len = types.len();
+        let mut i = len;
+        let mut count = 0;
+        while i > 0 {
+            i -= 1;
+            let source = types[i];
+            if hasEmptyObject
+                || self.types[source]
+                    .get_flags()
+                    .intersects(TypeFlags::StructuredOrInstantiable)
+            {
+                todo!();
+                // Find the first property with a unit type, if any. When constituents have a property by the same name
+                // but of a different unit type, we can quickly disqualify them from subtype checks. This helps subtype
+                // reduction of large discriminated union types.
+                // const keyProperty = source.flags & (TypeFlags.Object | TypeFlags.Intersection | TypeFlags.InstantiableNonPrimitive) ?
+                //     find(getPropertiesOfType(source), p => isUnitType(getTypeOfSymbol(p))) :
+                //     undefined;
+                // const keyPropertyType = keyProperty && getRegularTypeOfLiteralType(getTypeOfSymbol(keyProperty));
+                // for (const target of types) {
+                //     if (source !== target) {
+                //         if (count === 100000) {
+                //             // After 100000 subtype checks we estimate the remaining amount of work by assuming the
+                //             // same ratio of checks per element. If the estimated number of remaining type checks is
+                //             // greater than 1M we deem the union type too complex to represent. This for example
+                //             // caps union types at 1000 unique object types.
+                //             const estimatedCount = (count / (len - i)) * len;
+                //             if (estimatedCount > 1000000) {
+                //                 tracing?.instant(tracing.Phase.CheckTypes, "removeSubtypes_DepthLimit", { typeIds: types.map(t => t.id) });
+                //                 error(currentNode, Diagnostics.Expression_produces_a_union_type_that_is_too_complex_to_represent);
+                //                 return undefined;
+                //             }
+                //         }
+                //         count++;
+                //         if (keyProperty && target.flags & (TypeFlags.Object | TypeFlags.Intersection | TypeFlags.InstantiableNonPrimitive)) {
+                //             const t = getTypeOfPropertyOfType(target, keyProperty.escapedName);
+                //             if (t && isUnitType(t) && getRegularTypeOfLiteralType(t) !== keyPropertyType) {
+                //                 continue;
+                //             }
+                //         }
+                //         if (isTypeRelatedTo(source, target, strictSubtypeRelation) && (
+                //             !(getObjectFlags(getTargetType(source)) & ObjectFlags.Class) ||
+                //             !(getObjectFlags(getTargetType(target)) & ObjectFlags.Class) ||
+                //             isTypeDerivedFrom(source, target))) {
+                //             orderedRemoveItemAt(types, i);
+                //             break;
+                //         }
+                //     }
+                // }
+            }
+        }
+        self.subtypeReductionCache.insert(id, types.clone());
+        Some(types)
+    }
 
     fn removeRedundantLiteralTypes(
         &self,
@@ -10550,7 +11879,7 @@ impl Checker {
                     && flags.intersects(TypeFlags::Undefined)
                     && includes.intersects(TypeFlags::Void)
                 || self.isFreshLiteralType(t)
-                    && containsType(types, self.types[t].literal_type_regular_type());
+                    && containsType(types, self.types[t].get_literal_regular_type());
             if remove {
                 types.remove(i);
             }
@@ -10630,17 +11959,30 @@ impl Checker {
                 // removeStringLiteralsMatchedByTemplateLiterals(typeSet);
             }
             if unionReduction == UnionReduction::Subtype {
-                todo!();
-                // typeSet = removeSubtypes(typeSet, !!(includes & TypeFlags::Object));
-                // if (!typeSet) {
-                //     return errorType;
-                // }
+                if let Some(types) =
+                    self.removeSubtypes(typeSet, includes.intersects(TypeFlags::Object))
+                {
+                    typeSet = types;
+                } else {
+                    return self.errorType;
+                }
             }
             if typeSet.is_empty() {
-                todo!();
-                // return includes & TypeFlags::Null ? includes & TypeFlags::IncludesNonWideningType ? nullType : nullWideningType :
-                //     includes & TypeFlags::Undefined ? includes & TypeFlags::IncludesNonWideningType ? undefinedType : undefinedWideningType :
-                //     neverType;
+                return if includes.intersects(TypeFlags::Null) {
+                    if includes.intersects(TypeFlags::IncludesNonWideningType) {
+                        self.nullType
+                    } else {
+                        self.nullWideningType
+                    }
+                } else if includes.intersects(TypeFlags::Undefined) {
+                    if includes.intersects(TypeFlags::IncludesNonWideningType) {
+                        self.undefinedType
+                    } else {
+                        self.undefinedWideningType
+                    }
+                } else {
+                    self.neverType
+                };
             }
         }
         if origin.is_none() && includes.intersects(TypeFlags::Union) {
@@ -10684,8 +12026,71 @@ impl Checker {
         )
     }
 
-    // TODO:
-    // getUnionOrIntersectionTypePredicate
+    fn getUnionOrIntersectionTypePredicate(
+        &mut self,
+        signatures: &[SignatureId],
+        kind: Option<TypeFlags>,
+    ) -> Option<TypePredicate> {
+        let mut first = None;
+        let mut types = Vec::new();
+        for &sig in signatures {
+            let pred = self.getTypePredicateOfSignature(sig);
+            if pred.is_none()
+                || matches!(
+                    pred,
+                    Some(
+                        TypePredicate::AssertsThisTypePredicate { .. }
+                            | TypePredicate::AssertsIdentifierTypePredicate { .. }
+                    )
+                )
+            {
+                if kind != Some(TypeFlags::Intersection) {
+                    continue;
+                } else {
+                    return None; // intersections demand all members be type predicates for the result to have a predicate
+                }
+            }
+            let pred = pred.unwrap();
+
+            if let Some(first) = &first {
+                if !typePredicateKindsMatch(first, &pred) {
+                    // No common type predicate.
+                    return None;
+                }
+            } else {
+                first = Some(pred.clone());
+            }
+            types.push(pred.ty().unwrap());
+        }
+        if let Some(first) = first {
+            let compositeType = self.getUnionOrIntersectionType(&types, kind, None);
+            Some(match first {
+                TypePredicate::ThisTypePredicate { .. }
+                | TypePredicate::AssertsThisTypePredicate { .. } => unreachable!(),
+                TypePredicate::IdentifierTypePredicate {
+                    parameterName,
+                    parameterIndex,
+                    ..
+                } => TypePredicate::IdentifierTypePredicate {
+                    parameterName,
+                    parameterIndex,
+                    ty: compositeType,
+                },
+                TypePredicate::AssertsIdentifierTypePredicate {
+                    parameterName,
+                    parameterIndex,
+                    ..
+                } => TypePredicate::AssertsIdentifierTypePredicate {
+                    parameterName,
+                    parameterIndex,
+                    ty: Some(compositeType),
+                },
+            })
+        } else {
+            // No signatures had a type predicate.
+            None
+        }
+    }
 
     /// This function assumes the constituent type list is sorted and deduplicated.
     fn getUnionTypeFromSortedList(
@@ -10741,9 +12146,9 @@ impl Checker {
                 let types = Rc::new(types);
                 let mut ty = UnionType {
                     union_or_intersection_type: UnionOrIntersectionType {
-                        types: types.clone(),
                         objectFlags: objectFlags
-                            | self.getPropagatingFlagsOfTypes(types.clone(), TypeFlags::Nullable),
+                            | self.getPropagatingFlagsOfTypes(&types, TypeFlags::Nullable),
+                        types: types.clone(),
                         ..Default::default()
                     },
                     type_base: TypeBase::new(TypeFlags::Union, None),
@@ -10773,62 +12178,767 @@ impl Checker {
         }
     }
 
-    // TODO:
-    // getTypeFromUnionTypeNode
-    // TODO:
-    // addTypeToIntersection
-    // TODO:
-    // addTypesToIntersection
+    fn getTypeFromUnionTypeNode(&mut self, node: Rc<TsUnionType>) -> TypeId {
+        let bound_node = BoundNode::TsUnionType(node.clone());
+        match self.getNodeLinks(bound_node.clone()).resolvedType {
+            Some(resolvedType) => resolvedType,
+            None => {
+                let aliasSymbol = self.getAliasSymbolForTypeNode(&bound_node);
+                // TODO: bad collect
+                let types = node
+                    .types
+                    .iter()
+                    .map(|t| self.getTypeFromTypeNode(t.bind(bound_node.clone())))
+                    .collect::<Vec<_>>();
+                let aliasTypeArguments = self.getTypeArgumentsForAliasSymbol(aliasSymbol);
+                let resolvedType = self.getUnionType(
+                    &types,
+                    Some(UnionReduction::Literal),
+                    aliasSymbol,
+                    aliasTypeArguments,
+                    None,
+                );
+                self.getNodeLinks_mut(node.into()).resolvedType = Some(resolvedType);
+                resolvedType
+            }
+        }
+    }
+
+    fn addTypeToIntersection(
+        &mut self,
+        typeSet: &mut IndexSet<TypeId>,
+        mut includes: TypeFlags,
+        mut ty: TypeId,
+    ) -> TypeFlags {
+        let flags = self.types[ty].get_flags();
+        if flags.intersects(TypeFlags::Intersection) {
+            let types = self.types[ty]
+                .unwrap_as_union_or_intersection()
+                .types
+                .clone();
+            return self.addTypesToIntersection(typeSet, includes, &types);
+        }
+        if self.isEmptyAnonymousObjectType(ty) {
+            if !includes.intersects(TypeFlags::IncludesEmptyObject) {
+                includes |= TypeFlags::IncludesEmptyObject;
+                typeSet.insert(ty);
+            }
+        } else {
+            if flags.intersects(TypeFlags::AnyOrUnknown) {
+                if ty == self.wildcardType {
+                    includes |= TypeFlags::IncludesWildcard
+                };
+            } else if self.strictNullChecks || !flags.intersects(TypeFlags::Nullable) {
+                if self.exactOptionalPropertyTypes && ty == self.missingType {
+                    includes |= TypeFlags::IncludesMissingType;
+                    ty = self.undefinedType;
+                }
+                if !typeSet.contains(&ty) {
+                    if self.types[ty].get_flags().intersects(TypeFlags::Unit)
+                        && includes.intersects(TypeFlags::Unit)
+                    {
+                        // We have seen two distinct unit types which means we should reduce to an
+                        // empty intersection. Adding TypeFlags::NonPrimitive causes that to happen.
+                        includes |= TypeFlags::NonPrimitive;
+                    }
+                    typeSet.insert(ty);
+                }
+            }
+            includes |= flags & TypeFlags::IncludesMask;
+        }
+        includes
+    }
+
+    // Add the given types to the given type set. Order is preserved, freshness is removed from literal
+    // types, duplicates are removed, and nested types of the given kind are flattened into the set.
+    fn addTypesToIntersection(
+        &mut self,
+        typeSet: &mut IndexSet<TypeId>,
+        mut includes: TypeFlags,
+        types: &[TypeId],
+    ) -> TypeFlags {
+        for &ty in types {
+            let ty = self.getRegularTypeOfLiteralType(ty);
+            includes = self.addTypeToIntersection(typeSet, includes, ty);
+        }
+        includes
+    }
+
     // TODO:
     // removeRedundantPrimitiveTypes
-    // TODO:
-    // eachUnionContains
-    // TODO:
-    // extractRedundantTemplateLiterals
-    // TODO:
-    // eachIsUnionContaining
+
+    // Check that the given type has a match in every union. A given type is matched by
+    // an identical type, and a literal type is additionally matched by its corresponding
+    // primitive type.
+    fn eachUnionContains(&self, unionTypes: &[TypeId], ty: TypeId) -> bool {
+        let ty_flags = self.types[ty].get_flags();
+        for u in unionTypes {
+            let types = self.types[*u]
+                .unwrap_as_union_or_intersection()
+                .types
+                .as_ref();
+            if !containsType(types, ty) {
+                let primitive = if ty_flags.intersects(TypeFlags::StringLiteral) {
+                    Some(self.stringType)
+                } else if ty_flags.intersects(TypeFlags::NumberLiteral) {
+                    Some(self.numberType)
+                } else if ty_flags.intersects(TypeFlags::BigIntLiteral) {
+                    Some(self.bigintType)
+                } else if ty_flags.intersects(TypeFlags::UniqueESSymbol) {
+                    Some(self.esSymbolType)
+                } else {
+                    None
+                };
+                if primitive.is_none() || !containsType(types, primitive.unwrap()) {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// Returns `true` if the intersection of the template literals and string literals is the empty set, and should reduce to `never`.
+    ///
+    /// E.g. the following will reduce to `never`:
+    /// ```js
+    /// `get${string}` & "setX"
+    /// ```
+    fn extractRedundantTemplateLiterals(&mut self, types: &mut Vec<TypeId>) -> bool {
+        let mut i = types.len();
+        // TODO: bad collect:
+        let literals = types
+            .iter()
+            .cloned()
+            .filter(|&t| {
+                self.types[t]
+                    .get_flags()
+                    .intersects(TypeFlags::StringLiteral)
+            })
+            .collect::<Vec<_>>();
+        while i > 0 {
+            i -= 1;
+            let t = types[i];
+            if !self.types[t]
+                .get_flags()
+                .intersects(TypeFlags::TemplateLiteral)
+            {
+                continue;
+            };
+            for &t2 in &literals {
+                if self.isTypeSubtypeOf(t2, t) {
+                    // eg, ``get${T}` & "getX"` is just `"getX"`
+                    types.remove(i);
+                    break;
+                } else if self.isPatternLiteralType(t) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn eachIsUnionContaining(&self, types: &[TypeId], flag: TypeFlags) -> bool {
+        types.iter().all(|&t| {
+            if self.types[t].get_flags().intersects(TypeFlags::Union) {
+                self.types[t]
+                    .unwrap_as_union_or_intersection()
+                    .types
+                    .iter()
+                    .any(|&tt| self.types[tt].get_flags().intersects(flag))
+            } else {
+                false
+            }
+        })
+    }
+
     // TODO:
     // removeFromEach
-    // TODO:
-    // intersectUnionsOfPrimitiveTypes
-    // TODO:
-    // createIntersectionType
-    // TODO:
-    // getIntersectionType
+
+    // If the given list of types contains more than one union of primitive types, replace the
+    // first with a union containing an intersection of those primitive types, then remove the
+    // other unions and return true. Otherwise, do nothing and return false.
+    fn intersectUnionsOfPrimitiveTypes(&mut self, types: &mut Vec<TypeId>) -> bool {
+        let mut unionTypes = None;
+        let index = types.iter().position(|&t| {
+            self.types[t]
+                .get_object_flags()
+                .intersects(ObjectFlags::PrimitiveUnion)
+        });
+        let index = match index {
+            Some(index) => index,
+            None => return false,
+        };
+        let mut i = index + 1;
+        // Remove all but the first union of primitive types and collect them in
+        // the unionTypes array.
+        while i < types.len() {
+            let t = types[i];
+            if self.types[t]
+                .get_object_flags()
+                .intersects(ObjectFlags::PrimitiveUnion)
+            {
+                unionTypes.get_or_insert_with(|| vec![types[index]]).push(t);
+                types.remove(i);
+            } else {
+                i += 1;
+            }
+        }
+        let unionTypes = match unionTypes {
+            Some(unionTypes) => unionTypes,
+            // Return false if there was only one union of primitive types
+            None => return false,
+        };
+        // We have more than one union of primitive types, now intersect them. For each
+        // type in each union we check if the type is matched in every union and if so
+        // we include it in the result.
+        let mut checked = Vec::new();
+        let mut result = Vec::new();
+        for &u in &unionTypes {
+            for &t in self.types[u].unwrap_as_union_or_intersection().types.iter() {
+                if insertType(&mut checked, t) {
+                    if self.eachUnionContains(&unionTypes, t) {
+                        insertType(&mut result, t);
+                    }
+                }
+            }
+        }
+        // Finally replace the first union with the result
+        types[index] =
+            self.getUnionTypeFromSortedList(result, ObjectFlags::PrimitiveUnion, None, None, None);
+        true
+    }
+
+    fn createIntersectionType(
+        &mut self,
+        types: Vec<TypeId>,
+        aliasSymbol: Option<SymbolId>,
+        aliasTypeArguments: Option<Rc<Vec<TypeId>>>,
+    ) -> TypeId {
+        let types = Rc::new(types);
+        let objectFlags = self.getPropagatingFlagsOfTypes(&types, TypeFlags::Nullable);
+        let ty = IntersectionType {
+            union_or_intersection_type: UnionOrIntersectionType {
+                objectFlags,
+                types,
+                ..UnionOrIntersectionType::default()
+            },
+            type_base: TypeBase {
+                flags: TypeFlags::Intersection,
+                aliasSymbol,
+                aliasTypeArguments,
+                ..TypeBase::default()
+            },
+            resolvedApparentType: None,
+        };
+        self.types.push(Type::IntersectionType(ty))
+    }
+
+    // We normalize combinations of intersection and union types based on the distributive property of the '&'
+    // operator. Specifically, because X & (A | B) is equivalent to X & A | X & B, we can transform intersection
+    // types with union type constituents into equivalent union types with intersection type constituents and
+    // effectively ensure that union types are always at the top level in type representations.
+    //
+    // We do not perform structural deduplication on intersection types. Intersection types are created only by the &
+    // type operator and we can't reduce those because we want to support recursive intersection types. For example,
+    // a type alias of the form "type List<T> = T & { next: List<T> }" cannot be reduced during its declaration.
+    // Also, unlike union types, the order of the constituent types is preserved in order that overload resolution
+    // for intersections of types with signatures can be deterministic.
+    fn getIntersectionType(
+        &mut self,
+        types: &[TypeId],
+        aliasSymbol: Option<SymbolId>,
+        aliasTypeArguments: Option<Rc<Vec<TypeId>>>,
+    ) -> TypeId {
+        let mut typeMembershipMap = IndexSet::default();
+        let includes =
+            self.addTypesToIntersection(&mut typeMembershipMap, TypeFlags::empty(), types);
+        let mut typeSet = typeMembershipMap.into_ordered_vec();
+        // An intersection type is considered empty if it contains
+        // the type never, or
+        // more than one unit type or,
+        // an object type and a nullable type (null or undefined), or
+        // a string-like type and a type known to be non-string-like, or
+        // a number-like type and a type known to be non-number-like, or
+        // a symbol-like type and a type known to be non-symbol-like, or
+        // a void-like type and a type known to be non-void-like, or
+        // a non-primitive type and a type known to be primitive.
+        if includes.intersects(TypeFlags::Never) {
+            todo!();
+            // return contains(typeSet, silentNeverType) ? silentNeverType : neverType;
+        }
+        if self.strictNullChecks
+            && includes.intersects(TypeFlags::Nullable)
+            && includes.intersects(
+                TypeFlags::Object | TypeFlags::NonPrimitive | TypeFlags::IncludesEmptyObject,
+            )
+            || includes.intersects(TypeFlags::NonPrimitive)
+                && includes.intersects(TypeFlags::DisjointDomains & !TypeFlags::NonPrimitive)
+            || includes.intersects(TypeFlags::StringLike)
+                && includes.intersects(TypeFlags::DisjointDomains & !TypeFlags::StringLike)
+            || includes.intersects(TypeFlags::NumberLike)
+                && includes.intersects(TypeFlags::DisjointDomains & !TypeFlags::NumberLike)
+            || includes.intersects(TypeFlags::BigIntLike)
+                && includes.intersects(TypeFlags::DisjointDomains & !TypeFlags::BigIntLike)
+            || includes.intersects(TypeFlags::ESSymbolLike)
+                && includes.intersects(TypeFlags::DisjointDomains & !TypeFlags::ESSymbolLike)
+            || includes.intersects(TypeFlags::VoidLike)
+                && includes.intersects(TypeFlags::DisjointDomains & !TypeFlags::VoidLike)
+        {
+            return self.neverType;
+        }
+        if includes.intersects(TypeFlags::TemplateLiteral)
+            && includes.intersects(TypeFlags::StringLiteral)
+            && self.extractRedundantTemplateLiterals(&mut typeSet)
+        {
+            return self.neverType;
+        }
+        if includes.intersects(TypeFlags::Any) {
+            todo!();
+            // return includes & TypeFlags::IncludesWildcard ? wildcardType : anyType;
+        }
+        if !self.strictNullChecks && includes.intersects(TypeFlags::Nullable) {
+            return if includes.intersects(TypeFlags::Undefined) {
+                self.undefinedType
+            } else {
+                self.nullType
+            };
+        }
+        if includes.intersects(TypeFlags::String) && includes.intersects(TypeFlags::StringLiteral)
+            || includes.intersects(TypeFlags::Number)
+                && includes.intersects(TypeFlags::NumberLiteral)
+            || includes.intersects(TypeFlags::BigInt)
+                && includes.intersects(TypeFlags::BigIntLiteral)
+            || includes.intersects(TypeFlags::ESSymbol)
+                && includes.intersects(TypeFlags::UniqueESSymbol)
+        {
+            todo!();
+            // removeRedundantPrimitiveTypes(typeSet, includes);
+        }
+        if includes.intersects(TypeFlags::IncludesEmptyObject)
+            && includes.intersects(TypeFlags::Object)
+        {
+            todo!();
+            // orderedRemoveItemAt(typeSet, findIndex(typeSet, isEmptyAnonymousObjectType));
+        }
+        if includes.intersects(TypeFlags::IncludesMissingType) {
+            todo!();
+            // typeSet[typeSet.indexOf(undefinedType)] = missingType;
+        }
+        if typeSet.is_empty() {
+            return self.unknownType;
+        }
+        if typeSet.len() == 1 {
+            return typeSet[0];
+        }
+        let make_intersection_type_key = || {
+            // TODO: a bit janky:
+            let type_list = self.getTypeListId(Some(&typeSet));
+            let alias_id =
+                self.getAliasId(aliasSymbol, aliasTypeArguments.as_ref().map(|v| v.as_ref()));
+            IntersectionTypeKey(hash![type_list, alias_id])
+        };
+        let id = make_intersection_type_key();
+        match self.intersectionTypes.get(&id) {
+            Some(result) => *result,
+            None => {
+                let result = if includes.intersects(TypeFlags::Union) {
+                    if self.intersectUnionsOfPrimitiveTypes(&mut typeSet) {
+                        todo!();
+                        // When the intersection creates a reduced set (which might mean that *all* union types have
+                        // disappeared), we restart the operation to get a new set of combined flags. Once we have
+                        // reduced we'll never reduce again, so this occurs at most once.
+                        // getIntersectionType(typeSet, aliasSymbol, aliasTypeArguments)
+                    } else if self.eachIsUnionContaining(&typeSet, TypeFlags::Undefined) {
+                        todo!();
+                        // let undefinedOrMissingType = exactOptionalPropertyTypes && some(typeSet, t => containsType((t as UnionType).types, missingType)) ? missingType : undefinedType;
+                        // removeFromEach(typeSet, TypeFlags::Undefined);
+                        // getUnionType([getIntersectionType(typeSet), undefinedOrMissingType], UnionReduction.Literal, aliasSymbol, aliasTypeArguments)
+                    } else if self.eachIsUnionContaining(&typeSet, TypeFlags::Null) {
+                        todo!();
+                        // removeFromEach(typeSet, TypeFlags::Null);
+                        // getUnionType([getIntersectionType(typeSet), nullType], UnionReduction.Literal, aliasSymbol, aliasTypeArguments)
+                    } else {
+                        todo!();
+                        // We are attempting to construct a type of the form X & (A | B) & (C | D). Transform this into a type of
+                        // the form X & A & C | X & A & D | X & B & C | X & B & D. If the estimated size of the resulting union type
+                        // exceeds 100000 constituents, report an error.
+                        // if (!checkCrossProductUnion(typeSet)) {
+                        //     return errorType;
+                        // }
+                        // let constituents = getCrossProductIntersections(typeSet);
+                        // // We attach a denormalized origin type when at least one constituent of the cross-product union is an
+                        // // intersection (i.e. when the intersection didn't just reduce one or more unions to smaller unions).
+                        // let origin = some(constituents, t => !!(t.flags & TypeFlags::Intersection)) ? createOriginUnionOrIntersectionType(TypeFlags::Intersection, typeSet) : undefined;
+                        // getUnionType(constituents, UnionReduction.Literal, aliasSymbol, aliasTypeArguments, origin)
+                    }
+                } else {
+                    self.createIntersectionType(typeSet, aliasSymbol, aliasTypeArguments)
+                };
+                self.intersectionTypes.insert(id, result);
+                result
+            }
+        }
+    }
+
     // TODO:
     // getCrossProductUnionSize
     // TODO:
     // checkCrossProductUnion
     // TODO:
     // getCrossProductIntersections
-    // TODO:
-    // getTypeFromIntersectionTypeNode
-    // TODO:
-    // createIndexType
-    // TODO:
-    // createOriginIndexType
-    // TODO:
-    // getIndexTypeForGenericType
+
+    fn getTypeFromIntersectionTypeNode(&mut self, node: Rc<TsIntersectionType>) -> TypeId {
+        let bound_node = BoundNode::TsIntersectionType(node.clone());
+        match self.getNodeLinks(bound_node.clone()).resolvedType {
+            Some(t) => t,
+            None => {
+                let aliasSymbol = self.getAliasSymbolForTypeNode(&bound_node);
+                // TODO: bad collect
+                let types = node
+                    .types
+                    .iter()
+                    .map(|t| self.getTypeFromTypeNode(t.bind(bound_node.clone())))
+                    .collect::<Vec<_>>();
+                let aliasTypeArguments = self.getTypeArgumentsForAliasSymbol(aliasSymbol);
+                let resolvedType =
+                    self.getIntersectionType(&types, aliasSymbol, aliasTypeArguments);
+                self.getNodeLinks_mut(bound_node).resolvedType = Some(resolvedType);
+                resolvedType
+            }
+        }
+    }
+
+    fn createIndexType(&mut self, ty: TypeId, stringsOnly: bool) -> TypeId {
+        let ty = IndexType {
+            instantiable_type: InstantiableType::default(),
+            type_base: TypeBase::new(TypeFlags::Index, None),
+            ty,
+            stringsOnly,
+        };
+        self.types.push(Type::IndexType(ty))
+    }
+
+    fn createOriginIndexType(&mut self, ty: TypeId) -> TypeId {
+        let res = IndexType {
+            instantiable_type: InstantiableType::default(),
+            type_base: createOriginType(TypeFlags::Index),
+            ty,
+            stringsOnly: false,
+        };
+        self.types.push(Type::IndexType(res))
+    }
+
+    fn getIndexTypeForGenericType(&mut self, ty: TypeId, stringsOnly: bool) -> TypeId {
+        macro_rules! get_or_set_prop {
+            ($ty:expr, $prop:ident) => {
+                match $ty.$prop {
+                    Some($prop) => $prop,
+                    None => {
+                        let $prop = self.createIndexType(ty, stringsOnly);
+                        $ty.$prop = Some($prop);
+                        $prop
+                    }
+                }
+            };
+        }
+        if stringsOnly {
+            if self.types[ty].as_instantiable_type_mut().is_some() {
+                get_or_set_prop!(
+                    self.types[ty].as_instantiable_type_mut().unwrap(),
+                    resolvedStringIndexType
+                )
+            } else {
+                get_or_set_prop!(
+                    self.types[ty].unwrap_as_union_or_intersection_mut(),
+                    resolvedStringIndexType
+                )
+            }
+        } else {
+            if self.types[ty].as_instantiable_type_mut().is_some() {
+                get_or_set_prop!(
+                    self.types[ty].as_instantiable_type_mut().unwrap(),
+                    resolvedIndexType
+                )
+            } else {
+                get_or_set_prop!(
+                    self.types[ty].unwrap_as_union_or_intersection_mut(),
+                    resolvedIndexType
+                )
+            }
+        }
+    }
+
     // TODO:
     // getIndexTypeForMappedType
-    // TODO:
-    // hasDistributiveNameType
-    // TODO:
-    // getLiteralTypeFromPropertyName
-    // TODO:
-    // getLiteralTypeFromProperty
-    // TODO:
-    // isKeyTypeIncluded
-    // TODO:
-    // getLiteralTypeFromProperties
-    // TODO:
-    // getIndexType
+
+    // Ordinarily we reduce a keyof M, where M is a mapped type { [P in K as N<P>]: X }, to simply N<K>. This however presumes
+    // that N distributes over union types, i.e. that N<A | B | C> is equivalent to N<A> | N<B> | N<C>. Specifically, we only
+    // want to perform the reduction when the name type of a mapped type is distributive with respect to the type variable
+    // introduced by the 'in' clause of the mapped type. Note that non-generic types are considered to be distributive because
+    // they're the same type regardless of what's being distributed over.
+    fn hasDistributiveNameType(&mut self, mappedType: TypeId) -> bool {
+        let typeVariable = self.getTypeParameterFromMappedType(mappedType);
+        let ty = self
+            .getNameTypeFromMappedType(mappedType)
+            .unwrap_or(typeVariable);
+        return isDistributive(self, typeVariable, ty);
+        fn isDistributive(checker: &mut Checker, typeVariable: TypeId, ty: TypeId) -> bool {
+            let ty_flags = checker.types[ty].get_flags();
+            if ty_flags.intersects(
+                TypeFlags::AnyOrUnknown
+                    | TypeFlags::Primitive
+                    | TypeFlags::Never
+                    | TypeFlags::TypeParameter
+                    | TypeFlags::Object
+                    | TypeFlags::NonPrimitive,
+            ) {
+                return true;
+            }
+            match &checker.types[ty] {
+                Type::ConditionalType(t) => {
+                    checker.conditional_roots[t.root].isDistributive && t.checkType == typeVariable
+                }
+                Type::TemplateLiteralType(t) => t
+                    .types
+                    .clone()
+                    .iter()
+                    .all(|&t| isDistributive(checker, typeVariable, t)),
+                Type::UnionType(t) => t
+                    .union_or_intersection_type
+                    .types
+                    .clone()
+                    .iter()
+                    .all(|&t| isDistributive(checker, typeVariable, t)),
+                Type::IntersectionType(t) => t
+                    .union_or_intersection_type
+                    .types
+                    .clone()
+                    .iter()
+                    .all(|&t| isDistributive(checker, typeVariable, t)),
+                Type::IndexedAccessType(t) => {
+                    let object_type = t.objectType;
+                    let index_type = t.indexType;
+                    isDistributive(checker, typeVariable, object_type)
+                        && isDistributive(checker, typeVariable, index_type)
+                }
+                Type::SubstitutionType(t) => isDistributive(checker, typeVariable, t.substitute),
+                Type::StringMappingType(t) => isDistributive(checker, typeVariable, t.ty),
+                _ => false,
+            }
+        }
+    }
+
+    fn getLiteralTypeFromPropertyName(&mut self, name: BoundPropName) -> TypeId {
+        if let BoundPropName::Ident(name) = name {
+            self.getStringLiteralType(unescapeLeadingUnderscores(&name.sym))
+        } else {
+            let ty = if let BoundPropName::Computed(name) = name {
+                todo!();
+                // self.checkComputedPropertyName(name)
+            } else {
+                self.checkExpression(name.into(), None, false)
+            };
+            self.getRegularTypeOfLiteralType(ty)
+        }
+    }
+
+    fn getLiteralTypeFromProperty(
+        &mut self,
+        prop: SymbolId,
+        include: TypeFlags,
+        includeNonPublic: bool,
+    ) -> TypeId {
+        if includeNonPublic
+            || !self
+                .getDeclarationModifierFlagsFromSymbol(prop, false)
+                .intersects(ModifierFlags::NonPublicAccessibilityModifier)
+        {
+            let sym = self.getLateBoundSymbol(prop);
+            let mut ty = self.getSymbolLinks(sym).nameType;
+            if ty.is_none() {
+                ty = if self.symbols[prop].escapedName()
+                    == &JsWord::from(InternalSymbolName::Default)
+                {
+                    Some(self.getStringLiteralType(&JsWord::from(InternalSymbolName::Default)))
+                } else if let Some(name) =
+                    getNameOfDeclaration(self.symbols[prop].valueDeclaration().as_ref().unwrap())
+                {
+                    let prop_name = match name {
+                        DeclName::Ident(n) => BoundPropName::Ident(n),
+                        DeclName::String(n) => BoundPropName::Str(n),
+                        DeclName::Number(n) => BoundPropName::Num(n),
+                        DeclName::ComputedProperty(n) => BoundPropName::Computed(n),
+                        _ => unreachable!(),
+                    };
+                    Some(self.getLiteralTypeFromPropertyName(prop_name))
+                } else if !isKnownSymbol(&self.symbols[prop]) {
+                    todo!();
+                    // Some(self.getStringLiteralType(self.symbolName(prop)))
+                } else {
+                    None
+                };
+            }
+            if let Some(ty) = ty {
+                if self.types[ty].get_flags().intersects(include) {
+                    return ty;
+                }
+            }
+        }
+        self.neverType
+    }
+
+    fn isKeyTypeIncluded(&self, keyType: TypeId, include: TypeFlags) -> bool {
+        if self.types[keyType].get_flags().intersects(include) {
+            true
+        } else if let Type::IntersectionType(keyType) = &self.types[keyType] {
+            keyType
+                .union_or_intersection_type
+                .types
+                .clone()
+                .iter()
+                .any(|&t| self.isKeyTypeIncluded(t, include))
+        } else {
+            false
+        }
+    }
+
+    fn getLiteralTypeFromProperties(
+        &mut self,
+        ty: TypeId,
+        include: TypeFlags,
+        includeOrigin: bool,
+    ) -> TypeId {
+        let origin = if includeOrigin
+            && (self.types[ty]
+                .get_object_flags()
+                .intersects(ObjectFlags::ClassOrInterface | ObjectFlags::Reference)
+                || self.types[ty].get_aliasSymbol().is_some())
+        {
+            Some(self.createOriginIndexType(ty))
+        } else {
+            None
+        };
+
+        let propertyTypes = self.getPropertiesOfType(ty).clone();
+        let indexKeyTypes = self.getIndexInfosOfType(ty).clone();
+        // TODO: bad intermidiary vec
+        let mut types = Vec::with_capacity(propertyTypes.len() + indexKeyTypes.len());
+        types.extend(
+            propertyTypes
+                .iter()
+                .map(|&prop| self.getLiteralTypeFromProperty(prop, include, false)),
+        );
+        types.extend(indexKeyTypes.iter().map(|&info| {
+            if info != self.enumNumberIndexInfo
+                && self.isKeyTypeIncluded(self.index_infos[info].keyType, include)
+            {
+                if self.index_infos[info].keyType == self.stringType
+                    && include.intersects(TypeFlags::Number)
+                {
+                    todo!();
+                    // self.stringOrNumberType
+                } else {
+                    self.index_infos[info].keyType
+                }
+            } else {
+                self.neverType
+            }
+        }));
+        self.getUnionType(&types, Some(UnionReduction::Literal), None, None, origin)
+    }
+
+    fn getIndexType(
+        &mut self,
+        mut ty: TypeId,
+        stringsOnly: Option<bool>,
+        noIndexSignatures: bool,
+    ) -> TypeId {
+        let stringsOnly = stringsOnly.unwrap_or(self.keyofStringsOnly);
+        ty = self.getReducedType(ty);
+        let ty_flags = self.types[ty].get_flags();
+        if ty_flags.intersects(TypeFlags::Union) {
+            todo!();
+            // self.getIntersectionType(
+            //     map((ty as UnionType).types, |t| {
+            //         getIndexType(t, stringsOnly, noIndexSignatures)
+            //     }),
+            //     None,
+            //     None,
+            // )
+        } else if ty_flags.intersects(TypeFlags::Intersection) {
+            todo!();
+            // self.getUnionType(map((ty as IntersectionType).types, |t| {
+            //     getIndexType(t, stringsOnly, noIndexSignatures)
+            // }))
+        } else if ty_flags.intersects(TypeFlags::InstantiableNonPrimitive)
+            || self.isGenericTupleType(ty)
+            || self.isGenericMappedType(ty) && !self.hasDistributiveNameType(ty)
+        {
+            self.getIndexTypeForGenericType(ty, stringsOnly)
+        } else if self.types[ty]
+            .get_object_flags()
+            .intersects(ObjectFlags::Mapped)
+        {
+            todo!();
+            // self.getIndexTypeForMappedType(ty as MappedType, stringsOnly, noIndexSignatures)
+        } else if ty == self.wildcardType {
+            self.wildcardType
+        } else if ty_flags.intersects(TypeFlags::Unknown) {
+            self.neverType
+        } else if ty_flags.intersects(TypeFlags::Any | TypeFlags::Never) {
+            self.keyofConstraintType()
+        } else {
+            self.getLiteralTypeFromProperties(
+                ty,
+                if noIndexSignatures {
+                    TypeFlags::StringLiteral
+                } else {
+                    TypeFlags::StringLike
+                } | if stringsOnly {
+                    TypeFlags::empty()
+                } else {
+                    TypeFlags::NumberLike | TypeFlags::ESSymbolLike
+                },
+                stringsOnly == self.keyofStringsOnly && !noIndexSignatures,
+            )
+        }
+    }
+
     // TODO:
     // getExtractStringType
     // TODO:
     // getIndexTypeOrString
-    // TODO:
-    // getTypeFromTypeOperatorNode
+
+    fn getTypeFromTypeOperatorNode(&mut self, node: &Rc<TsTypeOperator>) -> TypeId {
+        let bound_node = BoundNode::TsTypeOperator(node.clone());
+        match self.getNodeLinks(bound_node.clone()).resolvedType {
+            Some(resolvedType) => resolvedType,
+            None => {
+                let resolvedType = match node.op {
+                    ast::TsTypeOperatorOp::KeyOf => {
+                        let ty = self.getTypeFromTypeNode(node.type_ann.bind(bound_node.clone()));
+                        self.getIndexType(ty, None, false)
+                    }
+                    ast::TsTypeOperatorOp::Unique => {
+                        todo!();
+                        // if matches!(node.type_ann, ast::TsType::TsKeywordType(k) if k.kind == ast::TsKeywordTypeKind::TsSymbolKeyword) {
+                        //     self.getESSymbolLikeTypeForNode(walkUpParenthesizedTypes(
+                        //         bound_node.parent(),
+                        //     ))
+                        // } else {
+                        //     self.errorType
+                        // }
+                    }
+                    ast::TsTypeOperatorOp::ReadOnly => {
+                        self.getTypeFromTypeNode(node.type_ann.bind(bound_node.clone()))
+                    }
+                };
+                self.getNodeLinks_mut(bound_node).resolvedType = Some(resolvedType);
+                resolvedType
+            }
+        }
+    }
+
     // TODO:
     // getTypeFromTemplateTypeNode
     // TODO:
@@ -10847,14 +12957,321 @@ impl Checker {
     // createStringMappingType
     // TODO:
     // createIndexedAccessType
-    // TODO:
-    // isJSLiteralType
-    // TODO:
-    // getPropertyNameFromIndex
-    // TODO:
-    // isUncalledFunctionReference
-    // TODO:
-    // getPropertyTypeForIndexType
+
+    /**
+     * Returns if a type is or consists of a JSLiteral object type
+     * In addition to objects which are directly literals,
+     * * unions where every element is a jsliteral
+     * * intersections where at least one element is a jsliteral
+     * * and instantiable types constrained to a jsliteral
+     * Should all count as literals and not print errors on access or assignment of possibly existing properties.
+     * This mirrors the behavior of the index signature propagation, to which this behaves similarly (but doesn't affect assignability or inference).
+     */
+    fn isJSLiteralType(&mut self, ty: TypeId) -> bool {
+        if self.noImplicitAny {
+            return false; // Flag is meaningless under `noImplicitAny` mode
+        }
+        if self.types[ty]
+            .get_object_flags()
+            .intersects(ObjectFlags::JSLiteral)
+        {
+            return true;
+        }
+        if self.types[ty].get_flags().intersects(TypeFlags::Union) {
+            return self.types[ty]
+                .unwrap_as_union_or_intersection()
+                .types
+                .clone()
+                .iter()
+                .all(|&t| self.isJSLiteralType(t));
+        }
+        if self.types[ty]
+            .get_flags()
+            .intersects(TypeFlags::Intersection)
+        {
+            return self.types[ty]
+                .unwrap_as_union_or_intersection()
+                .types
+                .clone()
+                .iter()
+                .any(|&t| self.isJSLiteralType(t));
+        }
+        if self.types[ty]
+            .get_flags()
+            .intersects(TypeFlags::Instantiable)
+        {
+            let constraint = self.getResolvedBaseConstraint(ty);
+            return constraint != ty && self.isJSLiteralType(constraint);
+        }
+        false
+    }
+
+    fn getPropertyNameFromIndex(
+        &mut self,
+        indexType: TypeId,
+        accessNode: Option<BoundNode>,
+    ) -> Option<JsWord> {
+        if self.isTypeUsableAsPropertyName(indexType) {
+            Some(self.getPropertyNameFromType(indexType))
+        } else if accessNode.is_some() && isPropertyName(accessNode.as_ref().unwrap()) {
+            todo!();
+            // late bound names are handled in the first branch, so here we only need to handle normal names
+            // self.getPropertyNameForPropertyNameNode(accessNode.unwrap())
+        } else {
+            None
+        }
+    }
+
+    fn isUncalledFunctionReference(&self, node: &BoundNode, symbol: SymbolId) -> bool {
+        if self.symbols[symbol]
+            .flags()
+            .intersects(SymbolFlags::Function | SymbolFlags::Method)
+        {
+            todo!();
+            // const parent = findAncestor(node.parent, n => !isAccessExpression(n)) || node.parent;
+            // if (isCallLikeExpression(parent)) {
+            //     return isCallOrNewExpression(parent) && isIdentifier(node) && hasMatchingArgument(parent, node);
+            // }
+            // return every(symbol.declarations, d => !isFunctionLike(d) || !!(getCombinedNodeFlags(d) & NodeFlags.Deprecated));
+        }
+        true
+    }
+
+    fn getPropertyTypeForIndexType(
+        &mut self,
+        originalObjectType: TypeId,
+        objectType: TypeId,
+        indexType: TypeId,
+        fullIndexType: TypeId,
+        accessNode: Option<BoundNode>,
+        accessFlags: AccessFlags,
+    ) -> Option<TypeId> {
+        let accessExpression = if matches!(&accessNode, Some(BoundNode::MemberExpr(m)) if m.computed)
+        {
+            accessNode.clone()
+        } else {
+            None
+        };
+        let propName = if matches!(accessNode, Some(BoundNode::PrivateName(_))) {
+            None
+        } else {
+            self.getPropertyNameFromIndex(indexType, accessNode.clone())
+        };
+
+        if let Some(propName) = propName {
+            if accessFlags.intersects(AccessFlags::Contextual) {
+                return self
+                    .getTypeOfPropertyOfContextualType(objectType, propName)
+                    .or(Some(self.anyType));
+            }
+            let prop = self.getPropertyOfType(objectType, &propName, false);
+            if let Some(prop) = prop {
+                // TODO: depreciation message:
+                // if accessFlags.intersects(AccessFlags::ReportDeprecated)
+                //     && accessNode.is_some()
+                //     && !self.symbols[prop].declarations().is_empty()
+                //     && self
+                //         .getDeclarationNodeFlagsFromSymbol(prop)
+                //         .intersects(NodeFlags::Deprecated)
+                //     && self.isUncalledFunctionReference(accessNode.as_ref().unwrap(), prop)
+                // {
+                //     todo!();
+                //     // let deprecatedNode = accessExpression?.argumentExpression ?? (isIndexedAccessTypeNode(accessNode) ? accessNode.indexType : accessNode);
+                //     // addDeprecatedSuggestion(deprecatedNode, prop.declarations, propName as string);
+                // }
+                if let Some(accessExpression) = accessExpression {
+                    todo!();
+                    // markPropertyAsReferenced(prop, accessExpression, isSelfTypeAccess(accessExpression.expression, objectType.symbol));
+                    // if (isAssignmentToReadonlyEntity(accessExpression, prop, getAssignmentTargetKind(accessExpression))) {
+                    //     error(accessExpression.argumentExpression, Diagnostics.Cannot_assign_to_0_because_it_is_a_read_only_property, symbolToString(prop));
+                    //     return undefined;
+                    // }
+                    // if accessFlags.intersects(AccessFlags::CacheSymbol) {
+                    //     todo!();
+                    //     // getNodeLinks(accessNode!).resolvedSymbol = prop;
+                    // }
+                    // if (isThisPropertyAccessInConstructor(accessExpression, prop)) {
+                    //     return autoType;
+                    // }
+                }
+                let propType = self.getTypeOfSymbol(prop);
+                return Some(
+                    if accessExpression.is_some()
+                        && getAssignmentTargetKind(accessExpression.clone().unwrap())
+                            != AssignmentKind::Definite
+                    {
+                        self.getFlowTypeOfReference(
+                            &accessExpression.unwrap(),
+                            propType,
+                            propType,
+                            None,
+                        )
+                    } else {
+                        propType
+                    },
+                );
+            }
+            // TODO: calling is_numeric_literal_name then ecma_string_to_number is a little redundant
+            // as is_numeric_literal_name calls ecma_string_to_number internally. Maybe refactor so
+            // is_numeric_literal_name becomes somthing like `as_numeric_literal_name` returns
+            // Option<numeric_val>, instead of bool, which we could use below. Then other callers of
+            // is_numeric_literal_name who don't care about the return value can call a new version
+            // of is_numeric_literal_name that is just as_numeric_literal_name().is_some()
+            if self.everyType(objectType, |checker, ty| checker.isTupleType(ty))
+                && is_numeric_literal_name(&propName)
+                && ecma_string_to_number(&propName) >= 0.0
+            {
+                todo!();
+                // if (accessNode && everyType(objectType, t => !(t as TupleTypeReference).target.hasRestElement) && !(accessFlags & AccessFlags.NoTupleBoundsCheck)) {
+                //     const indexNode = getIndexNodeForAccessExpression(accessNode);
+                //     if (isTupleType(objectType)) {
+                //         error(indexNode, Diagnostics.Tuple_type_0_of_length_1_has_no_element_at_index_2,
+                //             typeToString(objectType), getTypeReferenceArity(objectType), unescapeLeadingUnderscores(propName));
+                //     }
+                //     else {
+                //         error(indexNode, Diagnostics.Property_0_does_not_exist_on_type_1, unescapeLeadingUnderscores(propName), typeToString(objectType));
+                //     }
+                // }
+                // errorIfWritingToReadonlyIndex(getIndexInfoOfType(objectType, numberType));
+                // return mapType(objectType, t => {
+                //     const restType = getRestTypeOfTupleType(t as TupleTypeReference) || undefinedType;
+                //     return accessFlags & AccessFlags.IncludeUndefined ? getUnionType([restType, undefinedType]) : restType;
+                // });
+            }
+        }
+        if !self.types[indexType]
+            .get_flags()
+            .intersects(TypeFlags::Nullable)
+            && self.isTypeAssignableToKind(
+                indexType,
+                TypeFlags::StringLike | TypeFlags::NumberLike | TypeFlags::ESSymbolLike,
+                false,
+            )
+        {
+            todo!();
+            // if (objectType.flags & (TypeFlags::Any | TypeFlags::Never)) {
+            //     return objectType;
+            // }
+            // // If no index signature is applicable, we default to the string index signature. In effect, this means the string
+            // // index signature applies even when accessing with a symbol-like type.
+            // const indexInfo = getApplicableIndexInfo(objectType, indexType) || getIndexInfoOfType(objectType, stringType);
+            // if (indexInfo) {
+            //     if (accessFlags & AccessFlags.NoIndexSignatures && indexInfo.keyType !== numberType) {
+            //         if (accessExpression) {
+            //             error(accessExpression, Diagnostics.Type_0_cannot_be_used_to_index_type_1, typeToString(indexType), typeToString(originalObjectType));
+            //         }
+            //         return undefined;
+            //     }
+            //     if (accessNode && indexInfo.keyType === stringType && !isTypeAssignableToKind(indexType, TypeFlags::String | TypeFlags::Number)) {
+            //         const indexNode = getIndexNodeForAccessExpression(accessNode);
+            //         error(indexNode, Diagnostics.Type_0_cannot_be_used_as_an_index_type, typeToString(indexType));
+            //         return accessFlags & AccessFlags.IncludeUndefined ? getUnionType([indexInfo.type, undefinedType]) : indexInfo.type;
+            //     }
+            //     errorIfWritingToReadonlyIndex(indexInfo);
+            //     return accessFlags & AccessFlags.IncludeUndefined ? getUnionType([indexInfo.type, undefinedType]) : indexInfo.type;
+            // }
+            // if (indexType.flags & TypeFlags::Never) {
+            //     return neverType;
+            // }
+            // if (isJSLiteralType(objectType)) {
+            //     return anyType;
+            // }
+            // if (accessExpression && !isConstEnumObjectType(objectType)) {
+            //     if (isObjectLiteralType(objectType)) {
+            //         if (noImplicitAny && indexType.flags & (TypeFlags::StringLiteral | TypeFlags::NumberLiteral)) {
+            //             diagnostics.add(createDiagnosticForNode(accessExpression, Diagnostics.Property_0_does_not_exist_on_type_1, (indexType as StringLiteralType).value, typeToString(objectType)));
+            //             return undefinedType;
+            //         }
+            //         else if (indexType.flags & (TypeFlags::Number | TypeFlags::String)) {
+            //             const types = map((objectType as ResolvedType).properties, property => {
+            //                 return getTypeOfSymbol(property);
+            //             });
+            //             return getUnionType(append(types, undefinedType));
+            //         }
+            //     }
+
+            //     if (objectType.symbol === globalThisSymbol && propName !== undefined && globalThisSymbol.exports!.has(propName) && (globalThisSymbol.exports!.get(propName)!.flags & SymbolFlags.BlockScoped)) {
+            //         error(accessExpression, Diagnostics.Property_0_does_not_exist_on_type_1, unescapeLeadingUnderscores(propName), typeToString(objectType));
+            //     }
+            //     else if (noImplicitAny && !compilerOptions.suppressImplicitAnyIndexErrors && !(accessFlags & AccessFlags.SuppressNoImplicitAnyError)) {
+            //         if (propName !== undefined && typeHasStaticProperty(propName, objectType)) {
+            //             const typeName = typeToString(objectType);
+            //             error(accessExpression, Diagnostics.Property_0_does_not_exist_on_type_1_Did_you_mean_to_access_the_static_member_2_instead, propName as string, typeName, typeName + "[" + getTextOfNode(accessExpression.argumentExpression) + "]");
+            //         }
+            //         else if (getIndexTypeOfType(objectType, numberType)) {
+            //             error(accessExpression.argumentExpression, Diagnostics.Element_implicitly_has_an_any_type_because_index_expression_is_not_of_type_number);
+            //         }
+            //         else {
+            //             let suggestion: string | undefined;
+            //             if (propName !== undefined && (suggestion = getSuggestionForNonexistentProperty(propName as string, objectType))) {
+            //                 if (suggestion !== undefined) {
+            //                     error(accessExpression.argumentExpression, Diagnostics.Property_0_does_not_exist_on_type_1_Did_you_mean_2, propName as string, typeToString(objectType), suggestion);
+            //                 }
+            //             }
+            //             else {
+            //                 const suggestion = getSuggestionForNonexistentIndexSignature(objectType, accessExpression, indexType);
+            //                 if (suggestion !== undefined) {
+            //                     error(accessExpression, Diagnostics.Element_implicitly_has_an_any_type_because_type_0_has_no_index_signature_Did_you_mean_to_call_1, typeToString(objectType), suggestion);
+            //                 }
+            //                 else {
+            //                     let errorInfo: DiagnosticMessageChain | undefined;
+            //                     if (indexType.flags & TypeFlags::EnumLiteral) {
+            //                         errorInfo = chainDiagnosticMessages(/* details */ undefined, Diagnostics.Property_0_does_not_exist_on_type_1, "[" + typeToString(indexType) + "]", typeToString(objectType));
+            //                     }
+            //                     else if (indexType.flags & TypeFlags::UniqueESSymbol) {
+            //                         const symbolName = getFullyQualifiedName((indexType as UniqueESSymbolType).symbol, accessExpression);
+            //                         errorInfo = chainDiagnosticMessages(/* details */ undefined, Diagnostics.Property_0_does_not_exist_on_type_1, "[" + symbolName + "]", typeToString(objectType));
+            //                     }
+            //                     else if (indexType.flags & TypeFlags::StringLiteral) {
+            //                         errorInfo = chainDiagnosticMessages(/* details */ undefined, Diagnostics.Property_0_does_not_exist_on_type_1, (indexType as StringLiteralType).value, typeToString(objectType));
+            //                     }
+            //                     else if (indexType.flags & TypeFlags::NumberLiteral) {
+            //                         errorInfo = chainDiagnosticMessages(/* details */ undefined, Diagnostics.Property_0_does_not_exist_on_type_1, (indexType as NumberLiteralType).value, typeToString(objectType));
+            //                     }
+            //                     else if (indexType.flags & (TypeFlags::Number | TypeFlags::String)) {
+            //                         errorInfo = chainDiagnosticMessages(/* details */ undefined, Diagnostics.No_index_signature_with_a_parameter_of_type_0_was_found_on_type_1, typeToString(indexType), typeToString(objectType));
+            //                     }
+
+            //                     errorInfo = chainDiagnosticMessages(
+            //                         errorInfo,
+            //                         Diagnostics.Element_implicitly_has_an_any_type_because_expression_of_type_0_can_t_be_used_to_index_type_1, typeToString(fullIndexType), typeToString(objectType)
+            //                     );
+            //                     diagnostics.add(createDiagnosticForNodeFromMessageChain(accessExpression, errorInfo));
+            //                 }
+            //             }
+            //         }
+            //     }
+            //     return undefined;
+            // }
+        }
+        if self.isJSLiteralType(objectType) {
+            return Some(self.anyType);
+        }
+        if let Some(accessNode) = accessNode {
+            todo!();
+            // const indexNode = getIndexNodeForAccessExpression(accessNode);
+            // if (indexType.flags & (TypeFlags::StringLiteral | TypeFlags::NumberLiteral)) {
+            //     error(indexNode, Diagnostics.Property_0_does_not_exist_on_type_1, "" + (indexType as StringLiteralType | NumberLiteralType).value, typeToString(objectType));
+            // }
+            // else if (indexType.flags & (TypeFlags::String | TypeFlags::Number)) {
+            //     error(indexNode, Diagnostics.Type_0_has_no_matching_index_signature_for_type_1, typeToString(objectType), typeToString(indexType));
+            // }
+            // else {
+            //     error(indexNode, Diagnostics.Type_0_cannot_be_used_as_an_index_type, typeToString(indexType));
+            // }
+        }
+        if self.isTypeAny(Some(indexType)) {
+            return Some(indexType);
+        }
+        return None;
+
+        // function errorIfWritingToReadonlyIndex(indexInfo: IndexInfo | undefined): void {
+        //     if (indexInfo && indexInfo.isReadonly && accessExpression && (isAssignmentTarget(accessExpression) || isDeleteTarget(accessExpression))) {
+        //         error(accessExpression, Diagnostics.Index_signature_in_type_0_only_permits_reading, typeToString(objectType));
+        //     }
+        // }
+    }
+
     // TODO:
     // getIndexNodeForAccessExpression
 
@@ -10883,8 +13300,10 @@ impl Checker {
             .intersects(ObjectFlags::IsGenericObjectType)
     }
 
-    // TODO:
-    // isGenericIndexType
+    fn isGenericIndexType(&mut self, ty: TypeId) -> bool {
+        self.getGenericObjectFlags(ty)
+            .intersects(ObjectFlags::IsGenericIndexType)
+    }
 
     fn getGenericObjectFlags(&mut self, ty: TypeId) -> ObjectFlags {
         let ty_flags = self.types[ty].get_flags();
@@ -10969,41 +13388,577 @@ impl Checker {
         aliasSymbol: Option<SymbolId>,
         aliasTypeArguments: Option<Rc<Vec<TypeId>>>,
     ) -> TypeId {
-        todo!();
-        // let accessFlags = accessFlags.unwrap_or_default();
-        // self.getIndexedAccessTypeOrUndefined(objectType, indexType, accessFlags, accessNode, aliasSymbol, aliasTypeArguments).unwrap_or(if accessNode {self.errorType} else{self.unknownType})
+        let has_access_node = accessNode.is_some();
+        self.getIndexedAccessTypeOrUndefined(
+            objectType,
+            indexType,
+            accessFlags,
+            accessNode,
+            aliasSymbol,
+            aliasTypeArguments,
+        )
+        .unwrap_or(if has_access_node {
+            self.errorType
+        } else {
+            self.unknownType
+        })
     }
 
-    // TODO:
-    // indexTypeLessThan
-    // TODO:
-    // getIndexedAccessTypeOrUndefined
-    // TODO:
-    // getTypeFromIndexedAccessTypeNode
-    // TODO:
-    // getTypeFromMappedTypeNode
-    // TODO:
-    // getActualTypeVariable
-    // TODO:
-    // isTypicalNondistributiveConditional
-    // TODO:
-    // isSingletonTupleType
-    // TODO:
-    // unwrapNondistributiveConditionalTuple
-    // TODO:
-    // getConditionalType
+    fn indexTypeLessThan(&mut self, indexType: TypeId, limit: usize) -> bool {
+        self.everyType(indexType, |checker, t| {
+            if checker.types[t]
+                .get_flags()
+                .intersects(TypeFlags::StringOrNumberLiteral)
+            {
+                // let propName = checker.getPropertyNameFromType(t);
+                todo!();
+                // if isNumericLiteralName(propName) {
+                //     let index = +propName;
+                //     return index >= 0 && index < limit;
+                // }
+            }
+            return false;
+        })
+    }
+
+    fn getIndexedAccessTypeOrUndefined(
+        &mut self,
+        objectType: TypeId,
+        mut indexType: TypeId,
+        accessFlags: Option<AccessFlags>,
+        accessNode: Option<BoundNode>,
+        aliasSymbol: Option<SymbolId>,
+        aliasTypeArguments: Option<Rc<Vec<TypeId>>>,
+    ) -> Option<TypeId> {
+        let mut accessFlags = accessFlags.unwrap_or_default();
+        if objectType == self.wildcardType || indexType == self.wildcardType {
+            return Some(self.wildcardType);
+        }
+        // If the object type has a string index signature and no other members we know that the result will
+        // always be the type of that index signature and we can simplify accordingly.
+        if self.isStringIndexSignatureOnlyType(objectType)
+            && !self.types[indexType]
+                .get_flags()
+                .intersects(TypeFlags::Nullable)
+            && self.isTypeAssignableToKind(indexType, TypeFlags::String | TypeFlags::Number, false)
+        {
+            indexType = self.stringType;
+        }
+        // In noUncheckedIndexedAccess mode, indexed access operations that occur in an expression in a read position and resolve to
+        // an index signature have 'undefined' included in their type.
+        if self.compilerOptions.noUncheckedIndexedAccess
+            && accessFlags.intersects(AccessFlags::ExpressionPosition)
+        {
+            accessFlags |= AccessFlags::IncludeUndefined
+        };
+        // If the index type is generic, or if the object type is generic and doesn't originate in an expression and
+        // the operation isn't exclusively indexing the fixed (non-variadic) portion of a tuple type, we are performing
+        // a higher-order index access where we cannot meaningfully access the properties of the object type. Note that
+        // for a generic T and a non-generic K, we eagerly resolve T[K] if it originates in an expression. This is to
+        // preserve backwards compatibility. For example, an element access 'this["foo"]' has always been resolved
+        // eagerly using the constraint type of 'this' at the given location.
+        if self.isGenericIndexType(indexType)
+            || (if matches!(&accessNode, Some(n) if !matches!(n, BoundNode::TsIndexedAccessType(_)))
+            {
+                self.isGenericTupleType(objectType)
+                    && !self.indexTypeLessThan(
+                        indexType,
+                        unwrap_as!(
+                            &self.types[self.types[objectType]
+                                .unwrap_as_type_reference()
+                                .target
+                                .unwrap()],
+                            Type::TupleType(t),
+                            t
+                        )
+                        .fixedLength,
+                    )
+            } else {
+                self.isGenericObjectType(objectType)
+                    && !(self.isTupleType(objectType)
+                        && self.indexTypeLessThan(
+                            indexType,
+                            unwrap_as!(
+                                &self.types[self.types[objectType]
+                                    .unwrap_as_type_reference()
+                                    .target
+                                    .unwrap()],
+                                Type::TupleType(t),
+                                t
+                            )
+                            .fixedLength,
+                        ))
+            })
+        {
+            todo!();
+            // if (objectType.flags & TypeFlags::AnyOrUnknown) {
+            //     return objectType;
+            // }
+            // // Defer the operation by creating an indexed access type.
+            // const persistentAccessFlags = accessFlags & AccessFlags::Persistent;
+            // const id = objectType.id + "," + indexType.id + "," + persistentAccessFlags + getAliasId(aliasSymbol, aliasTypeArguments);
+            // let type = indexedAccessTypes.get(id);
+            // if (!type) {
+            //     indexedAccessTypes.set(id, type = createIndexedAccessType(objectType, indexType, persistentAccessFlags, aliasSymbol, aliasTypeArguments));
+            // }
+
+            // return type;
+        }
+        // In the following we resolve T[K] to the type of the property in T selected by K.
+        // We treat boolean as different from other unions to improve errors;
+        // skipping straight to getPropertyTypeForIndexType gives errors with 'boolean' instead of 'true'.
+        let apparentObjectType = self.getReducedApparentType(objectType);
+        if self.types[indexType]
+            .get_flags()
+            .intersects(TypeFlags::Union)
+            && !self.types[indexType]
+                .get_flags()
+                .intersects(TypeFlags::Boolean)
+        {
+            todo!();
+            // const propTypes: Type[] = [];
+            // let wasMissingProp = false;
+            // for (const t of (indexType as UnionType).types) {
+            //     const propType = getPropertyTypeForIndexType(objectType, apparentObjectType, t, indexType, accessNode, accessFlags | (wasMissingProp ? AccessFlags::SuppressNoImplicitAnyError : 0));
+            //     if (propType) {
+            //         propTypes.push(propType);
+            //     }
+            //     else if (!accessNode) {
+            //         // If there's no error node, we can immeditely stop, since error reporting is off
+            //         return undefined;
+            //     }
+            //     else {
+            //         // Otherwise we set a flag and return at the end of the loop so we still mark all errors
+            //         wasMissingProp = true;
+            //     }
+            // }
+            // if (wasMissingProp) {
+            //     return undefined;
+            // }
+            // return accessFlags & AccessFlags::Writing
+            //     ? getIntersectionType(propTypes, aliasSymbol, aliasTypeArguments)
+            //     : getUnionType(propTypes, UnionReduction.Literal, aliasSymbol, aliasTypeArguments);
+        }
+        self.getPropertyTypeForIndexType(
+            objectType,
+            apparentObjectType,
+            indexType,
+            indexType,
+            accessNode,
+            accessFlags | AccessFlags::CacheSymbol | AccessFlags::ReportDeprecated,
+        )
+    }
+
+    fn getTypeFromIndexedAccessTypeNode(&mut self, node: Rc<TsIndexedAccessType>) -> TypeId {
+        let bound_node = BoundNode::TsIndexedAccessType(node.clone());
+        match self.getNodeLinks(bound_node.clone()).resolvedType {
+            Some(resolvedType) => resolvedType,
+            None => {
+                let objectType = self.getTypeFromTypeNode(node.obj_type.bind(bound_node.clone()));
+                let indexType = self.getTypeFromTypeNode(node.index_type.bind(bound_node.clone()));
+                let potentialAlias = self.getAliasSymbolForTypeNode(&bound_node);
+                let aliasTypeArguments = self.getTypeArgumentsForAliasSymbol(potentialAlias);
+                let resolved = self.getIndexedAccessType(
+                    objectType,
+                    indexType,
+                    Some(AccessFlags::None),
+                    Some(bound_node.clone()),
+                    potentialAlias,
+                    aliasTypeArguments,
+                );
+                let resolvedType = if matches!(&self.types[resolved], Type::IndexedAccessType(t) if t.objectType == objectType
+                && t.indexType == indexType)
+                {
+                    self.getConditionalFlowTypeOfType(resolved, bound_node.clone())
+                } else {
+                    resolved
+                };
+                self.getNodeLinks_mut(bound_node).resolvedType = Some(resolvedType);
+                resolvedType
+            }
+        }
+    }
+
+    fn getTypeFromMappedTypeNode(&mut self, node: Rc<TsMappedType>) -> TypeId {
+        let bound_node = BoundNode::TsMappedType(node.clone());
+        match self.getNodeLinks(bound_node.clone()).resolvedType {
+            Some(resolvedType) => resolvedType,
+            None => {
+                let aliasSymbol = self.getAliasSymbolForTypeNode(&bound_node);
+                let resolvedType = MappedType {
+                    anonymous_type: AnonymousTypeBase::default(),
+                    object_type_base: ObjectTypeBase::new(ObjectFlags::Mapped),
+                    type_base: TypeBase {
+                        flags: TypeFlags::Object,
+                        aliasSymbol,
+                        aliasTypeArguments: self.getTypeArgumentsForAliasSymbol(aliasSymbol),
+                        symbol: self.node_data(bound_node.clone()).symbol,
+                        ..Default::default()
+                    },
+                    declaration: node,
+                    typeParameter: None,
+                    constraintType: None,
+                    nameType: None,
+                    templateType: None,
+                    modifiersType: None,
+                    resolvedApparentType: None,
+                    containsError: false,
+                };
+                let resolvedType = self.types.push(Type::MappedType(resolvedType));
+                self.getNodeLinks_mut(bound_node).resolvedType = Some(resolvedType);
+                // Eagerly resolve the constraint type which forces an error if the constraint type circularly
+                // references itself through one or more type aliases.
+                self.getConstraintTypeFromMappedType(resolvedType);
+                resolvedType
+            }
+        }
+    }
+
+    fn getActualTypeVariable(&mut self, ty: TypeId) -> TypeId {
+        if let Type::SubstitutionType(ty) = &self.types[ty] {
+            return ty.baseType;
+        }
+        if let Type::IndexedAccessType(ty) = &self.types[ty] {
+            if self.types[ty.objectType]
+                .get_flags()
+                .intersects(TypeFlags::Substitution)
+                || self.types[ty.indexType]
+                    .get_flags()
+                    .intersects(TypeFlags::Substitution)
+            {
+                let objectType = ty.objectType;
+                let indexType = ty.indexType;
+                let objectType = self.getActualTypeVariable(objectType);
+                let indexType = self.getActualTypeVariable(indexType);
+                return self.getIndexedAccessType(objectType, indexType, None, None, None, None);
+            }
+        }
+        ty
+    }
+
+    fn isTypicalNondistributiveConditional(&self, root: ConditionalRootId) -> bool {
+        fn isSingletonTupleType(node: &ast::TsType) -> bool {
+            if let ast::TsType::TsTupleType(tuple) = node {
+                if tuple.elem_types.len() == 1 {
+                    let elem = tuple.elem_types.first().unwrap();
+                    return !matches!(
+                        elem.ty,
+                        ast::TsType::TsRestType(_) | ast::TsType::TsOptionalType(_)
+                    );
+                }
+            }
+            false
+        }
+
+        let root = &self.conditional_roots[root];
+        !root.isDistributive
+            && isSingletonTupleType(&root.node.check_type)
+            && isSingletonTupleType(&root.node.extends_type)
+    }
+
+    /// We syntactually check for common nondistributive conditional shapes and unwrap them into
+    /// the intended comparison - we do this so we can check if the unwrapped types are generic or
+    /// not and appropriately defer condition calculation
+    fn unwrapNondistributiveConditionalTuple(
+        &mut self,
+        root: ConditionalRootId,
+        ty: TypeId,
+    ) -> TypeId {
+        if self.isTypicalNondistributiveConditional(root) && self.isTupleType(ty) {
+            *self.getTypeArguments(ty).first().unwrap()
+        } else {
+            ty
+        }
+    }
+
+    fn getConditionalType(
+        &mut self,
+        root: ConditionalRootId,
+        mapper: Option<Rc<TypeMapper>>,
+        aliasSymbol: Option<SymbolId>,
+        aliasTypeArguments: Option<Rc<Vec<TypeId>>>,
+    ) -> TypeId {
+        let mut result;
+        // TODO: remove type ann:
+        let mut extraTypes: Option<Vec<TypeId>> = None;
+        let mut tailCount = 0;
+        // We loop here for an immediately nested conditional type in the false position, effectively treating
+        // types of the form 'A extends B ? X : C extends D ? Y : E extends F ? Z : ...' as a single construct for
+        // purposes of resolution. We also loop here when resolution of a conditional type ends in resolution of
+        // another (or, through recursion, possibly the same) conditional type. In the potentially tail-recursive
+        // cases we increment the tail recursion counter and stop after 1000 iterations.
+        loop {
+            if tailCount == 1000 {
+                todo!();
+                // error(currentNode, Diagnostics.Type_instantiation_is_excessively_deep_and_possibly_infinite);
+                // result = errorType;
+                // break;
+            }
+            let isUnwrapped = self.isTypicalNondistributiveConditional(root);
+            let checkType = self.getActualTypeVariable(self.conditional_roots[root].checkType);
+            let checkType = self.unwrapNondistributiveConditionalTuple(root, checkType);
+            let checkType = self.instantiateType(checkType, mapper.clone());
+            let checkTypeInstantiable = self.isGenericType(checkType);
+            let extendsType = self.unwrapNondistributiveConditionalTuple(
+                root,
+                self.conditional_roots[root].extendsType,
+            );
+            let extendsType = self.instantiateType(extendsType, mapper.clone());
+            if checkType == self.wildcardType || extendsType == self.wildcardType {
+                return self.wildcardType;
+            }
+            let mut combinedMapper = None;
+            if let Some(inferTypeParameters) =
+                self.conditional_roots[root].inferTypeParameters.clone()
+            {
+                let context = self.createInferenceContext(
+                    inferTypeParameters,
+                    None,
+                    InferenceFlags::None,
+                    None,
+                );
+                if !checkTypeInstantiable {
+                    // We don't want inferences from constraints as they may cause us to eagerly resolve the
+                    // conditional type instead of deferring resolution. Also, we always want strict function
+                    // types rules (i.e. proper contravariance) for inferences.
+                    self.inferTypes(
+                        context,
+                        checkType,
+                        extendsType,
+                        Some(InferencePriority::NoConstraints | InferencePriority::AlwaysStrict),
+                        false,
+                    );
+                }
+                // It's possible for 'infer T' type paramteters to be given uninstantiated constraints when the
+                // those type parameters are used in type references (see getInferredTypeParameterConstraint). For
+                // that reason we need context.mapper to be first in the combined mapper. See #42636 for examples.
+                let inference_context_mapper = self.inference_contexts[context].mapper.clone();
+                combinedMapper = Some(if let Some(mapper) = &mapper {
+                    TypeMapper::combineTypeMappers(
+                        Some(inference_context_mapper.clone()),
+                        mapper.clone(),
+                    )
+                } else {
+                    inference_context_mapper
+                });
+            }
+            // Instantiate the extends type including inferences for 'infer T' type parameters
+            let inferredExtendsType = if combinedMapper.is_some() {
+                let ty = self.unwrapNondistributiveConditionalTuple(
+                    root,
+                    self.conditional_roots[root].extendsType,
+                );
+                self.instantiateType(ty, combinedMapper.clone())
+            } else {
+                extendsType
+            };
+            // We attempt to resolve the conditional type only when the check and extends types are non-generic
+            if !checkTypeInstantiable && !self.isGenericType(inferredExtendsType) {
+                todo!();
+                // Return falseType for a definitely false extends check. We check an instantiations of the two
+                // types with type parameters mapped to the wildcard type, the most permissive instantiations
+                // possible (the wildcard type is assignable to and from all types). If those are not related,
+                // then no instantiations will be and we can just return the false branch type.
+                // if (!(inferredExtendsType.flags & TypeFlags::AnyOrUnknown) && ((checkType.flags & TypeFlags::Any && !isUnwrapped) || !isTypeAssignableTo(getPermissiveInstantiation(checkType), getPermissiveInstantiation(inferredExtendsType)))) {
+                //     // Return union of trueType and falseType for 'any' since it matches anything
+                //     if (checkType.flags & TypeFlags::Any && !isUnwrapped) {
+                //         (extraTypes || (extraTypes = [])).push(instantiateType(getTypeFromTypeNode(root.node.trueType), combinedMapper || mapper));
+                //     }
+                //     // If falseType is an immediately nested conditional type that isn't distributive or has an
+                //     // identical checkType, switch to that type and loop.
+                //     let falseType = getTypeFromTypeNode(root.node.falseType);
+                //     if (falseType.flags & TypeFlags::Conditional) {
+                //         let newRoot = (falseType as ConditionalType).root;
+                //         if (newRoot.node.parent == root.node && (!newRoot.isDistributive || newRoot.checkType == root.checkType)) {
+                //             root = newRoot;
+                //             continue;
+                //         }
+                //         if (canTailRecurse(falseType, mapper)) {
+                //             continue;
+                //         }
+                //     }
+                //     result = instantiateType(falseType, mapper);
+                //     break;
+                // }
+                // // Return trueType for a definitely true extends check. We check instantiations of the two
+                // // types with type parameters mapped to their restrictive form, i.e. a form of the type parameter
+                // // that has no constraint. This ensures that, for example, the type
+                // //   type Foo<T extends { x: any }> = T extends { x: string } ? string : number
+                // // doesn't immediately resolve to 'string' instead of being deferred.
+                // if (inferredExtendsType.flags & TypeFlags::AnyOrUnknown || isTypeAssignableTo(getRestrictiveInstantiation(checkType), getRestrictiveInstantiation(inferredExtendsType))) {
+                //     let trueType = getTypeFromTypeNode(root.node.trueType);
+                //     let trueMapper = combinedMapper || mapper;
+                //     if (canTailRecurse(trueType, trueMapper)) {
+                //         continue;
+                //     }
+                //     result = instantiateType(trueType, trueMapper);
+                //     break;
+                // }
+            }
+            // Return a deferred type for a check that is neither definitely true nor definitely false
+            let cond_type = ConditionalType {
+                instantiable_type: InstantiableType::default(),
+                type_base: TypeBase {
+                    flags: TypeFlags::Conditional,
+                    symbol: None,
+                    pattern: None,
+                    aliasSymbol: aliasSymbol.or(self.conditional_roots[root].aliasSymbol),
+                    aliasTypeArguments: if aliasSymbol.is_some() {
+                        aliasTypeArguments
+                    } else {
+                        self.instantiateTypesOptionalWithOptionalMapper(
+                            self.conditional_roots[root].aliasTypeArguments.clone(),
+                            mapper.clone(),
+                        )
+                    },
+                    aliasTypeArgumentsContainsMarker: false,
+                    permissiveInstantiation: None,
+                    restrictiveInstantiation: None,
+                    immediateBaseConstraint: None,
+                    widened: None,
+                },
+                root,
+                checkType: self
+                    .instantiateType(self.conditional_roots[root].checkType, mapper.clone()),
+                extendsType: self
+                    .instantiateType(self.conditional_roots[root].extendsType, mapper.clone()),
+                resolvedTrueType: None,
+                resolvedFalseType: None,
+                resolvedInferredTrueType: None,
+                resolvedDefaultConstraint: None,
+                mapper,
+                combinedMapper,
+            };
+            result = self.types.push(Type::ConditionalType(cond_type));
+            break;
+        }
+        return if let Some(mut extraTypes) = extraTypes {
+            extraTypes.push(result);
+            self.getUnionType(&extraTypes, None, None, None, None)
+        } else {
+            result
+        };
+        // We tail-recurse for generic conditional types that (a) have not already been evaluated and cached, and
+        // (b) are non distributive, have a check type that is unaffected by instantiation, or have a non-union check
+        // type. Note that recursion is possible only through aliased conditional types, so we only increment the tail
+        // recursion counter for those.
+        fn canTailRecurse(newType: TypeId, newMapper: Option<TypeMapper>) -> bool {
+            todo!();
+            // if (newType.flags & TypeFlags::Conditional && newMapper) {
+            //     const newRoot = (newType as ConditionalType).root;
+            //     if (newRoot.outerTypeParameters) {
+            //         const typeParamMapper = combineTypeMappers((newType as ConditionalType).mapper, newMapper);
+            //         const typeArguments = map(newRoot.outerTypeParameters, t => getMappedType(t, typeParamMapper));
+            //         const newRootMapper = createTypeMapper(newRoot.outerTypeParameters, typeArguments);
+            //         const newCheckType = newRoot.isDistributive ? getMappedType(newRoot.checkType, newRootMapper) : undefined;
+            //         if (!newCheckType || newCheckType === newRoot.checkType || !(newCheckType.flags & (TypeFlags::Union | TypeFlags::Never))) {
+            //             root = newRoot;
+            //             mapper = newRootMapper;
+            //             aliasSymbol = undefined;
+            //             aliasTypeArguments = undefined;
+            //             if (newRoot.aliasSymbol) {
+            //                 tailCount++;
+            //             }
+            //             return true;
+            //         }
+            //     }
+            // }
+            // return false;
+        }
+    }
+
     // TODO:
     // getTrueTypeFromConditionalType
     // TODO:
     // getFalseTypeFromConditionalType
     // TODO:
     // getInferredTrueTypeFromConditionalType
-    // TODO:
-    // getInferTypeParameters
-    // TODO:
-    // getTypeFromConditionalTypeNode
-    // TODO:
-    // getTypeFromInferTypeNode
+
+    fn getInferTypeParameters(&mut self, node: Rc<TsConditionalType>) -> Option<Vec<TypeId>> {
+        let mut result: Option<Vec<TypeId>> = None;
+        if let Some(locals) = self.node_data(node.into()).locals {
+            // TODO: bad collect:
+            for symbol in self.symbol_tables[locals]
+                .values()
+                .cloned()
+                .collect::<Vec<_>>()
+            {
+                if self.symbols[symbol]
+                    .flags()
+                    .intersects(SymbolFlags::TypeParameter)
+                {
+                    let t = self.getDeclaredTypeOfSymbol(symbol);
+                    match &mut result {
+                        Some(res) => {
+                            res.push(t);
+                        }
+                        None => result = Some(vec![t]),
+                    }
+                }
+            }
+        }
+        result
+    }
+
+    fn getTypeFromConditionalTypeNode(&mut self, node: Rc<TsConditionalType>) -> TypeId {
+        let bound_node = BoundNode::TsConditionalType(node.clone());
+        match self.getNodeLinks(bound_node.clone()).resolvedType {
+            Some(resolvedType) => resolvedType,
+            None => {
+                let checkType = self.getTypeFromTypeNode(node.check_type.bind(bound_node.clone()));
+                let aliasSymbol = self.getAliasSymbolForTypeNode(&bound_node);
+                let aliasTypeArguments = self.getTypeArgumentsForAliasSymbol(aliasSymbol);
+                let allOuterTypeParameters = self.getOuterTypeParameters(bound_node.clone(), true);
+                let outerTypeParameters = if aliasTypeArguments.is_some() {
+                    allOuterTypeParameters.map(Rc::new)
+                } else {
+                    todo!();
+                    //  filter(allOuterTypeParameters, tp => isTypeParameterPossiblyReferenced(tp, node))
+                };
+                let root = ConditionalRoot {
+                    node: node.clone(),
+                    checkType,
+                    extendsType: self
+                        .getTypeFromTypeNode(node.extends_type.bind(bound_node.clone())),
+                    isDistributive: self.types[checkType]
+                        .get_flags()
+                        .intersects(TypeFlags::TypeParameter),
+                    inferTypeParameters: self.getInferTypeParameters(node).map(Rc::new),
+                    outerTypeParameters: outerTypeParameters.clone(),
+                    instantiations: AHashMap::default(),
+                    aliasSymbol,
+                    aliasTypeArguments,
+                };
+                let root = self.conditional_roots.push(root);
+                let resolvedType = self.getConditionalType(root, None, None, None);
+                if outerTypeParameters.is_some() {
+                    let type_list_id =
+                        self.getTypeListId(outerTypeParameters.as_ref().map(|v| v.as_ref()));
+                    self.conditional_roots[root]
+                        .instantiations
+                        .insert(type_list_id.0, resolvedType);
+                }
+                self.getNodeLinks_mut(bound_node).resolvedType = Some(resolvedType);
+                resolvedType
+            }
+        }
+    }
+
+    fn getTypeFromInferTypeNode(&mut self, node: Rc<TsInferType>) -> TypeId {
+        let bound_node = BoundNode::TsInferType(node.clone());
+        match self.getNodeLinks(bound_node.clone()).resolvedType {
+            Some(resolvedType) => resolvedType,
+            None => {
+                let type_param_symbol = self
+                    .getSymbolOfNode(node.type_param.bind(bound_node.clone()))
+                    .unwrap();
+                let resolvedType = self.getDeclaredTypeOfTypeParameter(type_param_symbol);
+                self.getNodeLinks_mut(bound_node).resolvedType = Some(resolvedType);
+                resolvedType
+            }
+        }
+    }
+
     // TODO:
     // getIdentifierChain
     // TODO:
@@ -11029,9 +13984,8 @@ impl Checker {
                         type_base: TypeBase::new(TypeFlags::Object, Some(symbol)),
                     }));
                     *self.types[ty].get_aliasSymbol_mut() = aliasSymbol;
-                    *self.types[ty].get_aliasTypeArguments_mut() = self
-                        .getTypeArgumentsForAliasSymbol(aliasSymbol)
-                        .map(Rc::new);
+                    *self.types[ty].get_aliasTypeArguments_mut() =
+                        self.getTypeArgumentsForAliasSymbol(aliasSymbol);
                     // TODO: jsdoc:
                     // if isJSDocTypeLiteral(node) && node.isArrayType {
                     //     ty = self.createArrayType(ty);
@@ -11059,7 +14013,10 @@ impl Checker {
         }
     }
 
-    fn getTypeArgumentsForAliasSymbol(&mut self, symbol: Option<SymbolId>) -> Option<Vec<TypeId>> {
+    fn getTypeArgumentsForAliasSymbol(
+        &mut self,
+        symbol: Option<SymbolId>,
+    ) -> Option<Rc<Vec<TypeId>>> {
         symbol.and_then(|s| self.getLocalTypeParametersOfClassOrInterfaceOrTypeAlias(s))
     }
 
@@ -11085,18 +14042,69 @@ impl Checker {
 
     // TODO:
     // createLiteralType
-    // TODO:
-    // getFreshTypeOfLiteralType
+
+    fn getFreshTypeOfLiteralType(&mut self, ty: TypeId) -> TypeId {
+        if self.types[ty].get_flags().intersects(TypeFlags::Literal) {
+            return match self.types[ty].get_literal_fresh_type() {
+                Some(fresh) => fresh,
+                None => {
+                    let fresh_type_id = self.types.next_index();
+                    let literal_type = LiteralType {
+                        freshType: Some(fresh_type_id),
+                        regularType: ty,
+                    };
+                    let fresh_type = match &self.types[ty] {
+                        Type::StringLiteralType(t) => {
+                            self.types.push(Type::StringLiteralType(StringLiteralType {
+                                literal_type,
+                                type_base: TypeBase::new(t.type_base.flags, t.type_base.symbol),
+                                value: t.value.clone(),
+                            }))
+                        }
+                        Type::NumberLiteralType(t) => {
+                            self.types.push(Type::NumberLiteralType(NumberLiteralType {
+                                literal_type,
+                                type_base: TypeBase::new(t.type_base.flags, t.type_base.symbol),
+                                value: t.value,
+                            }))
+                        }
+                        Type::BigIntLiteralType(t) => {
+                            self.types.push(Type::BigIntLiteralType(BigIntLiteralType {
+                                literal_type,
+                                type_base: TypeBase::new(t.type_base.flags, t.type_base.symbol),
+                                value: t.value.clone(),
+                            }))
+                        }
+                        // TODO: FreshableIntrinsicType?
+                        _ => unreachable!(),
+                    };
+                    debug_assert_eq!(fresh_type_id, fresh_type);
+
+                    self.types[ty].set_literal_fresh_type(fresh_type);
+                    fresh_type
+                }
+            };
+        }
+        ty
+    }
 
     fn getRegularTypeOfLiteralType(&mut self, ty: TypeId) -> TypeId {
         let flags = self.types[ty].get_flags();
         if flags.intersects(TypeFlags::Literal) {
-            self.types[ty].literal_type_regular_type()
+            self.types[ty].get_literal_regular_type()
         } else if flags.intersects(TypeFlags::Union) {
-            todo!()
-            // ((ty as UnionType).regularType
-            //     || ((ty as UnionType).regularType =
-            //         mapType(ty, getRegularTypeOfLiteralType) as UnionType))
+            match self.types[ty].unwrap_as_union_type_base().regularType {
+                Some(regular_ty) => regular_ty,
+                None => {
+                    let regular_ty = self.mapType(
+                        ty,
+                        &mut |checker, t| checker.getRegularTypeOfLiteralType(t),
+                        false,
+                    );
+                    self.types[ty].unwrap_as_union_type_base_mut().regularType = Some(regular_ty);
+                    regular_ty
+                }
+            }
         } else {
             ty
         }
@@ -11104,7 +14112,7 @@ impl Checker {
 
     fn isFreshLiteralType(&self, ty: TypeId) -> bool {
         self.types[ty].get_flags().intersects(TypeFlags::Literal)
-            && self.types[ty].literal_type_fresh_type() == Some(ty)
+            && self.types[ty].get_literal_fresh_type() == Some(ty)
     }
 
     fn getStringLiteralType(&mut self, value: &JsWord) -> TypeId {
@@ -11124,8 +14132,24 @@ impl Checker {
     // getBigIntLiteralType
     // TODO:
     // getEnumLiteralType
-    // TODO:
-    // getTypeFromLiteralTypeNode
+
+    fn getTypeFromLiteralTypeNode(&mut self, node: &Rc<TsLitType>) -> TypeId {
+        // TODO: I dont think this branch is possible for our AST
+        // if (node.literal.kind == SyntaxKind.NullKeyword) {
+        //     return self.nullType;
+        // }
+        let bound_node = BoundNode::TsLitType(node.clone());
+        match self.getNodeLinks(bound_node.clone()).resolvedType {
+            Some(resolvedType) => resolvedType,
+            None => {
+                let ty = self.checkExpression(node.lit.bind(bound_node.clone()), None, false);
+                let ty = self.getRegularTypeOfLiteralType(ty);
+                self.getNodeLinks_mut(bound_node).resolvedType = Some(ty);
+                ty
+            }
+        }
+    }
+
     // TODO:
     // createUniqueESSymbolType
     // TODO:
@@ -11235,12 +14259,11 @@ impl Checker {
             }
             BoundNode::TsKeywordType(t) if t.kind == KK::TsNeverKeyword => self.neverType,
             BoundNode::TsKeywordType(t) if t.kind == KK::TsObjectKeyword => {
-                todo!();
-                // if node.flags & NodeFlags.JavaScriptFile && !self.noImplicitAny {
-                //     self.anyType
-                // } else {
-                //     self.nonPrimitiveType
-                // }
+                if isBoundNodeInJSFile(&node) && !self.noImplicitAny {
+                    self.anyType
+                } else {
+                    self.nonPrimitiveType
+                }
             }
             BoundNode::TsKeywordType(t) if t.kind == KK::TsIntrinsicKeyword => {
                 self.intrinsicMarkerType
@@ -11250,10 +14273,7 @@ impl Checker {
                 self.getTypeFromThisTypeNode(node)
             }
             BoundNode::TsThisType(_) => self.getTypeFromThisTypeNode(node),
-            BoundNode::TsLitType(_) => {
-                todo!()
-                // self.getTypeFromLiteralTypeNode(node)
-            }
+            BoundNode::TsLitType(n) => self.getTypeFromLiteralTypeNode(n),
             BoundNode::TsTypeRef(_) => self.getTypeFromTypeReference(node),
             BoundNode::TsTypePredicate(t) => {
                 if t.asserts {
@@ -11262,10 +14282,7 @@ impl Checker {
                     self.booleanType()
                 }
             }
-            BoundNode::TsExprWithTypeArgs(_) => {
-                todo!();
-                // self.getTypeFromTypeReference(node)
-            }
+            BoundNode::TsExprWithTypeArgs(_) => self.getTypeFromTypeReference(node),
             BoundNode::TsTypeQuery(_) => {
                 todo!();
                 // self.getTypeFromTypeQueryNode(node)
@@ -11277,14 +14294,8 @@ impl Checker {
                 todo!();
                 // self.getTypeFromOptionalTypeNode(node)
             }
-            BoundNode::TsUnionType(_) => {
-                todo!();
-                // self.getTypeFromUnionTypeNode(node)
-            }
-            BoundNode::TsIntersectionType(_) => {
-                todo!();
-                // self.getTypeFromIntersectionTypeNode(node)
-            }
+            BoundNode::TsUnionType(t) => self.getTypeFromUnionTypeNode(t.clone()),
+            BoundNode::TsIntersectionType(t) => self.getTypeFromIntersectionTypeNode(t.clone()),
             // TODO: jsdoc:
             // BoundNode::JSDocNullableType(_) => self.getTypeFromJSDocNullableTypeNode(node),
             // BoundNode::JSDocOptionalType(_) => {
@@ -11298,9 +14309,8 @@ impl Checker {
             // TODO: jsdoc:
             // BoundNode::JSDocNonNullableType(_)
             // | BoundNode::JSDocTypeExpression(_)
-            BoundNode::TsParenthesizedType(_) => {
-                todo!();
-                // self.getTypeFromTypeNode((node as ParenthesizedTypeNode | JSDocTypeReferencingNode | JSDocTypeExpression | NamedTupleMember).type)
+            BoundNode::TsParenthesizedType(n) => {
+                self.getTypeFromTypeNode(n.type_ann.bind(node.clone()))
             }
             BoundNode::TsRestType(_) => {
                 todo!();
@@ -11317,26 +14327,11 @@ impl Checker {
             BoundNode::TsFnType(_) | BoundNode::TsConstructorType(_) | BoundNode::TsTypeLit(_) => {
                 self.getTypeFromTypeLiteralOrFunctionOrConstructorTypeNode(node)
             }
-            BoundNode::TsTypeOperator(_) => {
-                todo!();
-                // self.getTypeFromTypeOperatorNode(node)
-            }
-            BoundNode::TsIndexedAccessType(_) => {
-                todo!();
-                // self.getTypeFromIndexedAccessTypeNode(node)
-            }
-            BoundNode::TsMappedType(_) => {
-                todo!();
-                // self.getTypeFromMappedTypeNode(node)
-            }
-            BoundNode::TsConditionalType(_) => {
-                todo!();
-                // self.getTypeFromConditionalTypeNode(node)
-            }
-            BoundNode::TsInferType(_) => {
-                todo!();
-                // self.getTypeFromInferTypeNode(node)
-            }
+            BoundNode::TsTypeOperator(n) => self.getTypeFromTypeOperatorNode(n),
+            BoundNode::TsIndexedAccessType(n) => self.getTypeFromIndexedAccessTypeNode(n.clone()),
+            BoundNode::TsMappedType(n) => self.getTypeFromMappedTypeNode(n.clone()),
+            BoundNode::TsConditionalType(n) => self.getTypeFromConditionalTypeNode(n.clone()),
+            BoundNode::TsInferType(n) => self.getTypeFromInferTypeNode(n.clone()),
             BoundNode::TsTplLitType(_) => {
                 todo!();
                 // self.getTypeFromTemplateTypeNode(node)
@@ -11369,15 +14364,16 @@ impl Checker {
         }
     }
 
-    fn instantiateList<T, I>(
+    fn instantiateList<T, M, I>(
         &mut self,
         items: &Rc<Vec<T>>,
-        mapper: Rc<TypeMapper>,
+        mapper: M,
         mut instantiator: I,
     ) -> Rc<Vec<T>>
     where
         T: PartialEq + Copy,
-        I: FnMut(&mut Checker, T, Rc<TypeMapper>) -> T,
+        M: Clone,
+        I: FnMut(&mut Checker, T, M) -> T,
     {
         let mut i = 0;
         while i < items.len() {
@@ -11417,6 +14413,19 @@ impl Checker {
         mapper: Rc<TypeMapper>,
     ) -> Option<Rc<Vec<TypeId>>> {
         types.map(|t| self.instantiateTypes(t, mapper))
+    }
+
+    fn instantiateTypesOptionalWithOptionalMapper(
+        &mut self,
+        types: Option<Rc<Vec<TypeId>>>,
+        mapper: Option<Rc<TypeMapper>>,
+    ) -> Option<Rc<Vec<TypeId>>> {
+        types.map(|types| {
+            // Copied from instantiateTypes
+            self.instantiateList(&types, mapper, |checker, ty, mapper| {
+                checker.instantiateType(ty, mapper)
+            })
+        })
     }
 
     fn instantiateSignatures(
@@ -11549,28 +14558,28 @@ impl Checker {
         eraseTypeParameters: bool,
     ) -> SignatureId {
         let mut freshTypeParameters = None;
-        if !eraseTypeParameters {
-            // First create a fresh set of type parameters, then include a mapping from the old to the
-            // new type parameters in the mapper function. Finally store this mapper in the new type
-            // parameters such that we can use it when instantiating constraints.
-            let mut fresh_type_params = self.signatures[signature].typeParameters.as_ref().clone();
-            for t in &mut fresh_type_params {
-                *t = self.cloneTypeParameter(*t);
+        if let Some(sig_type_params) = self.signatures[signature].typeParameters.clone() {
+            if !eraseTypeParameters {
+                // First create a fresh set of type parameters, then include a mapping from the old to the
+                // new type parameters in the mapper function. Finally store this mapper in the new type
+                // parameters such that we can use it when instantiating constraints.
+                let mut fresh_type_params = sig_type_params.as_ref().clone();
+                for t in &mut fresh_type_params {
+                    *t = self.cloneTypeParameter(*t);
+                }
+                let fresh_type_params = Rc::new(fresh_type_params);
+                mapper = TypeMapper::combineTypeMappers(
+                    Some(self.createTypeMapper(sig_type_params, Some(fresh_type_params.clone()))),
+                    mapper,
+                );
+                for tp in fresh_type_params.iter() {
+                    unwrap_as!(&mut self.types[*tp], Type::TypeParameter(t), t).mapper =
+                        Some(mapper.clone());
+                }
+                freshTypeParameters = Some(fresh_type_params);
             }
-            let fresh_type_params = Rc::new(fresh_type_params);
-            mapper = TypeMapper::combineTypeMappers(
-                Some(self.createTypeMapper(
-                    self.signatures[signature].typeParameters.clone(),
-                    Some(fresh_type_params.clone()),
-                )),
-                mapper,
-            );
-            for tp in fresh_type_params.iter() {
-                unwrap_as!(&mut self.types[*tp], Type::TypeParameter(t), t).mapper =
-                    Some(mapper.clone());
-            }
-            freshTypeParameters = Some(fresh_type_params);
         }
+
         let sig = &self.signatures[signature];
         let declaration = sig.declaration.clone();
         let minArgumentCount = sig.minArgumentCount;
@@ -11769,7 +14778,7 @@ impl Checker {
                     ),
                 );
                 self.types[target]
-                    .unwrap_instantiations()
+                    .unwrap_instantiations_mut()
                     .insert(key, target);
             }
             return match self.types[target].unwrap_instantiations().get(&id) {
@@ -11795,13 +14804,12 @@ impl Checker {
                         .get_object_flags()
                         .intersects(ObjectFlags::Mapped)
                     {
-                        todo!();
-                        // self.instantiateMappedType(
-                        //     target,
-                        //     newMapper,
-                        //     newAliasSymbol,
-                        //     newAliasTypeArguments,
-                        // )
+                        self.instantiateMappedType(
+                            target,
+                            newMapper,
+                            newAliasSymbol,
+                            newAliasTypeArguments,
+                        )
                     } else {
                         self.instantiateAnonymousType(
                             target,
@@ -11811,7 +14819,7 @@ impl Checker {
                         )
                     };
                     self.types[target]
-                        .unwrap_instantiations()
+                        .unwrap_instantiations_mut()
                         .insert(id, result);
                     result
                 }
@@ -12044,21 +15052,73 @@ impl Checker {
     }
 
     fn getHomomorphicTypeVariable(&mut self, ty: TypeId) -> Option<TypeId> {
-        todo!();
-        // debug_assert!(matches!(&self.types[ty], Type::MappedType(_)));
-        // let constraintType = self.getConstraintTypeFromMappedType(ty);
-        // if self.types[constraintType].get_flags().intersects(TypeFlags::Index) {
-        //     let constraintType = unwrap_as!(&self.types[constraintType], Type::IndexType(t),t);
-        //     let typeVariable = self.getActualTypeVariable(constraintType.ty);
-        //     if self.types[typeVariable].get_flags().intersects(TypeFlags::TypeParameter) {
-        //         return Some(typeVariable);
-        //     }
-        // }
-        // None
+        debug_assert!(matches!(&self.types[ty], Type::MappedType(_)));
+        let constraintType = self.getConstraintTypeFromMappedType(ty);
+        if self.types[constraintType]
+            .get_flags()
+            .intersects(TypeFlags::Index)
+        {
+            let constraintType = unwrap_as!(&self.types[constraintType], Type::IndexType(t), t);
+            let typeVariable = self.getActualTypeVariable(constraintType.ty);
+            if self.types[typeVariable]
+                .get_flags()
+                .intersects(TypeFlags::TypeParameter)
+            {
+                return Some(typeVariable);
+            }
+        }
+        None
     }
 
-    // TODO:
-    // instantiateMappedType
+    fn instantiateMappedType(
+        &mut self,
+        ty: TypeId,
+        mapper: Rc<TypeMapper>,
+        aliasSymbol: Option<SymbolId>,
+        aliasTypeArguments: Option<Rc<Vec<TypeId>>>,
+    ) -> TypeId {
+        // For a homomorphic mapped type { [P in keyof T]: X }, where T is some type variable, the mapping
+        // operation depends on T as follows:
+        // * If T is a primitive type no mapping is performed and the result is simply T.
+        // * If T is a union type we distribute the mapped type over the union.
+        // * If T is an array we map to an array where the element type has been transformed.
+        // * If T is a tuple we map to a tuple where the element types have been transformed.
+        // * Otherwise we map to an object type where the type of each property has been transformed.
+        // For example, when T is instantiated to a union type A | B, we produce { [P in keyof A]: X } |
+        // { [P in keyof B]: X }, and when when T is instantiated to a union type A | undefined, we produce
+        // { [P in keyof A]: X } | undefined.
+        if let Some(typeVariable) = self.getHomomorphicTypeVariable(ty) {
+            let mappedTypeVariable = self.instantiateType(typeVariable, Some(mapper.clone()));
+            if typeVariable != mappedTypeVariable {
+                todo!();
+                // return self.mapTypeWithAlias(self.getReducedType(mappedTypeVariable), |t|  {
+                //     if (t.flags & (TypeFlags::AnyOrUnknown | TypeFlags::InstantiableNonPrimitive | TypeFlags::Object | TypeFlags::Intersection) && t != wildcardType && !isErrorType(t)) {
+                //         if (!ty.declaration.nameType) {
+                //             if (isArrayType(t)) {
+                //                 return self.instantiateMappedArrayType(t, ty, prependTypeMapping(typeVariable, t, mapper));
+                //             }
+                //             if (isGenericTupleType(t)) {
+                //                 return self.instantiateMappedGenericTupleType(t, ty, typeVariable, mapper);
+                //             }
+                //             if (isTupleType(t)) {
+                //                 return self.instantiateMappedTupleType(t, ty, prependTypeMapping(typeVariable, t, mapper));
+                //             }
+                //         }
+                //         return self.instantiateAnonymousType(ty, prependTypeMapping(typeVariable, t, mapper));
+                //     }
+                //     return t;
+                // }, aliasSymbol, aliasTypeArguments);
+            }
+        }
+        // If the constraint type of the instantiation is the wildcard type, return the wildcard type.
+        let constraint_ty = self.getConstraintTypeFromMappedType(ty);
+        if self.instantiateType(constraint_ty, Some(mapper.clone())) == self.wildcardType {
+            self.wildcardType
+        } else {
+            self.instantiateAnonymousType(ty, mapper, aliasSymbol, aliasTypeArguments)
+        }
+    }
+
     // TODO:
     // getModifiedReadonlyState
     // TODO:
@@ -12087,13 +15147,13 @@ impl Checker {
                 object_type_base: ObjectTypeBase::new(objectFlags | ObjectFlags::Instantiated),
                 type_base: TypeBase::new(TypeFlags::Object, *self.types[ty].get_symbol()),
                 declaration: t.declaration.clone(),
-                typeParameter: todo!(),
-                constraintType: todo!(),
-                nameType: todo!(),
-                templateType: todo!(),
-                modifiersType: todo!(),
-                resolvedApparentType: todo!(),
-                containsError: todo!(),
+                typeParameter: None,
+                constraintType: None,
+                nameType: None,
+                templateType: None,
+                modifiersType: None,
+                resolvedApparentType: None,
+                containsError: false,
             };
 
             // C.f. instantiateSignature
@@ -12112,9 +15172,9 @@ impl Checker {
                 Type::TypeParameter(t),
                 t
             )
-            .mapper = Some(mapper);
+            .mapper = Some(mapper.clone());
 
-            result.anonymous_type.mapper = Some(mapper);
+            result.anonymous_type.mapper = Some(mapper.clone());
             result.type_base.aliasSymbol = aliasSymbol.or(*self.types[ty].get_aliasSymbol());
             result.type_base.aliasTypeArguments = if aliasSymbol.is_some() {
                 aliasTypeArguments
@@ -12152,8 +15212,81 @@ impl Checker {
         }
     }
 
-    // TODO:
-    // getConditionalTypeInstantiation
+    fn getConditionalTypeInstantiation(
+        &mut self,
+        ty: TypeId,
+        mapper: Rc<TypeMapper>,
+        aliasSymbol: Option<SymbolId>,
+        aliasTypeArguments: Option<Rc<Vec<TypeId>>>,
+    ) -> TypeId {
+        let root = unwrap_as!(&self.types[ty], Type::ConditionalType(t), t).root;
+        if let Some(outerTypeParameters) = self.conditional_roots[root].outerTypeParameters.clone()
+        {
+            // We are instantiating a conditional type that has one or more type parameters in scope. Apply the
+            // mapper to the type parameters to produce the effective list of type arguments, and compute the
+            // instantiation cache key from the type IDs of the type arguments.
+            let typeArguments = outerTypeParameters
+                .iter()
+                .map(|&t| self.getMappedType(t, mapper.clone()))
+                .collect::<Vec<_>>();
+            let make_instantiation_cache_key = || {
+                let type_list_id = self.getTypeListId(Some(&typeArguments));
+                let alias_id =
+                    self.getAliasId(aliasSymbol, aliasTypeArguments.as_ref().map(|v| v.as_ref()));
+                hash![type_list_id, alias_id]
+            };
+            let id = make_instantiation_cache_key();
+            return match self.conditional_roots[root].instantiations.get(&id) {
+                Some(result) => *result,
+                None => {
+                    let newMapper =
+                        self.createTypeMapper(outerTypeParameters, Some(Rc::new(typeArguments)));
+                    let checkType = self.conditional_roots[root].checkType;
+                    let distributionType = if self.conditional_roots[root].isDistributive {
+                        Some(self.getMappedType(checkType, newMapper.clone()))
+                    } else {
+                        None
+                    };
+                    // Distributive conditional types are distributed over union types. For example, when the
+                    // distributive conditional type T extends U ? X : Y is instantiated with A | B for T, the
+                    // result is (A extends U ? X : Y) | (B extends U ? X : Y).
+                    let result = if distributionType.is_some()
+                        && checkType != distributionType.unwrap()
+                        && self.types[distributionType.unwrap()]
+                            .get_flags()
+                            .intersects(TypeFlags::Union | TypeFlags::Never)
+                    {
+                        todo!();
+                        // self.mapTypeWithAlias(
+                        //     distributionType.unwrap(),
+                        //     |t| {
+                        //         self.getConditionalType(
+                        //             root,
+                        //             self.prependTypeMapping(checkType, t, newMapper),
+                        //             None,
+                        //             None,
+                        //         )
+                        //     },
+                        //     aliasSymbol,
+                        //     aliasTypeArguments,
+                        // )
+                    } else {
+                        self.getConditionalType(
+                            root,
+                            Some(newMapper),
+                            aliasSymbol,
+                            aliasTypeArguments,
+                        )
+                    };
+                    self.conditional_roots[root]
+                        .instantiations
+                        .insert(id, result);
+                    result
+                }
+            };
+        }
+        ty
+    }
 
     fn instantiateType(&mut self, ty: TypeId, mapper: Option<Rc<TypeMapper>>) -> TypeId {
         if let Some(mapper) = mapper {
@@ -12255,7 +15388,7 @@ impl Checker {
         }
         if flags.intersects(TypeFlags::UnionOrIntersection) {
             todo!();
-            // const origin = ty.flags & TypeFlags::Union ? (ty as UnionType).origin : undefined;
+            // const origin = ty_flags & TypeFlags::Union ? (ty as UnionType).origin : undefined;
             // const types = origin && origin.flags & TypeFlags::UnionOrIntersection ? (origin as UnionOrIntersectionType).types : (ty as UnionOrIntersectionType).types;
             // const newTypes = instantiateTypes(types, mapper);
             // if (newTypes === types && aliasSymbol === ty.aliasSymbol) {
@@ -12285,9 +15418,13 @@ impl Checker {
             // const newAliasTypeArguments = aliasSymbol ? aliasTypeArguments : instantiateTypes(ty.aliasTypeArguments, mapper);
             // return getIndexedAccessType(instantiateType((ty as IndexedAccessType).objectType, mapper), instantiateType((ty as IndexedAccessType).indexType, mapper), (ty as IndexedAccessType).accessFlags, /*accessNode*/ undefined, newAliasSymbol, newAliasTypeArguments);
         }
-        if flags.intersects(TypeFlags::Conditional) {
-            todo!();
-            // return getConditionalTypeInstantiation(ty as ConditionalType, combineTypeMappers((ty as ConditionalType).mapper, mapper), aliasSymbol, aliasTypeArguments);
+        if let Type::ConditionalType(t) = &self.types[ty] {
+            return self.getConditionalTypeInstantiation(
+                ty,
+                TypeMapper::combineTypeMappers(t.mapper.clone(), mapper),
+                aliasSymbol,
+                aliasTypeArguments,
+            );
         }
         if flags.intersects(TypeFlags::Substitution) {
             todo!();
@@ -12448,10 +15585,44 @@ impl Checker {
         }
     }
 
-    // TODO:
-    // isEmptyAnonymousObjectType
-    // TODO:
-    // isStringIndexSignatureOnlyType
+    fn isEmptyAnonymousObjectType(&mut self, ty: TypeId) -> bool {
+        !!(self.types[ty]
+            .get_object_flags()
+            .intersects(ObjectFlags::Anonymous)
+            && (matches!(&self.types[ty], Type::ResolvedType(t) if t.object_type_base.members.is_some())
+                && self.isEmptyResolvedType(ty)
+                || self.types[ty]
+                    .get_symbol()
+                    .clone()
+                    .map(|s| {
+                        if self.symbols[s].flags().intersects(SymbolFlags::TypeLiteral) {
+                            let members = self.getMembersOfSymbol(s);
+                            self.symbol_tables[members].is_empty()
+                        } else {
+                            false
+                        }
+                    })
+                    .unwrap_or_default()))
+    }
+
+    fn isStringIndexSignatureOnlyType(&mut self, ty: TypeId) -> bool {
+        self.types[ty].get_flags().intersects(TypeFlags::Object)
+            && !self.isGenericMappedType(ty)
+            && self.getPropertiesOfType(ty).len() == 0
+            && self.getIndexInfosOfType(ty).len() == 1
+            && self.getIndexInfoOfType(ty, self.stringType).is_some()
+            || self.types[ty]
+                .get_flags()
+                .intersects(TypeFlags::UnionOrIntersection)
+                && self.types[ty]
+                    .unwrap_as_union_or_intersection()
+                    .types
+                    .clone()
+                    .iter()
+                    .all(|&t| self.isStringIndexSignatureOnlyType(t))
+            || false
+    }
+
     // TODO:
     // isEnumTypeRelatedTo
     // TODO:
@@ -12464,10 +15635,10 @@ impl Checker {
         relation: TypeRelationTableId,
     ) -> bool {
         if self.isFreshLiteralType(source) {
-            source = self.types[source].literal_type_regular_type();
+            source = self.types[source].get_literal_regular_type();
         }
         if self.isFreshLiteralType(target) {
-            target = self.types[target].literal_type_regular_type();
+            target = self.types[target].get_literal_regular_type();
         }
         if source == target {
             return true;
@@ -12664,12 +15835,150 @@ impl Checker {
 
     // TODO:
     // isPropertyIdenticalTo
-    // TODO:
-    // compareProperties
-    // TODO:
-    // isMatchingSignature
-    // TODO:
-    // compareSignaturesIdentical
+
+    fn compareProperties<C>(
+        &mut self,
+        sourceProp: SymbolId,
+        targetProp: SymbolId,
+        compareTypes: C,
+    ) -> Ternary
+    where
+        C: FnMut(TypeId, TypeId) -> Ternary,
+    {
+        // Two members are considered identical when
+        // - they are public properties with identical names, optionality, and types,
+        // - they are private or protected properties originating in the same declaration and having identical types
+        if sourceProp == targetProp {
+            return Ternary::True;
+        }
+        todo!();
+        // let sourcePropAccessibility = getDeclarationModifierFlagsFromSymbol(sourceProp) & ModifierFlags::NonPublicAccessibilityModifier;
+        // let targetPropAccessibility = getDeclarationModifierFlagsFromSymbol(targetProp) & ModifierFlags::NonPublicAccessibilityModifier;
+        // if (sourcePropAccessibility != targetPropAccessibility) {
+        //     return Ternary::False;
+        // }
+        // if (sourcePropAccessibility) {
+        //     if (getTargetSymbol(sourceProp) != getTargetSymbol(targetProp)) {
+        //         return Ternary::False;
+        //     }
+        // }
+        // else {
+        //     if ((sourceProp.flags & SymbolFlags::Optional) != (targetProp.flags & SymbolFlags::Optional)) {
+        //         return Ternary::False;
+        //     }
+        // }
+        // if (isReadonlySymbol(sourceProp) != isReadonlySymbol(targetProp)) {
+        //     return Ternary::False;
+        // }
+        // return compareTypes(getTypeOfSymbol(sourceProp), getTypeOfSymbol(targetProp));
+    }
+
+    fn isMatchingSignature(
+        &mut self,
+        source: SignatureId,
+        target: SignatureId,
+        partialMatch: bool,
+    ) -> bool {
+        let sourceParameterCount = self.getParameterCount(source);
+        let targetParameterCount = self.getParameterCount(target);
+        let sourceMinArgumentCount = self.getMinArgumentCount(source, None);
+        let targetMinArgumentCount = self.getMinArgumentCount(target, None);
+        let sourceHasRestParameter = self.hasEffectiveRestParameter(source);
+        let targetHasRestParameter = self.hasEffectiveRestParameter(target);
+        // A source signature matches a target signature if the two signatures have the same number of required,
+        // optional, and rest parameters.
+        if sourceParameterCount == targetParameterCount
+            && sourceMinArgumentCount == targetMinArgumentCount
+            && sourceHasRestParameter == targetHasRestParameter
+        {
+            return true;
+        }
+        // A source signature partially matches a target signature if the target signature has no fewer required
+        // parameters
+        if partialMatch && sourceMinArgumentCount <= targetMinArgumentCount {
+            return true;
+        }
+        false
+    }
+
+    /**
+     * See signatureRelatedTo, compareSignaturesIdentical
+     */
+    fn compareSignaturesIdentical<C>(
+        &mut self,
+        source: SignatureId,
+        target: SignatureId,
+        partialMatch: bool,
+        ignoreThisTypes: bool,
+        ignoreReturnTypes: bool,
+        mut compareTypes: C,
+    ) -> Ternary
+    where
+        C: FnMut(&mut Checker, TypeId, TypeId) -> Ternary,
+    {
+        // TODO (drosen): De-duplicate code between related functions.
+        if source == target {
+            return Ternary::True;
+        }
+        if !self.isMatchingSignature(source, target, partialMatch) {
+            return Ternary::False;
+        }
+        // Check that the two signatures have the same number of type parameters.
+        if self.signatures[source].typeParameters.length()
+            != self.signatures[target].typeParameters.length()
+        {
+            return Ternary::False;
+        }
+        // Check that type parameter constraints and defaults match. If they do, instantiate the source
+        // signature with the type parameters of the target signature and continue the comparison.
+        if self.signatures[target].typeParameters.is_some() {
+            todo!();
+            //    const mapper = createTypeMapper(source.typeParameters!, target.typeParameters);
+            //    for (let i = 0; i < target.typeParameters.length; i++) {
+            //        const s = source.typeParameters![i];
+            //        const t = target.typeParameters[i];
+            //        if (!(s === t || compareTypes(instantiateType(getConstraintFromTypeParameter(s), mapper) || unknownType, getConstraintFromTypeParameter(t) || unknownType) &&
+            //            compareTypes(instantiateType(getDefaultFromTypeParameter(s), mapper) || unknownType, getDefaultFromTypeParameter(t) || unknownType))) {
+            //            return Ternary.False;
+            //        }
+            //    }
+            //    source = instantiateSignature(source, mapper, /*eraseTypeParameters*/ true);
+        }
+        let mut result = Ternary::True;
+        if !ignoreThisTypes {
+            let sourceThisType = self.getThisTypeOfSignature(source);
+            if let Some(sourceThisType) = sourceThisType {
+                let targetThisType = self.getThisTypeOfSignature(target);
+                if let Some(targetThisType) = targetThisType {
+                    let related = compareTypes(self, sourceThisType, targetThisType);
+                    if related == Ternary::False {
+                        return Ternary::False;
+                    }
+                    result &= related;
+                }
+            }
+        }
+        let targetLen = self.getParameterCount(target);
+        for i in 0..targetLen {
+            let s = self.getTypeAtPosition(source, i);
+            let t = self.getTypeAtPosition(target, i);
+            let related = compareTypes(self, t, s);
+            if related == Ternary::False {
+                return Ternary::False;
+            }
+            result &= related;
+        }
+        if !ignoreReturnTypes {
+            todo!();
+            //    let sourceTypePredicate = getTypePredicateOfSignature(source);
+            //    let targetTypePredicate = getTypePredicateOfSignature(target);
+            //    result &= sourceTypePredicate || targetTypePredicate ?
+            //        compareTypePredicatesIdentical(sourceTypePredicate, targetTypePredicate, compareTypes) :
+            //        compareTypes(getReturnTypeOfSignature(source), getReturnTypeOfSignature(target));
+        }
+        result
+    }
+
     // TODO:
     // compareTypePredicatesIdentical
     // TODO:
@@ -12775,10 +16084,46 @@ impl Checker {
         }
     }
 
-    // TODO:
-    // getWidenedLiteralType
-    // TODO:
-    // getWidenedUniqueESSymbolType
+    fn getWidenedLiteralType(&mut self, ty: TypeId) -> TypeId {
+        let ty_flags = self.types[ty].get_flags();
+        if ty_flags.intersects(TypeFlags::EnumLiteral) && self.isFreshLiteralType(ty) {
+            todo!();
+            // self.getBaseTypeOfEnumLiteralType(ty)
+        } else if ty_flags.intersects(TypeFlags::StringLiteral) && self.isFreshLiteralType(ty) {
+            self.stringType
+        } else if ty_flags.intersects(TypeFlags::NumberLiteral) && self.isFreshLiteralType(ty) {
+            self.numberType
+        } else if ty_flags.intersects(TypeFlags::BigIntLiteral) && self.isFreshLiteralType(ty) {
+            self.bigintType
+        } else if ty_flags.intersects(TypeFlags::BooleanLiteral) && self.isFreshLiteralType(ty) {
+            self.booleanType()
+        } else if ty_flags.intersects(TypeFlags::Union) {
+            self.mapType(
+                ty,
+                &mut |checker, t| checker.getWidenedLiteralType(t),
+                false,
+            )
+        } else {
+            ty
+        }
+    }
+
+    fn getWidenedUniqueESSymbolType(&mut self, ty: TypeId) -> TypeId {
+        if self.types[ty]
+            .get_flags()
+            .intersects(TypeFlags::UniqueESSymbol)
+        {
+            self.esSymbolType
+        } else if self.types[ty].get_flags().intersects(TypeFlags::Union) {
+            self.mapType(
+                ty,
+                &mut |checker, t| checker.getWidenedUniqueESSymbolType(t),
+                false,
+            )
+        } else {
+            ty
+        }
+    }
 
     fn getWidenedLiteralLikeTypeForContextualType(
         &mut self,
@@ -12786,10 +16131,11 @@ impl Checker {
         contextualType: Option<TypeId>,
     ) -> TypeId {
         if !self.isLiteralOfContextualType(ty, contextualType) {
-            todo!();
-            // ty = self.getWidenedUniqueESSymbolType(self.getWidenedLiteralType(ty));
+            let ty = self.getWidenedLiteralType(ty);
+            self.getWidenedUniqueESSymbolType(ty)
+        } else {
+            ty
         }
-        ty
     }
 
     fn getWidenedLiteralLikeTypeForContextualReturnTypeIfNeeded(
@@ -12823,6 +16169,7 @@ impl Checker {
     // Check if a Type was written as a tuple type literal.
     // Prefer using isTupleLikeType() unless the use of `elementTypes`/`getTypeArguments` is required.
     // TODO: maybe replace with `if let Type::TupleTypeReference(t)`, since most callers go on to use unwrap_as! anyway.
+    // We can the simplify callers
     fn isTupleType(&self, ty: TypeId) -> bool {
         match &self.types[ty] {
             Type::TupleTypeReference(_) => true,
@@ -12830,6 +16177,7 @@ impl Checker {
                 .get_object_flags()
                 .intersects(ObjectFlags::Reference) =>
             {
+                // This should be unreachable
                 todo!()
             }
             _ => false,
@@ -12938,10 +16286,38 @@ impl Checker {
         }
     }
 
-    // TODO:
-    // getGlobalNonNullableTypeInstantiation
-    // TODO:
-    // getNonNullableType
+    fn getGlobalNonNullableTypeInstantiation(&mut self, ty: TypeId) -> TypeId {
+        // First reduce away any constituents that are assignable to 'undefined' or 'null'. This not only eliminates
+        // 'undefined' and 'null', but also higher-order types such as a type parameter 'U extends undefined | null'
+        // that isn't eliminated by a NonNullable<T> instantiation.
+        let reducedType = self.getTypeWithFacts(ty, TypeFacts::NEUndefinedOrNull);
+        if self.deferredGlobalNonNullableTypeAlias.is_none() {
+            // self.deferredGlobalNonNullableTypeAlias = self.getGlobalSymbol("NonNullable" as __String, SymbolFlags::TypeAlias, /*diagnostic*/ undefined) || unknownSymbol;
+            self.deferredGlobalNonNullableTypeAlias = self
+                .getGlobalSymbol(JsWord::from("NonNullable"), SymbolFlags::TypeAlias)
+                .or(Some(self.unknownSymbol));
+        }
+        // If the NonNullable<T> type is available, return an instantiation. Otherwise just return the reduced type.
+        if self.deferredGlobalNonNullableTypeAlias.unwrap() != self.unknownSymbol {
+            self.getTypeAliasInstantiation(
+                self.deferredGlobalNonNullableTypeAlias.unwrap(),
+                Some(Rc::new(vec![reducedType])),
+                None,
+                None,
+            )
+        } else {
+            reducedType
+        }
+    }
+
+    fn getNonNullableType(&mut self, ty: TypeId) -> TypeId {
+        if self.strictNullChecks {
+            self.getGlobalNonNullableTypeInstantiation(ty)
+        } else {
+            ty
+        }
+    }
+
     // TODO:
     // addOptionalTypeMarker
     // TODO:
@@ -13038,18 +16414,175 @@ impl Checker {
     // transformTypeOfMembers
     // TODO:
     // getRegularTypeOfObjectLiteral
-    // TODO:
-    // createWideningContext
-    // TODO:
-    // getSiblingsOfContext
-    // TODO:
-    // getPropertiesOfContext
-    // TODO:
-    // getWidenedProperty
-    // TODO:
-    // getUndefinedProperty
-    // TODO:
-    // getWidenedTypeOfObjectLiteral
+
+    fn createWideningContext(
+        &mut self,
+        parent: Option<WideningContextId>,
+        propertyName: Option<JsWord>,
+        siblings: Option<Rc<Vec<TypeId>>>,
+    ) -> WideningContextId {
+        self.widening_contexts.push(WideningContext {
+            parent,
+            propertyName,
+            siblings,
+            resolvedProperties: None,
+        })
+    }
+
+    fn resolveSiblingsOfContext(&mut self, context: WideningContextId) {
+        if self.widening_contexts[context].siblings.is_none() {
+            let mut siblings = Vec::new();
+            let parent = self.widening_contexts[context].parent.unwrap();
+            self.resolveSiblingsOfContext(parent);
+            for &ty in self.widening_contexts[parent]
+                .siblings
+                .clone()
+                .unwrap()
+                .iter()
+            {
+                if self.isObjectLiteralType(ty) {
+                    let propertyName = self.widening_contexts[context]
+                        .propertyName
+                        .clone()
+                        .unwrap();
+                    let prop = self.getPropertyOfObjectType(ty, &propertyName);
+                    if let Some(prop) = prop {
+                        let prop_ty = self.getTypeOfSymbol(prop);
+                        self.forEachType(prop_ty, |_, t| {
+                            siblings.push(t);
+                        });
+                    }
+                }
+            }
+            self.widening_contexts[context].siblings = Some(Rc::new(siblings));
+        }
+    }
+
+    fn resolvePropertiesOfContext(&mut self, context: WideningContextId) {
+        if self.widening_contexts[context].resolvedProperties.is_none() {
+            let mut names = AHashSet::new();
+            self.resolveSiblingsOfContext(context);
+            for &t in self.widening_contexts[context]
+                .siblings
+                .clone()
+                .unwrap()
+                .iter()
+            {
+                if self.isObjectLiteralType(t)
+                    && !self.types[t]
+                        .get_object_flags()
+                        .intersects(ObjectFlags::ContainsSpread)
+                {
+                    names.extend(self.getPropertiesOfType(t).iter().copied());
+                }
+            }
+            self.widening_contexts[context].resolvedProperties = Some(Rc::new(names));
+        }
+    }
+
+    fn getWidenedProperty(
+        &mut self,
+        prop: SymbolId,
+        context: Option<WideningContextId>,
+    ) -> SymbolId {
+        if !self.symbols[prop].flags().intersects(SymbolFlags::Property) {
+            // Since get accessors already widen their return value there is no need to
+            // widen accessor based properties here.
+            return prop;
+        }
+        let original = self.getTypeOfSymbol(prop);
+        let propContext = context.map(|ctx| {
+            self.createWideningContext(
+                Some(ctx),
+                Some(self.symbols[prop].escapedName().clone()),
+                None,
+            )
+        });
+        let widened = self.getWidenedTypeWithContext(original, propContext);
+        if widened == original {
+            prop
+        } else {
+            self.createSymbolWithType(prop, Some(widened))
+        }
+    }
+
+    fn getUndefinedProperty(&mut self, prop: SymbolId) -> SymbolId {
+        let escapedName = self.symbols[prop].escapedName();
+        match self.undefinedProperties.get(escapedName) {
+            Some(cached) => *cached,
+            None => {
+                let result = self.createSymbolWithType(prop, Some(self.missingType));
+                *self.symbols[result].flags_mut() |= SymbolFlags::Optional;
+                let escapedName = self.symbols[prop].escapedName();
+                self.undefinedProperties.insert(escapedName.clone(), result);
+                result
+            }
+        }
+    }
+
+    fn getWidenedTypeOfObjectLiteral(
+        &mut self,
+        ty: TypeId,
+        context: Option<WideningContextId>,
+    ) -> TypeId {
+        let members = self.symbol_tables.push(SymbolTable::new());
+        for &prop in self.getPropertiesOfObjectType(ty).iter() {
+            let widened_prop = self.getWidenedProperty(prop, context);
+            self.symbol_tables[members]
+                .insert(self.symbols[prop].escapedName().clone(), widened_prop);
+        }
+        if let Some(context) = context {
+            self.resolvePropertiesOfContext(context);
+            for &prop in self.widening_contexts[context]
+                .resolvedProperties
+                .as_ref()
+                .unwrap()
+                .clone()
+                .iter()
+            {
+                if !self.symbol_tables[members].contains_key(self.symbols[prop].escapedName()) {
+                    let undefined_prop = self.getUndefinedProperty(prop);
+                    self.symbol_tables[members]
+                        .insert(self.symbols[prop].escapedName().clone(), undefined_prop);
+                }
+            }
+        }
+        let indexInfos = Rc::new(
+            self.getIndexInfosOfType(ty)
+                .iter()
+                .map(|&info| {
+                    let ty = self.getWidenedType(self.index_infos[info].ty);
+                    self.createIndexInfo(
+                        self.index_infos[info].keyType,
+                        ty,
+                        self.index_infos[info].isReadonly,
+                        None,
+                    )
+                })
+                .collect(),
+        );
+        let result = self.createAnonymousType(
+            *self.types[ty].get_symbol(),
+            members,
+            Rc::default(),
+            Rc::default(),
+            indexInfos,
+            // TODO: use sameMap from TSC:
+            // sameMap(self.getIndexInfosOfType(ty), |info| {
+            //     self.createIndexInfo(
+            //         self.index_infos[info].keyType,
+            //         self.getWidenedType(self.index_infos[info].ty),
+            //         self.index_infos[info].isReadonly,
+            //         None,
+            //     )
+            // }),
+        );
+        // Retain js literal flag through widening
+        let retained_flags = self.types[ty].get_object_flags()
+            & (ObjectFlags::JSLiteral | ObjectFlags::NonInferrableType);
+        *self.types[result].get_object_flags_mut() |= retained_flags;
+        result
+    }
 
     fn getWidenedType(&mut self, ty: TypeId) -> TypeId {
         self.getWidenedTypeWithContext(ty, None)
@@ -13058,41 +16591,46 @@ impl Checker {
     fn getWidenedTypeWithContext(
         &mut self,
         ty: TypeId,
-        context: Option<WideningContext>,
+        context: Option<WideningContextId>,
     ) -> TypeId {
         if self.types[ty]
             .get_object_flags()
             .intersects(ObjectFlags::RequiresWidening)
         {
-            todo!();
-            // if context == undefined && ty.widened {
-            //     return ty.widened;
-            // }
-            // let result: Type | undefined;
-            // if (ty.flags & (TypeFlags::Any | TypeFlags::Nullable)) {
-            //     result = anyType;
-            // }
-            // else if (isObjectLiteralType(ty)) {
-            //     result = getWidenedTypeOfObjectLiteral(ty, context);
-            // }
-            // else if (ty.flags & TypeFlags::Union) {
-            //     const unionContext = context || createWideningContext(/*parent*/ undefined, /*propertyName*/ undefined, (ty as UnionType).types);
-            //     const widenedTypes = sameMap((ty as UnionType).types, t => t.flags & TypeFlags::Nullable ? t : getWidenedTypeWithContext(t, unionContext));
-            //     // Widening an empty object literal transitions from a highly restrictive type to
-            //     // a highly inclusive one. For that reason we perform subtype reduction here if the
-            //     // union includes empty object types (e.g. reducing {} | string to just {}).
-            //     result = getUnionType(widenedTypes, some(widenedTypes, isEmptyObjectType) ? UnionReduction.Subtype : UnionReduction.Literal);
-            // }
-            // else if (ty.flags & TypeFlags::Intersection) {
-            //     result = getIntersectionType(sameMap((ty as IntersectionType).types, getWidenedType));
-            // }
-            // else if (isArrayType(ty) || isTupleType(ty)) {
-            //     result = createTypeReference(ty.target, sameMap(getTypeArguments(ty), getWidenedType));
-            // }
-            // if (result && context === undefined) {
-            //     ty.widened = result;
-            // }
-            // return result || ty;
+            if context.is_none() && self.types[ty].get_widened().is_some() {
+                return self.types[ty].get_widened().unwrap();
+            }
+            let mut result = if self.types[ty]
+                .get_flags()
+                .intersects(TypeFlags::Any | TypeFlags::Nullable)
+            {
+                Some(self.anyType)
+            } else if self.isObjectLiteralType(ty) {
+                Some(self.getWidenedTypeOfObjectLiteral(ty, context))
+            } else if self.types[ty].get_flags().intersects(TypeFlags::Union) {
+                todo!();
+                // const unionContext = context || createWideningContext(/*parent*/ undefined, /*propertyName*/ undefined, (ty as UnionType).types);
+                // const widenedTypes = sameMap((ty as UnionType).types, t => t.flags & TypeFlags::Nullable ? t : getWidenedTypeWithContext(t, unionContext));
+                // // Widening an empty object literal transitions from a highly restrictive type to
+                // // a highly inclusive one. For that reason we perform subtype reduction here if the
+                // // union includes empty object types (e.g. reducing {} | string to just {}).
+                // getUnionType(widenedTypes, some(widenedTypes, isEmptyObjectType) ? UnionReduction.Subtype : UnionReduction.Literal)
+            } else if self.types[ty]
+                .get_flags()
+                .intersects(TypeFlags::Intersection)
+            {
+                todo!();
+                // getIntersectionType(sameMap((ty as IntersectionType).types, getWidenedType))
+            } else if self.isArrayType(ty) || self.isTupleType(ty) {
+                todo!();
+                // createTypeReference(ty.target, sameMap(getTypeArguments(ty), getWidenedType))
+            } else {
+                None
+            };
+            if result.is_some() && context.is_none() {
+                *self.types[ty].get_widened_mut() = result;
+            }
+            return result.unwrap_or(ty);
         }
         ty
     }
@@ -13260,23 +16798,21 @@ impl Checker {
     }
 
     fn mapToInferredType(&mut self, context: InferenceContextId, t: TypeId, fix: bool) -> TypeId {
-        todo!();
-        // let inferences = context.inferences;
-        // for (let i = 0; i < inferences.length; i++) {
-        //     const inference = inferences[i];
-        //     if (t === inference.typeParameter) {
-        //         if (fix && !inference.isFixed) {
-        //             clearCachedInferences(inferences);
-        //             inference.isFixed = true;
-        //         }
-        //         return getInferredType(context, i);
-        //     }
-        // }
-        // return t;
+        let mut inferences = &mut self.inference_contexts[context].inferences;
+        let mut i = 0;
+        while i < inferences.len() {
+            let inference = &inferences[i];
+            if t == inference.typeParameter {
+                if fix && !inference.isFixed {
+                    clearCachedInferences(&mut inferences);
+                    inferences[i].isFixed = true;
+                }
+                return self.getInferredType(context, i);
+            }
+            i += 1;
+        }
+        t
     }
-
-    // TODO:
-    // clearCachedInferences
 
     // TODO:
     // cloneInferenceInfo
@@ -13435,9 +16971,9 @@ impl Checker {
                     // }
                     // else if (matchDiscriminantProperties) {
                     //     let targetType = getTypeOfSymbol(targetProp);
-                    //     if (targetType.flags & TypeFlags.Unit) {
+                    //     if (targetType.flags & TypeFlags::Unit) {
                     //         let sourceType = getTypeOfSymbol(sourceProp);
-                    //         if (!(sourceType.flags & TypeFlags.Any || getRegularTypeOfLiteralType(sourceType) === getRegularTypeOfLiteralType(targetType))) {
+                    //         if (!(sourceType.flags & TypeFlags::Any || getRegularTypeOfLiteralType(sourceType) === getRegularTypeOfLiteralType(targetType))) {
                     //             return true;
                     //         }
                     //     }
@@ -13496,8 +17032,28 @@ impl Checker {
         }
     }
 
-    // TODO:
-    // getTypeFromInference
+    fn getTypeFromInference(
+        &mut self,
+        context: InferenceContextId,
+        index: usize,
+    ) -> Option<TypeId> {
+        let inference = &self.inference_contexts[context].inferences[index];
+        if let Some(candidates) = &inference.candidates {
+            // TODO: bad clone of Vec:
+            Some(self.getUnionType(
+                &candidates.clone(),
+                Some(UnionReduction::Subtype),
+                None,
+                None,
+                None,
+            ))
+        } else if let Some(contraCandidates) = &inference.contraCandidates {
+            // TODO: bad clone of Vec:
+            Some(self.getIntersectionType(&contraCandidates.clone(), None, None))
+        } else {
+            None
+        }
+    }
     // TODO:
     // hasSkipDirectInferenceFlag
     // TODO:
@@ -14747,8 +18303,12 @@ impl Checker {
     // isTypeCloselyMatchedBy
     // TODO:
     // hasPrimitiveConstraint
-    // TODO:
-    // isObjectLiteralType
+
+    fn isObjectLiteralType(&self, ty: TypeId) -> bool {
+        self.types[ty]
+            .get_object_flags()
+            .intersects(ObjectFlags::ObjectLiteral)
+    }
 
     fn isObjectOrArrayLiteralType(&self, ty: TypeId) -> bool {
         self.types[ty]
@@ -14819,8 +18379,7 @@ impl Checker {
                     }
                 }
             } else {
-                // inferredType = self.getTypeFromInference(inference);
-                todo!();
+                inferredType = self.getTypeFromInference(context, index);
             }
 
             inference!().inferredType = inferredType.or(Some(
@@ -14875,22 +18434,23 @@ impl Checker {
     // TODO:
     // getCannotFindNameDiagnosticForName
 
-    fn getResolvedSymbol(&mut self, node: Rc<Ident>) -> SymbolId {
-        match self.getNodeLinks(node.clone().into()).resolvedSymbol {
+    fn getResolvedSymbol(&mut self, node: &Rc<Ident>) -> SymbolId {
+        let bound_node = BoundNode::Ident(node.clone());
+        match self.getNodeLinks(bound_node.clone()).resolvedSymbol {
             Some(s) => s,
             None => {
                 let resolved = self
                     .resolveName(
-                        Some(node.clone().into()),
+                        Some(bound_node.clone()),
                         node.sym.clone(),
                         SymbolFlags::Value | SymbolFlags::ExportValue,
                         /*getCannotFindNameDiagnosticForName(node),*/
                         Some(node.sym.clone()),
-                        !isWriteOnlyAccess(&node.clone().into()),
+                        !isWriteOnlyAccess(&bound_node),
                         false,
                     )
                     .unwrap_or(self.unknownSymbol);
-                self.getNodeLinks_mut(node.into()).resolvedSymbol = Some(resolved);
+                self.getNodeLinks_mut(bound_node).resolvedSymbol = Some(resolved);
                 resolved
             }
         }
@@ -14900,14 +18460,174 @@ impl Checker {
     // isInTypeQuery
     // TODO:
     // getFlowCacheKey
-    // TODO:
-    // isMatchingReference
+
+    fn isMatchingReference(&mut self, source: &BoundNode, target: &BoundNode) -> bool {
+        match target {
+            BoundNode::ParenExpr(t) => {
+                return self.isMatchingReference(source, &t.expr.bind(target.clone()));
+            }
+            BoundNode::TsNonNullExpr(t) => {
+                return self.isMatchingReference(source, &t.expr.bind(target.clone()));
+            }
+            BoundNode::AssignExpr(t) => {
+                return self.isMatchingReference(source, &t.left.bind(target.clone()));
+            }
+            BoundNode::BinExpr(_) => {
+                todo!();
+                // return (isAssignmentExpression(target)
+                //     && isMatchingReference(source, target.left))
+                //     || (isBinaryExpression(target)
+                //         && target.operatorToken.kind == SyntaxKind.CommaToken
+                //         && isMatchingReference(source, target.right));
+            }
+            _ => {}
+        }
+        match source {
+            BoundNode::MetaPropExpr(s) => {
+                if let BoundNode::MetaPropExpr(t) = target {
+                    s.meta.sym == t.meta.sym && s.prop.sym == t.prop.sym
+                } else {
+                    false
+                }
+            }
+            BoundNode::Ident(s) => {
+                if let BoundNode::Ident(t) = target {
+                    self.getResolvedSymbol(s) == self.getResolvedSymbol(t)
+                } else if let BoundNode::BindingIdent(t) = target {
+                    self.getResolvedSymbol(s)
+                        == self.getResolvedSymbol(&Ident::new(t.id.clone(), Some(target.clone())))
+                } else {
+                    dbg!(target);
+                    todo!("see below");
+                    // if matches!(
+                    //     target,
+                    //     BoundNode::ArrayPat(_)
+                    //         | BoundNode::RestPat(_)
+                    //         | BoundNode::ObjectPat(_)
+                    //         | BoundNode::AssignPat(_)
+                    //         | BoundNode::KeyValuePatProp(_)
+                    //         | BoundNode::AssignPatProp(_)
+                    // ) {
+                    // dbg!(target);
+                    // todo!("see below");
+                    // }
+                    // // (target.kind == SyntaxKind.VariableDeclaration
+                    // //     || target.kind == SyntaxKind.BindingElement)
+                    // //     && self.getExportSymbolOfValueSymbolIfExported(self.getResolvedSymbol(
+                    // //         s,
+                    // //     )) == self.getSymbolOfNode(target.clone())
+                    // if matches!(target, BoundNode::VarDeclarator(_)) {
+                    //     let source_sym = self.getResolvedSymbol(s);
+                    //     Some(self.getExportSymbolOfValueSymbolIfExported(source_sym))
+                    //         == self.getSymbolOfNode(target.clone())
+                    // } else {
+                    //     false
+                    // }
+                }
+            }
+            BoundNode::PrivateName(_) => {
+                todo!();
+                // if isThisInTypeQuery(source) {
+                //     target.kind == SyntaxKind.ThisKeyword
+                // } else {
+                //     target.kind == SyntaxKind.Identifier
+                //         && getResolvedSymbol(source as Identifier)
+                //             == getResolvedSymbol(target as Identifier)
+                //         || (target.kind == SyntaxKind.VariableDeclaration
+                //             || target.kind == SyntaxKind.BindingElement)
+                //             && getExportSymbolOfValueSymbolIfExported(getResolvedSymbol(
+                //                 source as Identifier,
+                //             )) == getSymbolOfNode(target)
+                // }
+            }
+            BoundNode::ThisExpr(_) => matches!(target, BoundNode::ThisExpr(_)),
+            BoundNode::Super(_) => matches!(target, BoundNode::Super(_)),
+            BoundNode::TsNonNullExpr(s) => {
+                self.isMatchingReference(&s.expr.bind(source.clone()), target)
+            }
+            BoundNode::ParenExpr(s) => {
+                self.isMatchingReference(&s.expr.bind(source.clone()), target)
+            }
+            BoundNode::MemberExpr(s) => {
+                if let BoundNode::MemberExpr(t) = target {
+                    self.getAccessedPropertyNameOfMemberExpr(s)
+                        == self.getAccessedPropertyNameOfMemberExpr(t)
+                        && self.isMatchingReference(
+                            &s.obj.bind(source.clone()),
+                            &t.obj.bind(target.clone()),
+                        )
+                } else {
+                    false
+                }
+            }
+            BoundNode::TsQualifiedName(s) => {
+                if let BoundNode::MemberExpr(t) = target {
+                    Some(s.right.sym.clone()) == self.getAccessedPropertyNameOfMemberExpr(t)
+                        && self.isMatchingReference(
+                            &s.left.bind(source.clone()),
+                            &t.obj.bind(target.clone()),
+                        )
+                } else {
+                    false
+                }
+            }
+            BoundNode::BinExpr(_) => {
+                todo!();
+                // return (isBinaryExpression(source)
+                //     && source.operatorToken.kind == SyntaxKind.CommaToken
+                //     && self.isMatchingReference(source.right, target));
+            }
+            _ => false,
+        }
+    }
+
     // TODO:
     // getPropertyAccess
-    // TODO:
-    // getAccessedPropertyName
-    // TODO:
-    // containsMatchingReference
+
+    // fn getAccessedPropertyName(&mut self, access: AccessExpression | BindingElement) -> Option<JsWord> {
+    fn getAccessedPropertyName(&mut self, access: &BoundNode) -> Option<JsWord> {
+        todo!("see below and getAccessedPropertyNameOfMemberExpr");
+        // let propertyName;
+        // if access.kind == SyntaxKind.PropertyAccessExpression {
+        //     access.name.escapedText
+        // } else if access.kind == SyntaxKind.ElementAccessExpression
+        //     && isStringOrNumericLiteralLike(access.argumentExpression)
+        // {
+        //     escapeLeadingUnderscores(access.argumentExpression.text)
+        // } else if access.kind == SyntaxKind.BindingElement
+        //     && (propertyName = getDestructuringPropertyName(access))
+        // {
+        //     escapeLeadingUnderscores(propertyName)
+        // } else {
+        //     None
+        // }
+    }
+    fn getAccessedPropertyNameOfMemberExpr(&mut self, access: &Rc<MemberExpr>) -> Option<JsWord> {
+        if access.computed {
+            match &access.prop {
+                // TODO: escapeLeadingUnderscores:
+                ast::Expr::Lit(ast::Lit::Num(_)) => todo!(),
+                ast::Expr::Lit(ast::Lit::Str(s)) => Some(s.value.clone()),
+                ast::Expr::Tpl(t) if t.exprs.is_empty() => {
+                    Some(get_text_of_no_substitution_template(t.as_ref()))
+                }
+                _ => None,
+            }
+        } else {
+            Some(unwrap_as!(&access.prop, ast::Expr::Ident(p), p).sym.clone())
+        }
+    }
+
+    fn containsMatchingReference(&mut self, mut source: BoundNode, target: &BoundNode) -> bool {
+        while let BoundNode::MemberExpr(s) = &source {
+            source = s.obj.bind(source.clone());
+            if self.isMatchingReference(&source, target) {
+                return true;
+            }
+        }
+        false
+    }
+
     // TODO:
     // optionalChainContainsReference
     // TODO:
@@ -15216,8 +18936,21 @@ impl Checker {
         }
     }
 
-    // TODO:
-    // everyType
+    fn everyType<F>(&mut self, ty: TypeId, mut f: F) -> bool
+    where
+        F: FnMut(&mut Checker, TypeId) -> bool,
+    {
+        if let Type::UnionType(t) = &self.types[ty] {
+            t.union_or_intersection_type
+                .types
+                .clone()
+                .iter()
+                .all(|&t| f(self, t))
+        } else {
+            f(self, ty)
+        }
+    }
+
     // TODO:
     // everyContainedType
 
@@ -15267,12 +19000,16 @@ impl Checker {
     // is a union type, the mapping function is applied to each constituent type and a union
     // of the resulting types is returned.
     // function mapType(type: Type, mapper: (t: Type) => Type | undefined, noReductions?: boolean): Type | undefined;
-    fn mapType<F>(&mut self, ty: TypeId, mut mapper: F, noReductions: bool) -> TypeId
+    fn mapType<F>(&mut self, ty: TypeId, mapper: &mut F, noReductions: bool) -> TypeId
     where
         F: FnMut(&mut Checker, TypeId) -> TypeId,
     {
-        self.mapTypeOptional(ty, |checker, ty| Some(mapper(checker, ty)), noReductions)
-            .unwrap()
+        self.mapTypeOptional(
+            ty,
+            &mut |checker, ty| Some(mapper(checker, ty)),
+            noReductions,
+        )
+        .unwrap()
     }
 
     // Apply a mapping function to a type and return the resulting type. If the source type
@@ -15282,7 +19019,7 @@ impl Checker {
     fn mapTypeOptional<F>(
         &mut self,
         ty: TypeId,
-        mut mapper: F,
+        mapper: &mut F,
         noReductions: bool,
     ) -> Option<TypeId>
     where
@@ -15294,24 +19031,54 @@ impl Checker {
         if !self.types[ty].get_flags().intersects(TypeFlags::Union) {
             return mapper(self, ty);
         }
-        todo!();
-        // const origin = (ty as UnionType).origin;
-        // const types = origin && origin.flags & TypeFlags::Union ? (origin as UnionType).types : (ty as UnionType).types;
-        // let mappedTypes: Type[] | undefined;
-        // let changed = false;
-        // for (const t of types) {
-        //     const mapped = t.flags & TypeFlags::Union ? mapType(t, mapper, noReductions) : mapper(t);
-        //     changed ||= t !== mapped;
-        //     if (mapped) {
-        //         if (!mappedTypes) {
-        //             mappedTypes = [mapped];
-        //         }
-        //         else {
-        //             mappedTypes.push(mapped);
-        //         }
-        //     }
-        // }
-        // if changed {mappedTypes && getUnionType(mappedTypes, noReductions ? UnionReduction.None : UnionReduction.Literal) }else{ ty}
+        let origin = self.types[ty].unwrap_as_union_type_base().origin;
+        let types = if origin.is_some()
+            && self.types[origin.unwrap()]
+                .get_flags()
+                .intersects(TypeFlags::Union)
+        {
+            self.types[origin.unwrap()]
+                .unwrap_as_union_or_intersection()
+                .types
+                .clone()
+        } else {
+            self.types[ty]
+                .unwrap_as_union_or_intersection()
+                .types
+                .clone()
+        };
+        let mut mappedTypes = Vec::new();
+        let mut changed = false;
+        for &t in types.iter() {
+            let mapped = if self.types[t].get_flags().intersects(TypeFlags::Union) {
+                self.mapTypeOptional(t, mapper, noReductions)
+            } else {
+                mapper(self, t)
+            };
+            changed |= Some(t) != mapped;
+            if let Some(mapped) = mapped {
+                mappedTypes.push(mapped);
+            }
+        }
+        if changed {
+            if !mappedTypes.is_empty() {
+                Some(self.getUnionType(
+                    &mappedTypes,
+                    Some(if noReductions {
+                        UnionReduction::None
+                    } else {
+                        UnionReduction::Literal
+                    }),
+                    None,
+                    None,
+                    None,
+                ))
+            } else {
+                None
+            }
+        } else {
+            Some(ty)
+        }
     }
 
     // TODO:
@@ -15390,26 +19157,298 @@ impl Checker {
         isLengthPushOrUnshift || isElementAssignment
     }
 
-    // TODO:
-    // isDeclarationWithExplicitTypeAnnotation
-    // TODO:
-    // getExplicitTypeOfSymbol
-    // TODO:
-    // getTypeOfDottedName
-    // TODO:
-    // getEffectsSignature
-    // TODO:
-    // hasTypePredicateOrNeverReturnType
+    fn getExplicitTypeOfSymbol(
+        &mut self,
+        symbol: SymbolId, /*, diagnostic?: Diagnostic*/
+    ) -> Option<TypeId> {
+        if self.symbols[symbol].flags().intersects(
+            SymbolFlags::Function
+                | SymbolFlags::Method
+                | SymbolFlags::Class
+                | SymbolFlags::ValueModule,
+        ) {
+            return Some(self.getTypeOfSymbol(symbol));
+        }
+        if self.symbols[symbol]
+            .flags()
+            .intersects(SymbolFlags::Variable | SymbolFlags::Property)
+        {
+            if getCheckFlags(&self.symbols[symbol]).intersects(CheckFlags::Mapped) {
+                todo!();
+                // let origin = (symbol as MappedSymbol).syntheticOrigin;
+                // if (origin && getExplicitTypeOfSymbol(origin)) {
+                //     return getTypeOfSymbol(symbol);
+                // }
+            }
+            if let Some(declaration) = self.symbols[symbol].valueDeclaration() {
+                if isDeclarationWithExplicitTypeAnnotation(&declaration.clone().into()) {
+                    return Some(self.getTypeOfSymbol(symbol));
+                }
+                todo!();
+                // if isVariableDeclaration(declaration) && declaration.parent.parent.kind === SyntaxKind.ForOfStatement {
+                //     todo!();
+                //     // const statement = declaration.parent.parent;
+                //     // const expressionType = getTypeOfDottedName(statement.expression, /*diagnostic*/ undefined);
+                //     // if (expressionType) {
+                //     //     const use = statement.awaitModifier ? IterationUse.ForAwaitOf : IterationUse.ForOf;
+                //     //     return checkIteratedTypeOrElementType(use, expressionType, undefinedType, /*errorNode*/ undefined);
+                //     // }
+                // }
+                // TODO: diagnostic
+                // if (diagnostic) {
+                //     addRelatedInfo(diagnostic, createDiagnosticForNode(declaration, Diagnostics._0_needs_an_explicit_type_annotation, symbolToString(symbol)));
+                // }
+            }
+        }
+        None
+    }
+
+    // We require the dotted function name in an assertion expression to be comprised of identifiers
+    // that reference function, method, class or value module symbols; or variable, property or
+    // parameter symbols with declarations that have explicit type annotations. Such references are
+    // resolvable with no possibility of triggering circularities in control flow analysis.
+    fn getTypeOfDottedName(
+        &mut self,
+        node: &BoundNode, /*, diagnostic: Diagnostic | undefined*/
+    ) -> Option<TypeId> {
+        // TODO: with stmts
+        // if (!(node.flags & NodeFlags.InWithStatement)) {
+        match node {
+            BoundNode::Ident(i) => {
+                let symbol = self.getResolvedSymbol(i);
+                let symbol = self.getExportSymbolOfValueSymbolIfExported(symbol);
+                let symbol = if self.symbols[symbol].flags().intersects(SymbolFlags::Alias) {
+                    self.resolveAlias(symbol)
+                } else {
+                    symbol
+                };
+                return self.getExplicitTypeOfSymbol(symbol /*, diagnostic*/);
+            }
+            BoundNode::ThisExpr(_) => {
+                todo!();
+                // return getExplicitThisType(node);
+            }
+            BoundNode::Super(_) => {
+                todo!();
+                // return checkSuperExpression(node);
+            }
+            BoundNode::MemberExpr(m) if !m.computed => {
+                let ty = self.getTypeOfDottedName(&m.obj.bind(node.clone()) /*, diagnostic*/);
+                if let Some(ty) = ty {
+                    let mut prop = if matches!(m.prop, ast::Expr::PrivateName(_)) {
+                        todo!();
+                        // if (!ty.symbol) {
+                        //     return undefined;
+                        // }
+                        // getPropertyOfType(ty, getSymbolNameForPrivateIdentifier(ty.symbol, name.escapedText))
+                    } else if let ast::Expr::Ident(i) = &m.prop {
+                        self.getPropertyOfType(ty, &i.sym, false)
+                    } else {
+                        unreachable!();
+                    };
+                    return prop
+                        .and_then(|p| self.getExplicitTypeOfSymbol(p /*, diagnostic*/));
+                }
+                return None;
+            }
+            BoundNode::ParenExpr(_) => {
+                todo!();
+                // return getTypeOfDottedName((node as ParenthesizedExpression).expression, diagnostic);
+            }
+            _ => {}
+        }
+        None
+        // }
+    }
+
+    fn getEffectsSignature(&mut self, node: &Rc<CallExpr>) -> Option<SignatureId> {
+        let bound_node = BoundNode::CallExpr(node.clone());
+        let signature = match self.getNodeLinks(bound_node.clone()).effectsSignature {
+            Some(effectsSignature) => effectsSignature,
+            None => {
+                // A call expression parented by an expression statement is a potential assertion. Other call
+                // expressions are potential type predicate function calls. In order to avoid triggering
+                // circularities in control flow analysis, we use getTypeOfDottedName when resolving the call
+                // target expression of an assertion.
+                let funcType = if matches!(&node.parent, Some(BoundNode::ExprStmt(_))) {
+                    // self.getTypeOfDottedName(node.expression, /*diagnostic*/ undefined)
+                    self.getTypeOfDottedName(&node.callee.bind(bound_node.clone()))
+                } else if matches!(node.callee, ast::ExprOrSuper::Expr(_)) {
+                    todo!();
+                    // if (isOptionalChain(node)) {
+                    //     self.checkNonNullType(
+                    //         self.getOptionalExpressionType(self.checkExpression(node.expression), node.expression),
+                    //         node.expression
+                    //     )
+                    // }
+                    // else {
+                    //     self.checkNonNullExpression(node.expression)
+                    // }
+                } else {
+                    None
+                };
+                let funcType = funcType
+                    .map(|t| self.getApparentType(t))
+                    .unwrap_or(self.unknownType);
+                let signatures = self.getSignaturesOfType(funcType, SignatureKind::Call);
+                let candidate = if signatures.len() == 1
+                    && self.signatures[signatures[0]].typeParameters.is_none()
+                {
+                    Some(signatures[0])
+                } else if signatures
+                    .iter()
+                    .any(|&s| self.hasTypePredicateOrNeverReturnType(s))
+                {
+                    Some(self.getResolvedSignature(bound_node.clone(), None, None))
+                } else {
+                    None
+                };
+                let signature = if candidate.is_some()
+                    && self.hasTypePredicateOrNeverReturnType(candidate.unwrap())
+                {
+                    candidate.unwrap()
+                } else {
+                    self.unknownSignature
+                };
+                self.getNodeLinks_mut(bound_node).effectsSignature = Some(signature);
+                signature
+            }
+        };
+        if signature == self.unknownSignature {
+            None
+        } else {
+            Some(signature)
+        }
+    }
+
+    fn hasTypePredicateOrNeverReturnType(&mut self, signature: SignatureId) -> bool {
+        if self.getTypePredicateOfSignature(signature).is_some() {
+            true
+        } else if let Some(decl) = &self.signatures[signature].declaration {
+            let return_ty = self
+                .getReturnTypeFromAnnotation(&decl.clone())
+                .unwrap_or(self.unknownType);
+            self.types[return_ty]
+                .get_flags()
+                .intersects(TypeFlags::Never)
+        } else {
+            false
+        }
+    }
+
     // TODO:
     // getTypePredicateArgument
     // TODO:
     // reportFlowControlError
-    // TODO:
-    // isReachableFlowNode
+
+    fn isReachableFlowNode(&mut self, flow: FlowNodeId) -> bool {
+        let result = self.isReachableFlowNodeWorker(flow, false);
+        self.lastFlowNode = Some(flow);
+        self.lastFlowNodeReachable = result;
+        result
+    }
+
     // TODO:
     // isFalseExpression
-    // TODO:
-    // isReachableFlowNodeWorker
+
+    fn isReachableFlowNodeWorker(&mut self, mut flow: FlowNodeId, noCacheCheck: bool) -> bool {
+        loop {
+            if Some(flow) == self.lastFlowNode {
+                return self.lastFlowNodeReachable;
+            }
+            let flags = self.flow_nodes[flow].flags;
+            if flags.intersects(FlowFlags::Shared) {
+                todo!();
+                // if (!noCacheCheck) {
+                //     const id = getFlowNodeId(flow);
+                //     const reachable = flowNodeReachable[id];
+                //     return reachable !== undefined ? reachable : (flowNodeReachable[id] = isReachableFlowNodeWorker(flow, /*noCacheCheck*/ true));
+                // }
+                // noCacheCheck = false;
+            }
+            match &self.flow_nodes[flow].kind {
+                FlowNodeKind::FlowAssignment(f) => {
+                    flow = f.antecedent;
+                }
+                FlowNodeKind::FlowCondition(f) => {
+                    flow = f.antecedent;
+                }
+                FlowNodeKind::FlowArrayMutation(f) => {
+                    flow = f.antecedent;
+                }
+                FlowNodeKind::FlowCall(f) => {
+                    let signature = self.getEffectsSignature(&f.node.clone());
+                    if let Some(signature) = signature {
+                        let predicate = self.getTypePredicateOfSignature(signature);
+                        if let Some(TypePredicate::AssertsIdentifierTypePredicate {
+                            parameterIndex,
+                            ty,
+                            ..
+                        }) = predicate
+                        {
+                            todo!();
+                            //     if !ty {
+                            //     let predicateArgument = f.node.args.get(parameterIndex);
+                            //     if matches!(predicateArgument, Some(ast::ExprOrSuper::Expr(a)) if self.isFalseExpression(a)) {
+                            //         return false;
+                            //     }
+                            // }
+                        }
+                        let return_ty = self.getReturnTypeOfSignature(signature);
+                        if self.types[return_ty]
+                            .get_flags()
+                            .intersects(TypeFlags::Never)
+                        {
+                            return false;
+                        }
+                    }
+                    flow = unwrap_as!(&self.flow_nodes[flow].kind, FlowNodeKind::FlowCall(f), f)
+                        .antecedent;
+                }
+                FlowNodeKind::FlowLabel(_) => {
+                    if flags.intersects(FlowFlags::BranchLabel) {
+                        todo!();
+                        // A branching point is reachable if any branch is reachable.
+                        // return some((flow as FlowLabel).antecedents, f => isReachableFlowNodeWorker(f, /*noCacheCheck*/ false));
+                    } else if flags.intersects(FlowFlags::LoopLabel) {
+                        todo!();
+                        // const antecedents = (flow as FlowLabel).antecedents;
+                        // if (antecedents === undefined || antecedents.length === 0) {
+                        //     return false;
+                        // }
+                        // // A loop is reachable if the control flow path that leads to the top is reachable.
+                        // flow = antecedents[0];
+                    } else {
+                        unreachable!();
+                    }
+                }
+                FlowNodeKind::FlowSwitchClause(_) => {
+                    todo!();
+                    // The control flow path representing an unmatched value in a switch statement with
+                    // no default clause is unreachable if the switch statement is exhaustive.
+                    // if ((flow as FlowSwitchClause).clauseStart === (flow as FlowSwitchClause).clauseEnd && isExhaustiveSwitchStatement((flow as FlowSwitchClause).switchStatement)) {
+                    //     return false;
+                    // }
+                    // flow = (flow as FlowSwitchClause).antecedent;
+                }
+                FlowNodeKind::FlowReduceLabel(_) => {
+                    todo!();
+                    // Cache is unreliable once we start adjusting labels
+                    // lastFlowNode = undefined;
+                    // const target = (flow as FlowReduceLabel).target;
+                    // const saveAntecedents = target.antecedents;
+                    // target.antecedents = (flow as FlowReduceLabel).antecedents;
+                    // const result = isReachableFlowNodeWorker((flow as FlowReduceLabel).antecedent, /*noCacheCheck*/ false);
+                    // target.antecedents = saveAntecedents;
+                    // return result;
+                }
+                _ => {
+                    return !flags.intersects(FlowFlags::Unreachable);
+                }
+            }
+        }
+    }
+
     // TODO:
     // isPostSuperFlowNode
     // TODO:
@@ -15603,7 +19642,7 @@ impl Checker {
     }
 
     fn checkIdentifier(&mut self, ident: &Rc<Ident>, checkMode: Option<CheckMode>) -> TypeId {
-        let symbol = self.getResolvedSymbol(ident.clone());
+        let symbol = self.getResolvedSymbol(ident);
         if symbol == self.unknownSymbol {
             return self.errorType;
         }
@@ -15628,7 +19667,7 @@ impl Checker {
             //     if (container.kind === SyntaxKind.ArrowFunction) {
             //         error(node, Diagnostics.The_arguments_object_cannot_be_referenced_in_an_arrow_function_in_ES3_and_ES5_Consider_using_a_standard_function_expression);
             //     }
-            //     else if (hasSyntacticModifier(container, ModifierFlags.Async)) {
+            //     else if (hasSyntacticModifier(container, ModifierFlags::Async)) {
             //         error(node, Diagnostics.The_arguments_object_cannot_be_referenced_in_an_async_function_or_method_in_ES3_and_ES5_Consider_using_a_standard_function_or_method);
             //     }
             // }
@@ -15668,10 +19707,10 @@ impl Checker {
                 .flags()
                 .intersects(SymbolFlags::Class)
             {
+                // TODO:
                 // Due to the emit for class decorators, any reference to the class from inside of the class body
                 // must instead be rewritten to point to a temporary variable to avoid issues with the double-bind
                 // behavior of class names in ES6.
-                todo!();
                 // if (declaration.kind == SyntaxKind.ClassDeclaration
                 //     && nodeIsDecorated(declaration as ClassDeclaration))
                 // {
@@ -15830,8 +19869,7 @@ impl Checker {
             } else {
                 self.getOptionalType(ty, false)
             };
-            let flowType =
-                self.getFlowTypeOfReference(node.clone(), ty, initialType, Some(flowContainer));
+            let flowType = self.getFlowTypeOfReference(&node, ty, initialType, Some(flowContainer));
             // A variable is considered uninitialized when it is possible to analyze the entire control flow graph
             // from declaration to use, and when the variable's declared type doesn't include undefined but the
             // control flow based type does include undefined.
@@ -15886,8 +19924,27 @@ impl Checker {
     // findFirstSuperCall
     // TODO:
     // classDeclarationExtendsNull
-    // TODO:
-    // checkThisBeforeSuper
+
+    fn checkThisBeforeSuper(
+        &mut self,
+        node: &BoundNode,
+        container: &BoundNode, /*, diagnosticMessage: DiagnosticMessage*/
+    ) {
+        let containingClassDecl = unwrap_as!(container.parent(), Some(BoundNode::Class(c)), c);
+        let baseTypeNode = containingClassDecl.extends.as_ref();
+
+        if baseTypeNode.is_some() {
+            todo!("see below");
+        }
+
+        // If a containing class does not have extends clause or the class extends null
+        // skip checking whether super statement is called before "this" accessing.
+        // if baseTypeNode && !classDeclarationExtendsNull(containingClassDecl) {
+        //     if (node.flowNode && !isPostSuperFlowNode(node.flowNode, /*noCacheCheck*/ false)) {
+        //         error(node, diagnosticMessage);
+        //     }
+        // }
+    }
 
     fn checkThisInStaticClassFieldInitializerInDecoratedClass(
         &mut self,
@@ -15937,8 +19994,7 @@ impl Checker {
         let mut capturedByArrowFunction = false;
 
         if matches!(container, BoundNode::Constructor(_)) {
-            todo!();
-            // self.checkThisBeforeSuper(node, container, Diagnostics.super_must_be_called_before_accessing_this_in_the_constructor_of_a_derived_class);
+            self.checkThisBeforeSuper(&node, &container/*, Diagnostics.super_must_be_called_before_accessing_this_in_the_constructor_of_a_derived_class*/);
         }
 
         // Now skip arrow functions to get the "real" owner of 'this'.
@@ -15969,14 +20025,14 @@ impl Checker {
                 // do not return here so in case if lexical this is captured - it will be reflected in flags on NodeLinks
             }
             BoundNode::Constructor(_) => {
-                todo!();
-                // if (isInConstructorArgumentInitializer(node, container)) {
-                //     error(
-                //         node,
-                //         Diagnostics.this_cannot_be_referenced_in_constructor_arguments,
-                //     );
-                //     // do not return here so in case if lexical this is captured - it will be reflected in flags on NodeLinks
-                // }
+                if isInConstructorArgumentInitializer(node.clone(), &container) {
+                    todo!();
+                    // error(
+                    //     node,
+                    //     Diagnostics.this_cannot_be_referenced_in_constructor_arguments,
+                    // );
+                    // do not return here so in case if lexical this is captured - it will be reflected in flags on NodeLinks
+                }
             }
             BoundNode::ComputedPropName(_) => {
                 todo!();
@@ -16065,7 +20121,7 @@ impl Checker {
             }
 
             if let Some(thisType) = thisType {
-                return Some(self.getFlowTypeOfReference(node, thisType, thisType, None));
+                return Some(self.getFlowTypeOfReference(&node, thisType, thisType, None));
             }
         }
 
@@ -16077,7 +20133,7 @@ impl Checker {
                 let ty = self.getDeclaredTypeOfSymbol(symbol);
                 self.types[ty].unwrap_as_interface_type().thisType.unwrap()
             };
-            return Some(self.getFlowTypeOfReference(node, ty, ty, None));
+            return Some(self.getFlowTypeOfReference(&node, ty, ty, None));
         }
 
         if matches!(container, BoundNode::Module(_) | BoundNode::Script(_)) {
@@ -16337,14 +20393,117 @@ impl Checker {
         None
     }
 
-    // TODO:
-    // getContextualTypeForVariableLikeDeclaration
+    fn getContextualTypeForVariableLikeDeclaration(
+        &mut self,
+        declaration: &BoundNode,
+    ) -> Option<TypeId> {
+        if let Some(typeNode) = getBoundEffectiveTypeAnnotationNode(declaration) {
+            return Some(self.getTypeFromTypeNode(typeNode));
+        }
+        match declaration {
+            BoundNode::Param(p) => {
+                self.getContextuallyTypedParameterType(Parameter::Param(p.clone()))
+            }
+            BoundNode::ParamWithoutDecorators(p) => {
+                self.getContextuallyTypedParameterType(Parameter::ParamWithoutDecorators(p.clone()))
+            }
+            BoundNode::TsAmbientParam(p) => {
+                self.getContextuallyTypedParameterType(Parameter::TsAmbientParam(p.clone()))
+            }
+            BoundNode::TsParamProp(p) => {
+                self.getContextuallyTypedParameterType(Parameter::TsParamProp(p.clone()))
+            }
+            // BoundNode::BindingElement(_) => {
+            //     self.getContextualTypeForBindingElement(declaration)
+            // }
+            BoundNode::BindingIdent(_)
+            | BoundNode::ArrayPat(_)
+            | BoundNode::RestPat(_)
+            | BoundNode::ObjectPat(_)
+            | BoundNode::AssignPat(_)
+            | BoundNode::KeyValuePatProp(_)
+            | BoundNode::AssignPatProp(_) => {
+                dbg!(declaration);
+                todo!("binding element; see above");
+            }
+            BoundNode::ClassProp(_) | BoundNode::PrivateProp(_) => {
+                if isStatic(declaration) {
+                    todo!();
+                    // self.getContextualTypeForStaticPropertyDeclaration(declaration)
+                } else {
+                    None
+                }
+            }
+            // By default, do nothing and return None - only the above cases have context implied by a parent
+            _ => None,
+        }
+    }
+
     // TODO:
     // getContextualTypeForBindingElement
     // TODO:
     // getContextualTypeForStaticPropertyDeclaration
-    // TODO:
-    // getContextualTypeForInitializerExpression
+
+    // In a variable, parameter or property declaration with a type annotation,
+    //   the contextual type of an initializer expression is the type of the variable, parameter or property.
+    // Otherwise, in a parameter declaration of a contextually typed function expression,
+    //   the contextual type of an initializer expression is the contextual type of the parameter.
+    // Otherwise, in a variable or parameter declaration with a binding pattern name,
+    //   the contextual type of an initializer expression is the type implied by the binding pattern.
+    // Otherwise, in a binding pattern inside a variable or parameter declaration,
+    //   the contextual type of an initializer expression is the type annotation of the containing declaration, if present.
+    fn getContextualTypeForInitializerExpression(
+        &mut self,
+        node: &BoundNode,
+        contextFlags: Option<ContextFlags>,
+    ) -> Option<TypeId> {
+        let declaration = node.parent().unwrap();
+        debug_assert!(matches!(
+            declaration,
+            // TODO:
+            // BoundNode::BindingElement(_)|
+            BoundNode::VarDeclarator(_)
+                | BoundNode::Param(_)
+                | BoundNode::ParamWithoutDecorators(_)
+                | BoundNode::TsAmbientParam(_)
+                | BoundNode::TsParamProp(_)
+                | BoundNode::ClassProp(_)
+                | BoundNode::PrivateProp(_)
+                | BoundNode::TsPropertySignature(_)
+        ));
+        if getInitializer(&declaration.clone().into()) == Some(node.clone().into()) {
+            let result = self.getContextualTypeForVariableLikeDeclaration(&declaration);
+            if result.is_some() {
+                return result;
+            }
+            let skip_binding_patterns = if let Some(contextFlags) = contextFlags {
+                contextFlags.intersects(ContextFlags::SkipBindingPatterns)
+            } else {
+                false
+            };
+            if !skip_binding_patterns {
+                let name = match &declaration {
+                    // TODO:
+                    // BoundNode::BindingElement(_)|
+                    BoundNode::VarDeclarator(n) => Some(n.name.bind(declaration.clone())),
+                    BoundNode::Param(n) => Some(n.pat.bind(declaration.clone())),
+                    BoundNode::ParamWithoutDecorators(n) => Some(n.pat.bind(declaration.clone())),
+                    BoundNode::TsAmbientParam(n) => Some(n.pat.bind(declaration.clone())),
+                    BoundNode::TsParamProp(n) => Some(n.param.bind(declaration.clone())),
+                    BoundNode::ClassProp(n) => Some(n.key.bind(declaration.clone())),
+                    BoundNode::PrivateProp(n) => Some(n.key.bind(declaration.clone())),
+                    BoundNode::TsPropertySignature(n) => Some(n.key.bind(declaration.clone())),
+                    _ => None,
+                };
+                if matches!(&name, Some(n) if isBindingPattern(n)) {
+                    // This is less a contextual type and more an implied shape - in some cases, this may be undesirable
+                    todo!();
+                    // return getTypeFromBindingPattern(declaration.name, /*includePatternInType*/ true, /*reportErrors*/ false);
+                }
+            }
+        }
+        None
+    }
 
     fn getContextualTypeForReturnExpression(&mut self, node: &BoundNode) -> Option<TypeId> {
         let func = getContainingFunction(node);
@@ -16476,12 +20635,119 @@ impl Checker {
     // getContextualTypeForThisPropertyAssignment
     // TODO:
     // isCircularMappedProperty
-    // TODO:
-    // getTypeOfPropertyOfContextualType
+
+    fn getTypeOfPropertyOfContextualType(&mut self, ty: TypeId, name: JsWord) -> Option<TypeId> {
+        self.mapTypeOptional(
+            ty,
+            &mut |checker, t| {
+                if checker.isGenericMappedType(t) {
+                    todo!();
+                    // let constraint = getConstraintTypeFromMappedType(t);
+                    // let constraintOfConstraint = getBaseConstraintOfType(constraint) || constraint;
+                    // let propertyNameType = getStringLiteralType(unescapeLeadingUnderscores(name));
+                    // if (isTypeAssignableTo(propertyNameType, constraintOfConstraint)) {
+                    //     return substituteIndexedMappedType(t, propertyNameType);
+                    // }
+                } else if checker.types[t]
+                    .get_flags()
+                    .intersects(TypeFlags::StructuredType)
+                {
+                    if let Some(prop) = checker.getPropertyOfType(t, &name, false) {
+                        todo!();
+                        // return isCircularMappedProperty(prop) ? undefined : getTypeOfSymbol(prop);
+                    }
+                    if checker.isTupleType(t) {
+                        todo!();
+                        // const restType = getRestTypeOfTupleType(t);
+                        // if (restType && isNumericLiteralName(name) && +name >= 0) {
+                        //     return restType;
+                        // }
+                    }
+                    let indexInfos = checker.getIndexInfosOfStructuredType(t);
+                    let keyType = checker.getStringLiteralType(unescapeLeadingUnderscores(&name));
+                    return checker
+                        .findApplicableIndexInfo(indexInfos, keyType)
+                        .map(|i| checker.index_infos[i].ty);
+                }
+                None
+            },
+            true,
+        )
+    }
+
     // TODO:
     // getContextualTypeForObjectLiteralMethod
-    // TODO:
-    // getContextualTypeForObjectLiteralElement
+
+    fn getContextualTypeForObjectLiteralElement(
+        &mut self,
+        element: &ast::Prop,
+        objectLiteral: &BoundNode,
+        contextFlags: Option<ContextFlags>,
+    ) -> Option<TypeId> {
+        debug_assert!(
+            !matches!(element, ast::Prop::Assign(_)),
+            "Assgin prop is not valid for obj lit"
+        );
+        debug_assert!(matches!(objectLiteral, BoundNode::ObjectLit(_)));
+
+        let bound_element = element.bind(objectLiteral.clone());
+        let propertyAssignmentType = if matches!(element, ast::Prop::KeyValue(_)) {
+            self.getContextualTypeForVariableLikeDeclaration(&bound_element)
+        } else {
+            None
+        };
+        if propertyAssignmentType.is_some() {
+            return propertyAssignmentType;
+        }
+
+        if let Some(ty) = self.getApparentTypeOfContextualType(objectLiteral.clone(), contextFlags)
+        {
+            if self.hasBindableName(&bound_element) {
+                // For a (non-symbol) computed property, there is no reason to look up the name
+                // in the type. It will just be "__computed", which does not appear in any
+                // SymbolTable.
+                let element_symbol = self.getSymbolOfNode(bound_element).unwrap();
+                let name = self.symbols[element_symbol].escapedName().clone();
+                return self.getTypeOfPropertyOfContextualType(ty, name);
+            }
+            let name = match element {
+                ast::Prop::Shorthand(p) => Some(BoundPropName::Ident(Ident::new(
+                    p.clone(),
+                    Some(bound_element),
+                ))),
+                ast::Prop::KeyValue(p) => {
+                    Some(BoundPropName::from_prop_name(p.key.clone(), bound_element))
+                }
+                ast::Prop::Getter(p) => {
+                    Some(BoundPropName::from_prop_name(p.key.clone(), bound_element))
+                }
+                ast::Prop::Setter(p) => {
+                    Some(BoundPropName::from_prop_name(p.key.clone(), bound_element))
+                }
+                ast::Prop::Method(p) => {
+                    Some(BoundPropName::from_prop_name(p.key.clone(), bound_element))
+                }
+                ast::Prop::Spread(p) => None,
+                ast::Prop::Assign(_) => unreachable!(),
+            };
+            if let Some(name) = name {
+                let nameType = self.getLiteralTypeFromPropertyName(name);
+                // We avoid calling getApplicableIndexInfo here because it performs potentially expensive intersection reduction.
+                return self.mapTypeOptional(
+                    ty,
+                    &mut |checker, t| {
+                        let indexInfos = checker.getIndexInfosOfStructuredType(t);
+                        checker
+                            .findApplicableIndexInfo(indexInfos.clone(), nameType)
+                            .map(|i| checker.index_infos[i].ty)
+                    },
+                    true,
+                );
+            }
+        }
+        None
+    }
+
     // TODO:
     // getContextualTypeForElementExpression
     // TODO:
@@ -16525,7 +20791,7 @@ impl Checker {
             {
                 let apparentType = self.mapType(
                     instantiatedType,
-                    |checker, ty| checker.getApparentType(ty),
+                    &mut |checker, ty| checker.getApparentType(ty),
                     true,
                 );
                 // TODO: jsx:
@@ -16561,29 +20827,84 @@ impl Checker {
     ) -> Option<TypeId> {
         if let Some(contextualType) = contextualType {
             if self.maybeTypeOfKind(contextualType, TypeFlags::Instantiable) {
-                todo!();
-                // let inferenceContext = getInferenceContext(node);
-                // // If no inferences have been made, nothing is gained from instantiating as type parameters
-                // // would just be replaced with their defaults similar to the apparent type.
-                // if inferenceContext && some(inferenceContext.inferences, hasInferenceCandidates) {
-                //     // For contextual signatures we incorporate all inferences made so far, e.g. from return
-                //     // types as well as arguments to the left in a function call.
-                //     if (contextFlags && contextFlags & ContextFlags.Signature) {
-                //         return instantiateInstantiableTypes(contextualType, inferenceContext.nonFixingMapper);
-                //     }
-                //     // For other purposes (e.g. determining whether to produce literal types) we only
-                //     // incorporate inferences made from the return type in a function call.
-                //     if (inferenceContext.returnMapper) {
-                //         return instantiateInstantiableTypes(contextualType, inferenceContext.returnMapper);
-                //     }
-                // }
+                // If no inferences have been made, nothing is gained from instantiating as type parameters
+                // would just be replaced with their defaults similar to the apparent type.
+                if let Some(inferenceContext) = self.getInferenceContext(node) {
+                    if self.inference_contexts[inferenceContext]
+                        .inferences
+                        .iter()
+                        .any(|i| hasInferenceCandidates(i))
+                    {
+                        // For contextual signatures we incorporate all inferences made so far, e.g. from return
+                        // types as well as arguments to the left in a function call.
+                        if contextFlags
+                            .map(|cf| cf.intersects(ContextFlags::Signature))
+                            .unwrap_or_default()
+                        {
+                            return Some(
+                                self.instantiateInstantiableTypes(
+                                    contextualType,
+                                    self.inference_contexts[inferenceContext]
+                                        .nonFixingMapper
+                                        .clone(),
+                                ),
+                            );
+                        }
+                        // For other purposes (e.g. determining whether to produce literal types) we only
+                        // incorporate inferences made from the return type in a function call.
+                        if let Some(returnMapper) = self.inference_contexts[inferenceContext]
+                            .returnMapper
+                            .as_ref()
+                        {
+                            return Some(self.instantiateInstantiableTypes(
+                                contextualType,
+                                returnMapper.clone(),
+                            ));
+                        }
+                    }
+                }
             }
         }
         contextualType
     }
 
-    // TODO:
-    // instantiateInstantiableTypes
+    // This function is similar to instantiateType, except that (a) it only instantiates types that
+    // are classified as instantiable (i.e. it doesn't instantiate object types), and (b) it performs
+    // no reductions on instantiated union types.
+    fn instantiateInstantiableTypes(&mut self, ty: TypeId, mapper: Rc<TypeMapper>) -> TypeId {
+        if self.types[ty]
+            .get_flags()
+            .intersects(TypeFlags::Instantiable)
+        {
+            return self.instantiateType(ty, Some(mapper));
+        }
+        if self.types[ty].get_flags().intersects(TypeFlags::Union) {
+            // TODO: bad collect
+            let types = self.types[ty]
+                .unwrap_as_union_or_intersection()
+                .types
+                .clone()
+                .iter()
+                .map(|&t| self.instantiateInstantiableTypes(t, mapper.clone()))
+                .collect::<Vec<_>>();
+            return self.getUnionType(&types, Some(UnionReduction::None), None, None, None);
+        }
+        if self.types[ty]
+            .get_flags()
+            .intersects(TypeFlags::Intersection)
+        {
+            // TODO: bad collect
+            let types = self.types[ty]
+                .unwrap_as_union_or_intersection()
+                .types
+                .clone()
+                .iter()
+                .map(|&t| self.instantiateInstantiableTypes(t, mapper.clone()))
+                .collect::<Vec<_>>();
+            return self.getIntersectionType(&types, None, None);
+        }
+        ty
+    }
 
     /**
      * Whoa! Do you really want to use this function?
@@ -16629,8 +20950,7 @@ impl Checker {
                 | BoundNode::ClassProp(_)
                 | BoundNode::PrivateProp(_)
                 | BoundNode::TsPropertySignature(_) => {
-                    todo!();
-                    // self.getContextualTypeForInitializerExpression(node, contextFlags)
+                    self.getContextualTypeForInitializerExpression(&node, contextFlags)
                 }
                 BoundNode::ArrowExpr(_) | BoundNode::ReturnStmt(_) => {
                     self.getContextualTypeForReturnExpression(&node)
@@ -16658,13 +20978,11 @@ impl Checker {
                     todo!();
                     // getContextualTypeForBinaryOperand(node, contextFlags)
                 }
-                BoundNode::KeyValueProp(_) => {
-                    todo!();
-                    //     getContextualTypeForObjectLiteralElement(
-                    //     parent as PropertyAssignment | ShorthandPropertyAssignment,
-                    //     contextFlags,
-                    // )
-                }
+                BoundNode::KeyValueProp(p) => self.getContextualTypeForObjectLiteralElement(
+                    &ast::Prop::KeyValue(p.node.clone()),
+                    p.parent.as_ref().unwrap(),
+                    contextFlags,
+                ),
                 // ShorthandPropertyAssignment
                 BoundNode::Ident(_) if matches!(parent.parent(), Some(BoundNode::ObjectLit(_))) => {
                     todo!();
@@ -16924,19 +21242,18 @@ impl Checker {
         left: SignatureId,
         right: SignatureId,
     ) -> SignatureId {
-        let typeParams = if !self.signatures[left].typeParameters.is_empty() {
+        let typeParams = if self.signatures[left].typeParameters.is_some() {
             self.signatures[left].typeParameters.clone()
         } else {
             self.signatures[right].typeParameters.clone()
         };
         let mut paramMapper = None;
-        if !self.signatures[left].typeParameters.is_empty()
-            && !self.signatures[right].typeParameters.is_empty()
-        {
-            paramMapper = Some(self.createTypeMapper(
-                self.signatures[right].typeParameters.clone(),
-                Some(self.signatures[left].typeParameters.clone()),
-            ));
+        if let (Some(left_params), Some(right_params)) = (
+            self.signatures[left].typeParameters.as_ref(),
+            self.signatures[right].typeParameters.as_ref(),
+        ) {
+            paramMapper =
+                Some(self.createTypeMapper(right_params.clone(), Some(left_params.clone())));
             // We just use the type parameter defaults from the first signature
         }
         let declaration = self.signatures[left].declaration.clone();
@@ -16952,7 +21269,7 @@ impl Checker {
         );
         let result = self.createSignature(
             declaration,
-            Some(typeParams),
+            typeParams,
             thisParam,
             params,
             /*resolvedReturnType*/ None,
@@ -17187,8 +21504,382 @@ impl Checker {
     // getObjectLiteralIndexInfo
     // TODO:
     // getImmediateAliasedSymbol
-    // TODO:
-    // checkObjectLiteral
+
+    fn checkObjectLiteral(&mut self, node: &Rc<ObjectLit>, checkMode: Option<CheckMode>) -> TypeId {
+        let bound_node = BoundNode::ObjectLit(node.clone());
+        let inDestructuringPattern = isAssignmentTarget(bound_node.clone());
+        // TODO: grammer checking:
+        // Grammar checking
+        // self.checkGrammarObjectLiteralExpression(node, inDestructuringPattern);
+
+        let allPropertiesTable = if self.strictNullChecks {
+            Some(self.symbol_tables.push(SymbolTable::new()))
+        } else {
+            None
+        };
+        let mut propertiesTable = self.symbol_tables.push(SymbolTable::new());
+        let mut propertiesArray = Vec::new();
+        let mut spread = self.emptyObjectType;
+
+        let contextualType = self.getApparentTypeOfContextualType(bound_node.clone(), None);
+        // TODO:
+        // let contextualTypeHasPattern = contextualType.is_some()
+        //     && contextualType.pattern
+        //     && (contextualType.pattern.kind == SyntaxKind.ObjectBindingPattern
+        //         || contextualType.pattern.kind == SyntaxKind.ObjectLiteralExpression);
+        let contextualTypeHasPattern = if contextualType.is_some()
+            && self.types[contextualType.unwrap()].get_pattern().is_some()
+        {
+            todo!("see above");
+        } else {
+            false
+        };
+        let inConstContext = isConstContext(&bound_node);
+        let checkFlags = if inConstContext {
+            CheckFlags::Readonly
+        } else {
+            CheckFlags::empty()
+        };
+        let isInJavascript = isBoundNodeInJSFile(&bound_node) && !isInJsonFile(Some(&bound_node));
+        // TODO: jsdoc
+        // let enumTag = getJSDocEnumTag(node);
+        // let isJSObjectLiteral = contextualType.is_none() && isInJavascript && enumTag.is_none();
+        let isJSObjectLiteral = contextualType.is_none() && isInJavascript;
+        let mut objectFlags = self.freshObjectLiteralFlag;
+        let mut patternWithComputedProperties = false;
+        let mut hasComputedStringProperty = false;
+        let mut hasComputedNumberProperty = false;
+        let mut hasComputedSymbolProperty = false;
+
+        // TODO:
+        // Spreads may cause an early bail; ensure computed names are always checked (this is cached)
+        // As otherwise they may not be checked until exports for the type at this position are retrieved,
+        // which may never occur.
+        // for elem in &node.props {
+        //     if (elem.name && isComputedPropertyName(elem.name)) {
+        //         checkComputedPropertyName(elem.name);
+        //     }
+        // }
+
+        let mut offset = 0;
+        for memberDecl in &node.props {
+            let bound_member_decl = memberDecl.bind(bound_node.clone());
+            let mut member = self.getSymbolOfNode(bound_member_decl).unwrap();
+            let computedNameType =
+                if let BoundNode::ComputedPropName(name) = memberDecl.name(bound_node.clone()) {
+                    todo!();
+                    // self.checkComputedPropertyName(name.into())
+                } else {
+                    None
+                };
+            match &memberDecl {
+                ast::Prop::KeyValue(_) | ast::Prop::Shorthand(_) | ast::Prop::Method(_) => {
+                    let mut ty = match &memberDecl {
+                        ast::Prop::KeyValue(n) => self.checkPropertyAssignment(
+                            &KeyValueProp::new(n.clone(), Some(bound_node.clone())),
+                            checkMode,
+                        ),
+                        ast::Prop::Shorthand(n) => {
+                            // avoid resolving the left side of the ShorthandPropertyAssignment outside of the destructuring
+                            // for error recovery purposes. For example, if a user wrote `{ a = 100 }` instead of `{ a: 100 }`.
+                            // we don't want to say "could not find 'a'".
+                            todo!();
+                            // self.checkExpressionForMutableLocation(
+                            //     if !inDestructuringPattern && memberDecl.objectAssignmentInitializer {
+                            //         memberDecl.objectAssignmentInitializer
+                            //     } else {
+                            //         memberDecl.name
+                            //     },
+                            //     checkMode,
+                            //     None,
+                            //     false,
+                            // )
+                        }
+                        ast::Prop::Method(n) => {
+                            todo!();
+                            // self.checkObjectLiteralMethod(memberDecl, checkMode)
+                        }
+                        _ => unreachable!(),
+                    };
+                    if isInJavascript {
+                        todo!();
+                        // let jsDocType = self.getTypeForDeclarationFromJSDocComment(memberDecl);
+                        // if (jsDocType) {
+                        //     self.checkTypeAssignableTo(ty, jsDocType, memberDecl);
+                        //     ty = jsDocType;
+                        // }
+                        // else if (enumTag && enumTag.typeExpression) {
+                        //     self.checkTypeAssignableTo(ty, self.getTypeFromTypeNode(enumTag.typeExpression), memberDecl);
+                        // }
+                    }
+                    objectFlags |=
+                        self.types[ty].get_object_flags() & ObjectFlags::PropagatingFlags;
+                    let nameType = if computedNameType.is_some()
+                        && self.isTypeUsableAsPropertyName(computedNameType.unwrap())
+                    {
+                        computedNameType
+                    } else {
+                        None
+                    };
+                    let prop = if let Some(nameType) = nameType {
+                        self.createSymbol(
+                            SymbolFlags::Property | self.symbols[member].flags(),
+                            self.getPropertyNameFromType(nameType),
+                            Some(checkFlags | CheckFlags::Late),
+                        )
+                    } else {
+                        self.createSymbol(
+                            SymbolFlags::Property | self.symbols[member].flags(),
+                            self.symbols[member].escapedName().clone(),
+                            Some(checkFlags),
+                        )
+                    };
+                    if nameType.is_some() {
+                        self.symbols[prop]
+                            .as_transient_symbol_mut()
+                            .symbol_links
+                            .nameType = nameType;
+                    }
+
+                    if inDestructuringPattern {
+                        todo!();
+                        // If object literal is an assignment pattern and if the assignment pattern specifies a default value
+                        // for the property, make the property optional.
+                        // let isOptional =
+                        //     (memberDecl.kind == SyntaxKind.PropertyAssignment && hasDefaultValue(memberDecl.initializer)) ||
+                        //     (memberDecl.kind == SyntaxKind.ShorthandPropertyAssignment && memberDecl.objectAssignmentInitializer);
+                        // if (isOptional) {
+                        //     prop.flags |= SymbolFlags.Optional;
+                        // }
+                    } else if contextualTypeHasPattern
+                        && (contextualType.is_none()
+                            || !self.types[contextualType.unwrap()]
+                                .get_object_flags()
+                                .intersects(
+                                    ObjectFlags::ObjectLiteralPatternWithComputedProperties,
+                                ))
+                    {
+                        todo!();
+                        // If object literal is contextually typed by the implied type of a binding pattern, and if the
+                        // binding pattern specifies a default value for the property, make the property optional.
+                        // let impliedProp = getPropertyOfType(contextualType, member.escapedName);
+                        // if (impliedProp) {
+                        //     prop.flags |= impliedProp.flags & SymbolFlags.Optional;
+                        // }
+
+                        // else if (!compilerOptions.suppressExcessPropertyErrors && !getIndexInfoOfType(contextualType, stringType)) {
+                        //     error(memberDecl.name, Diagnostics.Object_literal_may_only_specify_known_properties_and_0_does_not_exist_in_type_1,
+                        //         symbolToString(member), typeToString(contextualType));
+                        // }
+                    }
+
+                    let prop_sym = &mut self.symbols[prop];
+
+                    // TODO: bad vec clone?
+                    *self.symbols[prop].declarations_mut() =
+                        self.symbols[member].declarations().clone();
+                    *self.symbols[prop].parent_mut() = self.symbols[member].parent();
+                    if self.symbols[member].valueDeclaration().is_some() {
+                        *self.symbols[prop].valueDeclaration_mut() =
+                            self.symbols[member].valueDeclaration().clone();
+                    }
+
+                    self.symbols[prop].as_transient_symbol_mut().symbol_links.ty = Some(ty);
+                    self.symbols[prop]
+                        .as_transient_symbol_mut()
+                        .symbol_links
+                        .target = Some(member);
+                    member = prop;
+                    if let Some(allPropertiesTable) = allPropertiesTable {
+                        self.symbol_tables[allPropertiesTable]
+                            .insert(self.symbols[prop].escapedName().clone(), prop);
+                    }
+                }
+                ast::Prop::Spread(_) => {
+                    todo!();
+                    // if (languageVersion < ScriptTarget.ES2015) {
+                    //     checkExternalEmitHelpers(memberDecl, ExternalEmitHelpers.Assign);
+                    // }
+                    // if (propertiesArray.length > 0) {
+                    //     spread = getSpreadType(spread, createObjectLiteralType(), node.symbol, objectFlags, inConstContext);
+                    //     propertiesArray = [];
+                    //     propertiesTable = createSymbolTable();
+                    //     hasComputedStringProperty = false;
+                    //     hasComputedNumberProperty = false;
+                    //     hasComputedSymbolProperty = false;
+                    // }
+                    // let ty = getReducedType(checkExpression(memberDecl.expression));
+                    // if (isValidSpreadType(ty)) {
+                    //     let mergedType = tryMergeUnionOfObjectTypeAndEmptyObject(ty, inConstContext);
+                    //     if (allPropertiesTable) {
+                    //         checkSpreadPropOverrides(mergedType, allPropertiesTable, memberDecl);
+                    //     }
+                    //     offset = propertiesArray.length;
+                    //     if (isErrorType(spread)) {
+                    //         continue;
+                    //     }
+                    //     spread = getSpreadType(spread, mergedType, node.symbol, objectFlags, inConstContext);
+                    // }
+                    // else {
+                    //     error(memberDecl, Diagnostics.Spread_types_may_only_be_created_from_object_types);
+                    //     spread = errorType;
+                    // }
+                    // continue;
+                }
+                ast::Prop::Getter(_) | ast::Prop::Setter(_) => {
+                    todo!();
+                    // TypeScript 1.0 spec (April 2014)
+                    // A get accessor declaration is processed in the same manner as
+                    // an ordinary function declaration(section 6.1) with no parameters.
+                    // A set accessor declaration is processed in the same manner
+                    // as an ordinary function declaration with a single parameter and a Void return type.
+                    // Debug.assert(memberDecl.kind == SyntaxKind.GetAccessor || memberDecl.kind == SyntaxKind.SetAccessor);
+                    // checkNodeDeferred(memberDecl);
+                }
+                _ => unreachable!(),
+            }
+
+            if computedNameType.is_some()
+                && !self.types[computedNameType.unwrap()]
+                    .get_flags()
+                    .intersects(TypeFlags::StringOrNumberLiteralOrUnique)
+            {
+                todo!();
+                // if (isTypeAssignableTo(computedNameType, stringNumberSymbolType)) {
+                //     if (isTypeAssignableTo(computedNameType, numberType)) {
+                //         hasComputedNumberProperty = true;
+                //     }
+                //     else if (isTypeAssignableTo(computedNameType, esSymbolType)) {
+                //         hasComputedSymbolProperty = true;
+                //     }
+                //     else {
+                //         hasComputedStringProperty = true;
+                //     }
+                //     if (inDestructuringPattern) {
+                //         patternWithComputedProperties = true;
+                //     }
+                // }
+            } else {
+                self.symbol_tables[propertiesTable]
+                    .insert(self.symbols[member].escapedName().clone(), member);
+            }
+            propertiesArray.push(member);
+        }
+
+        // If object literal is contextually typed by the implied type of a binding pattern, augment the result
+        // type with those properties for which the binding pattern specifies a default value.
+        // If the object literal is spread into another object literal, skip this step and let the top-level object
+        // literal handle it instead.
+        if contextualTypeHasPattern && !matches!(&node.parent, Some(BoundNode::SpreadAssignment(_)))
+        {
+            todo!();
+            // for (let prop of getPropertiesOfType(contextualType)) {
+            //     if (!propertiesTable.get(prop.escapedName) && !getPropertyOfType(spread, prop.escapedName)) {
+            //         if (!(prop.flags & SymbolFlags.Optional)) {
+            //             error(prop.valueDeclaration || (prop as TransientSymbol).bindingElement,
+            //                 Diagnostics.Initializer_provides_no_value_for_this_binding_element_and_the_binding_element_has_no_default_value);
+            //         }
+            //         propertiesTable.set(prop.escapedName, prop);
+            //         propertiesArray.push(prop);
+            //     }
+            // }
+        }
+
+        if self.isErrorType(spread) {
+            return self.errorType;
+        }
+
+        if spread != self.emptyObjectType {
+            todo!();
+            // if (propertiesArray.length > 0) {
+            //     spread = getSpreadType(spread, createObjectLiteralType(), node.symbol, objectFlags, inConstContext);
+            //     propertiesArray = [];
+            //     propertiesTable = createSymbolTable();
+            //     hasComputedStringProperty = false;
+            //     hasComputedNumberProperty = false;
+            // }
+            // // remap the raw emptyObjectType fed in at the top into a fresh empty object literal type, unique to this use site
+            // return mapType(spread, t => t === emptyObjectType ? createObjectLiteralType() : t);
+        }
+
+        return createObjectLiteralType(
+            self,
+            propertiesTable,
+            bound_node,
+            objectFlags,
+            hasComputedStringProperty,
+            hasComputedNumberProperty,
+            hasComputedSymbolProperty,
+            isJSObjectLiteral,
+            patternWithComputedProperties,
+            inDestructuringPattern,
+        );
+
+        fn createObjectLiteralType(
+            checker: &mut Checker,
+            propertiesTable: SymbolTableId,
+            bound_node: BoundNode,
+            objectFlags: ObjectFlags,
+            hasComputedStringProperty: bool,
+            hasComputedNumberProperty: bool,
+            hasComputedSymbolProperty: bool,
+            isJSObjectLiteral: bool,
+            patternWithComputedProperties: bool,
+            inDestructuringPattern: bool,
+        ) -> TypeId {
+            let mut indexInfos = Vec::new();
+            if hasComputedStringProperty {
+                todo!();
+                // indexInfos.push(self.getObjectLiteralIndexInfo(
+                //     node,
+                //     offset,
+                //     propertiesArray,
+                //     self.stringType,
+                // ));
+            }
+            if hasComputedNumberProperty {
+                todo!();
+                // indexInfos.push(self.getObjectLiteralIndexInfo(
+                //     node,
+                //     offset,
+                //     propertiesArray,
+                //     self.numberType,
+                // ));
+            }
+            if hasComputedSymbolProperty {
+                todo!();
+                // indexInfos.push(self.getObjectLiteralIndexInfo(
+                //     node,
+                //     offset,
+                //     propertiesArray,
+                //     self.esSymbolType,
+                // ));
+            }
+            let symbol = checker.node_data(bound_node.clone()).symbol;
+            let result = checker.createAnonymousType(
+                symbol,
+                propertiesTable,
+                Rc::default(),
+                Rc::default(),
+                Rc::new(indexInfos),
+            );
+            *checker.types[result].get_object_flags_mut() |= objectFlags
+                | ObjectFlags::ObjectLiteral
+                | ObjectFlags::ContainsObjectOrArrayLiteral;
+            if isJSObjectLiteral {
+                *checker.types[result].get_object_flags_mut() |= ObjectFlags::JSLiteral;
+            }
+            if patternWithComputedProperties {
+                *checker.types[result].get_object_flags_mut() |=
+                    ObjectFlags::ObjectLiteralPatternWithComputedProperties;
+            }
+            if inDestructuringPattern {
+                *checker.types[result].get_pattern_mut() = Some(bound_node);
+            }
+            result
+        };
+    }
+
     // TODO:
     // isValidSpreadType
     // TODO:
@@ -17257,10 +21948,37 @@ impl Checker {
     // isExcessPropertyCheckTarget
     // TODO:
     // checkJsxExpression
-    // TODO:
-    // getDeclarationNodeFlagsFromSymbol
-    // TODO:
-    // isPrototypeProperty
+
+    fn getDeclarationNodeFlagsFromSymbol(&self, s: SymbolId) -> NodeFlags {
+        todo!();
+        // self.symbols[s]
+        //     .valueDeclaration()
+        //     .as_ref()
+        //     .map(|vd| getCombinedNodeFlags(vd))
+        //     .unwrap_or_default()
+    }
+
+    /**
+     * Return whether this symbol is a member of a prototype somewhere
+     * Note that this is not tracked well within the compiler, so the answer may be incorrect.
+     */
+    fn isPrototypeProperty(&self, symbol: SymbolId) -> bool {
+        if self.symbols[symbol].flags().intersects(SymbolFlags::Method)
+            || getCheckFlags(&self.symbols[symbol]).intersects(CheckFlags::SyntheticMethod)
+        {
+            return true;
+        }
+        if isInJSFile(self.symbols[symbol].valueDeclaration().as_ref()) {
+            let parent = self.symbols[symbol]
+                .valueDeclaration()
+                .as_ref()
+                .unwrap()
+                .parent();
+            return matches!(parent, Some(BoundNode::AssignExpr(p)) if getAssignmentDeclarationKind(&ast::Expr::Assign(p.node.clone())) == AssignmentDeclarationKind::PrototypeProperty);
+        }
+        false
+    }
+
     // TODO:
     // checkPropertyAccessibility
     // TODO:
@@ -17302,10 +22020,17 @@ impl Checker {
             type_flags & TypeFlags::Nullable
         };
         if !kind.is_empty() {
-            todo!();
+            // TODO: error
             // reportError(node, kind);
-            // let t = getNonNullableType(ty);
-            // return t.flags & (TypeFlags::Nullable | TypeFlags::Never) ? errorType : t;
+            let t = self.getNonNullableType(ty);
+            return if self.types[t]
+                .get_flags()
+                .intersects(TypeFlags::Nullable | TypeFlags::Never)
+            {
+                self.errorType
+            } else {
+                t
+            };
         }
         ty
     }
@@ -17504,8 +22229,7 @@ impl Checker {
             if self.isThisPropertyAccessInConstructor(node.clone(), prop) {
                 self.autoType
             } else if writing {
-                todo!();
-                // self.getSetAccessorTypeOfSymbol(prop)
+                self.getSetAccessorTypeOfSymbol(prop)
             } else {
                 self.getTypeOfSymbol(prop)
             }
@@ -17543,24 +22267,26 @@ impl Checker {
                 }
                 propType
             } else {
-                todo!();
+                // TODO:
                 // let isUncheckedJS = isUncheckedJSSuggestion(node, leftType.symbol, /*excludeClasses*/ true);
                 // if !isUncheckedJS && isJSLiteralType(leftType) {
                 //     return anyType;
                 // }
-                // if (leftType.symbol == globalThisSymbol) {
-                //     if (globalThisSymbol.exports!.has(right.escapedText) && (globalThisSymbol.exports!.get(right.escapedText)!.flags & SymbolFlags::BlockScoped)) {
-                //         error(right, Diagnostics.Property_0_does_not_exist_on_type_1, unescapeLeadingUnderscores(right.escapedText), typeToString(leftType));
-                //     }
-                //     else if (noImplicitAny) {
-                //         error(right, Diagnostics.Element_implicitly_has_an_any_type_because_type_0_has_no_index_signature, typeToString(leftType));
-                //     }
-                //     return anyType;
-                // }
+                if self.types[leftType].get_symbol() == &Some(self.globalThisSymbol) {
+                    // TODO: errors
+                    // if (globalThisSymbol.exports!.has(right.escapedText) && (globalThisSymbol.exports!.get(right.escapedText)!.flags & SymbolFlags::BlockScoped)) {
+                    //     error(right, Diagnostics.Property_0_does_not_exist_on_type_1, unescapeLeadingUnderscores(right.escapedText), typeToString(leftType));
+                    // }
+                    // else if (noImplicitAny) {
+                    //     error(right, Diagnostics.Element_implicitly_has_an_any_type_because_type_0_has_no_index_signature, typeToString(leftType));
+                    // }
+                    return self.anyType;
+                }
+                // TODO:
                 // if (right.escapedText && !checkAndReportErrorForExtendingInterface(node)) {
                 //     reportNonexistentProperty(right, isThisTypeParameter(leftType) ? apparentType : leftType, isUncheckedJS);
                 // }
-                // return errorType;
+                return self.errorType;
             }
         };
 
@@ -17635,7 +22361,7 @@ impl Checker {
         }
 
         let flowType = self.getFlowTypeOfReference(
-            node,
+            &node,
             propType,
             if assumeUninitialized {
                 todo!();
@@ -17917,13 +22643,13 @@ impl Checker {
     fn hasCorrectTypeArgumentArity(
         &self,
         signature: SignatureId,
-        typeArguments: Option<&TsTypeParamInstantiation>,
+        typeArguments: Option<&Rc<TsTypeParamInstantiation>>,
     ) -> bool {
         // If the user supplied type arguments, but the number of type arguments does not match
         // the declared number of type parameters, the call has an incorrect arity.
         let typeParameters = self.signatures[signature].typeParameters.clone();
-        let numTypeParameters = typeParameters.len();
-        let minTypeArgumentCount = self.getMinTypeArgumentCount(Some(typeParameters));
+        let numTypeParameters = typeParameters.length();
+        let minTypeArgumentCount = self.getMinTypeArgumentCount(typeParameters);
         if let Some(typeArguments) = typeArguments {
             typeArguments.params.len() >= minTypeArgumentCount
                 && typeArguments.params.len() <= numTypeParameters
@@ -17999,7 +22725,8 @@ impl Checker {
                 .typeParameters
                 .clone()
                 .iter()
-                .all(|p| self.getDefaultFromTypeParameter(*p).is_some())
+                .flat_map(|v| v.iter())
+                .all(|&p| self.getDefaultFromTypeParameter(p).is_some())
             {
                 ContextFlags::SkipBindingPatterns
             } else {
@@ -18028,7 +22755,7 @@ impl Checker {
                 let inferenceSourceType = if let Some(contextualSignature) = contextualSignature {
                     let sig = self.getSignatureInstantiationWithoutFillingInTypeArguments(
                         contextualSignature,
-                        Some(self.signatures[contextualSignature].typeParameters.clone()),
+                        self.signatures[contextualSignature].typeParameters.clone(),
                     );
                     self.getOrCreateTypeFromSignature(sig)
                 } else {
@@ -18048,7 +22775,7 @@ impl Checker {
                 // the source type uses the outer context's return mapper (which excludes inferences made from
                 // outer arguments), and (b) we don't want any further inferences going into this context.
                 let returnContext = self.createInferenceContext(
-                    self.signatures[signature].typeParameters.clone(),
+                    self.signatures[signature].typeParameters.clone().unwrap(),
                     Some(signature),
                     self.inference_contexts[context].flags,
                     None,
@@ -18132,8 +22859,63 @@ impl Checker {
     // getMutableArrayOrTupleType
     // TODO:
     // getSpreadArgumentType
-    // TODO:
-    // checkTypeArguments
+
+    // TODO: errors
+    fn checkTypeArguments(
+        &mut self,
+        signature: SignatureId,
+        typeArgumentInstantiation: &Rc<TsTypeParamInstantiation>,
+        reportErrors: bool, /*, headMessage?: DiagnosticMessage*/
+    ) -> Option<Rc<Vec<TypeId>>> {
+        let isJavascript = isInJSFile(self.signatures[signature].declaration.as_ref());
+        let typeParameters = self.signatures[signature].typeParameters.clone().unwrap();
+        let typeArgumentTypes = Rc::new(
+            typeArgumentInstantiation
+                .params
+                .iter()
+                .map(|t| self.getTypeFromTypeNode(t.bind(typeArgumentInstantiation.clone().into())))
+                .collect::<Vec<_>>(),
+        );
+        let typeArgumentTypes = self
+            .fillMissingTypeArguments(
+                Some(typeArgumentTypes),
+                Some(typeParameters.clone()),
+                self.getMinTypeArgumentCount(Some(typeParameters.clone())),
+                isJavascript,
+            )
+            .unwrap();
+        let mut mapper = None;
+        for (i, typeArgumentNode) in typeArgumentInstantiation.params.iter().enumerate() {
+            debug_assert!(
+                typeParameters.get(i).is_some(),
+                "Should not call checkTypeArguments with too many type arguments"
+            );
+            if let Some(constraint) = self.getConstraintOfTypeParameter(typeParameters[i]) {
+                // let errorInfo = reportErrors && headMessage ? (() => chainDiagnosticMessages(/*details*/ undefined, Diagnostics.Type_0_does_not_satisfy_the_constraint_1)) : undefined;
+                // let typeArgumentHeadMessage = headMessage || Diagnostics.Type_0_does_not_satisfy_the_constraint_1;
+                let mapper = match mapper {
+                    Some(m) => m,
+                    None => {
+                        let m = self.createTypeMapper(typeParameters, Some(typeArgumentTypes));
+                        mapper = Some(m.clone());
+                        m
+                    }
+                };
+                // let typeArgument = typeArgumentTypes[i];
+                todo!();
+                // if (!checkTypeAssignableTo(
+                //     typeArgument,
+                //     getTypeWithThisArgument(instantiateType(constraint, mapper), typeArgument),
+                //     reportErrors ? typeArgumentNodes[i] : undefined,
+                //     typeArgumentHeadMessage,
+                //     errorInfo)) {
+                //     return undefined;
+                // }
+            }
+        }
+        Some(typeArgumentTypes)
+    }
+
     // TODO:
     // getJsxReferenceKind
     // TODO:
@@ -18253,10 +23035,9 @@ impl Checker {
                         }
                     }
                 }
-                n.type_args.as_ref().map(|i| TsTypeParamInstantiation {
-                    node: i.clone(),
-                    parent: Some(node.clone()),
-                })
+                n.type_args
+                    .as_ref()
+                    .map(|i| TsTypeParamInstantiation::new(i.clone(), Some(node.clone())))
             }
             BoundNode::NewExpr(n) => {
                 if let Some(type_params) = &n.type_args {
@@ -18264,10 +23045,9 @@ impl Checker {
                         self.checkSourceElement(Some(p.bind(type_params.bind(node.clone()))));
                     }
                 }
-                n.type_args.as_ref().map(|i| TsTypeParamInstantiation {
-                    node: i.clone(),
-                    parent: Some(node.clone()),
-                })
+                n.type_args
+                    .as_ref()
+                    .map(|i| TsTypeParamInstantiation::new(i.clone(), Some(node.clone())))
             }
             BoundNode::TaggedTpl(n) => {
                 if let Some(type_params) = &n.type_params {
@@ -18275,10 +23055,9 @@ impl Checker {
                         self.checkSourceElement(Some(p.bind(type_params.bind(node.clone()))));
                     }
                 }
-                n.type_params.as_ref().map(|i| TsTypeParamInstantiation {
-                    node: i.clone(),
-                    parent: Some(node.clone()),
-                })
+                n.type_params
+                    .as_ref()
+                    .map(|i| TsTypeParamInstantiation::new(i.clone(), Some(node.clone())))
             }
             // TODO: jsx
             // JsxOpeningLikeElement => {
@@ -18318,7 +23097,7 @@ impl Checker {
         // For a decorator, no arguments are susceptible to contextual typing due to the fact
         // decorators are applied to a declaration by the emitter, and not to an expression.
         let isSingleNonGenericCandidate =
-            candidates.len() == 1 && self.signatures[candidates[0]].typeParameters.is_empty();
+            candidates.len() == 1 && self.signatures[candidates[0]].typeParameters.is_none();
         let mut argCheckMode = if !isDecorator
             && !isSingleNonGenericCandidate
             && args.iter().any(|a| isContextSensitive(&a.clone().into()))
@@ -18531,7 +23310,7 @@ impl Checker {
             signatureHelpTrailingComma: bool,
 
             argCheckMode: &mut CheckMode,
-            typeArguments: &Option<TsTypeParamInstantiation>,
+            typeArguments: &Option<Rc<TsTypeParamInstantiation>>,
             node: &BoundNode,
             args: &Vec<BoundNode>,
             candidateForArgumentArityError: &mut Option<SignatureId>,
@@ -18541,16 +23320,21 @@ impl Checker {
             // candidateForTypeArgumentError = undefined;
 
             if isSingleNonGenericCandidate {
-                todo!();
-                // const candidate = candidates[0];
-                // if (some(typeArguments) || !hasCorrectArity(node, args, candidate, signatureHelpTrailingComma)) {
-                //     return undefined;
-                // }
-                // if (getSignatureApplicabilityError(node, args, candidate, relation, CheckMode.Normal, /*reportErrors*/ false, /*containingMessageChain*/ undefined)) {
+                let candidate = candidates[0];
+                if let Some(typeArguments) = typeArguments {
+                    if !typeArguments.params.is_empty() {
+                        return None;
+                    }
+                }
+                if !checker.hasCorrectArity(node, args, candidate, signatureHelpTrailingComma) {
+                    return None;
+                }
+                // TODO: error:
+                // if getSignatureApplicabilityError(node, args, candidate, relation, CheckMode.Normal, /*reportErrors*/ false, /*containingMessageChain*/ undefined) {
                 //     candidatesForArgumentError = [candidate];
-                //     return undefined;
+                //     return None;
                 // }
-                // return candidate;
+                return Some(candidate);
             }
 
             for (candidateIndex, &candidate) in candidates.iter().enumerate() {
@@ -18563,23 +23347,20 @@ impl Checker {
                 let mut checkCandidate;
                 let mut inferenceContext = None;
 
-                if !checker.signatures[candidate].typeParameters.is_empty() {
-                    let mut typeArgumentTypes;
-                    if let Some(typeArguments) = typeArguments {
-                        todo!();
-                        // typeArgumentTypes = checker.checkTypeArguments(
-                        //     candidate,
-                        //     typeArguments,
-                        //     /*reportErrors*/ false,
-                        // );
-                        // if typeArgumentTypes.is_none() {
-                        //     // TODO:
-                        //     // candidateForTypeArgumentError = candidate;
-                        //     continue;
-                        // }
+                if let Some(typeParameters) = checker.signatures[candidate].typeParameters.as_ref()
+                {
+                    let mut typeArgumentTypes = None;
+                    if let Some(typeArguments) = typeArguments.as_ref() {
+                        typeArgumentTypes =
+                            checker.checkTypeArguments(candidate, typeArguments, false);
+                        if typeArgumentTypes.is_none() {
+                            // TODO:
+                            // candidateForTypeArgumentError = candidate;
+                            continue;
+                        }
                     } else {
                         let ctx = checker.createInferenceContext(
-                            checker.signatures[candidate].typeParameters.clone(),
+                            typeParameters.clone(),
                             Some(candidate),
                             if isBoundNodeInJSFile(node) {
                                 InferenceFlags::AnyDefault
@@ -18588,13 +23369,13 @@ impl Checker {
                             },
                             None,
                         );
-                        typeArgumentTypes = checker.inferTypeArguments(
+                        typeArgumentTypes = Some(Rc::new(checker.inferTypeArguments(
                             node,
                             candidate,
                             args,
                             *argCheckMode | CheckMode::SkipGenericFunctions,
                             ctx,
-                        );
+                        )));
                         *argCheckMode |= if checker.inference_contexts[ctx]
                             .flags
                             .intersects(InferenceFlags::SkippedGenericFunction)
@@ -18607,7 +23388,7 @@ impl Checker {
                     }
                     checkCandidate = checker.getSignatureInstantiation(
                         candidate,
-                        Some(Rc::new(typeArgumentTypes)),
+                        typeArgumentTypes,
                         isInJSFile(checker.signatures[candidate].declaration.as_ref()),
                         inferenceContext.and_then(|ctx| {
                             checker.inference_contexts[ctx]
@@ -18718,10 +23499,11 @@ impl Checker {
 
     fn resolveCallExpression(
         &mut self,
-        node: Rc<CallExpr>,
+        node: &Rc<CallExpr>,
         candidatesOutArray: Option<&mut Vec<SignatureId>>,
         checkMode: CheckMode,
     ) -> SignatureId {
+        let bound_node = BoundNode::CallExpr(node.clone());
         let callee = match &node.callee {
             ast::ExprOrSuper::Super(_) => {
                 todo!();
@@ -18743,7 +23525,7 @@ impl Checker {
                 // }
                 // return resolveUntypedCall(node);
             }
-            ast::ExprOrSuper::Expr(e) => e.bind(node.clone().into()),
+            ast::ExprOrSuper::Expr(e) => e.bind(bound_node.clone()),
         };
 
         let mut callChainFlags;
@@ -18857,7 +23639,7 @@ impl Checker {
         }
 
         self.resolveCall(
-            node.into(),
+            bound_node,
             callSignatures,
             candidatesOutArray,
             checkMode,
@@ -18866,7 +23648,7 @@ impl Checker {
     }
 
     fn isGenericFunctionReturningFunction(&mut self, signature: SignatureId) -> bool {
-        if !self.signatures[signature].typeParameters.is_empty() {
+        if self.signatures[signature].typeParameters.is_some() {
             let return_ty = self.getReturnTypeOfSignature(signature);
             self.isFunctionType(return_ty)
         } else {
@@ -18904,12 +23686,174 @@ impl Checker {
                 && self.isTypeAssignableTo(funcType, self.globalFunctionType())
     }
 
-    // TODO:
-    // resolveNewExpression
+    fn resolveNewExpression(
+        &mut self,
+        node: &Rc<NewExpr>,
+        candidatesOutArray: Option<&mut Vec<SignatureId>>,
+        checkMode: CheckMode,
+    ) -> SignatureId {
+        // TODO: es3
+        // if node.arguments && languageVersion < ScriptTarget.ES5 {
+        //     let spreadIndex = getSpreadArgumentIndex(node.arguments);
+        //     if (spreadIndex >= 0) {
+        //         error(node.arguments[spreadIndex], Diagnostics.Spread_operator_in_new_expressions_is_only_available_when_targeting_ECMAScript_5_and_higher);
+        //     }
+        // }
+        let bound_node = BoundNode::NewExpr(node.clone());
+
+        let mut expressionType = self.checkNonNullExpression(node.callee.bind(bound_node.clone()));
+        if expressionType == self.silentNeverType {
+            return self.silentNeverSignature;
+        }
+
+        // If expressionType's apparent type(section 3.8.1) is an object type with one or
+        // more construct signatures, the expression is processed in the same manner as a
+        // function call, but using the construct signatures as the initial set of candidate
+        // signatures for overload resolution. The result type of the function call becomes
+        // the result type of the operation.
+        expressionType = self.getApparentType(expressionType);
+        if self.isErrorType(expressionType) {
+            todo!();
+            // Another error has already been reported
+            // return resolveErrorCall(node);
+        }
+
+        // TS 1.0 spec: 4.11
+        // If expressionType is of type Any, Args can be any argument
+        // list and the result of the operation is of type Any.
+        if self.isTypeAny(Some(expressionType)) {
+            todo!();
+            // if node.type_args.is_some() {
+            //     todo!();
+            //     // error(node, Diagnostics.Untyped_function_calls_may_not_accept_type_arguments);
+            // }
+            // return self.resolveUntypedCall(node);
+        }
+
+        // Technically, this signatures list may be incomplete. We are taking the apparent type,
+        // but we are not including construct signatures that may have been added to the Object or
+        // Function interface, since they have none by default. This is a bit of a leap of faith
+        // that the user will not add any.
+        let constructSignatures =
+            self.getSignaturesOfType(expressionType, SignatureKind::Construct);
+        if !constructSignatures.is_empty() {
+            if !self.isConstructorAccessible(node, constructSignatures[0]) {
+                todo!();
+                // return resolveErrorCall(node);
+            }
+            // If the expression is a class of abstract type, or an abstract construct signature,
+            // then it cannot be instantiated.
+            // In the case of a merged class-module or class-interface declaration,
+            // only the class declaration node will have the Abstract flag set.
+            if constructSignatures.iter().any(|&signature| {
+                self.signatures[signature]
+                    .flags
+                    .intersects(SignatureFlags::Abstract)
+            }) {
+                todo!();
+                // error(node, Diagnostics.Cannot_create_an_instance_of_an_abstract_class);
+                // return resolveErrorCall(node);
+            }
+            let valueDecl = self.types[expressionType]
+                .get_symbol()
+                .as_ref()
+                .and_then(|&s| getClassLikeDeclarationOfSymbol(&self.symbols[s]));
+            if valueDecl.is_some()
+                && hasSyntacticModifier(&valueDecl.unwrap(), ModifierFlags::Abstract)
+            {
+                todo!();
+                // error(node, Diagnostics.Cannot_create_an_instance_of_an_abstract_class);
+                // return resolveErrorCall(node);
+            }
+
+            return self.resolveCall(
+                bound_node,
+                constructSignatures,
+                candidatesOutArray,
+                checkMode,
+                SignatureFlags::None,
+            );
+        }
+
+        // If expressionType's apparent type is an object type with no construct signatures but
+        // one or more call signatures, the expression is processed as a function call. A compile-time
+        // error occurs if the result of the function call is not Void. The type of the result of the
+        // operation is Any. It is an error to have a Void this type.
+        let callSignatures = self.getSignaturesOfType(expressionType, SignatureKind::Call);
+        if !callSignatures.is_empty() {
+            let signature = self.resolveCall(
+                bound_node,
+                callSignatures,
+                candidatesOutArray,
+                checkMode,
+                SignatureFlags::None,
+            );
+            if !self.noImplicitAny {
+                todo!();
+                // if (signature.declaration && !isJSConstructor(signature.declaration) && getReturnTypeOfSignature(signature) !== voidType) {
+                //     error(node, Diagnostics.Only_a_void_function_can_be_called_with_the_new_keyword);
+                // }
+                // if (getThisTypeOfSignature(signature) == voidType) {
+                //     error(node, Diagnostics.A_function_that_is_called_with_the_new_keyword_cannot_have_a_this_type_that_is_void);
+                // }
+            }
+            return signature;
+        }
+
+        todo!();
+        // invocationError(node.expression, expressionType, SignatureKind.Construct);
+        // self.resolveErrorCall(node)
+    }
+
     // TODO:
     // typeHasProtectedAccessibleBase
-    // TODO:
-    // isConstructorAccessible
+
+    fn isConstructorAccessible(&mut self, node: &Rc<NewExpr>, signature: SignatureId) -> bool {
+        let declaration = match self.signatures[signature].declaration.as_ref() {
+            Some(d) => d,
+            None => return true,
+        };
+        let modifiers = getSelectedEffectiveModifierFlags(
+            declaration,
+            ModifierFlags::NonPublicAccessibilityModifier,
+        );
+
+        // (1) Public constructors and (2) constructor functions are always accessible.
+        if modifiers.is_empty() || !matches!(declaration, BoundNode::Constructor(_)) {
+            return true;
+        }
+
+        todo!();
+
+        // let declaringClassDeclaration =
+        //     getClassLikeDeclarationOfSymbol(declaration.parent().unwrap().symbol).unwrap();
+        // let declaringClass = self.getDeclaredTypeOfSymbol(declaration.parent.symbol);
+
+        // // A private or protected constructor can only be instantiated within its own class (or a subclass, for protected)
+        // if !isNodeWithinClass(node, declaringClassDeclaration) {
+        //     todo!();
+        //     // let containingClass = getContainingClass(node);
+        //     // if containingClass && modifiers.intersects(ModifierFlags::Protected) {
+        //     //     todo!();
+        //     //     // let containingType = getTypeOfNode(containingClass);
+        //     //     // if typeHasProtectedAccessibleBase(declaration.parent.symbol, containingType as InterfaceType) {
+        //     //     //     return true;
+        //     //     // }
+        //     // }
+        //     // if modifiers.intersects(ModifierFlags::Private) {
+        //     //     todo!();
+        //     //     // error(node, Diagnostics.Constructor_of_class_0_is_private_and_only_accessible_within_the_class_declaration, typeToString(declaringClass));
+        //     // }
+        //     // if modifiers.intersects(ModifierFlags::Protected) {
+        //     //     todo!();
+        //     //     // error(node, Diagnostics.Constructor_of_class_0_is_protected_and_only_accessible_within_the_class_declaration, typeToString(declaringClass));
+        //     // }
+        //     // return false;
+        // }
+
+        // true
+    }
+
     // TODO:
     // invocationErrorDetails
     // TODO:
@@ -18931,16 +23875,13 @@ impl Checker {
 
     fn resolveSignature(
         &mut self,
-        node: BoundNode,
+        node: &BoundNode,
         candidatesOutArray: Option<&mut Vec<SignatureId>>,
         checkMode: CheckMode,
     ) -> SignatureId {
         match node {
             BoundNode::CallExpr(n) => self.resolveCallExpression(n, candidatesOutArray, checkMode),
-            BoundNode::NewExpr(_) => {
-                todo!();
-                // self.resolveNewExpression(node, candidatesOutArray, checkMode)
-            }
+            BoundNode::NewExpr(n) => self.resolveNewExpression(n, candidatesOutArray, checkMode),
             BoundNode::TaggedTpl(_) => {
                 todo!();
                 // self.resolveTaggedTemplateExpression(node, candidatesOutArray, checkMode)
@@ -18985,7 +23926,7 @@ impl Checker {
         }
         links.resolvedSignature = Some(resolvingSignature);
         let result = self.resolveSignature(
-            node.clone(),
+            &node,
             candidatesOutArray,
             checkMode.unwrap_or(CheckMode::Normal),
         );
@@ -19165,14 +24106,147 @@ impl Checker {
         // }
     }
 
-    // TODO:
-    // checkCallExpression
+    /**
+     * Syntactically and semantically checks a call or new expression.
+     * @param node The call/new expression to be checked.
+     * @returns On success, the expression's signature's return type. On failure, anyType.
+     */
+    fn checkCallExpression(&mut self, node: &BoundNode, checkMode: Option<CheckMode>) -> TypeId {
+        debug_assert!(matches!(
+            node,
+            BoundNode::CallExpr(_) | BoundNode::NewExpr(_)
+        ));
+        // if (!checkGrammarTypeArguments(node, node.typeArguments)) {
+        //     checkGrammarArguments(node.arguments);
+        // }
+
+        let signature = self.getResolvedSignature(node.clone(), None, checkMode);
+        if signature == self.resolvingSignature {
+            // CheckMode.SkipGenericFunctions is enabled and this is a call to a generic function that
+            // returns a function type. We defer checking and return nonInferrableType.
+            return self.nonInferrableType;
+        }
+
+        // TODO:
+        // self.checkDeprecatedSignature(signature, node);
+
+        if matches!(&node, BoundNode::CallExpr(c) if matches!(c.callee, ast::ExprOrSuper::Super(_)))
+        {
+            return self.voidType;
+        }
+
+        if matches!(node, BoundNode::NewExpr(_)) {
+            let declaration = self.signatures[signature].declaration.as_ref();
+
+            if let Some(declaration) = declaration {
+                if !matches!(
+                    declaration,
+                    BoundNode::Constructor(_)
+                        | BoundNode::TsConstructSignatureDecl(_)
+                        | BoundNode::TsConstructorType(_)
+                ) && !isJSDocConstructSignature(declaration)
+                    && !self.isJSConstructor(Some(declaration.clone()))
+                {
+                    // When resolved signature is a call signature (and not a construct signature) the result type is any
+                    if self.noImplicitAny {
+                        todo!();
+                        // error(node, Diagnostics.new_expression_whose_target_lacks_a_construct_signature_implicitly_has_an_any_type);
+                    }
+                    return self.anyType;
+                }
+            }
+        }
+
+        // In JavaScript files, calls to any identifier 'require' are treated as external module imports
+        // if isBoundNodeInJSFile(node) && isCommonJsRequire(node) {
+        //     return resolveExternalModuleTypeByLiteral(node.arguments![0] as StringLiteral);
+        // }
+        if isBoundNodeInJSFile(node) {
+            todo!("see above");
+        }
+
+        let returnType = self.getReturnTypeOfSignature(signature);
+        // Treat any call to the global 'Symbol' function that is part of a const variable or readonly property
+        // as a fresh unique symbol literal type.
+        if self.types[returnType]
+            .get_flags()
+            .intersects(TypeFlags::ESSymbolLike)
+            && self.isSymbolOrSymbolForCall(node)
+        {
+            todo!();
+            // return getESSymbolLikeTypeForNode(walkUpParenthesizedExpressions(node.parent));
+        }
+        if matches!(node, BoundNode::CallExpr(_))
+            && matches!(node.parent(), Some(BoundNode::ExprStmt(_)))
+            && self.types[returnType]
+                .get_flags()
+                .intersects(TypeFlags::Void)
+            && self.getTypePredicateOfSignature(signature).is_some()
+        {
+            todo!();
+            // if (!isDottedName(node.expression)) {
+            //     error(node.expression, Diagnostics.Assertions_require_the_call_target_to_be_an_identifier_or_qualified_name);
+            // }
+            // else if (!getEffectsSignature(node)) {
+            //     const diagnostic = error(node.expression, Diagnostics.Assertions_require_every_name_in_the_call_target_to_be_declared_with_an_explicit_type_annotation);
+            //     getTypeOfDottedName(node.expression, diagnostic);
+            // }
+        }
+
+        if isBoundNodeInJSFile(node) {
+            todo!();
+            // const jsSymbol = getSymbolOfExpando(node, /*allowDeclaration*/ false);
+            // if (jsSymbol?.exports?.size) {
+            //     const jsAssignmentType = createAnonymousType(jsSymbol, jsSymbol.exports, emptyArray, emptyArray, emptyArray);
+            //     jsAssignmentType.objectFlags |= ObjectFlags.JSLiteral;
+            //     return getIntersectionType([returnType, jsAssignmentType]);
+            // }
+        }
+
+        returnType
+    }
+
     // TODO:
     // checkDeprecatedSignature
     // TODO:
     // getDeprecatedSuggestionNode
-    // TODO:
-    // isSymbolOrSymbolForCall
+
+    fn isSymbolOrSymbolForCall(&mut self, node: &BoundNode) -> bool {
+        if let BoundNode::CallExpr(call) = node {
+            let mut left = call.callee.bind(call.clone().into());
+            if let BoundNode::MemberExpr(e) = &left {
+                if !e.computed && unwrap_as!(&e.prop, ast::Expr::Ident(i), i).sym == js_word!("for")
+                {
+                    left = e.obj.bind(left.clone());
+                }
+            }
+            if !matches!(left, BoundNode::Ident(i) if i.sym ==js_word!("Symbol") ) {
+                return false;
+            }
+
+            todo!();
+
+            // make sure `Symbol` is the global symbol
+            // let globalESSymbol = self.getGlobalESSymbolConstructorSymbol(/*reportErrors*/ false);
+            // if (!globalESSymbol) {
+            //     return false;
+            // }
+
+            // globalESSymbol
+            //     == self.resolveName(
+            //         Some(left),
+            //         js_word!("Symbol"),
+            //         SymbolFlags::Value,
+            //         // /*nameNotFoundMessage*/ undefined,
+            //         None,
+            //         false,
+            //         false,
+            //     )
+        } else {
+            false
+        }
+    }
+
     // TODO:
     // checkImportCallExpression
     // TODO:
@@ -19452,9 +24526,9 @@ impl Checker {
             if voidIsNonOptional {
                 return minArgumentCount;
             }
-            let mut i = minArgumentCount - 1;
+            let mut i = isize::try_from(minArgumentCount).unwrap() - 1;
             while i >= 0 {
-                let ty = self.getTypeAtPosition(signature, i);
+                let ty = self.getTypeAtPosition(signature, i as usize);
                 let filtered = self.filterType(ty, |checker, ty| checker.acceptsVoid(ty));
                 if self.types[filtered]
                     .get_flags()
@@ -19462,7 +24536,7 @@ impl Checker {
                 {
                     break;
                 }
-                minArgumentCount = i;
+                minArgumentCount = i as usize;
                 i -= 1;
             }
             self.signatures[signature].resolvedMinArgumentCount = Some(minArgumentCount);
@@ -19584,8 +24658,8 @@ impl Checker {
     }
 
     fn assignContextualParameterTypes(&mut self, signature: SignatureId, context: SignatureId) {
-        if !self.signatures[context].typeParameters.is_empty() {
-            if self.signatures[signature].typeParameters.is_empty() {
+        if self.signatures[context].typeParameters.is_some() {
+            if self.signatures[signature].typeParameters.is_none() {
                 self.signatures[signature].typeParameters =
                     self.signatures[context].typeParameters.clone();
             } else {
@@ -20122,10 +25196,67 @@ impl Checker {
     // checkFunctionExpressionOrObjectLiteralMethodDeferred
     // TODO:
     // checkArithmeticOperandType
-    // TODO:
-    // isReadonlyAssignmentDeclaration
-    // TODO:
-    // isReadonlySymbol
+
+    fn isReadonlyAssignmentDeclaration(&mut self, d: &BoundNode) -> bool {
+        if !matches!(d, BoundNode::CallExpr(_)) {
+            return false;
+        }
+        todo!();
+        // if (!isBindableObjectDefinePropertyCall(d)) {
+        //     return false;
+        // }
+        // const objectLitType = checkExpressionCached(d.arguments[2]);
+        // const valueType = getTypeOfPropertyOfType(objectLitType, "value" as __String);
+        // if (valueType) {
+        //     const writableProp = getPropertyOfType(objectLitType, "writable" as __String);
+        //     const writableType = writableProp && getTypeOfSymbol(writableProp);
+        //     if (!writableType || writableType === falseType || writableType === regularFalseType) {
+        //         return true;
+        //     }
+        //     // We include this definition whereupon we walk back and check the type at the declaration because
+        //     // The usual definition of `Object.defineProperty` will _not_ cause literal types to be preserved in the
+        //     // argument types, should the type be contextualized by the call itself.
+        //     if (writableProp && writableProp.valueDeclaration && isPropertyAssignment(writableProp.valueDeclaration)) {
+        //         const initializer = writableProp.valueDeclaration.initializer;
+        //         const rawOriginalType = checkExpression(initializer);
+        //         if (rawOriginalType === falseType || rawOriginalType === regularFalseType) {
+        //             return true;
+        //         }
+        //     }
+        //     return false;
+        // }
+        // const setProp = getPropertyOfType(objectLitType, "set" as __String);
+        // return !setProp;
+    }
+
+    fn isReadonlySymbol(&mut self, symbol: SymbolId) -> bool {
+        // The following symbols are considered read-only:
+        // Properties with a 'readonly' modifier
+        // Variables declared with 'const'
+        // Get accessors without matching set accessors
+        // Enum members
+        // Object.defineProperty assignments with writable false or no setter
+        // Unions and intersections of the above (unions and intersections eagerly set isReadonly on creation)
+        let symbol_flags = self.symbols[symbol].flags();
+        getCheckFlags(&self.symbols[symbol]).intersects(CheckFlags::Readonly)
+            || symbol_flags.intersects(SymbolFlags::Property)
+                && self
+                    .getDeclarationModifierFlagsFromSymbol(symbol, false)
+                    .intersects(ModifierFlags::Readonly)
+            || symbol_flags.intersects(SymbolFlags::Variable)
+                && self
+                    .getDeclarationNodeFlagsFromSymbol(symbol)
+                    .intersects(NodeFlags::Const)
+            || symbol_flags.intersects(SymbolFlags::Accessor)
+                && !symbol_flags.intersects(SymbolFlags::SetAccessor)
+            || symbol_flags.intersects(SymbolFlags::EnumMember)
+            // TODO: bad collect:
+            || self.symbols[symbol]
+                .declarations().clone()
+                .iter()
+                .any(|d| self.isReadonlyAssignmentDeclaration(d))
+    }
+
     // TODO:
     // isAssignmentToReadonlyEntity
     // TODO:
@@ -20166,8 +25297,37 @@ impl Checker {
         false
     }
 
-    // TODO:
-    // isTypeAssignableToKind
+    fn isTypeAssignableToKind(&mut self, source: TypeId, kind: TypeFlags, strict: bool) -> bool {
+        if self.types[source].get_flags().intersects(kind) {
+            return true;
+        }
+        if strict
+            && self.types[source].get_flags().intersects(
+                TypeFlags::AnyOrUnknown | TypeFlags::Void | TypeFlags::Undefined | TypeFlags::Null,
+            )
+        {
+            return false;
+        }
+
+        macro_rules! test {
+            ($test_flags:ident, $target_ty:expr) => {
+                kind.intersects(TypeFlags::$test_flags)
+                    && self.isTypeAssignableTo(source, $target_ty)
+            };
+        }
+
+        test!(NumberLike, self.numberType)
+            || test!(BigIntLike, self.bigintType)
+            || test!(StringLike, self.stringType)
+            || test!(BooleanLike, self.booleanType())
+            || test!(Void, self.voidType)
+            || test!(Never, self.neverType)
+            || test!(Null, self.nullType)
+            || test!(Undefined, self.undefinedType)
+            || test!(ESSymbol, self.esSymbolType)
+            || test!(NonPrimitive, self.nonPrimitiveType)
+    }
+
     // TODO:
     // allTypesAssignableToKind
     // TODO:
@@ -20271,7 +25431,7 @@ impl Checker {
                 // analysis because variables may have transient types in indeterminable states. Moving flowLoopStart
                 // to the top of the stack ensures all transient types are computed from a known point.
                 let saveFlowLoopStart = mem::replace(&mut self.flowLoopStart, self.flowLoopCount);
-                let saveFlowTypeCache = mem::replace(&mut self.flowTypeCache, None);
+                let saveFlowTypeCache = mem::take(&mut self.flowTypeCache);
                 let resolvedType = self.checkExpression(node.clone(), checkMode, false);
                 self.getNodeLinks_mut(node).resolvedType = Some(resolvedType);
                 self.flowTypeCache = saveFlowTypeCache;
@@ -20283,12 +25443,66 @@ impl Checker {
 
     // TODO:
     // isTypeAssertion
-    // TODO:
-    // checkDeclarationInitializer
+
+    fn checkDeclarationInitializer(
+        &mut self,
+        declaration: &BoundNode,
+        contextualType: Option<TypeId>,
+    ) -> TypeId {
+        let initializer = getEffectiveInitializer(declaration).unwrap();
+        let ty = self
+            .getQuickTypeOfExpression(initializer.clone())
+            .unwrap_or_else(|| {
+                if let Some(contextualType) = contextualType {
+                    self.checkExpressionWithContextualType(
+                        initializer,
+                        contextualType,
+                        None,
+                        CheckMode::Normal,
+                    )
+                } else {
+                    self.checkExpressionCached(initializer, None)
+                }
+            });
+
+        if let Ok(param) = Parameter::try_from(declaration.clone()) {
+            if let ast::Pat::Array(p) = param.pat() {
+                todo!();
+                //     if self.isTupleType(ty)
+                //     && !ty.target.hasRestElement
+                //     && self.getTypeReferenceArity(ty) < p.elems.len()
+                // {
+                //     return self.padTupleType(ty, param.pat());
+                // }
+            }
+        }
+        ty
+    }
+
     // TODO:
     // padTupleType
-    // TODO:
-    // widenTypeInferredFromInitializer
+
+    fn widenTypeInferredFromInitializer(&mut self, declaration: &BoundNode, ty: TypeId) -> TypeId {
+        let widened = if getCombinedNodeFlags(declaration).intersects(NodeFlags::Const)
+            || isDeclarationReadonly(declaration)
+        {
+            ty
+        } else {
+            self.getWidenedLiteralType(ty)
+        };
+        if isBoundNodeInJSFile(declaration) {
+            todo!();
+            // if (isEmptyLiteralType(widened)) {
+            //     reportImplicitAny(declaration, anyType);
+            //     return anyType;
+            // }
+            // else if (isEmptyArrayLiteralType(widened)) {
+            //     reportImplicitAny(declaration, anyArrayType);
+            //     return anyArrayType;
+            // }
+        }
+        widened
+    }
 
     fn isLiteralOfContextualType(
         &mut self,
@@ -20334,12 +25548,50 @@ impl Checker {
         false
     }
 
-    // TODO:
-    // isConstContext
-    // TODO:
-    // checkExpressionForMutableLocation
-    // TODO:
-    // checkPropertyAssignment
+    fn checkExpressionForMutableLocation(
+        &mut self,
+        node: BoundNode,
+        checkMode: Option<CheckMode>,
+        contextualType: Option<TypeId>,
+        forceTuple: bool,
+    ) -> TypeId {
+        let ty = self.checkExpression(node.clone(), checkMode, forceTuple);
+        if isConstContext(&node) {
+            self.getRegularTypeOfLiteralType(ty)
+        } else if isTypeAssertion(node.clone()) {
+            ty
+        } else {
+            let contextualType = if contextualType.is_none() {
+                self.getContextualType(node.clone(), None)
+            } else {
+                contextualType
+            };
+            let contextualType = self.instantiateContextualType(contextualType, node, None);
+            self.getWidenedLiteralLikeTypeForContextualType(ty, contextualType)
+        }
+    }
+
+    fn checkPropertyAssignment(
+        &mut self,
+        node: &Rc<KeyValueProp>,
+        checkMode: Option<CheckMode>,
+    ) -> TypeId {
+        // Do not use hasDynamicName here, because that returns false for well known symbols.
+        // We want to perform checkComputedPropertyName for all computed properties, including
+        // well known symbols.
+        if let ast::PropName::Computed(n) = &node.key {
+            todo!();
+            // self.checkComputedPropertyName(node.name);
+        }
+
+        self.checkExpressionForMutableLocation(
+            node.value.bind(node.clone().into()),
+            checkMode,
+            None,
+            false,
+        )
+    }
+
     // TODO:
     // checkObjectLiteralMethod
 
@@ -20356,7 +25608,7 @@ impl Checker {
                     self.getSingleSignature(ty, SignatureKind::Construct, true);
                 let signature = callSignature.or(constructSignature);
                 if let Some(signature) = signature {
-                    if !self.signatures[signature].typeParameters.is_empty() {
+                    if self.signatures[signature].typeParameters.is_some() {
                         todo!();
                         // let contextualType = getApparentTypeOfContextualType(node as Expression, ContextFlags.NoConstraints);
                         // if (contextualType) {
@@ -20425,14 +25677,96 @@ impl Checker {
     // hasTypeParameterByName
     // TODO:
     // getUniqueTypeParameterName
-    // TODO:
-    // getReturnTypeOfSingleNonGenericCallSignature
+
+    fn getReturnTypeOfSingleNonGenericCallSignature(&mut self, funcType: TypeId) -> Option<TypeId> {
+        let signature = self.getSingleCallSignature(funcType);
+        if let Some(sig) = signature {
+            if !self.signatures[sig].typeParameters.is_some() {
+                return Some(self.getReturnTypeOfSignature(sig));
+            }
+        }
+        None
+    }
+
     // TODO:
     // getReturnTypeOfSingleNonGenericSignatureOfCallChain
-    // TODO:
-    // getTypeOfExpression
-    // TODO:
-    // getQuickTypeOfExpression
+
+    /**
+     * Returns the type of an expression. Unlike checkExpression, this function is simply concerned
+     * with computing the type and may not fully check all contained sub-expressions for errors.
+     */
+    fn getTypeOfExpression(&mut self, node: BoundNode) -> TypeId {
+        // Don't bother caching types that require no flow analysis and are quick to compute.
+        let quickType = self.getQuickTypeOfExpression(node.clone());
+        if let Some(quickType) = quickType {
+            return quickType;
+        }
+        // If a type has been cached for the node, return it.
+        if self
+            .node_data(node.clone())
+            .flags
+            .intersects(NodeFlags::TypeCached)
+        {
+            let cachedType = self.flowTypeCache.get(&node);
+            if let Some(cachedType) = cachedType {
+                return *cachedType;
+            }
+        }
+        let startInvocationCount = self.flowInvocationCount;
+        let ty = self.checkExpression(node.clone(), None, false);
+        // If control flow analysis was required to determine the type, it is worth caching.
+        if self.flowInvocationCount != startInvocationCount {
+            self.flowTypeCache.insert(node.clone(), ty);
+            self.node_data_mut(node.clone()).flags |= NodeFlags::TypeCached;
+        }
+        return ty;
+    }
+
+    fn getQuickTypeOfExpression(&mut self, node: BoundNode) -> Option<TypeId> {
+        // TODO: jsdoc:
+        // let mut expr = skipParenthesesOfNode(node, /*excludeJSDocTypeAssertions*/ true);
+        // if (isJSDocTypeAssertion(expr)) {
+        //     let ty = getJSDocTypeAssertionType(expr);
+        //     if (!isConstTypeReference(ty)) {
+        //         return getTypeFromTypeNode(ty);
+        //     }
+        // }
+        // expr = skipParenthesesOfNode(node);
+        let expr = skipParenthesesOfNode(node.clone());
+        // Optimize for the common case of a call to a function with a single non-generic call
+        // signature where we can just fetch the return type without checking the arguments.
+        if matches!(&expr, BoundNode::CallExpr(c) if !matches!(c.callee, ast::ExprOrSuper::Super(_)))
+            && !isRequireCall(&expr.clone().into(), true)
+            && !self.isSymbolOrSymbolForCall(&expr)
+        {
+            // let ty = if isCallChain(expr) {
+            //     self.getReturnTypeOfSingleNonGenericSignatureOfCallChain(expr)
+            // } else {
+            //     self.getReturnTypeOfSingleNonGenericCallSignature(checkNonNullExpression(
+            //         expr.expression,
+            //     ))
+            // };
+            // TOOD: call chains
+            let callee = &unwrap_as!(&expr, BoundNode::CallExpr(e), e).callee;
+            let ty = self.checkNonNullExpression(callee.bind(expr.clone()));
+            let ty = self.getReturnTypeOfSingleNonGenericCallSignature(ty);
+            if ty.is_some() {
+                return ty;
+            }
+        } else if matches!(&expr, BoundNode::TsTypeAssertion(e) if !isConstTypeReference(&e.type_ann.clone().into()))
+            || matches!(expr, BoundNode::TsAsExpr(e) if !isConstTypeReference(&e.type_ann.clone().into()))
+        {
+            todo!();
+            // return getTypeFromTypeNode((expr as TypeAssertion).ty);
+        } else if matches!(
+            node,
+            BoundNode::Number(_) | BoundNode::Str(_) | BoundNode::Bool(_)
+        ) {
+            return Some(self.checkExpression(node, None, false));
+        }
+        None
+    }
+
     // TODO:
     // getContextFreeTypeOfExpression
 
@@ -20491,10 +25825,14 @@ impl Checker {
             }
             BoundNode::Null(_) => self.nullWideningType,
             // TODO:
-            // BoundNode::NoSubstitutionTemplateLiteral(_) | BoundNode::Str(_) => {
+            // BoundNode::NoSubstitutionTemplateLiteral(_) => {
             //     todo!();
             //     // self.getFreshTypeOfLiteralType(getStringLiteralType((node as StringLiteralLike).text))
             // }
+            BoundNode::Str(n) => {
+                let ty = self.getStringLiteralType(&n.value);
+                self.getFreshTypeOfLiteralType(ty)
+            }
             BoundNode::Number(_) => {
                 todo!();
                 // checkGrammarNumericLiteral(node as NumericLiteral);
@@ -20525,10 +25863,7 @@ impl Checker {
                 todo!();
                 // self.checkArrayLiteral(node as ArrayLiteralExpression, checkMode, forceTuple)
             }
-            BoundNode::ObjectLit(_) => {
-                todo!();
-                // self.checkObjectLiteral(node as ObjectLiteralExpression, checkMode)
-            }
+            BoundNode::ObjectLit(n) => self.checkObjectLiteral(n, checkMode),
             BoundNode::TsQualifiedName(_) => {
                 todo!();
                 // self.checkQualifiedName(node as QualifiedName, checkMode)
@@ -20541,17 +25876,15 @@ impl Checker {
                     self.checkPropertyAccessExpression(node.clone(), m.clone(), checkMode)
                 }
             }
-            BoundNode::CallExpr(_) => {
-                todo!();
-                // if (node as CallExpression).expression.kind == SyntaxKind.ImportKeyword {
-                //     return self.checkImportCallExpression(node as ImportCall);
-                // }
-                // self.checkCallExpression(node as CallExpression, checkMode)
+            BoundNode::CallExpr(c) => {
+                if matches!(&c.callee, ast::ExprOrSuper::Expr(ast::Expr::Ident(i)) if i.sym == js_word!("import"))
+                {
+                    todo!();
+                    // return self.checkImportCallExpression(node as ImportCall);
+                }
+                self.checkCallExpression(node, checkMode)
             }
-            BoundNode::NewExpr(_) => {
-                todo!();
-                // self.checkCallExpression(node as CallExpression, checkMode)
-            }
+            BoundNode::NewExpr(_) => self.checkCallExpression(node, checkMode),
             // TODO:
             // BoundNode::TaggedTemplateExpression(_) => {
             //     todo!();
@@ -21193,8 +26526,17 @@ impl Checker {
     // issueMemberSpecificError
     // TODO:
     // checkBaseTypeAccessibility
-    // TODO:
-    // getTargetSymbol
+
+    fn getTargetSymbol(&self, s: SymbolId) -> Option<SymbolId> {
+        // if symbol is instantiated its flags are not copied from the 'target'
+        // so we'll need to get back original 'target' symbol to work with correct set of flags
+        if getCheckFlags(&self.symbols[s]).intersects(CheckFlags::Instantiated) {
+            self.symbols[s].as_transient_symbol().symbol_links.target
+        } else {
+            Some(s)
+        }
+    }
+
     // TODO:
     // getClassOrInterfaceDeclarationsOfSymbol
     // TODO:
@@ -21277,14 +26619,15 @@ impl Checker {
     // isDuplicatedCommonJSExport
 
     fn checkSourceElement(&mut self, node: Option<BoundNode>) {
-        if let Some(node) = node {
-            dbg!(node);
-            todo!();
-            // let  saveCurrentNode = mem::replace(&mut self.currentNode, Some(node));
-            // self.instantiationCount = 0;
-            // self.checkSourceElementWorker(node);
-            // self.currentNode = saveCurrentNode;
-        }
+        // TODO: checking:
+        // if let Some(node) = node {
+        //     dbg!(node);
+        //     todo!();
+        //     // let  saveCurrentNode = mem::replace(&mut self.currentNode, Some(node));
+        //     // self.instantiationCount = 0;
+        //     // self.checkSourceElementWorker(node);
+        //     // self.currentNode = saveCurrentNode;
+        // }
     }
 
     // TODO:
@@ -21797,11 +27140,19 @@ impl Checker {
     // TODO:
     // getExportSpecifierLocalTargetSymbol
 
-    fn getTypeOfNode(&mut self, node: BoundNode) -> TypeId {
+    fn getTypeOfNode(&mut self, mut node: BoundNode) -> TypeId {
+        // 'flatten' binding idents to simplify logic:
+        if let Some(p @ BoundNode::BindingIdent(_)) = node.parent() {
+            node = p;
+        }
+
         // TODO:
         // if (isSourceFile(node) && !isExternalModule(node)) {
         //     return errorType;
         // }
+        if matches!(node, BoundNode::Script(_) | BoundNode::Module(_)) {
+            todo!("see above");
+        }
 
         // TODO:
         // if (node.flags & NodeFlags.InWithStatement) {
@@ -21809,62 +27160,72 @@ impl Checker {
         //     return errorType;
         // }
 
-        // TODO:
-        // let classDecl = tryGetClassImplementingOrExtendingExpressionWithTypeArguments(node);
-        // let classType = classDecl && getDeclaredTypeOfClassOrInterface(getSymbolOfNode(classDecl.class));
-        // if isPartOfTypeNode(node) {
-        //     let typeFromTypeNode = getTypeFromTypeNode(node as TypeNode);
-        //     return classType ? getTypeWithThisArgument(typeFromTypeNode, classType.thisType) : typeFromTypeNode;
-        // }
-
-        // TODO:
-        // if isExpressionNode(node) {
-        //     return getRegularTypeOfExpression(node as Expression);
-        // }
-
-        // TODO:
-        // if classType && !classDecl.isImplements {
-        //     // A SyntaxKind.ExpressionWithTypeArguments is considered a type node, except when it occurs in the
-        //     // extends clause of a class. We handle that case here.
-        //     let baseType = firstOrUndefined(getBaseTypes(classType));
-        //     return baseType ? getTypeWithThisArgument(baseType, classType.thisType) : errorType;
-        // }
-
-        // TODO:
-        // if isTypeDeclaration(node) {
-        //     // In this case, we call getSymbolOfNode instead of getSymbolAtLocation because it is a declaration
-        //     let symbol = getSymbolOfNode(node);
-        //     return getDeclaredTypeOfSymbol(symbol);
-        // }
-
-        // TODO:
-        // if isTypeDeclarationName(node) {
-        //     let symbol = getSymbolAtLocation(node);
-        //     return symbol ? getDeclaredTypeOfSymbol(symbol) : errorType;
-        // }
-
-        if let Ok(decl) = Declaration::try_from(node.clone()) {
-            todo!();
-            // let symbol = self.getSymbolOfDeclaration(decl);
-            // return self.getTypeOfSymbol(symbol);
-        } else {
-            dbg!(node);
-            todo!();
+        let classDecl = tryGetClassImplementingOrExtendingExpressionWithTypeArguments(&node);
+        let classType = classDecl.as_ref().map(|c| {
+            let sym = self.getSymbolOfNode(c.class.clone()).unwrap();
+            self.getDeclaredTypeOfClassOrInterface(sym)
+        });
+        if isPartOfTypeNode(&node) {
+            let typeFromTypeNode = self.getTypeFromTypeNode(node);
+            return if let Some(classType) = classType {
+                let thisType = self.types[classType].unwrap_as_interface_type().thisType;
+                self.getTypeWithThisArgument(typeFromTypeNode, thisType, false)
+            } else {
+                typeFromTypeNode
+            };
         }
 
-        // TODO:
-        // if isDeclarationNameOrImportPropertyName(node) {
-        //     let symbol = getSymbolAtLocation(node);
-        //     if symbol {
-        //         return getTypeOfSymbol(symbol);
-        //     }
-        //     return errorType;
-        // }
+        if isExpressionNode(&node) {
+            return self.getRegularTypeOfExpression(node);
+        }
 
-        // TODO:
-        // if isBindingPattern(node) {
-        //     return getTypeForVariableLikeDeclaration(node.parent, /*includeOptionality*/ true) || errorType;
-        // }
+        if let Some(classType) = classType {
+            if !classDecl.unwrap().isImplements {
+                // A SyntaxKind.ExpressionWithTypeArguments is considered a type node, except when it occurs in the
+                // extends clause of a class. We handle that case here.
+                return if let Some(baseType) = self.getBaseTypes(classType).first() {
+                    let thisType = self.types[classType].unwrap_as_interface_type().thisType;
+                    self.getTypeWithThisArgument(*baseType, thisType, false)
+                } else {
+                    self.errorType
+                };
+            }
+        }
+
+        if isTypeDeclaration(&node) {
+            // In this case, we call getSymbolOfNode instead of getSymbolAtLocation because it is a declaration
+            let symbol = self.getSymbolOfNode(node).unwrap();
+            return self.getDeclaredTypeOfSymbol(symbol);
+        }
+
+        if isTypeDeclarationName(&node) {
+            let symbol = self.getSymbolAtLocation(node, false);
+            return if let Some(symbol) = symbol {
+                self.getDeclaredTypeOfSymbol(symbol)
+            } else {
+                todo!();
+                self.errorType
+            };
+        }
+
+        if isDeclaration(&node) {
+            // In this case, we call getSymbolOfNode instead of getSymbolAtLocation because it is a declaration
+            let symbol = self.getSymbolOfNode(node).unwrap();
+            return self.getTypeOfSymbol(symbol);
+        }
+
+        if isDeclarationNameOrImportPropertyName(node.clone()) {
+            let symbol = self.getSymbolAtLocation(node, false);
+            if let Some(symbol) = symbol {
+                return self.getTypeOfSymbol(symbol);
+            }
+            return self.errorType;
+        }
+
+        if isBindingPattern(&node) {
+            todo!();
+            // return getTypeForVariableLikeDeclaration(node.parent, /*includeOptionality*/ true) || errorType;
+        }
 
         // TODO:
         // if isInRightSideOfImportOrExportAssignment(node as Identifier) {
@@ -21875,10 +27236,13 @@ impl Checker {
         //     }
         // }
 
-        // TODO:
-        // if isMetaProperty(node.parent) && node.parent.keywordToken == node.kind {
-        //     return checkMetaPropertyKeyword(node.parent);
-        // }
+        if let BoundNode::MetaPropExpr(p) = node {
+            todo!();
+            // return checkMetaPropertyKeyword(node.parent);
+        }
+
+        // dbg!(&node, node.parent());
+        // todo!();
 
         self.errorType
     }
@@ -21887,8 +27251,15 @@ impl Checker {
     // getTypeOfAssignmentPattern
     // TODO:
     // getPropertySymbolOfDestructuringAssignment
-    // TODO:
-    // getRegularTypeOfExpression
+
+    fn getRegularTypeOfExpression(&mut self, mut expr: BoundNode) -> TypeId {
+        if isRightSideOfQualifiedNameOrPropertyAccess(&expr) {
+            expr = expr.parent().unwrap();
+        }
+        let ty = self.getTypeOfExpression(expr);
+        self.getRegularTypeOfLiteralType(ty)
+    }
+
     // TODO:
     // getParentTypeOfClassElement
     // TODO:
@@ -22091,6 +27462,18 @@ impl Checker {
             None,
             None,
         ));
+        self.stringNumberSymbolType = Some(self.getUnionType(
+            &[self.stringType, self.numberType, self.esSymbolType],
+            None,
+            None,
+            None,
+            None,
+        ));
+        self.keyofConstraintType = if self.keyofStringsOnly {
+            Some(self.stringType)
+        } else {
+            self.stringNumberSymbolType
+        };
 
         // Setup global builtins
         {
@@ -22170,9 +27553,14 @@ impl Checker {
 
         self.autoArrayType = Some(self.createArrayType(self.autoType, false));
         if self.autoArrayType == Some(self.emptyObjectType) {
-            todo!();
             // autoArrayType is used as a marker, so even if global Array type is not defined, it needs to be a unique type
-            // autoArrayType = createAnonymousType(undefined, emptySymbols, emptyArray, emptyArray, emptyArray);
+            self.autoArrayType = Some(self.createAnonymousType(
+                None,
+                self.emptySymbols,
+                Default::default(),
+                Default::default(),
+                Default::default(),
+            ));
         }
 
         self.globalReadonlyArrayType =
@@ -22186,7 +27574,7 @@ impl Checker {
                 // anyArrayType
             },
         );
-        self.globalThisType = self.getGlobalTypeOrUndefined("ThisType" .into(),  1) /*as GenericType*/;
+        self.globalThisType = self.getGlobalTypeOrUndefined("ThisType".into(),  1) /*as GenericType*/;
 
         // if (augmentations) {
         //     // merge _nonglobal_ module augmentations.
@@ -22406,6 +27794,60 @@ impl Checker {
     // filterPrimitivesIfContainsNonPrimitive
     // TODO:
     // findMatchingDiscriminantType
+
+    pub fn getDeclarationModifierFlagsFromSymbol(
+        &mut self,
+        s: SymbolId,
+        isWrite: bool,
+    ) -> ModifierFlags {
+        if let Some(valueDeclaration) = self.symbols[s].valueDeclaration() {
+            let declaration = if isWrite {
+                self.symbols[s]
+                    .declarations()
+                    .iter()
+                    .find(|d| match d {
+                        BoundNode::ClassMethod(m) => m.kind == ast::MethodKind::Setter,
+                        BoundNode::PrivateMethod(m) => m.kind == ast::MethodKind::Setter,
+                        BoundNode::SetterProp(_) | BoundNode::TsSetterSignature(_) => true,
+                        _ => false,
+                    })
+                    .unwrap_or(valueDeclaration)
+            } else {
+                valueDeclaration
+            };
+            let flags = getCombinedModifierFlags(declaration);
+            let parent_sym = self.symbols[s].parent();
+            return if parent_sym.is_some()
+                && self.symbols[parent_sym.unwrap()]
+                    .flags()
+                    .intersects(SymbolFlags::Class)
+            {
+                flags
+            } else {
+                flags & !ModifierFlags::AccessibilityModifier
+            };
+        }
+        if getCheckFlags(&self.symbols[s]).intersects(CheckFlags::Synthetic) {
+            let checkFlags = getCheckFlags(&self.symbols[s]);
+            let accessModifier = if checkFlags.intersects(CheckFlags::ContainsPrivate) {
+                ModifierFlags::Private
+            } else if checkFlags.intersects(CheckFlags::ContainsPublic) {
+                ModifierFlags::Public
+            } else {
+                ModifierFlags::Protected
+            };
+            let staticModifier = if checkFlags.intersects(CheckFlags::ContainsStatic) {
+                ModifierFlags::Static
+            } else {
+                ModifierFlags::empty()
+            };
+            return accessModifier | staticModifier;
+        }
+        if self.symbols[s].flags().intersects(SymbolFlags::Prototype) {
+            return ModifierFlags::Public | ModifierFlags::Static;
+        }
+        ModifierFlags::empty()
+    }
 }
 
 bitflags! {
@@ -22746,7 +28188,6 @@ fn getIsDeferredContext(location: &BoundNode, lastLocation: &Option<BoundNode>) 
                 BoundNode::PrivateMethod(n) => n.key.bind(location.clone()),
                 BoundNode::ClassMethod(n) => n.key.bind(location.clone()),
                 BoundNode::MethodProp(n) => n.key.bind(location.clone()),
-                BoundNode::Constructor(n) => n.key.bind(location.clone()),
                 BoundNode::GetterProp(n) => n.key.bind(location.clone()),
                 BoundNode::SetterProp(n) => n.key.bind(location.clone()),
                 BoundNode::ClassProp(n) if !n.is_static => n.key.bind(location.clone()),
@@ -23031,12 +28472,6 @@ fn isMethodAccessForCall(mut node: BoundNode) -> bool {
     }
 }
 
-fn getIndexSymbolFromSymbolTable(symbolTable: &SymbolTable) -> Option<SymbolId> {
-    symbolTable
-        .get(&JsWord::from(InternalSymbolName::Index))
-        .copied()
-}
-
 /**
  * A type is free of this references if it's the any, string, number, boolean, symbol, or void keyword, a string
  * literal type, an array with an element type that is free of this references, or a type reference that is
@@ -23170,39 +28605,8 @@ fn isDuplicatedCommonJSExport(declarations: &Vec<BoundNode>) -> bool {
     // declarations.iter().all(|d|isBoundNodeInJSFile(&d) && isAccessExpression(d) && (isExportsIdentifier(d.expression) || isModuleExportsAccessExpression(d.expression)))
 }
 
-fn isNumericLiteralName(name: &JsWord) -> bool {
-    //todo:
-    false
-    // The intent of numeric names is that
-    //     - they are names with text in a numeric form, and that
-    //     - setting properties/indexing with them is always equivalent to doing so with the numeric literal 'numLit',
-    //         acquired by applying the abstract 'ToNumber' operation on the name's text.
-    //
-    // The subtlety is in the latter portion, as we cannot reliably say that anything that looks like a numeric literal is a numeric name.
-    // In fact, it is the case that the text of the name must be equal to 'ToString(numLit)' for this to hold.
-    //
-    // Consider the property name '"0xF00D"'. When one indexes with '0xF00D', they are actually indexing with the value of 'ToString(0xF00D)'
-    // according to the ECMAScript specification, so it is actually as if the user indexed with the string '"61453"'.
-    // Thus, the text of all numeric literals equivalent to '61543' such as '0xF00D', '0xf00D', '0170015', etc. are not valid numeric names
-    // because their 'ToString' representation is not equal to their original text.
-    // This is motivated by ECMA-262 sections 9.3.1, 9.8.1, 11.1.5, and 11.2.1.
-    //
-    // Here, we test whether 'ToString(ToNumber(name))' is exactly equal to 'name'.
-    // The '+' prefix operator is equivalent here to applying the abstract ToNumber operation.
-    // Applying the 'toString()' method on a number gives us the abstract ToString operation on a number.
-    //
-    // Note that this accepts the values 'Infinity', '-Infinity', and 'NaN', and that this is intentional.
-    // This is desired behavior, because when indexing with them as numeric entities, you are indexing
-    // with the strings '"Infinity"', '"-Infinity"', and '"NaN"' respectively.
-    // return (+name).toString() === name;
-}
-
 fn isLateBoundName(name: &JsWord) -> bool {
-    //  TODO:
-    false
-    // return (name as string).charCodeAt(0) === CharacterCodes._ &&
-    //     (name as string).charCodeAt(1) === CharacterCodes._ &&
-    //     (name as string).charCodeAt(2) === CharacterCodes.at;
+    name.starts_with("__@")
 }
 
 fn getTupleElementFlags(node: &Rc<ast::TsTupleElement>, parent: &BoundNode) -> ElementFlags {
@@ -23271,11 +28675,11 @@ fn getTypeReferenceName(node: &BoundNode) -> Option<BoundNode> {
             return Some(t.type_name.bind(node.clone()));
         }
         BoundNode::TsExprWithTypeArgs(e) => {
-            // We only support expressions that are simple qualified names. For other
-            // expressions this produces None.
-            if isEntityNameExpression(&e.expr.clone().into()) {
-                return Some(e.expr.bind(node.clone()));
-            }
+            // We only support expressions that are simple qualified names.
+            // TODO: this should never fail, as our definition of TsExprWithTypeArgs
+            // can only contain an EntityNameExpression for its `expr`.
+            debug_assert!(isEntityNameExpression(&e.expr.clone().into()));
+            return Some(e.expr.bind(node.clone()));
         }
         _ => {}
     }
@@ -23346,6 +28750,19 @@ struct RecursionIdentity(u64);
 struct TupleTypeKey(u64);
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
+struct IntersectionTypeKey(u64);
+
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+struct SubstitutionTypeKey(u64);
+
+impl SubstitutionTypeKey {
+    pub fn new(base_type: TypeId, substitute: TypeId) -> Self {
+        // TODO: it may not be necessary to hash '>':
+        Self(hash![base_type, '>', substitute])
+    }
+}
+
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
 struct UnionTypeKey(u64);
 
 fn typePredicateKindsMatch(a: &TypePredicate, b: &TypePredicate) -> bool {
@@ -23367,6 +28784,123 @@ fn isDestructuringAssignmentTarget(parent: &BoundNode) -> bool {
 /// `types` should be sorted
 fn containsType(types: &[TypeId], ty: TypeId) -> bool {
     types.binary_search(&ty).is_ok()
+}
+
+enum IntrinsicTypeKind {
+    Uppercase,
+    Lowercase,
+    Capitalize,
+    Uncapitalize,
+}
+
+fn get_intrinsic_type_kind(name: &JsWord) -> Option<IntrinsicTypeKind> {
+    if name == "Uppercase" {
+        Some(IntrinsicTypeKind::Uppercase)
+    } else if name == "Lowercase" {
+        Some(IntrinsicTypeKind::Lowercase)
+    } else if name == "Capitalize" {
+        Some(IntrinsicTypeKind::Capitalize)
+    } else if name == "Uncapitalize" {
+        Some(IntrinsicTypeKind::Uncapitalize)
+    } else {
+        None
+    }
+}
+
+/// `types` should be sorted
+/// Returns `true` if the type was inserted.
+fn insertType(types: &mut Vec<TypeId>, ty: TypeId) -> bool {
+    match types.binary_search(&ty) {
+        Ok(_) => false,
+        Err(index) => {
+            types.insert(index, ty);
+            true
+        }
+    }
+}
+
+fn clearCachedInferences(inferences: &mut Vec<InferenceInfo>) {
+    for inference in inferences {
+        if !inference.isFixed {
+            inference.inferredType = None;
+        }
+    }
+}
+
+fn createOriginType(flags: TypeFlags) -> TypeBase {
+    TypeBase::new(flags, None)
+}
+
+fn isConstContext(node: &BoundNode) -> bool {
+    if let Some(parent) = node.parent() {
+        match parent {
+            // TODO: jsdoc:
+            // isJSDocTypeAssertion(parent) => isConstTypeReference(getJSDocTypeAssertionType(parent))
+            BoundNode::TsTypeAssertion(n) => isConstTypeReference(&Node::from(n.type_ann.clone())),
+            BoundNode::TsAsExpr(n) => isConstTypeReference(&Node::from(n.type_ann.clone())),
+            BoundNode::ParenExpr(_) | BoundNode::ArrayLit(_) | BoundNode::SpreadElement(_) => {
+                isConstContext(&parent)
+            }
+            BoundNode::Ident(i) if matches!(i.parent, Some(BoundNode::ObjectLit(_))) => {
+                unreachable!("shorthand props are removed by normalization")
+            }
+            BoundNode::KeyValueProp(n) => isConstContext(n.parent.as_ref().unwrap()),
+            BoundNode::TplElement(n) => isConstContext(n.parent.as_ref().unwrap()),
+            _ => false,
+        }
+    } else {
+        false
+    }
+}
+
+fn isTypeAssertion(mut node: BoundNode) -> bool {
+    // TODO: jsdoc
+    // node = skipParenthesesOfNode(node, /*excludeJSDocTypeAssertions*/ true);
+    // return node.kind === SyntaxKind.TypeAssertionExpression ||
+    //     node.kind === SyntaxKind.AsExpression ||
+    //     isJSDocTypeAssertion(node);
+    node = skipParenthesesOfNode(node);
+    matches!(node, BoundNode::TsTypeAssertion(_) | BoundNode::TsAsExpr(_))
+}
+
+fn isInConstructorArgumentInitializer(node: BoundNode, constructorDecl: &BoundNode) -> bool {
+    findAncestor(Some(node), |n| {
+        if isFunctionLikeDeclaration(n) {
+            None
+        } else {
+            Some(
+                matches!(
+                    n,
+                    BoundNode::Param(_)
+                        | BoundNode::ParamWithoutDecorators(_)
+                        | BoundNode::TsAmbientParam(_)
+                        | BoundNode::TsParamProp(_)
+                ) && n.parent().as_ref() == Some(constructorDecl),
+            )
+        }
+    })
+    .is_some()
+}
+
+fn isDeclarationWithExplicitTypeAnnotation(node: &Node) -> bool {
+    matches!(
+        node,
+        Node::VarDeclarator(_)
+            | Node::KeyValueProp(_)
+            | Node::TsPropertySignature(_)
+            | Node::Param(_)
+            | Node::ParamWithoutDecorators(_)
+            | Node::TsAmbientParam(_)
+            | Node::TsParamProp(_)
+    ) && (getEffectiveTypeAnnotationNode(node).is_some()
+        || isNodeInJSFile(node)
+            && if let Some(init) = getInitializer(node) {
+                todo!();
+                // isFunctionExpressionOrArrowFunction(init)
+                //     && getEffectiveReturnTypeNode(&init).is_some()
+            } else {
+                false
+            })
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

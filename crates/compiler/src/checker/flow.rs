@@ -10,7 +10,7 @@ fn getTypeFromFlowType(flowType: &FlowType) -> TypeId {
 impl Checker {
     pub fn getFlowTypeOfReference(
         &mut self,
-        reference: BoundNode,
+        reference: &BoundNode,
         declaredType: TypeId,
         initialType: TypeId,
         flowContainer: Option<BoundNode>,
@@ -30,12 +30,12 @@ impl Checker {
         let reference_flow = self.node_data(reference.clone()).flowNode.unwrap();
         let evolvedType = getTypeFromFlowType(&getTypeAtFlowNode(
             self,
-            reference.clone(),
+            reference,
             declaredType,
             initialType,
             flowContainer,
-            reference_flow,
             &mut flowDepth,
+            reference_flow,
         ));
         self.sharedFlowCount = sharedFlowStart;
         // When the reference is 'x' in an 'x.length', 'x.push(value)', 'x.unshift(value)' or x[n] = value' operation,
@@ -84,13 +84,13 @@ impl Checker {
 
         fn getTypeAtFlowNode(
             checker: &mut Checker,
-            reference: BoundNode,
+            reference: &BoundNode,
             _declaredType: TypeId,
             initialType: TypeId,
             flowContainer: Option<BoundNode>,
+            flowDepth: &mut u16,
 
             mut flow: FlowNodeId,
-            flowDepth: &mut u16,
         ) -> FlowType {
             if *flowDepth == 2000 {
                 todo!();
@@ -120,13 +120,22 @@ impl Checker {
                     todo!();
                 }
                 let ty = match &checker.flow_nodes[flow].kind {
-                    FlowNodeKind::FlowAssignment(_) => {
-                        todo!();
-                        // ty = getTypeAtFlowAssignment(flow as FlowAssignment);
-                        // if ty.is_none() {
-                        //     flow = (flow as FlowAssignment).antecedent;
-                        //     continue;
-                        // }
+                    FlowNodeKind::FlowAssignment(f) => {
+                        let antecedent = f.antecedent;
+                        if let Some(ty) = getTypeAtFlowAssignment(
+                            checker,
+                            reference,
+                            _declaredType,
+                            initialType,
+                            &flowContainer,
+                            flowDepth,
+                            flow,
+                        ) {
+                            ty
+                        } else {
+                            flow = antecedent;
+                            continue;
+                        }
                     }
                     FlowNodeKind::FlowCall(_) => {
                         todo!();
@@ -186,7 +195,7 @@ impl Checker {
                             }
                         }
                         // At the top of the flow we have the initial type.
-                        initialType
+                        FlowType::Type(initialType)
                     }
                     FlowNodeKind::None => {
                         todo!();
@@ -203,7 +212,7 @@ impl Checker {
                     // sharedFlowCount += 1;
                 }
                 *flowDepth -= 1;
-                return FlowType::Type(ty);
+                return ty;
             }
         }
 
@@ -214,55 +223,104 @@ impl Checker {
         //         getAssignedType(node), reference);
         // }
 
-        // function getTypeAtFlowAssignment(flow: FlowAssignment) {
-        //     const node = flow.node;
-        //     // Assignments only narrow the computed type if the declared type is a union type. Thus, we
-        //     // only need to evaluate the assigned type if the declared type is a union type.
-        //     if (isMatchingReference(reference, node)) {
-        //         if (!isReachableFlowNode(flow)) {
-        //             return unreachableNeverType;
-        //         }
-        //         if (getAssignmentTargetKind(node) === AssignmentKind.Compound) {
-        //             const flowType = getTypeAtFlowNode(flow.antecedent);
-        //             return createFlowType(getBaseTypeOfLiteralType(getTypeFromFlowType(flowType)), isIncomplete(flowType));
-        //         }
-        //         if (declaredType === autoType || declaredType === autoArrayType) {
-        //             if (isEmptyArrayAssignment(node)) {
-        //                 return getEvolvingArrayType(neverType);
-        //             }
-        //             const assignedType = getWidenedLiteralType(getInitialOrAssignedType(flow));
-        //             return isTypeAssignableTo(assignedType, declaredType) ? assignedType : anyArrayType;
-        //         }
-        //         if (declaredType.flags & TypeFlags.Union) {
-        //             return getAssignmentReducedType(declaredType as UnionType, getInitialOrAssignedType(flow));
-        //         }
-        //         return declaredType;
-        //     }
-        //     // We didn't have a direct match. However, if the reference is a dotted name, this
-        //     // may be an assignment to a left hand part of the reference. For example, for a
-        //     // reference 'x.y.z', we may be at an assignment to 'x.y' or 'x'. In that case,
-        //     // return the declared type.
-        //     if (containsMatchingReference(reference, node)) {
-        //         if (!isReachableFlowNode(flow)) {
-        //             return unreachableNeverType;
-        //         }
-        //         // A matching dotted name might also be an expando property on a function *expression*,
-        //         // in which case we continue control flow analysis back to the function's declaration
-        //         if (isVariableDeclaration(node) && (isInJSFile(node) || isVarConst(node))) {
-        //             const init = getDeclaredExpandoInitializer(node);
-        //             if (init && (init.kind === SyntaxKind.FunctionExpression || init.kind === SyntaxKind.ArrowFunction)) {
-        //                 return getTypeAtFlowNode(flow.antecedent);
-        //             }
-        //         }
-        //         return declaredType;
-        //     }
-        //     // for (const _ in ref) acts as a nonnull on ref
-        //     if (isVariableDeclaration(node) && node.parent.parent.kind === SyntaxKind.ForInStatement && isMatchingReference(reference, node.parent.parent.expression)) {
-        //         return getNonNullableTypeIfNeeded(getTypeFromFlowType(getTypeAtFlowNode(flow.antecedent)));
-        //     }
-        //     // Assignment doesn't affect reference
-        //     return undefined;
-        // }
+        fn getTypeAtFlowAssignment(
+            checker: &mut Checker,
+            reference: &BoundNode,
+            declaredType: TypeId,
+            initialType: TypeId,
+            flowContainer: &Option<BoundNode>,
+            flowDepth: &mut u16,
+
+            flow: FlowNodeId,
+        ) -> Option<FlowType> {
+            debug_assert!(matches!(
+                &checker.flow_nodes[flow].kind,
+                FlowNodeKind::FlowAssignment(_)
+            ));
+            let node = unwrap_as!(
+                &checker.flow_nodes[flow].kind,
+                FlowNodeKind::FlowAssignment(a),
+                a
+            )
+            .node
+            .clone();
+            // Assignments only narrow the computed type if the declared type is a union type. Thus, we
+            // only need to evaluate the assigned type if the declared type is a union type.
+            if checker.isMatchingReference(reference, &node) {
+                if !checker.isReachableFlowNode(flow) {
+                    return Some(FlowType::Type(checker.unreachableNeverType));
+                }
+                if getAssignmentTargetKind(node.clone()) == AssignmentKind::Compound {
+                    todo!();
+                    // let flowType = getTypeAtFlowNode(flow.antecedent);
+                    // return createFlowType(getBaseTypeOfLiteralType(getTypeFromFlowType(flowType)), isIncomplete(flowType));
+                }
+                if declaredType == checker.autoType || declaredType == checker.autoArrayType() {
+                    todo!();
+                    // if isEmptyArrayAssignment(node) {
+                    //     return getEvolvingArrayType(checker.neverType);
+                    // }
+                    // let assignedType = getWidenedLiteralType(getInitialOrAssignedType(flow));
+                    // return if isTypeAssignableTo(assignedType, declaredType) {assignedType}else{checker.anyArrayType};
+                }
+                if checker.types[declaredType]
+                    .get_flags()
+                    .intersects(TypeFlags::Union)
+                {
+                    todo!();
+                    // return getAssignmentReducedType(declaredType as UnionType, getInitialOrAssignedType(flow));
+                }
+                return Some(FlowType::Type(declaredType));
+            }
+            // We didn't have a direct match. However, if the reference is a dotted name, this
+            // may be an assignment to a left hand part of the reference. For example, for a
+            // reference 'x.y.z', we may be at an assignment to 'x.y' or 'x'. In that case,
+            // return the declared type.
+            if checker.containsMatchingReference(reference.clone(), &node) {
+                if !checker.isReachableFlowNode(flow) {
+                    return Some(FlowType::Type(checker.unreachableNeverType));
+                }
+                // A matching dotted name might also be an expando property on a function *expression*,
+                // in which case we continue control flow analysis back to the function's declaration
+                if matches!(node, BoundNode::VarDeclarator(_))
+                    && (isBoundNodeInJSFile(&node) || isVarConst(&node))
+                {
+                    let init = getDeclaredExpandoInitializer(&node);
+                    if matches!(init, Some(BoundNode::FnExpr(_) | BoundNode::ArrowExpr(_))) {
+                        let antecedent = unwrap_as!(
+                            &checker.flow_nodes[flow].kind,
+                            FlowNodeKind::FlowAssignment(a),
+                            a
+                        )
+                        .antecedent;
+                        return Some(getTypeAtFlowNode(
+                            checker,
+                            reference,
+                            declaredType,
+                            initialType,
+                            flowContainer.clone(),
+                            flowDepth,
+                            antecedent,
+                        ));
+                    }
+                }
+                return Some(FlowType::Type(declaredType));
+            }
+            // for (const _ in ref) acts as a nonnull on ref
+            if matches!(node, BoundNode::VarDeclarator(_)) {
+                if let Some(BoundNode::ForInStmt(for_in_loop)) = node.parent().unwrap().parent() {
+                    if checker.isMatchingReference(
+                        reference,
+                        &for_in_loop.right.bind(for_in_loop.clone().into()),
+                    ) {
+                        todo!();
+                        // return getNonNullableTypeIfNeeded(getTypeFromFlowType(getTypeAtFlowNode(flow.antecedent)));
+                    }
+                }
+            }
+            // Assignment doesn't affect reference
+            None
+        }
 
         // function narrowTypeByAssertion(type: Type, expr: Expression): Type {
         //     const node = skipParentheses(expr, /*excludeJSDocTypeAssertions*/ true);

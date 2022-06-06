@@ -348,10 +348,9 @@ impl<I: Tokens> Parser<I> {
         }
 
         if is_one_of!(self, ')', ']') && !self.ctx().in_async {
-            return Ok(Box::new(Expr::Ident(Ident::new(
-                js_word!("await"),
-                span!(self, start),
-            ))));
+            return Ok(Box::new(Expr::Ident(
+                self.new_ident(js_word!("await"), span!(self, start)),
+            )));
         }
 
         let arg = self.parse_unary_expr()?;

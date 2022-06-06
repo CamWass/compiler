@@ -132,10 +132,10 @@ fn error_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
                 lib_ast,
             );
 
-            let mut result_path = path.clone();
-            result_path.set_extension("txt");
+            // let mut result_path = path.clone();
+            // result_path.set_extension("txt");
 
-            fs::write(result_path, &symbols).expect("failed");
+            // fs::write(result_path, &symbols).expect("failed");
 
             assert_eq!(symbols, reference);
         });
@@ -162,7 +162,7 @@ where
             .load_file(file_name)
             .unwrap_or_else(|e| panic!("failed to load {}: {}", file_name.display(), e));
 
-        let mut p = Parser::new(Syntax::Typescript(TsConfig::default()), &fm.src);
+        let mut p = Parser::new(Syntax::Typescript(TsConfig::default()), &fm);
 
         let res = f(&mut p).map_err(|e| e.into_diagnostic(handler).emit());
 
@@ -255,7 +255,7 @@ impl SymbolWriter {
         let lexer = Lexer::new(
             Syntax::Typescript(TsConfig::default()),
             Default::default(),
-            &file.src,
+            &file,
         );
         let mut writer = SymbolWriter {
             checker,
@@ -590,6 +590,7 @@ fn compute_line_of_position(line_starts: &Vec<usize>, position: usize) -> usize 
 impl Visit for SymbolWriter {
     generate_visitors!(@symbols,[
         [visit_class, Class],
+        [visit_extends_clause, ExtendsClause],
         [visit_class_prop, ClassProp],
         [visit_private_prop, PrivateProp],
         [visit_class_method, ClassMethod],

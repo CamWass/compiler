@@ -25,20 +25,27 @@ pub struct Class {
     pub body: Vec<ClassMember>,
 
     #[serde(default)]
-    pub super_class: Option<Box<Expr>>,
-
-    #[serde(default)]
     pub is_abstract: bool,
 
     #[serde(default)]
     pub type_params: Option<Vec<TsTypeParamDecl>>,
 
     #[serde(default)]
-    pub super_type_params: Option<TsTypeParamInstantiation>,
+    pub extends: Option<ExtendsClause>,
 
     /// Typescript extension.
     #[serde(default)]
     pub implements: Vec<TsExprWithTypeArgs>,
+}
+
+#[ast_node("ExtendsClause")]
+#[derive(Eq, Hash, EqIgnoreSpan)]
+pub struct ExtendsClause {
+    pub span: Span,
+    pub super_class: Box<Expr>,
+    /// Typescript extension.
+    #[serde(default)]
+    pub super_type_params: Option<TsTypeParamInstantiation>,
 }
 
 #[ast_node]
@@ -68,7 +75,7 @@ pub struct ClassProp {
     #[serde(default)]
     pub span: Span,
 
-    pub key: Box<Expr>,
+    pub key: PropName,
 
     #[serde(default)]
     pub value: Option<Box<Expr>>,
@@ -81,9 +88,6 @@ pub struct ClassProp {
 
     #[serde(default)]
     pub decorators: Vec<Decorator>,
-
-    #[serde(default)]
-    pub computed: bool,
 
     /// Typescript extension.
     #[serde(default)]
@@ -128,10 +132,6 @@ pub struct PrivateProp {
 
     #[serde(default)]
     pub decorators: Vec<Decorator>,
-
-    // TODO: this is always set to false by parser. Remove.
-    #[serde(default)]
-    pub computed: bool,
 
     /// Typescript extension.
     #[serde(default)]
@@ -196,8 +196,6 @@ method!(PrivateMethod, "PrivateMethod", PrivateName);
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct Constructor {
     pub span: Span,
-
-    pub key: PropName,
 
     pub params: Vec<ParamOrTsParamProp>,
 

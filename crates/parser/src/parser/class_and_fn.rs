@@ -95,13 +95,16 @@ impl<I: Tokens> Parser<I> {
                 None
             };
 
-            let (mut super_class, mut super_type_params) = if eat!(parser, "extends") {
-                let super_class = parser.parse_lhs_expr().map(Some)?;
+            let mut extends_clause = if is!(parser, "extends") {
+                let start = parser.input.cur_pos();
+                parser.input.bump();
+                let super_class = parser.parse_lhs_expr()?;
                 let super_type_params = if parser.syntax().typescript() && is!(parser, '<') {
                     Some(parser.parse_ts_type_args()?)
                 } else {
                     None
                 };
+                let span = span!(parser, start);
 
                 if parser.syntax().typescript() && eat!(parser, ',') {
                     let exprs = parser.parse_ts_heritage_clause()?;
@@ -111,9 +114,13 @@ impl<I: Tokens> Parser<I> {
                     }
                 }
 
-                (super_class, super_type_params)
+                Some(ExtendsClause {
+                    span,
+                    super_class,
+                    super_type_params,
+                })
             } else {
-                (None, None)
+                None
             };
 
             // Handle TS1172
@@ -142,28 +149,31 @@ impl<I: Tokens> Parser<I> {
             }
 
             // Handle TS1173
-            if parser.syntax().typescript() && eat!(parser, "extends") {
-                parser.emit_err(parser.input.prev_span(), SyntaxError::TS1173);
+            if parser.syntax().typescript() && is!(parser, "extends") {
+                parser.emit_err(parser.input.cur_span(), SyntaxError::TS1173);
+                let start = parser.input.cur_pos();
+                parser.input.bump();
 
-                let sc = parser.parse_lhs_expr()?;
-                let type_params = if parser.syntax().typescript() && is!(parser, '<') {
+                let super_class = parser.parse_lhs_expr()?;
+                let super_type_params = if parser.syntax().typescript() && is!(parser, '<') {
                     parser.parse_ts_type_args().map(Some)?
                 } else {
                     None
                 };
 
-                if super_class.is_none() {
-                    super_class = Some(sc);
-                    if let Some(tp) = type_params {
-                        super_type_params = Some(tp);
-                    }
+                if extends_clause.is_none() {
+                    extends_clause = Some(ExtendsClause {
+                        span: span!(parser, start),
+                        super_class,
+                        super_type_params,
+                    });
                 }
             }
 
             expect!(parser, '{');
             let body = parser
                 .with_ctx(Context {
-                    has_super_class: super_class.is_some(),
+                    has_super_class: extends_clause.is_some(),
                     ..parser.ctx()
                 })
                 .parse_class_body()?;
@@ -177,8 +187,7 @@ impl<I: Tokens> Parser<I> {
                     decorators,
                     is_abstract: false,
                     type_params,
-                    super_class,
-                    super_type_params,
+                    extends: extends_clause,
                     body,
                     implements,
                 },
@@ -320,10 +329,9 @@ impl<I: Tokens> Parser<I> {
         let declare_token = if declare {
             // Handle declare(){}
             if self.is_class_method()? {
-                let key = Either::Right(PropName::Ident(Ident::new(
-                    js_word!("declare"),
-                    span!(self, start),
-                )));
+                let key = Either::Right(PropName::Ident(
+                    self.new_ident(js_word!("declare"), span!(self, start)),
+                ));
                 let is_optional = self.syntax().typescript() && eat!(self, '?');
                 return self.make_method(
                     |parser| parser.parse_unique_formal_params(),
@@ -344,10 +352,9 @@ impl<I: Tokens> Parser<I> {
             } else if self.is_class_property()? {
                 // Property named `declare`
 
-                let key = Either::Right(PropName::Ident(Ident::new(
-                    js_word!("declare"),
-                    span!(self, start),
-                )));
+                let key = Either::Right(PropName::Ident(
+                    self.new_ident(js_word!("declare"), span!(self, start)),
+                ));
                 let is_optional = self.syntax().typescript() && eat!(self, '?');
                 return self.make_property(
                     start,
@@ -380,10 +387,9 @@ impl<I: Tokens> Parser<I> {
         if let Some(static_token) = static_token {
             // Handle static(){}
             if self.is_class_method()? {
-                let key = Either::Right(PropName::Ident(Ident::new(
-                    js_word!("static"),
-                    static_token,
-                )));
+                let key = Either::Right(PropName::Ident(
+                    self.new_ident(js_word!("static"), static_token),
+                ));
                 let is_optional = self.syntax().typescript() && eat!(self, '?');
                 return self.make_method(
                     |parser| parser.parse_unique_formal_params(),
@@ -404,10 +410,9 @@ impl<I: Tokens> Parser<I> {
             } else if self.is_class_property()? {
                 // Property named `static`
 
-                let key = Either::Right(PropName::Ident(Ident::new(
-                    js_word!("static"),
-                    static_token,
-                )));
+                let key = Either::Right(PropName::Ident(
+                    self.new_ident(js_word!("static"), static_token),
+                ));
                 let is_optional = self.syntax().typescript() && eat!(self, '?');
                 return self.make_property(
                     start,
@@ -552,10 +557,9 @@ impl<I: Tokens> Parser<I> {
 
         trace_cur!(self, parse_class_member_with_is_static__normal_class_member);
         let key = if readonly.is_some() && is_one_of!(self, '!', ':') {
-            Either::Right(PropName::Ident(Ident::new(
-                "readonly".into(),
-                readonly.unwrap(),
-            )))
+            Either::Right(PropName::Ident(
+                self.new_ident("readonly".into(), readonly.unwrap()),
+            ))
         } else {
             self.parse_class_prop_name()?
         };
@@ -659,10 +663,6 @@ impl<I: Tokens> Parser<I> {
                 return Ok(ClassMember::Constructor(Constructor {
                     span: span!(self, start),
                     accessibility,
-                    key: match key {
-                        Either::Right(key) => key,
-                        _ => unreachable!("is_constructor() returns false for PrivateName"),
-                    },
                     is_optional,
                     params,
                     body,
@@ -886,19 +886,11 @@ impl<I: Tokens> Parser<I> {
                     readonly,
                     definite,
                     type_ann,
-                    computed: false,
                 }
                 .into(),
                 Either::Right(key) => ClassProp {
                     span: span!(parser, start),
-                    computed: matches!(key, PropName::Computed(..)),
-                    key: match key {
-                        PropName::Ident(i) => Box::new(Expr::Ident(i)),
-                        PropName::Str(s) => Box::new(Expr::Lit(Lit::Str(s))),
-                        PropName::Num(n) => Box::new(Expr::Lit(Lit::Num(n))),
-                        PropName::BigInt(b) => Box::new(Expr::Lit(Lit::BigInt(b))),
-                        PropName::Computed(e) => e.expr,
-                    },
+                    key,
                     value,
                     is_static,
                     decorators,

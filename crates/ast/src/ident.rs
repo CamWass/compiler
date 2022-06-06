@@ -1,4 +1,5 @@
 use crate::typescript::TsTypeAnn;
+use crate::NodeId;
 use global_common::ast_node;
 use global_common::EqIgnoreSpan;
 use global_common::Span;
@@ -27,6 +28,7 @@ impl From<Ident> for BindingIdent {
 #[ast_node("Identifier")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct Ident {
+    pub node_id: NodeId,
     pub span: Span,
     #[serde(rename = "value")]
     pub sym: JsWord,
@@ -69,15 +71,15 @@ impl AsRef<str> for Ident {
     }
 }
 
-impl Ident {
-    pub const fn new(sym: JsWord, span: Span) -> Self {
-        Ident {
-            span,
-            sym,
-            optional: false,
-        }
-    }
-}
+// impl Ident {
+//     pub const fn new(sym: JsWord, span: Span) -> Self {
+//         Ident {
+//             span,
+//             sym,
+//             optional: false,
+//         }
+//     }
+// }
 
 pub trait IdentExt: AsRef<str> {
     fn is_reserved_for_es3(&self) -> bool {

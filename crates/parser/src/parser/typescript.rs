@@ -609,7 +609,7 @@ impl<I: Tokens> Parser<I> {
 
                 expect!(self, ']');
 
-                TsEnumMemberId::Ident(Ident::new(js_word!(""), span!(self, start)))
+                TsEnumMemberId::Ident(self.new_ident(js_word!(""), span!(self, start)))
             }
             _ => self.parse_ident_name().map(TsEnumMemberId::from)?,
         };
@@ -1204,40 +1204,6 @@ impl<I: Tokens> Parser<I> {
         }))
     }
 
-    /// `parsePropertyName` in babel.
-    ///
-    /// Returns `(computed, key)`.
-    fn parse_ts_property_name(&mut self) -> PResult<(bool, Box<Expr>)> {
-        let (computed, key) = if eat!(self, '[') {
-            let key = self.parse_assignment_expr()?;
-            expect!(self, ']');
-            (true, key)
-        } else {
-            let ctx = Context {
-                in_property_name: true,
-                ..self.ctx()
-            };
-            self.with_ctx(ctx).parse_with(|p| {
-                // We check if it's valid for it to be a private name when we push it.
-                let key = match *cur!(p, true)? {
-                    Token::Num(..) | Token::Str { .. } => p.parse_new_expr(),
-                    _ => p.parse_maybe_private_name().map(|e| match e {
-                        Either::Left(e) => {
-                            p.emit_err(e.span(), SyntaxError::PrivateNameInInterface);
-
-                            Box::new(Expr::PrivateName(e))
-                        }
-                        Either::Right(e) => Box::new(Expr::Ident(e)),
-                    }),
-                };
-
-                key.map(|key| (false, key))
-            })?
-        };
-
-        Ok((computed, key))
-    }
-
     /// `tsParsePropertyOrMethodSignature`
     fn parse_ts_property_or_method_signature(
         &mut self,
@@ -1246,7 +1212,7 @@ impl<I: Tokens> Parser<I> {
     ) -> PResult<Either<TsPropertySignature, TsMethodSignature>> {
         debug_assert!(self.syntax().typescript());
 
-        let (computed, key) = self.parse_ts_property_name()?;
+        let key = self.parse_prop_name()?;
 
         let optional = eat!(self, '?');
 
@@ -1266,7 +1232,6 @@ impl<I: Tokens> Parser<I> {
             self.parse_ts_type_member_semicolon()?;
             Ok(Either::Right(TsMethodSignature {
                 span: span!(self, start),
-                computed,
                 readonly,
                 key,
                 optional,
@@ -1280,7 +1245,6 @@ impl<I: Tokens> Parser<I> {
             self.parse_ts_type_member_semicolon()?;
             Ok(Either::Left(TsPropertySignature {
                 span: span!(self, start),
-                computed,
                 readonly,
                 key,
                 optional,
@@ -1332,7 +1296,7 @@ impl<I: Tokens> Parser<I> {
                 false
             };
 
-            let (computed, key) = p.parse_ts_property_name()?;
+            let key = p.parse_prop_name()?;
 
             let optional = eat!(p, '?');
 
@@ -1347,7 +1311,6 @@ impl<I: Tokens> Parser<I> {
                     span: span!(p, start),
                     readonly,
                     key,
-                    computed,
                     optional,
                     type_ann,
                 })))
@@ -1365,7 +1328,6 @@ impl<I: Tokens> Parser<I> {
                     span: span!(p, start),
                     readonly,
                     key,
-                    computed,
                     optional,
                     param,
                 })))

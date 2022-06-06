@@ -1113,8 +1113,8 @@ impl<I: Tokens> Parser<I> {
                     }
 
                     let expr = Box::new(Expr::MetaProp(MetaPropExpr {
-                        meta: Ident::new(js_word!("new"), span_of_new),
-                        prop: Ident::new(js_word!("target"), span_of_target),
+                        meta: self.new_ident(js_word!("new"), span_of_new),
+                        prop: self.new_ident(js_word!("target"), span_of_target),
                     }));
 
                     return self.parse_subscripts(ExprOrSuper::Expr(expr), true);
@@ -1369,10 +1369,9 @@ impl<I: Tokens> Parser<I> {
             // It's a call expression
             return Ok(Box::new(Expr::Call(CallExpr {
                 span: span!(self, async_span.lo()),
-                callee: ExprOrSuper::Expr(Box::new(Expr::Ident(Ident::new(
-                    "async".into(),
-                    async_span,
-                )))),
+                callee: ExprOrSuper::Expr(Box::new(Expr::Ident(
+                    self.new_ident("async".into(), async_span),
+                ))),
                 args: expr_or_spreads,
                 type_args: None,
             })));

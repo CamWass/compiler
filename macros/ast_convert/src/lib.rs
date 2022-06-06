@@ -266,14 +266,14 @@ fn make(stmts: Vec<Stmt>) -> Quote {
         }
     }
 
-    {
-        let mut q = Quote::new_call_site();
-        q.push_tokens(&special_tokens);
+    // {
+    //     let mut q = Quote::new_call_site();
+    //     q.push_tokens(&special_tokens);
 
-        let res: proc_macro::TokenStream = proc_macro2::TokenStream::from(q).into();
+    //     let res: proc_macro::TokenStream = proc_macro2::TokenStream::from(q).into();
 
-        std::fs::write("temp.rs", res.to_string()).expect("foooo");
-    }
+    //     std::fs::write("temp.rs", res.to_string()).expect("foooo");
+    // }
 
     // let mut ref_methods = vec![];
     // let mut optional_methods = vec![];

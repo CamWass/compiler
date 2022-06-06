@@ -12,7 +12,7 @@ impl<I: Tokens> Parser<I> {
             Token::JSXName { .. } => match self.input.bump() {
                 Token::JSXName { name } => {
                     let span = self.input.prev_span();
-                    Ok(Ident::new(name, span))
+                    Ok(self.new_ident(name, span))
                 }
                 _ => unreachable!(),
             },

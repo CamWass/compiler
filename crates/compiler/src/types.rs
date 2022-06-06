@@ -15,7 +15,7 @@ pub type TypeRelationTable = AHashMap<String, RelationComparisonResult>;
 
 index::newtype_index! {
     pub struct TypeRelationTableId {
-        DEBUG_FORMAT = "SymbolTableId({})"
+        DEBUG_FORMAT = "TypeRelationTableId({})"
     }
 }
 
@@ -257,16 +257,17 @@ pub struct SymbolLinks {
     pub nameType: Option<TypeId>, // Type associated with a late-bound symbol
     // uniqueESSymbolType?: Type;                  // UniqueESSymbol type for a symbol
     pub declaredType: Option<TypeId>, // Type of class, interface, enum, type alias, or type parameter
-    // typeParameters?: TypeParameter[];           // Type parameters of type alias (undefined if non-generic)
+    pub typeParameters: Option<Rc<Vec<TypeId>>>, // Type parameters of type alias (undefined if non-generic)
     // outerTypeParameters?: TypeParameter[];      // Outer type parameters of anonymous object type
-    // instantiations?: ESMap<string, Type>;       // Instantiations of generic type alias (undefined if non-generic)
+    // TODO: key:
+    pub instantiations: AHashMap<u64, TypeId>, // Instantiations of generic type alias (undefined if non-generic)
     // aliasSymbol?: Symbol;                       // Alias associated with generic type alias instantiation
     // aliasTypeArguments?: readonly Type[]        // Alias type arguments (if any)
     // inferredClassSymbol?: ESMap<SymbolId, TransientSymbol>; // Symbol of an inferred ES5 constructor function
     pub mapper: Option<Rc<TypeMapper>>, // Type mapper for instantiation alias
     // referenced?: boolean;                       // True if alias symbol has been referenced as a value that can be emitted
     // constEnumReferenced?: boolean;              // True if alias symbol resolves to a const enum and is referenced as a value ('referenced' will be false)
-    // containingType?: UnionOrIntersectionType;   // Containing union or intersection type for synthetic property
+    pub containingType: Option<TypeId>, // Containing union or intersection type for synthetic property
     // leftSpread?: Symbol;                        // Left source for synthetic spread property
     // rightSpread?: Symbol;                       // Right source for synthetic spread property
     // syntheticOrigin?: Symbol;                   // For a property on a mapped or spread type, points back to the original property
@@ -285,8 +286,8 @@ pub struct SymbolLinks {
     // extendedContainers?: Symbol[];              // Containers (other than the parent) which this symbol is aliased in
     // extendedContainersByFile?: ESMap<NodeId, Symbol[]>; // Containers (other than the parent) which this symbol is aliased in
     // variances?: VarianceFlags[];                // Alias symbol type argument variance cache
-    // deferralConstituents?: Type[];              // Calculated list of constituents for a deferred type
-    // deferralParent?: Type;                      // Source union/intersection of a deferred type
+    pub deferralConstituents: Vec<TypeId>, // Calculated list of constituents for a deferred type
+    pub deferralParent: Option<TypeId>,    // Source union/intersection of a deferred type
     // cjsExportMerged?: Symbol;                   // Version of the symbol with all non export= exports merged with the export= target
     pub typeOnlyDeclaration: Option<BoundNodeOrFalse>, // First resolved alias declaration that makes the symbol only usable in type constructs
     pub isConstructorDeclaredProperty: Option<bool>, // Property declared through 'this.x = ...' assignment in constructor
@@ -739,7 +740,7 @@ pub struct NodeLinks {
     pub resolvedSignature: Option<SignatureId>, // Cached signature of signature node or call expression
     pub resolvedSymbol: Option<SymbolId>,       // Cached name resolution result
     //     resolvedIndexInfo?: IndexInfo;      // Cached indexing info resolution result
-    //     effectsSignature?: Signature;       // Signature with possible control flow effects
+    pub effectsSignature: Option<SignatureId>, // Signature with possible control flow effects
     //     enumMemberValue?: string | number;  // Constant value of enum member
     //     isVisible?: boolean;                // Is this node visible
     //     containsArgumentsReference?: boolean; // Whether a function-like declaration contains an 'arguments' reference
@@ -1489,9 +1490,9 @@ pub struct OptionalCallSignatureCache {
 #[derive(Default, Debug)]
 pub struct Signature {
     pub flags: SignatureFlags,
-    pub declaration: Option<BoundNode>,  // Originating declaration
-    pub typeParameters: Rc<Vec<TypeId>>, // Type parameters (undefined if non-generic)
-    pub parameters: Rc<Vec<SymbolId>>,   // Parameters
+    pub declaration: Option<BoundNode>, // Originating declaration
+    pub typeParameters: Option<Rc<Vec<TypeId>>>, // Type parameters (undefined if non-generic)
+    pub parameters: Rc<Vec<SymbolId>>,  // Parameters
     pub thisParameter: Option<SymbolId>, // symbol of this-type parameter
     // See comment in `instantiateSignature` for why these are set lazily.
     pub resolvedReturnType: Option<TypeId>, // Lazily set by `getReturnTypeOfSignature`.
@@ -1607,7 +1608,8 @@ impl TypeMapper {
         sources: Rc<Vec<TypeId>>,
         targets: Option<Rc<Vec<TypeId>>>,
     ) -> Rc<TypeMapper> {
-        debug_assert!(targets.is_none() || targets.as_ref().unwrap().len() == sources.len());
+        // TODO: why was this here?
+        // debug_assert!(targets.is_none() || targets.as_ref().unwrap().len() == sources.len());
         Rc::new(TypeMapper::Array { sources, targets })
     }
 
@@ -1755,12 +1757,34 @@ bitflags! {
 /// Generally, `Ternary::Maybe` is used as the result of a relation that depends on itself, and
 /// `Ternary::Unknown` is used as the result of a variance check that depends on itself. We make
 /// a distinction because we don't want to cache circular variance check results.
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub enum Ternary {
-    False = 0,
-    Unknown = 1,
-    Maybe = 3,
-    True = -1,
+    False,
+    Unknown,
+    Maybe,
+    True,
+}
+
+impl std::ops::BitAnd for Ternary {
+    type Output = Self;
+
+    fn bitand(self, rhs: Self) -> Self::Output {
+        std::cmp::min(self, rhs)
+    }
+}
+
+impl std::ops::BitOr for Ternary {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        std::cmp::max(self, rhs)
+    }
+}
+
+impl std::ops::BitAndAssign for Ternary {
+    fn bitand_assign(&mut self, rhs: Self) {
+        *self = *self & rhs
+    }
 }
 
 // /* @internal */
@@ -1792,10 +1816,16 @@ index::newtype_index! {
 }
 
 pub struct WideningContext {
-    pub parent: Option<Rc<WideningContext>>, // Parent context
-    pub propertyName: Option<JsWord>,        // Name of property in parent
-    pub siblings: Option<Vec<TypeId>>,       // Types of siblings
-    pub resolvedProperties: Option<Vec<SymbolId>>, // Properties occurring in sibling object literals
+    pub parent: Option<WideningContextId>, // Parent context
+    pub propertyName: Option<JsWord>,      // Name of property in parent
+    pub siblings: Option<Rc<Vec<TypeId>>>, // Types of siblings
+    pub resolvedProperties: Option<Rc<AHashSet<SymbolId>>>, // Properties occurring in sibling object literals
+}
+
+index::newtype_index! {
+    pub struct WideningContextId {
+        DEBUG_FORMAT = "WideningContextId({})"
+    }
 }
 
 #[derive(PartialEq, Eq)]
@@ -1937,36 +1967,36 @@ pub struct NodeData {
     pub returnFlowNode: Option<FlowNodeId>,
 }
 
-// bitflags! {
-//     pub struct ModifierFlags:u32 {
-//         const None =               0;
-//         const Export =             1 << 0;  // Declarations
-//         const Ambient =            1 << 1;  // Declarations
-//         const Public =             1 << 2;  // Property/Method
-//         const Private =            1 << 3;  // Property/Method
-//         const Protected =          1 << 4;  // Property/Method
-//         const Static =             1 << 5;  // Property/Method
-//         const Readonly =           1 << 6;  // Property/Method
-//         const Abstract =           1 << 7;  // Class/Method/ConstructSignature
-//         const Async =              1 << 8;  // Property/Method/Function
-//         const Default =            1 << 9;  // Function/Class (export default declaration)
-//         const Const =              1 << 11; // Const enum
-//         const HasComputedJSDocModifiers = 1 << 12; // Indicates the computed modifier flags include modifiers from JSDoc.
+bitflags! {
+    pub struct ModifierFlags:u32 {
+        const None =               0;
+        const Export =             1 << 0;  // Declarations
+        const Ambient =            1 << 1;  // Declarations
+        const Public =             1 << 2;  // Property/Method
+        const Private =            1 << 3;  // Property/Method
+        const Protected =          1 << 4;  // Property/Method
+        const Static =             1 << 5;  // Property/Method
+        const Readonly =           1 << 6;  // Property/Method
+        const Abstract =           1 << 7;  // Class/Method/ConstructSignature
+        const Async =              1 << 8;  // Property/Method/Function
+        const Default =            1 << 9;  // Function/Class (export default declaration)
+        const Const =              1 << 11; // Const enum
+        const HasComputedJSDocModifiers = 1 << 12; // Indicates the computed modifier flags include modifiers from JSDoc.
 
-//         const Deprecated =         1 << 13; // Deprecated tag.
-//         const Override =           1 << 14; // Override method.
-//         const HasComputedFlags =   1 << 29; // Modifier flags have been computed
+        const Deprecated =         1 << 13; // Deprecated tag.
+        const Override =           1 << 14; // Override method.
+        const HasComputedFlags =   1 << 29; // Modifier flags have been computed
 
-//         const AccessibilityModifier = Self::Public.bits | Self::Private.bits | Self::Protected.bits;
-//         // Accessibility modifiers and 'readonly' can be attached to a parameter in a constructor to make it a property.
-//         const ParameterPropertyModifier = Self::AccessibilityModifier.bits | Self::Readonly.bits | Self::Override.bits;
-//         const NonPublicAccessibilityModifier = Self::Private.bits | Self::Protected.bits;
+        const AccessibilityModifier = Self::Public.bits | Self::Private.bits | Self::Protected.bits;
+        // Accessibility modifiers and 'readonly' can be attached to a parameter in a constructor to make it a property.
+        const ParameterPropertyModifier = Self::AccessibilityModifier.bits | Self::Readonly.bits | Self::Override.bits;
+        const NonPublicAccessibilityModifier = Self::Private.bits | Self::Protected.bits;
 
-//         const TypeScriptModifier = Self::Ambient.bits | Self::Public.bits | Self::Private.bits | Self::Protected.bits | Self::Readonly.bits | Self::Abstract.bits | Self::Const.bits | Self::Override.bits;
-//         const ExportDefault = Self::Export.bits | Self::Default.bits;
-//         const All = Self::Export.bits | Self::Ambient.bits | Self::Public.bits | Self::Private.bits | Self::Protected.bits | Self::Static.bits | Self::Readonly.bits | Self::Abstract.bits | Self::Async.bits | Self::Default.bits | Self::Const.bits | Self::Deprecated.bits | Self::Override.bits;
-//     }
-// }
+        const TypeScriptModifier = Self::Ambient.bits | Self::Public.bits | Self::Private.bits | Self::Protected.bits | Self::Readonly.bits | Self::Abstract.bits | Self::Const.bits | Self::Override.bits;
+        const ExportDefault = Self::Export.bits | Self::Default.bits;
+        const All = Self::Export.bits | Self::Ambient.bits | Self::Public.bits | Self::Private.bits | Self::Protected.bits | Self::Static.bits | Self::Readonly.bits | Self::Abstract.bits | Self::Async.bits | Self::Default.bits | Self::Const.bits | Self::Deprecated.bits | Self::Override.bits;
+    }
+}
 
 bitflags! {
     pub struct RelationComparisonResult: u8 {
@@ -2366,5 +2396,38 @@ bitflags! {
 
         // Skip building an accessible symbol chain
         const DoNotIncludeSymbolChain = 1 << 4;
+    }
+}
+
+pub enum BoundPropName {
+    Ident(Rc<Ident>),
+    /// String literal.
+    Str(Rc<Str>),
+    /// Numeric literal.
+    Num(Rc<Number>),
+    Computed(Rc<ComputedPropName>),
+}
+
+impl BoundPropName {
+    pub fn from_prop_name(prop_name: ast::PropName, parent: BoundNode) -> Self {
+        match prop_name {
+            ast::PropName::Ident(n) => BoundPropName::Ident(Ident::new(n, Some(parent))),
+            ast::PropName::Str(n) => BoundPropName::Str(Str::new(n, Some(parent))),
+            ast::PropName::Num(n) => BoundPropName::Num(Number::new(n, Some(parent))),
+            ast::PropName::Computed(n) => {
+                BoundPropName::Computed(ComputedPropName::new(n, Some(parent)))
+            }
+        }
+    }
+}
+
+impl From<BoundPropName> for BoundNode {
+    fn from(other: BoundPropName) -> BoundNode {
+        match other {
+            BoundPropName::Ident(n) => BoundNode::Ident(n),
+            BoundPropName::Str(n) => BoundNode::Str(n),
+            BoundPropName::Num(n) => BoundNode::Number(n),
+            BoundPropName::Computed(n) => BoundNode::ComputedPropName(n),
+        }
     }
 }

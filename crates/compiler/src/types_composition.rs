@@ -10,9 +10,9 @@ use swc_atoms::JsWord;
 // Properties common to all types
 #[derive(Debug, Default)]
 pub struct TypeBase {
-    pub flags: TypeFlags,         // Flags
-    pub symbol: Option<SymbolId>, // Symbol associated with type (if any)
-    // pub pattern?: DestructuringPattern,  // Destructuring pattern represented by type (if any)
+    pub flags: TypeFlags,                            // Flags
+    pub symbol: Option<SymbolId>,                    // Symbol associated with type (if any)
+    pub pattern: Option<BoundNode>, // Destructuring pattern represented by type (if any)
     pub aliasSymbol: Option<SymbolId>, // Alias associated with type
     pub aliasTypeArguments: Option<Rc<Vec<TypeId>>>, // Alias type arguments (if any)
     pub aliasTypeArgumentsContainsMarker: bool, // Alias type arguments (if any)
@@ -38,6 +38,9 @@ pub trait AsTypeBase {
 
     fn get_symbol(&self) -> &Option<SymbolId>;
     fn get_symbol_mut(&mut self) -> &mut Option<SymbolId>;
+
+    fn get_pattern(&self) -> &Option<BoundNode>;
+    fn get_pattern_mut(&mut self) -> &mut Option<BoundNode>;
 
     fn get_aliasSymbol(&self) -> &Option<SymbolId>;
     fn get_aliasSymbol_mut(&mut self) -> &mut Option<SymbolId>;
@@ -76,6 +79,12 @@ macro_rules! impl_AsTypeBase {
                 }
                 fn get_symbol_mut(&mut self) -> &mut Option<SymbolId> {
                     &mut self.type_base.symbol
+                }
+                fn get_pattern(&self) -> &Option<BoundNode> {
+                    &self.type_base.pattern
+                }
+                fn get_pattern_mut(&mut self) -> &mut Option<BoundNode> {
+                    &mut self.type_base.pattern
                 }
                 fn get_aliasSymbol(&self) -> &Option<SymbolId> {
                     &self.type_base.aliasSymbol
@@ -239,7 +248,7 @@ impl Type {
             Type::NullableType(t) => t.intrinsic_type_base.objectFlags,
             Type::FreshableIntrinsicType(t) => t.intrinsic_type_base.objectFlags,
             Type::UniqueESSymbolType(_) => todo!(),
-            Type::StringLiteralType(_) => todo!(),
+            Type::StringLiteralType(_) => Default::default(),
             Type::NumberLiteralType(_) => todo!(),
             Type::BigIntLiteralType(_) => todo!(),
             Type::EnumType(_) => todo!(),
@@ -263,8 +272,8 @@ impl Type {
             Type::SyntheticDefaultModuleType(_) => todo!(),
             Type::TypeParameter(_) => Default::default(),
             Type::IndexedAccessType(_) => todo!(),
-            Type::IndexType(_) => todo!(),
-            Type::ConditionalType(_) => todo!(),
+            Type::IndexType(_) => Default::default(),
+            Type::ConditionalType(_) => Default::default(),
             Type::TemplateLiteralType(_) => todo!(),
             Type::StringMappingType(_) => todo!(),
             Type::SubstitutionType(_) => todo!(),
@@ -327,7 +336,7 @@ impl Type {
             Type::GenericType(_) => todo!(),
             Type::TupleType(_) => todo!(),
             Type::TupleTypeReference(_) => todo!(),
-            Type::UnionType(_) => todo!(),
+            Type::UnionType(t) => t.union_or_intersection_type.resolvedBaseConstraint,
             Type::IntersectionType(_) => todo!(),
             Type::AnonymousType(_) => todo!(),
             Type::MappedType(_) => todo!(),
@@ -365,7 +374,7 @@ impl Type {
             Type::GenericType(_) => todo!(),
             Type::TupleType(_) => todo!(),
             Type::TupleTypeReference(_) => todo!(),
-            Type::UnionType(_) => todo!(),
+            Type::UnionType(t) => &mut t.union_or_intersection_type.resolvedBaseConstraint,
             Type::IntersectionType(_) => todo!(),
             Type::AnonymousType(_) => todo!(),
             Type::MappedType(_) => todo!(),
@@ -413,7 +422,11 @@ impl Type {
             Type::MappedType(_) => todo!(),
             Type::EvolvingArrayType(_) => todo!(),
             Type::ReverseMappedType(_) => todo!(),
-            Type::ResolvedType(_) => todo!(),
+            Type::ResolvedType(t) => match &t.old {
+                Some(Old::TypeReference { type_reference }) => type_reference,
+                Some(Old::GenericType { type_reference, .. }) => type_reference,
+                _ => todo!(),
+            },
             Type::IterableOrIteratorType(_) => todo!(),
             Type::PromiseOrAwaitableType(_) => todo!(),
             Type::SyntheticDefaultModuleType(_) => todo!(),
@@ -488,7 +501,7 @@ impl Type {
         }
     }
 
-    pub fn literal_type_fresh_type(&self) -> Option<TypeId> {
+    pub fn get_literal_fresh_type(&self) -> Option<TypeId> {
         match self {
             Type::StringLiteralType(t) => t.literal_type.freshType,
             Type::NumberLiteralType(t) => t.literal_type.freshType,
@@ -497,7 +510,16 @@ impl Type {
             _ => unreachable!(),
         }
     }
-    pub fn literal_type_regular_type(&self) -> TypeId {
+    pub fn set_literal_fresh_type(&mut self, new_fresh_type: TypeId) {
+        match self {
+            Type::StringLiteralType(t) => t.literal_type.freshType = Some(new_fresh_type),
+            Type::NumberLiteralType(t) => t.literal_type.freshType = Some(new_fresh_type),
+            Type::BigIntLiteralType(t) => t.literal_type.freshType = Some(new_fresh_type),
+            Type::FreshableIntrinsicType(t) => t.freshType = new_fresh_type,
+            _ => unreachable!(),
+        }
+    }
+    pub fn get_literal_regular_type(&self) -> TypeId {
         match self {
             Type::StringLiteralType(t) => t.literal_type.regularType,
             Type::NumberLiteralType(t) => t.literal_type.regularType,
@@ -506,6 +528,25 @@ impl Type {
             _ => unreachable!(),
         }
     }
+
+    // pub fn unwrap_as_literal_type(&self) -> &LiteralType {
+    //     match self {
+    //         Type::StringLiteralType(t) => &t.literal_type,
+    //         Type::NumberLiteralType(t) => &t.literal_type,
+    //         Type::BigIntLiteralType(t) => &t.literal_type,
+    //         Type::FreshableIntrinsicType(t) => todo!(),
+    //         _ => unreachable!(),
+    //     }
+    // }
+    // pub fn unwrap_as_literal_type_mut(&mut self) -> &mut LiteralType {
+    //     match self {
+    //         Type::StringLiteralType(t) => &mut t.literal_type,
+    //         Type::NumberLiteralType(t) => &mut t.literal_type,
+    //         Type::BigIntLiteralType(t) => &mut t.literal_type,
+    //         Type::FreshableIntrinsicType(t) => todo!(),
+    //         _ => unreachable!(),
+    //     }
+    // }
 
     pub fn unwrap_as_generic_type_base(&self) -> &GenericTypeBase {
         match self {
@@ -526,7 +567,26 @@ impl Type {
         }
     }
 
-    pub fn unwrap_instantiations(&mut self) -> &mut AHashMap<TypeList, TypeId> {
+    pub fn unwrap_instantiations(&self) -> &AHashMap<TypeList, TypeId> {
+        match self {
+            Type::DeferredTypeReference(t) => &t.instantiations,
+            Type::GenericType(t) => &t.generic_type_base.instantiations,
+            Type::TupleType(t) => &t.generic_type_base.instantiations,
+            Type::ResolvedType(t) => match t.old.as_ref().unwrap() {
+                Old::InterfaceType { .. } => todo!(),
+                Old::TypeReference { .. } => todo!(),
+                Old::GenericType {
+                    generic_type_base, ..
+                } => &generic_type_base.instantiations,
+                Old::AnonymousType { anonymous_type } => &anonymous_type.instantiations,
+                Old::UnionType { .. } => todo!(),
+            },
+            Type::AnonymousType(t) => &t.anonymous_type.instantiations,
+            Type::MappedType(t) => &t.anonymous_type.instantiations,
+            _ => unreachable!(),
+        }
+    }
+    pub fn unwrap_instantiations_mut(&mut self) -> &mut AHashMap<TypeList, TypeId> {
         match self {
             Type::DeferredTypeReference(t) => &mut t.instantiations,
             Type::GenericType(t) => &mut t.generic_type_base.instantiations,
@@ -560,6 +620,70 @@ impl Type {
             Type::IterableOrIteratorType(t) => &t.union_type_base,
             Type::PromiseOrAwaitableType(t) => &t.union_type_base,
             Type::ResolvedType(_) => todo!(),
+            _ => unreachable!(),
+        }
+    }
+    pub fn unwrap_as_union_type_base_mut(&mut self) -> &mut UnionTypeBase {
+        match self {
+            Type::UnionType(t) => &mut t.union_type_base,
+            Type::IterableOrIteratorType(t) => &mut t.union_type_base,
+            Type::PromiseOrAwaitableType(t) => &mut t.union_type_base,
+            Type::ResolvedType(_) => todo!(),
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn as_instantiable_type_mut(&mut self) -> Option<&mut InstantiableType> {
+        match self {
+            Type::TypeParameter(t) => Some(&mut t.instantiable_type),
+            Type::IndexedAccessType(t) => Some(&mut t.instantiable_type),
+            Type::IndexType(t) => Some(&mut t.instantiable_type),
+            Type::ConditionalType(t) => Some(&mut t.instantiable_type),
+            Type::TemplateLiteralType(t) => Some(&mut t.instantiable_type),
+            Type::StringMappingType(t) => Some(&mut t.instantiable_type),
+            Type::SubstitutionType(t) => Some(&mut t.instantiable_type),
+            Type::ResolvedType(_) => todo!(),
+            _ => None,
+        }
+    }
+
+    pub fn unwrap_object_type_base(&self) -> &ObjectTypeBase {
+        match self {
+            Type::ObjectType(t) => &t.object_type_base,
+            Type::InterfaceType(t) => &t.object_type_base,
+            Type::InterfaceTypeWithDeclaredMembers(t) => &t.object_type_base,
+            Type::TypeReference(t) => &t.object_type_base,
+            Type::DeferredTypeReference(t) => &t.object_type_base,
+            Type::GenericType(t) => &t.object_type_base,
+            Type::TupleType(t) => &t.object_type_base,
+            Type::TupleTypeReference(t) => &t.object_type_base,
+            Type::AnonymousType(t) => &t.object_type_base,
+            Type::MappedType(t) => &t.object_type_base,
+            Type::EvolvingArrayType(t) => &t.object_type_base,
+            Type::ReverseMappedType(t) => &t.object_type_base,
+            Type::ResolvedType(t) => &t.object_type_base,
+            Type::IterableOrIteratorType(t) => &t.object_type_base,
+            Type::PromiseOrAwaitableType(t) => &t.object_type_base,
+            _ => unreachable!(),
+        }
+    }
+    pub fn unwrap_object_type_base_mut(&mut self) -> &mut ObjectTypeBase {
+        match self {
+            Type::ObjectType(t) => &mut t.object_type_base,
+            Type::InterfaceType(t) => &mut t.object_type_base,
+            Type::InterfaceTypeWithDeclaredMembers(t) => &mut t.object_type_base,
+            Type::TypeReference(t) => &mut t.object_type_base,
+            Type::DeferredTypeReference(t) => &mut t.object_type_base,
+            Type::GenericType(t) => &mut t.object_type_base,
+            Type::TupleType(t) => &mut t.object_type_base,
+            Type::TupleTypeReference(t) => &mut t.object_type_base,
+            Type::AnonymousType(t) => &mut t.object_type_base,
+            Type::MappedType(t) => &mut t.object_type_base,
+            Type::EvolvingArrayType(t) => &mut t.object_type_base,
+            Type::ReverseMappedType(t) => &mut t.object_type_base,
+            Type::ResolvedType(t) => &mut t.object_type_base,
+            Type::IterableOrIteratorType(t) => &mut t.object_type_base,
+            Type::PromiseOrAwaitableType(t) => &mut t.object_type_base,
             _ => unreachable!(),
         }
     }
@@ -631,8 +755,8 @@ impl AsTypeBase for Type {
             Type::GenericType(t) => t.get_symbol(),
             Type::TupleType(t) => t.get_symbol(),
             Type::TupleTypeReference(t) => t.get_symbol(),
-            Type::UnionType(_) => todo!(),
-            Type::IntersectionType(_) => todo!(),
+            Type::UnionType(t) => t.get_symbol(),
+            Type::IntersectionType(t) => t.get_symbol(),
             Type::AnonymousType(t) => t.get_symbol(),
             Type::MappedType(t) => t.get_symbol(),
             Type::EvolvingArrayType(t) => t.get_symbol(),
@@ -655,6 +779,52 @@ impl AsTypeBase for Type {
         }
     }
     fn get_symbol_mut(&mut self) -> &mut Option<SymbolId> {
+        todo!()
+    }
+
+    fn get_pattern(&self) -> &Option<BoundNode> {
+        match self {
+            Type::IntrinsicType(t) => t.get_pattern(),
+            Type::NullableType(t) => t.get_pattern(),
+            Type::FreshableIntrinsicType(t) => t.get_pattern(),
+            // Type::LiteralType(t) => t.get_pattern(),
+            Type::UniqueESSymbolType(t) => t.get_pattern(),
+            Type::StringLiteralType(t) => t.get_pattern(),
+            Type::NumberLiteralType(t) => t.get_pattern(),
+            Type::BigIntLiteralType(t) => t.get_pattern(),
+            Type::EnumType(t) => t.get_pattern(),
+            Type::ObjectType(t) => t.get_pattern(),
+            Type::InterfaceType(t) => t.get_pattern(),
+            Type::InterfaceTypeWithDeclaredMembers(t) => t.get_pattern(),
+            Type::TypeReference(t) => t.get_pattern(),
+            Type::DeferredTypeReference(t) => t.get_pattern(),
+            Type::GenericType(t) => t.get_pattern(),
+            Type::TupleType(t) => t.get_pattern(),
+            Type::TupleTypeReference(t) => t.get_pattern(),
+            Type::UnionType(t) => t.get_pattern(),
+            Type::IntersectionType(t) => t.get_pattern(),
+            Type::AnonymousType(t) => t.get_pattern(),
+            Type::MappedType(t) => t.get_pattern(),
+            Type::EvolvingArrayType(t) => t.get_pattern(),
+            Type::ReverseMappedType(t) => t.get_pattern(),
+            Type::ResolvedType(t) => t.get_pattern(),
+            // Type::FreshObjectLiteralType(t) => t.get_pattern(),
+            // Type::IterationTypes(t) => t.get_pattern(),
+            Type::IterableOrIteratorType(t) => t.get_pattern(),
+            Type::PromiseOrAwaitableType(t) => t.get_pattern(),
+            Type::SyntheticDefaultModuleType(t) => t.get_pattern(),
+            // Type::InstantiableType(t) => t.get_pattern(),
+            Type::TypeParameter(t) => t.get_pattern(),
+            Type::IndexedAccessType(t) => t.get_pattern(),
+            Type::IndexType(t) => t.get_pattern(),
+            Type::ConditionalType(t) => t.get_pattern(),
+            Type::TemplateLiteralType(t) => t.get_pattern(),
+            Type::StringMappingType(t) => t.get_pattern(),
+            Type::SubstitutionType(t) => t.get_pattern(),
+            Type::Dummy => unreachable!(),
+        }
+    }
+    fn get_pattern_mut(&mut self) -> &mut Option<BoundNode> {
         todo!()
     }
 
@@ -854,9 +1024,9 @@ impl AsTypeBase for Type {
             Type::GenericType(t) => t.get_immediateBaseConstraint(),
             Type::TupleType(t) => t.get_immediateBaseConstraint(),
             Type::TupleTypeReference(t) => t.get_immediateBaseConstraint(),
-            Type::UnionType(_) => todo!(),
-            Type::IntersectionType(_) => todo!(),
-            Type::AnonymousType(_) => todo!(),
+            Type::UnionType(t) => t.get_immediateBaseConstraint(),
+            Type::IntersectionType(t) => t.get_immediateBaseConstraint(),
+            Type::AnonymousType(t) => t.get_immediateBaseConstraint(),
             Type::MappedType(t) => t.get_immediateBaseConstraint(),
             Type::EvolvingArrayType(t) => t.get_immediateBaseConstraint(),
             Type::ReverseMappedType(t) => t.get_immediateBaseConstraint(),
@@ -892,9 +1062,9 @@ impl AsTypeBase for Type {
             Type::GenericType(t) => t.get_immediateBaseConstraint_mut(),
             Type::TupleType(t) => t.get_immediateBaseConstraint_mut(),
             Type::TupleTypeReference(t) => t.get_immediateBaseConstraint_mut(),
-            Type::UnionType(_) => todo!(),
-            Type::IntersectionType(_) => todo!(),
-            Type::AnonymousType(_) => todo!(),
+            Type::UnionType(t) => t.get_immediateBaseConstraint_mut(),
+            Type::IntersectionType(t) => t.get_immediateBaseConstraint_mut(),
+            Type::AnonymousType(t) => t.get_immediateBaseConstraint_mut(),
             Type::MappedType(t) => t.get_immediateBaseConstraint_mut(),
             Type::EvolvingArrayType(t) => t.get_immediateBaseConstraint_mut(),
             Type::ReverseMappedType(t) => t.get_immediateBaseConstraint_mut(),
@@ -914,11 +1084,80 @@ impl AsTypeBase for Type {
     }
 
     fn get_widened(&self) -> &Option<TypeId> {
-        todo!();
-        // &self.type_base.widened
+        match self {
+            Type::IntrinsicType(t) => t.get_widened(),
+            Type::NullableType(t) => t.get_widened(),
+            Type::FreshableIntrinsicType(t) => t.get_widened(),
+            Type::UniqueESSymbolType(t) => t.get_widened(),
+            Type::StringLiteralType(t) => t.get_widened(),
+            Type::NumberLiteralType(t) => t.get_widened(),
+            Type::BigIntLiteralType(t) => t.get_widened(),
+            Type::EnumType(t) => t.get_widened(),
+            Type::ObjectType(t) => t.get_widened(),
+            Type::InterfaceType(t) => t.get_widened(),
+            Type::InterfaceTypeWithDeclaredMembers(t) => t.get_widened(),
+            Type::TypeReference(t) => t.get_widened(),
+            Type::DeferredTypeReference(t) => t.get_widened(),
+            Type::GenericType(t) => t.get_widened(),
+            Type::TupleType(t) => t.get_widened(),
+            Type::TupleTypeReference(t) => t.get_widened(),
+            Type::UnionType(t) => t.get_widened(),
+            Type::IntersectionType(t) => t.get_widened(),
+            Type::AnonymousType(t) => t.get_widened(),
+            Type::MappedType(t) => t.get_widened(),
+            Type::EvolvingArrayType(t) => t.get_widened(),
+            Type::ReverseMappedType(t) => t.get_widened(),
+            Type::ResolvedType(t) => t.get_widened(),
+            Type::IterableOrIteratorType(t) => t.get_widened(),
+            Type::PromiseOrAwaitableType(t) => t.get_widened(),
+            Type::SyntheticDefaultModuleType(t) => t.get_widened(),
+            Type::TypeParameter(t) => t.get_widened(),
+            Type::IndexedAccessType(t) => t.get_widened(),
+            Type::IndexType(t) => t.get_widened(),
+            Type::ConditionalType(t) => t.get_widened(),
+            Type::TemplateLiteralType(t) => t.get_widened(),
+            Type::StringMappingType(t) => t.get_widened(),
+            Type::SubstitutionType(t) => t.get_widened(),
+            Type::Dummy => unreachable!(),
+        }
     }
     fn get_widened_mut(&mut self) -> &mut Option<TypeId> {
-        todo!()
+        match self {
+            Type::IntrinsicType(t) => t.get_widened_mut(),
+            Type::NullableType(t) => t.get_widened_mut(),
+            Type::FreshableIntrinsicType(t) => t.get_widened_mut(),
+            Type::UniqueESSymbolType(t) => t.get_widened_mut(),
+            Type::StringLiteralType(t) => t.get_widened_mut(),
+            Type::NumberLiteralType(t) => t.get_widened_mut(),
+            Type::BigIntLiteralType(t) => t.get_widened_mut(),
+            Type::EnumType(t) => t.get_widened_mut(),
+            Type::ObjectType(t) => t.get_widened_mut(),
+            Type::InterfaceType(t) => t.get_widened_mut(),
+            Type::InterfaceTypeWithDeclaredMembers(t) => t.get_widened_mut(),
+            Type::TypeReference(t) => t.get_widened_mut(),
+            Type::DeferredTypeReference(t) => t.get_widened_mut(),
+            Type::GenericType(t) => t.get_widened_mut(),
+            Type::TupleType(t) => t.get_widened_mut(),
+            Type::TupleTypeReference(t) => t.get_widened_mut(),
+            Type::UnionType(t) => t.get_widened_mut(),
+            Type::IntersectionType(t) => t.get_widened_mut(),
+            Type::AnonymousType(t) => t.get_widened_mut(),
+            Type::MappedType(t) => t.get_widened_mut(),
+            Type::EvolvingArrayType(t) => t.get_widened_mut(),
+            Type::ReverseMappedType(t) => t.get_widened_mut(),
+            Type::ResolvedType(t) => t.get_widened_mut(),
+            Type::IterableOrIteratorType(t) => t.get_widened_mut(),
+            Type::PromiseOrAwaitableType(t) => t.get_widened_mut(),
+            Type::SyntheticDefaultModuleType(t) => t.get_widened_mut(),
+            Type::TypeParameter(t) => t.get_widened_mut(),
+            Type::IndexedAccessType(t) => t.get_widened_mut(),
+            Type::IndexType(t) => t.get_widened_mut(),
+            Type::ConditionalType(t) => t.get_widened_mut(),
+            Type::TemplateLiteralType(t) => t.get_widened_mut(),
+            Type::StringMappingType(t) => t.get_widened_mut(),
+            Type::SubstitutionType(t) => t.get_widened_mut(),
+            Type::Dummy => unreachable!(),
+        }
     }
 }
 
@@ -1373,7 +1612,7 @@ pub struct IntersectionType {
     pub union_or_intersection_type: UnionOrIntersectionType,
     pub type_base: TypeBase,
 
-    pub resolvedApparentType: TypeId,
+    pub resolvedApparentType: Option<TypeId>,
 }
 
 // export type StructuredType = ObjectType | UnionType | IntersectionType;
@@ -1432,7 +1671,9 @@ pub struct ReverseMappedType {
 #[derive(Debug)]
 pub enum Old {
     // ObjectType
-    // InterfaceType
+    InterfaceType {
+        interface_type: InterfaceTypeBase,
+    },
     // InterfaceTypeWithDeclaredMembers
     TypeReference {
         type_reference: TypeReferenceBase,
@@ -1448,10 +1689,11 @@ pub enum Old {
     AnonymousType {
         anonymous_type: AnonymousTypeBase,
     }, // MappedType
-       // EvolvingArrayType
-       // ReverseMappedType
-       // UnionType
-       // IterableOrIteratorType
+    // EvolvingArrayType
+    // ReverseMappedType
+    UnionType {
+        union_type_base: UnionTypeBase,
+    }, // IterableOrIteratorType
        // PromiseOrAwaitableType
 }
 
@@ -1497,7 +1739,18 @@ impl ResolvedType {
             Type::BigIntLiteralType(_) => todo!(),
             Type::EnumType(_) => todo!(),
             Type::ObjectType(_) => todo!(),
-            Type::InterfaceType(_) => todo!(),
+            Type::InterfaceType(t) => {
+                *ty = Type::ResolvedType(Self {
+                    type_base: t.type_base,
+                    union_or_intersection_type: UnionOrIntersectionType::new(
+                        t.object_type_base.objectFlags,
+                    ),
+                    object_type_base: t.object_type_base,
+                    old: Some(Old::InterfaceType {
+                        interface_type: t.interface_type,
+                    }),
+                })
+            }
             Type::InterfaceTypeWithDeclaredMembers(_) => todo!(),
             Type::TypeReference(t) => {
                 *ty = Type::ResolvedType(Self {
@@ -1528,7 +1781,16 @@ impl ResolvedType {
             }
             Type::TupleType(_) => todo!(),
             Type::TupleTypeReference(_) => todo!(),
-            Type::UnionType(_) => todo!(),
+            Type::UnionType(t) => {
+                *ty = Type::ResolvedType(Self {
+                    type_base: t.type_base,
+                    union_or_intersection_type: t.union_or_intersection_type,
+                    object_type_base: ObjectTypeBase::default(),
+                    old: Some(Old::UnionType {
+                        union_type_base: t.union_type_base,
+                    }),
+                });
+            }
             Type::IntersectionType(_) => todo!(),
             Type::AnonymousType(t) => {
                 *ty = Type::ResolvedType(Self {
@@ -1683,18 +1945,25 @@ pub struct IndexType {
     pub stringsOnly: bool,
 }
 
-#[derive(Debug, Hash)]
+#[derive(Debug)]
 pub struct ConditionalRoot {
     // node: ConditionalTypeNode,
-    pub node: BoundNode,
+    pub node: Rc<crate::node::TsConditionalType>,
     pub checkType: TypeId,
     pub extendsType: TypeId,
     pub isDistributive: bool,
-    pub inferTypeParameters: Rc<Vec<TypeId>>,
-    pub outerTypeParameters: Rc<Vec<TypeId>>,
-    // instantiations?: Map<Type>,
+    pub inferTypeParameters: Option<Rc<Vec<TypeId>>>,
+    pub outerTypeParameters: Option<Rc<Vec<TypeId>>>,
+    // TODO: key type:
+    pub instantiations: AHashMap<u64, TypeId>,
     pub aliasSymbol: Option<SymbolId>,
-    pub aliasTypeArguments: Rc<Vec<TypeId>>,
+    pub aliasTypeArguments: Option<Rc<Vec<TypeId>>>,
+}
+
+index::newtype_index! {
+    pub struct ConditionalRootId {
+        DEBUG_FORMAT = "ConditionalRootId({})"
+    }
 }
 
 // T extends U ? X : Y (TypeFlags.Conditional)
@@ -1703,7 +1972,7 @@ pub struct ConditionalType {
     pub instantiable_type: InstantiableType,
     pub type_base: TypeBase,
 
-    pub root: ConditionalRoot,
+    pub root: ConditionalRootId,
     pub checkType: TypeId,
     pub extendsType: TypeId,
     pub resolvedTrueType: Option<TypeId>,

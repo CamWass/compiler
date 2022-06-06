@@ -9,11 +9,16 @@ define!({
         pub span: Span,
         pub decorators: Vec<Rc<Decorator>>,
         pub body: Vec<ClassMember>,
-        pub super_class: Option<Expr>,
         pub is_abstract: bool,
         pub type_params: Option<Vec<Rc<TsTypeParamDecl>>>,
-        pub super_type_params: Option<Rc<TsTypeParamInstantiation>>,
+        pub extends: Option<Rc<ExtendsClause>>,
         pub implements: Vec<Rc<TsExprWithTypeArgs>>,
+        pub cached_hash: u8,
+    }
+    pub struct ExtendsClause {
+        pub span: Span,
+        pub super_class: Expr,
+        pub super_type_params: Option<Rc<TsTypeParamInstantiation>>,
         pub cached_hash: u8,
     }
     pub enum ClassMember {
@@ -29,7 +34,6 @@ define!({
         pub span: Span,
         pub decorators: Vec<Rc<Decorator>>,
         pub is_static: bool,
-        pub computed: bool,
         pub accessibility: Option<Accessibility>,
         pub is_abstract: bool,
         pub is_optional: bool,
@@ -37,7 +41,7 @@ define!({
         pub readonly: bool,
         pub declare: bool,
         pub definite: bool,
-        pub key: Expr,
+        pub key: PropName,
         pub type_ann: Option<Rc<TsTypeAnn>>,
         pub value: Option<Expr>,
         pub cached_hash: u8,
@@ -49,7 +53,6 @@ define!({
         pub is_abstract: bool,
         pub is_optional: bool,
         pub is_override: bool,
-        pub computed: bool,
         pub accessibility: Option<Accessibility>,
         pub readonly: bool,
         pub definite: bool,
@@ -86,7 +89,6 @@ define!({
     }
     pub struct Constructor {
         pub span: Span,
-        pub key: PropName,
         pub params: Vec<ParamOrTsParamProp>,
         pub body: Option<Rc<BlockStmt>>,
         pub accessibility: Option<Accessibility>,
@@ -382,6 +384,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct Ident {
+        pub node_id: NodeId,
         pub span: Span,
         pub sym: JsWord,
         pub optional: bool,
@@ -814,7 +817,6 @@ define!({
         Ident(Rc<Ident>),
         Str(Rc<Str>),
         Num(Rc<Number>),
-        BigInt(Rc<BigInt>),
         Computed(Rc<ComputedPropName>),
     }
     pub struct ComputedPropName {
@@ -1033,8 +1035,7 @@ define!({
     pub struct TsPropertySignature {
         pub span: Span,
         pub readonly: bool,
-        pub key: Expr,
-        pub computed: bool,
+        pub key: PropName,
         pub optional: bool,
         pub type_ann: Option<Rc<TsTypeAnn>>,
         pub cached_hash: u8,
@@ -1042,8 +1043,7 @@ define!({
     pub struct TsGetterSignature {
         pub span: Span,
         pub readonly: bool,
-        pub key: Expr,
-        pub computed: bool,
+        pub key: PropName,
         pub optional: bool,
         pub type_ann: Option<Rc<TsTypeAnn>>,
         pub cached_hash: u8,
@@ -1051,8 +1051,7 @@ define!({
     pub struct TsSetterSignature {
         pub span: Span,
         pub readonly: bool,
-        pub key: Expr,
-        pub computed: bool,
+        pub key: PropName,
         pub optional: bool,
         pub param: TsAmbientParam,
         pub cached_hash: u8,
@@ -1060,8 +1059,7 @@ define!({
     pub struct TsMethodSignature {
         pub span: Span,
         pub readonly: bool,
-        pub key: Expr,
-        pub computed: bool,
+        pub key: PropName,
         pub optional: bool,
         pub type_params: Option<Vec<Rc<TsTypeParamDecl>>>,
         pub params: Vec<TsAmbientParam>,

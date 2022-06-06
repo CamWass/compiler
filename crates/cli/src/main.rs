@@ -32,7 +32,7 @@ fn create_program(
         .load_file(Path::new(filename))
         .expect("Failed to load file");
 
-    let mut parser = Parser::new(syntax, &fm.src);
+    let mut parser = Parser::new(syntax, &fm);
 
     let program = parser.parse_program();
 
@@ -68,35 +68,37 @@ fn main() -> Result<()> {
     let lib = create_program("lib.es5.d.ts", &config, cm.clone(), &handler)?;
     let program = create_program(entry_file, &config, cm.clone(), &handler)?;
 
-    let compiler = Compiler {};
+    let compiler = Compiler::new();
 
-    compiler.compile(vec![lib], vec![program]);
+    let result = compiler.compile(vec![lib], program);
 
-    Ok(())
-    // println!("\n\n\nSuccessfully parsed");
+    // dbg!(result);
 
-    // let src = {
-    //     let mut buf = vec![];
-    //     {
-    //         let mut emitter = Emitter {
-    //             cfg: codegen::Config { minify: false },
-    //             comments: None,
-    //             cm: cm.clone(),
-    //             wr: Box::new(codegen::text_writer::JsWriter::new(
-    //                 cm.clone(),
-    //                 "\n",
-    //                 &mut buf,
-    //                 None,
-    //             )),
-    //         };
+    // Ok(())
+    println!("\n\n\nSuccessfully parsed");
 
-    //         program
-    //             .emit_with(&mut emitter)
-    //             .context("Failed to emit module")?;
-    //     }
-    //     // Invalid utf8 is valid in javascript world.
-    //     String::from_utf8(buf).expect("Invalid utf8 character detected")
-    // };
+    let src = {
+        let mut buf = vec![];
+        {
+            let mut emitter = Emitter {
+                cfg: codegen::Config { minify: false },
+                comments: None,
+                cm: cm.clone(),
+                wr: Box::new(codegen::text_writer::JsWriter::new(
+                    cm.clone(),
+                    "\n",
+                    &mut buf,
+                    None,
+                )),
+            };
 
-    // std::fs::write("out.js", src).context("Failed to write file")
+            result
+                .emit_with(&mut emitter)
+                .context("Failed to emit module")?;
+        }
+        // Invalid utf8 is valid in javascript world.
+        String::from_utf8(buf).expect("Invalid utf8 character detected")
+    };
+
+    std::fs::write("out.ts", src).context("Failed to write file")
 }

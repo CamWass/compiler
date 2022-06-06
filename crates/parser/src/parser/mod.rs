@@ -19,7 +19,7 @@ use crate::{
     JscTarget, Syntax,
 };
 use ast::*;
-use global_common::{BytePos, Span};
+use global_common::{BytePos, SourceFile, Span};
 use input::Buffer;
 pub use input::Tokens;
 use std::collections::HashMap;
@@ -48,10 +48,11 @@ pub struct Parser<I: Tokens> {
     emit_err: bool,
     state: State,
     input: Buffer<I>,
+    ident_id: NodeId,
 }
 
 impl<'src> Parser<Lexer<'src>> {
-    pub fn new(syntax: Syntax, input: &'src str) -> Self {
+    pub fn new(syntax: Syntax, input: &'src SourceFile) -> Self {
         Self::new_from(Lexer::new(syntax, Default::default(), input))
     }
 }
@@ -62,6 +63,7 @@ impl<I: Tokens> Parser<I> {
             emit_err: true,
             state: Default::default(),
             input: Buffer::new(input),
+            ident_id: NodeId(0),
         }
     }
 

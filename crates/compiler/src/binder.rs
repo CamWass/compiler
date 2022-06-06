@@ -3,7 +3,7 @@ use crate::node::*;
 use crate::types::*;
 use crate::utils::*;
 use crate::SourceFile;
-use ahash::{AHashMap};
+use ahash::AHashMap;
 use bitflags::bitflags;
 use index::vec::IndexVec;
 use std::hash::Hash;
@@ -204,14 +204,12 @@ impl<'a> Binder<'a> {
             hasExplicitReturn: false,
 
             // emitFlags: NodeFlags::None,
-
             inStrictMode: false,
 
             inAssignmentPattern: false,
 
             unreachableFlow,
             // reportedUnreachableFlow,
-
             node_data: Default::default(),
             flow_nodes,
             symbols: Default::default(),
@@ -367,7 +365,7 @@ impl<'a> Binder<'a> {
                 }
                 DeclName::Number(_) => todo!(),
                 DeclName::ComputedProperty(expr) => {
-                    match expr {
+                    match &expr.expr {
                         // treat computed property names where expression is string/numeric literal as just string/numeric literal
                         // TODO: escapeLeadingUnderscores:
                         ast::Expr::Lit(ast::Lit::Num(_)) => todo!(),
@@ -1173,8 +1171,7 @@ impl<'a> Binder<'a> {
                 let ast::Class {
                     decorators,
                     type_params,
-                    super_class,
-                    super_type_params,
+                    extends,
                     implements,
                     body,
                     is_abstract: _,
@@ -1184,8 +1181,7 @@ impl<'a> Binder<'a> {
 
                 bind_vec!(self, decorators, node.clone());
                 bind_opt_vec!(self, type_params, node.clone());
-                bind_opt!(self, super_class, node.clone());
-                bind_opt!(self, super_type_params, node.clone());
+                bind_opt!(self, extends, node.clone());
                 bind_vec!(self, implements, node.clone());
                 bind_vec!(self, body, node.clone());
             }
@@ -1197,7 +1193,6 @@ impl<'a> Binder<'a> {
                     type_ann,
                     is_static: _,
                     decorators,
-                    computed: _,
                     accessibility: _,
                     is_abstract: _,
                     is_optional: _,
@@ -1221,7 +1216,6 @@ impl<'a> Binder<'a> {
                     type_ann,
                     is_static: _,
                     decorators,
-                    computed: _,
                     accessibility: _,
                     is_abstract: _,
                     is_optional: _,
@@ -1307,7 +1301,6 @@ impl<'a> Binder<'a> {
             BoundNode::Constructor(c) => {
                 let ast::Constructor {
                     span: _,
-                    key,
                     params,
                     body,
                     accessibility: _,
@@ -1315,7 +1308,6 @@ impl<'a> Binder<'a> {
                     cached_hash: _,
                 } = c.node.as_ref();
 
-                bind!(self, key, node.clone());
                 bind_vec!(self, params, node.clone());
                 bind_opt!(self, body, node.clone());
             }
@@ -1655,7 +1647,14 @@ impl<'a> Binder<'a> {
             BoundNode::TsTypeAssertion(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
             BoundNode::TsNonNullExpr(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
             BoundNode::TsConstAssertion(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
-            _ => unreachable!("handled by bindChildren"),
+            BoundNode::ExtendsClause(n) => {
+                bind!(self, n.super_class, node.clone());
+                bind_opt!(self, n.super_type_params, node.clone());
+            }
+            _ => {
+                dbg!(node);
+                unreachable!("handled by bindChildren")
+            }
         }
     }
 
@@ -2873,7 +2872,7 @@ impl<'a> Binder<'a> {
     }
 
     fn bindModuleDeclaration(&mut self, node: BoundNode, module: Rc<TsModuleDecl>) {
-        setExportContextFlag(node.clone());
+        self.setExportContextFlag(&module);
         if isAmbientModule(&node) {
             todo!();
             // if hasSyntacticModifier(node, ModifierFlags.Export) {
@@ -2900,7 +2899,7 @@ impl<'a> Binder<'a> {
                 let symbol = self.node_data(node).symbol.unwrap();
                 let symbol = &mut self.symbols[symbol];
                 // if module was already merged with some function, class or non-const enum, treat it as non-const-enum-only
-                *symbol.constEnumOnlyModule_mut() = !(symbol.flags().contains(SymbolFlags::Function | SymbolFlags::Class | SymbolFlags::RegularEnum))
+                *symbol.constEnumOnlyModule_mut() = !symbol.flags().contains(SymbolFlags::Function | SymbolFlags::Class | SymbolFlags::RegularEnum)
                     // Current must be `const enum` only
                     && state == ModuleInstanceState::ConstEnumOnly
                     // Can't have been set to 'false' in a previous merged symbol. ('undefined' OK)
@@ -3294,10 +3293,12 @@ impl<'a> Binder<'a> {
             BoundNode::VarDeclarator(ref v) => {
                 return self.bindVariableDeclaration(node.clone(), v.clone());
             }
-            // BoundNode::BindingIdent(_) | BoundNode::RestPat(_) | BoundNode::AssignPat(_) => {
-            //     self.node_data_mut(node.clone()).flowNode = Some(self.currentFlow);
-            //     self.bindBindingElement(node);
-            // }
+            // TODO:
+            // BoundNode::BindingIdent(_) |
+            BoundNode::AssignPat(_) | BoundNode::RestPat(_) => {
+                self.node_data_mut(node.clone()).flowNode = Some(self.currentFlow);
+                self.bindBindingElement(node);
+            }
             BoundNode::ClassProp(_)
             | BoundNode::PrivateProp(_)
             | BoundNode::TsPropertySignature(_) => {
@@ -3565,16 +3566,12 @@ impl<'a> Binder<'a> {
     }
 
     fn bindPropertyWorker(&mut self, node: BoundNode) {
-        let (has_dynamic_name, optional) = match &node {
-            BoundNode::ClassProp(p) => (
-                p.computed && hasDynamicName(&p.key.bind(node.clone())),
-                p.is_optional,
-            ),
-            BoundNode::PrivateProp(p) => (false, p.is_optional),
-            BoundNode::TsPropertySignature(s) => (
-                s.computed && hasDynamicName(&s.key.bind(node.clone())),
-                s.optional,
-            ),
+        let has_dynamic_name = hasDynamicName(&node);
+
+        let optional = match &node {
+            BoundNode::ClassProp(n) => n.is_optional,
+            BoundNode::PrivateProp(n) => n.is_optional,
+            BoundNode::TsPropertySignature(n) => n.optional,
             _ => unreachable!(),
         };
 
@@ -3785,13 +3782,12 @@ impl<'a> Binder<'a> {
         //     checkStrictModeEvalOrArguments(node, node.name);
         // }
 
-        let kind = match &decl.parent {
-            Some(BoundNode::VarDecl(d)) => d.kind,
-            _ => unreachable!(),
-        };
-
         // if !isBindingPattern(node.name) {
         if !matches!(decl.name, ast::Pat::Object(_) | ast::Pat::Array(_)) {
+            let kind = match &decl.parent {
+                Some(BoundNode::VarDecl(d)) => d.kind,
+                _ => unreachable!(),
+            };
             // todo
             /*if isInJSFile(decl) && isRequireVariableDeclaration(decl) && !getJSDocTypeTag(decl) {
                 self.declareSymbolAndAddToSymbolTable(
@@ -3816,50 +3812,61 @@ impl<'a> Binder<'a> {
         }
     }
 
-    // fn bindBindingElement(&mut self, node: BoundNode) {
-    //     // if (inStrictMode) {
-    //     //     checkStrictModeEvalOrArguments(node, node.name);
-    //     // }
+    fn bindBindingElement(&mut self, node: BoundNode) {
+        debug_assert!(matches!(
+            node,
+            BoundNode::BindingIdent(_) | BoundNode::RestPat(_) | BoundNode::AssignPat(_)
+        ));
+        // if (inStrictMode) {
+        //     checkStrictModeEvalOrArguments(node, node.name);
+        // }
 
-    //     if !matches!(node, BoundNode::ObjectPat(_) | BoundNode::ArrayPat(_)) {
-    //         // TODO:
-    //         // if isInJSFile(node) && isRequireVariableDeclaration(node) && !getJSDocTypeTag(node) {
-    //         //     self.declareSymbolAndAddToSymbolTable(
-    //         //         node as Declaration,
-    //         //         SymbolFlags::Alias,
-    //         //         SymbolFlags::AliasExcludes,
-    //         //     );
-    //         // } else
-    //         if isBlockOrCatchScoped(node.clone()) {
-    //             self.bindBlockScopedDeclaration(
-    //                 node,
-    //                 SymbolFlags::BlockScopedVariable,
-    //                 SymbolFlags::BlockScopedVariableExcludes,
-    //             );
-    //         } else if isParameterDeclaration(node.clone()) {
-    //             // It is safe to walk up parent chain to find whether the node is a destructuring parameter declaration
-    //             // because its parent chain has already been set up, since parents are set before descending into children.
-    //             //
-    //             // If node is a binding element in parameter declaration, we need to use ParameterExcludes.
-    //             // Using ParameterExcludes flag allows the compiler to report an error on duplicate identifiers in Parameter Declaration
-    //             // For example:
-    //             //      function foo([a,a]) {} // Duplicate Identifier error
-    //             //      function bar(a,a) {}   // Duplicate Identifier error, parameter declaration in this case is handled in bindParameter
-    //             //                             // which correctly set excluded symbols
-    //             self.declareSymbolAndAddToSymbolTable(
-    //                 node,
-    //                 SymbolFlags::FunctionScopedVariable,
-    //                 SymbolFlags::ParameterExcludes,
-    //             );
-    //         } else {
-    //             self.declareSymbolAndAddToSymbolTable(
-    //                 node,
-    //                 SymbolFlags::FunctionScopedVariable,
-    //                 SymbolFlags::FunctionScopedVariableExcludes,
-    //             );
-    //         }
-    //     }
-    // }
+        let name = match &node {
+            BoundNode::RestPat(n) => Some(&n.arg),
+            BoundNode::AssignPat(n) => Some(&n.left),
+            _ => None,
+        };
+        let is_name_binding_pat = matches!(name, Some(ast::Pat::Object(_) | ast::Pat::Array(_)));
+
+        if !is_name_binding_pat {
+            // TODO:
+            // if isInJSFile(node) && isRequireVariableDeclaration(node) && !getJSDocTypeTag(node) {
+            //     self.declareSymbolAndAddToSymbolTable(
+            //         node as Declaration,
+            //         SymbolFlags::Alias,
+            //         SymbolFlags::AliasExcludes,
+            //     );
+            // } else
+            if isBlockOrCatchScoped(node.clone()) {
+                self.bindBlockScopedDeclaration(
+                    node,
+                    SymbolFlags::BlockScopedVariable,
+                    SymbolFlags::BlockScopedVariableExcludes,
+                );
+            } else if isParameterDeclaration(node.clone()) {
+                // It is safe to walk up parent chain to find whether the node is a destructuring parameter declaration
+                // because its parent chain has already been set up, since parents are set before descending into children.
+                //
+                // If node is a binding element in parameter declaration, we need to use ParameterExcludes.
+                // Using ParameterExcludes flag allows the compiler to report an error on duplicate identifiers in Parameter Declaration
+                // For example:
+                //      function foo([a,a]) {} // Duplicate Identifier error
+                //      function bar(a,a) {}   // Duplicate Identifier error, parameter declaration in this case is handled in bindParameter
+                //                             // which correctly set excluded symbols
+                self.declareSymbolAndAddToSymbolTable(
+                    node,
+                    SymbolFlags::FunctionScopedVariable,
+                    SymbolFlags::ParameterExcludes,
+                );
+            } else {
+                self.declareSymbolAndAddToSymbolTable(
+                    node,
+                    SymbolFlags::FunctionScopedVariable,
+                    SymbolFlags::FunctionScopedVariableExcludes,
+                );
+            }
+        }
+    }
 
     fn bindParameter(&mut self, param: Parameter /* | JSDocParameterTag*/) {
         // if (node.kind === SyntaxKind.JSDocParameterTag && container.kind !== SyntaxKind.JSDocSignature) {
@@ -3906,10 +3913,37 @@ impl<'a> Binder<'a> {
 
         // If this is a property-parameter, then also declare the property symbol into the
         // containing class.
-        if let Parameter::TsParamProp(_) = param {
-            todo!();
-            // const classDeclaration = node.parent.parent;
-            // declareSymbol(classDeclaration.symbol.members!, classDeclaration.symbol, node, SymbolFlags.Property | (node.questionToken ? SymbolFlags.Optional : SymbolFlags.None), SymbolFlags.PropertyExcludes);
+        if let Parameter::TsParamProp(p) = param {
+            let classDeclaration = p
+                .parent
+                .as_ref()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap();
+            debug_assert!(matches!(
+                classDeclaration,
+                BoundNode::ClassDecl(_) | BoundNode::ClassExpr(_)
+            ));
+            let class_sym = self.node_data(classDeclaration).symbol.unwrap();
+
+            let is_optional = matches!(&p.param, ast::TsParamPropParam::Ident(i) if i.id.optional);
+            let mut symbol_flags = SymbolFlags::Property;
+            symbol_flags.set(SymbolFlags::Optional, is_optional);
+
+            let bound = BoundNode::TsParamProp(p);
+
+            declare_symbol!(
+                self,
+                self.symbols[class_sym].members().unwrap(),
+                Some(class_sym),
+                bound,
+                symbol_flags,
+                SymbolFlags::PropertyExcludes,
+                false,
+                false
+            );
         }
     }
 
@@ -4072,6 +4106,20 @@ impl<'a> Binder<'a> {
         }
         return true;
     }
+
+    fn setExportContextFlag(
+        &mut self,
+        node: &Rc<TsModuleDecl>, /*node: Mutable<ModuleDeclaration | SourceFile>*/
+    ) {
+        let bound_node = BoundNode::TsModuleDecl(node.clone());
+        // A declaration source file or ambient module declaration that contains no export declarations (but possibly regular
+        // declarations with export modifiers) is an export context in which declarations are implicitly exported.
+        if node.declare && !hasExportDeclarations(&bound_node) {
+            self.node_data_mut(bound_node).flags |= NodeFlags::ExportContext;
+        } else {
+            self.node_data_mut(bound_node).flags &= !NodeFlags::ExportContext;
+        }
+    }
 }
 
 #[derive(PartialEq, Eq)]
@@ -4215,23 +4263,11 @@ fn getModuleInstanceStateWorker(
 //     return ModuleInstanceState::Instantiated; // Couldn't locate, assume could refer to a value
 // }
 
-// TODO:
-// fn hasExportDeclarations(node: BoundNode /*node: ModuleDeclaration | SourceFile*/) -> bool {
-//     // TODO:
-//     // const body = isSourceFile(node) ? node : tryCast(node.body, isModuleBlock);
-//     // return !!body && body.statements.some(s => isExportDeclaration(s) || isExportAssignment(s));
-// }
-
-fn setExportContextFlag(_node: BoundNode /*node: Mutable<ModuleDeclaration | SourceFile>*/) {
+fn hasExportDeclarations(node: &BoundNode /*node: ModuleDeclaration | SourceFile*/) -> bool {
+    false
     // TODO:
-    // A declaration source file or ambient module declaration that contains no export declarations (but possibly regular
-    // declarations with export modifiers) is an export context in which declarations are implicitly exported.
-    // if (node.flags & NodeFlags.Ambient && !hasExportDeclarations(node)) {
-    //     node.flags |= NodeFlags.ExportContext;
-    // }
-    // else {
-    //     node.flags &= ~NodeFlags.ExportContext;
-    // }
+    // const body = isSourceFile(node) ? node : tryCast(node.body, isModuleBlock);
+    // return !!body && body.statements.some(s => isExportDeclaration(s) || isExportAssignment(s));
 }
 
 fn getInferTypeContainer(mut node: BoundNode) -> Option<BoundNode> {
@@ -4398,7 +4434,7 @@ fn hasNarrowableArgument(expr: &ast::CallExpr) -> bool {
     false
 }
 
-fn isNarrowingTypeofOperands(_expr1: &ast::Expr,_expr2: &ast::Expr) -> bool {
+fn isNarrowingTypeofOperands(_expr1: &ast::Expr, _expr2: &ast::Expr) -> bool {
     todo!();
     // return isTypeOfExpression(expr1) && isNarrowableOperand(expr1.expression) && isStringLiteralLike(expr2);
 }
