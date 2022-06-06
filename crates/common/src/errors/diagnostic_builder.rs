@@ -41,13 +41,13 @@ pub struct DiagnosticBuilder<'a> {
 /// it easy to declare such methods on the builder.
 macro_rules! forward {
     // Forward pattern for &self -> &Self
-    (pub fn $n:ident(&self, $($name:ident: $ty:ty),* $(,)*) -> &Self) => {
-        pub fn $n(&self, $($name: $ty),*) -> &Self {
-            #[allow(deprecated)]
-            self.diagnostic.$n($($name),*);
-            self
-        }
-    };
+    // (pub fn $n:ident(&self, $($name:ident: $ty:ty),* $(,)*) -> &Self) => {
+    //     pub fn $n(&self, $($name: $ty),*) -> &Self {
+    //         #[allow(deprecated)]
+    //         self.diagnostic.$n($($name),*);
+    //         self
+    //     }
+    // };
 
     // Forward pattern for &mut self -> &mut Self
     (pub fn $n:ident(&mut self, $($name:ident: $ty:ty),* $(,)*) -> &mut Self) => {

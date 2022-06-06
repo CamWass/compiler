@@ -24,7 +24,7 @@ pub(crate) use unwrap_as;
 #[macro_export]
 macro_rules! new_ahash_map {
     [$( ($key:expr, $value:expr $(,)?)$(,)? )*] => {{
-        std::array::IntoIter::new([$( ($key, $value), )*]).collect::<AHashMap<_,_>>()
+        IntoIterator::into_iter([$( ($key, $value), )*]).collect::<AHashMap<_,_>>()
     }};
 }
 
