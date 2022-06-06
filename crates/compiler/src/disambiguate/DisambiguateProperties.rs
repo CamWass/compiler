@@ -536,15 +536,15 @@ class Other {
 }",
             "
 interface IFoo0 {
-    JSC$2_b();
+    JSC$1_b();
     JSC$1_c?();
 }
 interface IFoo1 {
     JSC$2_d?();
-    JSC$2_b();
+    JSC$1_b();
 }
 class Foo implements IFoo0, IFoo1 {
-    JSC$2_b() {}
+    JSC$1_b() {}
 }
 class Other {
     JSC$4_b() {}
@@ -756,10 +756,10 @@ class Other {
 }",
             "
 interface IFoo {
-    JSC$1_t();
+    JSC$2_t();
 }
 class Foo {
-    JSC$1_t() {}
+    JSC$2_t() {}
 }
 class SubFoo extends Foo implements IFoo {}
 

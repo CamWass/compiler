@@ -2,8 +2,8 @@ use super::ColorGraphNode::ColorGraphNodeId;
 use super::Invalidation::Invalidation;
 use crate::graph::StandardUnionFind::StandardUnionFind;
 use crate::node::BoundNode;
-use ahash::AHashMap;
 use index::newtype_index;
+use rustc_hash::FxHashMap;
 use swc_atoms::JsWord;
 
 /**
@@ -23,7 +23,7 @@ pub struct PropertyClustering {
     //  * <p>This index allows property references to be efficiently renamed once all clusters have been
     //  * found. It prevents us from re-traversing the code.
     //  */
-    pub useSites: AHashMap<ast::NodeId, ColorGraphNodeId>,
+    pub useSites: FxHashMap<ast::NodeId, ColorGraphNodeId>,
     pub clusters: StandardUnionFind<ColorGraphNodeId>,
     originalNameClusterRep: Option<ColorGraphNodeId>,
     lastInvalidation: Option<Invalidation>,
@@ -33,7 +33,7 @@ impl PropertyClustering {
     pub fn new(name: JsWord) -> Self {
         Self {
             name,
-            useSites: AHashMap::default(),
+            useSites: FxHashMap::default(),
             clusters: StandardUnionFind::default(),
             originalNameClusterRep: None,
             lastInvalidation: None,

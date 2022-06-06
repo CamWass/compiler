@@ -1,6 +1,6 @@
-use ahash::AHashSet;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
+use rustc_hash::FxHashSet;
 use std::{
     cmp::{max, min},
     iter::FromIterator,
@@ -59,7 +59,7 @@ where
      * @param graph The graph to traverse.
      */
     pub fn computeFixedPoint(&mut self, graph: &DiGraph<N, E>) {
-        let mut workSet = AHashSet::from_iter(graph.node_indices());
+        let mut workSet = FxHashSet::from_iter(graph.node_indices());
         let mut cycleCount: usize = 0;
         let nodeCount = min(graph.node_count(), MAX_NODE_COUNT_FOR_ITERATION_LIMIT);
 
@@ -81,7 +81,7 @@ where
     fn visitNode(
         &mut self,
         node: NodeIndex,
-        workSet: &mut AHashSet<NodeIndex>,
+        workSet: &mut FxHashSet<NodeIndex>,
         graph: &DiGraph<N, E>,
     ) {
         // For every out edge in the workSet, traverse that edge. If that

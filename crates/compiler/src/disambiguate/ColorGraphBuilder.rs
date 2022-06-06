@@ -1,7 +1,7 @@
 use crate::{colors::ColorId, graph::LowestCommonAncestorFinder::LowestCommonAncestorFinder};
 
 use super::{ColorGraphNode::ColorGraphNodeId, ColorGraphNodeFactory::ColorGraphNodeFactory};
-use ahash::AHashMap;
+use rustc_hash::FxHashMap;
 use petgraph::graph::{DiGraph, NodeIndex};
 
 /** Builds a graph of the {@link Color}s on the AST from a specified set of seed colors. */
@@ -33,7 +33,7 @@ pub struct ColorGraphBuilder<'col, 'nf> {
      */
     colorHoldsInstanceGraph: DiGraph<ColorGraphNodeId, EdgeReason>,
 
-    color_node_to_graph_node: AHashMap<ColorGraphNodeId, NodeIndex>,
+    color_node_to_graph_node: FxHashMap<ColorGraphNodeId, NodeIndex>,
 }
 
 impl<'col, 'nf> ColorGraphBuilder<'col, 'nf> {
@@ -46,7 +46,7 @@ impl<'col, 'nf> ColorGraphBuilder<'col, 'nf> {
             // lcaFinder: LowestCommonAncestorFinder::new(colorHoldsInstanceGraph),
             topNode,
             colorHoldsInstanceGraph,
-            color_node_to_graph_node: AHashMap::default(),
+            color_node_to_graph_node: FxHashMap::default(),
         }
     }
 

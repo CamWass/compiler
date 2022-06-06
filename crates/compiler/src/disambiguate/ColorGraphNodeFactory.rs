@@ -1,11 +1,11 @@
 use super::ColorGraphNode::{ColorGraphNode, ColorGraphNodeId};
 use crate::colors::{color_registry::ColorRegistry, ColorId};
 use crate::types::TypeId;
-use ahash::AHashMap;
 use index::vec::IndexVec;
+use rustc_hash::FxHashMap;
 
 pub struct ColorGraphNodeFactory<'c> {
-    typeIndex: AHashMap<ColorId, ColorGraphNodeId>,
+    typeIndex: FxHashMap<ColorId, ColorGraphNodeId>,
     // TODO: pub for testing
     pub nodes: IndexVec<ColorGraphNodeId, ColorGraphNode>,
     pub colours: &'c mut ColorRegistry,
@@ -13,8 +13,8 @@ pub struct ColorGraphNodeFactory<'c> {
 
 impl<'c> ColorGraphNodeFactory<'c> {
     pub fn new(colours: &'c mut ColorRegistry) -> Self {
-        let mut typeIndex = AHashMap::with_capacity(1);
-        let mut nodes = IndexVec::with_capacity(1);
+        let mut typeIndex = FxHashMap::default();
+        let mut nodes = IndexVec::default();
 
         let unknown_type = colours.unknown_color;
 

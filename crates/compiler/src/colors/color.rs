@@ -1,5 +1,5 @@
 use super::ColorId;
-use ahash::AHashSet;
+use rustc_hash::FxHashSet;
 use swc_atoms::JsWord;
 
 /** A simplified version of a Closure or TS type for use by optimizations */
@@ -10,12 +10,12 @@ pub struct Color {
     //  * Property names 'declared' on an object (as opposed to being conceptually inherited from some
     //  * supertype).
     //  */
-    // pub ownProperties: AHashSet<JsWord>,
+    // pub ownProperties: FxHashSet<JsWord>,
     /** Given `function Foo() {}` or `class Foo {}`, color of Foo.prototype. null otherwise. */
-    // pub prototypes: AHashSet<ColorId>,
+    // pub prototypes: FxHashSet<ColorId>,
     pub staticType: Option<ColorId>,
-    // pub instanceColors: AHashSet<ColorId>,
-    pub unionElements: AHashSet<ColorId>,
+    // pub instanceColors: FxHashSet<ColorId>,
+    pub unionElements: FxHashSet<ColorId>,
 }
 
 impl Color {

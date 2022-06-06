@@ -18,6 +18,7 @@ index = {path = "../index"}
 ecma_visit = {path = "../visit"}
 lexical = {version = "6.1.0", features = ["power-of-two", "format"]}
 petgraph = "0.6.0"
+rustc-hash = "1.1.0"
 
 [dev-dependencies]
 testing = {path = "../../testing"}

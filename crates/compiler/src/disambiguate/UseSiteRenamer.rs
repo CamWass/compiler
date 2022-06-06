@@ -2,17 +2,17 @@ use super::{
     ColorGraphNode::ColorGraphNodeId,
     PropertyClustering::{PropertyClustering, PropertyClusteringId},
 };
-use ahash::AHashMap;
 use ast::NodeId;
 use ecma_visit::{noop_visit_mut_type, VisitMut, VisitMutWith};
 use index::vec::IndexVec;
+use rustc_hash::FxHashMap;
 use swc_atoms::JsWord;
 
 pub fn rename_use_sites(
     ast: &mut ::ast::Program,
     propertyClusterings: IndexVec<PropertyClusteringId, PropertyClustering>,
 ) {
-    let mut renaming_map = AHashMap::default();
+    let mut renaming_map = FxHashMap::default();
     for mut prop in propertyClusterings {
         if prop.isInvalidated() {
             continue;
@@ -52,7 +52,7 @@ pub fn rename_use_sites(
 }
 
 pub struct UseSiteRenamer {
-    renaming_map: AHashMap<NodeId, JsWord>,
+    renaming_map: FxHashMap<NodeId, JsWord>,
 }
 
 // impl UseSiteRenamer {
@@ -97,7 +97,7 @@ pub struct UseSiteRenamer {
  * Creates a unique name for each cluster in {@code prop} and maps it to the cluster
  * representative.
  */
-fn createAllClusterNames(prop: &mut PropertyClustering) -> AHashMap<ColorGraphNodeId, JsWord> {
+fn createAllClusterNames(prop: &mut PropertyClustering) -> FxHashMap<ColorGraphNodeId, JsWord> {
     prop.clusters
         .allRepresentatives()
         .into_iter()

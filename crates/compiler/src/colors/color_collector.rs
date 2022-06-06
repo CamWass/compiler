@@ -9,11 +9,11 @@ use crate::utils::*;
 use crate::visit::{Visit, VisitWith};
 use crate::Checker;
 use crate::CompProgram;
-use ahash::{AHashMap, AHashSet};
 use index::{
     newtype_index,
     vec::{Idx, IndexVec},
 };
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::iter::FromIterator;
 use std::rc::Rc;
 use swc_atoms::{js_word, JsWord};
@@ -23,7 +23,7 @@ pub fn collect(checker: &mut Checker, program: &CompProgram) -> ColorRegistry {
     let mut data = Data {
         checker,
         registry: ColorRegistry::new(),
-        type_to_color_map: AHashMap::default(),
+        type_to_color_map: FxHashMap::default(),
         referenced_props,
     };
     data.add_standard_colors();
@@ -40,8 +40,8 @@ pub fn collect(checker: &mut Checker, program: &CompProgram) -> ColorRegistry {
 struct Data<'c> {
     checker: &'c mut Checker,
     registry: ColorRegistry,
-    type_to_color_map: AHashMap<TypeId, ColorId>,
-    referenced_props: AHashSet<JsWord>,
+    type_to_color_map: FxHashMap<TypeId, ColorId>,
+    referenced_props: FxHashSet<JsWord>,
 }
 
 impl Data<'_> {
@@ -132,7 +132,7 @@ impl Data<'_> {
                 .types
                 .clone();
             let types = types.iter().map(|t| self.recordType(*t, None));
-            let alt_colours = AHashSet::<ColorId, ahash::RandomState>::from_iter(types);
+            let alt_colours = FxHashSet::from_iter(types);
             // Some elements of the union may be equal as Colors
             if alt_colours.len() == 1 {
                 return *alt_colours.iter().next().unwrap();
@@ -194,7 +194,7 @@ impl Data<'_> {
     //         .types
     //         .clone();
     //     let types = types.iter().map(|t| self.recordType(*t, None));
-    //     let alt_colours = AHashSet::<ColorId, ahash::RandomState>::from_iter(types);
+    //     let alt_colours = FxHashSet::<ColorId, ahash::RandomState>::from_iter(types);
     //     // Some elements of the union may be equal as Colors
     //     if alt_colours.len() == 1 {
     //         return *alt_colours.iter().next().unwrap();
@@ -507,7 +507,7 @@ impl Visit for ClassVisitor<'_, '_> {
     }
 }
 
-fn find_props(program: &CompProgram) -> AHashSet<JsWord> {
+fn find_props(program: &CompProgram) -> FxHashSet<JsWord> {
     let mut finder = PropertyFinder::default();
     program.visit_with(&mut finder, None);
     finder.props
@@ -515,7 +515,7 @@ fn find_props(program: &CompProgram) -> AHashSet<JsWord> {
 
 #[derive(Default)]
 struct PropertyFinder {
-    props: AHashSet<JsWord>,
+    props: FxHashSet<JsWord>,
 }
 
 impl Visit for PropertyFinder {

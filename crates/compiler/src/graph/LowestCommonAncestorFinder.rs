@@ -1,9 +1,9 @@
 use std::collections::VecDeque;
 
-use ahash::{AHashMap, AHashSet};
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
 use petgraph::Direction;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::hash::Hash;
 
 /**
@@ -20,14 +20,14 @@ use std::hash::Hash;
  * deterministic iteration).
  */
 pub struct LowestCommonAncestorFinder {
-    searchColoring: AHashMap<NodeIndex, Color>,
+    searchColoring: FxHashMap<NodeIndex, Color>,
     searchQueue: VecDeque<NodeIndex>,
 }
 
 impl LowestCommonAncestorFinder {
     pub fn new() -> Self {
         Self {
-            searchColoring: AHashMap::default(),
+            searchColoring: FxHashMap::default(),
             searchQueue: VecDeque::new(),
         }
     }
@@ -39,7 +39,7 @@ impl LowestCommonAncestorFinder {
      * optimizations that could be applied.
      */
     // pub fn findAll(&mut self, roots: Vec<N>) -> impl Iterator<Item = N> {
-    pub fn findAll<N, E>(&mut self, graph: &DiGraph<N, E>, roots: &[NodeIndex]) -> AHashSet<N>
+    pub fn findAll<N, E>(&mut self, graph: &DiGraph<N, E>, roots: &[NodeIndex]) -> FxHashSet<N>
     where
         N: Eq + Hash + Copy,
     {
@@ -87,7 +87,7 @@ impl LowestCommonAncestorFinder {
             }
         }
 
-        let mut results = AHashSet::default();
+        let mut results = FxHashSet::default();
         for (&node, &color) in &self.searchColoring {
             if color == allColor {
                 results.insert(graph[node]);

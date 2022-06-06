@@ -10,13 +10,13 @@ use crate::types::TypeId;
 use crate::utils::{isBindableObjectDefinePropertyCall, unwrap_as};
 use crate::visit::{Visit, VisitWith};
 use crate::{ast, CompProgram};
-use ahash::AHashMap;
 use index::vec::IndexVec;
+use rustc_hash::FxHashMap;
 use std::fmt::Debug;
 use swc_atoms::JsWord;
 
 pub struct ColorFindPropertyReferences<'col, 'nf> {
-    propIndex: AHashMap<JsWord, PropertyClusteringId>,
+    propIndex: FxHashMap<JsWord, PropertyClusteringId>,
     colorGraphNodeFactory: &'nf mut ColorGraphNodeFactory<'col>,
     propertyClusterings: IndexVec<PropertyClusteringId, PropertyClustering>,
 }
@@ -26,11 +26,11 @@ impl<'col, 'nf> ColorFindPropertyReferences<'col, 'nf> {
         colorGraphNodeFactory: &'nf mut ColorGraphNodeFactory<'col>,
         program: &CompProgram,
     ) -> (
-        AHashMap<JsWord, PropertyClusteringId>,
+        FxHashMap<JsWord, PropertyClusteringId>,
         IndexVec<PropertyClusteringId, PropertyClustering>,
     ) {
         let mut prop_ref_finder = Self {
-            propIndex: AHashMap::default(),
+            propIndex: FxHashMap::default(),
             colorGraphNodeFactory,
             propertyClusterings: IndexVec::default(),
         };

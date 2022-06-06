@@ -1,5 +1,5 @@
-use ahash::AHashMap;
 use index::{newtype_index, vec::IndexVec};
+use rustc_hash::FxHashMap;
 use std::fmt::Debug;
 use std::hash::Hash;
 
@@ -9,7 +9,7 @@ where
     E: Eq + Hash + Copy + Debug,
 {
     /** All values with the same root node are in the same equivalence set. */
-    elmap: AHashMap<E, NodeId>,
+    elmap: FxHashMap<E, NodeId>,
     nodes: IndexVec<NodeId, Node<E>>,
 }
 
@@ -19,7 +19,7 @@ where
 {
     fn default() -> Self {
         Self {
-            elmap: AHashMap::default(),
+            elmap: FxHashMap::default(),
             nodes: IndexVec::default(),
         }
     }

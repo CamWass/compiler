@@ -8,11 +8,11 @@ use crate::utils::*;
 use crate::visit::{Visit, VisitWith};
 use crate::Checker;
 use crate::CompProgram;
-use ahash::{AHashMap, AHashSet};
 use index::{
     newtype_index,
     vec::{Idx, IndexVec},
 };
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::iter::FromIterator;
 use std::rc::Rc;
 use swc_atoms::{js_word, JsWord};
@@ -20,10 +20,10 @@ use swc_atoms::{js_word, JsWord};
 #[derive(Debug)]
 pub struct ColorRegistry {
     pub colors: IndexVec<ColorId, Color>,
-    pub node_to_color_map: AHashMap<BoundNode, ColorId>,
-    pub disambiguationSupertypeGraph: AHashMap<ColorId, AHashSet<ColorId>>,
+    pub node_to_color_map: FxHashMap<BoundNode, ColorId>,
+    pub disambiguationSupertypeGraph: FxHashMap<ColorId, FxHashSet<ColorId>>,
     /// Maps instantiable color -> union of instance colors.
-    instanceColorUnions: AHashMap<ColorId, ColorId>,
+    instanceColorUnions: FxHashMap<ColorId, ColorId>,
 
     // Standard colours:
     pub unknown_color: ColorId,
@@ -64,9 +64,9 @@ impl ColorRegistry {
 
         Self {
             colors,
-            node_to_color_map: AHashMap::default(),
-            disambiguationSupertypeGraph: AHashMap::default(),
-            instanceColorUnions: AHashMap::default(),
+            node_to_color_map: FxHashMap::default(),
+            disambiguationSupertypeGraph: FxHashMap::default(),
+            instanceColorUnions: FxHashMap::default(),
 
             unknown_color,
             bigint_color,
@@ -83,7 +83,7 @@ impl ColorRegistry {
      * The colors directly above `x` in the subtyping graph for the purposes of property
      * (dis)ambiguation.
      */
-    pub fn getDisambiguationSupertypes(&self, x: ColorId) -> Option<&AHashSet<ColorId>> {
+    pub fn getDisambiguationSupertypes(&self, x: ColorId) -> Option<&FxHashSet<ColorId>> {
         self.disambiguationSupertypeGraph.get(&x)
     }
 
@@ -109,9 +109,9 @@ impl ColorRegistry {
     //         return *cached;
     //     }
 
-    //     let mut prototypes = AHashSet::default();
-    //     let mut instanceColors = AHashSet::default();
-    //     // let mut ownProperties = AHashSet::default();
+    //     let mut prototypes = FxHashSet::default();
+    //     let mut instanceColors = FxHashSet::default();
+    //     // let mut ownProperties = FxHashSet::default();
     //     let mut isInvalidating = false;
 
     //     for &element in elements {

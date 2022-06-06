@@ -1,13 +1,13 @@
 use super::PropertyClustering::PropertyClusteringId;
 use crate::{colors::ColorId, types::TypeId};
-use ahash::AHashMap;
 use index::{newtype_index, vec::IndexVec};
+use rustc_hash::FxHashMap;
 
 // TODO: comment from closure
 #[derive(Debug)]
 pub struct ColorGraphNode {
     pub color: ColorId,
-    pub associatedProps: AHashMap<PropertyClusteringId, PropAssociation>,
+    pub associatedProps: FxHashMap<PropertyClusteringId, PropAssociation>,
     /**
      * An ID used to efficiently construct a unique name for any cluster this node becomes the
      * represenative of.
@@ -20,7 +20,7 @@ impl ColorGraphNode {
     pub fn new(single: ColorId, index: ColorGraphNodeId) -> Self {
         Self {
             color: single,
-            associatedProps: AHashMap::default(),
+            associatedProps: FxHashMap::default(),
             index,
         }
     }
