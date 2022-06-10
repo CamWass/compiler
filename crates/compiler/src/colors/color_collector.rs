@@ -276,11 +276,6 @@ macro_rules! generate_visitors {
             fn $name(&mut self, n: &Rc<ast::$N>, parent: Option<BoundNode>) {
                 n.visit_children_with(self, parent.clone());
                 let node = n.bind_to_opt_parent(parent);
-                if let BoundNode::Param(p) = &node {
-                    let ty = self.data.checker.getTypeAtLocation(node.clone());
-                    let color = self.data.recordType(ty, Some(&node));
-                    dbg!(ty, &self.data.checker.types[ty], color, &self.data.registry.colors[color]);
-                }
                 if isExpressionNode(&node) || isDeclaration(&node) || matches!(node, BoundNode::Ident(_)) || isDeclarationName(node.clone())  {
                     let ty = self.data.checker.getTypeAtLocation(node.clone());
                     let color = self.data.recordType(ty, Some(&node));

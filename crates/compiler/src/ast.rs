@@ -2,26 +2,11 @@ use crate::node::{Bind, BoundNode};
 use ast;
 pub use ast::NodeId;
 use ast_convert::define;
-use global_common::{EqIgnoreSpan, Span, Spanned};
+use global_common::{integer_decode::integer_decode, EqIgnoreSpan, Span, Spanned};
 use num_bigint::BigInt as BigIntValue;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 use swc_atoms::JsWord;
-
-// See: https://stackoverflow.com/a/39639200/
-fn integer_decode(val: f64) -> (u64, i16, i8) {
-    let bits = val.to_bits();
-    let sign: i8 = if bits >> 63 == 0 { 1 } else { -1 };
-    let mut exponent: i16 = ((bits >> 52) & 0x7ff) as i16;
-    let mantissa = if exponent == 0 {
-        (bits & 0xfffffffffffff) << 1
-    } else {
-        (bits & 0xfffffffffffff) | 0x10000000000000
-    };
-
-    exponent -= 1023 + 52;
-    (mantissa, exponent, sign)
-}
 
 impl Eq for Number {}
 

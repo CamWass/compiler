@@ -25,6 +25,7 @@ pub use ast_node::{ast_node, ast_serde, DeserializeEnum, Spanned};
 pub use eq_ignore_macros::EqIgnoreSpan;
 pub use from_variant::FromVariant;
 pub use global_visit::chain;
+
 #[doc(hidden)]
 pub mod private;
 
@@ -32,6 +33,7 @@ pub mod chars;
 pub mod comments;
 mod eq;
 pub mod errors;
+pub mod integer_decode;
 pub mod iter;
 pub mod macros;
 pub mod pass;

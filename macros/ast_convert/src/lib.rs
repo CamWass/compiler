@@ -437,7 +437,10 @@ fn make_arm_from_struct(in_path: &Path, out_path: &Path, variant: &Fields, is_st
                             name: f.member.clone()
                         },
                         {
-                            std::hash::Hash::hash(&integer_decode(name), &mut s);
+                            std::hash::Hash::hash(
+                                &::global_common::integer_decode::integer_decode(name),
+                                &mut s,
+                            );
                         }
                     )
                     .parse(),

@@ -357,13 +357,13 @@ impl<'a> Binder<'a> {
             //     return getSymbolNameForPrivateIdentifier(containingClassSymbol, name.escapedText);
             // }
 
-            return match name {
+            return match &name {
                 DeclName::Ident(i) => i.sym.clone(),
                 DeclName::String(s) => s.value.clone(),
                 DeclName::NoSubstitutionTemplate(t) => {
                     get_text_of_no_substitution_template(t.as_ref())
                 }
-                DeclName::Number(_) => todo!(),
+                DeclName::Number(n) => n.raw.clone().unwrap(),
                 DeclName::ComputedProperty(expr) => {
                     match &expr.expr {
                         // treat computed property names where expression is string/numeric literal as just string/numeric literal
@@ -1104,8 +1104,7 @@ impl<'a> Binder<'a> {
                 bind!(self, s.expr, node.clone());
             }
             _ => {
-                self.temp(node);
-                // self.bindEachChild(node);
+                self.bindEachChild(node);
             }
         }
         // TODO: jsdoc
@@ -1113,7 +1112,7 @@ impl<'a> Binder<'a> {
         self.inAssignmentPattern = save_in_assignment_pattern;
     }
 
-    fn temp(&mut self, node: BoundNode) {
+    fn bindEachChild(&mut self, node: BoundNode) {
         // TODO some of these will be handled by bindChildren, but are currently
         // commented-out. Remove them from here when they are added to bindChildren
         // TODO: use destructuring for these so future developers are forced to
@@ -1511,7 +1510,9 @@ impl<'a> Binder<'a> {
             BoundNode::GetterProp(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
             BoundNode::SetterProp(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
             BoundNode::MethodProp(_) => todo!("temp: node: {:?}", &node),
-            BoundNode::ComputedPropName(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
+            BoundNode::ComputedPropName(n) => {
+                bind!(self, n.expr, node.clone());
+            }
             BoundNode::EmptyStmt(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
             BoundNode::DebuggerStmt(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
             BoundNode::WithStmt(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),

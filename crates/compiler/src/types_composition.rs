@@ -247,10 +247,10 @@ impl Type {
             Type::IntrinsicType(t) => t.intrinsic_type_base.objectFlags,
             Type::NullableType(t) => t.intrinsic_type_base.objectFlags,
             Type::FreshableIntrinsicType(t) => t.intrinsic_type_base.objectFlags,
-            Type::UniqueESSymbolType(_) => todo!(),
+            Type::UniqueESSymbolType(_) => Default::default(),
             Type::StringLiteralType(_) => Default::default(),
-            Type::NumberLiteralType(_) => todo!(),
-            Type::BigIntLiteralType(_) => todo!(),
+            Type::NumberLiteralType(_) => Default::default(),
+            Type::BigIntLiteralType(_) => Default::default(),
             Type::EnumType(_) => todo!(),
             Type::ObjectType(t) => t.object_type_base.objectFlags,
             Type::InterfaceType(t) => t.object_type_base.objectFlags,
@@ -1237,6 +1237,19 @@ pub struct NumberLiteralType {
     pub type_base: TypeBase,
 
     pub value: f64,
+}
+
+impl NumberLiteralType {
+    pub fn new(value: f64, regularType: TypeId) -> Self {
+        Self {
+            literal_type: LiteralType {
+                freshType: None,
+                regularType,
+            },
+            type_base: TypeBase::new(TypeFlags::NumberLiteral, None),
+            value,
+        }
+    }
 }
 
 #[derive(Debug)]

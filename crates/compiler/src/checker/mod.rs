@@ -15,6 +15,7 @@ use crate::{Visit, VisitWith};
 use ahash::{AHashMap, AHashSet};
 use bitflags::bitflags;
 use convert::{ecma_number_to_string, ecma_string_to_number, is_numeric_literal_name};
+use global_common::integer_decode::{integer_decode, DecodedF64};
 use index::vec::IndexVec;
 use index_set::IndexSet;
 use std::cmp;
@@ -101,7 +102,7 @@ pub struct Checker {
     unionTypes: AHashMap<UnionTypeKey, TypeId>,
     intersectionTypes: AHashMap<IntersectionTypeKey, TypeId>,
     stringLiteralTypes: AHashMap<JsWord, TypeId>,
-    // const numberLiteralTypes = new Map<number, NumberLiteralType>();
+    numberLiteralTypes: AHashMap<DecodedF64, TypeId>,
     // const bigIntLiteralTypes = new Map<string, BigIntLiteralType>();
     // const enumLiteralTypes = new Map<string, LiteralType>();
     // const indexedAccessTypes = new Map<string, IndexedAccessType>();
@@ -481,7 +482,7 @@ impl Checker {
         let unionTypes = Default::default();
         let intersectionTypes = Default::default();
         let stringLiteralTypes = Default::default();
-        // const numberLiteralTypes = new Map<number, NumberLiteralType>();
+        let numberLiteralTypes = Default::default();
         // const bigIntLiteralTypes = new Map<string, BigIntLiteralType>();
         // const enumLiteralTypes = new Map<string, LiteralType>();
         // const indexedAccessTypes = new Map<string, IndexedAccessType>();
@@ -861,7 +862,7 @@ impl Checker {
             unionTypes,
             intersectionTypes,
             stringLiteralTypes,
-            // const numberLiteralTypes = new Map<number, NumberLiteralType>();
+            numberLiteralTypes,
             // const bigIntLiteralTypes = new Map<string, BigIntLiteralType>();
             // const enumLiteralTypes = new Map<string, LiteralType>();
             // const indexedAccessTypes = new Map<string, IndexedAccessType>();
@@ -14126,8 +14127,19 @@ impl Checker {
         }
     }
 
-    // TODO:
-    // getNumberLiteralType
+    fn getNumberLiteralType(&mut self, value: f64) -> TypeId {
+        let decoded = integer_decode(value);
+        match self.numberLiteralTypes.get(&decoded) {
+            Some(ty) => *ty,
+            None => {
+                let ty = NumberLiteralType::new(value, self.types.next_index());
+                let ty = self.types.push(Type::NumberLiteralType(ty));
+                self.numberLiteralTypes.insert(decoded, ty);
+                ty
+            }
+        }
+    }
+
     // TODO:
     // getBigIntLiteralType
     // TODO:
@@ -22457,8 +22469,29 @@ impl Checker {
     // checkElementAccessExpression
     // TODO:
     // callLikeExpressionMayHaveTypeArguments
-    // TODO:
-    // resolveUntypedCall
+
+    fn resolveUntypedCall(&mut self, node: BoundNode) -> SignatureId {
+        // TODO:
+        // if (callLikeExpressionMayHaveTypeArguments(node)) {
+        //     // Check type arguments even though we will give an error that untyped calls may not accept type arguments.
+        //     // This gets us diagnostics for the type arguments and marks them as referenced.
+        //     forEach(node.typeArguments, checkSourceElement);
+        // }
+
+        // if (node.kind === SyntaxKind.TaggedTemplateExpression) {
+        //     checkExpression(node.template);
+        // }
+        // else if (isJsxOpeningLikeElement(node)) {
+        //     checkExpression(node.attributes);
+        // }
+        // else if (node.kind !== SyntaxKind.Decorator) {
+        //     forEach((node as CallExpression).arguments, argument => {
+        //         checkExpression(argument);
+        //     });
+        // }
+        self.anySignature
+    }
+
     // TODO:
     // resolveErrorCall
 
@@ -23578,13 +23611,13 @@ impl Checker {
             callSignatures.len(),
             numConstructSignatures,
         ) {
-            // The unknownType indicates that an error already occurred (and was reported).  No
+            // The unknownType indicates that an error already occurred (and was reported). No
             // need to report another error in this case.
-            todo!();
-            // if (!isErrorType(funcType) && node.typeArguments) {
-            //     error(node, Diagnostics.Untyped_function_calls_may_not_accept_type_arguments);
-            // }
-            // return resolveUntypedCall(node);
+            if !self.isErrorType(funcType) && node.type_args.is_some() {
+                todo!();
+                // error(node, Diagnostics.Untyped_function_calls_may_not_accept_type_arguments);
+            }
+            return self.resolveUntypedCall(node.clone().into());
         }
         // If FuncExpr's apparent type(section 3.8.1) is a function type, the call is a typed function call.
         // TypeScript employs overload resolution in typed function calls in order to support functions
@@ -25833,10 +25866,11 @@ impl Checker {
                 let ty = self.getStringLiteralType(&n.value);
                 self.getFreshTypeOfLiteralType(ty)
             }
-            BoundNode::Number(_) => {
-                todo!();
+            BoundNode::Number(n) => {
+                // TODO:
                 // checkGrammarNumericLiteral(node as NumericLiteral);
-                // self.getFreshTypeOfLiteralType(getNumberLiteralType(+(node as NumericLiteral).text))
+                let ty = self.getNumberLiteralType(n.value);
+                self.getFreshTypeOfLiteralType(ty)
             }
             BoundNode::BigInt(_) => {
                 todo!();

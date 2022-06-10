@@ -827,16 +827,16 @@ function mix(x: " + annotation + ") {
 
     // TODO: maybe revert this to closure's version: `const z = {ab: 0};`
     // #[test]
-//     fn propertiesAreInvalidated_onObjectLiteralTypes() {
-//         test_same(
-//             "
-// const z = {ab: true}; 
+    //     fn propertiesAreInvalidated_onObjectLiteralTypes() {
+    //         test_same(
+    //             "
+    // const z = {ab: true};
 
-// class Other {
-//     ab() { }
-// }",
-//         );
-//     }
+    // class Other {
+    //     ab() { }
+    // }",
+    //         );
+    //     }
 
     // @Test
     // public void propertiesAreDisambiguated_acrossStructuralTypeMatches_iffMatchUsed() {
@@ -953,58 +953,57 @@ function mix(x: " + annotation + ") {
     //               "}")));
     // }
 
-    // @Test
-    // public void propertiesAreNotRenamed_ifTheyHaveASingleCluster() {
-    //   test(
-    //       srcs(
-    //           lines(
-    //               "class Foo0 {",
-    //               "  w() { }",
-    //               "  x() { }",
-    //               "}",
-    //               "class Foo1 extends Foo0 {",
-    //               "  w() { }",
-    //               "  y() { }",
-    //               "}",
-    //               "class Foo2 {",
-    //               "  w() { }",
-    //               "  z() { }",
-    //               "}",
-    //               "",
-    //               "function mix(/** (!Foo1|!Foo2) */ x) {",
-    //               "  x.w();",
-    //               "}",
-    //               "",
-    //               "class Other {",
-    //               "  x() { }",
-    //               "  y() { }",
-    //               "  z() { }",
-    //               "}")),
-    //       expected(
-    //           lines(
-    //               "class Foo0 {",
-    //               "  w() { }",
-    //               "  JSC$1_x() { }",
-    //               "}",
-    //               "class Foo1 extends Foo0 {",
-    //               "  w() { }",
-    //               "  JSC$3_y() { }",
-    //               "}",
-    //               "class Foo2 {",
-    //               "  w() { }",
-    //               "  JSC$5_z() { }",
-    //               "}",
-    //               "",
-    //               "function mix(/** (!Foo1|!Foo2) */ x) {",
-    //               "  x.w();",
-    //               "}",
-    //               "",
-    //               "class Other {",
-    //               "  JSC$8_x() { }",
-    //               "  JSC$8_y() { }",
-    //               "  JSC$8_z() { }",
-    //               "}")));
-    // }
+    #[test]
+    fn propertiesAreNotRenamed_ifTheyHaveASingleCluster() {
+        test_transform(
+            "
+class Foo0 {
+    w() {}
+    x() {}
+}
+class Foo1 extends Foo0 {
+    w() {}
+    y() {}
+}
+class Foo2 {
+    w() {}
+    z() {}
+}
+
+function mix(x: Foo1|Foo2) {
+    x.w();
+}
+
+class Other {
+    x() {}
+    y() {}
+    z() {}
+}",
+            "
+class Foo0 {
+    w() {}
+    JSC$1_x() {}
+}
+class Foo1 extends Foo0 {
+    w() {}
+    JSC$2_y() {}
+}
+class Foo2 {
+    w() {}
+    JSC$3_z() {}
+}
+
+function mix(x: Foo1|Foo2) {
+    x.w();
+}
+
+class Other {
+    JSC$5_x() {}
+    JSC$5_y() {}
+    JSC$5_z() {}
+}",
+        );
+    }
 
     // @Test
     // public void propertiesAreInvalidated_givenMissingPropertyError() {
@@ -1056,52 +1055,48 @@ function mix(x: " + annotation + ") {
     //               "}")));
     // }
 
-    // @Test
-    // public void propertiesAreInvalidated_ifUsedOnType_butNotDeclaredOnAncestor() {
-    //   test(
-    //       srcs(
-    //           lines(
-    //               "/** @interface */",
-    //               "class IFoo {",
-    //               "  a() { }",
-    //               "}",
-    //               "",
-    //               "/** @implements {IFoo} */",
-    //               "class Foo {",
-    //               "  b() { }",
-    //               "}",
-    //               "",
-    //               "new Foo().a;",
-    //               "new Foo().b;",
-    //               "new Foo().c;",
-    //               "",
-    //               "class Other {",
-    //               "  a() { }",
-    //               "  b() { }",
-    //               "  c() { }",
-    //               "}")),
-    //       expected(
-    //           lines(
-    //               "/** @interface */",
-    //               "class IFoo {",
-    //               "  JSC$1_a() { }",
-    //               "}",
-    //               "",
-    //               "/** @implements {IFoo} */",
-    //               "class Foo {",
-    //               "  JSC$3_b() { }",
-    //               "}",
-    //               "",
-    //               "new Foo().JSC$1_a;",
-    //               "new Foo().JSC$3_b;",
-    //               "new Foo().c;",
-    //               "",
-    //               "class Other {",
-    //               "  JSC$6_a() { }",
-    //               "  JSC$6_b() { }",
-    //               "  c() { }",
-    //               "}")));
+    // TODO:
+    //     #[test]
+    //     fn propertiesAreInvalidated_ifUsedOnType_butNotDeclaredOnAncestor() {
+    //         test_transform(
+    //             "
+    // interface IFoo {
+    //     a();
     // }
+
+    // class Foo implements IFoo {
+    //     b() {}
+    // }
+
+    // new Foo().a;
+    // new Foo().b;
+    // new Foo().c;
+
+    // class Other {
+    //     a() {}
+    //     b() {}
+    //     c() {}
+    // }",
+    //             "
+    // interface IFoo {
+    //     JSC$1_a();
+    // }
+
+    // class Foo implements IFoo {
+    //     JSC$2_b() {}
+    // }
+
+    // new Foo().JSC$1_a;
+    // new Foo().JSC$2_b;
+    // new Foo().c;
+
+    // class Other {
+    //     JSC$3_a() {}
+    //     JSC$3_b() {}
+    //     c() {}
+    // }",
+    //         );
+    //     }
 
     // @Test
     // public void propertiesReferenced_throughReflectorFunctions_areRenamed() {
@@ -1235,62 +1230,61 @@ class Bar {
         );
     }
 
-    // @Test
-    // public void classComputedField() {
-    //   testSame(
-    //       srcs(
-    //           lines(
-    //               "class Foo {",
-    //               "  ['a'];",
-    //               "  'b' = 2;",
-    //               "  1 = 'hello';",
-    //               "  static ['a'] = 2;",
-    //               "  static 'b' = 2;",
-    //               "  static 1 = 'hello';",
-    //               "}",
-    //               "",
-    //               "class Bar {",
-    //               "  ['a'];",
-    //               "  'b' = 2;",
-    //               "  1 = 'hello';",
-    //               "  static ['a'] = 2;",
-    //               "  static 'b' = 2;",
-    //               "  static 1 = 'hello';",
-    //               "}")));
-    // }
+    #[test]
+    fn classComputedField() {
+        test_same(
+            "
+class Foo {
+    ['a'];
+    'b' = 2;
+    1 = 'hello';
+    static ['a'] = 2;
+    static 'b' = 2;
+    static 1 = 'hello';
+}
 
-    // @Test
-    // public void classMixedFields() {
-    //   test(
-    //       srcs(
-    //           lines(
-    //               "class Foo {",
-    //               "  a;",
-    //               "  static a = 2;",
-    //               "  ['a'];",
-    //               "  static ['a'] = 2;",
-    //               "}",
-    //               "",
-    //               "class Bar {",
-    //               "  a;",
-    //               "  static a = 2;",
-    //               "  ['a'];",
-    //               "  static ['a'] = 2;",
-    //               "}")),
-    //       expected(
-    //           lines(
-    //               "class Foo {",
-    //               "  JSC$1_a;",
-    //               "  static JSC$2_a = 2;",
-    //               "  ['a'];",
-    //               "  static ['a'] = 2;",
-    //               "}",
-    //               "",
-    //               "class Bar {",
-    //               "  JSC$3_a;",
-    //               "  static JSC$4_a = 2;",
-    //               "  ['a'];",
-    //               "  static ['a'] = 2;",
-    //               "}")));
-    // }
+class Bar {
+    ['a'];
+    'b' = 2;
+    1 = 'hello';
+    static ['a'] = 2;
+    static 'b' = 2;
+    static 1 = 'hello';
+}",
+        );
+    }
+
+    #[test]
+    fn classMixedFields() {
+        test_transform(
+            "
+class Foo {
+    a;
+    static a = 2;
+    ['a'];
+    static ['a'] = 2;
+}
+
+class Bar {
+    a;
+    static a = 2;
+    ['a'];
+    static ['a'] = 2;
+}",
+            "
+class Foo {
+    JSC$1_a;
+    static JSC$2_a = 2;
+    ['a'];
+    static ['a'] = 2;
+}
+
+class Bar {
+    JSC$3_a;
+    static JSC$4_a = 2;
+    ['a'];
+    static ['a'] = 2;
+}",
+        );
+    }
 }
