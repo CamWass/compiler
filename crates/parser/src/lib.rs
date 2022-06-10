@@ -40,100 +40,91 @@ impl Syntax {
 
     /// Should we parse jsx?
     pub fn jsx(self) -> bool {
-        match self {
-            Syntax::Es(EsConfig { jsx: true, .. })
-            | Syntax::Typescript(TsConfig { tsx: true, .. }) => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            Syntax::Es(EsConfig { jsx: true, .. }) | Syntax::Typescript(TsConfig { tsx: true, .. })
+        )
     }
 
     pub fn dynamic_import(self) -> bool {
-        match self {
+        matches!(
+            self,
             Syntax::Es(EsConfig {
                 dynamic_import: true,
                 ..
-            })
-            | Syntax::Typescript(TsConfig {
+            }) | Syntax::Typescript(TsConfig {
                 dynamic_import: true,
                 ..
-            }) => true,
-            _ => false,
-        }
+            })
+        )
     }
 
     pub fn decorators(self) -> bool {
-        match self {
+        matches!(
+            self,
             Syntax::Es(EsConfig {
-                decorators: true, ..
+                decorators: true,
+                ..
+            }) | Syntax::Typescript(TsConfig {
+                decorators: true,
+                ..
             })
-            | Syntax::Typescript(TsConfig {
-                decorators: true, ..
-            }) => true,
-            _ => false,
-        }
+        )
     }
 
     pub fn class_private_props(self) -> bool {
-        match self {
+        matches!(
+            self,
             Syntax::Es(EsConfig {
                 class_private_props: true,
                 ..
-            })
-            | Syntax::Typescript(..) => true,
-            _ => false,
-        }
+            }) | Syntax::Typescript(..)
+        )
     }
 
     pub fn decorators_before_export(self) -> bool {
-        match self {
+        matches!(
+            self,
             Syntax::Es(EsConfig {
                 decorators_before_export: true,
                 ..
-            })
-            | Syntax::Typescript(..) => true,
-            _ => false,
-        }
+            }) | Syntax::Typescript(..)
+        )
     }
 
     /// Should we pare typescript?
     pub fn typescript(self) -> bool {
-        match self {
-            Syntax::Typescript(..) => true,
-            _ => false,
-        }
+        matches!(self, Syntax::Typescript(..))
     }
 
     pub fn export_default_from(self) -> bool {
-        match self {
+        matches!(
+            self,
             Syntax::Es(EsConfig {
                 export_default_from: true,
                 ..
-            }) => true,
-            _ => false,
-        }
+            })
+        )
     }
 
     pub fn import_meta(self) -> bool {
-        match self {
+        matches!(
+            self,
             Syntax::Es(EsConfig {
-                import_meta: true, ..
-            })
-            | Syntax::Typescript(..) => true,
-
-            _ => false,
-        }
+                import_meta: true,
+                ..
+            }) | Syntax::Typescript(..)
+        )
     }
 
     pub fn top_level_await(self) -> bool {
-        match self {
+        matches!(
+            self,
             Syntax::Es(EsConfig {
                 top_level_await: true,
                 ..
-            })
-            | Syntax::Typescript(..) => true,
-
-            _ => false,
-        }
+            }) | Syntax::Typescript(..)
+        )
     }
 
     pub fn dts(self) -> bool {

@@ -39,12 +39,12 @@ fn create_program(
     let mut error = false;
 
     for e in parser.take_errors() {
-        e.into_diagnostic(&handler).emit();
+        e.into_diagnostic(handler).emit();
         error = true;
     }
 
     let program = program.map_err(|e| {
-        e.into_diagnostic(&handler).emit();
+        e.into_diagnostic(handler).emit();
         Error::msg("Failed to parse")
     })?;
 
@@ -85,10 +85,7 @@ fn main() -> Result<()> {
                 comments: None,
                 cm: cm.clone(),
                 wr: Box::new(codegen::text_writer::JsWriter::new(
-                    cm.clone(),
-                    "\n",
-                    &mut buf,
-                    None,
+                    cm, "\n", &mut buf, None,
                 )),
             };
 

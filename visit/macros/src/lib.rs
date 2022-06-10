@@ -90,8 +90,8 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
 
     // Remove `Box`
     types.retain(|ty| as_box(ty).is_none());
-    types.sort_by_cached_key(|ty| method_name_as_str(mode, &ty));
-    types.dedup_by_key(|ty| method_name_as_str(mode, &ty));
+    types.sort_by_cached_key(|ty| method_name_as_str(mode, ty));
+    types.dedup_by_key(|ty| method_name_as_str(mode, ty));
 
     let types = types;
 
@@ -109,7 +109,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
         methods.push(TraitItemMethod {
             attrs: vec![],
             sig,
-            default: Some(create_method_body(mode, &ty)),
+            default: Some(create_method_body(mode, ty)),
             semi_token: None,
         });
     }
@@ -422,14 +422,9 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
 
     // impl Visit for global_visit::All<V> where V: VisitAll
     if mode == Mode::VisitAll {
-        let mut item = q!(
-            Vars {
-                Trait: Ident::new(mode.trait_name(), call_site()),
-            },
-            {
-                impl<V> Visit for ::global_visit::All<V> where V: VisitAll {}
-            }
-        )
+        let mut item = q!({
+            impl<V> Visit for ::global_visit::All<V> where V: VisitAll {}
+        })
         .parse::<ItemImpl>();
 
         item.items
@@ -573,7 +568,6 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
 
                     tokens.push_tokens(&q!(
                         Vars {
-                            method_name,
                             Type: ty,
                             expr,
                             default_body,
@@ -606,7 +600,6 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
 
                     tokens.push_tokens(&q!(
                         Vars {
-                            method_name,
                             Type: ty,
                             expr,
                             default_body,
@@ -692,7 +685,7 @@ fn adjust_expr<F>(mode: Mode, ty: &Type, mut expr: Expr, visit: F) -> Expr
 where
     F: FnOnce(Expr) -> Expr,
 {
-    if is_option(&ty) {
+    if is_option(ty) {
         expr = if is_opt_vec(ty) {
             match mode {
                 Mode::Fold => expr,
@@ -1073,19 +1066,19 @@ fn create_method_sig(mode: Mode, ty: &Type) -> Signature {
             let ident = method_name(mode, ty);
 
             if !last.arguments.is_empty() {
-                if let Some(arg) = as_box(&ty) {
-                    let ident = method_name(mode, &arg);
+                if let Some(arg) = as_box(ty) {
+                    let ident = method_name(mode, arg);
                     match mode {
                         Mode::Fold => {
-                            return mk_exact(mode, ident, &arg);
+                            return mk_exact(mode, ident, arg);
                         }
 
                         Mode::VisitMut => {
-                            return mk_ref(mode, ident, &arg, true);
+                            return mk_ref(mode, ident, arg, true);
                         }
 
                         Mode::Visit | Mode::VisitAll => {
-                            return mk_ref(mode, ident, &arg, false);
+                            return mk_ref(mode, ident, arg, false);
                         }
                     }
                 }
@@ -1437,7 +1430,6 @@ fn add_required(types: &mut Vec<Type>, ty: &Type) {
     if let Some(ty) = extract_generic("Arc", ty) {
         add_required(types, ty);
         types.push(ty.clone());
-        return;
     }
 }
 
@@ -1513,7 +1505,7 @@ fn method_name_as_str(mode: Mode, ty: &Type) -> String {
             }
             return suffix(ty).to_plural();
         }
-        type_to_name(&ty).to_snake_case()
+        type_to_name(ty).to_snake_case()
     }
 
     format!("{}_{}", mode.prefix(), suffix(ty))
@@ -1538,13 +1530,11 @@ fn skip(ty: &Type) -> bool {
 
             if i == "bool"
                 || i == "u128"
-                || i == "u128"
                 || i == "u64"
                 || i == "u32"
                 || i == "u16"
                 || i == "u8"
                 || i == "isize"
-                || i == "i128"
                 || i == "i128"
                 || i == "i64"
                 || i == "i32"

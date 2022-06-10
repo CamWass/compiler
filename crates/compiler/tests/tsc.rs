@@ -157,7 +157,7 @@ fn with_parser<F, Ret>(cm: Lrc<SourceMap>, file_name: &Path, f: F) -> Result<Ret
 where
     F: FnOnce(&mut Parser<Lexer>) -> PResult<Ret>,
 {
-    let output = ::testing::run_test_with_source_map(cm.clone(), false, |handler| {
+    ::testing::run_test_with_source_map(cm.clone(), false, |handler| {
         let fm = cm
             .load_file(file_name)
             .unwrap_or_else(|e| panic!("failed to load {}: {}", file_name.display(), e));
@@ -167,7 +167,7 @@ where
         let res = f(&mut p).map_err(|e| e.into_diagnostic(handler).emit());
 
         for e in p.take_errors() {
-            e.into_diagnostic(&handler).emit();
+            e.into_diagnostic(handler).emit();
         }
 
         if handler.has_errors() {
@@ -175,9 +175,7 @@ where
         }
 
         res
-    });
-
-    output
+    })
 }
 
 #[test]
@@ -369,7 +367,7 @@ impl SymbolWriter {
             .lookup_byte_offset(BytePos(self.line_map[index] as u32));
         let file = lo.sf;
         let lo = lo.pos.0 as usize;
-        let line = match file.src[lo..].find(|c| is_line_break(c)) {
+        let line = match file.src[lo..].find(is_line_break) {
             Some(hi) => &file.src[lo..hi + lo],
             // If there are no more line breaks, we must be on the last line.
             None => &file.src[lo..],
@@ -549,13 +547,12 @@ fn compute_line_starts(text: &str) -> Vec<usize> {
     let mut pos = 0;
     let mut line_start = 0;
     while pos < text.len() {
-        let string =
-            unsafe { std::str::from_utf8_unchecked(&text.as_bytes().get_unchecked(pos..)) };
+        let string = unsafe { std::str::from_utf8_unchecked(text.as_bytes().get_unchecked(pos..)) };
         let ch = string.chars().next().unwrap();
         pos += ch.len_utf8();
         match ch {
             char_literals::CARRIAGE_RETURN => {
-                if string.chars().next() == Some(char_literals::LINE_FEED) {
+                if string.starts_with(char_literals::LINE_FEED) {
                     pos += 1;
                 }
                 result.push(line_start);
@@ -577,7 +574,7 @@ fn compute_line_starts(text: &str) -> Vec<usize> {
     result
 }
 
-fn compute_line_of_position(line_starts: &Vec<usize>, position: usize) -> usize {
+fn compute_line_of_position(line_starts: &[usize], position: usize) -> usize {
     match line_starts.binary_search(&position) {
         Ok(i) => i,
         // If the actual position was not found, binary_search returns Err with the index

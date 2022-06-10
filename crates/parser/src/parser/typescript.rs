@@ -129,19 +129,16 @@ impl<I: Tokens> Parser<I> {
                 break;
             }
 
-            match kind {
-                // Recover
-                // const enum D {
-                //     d = 10
-                //     g = 11
-                // }
-                ParsingContext::EnumMembers => {
-                    const TOKEN: &Token = &Token::Comma;
-                    let cur = format!("{:?}", cur!(self, false).ok());
-                    self.emit_err(self.input.cur_span(), SyntaxError::Expected(TOKEN, cur));
-                    continue;
-                }
-                _ => {}
+            // Recover
+            // const enum D {
+            //     d = 10
+            //     g = 11
+            // }
+            if kind == ParsingContext::EnumMembers {
+                const TOKEN: &Token = &Token::Comma;
+                let cur = format!("{:?}", cur!(self, false).ok());
+                self.emit_err(self.input.cur_span(), SyntaxError::Expected(TOKEN, cur));
+                continue;
             }
             // This will fail with an error about a missing comma
             expect!(self, ',');
@@ -187,20 +184,18 @@ impl<I: Tokens> Parser<I> {
         debug_assert!(self.syntax().typescript());
 
         let init = self.parse_ident_name()?;
-        match init {
-            // Handle
-            //
-            // var a: void.x
-            //            ^
-            Ident {
-                sym: js_word!("void"),
-                ..
-            } => {
-                let dot_start = self.input.cur_pos();
-                let dot_span = span!(self, dot_start);
-                self.emit_err(dot_span, SyntaxError::TS1005)
-            }
-            _ => {}
+        // Handle
+        //
+        // var a: void.x
+        //            ^
+        if let Ident {
+            sym: js_word!("void"),
+            ..
+        } = init
+        {
+            let dot_start = self.input.cur_pos();
+            let dot_span = span!(self, dot_start);
+            self.emit_err(dot_span, SyntaxError::TS1005)
         }
         let mut entity = TsEntityName::Ident(init);
         while eat!(self, '.') {
@@ -717,10 +712,7 @@ impl<I: Tokens> Parser<I> {
         let (global, id) = if is!(self, "global") {
             let id = self.parse_ident_name()?;
             (true, TsModuleName::Ident(id))
-        } else if match *cur!(self, true)? {
-            Token::Str { .. } => true,
-            _ => false,
-        } {
+        } else if matches!(*cur!(self, true)?, Token::Str { .. }) {
             let id = self.parse_lit().map(|lit| match lit {
                 Lit::Str(s) => TsModuleName::Str(s),
                 _ => unreachable!(),
@@ -1020,8 +1012,7 @@ impl<I: Tokens> Parser<I> {
 
         let mut cloned = self.clone();
         cloned.emit_err = false;
-        let res = op(&mut cloned);
-        res
+        op(&mut cloned)
     }
 
     /// `tsIsUnambiguouslyStartOfFunctionType`
@@ -1192,8 +1183,7 @@ impl<I: Tokens> Parser<I> {
         expect!(self, ']');
         let params = vec![TsAmbientParamPat::Ident(id).into()];
 
-        let ty = self.try_parse_ts_type_ann()?;
-        let type_ann = if let Some(ty) = ty { Some(ty) } else { None };
+        let type_ann = self.try_parse_ts_type_ann()?;
 
         self.parse_ts_type_member_semicolon()?;
         Ok(Some(TsIndexSignature {
@@ -2231,10 +2221,7 @@ impl<I: Tokens> Parser<I> {
         self.try_parse_ts(|p| {
             let start = p.input.cur_pos();
             let opt = p.parse_ts_decl(start, decorators, value, true)?;
-            Ok(match opt {
-                Some(v) => Some(v),
-                None => None,
-            })
+            Ok(opt)
         })
     }
 
@@ -2302,10 +2289,7 @@ impl<I: Tokens> Parser<I> {
                     self.input.bump();
                 }
 
-                if match *cur!(self, true)? {
-                    Token::Str { .. } => true,
-                    _ => false,
-                } {
+                if matches!(*cur!(self, true)?, Token::Str { .. }) {
                     return self
                         .parse_ts_ambient_external_module_decl(start)
                         .map(From::from)
@@ -2472,7 +2456,7 @@ impl<I: Tokens> Parser<I> {
         let ty = parse_constituent_type(self)?;
         trace_cur!(self, parse_ts_union_or_intersection_type__after_first);
 
-        if self.input.is(&operator) {
+        if self.input.is(operator) {
             let mut types = vec![ty];
 
             while self.input.eat(operator) {

@@ -10,11 +10,11 @@ pub enum Ambiguous {
     B(B),
 }
 #[ast_serde("B")]
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct A {}
 
 #[ast_serde("B")]
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct B {}
 
 #[test]

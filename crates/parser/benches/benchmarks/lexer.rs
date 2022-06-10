@@ -31,7 +31,7 @@ fn bench(c: &mut Criterion) {
 
         group.bench_with_input(*id, &fm, |b, f| {
             b.iter(|| {
-                let lexer = Lexer::new(Default::default(), Default::default(), &f);
+                let lexer = Lexer::new(Default::default(), Default::default(), f);
                 for t in lexer {
                     black_box(t);
                 }

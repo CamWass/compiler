@@ -41,10 +41,7 @@ pub(super) trait IsDirective {
     }
     fn is_valid_directive(&self) -> bool {
         match self.as_ref() {
-            Some(&Stmt::Expr(ref expr)) => match *expr.expr {
-                Expr::Lit(Lit::Str(Str { .. })) => true,
-                _ => false,
-            },
+            Some(&Stmt::Expr(ref expr)) => matches!(*expr.expr, Expr::Lit(Lit::Str(Str { .. }))),
             _ => false,
         }
     }
@@ -424,8 +421,8 @@ impl<I: Tokens> Parser<I> {
         }
 
         if self.syntax().typescript() {
-            match *expr {
-                Expr::Ident(ref i) => match i.sym {
+            if let Expr::Ident(ref i) = *expr {
+                match i.sym {
                     js_word!("public") | js_word!("static") | js_word!("abstract") => {
                         if eat!(self, "interface") {
                             self.emit_err(i.span, SyntaxError::TS2427);
@@ -436,8 +433,7 @@ impl<I: Tokens> Parser<I> {
                         }
                     }
                     _ => {}
-                },
-                _ => {}
+                }
             }
         }
 
@@ -1206,17 +1202,17 @@ impl<I: Tokens> Parser<I> {
 
             let body = Box::new(if parser.input.is(&tok!("function")) {
                 let f = parser.parse_fn_decl(vec![])?;
-                match f {
-                    Decl::Fn(FnDecl {
-                        function:
-                            Function {
-                                span,
-                                is_generator: true,
-                                ..
-                            },
-                        ..
-                    }) => syntax_error!(p, span, SyntaxError::LabelledGenerator),
-                    _ => {}
+                if let Decl::Fn(FnDecl {
+                    function:
+                        Function {
+                            span,
+                            is_generator: true,
+                            ..
+                        },
+                    ..
+                }) = f
+                {
+                    syntax_error!(p, span, SyntaxError::LabelledGenerator)
                 }
 
                 f.into()

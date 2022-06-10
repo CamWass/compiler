@@ -930,7 +930,7 @@ impl<I: Tokens> Parser<I> {
         Self: MaybeOptionalIdentParser<T::Ident>,
         T::Ident: Spanned,
     {
-        let start = start_of_async.unwrap_or(self.input.cur_pos());
+        let start = start_of_async.unwrap_or_else(|| self.input.cur_pos());
         self.assert_and_bump(&tok!("function"));
         let is_async = start_of_async.is_some();
 
@@ -1051,7 +1051,7 @@ impl<I: Tokens> Parser<I> {
             };
             let params = parser
                 .with_ctx(arg_ctx)
-                .parse_with(|mut parser| parse_args(&mut parser))?;
+                .parse_with(|parser| parse_args(parser))?;
 
             expect!(parser, ')');
 
@@ -1219,7 +1219,7 @@ impl IsInvalidClassName for Ident {
 }
 impl IsInvalidClassName for Option<Ident> {
     fn invalid_class_name(&self) -> Option<Span> {
-        if let Some(ref i) = self.as_ref() {
+        if let Some(i) = self.as_ref() {
             return i.invalid_class_name();
         }
 
@@ -1344,30 +1344,29 @@ impl<I: Tokens> FnBodyParser<Option<BlockStmt>> for Parser<I> {
 }
 
 fn is_constructor(key: &Either<PrivateName, PropName>) -> bool {
-    match *key {
+    matches!(
+        *key,
         Either::Right(PropName::Ident(Ident {
             sym: js_word!("constructor"),
             ..
-        }))
-        | Either::Right(PropName::Str(Str {
+        })) | Either::Right(PropName::Str(Str {
             value: js_word!("constructor"),
             ..
-        })) => true,
-        _ => false,
-    }
+        }))
+    )
 }
 
 pub(crate) fn is_not_this(param: &Param) -> bool {
-    match param.pat {
+    !matches!(
+        param.pat,
         Pat::Ident(BindingIdent {
             id: Ident {
                 sym: js_word!("this"),
                 ..
             },
             ..
-        }) => false,
-        _ => true,
-    }
+        })
+    )
 }
 
 struct MakeMethodArgs {

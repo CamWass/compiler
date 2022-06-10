@@ -615,7 +615,7 @@ impl Word {
     pub(crate) fn cow(&self) -> Cow<JsWord> {
         match *self {
             Word::Keyword(k) => Cow::Owned(k.into_js_word()),
-            Word::Ident(ref w) => Cow::Borrowed(&w),
+            Word::Ident(ref w) => Cow::Borrowed(w),
             Word::False => Cow::Owned(js_word!("false")),
             Word::True => Cow::Owned(js_word!("true")),
             Word::Null => Cow::Owned(js_word!("null")),

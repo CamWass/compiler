@@ -64,13 +64,11 @@ impl<I: Tokens> Parser<I> {
                     left,
                     op: op!("||"),
                     ..
-                }) => match &**left {
-                    Expr::Bin(BinExpr { op: op!("??"), .. }) => {
+                }) => {
+                    if let Expr::Bin(BinExpr { op: op!("??"), .. }) = &**left {
                         self.emit_err(*span, SyntaxError::NullishCoalescingWithLogicalOp);
                     }
-
-                    _ => {}
-                },
+                }
                 _ => {}
             }
 
@@ -288,11 +286,7 @@ impl<I: Tokens> Parser<I> {
                 }
                 match &*arg {
                     Expr::Member(..) => {}
-                    Expr::OptChain(e)
-                        if match &*e.expr {
-                            Expr::Member(..) => true,
-                            _ => false,
-                        } => {}
+                    Expr::OptChain(e) if matches!(&*e.expr, Expr::Member(..)) => {}
                     _ => self.emit_err(unwrap_paren(&arg).span(), SyntaxError::TS2703),
                 }
             }

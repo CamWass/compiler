@@ -76,8 +76,8 @@ impl Iterator for Lexer<'_> {
             Err(e) => e,
         };
 
-        if let Some(ref token) = token {
-            self.state.update(start, &token);
+        if let Some(token) = &token {
+            self.state.update(start, token);
         }
 
         let had_line_break = self.state.had_line_break;
@@ -825,7 +825,7 @@ impl<'src> Lexer<'src> {
             while let Some(ch) = {
                 // Optimization
                 {
-                    let s = lexer.uncons_while_chars(|ch| is_ident_part(ch));
+                    let s = lexer.uncons_while_chars(is_ident_part);
                     if !s.is_empty() {
                         first = false;
                     }

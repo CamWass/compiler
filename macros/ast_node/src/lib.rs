@@ -230,7 +230,7 @@ fn print_item<T: Into<TokenStream>>(
     let item = Quote::new(def_site::<Span>()).quote_with(smart_quote!(
         Vars {
             item: item.into(),
-            NAME: Ident::new(&const_name, Span::call_site())
+            NAME: Ident::new(const_name, Span::call_site())
         },
         {
             const NAME: () = { item };

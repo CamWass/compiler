@@ -15,12 +15,11 @@ pub(crate) struct InjectSelf {
 
 #[cfg(procmacro2_semver_exempt)]
 fn get_joined_span(t: &dyn ToTokens) -> Span {
-    let tts: TokenStream = t.dump().into();
+    let tts: TokenStream = t.dump();
     let (mut first, mut last) = (None, None);
     for tt in tts {
-        match first {
-            None => first = Some(tt.span()),
-            _ => {}
+        if first.is_none() {
+            first = Some(tt.span())
         }
 
         last = Some(tt.span());
@@ -111,8 +110,7 @@ impl Fold for InjectSelf {
                     let args = args
                         .into_pairs()
                         .map(|el| el.map_item(|expr| self.fold_expr(expr)))
-                        .map(|arg| arg.dump())
-                        .flatten();
+                        .flat_map(|arg| arg.dump());
 
                     quote_spanned!(span => #parser,)
                         .into_iter()

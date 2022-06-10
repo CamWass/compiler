@@ -245,7 +245,7 @@ impl Lexer<'_> {
             // bytes, and then pass it to BigIntValue::parse_bytes which converts
             // it back into a string. Look into a more direct way to create a
             // Bigint from a string.
-            BigIntValue::parse_bytes(&raw.as_bytes(), radix as _)
+            BigIntValue::parse_bytes(raw.as_bytes(), radix as _)
                 .expect("failed to parse string as a bigint"),
             raw,
         ))
@@ -449,7 +449,7 @@ impl Lexer<'_> {
 
             if starts_with_dot {
                 debug_assert!(self.cur().is_some());
-                debug_assert!(self.cur().unwrap().is_digit(10));
+                debug_assert!(self.cur().unwrap().is_ascii_digit());
             }
 
             let mut raw = String::new();

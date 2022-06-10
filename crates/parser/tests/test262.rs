@@ -364,7 +364,7 @@ fn with_parser<F, Ret>(file_name: &Path, f: F) -> Result<Ret, StdErr>
 where
     F: FnOnce(&mut Parser<Lexer<'_>>) -> PResult<Ret>,
 {
-    let output = ::testing::run_test(false, |cm, handler| {
+    ::testing::run_test(false, |cm, handler| {
         let fm = cm
             .load_file(file_name)
             .unwrap_or_else(|e| panic!("failed to load {}: {}", file_name.display(), e));
@@ -374,7 +374,7 @@ where
         let res = f(&mut p).map_err(|e| e.into_diagnostic(handler).emit());
 
         for e in p.take_errors() {
-            e.into_diagnostic(&handler).emit();
+            e.into_diagnostic(handler).emit();
         }
 
         if handler.has_errors() {
@@ -382,9 +382,7 @@ where
         }
 
         res
-    });
-
-    output
+    })
 }
 
 #[test]

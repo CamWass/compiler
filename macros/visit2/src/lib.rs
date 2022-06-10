@@ -644,9 +644,7 @@ fn method_sig(mode: Mode, ty: &Type, is_struct: bool) -> Signature {
             p
         },
         variadic: None,
-        output: match mode {
-            _ => ReturnType::Default,
-        },
+        output: ReturnType::Default,
     }
 }
 
@@ -1127,7 +1125,7 @@ fn method_name_as_str(mode: Mode, ty: &Type) -> String {
             }
             return suffix(ty).to_plural();
         }
-        type_to_name(&ty).to_snake_case()
+        type_to_name(ty).to_snake_case()
     }
 
     format!("{}_{}", mode.prefix(), suffix(ty))

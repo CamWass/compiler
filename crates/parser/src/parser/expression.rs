@@ -440,18 +440,15 @@ impl<I: Tokens> Parser<I> {
                 .map(Some)?;
 
             if is!(self, ',') {
-                match elem {
-                    Some(ExprOrSpread::Spread(_)) => {
-                        // We only care about the first trailing comma, so we
-                        // will only save this one if it's the first we have
-                        // encountered for this array. This prevents the last
-                        // trailing comma from being reported rather than the
-                        // first.
-                        if trailing_comma_span.is_none() {
-                            trailing_comma_span = Some(self.input.cur_span());
-                        }
+                if let Some(ExprOrSpread::Spread(_)) = elem {
+                    // We only care about the first trailing comma, so we
+                    // will only save this one if it's the first we have
+                    // encountered for this array. This prevents the last
+                    // trailing comma from being reported rather than the
+                    // first.
+                    if trailing_comma_span.is_none() {
+                        trailing_comma_span = Some(self.input.cur_span());
                     }
-                    _ => {}
                 }
                 expect!(self, ',');
             }
@@ -519,14 +516,8 @@ impl<I: Tokens> Parser<I> {
                 ));
             }
 
-            if {
-                match obj {
-                    ExprOrSuper::Expr(..) => true,
-                    // super() cannot be generic
-                    _ => false,
-                }
-            } && is!(self, '<')
-            {
+            // super() cannot be generic
+            if !matches!(obj, ExprOrSuper::Super(_)) && is!(self, '<') {
                 let obj_ref = &obj;
                 // tsTryParseAndCatch is expensive, so avoid if not necessary.
                 // There are number of things we are going to "maybe" parse, like type arguments
@@ -573,12 +564,10 @@ impl<I: Tokens> Parser<I> {
                         )
                         .map(|expr| (Box::new(Expr::TaggedTpl(expr)), true))
                         .map(Some)
+                    } else if no_call {
+                        unexpected!(p, "`")
                     } else {
-                        if no_call {
-                            unexpected!(p, "`")
-                        } else {
-                            unexpected!(p, "( or `")
-                        }
+                        unexpected!(p, "( or `")
                     }
                 });
                 if let Some(result) = result {
@@ -1057,10 +1046,7 @@ impl<I: Tokens> Parser<I> {
                     PatOrExprOrSpread::ExprOrSpread(
                         ExprOrSpread::Spread(SpreadElement { expr, .. }) | ExprOrSpread::Expr(expr),
                     )
-                    | PatOrExprOrSpread::Pat(Pat::Expr(expr)) => match **expr {
-                        Expr::Ident(..) => true,
-                        _ => false,
-                    },
+                    | PatOrExprOrSpread::Pat(Pat::Expr(expr)) => matches!(**expr, Expr::Ident(..)),
                     PatOrExprOrSpread::Pat(Pat::Ident(..)) => true,
                     _ => false,
                 }
@@ -1240,8 +1226,7 @@ impl<I: Tokens> Parser<I> {
                 .parse_assignment_expr()
                 .map(|expr| ExprOrSpread::Spread(SpreadElement { dot3_token, expr }))
         } else {
-            self.parse_assignment_expr()
-                .map(|expr| ExprOrSpread::Expr(expr))
+            self.parse_assignment_expr().map(ExprOrSpread::Expr)
         }
     }
 
@@ -1253,7 +1238,9 @@ impl<I: Tokens> Parser<I> {
     ) -> PResult<Box<Expr>> {
         trace_cur!(self, parse_paren_expr_or_arrow_fn);
 
-        let expr_start = async_span.map(|x| x.lo()).unwrap_or(self.input.cur_pos());
+        let expr_start = async_span
+            .map(|x| x.lo())
+            .unwrap_or_else(|| self.input.cur_pos());
 
         // At this point, we can't know if it's parenthesized
         // expression or head of arrow function.
@@ -1334,24 +1321,20 @@ impl<I: Tokens> Parser<I> {
                 return_type,
                 type_params: None,
             };
-            match arrow_expr.body {
-                BlockStmtOrExpr::BlockStmt(..) => match self.input.cur() {
-                    Some(&Token::BinOp(..)) => {
-                        // ) is required
+            if let BlockStmtOrExpr::BlockStmt(..) = arrow_expr.body {
+                if let Some(&Token::BinOp(..)) = self.input.cur() {
+                    // ) is required
+                    self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
+                    let errored_expr =
+                        self.parse_bin_op_recursively(Box::new(arrow_expr.into()), 0)?;
+
+                    if !is!(self, ';') {
+                        // ; is required
                         self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
-                        let errored_expr =
-                            self.parse_bin_op_recursively(Box::new(arrow_expr.into()), 0)?;
-
-                        if !is!(self, ';') {
-                            // ; is required
-                            self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
-                        }
-
-                        return Ok(errored_expr);
                     }
-                    _ => {}
-                },
-                _ => {}
+
+                    return Ok(errored_expr);
+                }
             }
             return Ok(Box::new(Expr::Arrow(arrow_expr)));
         }
@@ -1608,13 +1591,13 @@ impl<I: Tokens> Parser<I> {
         // TODO(swc): !this.state.containsEsc &&
 
         Ok(self.state.potential_arrow_start == Some(expr.span().lo())
-            && match *expr {
+            && matches!(
+                *expr,
                 Expr::Ident(Ident {
                     sym: js_word!("async"),
                     ..
-                }) => true,
-                _ => false,
-            })
+                })
+            ))
     }
 
     /// 12.2.5 Array Initializer
@@ -1713,27 +1696,25 @@ impl<I: Tokens> Parser<I> {
             // IsValidSimpleAssignmentTarget of LeftHandSideExpression is false.
             if !is_eval_or_arguments
                 && !expr.is_valid_simple_assignment_target(self.ctx().strict)
-                && should_deny(&expr, deny_call)
+                && should_deny(expr, deny_call)
             {
                 self.emit_err(expr.span(), SyntaxError::TS2406);
             }
-        } else {
-            if !expr.is_valid_simple_assignment_target(self.ctx().strict) {
-                self.emit_err(expr.span(), SyntaxError::TS2406);
-            }
+        } else if !expr.is_valid_simple_assignment_target(self.ctx().strict) {
+            self.emit_err(expr.span(), SyntaxError::TS2406);
         }
     }
 }
 
 fn is_import(obj: &ExprOrSuper) -> bool {
     match *obj {
-        ExprOrSuper::Expr(ref expr) => match **expr {
+        ExprOrSuper::Expr(ref expr) => matches!(
+            **expr,
             Expr::Ident(Ident {
                 sym: js_word!("import"),
                 ..
-            }) => true,
-            _ => false,
-        },
+            })
+        ),
         _ => false,
     }
 }

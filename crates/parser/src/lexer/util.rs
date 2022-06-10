@@ -67,13 +67,11 @@ impl Lexer<'_> {
     /// Returns the remaining portion of the input as a str.
     #[inline(always)]
     fn as_str(&self) -> &str {
-        debug_assert!(unsafe {
-            std::str::from_utf8(&self.bytes.get_unchecked(self.cur..)).is_ok()
-        });
+        debug_assert!(unsafe { std::str::from_utf8(self.bytes.get_unchecked(self.cur..)).is_ok() });
 
         // Safety: We know this is safe because we require the input to the lexer
         // to be valid utf8 and cur always points to a character boundary.
-        unsafe { std::str::from_utf8_unchecked(&self.bytes.get_unchecked(self.cur..)) }
+        unsafe { std::str::from_utf8_unchecked(self.bytes.get_unchecked(self.cur..)) }
     }
 
     /// Gets the current char in the input.
@@ -161,13 +159,11 @@ impl Lexer<'_> {
     where
         F: FnMut(char) -> bool,
     {
-        debug_assert!(unsafe {
-            std::str::from_utf8(&self.bytes.get_unchecked(self.cur..)).is_ok()
-        });
+        debug_assert!(unsafe { std::str::from_utf8(self.bytes.get_unchecked(self.cur..)).is_ok() });
 
         // Safety: We know this is safe because we require the input to the lexer
         // to be valid utf8 and cur always points to a character boundary.
-        let s = unsafe { std::str::from_utf8_unchecked(&self.bytes.get_unchecked(self.cur..)) };
+        let s = unsafe { std::str::from_utf8_unchecked(self.bytes.get_unchecked(self.cur..)) };
 
         let mut last = 0;
 
@@ -200,10 +196,10 @@ impl Lexer<'_> {
         }
 
         debug_assert!(unsafe {
-            std::str::from_utf8(&self.bytes.get_unchecked(start..self.cur)).is_ok()
+            std::str::from_utf8(self.bytes.get_unchecked(start..self.cur)).is_ok()
         });
 
-        unsafe { std::str::from_utf8_unchecked(&self.bytes.get_unchecked(start..self.cur)) }
+        unsafe { std::str::from_utf8_unchecked(self.bytes.get_unchecked(start..self.cur)) }
     }
 
     #[inline]
@@ -213,10 +209,7 @@ impl Lexer<'_> {
 
     #[inline]
     pub(super) fn is(&self, c: u8) -> bool {
-        match self.bytes.get(self.cur).copied() {
-            Some(ch) if ch == c => true,
-            _ => false,
-        }
+        matches!(self.bytes.get(self.cur).copied(),Some(ch) if ch == c)
     }
 
     #[inline]

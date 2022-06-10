@@ -44,7 +44,7 @@ fn convert_ty(struct_names: &AHashSet<String>, ty: &Type) -> Type {
                                 return q!(Vars { t: convert_ty(struct_names,arg) }, { Option<t> })
                                     .parse();
                             } else if last.ident == "Box" {
-                                return convert_ty(struct_names, arg).clone();
+                                return convert_ty(struct_names, arg);
                             } else if last.ident == "Vec" {
                                 return q!(Vars { t: convert_ty(struct_names,arg) }, { Vec<t> })
                                     .parse();
@@ -67,7 +67,7 @@ fn convert_ty(struct_names: &AHashSet<String>, ty: &Type) -> Type {
     }
 }
 
-const CACHED_HASH_FIELD_NAME: &'static str = "cached_hash";
+const CACHED_HASH_FIELD_NAME: &str = "cached_hash";
 
 fn make_hash_impl(s: &ItemStruct) -> ItemImpl {
     let mut default_block = Block {
@@ -91,7 +91,7 @@ fn make_hash_impl(s: &ItemStruct) -> ItemImpl {
     q!(
         Vars {
             ty: s.ident.clone(),
-            cached_hash_field_name: Ident::new(CACHED_HASH_FIELD_NAME.into(), call_site()),
+            cached_hash_field_name: Ident::new(CACHED_HASH_FIELD_NAME, call_site()),
             default_block
         },
         {
@@ -161,7 +161,7 @@ fn make(stmts: Vec<Stmt>) -> Quote {
                         vis: Visibility::Public(VisPublic {
                             pub_token: Default::default(),
                         }),
-                        ident: Some(Ident::new(CACHED_HASH_FIELD_NAME.into(), call_site())),
+                        ident: Some(Ident::new(CACHED_HASH_FIELD_NAME, call_site())),
                         colon_token: Some(Default::default()),
                         ty: q!({ u32 }).parse(),
                     };
@@ -288,8 +288,8 @@ fn make(stmts: Vec<Stmt>) -> Quote {
 
     // Remove `Box`
     // types.retain(|ty| as_box(ty).is_none());
-    types.sort_by_cached_key(|ty| method_name_as_str(&ty));
-    types.dedup_by_key(|ty| method_name_as_str(&ty));
+    types.sort_by_cached_key(|ty| method_name_as_str(ty));
+    types.dedup_by_key(|ty| method_name_as_str(ty));
 
     let types = types;
 
@@ -307,7 +307,7 @@ fn make(stmts: Vec<Stmt>) -> Quote {
         methods.push(ItemFn {
             attrs: vec![],
             sig,
-            block: Box::new(make_sub_type_fn(&ty)),
+            block: Box::new(make_sub_type_fn(ty)),
             vis: Visibility::Inherited,
         });
     }
@@ -331,7 +331,7 @@ fn make(stmts: Vec<Stmt>) -> Quote {
             pub_token: Default::default(),
         }),
         mod_token: Default::default(),
-        ident: Ident::new("convert".into(), call_site()),
+        ident: Ident::new("convert", call_site()),
         content: Some((Default::default(), module_items)),
         semi: Default::default(),
     };
@@ -367,7 +367,7 @@ fn make_arm_from_struct(in_path: &Path, out_path: &Path, variant: &Fields, is_st
             .clone()
             .unwrap_or_else(|| Ident::new(&format!("_{}", i), call_site()));
 
-        if !skip(&ty) {
+        if !skip(ty) {
             let ident: Expr = q!(
                 Vars {
                     binding_ident: &binding_ident
@@ -461,7 +461,7 @@ fn make_arm_from_struct(in_path: &Path, out_path: &Path, variant: &Fields, is_st
         }
         let cached_hash_field = FieldValue {
             attrs: vec![],
-            member: Member::Named(Ident::new(CACHED_HASH_FIELD_NAME.into(), call_site())),
+            member: Member::Named(Ident::new(CACHED_HASH_FIELD_NAME, call_site())),
             colon_token: Some(Default::default()),
             expr: q!(Vars{
                 default_block
@@ -888,7 +888,6 @@ fn add_required(types: &mut Vec<Type>, ty: &Type) {
     if let Some(ty) = extract_generic("Vec", ty) {
         add_required(types, ty);
         types.push(ty.clone());
-        return;
     }
 }
 
@@ -918,7 +917,7 @@ fn extract_generic<'a>(name: &str, ty: &'a Type) -> Option<&'a Type> {
     None
 }
 
-const METHOD_NAME: &'static str = "convert";
+const METHOD_NAME: &str = "convert";
 
 fn method_name_as_str(ty: &Type) -> String {
     fn suffix(ty: &Type) -> String {
@@ -940,7 +939,7 @@ fn method_name_as_str(ty: &Type) -> String {
             }
             return suffix(ty).to_plural();
         }
-        type_to_name(&ty).to_snake_case()
+        type_to_name(ty).to_snake_case()
     }
 
     format!("{}_{}", METHOD_NAME, suffix(ty))
@@ -965,13 +964,11 @@ fn skip(ty: &Type) -> bool {
 
             if i == "bool"
                 || i == "u128"
-                || i == "u128"
                 || i == "u64"
                 || i == "u32"
                 || i == "u16"
                 || i == "u8"
                 || i == "isize"
-                || i == "i128"
                 || i == "i128"
                 || i == "i64"
                 || i == "i32"

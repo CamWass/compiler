@@ -20,7 +20,7 @@ impl<I: Tokens> Deref for WithState<'_, I> {
     type Target = Parser<I>;
 
     fn deref(&self) -> &Parser<I> {
-        &self.inner
+        self.inner
     }
 }
 impl<I: Tokens> DerefMut for WithState<'_, I> {
@@ -42,7 +42,7 @@ impl<I: Tokens> Deref for WithCtx<'_, I> {
     type Target = Parser<I>;
 
     fn deref(&self) -> &Parser<I> {
-        &self.inner
+        self.inner
     }
 }
 impl<I: Tokens> DerefMut for WithCtx<'_, I> {
