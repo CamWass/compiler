@@ -558,9 +558,7 @@ impl<I: Tokens> Parser<I> {
                 Ok(Pat::Invalid(Invalid { span }))
             }
             Expr::Assign(
-                assign_expr
-                @
-                AssignExpr {
+                assign_expr @ AssignExpr {
                     op: AssignOpToken::Assign,
                     ..
                 },

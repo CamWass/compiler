@@ -1,8 +1,8 @@
 use crate::{colors::ColorId, graph::LowestCommonAncestorFinder::LowestCommonAncestorFinder};
 
 use super::{ColorGraphNode::ColorGraphNodeId, ColorGraphNodeFactory::ColorGraphNodeFactory};
-use rustc_hash::FxHashMap;
 use petgraph::graph::{DiGraph, NodeIndex};
+use rustc_hash::FxHashMap;
 
 /** Builds a graph of the {@link Color}s on the AST from a specified set of seed colors. */
 pub struct ColorGraphBuilder<'col, 'nf> {
