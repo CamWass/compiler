@@ -9,70 +9,38 @@ use crate::utils::*;
 use crate::visit::{Visit, VisitWith};
 use crate::Checker;
 use crate::CompProgram;
-use index::{
-    newtype_index,
-    vec::{Idx, IndexVec},
-};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::iter::FromIterator;
 use std::rc::Rc;
 use swc_atoms::{js_word, JsWord};
 
 pub fn collect(checker: &mut Checker, program: &CompProgram) -> ColorRegistry {
-    let referenced_props = find_props(program);
-    let mut data = Data {
-        checker,
-        registry: ColorRegistry::new(),
-        type_to_color_map: FxHashMap::default(),
-        referenced_props,
-    };
-    data.add_standard_colors();
-
-    let mut collector = ColorCollector { data: &mut data };
+    let mut collector = ColorCollector::new(checker);
     program.visit_with(&mut collector, None);
 
-    let mut class_visitor = ClassVisitor { data: &mut data };
-    program.visit_with(&mut class_visitor, None);
-
-    data.registry
+    collector.registry
 }
 
-struct Data<'c> {
+struct ColorCollector<'c> {
     checker: &'c mut Checker,
     registry: ColorRegistry,
     type_to_color_map: FxHashMap<TypeId, ColorId>,
-    referenced_props: FxHashSet<JsWord>,
 }
 
-impl Data<'_> {
+impl<'c> ColorCollector<'c> {
+    fn new(checker: &'c mut Checker) -> Self {
+        let mut collector = Self {
+            checker,
+            registry: ColorRegistry::new(),
+            type_to_color_map: FxHashMap::default(),
+        };
+
+        collector.add_standard_colors();
+
+        collector
+    }
+
     fn add_standard_colors(&mut self) {
-        // debug_assert!(
-        //     self.registry.colors.is_empty() && self.registry.node_to_color_map.is_empty()
-        // );
-
-        // macro_rules! populate_standard_colors {
-        //     [$( ($name:ident, $color:expr)$(,)? )*] => {
-        //         let mut start = self.registry.colors.next_index();
-        //         $(
-        //             let $name = start;
-        //             start = start.plus(1);
-        //         )*
-        //         self.registry.colors.extend(std::array::IntoIter::new([$($color,)*]));
-        //     };
-        // }
-
-        // populate_standard_colors![
-        //     (unknown_color, Color::unknown()),
-        //     (bigint_color, Color::bigint()),
-        //     (boolean_color, Color::boolean()),
-        //     (null_or_void_color, Color::null_or_void()),
-        //     (number_color, Color::number()),
-        //     (string_color, Color::string()),
-        //     (symbol_color, Color::symbol()),
-        //     (null_or_void_color, Color::null_or_void()),
-        //     (top_object_color, Color::top_object()),
-        // ];
-
         debug_assert!(self.registry.node_to_color_map.is_empty());
 
         self.type_to_color_map.extend(std::array::IntoIter::new([
@@ -108,13 +76,6 @@ impl Data<'_> {
         }
 
         let ty_flags = self.checker.types[ty].get_flags();
-        // if ty_flags.intersects(TypeFlags::Union) {
-        //     return self.recordUnionType(ty);
-        // }
-
-        // if ty_flags.intersects(TypeFlags::Object) {
-        //     return self.recordObjectType(ty);
-        // }
 
         if ty_flags.intersects(TypeFlags::Intersection) {
             todo!();
@@ -157,84 +118,7 @@ impl Data<'_> {
             self.addSupertypeEdges(ty, color_id);
             color_id
         }
-
-        // if self.checker.types[ty]
-        //     .get_flags()
-        //     .intersects(TypeFlags::TypeParameter)
-        //     || self.checker.types[ty]
-        //         .get_object_flags()
-        //         .intersects(ObjectFlags::ClassOrInterface)
-        // {
-        // let color = Color::default();
-        // let color_id = self.registry.colors.push(color);
-        // self.type_to_color_map.insert(ty, color_id);
-        // self.addSupertypeEdges(ty, color_id);
-        // color_id
-        // } else {
-        //     dbg!(
-        //         &self.checker.types[ty],
-        //         todo_temp_node,
-        //         &self.checker.types[ty]
-        //             .get_symbol()
-        //             .clone()
-        //             .map(|s| &self.checker.symbols[s])
-        //     );
-        //     // dbg!(&self.checker.types[ty]);
-        //     todo!();
-        //     // *self
-        //     //     .type_to_color_map
-        //     //     .get(&self.checker.unknownType)
-        //     //     .unwrap()
-        // }
     }
-
-    // fn recordUnionType(&mut self, ty: TypeId) -> ColorId {
-    //     let types = self.checker.types[ty]
-    //         .unwrap_as_union_or_intersection()
-    //         .types
-    //         .clone();
-    //     let types = types.iter().map(|t| self.recordType(*t, None));
-    //     let alt_colours = FxHashSet::<ColorId, ahash::RandomState>::from_iter(types);
-    //     // Some elements of the union may be equal as Colors
-    //     if alt_colours.len() == 1 {
-    //         return *alt_colours.iter().next().unwrap();
-    //     }
-    //     // TODO: the following was made up on the fly, and is not based on anything in closure.
-
-    //     let color = Color::default();
-    //     let color_id = self.registry.colors.push(color);
-    //     self.type_to_color_map.insert(ty, color_id);
-
-    //     let mut isInvalidating = false;
-
-    //     for alt_colour in alt_colours {
-    //         if let Some(alt_super_types) =
-    //             self.registry.disambiguationSupertypeGraph.get(&alt_colour)
-    //         {
-    //             let alt_super_types = alt_super_types.clone();
-    //             // TODO: bad clone.
-    //             // see https://docs.rs/hashbrown/latest/hashbrown/struct.HashMap.html#method.get_many_mut
-    //             // for a possible solution.
-    //             self.registry
-    //                 .disambiguationSupertypeGraph
-    //                 .entry(color_id)
-    //                 .or_default()
-    //                 .extend(alt_super_types);
-    //         }
-    //         self.registry.colors[color_id].isInvalidating |=
-    //             self.registry.colors[alt_colour].isInvalidating
-    //     }
-
-    //     color_id
-    // }
-
-    // fn recordObjectType(&mut self, ty: TypeId) -> ColorId {
-    //     let color = Color::default();
-    //     let color_id = self.registry.colors.push(color);
-    //     self.type_to_color_map.insert(ty, color_id);
-    //     self.addSupertypeEdges(ty, color_id);
-    //     color_id
-    // }
 
     fn addSupertypeEdges(&mut self, subType: TypeId, subTypeColor: ColorId) {
         if let Some(base_types) = self.checker.pubGetBaseTypes(subType) {
@@ -265,10 +149,6 @@ impl Data<'_> {
     }
 }
 
-pub struct ColorCollector<'c, 'd> {
-    data: &'d mut Data<'c>,
-}
-
 macro_rules! generate_visitors {
     ([$([$name:ident, $N:ident]$(,)?)*]) => {
         $(
@@ -277,19 +157,58 @@ macro_rules! generate_visitors {
                 n.visit_children_with(self, parent.clone());
                 let node = n.bind_to_opt_parent(parent);
                 if isExpressionNode(&node) || isDeclaration(&node) || matches!(node, BoundNode::Ident(_)) || isDeclarationName(node.clone())  {
-                    let ty = self.data.checker.getTypeAtLocation(node.clone());
-                    let color = self.data.recordType(ty, Some(&node));
-                    self.data.registry.node_to_color_map.insert(node, color);
+                    let ty = self.checker.getTypeAtLocation(node.clone());
+                    let color = self.recordType(ty, Some(&node));
+                    self.registry.node_to_color_map.insert(node, color);
                 }
             }
         )*
-
     };
 }
 
-impl Visit for ColorCollector<'_, '_> {
+impl Visit for ColorCollector<'_> {
+    fn visit_class(&mut self, node: &Rc<ast::Class>, parent: Option<BoundNode>) {
+        node.visit_children_with(self, parent.clone());
+
+        let class_decl = parent.clone().unwrap();
+        let class_type = self.checker.getTypeAtLocation(class_decl);
+        let class_color = *self.type_to_color_map.get(&class_type).unwrap();
+
+        let bound_class = node.bind_to_opt_parent(parent);
+
+        // We consider implemented interfaces to be super types of classes so that properties are
+        // consistently renamed across all implementations of an interface.
+        for implemented in &node.implements {
+            let implemented = implemented.bind(bound_class.clone());
+            let interface_type = self.checker.getTypeAtLocation(implemented);
+            self.addSupertypeEdge(interface_type, class_color);
+        }
+
+        let class_sym = self.checker.types[class_type].get_symbol().unwrap();
+        let static_type = self.checker.getTypeOfSymbol(class_sym);
+        // TODO: I think we can skip the normalisation
+        // (apprent type, target, constraint etc) that recordType performs for this type.
+        let static_color = self.recordType(static_type, None);
+
+        // Add super-type edges to the class' 'static' type.
+        // E.g. 'static' Bar -> 'static' Foo in the following example:
+        // class Foo {}
+        // class Bar extends Foo {}
+        if let Some(base_types) = self.checker.pubGetBaseTypes(class_type) {
+            // Note: These are the base types of the class type, NOT its 'static' type.
+            // We use these to find the 'static' types of super classes.
+            for &base_type in base_types.iter() {
+                let base_type_sym = self.checker.types[base_type].get_symbol().unwrap();
+                let base_type_static_type = self.checker.getTypeOfSymbol(base_type_sym);
+                self.addSupertypeEdge(base_type_static_type, static_color);
+            }
+        }
+
+        self.registry.colors[class_color].staticType = Some(static_color);
+    }
+
     generate_visitors!([
-        [visit_class, Class],
+        // Note: `Class` is handled above.
         [visit_extends_clause, ExtendsClause],
         [visit_class_prop, ClassProp],
         [visit_private_prop, PrivateProp],
@@ -454,147 +373,4 @@ impl Visit for ColorCollector<'_, '_> {
         [visit_ts_non_null_expr, TsNonNullExpr],
         [visit_ts_const_assertion, TsConstAssertion],
     ]);
-}
-
-// ClassVisitor needs access to instance types. Typescript has no api to directly find these,
-// so we have to rely on ColorCollector incrementally accumulating them as it traverses the AST.
-// After we have visited all prop accesses on the classes, we will know the the set of instance types that
-// the props are accessed on.
-struct ClassVisitor<'c, 'd> {
-    data: &'d mut Data<'c>,
-}
-
-impl Visit for ClassVisitor<'_, '_> {
-    fn visit_class(&mut self, node: &Rc<ast::Class>, parent: Option<BoundNode>) {
-        let class_decl = parent.clone().unwrap();
-        let class_type = self.data.checker.getTypeAtLocation(class_decl);
-        let class_color = *self.data.type_to_color_map.get(&class_type).unwrap();
-
-        // TODO: bad collect
-        // let instantiations = self.data.checker.types[class_type]
-        //     .unwrap_instantiations()
-        //     .values()
-        //     .copied()
-        //     .collect::<Vec<_>>();
-
-        // for instance_type in instantiations {
-        //     let instance_color = self.data.recordType(instance_type, None);
-        //     self.data.registry.colors[class_color]
-        //         .instanceColors
-        //         .insert(instance_color);
-        // }
-
-        let bound_class = node.bind_to_opt_parent(parent);
-        // We consider implemented interfaces to be super types of classes so that properties are
-        // consistently renamed across all implementations of an interface.
-        for implemented in &node.implements {
-            let implemented = implemented.bind(bound_class.clone());
-            let interface_type = self.data.checker.getTypeAtLocation(implemented);
-            self.data.addSupertypeEdge(interface_type, class_color);
-        }
-
-        let class_sym = self.data.checker.types[class_type].get_symbol().unwrap();
-        let static_type = self.data.checker.getTypeOfSymbol(class_sym);
-        // TODO: I think we can skip the normalisation
-        // (apprent type, target, constraint etc) that recordType performs for this type.
-        let static_color = self.data.recordType(static_type, None);
-
-        if let Some(base_types) = self.data.checker.pubGetBaseTypes(class_type) {
-            for &base_type in base_types.iter() {
-                let base_type_sym = self.data.checker.types[base_type].get_symbol().unwrap();
-                let base_type_static_type = self.data.checker.getTypeOfSymbol(base_type_sym);
-                self.data
-                    .addSupertypeEdge(base_type_static_type, static_color);
-            }
-        }
-
-        self.data.registry.colors[class_color].staticType = Some(static_color);
-    }
-}
-
-fn find_props(program: &CompProgram) -> FxHashSet<JsWord> {
-    let mut finder = PropertyFinder::default();
-    program.visit_with(&mut finder, None);
-    finder.props
-}
-
-#[derive(Default)]
-struct PropertyFinder {
-    props: FxHashSet<JsWord>,
-}
-
-impl Visit for PropertyFinder {
-    // "name" from `someObject.name` or `someObject?.name`
-    fn visit_member_expr(&mut self, node: &Rc<ast::MemberExpr>, parent: Option<BoundNode>) {
-        node.visit_children_with(self, parent);
-        if !node.computed {
-            self.props
-                .insert(unwrap_as!(&node.prop, ast::Expr::Ident(i), i).sym.clone());
-        }
-    }
-
-    // "name" from `obj = {name: 0}`
-    fn visit_key_value_prop(&mut self, node: &Rc<ast::KeyValueProp>, parent: Option<BoundNode>) {
-        node.visit_children_with(self, parent);
-        if let ast::PropName::Ident(key) = &node.key {
-            self.props.insert(key.sym.clone());
-        }
-    }
-
-    // "name" from `obj = { name() {} }`
-    fn visit_method_prop(&mut self, node: &Rc<ast::MethodProp>, parent: Option<BoundNode>) {
-        node.visit_children_with(self, parent);
-        if let ast::PropName::Ident(key) = &node.key {
-            self.props.insert(key.sym.clone());
-        }
-    }
-
-    // "name" from `class C { name() {} }`, `class C { get name() {} }`, or `class C { set name() {} }`
-    fn visit_class_method(&mut self, node: &Rc<ast::ClassMethod>, parent: Option<BoundNode>) {
-        node.visit_children_with(self, parent);
-        if let ast::PropName::Ident(key) = &node.key {
-            self.props.insert(key.sym.clone());
-        }
-    }
-
-    // "name" from `class C { #name() {} }`, `class C { get #name() {} }`, or `class C { set #name() {} }`
-    fn visit_private_method(&mut self, node: &Rc<ast::PrivateMethod>, parent: Option<BoundNode>) {
-        node.visit_children_with(self, parent);
-        self.props.insert(node.key.id.sym.clone());
-    }
-
-    // "name" from `obj = { get name() {} }`
-    fn visit_getter_prop(&mut self, node: &Rc<ast::GetterProp>, parent: Option<BoundNode>) {
-        node.visit_children_with(self, parent);
-        if let ast::PropName::Ident(key) = &node.key {
-            self.props.insert(key.sym.clone());
-        }
-    }
-
-    // "name" from `obj = { set name() {} }`
-    fn visit_setter_prop(&mut self, node: &Rc<ast::SetterProp>, parent: Option<BoundNode>) {
-        node.visit_children_with(self, parent);
-        if let ast::PropName::Ident(key) = &node.key {
-            self.props.insert(key.sym.clone());
-        }
-    }
-
-    // "name" from `class C { name = 0; }`
-    fn visit_class_prop(&mut self, node: &Rc<ast::ClassProp>, parent: Option<BoundNode>) {
-        node.visit_children_with(self, parent);
-        if let ast::PropName::Ident(key) = &node.key {
-            self.props.insert(key.sym.clone());
-        }
-    }
-
-    // "name" from `class C { #name = 0; }`
-    fn visit_private_prop(&mut self, node: &Rc<ast::PrivateProp>, parent: Option<BoundNode>) {
-        node.visit_children_with(self, parent);
-        self.props.insert(node.key.id.sym.clone());
-    }
-
-    fn visit_constructor(&mut self, node: &Rc<ast::Constructor>, parent: Option<BoundNode>) {
-        node.visit_children_with(self, parent);
-        self.props.insert(js_word!("constructor"));
-    }
 }
