@@ -11,6 +11,10 @@ pub struct Config {
     pub ecmascript: EsConfig,
     #[serde(default)]
     pub typescript: TsConfig,
+    #[serde(default)]
+    pub disambiguate: bool,
+    #[serde(default)]
+    pub ambiguate: bool,
 }
 
 pub fn load_config(path: &Path) -> Result<Config> {

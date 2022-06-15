@@ -206,3 +206,5 @@ pub enum EdgeReason {
     ALGEBRAIC,
     CAN_HOLD,
 }
+
+// TODO: tests from closure

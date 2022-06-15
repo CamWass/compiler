@@ -55,3 +55,5 @@ impl EdgeCallback<ColorGraphNodeId, EdgeReason> for ClusterPropagator<'_, '_> {
         startDestPropCount < self.nodefactory.nodes[*destination].associatedProps.len()
     }
 }
+
+// TODO: tests from closure

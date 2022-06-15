@@ -1,5 +1,6 @@
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
+use petgraph::EdgeDirection;
 use rustc_hash::FxHashSet;
 use std::{
     cmp::{max, min},
@@ -53,6 +54,11 @@ where
         FixedPointGraphTraversal::new(callback, TraversalDirection::OUTWARDS)
     }
 
+    /** Helper method for creating new traversals that traverse from child to parent. */
+    pub fn newReverseTraversal(callback: C) -> Self {
+        FixedPointGraphTraversal::new(callback, TraversalDirection::INWARDS)
+    }
+
     /**
      * Compute a fixed point for the given graph.
      *
@@ -103,17 +109,16 @@ where
                 }
             }
             TraversalDirection::INWARDS => {
-                todo!();
-                // let revSourceValue = graph[node];
-                // for edge in node.getInEdges() {
-                //     let revDestValue = edge.getSource().getValue();
-                //     if self
-                //         .callback
-                //         .traverseEdge(revSourceValue, edge.getValue(), revDestValue)
-                //     {
-                //         workSet.insert(edge.getSource());
-                //     }
-                // }
+                let revSourceValue = &graph[node];
+                for edge in graph.edges_directed(node, EdgeDirection::Incoming) {
+                    let revDest = edge.source();
+                    if self
+                        .callback
+                        .traverseEdge(revSourceValue, edge.weight(), &graph[revDest])
+                    {
+                        workSet.insert(revDest);
+                    }
+                }
             }
         }
     }

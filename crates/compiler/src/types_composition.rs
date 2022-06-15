@@ -1683,7 +1683,6 @@ pub struct ReverseMappedType {
 // TODO: rename:
 #[derive(Debug)]
 pub enum Old {
-    // ObjectType
     InterfaceType {
         interface_type: InterfaceTypeBase,
     },
@@ -1751,7 +1750,16 @@ impl ResolvedType {
             Type::NumberLiteralType(_) => todo!(),
             Type::BigIntLiteralType(_) => todo!(),
             Type::EnumType(_) => todo!(),
-            Type::ObjectType(_) => todo!(),
+            Type::ObjectType(t) => {
+                *ty = Type::ResolvedType(Self {
+                    type_base: t.type_base,
+                    union_or_intersection_type: UnionOrIntersectionType::new(
+                        t.object_type_base.objectFlags,
+                    ),
+                    object_type_base: t.object_type_base,
+                    old: None,
+                })
+            }
             Type::InterfaceType(t) => {
                 *ty = Type::ResolvedType(Self {
                     type_base: t.type_base,

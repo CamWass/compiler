@@ -1,3 +1,4 @@
+pub mod AmbiguateProperties;
 mod ClusterPropagator;
 mod ColorFindPropertyReferences;
 mod ColorGraphBuilder;

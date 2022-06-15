@@ -1,9 +1,17 @@
 use super::PropertyClustering::PropertyClusteringId;
 use crate::{colors::ColorId, types::TypeId};
-use index::{newtype_index, vec::IndexVec};
+use index::{bit_set::GrowableBitSet, newtype_index, vec::IndexVec};
 use rustc_hash::FxHashMap;
 
-// TODO: comment from closure
+/**
+ * A struct representing a {@link Color} for use in ambiguation.
+ *
+ * <p>Each instance pairs a Color with additional information computed by/for optimizations.
+ *
+ * <p>Note: this design now depends on the implementation of Color to preserve invariants about
+ * recursive Colors. The node factory can't be depended on for post-processing Colors without losing
+ * type safety.
+ */
 #[derive(Debug)]
 pub struct ColorGraphNode {
     pub color: ColorId,
@@ -14,6 +22,7 @@ pub struct ColorGraphNode {
      */
     // TODO: remove
     index: ColorGraphNodeId,
+    pub subtypeIndices: GrowableBitSet<ColorGraphNodeId>,
 }
 
 impl ColorGraphNode {
@@ -22,6 +31,7 @@ impl ColorGraphNode {
             color: single,
             associatedProps: FxHashMap::default(),
             index,
+            subtypeIndices: GrowableBitSet::new_empty(),
         }
     }
 }

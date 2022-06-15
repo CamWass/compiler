@@ -7715,19 +7715,28 @@ impl Checker {
     // appendIndexInfo
 
     /**
+     * TODO: this comment is not strictly true (ty may not be AnonymousType)
      * Converts an AnonymousType to a ResolvedType.
      */
     fn resolveAnonymousTypeMembers(&mut self, ty: TypeId) {
         // TODO: could ty be a MappedType?
 
-        macro_rules! ty {
-            () => {
-                unwrap_as!(&self.types[ty], Type::AnonymousType(t), t)
-            };
-        }
         let symbol = self.getMergedSymbol(self.types[ty].get_symbol().unwrap());
-        if let Some(target) = ty!().anonymous_type.target {
-            let mapper = ty!().anonymous_type.mapper.clone().unwrap();
+        if matches!(&self.types[ty], Type::AnonymousType(t))
+            && unwrap_as!(&self.types[ty], Type::AnonymousType(t), t)
+                .anonymous_type
+                .target
+                .is_some()
+        {
+            let target = unwrap_as!(&self.types[ty], Type::AnonymousType(t), t)
+                .anonymous_type
+                .target
+                .unwrap();
+            let mapper = unwrap_as!(&self.types[ty], Type::AnonymousType(t), t)
+                .anonymous_type
+                .mapper
+                .clone()
+                .unwrap();
 
             self.setStructuredTypeMembers(
                 ty,
@@ -13059,13 +13068,13 @@ impl Checker {
             self.getPropertyNameFromIndex(indexType, accessNode.clone())
         };
 
-        if let Some(propName) = propName {
+        if let Some(propName) = &propName {
             if accessFlags.intersects(AccessFlags::Contextual) {
                 return self
-                    .getTypeOfPropertyOfContextualType(objectType, propName)
+                    .getTypeOfPropertyOfContextualType(objectType, propName.clone())
                     .or(Some(self.anyType));
             }
-            let prop = self.getPropertyOfType(objectType, &propName, false);
+            let prop = self.getPropertyOfType(objectType, propName, false);
             if let Some(prop) = prop {
                 // TODO: depreciation message:
                 // if accessFlags.intersects(AccessFlags::ReportDeprecated)
@@ -13119,8 +13128,8 @@ impl Checker {
             // is_numeric_literal_name who don't care about the return value can call a new version
             // of is_numeric_literal_name that is just as_numeric_literal_name().is_some()
             if self.everyType(objectType, |checker, ty| checker.isTupleType(ty))
-                && is_numeric_literal_name(&propName)
-                && ecma_string_to_number(&propName) >= 0.0
+                && is_numeric_literal_name(propName)
+                && ecma_string_to_number(propName) >= 0.0
             {
                 todo!();
                 // if (accessNode && everyType(objectType, t => !(t as TupleTypeReference).target.hasRestElement) && !(accessFlags & AccessFlags.NoTupleBoundsCheck)) {
@@ -13149,101 +13158,125 @@ impl Checker {
                 false,
             )
         {
-            todo!();
-            // if (objectType.flags & (TypeFlags::Any | TypeFlags::Never)) {
-            //     return objectType;
-            // }
-            // // If no index signature is applicable, we default to the string index signature. In effect, this means the string
-            // // index signature applies even when accessing with a symbol-like type.
-            // const indexInfo = getApplicableIndexInfo(objectType, indexType) || getIndexInfoOfType(objectType, stringType);
-            // if (indexInfo) {
-            //     if (accessFlags & AccessFlags.NoIndexSignatures && indexInfo.keyType !== numberType) {
-            //         if (accessExpression) {
-            //             error(accessExpression, Diagnostics.Type_0_cannot_be_used_to_index_type_1, typeToString(indexType), typeToString(originalObjectType));
-            //         }
-            //         return undefined;
-            //     }
-            //     if (accessNode && indexInfo.keyType === stringType && !isTypeAssignableToKind(indexType, TypeFlags::String | TypeFlags::Number)) {
-            //         const indexNode = getIndexNodeForAccessExpression(accessNode);
-            //         error(indexNode, Diagnostics.Type_0_cannot_be_used_as_an_index_type, typeToString(indexType));
-            //         return accessFlags & AccessFlags.IncludeUndefined ? getUnionType([indexInfo.type, undefinedType]) : indexInfo.type;
-            //     }
-            //     errorIfWritingToReadonlyIndex(indexInfo);
-            //     return accessFlags & AccessFlags.IncludeUndefined ? getUnionType([indexInfo.type, undefinedType]) : indexInfo.type;
-            // }
-            // if (indexType.flags & TypeFlags::Never) {
-            //     return neverType;
-            // }
-            // if (isJSLiteralType(objectType)) {
-            //     return anyType;
-            // }
-            // if (accessExpression && !isConstEnumObjectType(objectType)) {
-            //     if (isObjectLiteralType(objectType)) {
-            //         if (noImplicitAny && indexType.flags & (TypeFlags::StringLiteral | TypeFlags::NumberLiteral)) {
-            //             diagnostics.add(createDiagnosticForNode(accessExpression, Diagnostics.Property_0_does_not_exist_on_type_1, (indexType as StringLiteralType).value, typeToString(objectType)));
-            //             return undefinedType;
-            //         }
-            //         else if (indexType.flags & (TypeFlags::Number | TypeFlags::String)) {
-            //             const types = map((objectType as ResolvedType).properties, property => {
-            //                 return getTypeOfSymbol(property);
-            //             });
-            //             return getUnionType(append(types, undefinedType));
-            //         }
-            //     }
+            if self.types[objectType]
+                .get_flags()
+                .intersects(TypeFlags::Any | TypeFlags::Never)
+            {
+                return Some(objectType);
+            }
+            // If no index signature is applicable, we default to the string index signature. In effect, this means the string
+            // index signature applies even when accessing with a symbol-like type.
+            let indexInfo = self
+                .getApplicableIndexInfo(objectType, indexType)
+                .or_else(|| self.getIndexInfoOfType(objectType, self.stringType));
+            if let Some(indexInfo) = indexInfo {
+                todo!();
+                // if (accessFlags & AccessFlags.NoIndexSignatures && indexInfo.keyType !== numberType) {
+                //     if (accessExpression) {
+                //         error(accessExpression, Diagnostics.Type_0_cannot_be_used_to_index_type_1, typeToString(indexType), typeToString(originalObjectType));
+                //     }
+                //     return undefined;
+                // }
+                // if (accessNode && indexInfo.keyType === stringType && !isTypeAssignableToKind(indexType, TypeFlags::String | TypeFlags::Number)) {
+                //     const indexNode = getIndexNodeForAccessExpression(accessNode);
+                //     error(indexNode, Diagnostics.Type_0_cannot_be_used_as_an_index_type, typeToString(indexType));
+                //     return accessFlags & AccessFlags.IncludeUndefined ? getUnionType([indexInfo.type, undefinedType]) : indexInfo.type;
+                // }
+                // errorIfWritingToReadonlyIndex(indexInfo);
+                // return accessFlags & AccessFlags.IncludeUndefined ? getUnionType([indexInfo.type, undefinedType]) : indexInfo.type;
+            }
+            if self.types[indexType]
+                .get_flags()
+                .intersects(TypeFlags::Never)
+            {
+                return Some(self.neverType);
+            }
+            if self.isJSLiteralType(objectType) {
+                return Some(self.anyType);
+            }
+            if accessExpression.is_some() && !self.isConstEnumObjectType(objectType) {
+                if self.isObjectLiteralType(objectType) {
+                    todo!();
+                    // if (noImplicitAny && indexType.flags & (TypeFlags::StringLiteral | TypeFlags::NumberLiteral)) {
+                    //     diagnostics.add(createDiagnosticForNode(accessExpression, Diagnostics.Property_0_does_not_exist_on_type_1, (indexType as StringLiteralType).value, typeToString(objectType)));
+                    //     return undefinedType;
+                    // }
+                    // else if (indexType.flags & (TypeFlags::Number | TypeFlags::String)) {
+                    //     const types = map((objectType as ResolvedType).properties, property => {
+                    //         return getTypeOfSymbol(property);
+                    //     });
+                    //     return getUnionType(append(types, undefinedType));
+                    // }
+                }
 
-            //     if (objectType.symbol === globalThisSymbol && propName !== undefined && globalThisSymbol.exports!.has(propName) && (globalThisSymbol.exports!.get(propName)!.flags & SymbolFlags.BlockScoped)) {
-            //         error(accessExpression, Diagnostics.Property_0_does_not_exist_on_type_1, unescapeLeadingUnderscores(propName), typeToString(objectType));
-            //     }
-            //     else if (noImplicitAny && !compilerOptions.suppressImplicitAnyIndexErrors && !(accessFlags & AccessFlags.SuppressNoImplicitAnyError)) {
-            //         if (propName !== undefined && typeHasStaticProperty(propName, objectType)) {
-            //             const typeName = typeToString(objectType);
-            //             error(accessExpression, Diagnostics.Property_0_does_not_exist_on_type_1_Did_you_mean_to_access_the_static_member_2_instead, propName as string, typeName, typeName + "[" + getTextOfNode(accessExpression.argumentExpression) + "]");
-            //         }
-            //         else if (getIndexTypeOfType(objectType, numberType)) {
-            //             error(accessExpression.argumentExpression, Diagnostics.Element_implicitly_has_an_any_type_because_index_expression_is_not_of_type_number);
-            //         }
-            //         else {
-            //             let suggestion: string | undefined;
-            //             if (propName !== undefined && (suggestion = getSuggestionForNonexistentProperty(propName as string, objectType))) {
-            //                 if (suggestion !== undefined) {
-            //                     error(accessExpression.argumentExpression, Diagnostics.Property_0_does_not_exist_on_type_1_Did_you_mean_2, propName as string, typeToString(objectType), suggestion);
-            //                 }
-            //             }
-            //             else {
-            //                 const suggestion = getSuggestionForNonexistentIndexSignature(objectType, accessExpression, indexType);
-            //                 if (suggestion !== undefined) {
-            //                     error(accessExpression, Diagnostics.Element_implicitly_has_an_any_type_because_type_0_has_no_index_signature_Did_you_mean_to_call_1, typeToString(objectType), suggestion);
-            //                 }
-            //                 else {
-            //                     let errorInfo: DiagnosticMessageChain | undefined;
-            //                     if (indexType.flags & TypeFlags::EnumLiteral) {
-            //                         errorInfo = chainDiagnosticMessages(/* details */ undefined, Diagnostics.Property_0_does_not_exist_on_type_1, "[" + typeToString(indexType) + "]", typeToString(objectType));
-            //                     }
-            //                     else if (indexType.flags & TypeFlags::UniqueESSymbol) {
-            //                         const symbolName = getFullyQualifiedName((indexType as UniqueESSymbolType).symbol, accessExpression);
-            //                         errorInfo = chainDiagnosticMessages(/* details */ undefined, Diagnostics.Property_0_does_not_exist_on_type_1, "[" + symbolName + "]", typeToString(objectType));
-            //                     }
-            //                     else if (indexType.flags & TypeFlags::StringLiteral) {
-            //                         errorInfo = chainDiagnosticMessages(/* details */ undefined, Diagnostics.Property_0_does_not_exist_on_type_1, (indexType as StringLiteralType).value, typeToString(objectType));
-            //                     }
-            //                     else if (indexType.flags & TypeFlags::NumberLiteral) {
-            //                         errorInfo = chainDiagnosticMessages(/* details */ undefined, Diagnostics.Property_0_does_not_exist_on_type_1, (indexType as NumberLiteralType).value, typeToString(objectType));
-            //                     }
-            //                     else if (indexType.flags & (TypeFlags::Number | TypeFlags::String)) {
-            //                         errorInfo = chainDiagnosticMessages(/* details */ undefined, Diagnostics.No_index_signature_with_a_parameter_of_type_0_was_found_on_type_1, typeToString(indexType), typeToString(objectType));
-            //                     }
+                if self.types[objectType].get_symbol() == &Some(self.globalThisSymbol)
+                    && propName.is_some()
+                    // Check if the global this symbol exports this prop, and if that prop is block scoped.
+                    && self.symbol_tables[self.symbols[self.globalThisSymbol].exports().unwrap()]
+                        .get(propName.as_ref().unwrap())
+                        .map(|prop_sym| {
+                            self.symbols[*prop_sym]
+                                .flags()
+                                .intersects(SymbolFlags::BlockScoped)
+                        })
+                        .unwrap_or_default()
+                {
+                    todo!();
+                    // error(accessExpression, Diagnostics.Property_0_does_not_exist_on_type_1, unescapeLeadingUnderscores(propName), typeToString(objectType));
+                } else if self.noImplicitAny
+                    && !self.compilerOptions.suppressImplicitAnyIndexErrors
+                    && !accessFlags.intersects(AccessFlags::SuppressNoImplicitAnyError)
+                {
+                    todo!();
+                    // if (propName !== undefined && typeHasStaticProperty(propName, objectType)) {
+                    //     const typeName = typeToString(objectType);
+                    //     error(accessExpression, Diagnostics.Property_0_does_not_exist_on_type_1_Did_you_mean_to_access_the_static_member_2_instead, propName as string, typeName, typeName + "[" + getTextOfNode(accessExpression.argumentExpression) + "]");
+                    // }
+                    // else if (getIndexTypeOfType(objectType, numberType)) {
+                    //     error(accessExpression.argumentExpression, Diagnostics.Element_implicitly_has_an_any_type_because_index_expression_is_not_of_type_number);
+                    // }
+                    // else {
+                    //     let suggestion: string | undefined;
+                    //     if (propName !== undefined && (suggestion = getSuggestionForNonexistentProperty(propName as string, objectType))) {
+                    //         if (suggestion !== undefined) {
+                    //             error(accessExpression.argumentExpression, Diagnostics.Property_0_does_not_exist_on_type_1_Did_you_mean_2, propName as string, typeToString(objectType), suggestion);
+                    //         }
+                    //     }
+                    //     else {
+                    //         const suggestion = getSuggestionForNonexistentIndexSignature(objectType, accessExpression, indexType);
+                    //         if (suggestion !== undefined) {
+                    //             error(accessExpression, Diagnostics.Element_implicitly_has_an_any_type_because_type_0_has_no_index_signature_Did_you_mean_to_call_1, typeToString(objectType), suggestion);
+                    //         }
+                    //         else {
+                    //             let errorInfo: DiagnosticMessageChain | undefined;
+                    //             if (indexType.flags & TypeFlags::EnumLiteral) {
+                    //                 errorInfo = chainDiagnosticMessages(/* details */ undefined, Diagnostics.Property_0_does_not_exist_on_type_1, "[" + typeToString(indexType) + "]", typeToString(objectType));
+                    //             }
+                    //             else if (indexType.flags & TypeFlags::UniqueESSymbol) {
+                    //                 const symbolName = getFullyQualifiedName((indexType as UniqueESSymbolType).symbol, accessExpression);
+                    //                 errorInfo = chainDiagnosticMessages(/* details */ undefined, Diagnostics.Property_0_does_not_exist_on_type_1, "[" + symbolName + "]", typeToString(objectType));
+                    //             }
+                    //             else if (indexType.flags & TypeFlags::StringLiteral) {
+                    //                 errorInfo = chainDiagnosticMessages(/* details */ undefined, Diagnostics.Property_0_does_not_exist_on_type_1, (indexType as StringLiteralType).value, typeToString(objectType));
+                    //             }
+                    //             else if (indexType.flags & TypeFlags::NumberLiteral) {
+                    //                 errorInfo = chainDiagnosticMessages(/* details */ undefined, Diagnostics.Property_0_does_not_exist_on_type_1, (indexType as NumberLiteralType).value, typeToString(objectType));
+                    //             }
+                    //             else if (indexType.flags & (TypeFlags::Number | TypeFlags::String)) {
+                    //                 errorInfo = chainDiagnosticMessages(/* details */ undefined, Diagnostics.No_index_signature_with_a_parameter_of_type_0_was_found_on_type_1, typeToString(indexType), typeToString(objectType));
+                    //             }
 
-            //                     errorInfo = chainDiagnosticMessages(
-            //                         errorInfo,
-            //                         Diagnostics.Element_implicitly_has_an_any_type_because_expression_of_type_0_can_t_be_used_to_index_type_1, typeToString(fullIndexType), typeToString(objectType)
-            //                     );
-            //                     diagnostics.add(createDiagnosticForNodeFromMessageChain(accessExpression, errorInfo));
-            //                 }
-            //             }
-            //         }
-            //     }
-            //     return undefined;
-            // }
+                    //             errorInfo = chainDiagnosticMessages(
+                    //                 errorInfo,
+                    //                 Diagnostics.Element_implicitly_has_an_any_type_because_expression_of_type_0_can_t_be_used_to_index_type_1, typeToString(fullIndexType), typeToString(objectType)
+                    //             );
+                    //             diagnostics.add(createDiagnosticForNodeFromMessageChain(accessExpression, errorInfo));
+                    //         }
+                    //     }
+                    // }
+                }
+                return None;
+            }
         }
         if self.isJSLiteralType(objectType) {
             return Some(self.anyType);
@@ -20149,20 +20182,19 @@ impl Checker {
         }
 
         if matches!(container, BoundNode::Module(_) | BoundNode::Script(_)) {
-            todo!();
+            // TODO
+            // look up in the source file's locals or exports
+            // if container.commonJsModuleIndicator {
+            //     let fileSymbol = self.getSymbolOfNode(container);
+            //     return fileSymbol && self.getTypeOfSymbol(fileSymbol);
+            // } else if container.externalModuleIndicator {
+            //     // TODO: Maybe issue a better error than 'object is possibly undefined'
+            //     return self.undefinedType;
+            // } else
+            if includeGlobalThis {
+                return Some(self.getTypeOfSymbol(self.globalThisSymbol));
+            }
         }
-        // if isSourceFile(container) {
-        //     // look up in the source file's locals or exports
-        //     if container.commonJsModuleIndicator {
-        //         let fileSymbol = self.getSymbolOfNode(container);
-        //         return fileSymbol && self.getTypeOfSymbol(fileSymbol);
-        //     } else if container.externalModuleIndicator {
-        //         // TODO: Maybe issue a better error than 'object is possibly undefined'
-        //         return self.undefinedType;
-        //     } else if includeGlobalThis {
-        //         return self.getTypeOfSymbol(globalThisSymbol);
-        //     }
-        // }
 
         None
     }
@@ -20246,8 +20278,267 @@ impl Checker {
     // getTypeForThisExpressionFromJSDoc
     // TODO:
     // isInConstructorArgumentInitializer
-    // TODO:
-    // checkSuperExpression
+
+    fn checkSuperExpression(&mut self, node: &Rc<Super>) -> TypeId {
+        let bound_node = BoundNode::Super(node.clone());
+        let isCallExpression = matches!(&node.parent, Some(BoundNode::CallExpr(p)) if p.callee == ast::ExprOrSuper::Super(node.node.clone()));
+
+        let immediateContainer = getSuperContainer(bound_node.clone(), true);
+        let mut container = immediateContainer.clone();
+        let mut needToCaptureLexicalThis = false;
+
+        // adjust the container reference in case if super is used inside arrow functions with arbitrarily deep nesting
+        if !isCallExpression {
+            while let Some(c @ BoundNode::ArrowExpr(_)) = container {
+                container = getSuperContainer(c, true);
+                needToCaptureLexicalThis = self.languageVersion < ScriptTarget::ES2015;
+            }
+        }
+
+        let canUseSuperExpression =
+            isLegalUsageOfSuperExpression(container.clone(), isCallExpression);
+        let mut nodeCheckFlag = NodeCheckFlags::empty();
+
+        if !canUseSuperExpression {
+            todo!();
+            // // issue more specific error if super is used in computed property name
+            // // class A { foo() { return "1" }}
+            // // class B {
+            // //     [super.foo()]() {}
+            // // }
+            // const current = findAncestor(node, n => n === container ? "quit" : n.kind === SyntaxKind.ComputedPropertyName);
+            // if (current && current.kind === SyntaxKind.ComputedPropertyName) {
+            //     error(node, Diagnostics.super_cannot_be_referenced_in_a_computed_property_name);
+            // }
+            // else if (isCallExpression) {
+            //     error(node, Diagnostics.Super_calls_are_not_permitted_outside_constructors_or_in_nested_functions_inside_constructors);
+            // }
+            // else if (!container || !container.parent || !(isClassLike(container.parent) || container.parent.kind === SyntaxKind.ObjectLiteralExpression)) {
+            //     error(node, Diagnostics.super_can_only_be_referenced_in_members_of_derived_classes_or_object_literal_expressions);
+            // }
+            // else {
+            //     error(node, Diagnostics.super_property_access_is_permitted_only_in_a_constructor_member_function_or_member_accessor_of_a_derived_class);
+            // }
+            // return errorType;
+        }
+
+        // Here, canUseSuperExpression is true which means the container exists.
+        let container = container.unwrap();
+
+        if !isCallExpression && matches!(immediateContainer, Some(BoundNode::Constructor(_))) {
+            todo!();
+            // checkThisBeforeSuper(node, container, Diagnostics.super_must_be_called_before_accessing_a_property_of_super_in_the_constructor_of_a_derived_class);
+        }
+
+        if isStatic(&container) || isCallExpression {
+            nodeCheckFlag = NodeCheckFlags::SuperStatic;
+            // TODO:
+            // if !isCallExpression &&
+            //     languageVersion >= ScriptTarget.ES2015 && languageVersion <= ScriptTarget.ES2021 &&
+            //     (isPropertyDeclaration(container) || isClassStaticBlockDeclaration(container)) {
+            //     // for `super.x` or `super[x]` in a static initializer, mark all enclosing
+            //     // block scope containers so that we can report potential collisions with
+            //     // `Reflect`.
+            //     forEachEnclosingBlockScopeContainer(node.parent, current => {
+            //         if (!isSourceFile(current) || isExternalOrCommonJsModule(current)) {
+            //             getNodeLinks(current).flags |= NodeCheckFlags.ContainsSuperPropertyInStaticInitializer;
+            //         }
+            //     });
+            // }
+        } else {
+            nodeCheckFlag = NodeCheckFlags::SuperInstance;
+        }
+
+        self.getNodeLinks_mut(bound_node.clone()).flags |= nodeCheckFlag;
+
+        // Due to how we emit async functions, we need to specialize the emit for an async method that contains a `super` reference.
+        // This is due to the fact that we emit the body of an async function inside of a generator function. As generator
+        // functions cannot reference `super`, we emit a helper inside of the method body, but outside of the generator. This helper
+        // uses an arrow function, which is permitted to reference `super`.
+        //
+        // There are two primary ways we can access `super` from within an async method. The first is getting the value of a property
+        // or indexed access on super, either as part of a right-hand-side expression or call expression. The second is when setting the value
+        // of a property or indexed access, either as part of an assignment expression or destructuring assignment.
+        //
+        // The simplest case is reading a value, in which case we will emit something like the following:
+        //
+        //  // ts
+        //  ...
+        //  async asyncMethod() {
+        //    let x = await super.asyncMethod();
+        //    return x;
+        //  }
+        //  ...
+        //
+        //  // js
+        //  ...
+        //  asyncMethod() {
+        //      const _super = Object.create(null, {
+        //        asyncMethod: { get: () => super.asyncMethod },
+        //      });
+        //      return __awaiter(this, arguments, Promise, function *() {
+        //          let x = yield _super.asyncMethod.call(this);
+        //          return x;
+        //      });
+        //  }
+        //  ...
+        //
+        // The more complex case is when we wish to assign a value, especially as part of a destructuring assignment. As both cases
+        // are legal in ES6, but also likely less frequent, we only emit setters if there is an assignment:
+        //
+        //  // ts
+        //  ...
+        //  async asyncMethod(ar: Promise<any[]>) {
+        //      [super.a, super.b] = await ar;
+        //  }
+        //  ...
+        //
+        //  // js
+        //  ...
+        //  asyncMethod(ar) {
+        //      const _super = Object.create(null, {
+        //        a: { get: () => super.a, set: (v) => super.a = v },
+        //        b: { get: () => super.b, set: (v) => super.b = v }
+        //      };
+        //      return __awaiter(this, arguments, Promise, function *() {
+        //          [_super.a, _super.b] = yield ar;
+        //      });
+        //  }
+        //  ...
+        //
+        // Creating an object that has getter and setters instead of just an accessor function is required for destructuring assignments
+        // as a call expression cannot be used as the target of a destructuring assignment while a property access can.
+        //
+        // For element access expressions (`super[x]`), we emit a generic helper that forwards the element access in both situations.
+        if matches!(
+            container,
+            BoundNode::PrivateMethod(_) | BoundNode::ClassMethod(_) | BoundNode::MethodProp(_)
+        ) && hasSyntacticModifier(&container, ModifierFlags::Async)
+        {
+            todo!();
+            // if (isSuperProperty(node.parent) && isAssignmentTarget(node.parent)) {
+            //     getNodeLinks(container).flags |= NodeCheckFlags.AsyncMethodWithSuperBinding;
+            // }
+            // else {
+            //     getNodeLinks(container).flags |= NodeCheckFlags.AsyncMethodWithSuper;
+            // }
+        }
+
+        if needToCaptureLexicalThis {
+            todo!();
+            // call expressions are allowed only in constructors so they should always capture correct 'this'
+            // super property access expressions can also appear in arrow functions -
+            // in this case they should also use correct lexical this
+            // captureLexicalThis(node.parent, container);
+        }
+
+        if matches!(container.parent(), Some(BoundNode::ObjectLit(_))) {
+            todo!();
+            // if (languageVersion < ScriptTarget.ES2015) {
+            //     error(node, Diagnostics.super_is_only_allowed_in_members_of_object_literal_expressions_when_option_target_is_ES2015_or_higher);
+            //     return errorType;
+            // }
+            // else {
+            //     // for object literal assume that type of 'super' is 'any'
+            //     return anyType;
+            // }
+        }
+
+        // at this point the only legal case for parent is ClassLikeDeclaration
+        let class = container.parent().unwrap();
+        if unwrap_as!(&class, BoundNode::Class(c), c).extends.is_none() {
+            todo!();
+            // error(node, Diagnostics.super_can_only_be_referenced_in_a_derived_class);
+            // return errorType;
+        }
+
+        let class_sym = self.getSymbolOfNode(class.parent().unwrap()).unwrap();
+        let classType = self.getDeclaredTypeOfSymbol(class_sym);
+        let baseClassType = self.getBaseTypes(classType).first();
+        let baseClassType = match self.getBaseTypes(classType).first() {
+            Some(ty) => *ty,
+            None => return self.errorType,
+        };
+
+        if matches!(container, BoundNode::Constructor(_))
+            && isInConstructorArgumentInitializer(bound_node, &container)
+        {
+            todo!();
+            // // issue custom error message for super property access in constructor arguments (to be aligned with old compiler)
+            // error(node, Diagnostics.super_cannot_be_referenced_in_constructor_arguments);
+            // return errorType;
+        }
+
+        return if nodeCheckFlag == NodeCheckFlags::SuperStatic {
+            self.getBaseConstructorTypeOfClass(classType)
+        } else {
+            let this_type = self.types[classType].unwrap_as_interface_type().thisType;
+            self.getTypeWithThisArgument(baseClassType, this_type, false)
+        };
+
+        fn isLegalUsageOfSuperExpression(
+            container: Option<BoundNode>,
+            isCallExpression: bool,
+        ) -> bool {
+            let container = match container {
+                Some(c) => c,
+                None => return false,
+            };
+
+            if isCallExpression {
+                // TS 1.0 SPEC (April 2014): 4.8.1
+                // Super calls are only permitted in constructors of derived classes
+                return matches!(container, BoundNode::Constructor(_));
+            } else {
+                // TS 1.0 SPEC (April 2014)
+                // 'super' property access is allowed
+                // - In a constructor, instance member function, instance member accessor, or instance member variable initializer where this references a derived class instance
+                // - In a static member function or static member accessor
+
+                // topmost container must be something that is directly nested in the class declaration\object literal expression
+                if let Some(parent) = container.parent() {
+                    if matches!(parent, BoundNode::Class(_) | BoundNode::ObjectLit(_)) {
+                        if isStatic(&container) {
+                            // TODO: class static block
+                            // | BoundNode::ClassStaticBlockDeclaration(_)
+                            return matches!(
+                                container,
+                                BoundNode::PrivateMethod(_)
+                                    | BoundNode::ClassMethod(_)
+                                    | BoundNode::MethodProp(_)
+                                    | BoundNode::TsMethodSignature(_)
+                                    | BoundNode::GetterProp(_)
+                                    | BoundNode::TsGetterSignature(_)
+                                    | BoundNode::SetterProp(_)
+                                    | BoundNode::TsSetterSignature(_)
+                                    | BoundNode::ClassProp(_)
+                                    | BoundNode::PrivateProp(_)
+                            );
+                        } else {
+                            return matches!(
+                                container,
+                                BoundNode::PrivateMethod(_)
+                                    | BoundNode::ClassMethod(_)
+                                    | BoundNode::MethodProp(_)
+                                    | BoundNode::TsMethodSignature(_)
+                                    | BoundNode::GetterProp(_)
+                                    | BoundNode::TsGetterSignature(_)
+                                    | BoundNode::SetterProp(_)
+                                    | BoundNode::TsSetterSignature(_)
+                                    | BoundNode::ClassProp(_)
+                                    | BoundNode::PrivateProp(_)
+                                    | BoundNode::TsPropertySignature(_)
+                                    | BoundNode::Constructor(_)
+                            );
+                        }
+                    }
+                }
+            }
+
+            return false;
+        }
+    }
+
     // TODO:
     // getContainingObjectLiteral
     // TODO:
@@ -22459,14 +22750,118 @@ impl Checker {
     // getForInVariableSymbol
     // TODO:
     // hasNumericPropertyNames
-    // TODO:
-    // isForInVariableForNumericPropertyNames
-    // TODO:
-    // checkIndexedAccess
+
+    /**
+     * Return true if given node is an expression consisting of an identifier (possibly parenthesized)
+     * that references a for-in variable for an object with numeric property names.
+     */
+    fn isForInVariableForNumericPropertyNames(&mut self, expr: BoundNode) -> bool {
+        let e = skipParenthesesOfNode(expr);
+        if matches!(e, BoundNode::Ident(_)) {
+            // const symbol = getResolvedSymbol(e as Identifier);
+            // if (symbol.flags & SymbolFlags.Variable) {
+            //     let child: Node = expr;
+            //     let node = expr.parent;
+            //     while (node) {
+            //         if (node.kind === SyntaxKind.ForInStatement &&
+            //             child === (node as ForInStatement).statement &&
+            //             getForInVariableSymbol(node as ForInStatement) === symbol &&
+            //             hasNumericPropertyNames(getTypeOfExpression((node as ForInStatement).expression))) {
+            //             return true;
+            //         }
+            //         child = node;
+            //         node = node.parent;
+            //     }
+            // }
+        }
+        false
+    }
+
+    fn checkIndexedAccess(
+        &mut self,
+        node: &Rc<MemberExpr>,
+        checkMode: Option<CheckMode>,
+    ) -> TypeId {
+        debug_assert!(node.computed);
+        // TODO: optional chaining
+        // if node.flags & NodeFlags.OptionalChain{
+        //    self. checkElementAccessChain(node as ElementAccessChain, checkMode)
+        // } else {
+        let exprType = self.checkNonNullExpression(node.obj.bind(node.clone().into()));
+        self.checkElementAccessExpression(node, exprType, checkMode)
+        // }
+    }
+
     // TODO:
     // checkElementAccessChain
-    // TODO:
-    // checkElementAccessExpression
+
+    fn checkElementAccessExpression(
+        &mut self,
+        node: &Rc<MemberExpr>,
+        exprType: TypeId,
+        checkMode: Option<CheckMode>,
+    ) -> TypeId {
+        debug_assert!(node.computed);
+        let bound_node = BoundNode::MemberExpr(node.clone());
+        let objectType = if getAssignmentTargetKind(bound_node.clone()) != AssignmentKind::None
+            || isMethodAccessForCall(bound_node.clone())
+        {
+            self.getWidenedType(exprType)
+        } else {
+            exprType
+        };
+        let indexExpression = &node.prop;
+        let boundIndexExpression = node.prop.bind(bound_node.clone());
+        let indexType = self.checkExpression(boundIndexExpression.clone(), None, false);
+
+        if self.isErrorType(objectType) || objectType == self.silentNeverType {
+            return objectType;
+        }
+
+        if self.isConstEnumObjectType(objectType) && !isStringLiteralLike(indexExpression) {
+            todo!();
+            // error(indexExpression, Diagnostics.A_const_enum_member_can_only_be_accessed_using_a_string_literal);
+            // return errorType;
+        }
+
+        let effectiveIndexType =
+            if self.isForInVariableForNumericPropertyNames(boundIndexExpression.clone()) {
+                self.numberType
+            } else {
+                indexType
+            };
+        let accessFlags = if isAssignmentTarget(bound_node.clone()) {
+            AccessFlags::Writing
+                | (if self.isGenericObjectType(objectType) && !self.isThisTypeParameter(objectType)
+                {
+                    AccessFlags::NoIndexSignatures
+                } else {
+                    AccessFlags::empty()
+                })
+        } else {
+            AccessFlags::ExpressionPosition
+        };
+        let indexedAccessType = self
+            .getIndexedAccessTypeOrUndefined(
+                objectType,
+                effectiveIndexType,
+                Some(accessFlags),
+                Some(bound_node.clone()),
+                None,
+                None,
+            )
+            .unwrap_or(self.errorType);
+        let propSym = self.getNodeLinks(bound_node.clone()).resolvedSymbol;
+        let ty = self.getFlowTypeOfAccessExpression(
+            bound_node.clone(),
+            propSym,
+            indexedAccessType,
+            boundIndexExpression,
+            checkMode,
+        );
+        return self.checkIndexedAccessIndexType(ty, &bound_node);
+    }
+
     // TODO:
     // callLikeExpressionMayHaveTypeArguments
 
@@ -22492,8 +22887,10 @@ impl Checker {
         self.anySignature
     }
 
-    // TODO:
-    // resolveErrorCall
+    fn resolveErrorCall(&mut self, node: BoundNode) -> SignatureId {
+        self.resolveUntypedCall(node);
+        return self.unknownSignature;
+    }
 
     // Re-order candidate signatures into the result array. Assumes the result array to be empty.
     // The candidate list orders groups in reverse, but within a group signatures are kept in declaration order
@@ -23589,8 +23986,7 @@ impl Checker {
         let apparentType = self.getApparentType(funcType);
         if self.isErrorType(apparentType) {
             // Another error has already been reported
-            todo!();
-            // return resolveErrorCall(node);
+            return self.resolveErrorCall(node.clone().into());
         }
 
         // Technically, this signatures list may be incomplete. We are taking the apparent type,
@@ -25363,8 +25759,14 @@ impl Checker {
 
     // TODO:
     // allTypesAssignableToKind
-    // TODO:
-    // isConstEnumObjectType
+
+    fn isConstEnumObjectType(&self, ty: TypeId) -> bool {
+        self.types[ty]
+            .get_object_flags()
+            .intersects(ObjectFlags::Anonymous)
+            && self.types[ty].get_symbol().is_some()
+            && self.isConstEnumSymbol(self.types[ty].get_symbol().unwrap())
+    }
 
     fn isConstEnumSymbol(&self, symbol: SymbolId) -> bool {
         self.symbols[symbol]
@@ -25815,10 +26217,10 @@ impl Checker {
         let uninstantiatedType = self.checkExpressionWorker(&node, checkMode, forceTuple);
         let ty =
             self.instantiateTypeWithSingleGenericCallSignature(node, uninstantiatedType, checkMode);
-        // TODO:
-        // if self.isConstEnumObjectType(ty) {
-        //     self.checkConstEnumAccess(node, ty);
-        // }
+        if self.isConstEnumObjectType(ty) {
+            todo!();
+            // self.checkConstEnumAccess(node, ty);
+        }
         self.currentNode = saveCurrentNode;
         // tracing?.pop();
         ty
@@ -25852,10 +26254,7 @@ impl Checker {
                 // self.checkPrivateIdentifierExpression(node as PrivateIdentifier)
             }
             BoundNode::ThisExpr(_) => self.checkThisExpression(node.clone()),
-            BoundNode::Super(_) => {
-                todo!();
-                // self.checkSuperExpression(node)
-            }
+            BoundNode::Super(n) => self.checkSuperExpression(n),
             BoundNode::Null(_) => self.nullWideningType,
             // TODO:
             // BoundNode::NoSubstitutionTemplateLiteral(_) => {
@@ -25904,8 +26303,7 @@ impl Checker {
             }
             BoundNode::MemberExpr(m) => {
                 if m.computed {
-                    // self.checkIndexedAccess(node as ElementAccessExpression, checkMode)
-                    todo!();
+                    self.checkIndexedAccess(m, checkMode)
                 } else {
                     self.checkPropertyAccessExpression(node.clone(), m.clone(), checkMode)
                 }
@@ -26080,8 +26478,59 @@ impl Checker {
     // checkTupleType
     // TODO:
     // checkUnionOrIntersectionType
-    // TODO:
-    // checkIndexedAccessIndexType
+
+    fn checkIndexedAccessIndexType(&mut self, ty: TypeId, accessNode: &BoundNode) -> TypeId {
+        debug_assert!(
+            matches!(accessNode, BoundNode::TsIndexedAccessType(_))
+                || matches!(&accessNode, BoundNode::MemberExpr(m) if m.computed)
+        );
+        if !self.types[ty]
+            .get_flags()
+            .intersects(TypeFlags::IndexedAccess)
+        {
+            return ty;
+        }
+        // Check if the index type is assignable to 'keyof T' for the object type.
+        let objectType = unwrap_as!(&self.types[ty], Type::IndexedAccessType(t), t).objectType;
+        let indexType = unwrap_as!(&self.types[ty], Type::IndexedAccessType(t), t).indexType;
+        {
+            let target = self.getIndexType(objectType, Some(false), false);
+            if self.isTypeAssignableTo(indexType, target) {
+                todo!();
+                // if (accessNode.kind == SyntaxKind.ElementAccessExpression && isAssignmentTarget(accessNode) &&
+                //     self.types[objectType].get_object_flags().intersects(ObjectFlags::Mapped) && self.getMappedTypeModifiers(objectType as MappedType) & MappedTypeModifiers::IncludeReadonly) {
+                //         todo!();
+                //     // error(accessNode, Diagnostics.Index_signature_in_type_0_only_permits_reading, typeToString(objectType));
+                // }
+                // return ty;
+            }
+        }
+        // Check if we're indexing with a numeric type and if either object or index types
+        // is a generic type with a constraint that has a numeric index signature.
+        let apparentObjectType = self.getApparentType(objectType);
+        if self
+            .getIndexInfoOfType(apparentObjectType, self.numberType)
+            .is_some()
+            && self.isTypeAssignableToKind(indexType, TypeFlags::NumberLike, false)
+        {
+            return ty;
+        }
+        if self.isGenericObjectType(objectType) {
+            todo!();
+            // let propertyName = getPropertyNameFromIndex(indexType, accessNode);
+            // if (propertyName) {
+            //     let propertySymbol = forEachType(apparentObjectType, t => getPropertyOfType(t, propertyName));
+            //     if (propertySymbol && getDeclarationModifierFlagsFromSymbol(propertySymbol) & ModifierFlags.NonPublicAccessibilityModifier) {
+            //         error(accessNode, Diagnostics.Private_or_protected_member_0_cannot_be_accessed_on_a_type_parameter, unescapeLeadingUnderscores(propertyName));
+            //         return errorType;
+            //     }
+            // }
+        }
+        todo!();
+        // error(accessNode, Diagnostics.Type_0_cannot_be_used_to_index_type_1, typeToString(indexType), typeToString(objectType));
+        // return errorType;
+    }
+
     // TODO:
     // checkIndexedAccessType
     // TODO:
@@ -27555,35 +28004,6 @@ impl Checker {
         self.globalBooleanType = Some(self.getGlobalType("Boolean".into(), 0, true).unwrap());
         self.globalRegExpType = Some(self.getGlobalType("RegExp".into(), 0, true).unwrap());
         self.anyArrayType = Some(self.createArrayType(self.anyType, false));
-
-        // println!(
-        //     "self.globalArrayType: {:?}",
-        //     &self.types[self.globalArrayType()]
-        // );
-        // println!(
-        //     "self.globalObjectType: {:?}",
-        //     &self.types[self.globalObjectType()]
-        // );
-        // println!(
-        //     "self.globalFunctionType: {:?}",
-        //     &self.types[self.globalFunctionType()]
-        // );
-        // println!(
-        //     "self.globalStringType: {:?}",
-        //     &self.types[self.globalStringType()]
-        // );
-        // println!(
-        //     "self.globalNumberType: {:?}",
-        //     &self.types[self.globalNumberType()]
-        // );
-        // println!(
-        //     "self.globalBooleanType: {:?}",
-        //     &self.types[self.globalBooleanType()]
-        // );
-        // println!(
-        //     "self.globalRegExpType: {:?}",
-        //     &self.types[self.globalRegExpType()]
-        // );
 
         self.autoArrayType = Some(self.createArrayType(self.autoType, false));
         if self.autoArrayType == Some(self.emptyObjectType) {

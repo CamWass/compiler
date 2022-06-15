@@ -302,6 +302,7 @@ mod tests {
     // index signatures
     // Missing props
     // getter/setters
+    // super
 
     // Type param with constraint
     #[test]

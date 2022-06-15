@@ -209,6 +209,63 @@ pub fn isObjectLiteralOrClassExpressionMethodOrAccessor(node: &BoundNode) -> boo
     )
 }
 
+/**
+ * Given an super call/property node, returns the closest node where
+ * - a super call/property access is legal in the node and not legal in the parent node the node.
+ *   i.e. super call is legal in constructor but not legal in the class body.
+ * - the container is an arrow function (so caller might need to call getSuperContainer again in case it needs to climb higher)
+ * - a super call/property is definitely illegal in the container (but might be legal in some subnode)
+ *   i.e. super property access is illegal in function declaration but can be legal in the statement list
+ */
+pub fn getSuperContainer(mut node: BoundNode, stopOnFunctions: bool) -> Option<BoundNode> {
+    loop {
+        node = match node.parent() {
+            Some(parent) => parent,
+            None => return None,
+        };
+        match node {
+            BoundNode::ComputedPropName(_) => {
+                node = node.parent().unwrap();
+            }
+            BoundNode::FnDecl(_) | BoundNode::FnExpr(_) | BoundNode::ArrowExpr(_) => {
+                if stopOnFunctions {
+                    return Some(node);
+                }
+            }
+            // TODO: class static block
+            // BoundNode::ClassStaticBlockDeclaration(_) |
+            BoundNode::ClassProp(_)
+            | BoundNode::PrivateProp(_)
+            | BoundNode::TsPropertySignature(_)
+            | BoundNode::PrivateMethod(_)
+            | BoundNode::ClassMethod(_)
+            | BoundNode::MethodProp(_)
+            | BoundNode::TsMethodSignature(_)
+            | BoundNode::Constructor(_)
+            | BoundNode::GetterProp(_)
+            | BoundNode::TsGetterSignature(_)
+            | BoundNode::SetterProp(_)
+            | BoundNode::TsSetterSignature(_) => {
+                return Some(node);
+            }
+            BoundNode::Decorator(_) => {
+                todo!();
+                // Decorators are always applied outside of the body of a class or method.
+                // if node.parent.kind == SyntaxKind.Parameter && isClassElement(node.parent.parent) {
+                //     // If the decorator's parent is a Parameter, we resolve the this container from
+                //     // the grandparent class declaration.
+                //     node = node.parent.parent;
+                // } else if isClassElement(node.parent) {
+                //     // If the decorator's parent is a class element, we resolve the 'this' container
+                //     // from the parent class declaration.
+                //     node = node.parent;
+                // }
+            }
+            _ => {}
+        }
+    }
+}
+
 pub fn getImmediatelyInvokedFunctionExpression(func: BoundNode) -> Option<Rc<CallExpr>> {
     if matches!(func, BoundNode::FnExpr(_) | BoundNode::ArrowExpr(_)) {
         let mut prev = func.clone();
@@ -419,7 +476,7 @@ pub fn isDottedName(node: &ExprOrSuper) -> bool {
     }
 }
 
-fn isStringLiteralLike(expr: &Expr) -> bool {
+pub fn isStringLiteralLike(expr: &Expr) -> bool {
     match expr {
         Expr::Lit(ast::Lit::Str(_)) => true,
         Expr::Tpl(tpl) => tpl.exprs.is_empty(),

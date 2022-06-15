@@ -5,6 +5,7 @@
 #![deny(non_shorthand_field_patterns)]
 #![allow(warnings)]
 
+mod DefaultNameGenerator;
 pub mod ast;
 mod binder;
 mod checker;
@@ -109,6 +110,8 @@ impl Compiler {
         &self,
         libs: Vec<(String, ::ast::Program)>,
         program: (String, ::ast::Program),
+        disambiguate: bool,
+        ambiguate: bool,
     ) -> ::ast::Program {
         self.run(|| {
             let mut source_files = Vec::with_capacity(libs.len() + 1);
@@ -178,11 +181,21 @@ impl Compiler {
 
             let mut colours = colors::color_collector::collect(&mut checker, &p);
 
-            disambiguate::DisambiguateProperties::DisambiguateProperties::process(
-                &mut program_ast,
-                &p,
-                &mut colours,
-            );
+            if disambiguate {
+                disambiguate::DisambiguateProperties::DisambiguateProperties::process(
+                    &mut program_ast,
+                    &p,
+                    &mut colours,
+                );
+            }
+
+            if ambiguate {
+                disambiguate::AmbiguateProperties::AmbiguateProperties::process(
+                    &mut program_ast,
+                    &p,
+                    &mut colours,
+                );
+            }
 
             program_ast
         })
@@ -767,7 +780,7 @@ pub struct CompilerOptions {
     // strictPropertyInitialization?: boolean;  // Always combine with strict property
     // stripInternal?: boolean;
     suppressExcessPropertyErrors: bool,
-    // suppressImplicitAnyIndexErrors?: boolean;
+    suppressImplicitAnyIndexErrors: bool,
     // /* @internal */ suppressOutputPathCheck?: boolean;
     // target?: ScriptTarget;
     // traceResolution?: boolean;

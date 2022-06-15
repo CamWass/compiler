@@ -70,7 +70,7 @@ fn main() -> Result<()> {
 
     let compiler = Compiler::new();
 
-    let result = compiler.compile(vec![lib], program);
+    let result = compiler.compile(vec![lib], program, config.disambiguate, config.ambiguate);
 
     // dbg!(result);
 

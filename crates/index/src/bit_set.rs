@@ -754,6 +754,32 @@ impl<T: Idx> GrowableBitSet<T> {
             false
         }
     }
+
+    /// Count the number of set bits in the set.
+    pub fn count(&self) -> usize {
+        self.bit_set.count()
+    }
+
+    /// Sets `self = self | other` and returns `true` if `self` changed
+    /// (i.e., if new bits were added).
+    pub fn union(&mut self, other: &GrowableBitSet<T>) {
+        self.ensure(other.bit_set.domain_size);
+
+        for (out_elem, in_elem) in iter::zip(&mut self.bit_set.words, &other.bit_set.words) {
+            let old_val = *out_elem;
+            let new_val = old_val | *in_elem;
+            *out_elem = new_val;
+        }
+    }
+
+    /// Returns true if the specified BitSet has any bits set to true that are also set to true in this BitSet
+    pub fn intersects(&self, other: &GrowableBitSet<T>) -> bool {
+        self.bit_set
+            .words
+            .iter()
+            .zip(other.bit_set.words.iter())
+            .any(|(a, b)| a & b != 0)
+    }
 }
 
 /// A fixed-size 2D bit matrix type with a dense representation.

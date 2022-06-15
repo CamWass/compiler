@@ -97,3 +97,5 @@ impl std::ops::IndexMut<ColorGraphNodeId> for ColorGraphNodeFactory<'_> {
         &mut self.nodes[index]
     }
 }
+
+// TODO: tests from closure

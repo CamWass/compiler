@@ -131,7 +131,7 @@ impl Visit for ColorFindPropertyReferences<'_, '_> {
             .get_color_of_node(&class_decl)
             .unwrap();
         for member in &node.body {
-            let res = match member {
+            let prop = match member {
                 ast::ClassMember::Constructor(_) => todo!(),
                 ast::ClassMember::Method(m) => {
                     if let ast::PropName::Ident(i) = &m.key {
@@ -152,7 +152,7 @@ impl Visit for ColorFindPropertyReferences<'_, '_> {
                 ast::ClassMember::TsIndexSignature(_) | ast::ClassMember::Empty(_) => None,
             };
 
-            if let Some((id, is_static)) = res {
+            if let Some((id, is_static)) = prop {
                 let owner = if is_static {
                     self.colorGraphNodeFactory.colours.colors[class_color]
                         .staticType
@@ -222,3 +222,5 @@ impl Visit for ColorFindPropertyReferences<'_, '_> {
         self.colorGraphNodeFactory.createNode(Some(interface_color));
     }
 }
+
+// TODO: tests from closure

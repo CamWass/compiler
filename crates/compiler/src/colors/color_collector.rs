@@ -498,6 +498,16 @@ impl Visit for ClassVisitor<'_, '_> {
         // TODO: I think we can skip the normalisation
         // (apprent type, target, constraint etc) that recordType performs for this type.
         let static_color = self.data.recordType(static_type, None);
+
+        if let Some(base_types) = self.data.checker.pubGetBaseTypes(class_type) {
+            for &base_type in base_types.iter() {
+                let base_type_sym = self.data.checker.types[base_type].get_symbol().unwrap();
+                let base_type_static_type = self.data.checker.getTypeOfSymbol(base_type_sym);
+                self.data
+                    .addSupertypeEdge(base_type_static_type, static_color);
+            }
+        }
+
         self.data.registry.colors[class_color].staticType = Some(static_color);
     }
 }
