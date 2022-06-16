@@ -459,29 +459,45 @@ impl Visit for ProcessPropertiesAndConstructors<'_, '_> {
 
     fn visit_binding_ident(&mut self, node: &Rc<ast::BindingIdent>, parent: Option<BoundNode>) {
         node.visit_children_with(self, parent.clone());
+        // TODO:
         // handle ES5-style classes
-        if matches!(parent, Some(BoundNode::VarDeclarator(_))) {
-            todo!();
-            // graphNodeFactory.createNode(getColor(n));
-        }
+        // if matches!(parent, Some(BoundNode::VarDeclarator(_))) {
+        //     graphNodeFactory.createNode(getColor(n));
+        // }
     }
 
     fn visit_object_lit(&mut self, node: &Rc<ast::ObjectLit>, parent: Option<BoundNode>) {
         node.visit_children_with(self, parent.clone());
-        todo!();
-        //   // Object.defineProperties literals are handled at the CALL node, as we determine the type
-        //   // differently than for regular object literals.
-        //   if (objectLit.getParent().isCall()
-        //       && NodeUtil.isObjectDefinePropertiesDefinition(objectLit.getParent())) {
-        //     return;
-        //   }
+        // TODO: verify this
+        // Object.defineProperties literals are handled at the CallExpr node, as we determine the type
+        // differently than for regular object literals.
+        if matches!(&parent, Some(BoundNode::CallExpr(c)) if isBindableObjectDefinePropertyCall(&c.node))
+        {
+            return;
+        }
 
-        //   // The children of an OBJECTLIT node are keys, where the values
-        //   // are the children of the keys.
-        //   Color type = getColor(objectLit);
-        //   for (Node key = objectLit.getFirstChild(); key != null; key = key.getNext()) {
-        //     processObjectProperty(objectLit, key, type);
-        //   }
+        let obj = node.bind_to_opt_parent(parent);
+        let owner = self
+            .colorGraphNodeFactory
+            .colours
+            .get_color_of_node(&obj)
+            .unwrap();
+
+        for prop in &node.props {
+            // TODO: quoted props
+            let name = match prop {
+                ast::Prop::Shorthand(n) => Some(ast::PropName::Ident(n.clone())),
+                ast::Prop::KeyValue(n) => Some(n.key.clone()),
+                ast::Prop::Assign(_) => None,
+                ast::Prop::Getter(n) => Some(n.key.clone()),
+                ast::Prop::Setter(n) => Some(n.key.clone()),
+                ast::Prop::Method(n) => Some(n.key.clone()),
+                ast::Prop::Spread(_) => None,
+            };
+            if let Some(ast::PropName::Ident(name)) = name {
+                self.maybeMarkCandidate(&name, owner);
+            }
+        }
     }
 
     fn visit_object_pat(&mut self, node: &Rc<ast::ObjectPat>, parent: Option<BoundNode>) {
@@ -2154,49 +2170,51 @@ mod tests {
     //   test_transform(js, output);
     // }
 
-    // TODO:
-    // #[test]
-    // fn testRelatedInstanceAndPrototypePropNotAmbiguated() {
-    //   test_transform(
-    //       lines(
-    //           "class Foo {", //
-    //           "  constructor() {",
-    //           "    this.y = 0;",
-    //           "  }",
-    //           "  x() {}",
-    //           "}"),
-    //       lines(
-    //           "class Foo {", //
-    //           "  constructor() {",
-    //           "    this.b = 0;",
-    //           "  }",
-    //           "  a() {}",
-    //           "}"));
-    // }
+    #[test]
+    fn testRelatedInstanceAndPrototypePropNotAmbiguated() {
+        test_transform(
+            "
+class Foo {
+    constructor() {
+        this.y = 0;
+    }
+    x() {}
+}",
+            "
+class Foo {
+    constructor() {
+        this.b = 0;
+    }
+    a() {}
+}",
+        );
+    }
 
-    // TODO:
-    // #[test]
-    // fn testRelatedInstanceAndSuperclassPrototypePropNotAmbiguated() {
-    //   test_transform(
-    //       lines(
-    //           "class Foo {", //
-    //           "  x() {}",
-    //           "}",
-    //           "class Bar extends Foo {",
-    //           "  constructor() {",
-    //           "    this.y = 0;",
-    //           "  }",
-    //           "}"),
-    //       lines(
-    //           "class Foo {", //
-    //           "  a() {}",
-    //           "}",
-    //           "class Bar extends Foo {",
-    //           "  constructor() {",
-    //           "    this.b = 0;",
-    //           "  }",
-    //           "}"));
-    // }
+    #[test]
+    fn testRelatedInstanceAndSuperclassPrototypePropNotAmbiguated() {
+        test_transform(
+            "
+class Foo {
+    x() {}
+}
+class Bar extends Foo {
+    constructor() {
+        super();
+        this.y = 0;
+    }
+}",
+            "
+class Foo {
+    a() {}
+}
+class Bar extends Foo {
+    constructor() {
+        super();
+        this.b = 0;
+    }
+}",
+        );
+    }
 
     // TODO:
     // #[test]
@@ -2383,33 +2401,30 @@ class Bar extends Foo { static a; }",
         );
     }
 
-    // TODO:
-    // #[test]
-    // fn testSingleClass_withMultipleMemberFields_notAmbiguated() {
-    //   test_transform(
-    //       lines(
-    //           "/** @unrestricted */",
-    //           "class Foo {",
-    //           "  field = 1;",
-    //           "  ['hi'] = 4;",
-    //           "  static 1 = 2;",
-    //           "  hello = 5;",
-    //           "}"),
-    //       lines(
-    //           "/** @unrestricted */",
-    //           "class Foo {",
-    //           "  a = 1;",
-    //           "  ['hi'] = 4;",
-    //           "  static 1 = 2;",
-    //           "  b = 5;",
-    //           "}"));
-    // }
+    #[test]
+    fn testSingleClass_withMultipleMemberFields_notAmbiguated() {
+        test_transform(
+            "
+class Foo {
+    field = 1;
+    ['hi'] = 4;
+    static 1 = 2;
+    hello = 5;
+}",
+            "
+class Foo {
+    a = 1;
+    ['hi'] = 4;
+    static 1 = 2;
+    b = 5;
+}",
+        );
+    }
 
-    // TODO:
-    // #[test]
-    // fn testQuotedMemberFnInClass_notAmbiguated() {
-    //   test_same("/** @dict */ class Foo { 'methodFoo'() {} }");
-    // }
+    #[test]
+    fn testQuotedMemberFnInClass_notAmbiguated() {
+        test_same("class Foo { 'methodFoo'() {} }");
+    }
 
     // TODO:
     // #[test]
@@ -2539,17 +2554,15 @@ class Bar extends Foo { static b() { super.a(); } }",
         );
     }
 
-    // TODO:
-    // #[test]
-    // fn testGetterInClass_ambiguated() {
-    //   test_transform("class Foo { get prop() {} }", "class Foo { get a() {} }");
-    // }
+    #[test]
+    fn testGetterInClass_ambiguated() {
+        test_transform("class Foo { get prop() {} }", "class Foo { get a() {} }");
+    }
 
-    // TODO:
-    // #[test]
-    // fn testQuotedGetterInClass_isNotAmbiguated() {
-    //   test_same("/** @dict */ class Foo { get 'prop'() {} }");
-    // }
+    #[test]
+    fn testQuotedGetterInClass_isNotAmbiguated() {
+        test_same("class Foo { get 'prop'() {} }");
+    }
 
     // TODO:
     // #[test]
@@ -2562,51 +2575,58 @@ class Bar extends Foo { static b() { super.a(); } }",
     // TODO:
     // #[test]
     // fn testSetterInClass_isAmbiguated() {
-    //   test_transform("class Foo { set prop(x) {} }", "class Foo { set a(x) {} }");
+    //     test_transform("class Foo { set prop(x) {} }", "class Foo { set a(x) {} }");
     // }
 
     // TODO:
     // #[test]
     // fn testQuotedSetterInClass_notAmbiguated() {
-    //   test_same("/** @dict */ class Foo { set 'prop'(x) {} }");
+    //     test_same("class Foo { set 'prop'(x) {} }");
     // }
 
     // TODO:
     // #[test]
     // fn test_sameGetterAndSetterInClass_ambiguated() {
-    //   test_transform("class Foo { get prop() {} set prop(x) {} }", "class Foo { get a() {} set a(x) {} }");
+    //     test_transform(
+    //         "class Foo { get prop() {} set prop(x) {} }",
+    //         "class Foo { get a() {} set a(x) {} }",
+    //     );
     // }
 
     // TODO:
     // #[test]
     // fn testDistinctGetterAndSetterInClass_notAmbiguated() {
-    //   test_transform("class Foo { set propA(x) {} get propB() {} }", "class Foo { set a(x) {} get b() {} }");
+    //     test_transform(
+    //         "class Foo { set propA(x) {} get propB() {} }",
+    //         "class Foo { set a(x) {} get b() {} }",
+    //     );
     // }
 
-    // TODO:
-    // #[test]
-    // fn testComputedMemberFunctionInClass_notAmbiguated() {
-    //   test_same("/** @dict */ class Foo { ['method']() {}}");
-    // }
+    #[test]
+    fn testComputedMemberFunctionInClass_notAmbiguated() {
+        test_same("class Foo { ['method']() {}}");
+    }
 
     // TODO:
     // #[test]
     // fn testSimpleComputedMemberFnInClassReservesPropertyName() {
-    //   test_transform(
-    //       "/** @unrestricted */ class Foo { ['a']() {} foo() {} }",
-    //       "/** @unrestricted */ class Foo { ['a']() {} b() {} }");
+    //     test_transform(
+    //         "class Foo { ['a']() {} foo() {} }",
+    //         "class Foo { ['a']() {} b() {} }",
+    //     );
     // }
 
     // TODO:
     // #[test]
     // fn testComplexComputedMemberFnInClassDoesntReservePropertyName() {
-    //   // we don't try to evaluate 'a' + '' to see that it's identical to 'a', and so end up renaming
-    //   // 'foo' -> 'a'
-    //   // The property name invalidation is already just a heuristic, so just handle the very simple
-    //   // case of ['a']() {}
-    //   test_transform(
-    //       "/** @unrestricted */ class Foo { ['a' + '']() {} foo() {} }",
-    //       "/** @unrestricted */ class Foo { ['a' + '']() {} a() {} }");
+    //     // we don't try to evaluate 'a' + '' to see that it's identical to 'a', and so end up renaming
+    //     // 'foo' -> 'a'
+    //     // The property name invalidation is already just a heuristic, so just handle the very simple
+    //     // case of ['a']() {}
+    //     test_transform(
+    //         "class Foo { ['a' + '']() {} foo() {} }",
+    //         "class Foo { ['a' + '']() {} a() {} }",
+    //     );
     // }
 
     #[test]

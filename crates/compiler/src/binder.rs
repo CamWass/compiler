@@ -1044,9 +1044,9 @@ impl<'a> Binder<'a> {
             BoundNode::MemberExpr(ref expr) => {
                 self.bindAccessExpressionFlow(node.clone(), expr.clone());
             }
-            // BoundNode::CallExpr(_) => {
-            //     self.bindCallExpressionFlow(node as CallExpression);
-            // }
+            BoundNode::CallExpr(ref n) => {
+                self.bindCallExpressionFlow(n);
+            }
             // BoundNode::NonNullExpression(_) => {
             //     self.bindNonNullExpressionFlow(node as NonNullExpression);
             // }
@@ -2587,7 +2587,42 @@ impl<'a> Binder<'a> {
         }
     }
 
-    // fn bindCallExpressionFlow(node: CallExpression | CallChain)
+    fn bindCallExpressionFlow(&mut self, node: &Rc<CallExpr>) {
+        let bound_node = BoundNode::CallExpr(node.clone());
+        // TODO: optional chain
+        // if (isOptionalChain(node)) {
+        //     bindOptionalChainFlow(node);
+        // }
+        // else {
+        // If the target of the call expression is a function expression or arrow function we have
+        // an immediately invoked function expression (IIFE). Initialize the flowNode property to
+        // the current control flow (which includes evaluation of the IIFE arguments).
+        let expr = skipParenthesesOfNode(node.callee.bind(bound_node.clone()));
+        if matches!(expr, BoundNode::FnExpr(_) | BoundNode::ArrowExpr(_)) {
+            bind_opt!(self, node.type_args, bound_node.clone());
+            bind_vec!(self, node.args, bound_node.clone());
+            self.bind(Some(node.callee.bind(bound_node)));
+        } else {
+            self.bindEachChild(bound_node);
+            if matches!(node.callee, ast::ExprOrSuper::Super(_)) {
+                self.currentFlow = self.createFlowCall(self.currentFlow, node.clone());
+            }
+        }
+        // }
+        if let ast::ExprOrSuper::Expr(ast::Expr::Member(callee)) = &node.callee {
+            if !callee.computed {
+                if let ast::Expr::Ident(prop) = &callee.prop {
+                    if isNarrowableOperand(&callee.obj.clone().into())
+                        && isPushOrUnshiftIdentifier(&prop.sym)
+                    {
+                        todo!();
+                        // self.currentFlow =
+                        //     self.createFlowMutation(FlowFlags::ArrayMutation, self.currentFlow, node);
+                    }
+                }
+            }
+        }
+    }
 
     fn getContainerFlags(&self, node: BoundNode) -> ContainerFlags {
         match node {
@@ -3188,9 +3223,7 @@ impl<'a> Binder<'a> {
             //     return checkPrivateIdentifier(node as PrivateIdentifier);
             // }
             BoundNode::MemberExpr(ref expr) => {
-                if isNarrowableReference(&ast::ExprOrSuper::Expr(ast::Expr::Member(
-                    expr.node.clone(),
-                ))) {
+                if isNarrowableReference(&expr.node.clone().into()) {
                     self.node_data_mut(node).flowNode = Some(self.currentFlow);
                 }
                 // TODO:
@@ -4379,34 +4412,31 @@ fn isNarrowingExpression(expr: &ast::Expr) -> bool {
     }
 }
 
-fn isNarrowableReference(expr: &ast::ExprOrSuper) -> bool {
+fn isNarrowableReference(expr: &Node) -> bool {
     if isDottedName(expr) {
         return true;
     }
 
     match expr {
-        ast::ExprOrSuper::Expr(expr) => match expr {
-            ast::Expr::TsNonNull(e) => isNarrowableReference(&e.expr.clone().into()),
-            ast::Expr::Paren(e) => isNarrowableReference(&e.expr.clone().into()),
-            ast::Expr::Seq(e) => e
-                .exprs
-                .last()
-                .map(|e| isNarrowableReference(&e.clone().into()))
-                .unwrap_or_default(),
-            ast::Expr::Member(e) if !e.computed || isStringOrNumericLiteralLike(&e.prop) => {
-                isNarrowableReference(&e.obj)
-            }
-            ast::Expr::Assign(e) => match &e.left {
-                ast::PatOrExpr::Expr(e) => isNarrowableReference(&e.clone().into()),
-                ast::PatOrExpr::Pat(_) => false,
-            },
-            _ => false,
+        Node::TsNonNullExpr(e) => isNarrowableReference(&e.expr.clone().into()),
+        Node::ParenExpr(e) => isNarrowableReference(&e.expr.clone().into()),
+        Node::SeqExpr(e) => e
+            .exprs
+            .last()
+            .map(|e| isNarrowableReference(&e.clone().into()))
+            .unwrap_or_default(),
+        Node::MemberExpr(e) if !e.computed || isStringOrNumericLiteralLike(&e.prop) => {
+            isNarrowableReference(&e.obj.clone().into())
+        }
+        Node::AssignExpr(e) => match &e.left {
+            ast::PatOrExpr::Expr(e) => isNarrowableReference(&e.clone().into()),
+            ast::PatOrExpr::Pat(_) => false,
         },
-        _ => unreachable!("super is handled above"),
+        _ => false,
     }
 }
 
-fn containsNarrowableReference(expr: &ast::ExprOrSuper) -> bool {
+fn containsNarrowableReference(expr: &Node) -> bool {
     if isNarrowableReference(expr) {
         return true;
     }
@@ -4464,21 +4494,19 @@ fn isNarrowingBinaryExpression(_expr: &ast::BinExpr) -> bool {
     // return false;
 }
 
-// fn isNarrowableOperand(expr: &ast::Expr) -> bool {
-//     todo!();
-//     // switch (expr.kind) {
-//     //     case SyntaxKind.ParenthesizedExpression:
-//     //         return isNarrowableOperand((expr as ParenthesizedExpression).expression);
-//     //     case SyntaxKind.BinaryExpression:
-//     //         switch ((expr as BinaryExpression).operatorToken.kind) {
-//     //             case SyntaxKind.EqualsToken:
-//     //                 return isNarrowableOperand((expr as BinaryExpression).left);
-//     //             case SyntaxKind.CommaToken:
-//     //                 return isNarrowableOperand((expr as BinaryExpression).right);
-//     //         }
-//     // }
-//     // return containsNarrowableReference(expr);
-// }
+fn isNarrowableOperand(expr: &Node) -> bool {
+    match expr {
+        Node::ParenExpr(e) => isNarrowableOperand(&e.expr.clone().into()),
+        Node::AssignExpr(e) if e.op == ast::AssignOp::Assign => {
+            isNarrowableOperand(&e.left.clone().into())
+        }
+        Node::SeqExpr(e) => {
+            todo!();
+            // isNarrowableOperand(Node::from(e.right))
+        }
+        _ => containsNarrowableReference(expr),
+    }
+}
 
 // TODO: pub only for testing
 pub struct ActiveLabel {

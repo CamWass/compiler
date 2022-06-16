@@ -464,15 +464,12 @@ pub fn isLogicalOrCoalescingAssignmentOperator(op: ast::AssignOp) -> bool {
     )
 }
 
-pub fn isDottedName(node: &ExprOrSuper) -> bool {
+pub fn isDottedName(node: &Node) -> bool {
     match node {
-        ExprOrSuper::Expr(expr) => match expr {
-            Expr::Ident(_) | Expr::This(_) | Expr::MetaProp(_) => true,
-            Expr::Member(e) => isDottedName(&e.obj),
-            Expr::Paren(e) if isDottedName(&e.expr.clone().into()) => true,
-            _ => false,
-        },
-        ExprOrSuper::Super(_) => true,
+        Node::Ident(_) | Node::ThisExpr(_) | Node::MetaPropExpr(_) | Node::Super(_) => true,
+        Node::MemberExpr(e) => isDottedName(&e.obj.clone().into()),
+        Node::ParenExpr(e) if isDottedName(&e.expr.clone().into()) => true,
+        _ => false,
     }
 }
 
@@ -804,6 +801,7 @@ fn getNonAssignedNameOfDeclaration(declaration: &BoundNode) -> Option<DeclName> 
         BoundNode::TsTypeAliasDecl(a) => ident!(a.id.clone(), a.clone().into()),
         BoundNode::KeyValueProp(d) => prop_name_key!(d),
         BoundNode::FnDecl(d) => ident!(d.ident.clone(), d.clone().into()),
+        BoundNode::Constructor(_) => None,
         _ => {
             println!("==============WARNING==============");
             println!(
@@ -1841,6 +1839,8 @@ fn getSyntacticModifierFlagsNoCache(node: &BoundNode) -> ModifierFlags {
             }
             flags
         }
+        BoundNode::VarDeclarator(_) => ModifierFlags::empty(),
+        BoundNode::VarDecl(_) => ModifierFlags::empty(),
         _ => {
             dbg!(node);
             todo!();
@@ -2666,6 +2666,11 @@ pub fn forEachReturnStatement(body: &BoundNode, visit_fn: impl FnMut(Rc<ReturnSt
 
 pub fn getContainingFunction(node: &BoundNode) -> Option<BoundNode> {
     findAncestor(node.parent(), |n| Some(isFunctionLike(Some(n))))
+}
+
+/// Returns the closest parent ClassDecl or ClassExpr (if any).
+pub fn getContainingClass(node: BoundNode) -> Option<BoundNode> {
+    findAncestor(node.parent(), |n| Some(isClassLike(n)))
 }
 
 pub fn getThisContainer(mut node: BoundNode, includeArrowFunctions: bool) -> BoundNode {

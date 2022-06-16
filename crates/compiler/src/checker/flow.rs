@@ -137,13 +137,22 @@ impl Checker {
                             continue;
                         }
                     }
-                    FlowNodeKind::FlowCall(_) => {
-                        todo!();
-                        // ty = getTypeAtFlowCall(flow as FlowCall);
-                        // if ty.is_none() {
-                        //     flow = (flow as FlowCall).antecedent;
-                        //     continue;
-                        // }
+                    FlowNodeKind::FlowCall(f) => {
+                        let antecedent = f.antecedent;
+                        if let Some(ty) = getTypeAtFlowCall(
+                            checker,
+                            reference,
+                            _declaredType,
+                            initialType,
+                            &flowContainer,
+                            flowDepth,
+                            flow,
+                        ) {
+                            ty
+                        } else {
+                            flow = antecedent;
+                            continue;
+                        }
                     }
                     FlowNodeKind::FlowCondition(_) => {
                         todo!();
@@ -338,24 +347,41 @@ impl Checker {
         //     return narrowType(type, node, /*assumeTrue*/ true);
         // }
 
-        // function getTypeAtFlowCall(flow: FlowCall): FlowType | undefined {
-        //     const signature = getEffectsSignature(flow.node);
-        //     if (signature) {
-        //         const predicate = getTypePredicateOfSignature(signature);
-        //         if (predicate && (predicate.kind === TypePredicateKind.AssertsThis || predicate.kind === TypePredicateKind.AssertsIdentifier)) {
-        //             const flowType = getTypeAtFlowNode(flow.antecedent);
-        //             const type = finalizeEvolvingArrayType(getTypeFromFlowType(flowType));
-        //             const narrowedType = predicate.type ? narrowTypeByTypePredicate(type, predicate, flow.node, /*assumeTrue*/ true) :
-        //                 predicate.kind === TypePredicateKind.AssertsIdentifier && predicate.parameterIndex >= 0 && predicate.parameterIndex < flow.node.arguments.length ? narrowTypeByAssertion(type, flow.node.arguments[predicate.parameterIndex]) :
-        //                 type;
-        //             return narrowedType === type ? flowType : createFlowType(narrowedType, isIncomplete(flowType));
-        //         }
-        //         if (getReturnTypeOfSignature(signature).flags & TypeFlags.Never) {
-        //             return unreachableNeverType;
-        //         }
-        //     }
-        //     return undefined;
-        // }
+        fn getTypeAtFlowCall(
+            checker: &mut Checker,
+            reference: &BoundNode,
+            declaredType: TypeId,
+            initialType: TypeId,
+            flowContainer: &Option<BoundNode>,
+            flowDepth: &mut u16,
+
+            flow: FlowNodeId,
+        ) -> Option<FlowType> {
+            debug_assert!(matches!(
+                checker.flow_nodes[flow].kind,
+                FlowNodeKind::FlowCall(_)
+            ));
+            let call_node =
+                unwrap_as!(&checker.flow_nodes[flow].kind, FlowNodeKind::FlowCall(c), c)
+                    .node
+                    .clone();
+            if let Some(signature) = checker.getEffectsSignature(&call_node) {
+                todo!();
+                // let predicate = getTypePredicateOfSignature(signature);
+                // if (predicate && (predicate.kind == TypePredicateKind.AssertsThis || predicate.kind == TypePredicateKind.AssertsIdentifier)) {
+                //     let flowType = getTypeAtFlowNode(flow.antecedent);
+                //     let ty = finalizeEvolvingArrayType(getTypeFromFlowType(flowType));
+                //     let narrowedType = if predicate.ty {narrowTypeByTypePredicate(ty, predicate, flow.node, /*assumeTrue*/ true) }
+                //         else if predicate.kind == TypePredicateKind.AssertsIdentifier && predicate.parameterIndex >= 0 && predicate.parameterIndex < flow.node.arguments.length {narrowTypeByAssertion(ty, flow.node.arguments[predicate.parameterIndex]) }
+                //         else{ty};
+                //     return narrowedType == ty ? flowType : createFlowType(narrowedType, isIncomplete(flowType));
+                // }
+                // if getReturnTypeOfSignature(signature).flags & TypeFlags.Never {
+                //     return unreachableNeverType;
+                // }
+            }
+            None
+        }
 
         // function getTypeAtFlowArrayMutation(flow: FlowArrayMutation): FlowType | undefined {
         //     if (declaredType === autoType || declaredType === autoArrayType) {

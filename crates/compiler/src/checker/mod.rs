@@ -315,7 +315,7 @@ pub struct Checker {
     // const sharedFlowNodes: FlowNode[] = [];
     // const sharedFlowTypes: FlowType[] = [];
     // const flowNodeReachable: (boolean | undefined)[] = [];
-    // const flowNodePostSuper: (boolean | undefined)[] = [];
+    flowNodePostSuper: AHashMap<FlowNodeId, bool>,
     // const potentialThisCollisions: Node[] = [];
     // const potentialNewTargetCollisions: Node[] = [];
     // const potentialWeakMapSetCollisions: Node[] = [];
@@ -781,7 +781,6 @@ impl Checker {
         // const sharedFlowNodes: FlowNode[] = [];
         // const sharedFlowTypes: FlowType[] = [];
         // const flowNodeReachable: (boolean | undefined)[] = [];
-        // const flowNodePostSuper: (boolean | undefined)[] = [];
         // const potentialThisCollisions: Node[] = [];
         // const potentialNewTargetCollisions: Node[] = [];
         // const potentialWeakMapSetCollisions: Node[] = [];
@@ -1054,7 +1053,7 @@ impl Checker {
             // const sharedFlowNodes: FlowNode[] = [];
             // const sharedFlowTypes: FlowType[] = [];
             // const flowNodeReachable: (boolean | undefined)[] = [];
-            // const flowNodePostSuper: (boolean | undefined)[] = [];
+            flowNodePostSuper: AHashMap::default(),
             // const potentialThisCollisions: Node[] = [];
             // const potentialNewTargetCollisions: Node[] = [];
             // const potentialWeakMapSetCollisions: Node[] = [];
@@ -6058,10 +6057,63 @@ impl Checker {
         getEffectiveBaseTypeNode(self.symbols[sym].valueDeclaration().clone().unwrap())
     }
 
-    // TODO:
-    // getConstructorsForTypeArguments
-    // TODO:
-    // getInstantiatedConstructorsForTypeArguments
+    // TODO: maybe clean this up
+    fn getConstructorsForTypeArguments(
+        &mut self,
+        ty: TypeId,
+        typeArgumentNodes: &Option<Rc<TsTypeParamInstantiation>>,
+        location: &BoundNode,
+    ) -> Rc<Vec<SignatureId>> {
+        let typeArgCount = typeArgumentNodes
+            .as_ref()
+            .map(|i| i.params.len())
+            .unwrap_or_default();
+        let isJavascript = isBoundNodeInJSFile(location);
+        let mut construct_sigs = self.getSignaturesOfType(ty, SignatureKind::Construct);
+        Rc::make_mut(&mut construct_sigs).retain(|&sig| {
+            (isJavascript
+                || typeArgCount
+                    >= self.getMinTypeArgumentCount(self.signatures[sig].typeParameters.clone()))
+                && typeArgCount <= self.signatures[sig].typeParameters.length()
+        });
+        construct_sigs
+    }
+
+    fn getInstantiatedConstructorsForTypeArguments(
+        &mut self,
+        ty: TypeId,
+        typeArgumentNodes: Option<Rc<TsTypeParamInstantiation>>,
+        location: BoundNode,
+    ) -> Rc<Vec<SignatureId>> {
+        let signatures = self.getConstructorsForTypeArguments(ty, &typeArgumentNodes, &location);
+        let typeArguments = typeArgumentNodes.map(|i| {
+            let bound_instantiation = BoundNode::TsTypeParamInstantiation(i.clone());
+            Rc::new(
+                i.params
+                    .iter()
+                    .map(|a| self.getTypeFromTypeNode(a.bind(bound_instantiation.clone())))
+                    .collect(),
+            )
+        });
+        // TODO: sameMap from tsc
+        Rc::new(
+            signatures
+                .iter()
+                .map(|&sig| {
+                    if self.signatures[sig].typeParameters.is_some() {
+                        self.getSignatureInstantiation(
+                            sig,
+                            typeArguments.clone(),
+                            isBoundNodeInJSFile(&location),
+                            None,
+                        )
+                    } else {
+                        sig
+                    }
+                })
+                .collect(),
+        )
+    }
 
     /**
      * The base constructor of a class can resolve to
@@ -19273,9 +19325,8 @@ impl Checker {
                 todo!();
                 // return getExplicitThisType(node);
             }
-            BoundNode::Super(_) => {
-                todo!();
-                // return checkSuperExpression(node);
+            BoundNode::Super(n) => {
+                return Some(self.checkSuperExpression(n));
             }
             BoundNode::MemberExpr(m) if !m.computed => {
                 let ty = self.getTypeOfDottedName(&m.obj.bind(node.clone()) /*, diagnostic*/);
@@ -19494,8 +19545,78 @@ impl Checker {
         }
     }
 
-    // TODO:
-    // isPostSuperFlowNode
+    // Return true if the given flow node is preceded by a 'super(...)' call in every possible code path
+    // leading to the node.
+    fn isPostSuperFlowNode(&mut self, mut flow: FlowNodeId, mut noCacheCheck: bool) -> bool {
+        loop {
+            let flags = self.flow_nodes[flow].flags;
+            if flags.intersects(FlowFlags::Shared) {
+                if !noCacheCheck {
+                    return if let Some(postSuper) = self.flowNodePostSuper.get(&flow) {
+                        *postSuper
+                    } else {
+                        let postSuper = self.isPostSuperFlowNode(flow, true);
+                        self.flowNodePostSuper.insert(flow, postSuper);
+                        postSuper
+                    };
+                }
+                noCacheCheck = false;
+            }
+            match &self.flow_nodes[flow].kind {
+                FlowNodeKind::FlowAssignment(FlowAssignment { antecedent, .. })
+                | FlowNodeKind::FlowCondition(FlowCondition { antecedent, .. })
+                | FlowNodeKind::FlowArrayMutation(FlowArrayMutation { antecedent, .. })
+                | FlowNodeKind::FlowSwitchClause(FlowSwitchClause { antecedent, .. }) => {
+                    flow = *antecedent;
+                }
+                FlowNodeKind::FlowCall(f) => {
+                    if matches!(f.node.callee, ast::ExprOrSuper::Super(_)) {
+                        return true;
+                    }
+                    flow = f.antecedent;
+                }
+                FlowNodeKind::FlowLabel(f) => {
+                    if flags.intersects(FlowFlags::BranchLabel) {
+                        // A branching point is post-super if every branch is post-super.
+                        return f
+                            .antecedents
+                            .clone()
+                            .iter()
+                            .all(|&f| self.isPostSuperFlowNode(f, false));
+                    } else if flags.intersects(FlowFlags::LoopLabel) {
+                        // A loop is post-super if the control flow path that leads to the top is post-super.
+                        flow = *f.antecedents.first().unwrap();
+                    } else {
+                        unreachable!();
+                    }
+                }
+                FlowNodeKind::FlowReduceLabel(f) => {
+                    let reduce_label_antecedent = f.antecedent;
+                    let target = f.target;
+                    let saveAntecedents = self.flow_nodes[target]
+                        .kind
+                        .unwrap_flow_label()
+                        .antecedents
+                        .clone();
+                    self.flow_nodes[target]
+                        .kind
+                        .unwrap_flow_label_mut()
+                        .antecedents = f.antecedents.clone();
+                    let result = self.isPostSuperFlowNode(reduce_label_antecedent, false);
+                    self.flow_nodes[target]
+                        .kind
+                        .unwrap_flow_label_mut()
+                        .antecedents = saveAntecedents;
+                    return result;
+                }
+                _ => {
+                    // Unreachable nodes are considered post-super to silence errors
+                    return flags.intersects(FlowFlags::Unreachable);
+                }
+            }
+        }
+    }
+
     // TODO:
     // isConstantReference
 
@@ -19967,8 +20088,19 @@ impl Checker {
     // captureLexicalThis
     // TODO:
     // findFirstSuperCall
-    // TODO:
-    // classDeclarationExtendsNull
+
+    /**
+     * Check if the given class-declaration extends null then return true.
+     * Otherwise, return false
+     * @param classDecl a class declaration to check if it extends null
+     */
+    fn classDeclarationExtendsNull(&mut self, classDecl: &Rc<Class>) -> bool {
+        let classSymbol = self.getSymbolOfNode(classDecl.parent.clone().unwrap());
+        let classInstanceType = self.getDeclaredTypeOfSymbol(classSymbol.unwrap());
+        let baseConstructorType = self.getBaseConstructorTypeOfClass(classInstanceType);
+
+        baseConstructorType == self.nullWideningType
+    }
 
     fn checkThisBeforeSuper(
         &mut self,
@@ -19978,17 +20110,16 @@ impl Checker {
         let containingClassDecl = unwrap_as!(container.parent(), Some(BoundNode::Class(c)), c);
         let baseTypeNode = containingClassDecl.extends.as_ref();
 
-        if baseTypeNode.is_some() {
-            todo!("see below");
-        }
-
         // If a containing class does not have extends clause or the class extends null
         // skip checking whether super statement is called before "this" accessing.
-        // if baseTypeNode && !classDeclarationExtendsNull(containingClassDecl) {
-        //     if (node.flowNode && !isPostSuperFlowNode(node.flowNode, /*noCacheCheck*/ false)) {
-        //         error(node, diagnosticMessage);
-        //     }
-        // }
+        if baseTypeNode.is_some() && !self.classDeclarationExtendsNull(&containingClassDecl) {
+            if let Some(flowNode) = self.node_data(node.clone()).flowNode {
+                if !self.isPostSuperFlowNode(flowNode, false) {
+                    todo!();
+                    // error(node, diagnosticMessage);
+                }
+            }
+        }
     }
 
     fn checkThisInStaticClassFieldInitializerInDecoratedClass(
@@ -23935,25 +24066,37 @@ impl Checker {
     ) -> SignatureId {
         let bound_node = BoundNode::CallExpr(node.clone());
         let callee = match &node.callee {
-            ast::ExprOrSuper::Super(_) => {
-                todo!();
-                // let superType = checkSuperExpression(node.expression);
-                // if (isTypeAny(superType)) {
-                //     for (const arg of node.arguments) {
-                //         checkExpression(arg); // Still visit arguments so they get marked for visibility, etc
-                //     }
-                //     return anySignature;
-                // }
-                // if (!isErrorType(superType)) {
-                //     // In super call, the candidate signatures are the matching arity signatures of the base constructor function instantiated
-                //     // with the type arguments specified in the extends clause.
-                //     const baseTypeNode = getEffectiveBaseTypeNode(getContainingClass(node).unwrap());
-                //     if (baseTypeNode) {
-                //         const baseConstructors = getInstantiatedConstructorsForTypeArguments(superType, baseTypeNode.typeArguments, baseTypeNode);
-                //         return resolveCall(node, baseConstructors, candidatesOutArray, checkMode, SignatureFlags.None);
-                //     }
-                // }
-                // return resolveUntypedCall(node);
+            ast::ExprOrSuper::Super(n) => {
+                let superType =
+                    self.checkSuperExpression(&Super::new(n.clone(), Some(bound_node.clone())));
+                if self.isTypeAny(Some(superType)) {
+                    for arg in &node.args {
+                        self.checkExpression(arg.bind(bound_node.clone()), None, false);
+                        // Still visit arguments so they get marked for visibility, etc
+                    }
+                    return self.anySignature;
+                }
+                if !self.isErrorType(superType) {
+                    // In super call, the candidate signatures are the matching arity signatures of the base constructor function instantiated
+                    // with the type arguments specified in the extends clause.
+                    if let Some(baseTypeNode) =
+                        getContainingClass(bound_node.clone()).and_then(getEffectiveBaseTypeNode)
+                    {
+                        let baseConstructors = self.getInstantiatedConstructorsForTypeArguments(
+                            superType,
+                            baseTypeNode.type_args,
+                            baseTypeNode.expr,
+                        );
+                        return self.resolveCall(
+                            bound_node.clone(),
+                            baseConstructors,
+                            candidatesOutArray,
+                            checkMode,
+                            SignatureFlags::None,
+                        );
+                    }
+                }
+                return self.resolveUntypedCall(bound_node);
             }
             ast::ExprOrSuper::Expr(e) => e.bind(bound_node.clone()),
         };
