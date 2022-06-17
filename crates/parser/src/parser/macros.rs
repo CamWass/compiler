@@ -305,3 +305,9 @@ macro_rules! syntax_error {
         return Err(err.into());
     }};
 }
+
+macro_rules! node_id {
+    ($parser:expr) => {{
+        $parser.node_id_gen.next()
+    }};
+}

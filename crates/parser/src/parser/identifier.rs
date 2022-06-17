@@ -6,9 +6,8 @@ use swc_atoms::js_word;
 
 impl<I: Tokens> Parser<I> {
     pub(super) fn new_ident(&mut self, sym: JsWord, span: Span) -> Ident {
-        self.ident_id = NodeId(self.ident_id.0 + 1);
         Ident {
-            node_id: self.ident_id,
+            node_id: node_id!(self),
             span,
             sym,
             optional: false,
@@ -40,6 +39,7 @@ impl<I: Tokens> Parser<I> {
 
         let id = self.parse_ident_name()?;
         Ok(PrivateName {
+            node_id: node_id!(self),
             span: span!(self, start),
             id,
         })

@@ -115,6 +115,7 @@ impl<I: Tokens> Parser<I> {
                 }
 
                 Some(ExtendsClause {
+                    node_id: node_id!(parser),
                     span,
                     super_class,
                     super_type_params,
@@ -163,6 +164,7 @@ impl<I: Tokens> Parser<I> {
 
                 if extends_clause.is_none() {
                     extends_clause = Some(ExtendsClause {
+                        node_id: node_id!(parser),
                         span: span!(parser, start),
                         super_class,
                         super_type_params,
@@ -183,6 +185,7 @@ impl<I: Tokens> Parser<I> {
                 span!(parser, start),
                 ident,
                 Class {
+                    node_id: node_id!(parser),
                     span: Span::new(class_start, end, Default::default()),
                     decorators,
                     is_abstract: false,
@@ -191,6 +194,7 @@ impl<I: Tokens> Parser<I> {
                     body,
                     implements,
                 },
+                node_id!(parser),
             ))
         })
     }
@@ -247,6 +251,7 @@ impl<I: Tokens> Parser<I> {
                 let span = Span::new(start, expr.span().hi(), Default::default());
 
                 expr = Box::new(Expr::Member(MemberExpr {
+                    node_id: node_id!(self),
                     span,
                     obj: ExprOrSuper::Expr(expr),
                     computed: false,
@@ -260,6 +265,7 @@ impl<I: Tokens> Parser<I> {
         let expr = self.parse_maybe_decorator_args(expr)?;
 
         Ok(Decorator {
+            node_id: node_id!(self),
             span: span!(self, start),
             expr,
         })
@@ -278,6 +284,7 @@ impl<I: Tokens> Parser<I> {
 
         let args = self.parse_args(false)?;
         Ok(Box::new(Expr::Call(CallExpr {
+            node_id: node_id!(self),
             span: span!(self, expr.span().lo()),
             callee: ExprOrSuper::Expr(expr),
             args,
@@ -291,6 +298,7 @@ impl<I: Tokens> Parser<I> {
             if self.input.eat(&tok!(';')) {
                 let span = self.input.prev_span();
                 elems.push(ClassMember::Empty(EmptyStmt {
+                    node_id: node_id!(self),
                     span: Span::new(span.lo, span.hi, SyntaxContext::empty()),
                 }));
                 continue;
@@ -661,6 +669,7 @@ impl<I: Tokens> Parser<I> {
                 }
 
                 return Ok(ClassMember::Constructor(Constructor {
+                    node_id: node_id!(self),
                     span: span!(self, start),
                     accessibility,
                     is_optional,
@@ -874,6 +883,7 @@ impl<I: Tokens> Parser<I> {
 
             Ok(match key {
                 Either::Left(key) => PrivateProp {
+                    node_id: node_id!(parser),
                     span: span!(parser, start),
                     key,
                     value,
@@ -889,6 +899,7 @@ impl<I: Tokens> Parser<I> {
                 }
                 .into(),
                 Either::Right(key) => ClassProp {
+                    node_id: node_id!(parser),
                     span: span!(parser, start),
                     key,
                     value,
@@ -989,6 +1000,7 @@ impl<I: Tokens> Parser<I> {
                 span!(parser, start_of_output_type.unwrap_or(start)),
                 ident,
                 f,
+                node_id!(parser),
             ))
         })
     }
@@ -1083,6 +1095,7 @@ impl<I: Tokens> Parser<I> {
             }
 
             Ok(Function {
+                node_id: node_id!(parser),
                 span: span!(parser, start),
                 decorators,
                 type_params,
@@ -1174,6 +1187,7 @@ impl<I: Tokens> Parser<I> {
 
         match key {
             Either::Left(key) => Ok(PrivateMethod {
+                node_id: node_id!(self),
                 span: span!(self, start),
 
                 accessibility,
@@ -1188,6 +1202,7 @@ impl<I: Tokens> Parser<I> {
             }
             .into()),
             Either::Right(key) => Ok(ClassMethod {
+                node_id: node_id!(self),
                 span: span!(self, start),
 
                 accessibility,
@@ -1246,8 +1261,8 @@ trait OutputType {
         false
     }
 
-    fn finish_fn(span: Span, ident: Self::Ident, f: Function) -> Self;
-    fn finish_class(span: Span, ident: Self::Ident, class: Class) -> Self;
+    fn finish_fn(span: Span, ident: Self::Ident, f: Function, node_id: NodeId) -> Self;
+    fn finish_class(span: Span, ident: Self::Ident, class: Class, node_id: NodeId) -> Self;
 }
 
 impl OutputType for Box<Expr> {
@@ -1264,11 +1279,19 @@ impl OutputType for Box<Expr> {
         true
     }
 
-    fn finish_fn(_: Span, ident: Option<Ident>, function: Function) -> Self {
-        Box::new(Expr::Fn(FnExpr { ident, function }))
+    fn finish_fn(_: Span, ident: Option<Ident>, function: Function, node_id: NodeId) -> Self {
+        Box::new(Expr::Fn(FnExpr {
+            ident,
+            function,
+            node_id,
+        }))
     }
-    fn finish_class(_: Span, ident: Option<Ident>, class: Class) -> Self {
-        Box::new(Expr::Class(ClassExpr { ident, class }))
+    fn finish_class(_: Span, ident: Option<Ident>, class: Class, node_id: NodeId) -> Self {
+        Box::new(Expr::Class(ClassExpr {
+            ident,
+            class,
+            node_id,
+        }))
     }
 }
 
@@ -1282,16 +1305,26 @@ impl OutputType for ExportDefaultDecl {
         }
     }
 
-    fn finish_fn(span: Span, ident: Option<Ident>, function: Function) -> Self {
+    fn finish_fn(span: Span, ident: Option<Ident>, function: Function, node_id: NodeId) -> Self {
         ExportDefaultDecl {
             span,
-            decl: DefaultDecl::Fn(FnExpr { ident, function }),
+            decl: DefaultDecl::Fn(FnExpr {
+                ident,
+                function,
+                node_id,
+            }),
+            node_id,
         }
     }
-    fn finish_class(span: Span, ident: Option<Ident>, class: Class) -> Self {
+    fn finish_class(span: Span, ident: Option<Ident>, class: Class, node_id: NodeId) -> Self {
         ExportDefaultDecl {
             span,
-            decl: DefaultDecl::Class(ClassExpr { ident, class }),
+            decl: DefaultDecl::Class(ClassExpr {
+                ident,
+                class,
+                node_id,
+            }),
+            node_id,
         }
     }
 }
@@ -1303,18 +1336,20 @@ impl OutputType for Decl {
         i.sym == js_word!("constructor")
     }
 
-    fn finish_fn(_: Span, ident: Ident, function: Function) -> Self {
+    fn finish_fn(_: Span, ident: Ident, function: Function, node_id: NodeId) -> Self {
         Decl::Fn(FnDecl {
             declare: false,
             ident,
             function,
+            node_id,
         })
     }
-    fn finish_class(_: Span, ident: Ident, class: Class) -> Self {
+    fn finish_class(_: Span, ident: Ident, class: Class, node_id: NodeId) -> Self {
         Decl::Class(ClassDecl {
             declare: false,
             ident,
             class,
+            node_id,
         })
     }
 }

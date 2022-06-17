@@ -1168,6 +1168,7 @@ impl<'a> Binder<'a> {
             }
             BoundNode::Class(c) => {
                 let ast::Class {
+                    node_id: _,
                     decorators,
                     type_params,
                     extends,
@@ -1186,6 +1187,7 @@ impl<'a> Binder<'a> {
             }
             BoundNode::ClassProp(p) => {
                 let ast::ClassProp {
+                    node_id: _,
                     span: _,
                     key,
                     value,
@@ -1209,6 +1211,7 @@ impl<'a> Binder<'a> {
             }
             BoundNode::PrivateProp(p) => {
                 let ast::PrivateProp {
+                    node_id: _,
                     span: _,
                     key,
                     value,
@@ -1299,6 +1302,7 @@ impl<'a> Binder<'a> {
             }
             BoundNode::Constructor(c) => {
                 let ast::Constructor {
+                    node_id: _,
                     span: _,
                     params,
                     body,
@@ -1313,6 +1317,7 @@ impl<'a> Binder<'a> {
             BoundNode::Decorator(d) => bind!(self, d.expr, node.clone()),
             BoundNode::FnDecl(f) => {
                 let ast::FnDecl {
+                    node_id: _,
                     ident,
                     function,
                     declare: _,
@@ -1355,6 +1360,7 @@ impl<'a> Binder<'a> {
             }
             BoundNode::FnExpr(f) => {
                 let ast::FnExpr {
+                    node_id: _,
                     ident,
                     function,
                     cached_hash: _,
@@ -1417,6 +1423,7 @@ impl<'a> Binder<'a> {
             BoundNode::OptChainExpr(e) => bind!(self, e.expr, node.clone()),
             BoundNode::Function(n) => {
                 let ast::Function {
+                    node_id: _,
                     params,
                     decorators,
                     span: _,

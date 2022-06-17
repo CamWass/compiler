@@ -175,6 +175,7 @@ mod tests {
             program.visit_mut_with(&mut DropSpan {
                 preserve_ctxt: true,
             });
+            program.visit_mut_with(&mut DropNodeId);
 
             Ok(program)
         }
@@ -248,6 +249,7 @@ mod tests {
             actual.visit_mut_with(&mut DropSpan {
                 preserve_ctxt: false,
             });
+            actual.visit_mut_with(&mut DropNodeId);
 
             if actual == expected {
                 return Ok(());
@@ -287,6 +289,12 @@ mod tests {
             } else {
                 DUMMY_SP
             };
+        }
+    }
+    struct DropNodeId;
+    impl VisitMut for DropNodeId {
+        fn visit_mut_node_id(&mut self, span: &mut NodeId) {
+            *span = NodeId::from_u32(0);
         }
     }
 

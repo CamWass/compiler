@@ -32,6 +32,7 @@ impl<I: Tokens> Parser<I> {
 
         let name = self.parse_jsx_ident()?;
         Ok(JSXAttrName::JSXNamespacedName(JSXNamespacedName {
+            node_id: node_id!(self),
             ns,
             name,
         }))
@@ -49,6 +50,7 @@ impl<I: Tokens> Parser<I> {
         while eat!(self, '.') {
             let prop = self.parse_jsx_ident()?;
             let new_node = JSXElementName::JSXMemberExpr(JSXMemberExpr {
+                node_id: node_id!(self),
                 obj: match node {
                     JSXElementName::Ident(i) => JSXObject::Ident(i),
                     JSXElementName::JSXMemberExpr(i) => JSXObject::JSXMemberExpr(Box::new(i)),
@@ -104,6 +106,7 @@ impl<I: Tokens> Parser<I> {
         let start = self.input.cur_pos();
 
         Ok(JSXEmptyExpr {
+            node_id: node_id!(self),
             span: Span::new(start, start, SyntaxContext::empty()),
         })
     }
@@ -118,6 +121,7 @@ impl<I: Tokens> Parser<I> {
         expect!(self, '}');
 
         Ok(JSXSpreadChild {
+            node_id: node_id!(self),
             span: span!(self, start),
             expr,
         })
@@ -136,6 +140,7 @@ impl<I: Tokens> Parser<I> {
         };
         expect!(self, '}');
         Ok(JSXExprContainer {
+            node_id: node_id!(self),
             span: span!(self, start),
             expr,
         })
@@ -152,7 +157,12 @@ impl<I: Tokens> Parser<I> {
             let dot3_token = span!(self, dot3_start);
             let expr = self.parse_assignment_expr()?;
             expect!(self, '}');
-            return Ok(SpreadElement { dot3_token, expr }.into());
+            return Ok(SpreadElement {
+                node_id: node_id!(self),
+                dot3_token,
+                expr,
+            }
+            .into());
         }
 
         let name = self.parse_jsx_namespaced_name()?;
@@ -163,6 +173,7 @@ impl<I: Tokens> Parser<I> {
         };
 
         Ok(JSXAttr {
+            node_id: node_id!(self),
             span: span!(self, start),
             name,
             value,
@@ -179,6 +190,7 @@ impl<I: Tokens> Parser<I> {
 
         if eat!(self, JSXTagEnd) {
             return Ok(Either::Left(JSXOpeningFragment {
+                node_id: node_id!(self),
                 span: span!(self, start),
             }));
         }
@@ -216,6 +228,7 @@ impl<I: Tokens> Parser<I> {
             unexpected!(self, "> (jsx closing tag)");
         }
         Ok(JSXOpeningElement {
+            node_id: node_id!(self),
             span: span!(self, start),
             name,
             attrs,
@@ -233,6 +246,7 @@ impl<I: Tokens> Parser<I> {
 
         if eat!(self, JSXTagEnd) {
             return Ok(Either::Left(JSXClosingFragment {
+                node_id: node_id!(self),
                 span: span!(self, start),
             }));
         }
@@ -240,6 +254,7 @@ impl<I: Tokens> Parser<I> {
         let name = self.parse_jsx_element_name()?;
         expect!(self, JSXTagEnd);
         Ok(Either::Right(JSXClosingElement {
+            node_id: node_id!(self),
             span: span!(self, start),
             name,
         }))
@@ -330,12 +345,14 @@ impl<I: Tokens> Parser<I> {
                     );
                 }
                 (Either::Left(opening), Some(Either::Left(closing))) => Either::Left(JSXFragment {
+                    node_id: node_id!(p),
                     span,
                     opening,
                     children,
                     closing,
                 }),
                 (Either::Right(opening), None) => Either::Right(JSXElement {
+                    node_id: node_id!(p),
                     span,
                     opening,
                     children,
@@ -354,6 +371,7 @@ impl<I: Tokens> Parser<I> {
                         );
                     }
                     Either::Right(JSXElement {
+                        node_id: node_id!(p),
                         span,
                         opening,
                         children,
@@ -384,6 +402,7 @@ impl<I: Tokens> Parser<I> {
         let span = self.input.prev_span();
         match token {
             Token::JSXText { raw } => Ok(JSXText {
+                node_id: node_id!(self),
                 span,
                 // TODO
                 value: raw.clone(),
@@ -429,11 +448,11 @@ fn get_qualified_jsx_name(name: &JSXElementName) -> JsWord {
     }
     match *name {
         JSXElementName::Ident(ref i) => i.sym.clone(),
-        JSXElementName::JSXNamespacedName(JSXNamespacedName { ref ns, ref name }) => {
-            format!("{}:{}", ns.sym, name.sym).into()
-        }
-        JSXElementName::JSXMemberExpr(JSXMemberExpr { ref obj, ref prop }) => {
-            format!("{}.{}", get_qualified_obj_name(obj), prop.sym).into()
-        }
+        JSXElementName::JSXNamespacedName(JSXNamespacedName {
+            ref ns, ref name, ..
+        }) => format!("{}:{}", ns.sym, name.sym).into(),
+        JSXElementName::JSXMemberExpr(JSXMemberExpr {
+            ref obj, ref prop, ..
+        }) => format!("{}.{}", get_qualified_obj_name(obj), prop.sym).into(),
     }
 }

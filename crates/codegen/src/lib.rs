@@ -354,14 +354,14 @@ impl<'a> Emitter<'a> {
         self.emit_leading_comments_of_span(node.span(), false)?;
 
         match *node {
-            Lit::Bool(Bool { value, span }) => {
+            Lit::Bool(Bool { value, span, .. }) => {
                 if value {
                     keyword!(span, "true")
                 } else {
                     keyword!(span, "false")
                 }
             }
-            Lit::Null(Null { span }) => keyword!(span, "null"),
+            Lit::Null(Null { span, .. }) => keyword!(span, "null"),
             Lit::Str(ref s) => emit!(s),
             Lit::BigInt(ref s) => emit!(s),
             Lit::Num(ref n) => emit!(n),
@@ -630,7 +630,9 @@ impl<'a> Emitter<'a> {
         match *expr {
             ExprOrSuper::Expr(ref expr) => {
                 match expr.as_ref() {
-                    Expr::Lit(Lit::Num(Number { span, value, raw })) => {
+                    Expr::Lit(Lit::Num(Number {
+                        span, value, raw, ..
+                    })) => {
                         if value.is_nan() || value.is_infinite() {
                             return false;
                         }
@@ -673,7 +675,9 @@ impl<'a> Emitter<'a> {
 
         let space = !self.cfg.minify
             || match node.params.as_slice() {
-                [ParamWithoutDecorators { pat: Pat::Ident(_) }] => true,
+                [ParamWithoutDecorators {
+                    pat: Pat::Ident(_), ..
+                }] => true,
                 _ => false,
             };
 
@@ -688,7 +692,9 @@ impl<'a> Emitter<'a> {
 
         let parens = !self.cfg.minify
             || match node.params.as_slice() {
-                [ParamWithoutDecorators { pat: Pat::Ident(_) }] => false,
+                [ParamWithoutDecorators {
+                    pat: Pat::Ident(_), ..
+                }] => false,
                 _ => true,
             };
 

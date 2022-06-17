@@ -13,10 +13,10 @@ use crate::{
         TsAsExpr, TsConstAssertion, TsNonNullExpr, TsTypeAnn, TsTypeAssertion,
         TsTypeParamInstantiation,
     },
-    Invalid, ParamWithoutDecorators, TsTypeParamDecl,
+    Invalid, NodeId, ParamWithoutDecorators, TsTypeParamDecl,
 };
 use global_common::EqIgnoreSpan;
-use global_common::{ast_node, Span, DUMMY_SP};
+use global_common::{ast_node, Span};
 use serde::{self};
 
 #[ast_node]
@@ -151,6 +151,8 @@ pub enum Expr {
 #[ast_node("ThisExpression")]
 #[derive(Eq, Hash, Copy, EqIgnoreSpan)]
 pub struct ThisExpr {
+    pub node_id: NodeId,
+
     pub span: Span,
 }
 
@@ -158,6 +160,8 @@ pub struct ThisExpr {
 #[ast_node("ArrayExpression")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ArrayLit {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     #[serde(default, rename = "elements")]
@@ -168,6 +172,8 @@ pub struct ArrayLit {
 #[ast_node("ObjectExpression")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ObjectLit {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     #[serde(default, rename = "properties")]
@@ -177,6 +183,8 @@ pub struct ObjectLit {
 #[ast_node("SpreadElement")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct SpreadElement {
+    pub node_id: NodeId,
+
     #[serde(rename = "spread")]
     #[span(lo)]
     pub dot3_token: Span,
@@ -189,6 +197,8 @@ pub struct SpreadElement {
 #[ast_node("UnaryExpression")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct UnaryExpr {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     #[serde(rename = "operator")]
@@ -201,6 +211,8 @@ pub struct UnaryExpr {
 #[ast_node("UpdateExpression")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct UpdateExpr {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     #[serde(rename = "operator")]
@@ -215,6 +227,8 @@ pub struct UpdateExpr {
 #[ast_node("BinaryExpression")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct BinExpr {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     #[serde(rename = "operator")]
@@ -229,6 +243,8 @@ pub struct BinExpr {
 #[ast_node("FunctionExpression")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct FnExpr {
+    pub node_id: NodeId,
+
     #[serde(default, rename = "identifier")]
     pub ident: Option<Ident>,
 
@@ -241,6 +257,8 @@ pub struct FnExpr {
 #[ast_node("ClassExpression")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ClassExpr {
+    pub node_id: NodeId,
+
     #[serde(default, rename = "identifier")]
     pub ident: Option<Ident>,
 
@@ -252,6 +270,8 @@ pub struct ClassExpr {
 #[ast_node("AssignmentExpression")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct AssignExpr {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     #[serde(rename = "operator")]
@@ -265,6 +285,8 @@ pub struct AssignExpr {
 #[ast_node("MemberExpression")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct MemberExpr {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     #[serde(rename = "object")]
@@ -279,6 +301,8 @@ pub struct MemberExpr {
 #[ast_node("ConditionalExpression")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct CondExpr {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     pub test: Box<Expr>,
@@ -293,6 +317,8 @@ pub struct CondExpr {
 #[ast_node("CallExpression")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct CallExpr {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     pub callee: ExprOrSuper,
@@ -308,6 +334,8 @@ pub struct CallExpr {
 #[ast_node("NewExpression")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct NewExpr {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     pub callee: Box<Expr>,
@@ -323,6 +351,8 @@ pub struct NewExpr {
 #[ast_node("SequenceExpression")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct SeqExpr {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     #[serde(rename = "expressions")]
@@ -332,6 +362,8 @@ pub struct SeqExpr {
 #[ast_node("ArrowFunctionExpression")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ArrowExpr {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     // TODO:
@@ -352,6 +384,8 @@ pub struct ArrowExpr {
 #[ast_node("YieldExpression")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct YieldExpr {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     #[serde(default, rename = "argument")]
@@ -364,6 +398,8 @@ pub struct YieldExpr {
 #[ast_node("MetaProperty")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct MetaPropExpr {
+    pub node_id: NodeId,
+
     #[span(lo)]
     pub meta: Ident,
 
@@ -375,6 +411,8 @@ pub struct MetaPropExpr {
 #[ast_node("AwaitExpression")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct AwaitExpr {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     #[serde(rename = "argument")]
@@ -384,6 +422,8 @@ pub struct AwaitExpr {
 #[ast_node("TemplateLiteral")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct Tpl {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     #[serde(rename = "expressions")]
@@ -395,6 +435,8 @@ pub struct Tpl {
 #[ast_node("TaggedTemplateExpression")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TaggedTpl {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     pub tag: Box<Expr>,
@@ -409,6 +451,8 @@ pub struct TaggedTpl {
 #[ast_node("TemplateElement")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TplElement {
+    pub node_id: NodeId,
+
     pub span: Span,
     pub tail: bool,
     pub cooked: Option<Str>,
@@ -418,6 +462,8 @@ pub struct TplElement {
 #[ast_node("ParenthesisExpression")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ParenExpr {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     #[serde(rename = "expression")]
@@ -438,6 +484,8 @@ pub enum ExprOrSuper {
 #[ast_node("Super")]
 #[derive(Eq, Hash, Copy, EqIgnoreSpan)]
 pub struct Super {
+    pub node_id: NodeId,
+
     pub span: Span,
 }
 
@@ -505,25 +553,6 @@ pub enum PatOrExpr {
     Pat(Box<Pat>),
 }
 
-impl From<bool> for Expr {
-    fn from(value: bool) -> Self {
-        Expr::Lit(Lit::Bool(Bool {
-            span: DUMMY_SP,
-            value,
-        }))
-    }
-}
-
-impl From<f64> for Expr {
-    fn from(value: f64) -> Self {
-        Expr::Lit(Lit::Num(Number {
-            span: DUMMY_SP,
-            value,
-            raw: None,
-        }))
-    }
-}
-
 impl From<Bool> for Expr {
     fn from(v: Bool) -> Self {
         Expr::Lit(Lit::Bool(v))
@@ -545,6 +574,8 @@ impl From<Str> for Expr {
 #[ast_node("OptionalChainingExpression")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct OptChainExpr {
+    pub node_id: NodeId,
+
     pub span: Span,
     pub question_dot_token: Span,
     pub expr: Box<Expr>,

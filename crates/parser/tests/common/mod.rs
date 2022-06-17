@@ -2,6 +2,7 @@ use ast::*;
 use ecma_visit::{Fold, FoldWith};
 use global_common::Span;
 
+/// Normalizes certain expressions, drops node IDs, and optionally drops spans.
 pub struct Normalizer {
     pub drop_span: bool,
     pub is_test262: bool,
@@ -30,7 +31,9 @@ impl Fold for Normalizer {
                 ..n
             }),
             // Flatten comma expressions.
-            Expr::Seq(SeqExpr { mut exprs, span }) => {
+            Expr::Seq(SeqExpr {
+                mut exprs, span, ..
+            }) => {
                 let need_work = exprs.iter().any(|n| matches!(**n, Expr::Seq(..)));
 
                 if need_work {
@@ -42,7 +45,11 @@ impl Fold for Normalizer {
                         v
                     });
                 }
-                Expr::Seq(SeqExpr { exprs, span })
+                Expr::Seq(SeqExpr {
+                    node_id: NodeId::from_u32(0),
+                    exprs,
+                    span,
+                })
             }
             _ => e,
         }
@@ -84,7 +91,9 @@ impl Fold for Normalizer {
 
         if let Pat::Expr(expr) = node {
             match *expr {
-                Expr::Ident(i) => return Pat::Ident(i.into()),
+                Expr::Ident(i) => {
+                    return Pat::Ident(BindingIdent::from_ident(i, NodeId::from_u32(0)))
+                }
                 _ => {
                     node = Pat::Expr(expr);
                 }
@@ -99,7 +108,10 @@ impl Fold for Normalizer {
 
         match node {
             PatOrExpr::Expr(expr) => match *expr {
-                Expr::Ident(i) => PatOrExpr::Pat(Box::new(Pat::Ident(i.into()))),
+                Expr::Ident(i) => PatOrExpr::Pat(Box::new(Pat::Ident(BindingIdent::from_ident(
+                    i,
+                    NodeId::from_u32(0),
+                )))),
                 _ => PatOrExpr::Expr(expr),
             },
             PatOrExpr::Pat(pat) => match *pat {
@@ -118,12 +130,14 @@ impl Fold for Normalizer {
 
         match n {
             PropName::Ident(Ident { span, sym, .. }) => PropName::Str(Str {
+                node_id: NodeId::from_u32(0),
                 span,
                 value: sym,
                 has_escape: false,
                 kind: Default::default(),
             }),
             PropName::Num(num) => PropName::Str(Str {
+                node_id: NodeId::from_u32(0),
                 span: num.span,
                 value: num.to_string().into(),
                 has_escape: false,
@@ -139,6 +153,10 @@ impl Fold for Normalizer {
         } else {
             span
         }
+    }
+
+    fn fold_node_id(&mut self, _node_id: NodeId) -> NodeId {
+        NodeId::from_u32(0)
     }
 
     fn fold_str(&mut self, s: Str) -> Str {

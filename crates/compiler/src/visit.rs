@@ -6,6 +6,7 @@ use visit2::define;
 define!({
     // TODO: ensure field order matches evaluation order in ECMA/TSC:
     pub struct Class {
+        pub node_id: NodeId,
         pub span: Span,
         pub decorators: Vec<Rc<Decorator>>,
         pub body: Vec<ClassMember>,
@@ -16,6 +17,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct ExtendsClause {
+        pub node_id: NodeId,
         pub span: Span,
         pub super_class: Expr,
         pub super_type_params: Option<Rc<TsTypeParamInstantiation>>,
@@ -31,6 +33,7 @@ define!({
         Empty(Rc<EmptyStmt>),
     }
     pub struct ClassProp {
+        pub node_id: NodeId,
         pub span: Span,
         pub decorators: Vec<Rc<Decorator>>,
         pub is_static: bool,
@@ -47,6 +50,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct PrivateProp {
+        pub node_id: NodeId,
         pub span: Span,
         pub decorators: Vec<Rc<Decorator>>,
         pub is_static: bool,
@@ -63,6 +67,7 @@ define!({
     }
     // TODO: ensure field order matches evaluation order in ECMA/TSC:
     pub struct ClassMethod {
+        pub node_id: NodeId,
         pub span: Span,
         pub key: PropName,
         pub function: Rc<Function>,
@@ -76,6 +81,7 @@ define!({
     }
     // TODO: ensure field order matches evaluation order in ECMA/TSC:
     pub struct PrivateMethod {
+        pub node_id: NodeId,
         pub span: Span,
         pub key: Rc<PrivateName>,
         pub function: Rc<Function>,
@@ -88,6 +94,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct Constructor {
+        pub node_id: NodeId,
         pub span: Span,
         pub params: Vec<ParamOrTsParamProp>,
         pub body: Option<Rc<BlockStmt>>,
@@ -96,6 +103,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct Decorator {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: Expr,
         pub cached_hash: u8,
@@ -116,6 +124,7 @@ define!({
     }
     // TODO: ensure field order matches evaluation order in ECMA/TSC:
     pub struct FnDecl {
+        pub node_id: NodeId,
         pub ident: Rc<Ident>,
         pub declare: bool,
         pub function: Rc<Function>,
@@ -123,12 +132,14 @@ define!({
     }
     // TODO: ensure field order matches evaluation order in ECMA/TSC:
     pub struct ClassDecl {
+        pub node_id: NodeId,
         pub ident: Rc<Ident>,
         pub declare: bool,
         pub class: Rc<Class>,
         pub cached_hash: u8,
     }
     pub struct VarDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub kind: VarDeclKind,
         pub declare: bool,
@@ -141,6 +152,7 @@ define!({
         Const,
     }
     pub struct VarDeclarator {
+        pub node_id: NodeId,
         pub span: Span,
         pub name: Pat,
         pub init: Option<Expr>,
@@ -185,31 +197,37 @@ define!({
         Invalid(Rc<Invalid>),
     }
     pub struct ThisExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub cached_hash: u8,
     }
     pub struct ArrayLit {
+        pub node_id: NodeId,
         pub span: Span,
         pub elems: Vec<Option<Rc<ExprOrSpread>>>,
         pub cached_hash: u8,
     }
     pub struct ObjectLit {
+        pub node_id: NodeId,
         pub span: Span,
         pub props: Vec<Prop>,
         pub cached_hash: u8,
     }
     pub struct SpreadElement {
+        pub node_id: NodeId,
         pub dot3_token: Span,
         pub expr: Expr,
         pub cached_hash: u8,
     }
     pub struct UnaryExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub op: UnaryOp,
         pub arg: Expr,
         pub cached_hash: u8,
     }
     pub struct UpdateExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub op: UpdateOp,
         pub prefix: bool,
@@ -217,6 +235,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct BinExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub left: Expr,
         pub op: BinaryOp,
@@ -225,17 +244,20 @@ define!({
     }
     // TODO: ensure field order matches evaluation order in ECMA/TSC:
     pub struct FnExpr {
+        pub node_id: NodeId,
         pub ident: Option<Rc<Ident>>,
         pub function: Rc<Function>,
         pub cached_hash: u8,
     }
     // TODO: ensure field order matches evaluation order in ECMA/TSC:
     pub struct ClassExpr {
+        pub node_id: NodeId,
         pub ident: Option<Rc<Ident>>,
         pub class: Rc<Class>,
         pub cached_hash: u8,
     }
     pub struct AssignExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub op: AssignOp,
         pub left: PatOrExpr,
@@ -243,6 +265,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct MemberExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub obj: ExprOrSuper,
         pub prop: Expr,
@@ -250,6 +273,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct CondExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub test: Expr,
         pub cons: Expr,
@@ -257,6 +281,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct CallExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub callee: ExprOrSuper,
         pub type_args: Option<Rc<TsTypeParamInstantiation>>,
@@ -264,6 +289,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct NewExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub callee: Expr,
         pub type_args: Option<Rc<TsTypeParamInstantiation>>,
@@ -271,11 +297,13 @@ define!({
         pub cached_hash: u8,
     }
     pub struct SeqExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub exprs: Vec<Expr>,
         pub cached_hash: u8,
     }
     pub struct ArrowExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub is_async: bool,
         pub type_params: Option<Vec<Rc<TsTypeParamDecl>>>,
@@ -285,29 +313,34 @@ define!({
         pub cached_hash: u8,
     }
     pub struct YieldExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub arg: Option<Expr>,
         pub delegate: bool,
         pub cached_hash: u8,
     }
     pub struct MetaPropExpr {
+        pub node_id: NodeId,
         pub meta: Rc<Ident>,
         pub prop: Rc<Ident>,
         pub cached_hash: u8,
     }
     pub struct AwaitExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub arg: Expr,
         pub cached_hash: u8,
     }
     // TODO: ensure field order matches evaluation order in ECMA/TSC:
     pub struct Tpl {
+        pub node_id: NodeId,
         pub span: Span,
         pub exprs: Vec<Expr>,
         pub quasis: Vec<Rc<TplElement>>,
         pub cached_hash: u8,
     }
     pub struct TaggedTpl {
+        pub node_id: NodeId,
         pub span: Span,
         pub tag: Expr,
         pub type_params: Option<Rc<TsTypeParamInstantiation>>,
@@ -315,6 +348,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct TplElement {
+        pub node_id: NodeId,
         pub span: Span,
         pub tail: bool,
         pub cooked: Option<Rc<Str>>,
@@ -322,6 +356,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct ParenExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: Expr,
         pub cached_hash: u8,
@@ -331,6 +366,7 @@ define!({
         Expr(Expr),
     }
     pub struct Super {
+        pub node_id: NodeId,
         pub span: Span,
         pub cached_hash: u8,
     }
@@ -347,6 +383,7 @@ define!({
         Pat(Pat),
     }
     pub struct OptChainExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub question_dot_token: Span,
         pub expr: Expr,
@@ -354,6 +391,7 @@ define!({
     }
     // TODO: ensure field order matches evaluation order in ECMA/TSC:
     pub struct Function {
+        pub node_id: NodeId,
         pub params: Vec<Rc<Param>>,
         pub decorators: Vec<Rc<Decorator>>,
         pub span: Span,
@@ -365,12 +403,14 @@ define!({
         pub cached_hash: u8,
     }
     pub struct Param {
+        pub node_id: NodeId,
         pub span: Span,
         pub decorators: Vec<Rc<Decorator>>,
         pub pat: Pat,
         pub cached_hash: u8,
     }
     pub struct ParamWithoutDecorators {
+        pub node_id: NodeId,
         pub pat: Pat,
         pub cached_hash: u8,
     }
@@ -379,6 +419,7 @@ define!({
         Param(Rc<Param>),
     }
     pub struct BindingIdent {
+        pub node_id: NodeId,
         pub id: Rc<Ident>,
         pub type_ann: Option<Rc<TsTypeAnn>>,
         pub cached_hash: u8,
@@ -391,6 +432,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct PrivateName {
+        pub node_id: NodeId,
         pub span: Span,
         pub id: Rc<Ident>,
         pub cached_hash: u8,
@@ -400,20 +442,24 @@ define!({
         Ident(Rc<Ident>),
     }
     pub struct JSXMemberExpr {
+        pub node_id: NodeId,
         pub obj: JSXObject,
         pub prop: Rc<Ident>,
         pub cached_hash: u8,
     }
     pub struct JSXNamespacedName {
+        pub node_id: NodeId,
         pub ns: Rc<Ident>,
         pub name: Rc<Ident>,
         pub cached_hash: u8,
     }
     pub struct JSXEmptyExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub cached_hash: u8,
     }
     pub struct JSXExprContainer {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: JSXExpr,
         pub cached_hash: u8,
@@ -423,6 +469,7 @@ define!({
         Expr(Expr),
     }
     pub struct JSXSpreadChild {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: Expr,
         pub cached_hash: u8,
@@ -433,6 +480,7 @@ define!({
         JSXNamespacedName(Rc<JSXNamespacedName>),
     }
     pub struct JSXOpeningElement {
+        pub node_id: NodeId,
         pub span: Span,
         pub name: JSXElementName,
         pub type_args: Option<Rc<TsTypeParamInstantiation>>,
@@ -445,11 +493,13 @@ define!({
         SpreadElement(Rc<SpreadElement>),
     }
     pub struct JSXClosingElement {
+        pub node_id: NodeId,
         pub span: Span,
         pub name: JSXElementName,
         pub cached_hash: u8,
     }
     pub struct JSXAttr {
+        pub node_id: NodeId,
         pub span: Span,
         pub name: JSXAttrName,
         pub value: Option<JSXAttrValue>,
@@ -466,12 +516,14 @@ define!({
         JSXFragment(Rc<JSXFragment>),
     }
     pub struct JSXText {
+        pub node_id: NodeId,
         pub span: Span,
         pub value: JsWord,
         pub raw: JsWord,
         pub cached_hash: u8,
     }
     pub struct JSXElement {
+        pub node_id: NodeId,
         pub span: Span,
         pub opening: Rc<JSXOpeningElement>,
         pub children: Vec<JSXElementChild>,
@@ -486,6 +538,7 @@ define!({
         JSXFragment(Rc<JSXFragment>),
     }
     pub struct JSXFragment {
+        pub node_id: NodeId,
         pub span: Span,
         pub opening: Rc<JSXOpeningFragment>,
         pub children: Vec<JSXElementChild>,
@@ -493,14 +546,17 @@ define!({
         pub cached_hash: u8,
     }
     pub struct JSXOpeningFragment {
+        pub node_id: NodeId,
         pub span: Span,
         pub cached_hash: u8,
     }
     pub struct JSXClosingFragment {
+        pub node_id: NodeId,
         pub span: Span,
         pub cached_hash: u8,
     }
     pub struct Invalid {
+        pub node_id: NodeId,
         pub span: Span,
         pub cached_hash: u8,
     }
@@ -514,11 +570,13 @@ define!({
         JSXText(Rc<JSXText>),
     }
     pub struct BigInt {
+        pub node_id: NodeId,
         pub span: Span,
         pub value: BigIntValue,
         pub cached_hash: u8,
     }
     pub struct Str {
+        pub node_id: NodeId,
         pub span: Span,
         pub value: JsWord,
         pub has_escape: bool,
@@ -526,21 +584,25 @@ define!({
         pub cached_hash: u8,
     }
     pub struct Bool {
+        pub node_id: NodeId,
         pub span: Span,
         pub value: bool,
         pub cached_hash: u8,
     }
     pub struct Null {
+        pub node_id: NodeId,
         pub span: Span,
         pub cached_hash: u8,
     }
     pub struct Regex {
+        pub node_id: NodeId,
         pub span: Span,
         pub exp: JsWord,
         pub flags: JsWord,
         pub cached_hash: u8,
     }
     pub struct Number {
+        pub node_id: NodeId,
         pub span: Span,
         pub value: f64,
         pub raw: Option<JsWord>,
@@ -551,12 +613,14 @@ define!({
         Script(Rc<Script>),
     }
     pub struct Module {
+        pub node_id: NodeId,
         pub span: Span,
         pub body: Vec<ModuleItem>,
         pub shebang: Option<JsWord>,
         pub cached_hash: u8,
     }
     pub struct Script {
+        pub node_id: NodeId,
         pub span: Span,
         pub body: Vec<Stmt>,
         pub shebang: Option<JsWord>,
@@ -578,16 +642,19 @@ define!({
         TsNamespaceExport(Rc<TsNamespaceExportDecl>),
     }
     pub struct ExportDefaultExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: Expr,
         pub cached_hash: u8,
     }
     pub struct ExportDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub decl: Decl,
         pub cached_hash: u8,
     }
     pub struct ImportDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub specifiers: Vec<ImportSpecifier>,
         pub src: Rc<Str>,
@@ -596,12 +663,14 @@ define!({
         pub cached_hash: u8,
     }
     pub struct ExportAll {
+        pub node_id: NodeId,
         pub span: Span,
         pub src: Rc<Str>,
         pub asserts: Option<Rc<ObjectLit>>,
         pub cached_hash: u8,
     }
     pub struct NamedExport {
+        pub node_id: NodeId,
         pub span: Span,
         pub specifiers: Vec<ExportSpecifier>,
         pub src: Option<Rc<Str>>,
@@ -610,6 +679,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct ExportDefaultDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub decl: DefaultDecl,
         pub cached_hash: u8,
@@ -625,16 +695,19 @@ define!({
         Namespace(Rc<ImportStarAsSpecifier>),
     }
     pub struct ImportDefaultSpecifier {
+        pub node_id: NodeId,
         pub span: Span,
         pub local: Rc<Ident>,
         pub cached_hash: u8,
     }
     pub struct ImportStarAsSpecifier {
+        pub node_id: NodeId,
         pub span: Span,
         pub local: Rc<Ident>,
         pub cached_hash: u8,
     }
     pub struct ImportNamedSpecifier {
+        pub node_id: NodeId,
         pub span: Span,
         pub local: Rc<Ident>,
         pub imported: Option<Rc<Ident>>,
@@ -646,15 +719,18 @@ define!({
         Named(Rc<ExportNamedSpecifier>),
     }
     pub struct ExportNamespaceSpecifier {
+        pub node_id: NodeId,
         pub span: Span,
         pub name: Rc<Ident>,
         pub cached_hash: u8,
     }
     pub struct ExportDefaultSpecifier {
+        pub node_id: NodeId,
         pub exported: Rc<Ident>,
         pub cached_hash: u8,
     }
     pub struct ExportNamedSpecifier {
+        pub node_id: NodeId,
         pub span: Span,
         pub orig: Rc<Ident>,
         pub exported: Option<Rc<Ident>>,
@@ -728,6 +804,7 @@ define!({
         Expr(Expr),
     }
     pub struct ArrayPat {
+        pub node_id: NodeId,
         pub span: Span,
         pub elems: Vec<Option<Pat>>,
         pub optional: bool,
@@ -735,6 +812,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct ObjectPat {
+        pub node_id: NodeId,
         pub span: Span,
         pub props: Vec<ObjectPatProp>,
         pub optional: bool,
@@ -742,6 +820,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct AssignPat {
+        pub node_id: NodeId,
         pub span: Span,
         pub left: Pat,
         pub type_ann: Option<Rc<TsTypeAnn>>,
@@ -749,6 +828,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct RestPat {
+        pub node_id: NodeId,
         pub span: Span,
         pub dot3_token: Span,
         pub arg: Pat,
@@ -761,11 +841,13 @@ define!({
         Rest(Rc<RestPat>),
     }
     pub struct KeyValuePatProp {
+        pub node_id: NodeId,
         pub key: PropName,
         pub value: Pat,
         pub cached_hash: u8,
     }
     pub struct AssignPatProp {
+        pub node_id: NodeId,
         pub span: Span,
         pub key: Rc<Ident>,
         pub value: Option<Expr>,
@@ -781,16 +863,19 @@ define!({
         Spread(Rc<SpreadAssignment>),
     }
     pub struct KeyValueProp {
+        pub node_id: NodeId,
         pub key: PropName,
         pub value: Expr,
         pub cached_hash: u8,
     }
     pub struct AssignProp {
+        pub node_id: NodeId,
         pub key: Rc<Ident>,
         pub value: Expr,
         pub cached_hash: u8,
     }
     pub struct GetterProp {
+        pub node_id: NodeId,
         pub span: Span,
         pub key: PropName,
         pub type_ann: Option<Rc<TsTypeAnn>>,
@@ -798,6 +883,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct SetterProp {
+        pub node_id: NodeId,
         pub span: Span,
         pub key: PropName,
         pub param: Pat,
@@ -805,11 +891,13 @@ define!({
         pub cached_hash: u8,
     }
     pub struct MethodProp {
+        pub node_id: NodeId,
         pub key: PropName,
         pub function: Rc<Function>,
         pub cached_hash: u8,
     }
     pub struct SpreadAssignment {
+        pub node_id: NodeId,
         pub dot3_token: Span,
         pub expr: Expr,
         pub cached_hash: u8,
@@ -821,11 +909,13 @@ define!({
         Computed(Rc<ComputedPropName>),
     }
     pub struct ComputedPropName {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: Expr,
         pub cached_hash: u8,
     }
     pub struct BlockStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub stmts: Vec<Stmt>,
         pub cached_hash: u8,
@@ -852,46 +942,55 @@ define!({
         Expr(Rc<ExprStmt>),
     }
     pub struct ExprStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: Expr,
         pub cached_hash: u8,
     }
     pub struct EmptyStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub cached_hash: u8,
     }
     pub struct DebuggerStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub cached_hash: u8,
     }
     pub struct WithStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub obj: Expr,
         pub body: Stmt,
         pub cached_hash: u8,
     }
     pub struct ReturnStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub arg: Option<Expr>,
         pub cached_hash: u8,
     }
     pub struct LabeledStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub label: Rc<Ident>,
         pub body: Stmt,
         pub cached_hash: u8,
     }
     pub struct BreakStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub label: Option<Rc<Ident>>,
         pub cached_hash: u8,
     }
     pub struct ContinueStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub label: Option<Rc<Ident>>,
         pub cached_hash: u8,
     }
     pub struct IfStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub test: Expr,
         pub cons: Stmt,
@@ -899,17 +998,20 @@ define!({
         pub cached_hash: u8,
     }
     pub struct SwitchStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub discriminant: Expr,
         pub cases: Vec<Rc<SwitchCase>>,
         pub cached_hash: u8,
     }
     pub struct ThrowStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub arg: Expr,
         pub cached_hash: u8,
     }
     pub struct TryStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub block: Rc<BlockStmt>,
         pub handler: Option<Rc<CatchClause>>,
@@ -917,18 +1019,21 @@ define!({
         pub cached_hash: u8,
     }
     pub struct WhileStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub test: Expr,
         pub body: Stmt,
         pub cached_hash: u8,
     }
     pub struct DoWhileStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub body: Stmt,
         pub test: Expr,
         pub cached_hash: u8,
     }
     pub struct ForStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub init: Option<VarDeclOrExpr>,
         pub test: Option<Expr>,
@@ -937,6 +1042,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct ForInStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub left: VarDeclOrPat,
         pub right: Expr,
@@ -944,6 +1050,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct ForOfStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub await_token: Option<Span>,
         pub left: VarDeclOrPat,
@@ -952,12 +1059,14 @@ define!({
         pub cached_hash: u8,
     }
     pub struct SwitchCase {
+        pub node_id: NodeId,
         pub span: Span,
         pub test: Option<Expr>,
         pub cons: Vec<Stmt>,
         pub cached_hash: u8,
     }
     pub struct CatchClause {
+        pub node_id: NodeId,
         pub span: Span,
         pub param: Option<Pat>,
         pub body: Rc<BlockStmt>,
@@ -972,11 +1081,13 @@ define!({
         Expr(Expr),
     }
     pub struct TsTypeAnn {
+        pub node_id: NodeId,
         pub span: Span,
         pub type_ann: TsType,
         pub cached_hash: u8,
     }
     pub struct TsTypeParamDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub name: Rc<Ident>,
         pub constraint: Option<TsType>,
@@ -984,11 +1095,13 @@ define!({
         pub cached_hash: u8,
     }
     pub struct TsTypeParamInstantiation {
+        pub node_id: NodeId,
         pub span: Span,
         pub params: Vec<TsType>,
         pub cached_hash: u8,
     }
     pub struct TsParamProp {
+        pub node_id: NodeId,
         pub span: Span,
         pub decorators: Vec<Rc<Decorator>>,
         pub accessibility: Option<Accessibility>,
@@ -1002,6 +1115,7 @@ define!({
         Assign(Rc<AssignPat>),
     }
     pub struct TsQualifiedName {
+        pub node_id: NodeId,
         pub left: TsEntityName,
         pub right: Rc<Ident>,
         pub cached_hash: u8,
@@ -1020,6 +1134,7 @@ define!({
         TsIndexSignature(Rc<TsIndexSignature>),
     }
     pub struct TsCallSignatureDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub type_params: Option<Vec<Rc<TsTypeParamDecl>>>,
         pub params: Vec<TsAmbientParam>,
@@ -1027,6 +1142,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct TsConstructSignatureDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub type_params: Option<Vec<Rc<TsTypeParamDecl>>>,
         pub params: Vec<TsAmbientParam>,
@@ -1034,6 +1150,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct TsPropertySignature {
+        pub node_id: NodeId,
         pub span: Span,
         pub readonly: bool,
         pub key: PropName,
@@ -1042,6 +1159,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct TsGetterSignature {
+        pub node_id: NodeId,
         pub span: Span,
         pub readonly: bool,
         pub key: PropName,
@@ -1050,6 +1168,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct TsSetterSignature {
+        pub node_id: NodeId,
         pub span: Span,
         pub readonly: bool,
         pub key: PropName,
@@ -1058,6 +1177,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct TsMethodSignature {
+        pub node_id: NodeId,
         pub span: Span,
         pub readonly: bool,
         pub key: PropName,
@@ -1068,6 +1188,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct TsIndexSignature {
+        pub node_id: NodeId,
         pub params: Vec<TsAmbientParam>,
         pub type_ann: Option<Rc<TsTypeAnn>>,
         pub readonly: bool,
@@ -1102,6 +1223,7 @@ define!({
         TsConstructorType(Rc<TsConstructorType>),
     }
     pub struct TsKeywordType {
+        pub node_id: NodeId,
         pub span: Span,
         pub kind: TsKeywordTypeKind,
         pub cached_hash: u8,
@@ -1122,10 +1244,12 @@ define!({
         TsIntrinsicKeyword,
     }
     pub struct TsThisType {
+        pub node_id: NodeId,
         pub span: Span,
         pub cached_hash: u8,
     }
     pub struct TsAmbientParam {
+        pub node_id: NodeId,
         pub pat: TsAmbientParamPat,
         pub cached_hash: u8,
     }
@@ -1136,6 +1260,7 @@ define!({
         Object(Rc<ObjectPat>),
     }
     pub struct TsFnType {
+        pub node_id: NodeId,
         pub span: Span,
         pub type_params: Option<Vec<Rc<TsTypeParamDecl>>>,
         pub params: Vec<TsAmbientParam>,
@@ -1143,6 +1268,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct TsConstructorType {
+        pub node_id: NodeId,
         pub span: Span,
         pub type_params: Option<Vec<Rc<TsTypeParamDecl>>>,
         pub params: Vec<TsAmbientParam>,
@@ -1151,12 +1277,14 @@ define!({
         pub cached_hash: u8,
     }
     pub struct TsTypeRef {
+        pub node_id: NodeId,
         pub span: Span,
         pub type_name: TsEntityName,
         pub type_params: Option<Rc<TsTypeParamInstantiation>>,
         pub cached_hash: u8,
     }
     pub struct TsTypePredicate {
+        pub node_id: NodeId,
         pub span: Span,
         pub asserts: bool,
         pub param_name: TsThisTypeOrIdent,
@@ -1168,6 +1296,7 @@ define!({
         Ident(Rc<Ident>),
     }
     pub struct TsTypeQuery {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr_name: TsTypeQueryExpr,
         pub cached_hash: u8,
@@ -1177,6 +1306,7 @@ define!({
         Import(Rc<TsImportType>),
     }
     pub struct TsImportType {
+        pub node_id: NodeId,
         pub span: Span,
         pub arg: Rc<Str>,
         pub qualifier: Option<TsEntityName>,
@@ -1184,32 +1314,38 @@ define!({
         pub cached_hash: u8,
     }
     pub struct TsTypeLit {
+        pub node_id: NodeId,
         pub span: Span,
         pub members: Vec<TsTypeElement>,
         pub cached_hash: u8,
     }
     pub struct TsArrayType {
+        pub node_id: NodeId,
         pub span: Span,
         pub elem_type: TsType,
         pub cached_hash: u8,
     }
     pub struct TsTupleType {
+        pub node_id: NodeId,
         pub span: Span,
         pub elem_types: Vec<Rc<TsTupleElement>>,
         pub cached_hash: u8,
     }
     pub struct TsTupleElement {
+        pub node_id: NodeId,
         pub span: Span,
         pub label: Option<Pat>,
         pub ty: TsType,
         pub cached_hash: u8,
     }
     pub struct TsOptionalType {
+        pub node_id: NodeId,
         pub span: Span,
         pub type_ann: TsType,
         pub cached_hash: u8,
     }
     pub struct TsRestType {
+        pub node_id: NodeId,
         pub span: Span,
         pub type_ann: TsType,
         pub cached_hash: u8,
@@ -1219,16 +1355,19 @@ define!({
         TsIntersectionType(Rc<TsIntersectionType>),
     }
     pub struct TsUnionType {
+        pub node_id: NodeId,
         pub span: Span,
         pub types: Vec<TsType>,
         pub cached_hash: u8,
     }
     pub struct TsIntersectionType {
+        pub node_id: NodeId,
         pub span: Span,
         pub types: Vec<TsType>,
         pub cached_hash: u8,
     }
     pub struct TsConditionalType {
+        pub node_id: NodeId,
         pub span: Span,
         pub check_type: TsType,
         pub extends_type: TsType,
@@ -1237,16 +1376,19 @@ define!({
         pub cached_hash: u8,
     }
     pub struct TsInferType {
+        pub node_id: NodeId,
         pub span: Span,
         pub type_param: Rc<TsTypeParamDecl>,
         pub cached_hash: u8,
     }
     pub struct TsParenthesizedType {
+        pub node_id: NodeId,
         pub span: Span,
         pub type_ann: TsType,
         pub cached_hash: u8,
     }
     pub struct TsTypeOperator {
+        pub node_id: NodeId,
         pub span: Span,
         pub op: TsTypeOperatorOp,
         pub type_ann: TsType,
@@ -1258,6 +1400,7 @@ define!({
         ReadOnly,
     }
     pub struct TsIndexedAccessType {
+        pub node_id: NodeId,
         pub span: Span,
         pub readonly: bool,
         pub obj_type: TsType,
@@ -1270,6 +1413,7 @@ define!({
         Minus,
     }
     pub struct TsMappedType {
+        pub node_id: NodeId,
         pub span: Span,
         pub readonly: Option<TruePlusMinus>,
         pub type_param: Rc<TsTypeParamDecl>,
@@ -1279,6 +1423,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct TsLitType {
+        pub node_id: NodeId,
         pub span: Span,
         pub lit: TsLit,
         pub cached_hash: u8,
@@ -1291,12 +1436,14 @@ define!({
         Tpl(Rc<TsTplLitType>),
     }
     pub struct TsTplLitType {
+        pub node_id: NodeId,
         pub span: Span,
         pub types: Vec<TsType>,
         pub quasis: Vec<Rc<TplElement>>,
         pub cached_hash: u8,
     }
     pub struct TsInterfaceDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub id: Rc<Ident>,
         pub declare: bool,
@@ -1306,17 +1453,20 @@ define!({
         pub cached_hash: u8,
     }
     pub struct TsInterfaceBody {
+        pub node_id: NodeId,
         pub span: Span,
         pub body: Vec<TsTypeElement>,
         pub cached_hash: u8,
     }
     pub struct TsExprWithTypeArgs {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: TsEntityName,
         pub type_args: Option<Rc<TsTypeParamInstantiation>>,
         pub cached_hash: u8,
     }
     pub struct TsTypeAliasDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub declare: bool,
         pub id: Rc<Ident>,
@@ -1325,6 +1475,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct TsEnumDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub declare: bool,
         pub is_const: bool,
@@ -1333,6 +1484,7 @@ define!({
         pub cached_hash: u8,
     }
     pub struct TsEnumMember {
+        pub node_id: NodeId,
         pub span: Span,
         pub id: TsEnumMemberId,
         pub init: Option<Expr>,
@@ -1343,6 +1495,7 @@ define!({
         Str(Rc<Str>),
     }
     pub struct TsModuleDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub declare: bool,
         pub global: bool,
@@ -1355,11 +1508,13 @@ define!({
         TsNamespaceDecl(Rc<TsNamespaceDecl>),
     }
     pub struct TsModuleBlock {
+        pub node_id: NodeId,
         pub span: Span,
         pub body: Vec<ModuleItem>,
         pub cached_hash: u8,
     }
     pub struct TsNamespaceDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub declare: bool,
         pub global: bool,
@@ -1372,6 +1527,7 @@ define!({
         Str(Rc<Str>),
     }
     pub struct TsImportEqualsDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub declare: bool,
         pub is_export: bool,
@@ -1385,33 +1541,39 @@ define!({
         TsExternalModuleRef(Rc<TsExternalModuleRef>),
     }
     pub struct TsExternalModuleRef {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: Rc<Str>,
         pub cached_hash: u8,
     }
     pub struct TsExportAssignment {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: Expr,
         pub cached_hash: u8,
     }
     pub struct TsNamespaceExportDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub id: Rc<Ident>,
         pub cached_hash: u8,
     }
     pub struct TsAsExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: Expr,
         pub type_ann: TsType,
         pub cached_hash: u8,
     }
     pub struct TsTypeAssertion {
+        pub node_id: NodeId,
         pub span: Span,
         pub type_ann: TsType,
         pub expr: Expr,
         pub cached_hash: u8,
     }
     pub struct TsNonNullExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: Expr,
         pub cached_hash: u8,
@@ -1422,6 +1584,7 @@ define!({
         Private,
     }
     pub struct TsConstAssertion {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: Expr,
         pub cached_hash: u8,

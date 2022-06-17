@@ -11,6 +11,8 @@ use swc_atoms::JsWord;
 /// Identifer used as a pattern.
 #[derive(Spanned, Clone, Debug, PartialEq, Eq, Hash, EqIgnoreSpan, Serialize, Deserialize)]
 pub struct BindingIdent {
+    pub node_id: NodeId,
+
     #[span]
     #[serde(flatten)]
     pub id: Ident,
@@ -18,9 +20,13 @@ pub struct BindingIdent {
     pub type_ann: Option<TsTypeAnn>,
 }
 
-impl From<Ident> for BindingIdent {
-    fn from(id: Ident) -> Self {
-        Self { id, type_ann: None }
+impl BindingIdent {
+    pub fn from_ident(id: Ident, node_id: NodeId) -> Self {
+        Self {
+            id,
+            type_ann: None,
+            node_id,
+        }
     }
 }
 
@@ -29,6 +35,7 @@ impl From<Ident> for BindingIdent {
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct Ident {
     pub node_id: NodeId,
+
     pub span: Span,
     #[serde(rename = "value")]
     pub sym: JsWord,
@@ -61,6 +68,8 @@ impl arbitrary::Arbitrary for Ident {
 #[ast_node("PrivateName")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct PrivateName {
+    pub node_id: NodeId,
+
     pub span: Span,
     pub id: Ident,
 }

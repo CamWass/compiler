@@ -7,7 +7,7 @@ use crate::{
     typescript::{
         Accessibility, TsExprWithTypeArgs, TsIndexSignature, TsTypeAnn, TsTypeParamInstantiation,
     },
-    EmptyStmt, TsTypeParamDecl,
+    EmptyStmt, NodeId, TsTypeParamDecl,
 };
 use global_common::{ast_node, EqIgnoreSpan, Span};
 use serde::{Deserialize, Serialize};
@@ -15,6 +15,8 @@ use serde::{Deserialize, Serialize};
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct Class {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     #[serde(default)]
@@ -40,6 +42,8 @@ pub struct Class {
 #[ast_node("ExtendsClause")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ExtendsClause {
+    pub node_id: NodeId,
+
     pub span: Span,
     pub super_class: Box<Expr>,
     /// Typescript extension.
@@ -71,6 +75,8 @@ pub enum ClassMember {
 #[ast_node("ClassProperty")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ClassProp {
+    pub node_id: NodeId,
+
     #[serde(default)]
     pub span: Span,
 
@@ -115,6 +121,8 @@ pub struct ClassProp {
 #[ast_node("PrivateProperty")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct PrivateProp {
+    pub node_id: NodeId,
+
     #[serde(default)]
     pub span: Span,
 
@@ -159,6 +167,8 @@ macro_rules! method {
         #[derive(Eq, Hash, EqIgnoreSpan)]
         #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
         pub struct $name {
+            pub node_id: NodeId,
+
             #[serde(default)]
             pub span: Span,
 
@@ -194,6 +204,8 @@ method!(PrivateMethod, "PrivateMethod", PrivateName);
 #[ast_node("Constructor")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct Constructor {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     pub params: Vec<ParamOrTsParamProp>,
@@ -211,6 +223,8 @@ pub struct Constructor {
 #[ast_node("Decorator")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct Decorator {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     #[serde(rename = "expression")]

@@ -48,7 +48,7 @@ pub struct Parser<I: Tokens> {
     emit_err: bool,
     state: State,
     input: Buffer<I>,
-    ident_id: NodeId,
+    node_id_gen: NodeIdGen,
 }
 
 impl<'src> Parser<Lexer<'src>> {
@@ -63,7 +63,7 @@ impl<I: Tokens> Parser<I> {
             emit_err: true,
             state: Default::default(),
             input: Buffer::new(input),
-            ident_id: NodeId(0),
+            node_id_gen: NodeIdGen::default(),
         }
     }
 
@@ -89,6 +89,7 @@ impl<I: Tokens> Parser<I> {
         let shebang = self.parse_shebang()?;
 
         self.parse_block_body(true, true, None).map(|body| Script {
+            node_id: node_id!(self),
             span: span!(self, start),
             body,
             shebang,
@@ -113,6 +114,7 @@ impl<I: Tokens> Parser<I> {
         let shebang = self.parse_shebang()?;
 
         self.parse_block_body(true, true, None).map(|body| Module {
+            node_id: node_id!(self),
             span: span!(self, start),
             body,
             shebang,
@@ -136,12 +138,14 @@ impl<I: Tokens> Parser<I> {
                 })
                 .collect();
             Program::Script(Script {
+                node_id: node_id!(self),
                 span: span!(self, start),
                 body,
                 shebang,
             })
         } else {
             Program::Module(Module {
+                node_id: node_id!(self),
                 span: span!(self, start),
                 body,
                 shebang,
@@ -162,6 +166,7 @@ impl<I: Tokens> Parser<I> {
         let shebang = self.parse_shebang()?;
 
         self.parse_block_body(true, true, None).map(|body| Module {
+            node_id: node_id!(self),
             span: span!(self, start),
             body,
             shebang,

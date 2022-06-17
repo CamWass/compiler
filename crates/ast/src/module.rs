@@ -1,4 +1,4 @@
-use crate::{module_decl::ModuleDecl, stmt::Stmt};
+use crate::{module_decl::ModuleDecl, stmt::Stmt, NodeId};
 use global_common::{ast_node, EqIgnoreSpan, Span};
 use swc_atoms::JsWord;
 
@@ -14,6 +14,8 @@ pub enum Program {
 #[ast_node("Module")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct Module {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     pub body: Vec<ModuleItem>,
@@ -38,6 +40,8 @@ impl arbitrary::Arbitrary for Module {
 #[ast_node("Script")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct Script {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     pub body: Vec<Stmt>,

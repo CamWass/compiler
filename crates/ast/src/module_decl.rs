@@ -4,7 +4,7 @@ use crate::{
     ident::Ident,
     lit::Str,
     typescript::{TsExportAssignment, TsImportEqualsDecl, TsInterfaceDecl, TsNamespaceExportDecl},
-    ObjectLit,
+    NodeId, ObjectLit,
 };
 use global_common::{ast_node, EqIgnoreSpan, Span};
 
@@ -42,6 +42,8 @@ pub enum ModuleDecl {
 #[ast_node("ExportDefaultExpression")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ExportDefaultExpr {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     #[serde(rename = "expression")]
@@ -51,6 +53,8 @@ pub struct ExportDefaultExpr {
 #[ast_node("ExportDeclaration")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ExportDecl {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     #[serde(rename = "declaration")]
@@ -60,6 +64,8 @@ pub struct ExportDecl {
 #[ast_node("ImportDeclaration")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ImportDecl {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     #[serde(default)]
@@ -79,6 +85,8 @@ pub struct ImportDecl {
 #[ast_node("ExportAllDeclaration")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ExportAll {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     #[serde(rename = "source")]
@@ -93,6 +101,8 @@ pub struct ExportAll {
 #[ast_node("ExportNamedDeclaration")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct NamedExport {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     pub specifiers: Vec<ExportSpecifier>,
@@ -110,6 +120,8 @@ pub struct NamedExport {
 #[ast_node("ExportDefaultDeclaration")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ExportDefaultDecl {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     pub decl: DefaultDecl,
@@ -143,6 +155,8 @@ pub enum ImportSpecifier {
 #[ast_node("ImportDefaultSpecifier")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ImportDefaultSpecifier {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     pub local: Ident,
@@ -151,6 +165,8 @@ pub struct ImportDefaultSpecifier {
 #[ast_node("ImportNamespaceSpecifier")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ImportStarAsSpecifier {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     pub local: Ident,
@@ -161,6 +177,8 @@ pub struct ImportStarAsSpecifier {
 #[ast_node("ImportSpecifier")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ImportNamedSpecifier {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     pub local: Ident,
@@ -186,6 +204,8 @@ pub enum ExportSpecifier {
 #[ast_node("ExportNamespaceSpecifier")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ExportNamespaceSpecifier {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     pub name: Ident,
@@ -195,6 +215,8 @@ pub struct ExportNamespaceSpecifier {
 #[ast_node("ExportDefaultSpecifier")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ExportDefaultSpecifier {
+    pub node_id: NodeId,
+
     #[span]
     pub exported: Ident,
 }
@@ -202,6 +224,8 @@ pub struct ExportDefaultSpecifier {
 #[ast_node("ExportSpecifier")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ExportNamedSpecifier {
+    pub node_id: NodeId,
+
     pub span: Span,
     /// `foo` in `export { foo as bar }`
     pub orig: Ident,

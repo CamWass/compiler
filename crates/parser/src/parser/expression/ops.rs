@@ -21,12 +21,18 @@ impl<I: Tokens> Parser<I> {
                     &Word(Word::Keyword(Keyword::In)) if include_in_expr => {
                         self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
 
-                        Box::new(Expr::Invalid(Invalid { span: err.span() }))
+                        Box::new(Expr::Invalid(Invalid {
+                            node_id: node_id!(self),
+                            span: err.span(),
+                        }))
                     }
                     &Word(Word::Keyword(Keyword::InstanceOf)) | &Token::BinOp(..) => {
                         self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
 
-                        Box::new(Expr::Invalid(Invalid { span: err.span() }))
+                        Box::new(Expr::Invalid(Invalid {
+                            node_id: node_id!(self),
+                            span: err.span(),
+                        }))
                     }
                     _ => return Err(err),
                 }
@@ -100,12 +106,14 @@ impl<I: Tokens> Parser<I> {
                 self.input.bump(); // as
                 self.input.bump(); // const
                 Box::new(Expr::TsConstAssertion(TsConstAssertion {
+                    node_id: node_id!(self),
                     span: span!(self, start),
                     expr,
                 }))
             } else {
                 let type_ann = self.next_then_parse_ts_type()?;
                 Box::new(Expr::TsAs(TsAsExpr {
+                    node_id: node_id!(self),
                     span: span!(self, start),
                     expr,
                     type_ann,
@@ -195,6 +203,7 @@ impl<I: Tokens> Parser<I> {
         }
 
         let node = Box::new(Expr::Bin(BinExpr {
+            node_id: node_id!(self),
             span: Span::new(left.span().lo(), right.span().hi(), Default::default()),
             op,
             left,
@@ -217,6 +226,7 @@ impl<I: Tokens> Parser<I> {
                 expect!(self, '>');
                 let expr = self.parse_unary_expr()?;
                 return Ok(Box::new(Expr::TsConstAssertion(TsConstAssertion {
+                    node_id: node_id!(self),
                     span: span!(self, start),
                     expr,
                 })));
@@ -241,6 +251,7 @@ impl<I: Tokens> Parser<I> {
             self.check_assign_target(&arg, false);
 
             return Ok(Box::new(Expr::Update(UpdateExpr {
+                node_id: node_id!(self),
                 span,
                 prefix: true,
                 op,
@@ -266,6 +277,7 @@ impl<I: Tokens> Parser<I> {
                 Err(err) => {
                     self.emit_error(err);
                     Box::new(Expr::Invalid(Invalid {
+                        node_id: node_id!(self),
                         span: Span::new(arg_start, arg_start, Default::default()),
                     }))
                 }
@@ -292,6 +304,7 @@ impl<I: Tokens> Parser<I> {
             }
 
             return Ok(Box::new(Expr::Unary(UnaryExpr {
+                node_id: node_id!(self),
                 span: Span::new(start, arg.span().hi(), Default::default()),
                 op,
                 arg,
@@ -323,6 +336,7 @@ impl<I: Tokens> Parser<I> {
             };
 
             return Ok(Box::new(Expr::Update(UpdateExpr {
+                node_id: node_id!(self),
                 span: span!(self, expr.span().lo()),
                 prefix: false,
                 op,
@@ -349,6 +363,7 @@ impl<I: Tokens> Parser<I> {
 
         let arg = self.parse_unary_expr()?;
         Ok(Box::new(Expr::Await(AwaitExpr {
+            node_id: node_id!(self),
             span: span!(self, start),
             arg,
         })))

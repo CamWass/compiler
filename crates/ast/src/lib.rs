@@ -1,6 +1,4 @@
 #![deny(unreachable_patterns)]
-#![deny(missing_copy_implementations)]
-#![deny(missing_debug_implementations)]
 #![deny(trivial_casts)]
 #![deny(trivial_numeric_casts)]
 #![deny(unreachable_pub)]
@@ -65,6 +63,7 @@ pub use self::{
     },
 };
 use global_common::{ast_node, EqIgnoreSpan, Span};
+use index::{newtype_index, vec::Idx};
 use serde::{Deserialize, Serialize};
 
 #[macro_use]
@@ -84,13 +83,50 @@ mod prop;
 mod stmt;
 mod typescript;
 
-#[derive(PartialEq, Eq, Clone, Copy, Hash, EqIgnoreSpan, Serialize, Deserialize, Debug)]
-pub struct NodeId(pub u32);
+newtype_index! {
+    pub struct NodeId {
+        derive [Serialize, EqIgnoreSpan]
+        DEBUG_FORMAT = "NodeId({})"
+    }
+}
+
+impl<'de> Deserialize<'de> for NodeId {
+    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        todo!()
+    }
+}
+
+#[derive(Clone)]
+pub struct NodeIdGen {
+    cur: NodeId,
+}
+
+impl Default for NodeIdGen {
+    fn default() -> Self {
+        Self {
+            cur: NodeId::from_u32(0),
+        }
+    }
+}
+
+impl NodeIdGen {
+    pub fn next(&mut self) -> NodeId {
+        // Incrementing after we take the id ensures that NodeId(0) is used.
+        let id = self.cur;
+        self.cur.increment_by(1);
+        id
+    }
+}
 
 /// Represents a invalid node.
 #[ast_node("Invalid")]
 #[derive(Eq, Hash, Copy, EqIgnoreSpan)]
 pub struct Invalid {
+    pub node_id: NodeId,
+
     pub span: Span,
 }
 

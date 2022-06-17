@@ -41,6 +41,7 @@ impl<I: Tokens> Parser<I> {
             }
 
             return Ok(Box::new(Expr::Seq(SeqExpr {
+                node_id: node_id!(self),
                 span: span!(self, start),
                 exprs,
             })));
@@ -182,6 +183,7 @@ impl<I: Tokens> Parser<I> {
                 self.input.bump();
                 let right = self.parse_assignment_expr()?;
                 Ok(Box::new(Expr::Assign(AssignExpr {
+                    node_id: node_id!(self),
                     span: span!(self, start),
                     op,
                     // TODO(swc):
@@ -219,6 +221,7 @@ impl<I: Tokens> Parser<I> {
             let alt = self.with_ctx(ctx).parse_assignment_expr()?;
             let span = Span::new(start, alt.span().hi(), Default::default());
             Ok(Box::new(Expr::Cond(CondExpr {
+                node_id: node_id!(self),
                 span,
                 test,
                 cons,
@@ -248,6 +251,7 @@ impl<I: Tokens> Parser<I> {
                 tok!("this") => {
                     self.input.bump();
                     return Ok(Box::new(Expr::This(ThisExpr {
+                        node_id: node_id!(self),
                         span: span!(self, start),
                     })));
                 }
@@ -320,6 +324,7 @@ impl<I: Tokens> Parser<I> {
                 Token::Regex(..) => match self.input.bump() {
                     Token::Regex(exp, flags) => {
                         return Ok(Box::new(Expr::Lit(Lit::Regex(Regex {
+                            node_id: node_id!(self),
                             span: span!(self, start),
                             exp,
                             flags,
@@ -377,11 +382,12 @@ impl<I: Tokens> Parser<I> {
             if can_be_arrow && id.sym == js_word!("async") && is!(self, BindingIdent) {
                 // async a => body
                 let arg = self.parse_binding_ident().map(Pat::from)?;
-                let params = vec![arg.into()];
+                let params = vec![ParamWithoutDecorators::from_pat(arg, node_id!(self))];
                 expect!(self, "=>");
                 let body = self.parse_fn_body(true, false)?;
 
                 return Ok(Box::new(Expr::Arrow(ArrowExpr {
+                    node_id: node_id!(self),
                     span: span!(self, start),
                     body,
                     params,
@@ -393,10 +399,14 @@ impl<I: Tokens> Parser<I> {
                 && !self.input.had_line_break_before_cur()
                 && self.input.eat(&tok!("=>"))
             {
-                let params = vec![Pat::from(id).into()];
+                let params = vec![ParamWithoutDecorators::from_pat(
+                    Pat::Ident(BindingIdent::from_ident(id, node_id!(self))),
+                    node_id!(self),
+                )];
                 let body = self.parse_fn_body(false, false)?;
 
                 return Ok(Box::new(Expr::Arrow(ArrowExpr {
+                    node_id: node_id!(self),
                     span: span!(self, start),
                     body,
                     params,
@@ -466,7 +476,11 @@ impl<I: Tokens> Parser<I> {
                 .insert(span, trailing_comma_span);
         }
 
-        Ok(Box::new(Expr::Array(ArrayLit { span, elems })))
+        Ok(Box::new(Expr::Array(ArrayLit {
+            node_id: node_id!(self),
+            span,
+            elems,
+        })))
     }
 
     /// `parseImportMetaProperty`
@@ -481,7 +495,11 @@ impl<I: Tokens> Parser<I> {
             unexpected!(self, "meta");
         };
 
-        Ok(MetaPropExpr { meta, prop })
+        Ok(MetaPropExpr {
+            node_id: node_id!(self),
+            meta,
+            prop,
+        })
     }
 
     fn parse_subscripts(&mut self, mut obj: ExprOrSuper, no_call: bool) -> PResult<Box<Expr>> {
@@ -509,6 +527,7 @@ impl<I: Tokens> Parser<I> {
                 };
                 return Ok((
                     Box::new(Expr::TsNonNull(TsNonNullExpr {
+                        node_id: node_id!(self),
                         span: span!(self, start),
                         expr,
                     })),
@@ -547,6 +566,7 @@ impl<I: Tokens> Parser<I> {
 
                         Ok(Some((
                             Box::new(Expr::Call(CallExpr {
+                                node_id: node_id!(p),
                                 span: span!(p, start),
                                 callee: obj_ref.clone(),
                                 type_args: Some(type_args),
@@ -589,6 +609,7 @@ impl<I: Tokens> Parser<I> {
             ($e:expr) => {{
                 if let Some(question_dot_token) = question_dot_token {
                     Expr::OptChain(OptChainExpr {
+                        node_id: node_id!(self),
                         span: span!(self, start),
                         question_dot_token,
                         expr: Box::new($e),
@@ -614,6 +635,7 @@ impl<I: Tokens> Parser<I> {
 
             return Ok((
                 Box::new(wrap!(Expr::Member(MemberExpr {
+                    node_id: node_id!(self),
                     span,
                     obj,
                     prop,
@@ -632,6 +654,7 @@ impl<I: Tokens> Parser<I> {
             let args = self.parse_args(is_import(&obj))?;
             return Ok((
                 Box::new(wrap!(Expr::Call(CallExpr {
+                    node_id: node_id!(self),
                     span: span!(self, start),
                     callee: obj,
                     args,
@@ -654,6 +677,7 @@ impl<I: Tokens> Parser<I> {
 
             return Ok((
                 Box::new(wrap!(Expr::Member(MemberExpr {
+                    node_id: node_id!(self),
                     span,
                     obj,
 
@@ -723,6 +747,7 @@ impl<I: Tokens> Parser<I> {
         // `super()` can't be handled from parse_new_expr()
         if self.input.eat(&tok!("super")) {
             let obj = ExprOrSuper::Super(Super {
+                node_id: node_id!(self),
                 span: span!(self, start),
             });
             return self.parse_subscripts(obj, false);
@@ -769,6 +794,7 @@ impl<I: Tokens> Parser<I> {
             let args = self.parse_args(is_import(&callee))?;
 
             let call_expr = Box::new(Expr::Call(CallExpr {
+                node_id: node_id!(self),
                 span: span!(self, start),
 
                 callee,
@@ -863,9 +889,11 @@ impl<I: Tokens> Parser<I> {
                     };
 
                     match spread {
-                        Some(dot3_token) => {
-                            ExprOrSpread::Spread(SpreadElement { dot3_token, expr })
-                        }
+                        Some(dot3_token) => ExprOrSpread::Spread(SpreadElement {
+                            node_id: node_id!(self),
+                            dot3_token,
+                            expr,
+                        }),
                         None => ExprOrSpread::Expr(expr),
                     }
                 } else {
@@ -918,6 +946,7 @@ impl<I: Tokens> Parser<I> {
                         let alt = self.with_ctx(ctx).parse_assignment_expr()?;
 
                         arg = ExprOrSpread::Expr(Box::new(Expr::Cond(CondExpr {
+                            node_id: node_id!(self),
                             span: Span::new(start, alt.span().hi(), Default::default()),
 
                             test,
@@ -944,9 +973,9 @@ impl<I: Tokens> Parser<I> {
                 // }
 
                 let (expr, spread) = match arg {
-                    ExprOrSpread::Spread(SpreadElement { dot3_token, expr }) => {
-                        (expr, Some(dot3_token))
-                    }
+                    ExprOrSpread::Spread(SpreadElement {
+                        dot3_token, expr, ..
+                    }) => (expr, Some(dot3_token)),
                     ExprOrSpread::Expr(expr) => (expr, None),
                 };
 
@@ -966,6 +995,7 @@ impl<I: Tokens> Parser<I> {
                     }
                     rest_span = Some(span);
                     pat = Pat::Rest(RestPat {
+                        node_id: node_id!(self),
                         span: span!(self, pat_start),
                         dot3_token: span,
                         arg: Box::new(pat),
@@ -1019,6 +1049,7 @@ impl<I: Tokens> Parser<I> {
                 if eat!(self, '=') {
                     let right = self.parse_assignment_expr()?;
                     pat = Pat::Assign(AssignPat {
+                        node_id: node_id!(self),
                         span: span!(self, pat_start),
                         left: Box::new(pat),
                         right,
@@ -1054,7 +1085,7 @@ impl<I: Tokens> Parser<I> {
                 let params = self
                     .parse_paren_items_as_params(items)?
                     .into_iter()
-                    .map(|p| p.into())
+                    .map(|p| ParamWithoutDecorators::from_pat(p, node_id!(self)))
                     .collect();
 
                 let body: BlockStmtOrExpr = self.parse_fn_body(false, false)?;
@@ -1064,6 +1095,7 @@ impl<I: Tokens> Parser<I> {
                 return Ok(vec![PatOrExprOrSpread::ExprOrSpread(ExprOrSpread::Expr(
                     Box::new(
                         ArrowExpr {
+                            node_id: node_id!(self),
                             span,
                             body,
                             is_async: false,
@@ -1099,6 +1131,7 @@ impl<I: Tokens> Parser<I> {
                     }
 
                     let expr = Box::new(Expr::MetaProp(MetaPropExpr {
+                        node_id: node_id!(self),
                         meta: self.new_ident(js_word!("new"), span_of_new),
                         prop: self.new_ident(js_word!("target"), span_of_target),
                     }));
@@ -1133,6 +1166,7 @@ impl<I: Tokens> Parser<I> {
                 let args = self.parse_args(false).map(Some)?;
 
                 let new_expr = ExprOrSuper::Expr(Box::new(Expr::New(NewExpr {
+                    node_id: node_id!(self),
                     span: span!(self, start),
                     callee,
                     args,
@@ -1147,6 +1181,7 @@ impl<I: Tokens> Parser<I> {
             // Parsed with 'NewExpression' production.
 
             return Ok(Box::new(Expr::New(NewExpr {
+                node_id: node_id!(self),
                 span: span!(self, start),
                 callee,
                 args: None,
@@ -1156,6 +1191,7 @@ impl<I: Tokens> Parser<I> {
 
         if self.input.eat(&tok!("super")) {
             let base = ExprOrSuper::Super(Super {
+                node_id: node_id!(self),
                 span: span!(self, start),
             });
             return self.parse_subscripts(base, true);
@@ -1222,9 +1258,16 @@ impl<I: Tokens> Parser<I> {
 
         if self.input.eat(&tok!("...")) {
             let dot3_token = span!(self, start);
+            let node_id = node_id!(self);
             self.include_in_expr(true)
                 .parse_assignment_expr()
-                .map(|expr| ExprOrSpread::Spread(SpreadElement { dot3_token, expr }))
+                .map(|expr| {
+                    ExprOrSpread::Spread(SpreadElement {
+                        node_id,
+                        dot3_token,
+                        expr,
+                    })
+                })
         } else {
             self.parse_assignment_expr().map(ExprOrSpread::Expr)
         }
@@ -1264,12 +1307,13 @@ impl<I: Tokens> Parser<I> {
                 let params = p
                     .parse_paren_items_as_params(items_ref.clone())?
                     .into_iter()
-                    .map(|p| p.into())
+                    .map(|pat| ParamWithoutDecorators::from_pat(pat, node_id!(p)))
                     .collect();
 
                 let body = p.parse_fn_body(async_span.is_some(), false)?;
 
                 Ok(Some(Box::new(Expr::Arrow(ArrowExpr {
+                    node_id: node_id!(p),
                     span: span!(p, expr_start),
                     is_async: async_span.is_some(),
                     params,
@@ -1309,11 +1353,12 @@ impl<I: Tokens> Parser<I> {
             let params = self
                 .parse_paren_items_as_params(paren_items)?
                 .into_iter()
-                .map(|p| p.into())
+                .map(|p| ParamWithoutDecorators::from_pat(p, node_id!(self)))
                 .collect();
 
             let body: BlockStmtOrExpr = self.parse_fn_body(async_span.is_some(), false)?;
             let arrow_expr = ArrowExpr {
+                node_id: node_id!(self),
                 span: span!(self, expr_start),
                 is_async: async_span.is_some(),
                 params,
@@ -1351,6 +1396,7 @@ impl<I: Tokens> Parser<I> {
         if let Some(async_span) = async_span {
             // It's a call expression
             return Ok(Box::new(Expr::Call(CallExpr {
+                node_id: node_id!(self),
                 span: span!(self, async_span.lo()),
                 callee: ExprOrSuper::Expr(Box::new(Expr::Ident(
                     self.new_ident("async".into(), async_span),
@@ -1381,6 +1427,7 @@ impl<I: Tokens> Parser<I> {
                 ExprOrSpread::Expr(e) => e,
             };
             Ok(Box::new(Expr::Paren(ParenExpr {
+                node_id: node_id!(self),
                 span: span!(self, expr_start),
                 expr,
             })))
@@ -1400,6 +1447,7 @@ impl<I: Tokens> Parser<I> {
 
             // span of sequence expression should not include '(', ')'
             let seq_expr = Box::new(Expr::Seq(SeqExpr {
+                node_id: node_id!(self),
                 span: Span::new(
                     exprs.first().unwrap().span().lo(),
                     exprs.last().unwrap().span().hi(),
@@ -1408,6 +1456,7 @@ impl<I: Tokens> Parser<I> {
                 exprs,
             }));
             Ok(Box::new(Expr::Paren(ParenExpr {
+                node_id: node_id!(self),
                 span: span!(self, expr_start),
                 expr: seq_expr,
             })))
@@ -1452,6 +1501,7 @@ impl<I: Tokens> Parser<I> {
 
         let span = span!(self, tagged_tpl_start);
         Ok(TaggedTpl {
+            node_id: node_id!(self),
             span,
             tag,
             type_params,
@@ -1472,6 +1522,7 @@ impl<I: Tokens> Parser<I> {
 
         let span = span!(self, start);
         Ok(Tpl {
+            node_id: node_id!(self),
             span,
             exprs,
             quasis,
@@ -1489,6 +1540,7 @@ impl<I: Tokens> Parser<I> {
                     has_escape,
                 } => (
                     Str {
+                        node_id: node_id!(self),
                         span: span!(self, start),
                         value: raw,
                         has_escape,
@@ -1497,6 +1549,7 @@ impl<I: Tokens> Parser<I> {
                         },
                     },
                     cooked.map(|cooked| Str {
+                        node_id: node_id!(self),
                         span: span!(self, start),
                         value: cooked,
                         has_escape,
@@ -1520,6 +1573,7 @@ impl<I: Tokens> Parser<I> {
 
         let tail = is!(self, '`');
         Ok(TplElement {
+            node_id: node_id!(self),
             span: span!(self, start),
             raw,
             tail,
@@ -1566,6 +1620,7 @@ impl<I: Tokens> Parser<I> {
                 && !self.input.cur().map(Token::starts_expr).unwrap_or(true))
         {
             Ok(Box::new(Expr::Yield(YieldExpr {
+                node_id: node_id!(self),
                 span: span!(self, start),
                 arg: None,
                 delegate: false,
@@ -1575,6 +1630,7 @@ impl<I: Tokens> Parser<I> {
             let arg = self.parse_assignment_expr()?;
 
             Ok(Box::new(Expr::Yield(YieldExpr {
+                node_id: node_id!(self),
                 span: span!(self, start),
                 arg: Some(arg),
                 delegate: has_star,
@@ -1608,17 +1664,25 @@ impl<I: Tokens> Parser<I> {
             Word(Word::Null) => {
                 self.input.bump();
                 let span = span!(self, start);
-                Lit::Null(Null { span })
+                Lit::Null(Null {
+                    node_id: node_id!(self),
+                    span,
+                })
             }
             Word(Word::True) | Word(Word::False) => {
                 let value = self.input.is(&tok!("true"));
                 self.input.bump();
                 let span = span!(self, start);
 
-                Lit::Bool(Bool { span, value })
+                Lit::Bool(Bool {
+                    node_id: node_id!(self),
+                    span,
+                    value,
+                })
             }
             Token::Str { .. } => match self.input.bump() {
                 Token::Str { value, has_escape } => Lit::Str(Str {
+                    node_id: node_id!(self),
                     span: span!(self, start),
                     value,
                     has_escape,
@@ -1630,6 +1694,7 @@ impl<I: Tokens> Parser<I> {
             },
             Token::Num { .. } => match self.input.bump() {
                 Token::Num { value, raw } => Lit::Num(Number {
+                    node_id: node_id!(self),
                     span: span!(self, start),
                     value,
                     raw: Some(raw),
@@ -1638,6 +1703,7 @@ impl<I: Tokens> Parser<I> {
             },
             Token::BigInt(..) => match self.input.bump() {
                 Token::BigInt(value) => Lit::BigInt(BigInt {
+                    node_id: node_id!(self),
                     span: span!(self, start),
                     value,
                 }),
@@ -1659,6 +1725,7 @@ impl<I: Tokens> Parser<I> {
 
         let args = self.parse_args(true)?;
         let import = Box::new(Expr::Call(CallExpr {
+            node_id: node_id!(self),
             span: span!(self, start),
             callee: ExprOrSuper::Expr(Box::new(Expr::Ident(import_ident))),
             args,

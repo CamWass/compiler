@@ -413,6 +413,7 @@ macro_rules! noop_visit_mut_type {
 
 define!({
     pub struct Class {
+        pub node_id: NodeId,
         pub span: Span,
         pub decorators: Vec<Decorator>,
         pub body: Vec<ClassMember>,
@@ -423,6 +424,7 @@ define!({
     }
 
     pub struct ExtendsClause {
+        pub node_id: NodeId,
         pub span: Span,
         pub super_class: Box<Expr>,
         pub super_type_params: Option<TsTypeParamInstantiation>,
@@ -439,6 +441,7 @@ define!({
     }
 
     pub struct ClassProp {
+        pub node_id: NodeId,
         pub span: Span,
         pub key: PropName,
         pub value: Option<Box<Expr>>,
@@ -454,6 +457,7 @@ define!({
         pub definite: bool,
     }
     pub struct PrivateProp {
+        pub node_id: NodeId,
         pub span: Span,
         pub key: PrivateName,
         pub value: Option<Box<Expr>>,
@@ -468,6 +472,7 @@ define!({
         pub definite: bool,
     }
     pub struct ClassMethod {
+        pub node_id: NodeId,
         pub span: Span,
         pub key: PropName,
         pub function: Function,
@@ -479,6 +484,7 @@ define!({
         pub is_override: bool,
     }
     pub struct PrivateMethod {
+        pub node_id: NodeId,
         pub span: Span,
         pub key: PrivateName,
         pub function: Function,
@@ -490,6 +496,7 @@ define!({
         pub is_override: bool,
     }
     pub struct Constructor {
+        pub node_id: NodeId,
         pub span: Span,
         pub params: Vec<ParamOrTsParamProp>,
         pub body: Option<BlockStmt>,
@@ -497,6 +504,7 @@ define!({
         pub is_optional: bool,
     }
     pub struct Decorator {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: Box<Expr>,
     }
@@ -515,16 +523,19 @@ define!({
         TsModule(TsModuleDecl),
     }
     pub struct FnDecl {
+        pub node_id: NodeId,
         pub ident: Ident,
         pub declare: bool,
         pub function: Function,
     }
     pub struct ClassDecl {
+        pub node_id: NodeId,
         pub ident: Ident,
         pub declare: bool,
         pub class: Class,
     }
     pub struct VarDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub kind: VarDeclKind,
         pub declare: bool,
@@ -536,6 +547,7 @@ define!({
         Const,
     }
     pub struct VarDeclarator {
+        pub node_id: NodeId,
         pub span: Span,
         pub name: Pat,
         pub init: Option<Box<Expr>>,
@@ -579,80 +591,96 @@ define!({
         Invalid(Invalid),
     }
     pub struct ThisExpr {
+        pub node_id: NodeId,
         pub span: Span,
     }
     pub struct ArrayLit {
+        pub node_id: NodeId,
         pub span: Span,
         pub elems: Vec<Option<ExprOrSpread>>,
     }
     pub struct ObjectLit {
+        pub node_id: NodeId,
         pub span: Span,
         pub props: Vec<Prop>,
     }
     pub struct SpreadElement {
+        pub node_id: NodeId,
         pub dot3_token: Span,
         pub expr: Box<Expr>,
     }
     pub struct UnaryExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub op: UnaryOp,
         pub arg: Box<Expr>,
     }
     pub struct UpdateExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub op: UpdateOp,
         pub prefix: bool,
         pub arg: Box<Expr>,
     }
     pub struct BinExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub op: BinaryOp,
         pub left: Box<Expr>,
         pub right: Box<Expr>,
     }
     pub struct FnExpr {
+        pub node_id: NodeId,
         pub ident: Option<Ident>,
         pub function: Function,
     }
     pub struct ClassExpr {
+        pub node_id: NodeId,
         pub ident: Option<Ident>,
         pub class: Class,
     }
     pub struct AssignExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub op: AssignOp,
         pub left: PatOrExpr,
         pub right: Box<Expr>,
     }
     pub struct MemberExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub obj: ExprOrSuper,
         pub prop: Box<Expr>,
         pub computed: bool,
     }
     pub struct CondExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub test: Box<Expr>,
         pub cons: Box<Expr>,
         pub alt: Box<Expr>,
     }
     pub struct CallExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub callee: ExprOrSuper,
         pub args: Vec<ExprOrSpread>,
         pub type_args: Option<TsTypeParamInstantiation>,
     }
     pub struct NewExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub callee: Box<Expr>,
         pub args: Option<Vec<ExprOrSpread>>,
         pub type_args: Option<TsTypeParamInstantiation>,
     }
     pub struct SeqExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub exprs: Vec<Box<Expr>>,
     }
     pub struct ArrowExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub params: Vec<ParamWithoutDecorators>,
         pub body: BlockStmtOrExpr,
@@ -661,36 +689,43 @@ define!({
         pub return_type: Option<TsTypeAnn>,
     }
     pub struct YieldExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub arg: Option<Box<Expr>>,
         pub delegate: bool,
     }
     pub struct MetaPropExpr {
+        pub node_id: NodeId,
         pub meta: Ident,
         pub prop: Ident,
     }
     pub struct AwaitExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub arg: Box<Expr>,
     }
     pub struct Tpl {
+        pub node_id: NodeId,
         pub span: Span,
         pub exprs: Vec<Box<Expr>>,
         pub quasis: Vec<TplElement>,
     }
     pub struct TaggedTpl {
+        pub node_id: NodeId,
         pub span: Span,
         pub tag: Box<Expr>,
         pub type_params: Option<TsTypeParamInstantiation>,
         pub tpl: Tpl,
     }
     pub struct TplElement {
+        pub node_id: NodeId,
         pub span: Span,
         pub tail: bool,
         pub cooked: Option<Str>,
         pub raw: Str,
     }
     pub struct ParenExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: Box<Expr>,
     }
@@ -699,6 +734,7 @@ define!({
         Expr(Box<Expr>),
     }
     pub struct Super {
+        pub node_id: NodeId,
         pub span: Span,
     }
     pub enum ExprOrSpread {
@@ -714,11 +750,13 @@ define!({
         Pat(Box<Pat>),
     }
     pub struct OptChainExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub question_dot_token: Span,
         pub expr: Box<Expr>,
     }
     pub struct Function {
+        pub node_id: NodeId,
         pub params: Vec<Param>,
         pub decorators: Vec<Decorator>,
         pub span: Span,
@@ -729,6 +767,7 @@ define!({
         pub return_type: Option<TsTypeAnn>,
     }
     pub struct Param {
+        pub node_id: NodeId,
         pub span: Span,
         pub decorators: Vec<Decorator>,
         pub pat: Pat,
@@ -739,6 +778,7 @@ define!({
     }
 
     pub struct BindingIdent {
+        pub node_id: NodeId,
         pub id: Ident,
         pub type_ann: Option<TsTypeAnn>,
     }
@@ -751,6 +791,7 @@ define!({
     }
 
     pub struct PrivateName {
+        pub node_id: NodeId,
         pub span: Span,
         pub id: Ident,
     }
@@ -760,17 +801,21 @@ define!({
         Ident(Ident),
     }
     pub struct JSXMemberExpr {
+        pub node_id: NodeId,
         pub obj: JSXObject,
         pub prop: Ident,
     }
     pub struct JSXNamespacedName {
+        pub node_id: NodeId,
         pub ns: Ident,
         pub name: Ident,
     }
     pub struct JSXEmptyExpr {
+        pub node_id: NodeId,
         pub span: Span,
     }
     pub struct JSXExprContainer {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: JSXExpr,
     }
@@ -779,6 +824,7 @@ define!({
         Expr(Box<Expr>),
     }
     pub struct JSXSpreadChild {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: Box<Expr>,
     }
@@ -788,6 +834,7 @@ define!({
         JSXNamespacedName(JSXNamespacedName),
     }
     pub struct JSXOpeningElement {
+        pub node_id: NodeId,
         pub name: JSXElementName,
         pub span: Span,
         pub attrs: Vec<JSXAttrOrSpread>,
@@ -799,10 +846,12 @@ define!({
         SpreadElement(SpreadElement),
     }
     pub struct JSXClosingElement {
+        pub node_id: NodeId,
         pub span: Span,
         pub name: JSXElementName,
     }
     pub struct JSXAttr {
+        pub node_id: NodeId,
         pub span: Span,
         pub name: JSXAttrName,
         pub value: Option<JSXAttrValue>,
@@ -818,11 +867,13 @@ define!({
         JSXFragment(JSXFragment),
     }
     pub struct JSXText {
+        pub node_id: NodeId,
         pub span: Span,
         pub value: JsWord,
         pub raw: JsWord,
     }
     pub struct JSXElement {
+        pub node_id: NodeId,
         pub span: Span,
         pub opening: JSXOpeningElement,
         pub children: Vec<JSXElementChild>,
@@ -836,18 +887,22 @@ define!({
         JSXFragment(JSXFragment),
     }
     pub struct JSXFragment {
+        pub node_id: NodeId,
         pub span: Span,
         pub opening: JSXOpeningFragment,
         pub children: Vec<JSXElementChild>,
         pub closing: JSXClosingFragment,
     }
     pub struct JSXOpeningFragment {
+        pub node_id: NodeId,
         pub span: Span,
     }
     pub struct JSXClosingFragment {
+        pub node_id: NodeId,
         pub span: Span,
     }
     pub struct Invalid {
+        pub node_id: NodeId,
         pub span: Span,
     }
     pub enum Lit {
@@ -860,28 +915,34 @@ define!({
         JSXText(JSXText),
     }
     pub struct BigInt {
+        pub node_id: NodeId,
         pub span: Span,
         pub value: BigIntValue,
     }
     pub struct Str {
+        pub node_id: NodeId,
         pub span: Span,
         pub value: JsWord,
         pub has_escape: bool,
         pub kind: StrKind,
     }
     pub struct Bool {
+        pub node_id: NodeId,
         pub span: Span,
         pub value: bool,
     }
     pub struct Null {
+        pub node_id: NodeId,
         pub span: Span,
     }
     pub struct Regex {
+        pub node_id: NodeId,
         pub span: Span,
         pub exp: JsWord,
         pub flags: JsWord,
     }
     pub struct Number {
+        pub node_id: NodeId,
         pub span: Span,
         pub value: f64,
         pub raw: Option<JsWord>,
@@ -891,11 +952,13 @@ define!({
         Script(Script),
     }
     pub struct Module {
+        pub node_id: NodeId,
         pub span: Span,
         pub body: Vec<ModuleItem>,
         pub shebang: Option<JsWord>,
     }
     pub struct Script {
+        pub node_id: NodeId,
         pub span: Span,
         pub body: Vec<Stmt>,
         pub shebang: Option<JsWord>,
@@ -916,14 +979,17 @@ define!({
         TsNamespaceExport(TsNamespaceExportDecl),
     }
     pub struct ExportDefaultExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: Box<Expr>,
     }
     pub struct ExportDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub decl: Decl,
     }
     pub struct ImportDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub specifiers: Vec<ImportSpecifier>,
         pub src: Str,
@@ -931,11 +997,13 @@ define!({
         pub asserts: Option<ObjectLit>,
     }
     pub struct ExportAll {
+        pub node_id: NodeId,
         pub span: Span,
         pub src: Str,
         pub asserts: Option<ObjectLit>,
     }
     pub struct NamedExport {
+        pub node_id: NodeId,
         pub span: Span,
         pub specifiers: Vec<ExportSpecifier>,
         pub src: Option<Str>,
@@ -943,6 +1011,7 @@ define!({
         pub asserts: Option<ObjectLit>,
     }
     pub struct ExportDefaultDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub decl: DefaultDecl,
     }
@@ -957,14 +1026,17 @@ define!({
         Namespace(ImportStarAsSpecifier),
     }
     pub struct ImportDefaultSpecifier {
+        pub node_id: NodeId,
         pub span: Span,
         pub local: Ident,
     }
     pub struct ImportStarAsSpecifier {
+        pub node_id: NodeId,
         pub span: Span,
         pub local: Ident,
     }
     pub struct ImportNamedSpecifier {
+        pub node_id: NodeId,
         pub span: Span,
         pub local: Ident,
         pub imported: Option<Ident>,
@@ -975,13 +1047,16 @@ define!({
         Named(ExportNamedSpecifier),
     }
     pub struct ExportNamespaceSpecifier {
+        pub node_id: NodeId,
         pub span: Span,
         pub name: Ident,
     }
     pub struct ExportDefaultSpecifier {
+        pub node_id: NodeId,
         pub exported: Ident,
     }
     pub struct ExportNamedSpecifier {
+        pub node_id: NodeId,
         pub span: Span,
         pub orig: Ident,
         pub exported: Option<Ident>,
@@ -1055,24 +1130,28 @@ define!({
         Expr(Box<Expr>),
     }
     pub struct ArrayPat {
+        pub node_id: NodeId,
         pub span: Span,
         pub elems: Vec<Option<Pat>>,
         pub optional: bool,
         pub type_ann: Option<TsTypeAnn>,
     }
     pub struct ObjectPat {
+        pub node_id: NodeId,
         pub span: Span,
         pub props: Vec<ObjectPatProp>,
         pub optional: bool,
         pub type_ann: Option<TsTypeAnn>,
     }
     pub struct AssignPat {
+        pub node_id: NodeId,
         pub span: Span,
         pub left: Box<Pat>,
         pub right: Box<Expr>,
         pub type_ann: Option<TsTypeAnn>,
     }
     pub struct RestPat {
+        pub node_id: NodeId,
         pub span: Span,
         pub dot3_token: Span,
         pub arg: Box<Pat>,
@@ -1084,10 +1163,12 @@ define!({
         Rest(RestPat),
     }
     pub struct KeyValuePatProp {
+        pub node_id: NodeId,
         pub key: PropName,
         pub value: Box<Pat>,
     }
     pub struct AssignPatProp {
+        pub node_id: NodeId,
         pub span: Span,
         pub key: Ident,
         pub value: Option<Box<Expr>>,
@@ -1102,30 +1183,36 @@ define!({
         Spread(SpreadAssignment),
     }
     pub struct KeyValueProp {
+        pub node_id: NodeId,
         pub key: PropName,
         pub value: Box<Expr>,
     }
     pub struct AssignProp {
+        pub node_id: NodeId,
         pub key: Ident,
         pub value: Box<Expr>,
     }
     pub struct GetterProp {
+        pub node_id: NodeId,
         pub span: Span,
         pub key: PropName,
         pub type_ann: Option<TsTypeAnn>,
         pub body: Option<BlockStmt>,
     }
     pub struct SetterProp {
+        pub node_id: NodeId,
         pub span: Span,
         pub key: PropName,
         pub param: ParamWithoutDecorators,
         pub body: Option<BlockStmt>,
     }
     pub struct MethodProp {
+        pub node_id: NodeId,
         pub key: PropName,
         pub function: Function,
     }
     pub struct SpreadAssignment {
+        pub node_id: NodeId,
         pub dot3_token: Span,
         pub expr: Box<Expr>,
     }
@@ -1136,10 +1223,12 @@ define!({
         Computed(ComputedPropName),
     }
     pub struct ComputedPropName {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: Box<Expr>,
     }
     pub struct BlockStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub stmts: Vec<Stmt>,
     }
@@ -1165,69 +1254,84 @@ define!({
         Expr(ExprStmt),
     }
     pub struct ExprStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: Box<Expr>,
     }
     pub struct EmptyStmt {
+        pub node_id: NodeId,
         pub span: Span,
     }
     pub struct DebuggerStmt {
+        pub node_id: NodeId,
         pub span: Span,
     }
     pub struct WithStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub obj: Box<Expr>,
         pub body: Box<Stmt>,
     }
     pub struct ReturnStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub arg: Option<Box<Expr>>,
     }
     pub struct LabeledStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub label: Ident,
         pub body: Box<Stmt>,
     }
     pub struct BreakStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub label: Option<Ident>,
     }
     pub struct ContinueStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub label: Option<Ident>,
     }
     pub struct IfStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub test: Box<Expr>,
         pub cons: Box<Stmt>,
         pub alt: Option<Box<Stmt>>,
     }
     pub struct SwitchStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub discriminant: Box<Expr>,
         pub cases: Vec<SwitchCase>,
     }
     pub struct ThrowStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub arg: Box<Expr>,
     }
     pub struct TryStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub block: BlockStmt,
         pub handler: Option<CatchClause>,
         pub finalizer: Option<BlockStmt>,
     }
     pub struct WhileStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub test: Box<Expr>,
         pub body: Box<Stmt>,
     }
     pub struct DoWhileStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub test: Box<Expr>,
         pub body: Box<Stmt>,
     }
     pub struct ForStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub init: Option<VarDeclOrExpr>,
         pub test: Option<Box<Expr>>,
@@ -1235,12 +1339,14 @@ define!({
         pub body: Box<Stmt>,
     }
     pub struct ForInStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub left: VarDeclOrPat,
         pub right: Box<Expr>,
         pub body: Box<Stmt>,
     }
     pub struct ForOfStmt {
+        pub node_id: NodeId,
         pub span: Span,
         pub await_token: Option<Span>,
         pub left: VarDeclOrPat,
@@ -1248,11 +1354,13 @@ define!({
         pub body: Box<Stmt>,
     }
     pub struct SwitchCase {
+        pub node_id: NodeId,
         pub span: Span,
         pub test: Option<Box<Expr>>,
         pub cons: Vec<Stmt>,
     }
     pub struct CatchClause {
+        pub node_id: NodeId,
         pub span: Span,
         pub param: Option<Pat>,
         pub body: BlockStmt,
@@ -1266,20 +1374,24 @@ define!({
         Expr(Box<Expr>),
     }
     pub struct TsTypeAnn {
+        pub node_id: NodeId,
         pub span: Span,
         pub type_ann: Box<TsType>,
     }
     pub struct TsTypeParamDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub name: Ident,
         pub constraint: Option<Box<TsType>>,
         pub default: Option<Box<TsType>>,
     }
     pub struct TsTypeParamInstantiation {
+        pub node_id: NodeId,
         pub span: Span,
         pub params: Vec<Box<TsType>>,
     }
     pub struct TsParamProp {
+        pub node_id: NodeId,
         pub span: Span,
         pub decorators: Vec<Decorator>,
         pub accessibility: Option<Accessibility>,
@@ -1292,6 +1404,7 @@ define!({
         Assign(AssignPat),
     }
     pub struct TsQualifiedName {
+        pub node_id: NodeId,
         pub left: TsEntityName,
         pub right: Ident,
     }
@@ -1309,18 +1422,21 @@ define!({
         TsIndexSignature(TsIndexSignature),
     }
     pub struct TsCallSignatureDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub params: Vec<TsAmbientParam>,
         pub type_ann: Option<TsTypeAnn>,
         pub type_params: Option<Vec<TsTypeParamDecl>>,
     }
     pub struct TsConstructSignatureDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub params: Vec<TsAmbientParam>,
         pub type_ann: Option<TsTypeAnn>,
         pub type_params: Option<Vec<TsTypeParamDecl>>,
     }
     pub struct TsPropertySignature {
+        pub node_id: NodeId,
         pub span: Span,
         pub readonly: bool,
         pub key: PropName,
@@ -1329,6 +1445,7 @@ define!({
     }
 
     pub struct TsGetterSignature {
+        pub node_id: NodeId,
         pub span: Span,
         pub readonly: bool,
         pub key: PropName,
@@ -1337,6 +1454,7 @@ define!({
     }
 
     pub struct TsSetterSignature {
+        pub node_id: NodeId,
         pub span: Span,
         pub readonly: bool,
         pub key: PropName,
@@ -1344,6 +1462,7 @@ define!({
         pub param: TsAmbientParam,
     }
     pub struct TsMethodSignature {
+        pub node_id: NodeId,
         pub span: Span,
         pub readonly: bool,
         pub key: PropName,
@@ -1353,6 +1472,7 @@ define!({
         pub type_params: Option<Vec<TsTypeParamDecl>>,
     }
     pub struct TsIndexSignature {
+        pub node_id: NodeId,
         pub params: Vec<TsAmbientParam>,
         pub type_ann: Option<TsTypeAnn>,
         pub readonly: bool,
@@ -1386,6 +1506,7 @@ define!({
         TsConstructorType(TsConstructorType),
     }
     pub struct TsKeywordType {
+        pub node_id: NodeId,
         pub span: Span,
         pub kind: TsKeywordTypeKind,
     }
@@ -1405,9 +1526,11 @@ define!({
         TsIntrinsicKeyword,
     }
     pub struct TsThisType {
+        pub node_id: NodeId,
         pub span: Span,
     }
     pub struct TsAmbientParam {
+        pub node_id: NodeId,
         pub pat: TsAmbientParamPat,
     }
     pub enum TsAmbientParamPat {
@@ -1417,12 +1540,14 @@ define!({
         Object(ObjectPat),
     }
     pub struct TsFnType {
+        pub node_id: NodeId,
         pub span: Span,
         pub params: Vec<TsAmbientParam>,
         pub type_params: Option<Vec<TsTypeParamDecl>>,
         pub type_ann: TsTypeAnn,
     }
     pub struct TsConstructorType {
+        pub node_id: NodeId,
         pub span: Span,
         pub params: Vec<TsAmbientParam>,
         pub type_params: Option<Vec<TsTypeParamDecl>>,
@@ -1430,11 +1555,13 @@ define!({
         pub is_abstract: bool,
     }
     pub struct TsTypeRef {
+        pub node_id: NodeId,
         pub span: Span,
         pub type_name: TsEntityName,
         pub type_params: Option<TsTypeParamInstantiation>,
     }
     pub struct TsTypePredicate {
+        pub node_id: NodeId,
         pub span: Span,
         pub asserts: bool,
         pub param_name: TsThisTypeOrIdent,
@@ -1445,6 +1572,7 @@ define!({
         Ident(Ident),
     }
     pub struct TsTypeQuery {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr_name: TsTypeQueryExpr,
     }
@@ -1453,36 +1581,43 @@ define!({
         Import(TsImportType),
     }
     pub struct TsImportType {
+        pub node_id: NodeId,
         pub span: Span,
         pub arg: Str,
         pub qualifier: Option<TsEntityName>,
         pub type_args: Option<TsTypeParamInstantiation>,
     }
     pub struct TsTypeLit {
+        pub node_id: NodeId,
         pub span: Span,
         pub members: Vec<TsTypeElement>,
     }
     pub struct TsArrayType {
+        pub node_id: NodeId,
         pub span: Span,
         pub elem_type: Box<TsType>,
     }
 
     pub struct TsTupleType {
+        pub node_id: NodeId,
         pub span: Span,
         pub elem_types: Vec<TsTupleElement>,
     }
 
     pub struct TsTupleElement {
+        pub node_id: NodeId,
         pub span: Span,
         pub label: Option<Pat>,
         pub ty: TsType,
     }
 
     pub struct TsOptionalType {
+        pub node_id: NodeId,
         pub span: Span,
         pub type_ann: Box<TsType>,
     }
     pub struct TsRestType {
+        pub node_id: NodeId,
         pub span: Span,
         pub type_ann: Box<TsType>,
     }
@@ -1491,14 +1626,17 @@ define!({
         TsIntersectionType(TsIntersectionType),
     }
     pub struct TsUnionType {
+        pub node_id: NodeId,
         pub span: Span,
         pub types: Vec<Box<TsType>>,
     }
     pub struct TsIntersectionType {
+        pub node_id: NodeId,
         pub span: Span,
         pub types: Vec<Box<TsType>>,
     }
     pub struct TsConditionalType {
+        pub node_id: NodeId,
         pub span: Span,
         pub check_type: Box<TsType>,
         pub extends_type: Box<TsType>,
@@ -1506,14 +1644,17 @@ define!({
         pub false_type: Box<TsType>,
     }
     pub struct TsInferType {
+        pub node_id: NodeId,
         pub span: Span,
         pub type_param: TsTypeParamDecl,
     }
     pub struct TsParenthesizedType {
+        pub node_id: NodeId,
         pub span: Span,
         pub type_ann: Box<TsType>,
     }
     pub struct TsTypeOperator {
+        pub node_id: NodeId,
         pub span: Span,
         pub op: TsTypeOperatorOp,
         pub type_ann: Box<TsType>,
@@ -1524,6 +1665,7 @@ define!({
         ReadOnly,
     }
     pub struct TsIndexedAccessType {
+        pub node_id: NodeId,
         pub span: Span,
         pub readonly: bool,
         pub obj_type: Box<TsType>,
@@ -1535,6 +1677,7 @@ define!({
         Minus,
     }
     pub struct TsMappedType {
+        pub node_id: NodeId,
         pub span: Span,
         pub readonly: Option<TruePlusMinus>,
         pub type_param: TsTypeParamDecl,
@@ -1543,6 +1686,7 @@ define!({
         pub type_ann: Option<Box<TsType>>,
     }
     pub struct TsLitType {
+        pub node_id: NodeId,
         pub span: Span,
         pub lit: TsLit,
     }
@@ -1554,11 +1698,13 @@ define!({
         Tpl(TsTplLitType),
     }
     pub struct TsTplLitType {
+        pub node_id: NodeId,
         pub span: Span,
         pub types: Vec<Box<TsType>>,
         pub quasis: Vec<TplElement>,
     }
     pub struct TsInterfaceDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub id: Ident,
         pub declare: bool,
@@ -1567,15 +1713,18 @@ define!({
         pub body: TsInterfaceBody,
     }
     pub struct TsInterfaceBody {
+        pub node_id: NodeId,
         pub span: Span,
         pub body: Vec<TsTypeElement>,
     }
     pub struct TsExprWithTypeArgs {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: TsEntityName,
         pub type_args: Option<TsTypeParamInstantiation>,
     }
     pub struct TsTypeAliasDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub declare: bool,
         pub id: Ident,
@@ -1583,6 +1732,7 @@ define!({
         pub type_ann: Box<TsType>,
     }
     pub struct TsEnumDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub declare: bool,
         pub is_const: bool,
@@ -1590,6 +1740,7 @@ define!({
         pub members: Vec<TsEnumMember>,
     }
     pub struct TsEnumMember {
+        pub node_id: NodeId,
         pub span: Span,
         pub id: TsEnumMemberId,
         pub init: Option<Box<Expr>>,
@@ -1599,6 +1750,7 @@ define!({
         Str(Str),
     }
     pub struct TsModuleDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub declare: bool,
         pub global: bool,
@@ -1610,10 +1762,12 @@ define!({
         TsNamespaceDecl(TsNamespaceDecl),
     }
     pub struct TsModuleBlock {
+        pub node_id: NodeId,
         pub span: Span,
         pub body: Vec<ModuleItem>,
     }
     pub struct TsNamespaceDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub declare: bool,
         pub global: bool,
@@ -1625,6 +1779,7 @@ define!({
         Str(Str),
     }
     pub struct TsImportEqualsDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub declare: bool,
         pub is_export: bool,
@@ -1637,28 +1792,34 @@ define!({
         TsExternalModuleRef(TsExternalModuleRef),
     }
     pub struct TsExternalModuleRef {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: Str,
     }
     pub struct TsExportAssignment {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: Box<Expr>,
     }
     pub struct TsNamespaceExportDecl {
+        pub node_id: NodeId,
         pub span: Span,
         pub id: Ident,
     }
     pub struct TsAsExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: Box<Expr>,
         pub type_ann: Box<TsType>,
     }
     pub struct TsTypeAssertion {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: Box<Expr>,
         pub type_ann: Box<TsType>,
     }
     pub struct TsNonNullExpr {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: Box<Expr>,
     }
@@ -1668,6 +1829,7 @@ define!({
         Private,
     }
     pub struct TsConstAssertion {
+        pub node_id: NodeId,
         pub span: Span,
         pub expr: Box<Expr>,
     }

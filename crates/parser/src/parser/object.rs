@@ -48,6 +48,7 @@ impl<I: Tokens> Parser<I> {
             let v = match *cur!(parser, true)? {
                 Token::Str { .. } => match parser.input.bump() {
                     Token::Str { value, has_escape } => PropName::Str(Str {
+                        node_id: node_id!(parser),
                         span: span!(parser, start),
                         value,
                         has_escape,
@@ -59,6 +60,7 @@ impl<I: Tokens> Parser<I> {
                 },
                 Token::Num { .. } => match parser.input.bump() {
                     Token::Num { value, raw } => PropName::Num(Number {
+                        node_id: node_id!(parser),
                         span: span!(parser, start),
                         value,
                         raw: Some(raw),
@@ -100,6 +102,7 @@ impl<I: Tokens> Parser<I> {
 
                         expr = Box::new(
                             SeqExpr {
+                                node_id: node_id!(parser),
                                 span: span!(parser, inner_start),
                                 exprs,
                             }
@@ -110,6 +113,7 @@ impl<I: Tokens> Parser<I> {
                     expect!(parser, ']');
 
                     PropName::Computed(ComputedPropName {
+                        node_id: node_id!(parser),
                         span: span!(parser, start),
                         expr,
                     })
@@ -129,7 +133,11 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
     type Prop = Prop;
 
     fn make_object(&mut self, span: Span, props: Vec<Self::Prop>) -> PResult<Box<Expr>> {
-        Ok(Box::new(Expr::Object(ObjectLit { span, props })))
+        Ok(Box::new(Expr::Object(ObjectLit {
+            node_id: node_id!(self),
+            span,
+            props,
+        })))
     }
 
     /// spec: 'PropertyDefinition'
@@ -145,7 +153,11 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
 
             let expr = self.include_in_expr(true).parse_assignment_expr()?;
 
-            return Ok(Prop::Spread(SpreadAssignment { dot3_token, expr }));
+            return Ok(Prop::Spread(SpreadAssignment {
+                node_id: node_id!(self),
+                dot3_token,
+                expr,
+            }));
         }
 
         if self.input.eat(&tok!('*')) {
@@ -161,6 +173,7 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                 )
                 .map(|function| {
                     Prop::Method(MethodProp {
+                        node_id: node_id!(self),
                         key: name,
                         function,
                     })
@@ -181,8 +194,10 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
 
             self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
             return Ok(Prop::KeyValue(KeyValueProp {
+                node_id: node_id!(self),
                 key,
                 value: Box::new(Expr::Invalid(Invalid {
+                    node_id: node_id!(self),
                     span: span!(self, start),
                 })),
             }));
@@ -194,7 +209,11 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
         // { a: expr, }
         if self.input.eat(&tok!(':')) {
             let value = self.include_in_expr(true).parse_assignment_expr()?;
-            return Ok(Prop::KeyValue(KeyValueProp { key, value }));
+            return Ok(Prop::KeyValue(KeyValueProp {
+                node_id: node_id!(self),
+                key,
+                value,
+            }));
         }
 
         // Handle `a(){}` (and async(){} / get(){} / set(){})
@@ -208,7 +227,13 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                     false,
                     false,
                 )
-                .map(|function| Prop::Method(MethodProp { key, function }));
+                .map(|function| {
+                    Prop::Method(MethodProp {
+                        node_id: node_id!(self),
+                        key,
+                        function,
+                    })
+                });
         }
 
         let ident = match key {
@@ -230,7 +255,11 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
 
             if self.input.eat(&tok!('=')) {
                 let value = self.include_in_expr(true).parse_assignment_expr()?;
-                return Ok(Prop::Assign(AssignProp { key: ident, value }));
+                return Ok(Prop::Assign(AssignProp {
+                    node_id: node_id!(self),
+                    key: ident,
+                    value,
+                }));
             }
 
             return Ok(Prop::from(ident));
@@ -283,6 +312,7 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                                 }
 
                                 Prop::Getter(GetterProp {
+                                    node_id: node_id!(self),
                                     span: span!(self, start),
                                     key,
                                     type_ann: return_type,
@@ -325,15 +355,24 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                         .map(|Function { params, body, .. }| {
                             // debug_assert_eq!(params.len(), 1);
                             Prop::Setter(SetterProp {
+                                node_id: node_id!(self),
                                 span: span!(self, start),
                                 key,
                                 body,
                                 param: params
                                     .into_iter()
-                                    .map(|param| param.pat.into())
+                                    .map(|param| {
+                                        ParamWithoutDecorators::from_pat(param.pat, node_id!(self))
+                                    })
                                     .next()
                                     .unwrap_or_else(|| {
-                                        Pat::Invalid(Invalid { span: key_span }).into()
+                                        ParamWithoutDecorators::from_pat(
+                                            Pat::Invalid(Invalid {
+                                                node_id: node_id!(self),
+                                                span: key_span,
+                                            }),
+                                            node_id!(self),
+                                        )
                                     }),
                             })
                         }),
@@ -346,7 +385,13 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                             true,
                             is_generator,
                         )
-                        .map(|function| Prop::Method(MethodProp { key, function })),
+                        .map(|function| {
+                            Prop::Method(MethodProp {
+                                node_id: node_id!(self),
+                                key,
+                                function,
+                            })
+                        }),
                     _ => unreachable!(),
                 }
             }
@@ -392,6 +437,7 @@ impl<I: Tokens> ParseObject<Pat> for Parser<I> {
             (self.input.syntax().dts() || self.ctx().in_declare) && self.input.eat(&tok!('?'));
 
         Ok(Pat::Object(ObjectPat {
+            node_id: node_id!(self),
             span,
             props,
             optional,
@@ -410,6 +456,7 @@ impl<I: Tokens> ParseObject<Pat> for Parser<I> {
             let arg = Box::new(self.parse_binding_pat_or_ident()?);
 
             return Ok(ObjectPatProp::Rest(RestPat {
+                node_id: node_id!(self),
                 span: span!(self, start),
                 dot3_token,
                 arg,
@@ -421,7 +468,11 @@ impl<I: Tokens> ParseObject<Pat> for Parser<I> {
         if self.input.eat(&tok!(':')) {
             let value = Box::new(self.parse_binding_element()?);
 
-            return Ok(ObjectPatProp::KeyValue(KeyValuePatProp { key, value }));
+            return Ok(ObjectPatProp::KeyValue(KeyValuePatProp {
+                node_id: node_id!(self),
+                key,
+                value,
+            }));
         }
         let key = match key {
             PropName::Ident(ident) => ident,
@@ -441,6 +492,7 @@ impl<I: Tokens> ParseObject<Pat> for Parser<I> {
         };
 
         Ok(ObjectPatProp::Assign(AssignPatProp {
+            node_id: node_id!(self),
             span: span!(self, start),
             key,
             value,

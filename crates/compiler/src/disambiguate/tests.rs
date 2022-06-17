@@ -93,6 +93,7 @@ impl<'a> Tester<'a> {
         module.visit_mut_with(&mut DropSpan {
             preserve_ctxt: true,
         });
+        module.visit_mut_with(&mut DropNodeId);
 
         Ok(module)
     }
@@ -144,6 +145,7 @@ pub(crate) fn test_transform<F, P>(
         actual.visit_mut_with(&mut DropSpan {
             preserve_ctxt: false,
         });
+        actual.visit_mut_with(&mut DropNodeId);
 
         if actual == expected {
             return Ok(());
@@ -185,5 +187,11 @@ impl VisitMut for DropSpan {
         } else {
             DUMMY_SP
         };
+    }
+}
+struct DropNodeId;
+impl VisitMut for DropNodeId {
+    fn visit_mut_node_id(&mut self, span: &mut NodeId) {
+        *span = NodeId::from_u32(0);
     }
 }

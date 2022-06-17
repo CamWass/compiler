@@ -1,4 +1,4 @@
-use crate::jsx::JSXText;
+use crate::{jsx::JSXText, NodeId};
 use global_common::{ast_node, integer_decode::integer_decode, EqIgnoreSpan, Span};
 use num_bigint::BigInt as BigIntValue;
 use serde::{Deserialize, Serialize};
@@ -36,6 +36,8 @@ pub enum Lit {
 #[ast_node("BigIntLiteral")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct BigInt {
+    pub node_id: NodeId,
+
     pub span: Span,
     pub value: BigIntValue,
 }
@@ -53,6 +55,8 @@ impl arbitrary::Arbitrary for BigInt {
 #[ast_node("StringLiteral")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct Str {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     pub value: JsWord,
@@ -127,6 +131,8 @@ impl Str {
 #[ast_node("BooleanLiteral")]
 #[derive(Copy, Eq, Hash, EqIgnoreSpan)]
 pub struct Bool {
+    pub node_id: NodeId,
+
     pub span: Span,
     pub value: bool,
 }
@@ -134,12 +140,16 @@ pub struct Bool {
 #[ast_node("NullLiteral")]
 #[derive(Copy, Eq, Hash, EqIgnoreSpan)]
 pub struct Null {
+    pub node_id: NodeId,
+
     pub span: Span,
 }
 
 #[ast_node("RegExpLiteral")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct Regex {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     #[serde(rename = "pattern")]
@@ -163,6 +173,8 @@ impl arbitrary::Arbitrary for Regex {
 #[ast_node("NumericLiteral")]
 #[derive(EqIgnoreSpan)]
 pub struct Number {
+    pub node_id: NodeId,
+
     pub span: Span,
     /// **Note**: This should not be `NaN`. Use [crate::Ident] to represent NaN.
     ///

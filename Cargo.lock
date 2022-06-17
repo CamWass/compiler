@@ -58,6 +58,7 @@ name = "ast"
 version = "0.1.0"
 dependencies = [
  "global_common",
+ "index",
  "num-bigint",
  "serde",
  "serde_json",

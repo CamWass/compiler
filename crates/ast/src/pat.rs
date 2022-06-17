@@ -1,12 +1,11 @@
-use crate::ident::BindingIdent;
-use crate::{expr::Expr, ident::Ident, prop::PropName, typescript::TsTypeAnn, Invalid};
+use crate::{
+    expr::Expr,
+    ident::{BindingIdent, Ident},
+    prop::PropName,
+    typescript::TsTypeAnn,
+    Invalid, NodeId,
+};
 use global_common::{ast_node, EqIgnoreSpan, Span};
-
-impl From<Ident> for Pat {
-    fn from(i: Ident) -> Self {
-        BindingIdent::from(i).into()
-    }
-}
 
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
@@ -37,6 +36,8 @@ pub enum Pat {
 #[ast_node("ArrayPattern")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ArrayPat {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     #[serde(rename = "elements")]
@@ -53,6 +54,8 @@ pub struct ArrayPat {
 #[ast_node("ObjectPattern")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ObjectPat {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     #[serde(rename = "properties")]
@@ -69,6 +72,8 @@ pub struct ObjectPat {
 #[ast_node("AssignmentPattern")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct AssignPat {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     pub left: Box<Pat>,
@@ -83,6 +88,8 @@ pub struct AssignPat {
 #[ast_node("RestElement")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct RestPat {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     #[serde(rename = "rest")]
@@ -112,6 +119,8 @@ pub enum ObjectPatProp {
 #[ast_node("KeyValuePatternProperty")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct KeyValuePatProp {
+    pub node_id: NodeId,
+
     #[span(lo)]
     pub key: PropName,
 
@@ -122,6 +131,8 @@ pub struct KeyValuePatProp {
 #[ast_node("AssignmentPatternProperty")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct AssignPatProp {
+    pub node_id: NodeId,
+
     pub span: Span,
     pub key: Ident,
 

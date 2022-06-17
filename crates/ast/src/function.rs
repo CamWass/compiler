@@ -3,6 +3,7 @@ use crate::{
     pat::Pat,
     stmt::BlockStmt,
     typescript::{TsParamProp, TsTypeAnn, TsTypeParamDecl},
+    NodeId,
 };
 use global_common::{ast_node, EqIgnoreSpan, Span};
 
@@ -10,6 +11,8 @@ use global_common::{ast_node, EqIgnoreSpan, Span};
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct Function {
+    pub node_id: NodeId,
+
     pub params: Vec<Param>,
 
     #[serde(default)]
@@ -38,6 +41,8 @@ pub struct Function {
 #[ast_node("Parameter")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct Param {
+    pub node_id: NodeId,
+
     pub span: Span,
     #[serde(default)]
     pub decorators: Vec<Decorator>,
@@ -47,13 +52,15 @@ pub struct Param {
 #[ast_node("ParamWithoutDecorators")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ParamWithoutDecorators {
+    pub node_id: NodeId,
+
     #[span]
     pub pat: Pat,
 }
 
-impl From<Pat> for ParamWithoutDecorators {
-    fn from(pat: Pat) -> Self {
-        Self { pat }
+impl ParamWithoutDecorators {
+    pub fn from_pat(pat: Pat, node_id: NodeId) -> Self {
+        Self { node_id, pat }
     }
 }
 

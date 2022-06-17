@@ -3,6 +3,7 @@ use crate::{
     expr::Expr,
     ident::Ident,
     pat::Pat,
+    NodeId,
 };
 use global_common::{ast_node, EqIgnoreSpan, Span};
 
@@ -10,6 +11,8 @@ use global_common::{ast_node, EqIgnoreSpan, Span};
 #[ast_node("BlockStatement")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct BlockStmt {
+    pub node_id: NodeId,
+
     /// Span including the braces.
     pub span: Span,
 
@@ -87,6 +90,8 @@ pub enum Stmt {
 #[ast_node("ExpressionStatement")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ExprStmt {
+    pub node_id: NodeId,
+
     pub span: Span,
     #[serde(rename = "expression")]
     pub expr: Box<Expr>,
@@ -95,6 +100,8 @@ pub struct ExprStmt {
 #[ast_node("EmptyStatement")]
 #[derive(Eq, Hash, Copy, EqIgnoreSpan)]
 pub struct EmptyStmt {
+    pub node_id: NodeId,
+
     /// Span of semicolon.
     pub span: Span,
 }
@@ -102,12 +109,16 @@ pub struct EmptyStmt {
 #[ast_node("DebuggerStatement")]
 #[derive(Eq, Hash, Copy, EqIgnoreSpan)]
 pub struct DebuggerStmt {
+    pub node_id: NodeId,
+
     pub span: Span,
 }
 
 #[ast_node("WithStatement")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct WithStmt {
+    pub node_id: NodeId,
+
     pub span: Span,
     #[serde(rename = "object")]
     pub obj: Box<Expr>,
@@ -117,6 +128,8 @@ pub struct WithStmt {
 #[ast_node("ReturnStatement")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ReturnStmt {
+    pub node_id: NodeId,
+
     pub span: Span,
     #[serde(default, rename = "argument")]
     pub arg: Option<Box<Expr>>,
@@ -125,6 +138,8 @@ pub struct ReturnStmt {
 #[ast_node("LabeledStatement")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct LabeledStmt {
+    pub node_id: NodeId,
+
     pub span: Span,
     pub label: Ident,
     pub body: Box<Stmt>,
@@ -133,6 +148,8 @@ pub struct LabeledStmt {
 #[ast_node("BreakStatement")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct BreakStmt {
+    pub node_id: NodeId,
+
     pub span: Span,
     #[serde(default)]
     pub label: Option<Ident>,
@@ -141,6 +158,8 @@ pub struct BreakStmt {
 #[ast_node("ContinueStatement")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ContinueStmt {
+    pub node_id: NodeId,
+
     pub span: Span,
     #[serde(default)]
     pub label: Option<Ident>,
@@ -149,6 +168,8 @@ pub struct ContinueStmt {
 #[ast_node("IfStatement")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct IfStmt {
+    pub node_id: NodeId,
+
     pub span: Span,
     pub test: Box<Expr>,
 
@@ -162,6 +183,8 @@ pub struct IfStmt {
 #[ast_node("SwitchStatement")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct SwitchStmt {
+    pub node_id: NodeId,
+
     pub span: Span,
     pub discriminant: Box<Expr>,
     pub cases: Vec<SwitchCase>,
@@ -170,6 +193,8 @@ pub struct SwitchStmt {
 #[ast_node("ThrowStatement")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ThrowStmt {
+    pub node_id: NodeId,
+
     pub span: Span,
     #[serde(rename = "argument")]
     pub arg: Box<Expr>,
@@ -178,6 +203,8 @@ pub struct ThrowStmt {
 #[ast_node("TryStatement")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TryStmt {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     pub block: BlockStmt,
@@ -192,6 +219,8 @@ pub struct TryStmt {
 #[ast_node("WhileStatement")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct WhileStmt {
+    pub node_id: NodeId,
+
     pub span: Span,
     pub test: Box<Expr>,
     pub body: Box<Stmt>,
@@ -200,6 +229,8 @@ pub struct WhileStmt {
 #[ast_node("DoWhileStatement")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct DoWhileStmt {
+    pub node_id: NodeId,
+
     pub span: Span,
     pub test: Box<Expr>,
     pub body: Box<Stmt>,
@@ -208,6 +239,8 @@ pub struct DoWhileStmt {
 #[ast_node("ForStatement")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ForStmt {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     #[serde(default)]
@@ -225,6 +258,8 @@ pub struct ForStmt {
 #[ast_node("ForInStatement")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ForInStmt {
+    pub node_id: NodeId,
+
     pub span: Span,
     pub left: VarDeclOrPat,
     pub right: Box<Expr>,
@@ -234,6 +269,8 @@ pub struct ForInStmt {
 #[ast_node("ForOfStatement")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ForOfStmt {
+    pub node_id: NodeId,
+
     pub span: Span,
     /// Span of the await token.
     ///
@@ -250,6 +287,8 @@ pub struct ForOfStmt {
 #[ast_node("SwitchCase")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct SwitchCase {
+    pub node_id: NodeId,
+
     pub span: Span,
 
     /// None for `default:`
@@ -263,6 +302,8 @@ pub struct SwitchCase {
 #[ast_node("CatchClause")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct CatchClause {
+    pub node_id: NodeId,
+
     pub span: Span,
     /// es2019
     ///
