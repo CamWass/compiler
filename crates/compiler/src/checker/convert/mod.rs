@@ -14,7 +14,6 @@ use parse_num::{parse_num, ConversionFlags};
 /// Based on V8's implementation.
 // Ported from (the bottom of): https://github.com/v8/v8/blob/62130792d1e439b4ccb4df6942ef17c26c1ca5bb/src/objects/string.cc#L690
 pub fn ecma_string_to_number(string: &str) -> f64 {
-    use parse_num::{parse_num, ConversionFlags};
     let flags =
         ConversionFlags::ALLOW_HEX | ConversionFlags::ALLOW_OCTAL | ConversionFlags::ALLOW_BINARY;
     parse_num(string, flags, 0.0)

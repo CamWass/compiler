@@ -1523,28 +1523,6 @@ impl UnionOrIntersectionType {
     }
 }
 
-// pub trait AsUnionOrIntersectionType {
-//     fn get_types(&self) -> &Vec<TypeId>;
-//     fn get_objectFlags(&self) -> &ObjectFlags;
-//     fn get_propertyCache(&self) -> &SymbolTable;
-//     fn get_propertyCacheWithoutObjectFunctionPropertyAugment(&self) -> &SymbolTable;
-//     fn get_resolvedProperties(&self) -> &Vec<SymbolId>;
-//     fn get_resolvedIndexType(&self) -> &Option<TypeId>;
-//     fn get_resolvedStringIndexType(&self) -> &Option<TypeId>;
-//     fn get_resolvedBaseConstraint(&self) -> &Option<TypeId>;
-// }
-
-// pub trait AsUnionOrIntersectionTypeMut {
-//     fn get_types_mut(&self) -> &mut Vec<TypeId>;
-//     fn get_objectFlags_mut(&self) -> &mut ObjectFlags;
-//     fn get_propertyCache_mut(&self) -> &mut SymbolTable;
-//     fn get_propertyCacheWithoutObjectFunctionPropertyAugment_mut(&self) -> &mut SymbolTable;
-//     fn get_resolvedProperties_mut(&self) -> &mut Vec<SymbolId>;
-//     fn get_resolvedIndexType_mut(&self) -> &mut Option<TypeId>;
-//     fn get_resolvedStringIndexType_mut(&self) -> &mut Option<TypeId>;
-//     fn get_resolvedBaseConstraint_mut(&self) -> &mut Option<TypeId>;
-// }
-
 #[derive(Debug, Default)]
 pub struct UnionTypeBase {
     pub resolvedReducedType: Option<TypeId>,
@@ -1561,64 +1539,6 @@ pub struct UnionType {
 
     pub union_type_base: UnionTypeBase,
 }
-
-// impl AsUnionOrIntersectionType for UnionType {
-//     fn get_types(&self) -> &Vec<TypeId> {
-//         &self.union_or_intersection_type.types
-//     }
-//     fn get_objectFlags(&self) -> &ObjectFlags {
-//         &self.union_or_intersection_type.objectFlags
-//     }
-//     fn get_propertyCache(&self) -> &SymbolTable {
-//         &self.union_or_intersection_type.propertyCache
-//     }
-//     fn get_propertyCacheWithoutObjectFunctionPropertyAugment(&self) -> &SymbolTable {
-//         &self
-//             .union_or_intersection_type
-//             .propertyCacheWithoutObjectFunctionPropertyAugment
-//     }
-//     fn get_resolvedProperties(&self) -> &Vec<SymbolId> {
-//         &self.union_or_intersection_type.resolvedProperties
-//     }
-//     fn get_resolvedIndexType(&self) -> &Option<TypeId> {
-//         &self.union_or_intersection_type.resolvedIndexType
-//     }
-//     fn get_resolvedStringIndexType(&self) -> &Option<TypeId> {
-//         &self.union_or_intersection_type.resolvedStringIndexType
-//     }
-//     fn get_resolvedBaseConstraint(&self) -> &Option<TypeId> {
-//         &self.union_or_intersection_type.resolvedBaseConstraint
-//     }
-// }
-
-// impl AsUnionOrIntersectionTypeMut for UnionType {
-//     fn get_types_mut(&self) -> &mut Vec<TypeId> {
-//         &mut self.union_or_intersection_type.types
-//     }
-//     fn get_objectFlags_mut(&self) -> &mut ObjectFlags {
-//         &mut self.union_or_intersection_type.objectFlags
-//     }
-//     fn get_propertyCache_mut(&self) -> &mut SymbolTable {
-//         &mut self.union_or_intersection_type.propertyCache
-//     }
-//     fn get_propertyCacheWithoutObjectFunctionPropertyAugment_mut(&self) -> &mut SymbolTable {
-//         &mut self
-//             .union_or_intersection_type
-//             .propertyCacheWithoutObjectFunctionPropertyAugment
-//     }
-//     fn get_resolvedProperties_mut(&self) -> &mut Vec<SymbolId> {
-//         &mut self.union_or_intersection_type.resolvedProperties
-//     }
-//     fn get_resolvedIndexType_mut(&self) -> &mut Option<TypeId> {
-//         &mut self.union_or_intersection_type.resolvedIndexType
-//     }
-//     fn get_resolvedStringIndexType_mut(&self) -> &mut Option<TypeId> {
-//         &mut self.union_or_intersection_type.resolvedStringIndexType
-//     }
-//     fn get_resolvedBaseConstraint_mut(&self) -> &mut Option<TypeId> {
-//         &mut self.union_or_intersection_type.resolvedBaseConstraint
-//     }
-// }
 
 #[derive(Debug)]
 pub struct IntersectionType {
