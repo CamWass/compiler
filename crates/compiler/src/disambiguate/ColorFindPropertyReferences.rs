@@ -3,16 +3,13 @@ use std::rc::Rc;
 use super::ColorGraphNode::PropAssociation;
 use super::ColorGraphNodeFactory::ColorGraphNodeFactory;
 use super::PropertyClustering::{PropertyClustering, PropertyClusteringId};
-use crate::colors::color_registry::ColorRegistry;
 use crate::colors::ColorId;
 use crate::node::{Bind, BoundNode};
-use crate::types::TypeId;
 use crate::utils::{isBindableObjectDefinePropertyCall, unwrap_as};
 use crate::visit::{Visit, VisitWith};
 use crate::{ast, CompProgram};
 use index::vec::IndexVec;
 use rustc_hash::FxHashMap;
-use std::fmt::Debug;
 use swc_atoms::JsWord;
 
 pub struct ColorFindPropertyReferences<'col, 'nf> {

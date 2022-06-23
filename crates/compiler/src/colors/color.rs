@@ -1,6 +1,5 @@
 use super::ColorId;
 use rustc_hash::FxHashSet;
-use swc_atoms::JsWord;
 
 /** A simplified version of a Closure or TS type for use by optimizations */
 #[derive(Default, Debug)]

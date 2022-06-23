@@ -1,21 +1,8 @@
 use super::color::Color;
 use super::ColorId;
-use crate::ast;
-use crate::node::{Bind, BoundNode};
-use crate::types::*;
-use crate::types_composition::*;
-use crate::utils::*;
-use crate::visit::{Visit, VisitWith};
-use crate::Checker;
-use crate::CompProgram;
-use index::{
-    newtype_index,
-    vec::{Idx, IndexVec},
-};
+use crate::node::BoundNode;
+use index::vec::{Idx, IndexVec};
 use rustc_hash::{FxHashMap, FxHashSet};
-use std::iter::FromIterator;
-use std::rc::Rc;
-use swc_atoms::{js_word, JsWord};
 
 #[derive(Debug)]
 pub struct ColorRegistry {
@@ -47,7 +34,7 @@ impl ColorRegistry {
                     let $name = start;
                     start = start.plus(1);
                 )*
-                colors.extend(std::array::IntoIter::new([$($color,)*]));
+                colors.extend([$($color,)*]);
             };
         }
 

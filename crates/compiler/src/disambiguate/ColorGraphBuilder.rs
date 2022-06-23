@@ -82,7 +82,7 @@ impl<'col, 'nf> ColorGraphBuilder<'col, 'nf> {
             return;
         }
 
-        /**
+        /*
          * Connect the LCAs to the union.
          *
          * <p>The union itself will be found in most cases, but since we don't add self-edges, that
@@ -158,7 +158,7 @@ impl<'col, 'nf> ColorGraphBuilder<'col, 'nf> {
             self.connectSourceToDest(self.topNode, EdgeReason::ALGEBRAIC, flatNode);
         }
 
-        /**
+        /*
          * Add all instance and prototype colors when visiting a constructor. We won't necessarily see
          * all possible instance colors that exist at runtime during an AST traversal.
          *

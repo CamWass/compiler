@@ -12,7 +12,6 @@ use crate::CompProgram;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::iter::FromIterator;
 use std::rc::Rc;
-use swc_atoms::{js_word, JsWord};
 
 pub fn collect(checker: &mut Checker, program: &CompProgram) -> ColorRegistry {
     let mut collector = ColorCollector::new(checker);
@@ -43,7 +42,7 @@ impl<'c> ColorCollector<'c> {
     fn add_standard_colors(&mut self) {
         debug_assert!(self.registry.node_to_color_map.is_empty());
 
-        self.type_to_color_map.extend(std::array::IntoIter::new([
+        self.type_to_color_map.extend([
             // Merge all the various top/bottom-like/unknown types into a single unknown type.
             (self.checker.unknownType, self.registry.unknown_color),
             (self.checker.anyType, self.registry.unknown_color),
@@ -63,7 +62,7 @@ impl<'c> ColorCollector<'c> {
                 self.checker.nonPrimitiveType,
                 self.registry.top_object_color,
             ),
-        ]));
+        ]);
     }
 
     fn recordType(&mut self, mut ty: TypeId, todo_temp_node: Option<&BoundNode>) -> ColorId {

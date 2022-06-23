@@ -2852,11 +2852,6 @@ pub fn getEffectiveTypeParameterDeclarations<'a>(
     //     Debug.assert(node.parent.kind == SyntaxKind.JSDocComment);
     //     return flatMap(node.parent.tags, tag => isJSDocTemplateTag(tag) ? tag.typeParameters : undefined);
     // }
-    macro_rules! extract_type_params {
-        ($type_params:expr) => {{
-            return $type_params.as_ref().map(|d| &d.params);
-        }};
-    }
     match &node {
         // TODO: jsdoc
         // BoundNode::JSDocTemplateTag(_)

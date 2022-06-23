@@ -1,6 +1,5 @@
 use super::ColorGraphNode::{ColorGraphNode, ColorGraphNodeId};
 use crate::colors::{color_registry::ColorRegistry, ColorId};
-use crate::types::TypeId;
 use index::vec::IndexVec;
 use rustc_hash::FxHashMap;
 
@@ -18,7 +17,7 @@ impl<'c> ColorGraphNodeFactory<'c> {
 
         let unknown_type = colours.unknown_color;
 
-        let unknownTypeNode = ColorGraphNode::new(unknown_type, nodes.next_index());
+        let unknownTypeNode = ColorGraphNode::new(unknown_type);
         let unknownTypeNodeId = nodes.push(unknownTypeNode);
         typeIndex.insert(unknown_type, unknownTypeNodeId);
 
@@ -40,9 +39,7 @@ impl<'c> ColorGraphNodeFactory<'c> {
         match self.typeIndex.get(&key) {
             Some(node) => *node,
             None => {
-                let id = self.nodes.next_index();
-                let node = ColorGraphNode::new(key, id);
-                self.nodes.push(node);
+                let id = self.nodes.push(ColorGraphNode::new(key));
                 self.typeIndex.insert(key, id);
                 id
             }

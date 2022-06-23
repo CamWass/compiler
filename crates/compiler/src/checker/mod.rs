@@ -21,7 +21,6 @@ use index_set::IndexSet;
 use std::cmp;
 use std::collections::hash_map::Entry;
 use std::convert::TryFrom;
-use std::convert::TryInto;
 use std::hash::Hash;
 use std::hash::Hasher;
 use std::iter::FromIterator;
@@ -29245,7 +29244,7 @@ fn isResolvedByTypeAlias(node: &BoundNode) -> bool {
     false
 }
 
-fn getArrayElementTypeNode(mut node: &BoundNode) -> Option<BoundNode> {
+fn getArrayElementTypeNode(node: &BoundNode) -> Option<BoundNode> {
     match node {
         BoundNode::TsParenthesizedType(n) => {
             return getArrayElementTypeNode(&n.type_ann.bind(node.clone()));

@@ -1,4 +1,3 @@
-use petgraph::graph::{Graph, NodeIndex};
 use rustc_hash::FxHashMap;
 use std::cmp::Ordering;
 use std::hash::Hash;

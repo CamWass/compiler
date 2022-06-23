@@ -1,6 +1,6 @@
 use super::PropertyClustering::PropertyClusteringId;
-use crate::{colors::ColorId, types::TypeId};
-use index::{bit_set::GrowableBitSet, newtype_index, vec::IndexVec};
+use crate::colors::ColorId;
+use index::{bit_set::GrowableBitSet, newtype_index};
 use rustc_hash::FxHashMap;
 
 /**
@@ -16,21 +16,14 @@ use rustc_hash::FxHashMap;
 pub struct ColorGraphNode {
     pub color: ColorId,
     pub associatedProps: FxHashMap<PropertyClusteringId, PropAssociation>,
-    /**
-     * An ID used to efficiently construct a unique name for any cluster this node becomes the
-     * represenative of.
-     */
-    // TODO: remove
-    index: ColorGraphNodeId,
     pub subtypeIndices: GrowableBitSet<ColorGraphNodeId>,
 }
 
 impl ColorGraphNode {
-    pub fn new(single: ColorId, index: ColorGraphNodeId) -> Self {
+    pub fn new(color: ColorId) -> Self {
         Self {
-            color: single,
+            color,
             associatedProps: FxHashMap::default(),
-            index,
             subtypeIndices: GrowableBitSet::new_empty(),
         }
     }

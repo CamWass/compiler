@@ -1,7 +1,6 @@
 use super::ColorGraphNode::ColorGraphNodeId;
 use super::Invalidation::Invalidation;
 use crate::graph::StandardUnionFind::StandardUnionFind;
-use crate::node::BoundNode;
 use index::newtype_index;
 use rustc_hash::FxHashMap;
 use swc_atoms::JsWord;

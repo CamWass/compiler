@@ -1,6 +1,6 @@
-use ast::{Pat, *};
+use ast::*;
 use codegen::{text_writer::JsWriter, Emitter};
-use ecma_visit::{as_folder, Fold, FoldWith, VisitMut, VisitMutWith};
+use ecma_visit::{VisitMut, VisitMutWith};
 use global_common::{errors::Handler, sync::Lrc, FileName, SourceMap, Span, DUMMY_SP};
 use parser::{error::Error, lexer::Lexer, Parser, Syntax};
 

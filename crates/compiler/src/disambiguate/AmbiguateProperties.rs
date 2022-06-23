@@ -13,10 +13,9 @@ use crate::visit::{Visit, VisitWith};
 use crate::CompProgram;
 use crate::DefaultNameGenerator::DefaultNameGenerator;
 use ::ast::NodeId;
-use ecma_visit::{noop_visit_mut_type, VisitMut, VisitMutWith};
+use ecma_visit::{VisitMut, VisitMutWith};
 use index::bit_set::GrowableBitSet;
 use index::{newtype_index, vec::IndexVec};
-use petgraph::Graph;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::iter::FromIterator;
 use std::rc::Rc;
@@ -66,7 +65,7 @@ impl AmbiguateProperties {
 
         struct Traversal<'col, 'nf> {
             colorGraphNodeFactory: &'nf mut ColorGraphNodeFactory<'col>,
-        };
+        }
 
         impl EdgeCallback<ColorGraphNodeId, EdgeReason> for Traversal<'_, '_> {
             fn traverseEdge(
@@ -173,7 +172,7 @@ impl AmbiguateProperties {
             // TODO: bad clone:
             nodes.clone(),
             |a, b| {
-                /**
+                /*
                  * Sorts Property objects by their count, breaking ties lexicographically to ensure a deterministic
                  * total ordering.
                  */
@@ -657,7 +656,7 @@ mod tests {
     use codegen::{text_writer::JsWriter, Emitter};
     use ecma_visit::{VisitMut, VisitMutWith};
     use global_common::{errors::Handler, sync::Lrc, FileName, SourceMap, Span, DUMMY_SP};
-    use parser::{error::Error, lexer::Lexer, Parser, Syntax};
+    use parser::{Parser, Syntax};
 
     struct Tester<'a> {
         cm: Lrc<SourceMap>,
@@ -728,7 +727,7 @@ mod tests {
     }
 
     fn init(program: ast::Program, file_name: &str) -> (CompProgram, ColorRegistry) {
-        let mut program_ast = program;
+        let program_ast = program;
 
         let program_source_file = SourceFile {
             file_name: file_name.to_string(),

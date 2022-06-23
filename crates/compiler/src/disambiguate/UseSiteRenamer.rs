@@ -3,7 +3,7 @@ use super::{
     PropertyClustering::{PropertyClustering, PropertyClusteringId},
 };
 use ast::NodeId;
-use ecma_visit::{noop_visit_mut_type, VisitMut, VisitMutWith};
+use ecma_visit::{VisitMut, VisitMutWith};
 use index::vec::IndexVec;
 use rustc_hash::FxHashMap;
 use swc_atoms::JsWord;
@@ -25,7 +25,7 @@ pub fn rename_use_sites(
         let clusterNames = createAllClusterNames(&mut prop);
 
         if clusterNames.len() <= 1 {
-            /**
+            /*
              * Don't bother renaming clusters with a single element. Renaming won't actaully disambiguate
              * anything in this case, so skip the work.
              */

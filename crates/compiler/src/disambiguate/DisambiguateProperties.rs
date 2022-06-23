@@ -5,13 +5,10 @@ use super::ColorGraphNodeFactory::ColorGraphNodeFactory;
 use super::Invalidation::Invalidation;
 use super::PropertyClustering::*;
 use super::UseSiteRenamer::rename_use_sites;
-use crate::ast;
 use crate::colors::color_registry::ColorRegistry;
 use crate::graph::FixedPointGraphTraversal::*;
-use crate::visit::VisitWith;
 use crate::CompProgram;
 use index::vec::IndexVec;
-use petgraph::dot::Dot;
 
 /** Assembles the various parts of the diambiguator to execute them as a compiler pass. */
 pub struct DisambiguateProperties {}
@@ -129,7 +126,7 @@ mod tests {
     use codegen::{text_writer::JsWriter, Emitter};
     use ecma_visit::{VisitMut, VisitMutWith};
     use global_common::{errors::Handler, sync::Lrc, FileName, SourceMap, Span, DUMMY_SP};
-    use parser::{error::Error, lexer::Lexer, Parser, Syntax};
+    use parser::{Parser, Syntax};
 
     struct Tester<'a> {
         cm: Lrc<SourceMap>,
@@ -200,7 +197,7 @@ mod tests {
     }
 
     fn init(program: ast::Program, file_name: &str) -> (CompProgram, ColorRegistry) {
-        let mut program_ast = program;
+        let program_ast = program;
 
         let program_source_file = SourceFile {
             file_name: file_name.to_string(),

@@ -4,6 +4,7 @@
 #![allow(unused_variables)]
 #![deny(non_shorthand_field_patterns)]
 #![allow(warnings)]
+#![deny(unused_imports)]
 
 mod DefaultNameGenerator;
 pub mod ast;
@@ -20,11 +21,10 @@ pub mod utils;
 pub mod visit;
 
 use crate::ast as local_ast;
-use crate::node::{Bind, BoundNode};
+use crate::node::BoundNode;
 use crate::visit::{Visit, VisitWith};
 pub use checker::Checker;
 use ecma_visit::VisitMutWith;
-use std::rc::Rc;
 use types::*;
 
 #[derive(Debug, Clone)]
