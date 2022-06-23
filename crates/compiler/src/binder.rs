@@ -169,12 +169,10 @@ impl<'a> Binder<'a> {
         let mut flow_nodes = IndexVec::with_capacity(2);
         let unreachableFlow = flow_nodes.push(FlowNode {
             flags: FlowFlags::Unreachable,
-            id: None,
             kind: FlowNodeKind::None,
         });
         let reportedUnreachableFlow = flow_nodes.push(FlowNode {
             flags: FlowFlags::Unreachable,
-            id: None,
             kind: FlowNodeKind::None,
         });
         Binder {
@@ -851,7 +849,6 @@ impl<'a> Binder<'a> {
                 }
                 self.currentFlow = self.alloc_flow_node(FlowNode {
                     flags: FlowFlags::Start,
-                    id: None,
                     kind: FlowNodeKind::FlowStart(flow_start),
                 });
             }
@@ -1520,7 +1517,7 @@ impl<'a> Binder<'a> {
             BoundNode::ComputedPropName(n) => {
                 bind!(self, n.expr, node.clone());
             }
-            BoundNode::EmptyStmt(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
+            BoundNode::EmptyStmt(n) => {}
             BoundNode::DebuggerStmt(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
             BoundNode::WithStmt(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
             BoundNode::CatchClause(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
@@ -1689,27 +1686,54 @@ impl<'a> Binder<'a> {
 
     fn createFlowCondition(
         &mut self,
-        _flags: FlowFlags,
-        _antecedent: FlowNodeId,
-        _expression: Option<ast::Expr>,
+        flags: FlowFlags,
+        antecedent: FlowNodeId,
+        expression: Option<ast::Expr>,
     ) -> FlowNodeId {
-        todo!();
-        // if (antecedent.flags & FlowFlags.Unreachable) {
-        //     return antecedent;
+        if self.flow_nodes[antecedent]
+            .flags
+            .intersects(FlowFlags::Unreachable)
+        {
+            return antecedent;
+        }
+        let expression = match expression {
+            Some(e) => e,
+            None => {
+                return if flags.intersects(FlowFlags::TrueCondition) {
+                    antecedent
+                } else {
+                    self.unreachableFlow
+                };
+            }
+        };
+        // if (matches!(expression, ast::Expr::Lit(ast::Lit::Bool(b)) if b.value == true)
+        //     && flags.intersects(FlowFlags::FalseCondition)
+        //     || matches!(expression, ast::Expr::Lit(ast::Lit::Bool(b)) if b.value == false)
+        //         && flags.intersects(FlowFlags::TrueCondition))
+        //     && !isExpressionOfOptionalChainRoot(expression)
+        //     && !isNullishCoalesce(expression.parent)
+        // {
+        //     return self.unreachableFlow;
         // }
-        // if (!expression) {
-        //     return flags & FlowFlags.TrueCondition ? antecedent : unreachableFlow;
-        // }
-        // if ((expression.kind === SyntaxKind.TrueKeyword && flags & FlowFlags.FalseCondition ||
-        //     expression.kind === SyntaxKind.FalseKeyword && flags & FlowFlags.TrueCondition) &&
-        //     !isExpressionOfOptionalChainRoot(expression) && !isNullishCoalesce(expression.parent)) {
-        //     return unreachableFlow;
-        // }
-        // if (!isNarrowingExpression(expression)) {
-        //     return antecedent;
-        // }
-        // setFlowNodeReferenced(antecedent);
-        // return initFlowNode({ flags, antecedent, node: expression });
+        if matches!(&expression, ast::Expr::Lit(ast::Lit::Bool(b)) if b.value == true)
+            && flags.intersects(FlowFlags::FalseCondition)
+            || matches!(&expression, ast::Expr::Lit(ast::Lit::Bool(b)) if b.value == false)
+                && flags.intersects(FlowFlags::TrueCondition)
+        {
+            todo!("see above");
+        }
+        if !isNarrowingExpression(&expression) {
+            return antecedent;
+        }
+        self.setFlowNodeReferenced(antecedent);
+        let node = FlowNode {
+            flags,
+            kind: FlowNodeKind::FlowCondition(FlowCondition {
+                antecedent,
+                node: expression,
+            }),
+        };
+        self.alloc_flow_node(node)
     }
 
     fn createFlowSwitchClause(
@@ -1722,7 +1746,6 @@ impl<'a> Binder<'a> {
         self.setFlowNodeReferenced(antecedent);
         let node = FlowNode {
             flags: FlowFlags::SwitchClause,
-            id: None,
             kind: FlowNodeKind::FlowSwitchClause(FlowSwitchClause {
                 antecedent,
                 switchStatement,
@@ -1737,7 +1760,6 @@ impl<'a> Binder<'a> {
         self.setFlowNodeReferenced(antecedent);
         let node = FlowNode {
             flags: FlowFlags::Assignment,
-            id: None,
             kind: FlowNodeKind::FlowAssignment(FlowAssignment { antecedent, node }),
         };
         let id = self.alloc_flow_node(node);
@@ -1765,7 +1787,6 @@ impl<'a> Binder<'a> {
         self.setFlowNodeReferenced(antecedent);
         let node = FlowNode {
             flags: FlowFlags::Call,
-            id: None,
             kind: FlowNodeKind::FlowCall(FlowCall { antecedent, node }),
         };
         self.alloc_flow_node(node)

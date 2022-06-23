@@ -26,3 +26,4 @@ once_cell = "1.10.0"
 parser = {path = "../parser"}
 codegen = {path = "../codegen"}
 regex = "1"
+pretty_assertions = "0.7.2"

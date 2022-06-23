@@ -84,7 +84,7 @@ fn error_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
         .collect::<Result<Vec<_>, io::Error>>()?;
 
     // TODO: this is a temp, implicit, whitelist system. It should be removed once all tests pass.
-    const NUM_TESTS: usize = 2;
+    const NUM_TESTS: usize = 4;
 
     assert!(NUM_TESTS <= entries.len());
 
@@ -149,7 +149,7 @@ fn error_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
                 program_ast,
             );
 
-            assert_eq!(symbols, reference);
+            pretty_assertions::assert_eq!(symbols, reference);
         });
     }
 

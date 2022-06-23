@@ -2070,8 +2070,6 @@ impl FlowNodeKind {
 #[derive(Debug)]
 pub struct FlowNode {
     pub flags: FlowFlags,
-    // TODO: Node id used by flow type cache in checker
-    pub id: Option<u32>,
     pub kind: FlowNodeKind,
 }
 
@@ -2079,7 +2077,6 @@ impl FlowNode {
     pub fn new_branch_label() -> Self {
         Self {
             flags: FlowFlags::BranchLabel,
-            id: None,
             kind: FlowNodeKind::FlowLabel(FlowLabel {
                 antecedents: Default::default(),
             }),
@@ -2089,7 +2086,6 @@ impl FlowNode {
     pub fn new_branch_label_with_antecedents(antecedents: Vec<FlowNodeId>) -> Self {
         Self {
             flags: FlowFlags::BranchLabel,
-            id: None,
             kind: FlowNodeKind::FlowLabel(FlowLabel {
                 antecedents: Rc::new(antecedents),
             }),
@@ -2099,7 +2095,6 @@ impl FlowNode {
     pub fn new_loop_label() -> Self {
         Self {
             flags: FlowFlags::LoopLabel,
-            id: None,
             kind: FlowNodeKind::FlowLabel(FlowLabel {
                 antecedents: Default::default(),
             }),
@@ -2113,7 +2108,6 @@ impl FlowNode {
     ) -> Self {
         Self {
             flags: FlowFlags::ReduceLabel,
-            id: None,
             kind: FlowNodeKind::FlowReduceLabel(FlowReduceLabel {
                 target,
                 antecedents: antecedents,

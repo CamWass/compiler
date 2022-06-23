@@ -239,6 +239,7 @@ dependencies = [
  "once_cell",
  "parser",
  "petgraph",
+ "pretty_assertions",
  "regex",
  "rustc-hash",
  "swc_atoms",
