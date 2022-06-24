@@ -2,6 +2,7 @@ use super::color::Color;
 use super::color_registry::ColorRegistry;
 use super::ColorId;
 use crate::ast;
+use crate::ast::GetNodeId;
 use crate::node::{Bind, BoundNode};
 use crate::types::*;
 use crate::types_composition::*;
@@ -158,7 +159,7 @@ macro_rules! generate_visitors {
                 if isExpressionNode(&node) || isDeclaration(&node) || matches!(node, BoundNode::Ident(_)) || isDeclarationName(node.clone())  {
                     let ty = self.checker.getTypeAtLocation(node.clone());
                     let color = self.recordType(ty, Some(&node));
-                    self.registry.node_to_color_map.insert(node, color);
+                    self.registry.node_to_color_map.insert(node.node_id(), color);
                 }
             }
         )*

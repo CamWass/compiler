@@ -1,13 +1,13 @@
 use super::color::Color;
 use super::ColorId;
-use crate::node::BoundNode;
+use ast::NodeId;
 use index::vec::{Idx, IndexVec};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 #[derive(Debug)]
 pub struct ColorRegistry {
     pub colors: IndexVec<ColorId, Color>,
-    pub node_to_color_map: FxHashMap<BoundNode, ColorId>,
+    pub node_to_color_map: FxHashMap<NodeId, ColorId>,
     pub disambiguationSupertypeGraph: FxHashMap<ColorId, FxHashSet<ColorId>>,
     /// Maps instantiable color -> union of instance colors.
     instanceColorUnions: FxHashMap<ColorId, ColorId>,
@@ -74,8 +74,8 @@ impl ColorRegistry {
         self.disambiguationSupertypeGraph.get(&x)
     }
 
-    pub fn get_color_of_node(&self, node: &BoundNode) -> Option<ColorId> {
-        self.node_to_color_map.get(node).copied()
+    pub fn get_color_of_node(&self, node_id: NodeId) -> Option<ColorId> {
+        self.node_to_color_map.get(&node_id).copied()
     }
 
     // TODO: temp

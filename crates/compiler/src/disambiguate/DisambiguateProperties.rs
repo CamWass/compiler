@@ -7,17 +7,16 @@ use super::PropertyClustering::*;
 use super::UseSiteRenamer::rename_use_sites;
 use crate::colors::color_registry::ColorRegistry;
 use crate::graph::FixedPointGraphTraversal::*;
-use crate::CompProgram;
 use index::vec::IndexVec;
 
 /** Assembles the various parts of the diambiguator to execute them as a compiler pass. */
 pub struct DisambiguateProperties {}
 
 impl DisambiguateProperties {
-    pub fn process(ast: &mut ::ast::Program, program: &CompProgram, colours: &mut ColorRegistry) {
+    pub fn process(ast: &mut ::ast::Program, colours: &mut ColorRegistry) {
         let mut flattener = ColorGraphNodeFactory::new(colours);
         let (propIndex, mut propertyClusterings) =
-            ColorFindPropertyReferences::find_prop_references(&mut flattener, program);
+            ColorFindPropertyReferences::find_prop_references(&mut flattener, ast);
 
         // TODO:
         // invalidateWellKnownProperties(propIndex);
@@ -196,7 +195,7 @@ mod tests {
         }
     }
 
-    fn init(program: ast::Program, file_name: &str) -> (CompProgram, ColorRegistry) {
+    fn init(program: ast::Program, file_name: &str) -> ColorRegistry {
         let program_ast = program;
 
         let program_source_file = SourceFile {
@@ -218,9 +217,7 @@ mod tests {
             source: program_source_file.clone(),
         };
 
-        let colours = crate::colors::color_collector::collect(&mut checker, &p);
-
-        (p, colours)
+        crate::colors::color_collector::collect(&mut checker, &p)
     }
 
     fn test_transform(input: &str, expected: &str) {
@@ -231,12 +228,8 @@ mod tests {
 
             let mut actual = tester.apply_transform(
                 |mut ast_program| {
-                    let (program, mut colours) = init(ast_program.clone(), "input.js");
-                    super::DisambiguateProperties::process(
-                        &mut ast_program,
-                        &program,
-                        &mut colours,
-                    );
+                    let mut colours = init(ast_program.clone(), "input.js");
+                    super::DisambiguateProperties::process(&mut ast_program, &mut colours);
                     ast_program
                 },
                 "input.js",

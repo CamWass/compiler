@@ -1,24 +1,19 @@
 use super::ColorGraphBuilder::ColorGraphBuilder;
 use super::ColorGraphNode::ColorGraphNodeId;
 use super::ColorGraphNodeFactory::ColorGraphNodeFactory;
-use crate::ast;
+use crate::ast::{GetNodeId, NodeId};
 use crate::colors::color_registry::ColorRegistry;
 use crate::colors::ColorId;
 use crate::disambiguate::ColorGraphBuilder::EdgeReason;
 use crate::graph::FixedPointGraphTraversal::{EdgeCallback, FixedPointGraphTraversal};
 use crate::graph::GraphColoring::{GreedyGraphColoring, SubGraph};
-use crate::node::{Bind, BoundNode};
-use crate::utils::{isBindableObjectDefinePropertyCall, unwrap_as};
-use crate::visit::{Visit, VisitWith};
-use crate::CompProgram;
+use crate::utils::unwrap_as;
 use crate::DefaultNameGenerator::DefaultNameGenerator;
-use ::ast::NodeId;
-use ecma_visit::{VisitMut, VisitMutWith};
+use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use index::bit_set::GrowableBitSet;
 use index::{newtype_index, vec::IndexVec};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::iter::FromIterator;
-use std::rc::Rc;
 use swc_atoms::JsWord;
 
 /**
@@ -41,7 +36,7 @@ use swc_atoms::JsWord;
 pub struct AmbiguateProperties;
 
 impl AmbiguateProperties {
-    pub fn process(ast: &mut ::ast::Program, program: &CompProgram, colours: &mut ColorRegistry) {
+    pub fn process(ast: &mut ast::Program, colours: &mut ColorRegistry) {
         let mut graphNodeFactory = ColorGraphNodeFactory::new(colours);
 
         let mut externedNames = FxHashSet::default();
@@ -52,7 +47,7 @@ impl AmbiguateProperties {
             ProcessPropertiesAndConstructors::process(
                 &mut graphNodeFactory,
                 &mut externedNames,
-                program,
+                ast,
             );
 
         let types_to_add = graphNodeFactory.getAllKnownTypes();
@@ -226,7 +221,7 @@ impl AmbiguateProperties {
             // #[cfg(not(test))]
             // noop_visit_mut_type!();
 
-            fn visit_mut_ident(&mut self, ident: &mut ::ast::Ident) {
+            fn visit_mut_ident(&mut self, ident: &mut ast::Ident) {
                 if self.stringNodesToRename.contains(&ident.node_id) {
                     let oldName = &ident.sym;
                     let p = self.propertyMap.get(oldName);
@@ -310,7 +305,7 @@ impl<'col, 'a> ProcessPropertiesAndConstructors<'col, 'a> {
     pub fn process(
         colorGraphNodeFactory: &'a mut ColorGraphNodeFactory<'col>,
         externedNames: &'a mut FxHashSet<JsWord>,
-        program: &CompProgram,
+        ast: &ast::Program,
     ) -> (
         IndexVec<PropertyId, Property>,
         FxHashMap<JsWord, PropertyId>,
@@ -324,7 +319,7 @@ impl<'col, 'a> ProcessPropertiesAndConstructors<'col, 'a> {
             colorGraphNodeFactory,
         };
 
-        program.visit_with(&mut visitor, None);
+        ast.visit_with(&mut visitor);
 
         (
             visitor.properties,
@@ -339,10 +334,10 @@ impl<'col, 'a> ProcessPropertiesAndConstructors<'col, 'a> {
      *
      * @param n The STRING node for a property
      */
-    fn maybeMarkCandidate(&mut self, node: &ast::Ident, owner: ColorId) {
-        if !self.externedNames.contains(&node.sym) {
-            self.stringNodesToRename.insert(node.node_id);
-            self.recordProperty(&node.sym, owner);
+    fn maybeMarkCandidate(&mut self, ident_node_id: NodeId, ident_sym: &JsWord, owner: ColorId) {
+        if !self.externedNames.contains(ident_sym) {
+            self.stringNodesToRename.insert(ident_node_id);
+            self.recordProperty(ident_sym, owner);
         }
     }
 
@@ -394,141 +389,8 @@ impl<'col, 'a> ProcessPropertiesAndConstructors<'col, 'a> {
     //             "Unexpected child of " + objectLit.getToken() + ": " + key.toStringTree());
     //     }
     //   }
-}
 
-impl Visit for ProcessPropertiesAndConstructors<'_, '_> {
-    fn visit_member_expr(&mut self, node: &Rc<ast::MemberExpr>, parent: Option<BoundNode>) {
-        node.visit_children_with(self, parent.clone());
-
-        if node.computed {
-            // TODO:
-            //   // If this is a quoted property access (e.g. x['myprop']), we need to
-            //   // ensure that we never rename some other property in a way that
-            //   // could conflict with this quoted name.
-            //   Node child = n.getLastChild();
-            //   if (child.isStringLit()) {
-            //     quotedNames.add(child.getString());
-            //   }
-        } else {
-            let bound_node = node.bind_to_opt_parent(parent);
-            // TODO: this is wrong (e.g. privatename). See notes.txt for info.
-            let prop = unwrap_as!(&node.prop, ast::Expr::Ident(i), i);
-            let obj = node.obj.bind(bound_node.clone());
-            let owner = self
-                .colorGraphNodeFactory
-                .colours
-                .get_color_of_node(&obj)
-                .unwrap();
-            self.maybeMarkCandidate(&prop, owner);
-
-            // TODO:
-            // if NodeUtil.isLhsOfAssign(node) || NodeUtil.isStatement(node.getParent()) {
-            //     graphNodeFactory.createNode(type);
-            //   }
-        }
-    }
-
-    fn visit_call_expr(&mut self, node: &Rc<ast::CallExpr>, parent: Option<BoundNode>) {
-        node.visit_children_with(self, parent.clone());
-
-        if isBindableObjectDefinePropertyCall(node.as_ref()) {
-            todo!();
-            //   Node typeObj = call.getSecondChild();
-            //   Color type = getColor(typeObj);
-            //   Node objectLiteral = typeObj.getNext();
-
-            //   if (!objectLiteral.isObjectLit()) {
-            //     return;
-            //   }
-
-            //   for (Node key = objectLiteral.getFirstChild(); key != null; key = key.getNext()) {
-            //     processObjectProperty(objectLiteral, key, type);
-            //   }
-        }
-    }
-
-    fn visit_ident(&mut self, node: &Rc<ast::Ident>, parent: Option<BoundNode>) {
-        node.visit_children_with(self, parent.clone());
-        // handle ES5-style classes
-        if matches!(parent, Some(BoundNode::Function(_))) {
-            todo!();
-            // graphNodeFactory.createNode(getColor(n));
-        }
-    }
-
-    fn visit_binding_ident(&mut self, node: &Rc<ast::BindingIdent>, parent: Option<BoundNode>) {
-        node.visit_children_with(self, parent.clone());
-        // TODO:
-        // handle ES5-style classes
-        // if matches!(parent, Some(BoundNode::VarDeclarator(_))) {
-        //     graphNodeFactory.createNode(getColor(n));
-        // }
-    }
-
-    fn visit_object_lit(&mut self, node: &Rc<ast::ObjectLit>, parent: Option<BoundNode>) {
-        node.visit_children_with(self, parent.clone());
-        // TODO: verify this
-        // Object.defineProperties literals are handled at the CallExpr node, as we determine the type
-        // differently than for regular object literals.
-        if matches!(&parent, Some(BoundNode::CallExpr(c)) if isBindableObjectDefinePropertyCall(&c.node))
-        {
-            return;
-        }
-
-        let obj = node.bind_to_opt_parent(parent);
-        let owner = self
-            .colorGraphNodeFactory
-            .colours
-            .get_color_of_node(&obj)
-            .unwrap();
-
-        for prop in &node.props {
-            // TODO: quoted props
-            let name = match prop {
-                ast::Prop::Shorthand(n) => Some(ast::PropName::Ident(n.clone())),
-                ast::Prop::KeyValue(n) => Some(n.key.clone()),
-                ast::Prop::Assign(_) => None,
-                ast::Prop::Getter(n) => Some(n.key.clone()),
-                ast::Prop::Setter(n) => Some(n.key.clone()),
-                ast::Prop::Method(n) => Some(n.key.clone()),
-                ast::Prop::Spread(_) => None,
-            };
-            if let Some(ast::PropName::Ident(name)) = name {
-                self.maybeMarkCandidate(&name, owner);
-            }
-        }
-    }
-
-    fn visit_object_pat(&mut self, node: &Rc<ast::ObjectPat>, parent: Option<BoundNode>) {
-        node.visit_children_with(self, parent.clone());
-        todo!();
-        //   // Object.defineProperties literals are handled at the CALL node, as we determine the type
-        //   // differently than for regular object literals.
-        //   if (objectLit.getParent().isCall()
-        //       && NodeUtil.isObjectDefinePropertiesDefinition(objectLit.getParent())) {
-        //     return;
-        //   }
-
-        //   // The children of an OBJECTLIT node are keys, where the values
-        //   // are the children of the keys.
-        //   Color type = getColor(objectLit);
-        //   for (Node key = objectLit.getFirstChild(); key != null; key = key.getNext()) {
-        //     processObjectProperty(objectLit, key, type);
-        //   }
-    }
-
-    fn visit_class(&mut self, node: &Rc<ast::Class>, parent: Option<BoundNode>) {
-        node.visit_children_with(self, parent.clone());
-
-        let class = node.bind_to_opt_parent(parent);
-        let class_decl = class.parent().clone().unwrap();
-
-        let class_color = self
-            .colorGraphNodeFactory
-            .colours
-            .get_color_of_node(&class_decl)
-            .unwrap();
-
+    fn handle_class(&mut self, class: &ast::Class, class_color: ColorId) {
         self.colorGraphNodeFactory.createNode(Some(class_color));
         // In theory all CLASS colors should be a function with a known prototype, but in
         // practice typecasts mean that this is not always the case.
@@ -538,7 +400,7 @@ impl Visit for ProcessPropertiesAndConstructors<'_, '_> {
         //     possiblePrototypes.isEmpty()
         //         ? StandardColors.UNKNOWN
         //         : Color.createUnion(possiblePrototypes);
-        for member in &node.body {
+        for member in &class.body {
             let prop = match member {
                 ast::ClassMember::Method(m) => {
                     if let ast::PropName::Ident(i) = &m.key {
@@ -585,9 +447,168 @@ impl Visit for ProcessPropertiesAndConstructors<'_, '_> {
                 } else {
                     class_color
                 };
-                self.maybeMarkCandidate(id, owner);
+                self.maybeMarkCandidate(id.node_id, &id.sym, owner);
             }
         }
+    }
+}
+
+impl Visit for ProcessPropertiesAndConstructors<'_, '_> {
+    fn visit_member_expr(&mut self, node: &ast::MemberExpr) {
+        node.visit_children_with(self);
+
+        if node.computed {
+            // TODO:
+            //   // If this is a quoted property access (e.g. x['myprop']), we need to
+            //   // ensure that we never rename some other property in a way that
+            //   // could conflict with this quoted name.
+            //   Node child = n.getLastChild();
+            //   if (child.isStringLit()) {
+            //     quotedNames.add(child.getString());
+            //   }
+        } else {
+            // TODO: this is wrong (e.g. privatename). See notes.txt for info.
+            let prop = unwrap_as!(node.prop.as_ref(), ast::Expr::Ident(i), i);
+            let owner = self
+                .colorGraphNodeFactory
+                .colours
+                .get_color_of_node(node.obj.node_id())
+                .unwrap();
+            self.maybeMarkCandidate(prop.node_id, &prop.sym, owner);
+
+            // TODO:
+            // if NodeUtil.isLhsOfAssign(node) || NodeUtil.isStatement(node.getParent()) {
+            //     graphNodeFactory.createNode(type);
+            //   }
+        }
+    }
+
+    fn visit_call_expr(&mut self, node: &ast::CallExpr) {
+        // TODO: objectDefineProperty
+        // if isBindableObjectDefinePropertyCall(node.as_ref()) {
+        //     node.type_args.visit_with(self);
+        //     node.callee.visit_with(self);
+
+        //     // Checked by isBindableObjectDefinePropertyCall
+        //     assert!(node.args.len() == 3);
+        //     // The obect the prop is defined on.
+        //     node.args[0].visit_with(self);
+        //     // Name of prop.
+        //     node.args[1].visit_with(self);
+        //     // The 3rd arg (the descriptor object) is handled below.
+
+        //     todo!();
+        //     //   Node typeObj = call.getSecondChild();
+        //     //   Color type = getColor(typeObj);
+        //     //   Node objectLiteral = typeObj.getNext();
+
+        //     //   if (!objectLiteral.isObjectLit()) {
+        //     //     return;
+        //     //   }
+
+        //     //   for (Node key = objectLiteral.getFirstChild(); key != null; key = key.getNext()) {
+        //     //     processObjectProperty(objectLiteral, key, type);
+        //     //   }
+        // } else {
+        node.visit_children_with(self);
+        // }
+    }
+
+    fn visit_fn_decl(&mut self, node: &ast::FnDecl) {
+        node.visit_children_with(self);
+
+        // TODO:
+        // handle ES5-style classes
+        // graphNodeFactory.createNode(getColor(node.ident));
+    }
+
+    fn visit_fn_expr(&mut self, node: &ast::FnExpr) {
+        node.visit_children_with(self);
+
+        // TODO:
+        // handle ES5-style classes
+        // graphNodeFactory.createNode(getColor(node.ident));
+    }
+
+    fn visit_var_declarator(&mut self, node: &ast::VarDeclarator) {
+        node.visit_children_with(self);
+
+        // TODO:
+        // handle ES5-style classes
+        // if let ast::Pat::Ident(_) = &node.name {
+        //     graphNodeFactory.createNode(getColor(node.name));
+        // }
+    }
+
+    fn visit_object_lit(&mut self, node: &ast::ObjectLit) {
+        node.visit_children_with(self);
+
+        let owner = self
+            .colorGraphNodeFactory
+            .colours
+            .get_color_of_node(node.node_id)
+            .unwrap();
+
+        for prop in &node.props {
+            // TODO: quoted props
+            let name = match prop {
+                ast::Prop::Shorthand(n) => Some((n.node_id, &n.sym)),
+                ast::Prop::KeyValue(ast::KeyValueProp { key, .. })
+                | ast::Prop::Getter(ast::GetterProp { key, .. })
+                | ast::Prop::Setter(ast::SetterProp { key, .. })
+                | ast::Prop::Method(ast::MethodProp { key, .. }) => match key {
+                    ast::PropName::Ident(i) => Some((i.node_id, &i.sym)),
+                    _ => None,
+                },
+                ast::Prop::Assign(_) => None,
+                ast::Prop::Spread(_) => None,
+            };
+            if let Some((ident_node_id, ident_sym)) = name {
+                self.maybeMarkCandidate(ident_node_id, ident_sym, owner);
+            }
+        }
+    }
+
+    fn visit_object_pat(&mut self, node: &ast::ObjectPat) {
+        node.visit_children_with(self);
+        todo!();
+        //   // Object.defineProperties literals are handled at the CALL node, as we determine the type
+        //   // differently than for regular object literals.
+        //   if (objectLit.getParent().isCall()
+        //       && NodeUtil.isObjectDefinePropertiesDefinition(objectLit.getParent())) {
+        //     return;
+        //   }
+
+        //   // The children of an OBJECTLIT node are keys, where the values
+        //   // are the children of the keys.
+        //   Color type = getColor(objectLit);
+        //   for (Node key = objectLit.getFirstChild(); key != null; key = key.getNext()) {
+        //     processObjectProperty(objectLit, key, type);
+        //   }
+    }
+
+    fn visit_class_decl(&mut self, node: &ast::ClassDecl) {
+        node.visit_children_with(self);
+
+        let class_color = self
+            .colorGraphNodeFactory
+            .colours
+            .get_color_of_node(node.node_id)
+            .unwrap();
+
+        self.handle_class(&node.class, class_color);
+    }
+
+    fn visit_class_expr(&mut self, node: &ast::ClassExpr) {
+        node.visit_children_with(self);
+
+        let class_color = self
+            .colorGraphNodeFactory
+            .colours
+            .get_color_of_node(node.node_id)
+            .unwrap();
+
+        self.handle_class(&node.class, class_color);
     }
 }
 
@@ -726,7 +747,7 @@ mod tests {
         }
     }
 
-    fn init(program: ast::Program, file_name: &str) -> (CompProgram, ColorRegistry) {
+    fn init(program: ast::Program, file_name: &str) -> ColorRegistry {
         let program_ast = program;
 
         let program_source_file = SourceFile {
@@ -748,9 +769,7 @@ mod tests {
             source: program_source_file.clone(),
         };
 
-        let colours = crate::colors::color_collector::collect(&mut checker, &p);
-
-        (p, colours)
+        crate::colors::color_collector::collect(&mut checker, &p)
     }
 
     fn test_transform(input: &str, expected: &str) {
@@ -761,8 +780,8 @@ mod tests {
 
             let mut actual = tester.apply_transform(
                 |mut ast_program| {
-                    let (program, mut colours) = init(ast_program.clone(), "input.js");
-                    super::AmbiguateProperties::process(&mut ast_program, &program, &mut colours);
+                    let mut colours = init(ast_program.clone(), "input.js");
+                    super::AmbiguateProperties::process(&mut ast_program, &mut colours);
                     ast_program
                 },
                 "input.js",

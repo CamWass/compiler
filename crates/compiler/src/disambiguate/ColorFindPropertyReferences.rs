@@ -1,13 +1,10 @@
-use std::rc::Rc;
-
 use super::ColorGraphNode::PropAssociation;
 use super::ColorGraphNodeFactory::ColorGraphNodeFactory;
 use super::PropertyClustering::{PropertyClustering, PropertyClusteringId};
+use crate::ast::{GetNodeId, NodeId};
 use crate::colors::ColorId;
-use crate::node::{Bind, BoundNode};
-use crate::utils::{isBindableObjectDefinePropertyCall, unwrap_as};
-use crate::visit::{Visit, VisitWith};
-use crate::{ast, CompProgram};
+use crate::utils::unwrap_as;
+use ecma_visit::{Visit, VisitWith};
 use index::vec::IndexVec;
 use rustc_hash::FxHashMap;
 use swc_atoms::JsWord;
@@ -21,7 +18,7 @@ pub struct ColorFindPropertyReferences<'col, 'nf> {
 impl<'col, 'nf> ColorFindPropertyReferences<'col, 'nf> {
     pub fn find_prop_references(
         colorGraphNodeFactory: &'nf mut ColorGraphNodeFactory<'col>,
-        program: &CompProgram,
+        ast: &::ast::Program,
     ) -> (
         FxHashMap<JsWord, PropertyClusteringId>,
         IndexVec<PropertyClusteringId, PropertyClustering>,
@@ -32,7 +29,7 @@ impl<'col, 'nf> ColorFindPropertyReferences<'col, 'nf> {
             propertyClusterings: IndexVec::default(),
         };
 
-        program.visit_with(&mut prop_ref_finder, None);
+        ast.visit_with(&mut prop_ref_finder);
 
         (
             prop_ref_finder.propIndex,
@@ -46,12 +43,17 @@ impl<'col, 'nf> ColorFindPropertyReferences<'col, 'nf> {
     }
 
     /// Update all datastructures as necessary to consider property use `site` from type `owner`.
-    fn registerPropertyUse(&mut self, site: &ast::Ident, owner: Option<ColorId>) {
-        let prop = match self.propIndex.get(&site.sym) {
+    fn registerPropertyUse(
+        &mut self,
+        ident_node_id: NodeId,
+        ident_sym: &JsWord,
+        owner: Option<ColorId>,
+    ) {
+        let prop = match self.propIndex.get(&ident_sym) {
             Some(p) => *p,
             None => {
-                let clustering = self.new_property_clustering(site.sym.clone());
-                self.propIndex.insert(site.sym.clone(), clustering);
+                let clustering = self.new_property_clustering(ident_sym.clone());
+                self.propIndex.insert(ident_sym.clone(), clustering);
                 clustering
             }
         };
@@ -66,7 +68,7 @@ impl<'col, 'nf> ColorFindPropertyReferences<'col, 'nf> {
         // Record the site to rename once clusters are found. If it's an extern, we won't rename anyway.
         self.propertyClusterings[prop]
             .useSites
-            .insert(site.node_id, flatOwner);
+            .insert(ident_node_id, flatOwner);
 
         // TODO:
         // Track the cluster of types whose properties must keep their original name after
@@ -76,58 +78,9 @@ impl<'col, 'nf> ColorFindPropertyReferences<'col, 'nf> {
         //     self.propertyClusterings[prop].registerOriginalNameType(flatOwner);
         // }
     }
-}
 
-// TODO: noop for types
-impl Visit for ColorFindPropertyReferences<'_, '_> {
-    fn visit_member_expr(&mut self, node: &Rc<ast::MemberExpr>, parent: Option<BoundNode>) {
-        node.visit_children_with(self, parent.clone());
-        if !node.computed {
-            let bound_node = node.bind_to_opt_parent(parent);
-            let prop = unwrap_as!(&node.prop, ast::Expr::Ident(i), i);
-            let obj = node.obj.bind(bound_node.clone());
-            let owner = self.colorGraphNodeFactory.colours.get_color_of_node(&obj);
-            self.registerPropertyUse(&prop, owner);
-        }
-    }
-
-    fn visit_object_lit(&mut self, node: &Rc<ast::ObjectLit>, parent: Option<BoundNode>) {
-        node.visit_children_with(self, parent.clone());
-        if let Some(BoundNode::CallExpr(c)) = parent {
-            todo!();
-        }
-        let bound_node = node.bind_to_opt_parent(parent);
-        let owner = self
-            .colorGraphNodeFactory
-            .colours
-            .get_color_of_node(&bound_node);
-        for prop in &node.props {
-            let key = match prop {
-                ast::Prop::KeyValue(prop) => &prop.key,
-                ast::Prop::Getter(prop) => &prop.key,
-                ast::Prop::Setter(prop) => &prop.key,
-                ast::Prop::Method(prop) => &prop.key,
-                ast::Prop::Spread(_) => continue,
-                ast::Prop::Assign(_) => unreachable!(),
-                ast::Prop::Shorthand(_) => unreachable!("removed by normalization"),
-            };
-
-            if let ast::PropName::Ident(i) = key {
-                self.registerPropertyUse(i, owner);
-            }
-        }
-    }
-
-    fn visit_class(&mut self, node: &Rc<ast::Class>, parent: Option<BoundNode>) {
-        node.visit_children_with(self, parent.clone());
-        let class = node.bind_to_opt_parent(parent);
-        let class_decl = class.parent().clone().unwrap();
-        let class_color = self
-            .colorGraphNodeFactory
-            .colours
-            .get_color_of_node(&class_decl)
-            .unwrap();
-        for member in &node.body {
+    fn handle_class(&mut self, class: &ast::Class, class_color: ColorId) {
+        for member in &class.body {
             let prop = match member {
                 ast::ClassMember::Constructor(_) => todo!(),
                 ast::ClassMember::Method(m) => {
@@ -165,41 +118,105 @@ impl Visit for ColorFindPropertyReferences<'_, '_> {
                 //     | ast::ClassMember::PrivateProp(_) => class_color,
                 //     _ => unreachable!(),
                 // };
-                self.registerPropertyUse(id, Some(owner));
+                self.registerPropertyUse(id.node_id, &id.sym, Some(owner));
             }
         }
         self.colorGraphNodeFactory.createNode(Some(class_color));
     }
+}
 
-    fn visit_call_expr(&mut self, node: &Rc<ast::CallExpr>, parent: Option<BoundNode>) {
-        node.visit_children_with(self, parent);
-
-        if isBindableObjectDefinePropertyCall(node.as_ref()) {
-            todo!();
+// TODO: noop for types
+impl Visit for ColorFindPropertyReferences<'_, '_> {
+    fn visit_member_expr(&mut self, node: &ast::MemberExpr) {
+        node.visit_children_with(self);
+        if !node.computed {
+            let prop = unwrap_as!(node.prop.as_ref(), ast::Expr::Ident(i), i);
+            let owner = self
+                .colorGraphNodeFactory
+                .colours
+                .get_color_of_node(node.obj.node_id());
+            self.registerPropertyUse(prop.node_id, &prop.sym, owner);
         }
     }
 
-    fn visit_object_pat(&mut self, node: &Rc<ast::ObjectPat>, parent: Option<BoundNode>) {
-        node.visit_children_with(self, parent);
+    fn visit_object_lit(&mut self, node: &ast::ObjectLit) {
+        node.visit_children_with(self);
+        let owner = self
+            .colorGraphNodeFactory
+            .colours
+            .get_color_of_node(node.node_id);
+        for prop in &node.props {
+            let key = match prop {
+                ast::Prop::KeyValue(prop) => &prop.key,
+                ast::Prop::Getter(prop) => &prop.key,
+                ast::Prop::Setter(prop) => &prop.key,
+                ast::Prop::Method(prop) => &prop.key,
+                ast::Prop::Spread(_) => continue,
+                ast::Prop::Assign(_) => unreachable!(),
+                ast::Prop::Shorthand(_) => unreachable!("removed by normalization"),
+            };
+
+            if let ast::PropName::Ident(i) = key {
+                self.registerPropertyUse(i.node_id, &i.sym, owner);
+            }
+        }
+    }
+
+    fn visit_class_decl(&mut self, node: &ast::ClassDecl) {
+        node.visit_children_with(self);
+        let class_color = self
+            .colorGraphNodeFactory
+            .colours
+            .get_color_of_node(node.node_id)
+            .unwrap();
+        self.handle_class(&node.class, class_color);
+    }
+
+    fn visit_class_expr(&mut self, node: &ast::ClassExpr) {
+        node.visit_children_with(self);
+        let class_color = self
+            .colorGraphNodeFactory
+            .colours
+            .get_color_of_node(node.node_id)
+            .unwrap();
+        self.handle_class(&node.class, class_color);
+    }
+
+    fn visit_call_expr(&mut self, node: &ast::CallExpr) {
+        // TODO: objectDefineProperty
+        // if isBindableObjectDefinePropertyCall(node.as_ref()) {
+        //     node.type_args.visit_with(self);
+        //     node.callee.visit_with(self);
+
+        //     // Checked by isBindableObjectDefinePropertyCall
+        //     assert!(node.args.len() == 3);
+        //     // The obect the prop is defined on.
+        //     node.args[0].visit_with(self);
+        //     // Name of prop.
+        //     node.args[1].visit_with(self);
+        //     // The 3rd arg (the descriptor object) is handled below.
+        //     todo!();
+        // } else {
+        node.visit_children_with(self);
+        // }
+    }
+
+    fn visit_object_pat(&mut self, node: &ast::ObjectPat) {
+        node.visit_children_with(self);
         todo!();
     }
 
-    // fn visit_function(&mut self, node: &Rc<ast::Function>, parent: Option<BoundNode>) {
-    //     node.visit_children_with(self, parent.clone());
+    // fn visit_function(&mut self, node: &Rc<ast::Function>) {
+    //     node.visit_children_with(self);
     //     // TODO:
     // }
 
-    fn visit_ts_interface_decl(
-        &mut self,
-        node: &Rc<ast::TsInterfaceDecl>,
-        parent: Option<BoundNode>,
-    ) {
-        node.visit_children_with(self, parent.clone());
-        let interface = node.bind_to_opt_parent(parent);
+    fn visit_ts_interface_decl(&mut self, node: &ast::TsInterfaceDecl) {
+        node.visit_children_with(self);
         let interface_color = self
             .colorGraphNodeFactory
             .colours
-            .get_color_of_node(&interface)
+            .get_color_of_node(node.node_id)
             .unwrap();
         for element in &node.body.body {
             let key = match element {
@@ -213,7 +230,7 @@ impl Visit for ColorFindPropertyReferences<'_, '_> {
             };
 
             if let Some(ast::PropName::Ident(id)) = key {
-                self.registerPropertyUse(id, Some(interface_color));
+                self.registerPropertyUse(id.node_id, &id.sym, Some(interface_color));
             }
         }
         self.colorGraphNodeFactory.createNode(Some(interface_color));

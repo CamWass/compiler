@@ -86,55 +86,59 @@ impl Compiler {
         disambiguate: bool,
         ambiguate: bool,
     ) -> ::ast::Program {
-        let mut source_files = Vec::with_capacity(libs.len() + 1);
-
         let mut program_ast = program.1;
 
-        let mut normalize = normalize::Normalize {};
-        program_ast.visit_mut_with(&mut normalize);
+        let mut colours = {
+            let mut source_files = Vec::with_capacity(libs.len() + 1);
 
-        let program_source_file = SourceFile {
-            file_name: program.0,
-            program: local_ast::convert::convert_program(program_ast.clone()),
-            jsGlobalAugmentations: Default::default(),
-        };
-        source_files.push(program_source_file.clone());
+            let mut normalize = normalize::Normalize {};
+            program_ast.visit_mut_with(&mut normalize);
 
-        let mut program = CompProgram {
-            libs: Vec::with_capacity(libs.len()),
-            // TODO: temp clone()
-            source: program_source_file.clone(),
-        };
-
-        for (file_name, ast) in libs.iter().cloned() {
-            let source_file = SourceFile {
-                file_name,
-                program: local_ast::convert::convert_program(ast),
+            let program_source_file = SourceFile {
+                file_name: program.0,
+                program: local_ast::convert::convert_program(program_ast.clone()),
                 jsGlobalAugmentations: Default::default(),
             };
-            source_files.push(source_file.clone());
-            program.libs.push(source_file);
-        }
+            source_files.push(program_source_file.clone());
 
-        let host = TypeCheckerHost {
-            files: source_files,
-            compiler_options: CompilerOptions::default(),
+            let mut program = CompProgram {
+                libs: Vec::with_capacity(libs.len()),
+                // TODO: temp clone()
+                source: program_source_file.clone(),
+            };
+
+            for (file_name, ast) in libs.iter().cloned() {
+                let source_file = SourceFile {
+                    file_name,
+                    program: local_ast::convert::convert_program(ast),
+                    jsGlobalAugmentations: Default::default(),
+                };
+                source_files.push(source_file.clone());
+                program.libs.push(source_file);
+            }
+
+            let host = TypeCheckerHost {
+                files: source_files,
+                compiler_options: CompilerOptions::default(),
+            };
+
+            let mut checker = Checker::new(host, false);
+
+            // TODO:
+            let p = CompProgram {
+                libs: Vec::new(),
+                source: program.source.clone(),
+            };
+
+            colors::color_collector::collect(&mut checker, &p)
         };
 
-        let mut checker = Checker::new(host, false);
-
-        // TODO:
-        let p = CompProgram {
-            libs: Vec::new(),
-            source: program.source.clone(),
-        };
-
-        let mut colours = colors::color_collector::collect(&mut checker, &p);
+        // Note: The Rc based AST is only to be used by the checker and passes that directly access
+        // the checker (color collector). All other passes should use the reference based AST.
 
         if disambiguate {
             disambiguate::DisambiguateProperties::DisambiguateProperties::process(
                 &mut program_ast,
-                &p,
                 &mut colours,
             );
         }
@@ -142,7 +146,6 @@ impl Compiler {
         if ambiguate {
             disambiguate::AmbiguateProperties::AmbiguateProperties::process(
                 &mut program_ast,
-                &p,
                 &mut colours,
             );
         }
