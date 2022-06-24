@@ -4,19 +4,15 @@ use global_common::ast_node;
 use global_common::EqIgnoreSpan;
 use global_common::Span;
 use global_common::Spanned;
-use serde::Deserialize;
-use serde::Serialize;
 use swc_atoms::JsWord;
 
 /// Identifer used as a pattern.
-#[derive(Spanned, Clone, Debug, PartialEq, Eq, Hash, EqIgnoreSpan, Serialize, Deserialize)]
+#[derive(Spanned, Clone, Debug, PartialEq, Eq, Hash, EqIgnoreSpan)]
 pub struct BindingIdent {
     pub node_id: NodeId,
 
     #[span]
-    #[serde(flatten)]
     pub id: Ident,
-    #[serde(default, rename = "typeAnnotation")]
     pub type_ann: Option<TsTypeAnn>,
 }
 
@@ -37,11 +33,9 @@ pub struct Ident {
     pub node_id: NodeId,
 
     pub span: Span,
-    #[serde(rename = "value")]
     pub sym: JsWord,
 
     /// TypeScript only. Used in case of an optional parameter.
-    #[serde(default)]
     pub optional: bool,
 }
 

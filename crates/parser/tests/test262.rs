@@ -317,22 +317,6 @@ fn identity_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
                 let src = p(false);
                 let expected = p(true);
                 assert_eq!(src, expected);
-
-                let json =
-                    serde_json::to_string_pretty(&src).expect("failed to serialize module as json");
-
-                let deser = serde_json::from_str::<Module>(&json)
-                    .unwrap_or_else(|err| {
-                        panic!(
-                            "failed to deserialize json back to module: {}\n{}",
-                            err, json
-                        )
-                    })
-                    .fold_with(&mut Normalizer {
-                        drop_span: true,
-                        is_test262: true,
-                    });
-                assert_eq!(src, deser, "JSON:\n{}", json);
             } else {
                 let p = |explicit| {
                     parse_script(

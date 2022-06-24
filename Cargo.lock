@@ -60,8 +60,6 @@ dependencies = [
  "global_common",
  "index",
  "num-bigint",
- "serde",
- "serde_json",
  "string_enum",
  "swc_atoms",
 ]
@@ -536,8 +534,6 @@ dependencies = [
  "once_cell",
  "rayon",
  "scoped-tls",
- "serde",
- "serde_json",
  "sourcemap",
  "string_cache",
  "termcolor",
@@ -1302,7 +1298,6 @@ dependencies = [
  "pmutil",
  "proc-macro2",
  "quote",
- "serde",
  "syn",
 ]
 

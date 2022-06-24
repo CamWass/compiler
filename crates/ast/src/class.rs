@@ -10,7 +10,6 @@ use crate::{
     EmptyStmt, NodeId, TsTypeParamDecl,
 };
 use global_common::{ast_node, EqIgnoreSpan, Span};
-use serde::{Deserialize, Serialize};
 
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
@@ -19,23 +18,17 @@ pub struct Class {
 
     pub span: Span,
 
-    #[serde(default)]
     pub decorators: Vec<Decorator>,
 
-    #[serde(default)]
     pub body: Vec<ClassMember>,
 
-    #[serde(default)]
     pub is_abstract: bool,
 
-    #[serde(default)]
     pub type_params: Option<Vec<TsTypeParamDecl>>,
 
-    #[serde(default)]
     pub extends: Option<ExtendsClause>,
 
     /// Typescript extension.
-    #[serde(default)]
     pub implements: Vec<TsExprWithTypeArgs>,
 }
 
@@ -47,28 +40,20 @@ pub struct ExtendsClause {
     pub span: Span,
     pub super_class: Box<Expr>,
     /// Typescript extension.
-    #[serde(default)]
     pub super_type_params: Option<TsTypeParamInstantiation>,
 }
 
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum ClassMember {
-    #[tag("Constructor")]
     Constructor(Constructor),
     /// `es2015`
-    #[tag("ClassMethod")]
     Method(ClassMethod),
-    #[tag("PrivateMethod")]
     PrivateMethod(PrivateMethod),
     /// stage 0 / Typescript
-    #[tag("ClassProperty")]
     ClassProp(ClassProp),
-    #[tag("PrivateProperty")]
     PrivateProp(PrivateProp),
-    #[tag("TsIndexSignature")]
     TsIndexSignature(TsIndexSignature),
-    #[tag("EmptyStatement")]
     Empty(EmptyStmt),
 }
 
@@ -77,44 +62,32 @@ pub enum ClassMember {
 pub struct ClassProp {
     pub node_id: NodeId,
 
-    #[serde(default)]
     pub span: Span,
 
     pub key: PropName,
 
-    #[serde(default)]
     pub value: Option<Box<Expr>>,
 
-    #[serde(default, rename = "typeAnnotation")]
     pub type_ann: Option<TsTypeAnn>,
 
-    #[serde(default)]
     pub is_static: bool,
 
-    #[serde(default)]
     pub decorators: Vec<Decorator>,
 
     /// Typescript extension.
-    #[serde(default)]
     pub accessibility: Option<Accessibility>,
 
     /// Typescript extension.
-    #[serde(default)]
     pub is_abstract: bool,
 
-    #[serde(default)]
     pub is_optional: bool,
 
-    #[serde(default)]
     pub is_override: bool,
 
-    #[serde(default)]
     pub readonly: bool,
 
-    #[serde(default)]
     pub declare: bool,
 
-    #[serde(default)]
     pub definite: bool,
 }
 
@@ -123,41 +96,30 @@ pub struct ClassProp {
 pub struct PrivateProp {
     pub node_id: NodeId,
 
-    #[serde(default)]
     pub span: Span,
 
     pub key: PrivateName,
 
-    #[serde(default)]
     pub value: Option<Box<Expr>>,
 
-    #[serde(default, rename = "typeAnnotation")]
     pub type_ann: Option<TsTypeAnn>,
 
-    #[serde(default)]
     pub is_static: bool,
 
-    #[serde(default)]
     pub decorators: Vec<Decorator>,
 
     /// Typescript extension.
-    #[serde(default)]
     pub accessibility: Option<Accessibility>,
 
     /// Typescript extension.
-    #[serde(default)]
     pub is_abstract: bool,
 
-    #[serde(default)]
     pub is_optional: bool,
 
-    #[serde(default)]
     pub is_override: bool,
 
-    #[serde(default)]
     pub readonly: bool,
 
-    #[serde(default)]
     pub definite: bool,
 }
 
@@ -169,7 +131,6 @@ macro_rules! method {
         pub struct $name {
             pub node_id: NodeId,
 
-            #[serde(default)]
             pub span: Span,
 
             pub key: $KEY,
@@ -178,21 +139,16 @@ macro_rules! method {
 
             pub kind: MethodKind,
 
-            #[serde(default)]
             pub is_static: bool,
 
             /// Typescript extension.
-            #[serde(default)]
             pub accessibility: Option<Accessibility>,
 
             /// Typescript extension.
-            #[serde(default)]
             pub is_abstract: bool,
 
-            #[serde(default)]
             pub is_optional: bool,
 
-            #[serde(default)]
             pub is_override: bool,
         }
     };
@@ -210,13 +166,10 @@ pub struct Constructor {
 
     pub params: Vec<ParamOrTsParamProp>,
 
-    #[serde(default)]
     pub body: Option<BlockStmt>,
 
-    #[serde(default)]
     pub accessibility: Option<Accessibility>,
 
-    #[serde(default)]
     pub is_optional: bool,
 }
 
@@ -227,16 +180,12 @@ pub struct Decorator {
 
     pub span: Span,
 
-    #[serde(rename = "expression")]
     pub expr: Box<Expr>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EqIgnoreSpan)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EqIgnoreSpan)]
 pub enum MethodKind {
-    #[serde(rename = "method")]
     Method,
-    #[serde(rename = "getter")]
     Getter,
-    #[serde(rename = "setter")]
     Setter,
 }

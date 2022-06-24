@@ -13,9 +13,7 @@ use swc_atoms::JsWord;
 #[derive(Eq, Hash, EqIgnoreSpan)]
 #[allow(variant_size_differences)]
 pub enum JSXObject {
-    #[tag("JSXMemberExpression")]
     JSXMemberExpr(Box<JSXMemberExpr>),
-    #[tag("Identifier")]
     Ident(Ident),
 }
 
@@ -24,11 +22,9 @@ pub enum JSXObject {
 pub struct JSXMemberExpr {
     pub node_id: NodeId,
 
-    #[serde(rename = "object")]
     #[span(lo)]
     pub obj: JSXObject,
 
-    #[serde(rename = "property")]
     #[span(hi)]
     pub prop: Ident,
 }
@@ -39,7 +35,6 @@ pub struct JSXMemberExpr {
 pub struct JSXNamespacedName {
     pub node_id: NodeId,
 
-    #[serde(rename = "namespace")]
     #[span(lo)]
     pub ns: Ident,
     #[span(hi)]
@@ -60,7 +55,7 @@ pub struct JSXExprContainer {
     pub node_id: NodeId,
 
     pub span: Span,
-    #[serde(rename = "expression")]
+
     pub expr: JSXExpr,
 }
 
@@ -68,9 +63,7 @@ pub struct JSXExprContainer {
 #[derive(Eq, Hash, EqIgnoreSpan)]
 #[allow(variant_size_differences)]
 pub enum JSXExpr {
-    #[tag("JSXEmptyExpression")]
     JSXEmptyExpr(JSXEmptyExpr),
-    #[tag("*")]
     Expr(Box<Expr>),
 }
 
@@ -80,18 +73,15 @@ pub struct JSXSpreadChild {
     pub node_id: NodeId,
 
     pub span: Span,
-    #[serde(rename = "expression")]
+
     pub expr: Box<Expr>,
 }
 
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum JSXElementName {
-    #[tag("Identifier")]
     Ident(Ident),
-    #[tag("JSXMemberExpression")]
     JSXMemberExpr(JSXMemberExpr),
-    #[tag("JSXNamespacedName")]
     JSXNamespacedName(JSXNamespacedName),
 }
 
@@ -104,15 +94,12 @@ pub struct JSXOpeningElement {
 
     pub span: Span,
 
-    #[serde(default, rename = "attributes")]
     pub attrs: Vec<JSXAttrOrSpread>,
 
-    #[serde(rename = "selfClosing")]
     pub self_closing: bool,
 
     /// Note: This field's name is different from one from babel because it is
     /// misleading
-    #[serde(default, rename = "typeArguments")]
     pub type_args: Option<TsTypeParamInstantiation>,
 }
 
@@ -120,9 +107,7 @@ pub struct JSXOpeningElement {
 #[derive(Eq, Hash, EqIgnoreSpan)]
 #[allow(variant_size_differences)]
 pub enum JSXAttrOrSpread {
-    #[tag("JSXAttribute")]
     JSXAttr(JSXAttr),
-    #[tag("SpreadElement")]
     SpreadElement(SpreadElement),
 }
 
@@ -149,30 +134,19 @@ pub struct JSXAttr {
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum JSXAttrName {
-    #[tag("Identifier")]
     Ident(Ident),
-    #[tag("JSXNamespacedName")]
     JSXNamespacedName(JSXNamespacedName),
 }
 
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum JSXAttrValue {
-    #[tag("StringLiteral")]
-    #[tag("BooleanLiteral")]
-    #[tag("NullLiteral")]
-    #[tag("NumericLiteral")]
-    #[tag("RegExpLiteral")]
-    #[tag("JSXText")]
     Lit(Lit),
 
-    #[tag("JSXExpressionContainer")]
     JSXExprContainer(JSXExprContainer),
 
-    #[tag("JSXElement")]
     JSXElement(Box<JSXElement>),
 
-    #[tag("JSXFragment")]
     JSXFragment(JSXFragment),
 }
 
@@ -211,19 +185,14 @@ pub struct JSXElement {
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum JSXElementChild {
-    #[tag("JSXText")]
     JSXText(JSXText),
 
-    #[tag("JSXExpressionContainer")]
     JSXExprContainer(JSXExprContainer),
 
-    #[tag("JSXSpreadChild")]
     JSXSpreadChild(JSXSpreadChild),
 
-    #[tag("JSXElement")]
     JSXElement(Box<JSXElement>),
 
-    #[tag("JSXFragment")]
     JSXFragment(JSXFragment),
 }
 
@@ -236,7 +205,6 @@ pub struct JSXFragment {
 
     pub opening: JSXOpeningFragment,
 
-    #[serde(default)]
     pub children: Vec<JSXElementChild>,
 
     pub closing: JSXClosingFragment,

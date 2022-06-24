@@ -5,9 +5,7 @@ use swc_atoms::JsWord;
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum Program {
-    #[tag("Module")]
     Module(Module),
-    #[tag("Script")]
     Script(Script),
 }
 
@@ -20,7 +18,6 @@ pub struct Module {
 
     pub body: Vec<ModuleItem>,
 
-    #[serde(default, rename = "interpreter")]
     pub shebang: Option<JsWord>,
 }
 
@@ -46,7 +43,6 @@ pub struct Script {
 
     pub body: Vec<Stmt>,
 
-    #[serde(default, rename = "interpreter")]
     pub shebang: Option<JsWord>,
 }
 
@@ -66,16 +62,6 @@ impl arbitrary::Arbitrary for Script {
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum ModuleItem {
-    #[tag("ImportDeclaration")]
-    #[tag("ExportDeclaration")]
-    #[tag("ExportNamedDeclaration")]
-    #[tag("ExportDefaultDeclaration")]
-    #[tag("ExportDefaultExpression")]
-    #[tag("ExportAllDeclaration")]
-    #[tag("TsImportEqualsDeclaration")]
-    #[tag("TsExportAssignment")]
-    #[tag("TsNamespaceExportDeclaration")]
     ModuleDecl(ModuleDecl),
-    #[tag("*")]
     Stmt(Stmt),
 }

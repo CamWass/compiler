@@ -1591,9 +1591,7 @@ fn word_contains_escape(span: &Span, word: &'static str) -> bool {
 
 #[ast_node]
 pub(in crate::parser) enum PatOrExprOrSpread {
-    #[tag("*")]
     Pat(Pat),
-    #[tag("*")]
     // TODO: maybe flatten
     ExprOrSpread(ExprOrSpread),
 }

@@ -11,11 +11,6 @@ use crate::{
 };
 use crate::{BindingIdent, PropName};
 use global_common::{ast_node, EqIgnoreSpan, Span};
-use serde::{
-    de::{self, Unexpected, Visitor},
-    Deserialize, Deserializer, Serialize,
-};
-use std::fmt;
 use string_enum::StringEnum;
 
 #[ast_node("TsTypeAnnotation")]
@@ -24,7 +19,6 @@ pub struct TsTypeAnn {
     pub node_id: NodeId,
 
     pub span: Span,
-    #[serde(rename = "typeAnnotation")]
     pub type_ann: Box<TsType>,
 }
 
@@ -36,10 +30,8 @@ pub struct TsTypeParamDecl {
     pub span: Span,
     pub name: Ident,
 
-    #[serde(default)]
     pub constraint: Option<Box<TsType>>,
 
-    #[serde(default)]
     pub default: Option<Box<TsType>>,
 }
 
@@ -58,12 +50,9 @@ pub struct TsParamProp {
     pub node_id: NodeId,
 
     pub span: Span,
-    #[serde(default)]
     pub decorators: Vec<Decorator>,
     /// At least one of `accessibility` or `readonly` must be set.
-    #[serde(default)]
     pub accessibility: Option<Accessibility>,
-    #[serde(rename = "override")]
     pub is_override: bool,
     pub readonly: bool,
     pub param: TsParamPropParam,
@@ -73,10 +62,8 @@ pub struct TsParamProp {
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum TsParamPropParam {
-    #[tag("Identifier")]
     Ident(BindingIdent),
 
-    #[tag("AssignmentPattern")]
     Assign(AssignPat),
 }
 
@@ -104,10 +91,8 @@ pub struct TsQualifiedName {
 #[derive(Eq, Hash, EqIgnoreSpan)]
 #[allow(variant_size_differences)]
 pub enum TsEntityName {
-    #[tag("TsQualifiedName")]
     TsQualifiedName(Box<TsQualifiedName>),
 
-    #[tag("Identifier")]
     Ident(Ident),
 }
 
@@ -118,25 +103,18 @@ pub enum TsEntityName {
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum TsTypeElement {
-    #[tag("TsCallSignatureDeclaration")]
     TsCallSignatureDecl(TsCallSignatureDecl),
 
-    #[tag("TsConstructSignatureDeclaration")]
     TsConstructSignatureDecl(TsConstructSignatureDecl),
 
-    #[tag("TsPropertySignature")]
     TsPropertySignature(TsPropertySignature),
 
-    #[tag("TsGetterSignature")]
     TsGetterSignature(TsGetterSignature),
 
-    #[tag("TsSetterSignature")]
     TsSetterSignature(TsSetterSignature),
 
-    #[tag("TsMethodSignature")]
     TsMethodSignature(TsMethodSignature),
 
-    #[tag("TsIndexSignature")]
     TsIndexSignature(TsIndexSignature),
 }
 
@@ -147,9 +125,7 @@ pub struct TsCallSignatureDecl {
 
     pub span: Span,
     pub params: Vec<TsAmbientParam>,
-    #[serde(default, rename = "typeAnnotation")]
     pub type_ann: Option<TsTypeAnn>,
-    #[serde(default)]
     pub type_params: Option<Vec<TsTypeParamDecl>>,
 }
 
@@ -160,9 +136,7 @@ pub struct TsConstructSignatureDecl {
 
     pub span: Span,
     pub params: Vec<TsAmbientParam>,
-    #[serde(default, rename = "typeAnnotation")]
     pub type_ann: Option<TsTypeAnn>,
-    #[serde(default)]
     pub type_params: Option<Vec<TsTypeParamDecl>>,
 }
 
@@ -175,7 +149,6 @@ pub struct TsPropertySignature {
     pub readonly: bool,
     pub key: PropName,
     pub optional: bool,
-    #[serde(default, rename = "typeAnnotation")]
     pub type_ann: Option<TsTypeAnn>,
 }
 
@@ -188,7 +161,6 @@ pub struct TsGetterSignature {
     pub readonly: bool,
     pub key: PropName,
     pub optional: bool,
-    #[serde(default, rename = "typeAnnotation")]
     pub type_ann: Option<TsTypeAnn>,
 }
 
@@ -214,9 +186,7 @@ pub struct TsMethodSignature {
     pub key: PropName,
     pub optional: bool,
     pub params: Vec<TsAmbientParam>,
-    #[serde(default)]
     pub type_ann: Option<TsTypeAnn>,
-    #[serde(default)]
     pub type_params: Option<Vec<TsTypeParamDecl>>,
 }
 
@@ -226,11 +196,9 @@ pub struct TsIndexSignature {
     pub node_id: NodeId,
 
     pub params: Vec<TsAmbientParam>,
-    #[serde(default, rename = "typeAnnotation")]
     pub type_ann: Option<TsTypeAnn>,
 
     pub readonly: bool,
-    #[serde(rename = "static")]
     pub is_static: bool,
     pub span: Span,
 }
@@ -242,75 +210,51 @@ pub struct TsIndexSignature {
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum TsType {
-    #[tag("TsKeywordType")]
     TsKeywordType(TsKeywordType),
 
-    #[tag("TsThisType")]
     TsThisType(TsThisType),
 
-    #[tag("TsFunctionType")]
-    #[tag("TsConstructorType")]
     TsFnOrConstructorType(TsFnOrConstructorType),
 
-    #[tag("TsTypeReference")]
     TsTypeRef(TsTypeRef),
 
-    #[tag("TsTypeQuery")]
     TsTypeQuery(TsTypeQuery),
 
-    #[tag("TsTypeLiteral")]
     TsTypeLit(TsTypeLit),
 
-    #[tag("TsArrayType")]
     TsArrayType(TsArrayType),
 
-    #[tag("TsTupleType")]
     TsTupleType(TsTupleType),
 
-    #[tag("TsOptionalType")]
     TsOptionalType(TsOptionalType),
 
-    #[tag("TsRestType")]
     TsRestType(TsRestType),
 
-    #[tag("TsUnionType")]
-    #[tag("TsIntersectionType")]
     TsUnionOrIntersectionType(TsUnionOrIntersectionType),
 
-    #[tag("TsConditionalType")]
     TsConditionalType(TsConditionalType),
 
-    #[tag("TsInferType")]
     TsInferType(TsInferType),
 
-    #[tag("TsParenthesizedType")]
     TsParenthesizedType(TsParenthesizedType),
 
-    #[tag("TsTypeOperator")]
     TsTypeOperator(TsTypeOperator),
 
-    #[tag("TsIndexedAccessType")]
     TsIndexedAccessType(TsIndexedAccessType),
 
-    #[tag("TsMappedType")]
     TsMappedType(TsMappedType),
 
-    #[tag("TsLiteralType")]
     TsLitType(TsLitType),
 
-    #[tag("TsTypePredicate")]
     TsTypePredicate(TsTypePredicate),
 
-    #[tag("TsImportType")]
     TsImportType(TsImportType),
 }
 
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum TsFnOrConstructorType {
-    #[tag("TsFunctionType")]
     TsFnType(TsFnType),
-    #[tag("TsConstructorType")]
     TsConstructorType(TsConstructorType),
 }
 
@@ -347,45 +291,32 @@ pub struct TsKeywordType {
     pub kind: TsKeywordTypeKind,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, EqIgnoreSpan)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, EqIgnoreSpan)]
 pub enum TsKeywordTypeKind {
-    #[serde(rename = "any")]
     TsAnyKeyword,
 
-    #[serde(rename = "unknown")]
     TsUnknownKeyword,
 
-    #[serde(rename = "number")]
     TsNumberKeyword,
 
-    #[serde(rename = "object")]
     TsObjectKeyword,
 
-    #[serde(rename = "boolean")]
     TsBooleanKeyword,
 
-    #[serde(rename = "bigint")]
     TsBigIntKeyword,
 
-    #[serde(rename = "string")]
     TsStringKeyword,
 
-    #[serde(rename = "symbol")]
     TsSymbolKeyword,
 
-    #[serde(rename = "void")]
     TsVoidKeyword,
 
-    #[serde(rename = "undefined")]
     TsUndefinedKeyword,
 
-    #[serde(rename = "null")]
     TsNullKeyword,
 
-    #[serde(rename = "never")]
     TsNeverKeyword,
 
-    #[serde(rename = "intrinsic")]
     TsIntrinsicKeyword,
 }
 
@@ -415,16 +346,12 @@ impl TsAmbientParam {
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum TsAmbientParamPat {
-    #[tag("Identifier")]
     Ident(BindingIdent),
 
-    #[tag("ArrayPattern")]
     Array(ArrayPat),
 
-    #[tag("RestElement")]
     Rest(RestPat),
 
-    #[tag("ObjectPattern")]
     Object(ObjectPat),
 }
 
@@ -447,9 +374,7 @@ pub struct TsFnType {
     pub span: Span,
     pub params: Vec<TsAmbientParam>,
 
-    #[serde(default)]
     pub type_params: Option<Vec<TsTypeParamDecl>>,
-    #[serde(rename = "typeAnnotation")]
     pub type_ann: TsTypeAnn,
 }
 
@@ -460,9 +385,7 @@ pub struct TsConstructorType {
 
     pub span: Span,
     pub params: Vec<TsAmbientParam>,
-    #[serde(default)]
     pub type_params: Option<Vec<TsTypeParamDecl>>,
-    #[serde(rename = "typeAnnotation")]
     pub type_ann: TsTypeAnn,
     pub is_abstract: bool,
 }
@@ -474,7 +397,6 @@ pub struct TsTypeRef {
 
     pub span: Span,
     pub type_name: TsEntityName,
-    #[serde(default)]
     pub type_params: Option<TsTypeParamInstantiation>,
 }
 
@@ -486,7 +408,6 @@ pub struct TsTypePredicate {
     pub span: Span,
     pub asserts: bool,
     pub param_name: TsThisTypeOrIdent,
-    #[serde(rename = "typeAnnotation")]
     pub type_ann: Option<TsTypeAnn>,
 }
 
@@ -494,10 +415,8 @@ pub struct TsTypePredicate {
 #[derive(Eq, Hash, EqIgnoreSpan)]
 #[allow(variant_size_differences)]
 pub enum TsThisTypeOrIdent {
-    #[tag("TsThisType")]
     TsThisType(TsThisType),
 
-    #[tag("Identifier")]
     Ident(Ident),
 }
 
@@ -514,10 +433,7 @@ pub struct TsTypeQuery {
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum TsTypeQueryExpr {
-    #[tag("TsQualifiedName")]
-    #[tag("Identifier")]
     TsEntityName(TsEntityName),
-    #[tag("TsImportType")]
     Import(TsImportType),
 }
 
@@ -527,10 +443,8 @@ pub struct TsImportType {
     pub node_id: NodeId,
 
     pub span: Span,
-    #[serde(rename = "argument")]
     pub arg: Str,
     pub qualifier: Option<TsEntityName>,
-    #[serde(rename = "typeArguments")]
     pub type_args: Option<TsTypeParamInstantiation>,
 }
 
@@ -579,7 +493,6 @@ pub struct TsOptionalType {
     pub node_id: NodeId,
 
     pub span: Span,
-    #[serde(rename = "typeAnnotation")]
     pub type_ann: Box<TsType>,
 }
 
@@ -589,17 +502,14 @@ pub struct TsRestType {
     pub node_id: NodeId,
 
     pub span: Span,
-    #[serde(rename = "typeAnnotation")]
     pub type_ann: Box<TsType>,
 }
 
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum TsUnionOrIntersectionType {
-    #[tag("TsUnionType")]
     TsUnionType(TsUnionType),
 
-    #[tag("TsIntersectionType")]
     TsIntersectionType(TsIntersectionType),
 }
 
@@ -648,7 +558,6 @@ pub struct TsParenthesizedType {
     pub node_id: NodeId,
 
     pub span: Span,
-    #[serde(rename = "typeAnnotation")]
     pub type_ann: Box<TsType>,
 }
 
@@ -659,7 +568,6 @@ pub struct TsTypeOperator {
 
     pub span: Span,
     pub op: TsTypeOperatorOp,
-    #[serde(rename = "typeAnnotation")]
     pub type_ann: Box<TsType>,
 }
 
@@ -680,7 +588,6 @@ pub struct TsIndexedAccessType {
 
     pub span: Span,
     pub readonly: bool,
-    #[serde(rename = "objectType")]
     pub obj_type: Box<TsType>,
     pub index_type: Box<TsType>,
 }
@@ -692,74 +599,16 @@ pub enum TruePlusMinus {
     Minus,
 }
 
-impl Serialize for TruePlusMinus {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: ::serde::Serializer,
-    {
-        match *self {
-            TruePlusMinus::True => serializer.serialize_bool(true),
-            TruePlusMinus::Plus => serializer.serialize_str("+"),
-            TruePlusMinus::Minus => serializer.serialize_str("-"),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for TruePlusMinus {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct TruePlusMinusVisitor;
-
-        impl<'de> Visitor<'de> for TruePlusMinusVisitor {
-            type Value = TruePlusMinus;
-            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str("one of '+', '-', true")
-            }
-
-            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                match value {
-                    "+" => Ok(TruePlusMinus::Plus),
-                    "-" => Ok(TruePlusMinus::Minus),
-                    "true" => Ok(TruePlusMinus::True),
-                    _ => Err(de::Error::invalid_value(Unexpected::Str(value), &self)),
-                }
-            }
-
-            fn visit_bool<E>(self, value: bool) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                if value {
-                    Ok(TruePlusMinus::True)
-                } else {
-                    Err(de::Error::invalid_value(Unexpected::Bool(value), &self))
-                }
-            }
-        }
-
-        deserializer.deserialize_any(TruePlusMinusVisitor)
-    }
-}
-
 #[ast_node("TsMappedType")]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsMappedType {
     pub node_id: NodeId,
 
     pub span: Span,
-    #[serde(default)]
     pub readonly: Option<TruePlusMinus>,
     pub type_param: TsTypeParamDecl,
-    #[serde(default, rename = "nameType")]
     pub name_type: Option<Box<TsType>>,
-    #[serde(default)]
     pub optional: Option<TruePlusMinus>,
-    #[serde(default, rename = "typeAnnotation")]
     pub type_ann: Option<Box<TsType>>,
 }
 
@@ -769,26 +618,20 @@ pub struct TsLitType {
     pub node_id: NodeId,
 
     pub span: Span,
-    #[serde(rename = "literal")]
     pub lit: TsLit,
 }
 
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum TsLit {
-    #[tag("NumericLiteral")]
     Number(Number),
 
-    #[tag("StringLiteral")]
     Str(Str),
 
-    #[tag("BooleanLiteral")]
     Bool(Bool),
 
-    #[tag("BigIntLiteral")]
     BigInt(BigInt),
 
-    #[tag("TemplateLiteral")]
     Tpl(TsTplLitType),
 }
 
@@ -816,7 +659,6 @@ pub struct TsInterfaceDecl {
     pub span: Span,
     pub id: Ident,
     pub declare: bool,
-    #[serde(default)]
     pub type_params: Option<Vec<TsTypeParamDecl>>,
     pub extends: Vec<TsExprWithTypeArgs>,
     pub body: TsInterfaceBody,
@@ -837,9 +679,7 @@ pub struct TsExprWithTypeArgs {
     pub node_id: NodeId,
 
     pub span: Span,
-    #[serde(rename = "expression")]
     pub expr: TsEntityName,
-    #[serde(default, rename = "typeArguments")]
     pub type_args: Option<TsTypeParamInstantiation>,
 }
 
@@ -851,9 +691,7 @@ pub struct TsTypeAliasDecl {
     pub span: Span,
     pub declare: bool,
     pub id: Ident,
-    #[serde(default)]
     pub type_params: Option<Vec<TsTypeParamDecl>>,
-    #[serde(rename = "typeAnnotation")]
     pub type_ann: Box<TsType>,
 }
 
@@ -876,7 +714,6 @@ pub struct TsEnumMember {
 
     pub span: Span,
     pub id: TsEnumMemberId,
-    #[serde(default)]
     pub init: Option<Box<Expr>>,
 }
 
@@ -885,10 +722,8 @@ pub struct TsEnumMember {
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum TsEnumMemberId {
-    #[tag("Identifier")]
     Ident(Ident),
 
-    #[tag("StringLiteral")]
     Str(Str),
 }
 
@@ -902,7 +737,6 @@ pub struct TsModuleDecl {
     /// In TypeScript, this is only available through`node.flags`.
     pub global: bool,
     pub id: TsModuleName,
-    #[serde(default)]
     pub body: Option<TsNamespaceBody>,
 }
 
@@ -911,10 +745,8 @@ pub struct TsModuleDecl {
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum TsNamespaceBody {
-    #[tag("TsModuleBlock")]
     TsModuleBlock(TsModuleBlock),
 
-    #[tag("TsNamespaceDeclaration")]
     TsNamespaceDecl(TsNamespaceDecl),
 }
 
@@ -943,10 +775,8 @@ pub struct TsNamespaceDecl {
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum TsModuleName {
-    #[tag("Identifier")]
     Ident(Ident),
 
-    #[tag("StringLiteral")]
     Str(Str),
 }
 
@@ -966,11 +796,8 @@ pub struct TsImportEqualsDecl {
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum TsModuleRef {
-    #[tag("TsQualifiedName")]
-    #[tag("Identifier")]
     TsEntityName(TsEntityName),
 
-    #[tag("TsExternalModuleReference")]
     TsExternalModuleRef(TsExternalModuleRef),
 }
 
@@ -980,7 +807,6 @@ pub struct TsExternalModuleRef {
     pub node_id: NodeId,
 
     pub span: Span,
-    #[serde(rename = "expression")]
     pub expr: Str,
 }
 
@@ -993,7 +819,6 @@ pub struct TsExportAssignment {
     pub node_id: NodeId,
 
     pub span: Span,
-    #[serde(rename = "expression")]
     pub expr: Box<Expr>,
 }
 
@@ -1016,9 +841,7 @@ pub struct TsAsExpr {
     pub node_id: NodeId,
 
     pub span: Span,
-    #[serde(rename = "expression")]
     pub expr: Box<Expr>,
-    #[serde(rename = "typeAnnotation")]
     pub type_ann: Box<TsType>,
 }
 
@@ -1028,9 +851,7 @@ pub struct TsTypeAssertion {
     pub node_id: NodeId,
 
     pub span: Span,
-    #[serde(rename = "expression")]
     pub expr: Box<Expr>,
-    #[serde(rename = "typeAnnotation")]
     pub type_ann: Box<TsType>,
 }
 
@@ -1040,17 +861,13 @@ pub struct TsNonNullExpr {
     pub node_id: NodeId,
 
     pub span: Span,
-    #[serde(rename = "expression")]
     pub expr: Box<Expr>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq, Hash, EqIgnoreSpan)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EqIgnoreSpan)]
 pub enum Accessibility {
-    #[serde(rename = "public")]
     Public,
-    #[serde(rename = "protected")]
     Protected,
-    #[serde(rename = "private")]
     Private,
 }
 

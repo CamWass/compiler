@@ -15,26 +15,20 @@ pub struct Function {
 
     pub params: Vec<Param>,
 
-    #[serde(default)]
     pub decorators: Vec<Decorator>,
 
     pub span: Span,
 
-    #[serde(default)]
     pub body: Option<BlockStmt>,
 
     /// if it's a generator.
-    #[serde(default, rename = "generator")]
     pub is_generator: bool,
 
     /// if it's an async function.
-    #[serde(default, rename = "async")]
     pub is_async: bool,
 
-    #[serde(default, rename = "typeParameters")]
     pub type_params: Option<Vec<TsTypeParamDecl>>,
 
-    #[serde(default)]
     pub return_type: Option<TsTypeAnn>,
 }
 
@@ -44,7 +38,6 @@ pub struct Param {
     pub node_id: NodeId,
 
     pub span: Span,
-    #[serde(default)]
     pub decorators: Vec<Decorator>,
     pub pat: Pat,
 }
@@ -67,8 +60,6 @@ impl ParamWithoutDecorators {
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum ParamOrTsParamProp {
-    #[tag("TsParameterProperty")]
     TsParamProp(TsParamProp),
-    #[tag("Parameter")]
     Param(Param),
 }

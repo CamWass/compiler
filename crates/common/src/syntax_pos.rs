@@ -1,6 +1,5 @@
 pub use self::hygiene::{Mark, SyntaxContext};
 use crate::{rustc_data_structures::stable_hasher::StableHasher, sync::Lrc};
-use serde::{Deserialize, Serialize};
 use std::{
     borrow::Cow,
     cmp, fmt,
@@ -21,11 +20,9 @@ pub mod hygiene;
 /// able to use many of the functions on spans in `source_map` and you cannot
 /// assume that the length of the `span = hi - lo`; there may be space in the
 /// `BytePos` range between files.
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Ord, PartialOrd)]
 pub struct Span {
-    #[serde(rename = "start")]
     pub lo: BytePos,
-    #[serde(rename = "end")]
     pub hi: BytePos,
     /// Information about where the macro came from, if this piece of
     /// code was created by a macro expansion.
@@ -733,8 +730,7 @@ pub trait Pos {
 
 /// A byte offset. Keep this small (currently 32-bits), as AST contains
 /// a lot of them.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Serialize, Deserialize)]
-#[serde(transparent)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct BytePos(pub u32);
 

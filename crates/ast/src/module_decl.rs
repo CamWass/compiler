@@ -11,31 +11,22 @@ use global_common::{ast_node, EqIgnoreSpan, Span};
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum ModuleDecl {
-    #[tag("ImportDeclaration")]
     Import(ImportDecl),
 
-    #[tag("ExportDeclaration")]
     ExportDecl(ExportDecl),
 
-    #[tag("ExportNamedDeclaration")]
     ExportNamed(NamedExport),
 
-    #[tag("ExportDefaultDeclaration")]
     ExportDefaultDecl(ExportDefaultDecl),
 
-    #[tag("ExportDefaultExpression")]
     ExportDefaultExpr(ExportDefaultExpr),
 
-    #[tag("ExportAllDeclaration")]
     ExportAll(ExportAll),
 
-    #[tag("TsImportEqualsDeclaration")]
     TsImportEquals(TsImportEqualsDecl),
 
-    #[tag("TsExportAssignment")]
     TsExportAssignment(TsExportAssignment),
 
-    #[tag("TsNamespaceExportDeclaration")]
     TsNamespaceExport(TsNamespaceExportDecl),
 }
 
@@ -46,7 +37,6 @@ pub struct ExportDefaultExpr {
 
     pub span: Span,
 
-    #[serde(rename = "expression")]
     pub expr: Box<Expr>,
 }
 
@@ -57,7 +47,6 @@ pub struct ExportDecl {
 
     pub span: Span,
 
-    #[serde(rename = "declaration")]
     pub decl: Decl,
 }
 
@@ -68,16 +57,12 @@ pub struct ImportDecl {
 
     pub span: Span,
 
-    #[serde(default)]
     pub specifiers: Vec<ImportSpecifier>,
 
-    #[serde(rename = "source")]
     pub src: Str,
 
-    #[serde(rename = "typeOnly")]
     pub type_only: bool,
 
-    #[serde(default)]
     pub asserts: Option<ObjectLit>,
 }
 
@@ -89,10 +74,8 @@ pub struct ExportAll {
 
     pub span: Span,
 
-    #[serde(rename = "source")]
     pub src: Str,
 
-    #[serde(default)]
     pub asserts: Option<ObjectLit>,
 }
 
@@ -107,13 +90,10 @@ pub struct NamedExport {
 
     pub specifiers: Vec<ExportSpecifier>,
 
-    #[serde(rename = "source")]
     pub src: Option<Str>,
 
-    #[serde(rename = "typeOnly")]
     pub type_only: bool,
 
-    #[serde(default)]
     pub asserts: Option<ObjectLit>,
 }
 
@@ -130,24 +110,18 @@ pub struct ExportDefaultDecl {
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum DefaultDecl {
-    #[tag("ClassExpression")]
     Class(ClassExpr),
 
-    #[tag("FunctionExpression")]
     Fn(FnExpr),
 
-    #[tag("TsInterfaceDeclaration")]
     TsInterfaceDecl(TsInterfaceDecl),
 }
 
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum ImportSpecifier {
-    #[tag("ImportSpecifier")]
     Named(ImportNamedSpecifier),
-    #[tag("ImportDefaultSpecifier")]
     Default(ImportDefaultSpecifier),
-    #[tag("ImportNamespaceSpecifier")]
     Namespace(ImportStarAsSpecifier),
 }
 
@@ -183,20 +157,16 @@ pub struct ImportNamedSpecifier {
 
     pub local: Ident,
 
-    #[serde(default)]
     pub imported: Option<Ident>,
 }
 
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum ExportSpecifier {
-    #[tag("ExportNamespaceSpecifier")]
     Namespace(ExportNamespaceSpecifier),
 
-    #[tag("ExportDefaultSpecifier")]
     Default(ExportDefaultSpecifier),
 
-    #[tag("ExportSpecifier")]
     Named(ExportNamedSpecifier),
 }
 
@@ -230,6 +200,5 @@ pub struct ExportNamedSpecifier {
     /// `foo` in `export { foo as bar }`
     pub orig: Ident,
     /// `Some(bar)` in `export { foo as bar }`
-    #[serde(default)]
     pub exported: Option<Ident>,
 }

@@ -21,13 +21,10 @@ pub use self::{
     source_map::{FileLines, FileLoader, FilePathMapping, SourceMap, SpanSnippetError},
     syntax_pos::{LineCol, Pos},
 };
-pub use ast_node::{ast_node, ast_serde, DeserializeEnum, Spanned};
+pub use ast_node::{ast_node, Spanned};
 pub use eq_ignore_macros::EqIgnoreSpan;
 pub use from_variant::FromVariant;
 pub use global_visit::chain;
-
-#[doc(hidden)]
-pub mod private;
 
 pub mod chars;
 pub mod comments;
@@ -39,7 +36,6 @@ pub mod macros;
 pub mod pass;
 mod pos;
 mod rustc_data_structures;
-pub mod serializer;
 mod source_map;
 pub mod sync;
 mod syntax_pos;

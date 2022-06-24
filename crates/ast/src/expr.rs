@@ -17,34 +17,25 @@ use crate::{
 };
 use global_common::EqIgnoreSpan;
 use global_common::{ast_node, Span};
-use serde::{self};
 
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum Expr {
-    #[tag("ThisExpression")]
     This(ThisExpr),
 
-    #[tag("ArrayExpression")]
     Array(ArrayLit),
 
-    #[tag("ObjectExpression")]
     Object(ObjectLit),
 
-    #[tag("FunctionExpression")]
     Fn(FnExpr),
 
-    #[tag("UnaryExpression")]
     Unary(UnaryExpr),
 
     /// `++v`, `--v`, `v++`, `v--`
-    #[tag("UpdateExpression")]
     Update(UpdateExpr),
 
-    #[tag("BinaryExpression")]
     Bin(BinExpr),
 
-    #[tag("AssignmentExpression")]
     Assign(AssignExpr),
 
     //
@@ -58,93 +49,60 @@ pub enum Expr {
     /// computed (a[b]) member expression and property is an Expression. If
     /// computed is false, the node corresponds to a static (a.b) member
     /// expression and property is an Identifier.
-    #[tag("MemberExpression")]
     Member(MemberExpr),
 
     /// true ? 'a' : 'b'
-    #[tag("ConditionalExpression")]
     Cond(CondExpr),
 
-    #[tag("CallExpression")]
     Call(CallExpr),
 
     /// `new Cat()`
-    #[tag("NewExpression")]
     New(NewExpr),
 
-    #[tag("SequenceExpression")]
     Seq(SeqExpr),
 
-    #[tag("Identifier")]
     Ident(Ident),
 
-    #[tag("StringLiteral")]
-    #[tag("BooleanLiteral")]
-    #[tag("NullLiteral")]
-    #[tag("NumericLiteral")]
-    #[tag("RegExpLiteral")]
-    #[tag("JSXText")]
-    #[tag("BigIntLiteral")]
     Lit(Lit),
 
-    #[tag("TemplateLiteral")]
     Tpl(Tpl),
 
-    #[tag("TaggedTemplateExpression")]
     TaggedTpl(TaggedTpl),
 
-    #[tag("ArrowFunctionExpression")]
     Arrow(ArrowExpr),
 
-    #[tag("ClassExpression")]
     Class(ClassExpr),
 
-    #[tag("YieldExpression")]
     Yield(YieldExpr),
 
-    #[tag("MetaProperty")]
     MetaProp(MetaPropExpr),
 
-    #[tag("AwaitExpression")]
     Await(AwaitExpr),
 
-    #[tag("ParenthesisExpression")]
     Paren(ParenExpr),
 
-    #[tag("JSXMemberExpression")]
     JSXMember(JSXMemberExpr),
 
-    #[tag("JSXNamespacedName")]
     JSXNamespacedName(JSXNamespacedName),
 
-    #[tag("JSXEmptyExpression")]
     JSXEmpty(JSXEmptyExpr),
 
-    #[tag("JSXElement")]
     JSXElement(Box<JSXElement>),
 
-    #[tag("JSXFragment")]
     JSXFragment(JSXFragment),
 
-    #[tag("TsTypeAssertion")]
     TsTypeAssertion(TsTypeAssertion),
 
-    #[tag("TsConstAssertion")]
     TsConstAssertion(TsConstAssertion),
 
-    #[tag("TsNonNullExpression")]
     TsNonNull(TsNonNullExpr),
 
-    #[tag("TsAsExpression")]
     TsAs(TsAsExpr),
 
-    #[tag("PrivateName")]
     PrivateName(PrivateName),
 
-    #[tag("OptionalChainingExpression")]
     OptChain(OptChainExpr),
 
-    #[tag("Invalid")]
     Invalid(Invalid),
 }
 
@@ -164,7 +122,6 @@ pub struct ArrayLit {
 
     pub span: Span,
 
-    #[serde(default, rename = "elements")]
     pub elems: Vec<Option<ExprOrSpread>>,
 }
 
@@ -176,7 +133,6 @@ pub struct ObjectLit {
 
     pub span: Span,
 
-    #[serde(default, rename = "properties")]
     pub props: Vec<Prop>,
 }
 
@@ -185,11 +141,9 @@ pub struct ObjectLit {
 pub struct SpreadElement {
     pub node_id: NodeId,
 
-    #[serde(rename = "spread")]
     #[span(lo)]
     pub dot3_token: Span,
 
-    #[serde(rename = "arguments")]
     #[span(hi)]
     pub expr: Box<Expr>,
 }
@@ -201,10 +155,8 @@ pub struct UnaryExpr {
 
     pub span: Span,
 
-    #[serde(rename = "operator")]
     pub op: UnaryOp,
 
-    #[serde(rename = "argument")]
     pub arg: Box<Expr>,
 }
 
@@ -215,12 +167,10 @@ pub struct UpdateExpr {
 
     pub span: Span,
 
-    #[serde(rename = "operator")]
     pub op: UpdateOp,
 
     pub prefix: bool,
 
-    #[serde(rename = "argument")]
     pub arg: Box<Expr>,
 }
 
@@ -231,7 +181,6 @@ pub struct BinExpr {
 
     pub span: Span,
 
-    #[serde(rename = "operator")]
     pub op: BinaryOp,
 
     pub left: Box<Expr>,
@@ -245,10 +194,8 @@ pub struct BinExpr {
 pub struct FnExpr {
     pub node_id: NodeId,
 
-    #[serde(default, rename = "identifier")]
     pub ident: Option<Ident>,
 
-    #[serde(flatten)]
     #[span]
     pub function: Function,
 }
@@ -259,10 +206,8 @@ pub struct FnExpr {
 pub struct ClassExpr {
     pub node_id: NodeId,
 
-    #[serde(default, rename = "identifier")]
     pub ident: Option<Ident>,
 
-    #[serde(flatten)]
     #[span]
     pub class: Class,
 }
@@ -274,7 +219,6 @@ pub struct AssignExpr {
 
     pub span: Span,
 
-    #[serde(rename = "operator")]
     pub op: AssignOp,
 
     pub left: PatOrExpr,
@@ -289,10 +233,8 @@ pub struct MemberExpr {
 
     pub span: Span,
 
-    #[serde(rename = "object")]
     pub obj: ExprOrSuper,
 
-    #[serde(rename = "property")]
     pub prop: Box<Expr>,
 
     pub computed: bool,
@@ -307,10 +249,8 @@ pub struct CondExpr {
 
     pub test: Box<Expr>,
 
-    #[serde(rename = "consequent")]
     pub cons: Box<Expr>,
 
-    #[serde(rename = "alternate")]
     pub alt: Box<Expr>,
 }
 
@@ -323,10 +263,8 @@ pub struct CallExpr {
 
     pub callee: ExprOrSuper,
 
-    #[serde(default, rename = "arguments")]
     pub args: Vec<ExprOrSpread>,
 
-    #[serde(default, rename = "typeArguments")]
     pub type_args: Option<TsTypeParamInstantiation>,
     // pub type_params: Option<TsTypeParamInstantiation>,
 }
@@ -340,10 +278,8 @@ pub struct NewExpr {
 
     pub callee: Box<Expr>,
 
-    #[serde(default, rename = "arguments")]
     pub args: Option<Vec<ExprOrSpread>>,
 
-    #[serde(default, rename = "typeArguments")]
     pub type_args: Option<TsTypeParamInstantiation>,
     // pub type_params: Option<TsTypeParamInstantiation>,
 }
@@ -355,7 +291,6 @@ pub struct SeqExpr {
 
     pub span: Span,
 
-    #[serde(rename = "expressions")]
     pub exprs: Vec<Box<Expr>>,
 }
 
@@ -371,13 +306,10 @@ pub struct ArrowExpr {
 
     pub body: BlockStmtOrExpr,
 
-    #[serde(default, rename = "async")]
     pub is_async: bool,
 
-    #[serde(default, rename = "typeParameters")]
     pub type_params: Option<Vec<TsTypeParamDecl>>,
 
-    #[serde(default)]
     pub return_type: Option<TsTypeAnn>,
 }
 
@@ -388,10 +320,8 @@ pub struct YieldExpr {
 
     pub span: Span,
 
-    #[serde(default, rename = "argument")]
     pub arg: Option<Box<Expr>>,
 
-    #[serde(default)]
     pub delegate: bool,
 }
 
@@ -403,7 +333,6 @@ pub struct MetaPropExpr {
     #[span(lo)]
     pub meta: Ident,
 
-    #[serde(rename = "property")]
     #[span(hi)]
     pub prop: Ident,
 }
@@ -415,7 +344,6 @@ pub struct AwaitExpr {
 
     pub span: Span,
 
-    #[serde(rename = "argument")]
     pub arg: Box<Expr>,
 }
 
@@ -426,7 +354,6 @@ pub struct Tpl {
 
     pub span: Span,
 
-    #[serde(rename = "expressions")]
     pub exprs: Vec<Box<Expr>>,
 
     pub quasis: Vec<TplElement>,
@@ -441,10 +368,8 @@ pub struct TaggedTpl {
 
     pub tag: Box<Expr>,
 
-    #[serde(default, rename = "typeParameters")]
     pub type_params: Option<TsTypeParamInstantiation>,
 
-    #[serde(rename = "template")]
     pub tpl: Tpl,
 }
 
@@ -466,7 +391,6 @@ pub struct ParenExpr {
 
     pub span: Span,
 
-    #[serde(rename = "expression")]
     pub expr: Box<Expr>,
 }
 
@@ -474,10 +398,8 @@ pub struct ParenExpr {
 #[allow(variant_size_differences)]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum ExprOrSuper {
-    #[tag("Super")]
     Super(Super),
 
-    #[tag("*")]
     Expr(Box<Expr>),
 }
 
@@ -492,9 +414,7 @@ pub struct Super {
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum ExprOrSpread {
-    #[tag("SpreadElement")]
     Spread(SpreadElement),
-    #[tag("*")]
     Expr(Box<Expr>),
 }
 
@@ -502,54 +422,14 @@ pub enum ExprOrSpread {
 #[derive(Eq, Hash, EqIgnoreSpan)]
 #[allow(variant_size_differences)]
 pub enum BlockStmtOrExpr {
-    #[tag("BlockStatement")]
     BlockStmt(BlockStmt),
-    #[tag("*")]
     Expr(Box<Expr>),
 }
 
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum PatOrExpr {
-    #[tag("ThisExpression")]
-    #[tag("ArrayExpression")]
-    #[tag("ObjectExpression")]
-    #[tag("FunctionExpression")]
-    #[tag("UnaryExpression")]
-    #[tag("UpdateExpression")]
-    #[tag("BinaryExpression")]
-    #[tag("AssignmentExpression")]
-    #[tag("MemberExpression")]
-    #[tag("ConditionalExpression")]
-    #[tag("CallExpression")]
-    #[tag("NewExpression")]
-    #[tag("SequenceExpression")]
-    #[tag("StringLiteral")]
-    #[tag("BooleanLiteral")]
-    #[tag("NullLiteral")]
-    #[tag("NumericLiteral")]
-    #[tag("RegExpLiteral")]
-    #[tag("JSXText")]
-    #[tag("TemplateLiteral")]
-    #[tag("TaggedTemplateLiteral")]
-    #[tag("ArrowFunctionExpression")]
-    #[tag("ClassExpression")]
-    #[tag("YieldExpression")]
-    #[tag("MetaProperty")]
-    #[tag("AwaitExpression")]
-    #[tag("ParenthesisExpression")]
-    #[tag("JSXMemberExpression")]
-    #[tag("JSXNamespacedName")]
-    #[tag("JSXEmptyExpression")]
-    #[tag("JSXElement")]
-    #[tag("JSXFragment")]
-    #[tag("TsTypeAssertion")]
-    #[tag("TsConstAssertion")]
-    #[tag("TsNonNullExpression")]
-    #[tag("TsAsExpression")]
-    #[tag("PrivateName")]
     Expr(Box<Expr>),
-    #[tag("*")]
     Pat(Box<Pat>),
 }
 
@@ -580,37 +460,3 @@ pub struct OptChainExpr {
     pub question_dot_token: Span,
     pub expr: Box<Expr>,
 }
-
-test_de!(
-    jsx_element,
-    JSXElement,
-    r#"{
-      "type": "JSXElement",
-      "span": {
-        "start": 0,
-        "end": 5,
-        "ctxt": 0
-      },
-      "opening": {
-        "type": "JSXOpeningElement",
-        "name": {
-          "type": "Identifier",
-          "span": {
-            "start": 1,
-            "end": 2,
-            "ctxt": 0
-          },
-          "value": "a",
-          "optional": false
-        },
-        "span": {
-          "start": 1,
-          "end": 5,
-          "ctxt": 0
-        },
-        "selfClosing": true
-      },
-      "children": [],
-      "closing": null
-    }"#
-);

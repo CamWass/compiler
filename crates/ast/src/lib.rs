@@ -64,7 +64,6 @@ pub use self::{
 };
 use global_common::{ast_node, EqIgnoreSpan, Span};
 use index::{newtype_index, vec::Idx};
-use serde::{Deserialize, Serialize};
 
 #[macro_use]
 mod macros;
@@ -85,17 +84,8 @@ mod typescript;
 
 newtype_index! {
     pub struct NodeId {
-        derive [Serialize, EqIgnoreSpan]
+        derive [EqIgnoreSpan]
         DEBUG_FORMAT = "NodeId({})"
-    }
-}
-
-impl<'de> Deserialize<'de> for NodeId {
-    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        todo!()
     }
 }
 
@@ -130,23 +120,15 @@ pub struct Invalid {
     pub span: Span,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub enum EsVersion {
-    #[serde(rename = "es3")]
     Es3,
-    #[serde(rename = "es5")]
     Es5,
-    #[serde(rename = "es2015")]
     Es2015,
-    #[serde(rename = "es2016")]
     Es2016,
-    #[serde(rename = "es2017")]
     Es2017,
-    #[serde(rename = "es2018")]
     Es2018,
-    #[serde(rename = "es2019")]
     Es2019,
-    #[serde(rename = "es2020")]
     Es2020,
 }
 

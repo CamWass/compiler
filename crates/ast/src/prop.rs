@@ -13,28 +13,21 @@ use global_common::{ast_node, EqIgnoreSpan, Span};
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum Prop {
     /// `a` in `{ a, }`
-    #[tag("Identifier")]
     Shorthand(Ident),
 
     /// `key: value` in `{ key: value, }`
-    #[tag("KeyValueProperty")]
     KeyValue(KeyValueProp),
 
     /// This is **invalid** for object literal.
-    #[tag("AssignmentProperty")]
     Assign(AssignProp),
 
-    #[tag("GetterProperty")]
     Getter(GetterProp),
 
-    #[tag("SetterProperty")]
     Setter(SetterProp),
 
-    #[tag("MethodProperty")]
     Method(MethodProp),
 
     /// Spread properties, e.g., `{a: 1, ...obj, b: 2}`.
-    #[tag("SpreadAssignment")]
     Spread(SpreadAssignment),
 }
 
@@ -68,9 +61,7 @@ pub struct GetterProp {
 
     pub span: Span,
     pub key: PropName,
-    #[serde(default, rename = "typeAnnotation")]
     pub type_ann: Option<TsTypeAnn>,
-    #[serde(default)]
     pub body: Option<BlockStmt>,
 }
 #[ast_node("SetterProperty")]
@@ -82,7 +73,6 @@ pub struct SetterProp {
     pub key: PropName,
     // TODO:
     pub param: ParamWithoutDecorators,
-    #[serde(default)]
     pub body: Option<BlockStmt>,
 }
 #[ast_node("MethodProperty")]
@@ -92,7 +82,6 @@ pub struct MethodProp {
 
     pub key: PropName,
 
-    #[serde(flatten)]
     #[span]
     pub function: Function,
 }
@@ -100,15 +89,11 @@ pub struct MethodProp {
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub enum PropName {
-    #[tag("Identifier")]
     Ident(Ident),
     /// String literal.
-    #[tag("StringLiteral")]
     Str(Str),
     /// Numeric literal.
-    #[tag("NumericLiteral")]
     Num(Number),
-    #[tag("Computed")]
     Computed(ComputedPropName),
 }
 
@@ -119,7 +104,6 @@ pub struct ComputedPropName {
 
     /// Span including `[` and `]`.
     pub span: Span,
-    #[serde(rename = "expression")]
     pub expr: Box<Expr>,
 }
 
@@ -128,11 +112,9 @@ pub struct ComputedPropName {
 pub struct SpreadAssignment {
     pub node_id: NodeId,
 
-    #[serde(rename = "spread")]
     #[span(lo)]
     pub dot3_token: Span,
 
-    #[serde(rename = "arguments")]
     #[span(hi)]
     pub expr: Box<Expr>,
 }
