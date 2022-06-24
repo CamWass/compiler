@@ -1,7 +1,7 @@
 use super::{pat::PatType, util::ExprExt, *};
 use crate::{lexer::TokenContext, token::AssignOpToken};
 use either::Either;
-use global_common::{ast_node, Pos, Spanned};
+use global_common::{Pos, Spanned};
 use swc_atoms::js_word;
 
 mod ops;
@@ -1589,7 +1589,7 @@ fn word_contains_escape(span: &Span, word: &'static str) -> bool {
     span.hi.to_usize() - span.lo.to_usize() != word.len()
 }
 
-#[ast_node]
+#[derive(::ast_node::Spanned, Debug, Clone, PartialEq)]
 pub(in crate::parser) enum PatOrExprOrSpread {
     Pat(Pat),
     // TODO: maybe flatten

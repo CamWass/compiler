@@ -57,8 +57,10 @@ checksum = "be4dc07131ffa69b8072d35f5007352af944213cde02545e2103680baed38fcd"
 name = "ast"
 version = "0.1.0"
 dependencies = [
+ "ast_node",
  "global_common",
  "index",
+ "node_id",
  "num-bigint",
  "string_enum",
  "swc_atoms",
@@ -82,6 +84,7 @@ name = "ast_node"
 version = "0.1.0"
 dependencies = [
  "darling",
+ "global_common",
  "macro_common",
  "pmutil",
  "proc-macro2",
@@ -233,6 +236,7 @@ dependencies = [
  "global_common",
  "index",
  "lexical",
+ "node_id",
  "num-bigint",
  "once_cell",
  "parser",
@@ -523,7 +527,6 @@ name = "global_common"
 version = "0.1.0"
 dependencies = [
  "ahash",
- "ast_node",
  "atty",
  "cfg-if 0.1.10",
  "either",
@@ -793,6 +796,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4a24736216ec316047a1fc4252e27dabb04218aa4a3f37c6e7ddbf1f9782b54"
 
 [[package]]
+name = "node_id"
+version = "0.1.0"
+dependencies = [
+ "macro_common",
+ "pmutil",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "num-bigint"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -859,6 +873,7 @@ name = "parser"
 version = "0.1.0"
 dependencies = [
  "ast",
+ "ast_node",
  "criterion",
  "ecma_visit",
  "either",

@@ -3,12 +3,13 @@ use crate::{
     expr::Expr,
     ident::Ident,
     pat::Pat,
-    NodeId,
+    GetNodeId, NodeId,
 };
-use global_common::{ast_node, EqIgnoreSpan, Span};
+use ast_node::ast_node;
+use global_common::{EqIgnoreSpan, Span};
 
 /// Use when only block statements are allowed.
-#[ast_node("BlockStatement")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct BlockStmt {
     pub node_id: NodeId,
@@ -62,7 +63,7 @@ pub enum Stmt {
     Expr(ExprStmt),
 }
 
-#[ast_node("ExpressionStatement")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ExprStmt {
     pub node_id: NodeId,
@@ -71,7 +72,7 @@ pub struct ExprStmt {
     pub expr: Box<Expr>,
 }
 
-#[ast_node("EmptyStatement")]
+#[ast_node]
 #[derive(Eq, Hash, Copy, EqIgnoreSpan)]
 pub struct EmptyStmt {
     pub node_id: NodeId,
@@ -80,7 +81,7 @@ pub struct EmptyStmt {
     pub span: Span,
 }
 
-#[ast_node("DebuggerStatement")]
+#[ast_node]
 #[derive(Eq, Hash, Copy, EqIgnoreSpan)]
 pub struct DebuggerStmt {
     pub node_id: NodeId,
@@ -88,7 +89,7 @@ pub struct DebuggerStmt {
     pub span: Span,
 }
 
-#[ast_node("WithStatement")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct WithStmt {
     pub node_id: NodeId,
@@ -98,7 +99,7 @@ pub struct WithStmt {
     pub body: Box<Stmt>,
 }
 
-#[ast_node("ReturnStatement")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ReturnStmt {
     pub node_id: NodeId,
@@ -107,7 +108,7 @@ pub struct ReturnStmt {
     pub arg: Option<Box<Expr>>,
 }
 
-#[ast_node("LabeledStatement")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct LabeledStmt {
     pub node_id: NodeId,
@@ -117,7 +118,7 @@ pub struct LabeledStmt {
     pub body: Box<Stmt>,
 }
 
-#[ast_node("BreakStatement")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct BreakStmt {
     pub node_id: NodeId,
@@ -126,7 +127,7 @@ pub struct BreakStmt {
     pub label: Option<Ident>,
 }
 
-#[ast_node("ContinueStatement")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ContinueStmt {
     pub node_id: NodeId,
@@ -135,7 +136,7 @@ pub struct ContinueStmt {
     pub label: Option<Ident>,
 }
 
-#[ast_node("IfStatement")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct IfStmt {
     pub node_id: NodeId,
@@ -148,7 +149,7 @@ pub struct IfStmt {
     pub alt: Option<Box<Stmt>>,
 }
 
-#[ast_node("SwitchStatement")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct SwitchStmt {
     pub node_id: NodeId,
@@ -158,7 +159,7 @@ pub struct SwitchStmt {
     pub cases: Vec<SwitchCase>,
 }
 
-#[ast_node("ThrowStatement")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ThrowStmt {
     pub node_id: NodeId,
@@ -167,7 +168,7 @@ pub struct ThrowStmt {
     pub arg: Box<Expr>,
 }
 
-#[ast_node("TryStatement")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TryStmt {
     pub node_id: NodeId,
@@ -181,7 +182,7 @@ pub struct TryStmt {
     pub finalizer: Option<BlockStmt>,
 }
 
-#[ast_node("WhileStatement")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct WhileStmt {
     pub node_id: NodeId,
@@ -191,7 +192,7 @@ pub struct WhileStmt {
     pub body: Box<Stmt>,
 }
 
-#[ast_node("DoWhileStatement")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct DoWhileStmt {
     pub node_id: NodeId,
@@ -201,7 +202,7 @@ pub struct DoWhileStmt {
     pub body: Box<Stmt>,
 }
 
-#[ast_node("ForStatement")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ForStmt {
     pub node_id: NodeId,
@@ -217,7 +218,7 @@ pub struct ForStmt {
     pub body: Box<Stmt>,
 }
 
-#[ast_node("ForInStatement")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ForInStmt {
     pub node_id: NodeId,
@@ -228,7 +229,7 @@ pub struct ForInStmt {
     pub body: Box<Stmt>,
 }
 
-#[ast_node("ForOfStatement")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ForOfStmt {
     pub node_id: NodeId,
@@ -245,7 +246,7 @@ pub struct ForOfStmt {
     pub body: Box<Stmt>,
 }
 
-#[ast_node("SwitchCase")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct SwitchCase {
     pub node_id: NodeId,
@@ -258,7 +259,7 @@ pub struct SwitchCase {
     pub cons: Vec<Stmt>,
 }
 
-#[ast_node("CatchClause")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct CatchClause {
     pub node_id: NodeId,

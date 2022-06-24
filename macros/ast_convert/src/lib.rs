@@ -180,7 +180,16 @@ fn make(stmts: Vec<Stmt>) -> Quote {
                             style: AttrStyle::Outer,
                             bracket_token: def_site(),
                             path: q!({ derive }).parse(),
-                            tokens: q!({ (PartialEq, Clone, Debug, EqIgnoreSpan) }).parse(),
+                            tokens: q!({
+                                (
+                                    PartialEq,
+                                    Clone,
+                                    Debug,
+                                    EqIgnoreSpan,
+                                    ::node_id::GetNodeIdMacro,
+                                )
+                            })
+                            .parse(),
                         });
                         needs_hash_impl = false;
                     } else {
@@ -196,7 +205,17 @@ fn make(stmts: Vec<Stmt>) -> Quote {
                             style: AttrStyle::Outer,
                             bracket_token: def_site(),
                             path: q!({ derive }).parse(),
-                            tokens: q!({ (PartialEq, Eq, Clone, Debug, EqIgnoreSpan) }).parse(),
+                            tokens: q!({
+                                (
+                                    PartialEq,
+                                    Eq,
+                                    Clone,
+                                    Debug,
+                                    EqIgnoreSpan,
+                                    ::node_id::GetNodeIdMacro,
+                                )
+                            })
+                            .parse(),
                         });
                         needs_hash_impl = true;
                     }
@@ -242,13 +261,35 @@ fn make(stmts: Vec<Stmt>) -> Quote {
                                 .parse(),
                         });
                     } else {
+                        // GetNodeIdMacro can only be derived on enums whose fields are all tuples with 1 field e.g.
+                        // enum Foo {
+                        //     A(bool),
+                        //     B(bool),
+                        // }
+                        let tokens = if e.variants.iter().all(
+                            |v| matches!(&v.fields, Fields::Unnamed(f) if f.unnamed.len() == 1),
+                        ) {
+                            q!({
+                                (
+                                    PartialEq,
+                                    Eq,
+                                    Hash,
+                                    Clone,
+                                    Debug,
+                                    EqIgnoreSpan,
+                                    ::node_id::GetNodeIdMacro,
+                                )
+                            })
+                            .parse()
+                        } else {
+                            q!({ (PartialEq, Eq, Hash, Clone, Debug, EqIgnoreSpan) }).parse()
+                        };
                         e.attrs.push(Attribute {
                             pound_token: def_site(),
                             style: AttrStyle::Outer,
                             bracket_token: def_site(),
                             path: q!({ derive }).parse(),
-                            tokens: q!({ (PartialEq, Eq, Hash, Clone, Debug, EqIgnoreSpan) })
-                                .parse(),
+                            tokens,
                         });
                     }
 

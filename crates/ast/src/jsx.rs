@@ -3,9 +3,10 @@ use crate::{
     ident::Ident,
     lit::Lit,
     typescript::TsTypeParamInstantiation,
-    NodeId,
+    GetNodeId, NodeId,
 };
-use global_common::{ast_node, EqIgnoreSpan, Span};
+use ast_node::ast_node;
+use global_common::{EqIgnoreSpan, Span};
 use swc_atoms::JsWord;
 
 /// Used for `obj` property of `JSXMemberExpr`.
@@ -17,7 +18,7 @@ pub enum JSXObject {
     Ident(Ident),
 }
 
-#[ast_node("JSXMemberExpression")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct JSXMemberExpr {
     pub node_id: NodeId,
@@ -30,7 +31,7 @@ pub struct JSXMemberExpr {
 }
 
 /// XML-based namespace syntax:
-#[ast_node("JSXNamespacedName")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct JSXNamespacedName {
     pub node_id: NodeId,
@@ -41,7 +42,7 @@ pub struct JSXNamespacedName {
     pub name: Ident,
 }
 
-#[ast_node("JSXEmptyExpression")]
+#[ast_node]
 #[derive(Eq, Hash, Copy, EqIgnoreSpan)]
 pub struct JSXEmptyExpr {
     pub node_id: NodeId,
@@ -49,7 +50,7 @@ pub struct JSXEmptyExpr {
     pub span: Span,
 }
 
-#[ast_node("JSXExpressionContainer")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct JSXExprContainer {
     pub node_id: NodeId,
@@ -67,7 +68,7 @@ pub enum JSXExpr {
     Expr(Box<Expr>),
 }
 
-#[ast_node("JSXSpreadChild")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct JSXSpreadChild {
     pub node_id: NodeId,
@@ -85,7 +86,7 @@ pub enum JSXElementName {
     JSXNamespacedName(JSXNamespacedName),
 }
 
-#[ast_node("JSXOpeningElement")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct JSXOpeningElement {
     pub node_id: NodeId,
@@ -111,7 +112,7 @@ pub enum JSXAttrOrSpread {
     SpreadElement(SpreadElement),
 }
 
-#[ast_node("JSXClosingElement")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct JSXClosingElement {
     pub node_id: NodeId,
@@ -120,7 +121,7 @@ pub struct JSXClosingElement {
     pub name: JSXElementName,
 }
 
-#[ast_node("JSXAttribute")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct JSXAttr {
     pub node_id: NodeId,
@@ -150,7 +151,7 @@ pub enum JSXAttrValue {
     JSXFragment(JSXFragment),
 }
 
-#[ast_node("JSXText")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct JSXText {
     pub node_id: NodeId,
@@ -171,7 +172,7 @@ impl arbitrary::Arbitrary for JSXText {
     }
 }
 
-#[ast_node("JSXElement")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct JSXElement {
     pub node_id: NodeId,
@@ -196,7 +197,7 @@ pub enum JSXElementChild {
     JSXFragment(JSXFragment),
 }
 
-#[ast_node("JSXFragment")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct JSXFragment {
     pub node_id: NodeId,
@@ -210,7 +211,7 @@ pub struct JSXFragment {
     pub closing: JSXClosingFragment,
 }
 
-#[ast_node("JSXOpeningFragment")]
+#[ast_node]
 #[derive(Eq, Hash, Copy, EqIgnoreSpan)]
 pub struct JSXOpeningFragment {
     pub node_id: NodeId,
@@ -218,7 +219,7 @@ pub struct JSXOpeningFragment {
     pub span: Span,
 }
 
-#[ast_node("JSXClosingFragment")]
+#[ast_node]
 #[derive(Eq, Hash, Copy, EqIgnoreSpan)]
 pub struct JSXClosingFragment {
     pub node_id: NodeId,

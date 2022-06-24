@@ -62,7 +62,8 @@ pub use self::{
         TsTypeQueryExpr, TsTypeRef, TsUnionOrIntersectionType, TsUnionType,
     },
 };
-use global_common::{ast_node, EqIgnoreSpan, Span};
+use ast_node::ast_node;
+use global_common::{EqIgnoreSpan, Span};
 use index::{newtype_index, vec::Idx};
 
 #[macro_use]
@@ -89,6 +90,10 @@ newtype_index! {
     }
 }
 
+pub trait GetNodeId {
+    fn node_id(&self) -> NodeId;
+}
+
 #[derive(Clone)]
 pub struct NodeIdGen {
     cur: NodeId,
@@ -112,7 +117,7 @@ impl NodeIdGen {
 }
 
 /// Represents a invalid node.
-#[ast_node("Invalid")]
+#[ast_node]
 #[derive(Eq, Hash, Copy, EqIgnoreSpan)]
 pub struct Invalid {
     pub node_id: NodeId,

@@ -4,9 +4,10 @@ use crate::{
     ident::Ident,
     lit::Str,
     typescript::{TsExportAssignment, TsImportEqualsDecl, TsInterfaceDecl, TsNamespaceExportDecl},
-    NodeId, ObjectLit,
+    GetNodeId, NodeId, ObjectLit,
 };
-use global_common::{ast_node, EqIgnoreSpan, Span};
+use ast_node::ast_node;
+use global_common::{EqIgnoreSpan, Span};
 
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
@@ -30,7 +31,7 @@ pub enum ModuleDecl {
     TsNamespaceExport(TsNamespaceExportDecl),
 }
 
-#[ast_node("ExportDefaultExpression")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ExportDefaultExpr {
     pub node_id: NodeId,
@@ -40,7 +41,7 @@ pub struct ExportDefaultExpr {
     pub expr: Box<Expr>,
 }
 
-#[ast_node("ExportDeclaration")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ExportDecl {
     pub node_id: NodeId,
@@ -50,7 +51,7 @@ pub struct ExportDecl {
     pub decl: Decl,
 }
 
-#[ast_node("ImportDeclaration")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ImportDecl {
     pub node_id: NodeId,
@@ -67,7 +68,7 @@ pub struct ImportDecl {
 }
 
 /// `export * from 'mod'`
-#[ast_node("ExportAllDeclaration")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ExportAll {
     pub node_id: NodeId,
@@ -81,7 +82,7 @@ pub struct ExportAll {
 
 /// `export { foo } from 'mod'`
 /// `export { foo as bar } from 'mod'`
-#[ast_node("ExportNamedDeclaration")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct NamedExport {
     pub node_id: NodeId,
@@ -97,7 +98,7 @@ pub struct NamedExport {
     pub asserts: Option<ObjectLit>,
 }
 
-#[ast_node("ExportDefaultDeclaration")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ExportDefaultDecl {
     pub node_id: NodeId,
@@ -126,7 +127,7 @@ pub enum ImportSpecifier {
 }
 
 /// e.g. `import foo from 'mod.js'`
-#[ast_node("ImportDefaultSpecifier")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ImportDefaultSpecifier {
     pub node_id: NodeId,
@@ -136,7 +137,7 @@ pub struct ImportDefaultSpecifier {
     pub local: Ident,
 }
 /// e.g. `import * as foo from 'mod.js'`.
-#[ast_node("ImportNamespaceSpecifier")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ImportStarAsSpecifier {
     pub node_id: NodeId,
@@ -148,7 +149,7 @@ pub struct ImportStarAsSpecifier {
 /// e.g. local = foo, imported = None `import { foo } from 'mod.js'`
 /// e.g. local = bar, imported = Some(foo) for `import { foo as bar } from
 /// 'mod.js'`
-#[ast_node("ImportSpecifier")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ImportNamedSpecifier {
     pub node_id: NodeId,
@@ -171,7 +172,7 @@ pub enum ExportSpecifier {
 }
 
 /// `export * as foo from 'src';`
-#[ast_node("ExportNamespaceSpecifier")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ExportNamespaceSpecifier {
     pub node_id: NodeId,
@@ -182,7 +183,7 @@ pub struct ExportNamespaceSpecifier {
 }
 
 // export v from 'mod';
-#[ast_node("ExportDefaultSpecifier")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ExportDefaultSpecifier {
     pub node_id: NodeId,
@@ -191,7 +192,7 @@ pub struct ExportDefaultSpecifier {
     pub exported: Ident,
 }
 
-#[ast_node("ExportSpecifier")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ExportNamedSpecifier {
     pub node_id: NodeId,

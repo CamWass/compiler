@@ -32,25 +32,27 @@ pub fn ast_node(
     args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
+    if !args.is_empty() {
+        panic!("#[ast_node] does not accept any arguments");
+    }
     let input: DeriveInput = parse(input).expect("failed to parse input as a DeriveInput");
 
     // we should use call_site
     let mut item = Quote::new(Span::call_site());
     item = match input.data {
-        Data::Enum(..) => {
-            if !args.is_empty() {
-                panic!("#[ast_node] on enum does not accept any argument")
-            }
-
-            item.quote_with(smart_quote!(Vars { input }, {
-                #[derive(
-                    ::global_common::FromVariant, ::global_common::Spanned, Clone, Debug, PartialEq,
-                )]
-                input
-            }))
-        }
+        Data::Enum(..) => item.quote_with(smart_quote!(Vars { input }, {
+            #[derive(
+                ::global_common::FromVariant,
+                ::ast_node::Spanned,
+                Clone,
+                Debug,
+                PartialEq,
+                ::node_id::GetNodeIdMacro,
+            )]
+            input
+        })),
         _ => item.quote_with(smart_quote!(Vars { input }, {
-            #[derive(::global_common::Spanned, Clone, Debug, PartialEq)]
+            #[derive(::ast_node::Spanned, Clone, Debug, PartialEq, ::node_id::GetNodeIdMacro)]
             input
         })),
     };

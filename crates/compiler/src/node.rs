@@ -1,6 +1,7 @@
 use global_common::{EqIgnoreSpan, Spanned};
 
 use crate::ast;
+use crate::ast::{GetNodeId, NodeId};
 use crate::{Visit, VisitWith};
 use std::convert::TryFrom;
 use std::fmt;
@@ -638,7 +639,7 @@ impl Bind for ast::ExprOrSpread {
 macro_rules! make {
     ($($field:ident,)*) => {
         // Enum declaration:
-        #[derive(PartialEq, Eq, Hash, Clone, EqIgnoreSpan)]
+        #[derive(PartialEq, Eq, Hash, Clone, EqIgnoreSpan, ::node_id::GetNodeIdMacro)]
         pub enum BoundNode {
             $($field(Rc<$field>),)*
         }

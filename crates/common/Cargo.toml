@@ -8,7 +8,6 @@ edition = "2018"
 tty-emitter = ["atty", "termcolor"]
 
 [dependencies]
-ast_node = {version = "0.1.0", path = "../../macros/ast_node"}
 atty = {version = "0.2", optional = true}
 cfg-if = "0.1.2"
 either = "1.6.1"

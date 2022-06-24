@@ -5,8 +5,10 @@ authors = ["Campbell <campbell.wass@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+ast_node = {version = "0.1.0", path = "../../macros/ast_node"}
 global_common = {version = "0.1.0", path = "../common"}
 index = {path = "../index"}
 num-bigint = {version = "0.2"}
 string_enum = {version = "0.1.0", path = "../../macros/string_enum"}
+node_id = {version = "0.1.0", path = "../../macros/node_id"}
 swc_atoms = "0.2.6"

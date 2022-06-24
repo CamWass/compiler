@@ -5,9 +5,10 @@ use crate::{
     lit::{Number, Str},
     stmt::BlockStmt,
     typescript::TsTypeAnn,
-    NodeId, ParamWithoutDecorators,
+    GetNodeId, NodeId, ParamWithoutDecorators,
 };
-use global_common::{ast_node, EqIgnoreSpan, Span};
+use ast_node::ast_node;
+use global_common::{EqIgnoreSpan, Span};
 
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
@@ -31,7 +32,7 @@ pub enum Prop {
     Spread(SpreadAssignment),
 }
 
-#[ast_node("KeyValueProperty")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct KeyValueProp {
     pub node_id: NodeId,
@@ -43,7 +44,7 @@ pub struct KeyValueProp {
     pub value: Box<Expr>,
 }
 
-#[ast_node("AssignmentProperty")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct AssignProp {
     pub node_id: NodeId,
@@ -54,7 +55,7 @@ pub struct AssignProp {
     pub value: Box<Expr>,
 }
 
-#[ast_node("GetterProperty")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct GetterProp {
     pub node_id: NodeId,
@@ -64,7 +65,7 @@ pub struct GetterProp {
     pub type_ann: Option<TsTypeAnn>,
     pub body: Option<BlockStmt>,
 }
-#[ast_node("SetterProperty")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct SetterProp {
     pub node_id: NodeId,
@@ -75,7 +76,7 @@ pub struct SetterProp {
     pub param: ParamWithoutDecorators,
     pub body: Option<BlockStmt>,
 }
-#[ast_node("MethodProperty")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct MethodProp {
     pub node_id: NodeId,
@@ -97,7 +98,7 @@ pub enum PropName {
     Computed(ComputedPropName),
 }
 
-#[ast_node("Computed")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ComputedPropName {
     pub node_id: NodeId,
@@ -107,7 +108,7 @@ pub struct ComputedPropName {
     pub expr: Box<Expr>,
 }
 
-#[ast_node("SpreadAssignment")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct SpreadAssignment {
     pub node_id: NodeId,

@@ -1,13 +1,12 @@
 use crate::typescript::TsTypeAnn;
-use crate::NodeId;
-use global_common::ast_node;
-use global_common::EqIgnoreSpan;
-use global_common::Span;
-use global_common::Spanned;
+use crate::{GetNodeId, NodeId};
+use ast_node::ast_node;
+use global_common::{EqIgnoreSpan, Span};
 use swc_atoms::JsWord;
 
 /// Identifer used as a pattern.
-#[derive(Spanned, Clone, Debug, PartialEq, Eq, Hash, EqIgnoreSpan)]
+#[ast_node]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct BindingIdent {
     pub node_id: NodeId,
 
@@ -27,7 +26,7 @@ impl BindingIdent {
 }
 
 /// Ident with span.
-#[ast_node("Identifier")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct Ident {
     pub node_id: NodeId,
@@ -59,7 +58,7 @@ impl arbitrary::Arbitrary for Ident {
     }
 }
 
-#[ast_node("PrivateName")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct PrivateName {
     pub node_id: NodeId,

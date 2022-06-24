@@ -7,13 +7,14 @@ use crate::{
     lit::{Bool, Number, Str},
     module::ModuleItem,
     pat::{ArrayPat, AssignPat, ObjectPat, Pat, RestPat},
-    BigInt, NodeId, TplElement,
+    BigInt, GetNodeId, NodeId, TplElement,
 };
 use crate::{BindingIdent, PropName};
-use global_common::{ast_node, EqIgnoreSpan, Span};
+use ast_node::ast_node;
+use global_common::{EqIgnoreSpan, Span};
 use string_enum::StringEnum;
 
-#[ast_node("TsTypeAnnotation")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsTypeAnn {
     pub node_id: NodeId,
@@ -22,7 +23,7 @@ pub struct TsTypeAnn {
     pub type_ann: Box<TsType>,
 }
 
-#[ast_node("TsTypeParameterDeclaration")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsTypeParamDecl {
     pub node_id: NodeId,
@@ -35,7 +36,7 @@ pub struct TsTypeParamDecl {
     pub default: Option<Box<TsType>>,
 }
 
-#[ast_node("TsTypeParameterInstantiation")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsTypeParamInstantiation {
     pub node_id: NodeId,
@@ -44,7 +45,7 @@ pub struct TsTypeParamInstantiation {
     pub params: Vec<Box<TsType>>,
 }
 
-#[ast_node("TsParameterProperty")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsParamProp {
     pub node_id: NodeId,
@@ -76,7 +77,7 @@ impl From<TsParamPropParam> for Pat {
     }
 }
 
-#[ast_node("TsQualifiedName")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsQualifiedName {
     pub node_id: NodeId,
@@ -118,7 +119,7 @@ pub enum TsTypeElement {
     TsIndexSignature(TsIndexSignature),
 }
 
-#[ast_node("TsCallSignatureDeclaration")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsCallSignatureDecl {
     pub node_id: NodeId,
@@ -129,7 +130,7 @@ pub struct TsCallSignatureDecl {
     pub type_params: Option<Vec<TsTypeParamDecl>>,
 }
 
-#[ast_node("TsConstructSignatureDeclaration")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsConstructSignatureDecl {
     pub node_id: NodeId,
@@ -140,7 +141,7 @@ pub struct TsConstructSignatureDecl {
     pub type_params: Option<Vec<TsTypeParamDecl>>,
 }
 
-#[ast_node("TsPropertySignature")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsPropertySignature {
     pub node_id: NodeId,
@@ -152,7 +153,7 @@ pub struct TsPropertySignature {
     pub type_ann: Option<TsTypeAnn>,
 }
 
-#[ast_node("TsGetterSignature")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsGetterSignature {
     pub node_id: NodeId,
@@ -164,7 +165,7 @@ pub struct TsGetterSignature {
     pub type_ann: Option<TsTypeAnn>,
 }
 
-#[ast_node("TsSetterSignature")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsSetterSignature {
     pub node_id: NodeId,
@@ -176,7 +177,7 @@ pub struct TsSetterSignature {
     pub param: TsAmbientParam,
 }
 
-#[ast_node("TsMethodSignature")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsMethodSignature {
     pub node_id: NodeId,
@@ -190,7 +191,7 @@ pub struct TsMethodSignature {
     pub type_params: Option<Vec<TsTypeParamDecl>>,
 }
 
-#[ast_node("TsIndexSignature")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsIndexSignature {
     pub node_id: NodeId,
@@ -282,7 +283,7 @@ impl From<TsIntersectionType> for TsType {
     }
 }
 
-#[ast_node("TsKeywordType")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsKeywordType {
     pub node_id: NodeId,
@@ -320,7 +321,7 @@ pub enum TsKeywordTypeKind {
     TsIntrinsicKeyword,
 }
 
-#[ast_node("TsThisType")]
+#[ast_node]
 #[derive(Copy, Eq, Hash, EqIgnoreSpan)]
 pub struct TsThisType {
     pub node_id: NodeId,
@@ -328,7 +329,7 @@ pub struct TsThisType {
     pub span: Span,
 }
 
-#[ast_node("TsAmbientParam")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsAmbientParam {
     pub node_id: NodeId,
@@ -366,7 +367,7 @@ impl From<TsAmbientParamPat> for Pat {
     }
 }
 
-#[ast_node("TsFunctionType")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsFnType {
     pub node_id: NodeId,
@@ -378,7 +379,7 @@ pub struct TsFnType {
     pub type_ann: TsTypeAnn,
 }
 
-#[ast_node("TsConstructorType")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsConstructorType {
     pub node_id: NodeId,
@@ -390,7 +391,7 @@ pub struct TsConstructorType {
     pub is_abstract: bool,
 }
 
-#[ast_node("TsTypeReference")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsTypeRef {
     pub node_id: NodeId,
@@ -400,7 +401,7 @@ pub struct TsTypeRef {
     pub type_params: Option<TsTypeParamInstantiation>,
 }
 
-#[ast_node("TsTypePredicate")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsTypePredicate {
     pub node_id: NodeId,
@@ -421,7 +422,7 @@ pub enum TsThisTypeOrIdent {
 }
 
 /// `typeof` operator
-#[ast_node("TsTypeQuery")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsTypeQuery {
     pub node_id: NodeId,
@@ -437,7 +438,7 @@ pub enum TsTypeQueryExpr {
     Import(TsImportType),
 }
 
-#[ast_node("TsImportType")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsImportType {
     pub node_id: NodeId,
@@ -448,7 +449,7 @@ pub struct TsImportType {
     pub type_args: Option<TsTypeParamInstantiation>,
 }
 
-#[ast_node("TsTypeLiteral")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsTypeLit {
     pub node_id: NodeId,
@@ -457,7 +458,7 @@ pub struct TsTypeLit {
     pub members: Vec<TsTypeElement>,
 }
 
-#[ast_node("TsArrayType")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsArrayType {
     pub node_id: NodeId,
@@ -466,7 +467,7 @@ pub struct TsArrayType {
     pub elem_type: Box<TsType>,
 }
 
-#[ast_node("TsTupleType")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsTupleType {
     pub node_id: NodeId,
@@ -475,7 +476,7 @@ pub struct TsTupleType {
     pub elem_types: Vec<TsTupleElement>,
 }
 
-#[ast_node("TsTupleElement")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsTupleElement {
     pub node_id: NodeId,
@@ -487,7 +488,7 @@ pub struct TsTupleElement {
     pub ty: TsType,
 }
 
-#[ast_node("TsOptionalType")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsOptionalType {
     pub node_id: NodeId,
@@ -496,7 +497,7 @@ pub struct TsOptionalType {
     pub type_ann: Box<TsType>,
 }
 
-#[ast_node("TsRestType")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsRestType {
     pub node_id: NodeId,
@@ -513,7 +514,7 @@ pub enum TsUnionOrIntersectionType {
     TsIntersectionType(TsIntersectionType),
 }
 
-#[ast_node("TsUnionType")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsUnionType {
     pub node_id: NodeId,
@@ -522,7 +523,7 @@ pub struct TsUnionType {
     pub types: Vec<Box<TsType>>,
 }
 
-#[ast_node("TsIntersectionType")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsIntersectionType {
     pub node_id: NodeId,
@@ -531,7 +532,7 @@ pub struct TsIntersectionType {
     pub types: Vec<Box<TsType>>,
 }
 
-#[ast_node("TsConditionalType")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsConditionalType {
     pub node_id: NodeId,
@@ -543,7 +544,7 @@ pub struct TsConditionalType {
     pub false_type: Box<TsType>,
 }
 
-#[ast_node("TsInferType")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsInferType {
     pub node_id: NodeId,
@@ -552,7 +553,7 @@ pub struct TsInferType {
     pub type_param: TsTypeParamDecl,
 }
 
-#[ast_node("TsParenthesizedType")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsParenthesizedType {
     pub node_id: NodeId,
@@ -561,7 +562,7 @@ pub struct TsParenthesizedType {
     pub type_ann: Box<TsType>,
 }
 
-#[ast_node("TsTypeOperator")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsTypeOperator {
     pub node_id: NodeId,
@@ -581,7 +582,7 @@ pub enum TsTypeOperatorOp {
     ReadOnly,
 }
 
-#[ast_node("TsIndexedAccessType")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsIndexedAccessType {
     pub node_id: NodeId,
@@ -599,7 +600,7 @@ pub enum TruePlusMinus {
     Minus,
 }
 
-#[ast_node("TsMappedType")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsMappedType {
     pub node_id: NodeId,
@@ -612,7 +613,7 @@ pub struct TsMappedType {
     pub type_ann: Option<Box<TsType>>,
 }
 
-#[ast_node("TsLiteralType")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsLitType {
     pub node_id: NodeId,
@@ -635,7 +636,7 @@ pub enum TsLit {
     Tpl(TsTplLitType),
 }
 
-#[ast_node("TemplateLiteral")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsTplLitType {
     pub node_id: NodeId,
@@ -651,7 +652,7 @@ pub struct TsTplLitType {
 // // TypeScript declarations
 // // ================
 
-#[ast_node("TsInterfaceDeclaration")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsInterfaceDecl {
     pub node_id: NodeId,
@@ -664,7 +665,7 @@ pub struct TsInterfaceDecl {
     pub body: TsInterfaceBody,
 }
 
-#[ast_node("TsInterfaceBody")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsInterfaceBody {
     pub node_id: NodeId,
@@ -673,7 +674,7 @@ pub struct TsInterfaceBody {
     pub body: Vec<TsTypeElement>,
 }
 
-#[ast_node("TsExpressionWithTypeArguments")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsExprWithTypeArgs {
     pub node_id: NodeId,
@@ -683,7 +684,7 @@ pub struct TsExprWithTypeArgs {
     pub type_args: Option<TsTypeParamInstantiation>,
 }
 
-#[ast_node("TsTypeAliasDeclaration")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsTypeAliasDecl {
     pub node_id: NodeId,
@@ -695,7 +696,7 @@ pub struct TsTypeAliasDecl {
     pub type_ann: Box<TsType>,
 }
 
-#[ast_node("TsEnumDeclaration")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsEnumDecl {
     pub node_id: NodeId,
@@ -707,7 +708,7 @@ pub struct TsEnumDecl {
     pub members: Vec<TsEnumMember>,
 }
 
-#[ast_node("TsEnumMember")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsEnumMember {
     pub node_id: NodeId,
@@ -727,7 +728,7 @@ pub enum TsEnumMemberId {
     Str(Str),
 }
 
-#[ast_node("TsModuleDeclaration")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsModuleDecl {
     pub node_id: NodeId,
@@ -750,7 +751,7 @@ pub enum TsNamespaceBody {
     TsNamespaceDecl(TsNamespaceDecl),
 }
 
-#[ast_node("TsModuleBlock")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsModuleBlock {
     pub node_id: NodeId,
@@ -759,7 +760,7 @@ pub struct TsModuleBlock {
     pub body: Vec<ModuleItem>,
 }
 
-#[ast_node("TsNamespaceDeclaration")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsNamespaceDecl {
     pub node_id: NodeId,
@@ -780,7 +781,7 @@ pub enum TsModuleName {
     Str(Str),
 }
 
-#[ast_node("TsImportEqualsDeclaration")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsImportEqualsDecl {
     pub node_id: NodeId,
@@ -801,7 +802,7 @@ pub enum TsModuleRef {
     TsExternalModuleRef(TsExternalModuleRef),
 }
 
-#[ast_node("TsExternalModuleReference")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsExternalModuleRef {
     pub node_id: NodeId,
@@ -813,7 +814,7 @@ pub struct TsExternalModuleRef {
 /// TypeScript's own parser uses ExportAssignment for both `export default` and
 /// `export =`. But for @babel/parser, `export default` is an ExportDefaultDecl,
 /// so a TsExportAssignment is always `export =`.
-#[ast_node("TsExportAssignment")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsExportAssignment {
     pub node_id: NodeId,
@@ -822,7 +823,7 @@ pub struct TsExportAssignment {
     pub expr: Box<Expr>,
 }
 
-#[ast_node("TsNamespaceExportDeclaration")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsNamespaceExportDecl {
     pub node_id: NodeId,
@@ -835,7 +836,7 @@ pub struct TsNamespaceExportDecl {
 // // TypeScript exprs
 // // ================
 
-#[ast_node("TsAsExpression")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsAsExpr {
     pub node_id: NodeId,
@@ -845,7 +846,7 @@ pub struct TsAsExpr {
     pub type_ann: Box<TsType>,
 }
 
-#[ast_node("TsTypeAssertion")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsTypeAssertion {
     pub node_id: NodeId,
@@ -855,7 +856,7 @@ pub struct TsTypeAssertion {
     pub type_ann: Box<TsType>,
 }
 
-#[ast_node("TsNonNullExpression")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsNonNullExpr {
     pub node_id: NodeId,
@@ -871,7 +872,7 @@ pub enum Accessibility {
     Private,
 }
 
-#[ast_node("TsConstAssertion")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct TsConstAssertion {
     pub node_id: NodeId,

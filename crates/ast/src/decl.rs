@@ -5,9 +5,10 @@ use crate::{
     ident::Ident,
     pat::Pat,
     typescript::{TsEnumDecl, TsInterfaceDecl, TsModuleDecl, TsTypeAliasDecl},
-    NodeId,
+    GetNodeId, NodeId,
 };
-use global_common::{ast_node, EqIgnoreSpan, Span};
+use ast_node::ast_node;
+use global_common::{EqIgnoreSpan, Span};
 use string_enum::StringEnum;
 
 #[ast_node]
@@ -22,7 +23,7 @@ pub enum Decl {
     TsModule(TsModuleDecl),
 }
 
-#[ast_node("FunctionDeclaration")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct FnDecl {
     pub node_id: NodeId,
@@ -35,7 +36,7 @@ pub struct FnDecl {
     pub function: Function,
 }
 
-#[ast_node("ClassDeclaration")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ClassDecl {
     pub node_id: NodeId,
@@ -48,7 +49,7 @@ pub struct ClassDecl {
     pub class: Class,
 }
 
-#[ast_node("VariableDeclaration")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct VarDecl {
     pub node_id: NodeId,
@@ -72,7 +73,7 @@ pub enum VarDeclKind {
     Const,
 }
 
-#[ast_node("VariableDeclarator")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct VarDeclarator {
     pub node_id: NodeId,

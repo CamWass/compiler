@@ -1,6 +1,6 @@
 use crate::node::{Bind, BoundNode};
 use ast;
-pub use ast::NodeId;
+pub use ast::{GetNodeId, NodeId};
 use ast_convert::define;
 use global_common::{integer_decode::integer_decode, EqIgnoreSpan, Span, Spanned};
 use num_bigint::BigInt as BigIntValue;

@@ -21,7 +21,6 @@ pub use self::{
     source_map::{FileLines, FileLoader, FilePathMapping, SourceMap, SpanSnippetError},
     syntax_pos::{LineCol, Pos},
 };
-pub use ast_node::{ast_node, Spanned};
 pub use eq_ignore_macros::EqIgnoreSpan;
 pub use from_variant::FromVariant;
 pub use global_visit::chain;

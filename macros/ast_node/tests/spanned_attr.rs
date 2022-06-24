@@ -2,7 +2,7 @@ use global_common::{BytePos, Span, Spanned};
 
 #[test]
 fn lo_hi() {
-    #[derive(Spanned)]
+    #[derive(::ast_node::Spanned)]
     struct LoHi {
         #[span(lo)]
         pub lo: BytePos,

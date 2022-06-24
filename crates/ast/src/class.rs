@@ -7,9 +7,10 @@ use crate::{
     typescript::{
         Accessibility, TsExprWithTypeArgs, TsIndexSignature, TsTypeAnn, TsTypeParamInstantiation,
     },
-    EmptyStmt, NodeId, TsTypeParamDecl,
+    EmptyStmt, GetNodeId, NodeId, TsTypeParamDecl,
 };
-use global_common::{ast_node, EqIgnoreSpan, Span};
+use ast_node::ast_node;
+use global_common::{EqIgnoreSpan, Span};
 
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
@@ -32,7 +33,7 @@ pub struct Class {
     pub implements: Vec<TsExprWithTypeArgs>,
 }
 
-#[ast_node("ExtendsClause")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ExtendsClause {
     pub node_id: NodeId,
@@ -57,7 +58,7 @@ pub enum ClassMember {
     Empty(EmptyStmt),
 }
 
-#[ast_node("ClassProperty")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ClassProp {
     pub node_id: NodeId,
@@ -91,7 +92,7 @@ pub struct ClassProp {
     pub definite: bool,
 }
 
-#[ast_node("PrivateProperty")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct PrivateProp {
     pub node_id: NodeId,
@@ -124,8 +125,8 @@ pub struct PrivateProp {
 }
 
 macro_rules! method {
-    ($name:ident, $ty:literal, $KEY:ty) => {
-        #[ast_node($ty)]
+    ($name:ident, $KEY:ty) => {
+        #[ast_node]
         #[derive(Eq, Hash, EqIgnoreSpan)]
         #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
         pub struct $name {
@@ -154,10 +155,10 @@ macro_rules! method {
     };
 }
 
-method!(ClassMethod, "ClassMethod", PropName);
-method!(PrivateMethod, "PrivateMethod", PrivateName);
+method!(ClassMethod, PropName);
+method!(PrivateMethod, PrivateName);
 
-#[ast_node("Constructor")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct Constructor {
     pub node_id: NodeId,
@@ -173,7 +174,7 @@ pub struct Constructor {
     pub is_optional: bool,
 }
 
-#[ast_node("Decorator")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct Decorator {
     pub node_id: NodeId,

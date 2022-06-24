@@ -1,5 +1,6 @@
-use crate::{jsx::JSXText, NodeId};
-use global_common::{ast_node, integer_decode::integer_decode, EqIgnoreSpan, Span};
+use crate::{jsx::JSXText, GetNodeId, NodeId};
+use ast_node::ast_node;
+use global_common::{integer_decode::integer_decode, EqIgnoreSpan, Span};
 use num_bigint::BigInt as BigIntValue;
 use std::{
     fmt::{self, Display, Formatter},
@@ -25,7 +26,7 @@ pub enum Lit {
     JSXText(JSXText),
 }
 
-#[ast_node("BigIntLiteral")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct BigInt {
     pub node_id: NodeId,
@@ -44,7 +45,7 @@ impl arbitrary::Arbitrary for BigInt {
     }
 }
 
-#[ast_node("StringLiteral")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct Str {
     pub node_id: NodeId,
@@ -114,7 +115,7 @@ impl Str {
     }
 }
 
-#[ast_node("BooleanLiteral")]
+#[ast_node]
 #[derive(Copy, Eq, Hash, EqIgnoreSpan)]
 pub struct Bool {
     pub node_id: NodeId,
@@ -123,7 +124,7 @@ pub struct Bool {
     pub value: bool,
 }
 
-#[ast_node("NullLiteral")]
+#[ast_node]
 #[derive(Copy, Eq, Hash, EqIgnoreSpan)]
 pub struct Null {
     pub node_id: NodeId,
@@ -131,7 +132,7 @@ pub struct Null {
     pub span: Span,
 }
 
-#[ast_node("RegExpLiteral")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct Regex {
     pub node_id: NodeId,
@@ -154,7 +155,7 @@ impl arbitrary::Arbitrary for Regex {
     }
 }
 
-#[ast_node("NumericLiteral")]
+#[ast_node]
 #[derive(EqIgnoreSpan)]
 pub struct Number {
     pub node_id: NodeId,

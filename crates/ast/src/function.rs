@@ -3,9 +3,10 @@ use crate::{
     pat::Pat,
     stmt::BlockStmt,
     typescript::{TsParamProp, TsTypeAnn, TsTypeParamDecl},
-    NodeId,
+    GetNodeId, NodeId,
 };
-use global_common::{ast_node, EqIgnoreSpan, Span};
+use ast_node::ast_node;
+use global_common::{EqIgnoreSpan, Span};
 
 /// Common parts of function and method.
 #[ast_node]
@@ -32,7 +33,7 @@ pub struct Function {
     pub return_type: Option<TsTypeAnn>,
 }
 
-#[ast_node("Parameter")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct Param {
     pub node_id: NodeId,
@@ -42,7 +43,7 @@ pub struct Param {
     pub pat: Pat,
 }
 
-#[ast_node("ParamWithoutDecorators")]
+#[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ParamWithoutDecorators {
     pub node_id: NodeId,

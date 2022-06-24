@@ -1,0 +1,17 @@
+[package]
+edition = "2021"
+name = "node_id"
+version = "0.1.0"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+macro_common = {version = "0.1.0", path = "../common"}
+pmutil = "0.5.1"
+proc-macro2 = "1"
+quote = "1"
+
+[dependencies.syn]
+features = ["full", "parsing", "printing", "extra-traits"]
+version = "1"
