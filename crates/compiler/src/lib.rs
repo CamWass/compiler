@@ -15,6 +15,7 @@ mod disambiguate;
 mod graph;
 pub mod node;
 mod normalize;
+mod resolver;
 pub mod types;
 mod types_composition;
 pub mod utils;
@@ -22,10 +23,15 @@ pub mod visit;
 
 use crate::ast as local_ast;
 use crate::node::BoundNode;
+use crate::resolver::resolver;
 use crate::visit::{Visit, VisitWith};
 pub use checker::Checker;
 use ecma_visit::VisitMutWith;
+use global_common::{Globals, Mark, SyntaxContext, GLOBALS};
+use swc_atoms::JsWord;
 use types::*;
+
+pub type Id = (JsWord, SyntaxContext);
 
 #[derive(Debug, Clone)]
 pub struct SourceFile {
@@ -76,9 +82,27 @@ impl<V: Visit> VisitWith<V> for CompProgram {
     }
 }
 
-pub struct Compiler {}
+pub struct Compiler {
+    globals: Globals,
+}
 
 impl Compiler {
+    pub fn new() -> Self {
+        Self {
+            globals: Globals::new(),
+        }
+    }
+
+    /// Runs `op` in current compiler's context.
+    ///
+    /// Note: Other methods of `Compiler` already uses this internally.
+    pub fn run<R, F>(&self, op: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        GLOBALS.set(&self.globals, op)
+    }
+
     pub fn compile(
         &self,
         libs: Vec<(String, ::ast::Program)>,
@@ -86,71 +110,78 @@ impl Compiler {
         disambiguate: bool,
         ambiguate: bool,
     ) -> ::ast::Program {
-        let mut program_ast = program.1;
+        self.run(|| {
+            let mut program_ast = program.1;
 
-        let mut colours = {
-            let mut source_files = Vec::with_capacity(libs.len() + 1);
+            let mut colours = {
+                let mut source_files = Vec::with_capacity(libs.len() + 1);
 
-            let mut normalize = normalize::Normalize {};
-            program_ast.visit_mut_with(&mut normalize);
+                let mut normalize = normalize::Normalize {};
+                program_ast.visit_mut_with(&mut normalize);
 
-            let program_source_file = SourceFile {
-                file_name: program.0,
-                program: local_ast::convert::convert_program(program_ast.clone()),
-                jsGlobalAugmentations: Default::default(),
-            };
-            source_files.push(program_source_file.clone());
-
-            let mut program = CompProgram {
-                libs: Vec::with_capacity(libs.len()),
-                // TODO: temp clone()
-                source: program_source_file.clone(),
-            };
-
-            for (file_name, ast) in libs.iter().cloned() {
-                let source_file = SourceFile {
-                    file_name,
-                    program: local_ast::convert::convert_program(ast),
+                let program_source_file = SourceFile {
+                    file_name: program.0,
+                    program: local_ast::convert::convert_program(program_ast.clone()),
                     jsGlobalAugmentations: Default::default(),
                 };
-                source_files.push(source_file.clone());
-                program.libs.push(source_file);
+                source_files.push(program_source_file.clone());
+
+                let mut program = CompProgram {
+                    libs: Vec::with_capacity(libs.len()),
+                    // TODO: temp clone()
+                    source: program_source_file.clone(),
+                };
+
+                for (file_name, ast) in libs.iter().cloned() {
+                    let source_file = SourceFile {
+                        file_name,
+                        program: local_ast::convert::convert_program(ast),
+                        jsGlobalAugmentations: Default::default(),
+                    };
+                    source_files.push(source_file.clone());
+                    program.libs.push(source_file);
+                }
+
+                let host = TypeCheckerHost {
+                    files: source_files,
+                    compiler_options: CompilerOptions::default(),
+                };
+
+                let mut checker = Checker::new(host, false);
+
+                // TODO:
+                let p = CompProgram {
+                    libs: Vec::new(),
+                    source: program.source.clone(),
+                };
+
+                colors::color_collector::collect(&mut checker, &p)
+            };
+
+            let unresolved_mark = Mark::new();
+            let top_level_mark = Mark::new();
+
+            program_ast.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark, true));
+
+            // Note: The Rc based AST is only to be used by the checker and passes that directly access
+            // the checker (color collector). All other passes should use the reference based AST.
+
+            if disambiguate {
+                disambiguate::DisambiguateProperties::DisambiguateProperties::process(
+                    &mut program_ast,
+                    &mut colours,
+                );
             }
 
-            let host = TypeCheckerHost {
-                files: source_files,
-                compiler_options: CompilerOptions::default(),
-            };
+            if ambiguate {
+                disambiguate::AmbiguateProperties::AmbiguateProperties::process(
+                    &mut program_ast,
+                    &mut colours,
+                );
+            }
 
-            let mut checker = Checker::new(host, false);
-
-            // TODO:
-            let p = CompProgram {
-                libs: Vec::new(),
-                source: program.source.clone(),
-            };
-
-            colors::color_collector::collect(&mut checker, &p)
-        };
-
-        // Note: The Rc based AST is only to be used by the checker and passes that directly access
-        // the checker (color collector). All other passes should use the reference based AST.
-
-        if disambiguate {
-            disambiguate::DisambiguateProperties::DisambiguateProperties::process(
-                &mut program_ast,
-                &mut colours,
-            );
-        }
-
-        if ambiguate {
-            disambiguate::AmbiguateProperties::AmbiguateProperties::process(
-                &mut program_ast,
-                &mut colours,
-            );
-        }
-
-        program_ast
+            program_ast
+        })
     }
 }
 

@@ -68,7 +68,7 @@ fn main() -> Result<()> {
     let lib = create_program("lib.es5.d.ts", &config, cm.clone(), &handler)?;
     let program = create_program(entry_file, &config, cm.clone(), &handler)?;
 
-    let compiler = Compiler {};
+    let compiler = Compiler::new();
 
     let result = compiler.compile(vec![lib], program, config.disambiguate, config.ambiguate);
 
