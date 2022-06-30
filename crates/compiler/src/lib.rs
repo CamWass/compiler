@@ -29,6 +29,7 @@ use crate::visit::{Visit, VisitWith};
 pub use checker::Checker;
 use ecma_visit::VisitMutWith;
 use global_common::{Globals, Mark, SyntaxContext, GLOBALS};
+use serde::Deserialize;
 use swc_atoms::JsWord;
 use types::*;
 
@@ -83,6 +84,16 @@ impl<V: Visit> VisitWith<V> for CompProgram {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+pub struct PassConfig {
+    #[serde(default)]
+    disambiguate_properties: bool,
+    #[serde(default)]
+    ambiguate_properties: bool,
+    #[serde(default)]
+    optimize_arguments_array: bool,
+}
+
 pub struct Compiler {
     globals: Globals,
 }
@@ -108,8 +119,7 @@ impl Compiler {
         &self,
         libs: Vec<(String, ::ast::Program)>,
         program: (String, ::ast::Program),
-        disambiguate: bool,
-        ambiguate: bool,
+        passes: PassConfig,
         node_id_gen: &'a mut ::ast::NodeIdGen,
     ) -> ::ast::Program {
         self.run(|| {
@@ -173,20 +183,22 @@ impl Compiler {
 
             let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 
-            OptimizeArgumentsArray::OptimizeArgumentsArray::process(
-                &mut program_ast,
-                node_id_gen,
-                unresolved_ctxt,
-            );
+            if passes.optimize_arguments_array {
+                OptimizeArgumentsArray::OptimizeArgumentsArray::process(
+                    &mut program_ast,
+                    node_id_gen,
+                    unresolved_ctxt,
+                );
+            }
 
-            if disambiguate {
+            if passes.disambiguate_properties {
                 disambiguate::DisambiguateProperties::DisambiguateProperties::process(
                     &mut program_ast,
                     &mut colours,
                 );
             }
 
-            if ambiguate {
+            if passes.ambiguate_properties {
                 disambiguate::AmbiguateProperties::AmbiguateProperties::process(
                     &mut program_ast,
                     &mut colours,

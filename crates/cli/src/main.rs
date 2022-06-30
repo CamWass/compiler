@@ -89,13 +89,7 @@ fn main() -> Result<()> {
 
     let compiler = Compiler::new();
 
-    let result = compiler.compile(
-        vec![lib],
-        program,
-        config.disambiguate,
-        config.ambiguate,
-        &mut node_id_gen,
-    );
+    let result = compiler.compile(vec![lib], program, config.passes, &mut node_id_gen);
 
     // dbg!(result);
 

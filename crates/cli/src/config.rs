@@ -1,10 +1,11 @@
 use anyhow::{Context, Error, Result};
+use compiler::PassConfig;
 use parser::{EsConfig, TsConfig};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::error::Category;
 use std::{fs::read_to_string, path::Path};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct Config {
     #[serde(default)]
@@ -12,9 +13,7 @@ pub struct Config {
     #[serde(default)]
     pub typescript: TsConfig,
     #[serde(default)]
-    pub disambiguate: bool,
-    #[serde(default)]
-    pub ambiguate: bool,
+    pub passes: PassConfig,
 }
 
 pub fn load_config(path: &Path) -> Result<Config> {

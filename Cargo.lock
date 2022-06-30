@@ -244,6 +244,7 @@ dependencies = [
  "pretty_assertions",
  "regex",
  "rustc-hash",
+ "serde",
  "swc_atoms",
  "testing",
  "visit2",
