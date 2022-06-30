@@ -308,6 +308,7 @@ macro_rules! syntax_error {
 
 macro_rules! node_id {
     ($parser:expr) => {{
-        $parser.node_id_gen.next()
+        let id = $parser.node_id_gen.borrow_mut().next();
+        id
     }};
 }

@@ -8,6 +8,8 @@ use global_common::{
     SourceMap,
 };
 use parser::{Parser, Syntax};
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::{env, path::Path};
 
 mod config;
@@ -17,6 +19,7 @@ fn create_program(
     config: &Config,
     cm: Lrc<SourceMap>,
     handler: &Handler,
+    node_id_gen: Rc<RefCell<ast::NodeIdGen>>,
 ) -> Result<(String, ast::Program)> {
     let syntax = if filename.ends_with(".js") {
         Syntax::Es(config.ecmascript)
@@ -32,7 +35,7 @@ fn create_program(
         .load_file(Path::new(filename))
         .expect("Failed to load file");
 
-    let mut parser = Parser::new(syntax, &fm);
+    let mut parser = Parser::new(syntax, &fm, node_id_gen);
 
     let program = parser.parse_program();
 
@@ -65,12 +68,34 @@ fn main() -> Result<()> {
     let cm = Lrc::<SourceMap>::default();
     let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
 
-    let lib = create_program("lib.es5.d.ts", &config, cm.clone(), &handler)?;
-    let program = create_program(entry_file, &config, cm.clone(), &handler)?;
+    let node_id_gen = Rc::new(RefCell::new(ast::NodeIdGen::default()));
+
+    let lib = create_program(
+        "lib.es5.d.ts",
+        &config,
+        cm.clone(),
+        &handler,
+        node_id_gen.clone(),
+    )?;
+    let program = create_program(
+        entry_file,
+        &config,
+        cm.clone(),
+        &handler,
+        node_id_gen.clone(),
+    )?;
+
+    let mut node_id_gen = Rc::try_unwrap(node_id_gen).unwrap().into_inner();
 
     let compiler = Compiler::new();
 
-    let result = compiler.compile(vec![lib], program, config.disambiguate, config.ambiguate);
+    let result = compiler.compile(
+        vec![lib],
+        program,
+        config.disambiguate,
+        config.ambiguate,
+        &mut node_id_gen,
+    );
 
     // dbg!(result);
 

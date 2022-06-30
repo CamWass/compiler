@@ -7,6 +7,7 @@
 #![deny(unused_imports)]
 
 mod DefaultNameGenerator;
+mod OptimizeArgumentsArray;
 pub mod ast;
 mod binder;
 mod checker;
@@ -103,14 +104,18 @@ impl Compiler {
         GLOBALS.set(&self.globals, op)
     }
 
-    pub fn compile(
+    pub fn compile<'a>(
         &self,
         libs: Vec<(String, ::ast::Program)>,
         program: (String, ::ast::Program),
         disambiguate: bool,
         ambiguate: bool,
+        node_id_gen: &'a mut ::ast::NodeIdGen,
     ) -> ::ast::Program {
         self.run(|| {
+            // TODO: maybe add an 'AST verifier' that checks basic invariants after
+            // each pass (e.g. that no two nodes have the same node_id).
+
             let mut program_ast = program.1;
 
             let mut colours = {
@@ -165,6 +170,14 @@ impl Compiler {
 
             // Note: The Rc based AST is only to be used by the checker and passes that directly access
             // the checker (color collector). All other passes should use the reference based AST.
+
+            let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
+
+            OptimizeArgumentsArray::OptimizeArgumentsArray::process(
+                &mut program_ast,
+                node_id_gen,
+                unresolved_ctxt,
+            );
 
             if disambiguate {
                 disambiguate::DisambiguateProperties::DisambiguateProperties::process(

@@ -94,7 +94,7 @@ pub trait GetNodeId {
     fn node_id(&self) -> NodeId;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct NodeIdGen {
     cur: NodeId,
 }

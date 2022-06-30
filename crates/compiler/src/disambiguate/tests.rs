@@ -36,7 +36,7 @@ impl<'a> Tester<'a> {
             .cm
             .new_source_file(FileName::Real(file_name.into()), src.into());
 
-        let mut p = Parser::new(syntax, &fm);
+        let mut p = Parser::new(syntax, &fm, Default::default());
         let res = op(&mut p).map_err(|e| e.into_diagnostic(self.handler).emit());
 
         for e in p.take_errors() {
@@ -77,7 +77,7 @@ impl<'a> Tester<'a> {
             .new_source_file(FileName::Real(name.into()), src.into());
 
         let mut module = {
-            let mut p = Parser::new(syntax, &fm);
+            let mut p = Parser::new(syntax, &fm, Default::default());
             let res = p
                 .parse_module()
                 .map_err(|e| e.into_diagnostic(self.handler).emit());

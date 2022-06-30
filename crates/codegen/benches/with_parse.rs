@@ -89,7 +89,7 @@ fn bench_emitter(b: &mut Bencher, s: &str) {
     let _ = ::testing::run_test(true, |cm, handler| {
         b.iter(|| {
             let fm = cm.new_source_file(FileName::Anon, s.into());
-            let mut parser = Parser::new(Default::default(), &fm);
+            let mut parser = Parser::new(Default::default(), &fm, Default::default());
             let mut src_map_buf = vec![];
             let module = parser
                 .parse_module()

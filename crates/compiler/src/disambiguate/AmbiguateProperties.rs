@@ -706,7 +706,11 @@ mod tests {
                 .new_source_file(FileName::Real(name.into()), src.into());
 
             let program = {
-                let mut p = Parser::new(Syntax::Typescript(Default::default()), &fm);
+                let mut p = Parser::new(
+                    Syntax::Typescript(Default::default()),
+                    &fm,
+                    Default::default(),
+                );
                 let res = p
                     .parse_program()
                     .map_err(|e| e.into_diagnostic(self.handler).emit());

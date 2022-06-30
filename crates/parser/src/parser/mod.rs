@@ -22,7 +22,9 @@ use ast::*;
 use global_common::{BytePos, SourceFile, Span};
 use input::Buffer;
 pub use input::Tokens;
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use swc_atoms::JsWord;
 
 #[derive(Clone, Default)]
@@ -48,22 +50,26 @@ pub struct Parser<I: Tokens> {
     emit_err: bool,
     state: State,
     input: Buffer<I>,
-    node_id_gen: NodeIdGen,
+    node_id_gen: Rc<RefCell<ast::NodeIdGen>>,
 }
 
 impl<'src> Parser<Lexer<'src>> {
-    pub fn new(syntax: Syntax, input: &'src SourceFile) -> Self {
-        Self::new_from(Lexer::new(syntax, Default::default(), input))
+    pub fn new(
+        syntax: Syntax,
+        input: &'src SourceFile,
+        node_id_gen: Rc<RefCell<ast::NodeIdGen>>,
+    ) -> Self {
+        Self::new_from(Lexer::new(syntax, Default::default(), input), node_id_gen)
     }
 }
 
 impl<I: Tokens> Parser<I> {
-    pub fn new_from(input: I) -> Self {
+    pub fn new_from(input: I, node_id_gen: Rc<RefCell<ast::NodeIdGen>>) -> Self {
         Parser {
             emit_err: true,
             state: Default::default(),
             input: Buffer::new(input),
-            node_id_gen: NodeIdGen::default(),
+            node_id_gen,
         }
     }
 

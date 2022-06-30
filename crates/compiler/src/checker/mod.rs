@@ -19821,24 +19821,27 @@ impl Checker {
         // To avoid that we will give an error to users if they use arguments objects in arrow function so that they
         // can explicitly bound arguments objects
         if symbol == self.argumentsSymbol {
-            todo!();
-            // if (isInPropertyInitializerOrClassStaticBlock(node)) {
-            //     error(node, Diagnostics.arguments_cannot_be_referenced_in_property_initializers);
-            //     return errorType;
-            // }
+            if isInPropertyInitializerOrClassStaticBlock(Some(node.clone())) {
+                todo!();
+                // error(node, Diagnostics.arguments_cannot_be_referenced_in_property_initializers);
+                // return errorType;
+            }
 
-            // const container = getContainingFunction(node)!;
-            // if (languageVersion < ScriptTarget.ES2015) {
-            //     if (container.kind === SyntaxKind.ArrowFunction) {
-            //         error(node, Diagnostics.The_arguments_object_cannot_be_referenced_in_an_arrow_function_in_ES3_and_ES5_Consider_using_a_standard_function_expression);
-            //     }
-            //     else if (hasSyntacticModifier(container, ModifierFlags::Async)) {
-            //         error(node, Diagnostics.The_arguments_object_cannot_be_referenced_in_an_async_function_or_method_in_ES3_and_ES5_Consider_using_a_standard_function_or_method);
-            //     }
-            // }
+            let container = getContainingFunction(&node).unwrap();
+            if self.languageVersion < ScriptTarget::ES2015 {
+                todo!();
+                // if matches!(container,BoundNode::ArrowExpr(_)) {
+                //     todo!();
+                //     // error(node, Diagnostics.The_arguments_object_cannot_be_referenced_in_an_arrow_function_in_ES3_and_ES5_Consider_using_a_standard_function_expression);
+                // }
+                // else if hasSyntacticModifier(container, ModifierFlags::Async) {
+                //     todo!();
+                //     // error(node, Diagnostics.The_arguments_object_cannot_be_referenced_in_an_async_function_or_method_in_ES3_and_ES5_Consider_using_a_standard_function_or_method);
+                // }
+            }
 
-            // getNodeLinks(container).flags |= NodeCheckFlags.CaptureArguments;
-            // return getTypeOfSymbol(symbol);
+            self.getNodeLinks_mut(container).flags |= NodeCheckFlags::CaptureArguments;
+            return self.getTypeOfSymbol(symbol);
         }
 
         // We should only mark aliases as referenced if there isn't a local value declaration
@@ -22826,8 +22829,6 @@ impl Checker {
 
     // TODO:
     // checkPropertyNotUsedBeforeDeclaration
-    // TODO:
-    // isInPropertyInitializerOrClassStaticBlock
     // TODO:
     // isPropertyDeclaredInAncestorClass
     // TODO:
@@ -29497,6 +29498,51 @@ fn isDeclarationWithExplicitTypeAnnotation(node: &Node) -> bool {
             } else {
                 false
             })
+}
+
+fn isInPropertyInitializerOrClassStaticBlock(node: Option<BoundNode>) -> bool {
+    findAncestor(node, |node| {
+        match node {
+            BoundNode::ClassProp(_) | BoundNode::PrivateProp(_) => Some(true),
+            // TODO: jsx
+            // BoundNode::TemplateSpan(_)|
+            // BoundNode::JsxExpression(_)|
+            // BoundNode::JsxAttribute(_)|
+            // BoundNode::JsxAttributes(_)|
+            // BoundNode::JsxSpreadAttribute(_)|
+            // BoundNode::JsxOpeningElement(_)|
+            BoundNode::KeyValueProp(_)
+            | BoundNode::PrivateMethod(_)
+            | BoundNode::ClassMethod(_)
+            | BoundNode::MethodProp(_)
+            | BoundNode::GetterProp(_)
+            | BoundNode::TsGetterSignature(_)
+            | BoundNode::SetterProp(_)
+            | BoundNode::TsSetterSignature(_)
+            | BoundNode::SpreadAssignment(_)
+            | BoundNode::ComputedPropName(_)
+            | BoundNode::TsExprWithTypeArgs(_)
+            | BoundNode::ExtendsClause(_) => Some(false),
+            BoundNode::ArrowExpr(_) | BoundNode::ExprStmt(_) => {
+                // if matches!(node.parent(), Some(BoundNode::BlockStmt(_))) {
+                //     todo!("see below");
+                // } else {
+                //     None
+                // }
+                // TODO: class static blocks
+                // if isBlock(node.parent) && isClassStaticBlockDeclaration(node.parent.parent) {Some(true)}else{None}
+                None
+            }
+            _ => {
+                if isExpressionNode(node) {
+                    Some(false)
+                } else {
+                    None
+                }
+            }
+        }
+    })
+    .is_some()
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
