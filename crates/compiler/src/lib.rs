@@ -23,6 +23,9 @@ mod types_composition;
 pub mod utils;
 pub mod visit;
 
+#[cfg(test)]
+mod testing;
+
 use crate::ast as local_ast;
 use crate::node::BoundNode;
 use crate::resolver::resolver;

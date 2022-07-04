@@ -540,162 +540,32 @@ impl VisitMut for FnBodyReWriter<'_> {
 mod tests {
     #![allow(non_snake_case)]
     use crate::resolver::resolver;
-    use ast::*;
-    use codegen::{text_writer::JsWriter, Emitter};
-    use ecma_visit::{VisitMut, VisitMutWith};
-    use global_common::{
-        errors::Handler, sync::Lrc, FileName, Mark, SourceMap, Span, SyntaxContext, DUMMY_SP,
-    };
-    use parser::{Parser, Syntax};
-
-    struct Tester<'a> {
-        cm: Lrc<SourceMap>,
-        handler: &'a Handler,
-    }
-
-    impl<'a> Tester<'a> {
-        fn run<F>(op: F)
-        where
-            F: FnOnce(&mut Tester<'_>) -> Result<(), ()>,
-        {
-            let out = ::testing::run_test(false, |cm, handler| op(&mut Tester { cm, handler }));
-
-            match out {
-                Ok(()) => {}
-                Err(stderr) => panic!("Stderr:\n{}", stderr),
-            }
-        }
-
-        fn apply_transform<T>(&mut self, tr: T, name: &str, src: &str) -> Result<Program, ()>
-        where
-            T: FnOnce(Program) -> Program,
-        {
-            let fm = self
-                .cm
-                .new_source_file(FileName::Real(name.into()), src.into());
-
-            let program = {
-                let mut p = Parser::new(
-                    Syntax::Typescript(Default::default()),
-                    &fm,
-                    Default::default(),
-                );
-                let res = p
-                    .parse_program()
-                    .map_err(|e| e.into_diagnostic(self.handler).emit());
-
-                for e in p.take_errors() {
-                    e.into_diagnostic(self.handler).emit()
-                }
-
-                res?
-            };
-
-            let mut program = tr(program);
-
-            program.visit_mut_with(&mut DropSpan {
-                preserve_ctxt: true,
-            });
-            program.visit_mut_with(&mut DropNodeId);
-
-            Ok(program)
-        }
-
-        fn print(&mut self, program: &Program) -> String {
-            let mut buf = vec![];
-            {
-                let mut emitter = Emitter {
-                    cfg: Default::default(),
-                    cm: self.cm.clone(),
-                    wr: Box::new(JsWriter::new(self.cm.clone(), "\n", &mut buf, None)),
-                    comments: None,
-                };
-
-                // println!("Emitting: {:?}", module);
-                emitter.emit_program(program).unwrap();
-            }
-
-            let s = String::from_utf8_lossy(&buf);
-            s.to_string()
-        }
-    }
+    use ecma_visit::VisitMutWith;
+    use global_common::{Mark, SyntaxContext};
 
     fn test_transform(input: &str, expected: &str) {
-        Tester::run(|tester| {
-            let expected = tester.apply_transform(|m| m, "output.js", expected)?;
+        crate::testing::test_transform(
+            |mut program, mut node_id_gen| {
+                let unresolved_mark = Mark::new();
+                let top_level_mark = Mark::new();
 
-            println!("----- Actual -----");
+                program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark, true));
 
-            let mut actual = tester.apply_transform(
-                |mut program| {
-                    let unresolved_mark = Mark::new();
-                    let top_level_mark = Mark::new();
+                let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 
-                    program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark, true));
-
-                    let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
-
-                    super::OptimizeArgumentsArray::process(
-                        &mut program,
-                        &mut Default::default(),
-                        unresolved_ctxt,
-                    );
-                    program
-                },
-                "input.js",
-                input,
-            )?;
-
-            actual.visit_mut_with(&mut DropSpan {
-                preserve_ctxt: false,
-            });
-            actual.visit_mut_with(&mut DropNodeId);
-
-            if actual == expected {
-                return Ok(());
-            }
-
-            let (actual_src, expected_src) = (tester.print(&actual), tester.print(&expected));
-
-            if actual_src == expected_src {
-                return Ok(());
-            }
-
-            println!(">>>>> Orig <<<<<\n{}", input);
-            println!(">>>>> Code <<<<<\n{}", actual_src);
-            if actual_src != expected_src {
-                panic!(
-                    r#"assertion failed: `(left == right)`
-                {}"#,
-                    ::testing::diff(&actual_src, &expected_src),
+                super::OptimizeArgumentsArray::process(
+                    &mut program,
+                    &mut node_id_gen,
+                    unresolved_ctxt,
                 );
-            }
-
-            Err(())
-        });
+                program
+            },
+            input,
+            expected,
+        );
     }
-
     fn test_same(input: &str) {
         test_transform(input, input);
-    }
-
-    struct DropSpan {
-        preserve_ctxt: bool,
-    }
-    impl VisitMut for DropSpan {
-        fn visit_mut_span(&mut self, span: &mut Span) {
-            *span = if self.preserve_ctxt {
-                DUMMY_SP.with_ctxt(span.ctxt())
-            } else {
-                DUMMY_SP
-            };
-        }
-    }
-    struct DropNodeId;
-    impl VisitMut for DropNodeId {
-        fn visit_mut_node_id(&mut self, span: &mut NodeId) {
-            *span = NodeId::from_u32(0);
-        }
     }
 
     #[test]

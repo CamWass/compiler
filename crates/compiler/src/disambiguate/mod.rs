@@ -8,5 +8,3 @@ pub mod DisambiguateProperties;
 mod Invalidation;
 mod PropertyClustering;
 mod UseSiteRenamer;
-#[cfg(test)]
-mod tests;

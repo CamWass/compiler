@@ -116,177 +116,19 @@ fn invalidateBasedOnType(
 
 #[cfg(test)]
 mod tests {
-    use crate::colors::color_registry::ColorRegistry;
-    use crate::{Checker, CompProgram, CompilerOptions, SourceFile, TypeCheckerHost};
-    use ast::*;
-    use codegen::{text_writer::JsWriter, Emitter};
-    use ecma_visit::{VisitMut, VisitMutWith};
-    use global_common::{errors::Handler, sync::Lrc, FileName, SourceMap, Span, DUMMY_SP};
-    use parser::{Parser, Syntax};
-
-    struct Tester<'a> {
-        cm: Lrc<SourceMap>,
-        handler: &'a Handler,
-    }
-
-    impl<'a> Tester<'a> {
-        fn run<F>(op: F)
-        where
-            F: FnOnce(&mut Tester<'_>) -> Result<(), ()>,
-        {
-            let out = ::testing::run_test(false, |cm, handler| op(&mut Tester { cm, handler }));
-
-            match out {
-                Ok(()) => {}
-                Err(stderr) => panic!("Stderr:\n{}", stderr),
-            }
-        }
-
-        fn apply_transform<T>(&mut self, tr: T, name: &str, src: &str) -> Result<Program, ()>
-        where
-            T: FnOnce(Program) -> Program,
-        {
-            let fm = self
-                .cm
-                .new_source_file(FileName::Real(name.into()), src.into());
-
-            let program = {
-                let mut p = Parser::new(
-                    Syntax::Typescript(Default::default()),
-                    &fm,
-                    Default::default(),
-                );
-                let res = p
-                    .parse_program()
-                    .map_err(|e| e.into_diagnostic(self.handler).emit());
-
-                for e in p.take_errors() {
-                    e.into_diagnostic(self.handler).emit()
-                }
-
-                res?
-            };
-
-            let mut program = tr(program);
-
-            program.visit_mut_with(&mut DropSpan {
-                preserve_ctxt: true,
-            });
-            program.visit_mut_with(&mut DropNodeId);
-
-            Ok(program)
-        }
-
-        fn print(&mut self, program: &Program) -> String {
-            let mut buf = vec![];
-            {
-                let mut emitter = Emitter {
-                    cfg: Default::default(),
-                    cm: self.cm.clone(),
-                    wr: Box::new(JsWriter::new(self.cm.clone(), "\n", &mut buf, None)),
-                    comments: None,
-                };
-
-                // println!("Emitting: {:?}", module);
-                emitter.emit_program(program).unwrap();
-            }
-
-            let s = String::from_utf8_lossy(&buf);
-            s.to_string()
-        }
-    }
-
-    fn init(program: ast::Program, file_name: &str) -> ColorRegistry {
-        let program_ast = program;
-
-        let program_source_file = SourceFile {
-            file_name: file_name.to_string(),
-            program: crate::ast::convert::convert_program(program_ast.clone()),
-            jsGlobalAugmentations: Default::default(),
-        };
-        let source_files = vec![program_source_file.clone()];
-
-        let host = TypeCheckerHost {
-            files: source_files,
-            compiler_options: CompilerOptions::default(),
-        };
-
-        let mut checker = Checker::new(host, false);
-
-        let p = CompProgram {
-            libs: Vec::new(),
-            source: program_source_file.clone(),
-        };
-
-        crate::colors::color_collector::collect(&mut checker, &p)
-    }
-
     fn test_transform(input: &str, expected: &str) {
-        Tester::run(|tester| {
-            let expected = tester.apply_transform(|m| m, "output.js", expected)?;
-
-            println!("----- Actual -----");
-
-            let mut actual = tester.apply_transform(
-                |mut ast_program| {
-                    let mut colours = init(ast_program.clone(), "input.js");
-                    super::DisambiguateProperties::process(&mut ast_program, &mut colours);
-                    ast_program
-                },
-                "input.js",
-                input,
-            )?;
-
-            actual.visit_mut_with(&mut DropSpan {
-                preserve_ctxt: false,
-            });
-            actual.visit_mut_with(&mut DropNodeId);
-
-            if actual == expected {
-                return Ok(());
-            }
-
-            let (actual_src, expected_src) = (tester.print(&actual), tester.print(&expected));
-
-            if actual_src == expected_src {
-                return Ok(());
-            }
-
-            println!(">>>>> Orig <<<<<\n{}", input);
-            println!(">>>>> Code <<<<<\n{}", actual_src);
-            if actual_src != expected_src {
-                panic!(
-                    r#"assertion failed: `(left == right)`
-                {}"#,
-                    ::testing::diff(&actual_src, &expected_src),
-                );
-            }
-
-            Err(())
-        });
+        crate::testing::test_transform(
+            |mut program, _| {
+                let mut colours = crate::testing::get_colours(program.clone());
+                super::DisambiguateProperties::process(&mut program, &mut colours);
+                program
+            },
+            input,
+            expected,
+        );
     }
-
     fn test_same(input: &str) {
         test_transform(input, input);
-    }
-
-    struct DropSpan {
-        preserve_ctxt: bool,
-    }
-    impl VisitMut for DropSpan {
-        fn visit_mut_span(&mut self, span: &mut Span) {
-            *span = if self.preserve_ctxt {
-                DUMMY_SP.with_ctxt(span.ctxt())
-            } else {
-                DUMMY_SP
-            };
-        }
-    }
-    struct DropNodeId;
-    impl VisitMut for DropNodeId {
-        fn visit_mut_node_id(&mut self, span: &mut NodeId) {
-            *span = NodeId::from_u32(0);
-        }
     }
 
     // TODO: test for
