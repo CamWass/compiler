@@ -441,7 +441,7 @@ impl<'col, 'a> ProcessPropertiesAndConstructors<'col, 'a> {
 
             if let Some((id, is_static)) = prop {
                 let owner = if is_static {
-                    self.colorGraphNodeFactory.colours.colors[class_color]
+                    self.colorGraphNodeFactory.colours[class_color]
                         .staticType
                         .unwrap()
                 } else {
@@ -649,7 +649,7 @@ impl Property {
 
         self.numOccurrences += 1;
 
-        let color = &colorGraphNodeFactory.colours.colors[color_id];
+        let color = &colorGraphNodeFactory.colours[color_id];
 
         if color.isInvalidating
         /*|| color.getPropertiesKeepOriginalName()*/

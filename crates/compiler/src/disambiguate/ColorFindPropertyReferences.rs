@@ -105,7 +105,7 @@ impl<'col, 'nf> ColorFindPropertyReferences<'col, 'nf> {
 
             if let Some((id, is_static)) = prop {
                 let owner = if is_static {
-                    self.colorGraphNodeFactory.colours.colors[class_color]
+                    self.colorGraphNodeFactory.colours[class_color]
                         .staticType
                         .unwrap()
                 } else {

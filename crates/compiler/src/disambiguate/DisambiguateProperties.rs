@@ -95,9 +95,6 @@ impl DisambiguateProperties {
         debug_assert_eq!(propIndex.len(), propertyClusterings.len());
 
         rename_use_sites(ast, propertyClusterings);
-        // TODO: now that we've modified the ast, the node hashes will have changed. This means hashmaps ect will break,
-        // e.g. colour regisrty's node_to_color_map. This could be solved by e.g. manually patching the hashmaps,
-        // or hashing node IDs instead of nodes.
     }
 }
 
@@ -107,7 +104,7 @@ fn invalidateBasedOnType(
 ) {
     for ty in flattener.getAllKnownTypes() {
         let node = &flattener.nodes[ty];
-        let color = &flattener.colours.colors[node.color];
+        let color = &flattener.colours[node.color];
         if color.isInvalidating {
             for &prop in node.associatedProps.keys() {
                 propertyClusterings[prop]

@@ -78,7 +78,7 @@ impl<'col, 'nf> ColorGraphBuilder<'col, 'nf> {
     ) {
         let flatUnion = self.colorHoldsInstanceGraph[unionNode];
         let color = self.nodeFactory[flatUnion].color;
-        if !self.nodeFactory.colours.colors[color].isUnion() {
+        if !self.nodeFactory.colours[color].isUnion() {
             return;
         }
 
@@ -94,7 +94,7 @@ impl<'col, 'nf> ColorGraphBuilder<'col, 'nf> {
          */
         debug_assert!(self.colorHoldsInstanceGraph.edges(unionNode).count() != 0);
         // TODO:: bad collect
-        let graphNodes = self.nodeFactory.colours.colors[color]
+        let graphNodes = self.nodeFactory.colours[color]
             .unionElements
             .iter()
             .copied()
@@ -134,8 +134,8 @@ impl<'col, 'nf> ColorGraphBuilder<'col, 'nf> {
 
         let color = self.nodeFactory[node].color;
 
-        if self.nodeFactory.colours.colors[color].isUnion() {
-            let alts = self.nodeFactory.colours.colors[color]
+        if self.nodeFactory.colours[color].isUnion() {
+            let alts = self.nodeFactory.colours[color]
                 .unionElements
                 .iter()
                 .copied()
@@ -147,7 +147,7 @@ impl<'col, 'nf> ColorGraphBuilder<'col, 'nf> {
             return flatNode;
         }
 
-        if let Some(supertypes) = self.nodeFactory.colours.getDisambiguationSupertypes(color) {
+        if let Some(supertypes) = self.nodeFactory.colours.get_supertypes(color) {
             // TODO: bad collect
             let supertypes = supertypes.iter().copied().collect::<Vec<_>>();
             for supertype in supertypes {

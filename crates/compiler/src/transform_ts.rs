@@ -28,7 +28,7 @@ impl ParamPropTransformer<'_> {
         macro_rules! set_colour {
             ($colour:ident, $node:expr) => {{
                 let node = $node;
-                self.colours.node_to_color_map.insert(node.node_id, $colour);
+                self.colours.set_color_of_node(node.node_id, $colour);
                 node
             }};
         }

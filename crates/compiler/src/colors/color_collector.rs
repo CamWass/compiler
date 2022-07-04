@@ -1,4 +1,3 @@
-use super::color::Color;
 use super::color_registry::ColorRegistry;
 use super::ColorId;
 use crate::ast;
@@ -41,8 +40,6 @@ impl<'c> ColorCollector<'c> {
     }
 
     fn add_standard_colors(&mut self) {
-        debug_assert!(self.registry.node_to_color_map.is_empty());
-
         self.type_to_color_map.extend([
             // Merge all the various top/bottom-like/unknown types into a single unknown type.
             (self.checker.unknownType, self.registry.unknown_color),
@@ -99,21 +96,18 @@ impl<'c> ColorCollector<'c> {
                 return *alt_colours.iter().next().unwrap();
             }
 
-            let color = Color::default();
-            let color_id = self.registry.colors.push(color);
+            let color_id = self.registry.new_color();
             self.type_to_color_map.insert(ty, color_id);
 
             for &alt_colour in &alt_colours {
-                self.registry.colors[color_id].isInvalidating |=
-                    self.registry.colors[alt_colour].isInvalidating
+                self.registry[color_id].isInvalidating |= self.registry[alt_colour].isInvalidating
             }
 
-            self.registry.colors[color_id].unionElements = alt_colours;
+            self.registry[color_id].unionElements = alt_colours;
 
             color_id
         } else {
-            let color = Color::default();
-            let color_id = self.registry.colors.push(color);
+            let color_id = self.registry.new_color();
             self.type_to_color_map.insert(ty, color_id);
             self.addSupertypeEdges(ty, color_id);
             color_id
@@ -141,11 +135,7 @@ impl<'c> ColorCollector<'c> {
 
     fn addSupertypeEdge(&mut self, super_ty: TypeId, subTypeColor: ColorId) {
         let super_color = self.recordType(super_ty, None);
-        self.registry
-            .disambiguationSupertypeGraph
-            .entry(subTypeColor)
-            .or_default()
-            .insert(super_color);
+        self.registry.add_supertype_edge(super_color, subTypeColor);
     }
 }
 
@@ -159,7 +149,7 @@ macro_rules! generate_visitors {
                 if isExpressionNode(&node) || isDeclaration(&node) || matches!(node, BoundNode::Ident(_)) || isDeclarationName(node.clone())  {
                     let ty = self.checker.getTypeAtLocation(node.clone());
                     let color = self.recordType(ty, Some(&node));
-                    self.registry.node_to_color_map.insert(node.node_id(), color);
+                    self.registry.set_color_of_node(node.node_id(), color);
                 }
             }
         )*
@@ -204,7 +194,7 @@ impl Visit for ColorCollector<'_> {
             }
         }
 
-        self.registry.colors[class_color].staticType = Some(static_color);
+        self.registry[class_color].staticType = Some(static_color);
     }
 
     generate_visitors!([

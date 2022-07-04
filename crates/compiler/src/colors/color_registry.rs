@@ -3,14 +3,13 @@ use super::ColorId;
 use ast::NodeId;
 use index::vec::{Idx, IndexVec};
 use rustc_hash::{FxHashMap, FxHashSet};
+use std::ops::{Index, IndexMut};
 
 #[derive(Debug)]
 pub struct ColorRegistry {
-    pub colors: IndexVec<ColorId, Color>,
-    pub node_to_color_map: FxHashMap<NodeId, ColorId>,
-    pub disambiguationSupertypeGraph: FxHashMap<ColorId, FxHashSet<ColorId>>,
-    /// Maps instantiable color -> union of instance colors.
-    instanceColorUnions: FxHashMap<ColorId, ColorId>,
+    colors: IndexVec<ColorId, Color>,
+    node_to_color_map: FxHashMap<NodeId, ColorId>,
+    supertype_graph: FxHashMap<ColorId, FxHashSet<ColorId>>,
 
     // Standard colours:
     pub unknown_color: ColorId,
@@ -24,6 +23,7 @@ pub struct ColorRegistry {
 }
 
 impl ColorRegistry {
+    /// Creates a new color registry containing only the standard colors.
     pub fn new() -> Self {
         let mut colors: IndexVec<ColorId, Color> = IndexVec::default();
 
@@ -52,8 +52,7 @@ impl ColorRegistry {
         Self {
             colors,
             node_to_color_map: FxHashMap::default(),
-            disambiguationSupertypeGraph: FxHashMap::default(),
-            instanceColorUnions: FxHashMap::default(),
+            supertype_graph: FxHashMap::default(),
 
             unknown_color,
             bigint_color,
@@ -66,60 +65,48 @@ impl ColorRegistry {
         }
     }
 
-    /**
-     * The colors directly above `x` in the subtyping graph for the purposes of property
-     * (dis)ambiguation.
-     */
-    pub fn getDisambiguationSupertypes(&self, x: ColorId) -> Option<&FxHashSet<ColorId>> {
-        self.disambiguationSupertypeGraph.get(&x)
+    /// Creates a blank color and returns its ID.
+    pub fn new_color(&mut self) -> ColorId {
+        let color = Color::default();
+        self.colors.push(color)
     }
 
+    /// Adds an edge between `super_color` and `sub_color` in the subtyping graph.
+    pub fn add_supertype_edge(&mut self, super_color: ColorId, sub_color: ColorId) {
+        self.supertype_graph
+            .entry(sub_color)
+            .or_default()
+            .insert(super_color);
+    }
+
+    /// The colors directly above `x` in the subtyping graph.
+    pub fn get_supertypes(&self, x: ColorId) -> Option<&FxHashSet<ColorId>> {
+        self.supertype_graph.get(&x)
+    }
+
+    /// Retrieves the color associated with the node, if any.
     pub fn get_color_of_node(&self, node_id: NodeId) -> Option<ColorId> {
         self.node_to_color_map.get(&node_id).copied()
     }
 
-    // TODO: temp
-    pub fn debug_get_color(&self, color: ColorId) -> &Color {
-        &self.colors[color]
+    /// Sets the color associated with the node, overwiting any previous color.
+    pub fn set_color_of_node(&mut self, node_id: NodeId, color: ColorId) {
+        self.node_to_color_map.insert(node_id, color);
     }
+}
 
-    // pub fn createUnionOfInstanceColors(&mut self, color: ColorId) -> ColorId {
-    //     let elements = &self.colors[color].instanceColors;
+impl Index<ColorId> for ColorRegistry {
+    type Output = Color;
 
-    //     debug_assert!(!elements.is_empty());
+    #[inline]
+    fn index(&self, index: ColorId) -> &Self::Output {
+        &self.colors[index]
+    }
+}
 
-    //     if elements.len() == 1 {
-    //         return *elements.iter().next().unwrap();
-    //     }
-
-    //     if let Some(cached) = self.instanceColorUnions.get(&color) {
-    //         return *cached;
-    //     }
-
-    //     let mut prototypes = FxHashSet::default();
-    //     let mut instanceColors = FxHashSet::default();
-    //     // let mut ownProperties = FxHashSet::default();
-    //     let mut isInvalidating = false;
-
-    //     for &element in elements {
-    //         prototypes.extend(self.colors[element].prototypes.iter());
-    //         instanceColors.extend(self.colors[element].instanceColors.iter());
-    //         // ownProperties.extend(self.colors[element].ownProperties.iter().cloned()); // Are these actually the "own props"?
-    //         isInvalidating |= self.colors[element].isInvalidating;
-    //     }
-
-    //     let result = Color {
-    //         isInvalidating,
-    //         // ownProperties,
-    //         prototypes,
-    //         instanceColors,
-    //         unionElements: elements.clone(),
-    //     };
-
-    //     let result = self.colors.push(result);
-
-    //     self.instanceColorUnions.insert(color, result);
-
-    //     result
-    // }
+impl IndexMut<ColorId> for ColorRegistry {
+    #[inline]
+    fn index_mut(&mut self, index: ColorId) -> &mut Self::Output {
+        &mut self.colors[index]
+    }
 }
