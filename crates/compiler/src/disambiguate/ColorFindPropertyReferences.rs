@@ -82,7 +82,6 @@ impl<'col, 'nf> ColorFindPropertyReferences<'col, 'nf> {
     fn handle_class(&mut self, class: &ast::Class, class_color: ColorId) {
         for member in &class.body {
             let prop = match member {
-                ast::ClassMember::Constructor(_) => todo!(),
                 ast::ClassMember::Method(m) => {
                     if let ast::PropName::Ident(i) = &m.key {
                         Some((i, m.is_static))
@@ -99,7 +98,9 @@ impl<'col, 'nf> ColorFindPropertyReferences<'col, 'nf> {
                     }
                 }
                 ast::ClassMember::PrivateProp(p) => Some((&p.key.id, p.is_static)),
-                ast::ClassMember::TsIndexSignature(_) | ast::ClassMember::Empty(_) => None,
+                ast::ClassMember::Constructor(_)
+                | ast::ClassMember::TsIndexSignature(_)
+                | ast::ClassMember::Empty(_) => None,
             };
 
             if let Some((id, is_static)) = prop {

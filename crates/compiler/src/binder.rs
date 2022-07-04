@@ -1648,7 +1648,10 @@ impl<'a> Binder<'a> {
             BoundNode::TsNamespaceExportDecl(n) => {
                 todo!("temp: node: {:?}, span: {:?}", &node, n.span)
             }
-            BoundNode::TsAsExpr(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
+            BoundNode::TsAsExpr(n) => {
+                bind!(self, n.expr, node.clone());
+                bind!(self, n.type_ann, node.clone());
+            }
             BoundNode::TsTypeAssertion(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
             BoundNode::TsNonNullExpr(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
             BoundNode::TsConstAssertion(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),

@@ -299,7 +299,6 @@ mod tests {
     // object lits
     // interfaces
     // functions?
-    // param props (i.e. constructor(private a:string) )
     // Optional chaining
     // index signatures
     // Missing props
@@ -432,6 +431,10 @@ class Other {
 }",
         );
     }
+
+    // =================================================================
+    // Tests from closure
+    // =================================================================
 
     #[test]
     fn propertiesAreConflated_byExtends_fromInterface() {

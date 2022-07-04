@@ -38,3 +38,4 @@ mod rustc_data_structures;
 mod source_map;
 pub mod sync;
 mod syntax_pos;
+pub mod util;

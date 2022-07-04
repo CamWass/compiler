@@ -234,6 +234,7 @@ dependencies = [
  "codegen",
  "ecma_visit",
  "global_common",
+ "global_visit",
  "index",
  "lexical",
  "node_id",

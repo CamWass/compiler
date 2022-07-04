@@ -17,6 +17,7 @@ mod graph;
 pub mod node;
 mod normalize;
 mod resolver;
+mod transform_ts;
 pub mod types;
 mod types_composition;
 pub mod utils;
@@ -181,6 +182,8 @@ impl Compiler {
             // Note: The Rc based AST is only to be used by the checker and passes that directly access
             // the checker (color collector). All other passes should use the reference based AST.
 
+            transform_ts::transform_param_props(&mut program_ast, node_id_gen, &mut colours);
+
             let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 
             if passes.optimize_arguments_array {
@@ -190,6 +193,15 @@ impl Compiler {
                     unresolved_ctxt,
                 );
             }
+
+            // TODO: inlineAndCollapseProperties
+
+            // TODO: inferConsts
+
+            // TODO: earlyInlineVariables
+            // TODO: earlyPeepholeOptimizations
+
+            // TODO: removeUnusedCodeOnce
 
             if passes.disambiguate_properties {
                 disambiguate::DisambiguateProperties::DisambiguateProperties::process(

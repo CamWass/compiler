@@ -7238,8 +7238,19 @@ impl Checker {
         if !baseTypes.is_empty() {
             if let Some(source_sym) = self.types[source].get_symbol() {
                 if members == self.getMembersOfSymbol(*source_sym) {
-                    todo!();
-                    // members = self.createSymbolTable(source.declaredProperties);
+                    let mut result = SymbolTable::default();
+                    result.extend(
+                        self.types[source]
+                            .unwrap_as_interface_type()
+                            .declared_members
+                            .as_ref()
+                            .unwrap()
+                            .declaredProperties
+                            .iter()
+                            .map(|&s| (self.symbols[s].escapedName().clone(), s)),
+                    );
+
+                    members = self.symbol_tables.push(result);
                 }
             }
 
@@ -16434,8 +16445,14 @@ impl Checker {
     //     }
     // }
 
-    // TODO:
-    // removeMissingType
+    fn removeMissingType(&mut self, ty: TypeId, isOptional: bool) -> TypeId {
+        if self.exactOptionalPropertyTypes && isOptional {
+            self.removeType(ty, self.missingType)
+        } else {
+            ty
+        }
+    }
+
     // TODO:
     // containsMissingType
     // TODO:
@@ -16506,10 +16523,64 @@ impl Checker {
         self.symbols.push(Symbol::TransientSymbol(symbol))
     }
 
-    // TODO:
-    // transformTypeOfMembers
-    // TODO:
-    // getRegularTypeOfObjectLiteral
+    fn transformTypeOfMembers<F>(&mut self, ty: TypeId, mut f: F) -> SymbolTableId
+    where
+        F: FnMut(&mut Checker, TypeId) -> TypeId,
+    {
+        let properties = self.getPropertiesOfObjectType(ty);
+        let members = SymbolTable::from_iter(properties.clone().iter().map(|&property| {
+            let original = self.getTypeOfSymbol(property);
+            let updated = f(self, original);
+            let symbol = if updated == original {
+                property
+            } else {
+                self.createSymbolWithType(property, Some(updated))
+            };
+            (self.symbols[property].escapedName().clone(), symbol)
+        }));
+        self.symbol_tables.push(members)
+    }
+
+    /**
+     * If the the provided object literal is subject to the excess properties check,
+     * create a new that is exempt. Recursively mark object literal members as exempt.
+     * Leave signatures alone since they are not subject to the check.
+     */
+    fn getRegularTypeOfObjectLiteral(&mut self, ty: TypeId) -> TypeId {
+        if !(self.isObjectLiteralType(ty)
+            && self.types[ty]
+                .get_object_flags()
+                .intersects(ObjectFlags::FreshLiteral))
+        {
+            return ty;
+        }
+        if let Type::FreshObjectLiteralType(t) = &self.types[ty] {
+            return t.regularType;
+        }
+
+        let members = self.transformTypeOfMembers(ty, |checker, prop_type| {
+            checker.getRegularTypeOfObjectLiteral(prop_type)
+        });
+        let resolved = self.types[ty].unwrap_object_type_base();
+        let regularType = self.createAnonymousType(
+            self.types[ty].get_symbol().clone(),
+            members,
+            resolved.callSignatures.clone(),
+            resolved.constructSignatures.clone(),
+            resolved.indexInfos.clone(),
+        );
+        *self.types[regularType].get_flags_mut() = self.types[ty].get_flags();
+        let additional_regularType_object_flags =
+            self.types[ty].get_object_flags() & !ObjectFlags::FreshLiteral;
+        *self.types[regularType].get_object_flags_mut() |= additional_regularType_object_flags;
+        let old = std::mem::replace(&mut self.types[ty], Type::Dummy);
+        self.types[ty] = Type::FreshObjectLiteralType(FreshObjectLiteralType {
+            resolved_type: unwrap_as!(old, Type::ResolvedType(t), t),
+            // TODO: I think regularType is supposed to be a resolved type.
+            regularType,
+        });
+        regularType
+    }
 
     fn createWideningContext(
         &mut self,
@@ -19087,8 +19158,10 @@ impl Checker {
         }
     }
 
-    // TODO:
-    // removeType
+    fn removeType(&mut self, ty: TypeId, targetType: TypeId) -> TypeId {
+        self.filterType(ty, |_, t| t != targetType)
+    }
+
     // TODO:
     // countTypes
 
@@ -21069,8 +21142,17 @@ impl Checker {
     // isPossiblyAliasedThisProperty
     // TODO:
     // getContextualTypeForThisPropertyAssignment
-    // TODO:
-    // isCircularMappedProperty
+
+    fn isCircularMappedProperty(&mut self, symbol: SymbolId) -> bool {
+        getCheckFlags(&self.symbols[symbol]).intersects(CheckFlags::Mapped)
+            && self.get_transient_sym(symbol).symbol_links.ty.is_none()
+            && self
+                .findResolutionCycleStartIndex(
+                    TypeSystemEntity::Symbol(symbol),
+                    TypeSystemPropertyName::Type,
+                )
+                .is_some()
+    }
 
     fn getTypeOfPropertyOfContextualType(&mut self, ty: TypeId, name: JsWord) -> Option<TypeId> {
         self.mapTypeOptional(
@@ -21089,8 +21171,11 @@ impl Checker {
                     .intersects(TypeFlags::StructuredType)
                 {
                     if let Some(prop) = checker.getPropertyOfType(t, &name, false) {
-                        todo!();
-                        // return isCircularMappedProperty(prop) ? undefined : getTypeOfSymbol(prop);
+                        return if checker.isCircularMappedProperty(prop) {
+                            None
+                        } else {
+                            Some(checker.getTypeOfSymbol(prop))
+                        };
                     }
                     if checker.isTupleType(t) {
                         todo!();
@@ -22745,8 +22830,11 @@ impl Checker {
         // accessor, or optional method.
         let assignmentKind = getAssignmentTargetKind(node.clone());
         if assignmentKind == AssignmentKind::Definite {
-            todo!();
-            // return removeMissingType(propType, !!(prop && prop.flags & SymbolFlags::Optional));
+            let isOptional = prop.is_some()
+                && self.symbols[prop.unwrap()]
+                    .flags()
+                    .intersects(SymbolFlags::Optional);
+            return self.removeMissingType(propType, isOptional);
         }
         if let Some(prop) = prop {
             if !self.symbols[prop]
@@ -24856,12 +24944,57 @@ impl Checker {
 
     // TODO:
     // checkTaggedTemplateExpression
-    // TODO:
-    // checkAssertion
+
+    fn checkAssertion(&mut self, node: &BoundNode) -> TypeId {
+        let (ty, expr) = match node {
+            BoundNode::TsTypeAssertion(n) => {
+                // TODO:
+                // let file = getSourceFileOfNode(node);
+                // if (file && fileExtensionIsOneOf(file.fileName, [Extension.Cts, Extension.Mts])) {
+                //     grammarErrorOnNode(node, Diagnostics.This_syntax_is_reserved_in_files_with_the_mts_or_cts_extension_Use_an_as_expression_instead);
+                // }
+                (&n.type_ann, &n.expr)
+            }
+            BoundNode::TsAsExpr(n) => (&n.type_ann, &n.expr),
+            _ => unreachable!(),
+        };
+        self.checkAssertionWorker(node, ty.bind(node.clone()), expr.bind(node.clone()), None)
+    }
+
     // TODO:
     // isValidConstAssertionArgument
-    // TODO:
-    // checkAssertionWorker
+
+    fn checkAssertionWorker(
+        &mut self,
+        errNode: &BoundNode,
+        ty: BoundNode,
+        expression: BoundNode,
+        checkMode: Option<CheckMode>,
+    ) -> TypeId {
+        let exprType = self.checkExpression(expression, checkMode, false);
+        if isConstTypeReference(&ty.clone().into()) {
+            todo!();
+            // if !isValidConstAssertionArgument(expression) {
+            //     todo!();
+            //     // error(expression, Diagnostics.A_const_assertions_can_only_be_applied_to_references_to_enum_members_or_string_number_boolean_array_or_object_literals);
+            // }
+            // return self.getRegularTypeOfLiteralType(exprType);
+        }
+        self.checkSourceElement(Some(ty.clone()));
+        let exprType = self.getBaseTypeOfLiteralType(exprType);
+        let exprType = self.getRegularTypeOfObjectLiteral(exprType);
+        let targetType = self.getTypeFromTypeNode(ty);
+        if self.produceDiagnostics && !self.isErrorType(targetType) {
+            todo!();
+            // let widenedType = self.getWidenedType(exprType);
+            // if !self.isTypeComparableTo(targetType, widenedType) {
+            //     self.checkTypeComparableTo(exprType, targetType, errNode,
+            //         Diagnostics.Conversion_of_type_0_to_type_1_may_be_a_mistake_because_neither_type_sufficiently_overlaps_with_the_other_If_this_was_intentional_convert_the_expression_to_unknown_first);
+            // }
+        }
+        targetType
+    }
+
     // TODO:
     // checkNonNullChain
     // TODO:
@@ -26332,10 +26465,14 @@ impl Checker {
                 return ty;
             }
         } else if matches!(&expr, BoundNode::TsTypeAssertion(e) if !isConstTypeReference(&e.type_ann.clone().into()))
-            || matches!(expr, BoundNode::TsAsExpr(e) if !isConstTypeReference(&e.type_ann.clone().into()))
+            || matches!(&expr, BoundNode::TsAsExpr(e) if !isConstTypeReference(&e.type_ann.clone().into()))
         {
-            todo!();
-            // return getTypeFromTypeNode((expr as TypeAssertion).ty);
+            let ty_node = match &expr {
+                BoundNode::TsTypeAssertion(n) => &n.type_ann,
+                BoundNode::TsAsExpr(n) => &n.type_ann,
+                _ => unreachable!(),
+            };
+            return Some(self.getTypeFromTypeNode(ty_node.bind(expr.clone())));
         } else if matches!(
             node,
             BoundNode::Number(_) | BoundNode::Str(_) | BoundNode::Bool(_)
@@ -26371,8 +26508,19 @@ impl Checker {
 
     // TODO:
     // checkConstEnumAccess
-    // TODO:
-    // checkParenthesizedExpression
+
+    fn checkParenthesizedExpression(
+        &mut self,
+        node: &Rc<ParenExpr>,
+        checkMode: Option<CheckMode>,
+    ) -> TypeId {
+        // TODO: jsdoc
+        // if (hasJSDocNodes(node) && isJSDocTypeAssertion(node)) {
+        //     const type = getJSDocTypeAssertionType(node);
+        //     return checkAssertionWorker(type, type, node.expression, checkMode);
+        // }
+        self.checkExpression(node.expr.bind(node.clone().into()), checkMode, false)
+    }
 
     fn checkExpressionWorker(
         &mut self,
@@ -26465,10 +26613,7 @@ impl Checker {
             //     todo!();
             //     // self.checkTaggedTemplateExpression(node as TaggedTemplateExpression)
             // }
-            BoundNode::ParenExpr(_) => {
-                todo!();
-                // self.checkParenthesizedExpression(node as ParenthesizedExpression, checkMode)
-            }
+            BoundNode::ParenExpr(n) => self.checkParenthesizedExpression(n, checkMode),
             BoundNode::ClassExpr(_) => {
                 todo!();
                 // self.checkClassExpression(node as ClassExpression)
@@ -26481,10 +26626,7 @@ impl Checker {
             //     todo!();
             //     // self.checkTypeOfExpression(node as TypeOfExpression)
             // }
-            BoundNode::TsTypeAssertion(_) | BoundNode::TsAsExpr(_) => {
-                todo!();
-                // self.checkAssertion(node as AssertionExpression)
-            }
+            BoundNode::TsTypeAssertion(_) | BoundNode::TsAsExpr(_) => self.checkAssertion(node),
             BoundNode::TsNonNullExpr(_) => {
                 todo!();
                 // self.checkNonNullAssertion(node as NonNullExpression)

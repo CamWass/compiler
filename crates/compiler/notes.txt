@@ -52,3 +52,5 @@ while only those two will have no parent, this can reduce the number of .parent(
 would still have to return Option, and possible be unwrapped, but accessing the parent of a bare node would become nicer.
 
 TODO: codegen doesn't emmit implements clauses and possibly other TS things as well.
+
+TODO: everytime we create a new node, we should also try to set its type. E.g. when we transform a TsParamProp, we should set the types of the new AssignExpr.

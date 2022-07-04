@@ -157,6 +157,7 @@ impl_AsTypeBase![
     EvolvingArrayType,
     ReverseMappedType,
     ResolvedType,
+    // FreshObjectLiteralType,
     IterableOrIteratorType,
     PromiseOrAwaitableType,
     SyntheticDefaultModuleType,
@@ -195,7 +196,7 @@ pub enum Type {
     EvolvingArrayType(EvolvingArrayType),
     ReverseMappedType(ReverseMappedType),
     ResolvedType(ResolvedType),
-    // FreshObjectLiteralType(FreshObjectLiteralType),
+    FreshObjectLiteralType(FreshObjectLiteralType),
     // IterationTypes(IterationTypes),
     IterableOrIteratorType(IterableOrIteratorType),
     PromiseOrAwaitableType(PromiseOrAwaitableType),
@@ -222,7 +223,11 @@ impl Type {
             Type::IntersectionType(_) => todo!(),
             Type::ResolvedType(t) => match &t.old {
                 Some(Old::GenericType { interface_type, .. }) => interface_type,
-                _ => todo!(),
+                Some(Old::InterfaceType { interface_type, .. }) => interface_type,
+                _ => {
+                    dbg!(t);
+                    todo!()
+                }
             },
             _ => unreachable!(),
         }
@@ -267,6 +272,7 @@ impl Type {
             Type::EvolvingArrayType(t) => t.object_type_base.objectFlags,
             Type::ReverseMappedType(t) => t.object_type_base.objectFlags,
             Type::ResolvedType(t) => t.object_type_base.objectFlags,
+            Type::FreshObjectLiteralType(t) => t.resolved_type.object_type_base.objectFlags,
             Type::IterableOrIteratorType(t) => t.object_type_base.objectFlags,
             Type::PromiseOrAwaitableType(t) => t.object_type_base.objectFlags,
             Type::SyntheticDefaultModuleType(_) => todo!(),
@@ -305,6 +311,7 @@ impl Type {
             Type::EvolvingArrayType(t) => &mut t.object_type_base.objectFlags,
             Type::ReverseMappedType(t) => &mut t.object_type_base.objectFlags,
             Type::ResolvedType(t) => &mut t.object_type_base.objectFlags,
+            Type::FreshObjectLiteralType(t) => &mut t.resolved_type.object_type_base.objectFlags,
             Type::IterableOrIteratorType(t) => &mut t.object_type_base.objectFlags,
             Type::PromiseOrAwaitableType(t) => &mut t.object_type_base.objectFlags,
             Type::SyntheticDefaultModuleType(_) => todo!(),
@@ -343,6 +350,7 @@ impl Type {
             Type::EvolvingArrayType(_) => todo!(),
             Type::ReverseMappedType(_) => todo!(),
             Type::ResolvedType(t) => t.union_or_intersection_type.resolvedBaseConstraint,
+            Type::FreshObjectLiteralType(_) => todo!(),
             Type::IterableOrIteratorType(t) => t.union_or_intersection_type.resolvedBaseConstraint,
             Type::PromiseOrAwaitableType(t) => t.union_or_intersection_type.resolvedBaseConstraint,
             Type::SyntheticDefaultModuleType(_) => todo!(),
@@ -381,6 +389,7 @@ impl Type {
             Type::EvolvingArrayType(_) => todo!(),
             Type::ReverseMappedType(_) => todo!(),
             Type::ResolvedType(t) => &mut t.union_or_intersection_type.resolvedBaseConstraint,
+            Type::FreshObjectLiteralType(_) => todo!(),
             Type::IterableOrIteratorType(t) => {
                 &mut t.union_or_intersection_type.resolvedBaseConstraint
             }
@@ -427,6 +436,7 @@ impl Type {
                 Some(Old::GenericType { type_reference, .. }) => type_reference,
                 _ => todo!(),
             },
+            Type::FreshObjectLiteralType(_) => todo!(),
             Type::IterableOrIteratorType(_) => todo!(),
             Type::PromiseOrAwaitableType(_) => todo!(),
             Type::SyntheticDefaultModuleType(_) => todo!(),
@@ -465,6 +475,7 @@ impl Type {
             Type::EvolvingArrayType(_) => todo!(),
             Type::ReverseMappedType(_) => todo!(),
             Type::ResolvedType(_) => todo!(),
+            Type::FreshObjectLiteralType(_) => todo!(),
             Type::IterableOrIteratorType(_) => todo!(),
             Type::PromiseOrAwaitableType(_) => todo!(),
             Type::SyntheticDefaultModuleType(_) => todo!(),
@@ -716,7 +727,7 @@ impl AsTypeBase for Type {
             Type::EvolvingArrayType(t) => t.get_flags(),
             Type::ReverseMappedType(t) => t.get_flags(),
             Type::ResolvedType(t) => t.get_flags(),
-            // Type::FreshObjectLiteralType(t) => t.get_flags(),
+            Type::FreshObjectLiteralType(t) => t.resolved_type.get_flags(),
             // Type::IterationTypes(t) => t.get_flags(),
             Type::IterableOrIteratorType(t) => t.get_flags(),
             Type::PromiseOrAwaitableType(t) => t.get_flags(),
@@ -762,7 +773,7 @@ impl AsTypeBase for Type {
             Type::EvolvingArrayType(t) => t.get_symbol(),
             Type::ReverseMappedType(t) => t.get_symbol(),
             Type::ResolvedType(t) => t.get_symbol(),
-            // Type::FreshObjectLiteralType(t) => t.get_symbol(),
+            Type::FreshObjectLiteralType(t) => t.resolved_type.get_symbol(),
             // Type::IterationTypes(t) => t.get_symbol(),
             Type::IterableOrIteratorType(t) => t.get_symbol(),
             Type::PromiseOrAwaitableType(t) => t.get_symbol(),
@@ -808,7 +819,7 @@ impl AsTypeBase for Type {
             Type::EvolvingArrayType(t) => t.get_pattern(),
             Type::ReverseMappedType(t) => t.get_pattern(),
             Type::ResolvedType(t) => t.get_pattern(),
-            // Type::FreshObjectLiteralType(t) => t.get_pattern(),
+            Type::FreshObjectLiteralType(t) => t.resolved_type.get_pattern(),
             // Type::IterationTypes(t) => t.get_pattern(),
             Type::IterableOrIteratorType(t) => t.get_pattern(),
             Type::PromiseOrAwaitableType(t) => t.get_pattern(),
@@ -853,6 +864,7 @@ impl AsTypeBase for Type {
             Type::EvolvingArrayType(t) => &t.type_base.aliasSymbol,
             Type::ReverseMappedType(t) => &t.type_base.aliasSymbol,
             Type::ResolvedType(t) => &t.type_base.aliasSymbol,
+            Type::FreshObjectLiteralType(_) => todo!(),
             Type::IterableOrIteratorType(t) => &t.type_base.aliasSymbol,
             Type::PromiseOrAwaitableType(t) => &t.type_base.aliasSymbol,
             Type::SyntheticDefaultModuleType(t) => &t.type_base.aliasSymbol,
@@ -891,6 +903,7 @@ impl AsTypeBase for Type {
             Type::EvolvingArrayType(t) => &mut t.type_base.aliasSymbol,
             Type::ReverseMappedType(t) => &mut t.type_base.aliasSymbol,
             Type::ResolvedType(t) => &mut t.type_base.aliasSymbol,
+            Type::FreshObjectLiteralType(_) => todo!(),
             Type::IterableOrIteratorType(t) => &mut t.type_base.aliasSymbol,
             Type::PromiseOrAwaitableType(t) => &mut t.type_base.aliasSymbol,
             Type::SyntheticDefaultModuleType(t) => &mut t.type_base.aliasSymbol,
@@ -930,6 +943,7 @@ impl AsTypeBase for Type {
             Type::EvolvingArrayType(t) => &t.type_base.aliasTypeArguments,
             Type::ReverseMappedType(t) => &t.type_base.aliasTypeArguments,
             Type::ResolvedType(t) => &t.type_base.aliasTypeArguments,
+            Type::FreshObjectLiteralType(_) => todo!(),
             Type::IterableOrIteratorType(t) => &t.type_base.aliasTypeArguments,
             Type::PromiseOrAwaitableType(t) => &t.type_base.aliasTypeArguments,
             Type::SyntheticDefaultModuleType(t) => &t.type_base.aliasTypeArguments,
@@ -968,6 +982,7 @@ impl AsTypeBase for Type {
             Type::EvolvingArrayType(t) => &mut t.type_base.aliasTypeArguments,
             Type::ReverseMappedType(t) => &mut t.type_base.aliasTypeArguments,
             Type::ResolvedType(t) => &mut t.type_base.aliasTypeArguments,
+            Type::FreshObjectLiteralType(_) => todo!(),
             Type::IterableOrIteratorType(t) => &mut t.type_base.aliasTypeArguments,
             Type::PromiseOrAwaitableType(t) => &mut t.type_base.aliasTypeArguments,
             Type::SyntheticDefaultModuleType(t) => &mut t.type_base.aliasTypeArguments,
@@ -1031,6 +1046,7 @@ impl AsTypeBase for Type {
             Type::EvolvingArrayType(t) => t.get_immediateBaseConstraint(),
             Type::ReverseMappedType(t) => t.get_immediateBaseConstraint(),
             Type::ResolvedType(t) => t.get_immediateBaseConstraint(),
+            Type::FreshObjectLiteralType(_) => todo!(),
             Type::IterableOrIteratorType(t) => t.get_immediateBaseConstraint(),
             Type::PromiseOrAwaitableType(t) => t.get_immediateBaseConstraint(),
             Type::SyntheticDefaultModuleType(t) => t.get_immediateBaseConstraint(),
@@ -1069,6 +1085,7 @@ impl AsTypeBase for Type {
             Type::EvolvingArrayType(t) => t.get_immediateBaseConstraint_mut(),
             Type::ReverseMappedType(t) => t.get_immediateBaseConstraint_mut(),
             Type::ResolvedType(t) => t.get_immediateBaseConstraint_mut(),
+            Type::FreshObjectLiteralType(_) => todo!(),
             Type::IterableOrIteratorType(t) => t.get_immediateBaseConstraint_mut(),
             Type::PromiseOrAwaitableType(t) => t.get_immediateBaseConstraint_mut(),
             Type::SyntheticDefaultModuleType(t) => t.get_immediateBaseConstraint_mut(),
@@ -1108,6 +1125,7 @@ impl AsTypeBase for Type {
             Type::EvolvingArrayType(t) => t.get_widened(),
             Type::ReverseMappedType(t) => t.get_widened(),
             Type::ResolvedType(t) => t.get_widened(),
+            Type::FreshObjectLiteralType(_) => todo!(),
             Type::IterableOrIteratorType(t) => t.get_widened(),
             Type::PromiseOrAwaitableType(t) => t.get_widened(),
             Type::SyntheticDefaultModuleType(t) => t.get_widened(),
@@ -1146,6 +1164,7 @@ impl AsTypeBase for Type {
             Type::EvolvingArrayType(t) => t.get_widened_mut(),
             Type::ReverseMappedType(t) => t.get_widened_mut(),
             Type::ResolvedType(t) => t.get_widened_mut(),
+            Type::FreshObjectLiteralType(_) => todo!(),
             Type::IterableOrIteratorType(t) => t.get_widened_mut(),
             Type::PromiseOrAwaitableType(t) => t.get_widened_mut(),
             Type::SyntheticDefaultModuleType(t) => t.get_widened_mut(),
@@ -1758,7 +1777,7 @@ impl ResolvedType {
             Type::TemplateLiteralType(_) => todo!(),
             Type::StringMappingType(_) => todo!(),
             Type::SubstitutionType(_) => todo!(),
-            Type::ResolvedType(_) | Type::Dummy => unreachable!(),
+            Type::ResolvedType(_) | Type::FreshObjectLiteralType(_) | Type::Dummy => unreachable!(),
         }
     }
 }
@@ -1770,7 +1789,7 @@ impl ResolvedType {
 pub struct FreshObjectLiteralType {
     pub resolved_type: ResolvedType,
 
-    pub regularType: ResolvedType, // Regular version of fresh type
+    pub regularType: TypeId, // Regular version of fresh type
 }
 
 #[derive(Debug)]

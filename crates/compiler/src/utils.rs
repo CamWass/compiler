@@ -3418,25 +3418,33 @@ pub enum AssignmentKind {
 pub fn getAssignmentTargetKind(mut node: BoundNode) -> AssignmentKind {
     let mut parent = node.parent();
     while let Some(p) = parent {
-        match p {
-            BoundNode::BinExpr(_) => {
-                todo!();
-                // let binaryOperator = (p as BinaryExpression).operatorToken.kind;
-                // return isAssignmentOperator(binaryOperator) && (p as BinaryExpression).left == node ?
-                //     binaryOperator == SyntaxKind.EqualsToken || isLogicalOrCoalescingAssignmentOperator(binaryOperator) ? AssignmentKind.Definite : AssignmentKind.Compound :
-                //     AssignmentKind.None;
+        match &p {
+            BoundNode::AssignExpr(n) => {
+                return if n.left.bind(p.clone()) == node {
+                    if n.op == ast::AssignOp::Assign
+                        || n.op == ast::AssignOp::OrAssign
+                        || n.op == ast::AssignOp::AndAssign
+                        || n.op == ast::AssignOp::NullishAssign
+                    {
+                        AssignmentKind::Definite
+                    } else {
+                        AssignmentKind::Compound
+                    }
+                } else {
+                    AssignmentKind::None
+                };
             }
             BoundNode::UpdateExpr(_) => {
                 return AssignmentKind::Compound;
             }
-            BoundNode::ForInStmt(ref f) => {
+            BoundNode::ForInStmt(f) => {
                 return if f.left.bind(p.clone()) == node {
                     AssignmentKind::Definite
                 } else {
                     AssignmentKind::None
                 };
             }
-            BoundNode::ForOfStmt(ref f) => {
+            BoundNode::ForOfStmt(f) => {
                 return if f.left.bind(p.clone()) == node {
                     AssignmentKind::Definite
                 } else {
@@ -3460,7 +3468,7 @@ pub fn getAssignmentTargetKind(mut node: BoundNode) -> AssignmentKind {
                 }
                 node = p.parent().unwrap();
             }
-            BoundNode::KeyValueProp(ref prop) => {
+            BoundNode::KeyValueProp(prop) => {
                 if prop.key.bind(p.clone()) == node {
                     return AssignmentKind::None;
                 }
@@ -3799,37 +3807,29 @@ enum AccessKind {
     ReadWrite,
 }
 fn accessKind(node: &BoundNode) -> AccessKind {
-    fn writeOrReadWrite(parent: BoundNode) -> AccessKind {
-        // If grandparent is not an ExpressionStatement, this is used as an expression in addition to having a side effect.
-        if let Some(grand_parent) = parent.parent() {
-            if matches!(
-                walkUpParenthesizedExpressions(grand_parent),
-                BoundNode::ExprStmt(_)
-            ) {
-                return AccessKind::Write;
-            }
-        }
-        AccessKind::ReadWrite
-    }
     if let Some(parent) = node.parent() {
+        let writeOrReadWrite = || {
+            // If grandparent is not an ExpressionStatement, this is used as an expression in addition to having a side effect.
+            if let Some(grand_parent) = parent.parent() {
+                if matches!(
+                    walkUpParenthesizedExpressions(grand_parent),
+                    BoundNode::ExprStmt(_)
+                ) {
+                    return AccessKind::Write;
+                }
+            }
+            AccessKind::ReadWrite
+        };
         match &parent {
             BoundNode::ParenExpr(_) => accessKind(&parent),
-            // BoundNode::PostfixUnaryExpression(_) => {
-            // BoundNode::PrefixUnaryExpression(_) => {
-            //     const { operator } = parent as PrefixUnaryExpression | PostfixUnaryExpression;
-            //     return operator == SyntaxKind.PlusPlusToken || operator == SyntaxKind.MinusMinusToken ? writeOrReadWrite() : AccessKind.Read;
-            // }
-            BoundNode::BinExpr(_) => {
-                todo!("is this reachable?");
-                // AccessKind::Read
-            }
+            BoundNode::UpdateExpr(_) => writeOrReadWrite(),
             BoundNode::AssignExpr(e) => {
                 // const { left, operatorToken } = parent as BinaryExpression;
                 if &e.left.bind(parent.clone()) == node {
                     if e.op == ast::AssignOp::Assign {
                         AccessKind::Write
                     } else {
-                        writeOrReadWrite(parent)
+                        writeOrReadWrite()
                     }
                 } else {
                     AccessKind::Read
