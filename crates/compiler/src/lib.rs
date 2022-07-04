@@ -213,6 +213,24 @@ impl Compiler {
                 );
             }
 
+            // TODO: markPureFunctions
+
+            getEarlyOptimizationLoopPasses(&mut program_ast);
+
+            // TODO: crossModuleCodeMotion
+            // TODO: devirtualizeMethods
+            // TODO: flowSensitiveInlineVariables
+            getMainOptimizationLoop(&mut program_ast);
+
+            // Finalizations:
+
+            // TODO: flowSensitiveInlineVariables
+            // TODO: removeUnusedCodeOnce
+            // TODO: crossModuleCodeMotion
+            // TODO: crossModuleMethodMotion
+            // TODO: optimizeConstructors
+            // TODO: collapseAnonymousFunctions
+
             if passes.ambiguate_properties {
                 disambiguate::AmbiguateProperties::AmbiguateProperties::process(
                     &mut program_ast,
@@ -220,9 +238,45 @@ impl Compiler {
                 );
             }
 
+            // TODO: renameProperties
+            // TODO: convertToDottedProperties
+            // TODO: rewriteFunctionExpressions
+            // TODO: aliasStrings
+            // TODO: coalesceVariableNames
+            // TODO: peepholeOptimizationsOnce
+            // TODO: exploitAssign
+            // TODO: collapseVariableDeclarations
+            // TODO: denormalize
+            // TODO: renameVars
+            // TODO: renameLabels
+            // TODO: latePeepholeOptimizations
+            // TODO: optimizeToEs6
+
             program_ast
         })
     }
+}
+
+fn getEarlyOptimizationLoopPasses(ast: &mut ::ast::Program) {
+    // TODO: inlineVariables
+    // TODO: collapseObjectLiterals
+    // TODO: removeUnusedCode
+    // TODO: peepholeOptimizations
+    // TODO: removeUnreachableCode
+}
+
+fn getMainOptimizationLoop(ast: &mut ::ast::Program) {
+    // TODO: inlineSimpleMethods
+    // TODO: inlineProperties
+    // TODO: deadPropertyAssignmentElimination
+    // TODO: optimizeCalls
+    // TODO: inlineFunctions
+    // TODO: inlineVariables
+    // TODO: deadAssignmentsElimination
+    // TODO: collapseObjectLiterals
+    // TODO: removeUnusedCode
+    // TODO: peepholeOptimizations
+    // TODO: removeUnreachableCode
 }
 
 #[derive(Default)]
