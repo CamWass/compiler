@@ -8,6 +8,7 @@
 
 mod DefaultNameGenerator;
 mod OptimizeArgumentsArray;
+mod RenameLabels;
 pub mod ast;
 mod binder;
 mod checker;
@@ -91,11 +92,13 @@ impl<V: Visit> VisitWith<V> for CompProgram {
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
 pub struct PassConfig {
     #[serde(default)]
+    optimize_arguments_array: bool,
+    #[serde(default)]
     disambiguate_properties: bool,
     #[serde(default)]
     ambiguate_properties: bool,
     #[serde(default)]
-    optimize_arguments_array: bool,
+    rename_labels: bool,
 }
 
 pub struct Compiler {
@@ -248,7 +251,11 @@ impl Compiler {
             // TODO: collapseVariableDeclarations
             // TODO: denormalize
             // TODO: renameVars
-            // TODO: renameLabels
+
+            if passes.rename_labels {
+                RenameLabels::process(&mut program_ast);
+            }
+
             // TODO: latePeepholeOptimizations
             // TODO: optimizeToEs6
 

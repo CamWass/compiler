@@ -22,6 +22,12 @@ pub struct DefaultNameGenerator {
     nonFirstChars: Vec<CharPriority>,
 }
 
+impl std::default::Default for DefaultNameGenerator {
+    fn default() -> Self {
+        Self::new(Default::default())
+    }
+}
+
 impl DefaultNameGenerator {
     pub fn new(reservedNames: FxHashSet<JsWord>) -> Self {
         let mut priorityLookupMap =

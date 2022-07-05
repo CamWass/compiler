@@ -6,7 +6,7 @@ use crate::{
     GetNodeId, NodeId,
 };
 use ast_node::ast_node;
-use global_common::{EqIgnoreSpan, Span};
+use global_common::{util::take::Take, EqIgnoreSpan, Span, DUMMY_SP};
 
 /// Use when only block statements are allowed.
 #[ast_node]
@@ -61,6 +61,15 @@ pub enum Stmt {
     Decl(Decl),
 
     Expr(ExprStmt),
+}
+
+impl Take for Stmt {
+    fn dummy() -> Self {
+        Self::Empty(EmptyStmt {
+            node_id: NodeId::MAX,
+            span: DUMMY_SP,
+        })
+    }
 }
 
 #[ast_node]
