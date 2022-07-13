@@ -1,8 +1,6 @@
-use global_common::{EqIgnoreSpan, Spanned};
-
-use crate::ast;
-use crate::ast::{GetNodeId, NodeId};
+use crate::ast::{self, GetNodeId, NodeId};
 use crate::{Visit, VisitWith};
+use global_common::{EqIgnoreSpan, Spanned};
 use std::convert::TryFrom;
 use std::fmt;
 use std::ops::Deref;

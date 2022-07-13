@@ -27,7 +27,7 @@ define!({
 
 struct Panic;
 
-impl Visit for Panic {
+impl Visit<'_> for Panic {
     fn visit_item(&mut self, _: &Item) {
         panic!("Success")
     }

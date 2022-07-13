@@ -7,10 +7,10 @@ use proc_macro2::Ident;
 use std::{collections::HashSet, mem::replace};
 use syn::{
     parse_quote::parse, punctuated::Punctuated, spanned::Spanned, Arm, AttrStyle, Attribute, Block,
-    Expr, ExprBlock, ExprMatch, FieldValue, Fields, FnArg, GenericArgument, ImplItem,
-    ImplItemMethod, Index, Item, ItemImpl, ItemTrait, Member, Path, PathArguments, ReturnType,
-    Signature, Stmt, Token, TraitItem, TraitItemMethod, Type, TypePath, TypeReference, VisPublic,
-    Visibility,
+    Expr, ExprBlock, ExprMatch, FieldValue, Fields, FnArg, GenericArgument, GenericParam, Generics,
+    ImplItem, ImplItemMethod, Index, Item, ItemImpl, ItemTrait, Lifetime, LifetimeDef, Member,
+    Path, PathArguments, ReturnType, Signature, Stmt, Token, TraitItem, TraitItemMethod, Type,
+    TypePath, TypeReference, VisPublic, Visibility,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -318,7 +318,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
                 },
                 {
                     #[allow(unused_variables)]
-                    pub fn fn_name<V: ?Sized + Trait>(_visitor: &mut V, n: Type) {
+                    pub fn fn_name<'ast, V: ?Sized + Trait<'ast>>(_visitor: &mut V, n: Type) {
                         default_body
                     }
                 }
@@ -327,6 +327,16 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
             Mode::VisitAll => {}
         }
     });
+
+    let mut generics = Generics::default();
+    if mode == Mode::Visit || mode == Mode::VisitAll {
+        generics
+            .params
+            .push(GenericParam::Lifetime(LifetimeDef::new(Lifetime::new(
+                "'ast",
+                proc_macro2::Span::call_site(),
+            ))));
+    }
 
     tokens.push_tokens(&ItemTrait {
         attrs: vec![],
@@ -337,7 +347,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
         auto_token: None,
         trait_token: def_site(),
         ident: Ident::new(mode.trait_name(), call_site()),
-        generics: Default::default(),
+        generics,
         colon_token: None,
         supertraits: Default::default(),
         brace_token: def_site(),
@@ -347,15 +357,27 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
     {
         // impl Visit for &'_ mut V
 
-        let mut item = q!(
-            Vars {
-                Trait: Ident::new(mode.trait_name(), call_site()),
-            },
-            {
-                impl<'a, V> Trait for &'a mut V where V: ?Sized + Trait {}
-            }
-        )
-        .parse::<ItemImpl>();
+        let mut item = if mode == Mode::Visit || mode == Mode::VisitAll {
+            q!(
+                Vars {
+                    Trait: Ident::new(mode.trait_name(), call_site()),
+                },
+                {
+                    impl<'a, 'ast, V> Trait<'ast> for &'a mut V where V: ?Sized + Trait<'ast> {}
+                }
+            )
+            .parse::<ItemImpl>()
+        } else {
+            q!(
+                Vars {
+                    Trait: Ident::new(mode.trait_name(), call_site()),
+                },
+                {
+                    impl<'a, V> Trait for &'a mut V where V: ?Sized + Trait {}
+                }
+            )
+            .parse::<ItemImpl>()
+        };
 
         item.items
             .extend(ref_methods.clone().into_iter().map(ImplItem::Method));
@@ -364,15 +386,27 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
     {
         // impl Visit for Box<V>
 
-        let mut item = q!(
-            Vars {
-                Trait: Ident::new(mode.trait_name(), call_site()),
-            },
-            {
-                impl<V> Trait for Box<V> where V: ?Sized + Trait {}
-            }
-        )
-        .parse::<ItemImpl>();
+        let mut item = if mode == Mode::Visit || mode == Mode::VisitAll {
+            q!(
+                Vars {
+                    Trait: Ident::new(mode.trait_name(), call_site()),
+                },
+                {
+                    impl<'ast, V> Trait<'ast> for Box<V> where V: ?Sized + Trait<'ast> {}
+                }
+            )
+            .parse::<ItemImpl>()
+        } else {
+            q!(
+                Vars {
+                    Trait: Ident::new(mode.trait_name(), call_site()),
+                },
+                {
+                    impl<V> Trait for Box<V> where V: ?Sized + Trait {}
+                }
+            )
+            .parse::<ItemImpl>()
+        };
 
         item.items
             .extend(ref_methods.into_iter().map(ImplItem::Method));
@@ -381,15 +415,27 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
 
     {
         // impl Trait for Optional
-        let mut item = q!(
-            Vars {
-                Trait: Ident::new(mode.trait_name(), call_site()),
-            },
-            {
-                impl<V> Trait for ::global_visit::Optional<V> where V: Trait {}
-            }
-        )
-        .parse::<ItemImpl>();
+        let mut item = if mode == Mode::Visit || mode == Mode::VisitAll {
+            q!(
+                Vars {
+                    Trait: Ident::new(mode.trait_name(), call_site()),
+                },
+                {
+                    impl<'ast, V> Trait<'ast> for ::global_visit::Optional<V> where V: Trait<'ast> {}
+                }
+            )
+            .parse::<ItemImpl>()
+        } else {
+            q!(
+                Vars {
+                    Trait: Ident::new(mode.trait_name(), call_site()),
+                },
+                {
+                    impl<V> Trait for ::global_visit::Optional<V> where V: Trait {}
+                }
+            )
+            .parse::<ItemImpl>()
+        };
 
         item.items
             .extend(optional_methods.into_iter().map(ImplItem::Method));
@@ -399,20 +445,37 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
 
     {
         // impl Trait for Either
-        let mut item = q!(
-            Vars {
-                Trait: Ident::new(mode.trait_name(), call_site()),
-            },
-            {
-                impl<A, B> Trait for ::global_visit::Either<A, B>
-                where
-                    A: Trait,
-                    B: Trait,
+        let mut item = if mode == Mode::Visit || mode == Mode::VisitAll {
+            q!(
+                Vars {
+                    Trait: Ident::new(mode.trait_name(), call_site()),
+                },
                 {
+                    impl<'ast, A, B> Trait<'ast> for ::global_visit::Either<A, B>
+                    where
+                        A: Trait<'ast>,
+                        B: Trait<'ast>,
+                    {
+                    }
                 }
-            }
-        )
-        .parse::<ItemImpl>();
+            )
+            .parse::<ItemImpl>()
+        } else {
+            q!(
+                Vars {
+                    Trait: Ident::new(mode.trait_name(), call_site()),
+                },
+                {
+                    impl<A, B> Trait for ::global_visit::Either<A, B>
+                    where
+                        A: Trait,
+                        B: Trait,
+                    {
+                    }
+                }
+            )
+            .parse::<ItemImpl>()
+        };
 
         item.items
             .extend(either_methods.into_iter().map(ImplItem::Method));
@@ -423,7 +486,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
     // impl Visit for global_visit::All<V> where V: VisitAll
     if mode == Mode::VisitAll {
         let mut item = q!({
-            impl<V> Visit for ::global_visit::All<V> where V: VisitAll {}
+            impl<'ast, V> Visit<'ast> for ::global_visit::All<V> where V: VisitAll<'ast> {}
         })
         .parse::<ItemImpl>();
 
@@ -441,47 +504,49 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
 
         let trait_decl = match mode {
             Mode::Visit => q!({
-                pub trait VisitWith<V: Visit> {
-                    fn visit_with(&self, v: &mut V);
+                // TODO: do we need the lifetimes for self?
+                pub trait VisitWith<'ast, V: Visit<'ast>> {
+                    fn visit_with(&'ast self, v: &mut V);
 
                     /// Visit children nodes of self with `v`
-                    fn visit_children_with(&self, v: &mut V);
+                    fn visit_children_with(&'ast self, v: &mut V);
                 }
 
-                impl<V, T> VisitWith<V> for Box<T>
+                impl<'ast, V, T> VisitWith<'ast, V> for Box<T>
                 where
-                    V: Visit,
-                    T: 'static + VisitWith<V>,
+                    V: Visit<'ast>,
+                    T: 'static + VisitWith<'ast, V>,
                 {
-                    fn visit_with(&self, v: &mut V) {
+                    fn visit_with(&'ast self, v: &mut V) {
                         (**self).visit_with(v)
                     }
 
                     /// Visit children nodes of self with `v`
-                    fn visit_children_with(&self, v: &mut V) {
+                    fn visit_children_with(&'ast self, v: &mut V) {
                         (**self).visit_children_with(v)
                     }
                 }
             }),
             Mode::VisitAll => q!({
-                pub trait VisitAllWith<V: VisitAll> {
-                    fn visit_all_with(&self, v: &mut V);
+                // TODO: do we need the lifetimes for self?
+                pub trait VisitAllWith<'ast, V: VisitAll<'ast>> {
+                    fn visit_all_with(&'ast self, v: &mut V);
 
                     /// Visit children nodes of self with `v`
-                    fn visit_all_children_with(&self, v: &mut V);
+                    fn visit_all_children_with(&'ast self, v: &mut V);
                 }
 
-                impl<V, T> VisitAllWith<V> for Box<T>
+                impl<'ast, V, T> VisitAllWith<'ast, V> for Box<T>
                 where
-                    V: VisitAll,
-                    T: 'static + VisitAllWith<V>,
+                    V: VisitAll<'ast>,
+                    T: 'static + VisitAllWith<'ast, V>,
                 {
-                    fn visit_all_with(&self, v: &mut V) {
+                    fn visit_all_with(&'ast self, v: &mut V) {
                         (**self).visit_all_with(v)
                     }
 
                     /// Visit children nodes of self with `v`
-                    fn visit_all_children_with(&self, v: &mut V) {
+                    fn visit_all_children_with(&'ast self, v: &mut V) {
                         (**self).visit_all_children_with(v)
                     }
                 }
@@ -573,12 +638,12 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
                             default_body,
                         },
                         {
-                            impl<V: Visit> VisitWith<V> for Type {
-                                fn visit_with(&self, v: &mut V) {
+                            impl<'ast, V: Visit<'ast>> VisitWith<'ast, V> for Type {
+                                fn visit_with(&'ast self, v: &mut V) {
                                     expr
                                 }
 
-                                fn visit_children_with(&self, _visitor: &mut V) {
+                                fn visit_children_with(&'ast self, _visitor: &mut V) {
                                     default_body
                                 }
                             }
@@ -605,14 +670,14 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
                             default_body,
                         },
                         {
-                            impl<V: VisitAll> VisitAllWith<V> for Type {
-                                fn visit_all_with(&self, v: &mut V) {
+                            impl<'ast, V: VisitAll<'ast>> VisitAllWith<'ast, V> for Type {
+                                fn visit_all_with(&'ast self, v: &mut V) {
                                     let mut all = ::global_visit::All { visitor: v };
                                     let mut v = &mut all;
                                     expr
                                 }
 
-                                fn visit_all_children_with(&self, _visitor: &mut V) {
+                                fn visit_all_children_with(&'ast self, _visitor: &mut V) {
                                     let mut all = ::global_visit::All { visitor: _visitor };
                                     let mut _visitor = &mut all;
                                     default_body
@@ -883,7 +948,7 @@ fn method_sig(mode: Mode, ty: &Type) -> Signature {
                 }
 
                 Mode::Visit | Mode::VisitAll => {
-                    p.push_value(q!(Vars { Type: ty }, { n: &Type }).parse());
+                    p.push_value(q!(Vars { Type: ty }, { n: &'ast Type }).parse());
                 }
             }
 
@@ -1040,12 +1105,17 @@ fn create_method_sig(mode: Mode, ty: &Type) -> Signature {
     }
 
     fn mk_ref(mode: Mode, ident: Ident, ty: &Type, mutable: bool) -> Signature {
+        let lifetime = if mode == Mode::Visit || mode == Mode::VisitAll {
+            Some(Lifetime::new("'ast", proc_macro2::Span::call_site()))
+        } else {
+            None
+        };
         mk_exact(
             mode,
             ident,
             &Type::Reference(TypeReference {
                 and_token: def_site(),
-                lifetime: None,
+                lifetime,
                 mutability: if mutable { Some(def_site()) } else { None },
                 elem: Box::new(ty.clone()),
             }),
@@ -1106,7 +1176,7 @@ fn create_method_sig(mode: Mode, ty: &Type) -> Signature {
                                 return mk_exact(
                                     mode,
                                     ident,
-                                    &q!(Vars { item }, { Option<&[item]> }).parse(),
+                                    &q!(Vars { item }, { Option<&'ast [item]> }).parse(),
                                 );
                             }
                         }
@@ -1131,7 +1201,7 @@ fn create_method_sig(mode: Mode, ty: &Type) -> Signature {
                             return mk_exact(
                                 mode,
                                 ident,
-                                &q!(Vars { arg }, { Option<&arg> }).parse(),
+                                &q!(Vars { arg }, { Option<&'ast arg> }).parse(),
                             );
                         }
                     }

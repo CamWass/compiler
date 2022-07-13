@@ -20,7 +20,7 @@ pub(super) struct Verifier {
     pub errors: Vec<(Span, SyntaxError)>,
 }
 
-impl Visit for Verifier {
+impl Visit<'_> for Verifier {
     noop_visit_type!();
 
     fn visit_assign_prop(&mut self, p: &AssignProp) {

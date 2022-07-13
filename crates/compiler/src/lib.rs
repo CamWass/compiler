@@ -1,3 +1,4 @@
+#![feature(iter_order_by)]
 // TODO:
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
@@ -13,6 +14,7 @@ pub mod ast;
 mod binder;
 mod checker;
 mod colors;
+mod control_flow;
 mod disambiguate;
 mod graph;
 pub mod node;

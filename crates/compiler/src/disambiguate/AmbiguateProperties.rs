@@ -453,7 +453,7 @@ impl<'col, 'a> ProcessPropertiesAndConstructors<'col, 'a> {
     }
 }
 
-impl Visit for ProcessPropertiesAndConstructors<'_, '_> {
+impl Visit<'_> for ProcessPropertiesAndConstructors<'_, '_> {
     fn visit_member_expr(&mut self, node: &ast::MemberExpr) {
         node.visit_children_with(self);
 

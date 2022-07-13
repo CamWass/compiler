@@ -416,7 +416,7 @@ impl FnBodyVisitor {
     }
 }
 
-impl Visit for FnBodyVisitor {
+impl Visit<'_> for FnBodyVisitor {
     noop_visit_type!();
 
     // Don't visit nested functions.

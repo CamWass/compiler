@@ -127,7 +127,7 @@ impl<'col, 'nf> ColorFindPropertyReferences<'col, 'nf> {
 }
 
 // TODO: noop for types
-impl Visit for ColorFindPropertyReferences<'_, '_> {
+impl Visit<'_> for ColorFindPropertyReferences<'_, '_> {
     fn visit_member_expr(&mut self, node: &ast::MemberExpr) {
         node.visit_children_with(self);
         if !node.computed {

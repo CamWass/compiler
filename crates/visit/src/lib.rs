@@ -33,17 +33,17 @@ where
     }
 }
 
-impl<A, B> Visit for AndThen<A, B>
+impl<'ast, A, B> Visit<'ast> for AndThen<A, B>
 where
-    A: Visit,
-    B: Visit,
+    A: Visit<'ast>,
+    B: Visit<'ast>,
 {
-    fn visit_module(&mut self, n: &Module) {
+    fn visit_module(&mut self, n: &'ast Module) {
         self.first.visit_module(n);
         self.second.visit_module(n);
     }
 
-    fn visit_script(&mut self, n: &Script) {
+    fn visit_script(&mut self, n: &'ast Script) {
         self.first.visit_script(n);
         self.second.visit_script(n);
     }

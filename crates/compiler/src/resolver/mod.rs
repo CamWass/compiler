@@ -1788,9 +1788,9 @@ struct DestructuringFinder<'a> {
 }
 
 /// Finds all **binding** idents of `node`.
-fn find_pat_ids<T>(node: &T) -> Vec<Id>
+fn find_pat_ids<'ast, T>(node: &'ast T) -> Vec<Id>
 where
-    T: for<'any> VisitWith<DestructuringFinder<'any>>,
+    T: for<'any> VisitWith<'ast, DestructuringFinder<'any>>,
 {
     let mut found = vec![];
 
@@ -1802,7 +1802,7 @@ where
     found
 }
 
-impl<'a> Visit for DestructuringFinder<'a> {
+impl<'a> Visit<'_> for DestructuringFinder<'a> {
     noop_visit_type!();
 
     /// No-op (we don't care about expressions)

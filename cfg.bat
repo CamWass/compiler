@@ -1,0 +1,1 @@
+dot -Tsvg cfg.dot -o cfg.svg & start cfg.svg
