@@ -1,13 +1,14 @@
-use super::node::Node;
+use super::node::*;
 use ast::*;
 use petgraph::{
     dot::Dot,
     graph::{DiGraph, EdgeIndex, Neighbors, NodeIndex},
     visit::EdgeRef,
-    EdgeDirection::Outgoing,
+    EdgeDirection::*,
 };
 use rustc_hash::FxHashMap;
 use std::fmt;
+use std::ops::Index;
 
 // TODO: account for other function like types (such as methods/getters etc)
 
@@ -22,28 +23,30 @@ pub trait Annotation {}
  *
  * @param <N> The instruction type of the control flow graph.
  */
-pub struct ControlFlowGraph<'ast, N: Annotation, E: Annotation> {
-    pub(super) map: FxHashMap<Node<'ast>, NodeIndex>,
+#[derive(Debug)]
+pub struct ControlFlowGraph<N: CfgNode, NA: Annotation, EA: Annotation> {
+    pub map: FxHashMap<N, NodeIndex>,
     /**
      * A special node marked by the node value key null to a singleton
      * "return" when control is transferred outside of the current control flow
      * graph.
      */
-    pub implicit_return: Node<'ast>,
-    pub entry: Node<'ast>,
-    pub(super) graph: DiGraph<Node<'ast>, Branch>,
-    node_annotations: FxHashMap<Node<'ast>, N>,
-    edge_annotations: FxHashMap<EdgeIndex, E>,
+    pub implicit_return: N,
+    pub entry: N,
+    pub graph: DiGraph<N, Branch>,
+    pub node_annotations: FxHashMap<N, NA>,
+    pub edge_annotations: FxHashMap<EdgeIndex, EA>,
 }
 
-impl<'ast, N, E> ControlFlowGraph<'ast, N, E>
+impl<'ast, N, NA, EA> ControlFlowGraph<N, NA, EA>
 where
-    N: Annotation,
-    E: Annotation,
+    N: CfgNode,
+    NA: Annotation,
+    EA: Annotation,
 {
-    pub fn new(entry: Node<'ast>) -> Self {
-        let mut graph = DiGraph::<Node<'ast>, Branch>::new();
-        let implicit_return = Node::ImplicitReturn;
+    pub fn new(entry: N) -> Self {
+        let mut graph = DiGraph::<N, Branch>::new();
+        let implicit_return = N::implicit_return();
         let implicit_return_index = graph.add_node(implicit_return);
         let entry_index = graph.add_node(entry);
 
@@ -61,7 +64,7 @@ where
         }
     }
 
-    fn create_node(&mut self, value: Node<'ast>) -> NodeIndex {
+    fn create_node(&mut self, value: N) -> NodeIndex {
         match self.map.get(&value) {
             Some(index) => *index,
             None => {
@@ -80,7 +83,7 @@ where
      * @param fromNode Source.
      * @param toNode Destination.
      */
-    pub fn create_edge(&mut self, from: Node<'ast>, branch: Branch, to: Node<'ast>) {
+    pub fn create_edge(&mut self, from: N, branch: Branch, to: N) {
         let from_node = self.create_node(from);
         let to_node = self.create_node(to);
         self.connect_if_not_found(from_node, branch, to_node);
@@ -140,7 +143,14 @@ where
 
     /// Note: neighbor are listed in reverse order of their addition to the graph,
     /// so the most recently added edge's neighbor is listed first.
-    pub fn getDirectedSuccNodes(&self, node: Node<'ast>) -> Neighbors<'_, Branch> {
+    pub fn getDirectedPredNodes(&self, node: N) -> Neighbors<'_, Branch> {
+        self.graph
+            .neighbors_directed(*self.map.get(&node).unwrap(), Incoming)
+    }
+
+    /// Note: neighbor are listed in reverse order of their addition to the graph,
+    /// so the most recently added edge's neighbor is listed first.
+    pub fn getDirectedSuccNodes(&self, node: N) -> Neighbors<'_, Branch> {
         self.graph
             .neighbors_directed(*self.map.get(&node).unwrap(), Outgoing)
     }
@@ -242,10 +252,10 @@ pub fn is_entering_new_cfg_node<'ast>(n: Node<'ast>, parent: Node<'ast>) -> bool
     }
 }
 
-impl<'ast, N, E> ControlFlowGraph<'ast, N, E>
+impl<'ast, NA, EA> ControlFlowGraph<Node<'ast>, NA, EA>
 where
-    N: Annotation,
-    E: Annotation,
+    NA: Annotation,
+    EA: Annotation,
 {
     pub fn print_simplified(&self) {
         let mut dot = format!("{:?}", Dot::with_config(&self.graph, &[]));
@@ -332,4 +342,18 @@ fn recolour_graph(mut dot: String, node_count: usize) -> String {
         );
 
     dot
+}
+
+impl<N, NA, EA> Index<NodeIndex> for ControlFlowGraph<N, NA, EA>
+where
+    N: CfgNode,
+    NA: Annotation,
+    EA: Annotation,
+{
+    type Output = N;
+
+    #[inline]
+    fn index(&self, index: NodeIndex) -> &Self::Output {
+        &self.graph[index]
+    }
 }

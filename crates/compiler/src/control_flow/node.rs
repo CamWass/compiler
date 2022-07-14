@@ -1,5 +1,17 @@
 use global_common::{Spanned, DUMMY_SP};
 use std::fmt;
+use std::fmt::Debug;
+use std::hash::Hash;
+
+pub trait CfgNode: Copy + Eq + Hash + Debug {
+    fn implicit_return() -> Self;
+}
+
+impl CfgNode for Node<'_> {
+    fn implicit_return() -> Self {
+        Node::ImplicitReturn
+    }
+}
 
 macro_rules! make {
     ($($field:ident,)*) => {

@@ -1,4 +1,4 @@
-use super::node::Node;
+use super::node::*;
 use super::util::*;
 use super::ControlFlowGraph::{Annotation, Branch, ControlFlowGraph};
 use ast::*;
@@ -9,8 +9,13 @@ use std::collections::BinaryHeap;
 
 // TODO: account for other function like types (such as methods/getters etc)
 
+pub struct ControlFlowAnalysisResult<N: CfgNode, NA: Annotation, EA: Annotation> {
+    pub cfg: ControlFlowGraph<N, NA, EA>,
+    pub nodePriorities: FxHashMap<N, usize>,
+}
+
 pub struct ControlFlowAnalysis<'ast, N: Annotation, E: Annotation> {
-    pub(super) cfg: ControlFlowGraph<'ast, N, E>,
+    pub(super) cfg: ControlFlowGraph<Node<'ast>, N, E>,
     pub(super) astPosition: FxHashMap<Node<'ast>, usize>,
     pub(super) nodePriorities: FxHashMap<Node<'ast>, usize>,
     astPositionCounter: usize,
@@ -83,11 +88,11 @@ where
     }
 
     // TODO: make this private and call in constructor.
-    pub fn process(&mut self) {
+    pub fn process(mut self) -> ControlFlowAnalysisResult<Node<'ast>, N, E> {
         match self.root {
-            Node::Function(n) => n.visit_with(self),
-            Node::Script(n) => n.visit_with(self),
-            Node::Module(n) => n.visit_with(self),
+            Node::Function(n) => n.visit_with(&mut self),
+            Node::Script(n) => n.visit_with(&mut self),
+            Node::Module(n) => n.visit_with(&mut self),
             _ => unreachable!(),
         }
 
@@ -142,6 +147,11 @@ where
         // Every node in the cfg should have been prioritized.
         debug_assert_eq!(self.nodePriorities.len(), self.cfg.graph.node_count());
         debug_assert_eq!(self.nodePriorities.len(), self.priorityCounter);
+
+        ControlFlowAnalysisResult {
+            cfg: self.cfg,
+            nodePriorities: self.nodePriorities,
+        }
     }
 
     /**
@@ -224,7 +234,7 @@ where
         // }
     }
 
-    pub fn cfg(self) -> ControlFlowGraph<'ast, N, E> {
+    pub fn cfg(self) -> ControlFlowGraph<Node<'ast>, N, E> {
         self.cfg
     }
 

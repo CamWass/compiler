@@ -214,7 +214,7 @@ make!(
 
 fn test_script<F>(src: &str, mut op: F)
 where
-    F: FnMut(&ControlFlowGraph<'_, DummyAnnotation, DummyAnnotation>, &AstGraph<'_>),
+    F: FnMut(&ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>, &AstGraph<'_>),
 {
     let root = parse_script(src);
     let cfg = createCfg(&root);
@@ -336,7 +336,7 @@ impl<'ast> AstGraph<'ast> {
 * Gets all the edges of the graph.
 */
 fn getAllEdgesOfCFG<'a>(
-    cfg: &'a ControlFlowGraph<'_, DummyAnnotation, DummyAnnotation>,
+    cfg: &'a ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
 ) -> &'a [Edge<Branch>] {
     cfg.graph.raw_edges()
 }
@@ -346,7 +346,7 @@ fn getAllEdgesOfCFG<'a>(
 * some node with the second token.
 */
 fn getAllEdges<'a>(
-    cfg: &'a ControlFlowGraph<'_, DummyAnnotation, DummyAnnotation>,
+    cfg: &'a ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
     startToken: Token,
     endToken: Token,
 ) -> impl Iterator<Item = &'a Edge<Branch>> {
@@ -364,7 +364,7 @@ fn getAllEdges<'a>(
 * some node with the second token.
 */
 fn getAllEdgesPredicate<'a, S, E>(
-    cfg: &'a ControlFlowGraph<'_, DummyAnnotation, DummyAnnotation>,
+    cfg: &'a ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
     start: S,
     end: E,
 ) -> impl Iterator<Item = &'a Edge<Branch>>
@@ -386,7 +386,7 @@ where
 * first token to some node with the second token.
 */
 fn getAllEdgesOfType<'a>(
-    cfg: &'a ControlFlowGraph<'_, DummyAnnotation, DummyAnnotation>,
+    cfg: &'a ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
     startToken: Token,
     endToken: Token,
     edge_type: Branch,
@@ -399,7 +399,7 @@ fn getAllEdgesOfType<'a>(
 * first token to some node with the second token.
 */
 fn getAllEdgesOfTypePredicate<'a, S, E>(
-    cfg: &'a ControlFlowGraph<'_, DummyAnnotation, DummyAnnotation>,
+    cfg: &'a ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
     start: S,
     end: E,
     edge_type: Branch,
@@ -417,7 +417,7 @@ where
 * This edge must flow from a parent to one of its descendants.
 */
 fn getAllDownEdges<'a>(
-    cfg: &'a ControlFlowGraph<'_, DummyAnnotation, DummyAnnotation>,
+    cfg: &'a ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
     ast_graph: &'a AstGraph<'_>,
     startToken: Token,
     endToken: Token,
@@ -436,7 +436,7 @@ fn getAllDownEdges<'a>(
 * This edge must flow from a parent to one of its descendants.
 */
 fn getAllDownEdgesPredicate<'a, S, E>(
-    cfg: &'a ControlFlowGraph<'_, DummyAnnotation, DummyAnnotation>,
+    cfg: &'a ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
     ast_graph: &'a AstGraph<'_>,
     start: S,
     end: E,
@@ -458,7 +458,7 @@ where
 * token to some node with the second token.
 */
 fn assertNoEdge(
-    cfg: &ControlFlowGraph<'_, DummyAnnotation, DummyAnnotation>,
+    cfg: &ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
     startToken: Token,
     endToken: Token,
 ) {
@@ -471,7 +471,7 @@ fn assertNoEdge(
 * This edge must flow from a parent to one of its descendants.
 */
 fn assertDownEdge(
-    cfg: &ControlFlowGraph<'_, DummyAnnotation, DummyAnnotation>,
+    cfg: &ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
     ast_graph: &AstGraph<'_>,
     startToken: Token,
     endToken: Token,
@@ -493,7 +493,7 @@ fn assertDownEdge(
 * This edge must flow from a node to one of its ancestors.
 */
 fn assertUpEdge(
-    cfg: &ControlFlowGraph<'_, DummyAnnotation, DummyAnnotation>,
+    cfg: &ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
     ast_graph: &AstGraph<'_>,
     startToken: Token,
     endToken: Token,
@@ -515,7 +515,7 @@ fn assertUpEdge(
 * This edge must flow between two nodes that are not in the same subtree.
 */
 fn assertCrossEdge(
-    cfg: &ControlFlowGraph<'_, DummyAnnotation, DummyAnnotation>,
+    cfg: &ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
     ast_graph: &AstGraph<'_>,
     startToken: Token,
     endToken: Token,
@@ -538,7 +538,7 @@ fn assertCrossEdge(
 * This edge must flow between two nodes that are not in the same subtree.
 */
 fn assertCrossEdgePredicate<S, E>(
-    cfg: &ControlFlowGraph<'_, DummyAnnotation, DummyAnnotation>,
+    cfg: &ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
     ast_graph: &AstGraph<'_>,
     start: S,
     end: E,
@@ -558,7 +558,7 @@ fn assertCrossEdgePredicate<S, E>(
 * from some node with the first token to the return node.
 */
 fn assertReturnEdge(
-    cfg: &ControlFlowGraph<'_, DummyAnnotation, DummyAnnotation>,
+    cfg: &ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
     startToken: Token,
 ) {
     let edges = getAllEdgesOfCFG(cfg);
@@ -578,7 +578,7 @@ fn assertReturnEdge(
 * from some node with the first token to the return node.
 */
 fn assertNoReturnEdge(
-    cfg: &ControlFlowGraph<'_, DummyAnnotation, DummyAnnotation>,
+    cfg: &ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
     startToken: Token,
 ) {
     let edges = getAllEdgesOfCFG(cfg);
@@ -601,13 +601,13 @@ fn assertNoReturnEdge(
 *
 * @param input Input JavaScript.
 */
-fn createCfg<'ast, T>(root: T) -> ControlFlowGraph<'ast, DummyAnnotation, DummyAnnotation>
+fn createCfg<'ast, T>(root: T) -> ControlFlowGraph<Node<'ast>, DummyAnnotation, DummyAnnotation>
 where
     T: Into<Node<'ast>>,
 {
     let mut cfa = ControlFlowAnalysis::new(root.into(), true);
-    cfa.process();
-    cfa.cfg()
+    let cfa = cfa.process();
+    cfa.cfg
 }
 
 #[test]
@@ -2629,7 +2629,7 @@ fn assertNodeOrder(src: &str, expected: &[Token]) {
     let ast_graph = AstGraph::new(&root_node);
 
     let mut cfa = ControlFlowAnalysis::<'_, DummyAnnotation, DummyAnnotation>::new(root_node, true);
-    cfa.process();
+    let cfa = cfa.process();
 
     let mut actual = cfa
         .nodePriorities
