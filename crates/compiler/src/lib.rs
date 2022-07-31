@@ -10,6 +10,7 @@
 
 mod DataFlowAnalysis;
 mod DefaultNameGenerator;
+mod LiveVariablesAnalysis;
 mod OptimizeArgumentsArray;
 mod RenameLabels;
 pub mod ast;
@@ -18,6 +19,7 @@ mod checker;
 mod colors;
 mod control_flow;
 mod disambiguate;
+mod find_vars;
 mod graph;
 pub mod node;
 mod normalize;
@@ -43,6 +45,22 @@ use swc_atoms::JsWord;
 use types::*;
 
 pub type Id = (JsWord, SyntaxContext);
+
+trait ToId {
+    fn to_id(&self) -> Id;
+}
+
+impl ToId for ::ast::Ident {
+    fn to_id(&self) -> Id {
+        (self.sym.clone(), self.span.ctxt)
+    }
+}
+
+impl ToId for ::ast::BindingIdent {
+    fn to_id(&self) -> Id {
+        self.id.to_id()
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct SourceFile {

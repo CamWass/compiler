@@ -336,6 +336,7 @@ where
     }
 }
 
+// TODO: can this be replaced by Iterator::skip_while?
 pub trait AdvanceWhile: Iterator {
     /// Advances the iterator while the `predicate` returns true.
     ///
@@ -344,12 +345,12 @@ pub trait AdvanceWhile: Iterator {
     ///
     /// This method will always call [`next`] at least once, even if the
     /// predicate always returns false:
-    /// ```
+    /// ```ignore
     /// let mut a = [1, 2, 3].iter();
     /// a.advance_while(|_| false);
     /// assert_eq!(a.next(), Some(&2));
     /// ```
-    /// This means that is consumes the elements up to, **and including**, the
+    /// This means that it consumes the elements up to, **and including**, the
     /// element the predicate returns true for.
     ///
     /// Because `advance_while()` takes a reference, and many iterators iterate
@@ -363,7 +364,7 @@ pub trait AdvanceWhile: Iterator {
     ///
     /// Basic usage:
     ///
-    /// ```
+    /// ```ignore
     /// let a = [1, 2, 3, 4, 5, 6];
     /// let mut iter = a.iter();
     ///

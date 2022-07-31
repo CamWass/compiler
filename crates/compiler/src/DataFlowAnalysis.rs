@@ -1,17 +1,20 @@
 use std::hash::Hash;
 use std::marker::PhantomData;
-use std::mem::replace;
 use std::{collections::BTreeSet, ops::Index};
 
+use ecma_visit::{noop_visit_type, Visit, VisitWith};
 use index::newtype_index;
 use petgraph::{graph::EdgeReference, visit::EdgeRef, EdgeDirection};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::control_flow::ControlFlowGraph::AnnotationPrinter;
 use crate::control_flow::{
     node::CfgNode,
     ControlFlowAnalysis::ControlFlowAnalysisResult,
     ControlFlowGraph::{Annotation, Branch, ControlFlowGraph},
 };
+use crate::Id;
+use crate::{find_vars::*, ToId};
 
 #[cfg(test)]
 mod tests;
@@ -19,6 +22,26 @@ mod tests;
 /// The maximum number of steps per individual CFG node before we assume the analysis is divergent.
 // <p>TODO(b/196398705): This is way too high. Find traversal ordering heurisitc that reduces it.
 pub const MAX_STEPS_PER_NODE: usize = 20000;
+
+impl<N, I, L, J> AnnotationPrinter<LinearFlowState> for DataFlowAnalysis<N, I, L, J>
+where
+    N: CfgNode,
+    I: DataFlowAnalysisInner<N, L, J>,
+    L: LatticeElement,
+    J: FlowJoiner<L>,
+{
+    fn print(
+        &self,
+        annotation: &LinearFlowState,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        f.debug_struct("LinearFlowState")
+            .field("stepCount", &annotation.stepCount)
+            .field("in_", &self.inner[annotation.in_])
+            .field("out", &self.inner[annotation.out])
+            .finish()
+    }
+}
 
 /**
  * A framework to help writing static program analysis.
@@ -77,7 +100,7 @@ where
 {
     pub inner: I,
 
-    cfg: ControlFlowGraph<N, LinearFlowState, L>,
+    pub cfg: ControlFlowGraph<N, LinearFlowState, L>,
     /// The set of nodes that need to be considered, orderd by their priority
     /// as determined by control flow analysis and data flow direction.
     workQueue: UniqueQueue<N>,
@@ -204,13 +227,17 @@ where
      * @return {@code true} if the flow state differs from the previous state.
      */
     fn flow(&mut self, node: N) -> bool {
-        let state = self.cfg.node_annotations.get_mut(&node).unwrap();
+        let state = &self.cfg.node_annotations[&node];
         if self.inner.isForward() {
-            let outBefore = replace(&mut state.out, self.inner.flowThrough(node, state.in_));
-            outBefore != state.out
+            let outBefore = state.out;
+            let new_out = self.inner.flowThrough(node, state.in_, &self.cfg);
+            self.cfg.node_annotations.get_mut(&node).unwrap().out = new_out;
+            self.inner[outBefore] != self.inner[new_out]
         } else {
-            let inBefore = replace(&mut state.in_, self.inner.flowThrough(node, state.out));
-            inBefore != state.in_
+            let inBefore = state.in_;
+            let new_in = self.inner.flowThrough(node, state.out, &self.cfg);
+            self.cfg.node_annotations.get_mut(&node).unwrap().in_ = new_in;
+            self.inner[inBefore] != self.inner[new_in]
         }
     }
 
@@ -330,7 +357,12 @@ where
      * @param input Input lattice that should be read-only.
      * @return Output lattice.
      */
-    fn flowThrough(&mut self, node: N, input: LatticeElementId) -> LatticeElementId;
+    fn flowThrough(
+        &mut self,
+        node: N,
+        input: LatticeElementId,
+        cfg: &ControlFlowGraph<N, LinearFlowState, L>,
+    ) -> LatticeElementId;
 }
 
 /** A reducer that joins flow states from distinct input states into a single input state. */
@@ -343,7 +375,7 @@ where
     fn finish(self) -> L;
 }
 
-pub trait LatticeElement: Annotation {}
+pub trait LatticeElement: Annotation + PartialEq {}
 
 /** The in and out states of a node. */
 #[derive(Debug)]
@@ -433,5 +465,78 @@ where
 
     fn clear(&mut self) {
         self.inner.clear()
+    }
+}
+
+// TODO: comment. I think the only vars that get escaped are catch variables and variables referenced in nested functions.
+/**
+ * Compute set of escaped variables. When a variable is escaped in a dataflow analysis, it can be
+ * referenced outside of the code that we are analyzing. A variable is escaped if any of the
+ * following is true:
+ *
+ * <p>1. Exported variables as they can be needed after the script terminates. 2. Names of named
+ * functions because in JavaScript, function foo(){} does not kill foo in the dataflow.
+ *
+ * @param jsScope Must be a function scope
+ */
+pub fn computeEscaped<'a, T>(
+    fn_scope: &T,
+    allVarsInFn: &FxIndexSet<Id>,
+    catch_vars: FxHashSet<Id>,
+) -> FxHashSet<Id>
+where
+    T: FunctionLike<'a>,
+{
+    // TODO (simranarora) catch variables should not be considered escaped in ES6. Getting rid of
+    // the catch check is causing breakages however
+    let mut escaped = catch_vars;
+    let mut v = EscapedVarFinder {
+        allVarsInFn,
+        escaped: &mut escaped,
+    };
+    fn_scope.visit_body_with(&mut v);
+    escaped
+}
+
+struct EscapedVarFinder<'a> {
+    allVarsInFn: &'a FxIndexSet<Id>,
+    escaped: &'a mut FxHashSet<Id>,
+}
+
+macro_rules! visit_fn {
+    ($f:ident, $t:ident) => {
+        fn $f(&mut self, node: &ast::$t) {
+            let mut v = RefFinder {
+                allVarsInFn: self.allVarsInFn,
+                escaped: self.escaped,
+            };
+            node.body.visit_children_with(&mut v);
+        }
+    };
+}
+
+impl<'ast, 'a> Visit<'ast> for EscapedVarFinder<'a> {
+    noop_visit_type!();
+
+    // Only search for references in nested functions.
+    visit_fn!(visit_function, Function);
+    visit_fn!(visit_constructor, Constructor);
+    visit_fn!(visit_arrow_expr, ArrowExpr);
+    visit_fn!(visit_getter_prop, GetterProp);
+    visit_fn!(visit_setter_prop, SetterProp);
+}
+struct RefFinder<'a> {
+    allVarsInFn: &'a FxIndexSet<Id>,
+    escaped: &'a mut FxHashSet<Id>,
+}
+
+impl<'ast, 'a> Visit<'ast> for RefFinder<'a> {
+    noop_visit_type!();
+
+    fn visit_ident(&mut self, node: &'ast ast::Ident) {
+        let id = node.to_id();
+        if self.allVarsInFn.contains(&id) {
+            self.escaped.insert(id);
+        }
     }
 }

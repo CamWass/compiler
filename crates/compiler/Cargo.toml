@@ -17,6 +17,7 @@ visit2 = {path = "../../macros/visit2"}
 num-bigint = {version = "0.2"}
 swc_atoms = "0.2"
 index = {path = "../index"}
+indexmap = "1.9.1"
 ecma_visit = {path = "../visit"}
 lexical = {version = "6.1.0", features = ["power-of-two", "format"]}
 petgraph = "0.6.0"

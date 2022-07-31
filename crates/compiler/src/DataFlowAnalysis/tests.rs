@@ -1,6 +1,22 @@
-use std::iter::FromIterator;
-
+use ast::*;
+use ecma_visit::VisitMutWith;
+use global_common::{
+    errors::{ColorConfig, Handler},
+    sync::Lrc,
+    FileName, Globals, Mark, SourceMap, SyntaxContext, GLOBALS,
+};
 use index::vec::IndexVec;
+use parser::{Parser, Syntax};
+use rustc_hash::FxHashMap;
+use std::{iter::FromIterator, sync::atomic::AtomicU32};
+use swc_atoms::JsWord;
+
+use crate::control_flow::{node::Node, ControlFlowAnalysis::ControlFlowAnalysis};
+use crate::resolver::resolver;
+use crate::DataFlowAnalysis::LinearFlowState;
+use crate::Id;
+use crate::LiveVariablesAnalysis::LiveVariablesAnalysis;
+use crate::{find_vars::find_vars_declared_in_fn, utils::unwrap_as};
 
 use super::*;
 
@@ -143,7 +159,7 @@ impl BranchInstruction {
  * defined to be constant 10. The map will contain the value 10 with the
  * variable {@code x} as key. Otherwise, {@code x} is not a constant.
  */
-#[derive(Default, Clone)]
+#[derive(Default, Clone, PartialEq, Debug)]
 struct ConstPropLatticeElement {
     constMap: FxHashMap<Value, usize>,
     isTop: bool,
@@ -233,7 +249,12 @@ impl DataFlowAnalysisInner<Instruction, ConstPropLatticeElement, ConstPropJoinOp
         ConstPropJoinOp::default()
     }
 
-    fn flowThrough(&mut self, node: Instruction, input: LatticeElementId) -> LatticeElementId {
+    fn flowThrough(
+        &mut self,
+        node: Instruction,
+        input: LatticeElementId,
+        _cfg: &ControlFlowGraph<Instruction, LinearFlowState, ConstPropLatticeElement>,
+    ) -> LatticeElementId {
         let elem = match node {
             Instruction::BranchInstruction(_) => self.lattice_elements[input].clone(),
             Instruction::ArithmeticInstruction(n) => {
@@ -438,10 +459,7 @@ fn testSimpleLoop() {
 
     let mut constProp = DummyConstPropagation::new(cfa);
     // This will also show that the framework terminates properly.
-    constProp
-        .data_flow_analysis
-        .analyze_inner()
-        .expect_err("data flow analysis should diverge");
+    constProp.data_flow_analysis.analyze();
 
     // a = 0 is the only thing we know.
     constProp.verifyInHas(n1, a, None);
@@ -477,105 +495,136 @@ fn testSimpleLoop() {
 
 // tests for computeEscaped method
 
-// #[test]
-// public void testEscaped() {
-//   assertThat(
-//           computeEscapedLocals(
-//               "function f() {",
-//               "    var x = 0; ",
-//               "    setTimeout(function() { x++; }); ",
-//               "    alert(x);",
-//               "}"))
-//       .hasSize(1);
-//   assertThat(computeEscapedLocals("function f() {var _x}")).hasSize(1);
-//   assertThat(computeEscapedLocals("function f() {try{} catch(e){}}")).hasSize(1);
-// }
+#[test]
+fn testEscaped() {
+    assert!(
+        computeEscapedLocals(
+            "
+function f() {
+    var x = 0;
+    setTimeout(function() { x++; });
+    alert(x);
+}",
+        )
+        .len()
+            == 1,
+    );
+    //   assert(computeEscapedLocals("function f() {var _x}").len() == 1);
+    assert!(computeEscapedLocals("function f() {try{} catch(e){}}").len() == 1);
+}
 
-// #[test]
-// public void testEscapedFunctionLayered() {
-//   assertThat(
-//           computeEscapedLocals(
-//               "function f() {",
-//               "    function ff() {",
-//               "        var x = 0; ",
-//               "        setTimeout(function() { x++; }); ",
-//               "        alert(x);",
-//               "    }",
-//               "}"))
-//       .isEmpty();
-// }
+#[test]
+fn testEscapedFunctionLayered() {
+    assert!(computeEscapedLocals(
+        "
+function f() {
+    function ff() {
+        var x = 0; 
+        setTimeout(function() { x++; });
+        alert(x);
+    }
+}"
+    )
+    .is_empty());
+}
 
-// #[test]
-// public void testEscapedLetConstSimple() {
-//   assertThat(computeEscapedLocals("function f() { let x = 0; x ++; x; }")).isEmpty();
-// }
+#[test]
+fn testEscapedLetConstSimple() {
+    assert!(computeEscapedLocals("function f() { let x = 0; x ++; x; }").is_empty());
+}
 
-// #[test]
-// public void testEscapedFunctionAssignment() {
-//   assertThat(computeEscapedLocals("function f() {var x = function () { return 1; }; }"))
-//       .isEmpty();
-//   assertThat(computeEscapedLocals("function f() {var x = function (y) { return y; }; }"))
-//       .isEmpty();
-//   assertThat(computeEscapedLocals("function f() {let x = function () { return 1; }; }"))
-//       .isEmpty();
-// }
+#[test]
+fn testEscapedFunctionAssignment() {
+    assert!(computeEscapedLocals("function f() {var x = function () { return 1; }; }").is_empty());
+    assert!(computeEscapedLocals("function f() {var x = function (y) { return y; }; }").is_empty());
+    assert!(computeEscapedLocals("function f() {let x = function () { return 1; }; }").is_empty());
+}
 
-// #[test]
-// public void testEscapedArrowFunction() {
-//   // When the body of the arrow fn is analyzed, x is considered an escaped var. When the outer
-//   // block containing "const value ..." is analyzed, 'x' is not considered an escaped var
-//   assertThat(
-//           computeEscapedLocals(
-//               "function f() {const value = () => {",
-//               "    var x = 0; ",
-//               "    setTimeout(function() { x++; }); ",
-//               "    alert(x);",
-//               " };}"))
-//       .isEmpty();
-// }
+#[test]
+fn testEscapedArrowFunction() {
+    // When the body of the arrow fn is analyzed, x is considered an escaped var. When the outer
+    // block containing "const value ..." is analyzed, 'x' is not considered an escaped var
+    assert!(computeEscapedLocals(
+        "
+function f() {
+    const value = () => {
+        var x = 0; 
+        setTimeout(function() { x++; }); 
+        alert(x);
+    };
+}",
+    )
+    .is_empty(),);
+}
 
-// // test computeEscaped helper method that returns the liveness analysis performed by the
-// // LiveVariablesAnalysis class
-// public Set<? extends Var> computeEscapedLocals(String... lines) {
-//   // Set up compiler
-//   Compiler compiler = new Compiler();
-//   CompilerOptions options = new CompilerOptions();
-//   options.setCodingConvention(new GoogleCodingConvention());
-//   compiler.initOptions(options);
-//   compiler.setLifeCycleStage(LifeCycleStage.NORMALIZED);
+// test computeEscaped helper method that returns the liveness analysis performed by the
+// LiveVariablesAnalysis class
+fn computeEscapedLocals(src: &str) -> FxHashSet<Id> {
+    GLOBALS.set(&Globals::new(), || {
+        let mut program = Program::Script(parse_script(&src));
 
-//   String src = CompilerTestCase.lines(lines);
-//   Node n = compiler.parseTestCode(src).removeFirstChild();
-//   Node script = new Node(Token.SCRIPT, n);
-//   script.setInputId(new InputId("test"));
-//   assertThat(compiler.getErrors()).isEmpty();
+        let unresolved_mark = Mark::new();
+        let top_level_mark = Mark::new();
 
-//   // Create scopes
-//   SyntacticScopeCreator scopeCreator = new SyntacticScopeCreator(compiler);
-//   Scope scope = scopeCreator.createScope(n, Scope.createGlobalScope(script));
-//   Scope childScope;
-//   if (script.getFirstChild().isFunction()) {
-//     childScope = scopeCreator.createScope(NodeUtil.getFunctionBody(n), scope);
-//   } else {
-//     childScope = null;
-//   }
+        program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark, false));
 
-//   // Control flow graph
-//   ControlFlowAnalysis cfa = new ControlFlowAnalysis(compiler, false, true);
-//   cfa.process(null, script);
-//   ControlFlowGraph<Node> cfg = cfa.getCfg();
+        let script = unwrap_as!(program, Program::Script(s), s);
 
-//   // All variables declared in function
-//   AllVarsDeclaredInFunction allVarsDeclaredInFunction =
-//       NodeUtil.getAllVarsDeclaredInFunction(compiler, scopeCreator, scope);
+        let function = match script.body.first() {
+            Some(Stmt::Decl(Decl::Fn(f))) => &f.function,
+            _ => unreachable!(),
+        };
 
-//   // Compute liveness of variables
-//   LiveVariablesAnalysis analysis =
-//       new LiveVariablesAnalysis(
-//           cfg, scope, childScope, compiler, scopeCreator, allVarsDeclaredInFunction);
-//   analysis.analyze();
-//   return analysis.getEscapedLocals();
-// }
+        // Control flow graph
+        let mut cfa = ControlFlowAnalysis::new(Node::Function(function), false);
+        let cfa = cfa.process();
+
+        // All variables declared in function
+        let allVarsDeclaredInFunction = find_vars_declared_in_fn(function);
+
+        let vars = allVarsDeclaredInFunction
+            .ordered_vars
+            .iter()
+            .map(|id| (id.0.clone(), id.clone()))
+            .collect::<FxHashMap<JsWord, Id>>();
+
+        let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
+
+        // Compute liveness of variables
+        let mut liveness =
+            LiveVariablesAnalysis::new(cfa, function, allVarsDeclaredInFunction, unresolved_ctxt);
+        liveness.analyze().0.escaped_locals
+    })
+}
+
+fn parse_script(input: &str) -> Script {
+    let cm = Lrc::<SourceMap>::default();
+    let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
+
+    let fm = cm.new_source_file(FileName::Real("input".into()), input.into());
+
+    let mut p = Parser::new(Syntax::Es(Default::default()), &fm, Default::default());
+    let res = match p.parse_script() {
+        Ok(p) => p,
+        Err(e) => {
+            e.into_diagnostic(&handler).emit();
+            panic!("Failed to parse");
+        }
+    };
+
+    let mut error = false;
+
+    for e in p.take_errors() {
+        e.into_diagnostic(&handler).emit();
+        error = true;
+    }
+
+    if error {
+        panic!("Failed to parse");
+    }
+
+    res
+}
 
 #[derive(Default, Debug)]
 struct DivergentAnalysisInner {
@@ -593,18 +642,23 @@ impl DataFlowAnalysisInner<Counter, Step, DivergentFlowJoiner> for DivergentAnal
     }
 
     fn createEntryLattice(&mut self) -> LatticeElementId {
-        self.add_lattice_element(Step)
+        self.add_lattice_element(Step::new())
     }
 
     fn createInitialEstimateLattice(&mut self) -> LatticeElementId {
-        self.add_lattice_element(Step)
+        self.add_lattice_element(Step::new())
     }
 
     fn createFlowJoiner(&self) -> DivergentFlowJoiner {
-        DivergentFlowJoiner
+        DivergentFlowJoiner(Step::new())
     }
 
-    fn flowThrough(&mut self, node: Counter, input: LatticeElementId) -> LatticeElementId {
+    fn flowThrough(
+        &mut self,
+        node: Counter,
+        input: LatticeElementId,
+        _cfg: &ControlFlowGraph<Counter, LinearFlowState, Step>,
+    ) -> LatticeElementId {
         *self.counts.entry(node).or_default() += 1;
         input
     }
@@ -618,17 +672,17 @@ impl Index<LatticeElementId> for DivergentAnalysisInner {
     }
 }
 
-struct DivergentFlowJoiner;
+struct DivergentFlowJoiner(Step);
 
 impl FlowJoiner<Step> for DivergentFlowJoiner {
     fn joinFlow(&mut self, input: &Step) {}
 
     fn finish(self) -> Step {
-        Step
+        self.0
     }
 }
 
-// Field is meaningless, but is necessary (and should be unique) for equality.
+/// Field is meaningless, but is necessary (and should be unique) for equality.
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
 struct Counter(u32);
 
@@ -638,8 +692,17 @@ impl CfgNode for Counter {
     }
 }
 
-#[derive(Debug)]
-struct Step;
+static STEP_ID: AtomicU32 = AtomicU32::new(0);
+
+/// Field is meaningless, but is necessary (and should be unique) for equality.
+#[derive(Debug, PartialEq)]
+struct Step(u32);
+
+impl Step {
+    fn new() -> Self {
+        Self(STEP_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+    }
+}
 
 impl LatticeElement for Step {}
 

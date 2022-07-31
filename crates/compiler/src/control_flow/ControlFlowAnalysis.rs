@@ -222,16 +222,6 @@ where
         );
         self.astPosition.insert(node, self.astPositionCounter);
         self.astPositionCounter += 1;
-
-        // if let Node::BlockStmt(BlockStmt {
-        //     span: Span {
-        //         lo: BytePos(24), ..
-        //     },
-        //     ..
-        // }) = node
-        // {
-        //     panic!();
-        // }
     }
 
     pub fn cfg(self) -> ControlFlowGraph<Node<'ast>, N, E> {
@@ -239,7 +229,7 @@ where
     }
 
     pub fn print_simple_graph(&self) {
-        self.cfg.print_simplified();
+        self.cfg.print_simple();
     }
 
     pub fn print_full_graph(&self) {

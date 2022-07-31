@@ -7,16 +7,17 @@ use petgraph::{
     EdgeDirection::*,
 };
 use rustc_hash::FxHashMap;
-use std::fmt;
+use std::fmt::{self, Write};
 use std::ops::Index;
 
 // TODO: account for other function like types (such as methods/getters etc)
 
 // TODO:
+#[derive(Debug)]
 pub struct DummyAnnotation;
 impl Annotation for DummyAnnotation {}
 
-pub trait Annotation {}
+pub trait Annotation: fmt::Debug {}
 
 /**
  * Control flow graph.
@@ -252,42 +253,120 @@ pub fn is_entering_new_cfg_node<'ast>(n: Node<'ast>, parent: Node<'ast>) -> bool
     }
 }
 
+/// A custom version of [`Debug`][std::fmt::Debug] that allows control flow
+/// graph annotations to printed using external state.
+pub trait AnnotationPrinter<A: Annotation> {
+    /// Formats the annotation using the given formatter.
+    fn print(&self, annotation: &A, f: &mut fmt::Formatter<'_>) -> fmt::Result;
+}
+
+/// Default [`AnnotationPrinter`] that uses the annotations impl of [`Debug`][std::fmt::Debug].
+struct DefaultPrinter;
+
+impl<A> AnnotationPrinter<A> for DefaultPrinter
+where
+    A: Annotation,
+{
+    fn print(&self, annotation: &A, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_fmt(format_args!("{:?}", annotation))
+    }
+}
+
+const CFG_DOT_FILE_NAME: &str = "cfg.dot";
+
 impl<'ast, NA, EA> ControlFlowGraph<Node<'ast>, NA, EA>
 where
     NA: Annotation,
     EA: Annotation,
 {
-    pub fn print_simplified(&self) {
+    /// Prints a simple representation of the control flow graph to dot format.
+    /// The resulting graph contains only the nodes and edges from the control
+    /// flow graph.
+    pub fn print_simple(&self) {
         let mut dot = format!("{:?}", Dot::with_config(&self.graph, &[]));
 
         dot = recolour_graph(dot, self.graph.node_count());
 
-        std::fs::write("cfg.dot", dot).expect("Failed to output control flow graph");
+        std::fs::write(CFG_DOT_FILE_NAME, dot).expect("Failed to output control flow graph");
     }
 
+    /// Prints a rich representation of the control flow graph to dot format.
+    /// The resulting graph contains represents the full AST of the entry node,
+    /// as well as any control flow edges.
     pub fn print_full(&self) {
-        // Only used for custom debug impl.
-        struct CustomNode<'ast>(Node<'ast>);
+        self.print_full_inner::<DefaultPrinter>(None)
+    }
+    /// Same as `print_full` but also prints node annotations using `printer`.
+    /// If `printer` is `None`, the annotations will be printed using [`Debug`][std::fmt::Debug].
+    pub fn print_full_with_annotations<P>(&self, printer: Option<&P>)
+    where
+        P: AnnotationPrinter<NA>,
+    {
+        match printer {
+            Some(p) => self.print_full_inner(Some(p)),
+            None => self.print_full_inner(Some(&DefaultPrinter)),
+        }
+    }
 
-        impl<'ast> fmt::Debug for CustomNode<'ast> {
+    /// If `printer` is `None`, node annotations are not printed.
+    fn print_full_inner<P>(&self, printer: Option<&P>)
+    where
+        P: AnnotationPrinter<NA>,
+    {
+        // Only used for custom debug impl.
+        struct CustomNode<'ast, 'a, NA, P>
+        where
+            NA: Annotation,
+            P: AnnotationPrinter<NA>,
+        {
+            node: Node<'ast>,
+            annotation: Option<&'a NA>,
+            printer: Option<&'a P>,
+        }
+
+        impl<NA, P> fmt::Debug for CustomNode<'_, '_, NA, P>
+        where
+            NA: Annotation,
+            P: AnnotationPrinter<NA>,
+        {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                match self.0 {
-                    Node::Str(s) => f.write_fmt(format_args!("Str({})", s.value)),
-                    Node::Number(n) => f.write_fmt(format_args!("Number({})", n.value)),
-                    Node::Ident(s) => f.write_fmt(format_args!("Ident({})", s.sym)),
-                    _ => f.write_fmt(format_args!("{:?}", self.0)),
+                match self.node {
+                    Node::Str(s) => {
+                        f.write_fmt(format_args!("Str({})", s.value))?;
+                    }
+                    Node::Number(n) => {
+                        f.write_fmt(format_args!("Number({})", n.value))?;
+                    }
+                    Node::Ident(s) => {
+                        f.write_fmt(format_args!("Ident({})", s.sym))?;
+                    }
+                    _ => {
+                        f.write_fmt(format_args!("{:?}", self.node))?;
+                    }
+                }
+                if let (Some(printer), Some(ann)) = (self.printer, self.annotation) {
+                    f.write_char('\n');
+                    printer.print(ann, f)
+                } else {
+                    Ok(())
                 }
             }
         }
+
+        let custom_node = |node| CustomNode {
+            node,
+            annotation: self.node_annotations.get(&node),
+            printer,
+        };
 
         // Create graph of AST nodes.
         let (map, graph) = super::print::ast_graph::<Branch>(&self.entry);
 
         // Map the nodes of the AST graph to our custom node type. This preserves their edges and node indicies.
-        let mut graph = graph.map(|_, n| CustomNode(*n), |_, e| *e);
+        let mut graph = graph.map(|_, n| custom_node(*n), |_, e| *e);
 
         // Implicit return isn't a 'real' AST node, so it won't be in the AST graph. Add it manually.
-        let implicit_return = graph.add_node(CustomNode(self.implicit_return));
+        let implicit_return = graph.add_node(custom_node(self.implicit_return));
 
         // Add the control flow edges to the AST graph.
         for e in self.graph.edge_references() {
@@ -315,7 +394,7 @@ where
 
         println!("creating dot file");
 
-        std::fs::write("cfg.dot", dot).expect("Failed to output control flow graph");
+        std::fs::write(CFG_DOT_FILE_NAME, dot).expect("Failed to output control flow graph");
     }
 }
 
