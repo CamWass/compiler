@@ -152,7 +152,8 @@ impl Lexer<'_> {
 
     #[inline]
     pub(super) fn slice_to_cur(&self, start: BytePos) -> &str {
-        std::str::from_utf8(&self.bytes[start.to_usize()..self.cur]).unwrap()
+        let start = (start - self.start_pos).to_usize();
+        std::str::from_utf8(&self.bytes[start..self.cur]).unwrap()
     }
 
     pub(super) fn uncons_while_chars<F>(&mut self, mut pred: F) -> &str
@@ -204,7 +205,8 @@ impl Lexer<'_> {
 
     #[inline]
     pub(super) fn reset_to(&mut self, to: BytePos) {
-        self.cur = to.to_usize();
+        let new_pos = (to - self.start_pos).to_usize();
+        self.cur = new_pos;
     }
 
     #[inline]
