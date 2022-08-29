@@ -100,7 +100,9 @@ fn main() -> Result<()> {
         let mut buf = vec![];
         {
             let mut emitter = Emitter {
-                cfg: codegen::Config { minify: false },
+                cfg: codegen::Config {
+                    minify: !config.pretty_print,
+                },
                 comments: None,
                 cm: cm.clone(),
                 wr: Box::new(codegen::text_writer::JsWriter::new(

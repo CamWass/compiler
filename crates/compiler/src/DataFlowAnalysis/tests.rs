@@ -11,7 +11,7 @@ use rustc_hash::FxHashMap;
 use std::{iter::FromIterator, sync::atomic::AtomicU32};
 use swc_atoms::JsWord;
 
-use crate::control_flow::{node::Node, ControlFlowAnalysis::ControlFlowAnalysis};
+use crate::control_flow::ControlFlowAnalysis::{ControlFlowAnalysis, ControlFlowRoot};
 use crate::resolver::resolver;
 use crate::DataFlowAnalysis::LinearFlowState;
 use crate::Id;
@@ -576,11 +576,10 @@ fn computeEscapedLocals(src: &str) -> FxHashSet<Id> {
         };
 
         // Control flow graph
-        let mut cfa = ControlFlowAnalysis::new(Node::Function(function), false);
-        let cfa = cfa.process();
+        let cfa = ControlFlowAnalysis::analyze(ControlFlowRoot::Function(function), false);
 
         // All variables declared in function
-        let allVarsDeclaredInFunction = find_vars_declared_in_fn(function);
+        let allVarsDeclaredInFunction = find_vars_declared_in_fn(function, false);
 
         let vars = allVarsDeclaredInFunction
             .ordered_vars

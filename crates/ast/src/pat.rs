@@ -6,7 +6,7 @@ use crate::{
     GetNodeId, Invalid, NodeId,
 };
 use ast_node::ast_node;
-use global_common::{EqIgnoreSpan, Span};
+use global_common::{util::take::Take, EqIgnoreSpan, Span, DUMMY_SP};
 
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
@@ -25,6 +25,15 @@ pub enum Pat {
 
     /// Only for for-in / for-of loops. This is *syntactically* valid.
     Expr(Box<Expr>),
+}
+
+impl Take for Pat {
+    fn dummy() -> Self {
+        Pat::Invalid(Invalid {
+            node_id: NodeId::MAX,
+            span: DUMMY_SP,
+        })
+    }
 }
 
 #[ast_node]

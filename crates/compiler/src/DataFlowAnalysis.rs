@@ -481,7 +481,7 @@ where
  */
 pub fn computeEscaped<'a, T>(
     fn_scope: &T,
-    allVarsInFn: &FxIndexSet<Id>,
+    allVarsInFn: &FxHashMap<Id, VarId>,
     catch_vars: FxHashSet<Id>,
 ) -> FxHashSet<Id>
 where
@@ -499,7 +499,7 @@ where
 }
 
 struct EscapedVarFinder<'a> {
-    allVarsInFn: &'a FxIndexSet<Id>,
+    allVarsInFn: &'a FxHashMap<Id, VarId>,
     escaped: &'a mut FxHashSet<Id>,
 }
 
@@ -526,7 +526,7 @@ impl<'ast, 'a> Visit<'ast> for EscapedVarFinder<'a> {
     visit_fn!(visit_setter_prop, SetterProp);
 }
 struct RefFinder<'a> {
-    allVarsInFn: &'a FxIndexSet<Id>,
+    allVarsInFn: &'a FxHashMap<Id, VarId>,
     escaped: &'a mut FxHashSet<Id>,
 }
 
@@ -535,7 +535,7 @@ impl<'ast, 'a> Visit<'ast> for RefFinder<'a> {
 
     fn visit_ident(&mut self, node: &'ast ast::Ident) {
         let id = node.to_id();
-        if self.allVarsInFn.contains(&id) {
+        if self.allVarsInFn.contains_key(&id) {
             self.escaped.insert(id);
         }
     }

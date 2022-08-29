@@ -10,6 +10,8 @@ pub fn process(ast: &mut ast::Program) {
     ast.visit_mut_with(&mut visitor);
 }
 
+// TODO: change they span ctxt when changing the sym
+
 /// RenameLabels renames all the labels so that they have short names, to reduce
 /// code size and also to obfuscate the code.
 ///
@@ -86,7 +88,7 @@ macro_rules! handle_scope {
     };
 }
 
-impl VisitMut for RenameLabels {
+impl VisitMut<'_> for RenameLabels {
     fn visit_mut_stmt(&mut self, node: &mut ast::Stmt) {
         node.map_with_mut(|mut stmt| {
             match stmt {

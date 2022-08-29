@@ -303,7 +303,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
                 },
                 {
                     #[allow(unused_variables)]
-                    pub fn fn_name<V: ?Sized + Trait>(_visitor: &mut V, n: Type) {
+                    pub fn fn_name<'ast, V: ?Sized + Trait<'ast>>(_visitor: &mut V, n: Type) {
                         default_body
                     }
                 }
@@ -329,7 +329,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
     });
 
     let mut generics = Generics::default();
-    if mode == Mode::Visit || mode == Mode::VisitAll {
+    if mode == Mode::Visit || mode == Mode::VisitAll || mode == Mode::VisitMut {
         generics
             .params
             .push(GenericParam::Lifetime(LifetimeDef::new(Lifetime::new(
@@ -357,7 +357,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
     {
         // impl Visit for &'_ mut V
 
-        let mut item = if mode == Mode::Visit || mode == Mode::VisitAll {
+        let mut item = if mode == Mode::Visit || mode == Mode::VisitAll || mode == Mode::VisitMut {
             q!(
                 Vars {
                     Trait: Ident::new(mode.trait_name(), call_site()),
@@ -386,7 +386,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
     {
         // impl Visit for Box<V>
 
-        let mut item = if mode == Mode::Visit || mode == Mode::VisitAll {
+        let mut item = if mode == Mode::Visit || mode == Mode::VisitAll || mode == Mode::VisitMut {
             q!(
                 Vars {
                     Trait: Ident::new(mode.trait_name(), call_site()),
@@ -415,7 +415,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
 
     {
         // impl Trait for Optional
-        let mut item = if mode == Mode::Visit || mode == Mode::VisitAll {
+        let mut item = if mode == Mode::Visit || mode == Mode::VisitAll || mode == Mode::VisitMut {
             q!(
                 Vars {
                     Trait: Ident::new(mode.trait_name(), call_site()),
@@ -445,7 +445,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
 
     {
         // impl Trait for Either
-        let mut item = if mode == Mode::Visit || mode == Mode::VisitAll {
+        let mut item = if mode == Mode::Visit || mode == Mode::VisitAll || mode == Mode::VisitMut {
             q!(
                 Vars {
                     Trait: Ident::new(mode.trait_name(), call_site()),
@@ -504,7 +504,6 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
 
         let trait_decl = match mode {
             Mode::Visit => q!({
-                // TODO: do we need the lifetimes for self?
                 pub trait VisitWith<'ast, V: Visit<'ast>> {
                     fn visit_with(&'ast self, v: &mut V);
 
@@ -528,7 +527,6 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
                 }
             }),
             Mode::VisitAll => q!({
-                // TODO: do we need the lifetimes for self?
                 pub trait VisitAllWith<'ast, V: VisitAll<'ast>> {
                     fn visit_all_with(&'ast self, v: &mut V);
 
@@ -575,22 +573,22 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
                 }
             }),
             Mode::VisitMut => q!({
-                pub trait VisitMutWith<V: VisitMut> {
-                    fn visit_mut_with(&mut self, v: &mut V);
+                pub trait VisitMutWith<'ast, V: VisitMut<'ast>> {
+                    fn visit_mut_with(&'ast mut self, v: &mut V);
 
-                    fn visit_mut_children_with(&mut self, v: &mut V);
+                    fn visit_mut_children_with(&'ast mut self, v: &mut V);
                 }
 
-                impl<V, T> VisitMutWith<V> for Box<T>
+                impl<'ast, V, T> VisitMutWith<'ast, V> for Box<T>
                 where
-                    V: VisitMut,
-                    T: 'static + VisitMutWith<V>,
+                    V: VisitMut<'ast>,
+                    T: 'static + VisitMutWith<'ast, V>,
                 {
-                    fn visit_mut_with(&mut self, v: &mut V) {
+                    fn visit_mut_with(&'ast mut self, v: &mut V) {
                         (**self).visit_mut_with(v);
                     }
 
-                    fn visit_mut_children_with(&mut self, v: &mut V) {
+                    fn visit_mut_children_with(&'ast mut self, v: &mut V) {
                         (**self).visit_mut_children_with(v);
                     }
                 }
@@ -706,12 +704,12 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
                             expr,
                         },
                         {
-                            impl<V: VisitMut> VisitMutWith<V> for Type {
-                                fn visit_mut_with(&mut self, v: &mut V) {
+                            impl<'ast, V: VisitMut<'ast>> VisitMutWith<'ast, V> for Type {
+                                fn visit_mut_with(&'ast mut self, v: &mut V) {
                                     expr
                                 }
 
-                                fn visit_mut_children_with(&mut self, _visitor: &mut V) {
+                                fn visit_mut_children_with(&'ast mut self, _visitor: &mut V) {
                                     default_body
                                 }
                             }
@@ -944,7 +942,7 @@ fn method_sig(mode: Mode, ty: &Type) -> Signature {
                 }
 
                 Mode::VisitMut => {
-                    p.push_value(q!(Vars { Type: ty }, { n: &mut Type }).parse());
+                    p.push_value(q!(Vars { Type: ty }, { n: &'ast mut Type }).parse());
                 }
 
                 Mode::Visit | Mode::VisitAll => {
@@ -1105,7 +1103,7 @@ fn create_method_sig(mode: Mode, ty: &Type) -> Signature {
     }
 
     fn mk_ref(mode: Mode, ident: Ident, ty: &Type, mutable: bool) -> Signature {
-        let lifetime = if mode == Mode::Visit || mode == Mode::VisitAll {
+        let lifetime = if mode == Mode::Visit || mode == Mode::VisitAll || mode == Mode::VisitMut {
             Some(Lifetime::new("'ast", proc_macro2::Span::call_site()))
         } else {
             None
@@ -1169,7 +1167,7 @@ fn create_method_sig(mode: Mode, ty: &Type) -> Signature {
                                 return mk_exact(
                                     mode,
                                     ident,
-                                    &q!(Vars { item }, { &mut Option<Vec<item>> }).parse(),
+                                    &q!(Vars { item }, { &'ast mut Option<Vec<item>> }).parse(),
                                 );
                             }
                             Mode::Visit | Mode::VisitAll => {
@@ -1194,7 +1192,7 @@ fn create_method_sig(mode: Mode, ty: &Type) -> Signature {
                             return mk_exact(
                                 mode,
                                 ident,
-                                &q!(Vars { arg }, { &mut Option<arg> }).parse(),
+                                &q!(Vars { arg }, { &'ast mut Option<arg> }).parse(),
                             );
                         }
                         Mode::Visit | Mode::VisitAll => {

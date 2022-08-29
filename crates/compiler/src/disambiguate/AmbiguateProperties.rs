@@ -166,7 +166,7 @@ impl AmbiguateProperties {
         let numNewPropertyNames = coloring.color::<_, _, PropertySubGraph, _>(
             // TODO: bad clone:
             nodes.clone(),
-            |a, b| {
+            |&a, &b| {
                 /*
                  * Sorts Property objects by their count, breaking ties lexicographically to ensure a deterministic
                  * total ordering.
@@ -180,20 +180,21 @@ impl AmbiguateProperties {
                     result
                 }
             },
-            |prop| properties[prop].numOccurrences,
+            |&prop| properties[prop].numOccurrences,
             || PropertySubGraph::new(&properties),
         );
 
         // Generate new names for the properties that will be renamed.
         let mut nameGen = DefaultNameGenerator::new(reservedNames);
-        let mut colorMap = Vec::with_capacity(numNewPropertyNames);
-        for i in 0..numNewPropertyNames {
+        let mut colorMap = IndexVec::with_capacity(numNewPropertyNames);
+        for _ in 0..numNewPropertyNames {
             colorMap.push(nameGen.generateNextName());
         }
 
         // Translate the color of each Property instance to a name.
         for node in nodes {
-            properties[node].newName = coloring.color_map.get(&node).map(|c| colorMap[*c].clone());
+            let color = coloring.get_color_of_node(&node);
+            properties[node].newName = Some(colorMap[color].clone());
             //   renamingMap.put(node.getValue().oldName, node.getValue().newName);
         }
 
@@ -214,7 +215,7 @@ impl AmbiguateProperties {
 
         // TODO: since there is a one-to-one relation between idents and use sites,
         // once we have renamed all id's we collected, we can abort the traversal
-        impl VisitMut for UseSiteRenamer {
+        impl VisitMut<'_> for UseSiteRenamer {
             // TODO:
             // We only rename idents in types for testing, to make writing tests easier.
             // In normal builds there's no point in renaming these idents, so we skip the work.
@@ -273,10 +274,10 @@ impl SubGraph<PropertyId> for PropertySubGraph<'_> {
      * sub graph.  That is, if none of its related types intersects with the
      * related types for this sub graph.
      */
-    fn isIndependentOf(&mut self, prop: PropertyId) -> bool {
+    fn isIndependentOf(&self, prop: &PropertyId) -> bool {
         !self
             .relatedTypes
-            .intersects(&self.properties[prop].relatedColors)
+            .intersects(&self.properties[*prop].relatedColors)
     }
 
     /**

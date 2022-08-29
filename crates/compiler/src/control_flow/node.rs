@@ -1,7 +1,8 @@
 use global_common::{Spanned, DUMMY_SP};
 use std::fmt;
 use std::fmt::Debug;
-use std::hash::Hash;
+use std::hash::{Hash, Hasher};
+use std::mem::discriminant;
 
 pub trait CfgNode: Copy + Eq + Hash + Debug {
     fn implicit_return() -> Self;
@@ -13,9 +14,22 @@ impl CfgNode for Node<'_> {
     }
 }
 
+impl Node<'_> {
+    pub fn is_function_like(&self) -> bool {
+        matches!(
+            self,
+            Node::Function(_)
+                | Node::Constructor(_)
+                | Node::ArrowExpr(_)
+                | Node::GetterProp(_)
+                | Node::SetterProp(_)
+        )
+    }
+}
+
 macro_rules! make {
     ($($field:ident,)*) => {
-        #[derive(Copy, Clone, PartialEq, Eq, Hash)]
+        #[derive(Copy, Clone)]
         pub enum Node<'ast> {
             ImplicitReturn,
             $($field(&'ast ::ast::$field),)*
@@ -30,6 +44,32 @@ macro_rules! make {
                     )*
                 }
 
+            }
+        }
+
+        impl <'ast> PartialEq for Node<'ast>  {
+            fn eq(&self, other: &Self) -> bool {
+                discriminant(self) == discriminant(other) && match (self, other) {
+                    (Self::ImplicitReturn, Self::ImplicitReturn) => true,
+                    $(
+                        (Self::$field(l), Self::$field(r)) => l.node_id == r.node_id,
+                    )*
+                    _ => unreachable!()
+                }
+            }
+        }
+
+        impl <'ast> Eq for Node<'ast> {}
+
+        impl <'ast> Hash for Node<'ast>  {
+            fn hash<H: Hasher>(&self, state: &mut H) {
+                discriminant(self).hash(state);
+                match self {
+                    Self::ImplicitReturn => {},
+                    $(
+                        Self::$field(l) => l.node_id.hash(state),
+                    )*
+                }
             }
         }
 
@@ -393,6 +433,15 @@ impl<'ast> From<&'ast ::ast::ModuleDecl> for Node<'ast> {
             ::ast::ModuleDecl::TsImportEquals(n) => Node::TsImportEqualsDecl(n),
             ::ast::ModuleDecl::TsExportAssignment(n) => Node::TsExportAssignment(n),
             ::ast::ModuleDecl::TsNamespaceExport(n) => Node::TsNamespaceExportDecl(n),
+        }
+    }
+}
+
+impl<'ast> From<&'ast ::ast::BlockStmtOrExpr> for Node<'ast> {
+    fn from(other: &'ast ::ast::BlockStmtOrExpr) -> Node<'ast> {
+        match other {
+            ::ast::BlockStmtOrExpr::BlockStmt(n) => Node::BlockStmt(n),
+            ::ast::BlockStmtOrExpr::Expr(n) => Node::from(&**n),
         }
     }
 }

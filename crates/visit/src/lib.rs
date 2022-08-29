@@ -3,10 +3,10 @@
 pub extern crate ast;
 
 use ast::*;
-use global_common::{pass::CompilerPass, Span, DUMMY_SP};
+use global_common::{Span, DUMMY_SP};
 use global_visit::{define, AndThen, Repeat, Repeated};
 use num_bigint::BigInt as BigIntValue;
-use std::{any::Any, borrow::Cow, fmt::Debug};
+use std::{any::Any, fmt::Debug};
 use swc_atoms::JsWord;
 
 /// Visitable nodes.
@@ -114,69 +114,69 @@ macro_rules! assert_eq_ignore_span {
     }};
 }
 
-pub fn as_folder<V>(v: V) -> Folder<V>
-where
-    V: VisitMut,
-{
-    Folder(v)
-}
+// pub fn as_folder<V>(v: V) -> Folder<V>
+// where
+//     V: VisitMut,
+// {
+//     Folder(v)
+// }
 
-/// Wrap a [VisitMut] as a [Fold]
-#[derive(Debug, Clone, Copy)]
-pub struct Folder<V: VisitMut>(V);
+// /// Wrap a [VisitMut] as a [Fold]
+// #[derive(Debug, Clone, Copy)]
+// pub struct Folder<V: VisitMut>(V);
 
-impl<V> Repeated for Folder<V>
-where
-    V: Repeated + VisitMut,
-{
-    #[inline(always)]
-    fn changed(&self) -> bool {
-        self.0.changed()
-    }
+// impl<V> Repeated for Folder<V>
+// where
+//     V: Repeated + VisitMut,
+// {
+//     #[inline(always)]
+//     fn changed(&self) -> bool {
+//         self.0.changed()
+//     }
 
-    #[inline(always)]
-    fn reset(&mut self) {
-        self.0.reset();
-    }
-}
+//     #[inline(always)]
+//     fn reset(&mut self) {
+//         self.0.reset();
+//     }
+// }
 
-impl<V> CompilerPass for Folder<V>
-where
-    V: VisitMut + CompilerPass,
-{
-    fn name() -> Cow<'static, str> {
-        V::name()
-    }
-}
+// impl<V> CompilerPass for Folder<V>
+// where
+//     V: VisitMut + CompilerPass,
+// {
+//     fn name() -> Cow<'static, str> {
+//         V::name()
+//     }
+// }
 
-macro_rules! method {
-    ($name:ident, $T:ty) => {
-        #[inline(always)]
-        fn $name(&mut self, mut n: $T) -> $T {
-            n.visit_mut_with(&mut self.0);
-            n
-        }
-    };
-}
+// macro_rules! method {
+//     ($name:ident, $T:ty) => {
+//         #[inline(always)]
+//         fn $name(&mut self, mut n: $T) -> $T {
+//             n.visit_mut_with(&mut self.0);
+//             n
+//         }
+//     };
+// }
 
-impl<V> Fold for Folder<V>
-where
-    V: VisitMut,
-{
-    method!(fold_ident, Ident);
-    method!(fold_span, Span);
+// impl<V> Fold for Folder<V>
+// where
+//     V: VisitMut,
+// {
+//     method!(fold_ident, Ident);
+//     method!(fold_span, Span);
 
-    method!(fold_expr, Expr);
-    method!(fold_decl, Decl);
-    method!(fold_stmt, Stmt);
-    method!(fold_pat, Pat);
+//     method!(fold_expr, Expr);
+//     method!(fold_decl, Decl);
+//     method!(fold_stmt, Stmt);
+//     method!(fold_pat, Pat);
 
-    method!(fold_ts_type, TsType);
+//     method!(fold_ts_type, TsType);
 
-    method!(fold_module, Module);
-    method!(fold_script, Script);
-    method!(fold_program, Program);
-}
+//     method!(fold_module, Module);
+//     method!(fold_script, Script);
+//     method!(fold_program, Program);
+// }
 
 /// Note: Ignoring more types is not considered as a breaking change.
 #[macro_export]
@@ -772,6 +772,11 @@ define!({
         pub decorators: Vec<Decorator>,
         pub pat: Pat,
     }
+    pub struct ParamWithoutDecorators {
+        pub node_id: NodeId,
+        pub pat: Pat,
+    }
+
     pub enum ParamOrTsParamProp {
         TsParamProp(TsParamProp),
         Param(Param),

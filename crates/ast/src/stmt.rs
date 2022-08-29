@@ -297,6 +297,12 @@ pub enum VarDeclOrPat {
     Pat(Pat),
 }
 
+impl Take for VarDeclOrPat {
+    fn dummy() -> Self {
+        VarDeclOrPat::Pat(Pat::dummy())
+    }
+}
+
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
 #[allow(variant_size_differences)]

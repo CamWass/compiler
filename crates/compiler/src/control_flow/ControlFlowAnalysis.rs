@@ -1,3 +1,5 @@
+use crate::find_vars::FunctionLike;
+
 use super::node::*;
 use super::util::*;
 use super::ControlFlowGraph::{Annotation, Branch, ControlFlowGraph};
@@ -7,7 +9,48 @@ use rustc_hash::FxHashMap;
 use std::collections::hash_map::Entry;
 use std::collections::BinaryHeap;
 
-// TODO: account for other function like types (such as methods/getters etc)
+pub enum ControlFlowRoot<'ast> {
+    Script(&'ast Script),
+    Module(&'ast Module),
+    // Function-like
+    Function(&'ast Function),
+    Constructor(&'ast Constructor),
+    ArrowExpr(&'ast ArrowExpr),
+    GetterProp(&'ast GetterProp),
+    SetterProp(&'ast SetterProp),
+}
+
+impl<'ast> Into<Node<'ast>> for ControlFlowRoot<'ast> {
+    fn into(self) -> Node<'ast> {
+        match self {
+            ControlFlowRoot::Script(n) => Node::Script(n),
+            ControlFlowRoot::Module(n) => Node::Module(n),
+            ControlFlowRoot::Function(n) => Node::Function(n),
+            ControlFlowRoot::Constructor(n) => Node::Constructor(n),
+            ControlFlowRoot::ArrowExpr(n) => Node::ArrowExpr(n),
+            ControlFlowRoot::GetterProp(n) => Node::GetterProp(n),
+            ControlFlowRoot::SetterProp(n) => Node::SetterProp(n),
+        }
+    }
+}
+
+macro_rules! impl_from {
+    ($t:ty, $name:ident) => {
+        impl<'ast> From<$t> for ControlFlowRoot<'ast> {
+            fn from(other: $t) -> Self {
+                Self::$name(other)
+            }
+        }
+    };
+}
+
+impl_from!(&'ast Script, Script);
+impl_from!(&'ast Module, Module);
+impl_from!(&'ast Function, Function);
+impl_from!(&'ast Constructor, Constructor);
+impl_from!(&'ast ArrowExpr, ArrowExpr);
+impl_from!(&'ast GetterProp, GetterProp);
+impl_from!(&'ast SetterProp, SetterProp);
 
 pub struct ControlFlowAnalysisResult<N: CfgNode, NA: Annotation, EA: Annotation> {
     pub cfg: ControlFlowGraph<N, NA, EA>,
@@ -67,13 +110,12 @@ where
     N: Annotation,
     E: Annotation,
 {
-    pub fn new(root: Node<'ast>, should_traverse_functions: bool) -> Self {
-        debug_assert!(matches!(
-            root,
-            Node::Function(..) | Node::Script(..) | Node::Module(..)
-        ));
-
-        Self {
+    pub fn analyze(
+        root: ControlFlowRoot<'ast>,
+        should_traverse_functions: bool,
+    ) -> ControlFlowAnalysisResult<Node<'ast>, N, E> {
+        let root = root.into();
+        let mut cfa = Self {
             cfg: ControlFlowGraph::new(compute_fall_through(root)),
             astPosition: FxHashMap::default(),
             nodePriorities: FxHashMap::default(),
@@ -84,45 +126,38 @@ where
             exception_handler: Vec::new(),
             parent_stack: ParentStack::new(),
             finally_map: MultiMap::default(),
-        }
-    }
+        };
 
-    // TODO: make this private and call in constructor.
-    pub fn process(mut self) -> ControlFlowAnalysisResult<Node<'ast>, N, E> {
-        match self.root {
-            Node::Function(n) => n.visit_with(&mut self),
-            Node::Script(n) => n.visit_with(&mut self),
-            Node::Module(n) => n.visit_with(&mut self),
-            _ => unreachable!(),
-        }
+        root.visit_with(&mut cfa);
 
-        self.prioritize_node(self.cfg.implicit_return); // the implicit return is last.
+        cfa.prioritize_node(cfa.cfg.implicit_return); // the implicit return is last.
 
         // Every node in the cfg should have been prioritized.
-        for node in self.cfg.graph.node_weights() {
+        for node in cfa.cfg.graph.node_weights() {
             debug_assert!(
-                self.astPosition.contains_key(node),
-                "node shoul have ast position {:#?}",
+                cfa.astPosition.contains_key(node),
+                "node should have ast position {:#?}",
                 node
             );
         }
-        debug_assert_eq!(self.astPosition.len(), self.astPositionCounter);
+        debug_assert_eq!(cfa.astPosition.len(), cfa.astPositionCounter);
 
         // Now, generate the priority of nodes by doing a depth-first
         // search on the CFG.
-        let entry = self.cfg.entry;
-        self.prioritizeFromEntryNode(entry);
+        let entry = cfa.cfg.entry;
+        cfa.prioritizeFromEntryNode(entry);
 
-        if self.should_traverse_functions {
+        if cfa.should_traverse_functions {
             // If we're traversing inner functions, we need to rank the
             // priority of them too.
+
             // prioritizeFromEntryNode doesn't modify the graph, so we don't have
             // to worry about skipping nodes.
-            for i in 0..self.cfg.graph.node_count() {
-                let candidate = self.cfg.graph.raw_nodes()[i].weight;
-                // TODO: other functions (and classes?)
-                if matches!(candidate, Node::Function(_)) {
-                    self.prioritizeFromEntryNode(candidate);
+            for i in 0..cfa.cfg.graph.node_count() {
+                let candidate = cfa.cfg.graph.raw_nodes()[i].weight;
+                // TODO: classes?
+                if candidate.is_function_like() {
+                    cfa.prioritizeFromEntryNode(candidate);
                 }
             }
         }
@@ -131,26 +166,26 @@ where
         // unreachable nodes have not been given a priority. Put them last.
         // Presumably, it doesn't really matter what priority they get, since
         // this shouldn't happen in real code.
-        for &candidate in self.cfg.graph.node_weights() {
-            if let Entry::Vacant(entry) = self.nodePriorities.entry(candidate) {
-                entry.insert(self.priorityCounter);
-                self.priorityCounter += 1;
+        for &candidate in cfa.cfg.graph.node_weights() {
+            if let Entry::Vacant(entry) = cfa.nodePriorities.entry(candidate) {
+                entry.insert(cfa.priorityCounter);
+                cfa.priorityCounter += 1;
             }
         }
 
         // Again, the implicit return node is always last.
-        self.nodePriorities
-            .insert(self.cfg.implicit_return, self.priorityCounter);
+        cfa.nodePriorities
+            .insert(cfa.cfg.implicit_return, cfa.priorityCounter);
         // TODO: unnecessary? (never read after this?)
-        // self.priorityCounter += 1;
+        // cfa.priorityCounter += 1;
 
         // Every node in the cfg should have been prioritized.
-        debug_assert_eq!(self.nodePriorities.len(), self.cfg.graph.node_count());
-        debug_assert_eq!(self.nodePriorities.len(), self.priorityCounter);
+        debug_assert_eq!(cfa.nodePriorities.len(), cfa.cfg.graph.node_count());
+        debug_assert_eq!(cfa.nodePriorities.len(), cfa.priorityCounter);
 
         ControlFlowAnalysisResult {
-            cfg: self.cfg,
-            nodePriorities: self.nodePriorities,
+            cfg: cfa.cfg,
+            nodePriorities: cfa.nodePriorities,
         }
     }
 
@@ -289,31 +324,36 @@ where
         );
     }
 
-    /// Handles functions and constructors
-    fn handle_function_like(&mut self, node: Node<'ast>) {
-        let body = match node {
-            Node::Function(Function { body, .. }) | Node::Constructor(Constructor { body, .. }) => {
-                body
+    /// Handles functions/constructors/etc
+    fn handle_function_like<T>(&mut self, node: &'ast T)
+    where
+        T: FunctionLike<'ast>,
+        &'ast T: Into<Node<'ast>>,
+    {
+        let body = node.body();
+        let node = node.into();
+        self.prioritize_node(node);
+
+        if self.should_traverse_functions || node == self.cfg.entry {
+            // We don't want to descend into an expr body of an ArrowExpr e.g. `a => foo()`.
+            if let Some(body @ Node::BlockStmt(_)) = body {
+                self.exception_handler
+                    .push(ExceptionHandler::new(&self.parent_stack, node));
+
+                self.parent_stack.push_with_child_node(node, body);
+                // Only traverse the body.
+                body.visit_with(self);
+                self.parent_stack.pop();
+
+                // A function transfers control to its body.
+                self.cfg
+                    .create_edge(node, Branch::UNCOND, compute_fall_through(body));
+
+                debug_assert!(
+                    self.exception_handler.last().map(|handler| handler.node) == Some(node)
+                );
+                self.exception_handler.pop();
             }
-            _ => unreachable!(),
-        };
-        if let Some(ref body) = body {
-            self.exception_handler
-                .push(ExceptionHandler::new(&self.parent_stack, node));
-
-            let body_node = Node::BlockStmt(body);
-
-            self.parent_stack.push_with_child_node(node, body_node);
-            // Only traverse the body.
-            body.visit_with(self);
-            self.parent_stack.pop();
-
-            // A block transfer control to its first child if it is not empty.
-            self.cfg
-                .create_edge(node, Branch::UNCOND, compute_fall_through(body_node));
-
-            debug_assert!(self.exception_handler.last().map(|handler| handler.node) == Some(node));
-            self.exception_handler.pop();
         }
     }
 
@@ -483,7 +523,7 @@ where
             for handler in self.exception_handler.iter().rev() {
                 let handler_node = match handler.node {
                     Node::TryStmt(t) => t,
-                    Node::Function(_) | Node::Constructor(_) => return,
+                    _ if handler.node.is_function_like() => return,
                     _ => unreachable!(),
                 };
 
@@ -569,8 +609,7 @@ where
              * In all cases we should transfer control to a "symbolic return" node.
              * This will make life easier for DFAs.
              */
-            if matches!(parent.node, Node::Function(_) | Node::Constructor(_)) || node == self.root
-            {
+            if parent.node.is_function_like() || node == self.root {
                 return Node::ImplicitReturn;
             }
 
@@ -578,30 +617,6 @@ where
             match parent.node {
                 // The follow() of any of the path from IF would be what follows IF.
                 Node::IfStmt(_) => {
-                    // Control is transferred up the AST to the parent's follow
-                    // node.
-                    node = parent.node;
-                    continue;
-                }
-                Node::SwitchCase(case) => {
-                    // After the body of a CASE, the control goes to the body of the next
-                    // case, without having to go to the case condition.
-
-                    let mut cases = match parents.clone().next() {
-                        Some(ParentNode {
-                            node: Node::SwitchStmt(switch),
-                            ..
-                        }) => switch.cases.iter(),
-                        _ => unreachable!("Case should always be child of a switch statement"),
-                    };
-                    let next_siblings = cases.advance_while(|&child| child != case);
-
-                    while let Some(next_sibling) = next_siblings.next() {
-                        if let Some(stmt) = next_sibling.cons.first() {
-                            return Node::from(stmt);
-                        }
-                    }
-
                     // Control is transferred up the AST to the parent's follow
                     // node.
                     node = parent.node;
@@ -686,7 +701,6 @@ where
                 .iter()
                 .advance_while(|&&child| child != node)
                 // Skip function declarations because control doesn't get passed into it.
-                // TODO: is Node::Constructor(_) necessary here?
                 .find(|sibling| !matches!(sibling, Node::FnDecl(_)));
 
             match next_sibling {
@@ -996,7 +1010,7 @@ where
         self.handle_switch_cases(node);
         self.parent_stack.pop();
 
-        // Transfer to the first non-DEFAULT CASE. if there are none, transfer
+        // Transfer to the first non-DEFAULT CASE. If there are none, transfer
         // to the DEFAULT or the EMPTY node.
         let next = node.cases.iter().find(|case| !case.is_default());
         match next {
@@ -1187,32 +1201,27 @@ where
 
     fn visit_function(&mut self, node: &'ast Function) {
         p!(self, Function);
-        let fn_node = Node::Function(node);
-        self.prioritize_node(fn_node);
-        if self.should_traverse_functions || fn_node == self.cfg.entry {
-            self.handle_function_like(fn_node);
-        }
+        self.handle_function_like(node);
+    }
+    fn visit_constructor(&mut self, node: &'ast Constructor) {
+        p!(self, Constructor);
+        self.handle_function_like(node);
+    }
+    fn visit_arrow_expr(&mut self, node: &'ast ArrowExpr) {
+        p!(self, ArrowExpr);
+        self.handle_function_like(node);
+    }
+    fn visit_getter_prop(&mut self, node: &'ast GetterProp) {
+        p!(self, GetterProp);
+        self.handle_function_like(node);
+    }
+    fn visit_setter_prop(&mut self, node: &'ast SetterProp) {
+        p!(self, SetterProp);
+        self.handle_function_like(node);
     }
 
     fn visit_class(&mut self, _: &'ast Class) {
         unreachable!("class exprs not reachable; class decls handled by visit_stmt");
-    }
-
-    fn visit_constructor(&mut self, node: &'ast Constructor) {
-        p!(self, Constructor);
-        let cons_node = Node::Constructor(node);
-        self.prioritize_node(cons_node);
-        if self.should_traverse_functions {
-            self.handle_function_like(Node::Constructor(node));
-        }
-    }
-
-    fn visit_arrow_expr(&mut self, node: &'ast ArrowExpr) {
-        p!(self, ArrowExpr);
-        let node = Node::ArrowExpr(node);
-        self.prioritize_node(node);
-        todo!();
-        // TODO: special handling
     }
 
     fn visit_try_stmt(&mut self, node: &'ast TryStmt) {
@@ -1271,11 +1280,9 @@ where
         // A block transfer control to its first child if it is not empty.
         // Function declarations are skipped since control doesn't go into that
         // function (unless it is called)
-        // TODO: what about other decls (like class)?
         let child = node
             .body
             .iter()
-            // TODO: is Node::Constructor(_) necessary here?
             .find(|stmt| !matches!(stmt, Stmt::Decl(Decl::Fn(_))));
 
         match child {
@@ -1316,7 +1323,6 @@ where
         // A block transfer control to its first child if it is not empty.
         // Function declarations are skipped since control doesn't go into that
         // function (unless it is called)
-        // TODO: what about other decls (like class)?
         let child = node
             .body
             .iter()
@@ -1324,7 +1330,6 @@ where
                 ModuleItem::ModuleDecl(_) => todo!(),
                 ModuleItem::Stmt(s) => Node::from(s),
             })
-            // TODO: is Node::Constructor(_) necessary here?
             .find(|node| !matches!(node, Node::FnDecl(_)));
 
         match child {
@@ -1351,11 +1356,9 @@ where
         // A block transfer control to its first child if it is not empty.
         // Function declarations are skipped since control doesn't go into that
         // function (unless it is called)
-        // TODO: what about other decls (like class)?
         let child = node
             .stmts
             .iter()
-            // TODO: is Node::Constructor(_) necessary here?
             .find(|stmt| !matches!(stmt, Stmt::Decl(Decl::Fn(_))));
 
         match child {
@@ -1561,7 +1564,7 @@ where
                         last_jump = Some(cur_handler.node);
                     }
                 }
-                Node::Function(_) => break,
+                _ if cur_handler.node.is_function_like() => break,
                 _ => unreachable!(),
             }
         }
@@ -1678,8 +1681,8 @@ where
         [visit_assign_pat_prop, AssignPatProp],
         [visit_key_value_prop, KeyValueProp],
         [visit_assign_prop, AssignProp],
-        [visit_getter_prop, GetterProp],
-        [visit_setter_prop, SetterProp],
+        // [visit_getter_prop, GetterProp],
+        // [visit_setter_prop, SetterProp],
         [visit_method_prop, MethodProp],
         [visit_computed_prop_name, ComputedPropName],
         [visit_spread_assignment, SpreadAssignment],

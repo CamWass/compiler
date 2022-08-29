@@ -8,6 +8,7 @@
 #![allow(warnings)]
 #![deny(unused_imports)]
 
+pub mod CoalesceVariableNames;
 mod DataFlowAnalysis;
 mod DefaultNameGenerator;
 mod LiveVariablesAnalysis;
@@ -18,12 +19,14 @@ mod binder;
 mod checker;
 mod colors;
 mod control_flow;
+mod denormalize;
 mod disambiguate;
 mod find_vars;
 mod graph;
 pub mod node;
-mod normalize;
-mod resolver;
+pub mod normalize;
+mod normalize_shorthand;
+pub mod resolver;
 mod transform_ts;
 pub mod types;
 mod types_composition;
@@ -114,13 +117,15 @@ impl<V: Visit> VisitWith<V> for CompProgram {
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
 pub struct PassConfig {
     #[serde(default)]
-    optimize_arguments_array: bool,
+    pub optimize_arguments_array: bool,
     #[serde(default)]
-    disambiguate_properties: bool,
+    pub disambiguate_properties: bool,
     #[serde(default)]
-    ambiguate_properties: bool,
+    pub ambiguate_properties: bool,
     #[serde(default)]
-    rename_labels: bool,
+    pub coalesce_variable_names: bool,
+    #[serde(default)]
+    pub rename_labels: bool,
 }
 
 pub struct Compiler {
@@ -157,11 +162,10 @@ impl Compiler {
 
             let mut program_ast = program.1;
 
+            normalize_shorthand::normalize_shorthand(&mut program_ast, node_id_gen);
+
             let mut colours = {
                 let mut source_files = Vec::with_capacity(libs.len() + 1);
-
-                let mut normalize = normalize::Normalize {};
-                program_ast.visit_mut_with(&mut normalize);
 
                 let program_source_file = SourceFile {
                     file_name: program.0,
@@ -202,13 +206,15 @@ impl Compiler {
                 colors::color_collector::collect(&mut checker, &p)
             };
 
+            // Note: The Rc based AST is only to be used by the checker and passes that directly access
+            // the checker (color collector). All other passes should use the reference based AST.
+
             let unresolved_mark = Mark::new();
             let top_level_mark = Mark::new();
 
             program_ast.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark, true));
 
-            // Note: The Rc based AST is only to be used by the checker and passes that directly access
-            // the checker (color collector). All other passes should use the reference based AST.
+            normalize::normalize(&mut program_ast, node_id_gen);
 
             transform_ts::transform_param_props(&mut program_ast, node_id_gen, &mut colours);
 
@@ -267,11 +273,18 @@ impl Compiler {
             // TODO: convertToDottedProperties
             // TODO: rewriteFunctionExpressions
             // TODO: aliasStrings
+            if passes.coalesce_variable_names {
+                CoalesceVariableNames::coalesce_variable_names(
+                    &mut program_ast,
+                    unresolved_ctxt,
+                    node_id_gen,
+                );
+            }
             // TODO: coalesceVariableNames
             // TODO: peepholeOptimizationsOnce
             // TODO: exploitAssign
             // TODO: collapseVariableDeclarations
-            // TODO: denormalize
+            denormalize::denormalize(&mut program_ast);
             // TODO: renameVars
 
             if passes.rename_labels {

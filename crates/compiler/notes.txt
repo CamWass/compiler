@@ -54,3 +54,10 @@ would still have to return Option, and possible be unwrapped, but accessing the 
 TODO: codegen doesn't emmit implements clauses and possibly other TS things as well.
 
 TODO: everytime we create a new node, we should also try to set its type. E.g. when we transform a TsParamProp, we should set the types of the new AssignExpr.
+
+TODO: it may be possible to optimise the colour/type system to only collect/store/update the colours of nodes that passes actually care about e.g. classes
+objects, member exprs etc.
+
+Use petgraph::GraphMap in more places? (for its deduping of edges, and auto addition of nodes i.e.GraphMap::add_edge)
+
+TODO: use noop_visit_type every where possible

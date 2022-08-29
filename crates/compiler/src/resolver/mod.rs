@@ -128,7 +128,11 @@ const LOG: bool = false && cfg!(debug_assertions);
 ///
 /// both of them have the same name, so the `(JsWord, SyntaxContext)` pair will
 /// be also identical.
-pub fn resolver(unresolved_mark: Mark, top_level_mark: Mark, typescript: bool) -> impl VisitMut {
+pub fn resolver<'ast>(
+    unresolved_mark: Mark,
+    top_level_mark: Mark,
+    typescript: bool,
+) -> impl VisitMut<'ast> {
     assert_ne!(
         unresolved_mark,
         Mark::root(),
@@ -530,7 +534,7 @@ macro_rules! track_ident_mut {
     };
 }
 
-impl<'a> VisitMut for Resolver<'a> {
+impl<'a> VisitMut<'_> for Resolver<'a> {
     noop!(visit_mut_accessibility, Accessibility);
 
     noop!(visit_mut_true_plus_minus, TruePlusMinus);
@@ -1402,7 +1406,7 @@ impl Hoister<'_, '_> {
     }
 }
 
-impl VisitMut for Hoister<'_, '_> {
+impl VisitMut<'_> for Hoister<'_, '_> {
     noop_visit_mut_type!();
 
     #[inline]

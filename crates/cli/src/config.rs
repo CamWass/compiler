@@ -6,8 +6,10 @@ use serde_json::error::Category;
 use std::{fs::read_to_string, path::Path};
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct Config {
+    #[serde(default)]
+    pub pretty_print: bool,
     #[serde(default)]
     pub ecmascript: EsConfig,
     #[serde(default)]

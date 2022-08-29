@@ -179,7 +179,7 @@ impl ParamPropTransformer<'_> {
     }
 }
 
-impl VisitMut for ParamPropTransformer<'_> {
+impl VisitMut<'_> for ParamPropTransformer<'_> {
     fn visit_mut_class_decl(&mut self, node: &mut ast::ClassDecl) {
         let class_colour = self.colours.get_color_of_node(node.node_id).unwrap();
         self.handle_class(&mut node.class, class_colour);

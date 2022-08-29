@@ -1,3 +1,5 @@
+use crate::control_flow::ControlFlowAnalysis::ControlFlowRoot;
+
 use super::node::Node;
 use super::print::ast_graph;
 use super::ControlFlowAnalysis::ControlFlowAnalysis;
@@ -12,6 +14,8 @@ use parser::{Parser, Syntax};
 use petgraph::algo::has_path_connecting;
 use petgraph::graph::{DiGraph, Edge, NodeIndex};
 use rustc_hash::FxHashMap;
+
+// TODO: tests for other function like things (e.g. methods, arrow funcs) and classes.
 
 macro_rules! make {
     ($($field:ident,)*) => {
@@ -603,10 +607,9 @@ fn assertNoReturnEdge(
 */
 fn createCfg<'ast, T>(root: T) -> ControlFlowGraph<Node<'ast>, DummyAnnotation, DummyAnnotation>
 where
-    T: Into<Node<'ast>>,
+    T: Into<ControlFlowRoot<'ast>>,
 {
-    let mut cfa = ControlFlowAnalysis::new(root.into(), true);
-    let cfa = cfa.process();
+    let cfa = ControlFlowAnalysis::analyze(root.into(), true);
     cfa.cfg
 }
 
@@ -2626,10 +2629,10 @@ fn assertNodeOrder(src: &str, expected: &[Token]) {
     let root = parse_script(src);
     let cfg = createCfg(&root);
     let root_node = Node::Script(&root);
+    let root = ControlFlowRoot::Script(&root);
     let ast_graph = AstGraph::new(&root_node);
 
-    let mut cfa = ControlFlowAnalysis::<'_, DummyAnnotation, DummyAnnotation>::new(root_node, true);
-    let cfa = cfa.process();
+    let cfa = ControlFlowAnalysis::<'_, DummyAnnotation, DummyAnnotation>::analyze(root, true);
 
     let mut actual = cfa
         .nodePriorities

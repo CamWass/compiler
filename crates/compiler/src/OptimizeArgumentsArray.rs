@@ -1,4 +1,4 @@
-use crate::Id;
+use crate::{Id, ToId};
 use ast;
 use ecma_visit::{noop_visit_type, Visit, VisitMut, VisitMutWith, VisitWith};
 use global_common::{SyntaxContext, DUMMY_SP};
@@ -56,7 +56,7 @@ impl<'a> OptimizeArgumentsArray<'a> {
     }
 }
 
-impl VisitMut for OptimizeArgumentsArray<'_> {
+impl VisitMut<'_> for OptimizeArgumentsArray<'_> {
     fn visit_mut_function(&mut self, node: &mut ast::Function) {
         node.body.visit_mut_with(self);
         self.try_replace_arguments(node);
@@ -102,7 +102,7 @@ impl OptimizeArgumentsArray<'_> {
 
     fn handle_setter(&mut self, param_pat: &ast::Pat, body: &mut Option<ast::BlockStmt>) {
         if let ast::Pat::Ident(id) = param_pat {
-            let id = (id.id.sym.clone(), id.id.span.ctxt);
+            let id = id.to_id();
             self.try_replace_setter_argument(id, body);
         } else {
             // Non-ident params don't introduce names for us to bind arguments
@@ -228,7 +228,7 @@ impl AsFn for ast::Function {
         for param in &self.params {
             match &param.pat {
                 ast::Pat::Ident(n) => {
-                    map.insert(index, (n.id.sym.clone(), n.id.span.ctxt));
+                    map.insert(index, n.to_id());
                 }
                 // Array and object patterns have no names to substitute into the body.
                 ast::Pat::Array(_) | ast::Pat::Object(_) => {}
@@ -273,14 +273,14 @@ impl AsFn for ast::Constructor {
             match param {
                 ast::ParamOrTsParamProp::TsParamProp(n) => match &n.param {
                     ast::TsParamPropParam::Ident(n) => {
-                        map.insert(index, (n.id.sym.clone(), n.id.span.ctxt));
+                        map.insert(index, n.to_id());
                     }
                     // `arguments` doesn't consider default values. It holds exactly the provided args.
                     ast::TsParamPropParam::Assign(_) => {}
                 },
                 ast::ParamOrTsParamProp::Param(n) => match &n.pat {
                     ast::Pat::Ident(n) => {
-                        map.insert(index, (n.id.sym.clone(), n.id.span.ctxt));
+                        map.insert(index, n.to_id());
                     }
                     // Array and object patterns have no names to substitute into the body.
                     ast::Pat::Array(_) | ast::Pat::Object(_) => {}
@@ -501,7 +501,7 @@ impl<'a> FnBodyReWriter<'a> {
     }
 }
 
-impl VisitMut for FnBodyReWriter<'_> {
+impl VisitMut<'_> for FnBodyReWriter<'_> {
     // Don't visit nested functions.
     fn visit_mut_function(&mut self, _: &mut ast::Function) {}
     fn visit_mut_getter_prop(&mut self, _: &mut ast::GetterProp) {}

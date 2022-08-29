@@ -1,4 +1,3 @@
-use std::iter::FromIterator;
 use std::ops::Index;
 
 use ast::*;
@@ -12,18 +11,23 @@ use crate::control_flow::ControlFlowGraph::{Branch, ControlFlowGraph};
 use crate::control_flow::{
     node::Node, ControlFlowAnalysis::ControlFlowAnalysisResult, ControlFlowGraph::Annotation,
 };
-use crate::find_vars::{AllVarsDeclaredInFunction, FunctionLike, FxIndexSet};
+use crate::find_vars::*;
 use crate::{DataFlowAnalysis::*, Id, ToId};
 
 #[cfg(test)]
 mod tests;
 
+// TODO: might be able to use this to pre-allocate or as an upper bound to lower
+// memory usage of e.g. bitsets.
 pub const MAX_VARIABLES_TO_ANALYZE: usize = 100;
 
 pub struct LiveVariablesAnalysisResult {
     pub escaped_locals: FxHashSet<Id>,
     pub scopeVariables: FxHashMap<Id, VarId>,
-    pub orderedVars: FxIndexSet<Id>,
+    pub orderedVars: IndexVec<VarId, Id>,
+    pub params: FxHashSet<VarId>,
+    pub fn_and_class_names: FxHashSet<VarId>,
+    pub lattice_elements: IndexVec<LatticeElementId, LiveVariableLattice>,
 }
 
 /**
@@ -74,19 +78,6 @@ where
         allVarsDeclaredInFunction: AllVarsDeclaredInFunction,
         unresolved_ctxt: SyntaxContext,
     ) -> Self {
-        /**
-         * Parameters belong to the function scope, but variables defined in the function body belong to
-         * the function body scope. Assign a unique index to each variable, regardless of which scope it's
-         * in.
-         */
-        let scopeVariables = FxHashMap::from_iter(
-            allVarsDeclaredInFunction
-                .ordered_vars
-                .iter()
-                .enumerate()
-                .map(|(i, id)| (id.clone(), VarId::from_usize(i))),
-        );
-
         let inner = Inner {
             unresolved_ctxt,
             num_vars: allVarsDeclaredInFunction.ordered_vars.len(),
@@ -94,11 +85,13 @@ where
 
             escaped: computeEscaped(
                 fn_scope,
-                &allVarsDeclaredInFunction.ordered_vars,
+                &allVarsDeclaredInFunction.scopeVariables,
                 allVarsDeclaredInFunction.catch_vars,
             ),
-            scopeVariables,
+            scopeVariables: allVarsDeclaredInFunction.scopeVariables,
             orderedVars: allVarsDeclaredInFunction.ordered_vars,
+            params: allVarsDeclaredInFunction.params,
+            fn_and_class_names: allVarsDeclaredInFunction.fn_and_class_names,
             lattice_elements: IndexVec::default(),
         };
         let data_flow_analysis = DataFlowAnalysis::new(inner, cfa);
@@ -118,6 +111,9 @@ where
             escaped_locals: self.data_flow_analysis.inner.escaped,
             scopeVariables: self.data_flow_analysis.inner.scopeVariables,
             orderedVars: self.data_flow_analysis.inner.orderedVars,
+            params: self.data_flow_analysis.inner.params,
+            fn_and_class_names: self.data_flow_analysis.inner.fn_and_class_names,
+            lattice_elements: self.data_flow_analysis.inner.lattice_elements,
         };
         (liveness_result, self.data_flow_analysis.cfg)
     }
@@ -142,7 +138,9 @@ where
     // represents the equivalent of the variable index property within a scope
     scopeVariables: FxHashMap<Id, VarId>,
     // obtain variables in the order in which they appear in the code
-    orderedVars: FxIndexSet<Id>,
+    orderedVars: IndexVec<VarId, Id>,
+    params: FxHashSet<VarId>,
+    fn_and_class_names: FxHashSet<VarId>,
 
     lattice_elements: IndexVec<LatticeElementId, LiveVariableLattice>,
 }
@@ -187,7 +185,7 @@ where
     }
 
     fn addToSetIfLocal(&mut self, name: &Id, set: &mut BitSet<VarId>) {
-        if !self.orderedVars.contains(name) {
+        if !self.scopeVariables.contains_key(name) {
             return;
         }
 
@@ -239,33 +237,26 @@ where
 {
     noop_visit_type!();
 
-    fn visit_script(&mut self, node: &'ast Script) {}
-    fn visit_module(&mut self, node: &'ast Module) {}
-    fn visit_function(&mut self, node: &'ast Function) {}
+    // Don't enter any new control nodes. They will be handled by later.
     fn visit_block_stmt(&mut self, node: &'ast BlockStmt) {}
-
-    fn visit_while_stmt(&mut self, node: &'ast WhileStmt) {
-        debug_assert!(!self.in_lhs);
-        node.test.visit_with(self);
-    }
-    fn visit_do_while_stmt(&mut self, node: &'ast DoWhileStmt) {
-        debug_assert!(!self.in_lhs);
-        node.test.visit_with(self);
-    }
-    fn visit_if_stmt(&mut self, node: &'ast IfStmt) {
-        debug_assert!(!self.in_lhs);
-        node.test.visit_with(self);
-    }
     fn visit_for_stmt(&mut self, node: &'ast ForStmt) {
-        debug_assert!(!self.in_lhs);
         node.test.visit_with(self);
+    }
+    fn visit_switch_case(&mut self, node: &'ast SwitchCase) {
+        node.test.visit_with(self);
+    }
+    fn visit_switch_stmt(&mut self, node: &'ast SwitchStmt) {
+        node.discriminant.visit_with(self);
     }
 
     fn visit_for_in_stmt(&mut self, node: &'ast ForInStmt) {
         debug_assert!(!self.in_lhs);
         let lhs = match &node.left {
             // for (var x in y) {...}
-            VarDeclOrPat::VarDecl(v) => &v.decls.first().unwrap().name,
+            VarDeclOrPat::VarDecl(v) => {
+                assert!(v.decls.len() == 1);
+                &v.decls.first().unwrap().name
+            }
             // for (x in y) {...}
             VarDeclOrPat::Pat(p) => p,
         };
@@ -283,7 +274,10 @@ where
         debug_assert!(!self.in_lhs);
         let lhs = match &node.left {
             // for (var x in y) {...}
-            VarDeclOrPat::VarDecl(v) => &v.decls.first().unwrap().name,
+            VarDeclOrPat::VarDecl(v) => {
+                assert!(v.decls.len() == 1);
+                &v.decls.first().unwrap().name
+            }
             // for (x in y) {...}
             VarDeclOrPat::Pat(p) => p,
         };
@@ -415,9 +409,9 @@ where
     }
     fn visit_key_value_pat_prop(&mut self, node: &'ast KeyValuePatProp) {
         let old = self.in_lhs;
-        self.in_lhs = true;
-        node.key.visit_with(self);
         self.in_lhs = false;
+        node.key.visit_with(self);
+        self.in_lhs = true;
         node.value.visit_with(self);
         self.in_lhs = old;
     }
@@ -526,80 +520,6 @@ where
         self.in_lhs = false;
         node.visit_children_with(self);
         self.in_lhs = old;
-    }
-}
-
-/// Finds all **binding** idents of variables.
-struct DestructuringFinder<'a> {
-    found: &'a mut Vec<Id>,
-    in_lhs: bool,
-}
-
-/// Finds all **binding** idents of `node`.
-fn find_pat_ids(node: &Pat) -> Vec<Id> {
-    let mut found = vec![];
-
-    {
-        let mut v = DestructuringFinder {
-            found: &mut found,
-            in_lhs: true,
-        };
-        node.visit_with(&mut v);
-    }
-
-    found
-}
-
-impl<'a> Visit<'_> for DestructuringFinder<'a> {
-    noop_visit_type!();
-
-    /// No-op (we don't care about expressions)
-    fn visit_expr(&mut self, _: &Expr) {}
-    fn visit_prop_name(&mut self, _: &PropName) {}
-
-    // fn visit_ident(&mut self, i: &Ident) {
-    //     self.found.push(i.to_id());
-    // }
-
-    fn visit_assign_pat(&mut self, node: &AssignPat) {
-        let old = self.in_lhs;
-        self.in_lhs = true;
-
-        node.left.visit_with(self);
-
-        self.in_lhs = false;
-
-        node.right.visit_with(self);
-
-        self.in_lhs = old;
-    }
-    fn visit_key_value_pat_prop(&mut self, node: &KeyValuePatProp) {
-        let old = self.in_lhs;
-        self.in_lhs = true;
-        node.key.visit_with(self);
-        self.in_lhs = false;
-        node.value.visit_with(self);
-        self.in_lhs = old;
-    }
-    fn visit_assign_pat_prop(&mut self, node: &AssignPatProp) {
-        let old = self.in_lhs;
-        self.in_lhs = true;
-        node.key.visit_with(self);
-        self.in_lhs = false;
-        node.value.visit_with(self);
-        self.in_lhs = old;
-    }
-    fn visit_rest_pat(&mut self, node: &RestPat) {
-        let old = self.in_lhs;
-        self.in_lhs = true;
-        node.arg.visit_with(self);
-        self.in_lhs = old;
-    }
-
-    fn visit_ident(&mut self, node: &Ident) {
-        if self.in_lhs {
-            self.found.push(node.to_id());
-        }
     }
 }
 
@@ -714,16 +634,22 @@ impl LiveVariableLattice {
         }
     }
 
-    fn isLive(&self, index: VarId) -> bool {
+    pub fn isLive(&self, index: VarId) -> bool {
         self.liveSet.contains(index)
+    }
+
+    /// Returns the index of the first bit that is set to true that occurs
+    /// on or after the specified starting index.
+    pub fn next_set_bits(&self, fromIndex: VarId) -> impl Iterator<Item = VarId> + '_ {
+        // TODO: maybe add a method to BitSet that allows us to get the iter from
+        // a specific index without having to skip.
+        self.liveSet.iter().skip(fromIndex.as_usize() + 1)
+    }
+
+    pub fn set_bits(&self) -> impl Iterator<Item = VarId> + '_ {
+        self.liveSet.iter()
     }
 }
 
 impl Annotation for LiveVariableLattice {}
 impl LatticeElement for LiveVariableLattice {}
-
-index::newtype_index! {
-    pub struct VarId {
-        DEBUG_FORMAT = "VarId({})"
-    }
-}

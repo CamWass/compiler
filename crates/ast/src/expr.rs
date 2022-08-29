@@ -16,7 +16,7 @@ use crate::{
     GetNodeId, Invalid, NodeId, ParamWithoutDecorators, TsTypeParamDecl,
 };
 use ast_node::ast_node;
-use global_common::{EqIgnoreSpan, Span};
+use global_common::{util::take::Take, EqIgnoreSpan, Span, DUMMY_SP};
 
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
@@ -104,6 +104,15 @@ pub enum Expr {
     OptChain(OptChainExpr),
 
     Invalid(Invalid),
+}
+
+impl Take for Expr {
+    fn dummy() -> Self {
+        Self::Invalid(Invalid {
+            node_id: NodeId::MAX,
+            span: DUMMY_SP,
+        })
+    }
 }
 
 #[ast_node]
@@ -424,6 +433,16 @@ pub enum ExprOrSpread {
 pub enum BlockStmtOrExpr {
     BlockStmt(BlockStmt),
     Expr(Box<Expr>),
+}
+
+impl Take for BlockStmtOrExpr {
+    fn dummy() -> Self {
+        Self::BlockStmt(BlockStmt {
+            node_id: NodeId::MAX,
+            span: DUMMY_SP,
+            stmts: Vec::new(),
+        })
+    }
 }
 
 #[ast_node]

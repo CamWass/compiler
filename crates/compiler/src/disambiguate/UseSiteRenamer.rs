@@ -117,7 +117,7 @@ fn createClusterName(prop: &mut PropertyClustering, rep: ColorGraphNodeId) -> Js
 
 // TODO: since there is a one-to-one relation between idents and use sites,
 // once we have renamed all id's we collected, we can abort the traversal
-impl VisitMut for UseSiteRenamer {
+impl VisitMut<'_> for UseSiteRenamer {
     // TODO:
     // We only rename idents in types for testing, to make writing tests easier.
     // In normal builds there's no point in renaming these idents, so we skip the work.

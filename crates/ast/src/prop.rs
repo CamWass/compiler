@@ -8,7 +8,8 @@ use crate::{
     GetNodeId, NodeId, ParamWithoutDecorators,
 };
 use ast_node::ast_node;
-use global_common::{EqIgnoreSpan, Span};
+use global_common::{util::take::Take, EqIgnoreSpan, Span, DUMMY_SP};
+use swc_atoms::js_word;
 
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
@@ -30,6 +31,17 @@ pub enum Prop {
 
     /// Spread properties, e.g., `{a: 1, ...obj, b: 2}`.
     Spread(SpreadAssignment),
+}
+
+impl Take for Prop {
+    fn dummy() -> Self {
+        Self::Shorthand(Ident {
+            node_id: NodeId::MAX,
+            span: DUMMY_SP,
+            sym: js_word!(""),
+            optional: false,
+        })
+    }
 }
 
 #[ast_node]

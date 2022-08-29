@@ -115,8 +115,6 @@ where
     Tester::run(|tester| {
         let expected = tester.apply_transform(|m, _| m, "output.js", expected)?;
 
-        println!("----- Actual -----");
-
         let mut actual = tester.apply_transform(transform, "input.js", input)?;
 
         actual.visit_mut_with(&mut DropSpan {
@@ -134,8 +132,9 @@ where
             return Ok(());
         }
 
-        println!(">>>>> Orig <<<<<\n{}", input);
-        println!(">>>>> Code <<<<<\n{}", actual_src);
+        println!(">>>>> Input <<<<<\n{}", input);
+        println!(">>>>> Output <<<<<\n{}", actual_src);
+        println!(">>>>> Expected <<<<<\n{}", expected_src);
         if actual_src != expected_src {
             panic!(
                 r#"assertion failed: `(left == right)`
@@ -151,7 +150,7 @@ where
 struct DropSpan {
     preserve_ctxt: bool,
 }
-impl VisitMut for DropSpan {
+impl VisitMut<'_> for DropSpan {
     fn visit_mut_span(&mut self, span: &mut Span) {
         *span = if self.preserve_ctxt {
             DUMMY_SP.with_ctxt(span.ctxt())
@@ -161,7 +160,7 @@ impl VisitMut for DropSpan {
     }
 }
 struct DropNodeId;
-impl VisitMut for DropNodeId {
+impl VisitMut<'_> for DropNodeId {
     fn visit_mut_node_id(&mut self, span: &mut NodeId) {
         *span = NodeId::from_u32(0);
     }
