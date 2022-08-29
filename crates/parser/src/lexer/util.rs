@@ -67,7 +67,7 @@ impl Lexer<'_> {
     /// Returns the remaining portion of the input as a str.
     #[inline(always)]
     fn as_str(&self) -> &str {
-        debug_assert!(unsafe { std::str::from_utf8(self.bytes.get_unchecked(self.cur..)).is_ok() });
+        // debug_assert!(unsafe { std::str::from_utf8(self.bytes.get_unchecked(self.cur..)).is_ok() });
 
         // Safety: We know this is safe because we require the input to the lexer
         // to be valid utf8 and cur always points to a character boundary.
@@ -159,7 +159,7 @@ impl Lexer<'_> {
     where
         F: FnMut(char) -> bool,
     {
-        debug_assert!(unsafe { std::str::from_utf8(self.bytes.get_unchecked(self.cur..)).is_ok() });
+        // debug_assert!(unsafe { std::str::from_utf8(self.bytes.get_unchecked(self.cur..)).is_ok() });
 
         // Safety: We know this is safe because we require the input to the lexer
         // to be valid utf8 and cur always points to a character boundary.
@@ -195,9 +195,9 @@ impl Lexer<'_> {
             }
         }
 
-        debug_assert!(unsafe {
-            std::str::from_utf8(self.bytes.get_unchecked(start..self.cur)).is_ok()
-        });
+        // debug_assert!(unsafe {
+        //     std::str::from_utf8(self.bytes.get_unchecked(start..self.cur)).is_ok()
+        // });
 
         unsafe { std::str::from_utf8_unchecked(self.bytes.get_unchecked(start..self.cur)) }
     }
