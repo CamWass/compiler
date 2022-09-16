@@ -1,8 +1,8 @@
 use crate::typescript::TsTypeAnn;
 use crate::{GetNodeId, NodeId};
 use ast_node::ast_node;
-use global_common::{EqIgnoreSpan, Span};
-use swc_atoms::JsWord;
+use global_common::{util::take::Take, EqIgnoreSpan, Span, DUMMY_SP};
+use swc_atoms::{js_word, JsWord};
 
 /// Identifer used as a pattern.
 #[ast_node]
@@ -36,6 +36,17 @@ pub struct Ident {
 
     /// TypeScript only. Used in case of an optional parameter.
     pub optional: bool,
+}
+
+impl Take for Ident {
+    fn dummy() -> Self {
+        Ident {
+            node_id: NodeId::MAX,
+            span: DUMMY_SP,
+            sym: js_word!(""),
+            optional: false,
+        }
+    }
 }
 
 #[cfg(feature = "arbitrary")]

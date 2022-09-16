@@ -95,10 +95,19 @@ impl DefaultNameGenerator {
 
             // Make sure it's not a JS keyword or reserved name.
             // if !(TokenStream.isKeyword(name) || self.reservedNames.contains(name) || isBadName(name)) {
-            if !(self.reservedNames.contains(&name)) {
+            if !self.reservedNames.contains(&name) {
                 return name;
             }
         }
+    }
+
+    /**
+     * Generates the next short name and reserves it so it can't be used for future names.
+     */
+    pub fn generateAndReserveNextName(&mut self) -> JsWord {
+        let new_name = self.generateNextName();
+        self.reservedNames.insert(new_name.clone());
+        new_name
     }
 }
 

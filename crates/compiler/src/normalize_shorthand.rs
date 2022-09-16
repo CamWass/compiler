@@ -34,4 +34,27 @@ impl VisitMut<'_> for NormalizeShortHand<'_> {
             });
         }
     }
+
+    fn visit_mut_object_pat_prop(&mut self, node: &mut ObjectPatProp) {
+        node.visit_mut_children_with(self);
+
+        if matches!(node, ObjectPatProp::Assign(p) if p.value.is_none()) {
+            node.map_with_mut(|prop| {
+                let prop = unwrap_as!(prop, ObjectPatProp::Assign(p), p);
+
+                ObjectPatProp::KeyValue(KeyValuePatProp {
+                    node_id: self.node_id_gen.next(),
+                    key: PropName::Ident(prop.key.clone()),
+                    value: Box::new(Pat::Ident(BindingIdent {
+                        node_id: self.node_id_gen.next(),
+                        id: Ident {
+                            node_id: self.node_id_gen.next(),
+                            ..prop.key
+                        },
+                        type_ann: None,
+                    })),
+                })
+            });
+        }
+    }
 }

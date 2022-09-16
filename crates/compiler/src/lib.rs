@@ -14,6 +14,7 @@ mod DefaultNameGenerator;
 mod LiveVariablesAnalysis;
 mod OptimizeArgumentsArray;
 mod RenameLabels;
+mod RenameVars;
 pub mod ast;
 mod binder;
 mod checker;
@@ -124,6 +125,8 @@ pub struct PassConfig {
     pub ambiguate_properties: bool,
     #[serde(default)]
     pub coalesce_variable_names: bool,
+    #[serde(default)]
+    pub rename_vars: bool,
     #[serde(default)]
     pub rename_labels: bool,
 }
@@ -285,7 +288,9 @@ impl Compiler {
             // TODO: exploitAssign
             // TODO: collapseVariableDeclarations
             denormalize::denormalize(&mut program_ast);
-            // TODO: renameVars
+            if passes.rename_vars {
+                RenameVars::rename_vars(&mut program_ast, unresolved_ctxt);
+            }
 
             if passes.rename_labels {
                 RenameLabels::process(&mut program_ast);

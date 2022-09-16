@@ -105,6 +105,17 @@ pub enum ObjectPatProp {
     Rest(RestPat),
 }
 
+impl Take for ObjectPatProp {
+    fn dummy() -> Self {
+        ObjectPatProp::Assign(AssignPatProp {
+            node_id: NodeId::MAX,
+            span: DUMMY_SP,
+            key: Ident::dummy(),
+            value: None,
+        })
+    }
+}
+
 /// `{key: value}`
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]

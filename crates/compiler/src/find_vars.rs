@@ -199,7 +199,7 @@ impl<'a> Visit<'_> for DestructuringFinder<'a> {
         self.found.push(i.to_id());
     }
 
-    // The key of AssignPatProp is LHS but is an Ident, do won't be caught by
+    // The key of AssignPatProp is LHS but is an Ident, but won't be caught by
     // the BindingIdent visitor above.
     fn visit_assign_pat_prop(&mut self, node: &AssignPatProp) {
         self.found.push(node.key.to_id())
@@ -238,7 +238,7 @@ impl<'ast> VisitMut<'ast> for FindFirstLHSIdent<'ast> {
         }
     }
 
-    // The key of AssignPatProp is LHS but is an Ident, do won't be caught by
+    // The key of AssignPatProp is LHS but is an Ident, but won't be caught by
     // the BindingIdent visitor above.
     fn visit_mut_assign_pat_prop(&mut self, node: &'ast mut AssignPatProp) {
         if self.found.is_none() {
