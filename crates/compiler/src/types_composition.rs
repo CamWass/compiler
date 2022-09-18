@@ -583,14 +583,15 @@ impl Type {
             Type::DeferredTypeReference(t) => &t.instantiations,
             Type::GenericType(t) => &t.generic_type_base.instantiations,
             Type::TupleType(t) => &t.generic_type_base.instantiations,
-            Type::ResolvedType(t) => match t.old.as_ref().unwrap() {
-                Old::InterfaceType { .. } => todo!(),
-                Old::TypeReference { .. } => todo!(),
-                Old::GenericType {
+            Type::ResolvedType(t) => match &t.old {
+                Some(Old::GenericType {
                     generic_type_base, ..
-                } => &generic_type_base.instantiations,
-                Old::AnonymousType { anonymous_type } => &anonymous_type.instantiations,
-                Old::UnionType { .. } => todo!(),
+                }) => &generic_type_base.instantiations,
+                Some(Old::AnonymousType { anonymous_type }) => &anonymous_type.instantiations,
+                _ => {
+                    dbg!(t);
+                    todo!()
+                }
             },
             Type::AnonymousType(t) => &t.anonymous_type.instantiations,
             Type::MappedType(t) => &t.anonymous_type.instantiations,
@@ -602,7 +603,16 @@ impl Type {
             Type::DeferredTypeReference(t) => &mut t.instantiations,
             Type::GenericType(t) => &mut t.generic_type_base.instantiations,
             Type::TupleType(t) => &mut t.generic_type_base.instantiations,
-            Type::ResolvedType(_) => todo!(),
+            Type::ResolvedType(t) => match &mut t.old {
+                Some(Old::GenericType {
+                    generic_type_base, ..
+                }) => &mut generic_type_base.instantiations,
+                Some(Old::AnonymousType { anonymous_type }) => &mut anonymous_type.instantiations,
+                _ => {
+                    // dbg!(&t);
+                    todo!()
+                }
+            },
             Type::AnonymousType(t) => &mut t.anonymous_type.instantiations,
             Type::MappedType(t) => &mut t.anonymous_type.instantiations,
             _ => unreachable!(),
@@ -620,7 +630,15 @@ impl Type {
             Type::MappedType(t) => t.anonymous_type.mapper.as_ref(),
             Type::TypeParameter(t) => t.mapper.as_ref(),
             Type::ConditionalType(t) => t.mapper.as_ref(),
-            Type::ResolvedType(_) => todo!(),
+            Type::ResolvedType(t) => match &t.old {
+                Some(Old::TypeReference { type_reference }) => type_reference.mapper.as_ref(),
+                Some(Old::GenericType { type_reference, .. }) => type_reference.mapper.as_ref(),
+                Some(Old::AnonymousType { anonymous_type, .. }) => anonymous_type.mapper.as_ref(),
+                _ => {
+                    dbg!(t);
+                    todo!()
+                }
+            },
             _ => None,
         }
     }

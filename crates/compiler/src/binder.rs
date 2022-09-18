@@ -1501,14 +1501,23 @@ impl<'a> Binder<'a> {
                 todo!("temp: node: {:?}, span: {:?}", &node, n.span)
             }
             BoundNode::ArrayPat(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
-            BoundNode::ObjectPat(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
+            BoundNode::ObjectPat(n) => {
+                bind_vec!(self, n.props, node.clone());
+                bind_opt!(self, n.type_ann, node.clone());
+            }
             // BoundNode::AssignPat(n) => {// handled above},
             BoundNode::RestPat(p) => {
                 bind!(self, p.arg, node.clone());
                 bind_opt!(self, p.type_ann, node.clone());
             }
-            BoundNode::KeyValuePatProp(_) => todo!("temp: node: {:?}", &node),
-            BoundNode::AssignPatProp(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
+            BoundNode::KeyValuePatProp(n) => {
+                bind!(self, n.key, node.clone());
+                bind!(self, n.value, node.clone());
+            }
+            BoundNode::AssignPatProp(n) => {
+                bind!(self, n.key, node.clone());
+                bind_opt!(self, n.value, node.clone());
+            }
             // BoundNode::KeyValueProp(_) => todo!(),
             BoundNode::AssignProp(_) => todo!("temp: node: {:?}", &node),
             BoundNode::GetterProp(n) => todo!("temp: node: {:?}, span: {:?}", &node, n.span),
@@ -1691,7 +1700,8 @@ impl<'a> Binder<'a> {
         &mut self,
         flags: FlowFlags,
         antecedent: FlowNodeId,
-        expression: Option<ast::Expr>,
+        parent: Option<BoundNode>,
+        expression: Option<&ast::Expr>,
     ) -> FlowNodeId {
         if self.flow_nodes[antecedent]
             .flags
@@ -1718,14 +1728,14 @@ impl<'a> Binder<'a> {
         // {
         //     return self.unreachableFlow;
         // }
-        if matches!(&expression, ast::Expr::Lit(ast::Lit::Bool(b)) if b.value == true)
+        if matches!(expression, ast::Expr::Lit(ast::Lit::Bool(b)) if b.value == true)
             && flags.intersects(FlowFlags::FalseCondition)
-            || matches!(&expression, ast::Expr::Lit(ast::Lit::Bool(b)) if b.value == false)
+            || matches!(expression, ast::Expr::Lit(ast::Lit::Bool(b)) if b.value == false)
                 && flags.intersects(FlowFlags::TrueCondition)
         {
             todo!("see above");
         }
-        if !isNarrowingExpression(&expression) {
+        if !isNarrowingExpression(expression) {
             return antecedent;
         }
         self.setFlowNodeReferenced(antecedent);
@@ -1733,7 +1743,7 @@ impl<'a> Binder<'a> {
             flags,
             kind: FlowNodeKind::FlowCondition(FlowCondition {
                 antecedent,
-                node: expression,
+                node: expression.bind_to_opt_parent(parent),
             }),
         };
         self.alloc_flow_node(node)
@@ -1827,8 +1837,9 @@ impl<'a> Binder<'a> {
         assert_id_is_for_flow_label!(self, trueTarget);
         assert_id_is_for_flow_label!(self, falseTarget);
 
-        let node = expr.bind_to_opt_parent(parent);
+        let node = expr.bind_to_opt_parent(parent.clone());
 
+        // TODO:
         // self.doWithConditionalBranches(bind, node, trueTarget, falseTarget);
         if !isLogicalAssignmentExpression(node)
         // && !isLogicalExpression(node)
@@ -1837,11 +1848,16 @@ impl<'a> Binder<'a> {
             let true_id = self.createFlowCondition(
                 FlowFlags::TrueCondition,
                 self.currentFlow,
-                Some(expr.clone()),
+                parent.clone(),
+                Some(&expr),
             );
             self.addAntecedent(trueTarget, true_id);
-            let false_id =
-                self.createFlowCondition(FlowFlags::FalseCondition, self.currentFlow, Some(expr));
+            let false_id = self.createFlowCondition(
+                FlowFlags::FalseCondition,
+                self.currentFlow,
+                parent,
+                Some(&expr),
+            );
             self.addAntecedent(falseTarget, false_id);
         }
     }
@@ -2552,36 +2568,38 @@ impl<'a> Binder<'a> {
     }
 
     fn bindInitializedVariableFlow(&mut self, node: BoundNode) {
-        debug_assert!(matches!(
-            node,
-            BoundNode::VarDeclarator(_)
-                | BoundNode::BindingIdent(_)
-                | BoundNode::ArrayPat(_)
-                | BoundNode::RestPat(_)
-                | BoundNode::ObjectPat(_)
-                | BoundNode::AssignPat(_)
-        ));
         // TODO:
         // let name = if !isOmittedExpression(node) {node.name }else{ None};
         let name = match node {
             BoundNode::VarDeclarator(ref d) => d.name.bind(node.clone()),
             _ => node,
         };
-        match name {
-            BoundNode::ArrayPat(ref p) => {
+        match &name {
+            BoundNode::ArrayPat(p) => {
                 for child in &p.elems {
                     if let Some(child) = child {
                         self.bindInitializedVariableFlow(child.bind(name.clone()));
                     }
                 }
             }
-            BoundNode::ObjectPat(ref p) => {
+            BoundNode::ObjectPat(p) => {
                 for child in &p.props {
                     self.bindInitializedVariableFlow(child.bind(name.clone()));
                 }
             }
             BoundNode::BindingIdent(_) => {
                 self.currentFlow = self.createFlowAssignment(self.currentFlow, name);
+            }
+            BoundNode::RestPat(n) => self.bindInitializedVariableFlow(n.arg.bind(name.clone())),
+            BoundNode::AssignPat(n) => {
+                self.bindInitializedVariableFlow(n.left.bind(name.clone()));
+            }
+            BoundNode::KeyValuePatProp(n) => {
+                self.bindInitializedVariableFlow(n.value.bind(name.clone()));
+            }
+            BoundNode::AssignPatProp(n) => {
+                self.currentFlow =
+                    self.createFlowAssignment(self.currentFlow, n.key.bind(name.clone()));
             }
             _ => unreachable!(),
         }
@@ -3358,9 +3376,11 @@ impl<'a> Binder<'a> {
             BoundNode::VarDeclarator(ref v) => {
                 return self.bindVariableDeclaration(node.clone(), v.clone());
             }
-            // TODO:
             // BoundNode::BindingIdent(_) |
-            BoundNode::AssignPat(_) | BoundNode::RestPat(_) => {
+            BoundNode::RestPat(_)
+            | BoundNode::AssignPat(_)
+            | BoundNode::KeyValuePatProp(_)
+            | BoundNode::AssignPatProp(_) => {
                 self.node_data_mut(node.clone()).flowNode = Some(self.currentFlow);
                 self.bindBindingElement(node);
             }
@@ -3880,7 +3900,11 @@ impl<'a> Binder<'a> {
     fn bindBindingElement(&mut self, node: BoundNode) {
         debug_assert!(matches!(
             node,
-            BoundNode::BindingIdent(_) | BoundNode::RestPat(_) | BoundNode::AssignPat(_)
+            BoundNode::BindingIdent(_)
+                | BoundNode::RestPat(_)
+                | BoundNode::AssignPat(_)
+                | BoundNode::KeyValuePatProp(_)
+                | BoundNode::AssignPatProp(_)
         ));
         // if (inStrictMode) {
         //     checkStrictModeEvalOrArguments(node, node.name);
@@ -3889,6 +3913,7 @@ impl<'a> Binder<'a> {
         let name = match &node {
             BoundNode::RestPat(n) => Some(&n.arg),
             BoundNode::AssignPat(n) => Some(&n.left),
+            BoundNode::KeyValuePatProp(n) => Some(&n.value),
             _ => None,
         };
         let is_name_binding_pat = matches!(name, Some(ast::Pat::Object(_) | ast::Pat::Array(_)));

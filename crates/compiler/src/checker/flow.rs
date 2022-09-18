@@ -1,8 +1,8 @@
 use super::*;
 
-fn getTypeFromFlowType(flowType: &FlowType) -> TypeId {
+fn getTypeFromFlowType(flowType: FlowType) -> TypeId {
     match flowType {
-        FlowType::Type(t) => *t,
+        FlowType::Type(t) => t,
         FlowType::IncompleteType(t) => t.ty,
     }
 }
@@ -28,13 +28,14 @@ impl Checker {
         self.flowInvocationCount += 1;
         let sharedFlowStart = self.sharedFlowCount;
         let reference_flow = self.node_data(reference.clone()).flowNode.unwrap();
-        let evolvedType = getTypeFromFlowType(&getTypeAtFlowNode(
+        let evolvedType = getTypeFromFlowType(getTypeAtFlowNode(
             self,
             reference,
             declaredType,
             initialType,
-            flowContainer,
+            &flowContainer,
             &mut flowDepth,
+            sharedFlowStart,
             reference_flow,
         ));
         self.sharedFlowCount = sharedFlowStart;
@@ -85,10 +86,11 @@ impl Checker {
         fn getTypeAtFlowNode(
             checker: &mut Checker,
             reference: &BoundNode,
-            _declaredType: TypeId,
+            declaredType: TypeId,
             initialType: TypeId,
-            flowContainer: Option<BoundNode>,
+            flowContainer: &Option<BoundNode>,
             flowDepth: &mut u16,
+            sharedFlowStart: usize,
 
             mut flow: FlowNodeId,
         ) -> FlowType {
@@ -102,22 +104,21 @@ impl Checker {
                 // return errorType;
             }
             *flowDepth += 1;
-            // TODO: remove type ann:
-            let mut sharedFlow: Option<FlowNodeId> = None;
+            let mut sharedFlow = None;
             loop {
                 let flags = checker.flow_nodes[flow].flags;
                 if flags.intersects(FlowFlags::Shared) {
                     // We cache results of flow type resolution for shared nodes that were previously visited in
                     // the same getFlowTypeOfReference invocation. A node is considered shared when it is the
                     // antecedent of more than one node.
-                    // for let i = sharedFlowStart; i < sharedFlowCount; i++ {
-                    //     if (sharedFlowNodes[i] == flow) {
-                    //         flowDepth-=1;
-                    //         return sharedFlowTypes[i];
-                    //     }
-                    // }
-                    // sharedFlow = flow;
-                    todo!();
+
+                    for i in sharedFlowStart..checker.sharedFlowCount {
+                        if checker.sharedFlowNodes[i] == flow {
+                            *flowDepth -= 1;
+                            return checker.sharedFlowTypes[i];
+                        }
+                    }
+                    sharedFlow = Some(flow);
                 }
                 let ty = match &checker.flow_nodes[flow].kind {
                     FlowNodeKind::FlowAssignment(f) => {
@@ -125,10 +126,11 @@ impl Checker {
                         if let Some(ty) = getTypeAtFlowAssignment(
                             checker,
                             reference,
-                            _declaredType,
+                            declaredType,
                             initialType,
-                            &flowContainer,
+                            flowContainer,
                             flowDepth,
+                            sharedFlowStart,
                             flow,
                         ) {
                             ty
@@ -142,9 +144,9 @@ impl Checker {
                         if let Some(ty) = getTypeAtFlowCall(
                             checker,
                             reference,
-                            _declaredType,
+                            declaredType,
                             initialType,
-                            &flowContainer,
+                            flowContainer,
                             flowDepth,
                             flow,
                         ) {
@@ -154,25 +156,40 @@ impl Checker {
                             continue;
                         }
                     }
-                    FlowNodeKind::FlowCondition(_) => {
-                        todo!();
-                        // ty = getTypeAtFlowCondition(flow as FlowCondition);
-                    }
+                    FlowNodeKind::FlowCondition(_) => getTypeAtFlowCondition(
+                        checker,
+                        reference,
+                        declaredType,
+                        initialType,
+                        flowContainer,
+                        flowDepth,
+                        sharedFlowStart,
+                        flow,
+                    ),
                     FlowNodeKind::FlowSwitchClause(_) => {
                         todo!();
                         // ty = getTypeAtSwitchClause(flow as FlowSwitchClause);
                     }
-                    FlowNodeKind::FlowLabel(_) => {
-                        todo!();
-                        // if (flow as FlowLabel).antecedents.unwrap().len() == 1 {
-                        //     flow = (flow as FlowLabel).antecedents.unwrap()[0];
-                        //     continue;
-                        // }
-                        // ty = if flags.intersects(FlowFlags::BranchLabel) {
-                        //     getTypeAtFlowBranchLabel(flow as FlowLabel)
-                        // } else {
-                        //     getTypeAtFlowLoopLabel(flow as FlowLabel)
-                        // };
+                    FlowNodeKind::FlowLabel(f) => {
+                        if f.antecedents.len() == 1 {
+                            flow = f.antecedents[0];
+                            continue;
+                        }
+                        if flags.intersects(FlowFlags::BranchLabel) {
+                            getTypeAtFlowBranchLabel(
+                                checker,
+                                reference,
+                                declaredType,
+                                initialType,
+                                flowContainer,
+                                flowDepth,
+                                sharedFlowStart,
+                                flow,
+                            )
+                        } else {
+                            todo!();
+                            // getTypeAtFlowLoopLabel(flow)
+                        }
                     }
                     FlowNodeKind::FlowArrayMutation(_) => {
                         todo!();
@@ -213,12 +230,15 @@ impl Checker {
                         // ty = convertAutoToAny(declaredType);
                     }
                 };
-                if let Some(_sharedFlow) = sharedFlow {
-                    todo!();
+                if let Some(sharedFlow) = sharedFlow {
                     // Record visited node and the associated type in the cache.
-                    // sharedFlowNodes[sharedFlowCount] = sharedFlow;
-                    // sharedFlowTypes[sharedFlowCount] = ty;
-                    // sharedFlowCount += 1;
+                    checker.sharedFlowNodes.push(sharedFlow);
+                    checker.sharedFlowTypes.push(ty);
+                    // debug_assert_eq!(checker.sharedFlowCount, checker.sharedFlowNodes.len() - 1);
+                    // debug_assert_eq!(checker.sharedFlowCount, checker.sharedFlowTypes.len() - 1);
+                    checker.sharedFlowNodes[checker.sharedFlowCount] = sharedFlow;
+                    checker.sharedFlowTypes[checker.sharedFlowCount] = ty;
+                    checker.sharedFlowCount += 1;
                 }
                 *flowDepth -= 1;
                 return ty;
@@ -239,13 +259,10 @@ impl Checker {
             initialType: TypeId,
             flowContainer: &Option<BoundNode>,
             flowDepth: &mut u16,
+            sharedFlowStart: usize,
 
             flow: FlowNodeId,
         ) -> Option<FlowType> {
-            debug_assert!(matches!(
-                &checker.flow_nodes[flow].kind,
-                FlowNodeKind::FlowAssignment(_)
-            ));
             let node = unwrap_as!(
                 &checker.flow_nodes[flow].kind,
                 FlowNodeKind::FlowAssignment(a),
@@ -307,8 +324,9 @@ impl Checker {
                             reference,
                             declaredType,
                             initialType,
-                            flowContainer.clone(),
+                            flowContainer,
                             flowDepth,
+                            sharedFlowStart,
                             antecedent,
                         ));
                     }
@@ -414,27 +432,68 @@ impl Checker {
         //     return undefined;
         // }
 
-        // function getTypeAtFlowCondition(flow: FlowCondition): FlowType {
-        //     const flowType = getTypeAtFlowNode(flow.antecedent);
-        //     const type = getTypeFromFlowType(flowType);
-        //     if (type.flags & TypeFlags.Never) {
-        //         return flowType;
-        //     }
-        //     // If we have an antecedent type (meaning we're reachable in some way), we first
-        //     // attempt to narrow the antecedent type. If that produces the never type, and if
-        //     // the antecedent type is incomplete (i.e. a transient type in a loop), then we
-        //     // take the type guard as an indication that control *could* reach here once we
-        //     // have the complete type. We proceed by switching to the silent never type which
-        //     // doesn't report errors when operators are applied to it. Note that this is the
-        //     // *only* place a silent never type is ever generated.
-        //     const assumeTrue = (flow.flags & FlowFlags.TrueCondition) !== 0;
-        //     const nonEvolvingType = finalizeEvolvingArrayType(type);
-        //     const narrowedType = narrowType(nonEvolvingType, flow.node, assumeTrue);
-        //     if (narrowedType === nonEvolvingType) {
-        //         return flowType;
-        //     }
-        //     return createFlowType(narrowedType, isIncomplete(flowType));
-        // }
+        fn getTypeAtFlowCondition(
+            checker: &mut Checker,
+            reference: &BoundNode,
+            declaredType: TypeId,
+            initialType: TypeId,
+            flowContainer: &Option<BoundNode>,
+            flowDepth: &mut u16,
+            sharedFlowStart: usize,
+
+            flow: FlowNodeId,
+        ) -> FlowType {
+            let antecedent = unwrap_as!(
+                &checker.flow_nodes[flow].kind,
+                FlowNodeKind::FlowCondition(a),
+                a
+            )
+            .antecedent;
+            let flowType = getTypeAtFlowNode(
+                checker,
+                reference,
+                declaredType,
+                initialType,
+                flowContainer,
+                flowDepth,
+                sharedFlowStart,
+                antecedent,
+            );
+            let ty = getTypeFromFlowType(flowType);
+            if checker.types[ty].get_flags().intersects(TypeFlags::Never) {
+                return flowType;
+            }
+            // If we have an antecedent type (meaning we're reachable in some way), we first
+            // attempt to narrow the antecedent type. If that produces the never type, and if
+            // the antecedent type is incomplete (i.e. a transient type in a loop), then we
+            // take the type guard as an indication that control *could* reach here once we
+            // have the complete type. We proceed by switching to the silent never type which
+            // doesn't report errors when operators are applied to it. Note that this is the
+            // *only* place a silent never type is ever generated.
+            let assumeTrue = checker.flow_nodes[flow]
+                .flags
+                .intersects(FlowFlags::TrueCondition);
+            let nonEvolvingType = checker.finalizeEvolvingArrayType(ty);
+            let node = &unwrap_as!(
+                &checker.flow_nodes[flow].kind,
+                FlowNodeKind::FlowCondition(a),
+                a
+            )
+            .node
+            .clone();
+            let narrowedType = narrowType(
+                checker,
+                reference,
+                declaredType,
+                nonEvolvingType,
+                &node,
+                assumeTrue,
+            );
+            if narrowedType == nonEvolvingType {
+                return flowType;
+            }
+            checker.createFlowType(narrowedType, isIncomplete(flowType))
+        }
 
         // function getTypeAtSwitchClause(flow: FlowSwitchClause): FlowType {
         //     const expr = flow.switchStatement.expression;
@@ -465,58 +524,116 @@ impl Checker {
         //     return createFlowType(type, isIncomplete(flowType));
         // }
 
-        // function getTypeAtFlowBranchLabel(flow: FlowLabel): FlowType {
-        //     const antecedentTypes: Type[] = [];
-        //     let subtypeReduction = false;
-        //     let seenIncomplete = false;
-        //     let bypassFlow: FlowSwitchClause | undefined;
-        //     for (const antecedent of flow.antecedents!) {
-        //         if (!bypassFlow && antecedent.flags & FlowFlags.SwitchClause && (antecedent as FlowSwitchClause).clauseStart === (antecedent as FlowSwitchClause).clauseEnd) {
-        //             // The antecedent is the bypass branch of a potentially exhaustive switch statement.
-        //             bypassFlow = antecedent as FlowSwitchClause;
-        //             continue;
-        //         }
-        //         const flowType = getTypeAtFlowNode(antecedent);
-        //         const type = getTypeFromFlowType(flowType);
-        //         // If the type at a particular antecedent path is the declared type and the
-        //         // reference is known to always be assigned (i.e. when declared and initial types
-        //         // are the same), there is no reason to process more antecedents since the only
-        //         // possible outcome is subtypes that will be removed in the final union type anyway.
-        //         if (type === declaredType && declaredType === initialType) {
-        //             return type;
-        //         }
-        //         pushIfUnique(antecedentTypes, type);
-        //         // If an antecedent type is not a subset of the declared type, we need to perform
-        //         // subtype reduction. This happens when a "foreign" type is injected into the control
-        //         // flow using the instanceof operator or a user defined type predicate.
-        //         if (!isTypeSubsetOf(type, declaredType)) {
-        //             subtypeReduction = true;
-        //         }
-        //         if (isIncomplete(flowType)) {
-        //             seenIncomplete = true;
-        //         }
-        //     }
-        //     if (bypassFlow) {
-        //         const flowType = getTypeAtFlowNode(bypassFlow);
-        //         const type = getTypeFromFlowType(flowType);
-        //         // If the bypass flow contributes a type we haven't seen yet and the switch statement
-        //         // isn't exhaustive, process the bypass flow type. Since exhaustiveness checks increase
-        //         // the risk of circularities, we only want to perform them when they make a difference.
-        //         if (!contains(antecedentTypes, type) && !isExhaustiveSwitchStatement(bypassFlow.switchStatement)) {
-        //             if (type === declaredType && declaredType === initialType) {
-        //                 return type;
-        //             }
-        //             antecedentTypes.push(type);
-        //             if (!isTypeSubsetOf(type, declaredType)) {
-        //                 subtypeReduction = true;
-        //             }
-        //             if (isIncomplete(flowType)) {
-        //                 seenIncomplete = true;
-        //             }
-        //         }
-        //     }
-        //     return createFlowType(getUnionOrEvolvingArrayType(antecedentTypes, subtypeReduction ? UnionReduction.Subtype : UnionReduction.Literal), seenIncomplete);
-        // }
+        fn getTypeAtFlowBranchLabel(
+            checker: &mut Checker,
+            reference: &BoundNode,
+            declaredType: TypeId,
+            initialType: TypeId,
+            flowContainer: &Option<BoundNode>,
+            flowDepth: &mut u16,
+            sharedFlowStart: usize,
+
+            flow: FlowNodeId,
+        ) -> FlowType {
+            let mut antecedentTypes = Vec::new();
+            let mut subtypeReduction = false;
+            let mut seenIncomplete = false;
+            let mut bypassFlow = None;
+            let antecedents = checker.flow_nodes[flow]
+                .kind
+                .unwrap_flow_label()
+                .antecedents
+                .clone();
+            for &antecedent in antecedents.iter() {
+                if bypassFlow.is_none() {
+                    if let FlowNodeKind::FlowSwitchClause(clause) =
+                        &checker.flow_nodes[antecedent].kind
+                    {
+                        if clause.clauseStart == clause.clauseEnd {
+                            // The antecedent is the bypass branch of a potentially exhaustive switch statement.
+                            bypassFlow = Some(antecedent);
+                            continue;
+                        }
+                    }
+                }
+                let flowType = getTypeAtFlowNode(
+                    checker,
+                    reference,
+                    declaredType,
+                    initialType,
+                    flowContainer,
+                    flowDepth,
+                    sharedFlowStart,
+                    antecedent,
+                );
+                let ty = getTypeFromFlowType(flowType);
+                // If the type at a particular antecedent path is the declared type and the
+                // reference is known to always be assigned (i.e. when declared and initial types
+                // are the same), there is no reason to process more antecedents since the only
+                // possible outcome is subtypes that will be removed in the final union type anyway.
+                if ty == declaredType && declaredType == initialType {
+                    return FlowType::Type(ty);
+                }
+                antecedentTypes.push_if_unique(ty);
+                // If an antecedent type is not a subset of the declared type, we need to perform
+                // subtype reduction. This happens when a "foreign" type is injected into the control
+                // flow using the instanceof operator or a user defined type predicate.
+                if !checker.isTypeSubsetOf(ty, declaredType) {
+                    subtypeReduction = true;
+                }
+                if isIncomplete(flowType) {
+                    seenIncomplete = true;
+                }
+            }
+            if let Some(bypassFlow) = bypassFlow {
+                let flowType = getTypeAtFlowNode(
+                    checker,
+                    reference,
+                    declaredType,
+                    initialType,
+                    flowContainer,
+                    flowDepth,
+                    sharedFlowStart,
+                    bypassFlow,
+                );
+                let ty = getTypeFromFlowType(flowType);
+                let switch_stmt = unwrap_as!(
+                    &checker.flow_nodes[bypassFlow].kind,
+                    FlowNodeKind::FlowSwitchClause(s),
+                    s
+                )
+                .switchStatement
+                .clone();
+                // If the bypass flow contributes a type we haven't seen yet and the switch statement
+                // isn't exhaustive, process the bypass flow type. Since exhaustiveness checks increase
+                // the risk of circularities, we only want to perform them when they make a difference.
+                if !antecedentTypes.contains(&ty)
+                    && !checker.isExhaustiveSwitchStatement(&switch_stmt)
+                {
+                    if ty == declaredType && declaredType == initialType {
+                        return FlowType::Type(ty);
+                    }
+                    antecedentTypes.push(ty);
+                    if !checker.isTypeSubsetOf(ty, declaredType) {
+                        subtypeReduction = true;
+                    }
+                    if isIncomplete(flowType) {
+                        seenIncomplete = true;
+                    }
+                }
+            }
+            let ty = getUnionOrEvolvingArrayType(
+                checker,
+                declaredType,
+                antecedentTypes,
+                if subtypeReduction {
+                    UnionReduction::Subtype
+                } else {
+                    UnionReduction::Literal
+                },
+            );
+            checker.createFlowType(ty, seenIncomplete)
+        }
 
         // function getTypeAtFlowLoopLabel(flow: FlowLabel): FlowType {
         //     // If we have previously computed the control flow type for the reference at
@@ -602,28 +719,79 @@ impl Checker {
         //     return result;
         // }
 
-        // // At flow control branch or loop junctions, if the type along every antecedent code path
-        // // is an evolving array type, we construct a combined evolving array type. Otherwise we
-        // // finalize all evolving array types.
-        // function getUnionOrEvolvingArrayType(types: Type[], subtypeReduction: UnionReduction) {
-        //     if (isEvolvingArrayTypeList(types)) {
-        //         return getEvolvingArrayType(getUnionType(map(types, getElementTypeOfEvolvingArrayType)));
-        //     }
-        //     const result = getUnionType(sameMap(types, finalizeEvolvingArrayType), subtypeReduction);
-        //     if (result !== declaredType && result.flags & declaredType.flags & TypeFlags.Union && arraysEqual((result as UnionType).types, (declaredType as UnionType).types)) {
-        //         return declaredType;
-        //     }
-        //     return result;
-        // }
+        // At flow control branch or loop junctions, if the type along every antecedent code path
+        // is an evolving array type, we construct a combined evolving array type. Otherwise we
+        // finalize all evolving array types.
+        fn getUnionOrEvolvingArrayType(
+            checker: &mut Checker,
+            declaredType: TypeId,
+            types: Vec<TypeId>,
+            subtypeReduction: UnionReduction,
+        ) -> TypeId {
+            if checker.isEvolvingArrayTypeList(&types) {
+                todo!();
+                // return checker.getEvolvingArrayType(
+                //     checker.getUnionType(map(types, getElementTypeOfEvolvingArrayType)),
+                // );
+            }
+            let types = types
+                .into_iter()
+                .map(|t| checker.finalizeEvolvingArrayType(t))
+                .collect::<Vec<_>>();
+            let result = checker.getUnionType(&types, Some(subtypeReduction), None, None, None);
+            if result != declaredType {
+                let result = &checker.types[result];
+                let declared_ty = &checker.types[declaredType];
+                if result.get_flags().intersects(TypeFlags::Union)
+                    && declared_ty.get_flags().intersects(TypeFlags::Union)
+                {
+                    if result.unwrap_as_union_or_intersection().types
+                        == declared_ty.unwrap_as_union_or_intersection().types
+                    {
+                        return declaredType;
+                    }
+                }
+            }
+            result
+        }
 
-        // function getDiscriminantPropertyAccess(expr: Expression, computedType: Type) {
-        //     let access, name;
-        //     const type = declaredType.flags & TypeFlags.Union ? declaredType : computedType;
-        //     return type.flags & TypeFlags.Union && (access = getPropertyAccess(expr)) && (name = getAccessedPropertyName(access)) &&
-        //         isMatchingReference(reference, isAccessExpression(access) ? access.expression : access.parent.parent.initializer!) &&
-        //         isDiscriminantProperty(type, name) ?
-        //         access : undefined;
-        // }
+        fn getDiscriminantPropertyAccess(
+            checker: &mut Checker,
+            reference: &BoundNode,
+            declaredType: TypeId,
+
+            expr: &BoundNode,
+            computedType: TypeId,
+        ) -> Option<BoundNode> {
+            let ty = if checker.types[declaredType]
+                .get_flags()
+                .intersects(TypeFlags::Union)
+            {
+                declaredType
+            } else {
+                computedType
+            };
+
+            if checker.types[ty].get_flags().intersects(TypeFlags::Union) {
+                if let Some(access) = checker.getPropertyAccess(expr) {
+                    if let Some(name) = checker.getAccessedPropertyName(&access) {
+                        let target = if let BoundNode::MemberExpr(e) = &access {
+                            e.obj.bind(access.clone())
+                        } else {
+                            todo!("BindingElement");
+                            // access.parent.parent.initializer.unwrap()
+                        };
+                        if checker.isMatchingReference(reference, &target)
+                            && checker.isDiscriminantProperty(Some(ty), &name)
+                        {
+                            return Some(access);
+                        }
+                    }
+                }
+            }
+
+            None
+        }
 
         // function narrowTypeByDiscriminant(type: Type, access: AccessExpression | BindingElement, narrowType: (t: Type) => Type): Type {
         //     const propName = getAccessedPropertyName(access);
@@ -669,20 +837,38 @@ impl Checker {
         //     return narrowTypeByDiscriminant(type, access, t => narrowTypeBySwitchOnDiscriminant(t, switchStatement, clauseStart, clauseEnd));
         // }
 
-        // function narrowTypeByTruthiness(type: Type, expr: Expression, assumeTrue: boolean): Type {
-        //     if (isMatchingReference(reference, expr)) {
-        //         return type.flags & TypeFlags.Unknown && assumeTrue ? nonNullUnknownType :
-        //             getTypeWithFacts(type, assumeTrue ? TypeFacts.Truthy : TypeFacts.Falsy);
-        //     }
-        //     if (strictNullChecks && assumeTrue && optionalChainContainsReference(expr, reference)) {
-        //         type = getTypeWithFacts(type, TypeFacts.NEUndefinedOrNull);
-        //     }
-        //     const access = getDiscriminantPropertyAccess(expr, type);
-        //     if (access) {
-        //         return narrowTypeByDiscriminant(type, access, t => getTypeWithFacts(t, assumeTrue ? TypeFacts.Truthy : TypeFacts.Falsy));
-        //     }
-        //     return type;
-        // }
+        fn narrowTypeByTruthiness(
+            checker: &mut Checker,
+            reference: &BoundNode,
+            declaredType: TypeId,
+
+            mut ty: TypeId,
+            expr: &BoundNode,
+            assumeTrue: bool,
+        ) -> TypeId {
+            if checker.isMatchingReference(reference, expr) {
+                return if checker.types[ty].get_flags().intersects(TypeFlags::Unknown) && assumeTrue
+                {
+                    checker.nonNullUnknownType
+                } else {
+                    todo!();
+                    // getTypeWithFacts(ty, assumeTrue ? TypeFacts.Truthy : TypeFacts.Falsy)
+                };
+            }
+            if checker.strictNullChecks
+                && assumeTrue
+                && checker.optionalChainContainsReference(expr, reference)
+            {
+                ty = checker.getTypeWithFacts(ty, TypeFacts::NEUndefinedOrNull);
+            }
+            if let Some(access) =
+                getDiscriminantPropertyAccess(checker, reference, declaredType, expr, ty)
+            {
+                todo!();
+                // return narrowTypeByDiscriminant(ty, access, t => getTypeWithFacts(t, assumeTrue ? TypeFacts.Truthy : TypeFacts.Falsy));
+            }
+            ty
+        }
 
         // function isTypePresencePossible(type: Type, propName: __String, assumeTrue: boolean) {
         //     const prop = getPropertyOfType(type, propName);
@@ -1205,51 +1391,107 @@ impl Checker {
         //     return type;
         // }
 
-        // // Narrow the given type based on the given expression having the assumed boolean value. The returned type
-        // // will be a subtype or the same type as the argument.
-        // function narrowType(type: Type, expr: Expression, assumeTrue: boolean): Type {
-        //     // for `a?.b`, we emulate a synthetic `a !== null && a !== undefined` condition for `a`
-        //     if (isExpressionOfOptionalChainRoot(expr) ||
-        //         isBinaryExpression(expr.parent) && expr.parent.operatorToken.kind === SyntaxKind.QuestionQuestionToken && expr.parent.left === expr) {
-        //         return narrowTypeByOptionality(type, expr, assumeTrue);
-        //     }
-        //     switch (expr.kind) {
-        //         case SyntaxKind.Identifier:
-        //             // When narrowing a reference to a const variable, non-assigned parameter, or readonly property, we inline
-        //             // up to five levels of aliased conditional expressions that are themselves declared as const variables.
-        //             if (!isMatchingReference(reference, expr) && inlineLevel < 5) {
-        //                 const symbol = getResolvedSymbol(expr as Identifier);
-        //                 if (isConstVariable(symbol)) {
-        //                     const declaration = symbol.valueDeclaration;
-        //                     if (declaration && isVariableDeclaration(declaration) && !declaration.type && declaration.initializer && isConstantReference(reference)) {
-        //                         inlineLevel++;
-        //                         const result = narrowType(type, declaration.initializer, assumeTrue);
-        //                         inlineLevel--;
-        //                         return result;
-        //                     }
-        //                 }
-        //             }
-        //             // falls through
-        //         case SyntaxKind.ThisKeyword:
-        //         case SyntaxKind.SuperKeyword:
-        //         case SyntaxKind.PropertyAccessExpression:
-        //         case SyntaxKind.ElementAccessExpression:
-        //             return narrowTypeByTruthiness(type, expr, assumeTrue);
-        //         case SyntaxKind.CallExpression:
-        //             return narrowTypeByCallExpression(type, expr as CallExpression, assumeTrue);
-        //         case SyntaxKind.ParenthesizedExpression:
-        //         case SyntaxKind.NonNullExpression:
-        //             return narrowType(type, (expr as ParenthesizedExpression | NonNullExpression).expression, assumeTrue);
-        //         case SyntaxKind.BinaryExpression:
-        //             return narrowTypeByBinaryExpression(type, expr as BinaryExpression, assumeTrue);
-        //         case SyntaxKind.PrefixUnaryExpression:
-        //             if ((expr as PrefixUnaryExpression).operator === SyntaxKind.ExclamationToken) {
-        //                 return narrowType(type, (expr as PrefixUnaryExpression).operand, !assumeTrue);
-        //             }
-        //             break;
-        //     }
-        //     return type;
-        // }
+        // Narrow the given type based on the given expression having the assumed boolean value. The returned type
+        // will be a subtype or the same type as the argument.
+        fn narrowType(
+            checker: &mut Checker,
+            reference: &BoundNode,
+            declaredType: TypeId,
+            ty: TypeId,
+            expr: &BoundNode,
+            assumeTrue: bool,
+        ) -> TypeId {
+            if matches!(expr, BoundNode::OptChainExpr(_)) {
+                todo!("see below");
+            }
+            // for `a?.b`, we emulate a synthetic `a !== null && a !== undefined` condition for `a`
+            // if isExpressionOfOptionalChainRoot(expr)
+            //     || isBinaryExpression(expr.parent)
+            //         && expr.parent.operatorToken.kind == SyntaxKind.QuestionQuestionToken
+            //         && expr.parent.left == expr
+            // {
+            //     return narrowTypeByOptionality(ty, expr, assumeTrue);
+            // }
+            match expr {
+                BoundNode::Ident(i) => {
+                    // When narrowing a reference to a const variable, non-assigned parameter, or readonly property, we inline
+                    // up to five levels of aliased conditional expressions that are themselves declared as const variables.
+                    if !checker.isMatchingReference(reference, expr) && checker.inlineLevel < 5 {
+                        let symbol = checker.getResolvedSymbol(i);
+                        if checker.isConstVariable(symbol) {
+                            if let Some(ref d @ BoundNode::VarDeclarator(ref decl)) =
+                                checker.symbols[symbol].valueDeclaration().clone()
+                            {
+                                let has_type_ann = match &decl.name {
+                                    ast::Pat::Ident(p) => p.type_ann.is_some(),
+                                    ast::Pat::Array(p) => p.type_ann.is_some(),
+                                    ast::Pat::Object(p) => p.type_ann.is_some(),
+                                    _ => unreachable!(),
+                                };
+                                if has_type_ann
+                                    && decl.init.is_some()
+                                    && checker.isConstantReference(reference)
+                                {
+                                    checker.inlineLevel += 1;
+                                    let result = narrowType(
+                                        checker,
+                                        reference,
+                                        declaredType,
+                                        ty,
+                                        &decl.init.as_ref().unwrap().bind(d.clone()),
+                                        assumeTrue,
+                                    );
+                                    checker.inlineLevel -= 1;
+                                    return result;
+                                }
+                            }
+                        }
+                    }
+                    return narrowTypeByTruthiness(
+                        checker,
+                        reference,
+                        declaredType,
+                        ty,
+                        expr,
+                        assumeTrue,
+                    );
+                }
+                BoundNode::ThisExpr(_) | BoundNode::Super(_) | BoundNode::MemberExpr(_) => {
+                    todo!();
+                    // return narrowTypeByTruthiness(ty, expr, assumeTrue);
+                }
+                BoundNode::CallExpr(_) => {
+                    todo!();
+                    // return narrowTypeByCallExpression(ty, expr as CallExpression, assumeTrue);
+                }
+                BoundNode::ParenExpr(_) | BoundNode::TsNonNullExpr(_) => {
+                    todo!();
+                    // return narrowType(
+                    //     ty,
+                    //     (expr as ParenthesizedExpression | NonNullExpression).expression,
+                    //     assumeTrue,
+                    // );
+                }
+                BoundNode::AssignExpr(_) | BoundNode::BinExpr(_) => {
+                    todo!();
+                    // return narrowTypeByBinaryExpression(ty, expr as BinaryExpression, assumeTrue);
+                }
+                BoundNode::UnaryExpr(e) => {
+                    if e.op == ast::UnaryOp::Bang {
+                        return narrowType(
+                            checker,
+                            reference,
+                            declaredType,
+                            ty,
+                            &e.arg.bind(expr.clone()),
+                            !assumeTrue,
+                        );
+                    }
+                }
+                _ => {}
+            }
+            ty
+        }
 
         // function narrowTypeByOptionality(type: Type, expr: Expression, assumePresent: boolean): Type {
         //     if (isMatchingReference(reference, expr)) {
@@ -1262,4 +1504,22 @@ impl Checker {
         //     return type;
         // }
     }
+
+    fn createFlowType(&self, ty: TypeId, incomplete: bool) -> FlowType {
+        if incomplete {
+            if self.types[ty].get_flags().intersects(TypeFlags::Never) {
+                FlowType::IncompleteType(IncompleteType {
+                    ty: self.silentNeverType,
+                })
+            } else {
+                FlowType::IncompleteType(IncompleteType { ty: ty })
+            }
+        } else {
+            FlowType::Type(ty)
+        }
+    }
+}
+
+fn isIncomplete(flowType: FlowType) -> bool {
+    matches!(flowType, FlowType::IncompleteType(_))
 }

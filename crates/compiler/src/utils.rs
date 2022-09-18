@@ -115,6 +115,8 @@ pub fn getCombinedNodeFlags(node: &BoundNode) -> NodeFlags {
             },
             BoundNode::VarDeclarator(n) => NodeFlags::empty(),
             BoundNode::ClassProp(n) => NodeFlags::empty(),
+            BoundNode::Param(n) => NodeFlags::empty(),
+            BoundNode::ParamWithoutDecorators(n) => NodeFlags::empty(),
             _ => {
                 dbg!(n);
                 todo!();
@@ -790,6 +792,15 @@ fn getNonAssignedNameOfDeclaration(declaration: &BoundNode) -> Option<DeclName> 
             _ => todo!(),
         },
         BoundNode::BindingIdent(i) => ident!(i.id.clone(), i.clone().into()),
+        BoundNode::AssignPat(n) => match &n.left {
+            ast::Pat::Ident(i) => ident!(i.id.clone(), i.bind(n.clone().into())),
+            _ => todo!(),
+        },
+        BoundNode::KeyValuePatProp(n) => match &n.value {
+            ast::Pat::Ident(i) => ident!(i.id.clone(), i.bind(n.clone().into())),
+            _ => todo!(),
+        },
+        BoundNode::AssignPatProp(n) => ident!(n.key.clone(), n.clone().into()),
         BoundNode::TsTypeParamDecl(p) => ident!(p.name.clone(), p.clone().into()),
         BoundNode::TsFnType(_) => None,
         BoundNode::TsConstructorType(_) => None,
@@ -3157,7 +3168,7 @@ pub fn getEffectiveTypeAnnotationNode(node: &Node) -> Option<ast::TsType> {
         Node::ClassProp(n) => n.type_ann.as_ref().map(|t| t.type_ann.clone()),
         // TODO: is this correct?
         Node::Param(p) => getEffectiveTypeAnnotationNode(&p.pat.clone().into()),
-        // Node::ParamWithoutDecorators(p) => getEffectiveTypeAnnotationNode(&p.pat.clone().into()),
+        Node::ParamWithoutDecorators(p) => getEffectiveTypeAnnotationNode(&p.pat.clone().into()),
         // Node::TsAmbientParam(p) => getEffectiveTypeAnnotationNode(&p.pat.clone().into()),
         // Node::TsParamPropParam(p) => getEffectiveTypeAnnotationNode(&p.param.clone().into()),
         Node::VarDeclarator(n) => getEffectiveTypeAnnotationNode(&n.name.clone().into()),
@@ -3214,7 +3225,9 @@ pub fn getBoundEffectiveTypeAnnotationNode(node: &BoundNode) -> Option<BoundNode
             .map(|t| t.type_ann.bind(t.bind(node.clone()))),
         // TODO: is this correct?
         BoundNode::Param(p) => getBoundEffectiveTypeAnnotationNode(&p.pat.bind(node.clone())),
-        // BoundNode::ParamWithoutDecorators(p) => getBoundEffectiveTypeAnnotationNode(&p.pat.bind(node.clone())),
+        BoundNode::ParamWithoutDecorators(p) => {
+            getBoundEffectiveTypeAnnotationNode(&p.pat.bind(node.clone()))
+        }
         BoundNode::TsAmbientParam(p) => {
             getBoundEffectiveTypeAnnotationNode(&p.pat.bind(node.clone()))
         }
@@ -4013,5 +4026,24 @@ where
 {
     fn length(&self) -> usize {
         self.as_ref().map(|v| v.length()).unwrap_or_default()
+    }
+}
+
+pub fn isParameterOrCatchClauseVariable(symbol: &Symbol) -> bool {
+    if let Some(decl) = &symbol.valueDeclaration() {
+        let decl = getRootDeclaration(decl.clone());
+        matches!(
+            decl,
+            BoundNode::Param(_) | BoundNode::ParamWithoutDecorators(_)
+        ) || matches!(
+            decl,
+            BoundNode::BindingIdent(_)
+                | BoundNode::ArrayPat(_)
+                | BoundNode::RestPat(_)
+                | BoundNode::ObjectPat(_)
+                | BoundNode::AssignPat(_)
+        ) && matches!(decl.parent(), Some(BoundNode::CatchClause(_)))
+    } else {
+        false
     }
 }

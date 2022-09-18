@@ -9,11 +9,11 @@ define!({
         pub node_id: NodeId,
         pub span: Span,
         pub decorators: Vec<Rc<Decorator>>,
-        pub body: Vec<ClassMember>,
         pub is_abstract: bool,
         pub type_params: Option<Vec<Rc<TsTypeParamDecl>>>,
         pub extends: Option<Rc<ExtendsClause>>,
         pub implements: Vec<Rc<TsExprWithTypeArgs>>,
+        pub body: Vec<ClassMember>,
         pub cached_hash: u8,
     }
     pub struct ExtendsClause {

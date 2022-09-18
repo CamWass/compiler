@@ -756,7 +756,7 @@ pub struct NodeLinks {
     pub deferredNodes: AHashSet<BoundNode>, // Set of nodes whose checking has been deferred
     //     capturedBlockScopeBindings?: Symbol[]; // Block-scoped bindings captured beneath this part of an IterationStatement
     pub outerTypeParameters: Option<Rc<Vec<TypeId>>>, // Outer type parameters of anonymous object type
-    //     isExhaustive?: boolean;             // Is node an exhaustive switch statement
+    pub isExhaustive: Option<bool>,                   // Is node an exhaustive switch statement
     //     skipDirectInference?: true;         // Flag set by the API `getContextualType` call on a node when `Completions` is passed to force the checker to skip making inferences to a node's type
     pub declarationRequiresScopeChange: Option<bool>, // Set by `useOuterVariableScopeInParameter` in checker when downlevel emit would change the name resolution scope inside of a parameter.
                                                       //     serializedTypes?: ESMap<string, TypeNode & {truncating?: boolean, addedLength: number}>; // Collection of types serialized at this location
@@ -2171,7 +2171,7 @@ pub struct FlowCall {
 // node's location in the control flow.
 #[derive(Hash, PartialEq, Eq, Debug)]
 pub struct FlowCondition {
-    pub node: ast::Expr,
+    pub node: BoundNode,
     pub antecedent: FlowNodeId,
 }
 
@@ -2207,6 +2207,7 @@ pub struct FlowReduceLabel {
     pub antecedent: FlowNodeId,
 }
 
+#[derive(Clone, Copy)]
 pub enum FlowType {
     Type(TypeId),
     IncompleteType(IncompleteType),
@@ -2215,6 +2216,7 @@ pub enum FlowType {
 // Incomplete types occur during control flow analysis of loops. An IncompleteType
 // is distinguished from a regular type by a flags value of zero. Incomplete type
 // objects are internal to the getFlowTypeOfReference function and never escape it.
+#[derive(Clone, Copy)]
 pub struct IncompleteType {
     // flags: TypeFlags,  // No flags set
     pub ty: TypeId, // The type marked incomplete

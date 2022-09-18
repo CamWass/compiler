@@ -21,8 +21,6 @@ pub struct Class {
 
     pub decorators: Vec<Decorator>,
 
-    pub body: Vec<ClassMember>,
-
     pub is_abstract: bool,
 
     pub type_params: Option<Vec<TsTypeParamDecl>>,
@@ -31,6 +29,8 @@ pub struct Class {
 
     /// Typescript extension.
     pub implements: Vec<TsExprWithTypeArgs>,
+
+    pub body: Vec<ClassMember>,
 }
 
 #[ast_node]

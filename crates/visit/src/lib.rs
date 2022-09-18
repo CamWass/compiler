@@ -416,11 +416,11 @@ define!({
         pub node_id: NodeId,
         pub span: Span,
         pub decorators: Vec<Decorator>,
-        pub body: Vec<ClassMember>,
         pub is_abstract: bool,
         pub type_params: Option<Vec<TsTypeParamDecl>>,
         pub extends: Option<ExtendsClause>,
         pub implements: Vec<TsExprWithTypeArgs>,
+        pub body: Vec<ClassMember>,
     }
 
     pub struct ExtendsClause {

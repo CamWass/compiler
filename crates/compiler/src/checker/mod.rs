@@ -55,7 +55,7 @@ pub struct Checker {
     // totalInstantiationCount: usize,
     instantiationCount: usize,
     instantiationDepth: usize,
-    // inlineLevel: usize,
+    inlineLevel: usize,
     currentNode: Option<BoundNode>,
 
     emptySymbols: SymbolTableId,
@@ -311,8 +311,8 @@ pub struct Checker {
     // const flowLoopNodes: FlowNode[] = [];
     // const flowLoopKeys: string[] = [];
     // const flowLoopTypes: Type[][] = [];
-    // const sharedFlowNodes: FlowNode[] = [];
-    // const sharedFlowTypes: FlowType[] = [];
+    sharedFlowNodes: Vec<FlowNodeId>,
+    sharedFlowTypes: Vec<FlowType>,
     // const flowNodeReachable: (boolean | undefined)[] = [];
     flowNodePostSuper: AHashMap<FlowNodeId, bool>,
     // const potentialThisCollisions: Node[] = [];
@@ -409,7 +409,6 @@ impl Checker {
         // let symbolCount = 0;
         // let enumCount = 0;
         // let totalInstantiationCount = 0;
-        // let inlineLevel = 0;
 
         let emptySymbols = bind_res.symbol_tables.push(SymbolTable::default());
         // const arrayVariances = [VarianceFlags.Covariant];
@@ -777,8 +776,6 @@ impl Checker {
         // const flowLoopNodes: FlowNode[] = [];
         // const flowLoopKeys: string[] = [];
         // const flowLoopTypes: Type[][] = [];
-        // const sharedFlowNodes: FlowNode[] = [];
-        // const sharedFlowTypes: FlowType[] = [];
         // const flowNodeReachable: (boolean | undefined)[] = [];
         // const potentialThisCollisions: Node[] = [];
         // const potentialNewTargetCollisions: Node[] = [];
@@ -822,7 +819,7 @@ impl Checker {
             // totalInstantiationCount: usize,
             instantiationCount: 0,
             instantiationDepth: 0,
-            // inlineLevel: usize,
+            inlineLevel: 0,
             currentNode: None,
 
             emptySymbols,
@@ -1049,8 +1046,8 @@ impl Checker {
             // const flowLoopNodes: FlowNode[] = [];
             // const flowLoopKeys: string[] = [];
             // const flowLoopTypes: Type[][] = [];
-            // const sharedFlowNodes: FlowNode[] = [];
-            // const sharedFlowTypes: FlowType[] = [];
+            sharedFlowNodes: Vec::new(),
+            sharedFlowTypes: Vec::new(),
             // const flowNodeReachable: (boolean | undefined)[] = [];
             flowNodePostSuper: AHashMap::default(),
             // const potentialThisCollisions: Node[] = [];
@@ -18748,8 +18745,30 @@ impl Checker {
         }
     }
 
-    // TODO:
-    // getPropertyAccess
+    fn getPropertyAccess(&mut self, expr: &BoundNode) -> Option<BoundNode> {
+        if matches!(expr, BoundNode::MemberExpr(_)) {
+            return Some(expr.clone());
+        }
+        if let BoundNode::Ident(i) = expr {
+            todo!();
+            // let symbol = getResolvedSymbol(expr);
+            // if (isConstVariable(symbol)) {
+            //     let declaration = symbol.valueDeclaration!;
+            //     // Given 'const x = obj.kind', allow 'x' as an alias for 'obj.kind'
+            //     if (isVariableDeclaration(declaration) && !declaration.type && declaration.initializer && isAccessExpression(declaration.initializer)) {
+            //         return declaration.initializer;
+            //     }
+            //     // Given 'const { kind: x } = obj', allow 'x' as an alias for 'obj.kind'
+            //     if (isBindingElement(declaration) && !declaration.initializer) {
+            //         let parent = declaration.parent.parent;
+            //         if (isVariableDeclaration(parent) && !parent.type && parent.initializer && (isIdentifier(parent.initializer) || isAccessExpression(parent.initializer))) {
+            //             return declaration;
+            //         }
+            //     }
+            // }
+        }
+        None
+    }
 
     // fn getAccessedPropertyName(&mut self, access: AccessExpression | BindingElement) -> Option<JsWord> {
     fn getAccessedPropertyName(&mut self, access: &BoundNode) -> Option<JsWord> {
@@ -18795,10 +18814,37 @@ impl Checker {
         false
     }
 
-    // TODO:
-    // optionalChainContainsReference
-    // TODO:
-    // isDiscriminantProperty
+    fn optionalChainContainsReference(&mut self, source: &BoundNode, target: &BoundNode) -> bool {
+        todo!();
+        // while (isOptionalChain(source)) {
+        //     source = source.expression;
+        //     if (isMatchingReference(source, target)) {
+        //         return true;
+        //     }
+        // }
+        // return false;
+    }
+
+    fn isDiscriminantProperty(&mut self, ty: Option<TypeId>, name: &JsWord) -> bool {
+        if let Some(ty) = ty {
+            if self.types[ty].get_flags().intersects(TypeFlags::Union) {
+                if let Some(prop) = self.getUnionOrIntersectionProperty(ty, name, false) {
+                    if getCheckFlags(&self.symbols[prop]).intersects(CheckFlags::SyntheticProperty)
+                    {
+                        todo!();
+                        // if ((prop as TransientSymbol).isDiscriminantProperty == undefined) {
+                        //     (prop as TransientSymbol).isDiscriminantProperty =
+                        //         ((prop as TransientSymbol).checkFlags & CheckFlags.Discriminant) == CheckFlags.Discriminant &&
+                        //         !self.isGenericType(self.getTypeOfSymbol(prop));
+                        // }
+                        // return !!(prop as TransientSymbol).isDiscriminantProperty;
+                    }
+                }
+            }
+        }
+        false
+    }
+
     // TODO:
     // findDiscriminantProperties
     // TODO:
@@ -19063,10 +19109,29 @@ impl Checker {
     // getSwitchClauseTypeOfWitnesses
     // TODO:
     // eachTypeContainedIn
-    // TODO:
-    // isTypeSubsetOf
-    // TODO:
-    // isTypeSubsetOfUnion
+
+    fn isTypeSubsetOf(&mut self, source: TypeId, target: TypeId) -> bool {
+        source == target
+            || self.types[target].get_flags().intersects(TypeFlags::Union)
+                && self.isTypeSubsetOfUnion(source, target)
+    }
+
+    // fn isTypeSubsetOfUnion(&mut self,source: TypeId, target: UnionType) -> bool{
+    fn isTypeSubsetOfUnion(&mut self, source: TypeId, target: TypeId) -> bool {
+        todo!();
+        // if (source.flags & TypeFlags.Union) {
+        //     for t in (source as UnionType).types {
+        //         if (!self.containsType(target.types, t)) {
+        //             return false;
+        //         }
+        //     }
+        //     return true;
+        // }
+        // if (source.flags & TypeFlags.EnumLiteral && self.getBaseTypeOfEnumLiteralType(source as LiteralType) == target) {
+        //     return true;
+        // }
+        // return containsType(target.types, source);
+    }
 
     fn forEachType<F>(&mut self, ty: TypeId, mut f: F)
     where
@@ -19258,11 +19323,9 @@ impl Checker {
     // extractTypesOfKind
     // TODO:
     // replacePrimitivesWithLiterals
-    // TODO:
-    // isIncomplete
 
-    // TODO:
-    // createFlowType
+    // TODO: move functions to flow.rs?
+
     // TODO:
     // createEvolvingArrayType
     // TODO:
@@ -19285,8 +19348,22 @@ impl Checker {
 
     // TODO:
     // getElementTypeOfEvolvingArrayType
-    // TODO:
-    // isEvolvingArrayTypeList
+
+    fn isEvolvingArrayTypeList(&self, types: &Vec<TypeId>) -> bool {
+        let mut hasEvolvingArrayType = false;
+        for &t in types {
+            if !self.types[t].get_flags().intersects(TypeFlags::Never) {
+                if !self.types[t]
+                    .get_object_flags()
+                    .intersects(ObjectFlags::EvolvingArray)
+                {
+                    return false;
+                }
+                hasEvolvingArrayType = true;
+            }
+        }
+        hasEvolvingArrayType
+    }
 
     // Return true if the given node is 'x' in an 'x.length', x.push(value)', 'x.unshift(value)' or
     // 'x[n] = value' operation, where 'n' is an expression of type any, undefined, or a number-like type.
@@ -19353,7 +19430,12 @@ impl Checker {
                 if isDeclarationWithExplicitTypeAnnotation(&declaration.clone().into()) {
                     return Some(self.getTypeOfSymbol(symbol));
                 }
-                todo!();
+                if matches!(
+                    declaration,
+                    BoundNode::VarDeclarator(_) | BoundNode::VarDecl(_)
+                ) {
+                    todo!("see below");
+                }
                 // if isVariableDeclaration(declaration) && declaration.parent.parent.kind === SyntaxKind.ForOfStatement {
                 //     todo!();
                 //     // const statement = declaration.parent.parent;
@@ -19394,8 +19476,7 @@ impl Checker {
                 return self.getExplicitTypeOfSymbol(symbol /*, diagnostic*/);
             }
             BoundNode::ThisExpr(_) => {
-                todo!();
-                // return getExplicitThisType(node);
+                return self.getExplicitThisType(node);
             }
             BoundNode::Super(n) => {
                 return Some(self.checkSuperExpression(n));
@@ -19689,8 +19770,22 @@ impl Checker {
         }
     }
 
-    // TODO:
-    // isConstantReference
+    fn isConstantReference(&mut self, node: &BoundNode) -> bool {
+        match node {
+            BoundNode::Ident(i) => {
+                let symbol = self.getResolvedSymbol(i);
+                self.isConstVariable(symbol)
+                    || isParameterOrCatchClauseVariable(&self.symbols[symbol])
+                        && !self.isSymbolAssigned(symbol)
+            }
+            BoundNode::MemberExpr(_) => {
+                todo!();
+                // The resolvedSymbol property is initialized by checkPropertyAccess or checkElementAccess before we get here.
+                // isConstantReference((node as AccessExpression).expression) && isReadonlySymbol(getNodeLinks(node).resolvedSymbol || unknownSymbol)
+            }
+            _ => false,
+        }
+    }
 
     // TODO:
     // getTypeOfSymbolAtLocation
@@ -19724,11 +19819,9 @@ impl Checker {
         self.symbols[symbol]
             .flags()
             .intersects(SymbolFlags::Variable)
-            && {
-                dbg!(&self.symbols[symbol]);
-                todo!();
-                // getDeclarationNodeFlagsFromSymbol(symbol).intersects(NodeFlags::Const)
-            }
+            && self
+                .getDeclarationNodeFlagsFromSymbol(symbol)
+                .intersects(NodeFlags::Const)
     }
 
     /** remove undefined from the annotated type of a parameter when there is an initializer (that doesn't include undefined) */
@@ -20405,8 +20498,28 @@ impl Checker {
         None
     }
 
-    // TODO:
-    // getExplicitThisType
+    fn getExplicitThisType(&mut self, node: &BoundNode) -> Option<TypeId> {
+        debug_assert!(matches!(node, BoundNode::ThisExpr(_)));
+        let container = getThisContainer(node.clone(), false);
+        if isFunctionLike(Some(&container)) {
+            let signature = self.getSignatureFromDeclaration(container.clone());
+            if let Some(this_param) = self.signatures[signature].thisParameter {
+                return self.getExplicitTypeOfSymbol(this_param);
+            }
+        }
+        if let Some(container_parent) = container.parent() {
+            if isClassLike(&container_parent) {
+                let symbol = self.getSymbolOfNode(container_parent).unwrap();
+                return if isStatic(&container) {
+                    Some(self.getTypeOfSymbol(symbol))
+                } else {
+                    let ty = self.getDeclaredTypeOfSymbol(symbol);
+                    self.types[ty].unwrap_as_interface_type().thisType
+                };
+            }
+        }
+        None
+    }
 
     fn getClassNameFromPrototypeMethod(&mut self, container: BoundNode) -> Option<BoundNode> {
         // TODO: prototype methods:
@@ -22471,12 +22584,11 @@ impl Checker {
     // checkJsxExpression
 
     fn getDeclarationNodeFlagsFromSymbol(&self, s: SymbolId) -> NodeFlags {
-        todo!();
-        // self.symbols[s]
-        //     .valueDeclaration()
-        //     .as_ref()
-        //     .map(|vd| getCombinedNodeFlags(vd))
-        //     .unwrap_or_default()
+        self.symbols[s]
+            .valueDeclaration()
+            .as_ref()
+            .map(|vd| getCombinedNodeFlags(vd))
+            .unwrap_or_default()
     }
 
     /**
@@ -25665,8 +25777,19 @@ impl Checker {
     // getYieldedTypeOfYieldExpression
     // TODO:
     // getFactsFromTypeofSwitch
-    // TODO:
-    // isExhaustiveSwitchStatement
+
+    fn isExhaustiveSwitchStatement(&mut self, node: &Rc<SwitchStmt>) -> bool {
+        let links = self.getNodeLinks(node.clone().into());
+        if let Some(isExhaustive) = links.isExhaustive {
+            isExhaustive
+        } else {
+            todo!();
+            // let isExhaustive = computeExhaustiveSwitchStatement(node);
+            //     self.getNodeLinks_mut(node).isExhaustive = Some(isExhaustive);
+            //     isExhaustive
+        }
+    }
+
     // TODO:
     // computeExhaustiveSwitchStatement
 
@@ -27738,12 +27861,10 @@ impl Checker {
         //     }
         // }
 
-        // TODO: this match stmt is a WIP port of the commented-out one below.
         match &node {
             BoundNode::Ident(_) | BoundNode::PrivateName(_) | BoundNode::TsQualifiedName(_) => {
                 self.getSymbolOfNameOrPropertyAccessExpression(node.clone())
             }
-
             BoundNode::MemberExpr(m) if !m.computed => {
                 self.getSymbolOfNameOrPropertyAccessExpression(node.clone())
             }
@@ -27772,133 +27893,147 @@ impl Checker {
                 let type_id = self.getTypeFromThisTypeNode(node);
                 *self.types[type_id].get_symbol()
             }
-            // TODO: remove these branches in favour of the default branch.
-            // They are only here to avoid an unknwon node error during dev:
-            BoundNode::CallExpr(_) => None,
-            _ => {
-                dbg!(node);
-                // todo!();
-                None
+            BoundNode::Super(_) => {
+                let ty = self.checkExpression(node, None, false);
+                *self.types[ty].get_symbol()
             }
+            // TODO:
+            // BoundNode::ConstructorKeyword(_) => {
+            //     // constructor keyword for an overload, should take us to the definition if it exist
+            //     let constructorDeclaration = parent;
+            //     if constructorDeclaration && constructorDeclaration.kind == SyntaxKind.Constructor {
+            //         return (constructorDeclaration.parent as ClassDeclaration).symbol;
+            //     }
+            //     None
+            // }
+            BoundNode::Tpl(_) => todo!("see below"),
+            //     BoundNode::StringLiteral(_) | BoundNode::NoSubstitutionTemplateLiteral(_) => {
+            BoundNode::Str(_) => {
+                // TODO:
+                // 1). import x = require("./mo/*gotToDefinitionHere*/d")
+                // 2). External module name in an import declaration
+                // 3). Dynamic import call or require in javascript
+                // 4). type A = import("./f/*gotToDefinitionHere*/oo")
+                // if (isExternalModuleImportEqualsDeclaration(grandparent)
+                //     && getExternalModuleImportEqualsDeclarationExpression(grandparent) == node)
+                //     || ((parent.kind == SyntaxKind.ImportDeclaration
+                //         || parent.kind == SyntaxKind.ExportDeclaration)
+                //         && (parent as ImportDeclaration).moduleSpecifier == node)
+                //     || ((isBoundNodeInJSFile(node)
+                //         && isRequireCall(parent, /*checkArgumentIsStringLiteralLike*/ false))
+                //         || isImportCall(parent))
+                //     || (isLiteralTypeNode(parent)
+                //         && isLiteralImportTypeNode(grandparent)
+                //         && grandparent.argument == parent)
+                // {
+                //     return resolveExternalModuleName(
+                //         node,
+                //         node as LiteralExpression,
+                //         ignoreErrors,
+                //     );
+                // }
+                if let BoundNode::CallExpr(p) = &parent {
+                    if isBindableObjectDefinePropertyCall(&p.node)
+                        && p.args[1].bind(parent.clone()) == node
+                    {
+                        return self.getSymbolOfNode(parent);
+                    }
+                }
+
+                // index access
+                let objectType = match &parent {
+                    BoundNode::MemberExpr(m) if m.computed => {
+                        if Node::from(m.prop.clone()) == Node::from(node) {
+                            Some(self.getTypeOfExpression(m.obj.bind(parent.clone())))
+                        } else {
+                            None
+                        }
+                    }
+                    BoundNode::TsLitType(_) => {
+                        todo!();
+                        // if isIndexedAccessTypeNode(grandParent) {
+                        //     Some(self.getTypeFromTypeNode(grandParent.objectType))
+                        // } else {
+                        //     None
+                        // }
+                    }
+                    _ => None,
+                };
+                if let Some(objectType) = objectType {
+                    todo!();
+                // self.getPropertyOfType(
+                //     objectType,
+                //     escapeLeadingUnderscores((node as StringLiteral | NumericLiteral).text),false
+                // )
+                } else {
+                    None
+                }
+            }
+            BoundNode::Number(n) => {
+                // index access
+                let objectType = match &parent {
+                    BoundNode::MemberExpr(m) if m.computed => {
+                        if Node::from(m.prop.clone()) == Node::from(node) {
+                            Some(self.getTypeOfExpression(m.obj.bind(parent.clone())))
+                        } else {
+                            None
+                        }
+                    }
+                    BoundNode::TsLitType(_) => {
+                        todo!();
+                        // if isIndexedAccessTypeNode(grandParent) {
+                        //     Some(self.getTypeFromTypeNode(grandParent.objectType))
+                        // } else {
+                        //     None
+                        // }
+                    }
+                    _ => None,
+                };
+                if let Some(objectType) = objectType {
+                    todo!();
+                // self.getPropertyOfType(
+                //     objectType,
+                //     escapeLeadingUnderscores((node as StringLiteral | NumericLiteral).text),false
+                // )
+                } else {
+                    None
+                }
+            }
+            // TODO:
+            //     BoundNode::DefaultKeyword(_)
+            //     | BoundNode::FunctionKeyword(_)
+            //     | BoundNode::EqualsGreaterThanToken(_)
+            //     | BoundNode::ClassKeyword(_) => self.getSymbolOfNode(parent),
+            //     BoundNode::ImportType(_) => {
+            //         if isLiteralImportTypeNode(node) {
+            //             self.getSymbolAtLocation(node.argument.literal, ignoreErrors)
+            //         } else {
+            //             None
+            //         }
+            //     }
+            // TODO:
+            //     BoundNode::ExportKeyword(_) => {
+            //         if isExportAssignment(parent) {
+            //             Debug.checkDefined(parent.symbol)
+            //         } else {
+            //             None
+            //         }
+            //     }
+            // TODO:
+            //     BoundNode::ImportKeyword(_) | BoundNode::NewKeyword(_) => {
+            //         if isMetaProperty(parent) {
+            //             self.checkMetaPropertyKeyword(parent).symbol
+            //         } else {
+            //             None
+            //         }
+            //     }
+            BoundNode::MetaPropExpr(_) => {
+                let ty = self.checkExpression(node, None, false);
+                *self.types[ty].get_symbol()
+            }
+
+            _ => None,
         }
-
-        // match node {
-
-        //     BoundNode::SuperKeyword(_) => self.checkExpression(node as Expression).symbol,
-
-        //     BoundNode::ConstructorKeyword(_) => {
-        //         // constructor keyword for an overload, should take us to the definition if it exist
-        //         let constructorDeclaration = parent;
-        //         if constructorDeclaration && constructorDeclaration.kind == SyntaxKind.Constructor {
-        //             return (constructorDeclaration.parent as ClassDeclaration).symbol;
-        //         }
-        //         None
-        //     }
-
-        //     BoundNode::StringLiteral(_) | BoundNode::NoSubstitutionTemplateLiteral(_) => {
-        //         // 1). import x = require("./mo/*gotToDefinitionHere*/d")
-        //         // 2). External module name in an import declaration
-        //         // 3). Dynamic import call or require in javascript
-        //         // 4). type A = import("./f/*gotToDefinitionHere*/oo")
-        //         if (isExternalModuleImportEqualsDeclaration(grandparent)
-        //             && getExternalModuleImportEqualsDeclarationExpression(grandparent) == node)
-        //             || ((parent.kind == SyntaxKind.ImportDeclaration
-        //                 || parent.kind == SyntaxKind.ExportDeclaration)
-        //                 && (parent as ImportDeclaration).moduleSpecifier == node)
-        //             || ((isBoundNodeInJSFile(node)
-        //                 && isRequireCall(parent, /*checkArgumentIsStringLiteralLike*/ false))
-        //                 || isImportCall(parent))
-        //             || (isLiteralTypeNode(parent)
-        //                 && isLiteralImportTypeNode(grandparent)
-        //                 && grandparent.argument == parent)
-        //         {
-        //             return resolveExternalModuleName(
-        //                 node,
-        //                 node as LiteralExpression,
-        //                 ignoreErrors,
-        //             );
-        //         }
-        //         if isCallExpression(parent)
-        //             && isBindableObjectDefinePropertyCall(parent)
-        //             && parent.arguments[1] == node
-        //         {
-        //             return getSymbolOfNode(parent);
-        //         }
-
-        //         // index access
-        //         let objectType = if isElementAccessExpression(parent) {
-        //             if parent.argumentExpression == node {
-        //                 self.getTypeOfExpression(parent.expression)
-        //             } else {
-        //                 None
-        //             }
-        //         } else {
-        //             if isLiteralTypeNode(parent) && isIndexedAccessTypeNode(grandParent) {
-        //                 self.getTypeFromTypeNode(grandParent.objectType)
-        //             } else {
-        //                 None
-        //             }
-        //         };
-        //         objectType
-        //             && self.getPropertyOfType(
-        //                 objectType,
-        //                 escapeLeadingUnderscores((node as StringLiteral | NumericLiteral).text),
-        //             )
-        //     }
-
-        //     BoundNode::NumericLiteral(_) => {
-        //         // index access
-        //         let objectType = if isElementAccessExpression(parent) {
-        //             if parent.argumentExpression == node {
-        //                 self.getTypeOfExpression(parent.expression)
-        //             } else {
-        //                 None
-        //             }
-        //         } else {
-        //             if isLiteralTypeNode(parent) && isIndexedAccessTypeNode(grandParent) {
-        //                 self.getTypeFromTypeNode(grandParent.objectType)
-        //             } else {
-        //                 None
-        //             }
-        //         };
-        //         objectType
-        //             && getPropertyOfType(
-        //                 objectType,
-        //                 escapeLeadingUnderscores((node as StringLiteral | NumericLiteral).text),
-        //             )
-        //     }
-
-        //     BoundNode::DefaultKeyword(_)
-        //     | BoundNode::FunctionKeyword(_)
-        //     | BoundNode::EqualsGreaterThanToken(_)
-        //     | BoundNode::ClassKeyword(_) => self.getSymbolOfNode(parent),
-        //     BoundNode::ImportType(_) => {
-        //         if isLiteralImportTypeNode(node) {
-        //             self.getSymbolAtLocation(node.argument.literal, ignoreErrors)
-        //         } else {
-        //             None
-        //         }
-        //     }
-
-        //     BoundNode::ExportKeyword(_) => {
-        //         if isExportAssignment(parent) {
-        //             Debug.checkDefined(parent.symbol)
-        //         } else {
-        //             None
-        //         }
-        //     }
-
-        //     BoundNode::ImportKeyword(_) | BoundNode::NewKeyword(_) => {
-        //         if isMetaProperty(parent) {
-        //             self.checkMetaPropertyKeyword(parent).symbol
-        //         } else {
-        //             None
-        //         }
-        //     }
-        //     BoundNode::MetaProperty(_) => self.checkExpression(node as Expression).symbol,
-
-        //     _ => None,
-        // }
     }
 
     // TODO:
