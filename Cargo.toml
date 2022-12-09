@@ -1,7 +1,9 @@
 [workspace]
 members = [
     "crates/*",
-    "macros/*"
+    "crates/ts/diagnostics",
+    "macros/*",
+    "xtask"
 ]
 
 [profile.release]

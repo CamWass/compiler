@@ -1,0 +1,13 @@
+[package]
+name = "xtask"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+itertools = "0.10.3"
+proc-macro2 = "1.0.39"
+quote = "1.0.20"
+ungrammar = "1.16.1"
+xshell = "0.2.2"

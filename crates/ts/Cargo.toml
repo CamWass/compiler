@@ -1,0 +1,15 @@
+[package]
+name = "ts"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bitflags = "1.3"
+diagnostics = {path = "./diagnostics"}
+once_cell = "1.15.0"
+regex = {version = "1.6.0"}
+rustc-hash = "1.1.0"
+swc_atoms = "0.2.6"
+unicode-id  = "0.3"
