@@ -1,6 +1,7 @@
 use std::fmt::Write;
 use std::rc::Rc;
 
+use diagnostics::Diagnostics;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use unicode_id::UnicodeID;
@@ -1050,7 +1051,7 @@ fn scanConflictMarkerTrivia(text: &str, mut pos: usize, error: bool) -> usize {
     if error {
         todo!();
         // error(
-        //     Diagnostics.Merge_conflict_marker_encountered,
+        //     Diagnostics::Merge_conflict_marker_encountered,
         //     pos,
         //     mergeConflictMarkerLength,
         // );
@@ -1339,6 +1340,13 @@ pub fn isIdentifierText(
 }
 
 #[derive(Clone)]
+pub struct ScannerError {
+    pub message: DiagnosticMessage,
+    pub start: usize,
+    pub length: usize,
+}
+
+#[derive(Clone)]
 pub struct Scanner {
     text: Rc<str>,
 
@@ -1364,6 +1372,9 @@ pub struct Scanner {
     languageVersion: ScriptTarget,
     skipTrivia: bool,
     languageVariant: LanguageVariant,
+
+    emit_errors: bool,
+    errors: Vec<ScannerError>,
 }
 
 impl Scanner {
@@ -1373,10 +1384,10 @@ impl Scanner {
         skipTrivia: bool,
         text: Rc<str>,
         languageVariant: LanguageVariant,
-        // textInitial: String,
-        // onError: Option<ErrorCallback>,
-        // start: Option<usize>,
-        // length: Option<usize>,
+        emit_errors: bool, // textInitial: String,
+                           // onError: Option<ErrorCallback>,
+                           // start: Option<usize>,
+                           // length: Option<usize>,
     ) -> Scanner {
         // let languageVariant = languageVariant.unwrap_or(LanguageVariant::Standard);
 
@@ -1394,10 +1405,16 @@ impl Scanner {
             languageVersion,
             skipTrivia,
             languageVariant,
+            emit_errors,
+            errors: Vec::new(),
         }
 
         // setText(text, start, length);
         // return scanner;
+    }
+
+    pub fn take_errors(&mut self) -> Vec<ScannerError> {
+        std::mem::take(&mut self.errors)
     }
 
     pub fn getStartPos(&self) -> usize {
@@ -1472,16 +1489,19 @@ impl Scanner {
 }
 
 impl Scanner {
-    // function error(message: DiagnosticMessage): void;
-    // function error(message: DiagnosticMessage, errPos: number, length: number): void;
-    // function error(message: DiagnosticMessage, errPos: number = pos, length?: number): void {
-    //     if (onError) {
-    //         const oldPos = pos;
-    //         pos = errPos;
-    //         onError(message, length || 0);
-    //         pos = oldPos;
-    //     }
-    // }
+    fn error(&mut self, message: DiagnosticMessage) {
+        self.error_at_pos(message, self.pos, 0);
+    }
+
+    fn error_at_pos(&mut self, message: DiagnosticMessage, errPos: usize, length: usize) {
+        if self.emit_errors {
+            self.errors.push(ScannerError {
+                message,
+                start: errPos,
+                length,
+            });
+        }
+    }
 
     fn scanNumberFragment(&mut self) -> String {
         let mut start = self.pos;
@@ -1497,15 +1517,17 @@ impl Scanner {
                     isPreviousTokenSeparator = true;
                     result.push_str(&self.text[start..self.pos]);
                 } else if isPreviousTokenSeparator {
-                    todo!();
-                    // error(
-                    //     Diagnostics.Multiple_consecutive_numeric_separators_are_not_permitted,
-                    //     pos,
-                    //     1,
-                    // );
+                    self.error_at_pos(
+                        Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted,
+                        self.pos,
+                        1,
+                    );
                 } else {
-                    todo!();
-                    // error(Diagnostics.Numeric_separators_are_not_allowed_here, pos, 1);
+                    self.error_at_pos(
+                        Diagnostics::Numeric_separators_are_not_allowed_here,
+                        self.pos,
+                        1,
+                    );
                 }
                 self.pos += 1;
                 start = self.pos;
@@ -1520,12 +1542,11 @@ impl Scanner {
             break;
         }
         if self.prev() == Some('_') {
-            todo!();
-            // error(
-            //     Diagnostics.Numeric_separators_are_not_allowed_here,
-            //     pos - 1,
-            //     1,
-            // );
+            self.error_at_pos(
+                Diagnostics::Numeric_separators_are_not_allowed_here,
+                self.pos - 1,
+                1,
+            );
         }
         result.push_str(&self.text[start..self.pos]);
         result
@@ -1550,8 +1571,7 @@ impl Scanner {
             let preNumericPart = self.pos;
             let finalFragment = self.scanNumberFragment();
             if finalFragment.is_empty() {
-                todo!();
-                // error(Diagnostics.Digit_expected);
+                self.error(Diagnostics::Digit_expected);
             } else {
                 scientificFragment = Some(format!(
                     "{}{}",
@@ -1608,28 +1628,25 @@ impl Scanner {
 
         if length == 1 && self.text.as_bytes()[identifierStart] == b'n' {
             if isScientific {
-                todo!();
-                // error(
-                //     Diagnostics.A_bigint_literal_cannot_use_exponential_notation,
-                //     numericStart,
-                //     identifierStart - numericStart + 1,
-                // );
+                self.error_at_pos(
+                    Diagnostics::A_bigint_literal_cannot_use_exponential_notation,
+                    numericStart,
+                    identifierStart - numericStart + 1,
+                );
             } else {
-                todo!();
-                // error(
-                //     Diagnostics.A_bigint_literal_must_be_an_integer,
-                //     numericStart,
-                //     identifierStart - numericStart + 1,
-                // );
+                self.error_at_pos(
+                    Diagnostics::A_bigint_literal_must_be_an_integer,
+                    numericStart,
+                    identifierStart - numericStart + 1,
+                );
             }
         } else {
-            todo!();
-            // error(
-            //     Diagnostics.An_identifier_or_keyword_cannot_immediately_follow_a_numeric_literal,
-            //     identifierStart,
-            //     length,
-            // );
-            // pos = identifierStart;
+            self.error_at_pos(
+                Diagnostics::An_identifier_or_keyword_cannot_immediately_follow_a_numeric_literal,
+                identifierStart,
+                length,
+            );
+            self.pos = identifierStart;
         }
     }
 
@@ -1686,11 +1703,17 @@ impl Scanner {
                     allowSeparator = false;
                     isPreviousTokenSeparator = true;
                 } else if isPreviousTokenSeparator {
-                    // error(Diagnostics.Multiple_consecutive_numeric_separators_are_not_permitted, pos, 1);
-                    todo!();
+                    self.error_at_pos(
+                        Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted,
+                        self.pos,
+                        1,
+                    );
                 } else {
-                    // error(Diagnostics.Numeric_separators_are_not_allowed_here, pos, 1);
-                    todo!();
+                    self.error_at_pos(
+                        Diagnostics::Numeric_separators_are_not_allowed_here,
+                        self.pos,
+                        1,
+                    );
                 }
                 self.pos += 1;
                 continue;
@@ -1709,8 +1732,11 @@ impl Scanner {
             valueChars.clear();
         }
         if self.prev() == Some('_') {
-            // error(Diagnostics.Numeric_separators_are_not_allowed_here, pos - 1, 1);
-            todo!();
+            self.error_at_pos(
+                Diagnostics::Numeric_separators_are_not_allowed_here,
+                self.pos - 1,
+                1,
+            );
         }
         valueChars
     }
@@ -1724,9 +1750,8 @@ impl Scanner {
             if self.pos >= self.end {
                 result.push_str(&self.text[start..self.pos]);
                 self.tokenFlags |= TokenFlags::Unterminated;
-                todo!();
-                // error(Diagnostics.Unterminated_string_literal);
-                // break;
+                self.error(Diagnostics::Unterminated_string_literal);
+                break;
             }
             let ch = self.cur().unwrap();
             if ch == quote {
@@ -1743,9 +1768,8 @@ impl Scanner {
             if isLineBreak(ch) && !jsxAttributeString {
                 result.push_str(&self.text[start..self.pos]);
                 self.tokenFlags |= TokenFlags::Unterminated;
-                todo!();
-                // error(Diagnostics.Unterminated_string_literal);
-                // break;
+                self.error(Diagnostics::Unterminated_string_literal);
+                break;
             }
             self.pos += ch.len_utf8();
         }
@@ -1768,14 +1792,13 @@ impl Scanner {
             if self.pos >= self.end {
                 contents.push_str(&self.text[start..self.pos]);
                 self.tokenFlags |= TokenFlags::Unterminated;
-                todo!();
-                // error(Diagnostics.Unterminated_template_literal);
-                // resultingToken = if startedWithBacktick {
-                //     SyntaxKind::NoSubstitutionTemplateLiteral
-                // } else {
-                //     SyntaxKind::TemplateTail
-                // };
-                // break;
+                self.error(Diagnostics::Unterminated_template_literal);
+                resultingToken = if startedWithBacktick {
+                    SyntaxKind::NoSubstitutionTemplateLiteral
+                } else {
+                    SyntaxKind::TemplateTail
+                };
+                break;
             }
 
             let currChar = self.cur().unwrap();
@@ -1838,9 +1861,8 @@ impl Scanner {
         let start = self.pos;
         self.pos += 1;
         if self.pos >= self.end {
-            todo!();
-            // error(Diagnostics.Unexpected_end_of_text);
-            // return "";
+            self.error(Diagnostics::Unexpected_end_of_text);
+            return String::new();
         }
         let ch = self.cur().unwrap();
         self.pos += 1;
@@ -1975,9 +1997,8 @@ impl Scanner {
                 String::new()
             }
         } else {
-            todo!();
-            // error(Diagnostics.Hexadecimal_digit_expected);
-            // return "";
+            self.error(Diagnostics::Hexadecimal_digit_expected);
+            return String::new();
         }
     }
 
@@ -1988,33 +2009,29 @@ impl Scanner {
         } else {
             None
         };
-        let isInvalidExtendedEscape = false;
+        let mut isInvalidExtendedEscape = false;
 
         // Validate the value of the digit
         if escapedValue.is_none() {
-            todo!();
-            // error(Diagnostics.Hexadecimal_digit_expected);
-            // isInvalidExtendedEscape = true;
+            self.error(Diagnostics::Hexadecimal_digit_expected);
+            isInvalidExtendedEscape = true;
         } else if escapedValue.unwrap() > 0x10FFFF {
-            todo!();
-            // error(
-            //     Diagnostics
-            //         .An_extended_Unicode_escape_value_must_be_between_0x0_and_0x10FFFF_inclusive,
-            // );
-            // isInvalidExtendedEscape = true;
+            self.error(
+                Diagnostics
+                    ::An_extended_Unicode_escape_value_must_be_between_0x0_and_0x10FFFF_inclusive,
+            );
+            isInvalidExtendedEscape = true;
         }
 
         if self.pos >= self.end {
-            todo!();
-            // error(Diagnostics.Unexpected_end_of_text);
-            // isInvalidExtendedEscape = true;
+            self.error(Diagnostics::Unexpected_end_of_text);
+            isInvalidExtendedEscape = true;
         } else if self.cur() == Some('}') {
             // Only swallow the following character up if it's a '}'.
             self.pos += 1;
         } else {
-            todo!();
-            // error(Diagnostics.Unterminated_Unicode_escape_sequence);
-            // isInvalidExtendedEscape = true;
+            self.error(Diagnostics::Unterminated_Unicode_escape_sequence);
+            isInvalidExtendedEscape = true;
         }
 
         if isInvalidExtendedEscape {
@@ -2130,11 +2147,17 @@ impl Scanner {
                     separatorAllowed = false;
                     isPreviousTokenSeparator = true;
                 } else if isPreviousTokenSeparator {
-                    todo!();
-                    // error(Diagnostics.Multiple_consecutive_numeric_separators_are_not_permitted, pos, 1);
+                    self.error_at_pos(
+                        Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted,
+                        self.pos,
+                        1,
+                    );
                 } else {
-                    todo!();
-                    // error(Diagnostics.Numeric_separators_are_not_allowed_here, pos, 1);
+                    self.error_at_pos(
+                        Diagnostics::Numeric_separators_are_not_allowed_here,
+                        self.pos,
+                        1,
+                    );
                 }
                 self.pos += 1;
                 continue;
@@ -2149,8 +2172,11 @@ impl Scanner {
         }
         if self.prev() == Some('_') {
             // Literal ends with underscore - not allowed
-            todo!();
-            // error(Diagnostics.Numeric_separators_are_not_allowed_here, pos - 1, 1);
+            self.error_at_pos(
+                Diagnostics::Numeric_separators_are_not_allowed_here,
+                self.pos - 1,
+                1,
+            );
         }
         value
     }
@@ -2440,8 +2466,7 @@ impl Scanner {
                         // );
 
                         if !commentClosed {
-                            todo!();
-                            // error(Diagnostics.Asterisk_Slash_expected);
+                            self.error(Diagnostics::Asterisk_Slash_expected);
                         }
 
                         if self.skipTrivia {
@@ -2469,9 +2494,8 @@ impl Scanner {
                         self.pos += 2;
                         self.tokenValue = Some(self.scanMinimumNumberOfHexDigits(1, true));
                         if self.tokenValue.is_none() {
-                            todo!();
-                            // error(Diagnostics.Hexadecimal_digit_expected);
-                            // self.tokenValue = "0";
+                            self.error(Diagnostics::Hexadecimal_digit_expected);
+                            self.tokenValue = Some("0".to_string());
                         }
                         self.tokenValue = Some(format!("0x{}", self.tokenValue.as_ref().unwrap()));
                         self.tokenFlags |= TokenFlags::HexSpecifier;
@@ -2482,9 +2506,8 @@ impl Scanner {
                         self.pos += 2;
                         self.tokenValue = Some(self.scanBinaryOrOctalDigits(2));
                         if self.tokenValue.as_ref().unwrap().is_empty() {
-                            todo!();
-                            // error(Diagnostics.Binary_digit_expected);
-                            // self.tokenValue = "0";
+                            self.error(Diagnostics::Binary_digit_expected);
+                            self.tokenValue = Some("0".to_string());
                         }
                         self.tokenValue = Some(format!("0b{}", self.tokenValue.as_ref().unwrap()));
                         self.tokenFlags |= TokenFlags::BinarySpecifier;
@@ -2495,9 +2518,8 @@ impl Scanner {
                         self.pos += 2;
                         self.tokenValue = Some(self.scanBinaryOrOctalDigits(8));
                         if self.tokenValue.as_ref().unwrap().is_empty() {
-                            todo!();
-                            // error(Diagnostics.Octal_digit_expected);
-                            // self.tokenValue = "0";
+                            self.error(Diagnostics::Octal_digit_expected);
+                            self.tokenValue = Some("0".to_string());
                         }
                         self.tokenValue = Some(format!("0o{}", self.tokenValue.as_ref().unwrap()));
                         self.tokenFlags |= TokenFlags::OctalSpecifier;
@@ -2702,17 +2724,15 @@ impl Scanner {
                         return_token!(self.getIdentifierToken());
                     }
 
-                    todo!();
-                    // error(Diagnostics.Invalid_character);
-                    // self.pos += 1;
-                    // return_token!(SyntaxKind::Unknown);
+                    self.error(Diagnostics::Invalid_character);
+                    self.pos += 1;
+                    return_token!(SyntaxKind::Unknown);
                 }
                 '#' => {
                     if self.pos != 0 && self.peek() == Some('!') {
-                        todo!();
-                        // error(Diagnostics.can_only_be_used_at_the_start_of_a_file);
-                        // self.pos += 1;
-                        // return_token!(SyntaxKind::Unknown);
+                        self.error(Diagnostics::can_only_be_used_at_the_start_of_a_file);
+                        self.pos += 1;
+                        return_token!(SyntaxKind::Unknown);
                     }
 
                     if self.peek().is_some()
@@ -2722,8 +2742,8 @@ impl Scanner {
                         self.scanIdentifier(self.cur().unwrap(), self.languageVersion);
                     } else {
                         self.tokenValue = Some('#'.to_string());
-                        todo!();
-                        // error(Diagnostics.Invalid_character, pos++, charSize(ch));
+                        self.pos += 1;
+                        self.error_at_pos(Diagnostics::Invalid_character, self.pos, 1);
                     }
                     return_token!(SyntaxKind::PrivateIdentifier);
                 }
@@ -2738,11 +2758,10 @@ impl Scanner {
                         self.pos += ch.len_utf8();
                         continue;
                     }
-                    todo!();
-                    // let size = charSize(ch);
-                    // error(Diagnostics.Invalid_character, pos, size);
-                    // self.pos += size;
-                    // return_token!(SyntaxKind::Unknown);
+                    let size = ch.len_utf8();
+                    self.error_at_pos(Diagnostics::Invalid_character, self.pos, size);
+                    self.pos += size;
+                    return_token!(SyntaxKind::Unknown);
                 }
             }
         }
@@ -2839,17 +2858,15 @@ impl Scanner {
                 // regex.  Report error and return what we have so far.
                 if p >= self.end {
                     self.tokenFlags |= TokenFlags::Unterminated;
-                    todo!();
-                    // error(Diagnostics.Unterminated_regular_expression_literal);
-                    // break;
+                    self.error(Diagnostics::Unterminated_regular_expression_literal);
+                    break;
                 }
 
                 let ch = self.char_at(p).unwrap();
                 if isLineBreak(ch) {
                     self.tokenFlags |= TokenFlags::Unterminated;
-                    todo!();
-                    // error(Diagnostics.Unterminated_regular_expression_literal);
-                    // break;
+                    self.error(Diagnostics::Unterminated_regular_expression_literal);
+                    break;
                 }
 
                 if inEscape {
@@ -3011,10 +3028,10 @@ impl Scanner {
     //             break;
     //         }
     //         if (char == '>') {
-    //             error(Diagnostics.Unexpected_token_Did_you_mean_or_gt, pos, 1);
+    //             error(Diagnostics::Unexpected_token_Did_you_mean_or_gt, pos, 1);
     //         }
     //         if (char == CharacterCodes.closeBrace) {
-    //             error(Diagnostics.Unexpected_token_Did_you_mean_or_rbrace, pos, 1);
+    //             error(Diagnostics::Unexpected_token_Did_you_mean_or_rbrace, pos, 1);
     //         }
 
     //         // FirstNonWhitespace is 0, then we only see whitespaces so far. If we see a linebreak, we want to ignore that whitespaces.

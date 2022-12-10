@@ -1,6 +1,7 @@
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 
+#[derive(Debug, Clone, Copy)]
 pub struct DiagnosticMessage {
     pub key: &'static str,
     pub category: DiagnosticCategory,

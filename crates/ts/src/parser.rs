@@ -948,7 +948,20 @@ impl Parser {
             contextFlags,
             topLevel: true,
             parseErrorBeforeNextFinishedNode: false,
-            scanner: Scanner::createScanner(languageVersion, true, sourceText, languageVariant),
+            scanner: Scanner::createScanner(
+                languageVersion,
+                true,
+                sourceText,
+                languageVariant,
+                true,
+            ),
+        }
+    }
+
+    /// Should be called after any operation where the scanner might generate an error.
+    fn emit_scanner_errors(&mut self) {
+        for error in self.scanner.take_errors() {
+            self.parseErrorAtPosition::<u8>(error.start, error.length, error.message, None);
         }
     }
 }
@@ -1648,6 +1661,7 @@ impl Parser {
 
     fn nextTokenWithoutCheck(&mut self) -> SyntaxKind {
         let next = self.scanner.scan();
+        self.emit_scanner_errors();
         self.currentToken = next;
         next
     }
@@ -1682,26 +1696,31 @@ impl Parser {
 
     fn reScanGreaterToken(&mut self) -> SyntaxKind {
         self.currentToken = self.scanner.reScanGreaterToken();
+        self.emit_scanner_errors();
         self.currentToken
     }
 
     fn reScanSlashToken(&mut self) -> SyntaxKind {
         self.currentToken = self.scanner.reScanSlashToken();
+        self.emit_scanner_errors();
         self.currentToken
     }
 
     fn reScanTemplateToken(&mut self, isTaggedTemplate: bool) -> SyntaxKind {
         self.currentToken = self.scanner.reScanTemplateToken(isTaggedTemplate);
+        self.emit_scanner_errors();
         self.currentToken
     }
 
     fn reScanTemplateHeadOrNoSubstitutionTemplate(&mut self) -> SyntaxKind {
         self.currentToken = self.scanner.reScanTemplateHeadOrNoSubstitutionTemplate();
+        self.emit_scanner_errors();
         self.currentToken
     }
 
     fn reScanLessThanToken(&mut self) -> SyntaxKind {
         self.currentToken = self.scanner.reScanLessThanToken();
+        self.emit_scanner_errors();
         self.currentToken
     }
 
@@ -2268,6 +2287,7 @@ impl Parser {
                 .scanner
                 .tryScan(|s| s.reScanInvalidIdentifier() == SyntaxKind::Identifier)
         {
+            self.emit_scanner_errors();
             // Scanner has already recorded an 'Invalid character' error, so no need to add another from the parser.
             return self.createIdentifier(true, None, None);
         }
@@ -4830,12 +4850,14 @@ impl Parser {
             SyntaxKind::AsteriskEqualsToken => {
                 // If there is '*=', treat it as * followed by postfix =
                 self.scanner.reScanAsteriskEqualsToken();
+                self.emit_scanner_errors();
                 TypeNode::JSDocAllType(Rc::new(self.parseJSDocAllType()))
             }
             SyntaxKind::AsteriskToken => TypeNode::JSDocAllType(Rc::new(self.parseJSDocAllType())),
             SyntaxKind::QuestionQuestionToken => {
                 // If there is '??', treat it as prefix-'?' in JSDoc type.
                 self.scanner.reScanQuestionToken();
+                self.emit_scanner_errors();
                 self.parseJSDocUnknownOrNullableType()
             }
             SyntaxKind::QuestionToken => self.parseJSDocUnknownOrNullableType(),
