@@ -3,6 +3,7 @@
 #![allow(non_upper_case_globals)]
 #![feature(map_many_mut)]
 
+mod convert;
 pub mod core;
 pub mod factory;
 pub mod node;

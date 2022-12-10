@@ -1667,11 +1667,11 @@ impl IsNode for QualifiedName {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        true
+        false
     }
 }
 
@@ -1759,11 +1759,11 @@ impl IsNode for ComputedPropertyName {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!();
+        true
     }
 }
 
@@ -1790,11 +1790,11 @@ impl IsNode for PrivateIdentifier {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!();
+        true
     }
 }
 
@@ -1825,7 +1825,7 @@ impl IsNode for Decorator {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
@@ -1839,7 +1839,7 @@ pub struct TypeParameterDeclaration {
     pub node_id: NodeId,
 
     // readonly parent: DeclarationWithTypeParameterChildren | InferTypeNode;
-    pub name: Identifier,
+    pub name: Rc<Identifier>,
     /** Note: Consider calling `getEffectiveConstraintOfTypeParameter` */
     pub constraint: Option<TypeNode>,
     pub default: Option<TypeNode>,
@@ -1860,11 +1860,11 @@ impl IsNode for TypeParameterDeclaration {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        Some(Node::Identifier(self.name.clone()))
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -1916,11 +1916,11 @@ impl IsNode for CallSignatureDeclaration {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -1950,11 +1950,11 @@ impl IsNode for ConstructSignatureDeclaration {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -2024,7 +2024,7 @@ impl IsNode for VariableDeclarationList {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
@@ -2060,7 +2060,7 @@ impl IsNode for ParameterDeclaration {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        Some(self.name.clone().into())
     }
 
     fn isPropertyName(&self) -> bool {
@@ -2094,11 +2094,11 @@ impl IsNode for BindingElement {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        Some(self.name.clone().into())
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -2130,11 +2130,11 @@ impl IsNode for PropertySignature {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        Some(self.name.clone().into())
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -2168,11 +2168,11 @@ impl IsNode for PropertyDeclaration {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        Some(self.name.clone().into())
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -2251,11 +2251,11 @@ impl IsNode for PropertyAssignment {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        Some(self.name.clone().into())
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -2291,11 +2291,11 @@ impl IsNode for ShorthandPropertyAssignment {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        Some(Node::Identifier(self.name.clone()))
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -2323,11 +2323,11 @@ impl IsNode for SpreadAssignment {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -2371,11 +2371,11 @@ impl IsNode for ObjectBindingPattern {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -2399,11 +2399,11 @@ impl IsNode for ArrayBindingPattern {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -2477,7 +2477,7 @@ impl IsNode for FunctionDeclaration {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -2513,11 +2513,11 @@ impl IsNode for MethodSignature {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        Some(self.name.clone().into())
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -2568,11 +2568,11 @@ impl IsNode for MethodDeclaration {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        Some(self.name.clone().into())
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -2610,11 +2610,11 @@ impl IsNode for ConstructorDeclaration {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -2640,11 +2640,11 @@ impl IsNode for SemicolonClassElement {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -2688,7 +2688,7 @@ impl IsNode for GetAccessorDeclaration {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -2734,7 +2734,7 @@ impl IsNode for SetAccessorDeclaration {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -2770,11 +2770,11 @@ impl IsNode for IndexSignatureDeclaration {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -2806,11 +2806,11 @@ impl IsNode for ClassStaticBlockDeclaration {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -2907,11 +2907,11 @@ impl IsNode for ImportTypeNode {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!();
+        false
     }
 }
 
@@ -2936,7 +2936,7 @@ impl IsNode for ThisTypeNode {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
@@ -2977,11 +2977,11 @@ impl IsNode for FunctionTypeNode {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -3013,11 +3013,11 @@ impl IsNode for ConstructorTypeNode {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -3050,11 +3050,11 @@ impl IsNode for TypeReferenceNode {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -3083,11 +3083,11 @@ impl IsNode for TypePredicateNode {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -3111,11 +3111,11 @@ impl IsNode for TypeQueryNode {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -3140,11 +3140,11 @@ impl IsNode for TypeLiteralNode {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -3168,11 +3168,11 @@ impl IsNode for ArrayTypeNode {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -3196,11 +3196,11 @@ impl IsNode for TupleTypeNode {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -3211,7 +3211,7 @@ pub struct NamedTupleMember {
     pub js_doc_container: JSDocContainer,
 
     pub dotDotDotToken: Option<DotDotDotToken>,
-    pub name: Identifier,
+    pub name: Rc<Identifier>,
     pub questionToken: Option<QuestionToken>,
     pub ty: TypeNode,
 }
@@ -3228,11 +3228,11 @@ impl IsNode for NamedTupleMember {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        Some(Node::Identifier(self.name.clone()))
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -3262,7 +3262,7 @@ impl IsNode for OptionalTypeNode {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -3290,7 +3290,7 @@ impl IsNode for RestTypeNode {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -3320,7 +3320,7 @@ impl IsNode for UnionTypeNode {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -3348,7 +3348,7 @@ impl IsNode for IntersectionTypeNode {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -3383,7 +3383,7 @@ impl IsNode for InferTypeNode {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -3407,11 +3407,11 @@ impl IsNode for ParenthesizedTypeNode {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -3441,7 +3441,7 @@ impl IsNode for TypeOperatorNode {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -3475,7 +3475,7 @@ impl IsNode for IndexedAccessTypeNode {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -3509,7 +3509,7 @@ impl IsNode for MappedTypeNode {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -3552,7 +3552,7 @@ impl IsNode for LiteralTypeNode {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -3587,7 +3587,7 @@ impl IsNode for StringLiteral {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        true
     }
 }
 
@@ -3615,11 +3615,11 @@ impl IsNode for TemplateLiteralTypeNode {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -3645,11 +3645,11 @@ impl IsNode for TemplateLiteralTypeSpan {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -3705,6 +3705,7 @@ make_node_enum!(
         AsExpression,
         BinaryExpression,
         CallExpression,
+        ConditionalExpression,
     ]
 );
 
@@ -3726,11 +3727,11 @@ impl IsNode for OmittedExpression {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -4015,11 +4016,11 @@ impl IsNode for PostfixUnaryExpression {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!();
+        false
     }
 }
 
@@ -4308,11 +4309,11 @@ impl IsNode for NullLiteral {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -4344,11 +4345,11 @@ impl IsNode for TrueLiteral {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -4380,11 +4381,11 @@ impl IsNode for FalseLiteral {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -4418,11 +4419,11 @@ impl IsNode for ThisExpression {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -4454,11 +4455,11 @@ impl IsNode for SuperExpression {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -4496,11 +4497,11 @@ impl IsNode for DeleteExpression {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -4524,11 +4525,11 @@ impl IsNode for TypeOfExpression {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -4552,11 +4553,11 @@ impl IsNode for VoidExpression {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -4580,11 +4581,11 @@ impl IsNode for AwaitExpression {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -4609,11 +4610,11 @@ impl IsNode for YieldExpression {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -4983,11 +4984,11 @@ impl IsNode for BinaryExpression {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -5067,14 +5068,37 @@ make_node_enum!(
 
 //     export type BindingOrAssignmentPattern = ObjectBindingOrAssignmentPattern | ArrayBindingOrAssignmentPattern;
 
-//     export interface ConditionalExpression extends Expression {
-//         readonly kind: SyntaxKind.ConditionalExpression;
-//         readonly condition: Expression;
-//         readonly questionToken: QuestionToken;
-//         readonly whenTrue: Expression;
-//         readonly colonToken: ColonToken;
-//         readonly whenFalse: Expression;
-//     }
+// export interface ConditionalExpression extends Expression {
+#[derive(Debug)]
+pub struct ConditionalExpression {
+    pub node_id: NodeId,
+
+    pub condition: Expression,
+    pub questionToken: QuestionToken,
+    pub whenTrue: Expression,
+    pub colonToken: ColonToken,
+    pub whenFalse: Expression,
+}
+
+impl HasNodeId for ConditionalExpression {
+    fn node_id(&self) -> NodeId {
+        self.node_id
+    }
+}
+
+impl IsNode for ConditionalExpression {
+    fn kind(&self) -> SyntaxKind {
+        SyntaxKind::ConditionalExpression
+    }
+
+    fn name(&self) -> Option<Node> {
+        None
+    }
+
+    fn isPropertyName(&self) -> bool {
+        false
+    }
+}
 
 pub type FunctionBody = Block;
 
@@ -5153,7 +5177,7 @@ impl IsNode for FunctionExpression {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -5192,11 +5216,11 @@ impl IsNode for ArrowFunction {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -5247,11 +5271,11 @@ impl IsNode for RegularExpressionLiteral {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!();
+        false
     }
 }
 
@@ -5282,11 +5306,11 @@ impl IsNode for NoSubstitutionTemplateLiteral {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!();
+        false
     }
 }
 
@@ -5335,11 +5359,11 @@ impl IsNode for NumericLiteral {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!();
+        true
     }
 }
 
@@ -5366,11 +5390,11 @@ impl IsNode for BigIntLiteral {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!();
+        false
     }
 }
 
@@ -5411,11 +5435,11 @@ impl IsNode for TemplateHead {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!();
+        false
     }
 }
 
@@ -5447,11 +5471,11 @@ impl IsNode for TemplateMiddle {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!();
+        false
     }
 }
 
@@ -5483,11 +5507,11 @@ impl IsNode for TemplateTail {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!();
+        false
     }
 }
 
@@ -5523,11 +5547,11 @@ impl IsNode for TemplateExpression {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!();
+        false
     }
 }
 
@@ -5562,11 +5586,11 @@ impl IsNode for TemplateSpan {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!();
+        false
     }
 }
 
@@ -5591,11 +5615,11 @@ impl IsNode for ParenthesizedExpression {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!();
+        false
     }
 }
 
@@ -5627,11 +5651,11 @@ impl IsNode for ArrayLiteralExpression {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!();
+        false
     }
 }
 
@@ -5656,11 +5680,11 @@ impl IsNode for SpreadElement {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!();
+        false
     }
 }
 
@@ -5697,11 +5721,11 @@ impl IsNode for ObjectLiteralExpression {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!();
+        false
     }
 }
 
@@ -5735,7 +5759,7 @@ impl IsNode for PropertyAccessExpression {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!();
+        false
     }
 }
 
@@ -5789,11 +5813,11 @@ impl IsNode for ElementAccessExpression {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -5839,11 +5863,11 @@ impl IsNode for CallExpression {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -5952,11 +5976,11 @@ impl IsNode for ExpressionWithTypeArguments {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -5982,11 +6006,11 @@ impl IsNode for NewExpression {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -6013,11 +6037,11 @@ impl IsNode for TaggedTemplateExpression {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -6050,11 +6074,11 @@ impl IsNode for AsExpression {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -6079,11 +6103,11 @@ impl IsNode for TypeAssertion {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -6112,11 +6136,11 @@ impl IsNode for NonNullExpression {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -6132,7 +6156,7 @@ pub struct MetaProperty {
     pub node_id: NodeId,
 
     pub keywordToken: SyntaxKind,
-    pub name: Identifier,
+    pub name: Rc<Identifier>,
 }
 
 impl HasNodeId for MetaProperty {
@@ -6147,11 +6171,11 @@ impl IsNode for MetaProperty {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        Some(Node::Identifier(self.name.clone()))
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -6506,7 +6530,7 @@ impl IsNode for VariableStatement {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
@@ -6837,7 +6861,7 @@ impl IsNode for BreakStatement {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
@@ -6868,7 +6892,7 @@ impl IsNode for ContinueStatement {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
@@ -7092,11 +7116,11 @@ impl IsNode for LabeledStatement {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -7123,11 +7147,11 @@ impl IsNode for ThrowStatement {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -7156,11 +7180,11 @@ impl IsNode for TryStatement {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -7188,11 +7212,11 @@ impl IsNode for CatchClause {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -7257,7 +7281,7 @@ impl IsNode for ClassDeclaration {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -7293,7 +7317,7 @@ impl IsNode for ClassExpression {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -7372,7 +7396,7 @@ impl IsNode for InterfaceDeclaration {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -7401,11 +7425,11 @@ impl IsNode for HeritageClause {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -7438,7 +7462,7 @@ impl IsNode for TypeAliasDeclaration {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -7473,7 +7497,7 @@ impl IsNode for EnumMember {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -7507,7 +7531,7 @@ impl IsNode for EnumDeclaration {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -7558,7 +7582,7 @@ impl IsNode for ModuleDeclaration {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -7606,11 +7630,11 @@ impl IsNode for ModuleBlock {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -7659,7 +7683,7 @@ impl IsNode for ImportEqualsDeclaration {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -7686,11 +7710,11 @@ impl IsNode for ExternalModuleReference {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 // In case of:
@@ -7724,11 +7748,11 @@ impl IsNode for ImportDeclaration {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -7751,7 +7775,7 @@ pub struct ImportClause {
 
     // readonly parent: ImportDeclaration;
     pub isTypeOnly: bool,
-    pub name: Option<Identifier>, // Default binding
+    pub name: Option<Rc<Identifier>>, // Default binding
     pub namedBindings: Option<NamedImportBindings>,
 }
 
@@ -7767,11 +7791,11 @@ impl IsNode for ImportClause {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        self.name.clone().map(|n| Node::Identifier(n))
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -7803,7 +7827,7 @@ impl IsNode for AssertEntry {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -7829,11 +7853,11 @@ impl IsNode for AssertClause {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -7843,7 +7867,7 @@ pub struct NamespaceImport {
     pub node_id: NodeId,
 
     // readonly parent: ImportClause;
-    pub name: Identifier,
+    pub name: Rc<Identifier>,
 }
 
 impl HasNodeId for NamespaceImport {
@@ -7858,11 +7882,11 @@ impl IsNode for NamespaceImport {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        Some(Node::Identifier(self.name.clone()))
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -7891,7 +7915,7 @@ impl IsNode for NamespaceExport {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -7922,7 +7946,7 @@ impl IsNode for NamespaceExportDeclaration {
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -7957,11 +7981,11 @@ impl IsNode for ExportDeclaration {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -7988,11 +8012,11 @@ impl IsNode for NamedImports {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -8017,11 +8041,11 @@ impl IsNode for NamedExports {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -8035,7 +8059,7 @@ pub struct ImportSpecifier {
 
     // readonly parent: NamedImports;
     pub propertyName: Option<Identifier>, // Name preceding "as" keyword (or undefined when "as" is absent)
-    pub name: Identifier,                 // Declared name
+    pub name: Rc<Identifier>,             // Declared name
     pub isTypeOnly: bool,
 }
 
@@ -8051,11 +8075,11 @@ impl IsNode for ImportSpecifier {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        Some(Node::Identifier(self.name.clone()))
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -8069,7 +8093,7 @@ pub struct ExportSpecifier {
     // readonly parent: NamedExports;
     pub isTypeOnly: bool,
     pub propertyName: Option<Identifier>, // Name preceding "as" keyword (or undefined when "as" is absent)
-    pub name: Identifier,                 // Declared name
+    pub name: Rc<Identifier>,             // Declared name
 }
 
 impl HasNodeId for ExportSpecifier {
@@ -8084,11 +8108,11 @@ impl IsNode for ExportSpecifier {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        Some(Node::Identifier(self.name.clone()))
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -8141,11 +8165,11 @@ impl IsNode for ExportAssignment {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!()
+        false
     }
 }
 
@@ -8213,11 +8237,11 @@ impl IsNode for JSDocAllType {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!();
+        false
     }
 }
 
@@ -8239,11 +8263,11 @@ impl IsNode for JSDocUnknownType {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!();
+        false
     }
 }
 
@@ -8266,11 +8290,11 @@ impl IsNode for JSDocNonNullableType {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!();
+        false
     }
 }
 
@@ -8294,11 +8318,11 @@ impl IsNode for JSDocNullableType {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!();
+        false
     }
 }
 
@@ -8330,11 +8354,11 @@ impl IsNode for JSDocFunctionType {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!();
+        None
     }
 
     fn isPropertyName(&self) -> bool {
-        todo!();
+        false
     }
 }
 

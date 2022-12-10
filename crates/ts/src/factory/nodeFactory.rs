@@ -1275,7 +1275,7 @@ impl NodeFactory {
 
     pub fn createTypeParameterDeclaration(
         &mut self,
-        name: Identifier,
+        name: Rc<Identifier>,
         constraint: Option<TypeNode>,
         defaultType: Option<TypeNode>,
     ) -> TypeParameterDeclaration {
@@ -2289,7 +2289,7 @@ impl NodeFactory {
     pub fn createNamedTupleMember(
         &mut self,
         dotDotDotToken: Option<DotDotDotToken>,
-        name: Identifier,
+        name: Rc<Identifier>,
         questionToken: Option<QuestionToken>,
         ty: TypeNode,
     ) -> NamedTupleMember {
@@ -3486,17 +3486,19 @@ impl NodeFactory {
         if operatorKind == SyntaxKind::QuestionQuestionToken {
             transform_flags |= TransformFlags::ContainsES2020;
         } else if operatorKind == SyntaxKind::EqualsToken {
-            if isObjectLiteralExpression(&node.left) {
-                todo!();
-                // transform_flags |= TransformFlags::ContainsES2015
-                //     | TransformFlags::ContainsES2018
-                //     | TransformFlags::ContainsDestructuringAssignment
-                //     | propagateAssignmentPatternFlags(node.left);
-            } else if isArrayLiteralExpression(&node.left) {
-                todo!();
-                // transform_flags |= TransformFlags::ContainsES2015
-                //     | TransformFlags::ContainsDestructuringAssignment
-                //     | propagateAssignmentPatternFlags(node.left);
+            if let Expression::ObjectLiteralExpression(left) = &node.left {
+                transform_flags |= TransformFlags::ContainsES2015
+                    | TransformFlags::ContainsES2018
+                    | TransformFlags::ContainsDestructuringAssignment
+                    | self.propagateAssignmentPatternFlags(
+                        &AssignmentPattern::ObjectLiteralExpression(left.clone()),
+                    );
+            } else if let Expression::ArrayLiteralExpression(left) = &node.left {
+                transform_flags |= TransformFlags::ContainsES2015
+                    | TransformFlags::ContainsDestructuringAssignment
+                    | self.propagateAssignmentPatternFlags(
+                        &AssignmentPattern::ArrayLiteralExpression(left.clone()),
+                    );
             }
         } else if operatorKind == SyntaxKind::AsteriskAsteriskToken
             || operatorKind == SyntaxKind::AsteriskAsteriskEqualsToken
@@ -3510,32 +3512,32 @@ impl NodeFactory {
     }
 
     fn propagateAssignmentPatternFlags(&mut self, node: &AssignmentPattern) -> TransformFlags {
-        todo!();
-        // let node_transform_flags = self.node_data(node).transformFlags;
-        // if node_transform_flags.intersects(TransformFlags::ContainsObjectRestOrSpread) {
-        //     return TransformFlags::ContainsObjectRestOrSpread;
-        // }
-        // if node_transform_flags.intersects(TransformFlags::ContainsES2018) {
-        //     // check for nested spread assignments, otherwise '{ x: { a, ...b } = foo } = c'
-        //     // will not be correctly interpreted by the ES2018 transformer
-        //     for element in getElementsOfBindingOrAssignmentPattern(node) {
-        //         let target = getTargetOfBindingOrAssignmentElement(element);
-        //         if target && isAssignmentPattern(&target) {
-        //             let target_transform_flags = self.node_data(&target).transformFlags;
-        //             if target_transform_flags.intersects(TransformFlags::ContainsObjectRestOrSpread)
-        //             {
-        //                 return TransformFlags::ContainsObjectRestOrSpread;
-        //             }
-        //             if target_transform_flags.intersects(TransformFlags::ContainsES2018) {
-        //                 let flags = self.propagateAssignmentPatternFlags(&target);
-        //                 if !flags.is_empty() {
-        //                     return flags;
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
-        // TransformFlags::None
+        let node_transform_flags = self.node_data(node).transformFlags;
+        if node_transform_flags.intersects(TransformFlags::ContainsObjectRestOrSpread) {
+            return TransformFlags::ContainsObjectRestOrSpread;
+        }
+        if node_transform_flags.intersects(TransformFlags::ContainsES2018) {
+            todo!();
+            // // check for nested spread assignments, otherwise '{ x: { a, ...b } = foo } = c'
+            // // will not be correctly interpreted by the ES2018 transformer
+            // for element in getElementsOfBindingOrAssignmentPattern(node) {
+            //     let target = getTargetOfBindingOrAssignmentElement(element);
+            //     if target && isAssignmentPattern(&target) {
+            //         let target_transform_flags = self.node_data(&target).transformFlags;
+            //         if target_transform_flags.intersects(TransformFlags::ContainsObjectRestOrSpread)
+            //         {
+            //             return TransformFlags::ContainsObjectRestOrSpread;
+            //         }
+            //         if target_transform_flags.intersects(TransformFlags::ContainsES2018) {
+            //             let flags = self.propagateAssignmentPatternFlags(&target);
+            //             if !flags.is_empty() {
+            //                 return flags;
+            //             }
+            //         }
+            //     }
+            // }
+        }
+        TransformFlags::None
     }
 
     //     // @api
@@ -3547,22 +3549,37 @@ impl NodeFactory {
     //             : node;
     //     }
 
-    //     // @api
-    //     function createConditionalExpression(condition: Expression, questionToken: QuestionToken | undefined, whenTrue: Expression, colonToken: ColonToken | undefined, whenFalse: Expression) {
-    //         const node = createBaseExpression<ConditionalExpression>(SyntaxKind::ConditionalExpression);
-    //         node.condition = parenthesizerRules().parenthesizeConditionOfConditionalExpression(condition);
-    //         node.questionToken = questionToken ?? createToken(SyntaxKind::QuestionToken);
-    //         node.whenTrue = parenthesizerRules().parenthesizeBranchOfConditionalExpression(whenTrue);
-    //         node.colonToken = colonToken ?? createToken(SyntaxKind::ColonToken);
-    //         node.whenFalse = parenthesizerRules().parenthesizeBranchOfConditionalExpression(whenFalse);
-    //         node.transformFlags |=
-    //             propagateChildFlags(node.condition) |
-    //             propagateChildFlags(node.questionToken) |
-    //             propagateChildFlags(node.whenTrue) |
-    //             propagateChildFlags(node.colonToken) |
-    //             propagateChildFlags(node.whenFalse);
-    //         return node;
-    //     }
+    pub fn createConditionalExpression(
+        &mut self,
+        condition: Expression,
+        questionToken: Option<QuestionToken>,
+        whenTrue: Expression,
+        colonToken: Option<ColonToken>,
+        whenFalse: Expression,
+    ) -> ConditionalExpression {
+        let node = ConditionalExpression {
+            node_id: self.node_id_gen.next(),
+            condition,
+            // TODO:
+            // condition: parenthesizerRules().parenthesizeConditionOfConditionalExpression(condition),
+            questionToken: questionToken
+                .unwrap_or_else(|| self.createToken(SyntaxKind::QuestionToken)),
+            whenTrue,
+            // TODO:
+            // whenTrue: parenthesizerRules().parenthesizeBranchOfConditionalExpression(whenTrue),
+            colonToken: colonToken.unwrap_or_else(|| self.createToken(SyntaxKind::ColonToken)),
+            whenFalse,
+            // TODO:
+            // whenFalse: parenthesizerRules().parenthesizeBranchOfConditionalExpression(whenFalse),
+        };
+        let transformFlags = self.propagateChildFlags(Some(&node.condition))
+            | self.propagateChildFlags(Some(&node.questionToken))
+            | self.propagateChildFlags(Some(&node.whenTrue))
+            | self.propagateChildFlags(Some(&node.colonToken))
+            | self.propagateChildFlags(Some(&node.whenFalse));
+        self.node_data_mut(&node).transformFlags |= transformFlags;
+        node
+    }
 
     //     // @api
     //     function updateConditionalExpression(
@@ -3965,7 +3982,7 @@ impl NodeFactory {
     pub fn createMetaProperty(
         &mut self,
         keywordToken: SyntaxKind,
-        name: Identifier,
+        name: Rc<Identifier>,
     ) -> MetaProperty {
         let node = MetaProperty {
             node_id: self.node_id_gen.next(),
@@ -5048,7 +5065,7 @@ impl NodeFactory {
     pub fn createImportClause(
         &mut self,
         isTypeOnly: bool,
-        name: Option<Identifier>,
+        name: Option<Rc<Identifier>>,
         namedBindings: Option<NamedImportBindings>,
     ) -> ImportClause {
         let node = ImportClause {
@@ -5117,7 +5134,7 @@ impl NodeFactory {
     //             : node;
     //     }
 
-    pub fn createNamespaceImport(&mut self, name: Identifier) -> NamespaceImport {
+    pub fn createNamespaceImport(&mut self, name: Rc<Identifier>) -> NamespaceImport {
         let node = NamespaceImport {
             node_id: self.node_id_gen.next(),
             name,
@@ -5176,7 +5193,7 @@ impl NodeFactory {
         &mut self,
         isTypeOnly: bool,
         propertyName: Option<Identifier>,
-        name: Identifier,
+        name: Rc<Identifier>,
     ) -> ImportSpecifier {
         let node = ImportSpecifier {
             node_id: self.node_id_gen.next(),
@@ -5320,7 +5337,7 @@ impl NodeFactory {
         &mut self,
         isTypeOnly: bool,
         propertyName: Option<Identifier>,
-        name: Identifier,
+        name: Rc<Identifier>,
     ) -> ExportSpecifier {
         let node = ExportSpecifier {
             node_id: self.node_id_gen.next(),

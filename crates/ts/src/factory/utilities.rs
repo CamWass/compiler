@@ -421,11 +421,14 @@ pub fn isLocalName(node: &Identifier, node_data: &NodeData) -> bool {
 //             node.kind === SyntaxKind::CommaListExpression;
 //     }
 
-//     export function isJSDocTypeAssertion(node: Node): node is JSDocTypeAssertion {
-//         return isParenthesizedExpression(node)
-//             && isInJSFile(node)
-//             && !!getJSDocTypeTag(node);
-//     }
+pub fn isJSDocTypeAssertion(_node: &Node) -> bool {
+    // TODO: JSDoc
+
+    // isParenthesizedExpression(node)
+    //     && isInJSFile(node)
+    //     && !!getJSDocTypeTag(node)
+    false
+}
 
 //     export function getJSDocTypeAssertionType(node: JSDocTypeAssertion) {
 //         const type = getJSDocType(node);
@@ -437,13 +440,12 @@ pub fn isOuterExpression(node: &Node, kinds: Option<OuterExpressionKinds>) -> bo
     let kinds = kinds.unwrap_or(OuterExpressionKinds::All);
     match node.kind() {
         SyntaxKind::ParenthesizedExpression => {
-            todo!();
-            // if kinds.intersects(OuterExpressionKinds::ExcludeJSDocTypeAssertion)
-            //     && isJSDocTypeAssertion(node)
-            // {
-            //     return false;
-            // }
-            // kinds.intersects(OuterExpressionKinds::Parentheses)
+            if kinds.intersects(OuterExpressionKinds::ExcludeJSDocTypeAssertion)
+                && isJSDocTypeAssertion(node)
+            {
+                return false;
+            }
+            kinds.intersects(OuterExpressionKinds::Parentheses)
         }
         SyntaxKind::TypeAssertionExpression | SyntaxKind::AsExpression => {
             kinds.intersects(OuterExpressionKinds::TypeAssertions)

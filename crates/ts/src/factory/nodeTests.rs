@@ -361,9 +361,9 @@ pub fn isObjectLiteralExpression<T: IsNode>(node: &T) -> bool {
 //         return node.kind === SyntaxKind.TypeAssertionExpression;
 //     }
 
-//     export function isParenthesizedExpression(node: Node): node is ParenthesizedExpression {
-//         return node.kind === SyntaxKind.ParenthesizedExpression;
-//     }
+pub fn isParenthesizedExpression<T: IsNode>(node: &T) -> bool {
+    node.kind() == SyntaxKind::ParenthesizedExpression
+}
 
 //     export function isFunctionExpression(node: Node): node is FunctionExpression {
 //         return node.kind === SyntaxKind.FunctionExpression;

@@ -1,4 +1,3 @@
-use std::convert::TryInto;
 use std::fmt::Write;
 use std::rc::Rc;
 
@@ -6,6 +5,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use unicode_id::UnicodeID;
 
+use crate::convert::{ecma_number_to_string, ecma_string_to_number};
 use crate::our_types::*;
 use crate::types::*;
 
@@ -1465,6 +1465,10 @@ impl Scanner {
     fn prev(&self) -> Option<char> {
         self.text[..self.pos].chars().rev().next()
     }
+
+    fn char_at(&self, pos: usize) -> Option<char> {
+        self.text[pos..].chars().next()
+    }
 }
 
 impl Scanner {
@@ -1576,9 +1580,8 @@ impl Scanner {
                 decimalFragment == None && self.tokenFlags.intersects(TokenFlags::Scientific),
             );
             // if value is not an integer, it can be safely coerced to a number
-            todo!();
-            // let s = "" + +result;
-            // return (SyntaxKind::NumericLiteral, );
+            let s = ecma_number_to_string(ecma_string_to_number(&result));
+            return (SyntaxKind::NumericLiteral, s);
         } else {
             self.tokenValue = Some(result);
             let ty = self.checkBigIntSuffix(); // if value is an integer, check whether it is a bigint
@@ -1587,43 +1590,50 @@ impl Scanner {
         }
     }
 
-    fn checkForIdentifierStartAfterNumericLiteral(&self, numericStart: usize, isScientific: bool) {
-        todo!();
-        // if !isIdentifierStart(self.cur(), self.languageVersion) {
-        //     return;
-        // }
+    fn checkForIdentifierStartAfterNumericLiteral(
+        &mut self,
+        numericStart: usize,
+        isScientific: bool,
+    ) {
+        if let Some(cur) = self.cur() {
+            if !isIdentifierStart(cur, Some(self.languageVersion)) {
+                return;
+            }
+        } else {
+            return;
+        }
 
-        // let identifierStart = self.pos;
-        // let length = self.scanIdentifierParts().len();
+        let identifierStart = self.pos;
+        let length = self.scanIdentifierParts().len();
 
-        // if length == 1 && self.text.as_bytes()[identifierStart] == b'n' {
-        //     if isScientific {
-        //         todo!();
-        //         // error(
-        //         //     Diagnostics.A_bigint_literal_cannot_use_exponential_notation,
-        //         //     numericStart,
-        //         //     identifierStart - numericStart + 1,
-        //         // );
-        //     } else {
-        //         todo!();
-        //         // error(
-        //         //     Diagnostics.A_bigint_literal_must_be_an_integer,
-        //         //     numericStart,
-        //         //     identifierStart - numericStart + 1,
-        //         // );
-        //     }
-        // } else {
-        //     todo!();
-        //     // error(
-        //     //     Diagnostics.An_identifier_or_keyword_cannot_immediately_follow_a_numeric_literal,
-        //     //     identifierStart,
-        //     //     length,
-        //     // );
-        //     // pos = identifierStart;
-        // }
+        if length == 1 && self.text.as_bytes()[identifierStart] == b'n' {
+            if isScientific {
+                todo!();
+                // error(
+                //     Diagnostics.A_bigint_literal_cannot_use_exponential_notation,
+                //     numericStart,
+                //     identifierStart - numericStart + 1,
+                // );
+            } else {
+                todo!();
+                // error(
+                //     Diagnostics.A_bigint_literal_must_be_an_integer,
+                //     numericStart,
+                //     identifierStart - numericStart + 1,
+                // );
+            }
+        } else {
+            todo!();
+            // error(
+            //     Diagnostics.An_identifier_or_keyword_cannot_immediately_follow_a_numeric_literal,
+            //     identifierStart,
+            //     length,
+            // );
+            // pos = identifierStart;
+        }
     }
 
-    fn scanOctalDigits(&mut self) -> usize {
+    fn scanOctalDigits(&mut self) -> String {
         let start = self.pos;
         for c in self.text[start..].chars() {
             if isOctalDigit(c) {
@@ -1632,23 +1642,17 @@ impl Scanner {
                 break;
             }
         }
-        todo!();
-        // +(text.substring(start, pos))
+        ecma_number_to_string(ecma_string_to_number(&self.text[start..self.pos]))
     }
 
     /**
      * Scans the given number of hexadecimal digits in the text,
      * returning -1 if the given number is unavailable.
      */
-    fn scanExactNumberOfHexDigits(
-        &mut self,
-        count: usize,
-        canHaveSeparators: bool,
-    ) -> Option<usize> {
+    fn scanExactNumberOfHexDigits(&mut self, count: usize, canHaveSeparators: bool) -> Option<u32> {
         let valueString = self.scanHexDigits(count, false, canHaveSeparators);
         if !valueString.is_empty() {
-            todo!();
-            // parseInt(valueString, 16)
+            u32::from_str_radix(&valueString, 16).ok()
         } else {
             None
         }
@@ -1743,7 +1747,7 @@ impl Scanner {
                 // error(Diagnostics.Unterminated_string_literal);
                 // break;
             }
-            self.pos += 1;
+            self.pos += ch.len_utf8();
         }
         result
     }
@@ -1753,71 +1757,81 @@ impl Scanner {
      * a literal component of a TemplateExpression.
      */
     fn scanTemplateAndSetTokenValue(&mut self, isTaggedTemplate: bool) -> SyntaxKind {
-        todo!();
-        //     const startedWithBacktick = text.charCodeAt(pos) == CharacterCodes.backtick;
+        let startedWithBacktick = self.cur() == Some('`');
 
-        //     pos+=1;
-        //     let start = pos;
-        //     let contents = "";
-        //     let resultingToken: SyntaxKind;
+        self.pos += 1;
+        let mut start = self.pos;
+        let mut contents = String::new();
+        let resultingToken;
 
-        //     while (true) {
-        //         if (pos >= end) {
-        //             contents += text.substring(start, pos);
-        //             tokenFlags |= TokenFlags::Unterminated;
-        //             error(Diagnostics.Unterminated_template_literal);
-        //             resultingToken = startedWithBacktick ? SyntaxKind::NoSubstitutionTemplateLiteral : SyntaxKind::TemplateTail;
-        //             break;
-        //         }
+        loop {
+            if self.pos >= self.end {
+                contents.push_str(&self.text[start..self.pos]);
+                self.tokenFlags |= TokenFlags::Unterminated;
+                todo!();
+                // error(Diagnostics.Unterminated_template_literal);
+                // resultingToken = if startedWithBacktick {
+                //     SyntaxKind::NoSubstitutionTemplateLiteral
+                // } else {
+                //     SyntaxKind::TemplateTail
+                // };
+                // break;
+            }
 
-        //         const currChar = text.charCodeAt(pos);
+            let currChar = self.cur().unwrap();
 
-        //         // '`'
-        //         if (currChar == CharacterCodes.backtick) {
-        //             contents += text.substring(start, pos);
-        //             pos+=1;
-        //             resultingToken = startedWithBacktick ? SyntaxKind::NoSubstitutionTemplateLiteral : SyntaxKind::TemplateTail;
-        //             break;
-        //         }
+            // '`'
+            if currChar == '`' {
+                contents.push_str(&self.text[start..self.pos]);
+                self.pos += 1;
+                resultingToken = if startedWithBacktick {
+                    SyntaxKind::NoSubstitutionTemplateLiteral
+                } else {
+                    SyntaxKind::TemplateTail
+                };
+                break;
+            }
 
-        //         // '${'
-        //         if (currChar == CharacterCodes.$ && pos + 1 < end && text.charCodeAt(pos + 1) == CharacterCodes.openBrace) {
-        //             contents += text.substring(start, pos);
-        //             pos += 2;
-        //             resultingToken = startedWithBacktick ? SyntaxKind::TemplateHead : SyntaxKind::TemplateMiddle;
-        //             break;
-        //         }
+            // '${'
+            if currChar == '$' && self.pos + 1 < self.end && self.peek() == Some('{') {
+                contents.push_str(&self.text[start..self.pos]);
+                self.pos += 2;
+                resultingToken = if startedWithBacktick {
+                    SyntaxKind::TemplateHead
+                } else {
+                    SyntaxKind::TemplateMiddle
+                };
+                break;
+            }
 
-        //         // Escape character
-        //         if (currChar == CharacterCodes.backslash) {
-        //             contents += text.substring(start, pos);
-        //             contents += scanEscapeSequence(isTaggedTemplate);
-        //             start = pos;
-        //             continue;
-        //         }
+            // Escape character
+            if currChar == '\\' {
+                contents.push_str(&self.text[start..self.pos]);
+                contents.push_str(&self.scanEscapeSequence(isTaggedTemplate));
+                start = self.pos;
+                continue;
+            }
 
-        //         // Speculated ECMAScript 6 Spec 11.8.6.1:
-        //         // <CR><LF> and <CR> LineTerminatorSequences are normalized to <LF> for Template Values
-        //         if (currChar == '\r') {
-        //             contents += text.substring(start, pos);
-        //             pos+=1;
+            // Speculated ECMAScript 6 Spec 11.8.6.1:
+            // <CR><LF> and <CR> LineTerminatorSequences are normalized to <LF> for Template Values
+            if currChar == '\r' {
+                contents.push_str(&self.text[start..self.pos]);
+                self.pos += 1;
 
-        //             if (pos < end && text.charCodeAt(pos) == CharacterCodes.lineFeed) {
-        //                 pos+=1;
-        //             }
+                if self.pos < self.end && self.cur() == Some('\n') {
+                    self.pos += 1;
+                }
 
-        //             contents += "\n";
-        //             start = pos;
-        //             continue;
-        //         }
+                contents.push('\n');
+                start = self.pos;
+                continue;
+            }
 
-        //         pos+=1;
-        //     }
+            self.pos += 1;
+        }
 
-        //     Debug.assert(resultingToken != undefined);
-
-        //     tokenValue = contents;
-        //     return resultingToken;
+        self.tokenValue = Some(contents);
+        resultingToken
     }
 
     fn scanEscapeSequence(&mut self, isTaggedTemplate: bool) -> String {
@@ -1955,8 +1969,7 @@ impl Scanner {
         let escapedValue = self.scanExactNumberOfHexDigits(numDigits, false);
 
         if let Some(escapedValue) = escapedValue {
-            let result = String::new();
-            if let Some(escaped) = escapedValue.try_into().ok().and_then(|e| char::from_u32(e)) {
+            if let Some(escaped) = char::from_u32(escapedValue) {
                 String::from(escaped)
             } else {
                 String::new()
@@ -1969,47 +1982,46 @@ impl Scanner {
     }
 
     fn scanExtendedUnicodeEscape(&mut self) -> String {
-        todo!();
-        // let escapedValueString = self.scanMinimumNumberOfHexDigits(1, false);
-        // let escapedValue = if !escapedValueString.is_empty() {
-        //     parseInt(escapedValueString, 16)
-        // } else {
-        //     None
-        // };
-        // let isInvalidExtendedEscape = false;
+        let escapedValueString = self.scanMinimumNumberOfHexDigits(1, false);
+        let escapedValue = if !escapedValueString.is_empty() {
+            u32::from_str_radix(&escapedValueString, 16).ok()
+        } else {
+            None
+        };
+        let isInvalidExtendedEscape = false;
 
-        // // Validate the value of the digit
-        // if escapedValue < 0 {
-        //     todo!();
-        //     // error(Diagnostics.Hexadecimal_digit_expected);
-        //     // isInvalidExtendedEscape = true;
-        // } else if escapedValue > 0x10FFFF {
-        //     todo!();
-        //     // error(
-        //     //     Diagnostics
-        //     //         .An_extended_Unicode_escape_value_must_be_between_0x0_and_0x10FFFF_inclusive,
-        //     // );
-        //     // isInvalidExtendedEscape = true;
-        // }
+        // Validate the value of the digit
+        if escapedValue.is_none() {
+            todo!();
+            // error(Diagnostics.Hexadecimal_digit_expected);
+            // isInvalidExtendedEscape = true;
+        } else if escapedValue.unwrap() > 0x10FFFF {
+            todo!();
+            // error(
+            //     Diagnostics
+            //         .An_extended_Unicode_escape_value_must_be_between_0x0_and_0x10FFFF_inclusive,
+            // );
+            // isInvalidExtendedEscape = true;
+        }
 
-        // if self.pos >= self.end {
-        //     todo!();
-        //     // error(Diagnostics.Unexpected_end_of_text);
-        //     // isInvalidExtendedEscape = true;
-        // } else if self.cur() == Some('}') {
-        //     // Only swallow the following character up if it's a '}'.
-        //     self.pos += 1;
-        // } else {
-        //     todo!();
-        //     // error(Diagnostics.Unterminated_Unicode_escape_sequence);
-        //     // isInvalidExtendedEscape = true;
-        // }
+        if self.pos >= self.end {
+            todo!();
+            // error(Diagnostics.Unexpected_end_of_text);
+            // isInvalidExtendedEscape = true;
+        } else if self.cur() == Some('}') {
+            // Only swallow the following character up if it's a '}'.
+            self.pos += 1;
+        } else {
+            todo!();
+            // error(Diagnostics.Unterminated_Unicode_escape_sequence);
+            // isInvalidExtendedEscape = true;
+        }
 
-        // if isInvalidExtendedEscape {
-        //     return String::new();
-        // }
+        if isInvalidExtendedEscape {
+            return String::new();
+        }
 
-        // return utf16EncodeAsString(escapedValue);
+        String::from(char::from_u32(escapedValue.unwrap()).unwrap())
     }
 
     // Current character is known to be a backslash. Check for Unicode escape of the form '\uXXXX'
@@ -2021,9 +2033,7 @@ impl Scanner {
             self.pos += 2;
             let value = self.scanExactNumberOfHexDigits(4, false);
             self.pos = start;
-            return value
-                .and_then(|u| u.try_into().ok())
-                .and_then(|n| char::from_u32(n));
+            return value.and_then(|n| char::from_u32(n));
         }
         None
     }
@@ -2037,52 +2047,50 @@ impl Scanner {
             self.pos += 3;
             let escapedValueString = self.scanMinimumNumberOfHexDigits(1, false);
             let escapedValue = if !escapedValueString.is_empty() {
-                todo!();
-                // parseInt(escapedValueString, 16)
+                u32::from_str_radix(&escapedValueString, 16).ok()
             } else {
                 None
             };
             self.pos = start;
-            return escapedValue;
+            return escapedValue.and_then(char::from_u32);
         }
         None
     }
 
     fn scanIdentifierParts(&mut self) -> String {
-        todo!();
-        // let result = "";
-        // let start = pos;
-        // while (pos < end) {
-        //     let ch = codePointAt(text, pos);
-        //     if (isIdentifierPart(ch, languageVersion)) {
-        //         pos += charSize(ch);
-        //     }
-        //     else if (ch == CharacterCodes.backslash) {
-        //         ch = peekExtendedUnicodeEscape();
-        //         if (ch >= 0 && isIdentifierPart(ch, languageVersion)) {
-        //             pos += 3;
-        //             tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
-        //             result += scanExtendedUnicodeEscape();
-        //             start = pos;
-        //             continue;
-        //         }
-        //         ch = self.peekUnicodeEscape();
-        //         if (!(ch >= 0 && isIdentifierPart(ch, languageVersion))) {
-        //             break;
-        //         }
-        //         tokenFlags |= TokenFlags::UnicodeEscape;
-        //         result += text.substring(start, pos);
-        //         result += utf16EncodeAsString(ch);
-        //         // Valid Unicode escape is always six characters
-        //         pos += 6;
-        //         start = pos;
-        //     }
-        //     else {
-        //         break;
-        //     }
-        // }
-        // result += text.substring(start, pos);
-        // return result;
+        let mut result = String::new();
+        let mut start = self.pos;
+        while self.pos < self.end {
+            let ch = self.cur().unwrap();
+            if isIdentifierPart(ch, Some(self.languageVersion), None) {
+                self.pos += ch.len_utf8();
+            } else if ch == '\\' {
+                let ch = self.peekExtendedUnicodeEscape();
+                if ch.is_some() && isIdentifierPart(ch.unwrap(), Some(self.languageVersion), None) {
+                    self.pos += 3;
+                    self.tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
+                    result.push_str(&self.scanExtendedUnicodeEscape());
+                    start = self.pos;
+                    continue;
+                }
+                let ch = self.peekUnicodeEscape();
+                if !(ch.is_some()
+                    && isIdentifierPart(ch.unwrap(), Some(self.languageVersion), None))
+                {
+                    break;
+                }
+                self.tokenFlags |= TokenFlags::UnicodeEscape;
+                result.push_str(&self.text[start..self.pos]);
+                result.push(ch.unwrap());
+                // Valid Unicode escape is always six characters
+                self.pos += 6;
+                start = self.pos;
+            } else {
+                break;
+            }
+        }
+        result.push_str(&self.text[start..self.pos]);
+        result
     }
 
     fn getIdentifierToken(&mut self) -> SyntaxKind {
@@ -2103,44 +2111,49 @@ impl Scanner {
         return token;
     }
 
-    // function scanBinaryOrOctalDigits(base: 2 | 8): string {
-    //     let value = "";
-    //     // For counting number of digits; Valid binaryIntegerLiteral must have at least one binary digit following B or b.
-    //     // Similarly valid octalIntegerLiteral must have at least one octal digit following o or O.
-    //     let separatorAllowed = false;
-    //     let isPreviousTokenSeparator = false;
-    //     while (true) {
-    //         const ch = text.charCodeAt(pos);
-    //         // Numeric separators are allowed anywhere within a numeric literal, except not at the beginning, or following another separator
-    //         if (ch == CharacterCodes._) {
-    //             tokenFlags |= TokenFlags::ContainsSeparator;
-    //             if (separatorAllowed) {
-    //                 separatorAllowed = false;
-    //                 isPreviousTokenSeparator = true;
-    //             }
-    //             else if (isPreviousTokenSeparator) {
-    //                 error(Diagnostics.Multiple_consecutive_numeric_separators_are_not_permitted, pos, 1);
-    //             }
-    //             else {
-    //                 error(Diagnostics.Numeric_separators_are_not_allowed_here, pos, 1);
-    //             }
-    //             pos+=1;
-    //             continue;
-    //         }
-    //         separatorAllowed = true;
-    //         if (!isDigit(ch) || ch - CharacterCodes._0 >= base) {
-    //             break;
-    //         }
-    //         value += text[pos];
-    //         pos+=1;
-    //         isPreviousTokenSeparator = false;
-    //     }
-    //     if (text.charCodeAt(pos - 1) == CharacterCodes._) {
-    //         // Literal ends with underscore - not allowed
-    //         error(Diagnostics.Numeric_separators_are_not_allowed_here, pos - 1, 1);
-    //     }
-    //     return value;
-    // }
+    fn scanBinaryOrOctalDigits(&mut self, base: u32) -> String {
+        debug_assert!(base == 2 || base == 8);
+        let mut value = String::new();
+        // For counting number of digits; Valid binaryIntegerLiteral must have at least one binary digit following B or b.
+        // Similarly valid octalIntegerLiteral must have at least one octal digit following o or O.
+        let mut separatorAllowed = false;
+        let mut isPreviousTokenSeparator = false;
+        loop {
+            let ch = match self.cur() {
+                Some(c) => c,
+                None => break,
+            };
+            // Numeric separators are allowed anywhere within a numeric literal, except not at the beginning, or following another separator
+            if ch == '_' {
+                self.tokenFlags |= TokenFlags::ContainsSeparator;
+                if separatorAllowed {
+                    separatorAllowed = false;
+                    isPreviousTokenSeparator = true;
+                } else if isPreviousTokenSeparator {
+                    todo!();
+                    // error(Diagnostics.Multiple_consecutive_numeric_separators_are_not_permitted, pos, 1);
+                } else {
+                    todo!();
+                    // error(Diagnostics.Numeric_separators_are_not_allowed_here, pos, 1);
+                }
+                self.pos += 1;
+                continue;
+            }
+            separatorAllowed = true;
+            if !isDigit(ch) || ch as u32 - '0' as u32 >= base {
+                break;
+            }
+            value.push(ch);
+            self.pos += 1;
+            isPreviousTokenSeparator = false;
+        }
+        if self.prev() == Some('_') {
+            // Literal ends with underscore - not allowed
+            todo!();
+            // error(Diagnostics.Numeric_separators_are_not_allowed_here, pos - 1, 1);
+        }
+        value
+    }
 
     fn checkBigIntSuffix(&mut self) -> SyntaxKind {
         if self.cur() == Some('n') {
@@ -2156,24 +2169,21 @@ impl Scanner {
             self.pos += 1;
             SyntaxKind::BigIntLiteral
         } else {
-            // TODO: temp type ann
+            let tokenValue = self.tokenValue.as_ref().unwrap();
             // not a bigint, so can convert to number in simplified form
             // Number() may not support 0b or 0o, so use parseInt() instead
-            let numericValue: usize = if self.tokenFlags.intersects(TokenFlags::BinarySpecifier) {
-                todo!();
-                // parseInt(self.tokenValue.slice(2), 2)
+            let numericValue = if self.tokenFlags.intersects(TokenFlags::BinarySpecifier) {
+                u32::from_str_radix(&tokenValue[2..], 2).unwrap() as f64
             }
             // skip "0b"
             else if self.tokenFlags.intersects(TokenFlags::OctalSpecifier) {
-                todo!();
-                // parseInt(self.tokenValue.slice(2), 8)
+                u32::from_str_radix(&tokenValue[2..], 8).unwrap() as f64
             }
             // skip "0o"
             else {
-                todo!();
-                // +tokenValue
+                ecma_string_to_number(tokenValue)
             };
-            self.tokenValue = Some(numericValue.to_string());
+            self.tokenValue = Some(ecma_number_to_string(numericValue));
             SyntaxKind::NumericLiteral
         }
     }
@@ -2271,8 +2281,7 @@ impl Scanner {
                     return_token!(SyntaxKind::StringLiteral);
                 }
                 '`' => {
-                    todo!();
-                    // return_token!(self.scanTemplateAndSetTokenValue(/* isTaggedTemplate */ false));
+                    return_token!(self.scanTemplateAndSetTokenValue(false));
                 }
                 '%' => {
                     if self.peek() == Some('=') {
@@ -2360,9 +2369,8 @@ impl Scanner {
                 }
                 '.' => {
                     if self.peek().map(|c| isDigit(c)).unwrap_or_default() {
-                        todo!();
-                        // self.tokenValue = scanNumber().value;
-                        // return_token!(SyntaxKind::NumericLiteral);
+                        self.tokenValue = Some(self.scanNumber().1);
+                        return_token!(SyntaxKind::NumericLiteral);
                     }
                     if self.peek() == Some('.') && self.peek_nth(1) == Some('.') {
                         self.pos += 3;
@@ -2471,52 +2479,49 @@ impl Scanner {
                     } else if self.pos + 2 < self.end
                         && (self.peek() == Some('B') || self.peek() == Some('b'))
                     {
-                        todo!();
-                        // self.pos += 2;
-                        // self.tokenValue = self.scanBinaryOrOctalDigits(/* base */ 2);
-                        // if self.tokenValue.is_none() {
-                        //     todo!();
-                        //     // error(Diagnostics.Binary_digit_expected);
-                        //     // self.tokenValue = "0";
-                        // }
-                        // self.tokenValue = Some(format!("0b{}", self.tokenValue.unwrap()));
-                        // self.tokenFlags |= TokenFlags::BinarySpecifier;
-                        // return_token!(self.checkBigIntSuffix());
+                        self.pos += 2;
+                        self.tokenValue = Some(self.scanBinaryOrOctalDigits(2));
+                        if self.tokenValue.as_ref().unwrap().is_empty() {
+                            todo!();
+                            // error(Diagnostics.Binary_digit_expected);
+                            // self.tokenValue = "0";
+                        }
+                        self.tokenValue = Some(format!("0b{}", self.tokenValue.as_ref().unwrap()));
+                        self.tokenFlags |= TokenFlags::BinarySpecifier;
+                        return_token!(self.checkBigIntSuffix());
                     } else if self.pos + 2 < self.end
                         && (self.peek() == Some('O') || self.peek() == Some('o'))
                     {
-                        todo!();
-                        // self.pos += 2;
-                        // self.tokenValue = self.scanBinaryOrOctalDigits(/* base */ 8);
-                        // if self.tokenValue.is_none() {
-                        //     todo!();
-                        //     // error(Diagnostics.Octal_digit_expected);
-                        //     // self.tokenValue = "0";
-                        // }
-                        // self.tokenValue = Some(format!("0o{}", self.tokenValue.unwrap()));
-                        // self.tokenFlags |= TokenFlags::OctalSpecifier;
-                        // return_token!(self.checkBigIntSuffix());
+                        self.pos += 2;
+                        self.tokenValue = Some(self.scanBinaryOrOctalDigits(8));
+                        if self.tokenValue.as_ref().unwrap().is_empty() {
+                            todo!();
+                            // error(Diagnostics.Octal_digit_expected);
+                            // self.tokenValue = "0";
+                        }
+                        self.tokenValue = Some(format!("0o{}", self.tokenValue.as_ref().unwrap()));
+                        self.tokenFlags |= TokenFlags::OctalSpecifier;
+                        return_token!(self.checkBigIntSuffix());
                     }
                     // Try to parse as an octal
                     if self.pos + 1 < self.end
                         && self.peek().map(|c| isOctalDigit(c)).unwrap_or_default()
                     {
-                        self.tokenValue = Some(self.scanOctalDigits().to_string());
+                        self.tokenValue = Some(self.scanOctalDigits());
                         self.tokenFlags |= TokenFlags::Octal;
                         return_token!(SyntaxKind::NumericLiteral);
                     }
                     // This fall-through is a deviation from the EcmaScript grammar. The grammar says that a leading zero
                     // can only be followed by an octal digit, a dot, or the end of the number literal. However, we are being
                     // permissive and allowing decimal digits of the form 08* and 09* (which many browsers also do).
-                    // falls through
-                    todo!();
-                    // ({ type: token, value: tokenValue } = scanNumber());
-                    // return token;
+                    let (kind, value) = self.scanNumber();
+                    self.tokenValue = Some(value);
+                    return_token!(kind);
                 }
                 '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' => {
-                    todo!();
-                    // ({ type: token, value: tokenValue } = scanNumber());
-                    // return token;
+                    let (kind, value) = self.scanNumber();
+                    self.tokenValue = Some(value);
+                    return_token!(kind);
                 }
                 ':' => {
                     self.pos += 1;
@@ -2672,24 +2677,30 @@ impl Scanner {
                     return_token!(SyntaxKind::AtToken);
                 }
                 '\\' => {
-                    // let extendedCookedChar = self.peekExtendedUnicodeEscape();
-                    // if extendedCookedChar.is_some()
-                    //     && isIdentifierStart(extendedCookedChar, self.languageVersion)
-                    // {
-                    //     self.pos += 3;
-                    //     self.tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
-                    //     self.tokenValue = self.scanExtendedUnicodeEscape() + scanIdentifierParts();
-                    //     return_token!(self.getIdentifierToken());
-                    // }
+                    let extendedCookedChar = self.peekExtendedUnicodeEscape();
+                    if extendedCookedChar.is_some()
+                        && isIdentifierStart(
+                            extendedCookedChar.unwrap(),
+                            Some(self.languageVersion),
+                        )
+                    {
+                        self.pos += 3;
+                        self.tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
+                        self.tokenValue =
+                            Some(self.scanExtendedUnicodeEscape() + &self.scanIdentifierParts());
+                        return_token!(self.getIdentifierToken());
+                    }
 
-                    // let cookedChar = self.peekUnicodeEscape();
-                    // if cookedChar.is_some() && isIdentifierStart(cookedChar, self.languageVersion) {
-                    //     self.pos += 6;
-                    //     self.tokenFlags |= TokenFlags::UnicodeEscape;
-                    //     self.tokenValue =
-                    //         Some(String::from(cookedChar.unwrap()) + scanIdentifierParts());
-                    //     return_token!(self.getIdentifierToken());
-                    // }
+                    let cookedChar = self.peekUnicodeEscape();
+                    if cookedChar.is_some()
+                        && isIdentifierStart(cookedChar.unwrap(), Some(self.languageVersion))
+                    {
+                        self.pos += 6;
+                        self.tokenFlags |= TokenFlags::UnicodeEscape;
+                        self.tokenValue =
+                            Some(String::from(cookedChar.unwrap()) + &self.scanIdentifierParts());
+                        return_token!(self.getIdentifierToken());
+                    }
 
                     todo!();
                     // error(Diagnostics.Invalid_character);
@@ -2704,17 +2715,17 @@ impl Scanner {
                         // return_token!(SyntaxKind::Unknown);
                     }
 
-                    todo!();
-
-                    // if isIdentifierStart(self.peek(), self.languageVersion) {
-                    //     self.pos += 1;
-                    //     self.scanIdentifier(self.cur().unwrap());
-                    // } else {
-                    //     self.tokenValue = Some('#'.to_string());
-                    //     todo!();
-                    //     // error(Diagnostics.Invalid_character, pos++, charSize(ch));
-                    // }
-                    // return_token!(SyntaxKind::PrivateIdentifier);
+                    if self.peek().is_some()
+                        && isIdentifierStart(self.peek().unwrap(), Some(self.languageVersion))
+                    {
+                        self.pos += 1;
+                        self.scanIdentifier(self.cur().unwrap(), self.languageVersion);
+                    } else {
+                        self.tokenValue = Some('#'.to_string());
+                        todo!();
+                        // error(Diagnostics.Invalid_character, pos++, charSize(ch));
+                    }
+                    return_token!(SyntaxKind::PrivateIdentifier);
                 }
                 _ => {
                     if let Some(identifierKind) = self.scanIdentifier(ch, self.languageVersion) {
@@ -2779,24 +2790,31 @@ impl Scanner {
 
     pub fn reScanGreaterToken(&mut self) -> SyntaxKind {
         if self.token == SyntaxKind::GreaterThanToken {
-            todo!();
-            // if (text.charCodeAt(pos) == '>') {
-            //     if (text.charCodeAt(pos + 1) == '>') {
-            //         if (text.charCodeAt(pos + 2) == '=') {
-            //             return pos += 3, token = SyntaxKind::GreaterThanGreaterThanGreaterThanEqualsToken;
-            //         }
-            //         return pos += 2, token = SyntaxKind::GreaterThanGreaterThanGreaterThanToken;
-            //     }
-            //     if (text.charCodeAt(pos + 1) == '=') {
-            //         return pos += 2, token = SyntaxKind::GreaterThanGreaterThanEqualsToken;
-            //     }
-            //     pos+=1;
-            //     return token = SyntaxKind::GreaterThanGreaterThanToken;
-            // }
-            // if (text.charCodeAt(pos) == '=') {
-            //     pos+=1;
-            //     return token = SyntaxKind::GreaterThanEqualsToken;
-            // }
+            if self.cur() == Some('>') {
+                if self.peek() == Some('>') {
+                    if self.peek_nth(1) == Some('=') {
+                        self.pos += 3;
+                        self.token = SyntaxKind::GreaterThanGreaterThanGreaterThanEqualsToken;
+                        return self.token;
+                    }
+                    self.pos += 2;
+                    self.token = SyntaxKind::GreaterThanGreaterThanGreaterThanToken;
+                    return self.token;
+                }
+                if self.peek() == Some('=') {
+                    self.pos += 2;
+                    self.token = SyntaxKind::GreaterThanGreaterThanEqualsToken;
+                    return self.token;
+                }
+                self.pos += 1;
+                self.token = SyntaxKind::GreaterThanGreaterThanToken;
+                return self.token;
+            }
+            if self.cur() == Some('=') {
+                self.pos += 1;
+                self.token = SyntaxKind::GreaterThanEqualsToken;
+                return self.token;
+            }
         }
         self.token
     }
@@ -2813,55 +2831,54 @@ impl Scanner {
 
     pub fn reScanSlashToken(&mut self) -> SyntaxKind {
         if self.token == SyntaxKind::SlashToken || self.token == SyntaxKind::SlashEqualsToken {
-            todo!();
-            // let p = tokenPos + 1;
-            // let inEscape = false;
-            // let inCharacterClass = false;
-            // while (true) {
-            //     // If we reach the end of a file, or hit a newline, then this is an unterminated
-            //     // regex.  Report error and return what we have so far.
-            //     if (p >= end) {
-            //         tokenFlags |= TokenFlags::Unterminated;
-            //         error(Diagnostics.Unterminated_regular_expression_literal);
-            //         break;
-            //     }
+            let mut p = self.tokenPos + 1;
+            let mut inEscape = false;
+            let mut inCharacterClass = false;
+            loop {
+                // If we reach the end of a file, or hit a newline, then this is an unterminated
+                // regex.  Report error and return what we have so far.
+                if p >= self.end {
+                    self.tokenFlags |= TokenFlags::Unterminated;
+                    todo!();
+                    // error(Diagnostics.Unterminated_regular_expression_literal);
+                    // break;
+                }
 
-            //     const ch = text.charCodeAt(p);
-            //     if (isLineBreak(ch)) {
-            //         tokenFlags |= TokenFlags::Unterminated;
-            //         error(Diagnostics.Unterminated_regular_expression_literal);
-            //         break;
-            //     }
+                let ch = self.char_at(p).unwrap();
+                if isLineBreak(ch) {
+                    self.tokenFlags |= TokenFlags::Unterminated;
+                    todo!();
+                    // error(Diagnostics.Unterminated_regular_expression_literal);
+                    // break;
+                }
 
-            //     if (inEscape) {
-            //         // Parsing an escape character;
-            //         // reset the flag and just advance to the next char.
-            //         inEscape = false;
-            //     }
-            //     else if (ch == '/' && !inCharacterClass) {
-            //         // A slash within a character class is permissible,
-            //         // but in general it signals the end of the regexp literal.
-            //         p+=1
-            //         break;
-            //     }
-            //     else if (ch == CharacterCodes.openBracket) {
-            //         inCharacterClass = true;
-            //     }
-            //     else if (ch == CharacterCodes.backslash) {
-            //         inEscape = true;
-            //     }
-            //     else if (ch == CharacterCodes.closeBracket) {
-            //         inCharacterClass = false;
-            //     }
-            //     p+=1
-            // }
+                if inEscape {
+                    // Parsing an escape character;
+                    // reset the flag and just advance to the next char.
+                    inEscape = false;
+                } else if ch == '/' && !inCharacterClass {
+                    // A slash within a character class is permissible,
+                    // but in general it signals the end of the regexp literal.
+                    p += 1;
+                    break;
+                } else if ch == '[' {
+                    inCharacterClass = true;
+                } else if ch == '\\' {
+                    inEscape = true;
+                } else if ch == ']' {
+                    inCharacterClass = false;
+                }
+                p += 1;
+            }
 
-            // while (p < end && isIdentifierPart(text.charCodeAt(p), languageVersion)) {
-            //     p+=1
-            // }
-            // pos = p;
-            // tokenValue = text.substring(tokenPos, pos);
-            // token = SyntaxKind::RegularExpressionLiteral;
+            while p < self.end
+                && isIdentifierPart(self.char_at(p).unwrap(), Some(self.languageVersion), None)
+            {
+                p += 1;
+            }
+            self.pos = p;
+            self.tokenValue = Some(self.text[self.tokenPos..self.pos].to_string());
+            self.token = SyntaxKind::RegularExpressionLiteral;
         }
         self.token
     }
@@ -3330,7 +3347,7 @@ impl Scanner {
 //     }
 // }
 
-mod char_literals {
+pub mod char_literals {
     pub const SPACE: char = '\u{0020}';
     pub const BACKSPACE: char = '\u{0008}';
     pub const LINE_FEED: char = '\u{000a}';

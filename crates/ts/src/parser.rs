@@ -3521,11 +3521,22 @@ impl Parser {
             self.reScanTemplateHeadOrNoSubstitutionTemplate();
         }
         let rawText = self.getTemplateLiteralRawText(SyntaxKind::TemplateHead);
-        self.factory.createTemplateHeadUnchecked(
+        let mut node = self.factory.createTemplateHeadUnchecked(
             self.scanner.getTokenValue().into(),
             Some(rawText),
             self.scanner.getTokenFlags() & TokenFlags::TemplateLiteralLikeFlags,
-        )
+        );
+
+        if self.scanner.hasExtendedUnicodeEscape() {
+            node.hasExtendedUnicodeEscape = Some(true);
+        }
+
+        if self.scanner.isUnterminated() {
+            node.isUnterminated = Some(true);
+        }
+
+        self.nextToken();
+        node
     }
 
     fn parseTemplateMiddleOrTemplateTail(&mut self) -> TemplateSpanLiteral {
@@ -3534,25 +3545,53 @@ impl Parser {
                 let rawText = self
                     .getTemplateLiteralRawText(SyntaxKind::TemplateMiddle)
                     .into();
-                TemplateSpanLiteral::TemplateMiddle(Rc::new(
+                let node = TemplateSpanLiteral::TemplateMiddle(Rc::new(
                     self.factory.createTemplateMiddleUnchecked(
                         self.scanner.getTokenValue().into(),
                         rawText,
                         self.scanner.getTokenFlags() & TokenFlags::TemplateLiteralLikeFlags,
                     ),
-                ))
+                ));
+
+                if self.scanner.hasExtendedUnicodeEscape() {
+                    todo!();
+                    // node.hasExtendedUnicodeEscape = Some(true);
+                }
+
+                if self.scanner.isUnterminated() {
+                    todo!();
+                    // node.isUnterminated = Some(true);
+                }
+
+                self.nextToken();
+
+                node
             }
             SyntaxKind::TemplateTail => {
                 let rawText = self
                     .getTemplateLiteralRawText(SyntaxKind::TemplateTail)
                     .into();
-                TemplateSpanLiteral::TemplateTail(Rc::new(
+                let node = TemplateSpanLiteral::TemplateTail(Rc::new(
                     self.factory.createTemplateTailUnchecked(
                         self.scanner.getTokenValue().into(),
                         rawText,
                         self.scanner.getTokenFlags() & TokenFlags::TemplateLiteralLikeFlags,
                     ),
-                ))
+                ));
+
+                if self.scanner.hasExtendedUnicodeEscape() {
+                    todo!();
+                    // node.hasExtendedUnicodeEscape = Some(true);
+                }
+
+                if self.scanner.isUnterminated() {
+                    todo!();
+                    // node.isUnterminated = Some(true);
+                }
+
+                self.nextToken();
+
+                node
             }
             _ => unreachable!("Template fragment has wrong token kind"),
         }
@@ -3767,20 +3806,18 @@ impl Parser {
 
     // If true, we should abort parsing an error function.
     fn typeHasArrowFunctionBlockingParseError(&mut self, node: &TypeNode) -> bool {
-        // TODO: replace with match on the TypeNode itself, once it is fully ported.
-        match node.kind() {
-            SyntaxKind::TypeReference => {
+        match node {
+            TypeNode::TypeReferenceNode(n) => nodeIsMissing(Some(&n.typeName)),
+            TypeNode::FunctionTypeNode(n) => {
                 todo!();
-                // return nodeIsMissing((node as TypeReferenceNode).typeName);
+                // isMissingList(n.parameters) || self.typeHasArrowFunctionBlockingParseError(n.ty.as_ref())
             }
-            SyntaxKind::FunctionType | SyntaxKind::ConstructorType => {
+            TypeNode::ConstructorTypeNode(n) => {
                 todo!();
-                // let { parameters, ty } = node as FunctionOrConstructorTypeNode;
-                // return isMissingList(parameters) || typeHasArrowFunctionBlockingParseError(ty);
+                // isMissingList(n.parameters) || self.typeHasArrowFunctionBlockingParseError(n.ty.as_ref())
             }
-            SyntaxKind::ParenthesizedType => {
-                todo!();
-                // return typeHasArrowFunctionBlockingParseError((node as ParenthesizedTypeNode).ty);
+            TypeNode::ParenthesizedTypeNode(n) => {
+                self.typeHasArrowFunctionBlockingParseError(&n.ty)
             }
             _ => false,
         }
@@ -3966,9 +4003,9 @@ impl Parser {
         } else {
             None
         };
-        let mut node = self
-            .factory
-            .createTypeParameterDeclaration(name, constraint, defaultType);
+        let mut node =
+            self.factory
+                .createTypeParameterDeclaration(Rc::new(name), constraint, defaultType);
         node.expression = expression;
         self.finishNode(node, pos, None)
     }
@@ -4483,7 +4520,7 @@ impl Parser {
         let ty = self.parseType();
         let node = self
             .factory
-            .createTypeParameterDeclaration(name, Some(ty), None);
+            .createTypeParameterDeclaration(Rc::new(name), Some(ty), None);
         self.finishNode(node, pos, None)
     }
 
@@ -4570,7 +4607,7 @@ impl Parser {
             let pos = self.getNodePos();
             let hasJSDoc = self.hasPrecedingJSDocComment();
             let dotDotDotToken = self.parseOptionalToken(SyntaxKind::DotDotDotToken);
-            let name = self.parseIdentifierName(None);
+            let name = Rc::new(self.parseIdentifierName(None));
             let questionToken = self.parseOptionalToken(SyntaxKind::QuestionToken);
             self.parseExpected(SyntaxKind::ColonToken, None, None);
             let ty = self.parseTupleElementType();
@@ -4977,7 +5014,7 @@ impl Parser {
         let name = self.parseIdentifier(None, None);
         let node = self
             .factory
-            .createTypeParameterDeclaration(name, None, None);
+            .createTypeParameterDeclaration(Rc::new(name), None, None);
         self.finishNode(node, pos, None)
     }
 
@@ -5409,11 +5446,12 @@ impl Parser {
         // To avoid a look-ahead, we did not handle the of an arrow function with a single un-parenthesized
         // parameter ('x => ...') above. We handle it here by checking if the parsed expression was a single
         // identifier and the current token is an arrow.
-        if matches!(expr, Expression::Identifier(_))
-            && self.token() == SyntaxKind::EqualsGreaterThanToken
-        {
-            todo!();
-            // return parseSimpleArrowFunctionExpression(pos, expr as Identifier, /*asyncModifier*/ undefined);
+        if self.token() == SyntaxKind::EqualsGreaterThanToken {
+            if let Expression::Identifier(expr) = expr {
+                return Expression::ArrowFunction(Rc::new(
+                    self.parseSimpleArrowFunctionExpression(pos, expr, None),
+                ));
+            }
         }
 
         // Now see if we might be in cases '2' or '3'.
@@ -5441,28 +5479,27 @@ impl Parser {
 
     fn isYieldExpression(&mut self) -> bool {
         if self.token() == SyntaxKind::YieldKeyword {
-            todo!();
-            // // If we have a 'yield' keyword, and this is a context where yield expressions are
-            // // allowed, then definitely parse out a yield expression.
-            // if self.inYieldContext() {
-            //     return true;
-            // }
+            // If we have a 'yield' keyword, and this is a context where yield expressions are
+            // allowed, then definitely parse out a yield expression.
+            if self.inYieldContext() {
+                return true;
+            }
 
-            // // We're in a context where 'yield expr' is not allowed.  However, if we can
-            // // definitely tell that the user was trying to parse a 'yield expr' and not
-            // // just a normal expr that start with a 'yield' identifier, then parse out
-            // // a 'yield expr'.  We can then report an error later that they are only
-            // // allowed in generator expressions.
-            // //
-            // // for example, if we see 'yield(foo)', then we'll have to treat that as an
-            // // invocation expression of something called 'yield'.  However, if we have
-            // // 'yield foo' then that is not legal as a normal expression, so we can
-            // // definitely recognize this as a yield expression.
-            // //
-            // // for now we just check if the next token is an identifier.  More heuristics
-            // // can be added here later as necessary.  We just need to make sure that we
-            // // don't accidentally consume something legal.
-            // return lookAhead(nextTokenIsIdentifierOrKeywordOrLiteralOnSameLine);
+            // We're in a context where 'yield expr' is not allowed.  However, if we can
+            // definitely tell that the user was trying to parse a 'yield expr' and not
+            // just a normal expr that start with a 'yield' identifier, then parse out
+            // a 'yield expr'.  We can then report an error later that they are only
+            // allowed in generator expressions.
+            //
+            // for example, if we see 'yield(foo)', then we'll have to treat that as an
+            // invocation expression of something called 'yield'.  However, if we have
+            // 'yield foo' then that is not legal as a normal expression, so we can
+            // definitely recognize this as a yield expression.
+            //
+            // for now we just check if the next token is an identifier.  More heuristics
+            // can be added here later as necessary.  We just need to make sure that we
+            // don't accidentally consume something legal.
+            return self.lookAhead(|p| p.nextTokenIsIdentifierOrKeywordOrLiteralOnSameLine());
         }
 
         false
@@ -5499,25 +5536,49 @@ impl Parser {
         }
     }
 
-    //     function parseSimpleArrowFunctionExpression(pos: number, identifier: Identifier, asyncModifier?: NodeArray<Modifier> | undefined): ArrowFunction {
-    //         Debug.assert(token() === SyntaxKind::EqualsGreaterThanToken, "parseSimpleArrowFunctionExpression should only have been called if we had a =>");
-    //         const parameter = factory.createParameterDeclaration(
-    //             /*decorators*/ undefined,
-    //             /*modifiers*/ undefined,
-    //             /*dotDotDotToken*/ undefined,
-    //             identifier,
-    //             /*questionToken*/ undefined,
-    //             /*type*/ undefined,
-    //             /*initializer*/ undefined
-    //         );
-    //         finishNode(parameter, identifier.pos);
+    fn parseSimpleArrowFunctionExpression(
+        &mut self,
+        pos: usize,
+        identifier: Rc<Identifier>,
+        asyncModifier: Option<NodeArray<Modifier>>,
+    ) -> ArrowFunction {
+        debug_assert!(
+            self.token() == SyntaxKind::EqualsGreaterThanToken,
+            "parseSimpleArrowFunctionExpression should only have been called if we had a =>"
+        );
+        let identifier_pos = self.factory.node_data(&identifier).get_range().pos;
+        let parameter = self.factory.createParameterDeclaration(
+            None,
+            None,
+            None,
+            BindingName::Identifier(identifier),
+            None,
+            None,
+            None,
+        );
+        let parameter = self.finishNode(parameter, identifier_pos, None);
+        let paremeter_range = *self.factory.node_data(&parameter).get_range();
 
-    //         const parameters = createNodeArray<ParameterDeclaration>([parameter], parameter.pos, parameter.end);
-    //         const equalsGreaterThanToken = parseExpectedToken(SyntaxKind::EqualsGreaterThanToken);
-    //         const body = parseArrowFunctionExpressionBody(/*isAsync*/ !!asyncModifier);
-    //         const node = factory.createArrowFunction(asyncModifier, /*typeParameters*/ undefined, parameters, /*type*/ undefined, equalsGreaterThanToken, body);
-    //         return addJSDocComment(finishNode(node, pos));
-    //     }
+        let parameters = self.createNodeArray(
+            vec![parameter],
+            paremeter_range.pos,
+            Some(paremeter_range.end),
+            false,
+        );
+        let equalsGreaterThanToken =
+            self.parseExpectedToken::<_, u8>(SyntaxKind::EqualsGreaterThanToken, None, None);
+        let body = self.parseArrowFunctionExpressionBody(asyncModifier.is_some());
+        let node = self.factory.createArrowFunction(
+            asyncModifier,
+            None,
+            parameters,
+            None,
+            Some(equalsGreaterThanToken),
+            body,
+        );
+        let node = self.finishNode(node, pos, None);
+        self.addJSDocComment(node)
+    }
 
     fn tryParseParenthesizedArrowFunctionExpression(&mut self) -> Option<Expression> {
         let triState = self.isParenthesizedArrowFunctionExpression();
@@ -5531,8 +5592,8 @@ impl Parser {
         // it out, but don't allow any ambiguity, and return 'undefined' if this could be an
         // expression instead.
         if triState == Tristate::True {
-            todo!();
-            // self.parseParenthesizedArrowFunctionExpression(/*allowAmbiguity*/ true)
+            self.parseParenthesizedArrowFunctionExpression(true)
+                .map(|a| Expression::ArrowFunction(Rc::new(a)))
         } else {
             self.tryParse(|p| p.parsePossibleParenthesizedArrowFunctionExpression())
                 .map(|a| Expression::ArrowFunction(Rc::new(a)))
@@ -5706,37 +5767,46 @@ impl Parser {
     fn tryParseAsyncSimpleArrowFunctionExpression(&mut self) -> Option<ArrowFunction> {
         // We do a check here so that we won't be doing unnecessarily call to "lookAhead"
         if self.token() == SyntaxKind::AsyncKeyword {
-            todo!();
-            // if lookAhead(isUnParenthesizedAsyncArrowFunctionWorker) == Tristate::True {
-            //     let pos = self.getNodePos();
-            //     let asyncModifier = self.parseModifiersForArrowFunction();
-            //     let expr = self.parseBinaryExpressionOrHigher(OperatorPrecedence.Lowest);
-            //     return parseSimpleArrowFunctionExpression(pos, expr as Identifier, asyncModifier);
-            // }
+            if self.lookAhead(|p| p.isUnParenthesizedAsyncArrowFunctionWorker()) == Tristate::True {
+                let pos = self.getNodePos();
+                let asyncModifier = self.parseModifiersForArrowFunction();
+                let expr = self.parseBinaryExpressionOrHigher(OperatorPrecedence::Lowest);
+                let identifier = unwrap_as!(expr, Expression::Identifier(i), i);
+                return Some(self.parseSimpleArrowFunctionExpression(
+                    pos,
+                    identifier,
+                    asyncModifier,
+                ));
+            }
         }
         None
     }
 
-    //     function isUnParenthesizedAsyncArrowFunctionWorker(): Tristate {
-    //         // AsyncArrowFunctionExpression:
-    //         //      1) async[no LineTerminator here]AsyncArrowBindingIdentifier[?Yield][no LineTerminator here]=>AsyncConciseBody[?In]
-    //         //      2) CoverCallExpressionAndAsyncArrowHead[?Yield, ?Await][no LineTerminator here]=>AsyncConciseBody[?In]
-    //         if (token() === SyntaxKind::AsyncKeyword) {
-    //             nextToken();
-    //             // If the "async" is followed by "=>" token then it is not a beginning of an async arrow-function
-    //             // but instead a simple arrow-function which will be parsed inside "parseAssignmentExpressionOrHigher"
-    //             if (scanner.hasPrecedingLineBreak() || token() === SyntaxKind::EqualsGreaterThanToken) {
-    //                 return Tristate::False;
-    //             }
-    //             // Check for un-parenthesized AsyncArrowFunction
-    //             const expr = parseBinaryExpressionOrHigher(OperatorPrecedence.Lowest);
-    //             if (!scanner.hasPrecedingLineBreak() && expr.kind === SyntaxKind::Identifier && token() === SyntaxKind::EqualsGreaterThanToken) {
-    //                 return Tristate::True;
-    //             }
-    //         }
+    fn isUnParenthesizedAsyncArrowFunctionWorker(&mut self) -> Tristate {
+        // AsyncArrowFunctionExpression:
+        //      1) async[no LineTerminator here]AsyncArrowBindingIdentifier[?Yield][no LineTerminator here]=>AsyncConciseBody[?In]
+        //      2) CoverCallExpressionAndAsyncArrowHead[?Yield, ?Await][no LineTerminator here]=>AsyncConciseBody[?In]
+        if self.token() == SyntaxKind::AsyncKeyword {
+            self.nextToken();
+            // If the "async" is followed by "=>" token then it is not a beginning of an async arrow-function
+            // but instead a simple arrow-function which will be parsed inside "parseAssignmentExpressionOrHigher"
+            if self.scanner.hasPrecedingLineBreak()
+                || self.token() == SyntaxKind::EqualsGreaterThanToken
+            {
+                return Tristate::False;
+            }
+            // Check for un-parenthesized AsyncArrowFunction
+            let expr = self.parseBinaryExpressionOrHigher(OperatorPrecedence::Lowest);
+            if !self.scanner.hasPrecedingLineBreak()
+                && matches!(expr, Expression::Identifier(_))
+                && self.token() == SyntaxKind::EqualsGreaterThanToken
+            {
+                return Tristate::True;
+            }
+        }
 
-    //         return Tristate::False;
-    //     }
+        Tristate::False
+    }
 
     fn parseParenthesizedArrowFunctionExpression(
         &mut self,
@@ -5902,33 +5972,31 @@ impl Parser {
                 None => return leftOperand,
             };
 
-        todo!();
-
-        // // Note: we explicitly 'allowIn' in the whenTrue part of the condition expression, and
-        // // we do not that for the 'whenFalse' part.
-        // let colonToken;
-        // self.finishNode(
-        //     self.factory.createConditionalExpression(
-        //         leftOperand,
-        //         questionToken,
-        //         doOutsideOfContext(
-        //             disallowInAndDecoratorContext,
-        //             parseAssignmentExpressionOrHigher,
-        //         ),
-        //         colonToken = parseExpectedToken(SyntaxKind::ColonToken),
-        //         if nodeIsPresent(colonToken) {
-        //             parseAssignmentExpressionOrHigher()
-        //         } else {
-        //             createMissingNode(
-        //                 SyntaxKind::Identifier,
-        //                 /*reportAtCurrentPosition*/ false,
-        //                 Diagnostics::_0_expected,
-        //                 tokenToString(SyntaxKind::ColonToken),
-        //             )
-        //         },
-        //     ),
-        //     pos,
-        // )
+        // Note: we explicitly 'allowIn' in the whenTrue part of the condition expression, and
+        // we do not that for the 'whenFalse' part.
+        let whenTrue = self.doOutsideOfContext(disallowInAndDecoratorContext, |p| {
+            p.parseAssignmentExpressionOrHigher()
+        });
+        let colonToken = self.parseExpectedToken::<_, u8>(SyntaxKind::ColonToken, None, None);
+        let whenFalse = if nodeIsPresent(Some(&colonToken)) {
+            self.parseAssignmentExpressionOrHigher()
+        } else {
+            todo!();
+            // createMissingNode(
+            //     SyntaxKind::Identifier,
+            //     /*reportAtCurrentPosition*/ false,
+            //     Diagnostics::_0_expected,
+            //     tokenToString(SyntaxKind::ColonToken),
+            // )
+        };
+        let node = self.factory.createConditionalExpression(
+            leftOperand,
+            Some(questionToken),
+            whenTrue,
+            Some(colonToken),
+            whenFalse,
+        );
+        Expression::ConditionalExpression(Rc::new(self.finishNode(node, pos, None)))
     }
 
     fn parseBinaryExpressionOrHigher(&mut self, precedence: OperatorPrecedence) -> Expression {
@@ -6048,10 +6116,11 @@ impl Parser {
 
     fn parsePrefixUnaryExpression(&mut self) -> PrefixUnaryExpression {
         let pos = self.getNodePos();
+        let operator = self.token();
         let expression = self.nextTokenAnd(|p| p.parseSimpleUnaryExpression());
         let node = self
             .factory
-            .createPrefixUnaryExpression(self.token(), expression);
+            .createPrefixUnaryExpression(operator, expression);
         self.finishNode(node, pos, None)
     }
 
@@ -6249,11 +6318,11 @@ impl Parser {
         if self.token() == SyntaxKind::PlusPlusToken || self.token() == SyntaxKind::MinusMinusToken
         {
             let pos = self.getNodePos();
+            let operator = self.token();
             let expression = self.nextTokenAnd(|p| p.parseLeftHandSideExpressionOrHigher());
-            let node = self.factory.createPrefixUnaryExpression(
-                self.token(),
-                UpdateExpression::from(expression).into(),
-            );
+            let node = self
+                .factory
+                .createPrefixUnaryExpression(operator, UpdateExpression::from(expression).into());
             return UpdateExpression::PrefixUnaryExpression(Rc::new(
                 self.finishNode(node, pos, None),
             ));
@@ -6337,15 +6406,15 @@ impl Parser {
                 let name = self.parseIdentifierName(None);
                 let expression = self
                     .factory
-                    .createMetaProperty(SyntaxKind::ImportKeyword, name);
+                    .createMetaProperty(SyntaxKind::ImportKeyword, Rc::new(name));
                 let expression = self.finishNode(expression, pos, None);
                 self.sourceFlags |= NodeFlags::PossiblyContainsImportMeta;
-                MemberExpression::MetaProperty(Rc::new(expression))
+                LeftHandSideExpression::MetaProperty(Rc::new(expression))
             } else {
                 self.parseMemberExpressionOrHigher()
             }
         } else if self.token() == SyntaxKind::SuperKeyword {
-            self.parseSuperExpression()
+            self.parseSuperExpression().into()
         } else {
             self.parseMemberExpressionOrHigher()
         };
@@ -6356,7 +6425,7 @@ impl Parser {
         self.parseCallExpressionRest(pos, expression.into())
     }
 
-    fn parseMemberExpressionOrHigher(&mut self) -> MemberExpression {
+    fn parseMemberExpressionOrHigher(&mut self) -> LeftHandSideExpression {
         // Note: to make our lives simpler, we decompose the NewExpression productions and
         // place ObjectCreationExpression and FunctionExpression into PrimaryExpression.
         // like so:
@@ -6857,7 +6926,7 @@ impl Parser {
         pos: usize,
         mut expression: LeftHandSideExpression,
         allowOptionalChain: bool,
-    ) -> MemberExpression {
+    ) -> LeftHandSideExpression {
         loop {
             let mut questionDotToken = None;
             let mut isPropertyAccess = false;
@@ -6908,57 +6977,7 @@ impl Parser {
                 continue;
             }
 
-            return match expression {
-                LeftHandSideExpression::Identifier(n) => MemberExpression::Identifier(n),
-                LeftHandSideExpression::PropertyAccessExpression(n) => {
-                    MemberExpression::PropertyAccessExpression(n)
-                }
-                LeftHandSideExpression::PrivateIdentifier(n) => {
-                    MemberExpression::PrivateIdentifier(n)
-                }
-                LeftHandSideExpression::SuperExpression(n) => MemberExpression::SuperExpression(n),
-                LeftHandSideExpression::FalseLiteral(n) => MemberExpression::FalseLiteral(n),
-                LeftHandSideExpression::NullLiteral(n) => MemberExpression::NullLiteral(n),
-                LeftHandSideExpression::ThisExpression(n) => MemberExpression::ThisExpression(n),
-                LeftHandSideExpression::TrueLiteral(n) => MemberExpression::TrueLiteral(n),
-                LeftHandSideExpression::StringLiteral(n) => MemberExpression::StringLiteral(n),
-                LeftHandSideExpression::RegularExpressionLiteral(n) => {
-                    MemberExpression::RegularExpressionLiteral(n)
-                }
-                LeftHandSideExpression::NoSubstitutionTemplateLiteral(n) => {
-                    MemberExpression::NoSubstitutionTemplateLiteral(n)
-                }
-                LeftHandSideExpression::NumericLiteral(n) => MemberExpression::NumericLiteral(n),
-                LeftHandSideExpression::BigIntLiteral(n) => MemberExpression::BigIntLiteral(n),
-                LeftHandSideExpression::ArrayLiteralExpression(n) => {
-                    MemberExpression::ArrayLiteralExpression(n)
-                }
-                LeftHandSideExpression::NewExpression(n) => MemberExpression::NewExpression(n),
-                LeftHandSideExpression::MetaProperty(n) => MemberExpression::MetaProperty(n),
-                LeftHandSideExpression::FunctionExpression(n) => {
-                    MemberExpression::FunctionExpression(n)
-                }
-                LeftHandSideExpression::ClassExpression(n) => MemberExpression::ClassExpression(n),
-                LeftHandSideExpression::ParenthesizedExpression(n) => {
-                    MemberExpression::ParenthesizedExpression(n)
-                }
-                LeftHandSideExpression::ObjectLiteralExpression(n) => {
-                    MemberExpression::ObjectLiteralExpression(n)
-                }
-                LeftHandSideExpression::TaggedTemplateExpression(n) => {
-                    MemberExpression::TaggedTemplateExpression(n)
-                }
-                LeftHandSideExpression::TemplateExpression(n) => {
-                    MemberExpression::TemplateExpression(n)
-                }
-                LeftHandSideExpression::ElementAccessExpression(n) => {
-                    MemberExpression::ElementAccessExpression(n)
-                }
-                LeftHandSideExpression::NonNullExpression(n) => {
-                    MemberExpression::NonNullExpression(n)
-                }
-                LeftHandSideExpression::CallExpression(_) => todo!(),
-            };
+            return expression;
         }
     }
 
@@ -7535,12 +7554,13 @@ impl Parser {
             let name = self.parseIdentifierName(None);
             let node = self
                 .factory
-                .createMetaProperty(SyntaxKind::NewKeyword, name);
+                .createMetaProperty(SyntaxKind::NewKeyword, Rc::new(name));
             return PrimaryExpression::MetaProperty(Rc::new(self.finishNode(node, pos, None)));
         }
 
         let expressionPos = self.getNodePos();
-        let mut expression: MemberExpression = self.parsePrimaryExpression().into();
+        let mut expression: LeftHandSideExpression =
+            MemberExpression::from(self.parsePrimaryExpression()).into();
         let mut typeArguments = None;
         loop {
             expression = self.parseMemberExpressionRest(expressionPos, expression.into(), false);
@@ -7548,7 +7568,7 @@ impl Parser {
             if self.isTemplateStartOfTaggedTemplate() {
                 debug_assert!(typeArguments.is_some(),
                         "Expected a type argument list; all plain tagged template starts should be consumed in 'parseMemberExpressionRest'");
-                expression = MemberExpression::TaggedTemplateExpression(Rc::new(
+                expression = LeftHandSideExpression::TaggedTemplateExpression(Rc::new(
                     self.parseTaggedTemplateRest(
                         expressionPos,
                         expression.into(),
@@ -9828,9 +9848,9 @@ impl Parser {
                 NamedImportBindings::NamedImports(Rc::new(self.parseNamedImports()))
             });
         }
-        let node = self
-            .factory
-            .createImportClause(isTypeOnly, identifier, namedBindings);
+        let node =
+            self.factory
+                .createImportClause(isTypeOnly, identifier.map(Rc::new), namedBindings);
         self.finishNode(node, pos, None)
     }
 
@@ -9873,7 +9893,7 @@ impl Parser {
         self.parseExpected(SyntaxKind::AsteriskToken, None, None);
         self.parseExpected(SyntaxKind::AsKeyword, None, None);
         let name = self.parseIdentifier(None, None);
-        let node = self.factory.createNamespaceImport(name);
+        let node = self.factory.createNamespaceImport(Rc::new(name));
         self.finishNode(node, pos, None)
     }
 
@@ -9924,7 +9944,7 @@ impl Parser {
             self.parseImportOrExportSpecifier(SyntaxKind::ExportSpecifier);
         let node = self
             .factory
-            .createExportSpecifier(isTypeOnly, propertyName, name);
+            .createExportSpecifier(isTypeOnly, propertyName, Rc::new(name));
         self.finishNode(node, pos, None)
     }
 
@@ -9933,7 +9953,7 @@ impl Parser {
             self.parseImportOrExportSpecifier(SyntaxKind::ImportSpecifier);
         let node = self
             .factory
-            .createImportSpecifier(isTypeOnly, propertyName, name);
+            .createImportSpecifier(isTypeOnly, propertyName, Rc::new(name));
         self.finishNode(node, pos, None)
     }
 

@@ -292,7 +292,7 @@ make!(
     PrefixUnaryExpression,
     PostfixUnaryExpression,
     BinaryExpression,
-    // ConditionalExpression,
+    ConditionalExpression,
     TemplateExpression,
     YieldExpression,
     SpreadElement,
