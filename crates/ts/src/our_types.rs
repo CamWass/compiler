@@ -5,7 +5,7 @@ use std::rc::Rc;
 #[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NodeId(u32);
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct NodeIdGen {
     cur: NodeId,
 }

@@ -15,7 +15,7 @@ use super::nodeTests::*;
 use super::utilities::*;
 use super::utilitiesPublic::setTextRange;
 
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub struct NodeFactory {
     flags: NodeFactoryFlags,
     node_data: FxHashMap<NodeId, NodeData>,

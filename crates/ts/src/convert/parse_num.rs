@@ -44,7 +44,6 @@ fn is_whitespace(ch: char) -> bool {
     )
 }
 
-#[derive(Clone)]
 struct Input<'src> {
     cur: usize,
     bytes: &'src [u8],

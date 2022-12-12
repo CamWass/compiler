@@ -1338,14 +1338,12 @@ pub fn isIdentifierText(
     chars.all(|c| isIdentifierPart(c, languageVersion, identifierVariant))
 }
 
-#[derive(Clone)]
 pub struct ScannerError {
     pub message: DiagnosticMessage,
     pub start: usize,
     pub length: usize,
 }
 
-#[derive(Clone)]
 pub struct Scanner {
     text: Rc<str>,
 
@@ -3207,6 +3205,32 @@ impl Scanner {
     //     }
     // }
 
+    pub fn get_context(&self) -> ScannerContext {
+        debug_assert!(self.errors.is_empty());
+
+        ScannerContext {
+            pos: self.pos,
+            startPos: self.startPos,
+            tokenPos: self.tokenPos,
+            token: self.token,
+            tokenValue: self.tokenValue.clone(),
+            tokenFlags: self.tokenFlags,
+            inJSDocType: self.inJSDocType,
+        }
+    }
+
+    pub fn restore_context(&mut self, context: ScannerContext) {
+        debug_assert_eq!(self.inJSDocType, context.inJSDocType);
+
+        self.pos = context.pos;
+        self.startPos = context.startPos;
+        self.tokenPos = context.tokenPos;
+        self.token = context.token;
+        self.tokenValue = context.tokenValue;
+        self.tokenFlags = context.tokenFlags;
+        self.inJSDocType = context.inJSDocType;
+    }
+
     fn speculationHelper<F, T>(&mut self, mut callback: F, isLookahead: bool) -> T
     where
         F: FnOnce(&mut Scanner) -> T,
@@ -3399,4 +3423,15 @@ pub mod char_literals {
     pub const ZERO_WIDTH_NO_BREAK_SPACE: char = '\u{feff}';
     pub const NEXT_LINE: char = '\u{0085}';
     pub const MAX_ASCII_CHARACTER: char = '\u{007f}';
+}
+
+pub struct ScannerContext {
+    pos: usize,
+    startPos: usize,
+    tokenPos: usize,
+    token: SyntaxKind,
+    tokenValue: Option<String>,
+    tokenFlags: TokenFlags,
+    // TODO: necessary?
+    inJSDocType: isize,
 }

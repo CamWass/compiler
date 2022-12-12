@@ -989,7 +989,7 @@ bitflags! {
 //     export type NodeId = number;
 
 //     export interface Node extends ReadonlyTextRange {
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub struct NodeData {
     pub range: TextRange,
     //         readonly kind: SyntaxKind;
@@ -12014,7 +12014,7 @@ bitflags! {
 //         skipTrivia?: (pos: number) => number;
 //     }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct EmitNode {
     // annotatedNodes?: Node[];                 // Tracks Parse-tree nodes with EmitNodes for eventual cleanup.
     pub flags: EmitFlags, // Flags that customize emit

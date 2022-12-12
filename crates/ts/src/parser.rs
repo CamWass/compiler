@@ -771,7 +771,6 @@ const disallowInAndDecoratorContext: NodeFlags = NodeFlags::from_bits_truncate(
 
 // }
 
-#[derive(Clone)]
 struct Parser {
     factory: NodeFactory,
     fileName: Rc<str>,
@@ -1757,7 +1756,7 @@ impl Parser {
         // assert that invariant holds.
         let saveContextFlags = self.contextFlags;
 
-        let cloned = self.clone();
+        let scanner_context = self.scanner.get_context();
 
         // If we're only looking ahead, then tell the scanner to only lookahead as well.
         // Otherwise, if we're actually speculatively parsing, then tell the scanner to do the
@@ -1775,12 +1774,12 @@ impl Parser {
         // If our callback returned something 'falsy' or we're just looking ahead,
         // then unconditionally restore us to where we were.
         if result.is_falsy() || speculationKind != SpeculationKind::TryParse {
-            // self.currentToken = saveToken;
-            // if (speculationKind != SpeculationKind::Reparse) {
-            //     self.parseDiagnostics.length = saveParseDiagnosticsLength;
-            // }
-            // self.parseErrorBeforeNextFinishedNode = saveParseErrorBeforeNextFinishedNode;
-            *self = cloned;
+            self.currentToken = saveToken;
+            if speculationKind != SpeculationKind::Reparse {
+                self.parseDiagnostics.truncate(saveParseDiagnosticsLength);
+            }
+            self.parseErrorBeforeNextFinishedNode = saveParseErrorBeforeNextFinishedNode;
+            self.scanner.restore_context(scanner_context);
         }
 
         result
