@@ -5361,15 +5361,15 @@ impl NodeFactory {
     //             : node;
     //     }
 
-    //     // @api
-    //     function createMissingDeclaration() {
-    //         const node = createBaseDeclaration<MissingDeclaration>(
-    //             SyntaxKind::MissingDeclaration,
-    //             /*decorators*/ undefined,
-    //             /*modifiers*/ undefined
-    //         );
-    //         return node;
-    //     }
+    pub fn createMissingDeclaration(&mut self) -> MissingDeclaration {
+        MissingDeclaration {
+            node_id: self.node_id_gen.next(),
+            js_doc_container: JSDocContainer::default(),
+            decorators: None,
+            modifiers: None,
+            name: None,
+        }
+    }
 
     //     //
     //     // Module references

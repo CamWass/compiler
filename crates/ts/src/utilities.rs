@@ -365,18 +365,17 @@ pub fn getFullWidth<T: HasTextRange>(node: &T) -> usize {
 // code). So the parser will attempt to parse out a type, and will create an actual node.
 // However, this node will be 'missing' in the sense that no actual source-code/tokens are
 // contained within it.
-pub fn nodeIsMissing<T: IsNode>(node: Option<&T>) -> bool {
+pub fn nodeIsMissing<'n, 'd, T: IsNode>(node: Option<NodeAndData<'n, 'd, T>>) -> bool {
     match node {
         Some(n) => {
-            // TODO: missing nodes
-            false
-            // node.pos == node.end && node.pos >= 0 && node.kind != SyntaxKind::EndOfFileToken
+            let range = n.1.get_range();
+            range.pos == range.end && range.pos >= 0 && n.0.kind() != SyntaxKind::EndOfFileToken
         }
         None => true,
     }
 }
 
-pub fn nodeIsPresent<T: IsNode>(node: Option<&T>) -> bool {
+pub fn nodeIsPresent<'n, 'd, T: IsNode>(node: Option<NodeAndData<'n, 'd, T>>) -> bool {
     !nodeIsMissing(node)
 }
 

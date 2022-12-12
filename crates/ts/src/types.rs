@@ -1236,6 +1236,7 @@ pub struct NodeArray<T> {
     pub inner: Vec<T>,
     pub hasTrailingComma: bool,
     pub transformFlags: Option<TransformFlags>, // Flags for transforms, possibly undefined
+    pub isMissingList: bool,
 }
 
 impl<T> Default for NodeArray<T> {
@@ -1245,6 +1246,7 @@ impl<T> Default for NodeArray<T> {
             hasTrailingComma: false,
             transformFlags: None,
             inner: Vec::new(),
+            isMissingList: false,
         }
     }
 }
@@ -6338,7 +6340,7 @@ make_node_enum!(
         ImportDeclaration,
         ExportAssignment,
         ExportDeclaration,
-        // MissingDeclaration,
+        MissingDeclaration,
         NotEmittedStatement,
     ]
 );
@@ -6461,12 +6463,38 @@ impl IsNode for DebuggerStatement {
 
 impl_has_js_doc!(DebuggerStatement);
 
-//     export interface MissingDeclaration extends DeclarationStatement {
-//         /*@internal*/ decorators?: NodeArray<Decorator>; // Present for use with reporting a grammar error
-//         /*@internal*/ modifiers?: ModifiersArray; // Present for use with reporting a grammar error
-//         readonly kind: SyntaxKind.MissingDeclaration;
-//         readonly name?: Identifier;
-//     }
+// export interface MissingDeclaration extends DeclarationStatement {
+#[derive(Debug)]
+pub struct MissingDeclaration {
+    pub node_id: NodeId,
+    pub js_doc_container: JSDocContainer,
+
+    pub decorators: Option<NodeArray<Decorator>>, // Present for use with reporting a grammar error
+    pub modifiers: Option<ModifiersArray>,        // Present for use with reporting a grammar error
+    pub name: Option<Rc<Identifier>>,
+}
+
+impl HasNodeId for MissingDeclaration {
+    fn node_id(&self) -> NodeId {
+        self.node_id
+    }
+}
+
+impl IsNode for MissingDeclaration {
+    fn kind(&self) -> SyntaxKind {
+        SyntaxKind::MissingDeclaration
+    }
+
+    fn name(&self) -> Option<Node> {
+        self.name.clone().map(|n| Node::Identifier(n))
+    }
+
+    fn isPropertyName(&self) -> bool {
+        false
+    }
+}
+
+impl_has_js_doc!(MissingDeclaration);
 
 //     export type BlockLike =
 //         | SourceFile

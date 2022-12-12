@@ -963,6 +963,11 @@ impl Parser {
             self.parseErrorAtPosition::<u8>(error.start, error.length, error.message, None);
         }
     }
+
+    fn node_and_data<'n, 'd, T: IsNode>(&'d mut self, node: &'n T) -> NodeAndData<'n, 'd, T> {
+        let data = self.factory.node_data(node);
+        NodeAndData(node, data)
+    }
 }
 
 impl Parser {
@@ -2113,13 +2118,16 @@ impl Parser {
         None
     }
 
-    //     function parseOptionalTokenJSDoc<TKind extends JSDocSyntaxKind>(t: TKind): Token<TKind>;
-    //     function parseOptionalTokenJSDoc(t: JSDocSyntaxKind): Node | undefined {
-    //         if (token() === t) {
-    //             return parseTokenNodeJSDoc();
-    //         }
-    //         return undefined;
-    //     }
+    fn parseOptionalTokenJSDoc<T>(&mut self, t: SyntaxKind) -> Option<T>
+    where
+        T: IsNode + IsSimpleTokenNode,
+    {
+        if self.token() == t {
+            todo!();
+            // return Some(self.parseTokenNodeJSDoc());
+        }
+        None
+    }
 
     fn parseExpectedToken<T, E>(
         &mut self,
@@ -2132,16 +2140,32 @@ impl Parser {
         E: Display,
     {
         self.parseOptionalToken(t).unwrap_or_else(|| {
-            todo!();
-            // self.createMissingNode(t, /*reportAtCurrentPosition*/ false, diagnosticMessage || Diagnostics::_0_expected, arg0 || tokenToString(t))
+            // Inlined `createMissingNode`
+            if let Some(diagnosticMessage) = diagnosticMessage {
+                self.parseErrorAtCurrentToken(diagnosticMessage, arg0);
+            } else {
+                self.parseErrorAtCurrentToken(Diagnostics::_0_expected, tokenToString(t));
+            }
+
+            let pos = self.getNodePos();
+            let result = self.factory.createToken(t);
+            self.finishNode(result, pos, None)
         })
     }
 
-    //     function parseExpectedTokenJSDoc<TKind extends JSDocSyntaxKind>(t: TKind): Token<TKind>;
-    //     function parseExpectedTokenJSDoc(t: JSDocSyntaxKind): Node {
-    //         return parseOptionalTokenJSDoc(t) ||
-    //             createMissingNode(t, /*reportAtCurrentPosition*/ false, Diagnostics::_0_expected, tokenToString(t));
-    //     }
+    fn parseExpectedTokenJSDoc<T>(&mut self, t: SyntaxKind) -> T
+    where
+        T: IsNode + IsSimpleTokenNode,
+    {
+        self.parseOptionalTokenJSDoc(t).unwrap_or_else(|| {
+            // Inlined `createMissingNode`
+            self.parseErrorAtCurrentToken(Diagnostics::_0_expected, tokenToString(t));
+
+            let pos = self.getNodePos();
+            let result = self.factory.createToken(t);
+            self.finishNode(result, pos, None)
+        })
+    }
 
     fn parseTokenNode<T: IsNode + IsSimpleTokenNode>(&mut self) -> T {
         let pos = self.getNodePos();
@@ -2220,26 +2244,76 @@ impl Parser {
         node
     }
 
+    // TODO: remove once all usages are inlined or have specialized functions created.
     //     function createMissingNode<T extends Node>(kind: T["kind"], reportAtCurrentPosition: false, diagnosticMessage?: DiagnosticMessage, arg0?: any): T;
     //     function createMissingNode<T extends Node>(kind: T["kind"], reportAtCurrentPosition: boolean, diagnosticMessage: DiagnosticMessage, arg0?: any): T;
-    //     function createMissingNode<T extends Node>(kind: T["kind"], reportAtCurrentPosition: boolean, diagnosticMessage: DiagnosticMessage, arg0?: any): T {
-    //         if (reportAtCurrentPosition) {
-    //             parseErrorAtPosition(scanner.getStartPos(), 0, diagnosticMessage, arg0);
-    //         }
-    //         else if (diagnosticMessage) {
-    //             parseErrorAtCurrentToken(diagnosticMessage, arg0);
-    //         }
+    // fn createMissingNode<T: Node, E>(
+    //     &mut self,
+    //     kind: SyntaxKind,
+    //     reportAtCurrentPosition: bool,
+    //     diagnosticMessage: Option<DiagnosticMessage>,
+    //     arg0: Option<E>,
+    // ) -> T
+    // where
+    //     E: Display,
+    // {
+    // if reportAtCurrentPosition {
+    //     self.parseErrorAtPosition(self.scanner.getStartPos(), 0, diagnosticMessage, arg0);
+    // } else if let Some(diagnosticMessage) = diagnosticMessage {
+    //     self.parseErrorAtCurrentToken(diagnosticMessage, arg0);
+    // }
 
-    //         const pos = getNodePos();
-    //         const result =
-    //             kind === SyntaxKind::Identifier ? factory.createIdentifier("", /*typeArguments*/ undefined, /*originalKeywordKind*/ undefined) :
-    //             isTemplateLiteralKind(kind) ? factory.createTemplateLiteralLikeNode(kind, "", "", /*templateFlags*/ undefined) :
-    //             kind === SyntaxKind::NumericLiteral ? factory.createNumericLiteral("", /*numericLiteralFlags*/ undefined) :
-    //             kind === SyntaxKind::StringLiteral ? factory.createStringLiteral("", /*isSingleQuote*/ undefined) :
-    //             kind === SyntaxKind::MissingDeclaration ? factory.createMissingDeclaration() :
-    //             factory.createToken(kind);
-    //         return finishNode(result, pos) as T;
-    //     }
+    // let pos = self.getNodePos();
+    // let result = if kind == SyntaxKind::Identifier {
+    //     self.factory.createIdentifier("", None, None)
+    // } else if kind == SyntaxKind::NoSubstitutionTemplateLiteral {
+    //     self.factory
+    //         .createNoSubstitutionTemplateLiteralUnchecked("", None, None)
+    // } else if kind == SyntaxKind::TemplateHead {
+    //     self.factory.createTemplateHeadUnchecked("", None, None)
+    // } else if kind == SyntaxKind::TemplateMiddle {
+    //     self.factory.createTemplateMiddleUnchecked("", None, None)
+    // } else if kind == SyntaxKind::TemplateTail {
+    //     self.factory.createTemplateTailUnchecked("", None, None)
+    // } else if kind == SyntaxKind::NumericLiteral {
+    //     self.factory.createNumericLiteral("", None)
+    // } else if kind == SyntaxKind::StringLiteral {
+    //     self.factory.createStringLiteral("", None, false)
+    // } else if kind == SyntaxKind::MissingDeclaration {
+    //     self.factory.createMissingDeclaration()
+    // } else {
+    //     self.factory.createToken(kind)
+    // };
+    // self.finishNode(result, pos, None) as T;
+    // }
+
+    // Copied from `createMissingNode`
+    fn createMissingIdentifier<E>(
+        &mut self,
+        reportAtCurrentPosition: bool,
+        diagnosticMessage: Option<DiagnosticMessage>,
+        arg0: Option<E>,
+    ) -> Identifier
+    where
+        E: Display,
+    {
+        if reportAtCurrentPosition {
+            self.parseErrorAtPosition(
+                self.scanner.getStartPos(),
+                0,
+                diagnosticMessage.unwrap(),
+                arg0,
+            );
+        } else if let Some(diagnosticMessage) = diagnosticMessage {
+            self.parseErrorAtCurrentToken(diagnosticMessage, arg0);
+        }
+
+        let pos = self.getNodePos();
+        let node = self
+            .factory
+            .createIdentifier(Default::default(), None, None);
+        self.finishNode(node, pos, None)
+    }
 
     //     function internIdentifier(text: string): string {
     //         let identifier = identifiers.get(text);
@@ -2290,20 +2364,25 @@ impl Parser {
             // Scanner has already recorded an 'Invalid character' error, so no need to add another from the parser.
             return self.createIdentifier(true, None, None);
         }
-        todo!();
 
         // identifierCount++;
-        // // Only for end of file because the error gets reported incorrectly on embedded script tags.
-        // const reportAtCurrentPosition = token() === SyntaxKind::EndOfFileToken;
+        // Only for end of file because the error gets reported incorrectly on embedded script tags.
+        let reportAtCurrentPosition = self.token() == SyntaxKind::EndOfFileToken;
 
-        // const isReservedWord = scanner.isReservedWord();
-        // const msgArg = scanner.getTokenText();
+        let isReservedWord = self.scanner.isReservedWord();
+        let msgArg = self.scanner.getTokenText().to_string();
 
-        // const defaultMessage = isReservedWord ?
-        //     Diagnostics::Identifier_expected_0_is_a_reserved_word_that_cannot_be_used_here :
-        //     Diagnostics::Identifier_expected;
+        let defaultMessage = if isReservedWord {
+            Diagnostics::Identifier_expected_0_is_a_reserved_word_that_cannot_be_used_here
+        } else {
+            Diagnostics::Identifier_expected
+        };
 
-        // return createMissingNode<Identifier>(SyntaxKind::Identifier, reportAtCurrentPosition, diagnosticMessage || defaultMessage, msgArg);
+        self.createMissingIdentifier(
+            reportAtCurrentPosition,
+            diagnosticMessage.or(Some(defaultMessage)),
+            Some(msgArg),
+        )
     }
 
     fn parseBindingIdentifier(
@@ -3308,21 +3387,11 @@ impl Parser {
         }
     }
 
-    //     interface MissingList<T extends Node> extends NodeArray<T> {
-    //         isMissingList: true;
-    //     }
-
     fn createMissingList<T: IsNode>(&mut self) -> MissingList<T> {
-        // TODO:
-        self.createNodeArray(Vec::new(), self.getNodePos(), None, false)
-        // let list = createNodeArray<T>([], getNodePos()) as MissingList<T>;
-        // list.isMissingList = true;
-        // return list;
+        let mut list = self.createNodeArray(Vec::new(), self.getNodePos(), None, false);
+        list.isMissingList = true;
+        list
     }
-
-    //     function isMissingList(arr: NodeArray<Node>): boolean {
-    //         return !!(arr as MissingList<Node>).isMissingList;
-    //     }
 
     fn parseBracketedList<T: IsNode, F>(
         &mut self,
@@ -3340,8 +3409,7 @@ impl Parser {
             return result;
         }
 
-        todo!();
-        // return createMissingList<T>();
+        self.createMissingList()
     }
 
     fn parseEntityName(
@@ -3425,12 +3493,11 @@ impl Parser {
                 // Report that we need an identifier.  However, report it right after the dot,
                 // and not on the next token.  This is because the next token might actually
                 // be an identifier and the error would be quite confusing.
-                todo!();
-                // return self.createMissingNode::<Identifier>(
-                //     SyntaxKind::Identifier,
-                //     /*reportAtCurrentPosition*/ true,
-                //     Diagnostics::Identifier_expected,
-                // );
+                return MemberName::Identifier(Rc::new(self.createMissingIdentifier::<u8>(
+                    true,
+                    Some(Diagnostics::Identifier_expected),
+                    None,
+                )));
             }
         }
 
@@ -3439,12 +3506,11 @@ impl Parser {
             return if allowPrivateIdentifiers {
                 MemberName::PrivateIdentifier(Rc::new(node))
             } else {
-                todo!();
-                // self.createMissingNode::<Identifier>(
-                //     SyntaxKind::Identifier,
-                //     /*reportAtCurrentPosition*/ true,
-                //     Diagnostics::Identifier_expected,
-                // )
+                MemberName::Identifier(Rc::new(self.createMissingIdentifier::<u8>(
+                    true,
+                    Some(Diagnostics::Identifier_expected),
+                    None,
+                )))
             };
         }
 
@@ -3826,14 +3892,16 @@ impl Parser {
     // If true, we should abort parsing an error function.
     fn typeHasArrowFunctionBlockingParseError(&mut self, node: &TypeNode) -> bool {
         match node {
-            TypeNode::TypeReferenceNode(n) => nodeIsMissing(Some(&n.typeName)),
+            TypeNode::TypeReferenceNode(n) => nodeIsMissing(Some(self.node_and_data(&n.typeName))),
             TypeNode::FunctionTypeNode(n) => {
-                todo!();
-                // isMissingList(n.parameters) || self.typeHasArrowFunctionBlockingParseError(n.ty.as_ref())
+                isMissingList(&n.parameters)
+                    || n.ty.is_some()
+                        && self.typeHasArrowFunctionBlockingParseError(n.ty.as_ref().unwrap())
             }
             TypeNode::ConstructorTypeNode(n) => {
-                todo!();
-                // isMissingList(n.parameters) || self.typeHasArrowFunctionBlockingParseError(n.ty.as_ref())
+                isMissingList(&n.parameters)
+                    || n.ty.is_some()
+                        && self.typeHasArrowFunctionBlockingParseError(n.ty.as_ref().unwrap())
             }
             TypeNode::ParenthesizedTypeNode(n) => {
                 self.typeHasArrowFunctionBlockingParseError(&n.ty)
@@ -4236,8 +4304,7 @@ impl Parser {
         // SingleNameBinding [Yield,Await]:
         //      BindingIdentifier[?Yield,?Await]Initializer [In, ?Yield,?Await] opt
         if !self.parseExpected(SyntaxKind::OpenParenToken, None, None) {
-            todo!();
-            // return createMissingList::<ParameterDeclaration>();
+            return self.createMissingList();
         }
 
         let parameters = self.parseParametersWorker(flags);
@@ -4514,8 +4581,7 @@ impl Parser {
             self.parseExpected(SyntaxKind::CloseBraceToken, None, None);
             members
         } else {
-            todo!();
-            // self.createMissingList::<TypeElement>()
+            self.createMissingList()
         }
     }
 
@@ -5854,13 +5920,12 @@ impl Parser {
         // close paren.
         let typeParameters = self.parseTypeParameters();
 
-        let parameters: NodeArray<ParameterDeclaration>;
+        let parameters;
         if !self.parseExpected(SyntaxKind::OpenParenToken, None, None) {
             if !allowAmbiguity {
                 return None;
             }
-            todo!();
-            // parameters = createMissingList<ParameterDeclaration>();
+            parameters = self.createMissingList();
         } else {
             parameters = self.parseParametersWorker(isAsync);
             if !self.parseExpected(SyntaxKind::CloseParenToken, None, None) && !allowAmbiguity {
@@ -5999,16 +6064,14 @@ impl Parser {
             p.parseAssignmentExpressionOrHigher()
         });
         let colonToken = self.parseExpectedToken::<_, u8>(SyntaxKind::ColonToken, None, None);
-        let whenFalse = if nodeIsPresent(Some(&colonToken)) {
+        let whenFalse = if nodeIsPresent(Some(self.node_and_data(&colonToken))) {
             self.parseAssignmentExpressionOrHigher()
         } else {
-            todo!();
-            // createMissingNode(
-            //     SyntaxKind::Identifier,
-            //     /*reportAtCurrentPosition*/ false,
-            //     Diagnostics::_0_expected,
-            //     tokenToString(SyntaxKind::ColonToken),
-            // )
+            Expression::Identifier(Rc::new(self.createMissingIdentifier(
+                false,
+                Some(Diagnostics::_0_expected),
+                tokenToString(SyntaxKind::ColonToken),
+            )))
         };
         let node = self.factory.createConditionalExpression(
             leftOperand,
@@ -6918,12 +6981,11 @@ impl Parser {
         questionDotToken: Option<QuestionDotToken>,
     ) -> ElementAccessExpression {
         let argumentExpression = if self.token() == SyntaxKind::CloseBracketToken {
-            todo!();
-            // argumentExpression = self.createMissingNode(
-            //     SyntaxKind::Identifier,
-            //     /*reportAtCurrentPosition*/ true,
-            //     Diagnostics::An_element_access_expression_should_take_an_argument,
-            // );
+            Expression::Identifier(Rc::new(self.createMissingIdentifier::<u8>(
+                true,
+                Some(Diagnostics::An_element_access_expression_should_take_an_argument),
+                None,
+            )))
         } else {
             self.allowInAnd(|p| p.parseExpression())
         };
@@ -7112,18 +7174,20 @@ impl Parser {
                 continue;
             }
             if questionDotToken.is_some() {
-                todo!();
-                // // We failed to parse anything, so report a missing identifier here.
-                // let name = createMissingNode::<Identifier>(
-                //     SyntaxKind::Identifier,
-                //     /*reportAtCurrentPosition*/ false,
-                //     Diagnostics::Identifier_expected,
-                // );
-                // expression = self.finishNode(
-                //     self.factory
-                //         .createPropertyAccessChain(expression, questionDotToken, name),
-                //     pos,
-                // );
+                // We failed to parse anything, so report a missing identifier here.
+                let name = self.createMissingIdentifier::<u8>(
+                    false,
+                    Some(Diagnostics::Identifier_expected),
+                    None,
+                );
+                let node = self.factory.createPropertyAccessChain(
+                    expression,
+                    questionDotToken,
+                    MemberName::Identifier(Rc::new(name)),
+                );
+                expression = LeftHandSideExpression::PropertyAccessExpression(Rc::new(
+                    self.finishNode(node, pos, None),
+                ));
             }
             break;
         }
@@ -7650,7 +7714,7 @@ impl Parser {
 
             return result;
         } else {
-            let statements = self.createMissingList::<Statement>();
+            let statements = self.createMissingList();
             let node = self.factory.createBlock(statements, None);
             let node = self.finishNode(node, pos, None);
             return self.withJSDoc(node, hasJSDoc);
@@ -8492,16 +8556,25 @@ impl Parser {
                 };
             }
             _ => {
+                if decorators.is_some() || modifiers.is_some() {
+                    // We reached this point because we encountered decorators and/or modifiers and assumed a declaration
+                    // would follow. For recovery and error reporting purposes, return an incomplete declaration.
+                    self.parseErrorAtPosition::<u8>(
+                        self.scanner.getStartPos(),
+                        0,
+                        Diagnostics::Declaration_expected,
+                        None,
+                    );
+
+                    let pos = self.getNodePos();
+                    let missing = self.factory.createMissingDeclaration();
+                    let mut missing = self.finishNode(missing, pos, None);
+                    self.factory.node_data_mut(&missing).setTextRangePos(pos);
+                    missing.decorators = decorators;
+                    missing.modifiers = modifiers;
+                    return Statement::MissingDeclaration(Rc::new(missing));
+                }
                 todo!();
-                // if decorators.is_some() || modifiers.is_some() {
-                //     // We reached this point because we encountered decorators and/or modifiers and assumed a declaration
-                //     // would follow. For recovery and error reporting purposes, return an incomplete declaration.
-                //     const missing = createMissingNode<MissingDeclaration>(SyntaxKind::MissingDeclaration, /*reportAtCurrentPosition*/ true, Diagnostics::Declaration_expected);
-                //     setTextRangePos(missing, pos);
-                //     missing.decorators = decorators;
-                //     missing.modifiers = modifiers;
-                //     return missing;
-                // }
                 // return undefined!; // TODO: GH#18217
             }
         }
@@ -8676,8 +8749,7 @@ impl Parser {
         if self.token() == SyntaxKind::OfKeyword
             && self.lookAhead(|p| p.canFollowContextualOfKeyword())
         {
-            todo!();
-            // declarations = self.createMissingList::<VariableDeclaration>();
+            declarations = self.createMissingList();
         } else {
             let savedDisallowIn = self.inDisallowInContext();
             self.setDisallowInContext(inForStatementInitializer);
@@ -9302,10 +9374,20 @@ impl Parser {
         }
 
         if decorators.is_some() || modifiers.is_some() {
-            todo!();
             // treat this as a property declaration with a missing name.
-            // let name = createMissingNode::<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ true, Diagnostics::Declaration_expected);
-            // return self.parsePropertyDeclaration(pos, hasJSDoc, decorators, modifiers, name, /*questionToken*/ undefined);
+            let name = self.createMissingIdentifier::<u8>(
+                true,
+                Some(Diagnostics::Declaration_expected),
+                None,
+            );
+            return ClassElement::PropertyDeclaration(Rc::new(self.parsePropertyDeclaration(
+                pos,
+                hasJSDoc,
+                decorators,
+                modifiers,
+                PropertyName::Identifier(Rc::new(name)),
+                None,
+            )));
         }
 
         // 'isClassMemberStart' should have hinted not to attempt parsing.
@@ -9330,8 +9412,7 @@ impl Parser {
             members = self.parseClassMembers();
             self.parseExpected(SyntaxKind::CloseBraceToken, None, None);
         } else {
-            todo!();
-            // members = self.createMissingList::<ClassElement>();
+            members = self.createMissingList();
         }
         self.setAwaitContext(savedAwaitContext);
         let node = self.factory.createClassExpression(
@@ -9375,8 +9456,7 @@ impl Parser {
             members = self.parseClassMembers();
             self.parseExpected(SyntaxKind::CloseBraceToken, None, None);
         } else {
-            todo!();
-            // members = self.createMissingList::<ClassElement>();
+            members = self.createMissingList();
         }
         self.setAwaitContext(savedAwaitContext);
         let node = self.factory.createClassDeclaration(
@@ -9552,8 +9632,7 @@ impl Parser {
             });
             self.parseExpected(SyntaxKind::CloseBraceToken, None, None);
         } else {
-            todo!();
-            // members = createMissingList<EnumMember>();
+            members = self.createMissingList();
         }
         let node = self
             .factory
@@ -9569,8 +9648,7 @@ impl Parser {
             statements = self.parseList(ParsingContext::BlockStatements, |p| p.parseStatement());
             self.parseExpected(SyntaxKind::CloseBraceToken, None, None);
         } else {
-            todo!();
-            // statements = self.createMissingList<Statement>();
+            statements = self.createMissingList();
         }
         let node = self.factory.createModuleBlock(statements);
         self.finishNode(node, pos, None)
@@ -12134,3 +12212,7 @@ bitflags! {
 struct SyntaxCursor {}
 
 type MissingList<T> = NodeArray<T>;
+
+fn isMissingList<T>(list: &NodeArray<T>) -> bool {
+    list.isMissingList
+}

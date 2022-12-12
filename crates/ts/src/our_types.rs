@@ -1,4 +1,7 @@
-use crate::{node::Node, types::SyntaxKind};
+use crate::{
+    node::Node,
+    types::{NodeData, SyntaxKind},
+};
 
 use std::rc::Rc;
 
@@ -122,3 +125,5 @@ impl<T> IsFalsy for Option<T> {
         self.is_none()
     }
 }
+
+pub struct NodeAndData<'n, 'd, T: IsNode>(pub &'n T, pub &'d NodeData);

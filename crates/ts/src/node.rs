@@ -348,7 +348,7 @@ make!(
     NamedExports,
     NamespaceExport,
     // ExportSpecifier,
-    // MissingDeclaration,
+    MissingDeclaration,
     // Module references
     ExternalModuleReference,
     // JSX
