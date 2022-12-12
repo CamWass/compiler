@@ -937,7 +937,7 @@ pub fn skipTrivia(
                             if isLineBreak(ch) {
                                 break;
                             }
-                            pos += 1;
+                            pos += ch.len_utf8();
                         }
                         canConsumeStar = false;
                         continue;
@@ -945,13 +945,12 @@ pub fn skipTrivia(
                     if text[pos..].chars().skip(1).next() == Some('*') {
                         pos += 2;
                         while pos < text.len() {
-                            if text[pos..].chars().next() == Some('*')
-                                && text[pos..].chars().skip(1).next() == Some('/')
-                            {
+                            let ch = text[pos..].chars().next().unwrap();
+                            if ch == '*' && text[pos..].chars().skip(1).next() == Some('/') {
                                 pos += 2;
                                 break;
                             }
-                            pos += 1;
+                            pos += ch.len_utf8();
                         }
                         canConsumeStar = false;
                         continue;
@@ -985,7 +984,7 @@ pub fn skipTrivia(
 
             _ => {
                 if ch > char_literals::MAX_ASCII_CHARACTER && isWhiteSpaceLike(ch) {
-                    pos += 1;
+                    pos += ch.len_utf8();
                     continue;
                 }
             }
@@ -1086,7 +1085,7 @@ fn scanConflictMarkerTrivia(text: &str, mut pos: usize, error: bool) -> usize {
 
     if ch == '<' || ch == '>' {
         while pos < len && !isLineBreak(text[pos..].chars().next().unwrap()) {
-            pos += 1;
+            pos += text[pos..].chars().next().unwrap().len_utf8();
         }
     } else {
         debug_assert!(ch == '|' || ch == '=');
@@ -1101,7 +1100,7 @@ fn scanConflictMarkerTrivia(text: &str, mut pos: usize, error: bool) -> usize {
                 break;
             }
 
-            pos += 1;
+            pos += currentChar.len_utf8();
         }
     }
 
@@ -1725,6 +1724,7 @@ impl Scanner {
                 break;
             }
             valueChars.push(ch);
+            debug_assert_eq!(ch.len_utf8(), 1);
             self.pos += 1;
             isPreviousTokenSeparator = false;
         }
@@ -1743,6 +1743,7 @@ impl Scanner {
 
     fn scanString(&mut self, jsxAttributeString: bool) -> String {
         let quote = self.cur().unwrap();
+        debug_assert!(quote == '"' || quote == '\'');
         self.pos += 1;
         let mut result = String::new();
         let mut start = self.pos;
@@ -1783,7 +1784,7 @@ impl Scanner {
     fn scanTemplateAndSetTokenValue(&mut self, isTaggedTemplate: bool) -> SyntaxKind {
         let startedWithBacktick = self.cur() == Some('`');
 
-        self.pos += 1;
+        self.pos += self.cur().unwrap().len_utf8();
         let mut start = self.pos;
         let mut contents = String::new();
         let resultingToken;
@@ -1850,7 +1851,7 @@ impl Scanner {
                 continue;
             }
 
-            self.pos += 1;
+            self.pos += currChar.len_utf8();
         }
 
         self.tokenValue = Some(contents);
@@ -1859,13 +1860,13 @@ impl Scanner {
 
     fn scanEscapeSequence(&mut self, isTaggedTemplate: bool) -> String {
         let start = self.pos;
-        self.pos += 1;
+        self.pos += self.cur().unwrap().len_utf8();
         if self.pos >= self.end {
             self.error(Diagnostics::Unexpected_end_of_text);
             return String::new();
         }
         let ch = self.cur().unwrap();
-        self.pos += 1;
+        self.pos += ch.len_utf8();
         match ch {
             '0' => {
                 // '\01'
@@ -2167,6 +2168,7 @@ impl Scanner {
                 break;
             }
             value.push(ch);
+            debug_assert_eq!(ch.len_utf8(), 1);
             self.pos += 1;
             isPreviousTokenSeparator = false;
         }
@@ -2281,11 +2283,11 @@ impl Scanner {
                 | char_literals::IDEOGRAPHIC_SPACE
                 | char_literals::ZERO_WIDTH_NO_BREAK_SPACE => {
                     if self.skipTrivia {
-                        self.pos += 1;
+                        self.pos += ch.len_utf8();
                         continue;
                     } else {
                         while self.pos < self.end && isWhiteSpaceSingleLine(self.cur().unwrap()) {
-                            self.pos += 1;
+                            self.pos += self.cur().unwrap().len_utf8();
                         }
                         return_token!(SyntaxKind::WhitespaceTrivia);
                     }
@@ -2411,10 +2413,11 @@ impl Scanner {
                         self.pos += 2;
 
                         while self.pos < self.end {
-                            if isLineBreak(self.cur().unwrap()) {
+                            let ch = self.cur().unwrap();
+                            if isLineBreak(ch) {
                                 break;
                             }
-                            self.pos += 1;
+                            self.pos += ch.len_utf8();
                         }
 
                         // TODO:
@@ -2449,7 +2452,7 @@ impl Scanner {
                                 break;
                             }
 
-                            self.pos += 1;
+                            self.pos += ch.len_utf8();
 
                             if isLineBreak(ch) {
                                 lastLineStart = self.pos;
@@ -2885,13 +2888,13 @@ impl Scanner {
                 } else if ch == ']' {
                     inCharacterClass = false;
                 }
-                p += 1;
+                p += ch.len_utf8();
             }
 
             while p < self.end
                 && isIdentifierPart(self.char_at(p).unwrap(), Some(self.languageVersion), None)
             {
-                p += 1;
+                p += self.char_at(p).unwrap().len_utf8();
             }
             self.pos = p;
             self.tokenValue = Some(self.text[self.tokenPos..self.pos].to_string());
