@@ -11839,21 +11839,21 @@ pub enum LanguageVariant {
 //         version: string;
 //     }
 
-//     export const enum Extension {
-//         Ts = ".ts",
-//         Tsx = ".tsx",
-//         Dts = ".d.ts",
-//         Js = ".js",
-//         Jsx = ".jsx",
-//         Json = ".json",
-//         TsBuildInfo = ".tsbuildinfo",
-//         Mjs = ".mjs",
-//         Mts = ".mts",
-//         Dmts = ".d.mts",
-//         Cjs = ".cjs",
-//         Cts = ".cts",
-//         Dcts = ".d.cts",
-//     }
+pub mod Extension {
+    pub const Ts: &'static str = ".ts";
+    pub const Tsx: &'static str = ".tsx";
+    pub const Dts: &'static str = ".d.ts";
+    pub const Js: &'static str = ".js";
+    pub const Jsx: &'static str = ".jsx";
+    pub const Json: &'static str = ".json";
+    pub const TsBuildInfo: &'static str = ".tsbuildinfo";
+    pub const Mjs: &'static str = ".mjs";
+    pub const Mts: &'static str = ".mts";
+    pub const Dmts: &'static str = ".d.mts";
+    pub const Cjs: &'static str = ".cjs";
+    pub const Cts: &'static str = ".cts";
+    pub const Dcts: &'static str = ".d.cts";
+}
 
 //     export interface ResolvedModuleWithFailedLookupLocations {
 //         readonly resolvedModule: ResolvedModuleFull | undefined;

@@ -6802,27 +6802,17 @@ pub fn ensureScriptKind(fileName: &str, scriptKind: Option<ScriptKind>) -> Scrip
     }
 }
 
-pub fn getScriptKindFromFileName(_fileName: &str) -> ScriptKind {
-    todo!();
-    // let ext = fileName.substr(fileName.lastIndexOf("."));
-    // switch (ext.toLowerCase()) {
-    //     case Extension.Js:
-    //     case Extension.Cjs:
-    //     case Extension.Mjs:
-    //         return ScriptKind.JS;
-    //     case Extension.Jsx:
-    //         return ScriptKind.JSX;
-    //     case Extension.Ts:
-    //     case Extension.Cts:
-    //     case Extension.Mts:
-    //         return ScriptKind.TS;
-    //     case Extension.Tsx:
-    //         return ScriptKind.TSX;
-    //     case Extension.Json:
-    //         return ScriptKind.JSON;
-    //     default:
-    //         return ScriptKind.Unknown;
-    // }
+pub fn getScriptKindFromFileName(fileName: &str) -> ScriptKind {
+    let dot_pos = fileName.rfind('.').unwrap_or_default();
+    let ext = fileName[dot_pos..].to_ascii_lowercase();
+    match ext.as_str() {
+        Extension::Js | Extension::Cjs | Extension::Mjs => ScriptKind::JS,
+        Extension::Jsx => ScriptKind::JSX,
+        Extension::Ts | Extension::Cts | Extension::Mts => ScriptKind::TS,
+        Extension::Tsx => ScriptKind::TSX,
+        Extension::Json => ScriptKind::JSON,
+        _ => ScriptKind::Unknown,
+    }
 }
 
 //     /**
