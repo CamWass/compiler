@@ -2317,12 +2317,12 @@ impl NodeFactory {
 
     pub fn createOptionalTypeNode(&mut self, ty: TypeNode) -> OptionalTypeNode {
         let node = OptionalTypeNode {
-            node_id: todo!(),
+            node_id: self.node_id_gen.next(),
             // TODO:
             // ty: parenthesizerRules().parenthesizeElementTypeOfArrayType(ty),
             ty,
         };
-        self.node_data(&node).transformFlags |= TransformFlags::ContainsTypeScript;
+        self.node_data_mut(&node).transformFlags |= TransformFlags::ContainsTypeScript;
         node
     }
 
@@ -4731,7 +4731,7 @@ impl NodeFactory {
         &mut self,
         decorators: Option<NodeArray<Decorator>>,
         modifiers: Option<NodeArray<Modifier>>,
-        name: Identifier,
+        name: Rc<Identifier>,
         typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
         heritageClauses: Option<NodeArray<HeritageClause>>,
         members: NodeArray<TypeElement>,
@@ -5371,9 +5371,9 @@ impl NodeFactory {
         }
     }
 
-    //     //
-    //     // Module references
-    //     //
+    //
+    // Module references
+    //
 
     pub fn createExternalModuleReference(
         &mut self,

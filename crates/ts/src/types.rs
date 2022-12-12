@@ -7402,7 +7402,7 @@ pub struct InterfaceDeclaration {
     pub decorators: Option<NodeArray<Decorator>>,
     pub modifiers: Option<NodeArray<Modifier>>,
 
-    pub name: Identifier,
+    pub name: Rc<Identifier>,
     pub typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
     pub heritageClauses: Option<NodeArray<HeritageClause>>,
     pub members: NodeArray<TypeElement>,
@@ -7420,7 +7420,7 @@ impl IsNode for InterfaceDeclaration {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        Some(Node::Identifier(self.name.clone()))
     }
 
     fn isPropertyName(&self) -> bool {

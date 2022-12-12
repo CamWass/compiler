@@ -5952,10 +5952,7 @@ impl Parser {
         // So we need just a bit of lookahead to ensure that it can only be a signature.
         let hasJSDocFunctionType = ty
             .as_ref()
-            .map(|_| {
-                todo!();
-                // isJSDocFunctionType(t)
-            })
+            .map(|t| matches!(t, TypeNode::JSDocFunctionType(_)))
             .unwrap_or_default();
         if !allowAmbiguity
             && self.token() != SyntaxKind::EqualsGreaterThanToken
@@ -9562,7 +9559,7 @@ impl Parser {
         let node = self.factory.createInterfaceDeclaration(
             decorators,
             modifiers,
-            name,
+            Rc::new(name),
             typeParameters,
             heritageClauses,
             members,
