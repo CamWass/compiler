@@ -16,7 +16,38 @@ use test::{
 
 use ts::{parser::createSourceFile, types::*};
 
-const IGNORED_PASS_TESTS: &[&str] = &[];
+// TSC does not pass the non-explicit versions of these, so we ignore them.
+// Their explicit counterparts however, don't include the problematic parts,
+// so are worth running.
+const IGNORED_NON_EXPLICIT_PASS_TESTS: &[&str] = &[
+    "c546a199e87abaad.js",
+    // Octal literals.
+    "0b6dfcd5427a43a6.js",
+    "45dd9586f26a3cf4.js",
+    // These contain HTML like comments: <!--
+    "fbcd793ec7c82779.js",
+    "d3ac25ddc7ba9779.js",
+    "c532e126a986c1d4.js",
+    "ba00173ff473e7da.js",
+    "b15ab152f8531a9f.js",
+    "9f0d8eb6f7ab8180.js",
+    "946bee37652a31fa.js",
+    "5d5b9de6d9b95f3e.js",
+    "4f5419fe648c691b.js",
+    "4ae32442eef8a4e0.js",
+    "e03ae54743348d7d.js",
+    "8ec6a55806087669.js",
+    "5a2a8e992fa4fe37.js",
+    "1270d541e0fd6af8.js",
+];
+const IGNORED_PASS_TESTS: &[&str] = &[
+    // TSC does not pass these tests.
+    "6815ab22de966de8.js",
+    "df696c501125c86f.js",
+    "ce5f3bc27d5ccaac.js",
+    "8af69d8f15295ed2.js",
+    "647e21f8f157c338.js",
+];
 
 fn add_test<F: FnOnce() + Send + 'static>(
     tests: &mut Vec<TestDescAndFn>,
@@ -171,7 +202,9 @@ fn identity_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
                     let src = if is_explicit { &explicit } else { &input };
                     parse_script(&file_name, src.clone().into()).unwrap()
                 };
-                p(false);
+                if !IGNORED_NON_EXPLICIT_PASS_TESTS.contains(&&*file_name) {
+                    p(false);
+                }
                 p(true);
                 // let src = p(false).statements;
                 // let expected = p(true).statements;
@@ -181,7 +214,9 @@ fn identity_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
                     let src = if is_explicit { &explicit } else { &input };
                     parse_script(&file_name, src.clone().into()).unwrap()
                 };
-                p(false);
+                if !IGNORED_NON_EXPLICIT_PASS_TESTS.contains(&&*file_name) {
+                    p(false);
+                }
                 p(true);
                 // let src = p(false).statements;
                 // let expected = p(true).statements;
@@ -205,6 +240,7 @@ fn parse_script(file_name: &str, source: Rc<str>) -> Result<SourceFile, ()> {
     if res.parseDiagnostics.is_empty() {
         Ok(res)
     } else {
+        eprintln!("{:#?}", res.parseDiagnostics);
         Err(())
     }
 }

@@ -1413,20 +1413,22 @@ pub fn isAssignmentPattern<T: IsNode>(node: &T) -> bool {
 //             || kind === SyntaxKind::OmittedExpression;
 //     }
 
-//     /**
-//      * Determines whether the BindingOrAssignmentElement is a BindingElement-like declaration
-//      */
-//     /* @internal */
-//     export function isDeclarationBindingElement(bindingElement: BindingOrAssignmentElement): bindingElement is VariableDeclaration | ParameterDeclaration | BindingElement {
-//         switch (bindingElement.kind) {
-//             case SyntaxKind::VariableDeclaration:
-//             case SyntaxKind::Parameter:
-//             case SyntaxKind::BindingElement:
-//                 return true;
-//         }
-
-//         return false;
-//     }
+/**
+ * Determines whether the BindingOrAssignmentElement is a BindingElement-like declaration
+ */
+pub fn isDeclarationBindingElement(bindingElement: &BindingOrAssignmentElement) -> bool {
+    match bindingElement {
+        BindingOrAssignmentElement::ParameterDeclaration(_)
+        | BindingOrAssignmentElement::VariableDeclaration(_)
+        | BindingOrAssignmentElement::BindingElement(_) => true,
+        BindingOrAssignmentElement::ArrayBindingElement(n) => match n {
+            ArrayBindingElement::BindingElement(_) => true,
+            ArrayBindingElement::OmittedExpression(_) => false,
+        },
+        BindingOrAssignmentElement::ObjectLiteralElementLike(_)
+        | BindingOrAssignmentElement::Expression(_) => false,
+    }
+}
 
 //     /**
 //      * Determines whether a node is a BindingOrAssignmentPattern

@@ -2358,7 +2358,7 @@ pub struct ObjectBindingPattern {
     pub node_id: NodeId,
 
     // readonly parent: VariableDeclaration | ParameterDeclaration | BindingElement;
-    pub elements: NodeArray<BindingElement>,
+    pub elements: NodeArray<Rc<BindingElement>>,
 }
 
 impl HasNodeId for ObjectBindingPattern {
@@ -5014,12 +5014,64 @@ impl IsNode for BinaryExpression {
 //         | ArrayDestructuringAssignment
 //         ;
 
-//     export type BindingOrAssignmentElement =
-//         | VariableDeclaration
-//         | ParameterDeclaration
-//         | ObjectBindingOrAssignmentElement
-//         | ArrayBindingOrAssignmentElement
-//         ;
+// TODO: expand as needed based on usage to match TSC.
+#[derive(Debug, Clone)]
+pub enum BindingOrAssignmentElement {
+    VariableDeclaration(Rc<VariableDeclaration>),
+    ParameterDeclaration(Rc<ParameterDeclaration>),
+    BindingElement(Rc<BindingElement>),
+    ArrayBindingElement(ArrayBindingElement),
+    ObjectLiteralElementLike(ObjectLiteralElementLike),
+    Expression(Expression),
+}
+
+impl HasNodeId for BindingOrAssignmentElement {
+    fn node_id(&self) -> NodeId {
+        match self {
+            BindingOrAssignmentElement::VariableDeclaration(n) => n.node_id(),
+            BindingOrAssignmentElement::ParameterDeclaration(n) => n.node_id(),
+            BindingOrAssignmentElement::BindingElement(n) => n.node_id(),
+            BindingOrAssignmentElement::ArrayBindingElement(n) => n.node_id(),
+            BindingOrAssignmentElement::ObjectLiteralElementLike(n) => n.node_id(),
+            BindingOrAssignmentElement::Expression(n) => n.node_id(),
+        }
+    }
+}
+
+impl IsNode for BindingOrAssignmentElement {
+    fn kind(&self) -> SyntaxKind {
+        match self {
+            BindingOrAssignmentElement::VariableDeclaration(n) => n.kind(),
+            BindingOrAssignmentElement::ParameterDeclaration(n) => n.kind(),
+            BindingOrAssignmentElement::BindingElement(n) => n.kind(),
+            BindingOrAssignmentElement::ArrayBindingElement(n) => n.kind(),
+            BindingOrAssignmentElement::ObjectLiteralElementLike(n) => n.kind(),
+            BindingOrAssignmentElement::Expression(n) => n.kind(),
+        }
+    }
+
+    fn name(&self) -> Option<Node> {
+        match self {
+            BindingOrAssignmentElement::VariableDeclaration(n) => n.name(),
+            BindingOrAssignmentElement::ParameterDeclaration(n) => n.name(),
+            BindingOrAssignmentElement::BindingElement(n) => n.name(),
+            BindingOrAssignmentElement::ArrayBindingElement(n) => n.name(),
+            BindingOrAssignmentElement::ObjectLiteralElementLike(n) => n.name(),
+            BindingOrAssignmentElement::Expression(n) => n.name(),
+        }
+    }
+
+    fn isPropertyName(&self) -> bool {
+        match self {
+            BindingOrAssignmentElement::VariableDeclaration(n) => n.isPropertyName(),
+            BindingOrAssignmentElement::ParameterDeclaration(n) => n.isPropertyName(),
+            BindingOrAssignmentElement::BindingElement(n) => n.isPropertyName(),
+            BindingOrAssignmentElement::ArrayBindingElement(n) => n.isPropertyName(),
+            BindingOrAssignmentElement::ObjectLiteralElementLike(n) => n.isPropertyName(),
+            BindingOrAssignmentElement::Expression(n) => n.isPropertyName(),
+        }
+    }
+}
 
 //     export type ObjectBindingOrAssignmentElement =
 //         | BindingElement
@@ -5046,12 +5098,13 @@ impl IsNode for BinaryExpression {
 //         | SpreadAssignment // AssignmentRestProperty
 //         ;
 
-//     export type BindingOrAssignmentElementTarget =
-//         | BindingOrAssignmentPattern
-//         | Identifier
-//         | PropertyAccessExpression
-//         | ElementAccessExpression
-//         | OmittedExpression;
+pub enum BindingOrAssignmentElementTarget {
+    BindingOrAssignmentPattern(BindingOrAssignmentPattern),
+    Identifier(Rc<Identifier>),
+    PropertyAccessExpression(Rc<PropertyAccessExpression>),
+    ElementAccessExpression(Rc<ElementAccessExpression>),
+    OmittedExpression(Rc<OmittedExpression>),
+}
 
 //     export type ObjectBindingOrAssignmentPattern =
 //         | ObjectBindingPattern
@@ -5068,7 +5121,15 @@ make_node_enum!(
     [ObjectLiteralExpression, ArrayLiteralExpression,]
 );
 
-//     export type BindingOrAssignmentPattern = ObjectBindingOrAssignmentPattern | ArrayBindingOrAssignmentPattern;
+make_node_enum!(
+    BindingOrAssignmentPattern,
+    [
+        ObjectBindingPattern,
+        ObjectLiteralExpression,
+        ArrayBindingPattern,
+        ArrayLiteralExpression,
+    ]
+);
 
 // export interface ConditionalExpression extends Expression {
 #[derive(Debug)]

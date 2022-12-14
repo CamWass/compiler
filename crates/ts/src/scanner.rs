@@ -1331,11 +1331,12 @@ pub fn isIdentifierText(
     identifierVariant: Option<LanguageVariant>,
 ) -> bool {
     let mut chars = name.chars();
-    if !isIdentifierStart(chars.next().unwrap(), languageVersion) {
-        return false;
+    if let Some(first) = chars.next() {
+        if isIdentifierStart(first, languageVersion) {
+            return chars.all(|c| isIdentifierPart(c, languageVersion, identifierVariant));
+        }
     }
-
-    chars.all(|c| isIdentifierPart(c, languageVersion, identifierVariant))
+    false
 }
 
 pub struct ScannerError {

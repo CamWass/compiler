@@ -413,9 +413,9 @@ pub fn isParenthesizedExpression<T: IsNode>(node: &T) -> bool {
 //         return node.kind === SyntaxKind.YieldExpression;
 //     }
 
-//     export function isSpreadElement(node: Node): node is SpreadElement {
-//         return node.kind === SyntaxKind.SpreadElement;
-//     }
+pub fn isSpreadElement<T: IsNode>(node: &T) -> bool {
+    node.kind() == SyntaxKind::SpreadElement
+}
 
 //     export function isClassExpression(node: Node): node is ClassExpression {
 //         return node.kind === SyntaxKind.ClassExpression;

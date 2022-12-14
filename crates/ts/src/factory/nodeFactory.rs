@@ -2626,7 +2626,7 @@ impl NodeFactory {
 
     pub fn createObjectBindingPattern(
         &mut self,
-        elements: NodeArray<BindingElement>,
+        elements: NodeArray<Rc<BindingElement>>,
     ) -> ObjectBindingPattern {
         let node = ObjectBindingPattern {
             node_id: self.node_id_gen.next(),
@@ -3491,13 +3491,13 @@ impl NodeFactory {
                     | TransformFlags::ContainsES2018
                     | TransformFlags::ContainsDestructuringAssignment
                     | self.propagateAssignmentPatternFlags(
-                        &AssignmentPattern::ObjectLiteralExpression(left.clone()),
+                        BindingOrAssignmentPattern::ObjectLiteralExpression(left.clone()),
                     );
             } else if let Expression::ArrayLiteralExpression(left) = &node.left {
                 transform_flags |= TransformFlags::ContainsES2015
                     | TransformFlags::ContainsDestructuringAssignment
                     | self.propagateAssignmentPatternFlags(
-                        &AssignmentPattern::ArrayLiteralExpression(left.clone()),
+                        BindingOrAssignmentPattern::ArrayLiteralExpression(left.clone()),
                     );
             }
         } else if operatorKind == SyntaxKind::AsteriskAsteriskToken
@@ -3511,31 +3511,48 @@ impl NodeFactory {
         node
     }
 
-    fn propagateAssignmentPatternFlags(&mut self, node: &AssignmentPattern) -> TransformFlags {
-        let node_transform_flags = self.node_data(node).transformFlags;
+    fn propagateAssignmentPatternFlags(
+        &mut self,
+        node: BindingOrAssignmentPattern,
+    ) -> TransformFlags {
+        let node_transform_flags = self.node_data(&node).transformFlags;
         if node_transform_flags.intersects(TransformFlags::ContainsObjectRestOrSpread) {
             return TransformFlags::ContainsObjectRestOrSpread;
         }
         if node_transform_flags.intersects(TransformFlags::ContainsES2018) {
-            todo!();
-            // // check for nested spread assignments, otherwise '{ x: { a, ...b } = foo } = c'
-            // // will not be correctly interpreted by the ES2018 transformer
-            // for element in getElementsOfBindingOrAssignmentPattern(node) {
-            //     let target = getTargetOfBindingOrAssignmentElement(element);
-            //     if target && isAssignmentPattern(&target) {
-            //         let target_transform_flags = self.node_data(&target).transformFlags;
-            //         if target_transform_flags.intersects(TransformFlags::ContainsObjectRestOrSpread)
-            //         {
-            //             return TransformFlags::ContainsObjectRestOrSpread;
-            //         }
-            //         if target_transform_flags.intersects(TransformFlags::ContainsES2018) {
-            //             let flags = self.propagateAssignmentPatternFlags(&target);
-            //             if !flags.is_empty() {
-            //                 return flags;
-            //             }
-            //         }
-            //     }
-            // }
+            // check for nested spread assignments, otherwise '{ x: { a, ...b } = foo } = c'
+            // will not be correctly interpreted by the ES2018 transformer
+            for element in getElementsOfBindingOrAssignmentPattern(node) {
+                if let Some(target) = getTargetOfBindingOrAssignmentElement(element) {
+                    // TODO: ugly
+                    let target = match target {
+                        Node::ObjectBindingPattern(n) => {
+                            BindingOrAssignmentPattern::ObjectBindingPattern(n)
+                        }
+                        Node::ObjectLiteralExpression(n) => {
+                            BindingOrAssignmentPattern::ObjectLiteralExpression(n)
+                        }
+                        Node::ArrayBindingPattern(n) => {
+                            BindingOrAssignmentPattern::ArrayBindingPattern(n)
+                        }
+                        Node::ArrayLiteralExpression(n) => {
+                            BindingOrAssignmentPattern::ArrayLiteralExpression(n)
+                        }
+                        _ => continue,
+                    };
+                    let target_transform_flags = self.node_data(&target).transformFlags;
+                    if target_transform_flags.intersects(TransformFlags::ContainsObjectRestOrSpread)
+                    {
+                        return TransformFlags::ContainsObjectRestOrSpread;
+                    }
+                    if target_transform_flags.intersects(TransformFlags::ContainsES2018) {
+                        let flags = self.propagateAssignmentPatternFlags(target);
+                        if !flags.is_empty() {
+                            return flags;
+                        }
+                    }
+                }
+            }
         }
         TransformFlags::None
     }

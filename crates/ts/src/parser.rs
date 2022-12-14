@@ -8644,7 +8644,7 @@ impl Parser {
         self.parseExpected(SyntaxKind::OpenBraceToken, None, None);
         let elements = self.parseDelimitedList(
             ParsingContext::ObjectBindingElements,
-            |p| p.parseObjectBindingElement(),
+            |p| Rc::new(p.parseObjectBindingElement()),
             false,
         );
         self.parseExpected(SyntaxKind::CloseBraceToken, None, None);

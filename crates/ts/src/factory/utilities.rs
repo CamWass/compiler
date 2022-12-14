@@ -2,6 +2,7 @@ use crate::node::*;
 use crate::our_types::*;
 use crate::types::*;
 use crate::utilities::*;
+use crate::utilitiesPublic::*;
 
 // /* @internal */
 // namespace ts {
@@ -694,80 +695,105 @@ pub fn skipOuterExpressionsOfNode(node: Node, kinds: Option<OuterExpressionKinds
 //         }
 //     }
 
-//     /**
-//      * Gets the name of an BindingOrAssignmentElement.
-//      */
-//     export function getTargetOfBindingOrAssignmentElement(bindingElement: BindingOrAssignmentElement): BindingOrAssignmentElementTarget | undefined {
-//         if (isDeclarationBindingElement(bindingElement)) {
-//             // `a` in `let { a } = ...`
-//             // `a` in `let { a = 1 } = ...`
-//             // `b` in `let { a: b } = ...`
-//             // `b` in `let { a: b = 1 } = ...`
-//             // `a` in `let { ...a } = ...`
-//             // `{b}` in `let { a: {b} } = ...`
-//             // `{b}` in `let { a: {b} = 1 } = ...`
-//             // `[b]` in `let { a: [b] } = ...`
-//             // `[b]` in `let { a: [b] = 1 } = ...`
-//             // `a` in `let [a] = ...`
-//             // `a` in `let [a = 1] = ...`
-//             // `a` in `let [...a] = ...`
-//             // `{a}` in `let [{a}] = ...`
-//             // `{a}` in `let [{a} = 1] = ...`
-//             // `[a]` in `let [[a]] = ...`
-//             // `[a]` in `let [[a] = 1] = ...`
-//             return bindingElement.name;
-//         }
+/**
+ * Gets the name of an BindingOrAssignmentElement.
+ */
+pub fn getTargetOfBindingOrAssignmentElement(
+    bindingElement: BindingOrAssignmentElement,
+) -> Option<Node> {
+    if isDeclarationBindingElement(&bindingElement) {
+        // `a` in `let { a } = ...`
+        // `a` in `let { a = 1 } = ...`
+        // `b` in `let { a: b } = ...`
+        // `b` in `let { a: b = 1 } = ...`
+        // `a` in `let { ...a } = ...`
+        // `{b}` in `let { a: {b} } = ...`
+        // `{b}` in `let { a: {b} = 1 } = ...`
+        // `[b]` in `let { a: [b] } = ...`
+        // `[b]` in `let { a: [b] = 1 } = ...`
+        // `a` in `let [a] = ...`
+        // `a` in `let [a = 1] = ...`
+        // `a` in `let [...a] = ...`
+        // `{a}` in `let [{a}] = ...`
+        // `{a}` in `let [{a} = 1] = ...`
+        // `[a]` in `let [[a]] = ...`
+        // `[a]` in `let [[a] = 1] = ...`
+        return bindingElement.name();
+    }
 
-//         if (isObjectLiteralElementLike(bindingElement)) {
-//             switch (bindingElement.kind) {
-//                 case SyntaxKind::PropertyAssignment:
-//                     // `b` in `({ a: b } = ...)`
-//                     // `b` in `({ a: b = 1 } = ...)`
-//                     // `{b}` in `({ a: {b} } = ...)`
-//                     // `{b}` in `({ a: {b} = 1 } = ...)`
-//                     // `[b]` in `({ a: [b] } = ...)`
-//                     // `[b]` in `({ a: [b] = 1 } = ...)`
-//                     // `b.c` in `({ a: b.c } = ...)`
-//                     // `b.c` in `({ a: b.c = 1 } = ...)`
-//                     // `b[0]` in `({ a: b[0] } = ...)`
-//                     // `b[0]` in `({ a: b[0] = 1 } = ...)`
-//                     return getTargetOfBindingOrAssignmentElement(bindingElement.initializer as BindingOrAssignmentElement);
+    if let BindingOrAssignmentElement::ObjectLiteralElementLike(bindingElement) = bindingElement {
+        return match bindingElement {
+            ObjectLiteralElementLike::PropertyAssignment(e) => {
+                // `b` in `({ a: b } = ...)`
+                // `b` in `({ a: b = 1 } = ...)`
+                // `{b}` in `({ a: {b} } = ...)`
+                // `{b}` in `({ a: {b} = 1 } = ...)`
+                // `[b]` in `({ a: [b] } = ...)`
+                // `[b]` in `({ a: [b] = 1 } = ...)`
+                // `b.c` in `({ a: b.c } = ...)`
+                // `b.c` in `({ a: b.c = 1 } = ...)`
+                // `b[0]` in `({ a: b[0] } = ...)`
+                // `b[0]` in `({ a: b[0] = 1 } = ...)`
+                getTargetOfBindingOrAssignmentElement(BindingOrAssignmentElement::Expression(
+                    e.initializer.clone(),
+                ))
+            }
 
-//                 case SyntaxKind::ShorthandPropertyAssignment:
-//                     // `a` in `({ a } = ...)`
-//                     // `a` in `({ a = 1 } = ...)`
-//                     return bindingElement.name;
+            ObjectLiteralElementLike::ShorthandPropertyAssignment(e) => {
+                // `a` in `({ a } = ...)`
+                // `a` in `({ a = 1 } = ...)`
+                Some(Node::Identifier(e.name.clone()))
+            }
 
-//                 case SyntaxKind::SpreadAssignment:
-//                     // `a` in `({ ...a } = ...)`
-//                     return getTargetOfBindingOrAssignmentElement(bindingElement.expression as BindingOrAssignmentElement);
-//             }
+            ObjectLiteralElementLike::SpreadAssignment(e) => {
+                // `a` in `({ ...a } = ...)`
+                getTargetOfBindingOrAssignmentElement(BindingOrAssignmentElement::Expression(
+                    e.expression.clone(),
+                ))
+            }
+            // no target
+            _ => None,
+        };
+    }
 
-//             // no target
-//             return undefined;
-//         }
+    if matches!(
+        bindingElement,
+        BindingOrAssignmentElement::Expression(Expression::BinaryExpression(_))
+    ) {
+        dbg!(bindingElement);
+        todo!("see below");
+    }
 
-//         if (isAssignmentExpression(bindingElement, /*excludeCompoundAssignment*/ true)) {
-//             // `a` in `[a = 1] = ...`
-//             // `{a}` in `[{a} = 1] = ...`
-//             // `[a]` in `[[a] = 1] = ...`
-//             // `a.b` in `[a.b = 1] = ...`
-//             // `a[0]` in `[a[0] = 1] = ...`
-//             return getTargetOfBindingOrAssignmentElement(bindingElement.left as BindingOrAssignmentElement);
-//         }
+    // if isAssignmentExpression(bindingElement, /*excludeCompoundAssignment*/ true) {
+    //     // `a` in `[a = 1] = ...`
+    //     // `{a}` in `[{a} = 1] = ...`
+    //     // `[a]` in `[[a] = 1] = ...`
+    //     // `a.b` in `[a.b = 1] = ...`
+    //     // `a[0]` in `[a[0] = 1] = ...`
+    //     return getTargetOfBindingOrAssignmentElement(bindingElement.left as BindingOrAssignmentElement);
+    // }
 
-//         if (isSpreadElement(bindingElement)) {
-//             // `a` in `[...a] = ...`
-//             return getTargetOfBindingOrAssignmentElement(bindingElement.expression as BindingOrAssignmentElement);
-//         }
+    if let BindingOrAssignmentElement::Expression(Expression::SpreadElement(e)) = bindingElement {
+        // `a` in `[...a] = ...`
+        return getTargetOfBindingOrAssignmentElement(BindingOrAssignmentElement::Expression(
+            e.expression.clone(),
+        ));
+    }
 
-//         // `a` in `[a] = ...`
-//         // `{a}` in `[{a}] = ...`
-//         // `[a]` in `[[a]] = ...`
-//         // `a.b` in `[a.b] = ...`
-//         // `a[0]` in `[a[0]] = ...`
-//         return bindingElement;
-//     }
+    // `a` in `[a] = ...`
+    // `{a}` in `[{a}] = ...`
+    // `[a]` in `[[a]] = ...`
+    // `a.b` in `[a.b] = ...`
+    // `a[0]` in `[a[0]] = ...`
+    Some(match bindingElement {
+        BindingOrAssignmentElement::VariableDeclaration(n) => Node::VariableDeclaration(n),
+        BindingOrAssignmentElement::ParameterDeclaration(n) => Node::ParameterDeclaration(n),
+        BindingOrAssignmentElement::BindingElement(n) => Node::BindingElement(n),
+        BindingOrAssignmentElement::ArrayBindingElement(n) => Node::from(n),
+        BindingOrAssignmentElement::ObjectLiteralElementLike(n) => Node::from(n),
+        BindingOrAssignmentElement::Expression(n) => Node::from(n),
+    })
+}
 
 //     /**
 //      * Determines whether an BindingOrAssignmentElement is a rest element.
@@ -853,23 +879,44 @@ pub fn skipOuterExpressionsOfNode(node: Node, kinds: Option<OuterExpressionKinds
 //             || kind === SyntaxKind::NumericLiteral;
 //     }
 
-//     /**
-//      * Gets the elements of a BindingOrAssignmentPattern
-//      */
-//     export function getElementsOfBindingOrAssignmentPattern(name: BindingOrAssignmentPattern): readonly BindingOrAssignmentElement[] {
-//         switch (name.kind) {
-//             case SyntaxKind::ObjectBindingPattern:
-//             case SyntaxKind::ArrayBindingPattern:
-//             case SyntaxKind::ArrayLiteralExpression:
-//                 // `a` in `{a}`
-//                 // `a` in `[a]`
-//                 return name.elements as readonly BindingOrAssignmentElement[];
-
-//             case SyntaxKind::ObjectLiteralExpression:
-//                 // `a` in `{a}`
-//                 return name.properties as readonly BindingOrAssignmentElement[];
-//         }
-//     }
+/**
+ * Gets the elements of a BindingOrAssignmentPattern
+ */
+pub fn getElementsOfBindingOrAssignmentPattern(
+    name: BindingOrAssignmentPattern,
+) -> Vec<BindingOrAssignmentElement> {
+    // TODO: these collect/allocations are not ideal
+    match name {
+        BindingOrAssignmentPattern::ObjectBindingPattern(n) => {
+            // `a` in `{a}`
+            n.elements
+                .iter()
+                .map(|n| BindingOrAssignmentElement::BindingElement(n.clone()))
+                .collect()
+        }
+        BindingOrAssignmentPattern::ArrayBindingPattern(n) => {
+            // `a` in `[a]`
+            n.elements
+                .iter()
+                .map(|n| BindingOrAssignmentElement::ArrayBindingElement(n.clone()))
+                .collect()
+        }
+        BindingOrAssignmentPattern::ArrayLiteralExpression(n) => {
+            // `a` in `[a]`
+            n.elements
+                .iter()
+                .map(|n| BindingOrAssignmentElement::Expression(n.clone()))
+                .collect()
+        }
+        BindingOrAssignmentPattern::ObjectLiteralExpression(n) => {
+            // `a` in `{a}`
+            n.properties
+                .iter()
+                .map(|n| BindingOrAssignmentElement::ObjectLiteralElementLike(n.clone()))
+                .collect()
+        }
+    }
+}
 
 //     /* @internal */
 //     export function getJSDocTypeAliasName(fullName: JSDocNamespaceBody | undefined) {
