@@ -8,7 +8,6 @@ use crate::utilities::*;
 use crate::utilitiesPublic::*;
 
 use bitflags::bitflags;
-use rustc_hash::FxHashMap;
 use swc_atoms::JsWord;
 
 use super::nodeTests::*;
@@ -18,38 +17,29 @@ use super::utilitiesPublic::setTextRange;
 #[derive(Default)]
 pub struct NodeFactory {
     flags: NodeFactoryFlags,
-    node_data: FxHashMap<NodeId, NodeData>,
+    node_data: Vec<Option<NodeData>>,
     node_id_gen: NodeIdGen,
 }
 
 impl NodeFactory {
+    fn ensure_node_data_capacity(&mut self, node_id: NodeId) {
+        if node_id.as_usize() >= self.node_data.len() {
+            let additional = node_id.as_usize() - self.node_data.len() + 1;
+            self.node_data.reserve(additional);
+            for _ in 0..additional {
+                self.node_data.push(None);
+            }
+        }
+    }
+
     pub fn node_data<T: HasNodeId>(&mut self, node: T) -> &NodeData {
-        self.node_data.entry(node.node_id()).or_default()
+        self.node_data_mut(node)
     }
 
     pub fn node_data_mut<T: HasNodeId>(&mut self, node: T) -> &mut NodeData {
-        self.node_data.entry(node.node_id()).or_default()
-    }
-
-    pub fn node_data_pick_2_mut<T, U>(
-        &mut self,
-        node1: T,
-        node2: U,
-    ) -> (&mut NodeData, &mut NodeData)
-    where
-        T: HasNodeId,
-        U: HasNodeId,
-    {
-        let key1 = node1.node_id();
-        let key2 = node2.node_id();
-        self.node_data.entry(key1).or_default();
-        self.node_data.entry(key2).or_default();
-
-        let [a, b] = self
-            .node_data
-            .get_many_mut([&key1, &key2])
-            .expect("keys should exist and be unique");
-        (a, b)
+        let node_id = node.node_id();
+        self.ensure_node_data_capacity(node_id);
+        self.node_data[node_id.as_usize()].get_or_insert_with(|| NodeData::default())
     }
 
     /**

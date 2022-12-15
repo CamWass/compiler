@@ -8,6 +8,12 @@ use std::rc::Rc;
 #[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NodeId(u32);
 
+impl NodeId {
+    pub fn as_usize(&self) -> usize {
+        self.0 as usize
+    }
+}
+
 #[derive(Debug)]
 pub struct NodeIdGen {
     cur: NodeId,
