@@ -1574,6 +1574,7 @@ name = "ts"
 version = "0.1.0"
 dependencies = [
  "bitflags",
+ "criterion",
  "diagnostics",
  "lexical",
  "once_cell",

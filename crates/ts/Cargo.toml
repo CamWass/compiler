@@ -14,3 +14,10 @@ regex = {version = "1.6.0"}
 rustc-hash = "1.1.0"
 swc_atoms = "0.2.6"
 unicode-id  = "0.3"
+
+[dev-dependencies]
+criterion = "0.3"
+
+[[bench]]
+name = "bench_main"
+harness = false
