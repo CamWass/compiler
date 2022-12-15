@@ -8,7 +8,7 @@ fn main() {
 
     let source_text = read_to_string(entry_file.as_ref()).unwrap();
 
-    let res = createSourceFile(
+    let source_file = createSourceFile(
         entry_file,
         source_text.into(),
         ts::types::ScriptTarget::ESNext,
@@ -16,5 +16,5 @@ fn main() {
         None,
     );
 
-    dbg!(res.parseDiagnostics);
+    dbg!(&source_file.parseDiagnostics);
 }

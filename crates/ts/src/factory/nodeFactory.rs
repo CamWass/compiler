@@ -1304,11 +1304,11 @@ impl NodeFactory {
 
     pub fn createParameterDeclaration(
         &mut self,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
-        dotDotDotToken: Option<DotDotDotToken>,
+        dotDotDotToken: Option<Rc<DotDotDotToken>>,
         name: BindingName,
-        questionToken: Option<QuestionToken>,
+        questionToken: Option<Rc<QuestionToken>>,
         ty: Option<TypeNode>,
         initializer: Option<Expression>,
     ) -> ParameterDeclaration {
@@ -1404,7 +1404,7 @@ impl NodeFactory {
         &mut self,
         modifiers: Option<NodeArray<Modifier>>,
         name: PropertyName,
-        questionToken: Option<QuestionToken>,
+        questionToken: Option<Rc<QuestionToken>>,
         ty: Option<TypeNode>,
     ) -> PropertySignature {
         let node = PropertySignature {
@@ -1449,11 +1449,11 @@ impl NodeFactory {
 
     pub fn createPropertyDeclaration(
         &mut self,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
         name: PropertyName,
-        questionToken: Option<QuestionToken>,
-        exclamationToken: Option<ExclamationToken>,
+        questionToken: Option<Rc<QuestionToken>>,
+        exclamationToken: Option<Rc<ExclamationToken>>,
         ty: Option<TypeNode>,
         initializer: Option<Expression>,
     ) -> PropertyDeclaration {
@@ -1531,9 +1531,9 @@ impl NodeFactory {
         &mut self,
         modifiers: Option<NodeArray<Modifier>>,
         name: PropertyName,
-        questionToken: Option<QuestionToken>,
-        typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
-        parameters: NodeArray<ParameterDeclaration>,
+        questionToken: Option<Rc<QuestionToken>>,
+        typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
+        parameters: NodeArray<Rc<ParameterDeclaration>>,
         ty: Option<TypeNode>,
     ) -> MethodSignature {
         let node = MethodSignature {
@@ -1586,15 +1586,15 @@ impl NodeFactory {
 
     pub fn createMethodDeclaration(
         &mut self,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
-        asteriskToken: Option<AsteriskToken>,
+        asteriskToken: Option<Rc<AsteriskToken>>,
         name: PropertyName,
-        questionToken: Option<QuestionToken>,
-        typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
-        parameters: NodeArray<ParameterDeclaration>,
+        questionToken: Option<Rc<QuestionToken>>,
+        typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
+        parameters: NodeArray<Rc<ParameterDeclaration>>,
         ty: Option<TypeNode>,
-        body: Option<Block>,
+        body: Option<Rc<Block>>,
     ) -> MethodDeclaration {
         let node = MethodDeclaration {
             node_id: self.node_id_gen.next(),
@@ -1686,9 +1686,9 @@ impl NodeFactory {
 
     pub fn createClassStaticBlockDeclaration(
         &mut self,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
-        body: Block,
+        body: Rc<Block>,
     ) -> ClassStaticBlockDeclaration {
         let node = ClassStaticBlockDeclaration {
             node_id: self.node_id_gen.next(),
@@ -1721,10 +1721,10 @@ impl NodeFactory {
 
     pub fn createConstructorDeclaration(
         &mut self,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
-        parameters: NodeArray<ParameterDeclaration>,
-        body: Option<Block>,
+        parameters: NodeArray<Rc<ParameterDeclaration>>,
+        body: Option<Rc<Block>>,
     ) -> ConstructorDeclaration {
         let node = ConstructorDeclaration {
             node_id: self.node_id_gen.next(),
@@ -1768,12 +1768,12 @@ impl NodeFactory {
 
     pub fn createGetAccessorDeclaration(
         &mut self,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
         name: PropertyName,
-        parameters: NodeArray<ParameterDeclaration>,
+        parameters: NodeArray<Rc<ParameterDeclaration>>,
         ty: Option<TypeNode>,
-        body: Option<Block>,
+        body: Option<Rc<Block>>,
     ) -> GetAccessorDeclaration {
         let node = GetAccessorDeclaration {
             node_id: self.node_id_gen.next(),
@@ -1835,11 +1835,11 @@ impl NodeFactory {
 
     pub fn createSetAccessorDeclaration(
         &mut self,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
         name: PropertyName,
-        parameters: NodeArray<ParameterDeclaration>,
-        body: Option<Block>,
+        parameters: NodeArray<Rc<ParameterDeclaration>>,
+        body: Option<Rc<Block>>,
     ) -> SetAccessorDeclaration {
         let node = SetAccessorDeclaration {
             node_id: self.node_id_gen.next(),
@@ -1896,8 +1896,8 @@ impl NodeFactory {
 
     pub fn createCallSignature(
         &mut self,
-        typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
-        parameters: NodeArray<ParameterDeclaration>,
+        typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
+        parameters: NodeArray<Rc<ParameterDeclaration>>,
         ty: Option<TypeNode>,
     ) -> CallSignatureDeclaration {
         let node = CallSignatureDeclaration {
@@ -1932,8 +1932,8 @@ impl NodeFactory {
 
     pub fn createConstructSignature(
         &mut self,
-        typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
-        parameters: NodeArray<ParameterDeclaration>,
+        typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
+        parameters: NodeArray<Rc<ParameterDeclaration>>,
         ty: Option<TypeNode>,
     ) -> ConstructSignatureDeclaration {
         let node = ConstructSignatureDeclaration {
@@ -1968,9 +1968,9 @@ impl NodeFactory {
 
     pub fn createIndexSignature(
         &mut self,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
-        parameters: NodeArray<ParameterDeclaration>,
+        parameters: NodeArray<Rc<ParameterDeclaration>>,
         ty: Option<TypeNode>,
     ) -> IndexSignatureDeclaration {
         let node = IndexSignatureDeclaration {
@@ -2041,7 +2041,7 @@ impl NodeFactory {
 
     pub fn createTypePredicateNode(
         &mut self,
-        assertsModifier: Option<AssertsKeyword>,
+        assertsModifier: Option<Rc<AssertsKeyword>>,
         parameterName: TypePredicateParameterName,
         ty: Option<TypeNode>,
     ) -> TypePredicateNode {
@@ -2090,8 +2090,8 @@ impl NodeFactory {
 
     pub fn createFunctionTypeNode(
         &mut self,
-        typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
-        parameters: NodeArray<ParameterDeclaration>,
+        typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
+        parameters: NodeArray<Rc<ParameterDeclaration>>,
         ty: Option<TypeNode>,
     ) -> FunctionTypeNode {
         let node = FunctionTypeNode {
@@ -2128,8 +2128,8 @@ impl NodeFactory {
     pub fn createConstructorTypeNode(
         &mut self,
         modifiers: Option<NodeArray<Modifier>>,
-        typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
-        parameters: NodeArray<ParameterDeclaration>,
+        typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
+        parameters: NodeArray<Rc<ParameterDeclaration>>,
         ty: Option<TypeNode>,
     ) -> ConstructorTypeNode {
         let node = ConstructorTypeNode {
@@ -2288,9 +2288,9 @@ impl NodeFactory {
 
     pub fn createNamedTupleMember(
         &mut self,
-        dotDotDotToken: Option<DotDotDotToken>,
+        dotDotDotToken: Option<Rc<DotDotDotToken>>,
         name: Rc<Identifier>,
-        questionToken: Option<QuestionToken>,
+        questionToken: Option<Rc<QuestionToken>>,
         ty: TypeNode,
     ) -> NamedTupleMember {
         let node = NamedTupleMember {
@@ -2420,7 +2420,7 @@ impl NodeFactory {
 
     pub fn createInferTypeNode(
         &mut self,
-        typeParameter: TypeParameterDeclaration,
+        typeParameter: Rc<TypeParameterDeclaration>,
     ) -> InferTypeNode {
         let node = InferTypeNode {
             node_id: self.node_id_gen.next(),
@@ -2439,8 +2439,8 @@ impl NodeFactory {
 
     pub fn createTemplateLiteralType(
         &mut self,
-        head: TemplateHead,
-        templateSpans: NodeArray<TemplateLiteralTypeSpan>,
+        head: Rc<TemplateHead>,
+        templateSpans: NodeArray<Rc<TemplateLiteralTypeSpan>>,
     ) -> TemplateLiteralTypeNode {
         let node = TemplateLiteralTypeNode {
             node_id: self.node_id_gen.next(),
@@ -2567,7 +2567,7 @@ impl NodeFactory {
     pub fn createMappedTypeNode(
         &mut self,
         readonlyToken: Option<SyntaxKind>,
-        typeParameter: TypeParameterDeclaration,
+        typeParameter: Rc<TypeParameterDeclaration>,
         nameType: Option<TypeNode>,
         questionToken: Option<SyntaxKind>,
         ty: Option<TypeNode>,
@@ -2674,7 +2674,7 @@ impl NodeFactory {
 
     pub fn createBindingElement(
         &mut self,
-        dotDotDotToken: Option<DotDotDotToken>,
+        dotDotDotToken: Option<Rc<DotDotDotToken>>,
         propertyName: Option<PropertyName>,
         name: BindingName,
         initializer: Option<Expression>,
@@ -2826,7 +2826,7 @@ impl NodeFactory {
     pub fn createPropertyAccessChain(
         &mut self,
         expression: LeftHandSideExpression,
-        questionDotToken: Option<QuestionDotToken>,
+        questionDotToken: Option<Rc<QuestionDotToken>>,
         name: MemberName,
     ) -> PropertyAccessChain {
         let node = PropertyAccessChain {
@@ -2908,7 +2908,7 @@ impl NodeFactory {
     pub fn createElementAccessChain(
         &mut self,
         expression: LeftHandSideExpression,
-        questionDotToken: Option<QuestionDotToken>,
+        questionDotToken: Option<Rc<QuestionDotToken>>,
         index: Expression,
     ) -> ElementAccessChain {
         let node = ElementAccessChain {
@@ -2995,7 +2995,7 @@ impl NodeFactory {
     pub fn createCallChain(
         &mut self,
         expression: LeftHandSideExpression,
-        questionDotToken: Option<QuestionDotToken>,
+        questionDotToken: Option<Rc<QuestionDotToken>>,
         typeArguments: Option<NodeArray<TypeNode>>,
         argumentsArray: Option<NodeArray<Expression>>,
     ) -> CallChain {
@@ -3162,12 +3162,12 @@ impl NodeFactory {
     pub fn createFunctionExpression(
         &mut self,
         modifiers: Option<NodeArray<Modifier>>,
-        asteriskToken: Option<AsteriskToken>,
+        asteriskToken: Option<Rc<AsteriskToken>>,
         name: Option<Rc<Identifier>>,
-        typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
-        parameters: Option<NodeArray<ParameterDeclaration>>,
+        typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
+        parameters: Option<NodeArray<Rc<ParameterDeclaration>>>,
         ty: Option<TypeNode>,
-        body: Block,
+        body: Rc<Block>,
     ) -> FunctionExpression {
         let node = FunctionExpression {
             node_id: self.node_id_gen.next(),
@@ -3240,10 +3240,10 @@ impl NodeFactory {
     pub fn createArrowFunction(
         &mut self,
         modifiers: Option<NodeArray<Modifier>>,
-        typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
-        parameters: NodeArray<ParameterDeclaration>,
+        typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
+        parameters: NodeArray<Rc<ParameterDeclaration>>,
         ty: Option<TypeNode>,
-        equalsGreaterThanToken: Option<EqualsGreaterThanToken>,
+        equalsGreaterThanToken: Option<Rc<EqualsGreaterThanToken>>,
         body: ConciseBody,
     ) -> ArrowFunction {
         let node = ArrowFunction {
@@ -3255,7 +3255,7 @@ impl NodeFactory {
             ty,
             typeArguments: None,
             equalsGreaterThanToken: equalsGreaterThanToken
-                .unwrap_or_else(|| self.createToken(SyntaxKind::EqualsGreaterThanToken)),
+                .unwrap_or_else(|| Rc::new(self.createToken(SyntaxKind::EqualsGreaterThanToken))),
             // TODO:
             // body: parenthesizerRules().parenthesizeConciseBodyOfArrowFunction(body),
             body,
@@ -3569,9 +3569,9 @@ impl NodeFactory {
     pub fn createConditionalExpression(
         &mut self,
         condition: Expression,
-        questionToken: Option<QuestionToken>,
+        questionToken: Option<Rc<QuestionToken>>,
         whenTrue: Expression,
-        colonToken: Option<ColonToken>,
+        colonToken: Option<Rc<ColonToken>>,
         whenFalse: Expression,
     ) -> ConditionalExpression {
         let node = ConditionalExpression {
@@ -3580,11 +3580,12 @@ impl NodeFactory {
             // TODO:
             // condition: parenthesizerRules().parenthesizeConditionOfConditionalExpression(condition),
             questionToken: questionToken
-                .unwrap_or_else(|| self.createToken(SyntaxKind::QuestionToken)),
+                .unwrap_or_else(|| Rc::new(self.createToken(SyntaxKind::QuestionToken))),
             whenTrue,
             // TODO:
             // whenTrue: parenthesizerRules().parenthesizeBranchOfConditionalExpression(whenTrue),
-            colonToken: colonToken.unwrap_or_else(|| self.createToken(SyntaxKind::ColonToken)),
+            colonToken: colonToken
+                .unwrap_or_else(|| Rc::new(self.createToken(SyntaxKind::ColonToken))),
             whenFalse,
             // TODO:
             // whenFalse: parenthesizerRules().parenthesizeBranchOfConditionalExpression(whenFalse),
@@ -3618,8 +3619,8 @@ impl NodeFactory {
 
     pub fn createTemplateExpression(
         &mut self,
-        head: TemplateHead,
-        templateSpans: NodeArray<TemplateSpan>,
+        head: Rc<TemplateHead>,
+        templateSpans: NodeArray<Rc<TemplateSpan>>,
     ) -> TemplateExpression {
         let node = TemplateExpression {
             node_id: self.node_id_gen.next(),
@@ -3789,7 +3790,7 @@ impl NodeFactory {
 
     pub fn createYieldExpression(
         &mut self,
-        asteriskToken: Option<AsteriskToken>,
+        asteriskToken: Option<Rc<AsteriskToken>>,
         expression: Option<Expression>,
     ) -> YieldExpression {
         debug_assert!(
@@ -3843,11 +3844,11 @@ impl NodeFactory {
 
     pub fn createClassExpression(
         &mut self,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
         name: Option<Rc<Identifier>>,
-        typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
-        heritageClauses: Option<NodeArray<HeritageClause>>,
+        typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
+        heritageClauses: Option<NodeArray<Rc<HeritageClause>>>,
         members: NodeArray<ClassElement>,
     ) -> ClassExpression {
         let node = ClassExpression {
@@ -4093,7 +4094,7 @@ impl NodeFactory {
     pub fn createVariableStatement(
         &mut self,
         modifiers: Option<NodeArray<Modifier>>,
-        declarationList: VariableDeclarationList,
+        declarationList: Rc<VariableDeclarationList>,
     ) -> VariableStatement {
         let node = VariableStatement {
             node_id: self.node_id_gen.next(),
@@ -4291,7 +4292,7 @@ impl NodeFactory {
 
     pub fn createForOfStatement(
         &mut self,
-        awaitModifier: Option<AwaitKeyword>,
+        awaitModifier: Option<Rc<AwaitKeyword>>,
         initializer: ForInitializer,
         expression: Expression,
         statement: Statement,
@@ -4416,7 +4417,7 @@ impl NodeFactory {
     pub fn createSwitchStatement(
         &mut self,
         expression: Expression,
-        caseBlock: CaseBlock,
+        caseBlock: Rc<CaseBlock>,
     ) -> SwitchStatement {
         let node = SwitchStatement {
             node_id: self.node_id_gen.next(),
@@ -4487,9 +4488,9 @@ impl NodeFactory {
 
     pub fn createTryStatement(
         &mut self,
-        tryBlock: Block,
-        catchClause: Option<CatchClause>,
-        finallyBlock: Option<Block>,
+        tryBlock: Rc<Block>,
+        catchClause: Option<Rc<CatchClause>>,
+        finallyBlock: Option<Rc<Block>>,
     ) -> TryStatement {
         let node = TryStatement {
             node_id: self.node_id_gen.next(),
@@ -4524,7 +4525,7 @@ impl NodeFactory {
     pub fn createVariableDeclaration(
         &mut self,
         name: BindingName,
-        exclamationToken: Option<ExclamationToken>,
+        exclamationToken: Option<Rc<ExclamationToken>>,
         ty: Option<TypeNode>,
         initializer: Option<Expression>,
     ) -> VariableDeclaration {
@@ -4569,7 +4570,7 @@ impl NodeFactory {
 
     pub fn createVariableDeclarationList(
         &mut self,
-        declarations: NodeArray<VariableDeclaration>,
+        declarations: NodeArray<Rc<VariableDeclaration>>,
         flags: Option<NodeFlags>,
     ) -> VariableDeclarationList {
         let flags = flags.unwrap_or_default();
@@ -4597,14 +4598,14 @@ impl NodeFactory {
 
     pub fn createFunctionDeclaration(
         &mut self,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
-        asteriskToken: Option<AsteriskToken>,
+        asteriskToken: Option<Rc<AsteriskToken>>,
         name: Option<Rc<Identifier>>,
-        typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
-        parameters: NodeArray<ParameterDeclaration>,
+        typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
+        parameters: NodeArray<Rc<ParameterDeclaration>>,
         ty: Option<TypeNode>,
-        body: Option<Block>,
+        body: Option<Rc<Block>>,
     ) -> FunctionDeclaration {
         let node = FunctionDeclaration {
             node_id: self.node_id_gen.next(),
@@ -4684,11 +4685,11 @@ impl NodeFactory {
 
     pub fn createClassDeclaration(
         &mut self,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
         name: Option<Rc<Identifier>>,
-        typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
-        heritageClauses: Option<NodeArray<HeritageClause>>,
+        typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
+        heritageClauses: Option<NodeArray<Rc<HeritageClause>>>,
         members: NodeArray<ClassElement>,
     ) -> ClassDeclaration {
         let node = ClassDeclaration {
@@ -4746,11 +4747,11 @@ impl NodeFactory {
 
     pub fn createInterfaceDeclaration(
         &mut self,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
         name: Rc<Identifier>,
-        typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
-        heritageClauses: Option<NodeArray<HeritageClause>>,
+        typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
+        heritageClauses: Option<NodeArray<Rc<HeritageClause>>>,
         members: NodeArray<TypeElement>,
     ) -> InterfaceDeclaration {
         let node = InterfaceDeclaration {
@@ -4795,10 +4796,10 @@ impl NodeFactory {
 
     pub fn createTypeAliasDeclaration(
         &mut self,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
-        name: Identifier,
-        typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
+        name: Rc<Identifier>,
+        typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
         ty: TypeNode,
     ) -> TypeAliasDeclaration {
         let node = TypeAliasDeclaration {
@@ -4839,10 +4840,10 @@ impl NodeFactory {
 
     pub fn createEnumDeclaration(
         &mut self,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
-        name: Identifier,
-        members: NodeArray<EnumMember>,
+        name: Rc<Identifier>,
+        members: NodeArray<Rc<EnumMember>>,
     ) -> EnumDeclaration {
         let node = EnumDeclaration {
             node_id: self.node_id_gen.next(),
@@ -4879,12 +4880,12 @@ impl NodeFactory {
 
     pub fn createModuleDeclaration(
         &mut self,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
         name: ModuleName,
         // TODO:
         // body: Option<ModuleBody>,
-        body: Option<ModuleBlock>,
+        body: Option<Rc<ModuleBlock>>,
         flags: Option<NodeFlags>,
     ) -> ModuleDeclaration {
         let node = ModuleDeclaration {
@@ -4962,7 +4963,7 @@ impl NodeFactory {
 
     pub fn createNamespaceExportDeclaration(
         &mut self,
-        name: Identifier,
+        name: Rc<Identifier>,
     ) -> NamespaceExportDeclaration {
         let node = NamespaceExportDeclaration {
             node_id: self.node_id_gen.next(),
@@ -4987,10 +4988,10 @@ impl NodeFactory {
 
     pub fn createImportEqualsDeclaration(
         &mut self,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
         isTypeOnly: bool,
-        name: Identifier,
+        name: Rc<Identifier>,
         moduleReference: ModuleReference,
     ) -> ImportEqualsDeclaration {
         let node = ImportEqualsDeclaration {
@@ -5037,11 +5038,11 @@ impl NodeFactory {
 
     pub fn createImportDeclaration(
         &mut self,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
-        importClause: Option<ImportClause>,
+        importClause: Option<Rc<ImportClause>>,
         moduleSpecifier: Expression,
-        assertClause: Option<AssertClause>,
+        assertClause: Option<Rc<AssertClause>>,
     ) -> ImportDeclaration {
         let node = ImportDeclaration {
             node_id: self.node_id_gen.next(),
@@ -5112,7 +5113,7 @@ impl NodeFactory {
 
     pub fn createAssertClause(
         &mut self,
-        elements: NodeArray<AssertEntry>,
+        elements: NodeArray<Rc<AssertEntry>>,
         multiLine: Option<bool>,
     ) -> AssertClause {
         let node = AssertClause {
@@ -5133,7 +5134,11 @@ impl NodeFactory {
     //             : node;
     //     }
 
-    pub fn createAssertEntry(&mut self, name: AssertionKey, value: StringLiteral) -> AssertEntry {
+    pub fn createAssertEntry(
+        &mut self,
+        name: AssertionKey,
+        value: Rc<StringLiteral>,
+    ) -> AssertEntry {
         let node = AssertEntry {
             node_id: self.node_id_gen.next(),
             name,
@@ -5169,7 +5174,7 @@ impl NodeFactory {
     //             : node;
     //     }
 
-    pub fn createNamespaceExport(&mut self, name: Identifier) -> NamespaceExport {
+    pub fn createNamespaceExport(&mut self, name: Rc<Identifier>) -> NamespaceExport {
         let node = NamespaceExport {
             node_id: self.node_id_gen.next(),
             name,
@@ -5188,7 +5193,7 @@ impl NodeFactory {
     //             : node;
     //     }
 
-    pub fn createNamedImports(&mut self, elements: NodeArray<ImportSpecifier>) -> NamedImports {
+    pub fn createNamedImports(&mut self, elements: NodeArray<Rc<ImportSpecifier>>) -> NamedImports {
         let node = NamedImports {
             node_id: self.node_id_gen.next(),
             elements: self.updateNodeArray(Some(elements), None),
@@ -5209,7 +5214,7 @@ impl NodeFactory {
     pub fn createImportSpecifier(
         &mut self,
         isTypeOnly: bool,
-        propertyName: Option<Identifier>,
+        propertyName: Option<Rc<Identifier>>,
         name: Rc<Identifier>,
     ) -> ImportSpecifier {
         let node = ImportSpecifier {
@@ -5236,7 +5241,7 @@ impl NodeFactory {
 
     pub fn createExportAssignment(
         &mut self,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
         isExportEquals: Option<bool>,
         expression: Expression,
@@ -5286,12 +5291,12 @@ impl NodeFactory {
 
     pub fn createExportDeclaration(
         &mut self,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
         isTypeOnly: bool,
         exportClause: Option<NamedExportBindings>,
         moduleSpecifier: Option<Expression>,
-        assertClause: Option<AssertClause>,
+        assertClause: Option<Rc<AssertClause>>,
     ) -> ExportDeclaration {
         let node = ExportDeclaration {
             node_id: self.node_id_gen.next(),
@@ -5332,7 +5337,7 @@ impl NodeFactory {
     //             : node;
     //     }
 
-    pub fn createNamedExports(&mut self, elements: NodeArray<ExportSpecifier>) -> NamedExports {
+    pub fn createNamedExports(&mut self, elements: NodeArray<Rc<ExportSpecifier>>) -> NamedExports {
         let node = NamedExports {
             node_id: self.node_id_gen.next(),
             elements: self.updateNodeArray(Some(elements), None),
@@ -5353,7 +5358,7 @@ impl NodeFactory {
     pub fn createExportSpecifier(
         &mut self,
         isTypeOnly: bool,
-        propertyName: Option<Identifier>,
+        propertyName: Option<Rc<Identifier>>,
         name: Rc<Identifier>,
     ) -> ExportSpecifier {
         let node = ExportSpecifier {
@@ -5469,7 +5474,7 @@ impl NodeFactory {
 
     pub fn createJSDocFunctionType(
         &mut self,
-        parameters: NodeArray<ParameterDeclaration>,
+        parameters: NodeArray<Rc<ParameterDeclaration>>,
         ty: Option<TypeNode>,
     ) -> JSDocFunctionType {
         let node = JSDocFunctionType {
@@ -6153,7 +6158,7 @@ impl NodeFactory {
     pub fn createHeritageClause(
         &mut self,
         token: SyntaxKind,
-        types: NodeArray<ExpressionWithTypeArguments>,
+        types: NodeArray<Rc<ExpressionWithTypeArguments>>,
     ) -> HeritageClause {
         let node = HeritageClause {
             node_id: self.node_id_gen.next(),
@@ -6183,8 +6188,8 @@ impl NodeFactory {
 
     pub fn createCatchClause(
         &mut self,
-        variableDeclaration: Option<VariableDeclaration>,
-        block: Block,
+        variableDeclaration: Option<Rc<VariableDeclaration>>,
+        block: Rc<Block>,
     ) -> CatchClause {
         let node = CatchClause {
             node_id: self.node_id_gen.next(),
@@ -6376,7 +6381,7 @@ impl NodeFactory {
     pub fn createSourceFile(
         &mut self,
         statements: NodeArray<Statement>,
-        endOfFileToken: EndOfFileToken,
+        endOfFileToken: Rc<EndOfFileToken>,
         flags: NodeFlags,
     ) -> SourceFile {
         let node_id = self.node_id_gen.next();

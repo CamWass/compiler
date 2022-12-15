@@ -59,23 +59,33 @@ enum SpeculationKind {
 // /* @internal */
 // export const parseNodeFactory = createNodeFactory(NodeFactoryFlags.NoParenthesizerRules, parseBaseNodeFactory);
 
-// function visitNode<T>(cbNode: (node: Node) => T, node: Node | undefined): T | undefined {
-//     return node && cbNode(node);
-// }
+fn visitNode<T, F>(cbNode: &mut F, node: Option<Node>) -> Option<T>
+where
+    F: FnMut(Node) -> Option<T>,
+{
+    node.and_then(|n| cbNode(n))
+}
 
-// function visitNodes<T>(cbNode: (node: Node) => T, cbNodes: ((node: NodeArray<Node>) => T | undefined) | undefined, nodes: NodeArray<Node> | undefined): T | undefined {
-//     if (nodes) {
-//         if (cbNodes) {
-//             return cbNodes(nodes);
-//         }
-//         for (const node of nodes) {
-//             const result = cbNode(node);
-//             if (result) {
-//                 return result;
-//             }
-//         }
-//     }
-// }
+fn visitNodes<N, T, F, G>(mut cbNode: F, cbNodes: G, nodes: Option<&NodeArray<N>>) -> Option<T>
+where
+    N: Into<Node> + Clone,
+    F: FnMut(Node) -> Option<T>,
+    G: FnMut(NodeArray<Node>) -> Option<T>,
+{
+    if let Some(nodes) = nodes {
+        // TODO:
+        // if (cbNodes) {
+        //     return cbNodes(nodes);
+        // }
+        for node in nodes.iter() {
+            let result = cbNode(node.clone().into());
+            if result.is_some() {
+                return result;
+            }
+        }
+    }
+    None
+}
 
 // /*@internal*/
 // export function isJSDocLikeText(text: string, start: number) {
@@ -84,523 +94,568 @@ enum SpeculationKind {
 //         text.charCodeAt(start + 3) !== CharacterCodes.slash;
 // }
 
-// /**
-//  * Invokes a callback for each child of the given node. The 'cbNode' callback is invoked for all child nodes
-//  * stored in properties. If a 'cbNodes' callback is specified, it is invoked for embedded arrays; otherwise,
-//  * embedded arrays are flattened and the 'cbNode' callback is invoked for each element. If a callback returns
-//  * a truthy value, iteration stops and that value is returned. Otherwise, undefined is returned.
-//  *
-//  * @param node a given node to visit its children
-//  * @param cbNode a callback to be invoked for all child nodes
-//  * @param cbNodes a callback to be invoked for embedded array
-//  *
-//  * @remarks `forEachChild` must visit the children of a node in the order
-//  * that they appear in the source code. The language service depends on this property to locate nodes by position.
-//  */
-// export function forEachChild<T>(node: Node, cbNode: (node: Node) => T | undefined, cbNodes?: (nodes: NodeArray<Node>) => T | undefined): T | undefined {
-//     if (!node || node.kind <= SyntaxKind::LastToken) {
-//         return;
-//     }
-//     switch (node.kind) {
-//         SyntaxKind::QualifiedName:
-//             return visitNode(cbNode, (node as QualifiedName).left) ||
-//                 visitNode(cbNode, (node as QualifiedName).right);
-//         SyntaxKind::TypeParameter:
-//             return visitNode(cbNode, (node as TypeParameterDeclaration).name) ||
-//                 visitNode(cbNode, (node as TypeParameterDeclaration).constraint) ||
-//                 visitNode(cbNode, (node as TypeParameterDeclaration).default) ||
-//                 visitNode(cbNode, (node as TypeParameterDeclaration).expression);
-//         SyntaxKind::ShorthandPropertyAssignment:
-//             return visitNodes(cbNode, cbNodes, node.decorators) ||
-//                 visitNodes(cbNode, cbNodes, node.modifiers) ||
-//                 visitNode(cbNode, (node as ShorthandPropertyAssignment).name) ||
-//                 visitNode(cbNode, (node as ShorthandPropertyAssignment).questionToken) ||
-//                 visitNode(cbNode, (node as ShorthandPropertyAssignment).exclamationToken) ||
-//                 visitNode(cbNode, (node as ShorthandPropertyAssignment).equalsToken) ||
-//                 visitNode(cbNode, (node as ShorthandPropertyAssignment).objectAssignmentInitializer);
-//         SyntaxKind::SpreadAssignment:
-//             return visitNode(cbNode, (node as SpreadAssignment).expression);
-//         SyntaxKind::Parameter:
-//             return visitNodes(cbNode, cbNodes, node.decorators) ||
-//                 visitNodes(cbNode, cbNodes, node.modifiers) ||
-//                 visitNode(cbNode, (node as ParameterDeclaration).dotDotDotToken) ||
-//                 visitNode(cbNode, (node as ParameterDeclaration).name) ||
-//                 visitNode(cbNode, (node as ParameterDeclaration).questionToken) ||
-//                 visitNode(cbNode, (node as ParameterDeclaration).type) ||
-//                 visitNode(cbNode, (node as ParameterDeclaration).initializer);
-//         SyntaxKind::PropertyDeclaration:
-//             return visitNodes(cbNode, cbNodes, node.decorators) ||
-//                 visitNodes(cbNode, cbNodes, node.modifiers) ||
-//                 visitNode(cbNode, (node as PropertyDeclaration).name) ||
-//                 visitNode(cbNode, (node as PropertyDeclaration).questionToken) ||
-//                 visitNode(cbNode, (node as PropertyDeclaration).exclamationToken) ||
-//                 visitNode(cbNode, (node as PropertyDeclaration).type) ||
-//                 visitNode(cbNode, (node as PropertyDeclaration).initializer);
-//         SyntaxKind::PropertySignature:
-//             return visitNodes(cbNode, cbNodes, node.decorators) ||
-//                 visitNodes(cbNode, cbNodes, node.modifiers) ||
-//                 visitNode(cbNode, (node as PropertySignature).name) ||
-//                 visitNode(cbNode, (node as PropertySignature).questionToken) ||
-//                 visitNode(cbNode, (node as PropertySignature).type) ||
-//                 visitNode(cbNode, (node as PropertySignature).initializer);
-//         SyntaxKind::PropertyAssignment:
-//             return visitNodes(cbNode, cbNodes, node.decorators) ||
-//                 visitNodes(cbNode, cbNodes, node.modifiers) ||
-//                 visitNode(cbNode, (node as PropertyAssignment).name) ||
-//                 visitNode(cbNode, (node as PropertyAssignment).questionToken) ||
-//                 visitNode(cbNode, (node as PropertyAssignment).initializer);
-//         SyntaxKind::VariableDeclaration:
-//             return visitNodes(cbNode, cbNodes, node.decorators) ||
-//                 visitNodes(cbNode, cbNodes, node.modifiers) ||
-//                 visitNode(cbNode, (node as VariableDeclaration).name) ||
-//                 visitNode(cbNode, (node as VariableDeclaration).exclamationToken) ||
-//                 visitNode(cbNode, (node as VariableDeclaration).type) ||
-//                 visitNode(cbNode, (node as VariableDeclaration).initializer);
-//         SyntaxKind::BindingElement:
-//             return visitNodes(cbNode, cbNodes, node.decorators) ||
-//                 visitNodes(cbNode, cbNodes, node.modifiers) ||
-//                 visitNode(cbNode, (node as BindingElement).dotDotDotToken) ||
-//                 visitNode(cbNode, (node as BindingElement).propertyName) ||
-//                 visitNode(cbNode, (node as BindingElement).name) ||
-//                 visitNode(cbNode, (node as BindingElement).initializer);
-//         SyntaxKind::FunctionType:
-//         SyntaxKind::ConstructorType:
-//         SyntaxKind::CallSignature:
-//         SyntaxKind::ConstructSignature:
-//         SyntaxKind::IndexSignature:
-//             return visitNodes(cbNode, cbNodes, node.decorators) ||
-//                 visitNodes(cbNode, cbNodes, node.modifiers) ||
-//                 visitNodes(cbNode, cbNodes, (node as SignatureDeclaration).typeParameters) ||
-//                 visitNodes(cbNode, cbNodes, (node as SignatureDeclaration).parameters) ||
-//                 visitNode(cbNode, (node as SignatureDeclaration).type);
-//         SyntaxKind::MethodDeclaration:
-//         SyntaxKind::MethodSignature:
-//         SyntaxKind::Constructor:
-//         SyntaxKind::GetAccessor:
-//         SyntaxKind::SetAccessor:
-//         SyntaxKind::FunctionExpression:
-//         SyntaxKind::FunctionDeclaration:
-//         SyntaxKind::ArrowFunction:
-//             return visitNodes(cbNode, cbNodes, node.decorators) ||
-//                 visitNodes(cbNode, cbNodes, node.modifiers) ||
-//                 visitNode(cbNode, (node as FunctionLikeDeclaration).asteriskToken) ||
-//                 visitNode(cbNode, (node as FunctionLikeDeclaration).name) ||
-//                 visitNode(cbNode, (node as FunctionLikeDeclaration).questionToken) ||
-//                 visitNode(cbNode, (node as FunctionLikeDeclaration).exclamationToken) ||
-//                 visitNodes(cbNode, cbNodes, (node as FunctionLikeDeclaration).typeParameters) ||
-//                 visitNodes(cbNode, cbNodes, (node as FunctionLikeDeclaration).parameters) ||
-//                 visitNode(cbNode, (node as FunctionLikeDeclaration).type) ||
-//                 visitNode(cbNode, (node as ArrowFunction).equalsGreaterThanToken) ||
-//                 visitNode(cbNode, (node as FunctionLikeDeclaration).body);
-//         SyntaxKind::ClassStaticBlockDeclaration:
-//             return visitNodes(cbNode, cbNodes, node.decorators) ||
-//                 visitNodes(cbNode, cbNodes, node.modifiers) ||
-//                 visitNode(cbNode, (node as ClassStaticBlockDeclaration).body);
-//         SyntaxKind::TypeReference:
-//             return visitNode(cbNode, (node as TypeReferenceNode).typeName) ||
-//                 visitNodes(cbNode, cbNodes, (node as TypeReferenceNode).typeArguments);
-//         SyntaxKind::TypePredicate:
-//             return visitNode(cbNode, (node as TypePredicateNode).assertsModifier) ||
-//                 visitNode(cbNode, (node as TypePredicateNode).parameterName) ||
-//                 visitNode(cbNode, (node as TypePredicateNode).type);
-//         SyntaxKind::TypeQuery:
-//             return visitNode(cbNode, (node as TypeQueryNode).exprName);
-//         SyntaxKind::TypeLiteral:
-//             return visitNodes(cbNode, cbNodes, (node as TypeLiteralNode).members);
-//         SyntaxKind::ArrayType:
-//             return visitNode(cbNode, (node as ArrayTypeNode).elementType);
-//         SyntaxKind::TupleType:
-//             return visitNodes(cbNode, cbNodes, (node as TupleTypeNode).elements);
-//         SyntaxKind::UnionType:
-//         SyntaxKind::IntersectionType:
-//             return visitNodes(cbNode, cbNodes, (node as UnionOrIntersectionTypeNode).types);
-//         SyntaxKind::ConditionalType:
-//             return visitNode(cbNode, (node as ConditionalTypeNode).checkType) ||
-//                 visitNode(cbNode, (node as ConditionalTypeNode).extendsType) ||
-//                 visitNode(cbNode, (node as ConditionalTypeNode).trueType) ||
-//                 visitNode(cbNode, (node as ConditionalTypeNode).falseType);
-//         SyntaxKind::InferType:
-//             return visitNode(cbNode, (node as InferTypeNode).typeParameter);
-//         SyntaxKind::ImportType:
-//             return visitNode(cbNode, (node as ImportTypeNode).argument) ||
-//                 visitNode(cbNode, (node as ImportTypeNode).qualifier) ||
-//                 visitNodes(cbNode, cbNodes, (node as ImportTypeNode).typeArguments);
-//         SyntaxKind::ParenthesizedType:
-//         SyntaxKind::TypeOperator:
-//             return visitNode(cbNode, (node as ParenthesizedTypeNode | TypeOperatorNode).type);
-//         SyntaxKind::IndexedAccessType:
-//             return visitNode(cbNode, (node as IndexedAccessTypeNode).objectType) ||
-//                 visitNode(cbNode, (node as IndexedAccessTypeNode).indexType);
-//         SyntaxKind::MappedType:
-//             return visitNode(cbNode, (node as MappedTypeNode).readonlyToken) ||
-//                 visitNode(cbNode, (node as MappedTypeNode).typeParameter) ||
-//                 visitNode(cbNode, (node as MappedTypeNode).nameType) ||
-//                 visitNode(cbNode, (node as MappedTypeNode).questionToken) ||
-//                 visitNode(cbNode, (node as MappedTypeNode).type);
-//         SyntaxKind::LiteralType:
-//             return visitNode(cbNode, (node as LiteralTypeNode).literal);
-//         SyntaxKind::NamedTupleMember:
-//             return visitNode(cbNode, (node as NamedTupleMember).dotDotDotToken) ||
-//                 visitNode(cbNode, (node as NamedTupleMember).name) ||
-//                 visitNode(cbNode, (node as NamedTupleMember).questionToken) ||
-//                 visitNode(cbNode, (node as NamedTupleMember).type);
-//         SyntaxKind::ObjectBindingPattern:
-//         SyntaxKind::ArrayBindingPattern:
-//             return visitNodes(cbNode, cbNodes, (node as BindingPattern).elements);
-//         SyntaxKind::ArrayLiteralExpression:
-//             return visitNodes(cbNode, cbNodes, (node as ArrayLiteralExpression).elements);
-//         SyntaxKind::ObjectLiteralExpression:
-//             return visitNodes(cbNode, cbNodes, (node as ObjectLiteralExpression).properties);
-//         SyntaxKind::PropertyAccessExpression:
-//             return visitNode(cbNode, (node as PropertyAccessExpression).expression) ||
-//                 visitNode(cbNode, (node as PropertyAccessExpression).questionDotToken) ||
-//                 visitNode(cbNode, (node as PropertyAccessExpression).name);
-//         SyntaxKind::ElementAccessExpression:
-//             return visitNode(cbNode, (node as ElementAccessExpression).expression) ||
-//                 visitNode(cbNode, (node as ElementAccessExpression).questionDotToken) ||
-//                 visitNode(cbNode, (node as ElementAccessExpression).argumentExpression);
-//         SyntaxKind::CallExpression:
-//         SyntaxKind::NewExpression:
-//             return visitNode(cbNode, (node as CallExpression).expression) ||
-//                 visitNode(cbNode, (node as CallExpression).questionDotToken) ||
-//                 visitNodes(cbNode, cbNodes, (node as CallExpression).typeArguments) ||
-//                 visitNodes(cbNode, cbNodes, (node as CallExpression).arguments);
-//         SyntaxKind::TaggedTemplateExpression:
-//             return visitNode(cbNode, (node as TaggedTemplateExpression).tag) ||
-//                 visitNode(cbNode, (node as TaggedTemplateExpression).questionDotToken) ||
-//                 visitNodes(cbNode, cbNodes, (node as TaggedTemplateExpression).typeArguments) ||
-//                 visitNode(cbNode, (node as TaggedTemplateExpression).template);
-//         SyntaxKind::TypeAssertionExpression:
-//             return visitNode(cbNode, (node as TypeAssertion).type) ||
-//                 visitNode(cbNode, (node as TypeAssertion).expression);
-//         SyntaxKind::ParenthesizedExpression:
-//             return visitNode(cbNode, (node as ParenthesizedExpression).expression);
-//         SyntaxKind::DeleteExpression:
-//             return visitNode(cbNode, (node as DeleteExpression).expression);
-//         SyntaxKind::TypeOfExpression:
-//             return visitNode(cbNode, (node as TypeOfExpression).expression);
-//         SyntaxKind::VoidExpression:
-//             return visitNode(cbNode, (node as VoidExpression).expression);
-//         SyntaxKind::PrefixUnaryExpression:
-//             return visitNode(cbNode, (node as PrefixUnaryExpression).operand);
-//         SyntaxKind::YieldExpression:
-//             return visitNode(cbNode, (node as YieldExpression).asteriskToken) ||
-//                 visitNode(cbNode, (node as YieldExpression).expression);
-//         SyntaxKind::AwaitExpression:
-//             return visitNode(cbNode, (node as AwaitExpression).expression);
-//         SyntaxKind::PostfixUnaryExpression:
-//             return visitNode(cbNode, (node as PostfixUnaryExpression).operand);
-//         SyntaxKind::BinaryExpression:
-//             return visitNode(cbNode, (node as BinaryExpression).left) ||
-//                 visitNode(cbNode, (node as BinaryExpression).operatorToken) ||
-//                 visitNode(cbNode, (node as BinaryExpression).right);
-//         SyntaxKind::AsExpression:
-//             return visitNode(cbNode, (node as AsExpression).expression) ||
-//                 visitNode(cbNode, (node as AsExpression).type);
-//         SyntaxKind::NonNullExpression:
-//             return visitNode(cbNode, (node as NonNullExpression).expression);
-//         SyntaxKind::MetaProperty:
-//             return visitNode(cbNode, (node as MetaProperty).name);
-//         SyntaxKind::ConditionalExpression:
-//             return visitNode(cbNode, (node as ConditionalExpression).condition) ||
-//                 visitNode(cbNode, (node as ConditionalExpression).questionToken) ||
-//                 visitNode(cbNode, (node as ConditionalExpression).whenTrue) ||
-//                 visitNode(cbNode, (node as ConditionalExpression).colonToken) ||
-//                 visitNode(cbNode, (node as ConditionalExpression).whenFalse);
-//         SyntaxKind::SpreadElement:
-//             return visitNode(cbNode, (node as SpreadElement).expression);
-//         SyntaxKind::Block:
-//         SyntaxKind::ModuleBlock:
-//             return visitNodes(cbNode, cbNodes, (node as Block).statements);
-//         SyntaxKind::SourceFile:
-//             return visitNodes(cbNode, cbNodes, (node as SourceFile).statements) ||
-//                 visitNode(cbNode, (node as SourceFile).endOfFileToken);
-//         SyntaxKind::VariableStatement:
-//             return visitNodes(cbNode, cbNodes, node.decorators) ||
-//                 visitNodes(cbNode, cbNodes, node.modifiers) ||
-//                 visitNode(cbNode, (node as VariableStatement).declarationList);
-//         SyntaxKind::VariableDeclarationList:
-//             return visitNodes(cbNode, cbNodes, (node as VariableDeclarationList).declarations);
-//         SyntaxKind::ExpressionStatement:
-//             return visitNode(cbNode, (node as ExpressionStatement).expression);
-//         SyntaxKind::IfStatement:
-//             return visitNode(cbNode, (node as IfStatement).expression) ||
-//                 visitNode(cbNode, (node as IfStatement).thenStatement) ||
-//                 visitNode(cbNode, (node as IfStatement).elseStatement);
-//         SyntaxKind::DoStatement:
-//             return visitNode(cbNode, (node as DoStatement).statement) ||
-//                 visitNode(cbNode, (node as DoStatement).expression);
-//         SyntaxKind::WhileStatement:
-//             return visitNode(cbNode, (node as WhileStatement).expression) ||
-//                 visitNode(cbNode, (node as WhileStatement).statement);
-//         SyntaxKind::ForStatement:
-//             return visitNode(cbNode, (node as ForStatement).initializer) ||
-//                 visitNode(cbNode, (node as ForStatement).condition) ||
-//                 visitNode(cbNode, (node as ForStatement).incrementor) ||
-//                 visitNode(cbNode, (node as ForStatement).statement);
-//         SyntaxKind::ForInStatement:
-//             return visitNode(cbNode, (node as ForInStatement).initializer) ||
-//                 visitNode(cbNode, (node as ForInStatement).expression) ||
-//                 visitNode(cbNode, (node as ForInStatement).statement);
-//         SyntaxKind::ForOfStatement:
-//             return visitNode(cbNode, (node as ForOfStatement).awaitModifier) ||
-//                 visitNode(cbNode, (node as ForOfStatement).initializer) ||
-//                 visitNode(cbNode, (node as ForOfStatement).expression) ||
-//                 visitNode(cbNode, (node as ForOfStatement).statement);
-//         SyntaxKind::ContinueStatement:
-//         SyntaxKind::BreakStatement:
-//             return visitNode(cbNode, (node as BreakOrContinueStatement).label);
-//         SyntaxKind::ReturnStatement:
-//             return visitNode(cbNode, (node as ReturnStatement).expression);
-//         SyntaxKind::WithStatement:
-//             return visitNode(cbNode, (node as WithStatement).expression) ||
-//                 visitNode(cbNode, (node as WithStatement).statement);
-//         SyntaxKind::SwitchStatement:
-//             return visitNode(cbNode, (node as SwitchStatement).expression) ||
-//                 visitNode(cbNode, (node as SwitchStatement).caseBlock);
-//         SyntaxKind::CaseBlock:
-//             return visitNodes(cbNode, cbNodes, (node as CaseBlock).clauses);
-//         SyntaxKind::CaseClause:
-//             return visitNode(cbNode, (node as CaseClause).expression) ||
-//                 visitNodes(cbNode, cbNodes, (node as CaseClause).statements);
-//         SyntaxKind::DefaultClause:
-//             return visitNodes(cbNode, cbNodes, (node as DefaultClause).statements);
-//         SyntaxKind::LabeledStatement:
-//             return visitNode(cbNode, (node as LabeledStatement).label) ||
-//                 visitNode(cbNode, (node as LabeledStatement).statement);
-//         SyntaxKind::ThrowStatement:
-//             return visitNode(cbNode, (node as ThrowStatement).expression);
-//         SyntaxKind::TryStatement:
-//             return visitNode(cbNode, (node as TryStatement).tryBlock) ||
-//                 visitNode(cbNode, (node as TryStatement).catchClause) ||
-//                 visitNode(cbNode, (node as TryStatement).finallyBlock);
-//         SyntaxKind::CatchClause:
-//             return visitNode(cbNode, (node as CatchClause).variableDeclaration) ||
-//                 visitNode(cbNode, (node as CatchClause).block);
-//         SyntaxKind::Decorator:
-//             return visitNode(cbNode, (node as Decorator).expression);
-//         SyntaxKind::ClassDeclaration:
-//         SyntaxKind::ClassExpression:
-//             return visitNodes(cbNode, cbNodes, node.decorators) ||
-//                 visitNodes(cbNode, cbNodes, node.modifiers) ||
-//                 visitNode(cbNode, (node as ClassLikeDeclaration).name) ||
-//                 visitNodes(cbNode, cbNodes, (node as ClassLikeDeclaration).typeParameters) ||
-//                 visitNodes(cbNode, cbNodes, (node as ClassLikeDeclaration).heritageClauses) ||
-//                 visitNodes(cbNode, cbNodes, (node as ClassLikeDeclaration).members);
-//         SyntaxKind::InterfaceDeclaration:
-//             return visitNodes(cbNode, cbNodes, node.decorators) ||
-//                 visitNodes(cbNode, cbNodes, node.modifiers) ||
-//                 visitNode(cbNode, (node as InterfaceDeclaration).name) ||
-//                 visitNodes(cbNode, cbNodes, (node as InterfaceDeclaration).typeParameters) ||
-//                 visitNodes(cbNode, cbNodes, (node as ClassDeclaration).heritageClauses) ||
-//                 visitNodes(cbNode, cbNodes, (node as InterfaceDeclaration).members);
-//         SyntaxKind::TypeAliasDeclaration:
-//             return visitNodes(cbNode, cbNodes, node.decorators) ||
-//                 visitNodes(cbNode, cbNodes, node.modifiers) ||
-//                 visitNode(cbNode, (node as TypeAliasDeclaration).name) ||
-//                 visitNodes(cbNode, cbNodes, (node as TypeAliasDeclaration).typeParameters) ||
-//                 visitNode(cbNode, (node as TypeAliasDeclaration).type);
-//         SyntaxKind::EnumDeclaration:
-//             return visitNodes(cbNode, cbNodes, node.decorators) ||
-//                 visitNodes(cbNode, cbNodes, node.modifiers) ||
-//                 visitNode(cbNode, (node as EnumDeclaration).name) ||
-//                 visitNodes(cbNode, cbNodes, (node as EnumDeclaration).members);
-//         SyntaxKind::EnumMember:
-//             return visitNode(cbNode, (node as EnumMember).name) ||
-//                 visitNode(cbNode, (node as EnumMember).initializer);
-//         SyntaxKind::ModuleDeclaration:
-//             return visitNodes(cbNode, cbNodes, node.decorators) ||
-//                 visitNodes(cbNode, cbNodes, node.modifiers) ||
-//                 visitNode(cbNode, (node as ModuleDeclaration).name) ||
-//                 visitNode(cbNode, (node as ModuleDeclaration).body);
-//         SyntaxKind::ImportEqualsDeclaration:
-//             return visitNodes(cbNode, cbNodes, node.decorators) ||
-//                 visitNodes(cbNode, cbNodes, node.modifiers) ||
-//                 visitNode(cbNode, (node as ImportEqualsDeclaration).name) ||
-//                 visitNode(cbNode, (node as ImportEqualsDeclaration).moduleReference);
-//         SyntaxKind::ImportDeclaration:
-//             return visitNodes(cbNode, cbNodes, node.decorators) ||
-//                 visitNodes(cbNode, cbNodes, node.modifiers) ||
-//                 visitNode(cbNode, (node as ImportDeclaration).importClause) ||
-//                 visitNode(cbNode, (node as ImportDeclaration).moduleSpecifier) ||
-//                 visitNode(cbNode, (node as ImportDeclaration).assertClause);
-//         SyntaxKind::ImportClause:
-//             return visitNode(cbNode, (node as ImportClause).name) ||
-//                 visitNode(cbNode, (node as ImportClause).namedBindings);
-//         SyntaxKind::AssertClause:
-//             return visitNodes(cbNode, cbNodes, (node as AssertClause).elements);
-//         SyntaxKind::AssertEntry:
-//             return visitNode(cbNode, (node as AssertEntry).name) ||
-//                 visitNode(cbNode, (node as AssertEntry).value);
-//         SyntaxKind::NamespaceExportDeclaration:
-//             return visitNode(cbNode, (node as NamespaceExportDeclaration).name);
-//         SyntaxKind::NamespaceImport:
-//             return visitNode(cbNode, (node as NamespaceImport).name);
-//         SyntaxKind::NamespaceExport:
-//             return visitNode(cbNode, (node as NamespaceExport).name);
-//         SyntaxKind::NamedImports:
-//         SyntaxKind::NamedExports:
-//             return visitNodes(cbNode, cbNodes, (node as NamedImportsOrExports).elements);
-//         SyntaxKind::ExportDeclaration:
-//             return visitNodes(cbNode, cbNodes, node.decorators) ||
-//                 visitNodes(cbNode, cbNodes, node.modifiers) ||
-//                 visitNode(cbNode, (node as ExportDeclaration).exportClause) ||
-//                 visitNode(cbNode, (node as ExportDeclaration).moduleSpecifier) ||
-//                 visitNode(cbNode, (node as ExportDeclaration).assertClause);
-//         SyntaxKind::ImportSpecifier:
-//         SyntaxKind::ExportSpecifier:
-//             return visitNode(cbNode, (node as ImportOrExportSpecifier).propertyName) ||
-//                 visitNode(cbNode, (node as ImportOrExportSpecifier).name);
-//         SyntaxKind::ExportAssignment:
-//             return visitNodes(cbNode, cbNodes, node.decorators) ||
-//                 visitNodes(cbNode, cbNodes, node.modifiers) ||
-//                 visitNode(cbNode, (node as ExportAssignment).expression);
-//         SyntaxKind::TemplateExpression:
-//             return visitNode(cbNode, (node as TemplateExpression).head) || visitNodes(cbNode, cbNodes, (node as TemplateExpression).templateSpans);
-//         SyntaxKind::TemplateSpan:
-//             return visitNode(cbNode, (node as TemplateSpan).expression) || visitNode(cbNode, (node as TemplateSpan).literal);
-//         SyntaxKind::TemplateLiteralType:
-//             return visitNode(cbNode, (node as TemplateLiteralTypeNode).head) || visitNodes(cbNode, cbNodes, (node as TemplateLiteralTypeNode).templateSpans);
-//         SyntaxKind::TemplateLiteralTypeSpan:
-//             return visitNode(cbNode, (node as TemplateLiteralTypeSpan).type) || visitNode(cbNode, (node as TemplateLiteralTypeSpan).literal);
-//         SyntaxKind::ComputedPropertyName:
-//             return visitNode(cbNode, (node as ComputedPropertyName).expression);
-//         SyntaxKind::HeritageClause:
-//             return visitNodes(cbNode, cbNodes, (node as HeritageClause).types);
-//         SyntaxKind::ExpressionWithTypeArguments:
-//             return visitNode(cbNode, (node as ExpressionWithTypeArguments).expression) ||
-//                 visitNodes(cbNode, cbNodes, (node as ExpressionWithTypeArguments).typeArguments);
-//         SyntaxKind::ExternalModuleReference:
-//             return visitNode(cbNode, (node as ExternalModuleReference).expression);
-//         SyntaxKind::MissingDeclaration:
-//             return visitNodes(cbNode, cbNodes, node.decorators);
-//         SyntaxKind::CommaListExpression:
-//             return visitNodes(cbNode, cbNodes, (node as CommaListExpression).elements);
+/**
+ * Invokes a callback for each child of the given node. The 'cbNode' callback is invoked for all child nodes
+ * stored in properties. If a 'cbNodes' callback is specified, it is invoked for embedded arrays; otherwise,
+ * embedded arrays are flattened and the 'cbNode' callback is invoked for each element. If a callback returns
+ * a truthy value, iteration stops and that value is returned. Otherwise, undefined is returned.
+ *
+ * @param node a given node to visit its children
+ * @param cbNode a callback to be invoked for all child nodes
+ * @param cbNodes a callback to be invoked for embedded array
+ *
+ * @remarks `forEachChild` must visit the children of a node in the order
+ * that they appear in the source code. The language service depends on this property to locate nodes by position.
+ */
+pub fn forEachChild<T, F>(node: Option<Node>, mut cbNode: F /*, cbNodes: G*/) -> Option<T>
+where
+    F: FnMut(Node) -> Option<T>,
+    // G: FnMut(NodeArray<Node>) -> Option<T>,
+{
+    let node = match node {
+        Some(n) => n,
+        None => todo!("unreachable?"),
+    };
+    if node.kind() <= SyntaxKind::LastToken {
+        todo!("unreachable?")
+        // return;
+    }
 
-//         SyntaxKind::JsxElement:
-//             return visitNode(cbNode, (node as JsxElement).openingElement) ||
-//                 visitNodes(cbNode, cbNodes, (node as JsxElement).children) ||
-//                 visitNode(cbNode, (node as JsxElement).closingElement);
-//         SyntaxKind::JsxFragment:
-//             return visitNode(cbNode, (node as JsxFragment).openingFragment) ||
-//                 visitNodes(cbNode, cbNodes, (node as JsxFragment).children) ||
-//                 visitNode(cbNode, (node as JsxFragment).closingFragment);
-//         SyntaxKind::JsxSelfClosingElement:
-//         SyntaxKind::JsxOpeningElement:
-//             return visitNode(cbNode, (node as JsxOpeningLikeElement).tagName) ||
-//                 visitNodes(cbNode, cbNodes, (node as JsxOpeningLikeElement).typeArguments) ||
-//                 visitNode(cbNode, (node as JsxOpeningLikeElement).attributes);
-//         SyntaxKind::JsxAttributes:
-//             return visitNodes(cbNode, cbNodes, (node as JsxAttributes).properties);
-//         SyntaxKind::JsxAttribute:
-//             return visitNode(cbNode, (node as JsxAttribute).name) ||
-//                 visitNode(cbNode, (node as JsxAttribute).initializer);
-//         SyntaxKind::JsxSpreadAttribute:
-//             return visitNode(cbNode, (node as JsxSpreadAttribute).expression);
-//         SyntaxKind::JsxExpression:
-//             return visitNode(cbNode, (node as JsxExpression).dotDotDotToken) ||
-//                 visitNode(cbNode, (node as JsxExpression).expression);
-//         SyntaxKind::JsxClosingElement:
-//             return visitNode(cbNode, (node as JsxClosingElement).tagName);
+    macro_rules! visit {
+        (@fields $name:ident { $fields:expr } Option<NodeArray<$field_name:ident>>, $($rest:tt)*) => {
+            visit!(@fields
+                $name {
+                    $fields.or_else(|| visitNodes(&mut cbNode, |_|None, $name.$field_name.as_ref()))
+                }
+                $($rest)*)
+        };
+        (@fields $name:ident { $fields:expr } Option<$field_name:ident>, $($rest:tt)*) => {
+            visit!(@fields
+                $name {
+                    $fields.or_else(|| visitNode(&mut cbNode, $name.$field_name.clone().map(Node::from)))
+                }
+                $($rest)*)
+        };
+        (@fields $name:ident { $fields:expr } NodeArray<$field_name:ident>, $($rest:tt)*) => {
+            visit!(@fields
+                $name {
+                    $fields.or_else(|| visitNodes(&mut cbNode, |_|None, Some(&$name.$field_name)))
+                }
+                $($rest)*)
+        };
+        (@fields $name:ident { $fields:expr } $field_name:ident, $($rest:tt)*) => {
+            visit!(@fields
+                $name {
+                    $fields.or_else(|| visitNode(&mut cbNode, Some($name.$field_name.clone().into())))
+                }
+                $($rest)*)
+        };
+        (@fields $name:ident { $fields:expr }) => {
+            $fields
+        };
 
-//         SyntaxKind::OptionalType:
-//         SyntaxKind::RestType:
-//         SyntaxKind::JSDocTypeExpression:
-//         SyntaxKind::JSDocNonNullableType:
-//         SyntaxKind::JSDocNullableType:
-//         SyntaxKind::JSDocOptionalType:
-//         SyntaxKind::JSDocVariadicType:
-//             return visitNode(cbNode, (node as OptionalTypeNode | RestTypeNode | JSDocTypeExpression | JSDocTypeReferencingNode).type);
-//         SyntaxKind::JSDocFunctionType:
-//             return visitNodes(cbNode, cbNodes, (node as JSDocFunctionType).parameters) ||
-//                 visitNode(cbNode, (node as JSDocFunctionType).type);
-//         SyntaxKind::JSDocComment:
-//             return (typeof (node as JSDoc).comment === "string" ? undefined : visitNodes(cbNode, cbNodes, (node as JSDoc).comment as NodeArray<JSDocComment> | undefined))
-//                 || visitNodes(cbNode, cbNodes, (node as JSDoc).tags);
-//         SyntaxKind::JSDocSeeTag:
-//             return visitNode(cbNode, (node as JSDocSeeTag).tagName) ||
-//                 visitNode(cbNode, (node as JSDocSeeTag).name) ||
-//                 (typeof (node as JSDoc).comment === "string" ? undefined : visitNodes(cbNode, cbNodes, (node as JSDoc).comment as NodeArray<JSDocComment> | undefined));
-//         SyntaxKind::JSDocNameReference:
-//             return visitNode(cbNode, (node as JSDocNameReference).name);
-//         SyntaxKind::JSDocMemberName:
-//             return visitNode(cbNode, (node as JSDocMemberName).left) ||
-//                 visitNode(cbNode, (node as JSDocMemberName).right);
-//         SyntaxKind::JSDocParameterTag:
-//         SyntaxKind::JSDocPropertyTag:
-//             return visitNode(cbNode, (node as JSDocTag).tagName) ||
-//                 ((node as JSDocPropertyLikeTag).isNameFirst
-//                     ? visitNode(cbNode, (node as JSDocPropertyLikeTag).name) ||
-//                         visitNode(cbNode, (node as JSDocPropertyLikeTag).typeExpression) ||
-//                         (typeof (node as JSDoc).comment === "string" ? undefined : visitNodes(cbNode, cbNodes, (node as JSDoc).comment as NodeArray<JSDocComment> | undefined))
-//                     : visitNode(cbNode, (node as JSDocPropertyLikeTag).typeExpression) ||
-//                         visitNode(cbNode, (node as JSDocPropertyLikeTag).name) ||
-//                         (typeof (node as JSDoc).comment === "string" ? undefined : visitNodes(cbNode, cbNodes, (node as JSDoc).comment as NodeArray<JSDocComment> | undefined)));
-//         SyntaxKind::JSDocAuthorTag:
-//             return visitNode(cbNode, (node as JSDocTag).tagName) ||
-//                 (typeof (node as JSDoc).comment === "string" ? undefined : visitNodes(cbNode, cbNodes, (node as JSDoc).comment as NodeArray<JSDocComment> | undefined));
-//         SyntaxKind::JSDocImplementsTag:
-//             return visitNode(cbNode, (node as JSDocTag).tagName) ||
-//                 visitNode(cbNode, (node as JSDocImplementsTag).class) ||
-//                 (typeof (node as JSDoc).comment === "string" ? undefined : visitNodes(cbNode, cbNodes, (node as JSDoc).comment as NodeArray<JSDocComment> | undefined));
-//         SyntaxKind::JSDocAugmentsTag:
-//             return visitNode(cbNode, (node as JSDocTag).tagName) ||
-//                 visitNode(cbNode, (node as JSDocAugmentsTag).class) ||
-//                 (typeof (node as JSDoc).comment === "string" ? undefined : visitNodes(cbNode, cbNodes, (node as JSDoc).comment as NodeArray<JSDocComment> | undefined));
-//         SyntaxKind::JSDocTemplateTag:
-//             return visitNode(cbNode, (node as JSDocTag).tagName) ||
-//                 visitNode(cbNode, (node as JSDocTemplateTag).constraint) ||
-//                 visitNodes(cbNode, cbNodes, (node as JSDocTemplateTag).typeParameters) ||
-//                 (typeof (node as JSDoc).comment === "string" ? undefined : visitNodes(cbNode, cbNodes, (node as JSDoc).comment as NodeArray<JSDocComment> | undefined));
-//         SyntaxKind::JSDocTypedefTag:
-//             return visitNode(cbNode, (node as JSDocTag).tagName) ||
-//                 ((node as JSDocTypedefTag).typeExpression &&
-//                     (node as JSDocTypedefTag).typeExpression!.kind === SyntaxKind::JSDocTypeExpression
-//                     ? visitNode(cbNode, (node as JSDocTypedefTag).typeExpression) ||
-//                         visitNode(cbNode, (node as JSDocTypedefTag).fullName) ||
-//                         (typeof (node as JSDoc).comment === "string" ? undefined : visitNodes(cbNode, cbNodes, (node as JSDoc).comment as NodeArray<JSDocComment> | undefined))
-//                     : visitNode(cbNode, (node as JSDocTypedefTag).fullName) ||
-//                         visitNode(cbNode, (node as JSDocTypedefTag).typeExpression) ||
-//                         (typeof (node as JSDoc).comment === "string" ? undefined : visitNodes(cbNode, cbNodes, (node as JSDoc).comment as NodeArray<JSDocComment> | undefined)));
-//         SyntaxKind::JSDocCallbackTag:
-//             return visitNode(cbNode, (node as JSDocTag).tagName) ||
-//                 visitNode(cbNode, (node as JSDocCallbackTag).fullName) ||
-//                 visitNode(cbNode, (node as JSDocCallbackTag).typeExpression) ||
-//                 (typeof (node as JSDoc).comment === "string" ? undefined : visitNodes(cbNode, cbNodes, (node as JSDoc).comment as NodeArray<JSDocComment> | undefined));
-//         SyntaxKind::JSDocReturnTag:
-//         SyntaxKind::JSDocTypeTag:
-//         SyntaxKind::JSDocThisTag:
-//         SyntaxKind::JSDocEnumTag:
-//             return visitNode(cbNode, (node as JSDocTag).tagName) ||
-//                 visitNode(cbNode, (node as JSDocReturnTag | JSDocTypeTag | JSDocThisTag | JSDocEnumTag).typeExpression) ||
-//                 (typeof (node as JSDoc).comment === "string" ? undefined : visitNodes(cbNode, cbNodes, (node as JSDoc).comment as NodeArray<JSDocComment> | undefined));
-//         SyntaxKind::JSDocSignature:
-//             return forEach((node as JSDocSignature).typeParameters, cbNode) ||
-//                 forEach((node as JSDocSignature).parameters, cbNode) ||
-//                 visitNode(cbNode, (node as JSDocSignature).type);
-//         SyntaxKind::JSDocLink:
-//         SyntaxKind::JSDocLinkCode:
-//         SyntaxKind::JSDocLinkPlain:
-//             return visitNode(cbNode, (node as JSDocLink | JSDocLinkCode | JSDocLinkPlain).name);
-//         SyntaxKind::JSDocTypeLiteral:
-//             return forEach((node as JSDocTypeLiteral).jsDocPropertyTags, cbNode);
-//         SyntaxKind::JSDocTag:
-//         SyntaxKind::JSDocClassTag:
-//         SyntaxKind::JSDocPublicTag:
-//         SyntaxKind::JSDocPrivateTag:
-//         SyntaxKind::JSDocProtectedTag:
-//         SyntaxKind::JSDocReadonlyTag:
-//         SyntaxKind::JSDocDeprecatedTag:
-//             return visitNode(cbNode, (node as JSDocTag).tagName)
-//                 || (typeof (node as JSDoc).comment === "string" ? undefined : visitNodes(cbNode, cbNodes, (node as JSDoc).comment as NodeArray<JSDocComment> | undefined));
-//         SyntaxKind::PartiallyEmittedExpression:
-//             return visitNode(cbNode, (node as PartiallyEmittedExpression).expression);
-//     }
-// }
+        ($name:ident, [ $($fields:tt)* ]) => {
+            visit!(@fields $name {(None)} $($fields)*)
+        };
+    }
+
+    match node {
+        Node::QualifiedName(n) => visit!(n, [left, right,]),
+        Node::TypeParameterDeclaration(n) => {
+            visit!(n, [name, Option<constraint>, Option<default>, Option<expression>,])
+        }
+        Node::ShorthandPropertyAssignment(n) => visit!(n, [
+            Option<NodeArray<decorators>>,
+            Option<NodeArray<modifiers>>,
+            name,
+            Option<questionToken>,
+            Option<exclamationToken>,
+            Option<equalsToken>,
+            Option<objectAssignmentInitializer>,
+        ]),
+        Node::SpreadAssignment(n) => visit!(n, [expression,]),
+        Node::ParameterDeclaration(n) => visit!(n,[
+            Option<NodeArray<decorators>>,
+            Option<NodeArray<modifiers>>,
+            Option<dotDotDotToken>,
+            name,
+            Option<questionToken>,
+            Option<ty>,
+            Option<initializer>,
+        ]),
+        Node::PropertyDeclaration(n) => visit!(n,[
+            Option<NodeArray<decorators>>,
+            Option<NodeArray<modifiers>>,
+            name,
+            Option<questionToken>,
+            Option<exclamationToken>,
+            Option<ty>,
+            Option<initializer>,
+        ]),
+        Node::PropertySignature(n) => visit!(n,[
+            // decorators,
+            Option<NodeArray<modifiers>>,
+            name,
+            Option<questionToken>,
+            Option<ty>,
+            Option<initializer>,
+        ]),
+        Node::PropertyAssignment(n) => visit!(n,[
+            Option<NodeArray<decorators>>,
+            Option<NodeArray<modifiers>>,
+            name,
+            Option<questionToken>,
+            initializer,
+        ]),
+        Node::VariableDeclaration(n) => visit!(n,[
+            // decorators,
+            // modifiers,
+            name,
+            Option<exclamationToken>,
+            Option<ty>,
+            Option<initializer>,
+        ]),
+        Node::BindingElement(n) => visit!(n,[
+            // decorators,
+            // modifiers,
+            Option<dotDotDotToken>,
+            Option<propertyName>,
+            name,
+            Option<initializer>,
+        ]),
+        Node::FunctionTypeNode(n) => visit!(n,[
+            // decorators,
+            Option<NodeArray<modifiers>>,
+            Option<NodeArray<typeParameters>>,
+            NodeArray<parameters>,
+            Option<ty>,
+        ]),
+        Node::ConstructorTypeNode(n) => visit!(n,[
+            // decorators,
+            Option<NodeArray<modifiers>>,
+            Option<NodeArray<typeParameters>>,
+            NodeArray<parameters>,
+            Option<ty>,
+        ]),
+        Node::CallSignatureDeclaration(n) => visit!(n,[
+            // decorators,
+            // modifiers,
+            Option<NodeArray<typeParameters>>,
+            NodeArray<parameters>,
+            Option<ty>,
+        ]),
+        Node::ConstructSignatureDeclaration(n) => visit!(n,[
+            // decorators,
+            // modifiers,
+            Option<NodeArray<typeParameters>>,
+            NodeArray<parameters>,
+            Option<ty>,
+        ]),
+        Node::IndexSignatureDeclaration(n) => visit!(n,[
+            Option<NodeArray<decorators>>,
+            Option<NodeArray<modifiers>>,
+            // typeParameters,
+            NodeArray<parameters>,
+            Option<ty>,
+        ]),
+        Node::MethodDeclaration(n) => visit!(n,[
+            Option<NodeArray<decorators>>,
+            Option<NodeArray<modifiers>>,
+            Option<asteriskToken>,
+            name,
+            Option<questionToken>,
+            Option<exclamationToken>,
+            Option<NodeArray<typeParameters>>,
+            NodeArray<parameters>,
+            Option<ty>,
+            Option<body>,
+        ]),
+        Node::MethodSignature(n) => visit!(n,[
+            Option<NodeArray<modifiers>>,
+            name,
+            Option<questionToken>,
+            Option<NodeArray<typeParameters>>,
+            NodeArray<parameters>,
+            Option<ty>,
+        ]),
+        Node::ConstructorDeclaration(n) => visit!(n, [
+            Option<NodeArray<decorators>>,
+            Option<NodeArray<modifiers>>,
+            Option<NodeArray<typeParameters>>,
+            NodeArray<parameters>,
+            Option<ty>,
+            Option<body>,
+        ]),
+        Node::GetAccessorDeclaration(n) => visit!(n, [
+            Option<NodeArray<decorators>>,
+            Option<NodeArray<modifiers>>,
+            name,
+            Option<questionToken>,
+            Option<NodeArray<typeParameters>>,
+            NodeArray<parameters>,
+            Option<ty>,
+            Option<body>,
+        ]),
+        Node::SetAccessorDeclaration(n) => visit!(n,[
+            Option<NodeArray<decorators>>,
+            Option<NodeArray<modifiers>>,
+            name,
+            Option<questionToken>,
+            Option<NodeArray<typeParameters>>,
+            NodeArray<parameters>,
+            Option<ty>,
+            Option<body>,
+        ]),
+        Node::FunctionExpression(n) => visit!(n,[
+            Option<NodeArray<modifiers>>,
+            Option<asteriskToken>,
+            Option<name>,
+            Option<NodeArray<typeParameters>>,
+            NodeArray<parameters>,
+            Option<ty>,
+            body,
+        ]),
+        Node::FunctionDeclaration(n) => visit!(n,[
+            Option<NodeArray<decorators>>,
+            Option<NodeArray<modifiers>>,
+            Option<asteriskToken>,
+            Option<name>,
+            Option<NodeArray<typeParameters>>,
+            NodeArray<parameters>,
+            Option<ty>,
+            Option<body>,
+        ]),
+        Node::ArrowFunction(n) => visit!(n,[
+            // decorators,
+            Option<NodeArray<modifiers>>,
+            Option<NodeArray<typeParameters>>,
+            NodeArray<parameters>,
+            Option<ty>,
+            body,
+        ]),
+        Node::ClassStaticBlockDeclaration(n) => visit!(n,[
+            Option<NodeArray<decorators>>,
+            Option<NodeArray<modifiers>>,
+            body,
+        ]),
+        Node::TypeReferenceNode(n) => visit!(n,[
+            typeName,
+            Option<NodeArray<typeArguments>>,
+        ]),
+        Node::TypePredicateNode(n) => {
+            visit!(n, [Option<assertsModifier>, parameterName, Option<ty>,])
+        }
+        Node::TypeQueryNode(n) => visit!(n, [exprName,]),
+        Node::TypeLiteralNode(n) => visit!(n, [NodeArray<members>,]),
+        Node::ArrayTypeNode(n) => visit!(n, [elementType,]),
+        Node::TupleTypeNode(n) => visit!(n, [NodeArray<elements>,]),
+        Node::UnionTypeNode(n) => visit!(n, [NodeArray<types>,]),
+        Node::IntersectionTypeNode(n) => visit!(n, [NodeArray<types>,]),
+        // TODO:
+        // Node::ConditionalTypeNode(n)=>visit!(n,[
+        //         checkType,
+        //         extendsType,
+        //         trueType,
+        //         falseType,]),
+        Node::InferTypeNode(n) => visit!(n, [typeParameter,]),
+        Node::ImportTypeNode(n) => visit!(n,[
+            argument,
+            Option<qualifier>,
+            Option<NodeArray<typeArguments>>,
+        ]),
+        Node::ParenthesizedTypeNode(n) => visit!(n, [ty,]),
+        Node::TypeOperatorNode(n) => visit!(n, [ty,]),
+        Node::IndexedAccessTypeNode(n) => visit!(n, [objectType, indexType,]),
+        // TODO:
+        // Node::MappedTypeNode(n) => visit!(
+        //     n,
+        //     [Option<readonlyToken>, typeParameter, Option<nameType>, Option<questionToken>, Option<ty>,]
+        // ),
+        Node::LiteralTypeNode(n) => visit!(n, [literal,]),
+        Node::NamedTupleMember(n) => {
+            visit!(n, [Option<dotDotDotToken>, name, Option<questionToken>, ty,])
+        }
+        Node::ObjectBindingPattern(n) => visit!(n, [NodeArray<elements>,]),
+        Node::ArrayBindingPattern(n) => visit!(n, [NodeArray<elements>,]),
+        Node::ArrayLiteralExpression(n) => visit!(n, [NodeArray<elements>,]),
+        Node::ObjectLiteralExpression(n) => visit!(n, [NodeArray<properties>,]),
+        Node::PropertyAccessExpression(n) => {
+            visit!(n, [expression, Option<questionDotToken>, name,])
+        }
+        Node::ElementAccessExpression(n) => {
+            visit!(n, [expression, Option<questionDotToken>, argumentExpression,])
+        }
+        Node::CallExpression(n) => {
+            visit!(n, [expression, Option<questionDotToken>, Option<NodeArray<typeArguments>>, NodeArray<arguments>,])
+        }
+        Node::NewExpression(n) => {
+            visit!(n, [expression, Option<NodeArray<typeArguments>>, Option<NodeArray<arguments>>,])
+        }
+        Node::TaggedTemplateExpression(n) => {
+            visit!(n, [tag, Option<questionDotToken>, Option<NodeArray<typeArguments>>, template,])
+        }
+        Node::TypeAssertion(n) => visit!(n, [ty, expression,]),
+        Node::ParenthesizedExpression(n) => visit!(n, [expression,]),
+        Node::DeleteExpression(n) => visit!(n, [expression,]),
+        Node::TypeOfExpression(n) => visit!(n, [expression,]),
+        Node::VoidExpression(n) => visit!(n, [expression,]),
+        Node::PrefixUnaryExpression(n) => visit!(n, [operand,]),
+        Node::YieldExpression(n) => visit!(n, [Option<asteriskToken>, Option<expression>,]),
+        Node::AwaitExpression(n) => visit!(n, [expression,]),
+        Node::PostfixUnaryExpression(n) => visit!(n, [operand,]),
+        Node::BinaryExpression(n) => visit!(n, [left, operatorToken, right,]),
+        Node::AsExpression(n) => visit!(n, [expression, ty,]),
+        Node::NonNullExpression(n) => visit!(n, [expression,]),
+        Node::MetaProperty(n) => visit!(n, [name,]),
+        Node::ConditionalExpression(n) => visit!(
+            n,
+            [condition, questionToken, whenTrue, colonToken, whenFalse,]
+        ),
+        Node::SpreadElement(n) => visit!(n, [expression,]),
+        Node::Block(n) => visit!(n, [NodeArray<statements>,]),
+        Node::ModuleBlock(n) => visit!(n, [NodeArray<statements>,]),
+        Node::SourceFile(n) => visit!(n, [NodeArray<statements>, endOfFileToken,]),
+        Node::VariableStatement(n) => {
+            visit!(n, [Option<NodeArray<decorators>>, Option<NodeArray<modifiers>>, declarationList,])
+        }
+        Node::VariableDeclarationList(n) => visit!(n, [NodeArray<declarations>,]),
+        Node::ExpressionStatement(n) => visit!(n, [expression,]),
+        Node::IfStatement(n) => visit!(n,[
+            expression,
+            thenStatement,
+            Option<elseStatement>,
+        ]),
+        Node::DoStatement(n) => visit!(n, [statement, expression,]),
+        Node::WhileStatement(n) => visit!(n, [expression, statement,]),
+        Node::ForStatement(n) => visit!(n,[
+            Option<initializer>,
+            Option<condition>,
+            Option<incrementor>,
+            statement,
+        ]),
+        Node::ForInStatement(n) => visit!(n, [initializer, expression, statement,]),
+        Node::ForOfStatement(n) => visit!(n,[
+            Option<awaitModifier>,
+            initializer,
+            expression,
+            statement,
+        ]),
+        Node::ContinueStatement(n) => visit!(n, [Option<label>,]),
+        Node::BreakStatement(n) => visit!(n, [Option<label>,]),
+        Node::ReturnStatement(n) => visit!(n, [Option<expression>,]),
+        Node::WithStatement(n) => visit!(n, [expression, statement,]),
+        Node::SwitchStatement(n) => visit!(n, [expression, caseBlock,]),
+        Node::CaseBlock(n) => visit!(n, [NodeArray<clauses>,]),
+        Node::CaseClause(n) => visit!(n, [expression, NodeArray<statements>,]),
+        Node::DefaultClause(n) => visit!(n, [NodeArray<statements>,]),
+        Node::LabeledStatement(n) => visit!(n, [label, statement,]),
+        Node::ThrowStatement(n) => visit!(n, [expression,]),
+        Node::TryStatement(n) => visit!(n, [tryBlock, Option<catchClause>, Option<finallyBlock>,]),
+        Node::CatchClause(n) => visit!(n, [Option<variableDeclaration>, block,]),
+        Node::Decorator(n) => visit!(n, [expression,]),
+        Node::ClassDeclaration(n) => visit!(
+            n,
+            [
+                Option<NodeArray<decorators>>,
+                Option<NodeArray<modifiers>>,
+                Option<name>,
+                Option<NodeArray<typeParameters>>,
+                Option<NodeArray<heritageClauses>>,
+                NodeArray<members>,
+            ]
+        ),
+        Node::ClassExpression(n) => visit!(
+            n,
+            [
+                Option<NodeArray<decorators>>,
+                Option<NodeArray<modifiers>>,
+                Option<name>,
+                Option<NodeArray<typeParameters>>,
+                Option<NodeArray<heritageClauses>>,
+                NodeArray<members>,
+            ]
+        ),
+        Node::InterfaceDeclaration(n) => visit!(
+            n,
+            [
+                Option<NodeArray<decorators>>,
+                Option<NodeArray<modifiers>>,
+                name,
+                Option<NodeArray<typeParameters>>,
+                Option<NodeArray<heritageClauses>>,
+                NodeArray<members>,
+            ]
+        ),
+        Node::TypeAliasDeclaration(n) => {
+            visit!(n, [Option<NodeArray<decorators>>, Option<NodeArray<modifiers>>, name, Option<NodeArray<typeParameters>>, ty,])
+        }
+        Node::EnumDeclaration(n) => {
+            visit!(n, [Option<NodeArray<decorators>>, Option<NodeArray<modifiers>>, name, NodeArray<members>,])
+        }
+        Node::EnumMember(n) => visit!(n, [name, Option<initializer>,]),
+        Node::ModuleDeclaration(n) => {
+            visit!(n, [Option<NodeArray<decorators>>, Option<NodeArray<modifiers>>, name, Option<body>,])
+        }
+        Node::ImportEqualsDeclaration(n) => {
+            visit!(n, [Option<NodeArray<decorators>>, Option<NodeArray<modifiers>>, name, moduleReference,])
+        }
+        Node::ImportDeclaration(n) => visit!(
+            n,
+            [
+                Option<NodeArray<decorators>>,
+                Option<NodeArray<modifiers>>,
+                Option<importClause>,
+                moduleSpecifier,
+                Option<assertClause>,
+            ]
+        ),
+        Node::ImportClause(n) => visit!(n, [Option<name>, Option<namedBindings>,]),
+        Node::AssertClause(n) => visit!(n, [NodeArray<elements>,]),
+        Node::AssertEntry(n) => visit!(n, [name, value,]),
+        Node::NamespaceExportDeclaration(n) => visit!(n, [name,]),
+        Node::NamespaceImport(n) => visit!(n, [name,]),
+        Node::NamespaceExport(n) => visit!(n, [name,]),
+        Node::NamedImports(n) => visit!(n, [NodeArray<elements>,]),
+        Node::NamedExports(n) => visit!(n, [NodeArray<elements>,]),
+        Node::ExportDeclaration(n) => visit!(
+            n,
+            [
+                Option<NodeArray<decorators>>,
+                Option<NodeArray<modifiers>>,
+                Option<exportClause>,
+                Option<moduleSpecifier>,
+                Option<assertClause>,
+            ]
+        ),
+        Node::ImportSpecifier(n) => visit!(n, [Option<propertyName>, name,]),
+        Node::ExportSpecifier(n) => visit!(n, [Option<propertyName>, name,]),
+        Node::ExportAssignment(n) => {
+            visit!(n, [Option<NodeArray<decorators>>, Option<NodeArray<modifiers>>, expression,])
+        }
+        Node::TemplateExpression(n) => visit!(n, [head, NodeArray<templateSpans>,]),
+        Node::TemplateSpan(n) => visit!(n, [expression, literal,]),
+        Node::TemplateLiteralTypeNode(n) => visit!(n, [head, NodeArray<templateSpans>,]),
+        Node::TemplateLiteralTypeSpan(n) => visit!(n, [ty, literal,]),
+        Node::ComputedPropertyName(n) => visit!(n, [expression,]),
+        Node::HeritageClause(n) => visit!(n, [NodeArray<types>,]),
+        Node::ExpressionWithTypeArguments(n) => {
+            visit!(n, [expression, Option<NodeArray<typeArguments>>,])
+        }
+        Node::ExternalModuleReference(n) => visit!(n, [expression,]),
+        Node::MissingDeclaration(n) => visit!(n, [Option<NodeArray<decorators>>,]),
+        // TODO:
+        // Node::CommaListExpression(n) => visit!(n, [elements,]),
+
+        // TODO:
+        // Node::JsxElement(n) => visit!(n, [openingElement, children, closingElement,]),
+        // Node::JsxFragment(n) => visit!(n, [openingFragment, children, closingFragment,]),
+        // Node::JsxSelfClosingElement(n) => visit!(n, [tagName, typeArguments, attributes,]),
+        // Node::JsxOpeningElement(n) => visit!(n, [tagName, typeArguments, attributes,]),
+        // Node::JsxAttributes(n) => visit!(n, [properties,]),
+        // Node::JsxAttribute(n) => visit!(n, [name, initializer,]),
+        // Node::JsxSpreadAttribute(n) => visit!(n, [expression,]),
+        // Node::JsxExpression(n) => visit!(n, [dotDotDotToken, expression,]),
+        // Node::JsxClosingElement(n) => visit!(n, [tagName,]),
+        Node::OptionalTypeNode(n) => visit!(n, [ty,]),
+        Node::RestTypeNode(n) => visit!(n, [ty,]),
+        Node::JSDocTypeExpression(n) => visit!(n, [ty,]),
+        Node::JSDocNonNullableType(n) => visit!(n, [ty,]),
+        Node::JSDocNullableType(n) => visit!(n, [ty,]),
+        Node::JSDocOptionalType(n) => visit!(n, [ty,]),
+        Node::JSDocVariadicType(n) => visit!(n, [ty,]),
+        Node::JSDocFunctionType(n) => visit!(n, [NodeArray<parameters>, Option<ty>,]),
+        // TODO:
+        //         Node::JSDocComment(n)=>visit!(n,[
+        //                 (typeof comment === "string" ? undefined : comment as NodeArray<JSDocComment> | undefined))
+        //                 || tags,]),
+        //         Node::JSDocSeeTag(n)=>visit!(n,[
+        //                 tagName,
+        //                 name,
+        //                 (typeof comment === "string" ? undefined : comment as NodeArray<JSDocComment> | undefined),]),
+        //         Node::JSDocNameReference(n)=>visit!(n,[
+        //                 name,]),
+        //         Node::JSDocMemberName(n)=>visit!(n,[
+        //                 left,
+        //                 right,]),
+        //         Node::JSDocParameterTag(n)=>visit!(n,[
+        //         Node::JSDocPropertyTag(n)=>visit!(n,[
+        //                 tagName,
+        //                 (isNameFirst
+        //                     ? name,
+        //                         typeExpression,
+        //                         (typeof comment === "string" ? undefined : comment as NodeArray<JSDocComment> | undefined))
+        //                     : typeExpression,
+        //                         name,
+        //                         (typeof comment === "string" ? undefined : comment as NodeArray<JSDocComment> | undefined)),]),
+        //         Node::JSDocAuthorTag(n)=>visit!(n,[
+        //                 tagName,
+        //                 (typeof comment === "string" ? undefined : comment as NodeArray<JSDocComment> | undefined),]),
+        //         Node::JSDocImplementsTag(n)=>visit!(n,[
+        //                 tagName,
+        //                 class,
+        //                 (typeof comment === "string" ? undefined : comment as NodeArray<JSDocComment> | undefined),]),
+        //         Node::JSDocAugmentsTag(n)=>visit!(n,[
+        //                 tagName,
+        //                 class,
+        //                 (typeof comment === "string" ? undefined : comment as NodeArray<JSDocComment> | undefined),]),
+        //         Node::JSDocTemplateTag(n)=>visit!(n,[
+        //                 tagName,
+        //                 constraint,
+        //                 typeParameters,
+        //                 (typeof comment === "string" ? undefined : comment as NodeArray<JSDocComment> | undefined),]),
+        //         Node::JSDocTypedefTag(n)=>visit!(n,[
+        //                 tagName,
+        //                 (typeExpression &&
+        //                     typeExpression!.kind === Node::JSDocTypeExpression
+        //                     ? typeExpression,
+        //                         fullName,
+        //                         (typeof comment === "string" ? undefined : comment as NodeArray<JSDocComment> | undefined))
+        //                     : fullName,
+        //                         typeExpression,
+        //                         (typeof comment === "string" ? undefined : comment as NodeArray<JSDocComment> | undefined)),]),
+        //         Node::JSDocCallbackTag(n)=>visit!(n,[
+        //                 tagName,
+        //                 fullName,
+        //                 typeExpression,
+        //                 (typeof comment === "string" ? undefined : comment as NodeArray<JSDocComment> | undefined),]),
+        //         Node::JSDocReturnTag(n)=>visit!(n,[
+        //         Node::JSDocTypeTag(n)=>visit!(n,[
+        //         Node::JSDocThisTag(n)=>visit!(n,[
+        //         Node::JSDocEnumTag(n)=>visit!(n,[
+        //                 tagName,
+        //                 visitNode(cbNode, (node as JSDocReturnTag | JSDocTypeTag | JSDocThisTag | JSDocEnumTag).typeExpression,
+        //                 (typeof comment === "string" ? undefined : comment as NodeArray<JSDocComment> | undefined),]),
+        //         Node::JSDocSignature(n)=>visit!(n,[
+        //                 forEach(typeParameters, cbNode,
+        //                 forEach(parameters, cbNode,
+        //                 ty,]),
+        //         Node::JSDocLink(n)=>visit!(n,[
+        //         Node::JSDocLinkCode(n)=>visit!(n,[
+        //         Node::JSDocLinkPlain(n)=>visit!(n,[
+        //                 visitNode(cbNode, (node as JSDocLink | JSDocLinkCode | JSDocLinkPlain).name,]),
+        //         Node::JSDocTypeLiteral(n)=>visit!(n,[
+        //                 forEach(jsDocPropertyTags, cbNode,]),
+        //         Node::JSDocTag(n)=>visit!(n,[
+        //         Node::JSDocClassTag(n)=>visit!(n,[
+        //         Node::JSDocPublicTag(n)=>visit!(n,[
+        //         Node::JSDocPrivateTag(n)=>visit!(n,[
+        //         Node::JSDocProtectedTag(n)=>visit!(n,[
+        //         Node::JSDocReadonlyTag(n)=>visit!(n,[
+        //         Node::JSDocDeprecatedTag(n)=>visit!(n,[
+        //                 tagName)
+        //                 || (typeof comment === "string" ? undefined : comment as NodeArray<JSDocComment> | undefined),]),
+        //         Node::PartiallyEmittedExpression(n)=>visit!(n,[
+        //                 expression,]),
+        _ => {
+            dbg!(node);
+            todo!()
+        }
+    }
+}
 
 // /** @internal */
 // /**
-//  * Invokes a callback for each child of the given node. The 'cbNode' callback is invoked for all child nodes
+//  * Invokes a callback for each child of the given  The 'cbNode' callback is invoked for all child nodes
 //  * stored in properties. If a 'cbNodes' callback is specified, it is invoked for embedded arrays; additionally,
 //  * unlike `forEachChild`, embedded arrays are flattened and the 'cbNode' callback is invoked for each element.
 //  *  If a callback returns a truthy value, iteration stops and that value is returned. Otherwise, undefined is returned.
@@ -1213,7 +1268,7 @@ impl Parser {
             scriptKind,
             isDeclarationFile,
             statements,
-            endOfFileToken,
+            Rc::new(endOfFileToken),
             self.sourceFlags,
         );
         // TODO: pragmas
@@ -1398,7 +1453,7 @@ impl Parser {
         scriptKind: ScriptKind,
         isDeclarationFile: bool,
         statements: NodeArray<Statement>,
-        endOfFileToken: EndOfFileToken,
+        endOfFileToken: Rc<EndOfFileToken>,
         flags: NodeFlags,
     ) -> SourceFile {
         // code from createNode is inlined here so createNode won't have to deal with special of creating source files
@@ -3521,11 +3576,11 @@ impl Parser {
         }
     }
 
-    fn parseTemplateSpans(&mut self, isTaggedTemplate: bool) -> NodeArray<TemplateSpan> {
+    fn parseTemplateSpans(&mut self, isTaggedTemplate: bool) -> NodeArray<Rc<TemplateSpan>> {
         let pos = self.getNodePos();
         let mut list = Vec::new();
         loop {
-            let node = self.parseTemplateSpan(isTaggedTemplate);
+            let node = Rc::new(self.parseTemplateSpan(isTaggedTemplate));
             let is_middle = matches!(node.literal, TemplateSpanLiteral::TemplateMiddle(_));
             list.push(node);
             if !is_middle {
@@ -3537,7 +3592,7 @@ impl Parser {
 
     fn parseTemplateExpression(&mut self, isTaggedTemplate: bool) -> TemplateExpression {
         let pos = self.getNodePos();
-        let head = self.parseTemplateHead(isTaggedTemplate);
+        let head = Rc::new(self.parseTemplateHead(isTaggedTemplate));
         let templateSpans = self.parseTemplateSpans(isTaggedTemplate);
         let node = self.factory.createTemplateExpression(head, templateSpans);
         self.finishNode(node, pos, None)
@@ -3545,17 +3600,17 @@ impl Parser {
 
     fn parseTemplateType(&mut self) -> TemplateLiteralTypeNode {
         let pos = self.getNodePos();
-        let head = self.parseTemplateHead(false);
+        let head = Rc::new(self.parseTemplateHead(false));
         let template_spans = self.parseTemplateTypeSpans();
         let node = self.factory.createTemplateLiteralType(head, template_spans);
         self.finishNode(node, pos, None)
     }
 
-    fn parseTemplateTypeSpans(&mut self) -> NodeArray<TemplateLiteralTypeSpan> {
+    fn parseTemplateTypeSpans(&mut self) -> NodeArray<Rc<TemplateLiteralTypeSpan>> {
         let pos = self.getNodePos();
         let mut list = Vec::new();
         loop {
-            let node = self.parseTemplateTypeSpan();
+            let node = Rc::new(self.parseTemplateTypeSpan());
             let is_middle = matches!(node.literal, TemplateSpanLiteral::TemplateMiddle(_));
             list.push(node);
             if !is_middle {
@@ -4097,11 +4152,11 @@ impl Parser {
         self.finishNode(node, pos, None)
     }
 
-    fn parseTypeParameters(&mut self) -> Option<NodeArray<TypeParameterDeclaration>> {
+    fn parseTypeParameters(&mut self) -> Option<NodeArray<Rc<TypeParameterDeclaration>>> {
         if self.token() == SyntaxKind::LessThanToken {
             Some(self.parseBracketedList(
                 ParsingContext::TypeParameters,
-                |p| p.parseTypeParameter(),
+                |p| Rc::new(p.parseTypeParameter()),
                 SyntaxKind::LessThanToken,
                 SyntaxKind::GreaterThanToken,
             ))
@@ -4193,9 +4248,9 @@ impl Parser {
         let node = self.factory.createParameterDeclaration(
             decorators,
             modifiers,
-            dotDotDotToken,
+            dotDotDotToken.map(Rc::new),
             name,
-            questionToken,
+            questionToken.map(Rc::new),
             ty,
             initializer,
         );
@@ -4243,7 +4298,10 @@ impl Parser {
         }
     }
 
-    fn parseParametersWorker(&mut self, flags: SignatureFlags) -> NodeArray<ParameterDeclaration> {
+    fn parseParametersWorker(
+        &mut self,
+        flags: SignatureFlags,
+    ) -> NodeArray<Rc<ParameterDeclaration>> {
         // FormalParameters [Yield,Await]: (modified)
         //      [empty]
         //      FormalParameterList[?Yield,Await]
@@ -4266,7 +4324,7 @@ impl Parser {
         let parameters = if flags.intersects(SignatureFlags::JSDoc) {
             self.parseDelimitedList(
                 ParsingContext::JSDocParameters,
-                |p| p.parseJSDocParameter(),
+                |p| Rc::new(p.parseJSDocParameter()),
                 false,
             )
         } else {
@@ -4274,9 +4332,9 @@ impl Parser {
                 ParsingContext::Parameters,
                 |p| {
                     if savedAwaitContext {
-                        p.parseParameterInOuterAwaitContext()
+                        Rc::new(p.parseParameterInOuterAwaitContext())
                     } else {
-                        p.parseParameter()
+                        Rc::new(p.parseParameter())
                     }
                 },
                 false,
@@ -4289,7 +4347,7 @@ impl Parser {
         parameters
     }
 
-    fn parseParameters(&mut self, flags: SignatureFlags) -> NodeArray<ParameterDeclaration> {
+    fn parseParameters(&mut self, flags: SignatureFlags) -> NodeArray<Rc<ParameterDeclaration>> {
         // FormalParameters [Yield,Await]: (modified)
         //      [empty]
         //      FormalParameterList[?Yield,Await]
@@ -4419,12 +4477,12 @@ impl Parser {
         &mut self,
         pos: usize,
         hasJSDoc: bool,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
     ) -> IndexSignatureDeclaration {
         let parameters = self.parseBracketedList(
             ParsingContext::Parameters,
-            |p| p.parseParameter(),
+            |p| Rc::new(p.parseParameter()),
             SyntaxKind::OpenBracketToken,
             SyntaxKind::CloseBracketToken,
         );
@@ -4444,7 +4502,9 @@ impl Parser {
         modifiers: Option<NodeArray<Modifier>>,
     ) -> TypeElement {
         let name = self.parsePropertyName();
-        let questionToken = self.parseOptionalToken(SyntaxKind::QuestionToken);
+        let questionToken = self
+            .parseOptionalToken(SyntaxKind::QuestionToken)
+            .map(Rc::new);
         if self.token() == SyntaxKind::OpenParenToken || self.token() == SyntaxKind::LessThanToken {
             // Method signatures don't exist in expression contexts.  So they have neither
             // [Yield] nor [Await]
@@ -4641,7 +4701,7 @@ impl Parser {
         self.parseExpected(SyntaxKind::CloseBraceToken, None, None);
         let node = self.factory.createMappedTypeNode(
             readonlyToken,
-            typeParameter,
+            Rc::new(typeParameter),
             nameType,
             questionToken,
             ty,
@@ -4691,9 +4751,13 @@ impl Parser {
         if self.lookAhead(|p| p.isTupleElementName()) {
             let pos = self.getNodePos();
             let hasJSDoc = self.hasPrecedingJSDocComment();
-            let dotDotDotToken = self.parseOptionalToken(SyntaxKind::DotDotDotToken);
+            let dotDotDotToken = self
+                .parseOptionalToken(SyntaxKind::DotDotDotToken)
+                .map(Rc::new);
             let name = Rc::new(self.parseIdentifierName(None));
-            let questionToken = self.parseOptionalToken(SyntaxKind::QuestionToken);
+            let questionToken = self
+                .parseOptionalToken(SyntaxKind::QuestionToken)
+                .map(Rc::new);
             self.parseExpected(SyntaxKind::ColonToken, None, None);
             let ty = self.parseTupleElementType();
             let node = self
@@ -5108,7 +5172,7 @@ impl Parser {
     fn parseInferType(&mut self) -> InferTypeNode {
         let pos = self.getNodePos();
         self.parseExpected(SyntaxKind::InferKeyword, None, None);
-        let param = self.parseTypeParameterOfInferType();
+        let param = Rc::new(self.parseTypeParameterOfInferType());
         let node = self.factory.createInferTypeNode(param);
         self.finishNode(node, pos, None)
     }
@@ -5315,7 +5379,7 @@ impl Parser {
     fn parseAssertsTypePredicate(&mut self) -> TypeNode {
         let pos = self.getNodePos();
         let assertsModifier =
-            self.parseExpectedToken::<_, u8>(SyntaxKind::AssertsKeyword, None, None);
+            Rc::new(self.parseExpectedToken::<_, u8>(SyntaxKind::AssertsKeyword, None, None));
         let parameterName = if self.token() == SyntaxKind::ThisKeyword {
             TypePredicateParameterName::ThisTypeNode(Rc::new(self.parseThisTypeNode()))
         } else {
@@ -5609,7 +5673,9 @@ impl Parser {
         if !self.scanner.hasPrecedingLineBreak()
             && (self.token() == SyntaxKind::AsteriskToken || self.isStartOfExpression())
         {
-            let asteriskToken = self.parseOptionalToken(SyntaxKind::AsteriskToken);
+            let asteriskToken = self
+                .parseOptionalToken(SyntaxKind::AsteriskToken)
+                .map(Rc::new);
             let expression = self.parseAssignmentExpressionOrHigher();
             let node = self
                 .factory
@@ -5647,13 +5713,16 @@ impl Parser {
         let paremeter_range = *self.factory.node_data(&parameter).get_range();
 
         let parameters = self.createNodeArray(
-            vec![parameter],
+            vec![Rc::new(parameter)],
             paremeter_range.pos,
             Some(paremeter_range.end),
             false,
         );
-        let equalsGreaterThanToken =
-            self.parseExpectedToken::<_, u8>(SyntaxKind::EqualsGreaterThanToken, None, None);
+        let equalsGreaterThanToken = Rc::new(self.parseExpectedToken::<_, u8>(
+            SyntaxKind::EqualsGreaterThanToken,
+            None,
+            None,
+        ));
         let body = self.parseArrowFunctionExpressionBody(asyncModifier.is_some());
         let node = self.factory.createArrowFunction(
             asyncModifier,
@@ -5965,8 +6034,11 @@ impl Parser {
         // If we have an arrow, then try to parse the body. Even if not, try to parse if we
         // have an opening brace, just in we're in an error state.
         let lastToken = self.token();
-        let equalsGreaterThanToken =
-            self.parseExpectedToken::<_, u8>(SyntaxKind::EqualsGreaterThanToken, None, None);
+        let equalsGreaterThanToken = Rc::new(self.parseExpectedToken::<_, u8>(
+            SyntaxKind::EqualsGreaterThanToken,
+            None,
+            None,
+        ));
         let body = if lastToken == SyntaxKind::EqualsGreaterThanToken
             || lastToken == SyntaxKind::OpenBraceToken
         {
@@ -6072,9 +6144,9 @@ impl Parser {
         };
         let node = self.factory.createConditionalExpression(
             leftOperand,
-            Some(questionToken),
+            Some(Rc::new(questionToken)),
             whenTrue,
-            Some(colonToken),
+            Some(Rc::new(colonToken)),
             whenFalse,
         );
         Expression::ConditionalExpression(Rc::new(self.finishNode(node, pos, None)))
@@ -6948,7 +7020,7 @@ impl Parser {
         &mut self,
         pos: usize,
         expression: LeftHandSideExpression,
-        questionDotToken: Option<QuestionDotToken>,
+        questionDotToken: Option<Rc<QuestionDotToken>>,
     ) -> PropertyAccessExpression {
         let name = self.parseRightSideOfDot(true, true);
         let isOptionalChain =
@@ -6975,7 +7047,7 @@ impl Parser {
         &mut self,
         pos: usize,
         expression: LeftHandSideExpression,
-        questionDotToken: Option<QuestionDotToken>,
+        questionDotToken: Option<Rc<QuestionDotToken>>,
     ) -> ElementAccessExpression {
         let argumentExpression = if self.token() == SyntaxKind::CloseBracketToken {
             Expression::Identifier(Rc::new(self.createMissingIdentifier::<u8>(
@@ -7011,11 +7083,11 @@ impl Parser {
             let mut questionDotToken = None;
             let mut isPropertyAccess = false;
             if allowOptionalChain && self.isStartOfOptionalPropertyOrElementAccessChain() {
-                questionDotToken = Some(self.parseExpectedToken::<QuestionDotToken, u8>(
+                questionDotToken = Some(Rc::new(self.parseExpectedToken::<QuestionDotToken, u8>(
                     SyntaxKind::QuestionDotToken,
                     None,
                     None,
-                ));
+                )));
                 isPropertyAccess = tokenIsIdentifierOrKeyword(self.token());
             } else {
                 isPropertyAccess = self.parseOptional(SyntaxKind::DotToken);
@@ -7070,7 +7142,7 @@ impl Parser {
         &mut self,
         pos: usize,
         tag: LeftHandSideExpression,
-        questionDotToken: Option<QuestionDotToken>,
+        questionDotToken: Option<Rc<QuestionDotToken>>,
         typeArguments: Option<NodeArray<TypeNode>>,
     ) -> TaggedTemplateExpression {
         let template = if self.token() == SyntaxKind::NoSubstitutionTemplateLiteral {
@@ -7103,8 +7175,9 @@ impl Parser {
     ) -> LeftHandSideExpression {
         loop {
             expression = self.parseMemberExpressionRest(pos, expression, true).into();
-            let questionDotToken =
-                self.parseOptionalToken::<QuestionDotToken>(SyntaxKind::QuestionDotToken);
+            let questionDotToken = self
+                .parseOptionalToken::<QuestionDotToken>(SyntaxKind::QuestionDotToken)
+                .map(Rc::new);
             // handle 'foo<<T>()'
             // parse template arguments only in TypeScript files (not in JavaScript files).
             if !self.contextFlags.intersects(NodeFlags::JavaScriptFile)
@@ -7458,13 +7531,19 @@ impl Parser {
             ));
         }
 
-        let asteriskToken = self.parseOptionalToken(SyntaxKind::AsteriskToken);
+        let asteriskToken = self
+            .parseOptionalToken(SyntaxKind::AsteriskToken)
+            .map(Rc::new);
         let tokenIsIdentifier = self.isIdentifier();
         let name = self.parsePropertyName();
 
         // Disallowing of optional property assignments and definite assignment assertion happens in the grammar checker.
-        let questionToken = self.parseOptionalToken(SyntaxKind::QuestionToken);
-        let exclamationToken = self.parseOptionalToken(SyntaxKind::ExclamationToken);
+        let questionToken = self
+            .parseOptionalToken(SyntaxKind::QuestionToken)
+            .map(Rc::new);
+        let exclamationToken = self
+            .parseOptionalToken(SyntaxKind::ExclamationToken)
+            .map(Rc::new);
 
         if asteriskToken.is_some()
             || self.token() == SyntaxKind::OpenParenToken
@@ -7493,7 +7572,9 @@ impl Parser {
         let isShorthandPropertyAssignment =
             tokenIsIdentifier && (self.token() != SyntaxKind::ColonToken);
         if isShorthandPropertyAssignment {
-            let equalsToken = self.parseOptionalToken(SyntaxKind::EqualsToken);
+            let equalsToken = self
+                .parseOptionalToken(SyntaxKind::EqualsToken)
+                .map(Rc::new);
             let objectAssignmentInitializer = if equalsToken.is_some() {
                 Some(self.allowInAnd(|p| p.parseAssignmentExpressionOrHigher()))
             } else {
@@ -7576,7 +7657,9 @@ impl Parser {
         let hasJSDoc = self.hasPrecedingJSDocComment();
         let modifiers = self.parseModifiers(false, false);
         self.parseExpected(SyntaxKind::FunctionKeyword, None, None);
-        let asteriskToken = self.parseOptionalToken(SyntaxKind::AsteriskToken);
+        let asteriskToken = self
+            .parseOptionalToken(SyntaxKind::AsteriskToken)
+            .map(Rc::new);
         let isGenerator = if asteriskToken.is_some() {
             SignatureFlags::Yield
         } else {
@@ -7615,7 +7698,7 @@ impl Parser {
             typeParameters,
             Some(parameters),
             ty,
-            body,
+            Rc::new(body),
         );
         let node = self.finishNode(node, pos, None);
         self.withJSDoc(node, hasJSDoc)
@@ -7822,7 +7905,9 @@ impl Parser {
         let pos = self.getNodePos();
         let hasJSDoc = self.hasPrecedingJSDocComment();
         self.parseExpected(SyntaxKind::ForKeyword, None, None);
-        let awaitToken = self.parseOptionalToken::<AwaitKeyword>(SyntaxKind::AwaitKeyword);
+        let awaitToken = self
+            .parseOptionalToken(SyntaxKind::AwaitKeyword)
+            .map(Rc::new);
         self.parseExpected(SyntaxKind::OpenParenToken, None, None);
 
         let mut initializer = None;
@@ -8007,7 +8092,7 @@ impl Parser {
         self.parseExpected(SyntaxKind::OpenParenToken, None, None);
         let expression = self.allowInAnd(|p| p.parseExpression());
         self.parseExpected(SyntaxKind::CloseParenToken, None, None);
-        let caseBlock = self.parseCaseBlock();
+        let caseBlock = Rc::new(self.parseCaseBlock());
         let node = self.factory.createSwitchStatement(expression, caseBlock);
         let node = self.finishNode(node, pos, None);
         self.withJSDoc(node, hasJSDoc)
@@ -8053,9 +8138,9 @@ impl Parser {
         let hasJSDoc = self.hasPrecedingJSDocComment();
 
         self.parseExpected(SyntaxKind::TryKeyword, None, None);
-        let tryBlock = self.parseBlock(false, None);
+        let tryBlock = Rc::new(self.parseBlock(false, None));
         let catchClause = if self.token() == SyntaxKind::CatchKeyword {
-            Some(self.parseCatchClause())
+            Some(Rc::new(self.parseCatchClause()))
         } else {
             None
         };
@@ -8065,7 +8150,7 @@ impl Parser {
         let mut finallyBlock = None;
         if catchClause.is_none() || self.token() == SyntaxKind::FinallyKeyword {
             self.parseExpected(SyntaxKind::FinallyKeyword, None, None);
-            finallyBlock = Some(self.parseBlock(false, None));
+            finallyBlock = Some(Rc::new(self.parseBlock(false, None)));
         }
         let node = self
             .factory
@@ -8080,7 +8165,7 @@ impl Parser {
 
         let variableDeclaration;
         if self.parseOptional(SyntaxKind::OpenParenToken) {
-            variableDeclaration = Some(self.parseVariableDeclaration(false));
+            variableDeclaration = Some(Rc::new(self.parseVariableDeclaration(false)));
             self.parseExpected(SyntaxKind::CloseParenToken, None, None);
         } else {
             // Keep shape of node to avoid degrading performance.
@@ -8088,7 +8173,9 @@ impl Parser {
         }
 
         let block = self.parseBlock(false, None);
-        let node = self.factory.createCatchClause(variableDeclaration, block);
+        let node = self
+            .factory
+            .createCatchClause(variableDeclaration, Rc::new(block));
         self.finishNode(node, pos, None)
     }
 
@@ -8490,7 +8577,7 @@ impl Parser {
         &mut self,
         pos: usize,
         hasJSDoc: bool,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
     ) -> Statement {
         match self.token() {
@@ -8606,7 +8693,9 @@ impl Parser {
                 self.finishNode(node, pos, None),
             ));
         }
-        let dotDotDotToken = self.parseOptionalToken(SyntaxKind::DotDotDotToken);
+        let dotDotDotToken = self
+            .parseOptionalToken(SyntaxKind::DotDotDotToken)
+            .map(Rc::new);
         let name = self.parseIdentifierOrPattern(None);
         let initializer = self.parseInitializer();
         let node = self
@@ -8617,7 +8706,9 @@ impl Parser {
 
     fn parseObjectBindingElement(&mut self) -> BindingElement {
         let pos = self.getNodePos();
-        let dotDotDotToken = self.parseOptionalToken(SyntaxKind::DotDotDotToken);
+        let dotDotDotToken = self
+            .parseOptionalToken(SyntaxKind::DotDotDotToken)
+            .map(Rc::new);
         let tokenIsIdentifier = self.isBindingIdentifier();
         let mut propertyName = Some(self.parsePropertyName());
         let name;
@@ -8703,7 +8794,7 @@ impl Parser {
             && self.token() == SyntaxKind::ExclamationToken
             && !self.scanner.hasPrecedingLineBreak()
         {
-            exclamationToken = Some(self.parseTokenNode());
+            exclamationToken = Some(Rc::new(self.parseTokenNode()));
         }
         let ty = self.parseTypeAnnotation();
         let initializer = if self.isInOrOfKeyword(self.token()) {
@@ -8755,9 +8846,9 @@ impl Parser {
                 ParsingContext::VariableDeclarations,
                 |p| {
                     if inForStatementInitializer {
-                        p.parseVariableDeclaration(false)
+                        Rc::new(p.parseVariableDeclaration(false))
                     } else {
-                        p.parseVariableDeclarationAllowExclamation()
+                        Rc::new(p.parseVariableDeclarationAllowExclamation())
                     }
                 },
                 false,
@@ -8780,14 +8871,14 @@ impl Parser {
         &mut self,
         pos: usize,
         hasJSDoc: bool,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
     ) -> VariableStatement {
         let declarationList = self.parseVariableDeclarationList(false);
         self.parseSemicolon();
         let mut node = self
             .factory
-            .createVariableStatement(modifiers, declarationList);
+            .createVariableStatement(modifiers, Rc::new(declarationList));
         // Decorators are not allowed on a variable statement, so we keep track of them to report them in the grammar checker.
         node.decorators = decorators;
         let node = self.finishNode(node, pos, None);
@@ -8798,14 +8889,16 @@ impl Parser {
         &mut self,
         pos: usize,
         hasJSDoc: bool,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
     ) -> FunctionDeclaration {
         let savedAwaitContext = self.inAwaitContext();
 
         let modifierFlags = modifiersToFlags(modifiers.as_ref());
         self.parseExpected(SyntaxKind::FunctionKeyword, None, None);
-        let asteriskToken = self.parseOptionalToken(SyntaxKind::AsteriskToken);
+        let asteriskToken = self
+            .parseOptionalToken(SyntaxKind::AsteriskToken)
+            .map(Rc::new);
         // We don't parse the name here in await context, instead we will report a grammar error in the checker.
         let name = if modifierFlags.intersects(ModifierFlags::Default) {
             self.parseOptionalBindingIdentifier()
@@ -8839,7 +8932,7 @@ impl Parser {
             typeParameters,
             parameters,
             ty,
-            body,
+            body.map(Rc::new),
         );
         let node = self.finishNode(node, pos, None);
         self.withJSDoc(node, hasJSDoc)
@@ -8868,7 +8961,7 @@ impl Parser {
         &mut self,
         pos: usize,
         hasJSDoc: bool,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
     ) -> Option<ConstructorDeclaration> {
         self.tryParse(|p| {
@@ -8880,9 +8973,12 @@ impl Parser {
                     SignatureFlags::None,
                     Some(Diagnostics::or_expected),
                 );
-                let mut node = p
-                    .factory
-                    .createConstructorDeclaration(decorators, modifiers, parameters, body);
+                let mut node = p.factory.createConstructorDeclaration(
+                    decorators,
+                    modifiers,
+                    parameters,
+                    body.map(Rc::new),
+                );
                 // Attach `typeParameters` and `type` if they exist so that we can report them in the grammar checker.
                 node.typeParameters = typeParameters;
                 node.ty = ty;
@@ -8898,12 +8994,12 @@ impl Parser {
         &mut self,
         pos: usize,
         hasJSDoc: bool,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
-        asteriskToken: Option<AsteriskToken>,
+        asteriskToken: Option<Rc<AsteriskToken>>,
         name: PropertyName,
-        questionToken: Option<QuestionToken>,
-        exclamationToken: Option<ExclamationToken>,
+        questionToken: Option<Rc<QuestionToken>>,
+        exclamationToken: Option<Rc<ExclamationToken>>,
         diagnosticMessage: Option<DiagnosticMessage>,
     ) -> MethodDeclaration {
         let isGenerator = if asteriskToken.is_some() {
@@ -8933,7 +9029,7 @@ impl Parser {
             typeParameters,
             parameters,
             ty,
-            body,
+            body.map(Rc::new),
         );
         // An exclamation token on a method is invalid syntax and will be handled by the grammar checker
         node.exclamationToken = exclamationToken;
@@ -8945,13 +9041,14 @@ impl Parser {
         &mut self,
         pos: usize,
         hasJSDoc: bool,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
         name: PropertyName,
-        questionToken: Option<QuestionToken>,
+        questionToken: Option<Rc<QuestionToken>>,
     ) -> PropertyDeclaration {
         let exclamationToken = if questionToken.is_none() && !self.scanner.hasPrecedingLineBreak() {
             self.parseOptionalToken(SyntaxKind::ExclamationToken)
+                .map(Rc::new)
         } else {
             None
         };
@@ -8978,14 +9075,18 @@ impl Parser {
         &mut self,
         pos: usize,
         hasJSDoc: bool,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
     ) -> ClassElement {
-        let asteriskToken = self.parseOptionalToken(SyntaxKind::AsteriskToken);
+        let asteriskToken = self
+            .parseOptionalToken(SyntaxKind::AsteriskToken)
+            .map(Rc::new);
         let name = self.parsePropertyName();
         // Note: this is not legal as per the grammar.  But we allow it in the parser and
         // report an error in the grammar checker.
-        let questionToken = self.parseOptionalToken(SyntaxKind::QuestionToken);
+        let questionToken = self
+            .parseOptionalToken(SyntaxKind::QuestionToken)
+            .map(Rc::new);
         if asteriskToken.is_some()
             || self.token() == SyntaxKind::OpenParenToken
             || self.token() == SyntaxKind::LessThanToken
@@ -9016,7 +9117,7 @@ impl Parser {
         &mut self,
         pos: usize,
         hasJSDoc: bool,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
     ) -> GetAccessorDeclaration {
         let name = self.parsePropertyName();
@@ -9024,9 +9125,14 @@ impl Parser {
         let parameters = self.parseParameters(SignatureFlags::None);
         let ty = self.parseReturnType(SyntaxKind::ColonToken, false);
         let body = self.parseFunctionBlockOrSemicolon(SignatureFlags::None, None);
-        let mut node = self
-            .factory
-            .createGetAccessorDeclaration(decorators, modifiers, name, parameters, ty, body);
+        let mut node = self.factory.createGetAccessorDeclaration(
+            decorators,
+            modifiers,
+            name,
+            parameters,
+            ty,
+            body.map(Rc::new),
+        );
         // Keep track of `typeParameters` if they were parsed those indicate grammar errors
         node.typeParameters = typeParameters;
         let node = self.finishNode(node, pos, None);
@@ -9037,7 +9143,7 @@ impl Parser {
         &mut self,
         pos: usize,
         hasJSDoc: bool,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
     ) -> SetAccessorDeclaration {
         let name = self.parsePropertyName();
@@ -9045,9 +9151,13 @@ impl Parser {
         let parameters = self.parseParameters(SignatureFlags::None);
         let ty = self.parseReturnType(SyntaxKind::ColonToken, false);
         let body = self.parseFunctionBlockOrSemicolon(SignatureFlags::None, None);
-        let mut node = self
-            .factory
-            .createSetAccessorDeclaration(decorators, modifiers, name, parameters, body);
+        let mut node = self.factory.createSetAccessorDeclaration(
+            decorators,
+            modifiers,
+            name,
+            parameters,
+            body.map(Rc::new),
+        );
         // Keep track of `typeParameters` (for both) and `type` (for setters) if they were parsed those indicate grammar errors
         node.typeParameters = typeParameters;
         if ty.is_some() {
@@ -9135,11 +9245,11 @@ impl Parser {
         &mut self,
         pos: usize,
         hasJSDoc: bool,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<ModifiersArray>,
     ) -> ClassStaticBlockDeclaration {
         self.parseExpectedToken::<StaticKeyword, u8>(SyntaxKind::StaticKeyword, None, None);
-        let body = self.parseClassStaticBlockBody();
+        let body = Rc::new(self.parseClassStaticBlockBody());
         let node = self
             .factory
             .createClassStaticBlockDeclaration(decorators, modifiers, body);
@@ -9187,11 +9297,11 @@ impl Parser {
         Some(self.finishNode(node, pos, None))
     }
 
-    fn parseDecorators(&mut self) -> Option<NodeArray<Decorator>> {
+    fn parseDecorators(&mut self) -> Option<NodeArray<Rc<Decorator>>> {
         let pos = self.getNodePos();
         let mut list = Vec::new();
         while let Some(decorator) = self.tryParseDecorator() {
-            list.push(decorator);
+            list.push(Rc::new(decorator));
         }
         if !list.is_empty() {
             Some(self.createNodeArray(list, pos, None, false))
@@ -9323,7 +9433,7 @@ impl Parser {
                         decorators.take(),
                         modifiers.take(),
                         parameters,
-                        body,
+                        body.map(Rc::new),
                     );
                     // Attach `typeParameters` and `type` if they exist so that we can report them in the grammar checker.
                     node.typeParameters = typeParameters;
@@ -9428,7 +9538,7 @@ impl Parser {
         &mut self,
         pos: usize,
         hasJSDoc: bool,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
     ) -> ClassDeclaration {
         let savedAwaitContext = self.inAwaitContext();
@@ -9486,14 +9596,14 @@ impl Parser {
             && self.lookAhead(|p| p.nextTokenIsIdentifierOrKeyword())
     }
 
-    fn parseHeritageClauses(&mut self) -> Option<NodeArray<HeritageClause>> {
+    fn parseHeritageClauses(&mut self) -> Option<NodeArray<Rc<HeritageClause>>> {
         // ClassTail[Yield,Await] : (Modified) See 14.5
         //      ClassHeritage[?Yield,?Await]opt { ClassBody[?Yield,?Await]opt }
 
         if self.isHeritageClause() {
-            return Some(
-                self.parseList(ParsingContext::HeritageClauses, |p| p.parseHeritageClause()),
-            );
+            return Some(self.parseList(ParsingContext::HeritageClauses, |p| {
+                Rc::new(p.parseHeritageClause())
+            }));
         }
 
         None
@@ -9506,7 +9616,7 @@ impl Parser {
         self.nextToken();
         let types = self.parseDelimitedList(
             ParsingContext::HeritageClauseElement,
-            |p| p.parseExpressionWithTypeArguments(),
+            |p| Rc::new(p.parseExpressionWithTypeArguments()),
             false,
         );
         let node = self.factory.createHeritageClause(tok, types);
@@ -9548,7 +9658,7 @@ impl Parser {
         &mut self,
         pos: usize,
         hasJSDoc: bool,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
     ) -> InterfaceDeclaration {
         self.parseExpected(SyntaxKind::InterfaceKeyword, None, None);
@@ -9572,7 +9682,7 @@ impl Parser {
         &mut self,
         pos: usize,
         hasJSDoc: bool,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
     ) -> TypeAliasDeclaration {
         self.parseExpected(SyntaxKind::TypeKeyword, None, None);
@@ -9591,7 +9701,7 @@ impl Parser {
         let node = self.factory.createTypeAliasDeclaration(
             decorators,
             modifiers,
-            name,
+            Rc::new(name),
             typeParameters,
             ty,
         );
@@ -9617,7 +9727,7 @@ impl Parser {
         &mut self,
         pos: usize,
         hasJSDoc: bool,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
     ) -> EnumDeclaration {
         self.parseExpected(SyntaxKind::EnumKeyword, None, None);
@@ -9625,15 +9735,19 @@ impl Parser {
         let members;
         if self.parseExpected(SyntaxKind::OpenBraceToken, None, None) {
             members = self.doOutsideOfYieldAndAwaitContext(|p| {
-                p.parseDelimitedList(ParsingContext::EnumMembers, |p| p.parseEnumMember(), false)
+                p.parseDelimitedList(
+                    ParsingContext::EnumMembers,
+                    |p| Rc::new(p.parseEnumMember()),
+                    false,
+                )
             });
             self.parseExpected(SyntaxKind::CloseBraceToken, None, None);
         } else {
             members = self.createMissingList();
         }
-        let node = self
-            .factory
-            .createEnumDeclaration(decorators, modifiers, name, members);
+        let node =
+            self.factory
+                .createEnumDeclaration(decorators, modifiers, Rc::new(name), members);
         let node = self.finishNode(node, pos, None);
         self.withJSDoc(node, hasJSDoc)
     }
@@ -9655,7 +9769,7 @@ impl Parser {
         &mut self,
         pos: usize,
         hasJSDoc: bool,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
         flags: NodeFlags,
     ) -> ModuleDeclaration {
@@ -9673,7 +9787,7 @@ impl Parser {
             //     NodeFlags::NestedNamespace | namespaceFlag,
             // ) as NamespaceDeclaration
         } else {
-            self.parseModuleBlock()
+            Rc::new(self.parseModuleBlock())
         };
         let node = self.factory.createModuleDeclaration(
             decorators,
@@ -9690,7 +9804,7 @@ impl Parser {
         &mut self,
         pos: usize,
         hasJSDoc: bool,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
     ) -> ModuleDeclaration {
         let mut flags = NodeFlags::empty();
@@ -9703,7 +9817,7 @@ impl Parser {
         };
         let mut body = None;
         if self.token() == SyntaxKind::OpenBraceToken {
-            body = Some(self.parseModuleBlock());
+            body = Some(Rc::new(self.parseModuleBlock()));
         } else {
             self.parseSemicolon();
         }
@@ -9718,7 +9832,7 @@ impl Parser {
         &mut self,
         pos: usize,
         hasJSDoc: bool,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
     ) -> ModuleDeclaration {
         let mut flags = NodeFlags::empty();
@@ -9758,14 +9872,14 @@ impl Parser {
         &mut self,
         pos: usize,
         hasJSDoc: bool,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
     ) -> NamespaceExportDeclaration {
         self.parseExpected(SyntaxKind::AsKeyword, None, None);
         self.parseExpected(SyntaxKind::NamespaceKeyword, None, None);
         let name = self.parseIdentifier(None, None);
         self.parseSemicolon();
-        let mut node = self.factory.createNamespaceExportDeclaration(name);
+        let mut node = self.factory.createNamespaceExportDeclaration(Rc::new(name));
         // NamespaceExportDeclaration nodes cannot have decorators or modifiers, so we attach them here so we can report them in the grammar checker
         node.decorators = decorators;
         node.modifiers = modifiers;
@@ -9777,7 +9891,7 @@ impl Parser {
         &mut self,
         pos: usize,
         hasJSDoc: bool,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
     ) -> Statement {
         self.parseExpected(SyntaxKind::ImportKeyword, None, None);
@@ -9807,7 +9921,12 @@ impl Parser {
             if let Some(identifier) = identifier {
                 return Statement::ImportEqualsDeclaration(Rc::new(
                     self.parseImportEqualsDeclaration(
-                        pos, hasJSDoc, decorators, modifiers, identifier, isTypeOnly,
+                        pos,
+                        hasJSDoc,
+                        decorators,
+                        modifiers,
+                        Rc::new(identifier),
+                        isTypeOnly,
                     ),
                 ));
             }
@@ -9829,14 +9948,14 @@ impl Parser {
 
         let mut assertClause = None;
         if self.token() == SyntaxKind::AssertKeyword && !self.scanner.hasPrecedingLineBreak() {
-            assertClause = Some(self.parseAssertClause());
+            assertClause = Some(Rc::new(self.parseAssertClause()));
         }
 
         self.parseSemicolon();
         let node = self.factory.createImportDeclaration(
             decorators,
             modifiers,
-            importClause,
+            importClause.map(Rc::new),
             moduleSpecifier,
             assertClause,
         );
@@ -9852,7 +9971,7 @@ impl Parser {
             AssertionKey::StringLiteral(Rc::new(self.parseStringLiteral()))
         };
         self.parseExpected(SyntaxKind::ColonToken, None, None);
-        let value = self.parseStringLiteral();
+        let value = Rc::new(self.parseStringLiteral());
         let node = self.factory.createAssertEntry(name, value);
         self.finishNode(node, pos, None)
     }
@@ -9865,7 +9984,7 @@ impl Parser {
         let multiLine = self.scanner.hasPrecedingLineBreak();
         let elements = self.parseDelimitedList(
             ParsingContext::AssertEntries,
-            |p| p.parseAssertEntry(),
+            |p| Rc::new(p.parseAssertEntry()),
             true,
         );
         if !self.parseExpected(SyntaxKind::CloseBraceToken, None, None) {
@@ -9902,9 +10021,9 @@ impl Parser {
         &mut self,
         pos: usize,
         hasJSDoc: bool,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
-        identifier: Identifier,
+        identifier: Rc<Identifier>,
         isTypeOnly: bool,
     ) -> ImportEqualsDeclaration {
         self.parseExpected(SyntaxKind::EqualsToken, None, None);
@@ -10006,7 +10125,7 @@ impl Parser {
         //  ImportsList, ImportSpecifier
         let elements = self.parseBracketedList(
             ParsingContext::ImportOrExportSpecifiers,
-            |p| p.parseImportSpecifier(),
+            |p| Rc::new(p.parseImportSpecifier()),
             SyntaxKind::OpenBraceToken,
             SyntaxKind::CloseBraceToken,
         );
@@ -10027,7 +10146,7 @@ impl Parser {
         //  ImportsList, ImportSpecifier
         let elements = self.parseBracketedList(
             ParsingContext::ImportOrExportSpecifiers,
-            |p| p.parseExportSpecifier(),
+            |p| Rc::new(p.parseExportSpecifier()),
             SyntaxKind::OpenBraceToken,
             SyntaxKind::CloseBraceToken,
         );
@@ -10038,18 +10157,22 @@ impl Parser {
     fn parseExportSpecifier(&mut self) -> ExportSpecifier {
         let (pos, isTypeOnly, propertyName, name) =
             self.parseImportOrExportSpecifier(SyntaxKind::ExportSpecifier);
-        let node = self
-            .factory
-            .createExportSpecifier(isTypeOnly, propertyName, Rc::new(name));
+        let node = self.factory.createExportSpecifier(
+            isTypeOnly,
+            propertyName.map(Rc::new),
+            Rc::new(name),
+        );
         self.finishNode(node, pos, None)
     }
 
     fn parseImportSpecifier(&mut self) -> ImportSpecifier {
         let (pos, isTypeOnly, propertyName, name) =
             self.parseImportOrExportSpecifier(SyntaxKind::ImportSpecifier);
-        let node = self
-            .factory
-            .createImportSpecifier(isTypeOnly, propertyName, Rc::new(name));
+        let node = self.factory.createImportSpecifier(
+            isTypeOnly,
+            propertyName.map(Rc::new),
+            Rc::new(name),
+        );
         self.finishNode(node, pos, None)
     }
 
@@ -10142,7 +10265,7 @@ impl Parser {
 
     fn parseNamespaceExport(&mut self, pos: usize) -> NamespaceExport {
         let name = self.parseIdentifierName(None);
-        let node = self.factory.createNamespaceExport(name);
+        let node = self.factory.createNamespaceExport(Rc::new(name));
         self.finishNode(node, pos, None)
     }
 
@@ -10150,7 +10273,7 @@ impl Parser {
         &mut self,
         pos: usize,
         hasJSDoc: bool,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
     ) -> ExportDeclaration {
         let savedAwaitContext = self.inAwaitContext();
@@ -10187,7 +10310,7 @@ impl Parser {
             && self.token() == SyntaxKind::AssertKeyword
             && !self.scanner.hasPrecedingLineBreak()
         {
-            assertClause = Some(self.parseAssertClause());
+            assertClause = Some(Rc::new(self.parseAssertClause()));
         }
         self.parseSemicolon();
         self.setAwaitContext(savedAwaitContext);
@@ -10207,7 +10330,7 @@ impl Parser {
         &mut self,
         pos: usize,
         hasJSDoc: bool,
-        decorators: Option<NodeArray<Decorator>>,
+        decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
     ) -> ExportAssignment {
         let savedAwaitContext = self.inAwaitContext();

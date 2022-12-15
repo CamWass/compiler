@@ -51,7 +51,7 @@ macro_rules! make {
 
 make!(
     // Unknown,
-    // EndOfFileToken,
+    EndOfFileToken,
     // SingleLineCommentTrivia,
     // MultiLineCommentTrivia,
     // NewLineTrivia,
@@ -73,15 +73,15 @@ make!(
     TemplateHead,
     TemplateMiddle,
     TemplateTail,
-    // // Punctuation
+    // Punctuation
     // OpenBraceToken,
     // CloseBraceToken,
     // OpenParenToken,
     // CloseParenToken,
     // OpenBracketToken,
     // CloseBracketToken,
-    // DotToken,
-    // DotDotDotToken,
+    DotToken,
+    DotDotDotToken,
     // SemicolonToken,
     CommaToken,
     QuestionDotToken,
@@ -114,7 +114,7 @@ make!(
     AmpersandAmpersandToken,
     BarBarToken,
     QuestionToken,
-    // ColonToken,
+    ColonToken,
     // AtToken,
     QuestionQuestionToken,
     // // Only the JSDoc scanner produces BacktickToken. The normal scanner produces NoSubstitutionTemplateLiteral and related kinds.
@@ -191,7 +191,7 @@ make!(
     // Contextual keywords
     AbstractKeyword,
     // AsKeyword,
-    // AssertsKeyword,
+    AssertsKeyword,
     // AssertKeyword,
     AnyKeyword,
     AsyncKeyword,
@@ -347,7 +347,7 @@ make!(
     ExportDeclaration,
     NamedExports,
     NamespaceExport,
-    // ExportSpecifier,
+    ExportSpecifier,
     MissingDeclaration,
     // Module references
     ExternalModuleReference,
@@ -366,7 +366,7 @@ make!(
     // Clauses
     CaseClause,
     DefaultClause,
-    // HeritageClause,
+    HeritageClause,
     CatchClause,
     AssertClause,
     AssertEntry,
@@ -382,22 +382,22 @@ make!(
     // UnparsedText,
     // UnparsedInternalText,
     // UnparsedSyntheticReference,
-    // // Top-level nodes
-    // SourceFile,
+    // Top-level nodes
+    SourceFile,
     // Bundle,
     // UnparsedSource,
     // InputFiles,
-    // // JSDoc nodes
-    // JSDocTypeExpression,
+    // JSDoc nodes
+    JSDocTypeExpression,
     // JSDocNameReference,
     // JSDocMemberName,  // C#p
     JSDocAllType,     // The * type
     JSDocUnknownType, // The ? type
     JSDocNullableType,
     JSDocNonNullableType,
-    // JSDocOptionalType,
+    JSDocOptionalType,
     JSDocFunctionType,
-    // JSDocVariadicType,
+    JSDocVariadicType,
     // JSDocNamepathType, // https://jsdoc.app/about-namepaths.html
     // JSDocComment,
     // JSDocText,

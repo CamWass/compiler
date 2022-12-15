@@ -996,7 +996,7 @@ pub struct NodeData {
     pub flags: NodeFlags,
     //         /* @internal */ modifierFlagsCache: ModifierFlags;
     pub transformFlags: TransformFlags, // Flags for transforms
-    //         readonly decorators?: NodeArray<Decorator>;           // Array of decorators (in document order)
+    //         readonly decorators?: NodeArray<Rc<Decorator>>;           // Array of decorators (in document order)
     //         readonly modifiers?: ModifiersArray;                  // Array of modifiers
     //         /* @internal */ id?: NodeId;                          // Unique id (used to look up NodeLinks)
     //         readonly parent: Node;                                // Parent node (initialized by binding)
@@ -1900,8 +1900,8 @@ pub struct CallSignatureDeclaration {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
 
-    pub typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
-    pub parameters: NodeArray<ParameterDeclaration>,
+    pub typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
+    pub parameters: NodeArray<Rc<ParameterDeclaration>>,
     pub ty: Option<TypeNode>,
     pub typeArguments: Option<NodeArray<TypeNode>>, // Used for quick info, replaces typeParameters for instantiated signatures
 }
@@ -1934,8 +1934,8 @@ pub struct ConstructSignatureDeclaration {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
 
-    pub typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
-    pub parameters: NodeArray<ParameterDeclaration>,
+    pub typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
+    pub parameters: NodeArray<Rc<ParameterDeclaration>>,
     pub ty: Option<TypeNode>,
     pub typeArguments: Option<NodeArray<TypeNode>>, // Used for quick info, replaces typeParameters for instantiated signatures
 }
@@ -1974,10 +1974,10 @@ pub struct VariableDeclaration {
     pub js_doc_container: JSDocContainer,
 
     // readonly parent: VariableDeclarationList | CatchClause;
-    pub name: BindingName,                          // Declared variable name
-    pub exclamationToken: Option<ExclamationToken>, // Optional definite assignment assertion
-    pub ty: Option<TypeNode>,                       // Optional type annotation
-    pub initializer: Option<Expression>,            // Optional initializer
+    pub name: BindingName, // Declared variable name
+    pub exclamationToken: Option<Rc<ExclamationToken>>, // Optional definite assignment assertion
+    pub ty: Option<TypeNode>, // Optional type annotation
+    pub initializer: Option<Expression>, // Optional initializer
 }
 
 impl HasNodeId for VariableDeclaration {
@@ -2011,7 +2011,7 @@ pub struct VariableDeclarationList {
     pub node_id: NodeId,
 
     // parent: VariableStatement | ForStatement | ForOfStatement | ForInStatement;
-    pub declarations: NodeArray<VariableDeclaration>,
+    pub declarations: NodeArray<Rc<VariableDeclaration>>,
 }
 
 impl HasNodeId for VariableDeclarationList {
@@ -2039,15 +2039,15 @@ impl IsNode for VariableDeclarationList {
 pub struct ParameterDeclaration {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
-    pub decorators: Option<NodeArray<Decorator>>,
+    pub decorators: Option<NodeArray<Rc<Decorator>>>,
     pub modifiers: Option<NodeArray<Modifier>>,
 
     // pub parent: SignatureDeclaration;
-    pub dotDotDotToken: Option<DotDotDotToken>, // Present on rest parameter
-    pub name: BindingName,                      // Declared parameter name.
-    pub questionToken: Option<QuestionToken>,   // Present on optional parameter
-    pub ty: Option<TypeNode>,                   // Optional type annotation
-    pub initializer: Option<Expression>,        // Optional initializer
+    pub dotDotDotToken: Option<Rc<DotDotDotToken>>, // Present on rest parameter
+    pub name: BindingName,                          // Declared parameter name.
+    pub questionToken: Option<Rc<QuestionToken>>,   // Present on optional parameter
+    pub ty: Option<TypeNode>,                       // Optional type annotation
+    pub initializer: Option<Expression>,            // Optional initializer
 }
 
 impl HasNodeId for ParameterDeclaration {
@@ -2079,9 +2079,9 @@ pub struct BindingElement {
 
     // readonly parent: BindingPattern;
     pub propertyName: Option<PropertyName>, // Binding property name (in object binding pattern)
-    pub dotDotDotToken: Option<DotDotDotToken>, // Present on rest element (in object binding pattern)
-    pub name: BindingName,                      // Declared binding element name
-    pub initializer: Option<Expression>,        // Optional initializer
+    pub dotDotDotToken: Option<Rc<DotDotDotToken>>, // Present on rest element (in object binding pattern)
+    pub name: BindingName,                          // Declared binding element name
+    pub initializer: Option<Expression>,            // Optional initializer
 }
 
 impl HasNodeId for BindingElement {
@@ -2114,10 +2114,10 @@ pub struct PropertySignature {
     pub js_doc_container: JSDocContainer,
     pub modifiers: Option<NodeArray<Modifier>>,
 
-    pub name: PropertyName,                   // Declared property name
-    pub questionToken: Option<QuestionToken>, // Present on optional property
-    pub ty: Option<TypeNode>,                 // Optional type annotation
-    pub initializer: Option<Expression>,      // Present for use with reporting a grammar error
+    pub name: PropertyName,                       // Declared property name
+    pub questionToken: Option<Rc<QuestionToken>>, // Present on optional property
+    pub ty: Option<TypeNode>,                     // Optional type annotation
+    pub initializer: Option<Expression>,          // Present for use with reporting a grammar error
 }
 
 impl HasNodeId for PropertySignature {
@@ -2147,13 +2147,13 @@ impl_has_js_doc!(PropertySignature);
 pub struct PropertyDeclaration {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
-    pub decorators: Option<NodeArray<Decorator>>,
+    pub decorators: Option<NodeArray<Rc<Decorator>>>,
     pub modifiers: Option<NodeArray<Modifier>>,
 
     // readonly parent: ClassLikeDeclaration;
     pub name: PropertyName,
-    pub questionToken: Option<QuestionToken>, // Present for use with reporting a grammar error
-    pub exclamationToken: Option<ExclamationToken>,
+    pub questionToken: Option<Rc<QuestionToken>>, // Present for use with reporting a grammar error
+    pub exclamationToken: Option<Rc<ExclamationToken>>,
     pub ty: Option<TypeNode>,
     pub initializer: Option<Expression>, // Optional initializer
 }
@@ -2231,13 +2231,13 @@ make_node_enum!(
 pub struct PropertyAssignment {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
-    pub decorators: Option<NodeArray<Decorator>>, // Present for use with reporting a grammar error
-    pub modifiers: Option<NodeArray<Modifier>>,   // Present for use with reporting a grammar error
+    pub decorators: Option<NodeArray<Rc<Decorator>>>, // Present for use with reporting a grammar error
+    pub modifiers: Option<NodeArray<Modifier>>, // Present for use with reporting a grammar error
 
     // readonly parent: ObjectLiteralExpression;
     pub name: PropertyName,
-    pub questionToken: Option<QuestionToken>, // Present for use with reporting a grammar error
-    pub exclamationToken: Option<ExclamationToken>, // Present for use with reporting a grammar error
+    pub questionToken: Option<Rc<QuestionToken>>, // Present for use with reporting a grammar error
+    pub exclamationToken: Option<Rc<ExclamationToken>>, // Present for use with reporting a grammar error
     pub initializer: Expression,
 }
 
@@ -2268,16 +2268,16 @@ impl_has_js_doc!(PropertyAssignment);
 pub struct ShorthandPropertyAssignment {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
-    pub decorators: Option<NodeArray<Decorator>>, // Present for use with reporting a grammar error
-    pub modifiers: Option<NodeArray<Modifier>>,   // Present for use with reporting a grammar error
+    pub decorators: Option<NodeArray<Rc<Decorator>>>, // Present for use with reporting a grammar error
+    pub modifiers: Option<NodeArray<Modifier>>, // Present for use with reporting a grammar error
 
     // readonly parent: ObjectLiteralExpression;
     pub name: Rc<Identifier>,
-    pub questionToken: Option<QuestionToken>,
-    pub exclamationToken: Option<ExclamationToken>,
+    pub questionToken: Option<Rc<QuestionToken>>,
+    pub exclamationToken: Option<Rc<ExclamationToken>>,
     // used when ObjectLiteralExpression is used in ObjectAssignmentPattern
     // it is a grammar error to appear in actual object initializer:
-    pub equalsToken: Option<EqualsToken>,
+    pub equalsToken: Option<Rc<EqualsToken>>,
     pub objectAssignmentInitializer: Option<Expression>,
 }
 
@@ -2448,19 +2448,19 @@ make_node_enum!(ArrayBindingElement, [BindingElement, OmittedExpression,]);
 pub struct FunctionDeclaration {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
-    pub decorators: Option<NodeArray<Decorator>>,
+    pub decorators: Option<NodeArray<Rc<Decorator>>>,
     pub modifiers: Option<NodeArray<Modifier>>,
 
-    pub typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
-    pub parameters: NodeArray<ParameterDeclaration>,
+    pub typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
+    pub parameters: NodeArray<Rc<ParameterDeclaration>>,
     pub ty: Option<TypeNode>,
     pub typeArguments: Option<NodeArray<TypeNode>>, // Used for quick info, replaces typeParameters for instantiated signatures
 
-    pub asteriskToken: Option<AsteriskToken>,
+    pub asteriskToken: Option<Rc<AsteriskToken>>,
     // pub endFlowNode?: FlowNode;
     // pub returnFlowNode?: FlowNode;
     pub name: Option<Rc<Identifier>>,
-    pub body: Option<FunctionBody>,
+    pub body: Option<Rc<FunctionBody>>,
 }
 
 impl HasNodeId for FunctionDeclaration {
@@ -2492,10 +2492,10 @@ pub struct MethodSignature {
     pub js_doc_container: JSDocContainer,
     pub modifiers: Option<NodeArray<Modifier>>,
 
-    pub questionToken: Option<QuestionToken>,
+    pub questionToken: Option<Rc<QuestionToken>>,
 
-    pub typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
-    pub parameters: NodeArray<ParameterDeclaration>,
+    pub typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
+    pub parameters: NodeArray<Rc<ParameterDeclaration>>,
     pub ty: Option<TypeNode>,
     pub typeArguments: Option<NodeArray<TypeNode>>, // Used for quick info, replaces typeParameters for instantiated signatures
 
@@ -2539,23 +2539,23 @@ impl_has_js_doc!(MethodSignature);
 pub struct MethodDeclaration {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
-    pub decorators: Option<NodeArray<Decorator>>,
+    pub decorators: Option<NodeArray<Rc<Decorator>>>,
     pub modifiers: Option<NodeArray<Modifier>>,
 
-    pub typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
-    pub parameters: NodeArray<ParameterDeclaration>,
+    pub typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
+    pub parameters: NodeArray<Rc<ParameterDeclaration>>,
     pub ty: Option<TypeNode>,
     pub typeArguments: Option<NodeArray<TypeNode>>, // Used for quick info, replaces typeParameters for instantiated signatures
 
-    pub asteriskToken: Option<AsteriskToken>,
-    pub questionToken: Option<QuestionToken>,
+    pub asteriskToken: Option<Rc<AsteriskToken>>,
+    pub questionToken: Option<Rc<QuestionToken>>,
     // pub endFlowNode?: FlowNode;
     // pub returnFlowNode?: FlowNode;
 
     // pub parent: ClassLikeDeclaration | ObjectLiteralExpression;
     pub name: PropertyName,
-    pub body: Option<FunctionBody>,
-    pub exclamationToken: Option<ExclamationToken>, // Present for use with reporting a grammar error
+    pub body: Option<Rc<FunctionBody>>,
+    pub exclamationToken: Option<Rc<ExclamationToken>>, // Present for use with reporting a grammar error
 }
 
 impl HasNodeId for MethodDeclaration {
@@ -2585,18 +2585,18 @@ impl_has_js_doc!(MethodDeclaration);
 pub struct ConstructorDeclaration {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
-    pub decorators: Option<NodeArray<Decorator>>,
+    pub decorators: Option<NodeArray<Rc<Decorator>>>,
     pub modifiers: Option<NodeArray<Modifier>>,
 
-    pub parameters: NodeArray<ParameterDeclaration>,
+    pub parameters: NodeArray<Rc<ParameterDeclaration>>,
     pub typeArguments: Option<NodeArray<TypeNode>>, // Used for quick info, replaces typeParameters for instantiated signatures
 
     // pub endFlowNode?: FlowNode;
     // pub returnFlowNode?: FlowNode;
 
     // readonly parent: ClassLikeDeclaration;
-    pub body: Option<FunctionBody>,
-    pub typeParameters: Option<NodeArray<TypeParameterDeclaration>>, // Present for use with reporting a grammar error
+    pub body: Option<Rc<FunctionBody>>,
+    pub typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>, // Present for use with reporting a grammar error
     pub ty: Option<TypeNode>, // Present for use with reporting a grammar error
 }
 
@@ -2657,21 +2657,21 @@ impl IsNode for SemicolonClassElement {
 pub struct GetAccessorDeclaration {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
-    pub decorators: Option<NodeArray<Decorator>>,
+    pub decorators: Option<NodeArray<Rc<Decorator>>>,
     pub modifiers: Option<NodeArray<Modifier>>,
 
-    pub parameters: NodeArray<ParameterDeclaration>,
+    pub parameters: NodeArray<Rc<ParameterDeclaration>>,
     pub ty: Option<TypeNode>,
     pub typeArguments: Option<NodeArray<TypeNode>>, // Used for quick info, replaces typeParameters for instantiated signatures
 
     // endFlowNode?: FlowNode;
     // returnFlowNode?: FlowNode;
-    pub questionToken: Option<QuestionToken>,
+    pub questionToken: Option<Rc<QuestionToken>>,
 
     // readonly parent: ClassLikeDeclaration | ObjectLiteralExpression | TypeLiteralNode | InterfaceDeclaration;
     pub name: PropertyName,
-    pub body: Option<FunctionBody>,
-    pub typeParameters: Option<NodeArray<TypeParameterDeclaration>>, // Present for use with reporting a grammar error
+    pub body: Option<Rc<FunctionBody>>,
+    pub typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>, // Present for use with reporting a grammar error
 }
 
 impl HasNodeId for GetAccessorDeclaration {
@@ -2703,20 +2703,20 @@ impl_has_js_doc!(GetAccessorDeclaration);
 pub struct SetAccessorDeclaration {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
-    pub decorators: Option<NodeArray<Decorator>>,
+    pub decorators: Option<NodeArray<Rc<Decorator>>>,
     pub modifiers: Option<NodeArray<Modifier>>,
 
-    pub parameters: NodeArray<ParameterDeclaration>,
+    pub parameters: NodeArray<Rc<ParameterDeclaration>>,
     pub typeArguments: Option<NodeArray<TypeNode>>, // Used for quick info, replaces typeParameters for instantiated signatures
 
     // endFlowNode?: FlowNode;
     // returnFlowNode?: FlowNode;
-    pub questionToken: Option<QuestionToken>,
+    pub questionToken: Option<Rc<QuestionToken>>,
 
     // readonly parent: ClassLikeDeclaration | ObjectLiteralExpression | TypeLiteralNode | InterfaceDeclaration;
     pub name: PropertyName,
-    pub body: Option<FunctionBody>,
-    pub typeParameters: Option<NodeArray<TypeParameterDeclaration>>, // Present for use with reporting a grammar error
+    pub body: Option<Rc<FunctionBody>>,
+    pub typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>, // Present for use with reporting a grammar error
     pub ty: Option<TypeNode>, // Present for use with reporting a grammar error
 }
 
@@ -2749,12 +2749,12 @@ impl_has_js_doc!(SetAccessorDeclaration);
 pub struct IndexSignatureDeclaration {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
-    pub decorators: Option<NodeArray<Decorator>>,
+    pub decorators: Option<NodeArray<Rc<Decorator>>>,
     pub modifiers: Option<NodeArray<Modifier>>,
 
-    pub parameters: NodeArray<ParameterDeclaration>,
+    pub parameters: NodeArray<Rc<ParameterDeclaration>>,
 
-    pub questionToken: Option<QuestionToken>,
+    pub questionToken: Option<Rc<QuestionToken>>,
 
     // readonly parent: ObjectTypeDeclaration,
     pub ty: Option<TypeNode>,
@@ -2789,11 +2789,11 @@ pub struct ClassStaticBlockDeclaration {
     pub js_doc_container: JSDocContainer,
 
     // readonly parent: ClassDeclaration | ClassExpression;
-    pub body: Block,
-    pub decorators: Option<NodeArray<Decorator>>, // Present for use with reporting a grammar error
-    pub modifiers: Option<ModifiersArray>,        // Present for use with reporting a grammar error
-                                                  // endFlowNode?: FlowNode;
-                                                  // returnFlowNode?: FlowNode;
+    pub body: Rc<Block>,
+    pub decorators: Option<NodeArray<Rc<Decorator>>>, // Present for use with reporting a grammar error
+    pub modifiers: Option<ModifiersArray>, // Present for use with reporting a grammar error
+                                           // endFlowNode?: FlowNode;
+                                           // returnFlowNode?: FlowNode;
 }
 
 impl HasNodeId for ClassStaticBlockDeclaration {
@@ -2858,14 +2858,14 @@ make_node_enum!(
         TemplateLiteralTypeSpan,
         ImportTypeNode,
         ExpressionWithTypeArguments,
-        // SyntaxKind::JSDocTypeExpression,
+        JSDocTypeExpression,
         JSDocAllType,
         JSDocUnknownType,
         JSDocNonNullableType,
         JSDocNullableType,
-        // SyntaxKind::JSDocOptionalType,
+        JSDocOptionalType,
         JSDocFunctionType,
-        // SyntaxKind::JSDocVariadicType,
+        JSDocVariadicType,
         // SyntaxKind::JSDocNamepathType,
         // SyntaxKind::JSDocSignature,
         // SyntaxKind::JSDocTypeLiteral,
@@ -2960,8 +2960,8 @@ pub struct FunctionTypeNode {
     pub js_doc_container: JSDocContainer,
     pub modifiers: Option<ModifiersArray>,
 
-    pub typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
-    pub parameters: NodeArray<ParameterDeclaration>,
+    pub typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
+    pub parameters: NodeArray<Rc<ParameterDeclaration>>,
     pub typeArguments: Option<NodeArray<TypeNode>>, // Used for quick info, replaces typeParameters for instantiated signatures
 
     pub ty: Option<TypeNode>,
@@ -2996,8 +2996,8 @@ pub struct ConstructorTypeNode {
     pub js_doc_container: JSDocContainer,
     pub modifiers: Option<ModifiersArray>,
 
-    pub typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
-    pub parameters: NodeArray<ParameterDeclaration>,
+    pub typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
+    pub parameters: NodeArray<Rc<ParameterDeclaration>>,
     pub typeArguments: Option<NodeArray<TypeNode>>, // Used for quick info, replaces typeParameters for instantiated signatures
 
     pub ty: Option<TypeNode>,
@@ -3068,7 +3068,7 @@ pub struct TypePredicateNode {
     pub node_id: NodeId,
 
     // readonly parent: SignatureDeclaration | JSDocTypeExpression;
-    pub assertsModifier: Option<AssertsKeyword>,
+    pub assertsModifier: Option<Rc<AssertsKeyword>>,
     pub parameterName: TypePredicateParameterName,
     pub ty: Option<TypeNode>,
 }
@@ -3212,9 +3212,9 @@ pub struct NamedTupleMember {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
 
-    pub dotDotDotToken: Option<DotDotDotToken>,
+    pub dotDotDotToken: Option<Rc<DotDotDotToken>>,
     pub name: Rc<Identifier>,
-    pub questionToken: Option<QuestionToken>,
+    pub questionToken: Option<Rc<QuestionToken>>,
     pub ty: TypeNode,
 }
 
@@ -3366,7 +3366,7 @@ impl IsNode for IntersectionTypeNode {
 #[derive(Debug)]
 pub struct InferTypeNode {
     pub node_id: NodeId,
-    pub typeParameter: TypeParameterDeclaration,
+    pub typeParameter: Rc<TypeParameterDeclaration>,
 }
 
 impl HasNodeId for InferTypeNode {
@@ -3488,7 +3488,7 @@ pub struct MappedTypeNode {
 
     /// ReadonlyKeyword | PlusToken | MinusToken
     pub readonlyToken: Option<SyntaxKind>,
-    pub typeParameter: TypeParameterDeclaration,
+    pub typeParameter: Rc<TypeParameterDeclaration>,
     pub nameType: Option<TypeNode>,
     /// QuestionToken | PlusToken | MinusToken
     pub questionToken: Option<SyntaxKind>,
@@ -3601,8 +3601,8 @@ impl IsNode for StringLiteral {
 pub struct TemplateLiteralTypeNode {
     pub node_id: NodeId,
 
-    pub head: TemplateHead,
-    pub templateSpans: NodeArray<TemplateLiteralTypeSpan>,
+    pub head: Rc<TemplateHead>,
+    pub templateSpans: NodeArray<Rc<TemplateLiteralTypeSpan>>,
 }
 
 impl HasNodeId for TemplateLiteralTypeNode {
@@ -4596,7 +4596,7 @@ impl IsNode for AwaitExpression {
 pub struct YieldExpression {
     pub node_id: NodeId,
 
-    pub asteriskToken: Option<AsteriskToken>,
+    pub asteriskToken: Option<Rc<AsteriskToken>>,
     pub expression: Option<Expression>,
 }
 
@@ -5137,9 +5137,9 @@ pub struct ConditionalExpression {
     pub node_id: NodeId,
 
     pub condition: Expression,
-    pub questionToken: QuestionToken,
+    pub questionToken: Rc<QuestionToken>,
     pub whenTrue: Expression,
-    pub colonToken: ColonToken,
+    pub colonToken: Rc<ColonToken>,
     pub whenFalse: Expression,
 }
 
@@ -5165,7 +5165,7 @@ impl IsNode for ConditionalExpression {
 
 pub type FunctionBody = Block;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ConciseBody {
     FunctionBody(Rc<FunctionBody>),
     Expression(Expression),
@@ -5203,6 +5203,15 @@ impl IsNode for ConciseBody {
     }
 }
 
+impl From<ConciseBody> for Node {
+    fn from(other: ConciseBody) -> Self {
+        match other {
+            ConciseBody::FunctionBody(n) => Node::Block(n),
+            ConciseBody::Expression(n) => Node::from(n),
+        }
+    }
+}
+
 // export interface FunctionExpression extends PrimaryExpression, FunctionLikeDeclarationBase, JSDocContainer {
 #[derive(Debug)]
 pub struct FunctionExpression {
@@ -5210,18 +5219,18 @@ pub struct FunctionExpression {
     pub js_doc_container: JSDocContainer,
     pub modifiers: Option<ModifiersArray>,
 
-    pub typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
-    pub parameters: NodeArray<ParameterDeclaration>,
+    pub typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
+    pub parameters: NodeArray<Rc<ParameterDeclaration>>,
     pub ty: Option<TypeNode>,
     pub typeArguments: Option<NodeArray<TypeNode>>, // Used for quick info, replaces typeParameters for instantiated signatures
 
-    pub asteriskToken: Option<AsteriskToken>,
+    pub asteriskToken: Option<Rc<AsteriskToken>>,
     // questionToken?: QuestionToken,
     // exclamationToken?: ExclamationToken,
     // endFlowNode?: FlowNode,
     // returnFlowNode?: FlowNode,
     pub name: Option<Rc<Identifier>>,
-    pub body: FunctionBody, // Required, whereas the member inherited from FunctionDeclaration is optional
+    pub body: Rc<FunctionBody>, // Required, whereas the member inherited from FunctionDeclaration is optional
 }
 
 impl HasNodeId for FunctionExpression {
@@ -5253,8 +5262,8 @@ pub struct ArrowFunction {
     pub js_doc_container: JSDocContainer,
     pub modifiers: Option<ModifiersArray>,
 
-    pub typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
-    pub parameters: NodeArray<ParameterDeclaration>,
+    pub typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
+    pub parameters: NodeArray<Rc<ParameterDeclaration>>,
     pub ty: Option<TypeNode>,
     pub typeArguments: Option<NodeArray<TypeNode>>, // Used for quick info, replaces typeParameters for instantiated signatures
 
@@ -5263,7 +5272,7 @@ pub struct ArrowFunction {
     // exclamationToken?: ExclamationToken,
     // endFlowNode?: FlowNode,
     // returnFlowNode?: FlowNode,
-    pub equalsGreaterThanToken: EqualsGreaterThanToken,
+    pub equalsGreaterThanToken: Rc<EqualsGreaterThanToken>,
     pub body: ConciseBody,
 }
 
@@ -5594,8 +5603,8 @@ impl IsNode for TemplateTail {
 pub struct TemplateExpression {
     pub node_id: NodeId,
 
-    pub head: TemplateHead,
-    pub templateSpans: NodeArray<TemplateSpan>,
+    pub head: Rc<TemplateHead>,
+    pub templateSpans: NodeArray<Rc<TemplateSpan>>,
 }
 
 impl HasNodeId for TemplateExpression {
@@ -5802,7 +5811,7 @@ pub struct PropertyAccessExpression {
     pub node_id: NodeId,
 
     pub expression: LeftHandSideExpression,
-    pub questionDotToken: Option<QuestionDotToken>,
+    pub questionDotToken: Option<Rc<QuestionDotToken>>,
     pub name: MemberName,
 }
 
@@ -5860,7 +5869,7 @@ pub struct ElementAccessExpression {
     pub node_id: NodeId,
 
     pub expression: LeftHandSideExpression,
-    pub questionDotToken: Option<QuestionDotToken>,
+    pub questionDotToken: Option<Rc<QuestionDotToken>>,
     pub argumentExpression: Expression,
 }
 
@@ -5909,7 +5918,7 @@ pub struct CallExpression {
     pub node_id: NodeId,
 
     pub expression: LeftHandSideExpression,
-    pub questionDotToken: Option<QuestionDotToken>,
+    pub questionDotToken: Option<Rc<QuestionDotToken>>,
     pub typeArguments: Option<NodeArray<TypeNode>>,
     pub arguments: NodeArray<Expression>,
 }
@@ -6085,7 +6094,7 @@ pub struct TaggedTemplateExpression {
     pub tag: LeftHandSideExpression,
     pub typeArguments: Option<NodeArray<TypeNode>>,
     pub template: TemplateLiteral,
-    pub questionDotToken: Option<QuestionDotToken>, // NOTE: Invalid syntax, only used to report a grammar error.
+    pub questionDotToken: Option<Rc<QuestionDotToken>>, // NOTE: Invalid syntax, only used to report a grammar error.
 }
 
 impl HasNodeId for TaggedTemplateExpression {
@@ -6530,8 +6539,8 @@ pub struct MissingDeclaration {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
 
-    pub decorators: Option<NodeArray<Decorator>>, // Present for use with reporting a grammar error
-    pub modifiers: Option<ModifiersArray>,        // Present for use with reporting a grammar error
+    pub decorators: Option<NodeArray<Rc<Decorator>>>, // Present for use with reporting a grammar error
+    pub modifiers: Option<ModifiersArray>, // Present for use with reporting a grammar error
     pub name: Option<Rc<Identifier>>,
 }
 
@@ -6603,8 +6612,8 @@ pub struct VariableStatement {
     pub js_doc_container: JSDocContainer,
     pub modifiers: Option<ModifiersArray>, // Array of modifiers
 
-    pub decorators: Option<NodeArray<Decorator>>, // Present for use with reporting a grammar error
-    pub declarationList: VariableDeclarationList,
+    pub decorators: Option<NodeArray<Rc<Decorator>>>, // Present for use with reporting a grammar error
+    pub declarationList: Rc<VariableDeclarationList>,
 }
 
 impl HasNodeId for VariableStatement {
@@ -6902,7 +6911,7 @@ pub struct ForOfStatement {
 
     pub statement: Statement,
 
-    pub awaitModifier: Option<AwaitKeyword>,
+    pub awaitModifier: Option<Rc<AwaitKeyword>>,
     pub initializer: ForInitializer,
     pub expression: Expression,
 }
@@ -7066,7 +7075,7 @@ pub struct SwitchStatement {
     pub js_doc_container: JSDocContainer,
 
     pub expression: Expression,
-    pub caseBlock: CaseBlock,
+    pub caseBlock: Rc<CaseBlock>,
     // pub possiblyExhaustive: Option<bool> // initialized by binding
 }
 
@@ -7252,9 +7261,9 @@ pub struct TryStatement {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
 
-    pub tryBlock: Block,
-    pub catchClause: Option<CatchClause>,
-    pub finallyBlock: Option<Block>,
+    pub tryBlock: Rc<Block>,
+    pub catchClause: Option<Rc<CatchClause>>,
+    pub finallyBlock: Option<Rc<Block>>,
 }
 
 impl HasNodeId for TryStatement {
@@ -7285,8 +7294,8 @@ pub struct CatchClause {
     pub node_id: NodeId,
 
     // readonly parent: TryStatement;
-    pub variableDeclaration: Option<VariableDeclaration>,
-    pub block: Block,
+    pub variableDeclaration: Option<Rc<VariableDeclaration>>,
+    pub block: Rc<Block>,
 }
 
 impl HasNodeId for CatchClause {
@@ -7343,11 +7352,11 @@ impl IsNode for CatchClause {
 pub struct ClassDeclaration {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
-    pub decorators: Option<NodeArray<Decorator>>,
+    pub decorators: Option<NodeArray<Rc<Decorator>>>,
     pub modifiers: Option<NodeArray<Modifier>>,
 
-    pub typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
-    pub heritageClauses: Option<NodeArray<HeritageClause>>,
+    pub typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
+    pub heritageClauses: Option<NodeArray<Rc<HeritageClause>>>,
     pub members: NodeArray<ClassElement>,
 
     /** May be undefined in `export default class { ... }`. */
@@ -7381,12 +7390,12 @@ impl_has_js_doc!(ClassDeclaration);
 pub struct ClassExpression {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
-    pub decorators: Option<NodeArray<Decorator>>,
+    pub decorators: Option<NodeArray<Rc<Decorator>>>,
     pub modifiers: Option<NodeArray<Modifier>>,
 
     pub name: Option<Rc<Identifier>>,
-    pub typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
-    pub heritageClauses: Option<NodeArray<HeritageClause>>,
+    pub typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
+    pub heritageClauses: Option<NodeArray<Rc<HeritageClause>>>,
     pub members: NodeArray<ClassElement>,
 }
 
@@ -7460,12 +7469,12 @@ make_node_enum!(
 pub struct InterfaceDeclaration {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
-    pub decorators: Option<NodeArray<Decorator>>,
+    pub decorators: Option<NodeArray<Rc<Decorator>>>,
     pub modifiers: Option<NodeArray<Modifier>>,
 
     pub name: Rc<Identifier>,
-    pub typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
-    pub heritageClauses: Option<NodeArray<HeritageClause>>,
+    pub typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
+    pub heritageClauses: Option<NodeArray<Rc<HeritageClause>>>,
     pub members: NodeArray<TypeElement>,
 }
 
@@ -7499,7 +7508,7 @@ pub struct HeritageClause {
     // readonly parent: InterfaceDeclaration | ClassLikeDeclaration;
     // SyntaxKind.ExtendsKeyword | SyntaxKind.ImplementsKeyword
     pub token: SyntaxKind,
-    pub types: NodeArray<ExpressionWithTypeArguments>,
+    pub types: NodeArray<Rc<ExpressionWithTypeArguments>>,
 }
 
 impl HasNodeId for HeritageClause {
@@ -7527,11 +7536,11 @@ impl IsNode for HeritageClause {
 pub struct TypeAliasDeclaration {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
-    pub decorators: Option<NodeArray<Decorator>>,
+    pub decorators: Option<NodeArray<Rc<Decorator>>>,
     pub modifiers: Option<NodeArray<Modifier>>,
 
-    pub name: Identifier,
-    pub typeParameters: Option<NodeArray<TypeParameterDeclaration>>,
+    pub name: Rc<Identifier>,
+    pub typeParameters: Option<NodeArray<Rc<TypeParameterDeclaration>>>,
     pub ty: TypeNode,
 }
 
@@ -7597,11 +7606,11 @@ impl_has_js_doc!(EnumMember);
 pub struct EnumDeclaration {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
-    pub decorators: Option<NodeArray<Decorator>>,
+    pub decorators: Option<NodeArray<Rc<Decorator>>>,
     pub modifiers: Option<NodeArray<Modifier>>,
 
-    pub name: Identifier,
-    pub members: NodeArray<EnumMember>,
+    pub name: Rc<Identifier>,
+    pub members: NodeArray<Rc<EnumMember>>,
 }
 
 impl HasNodeId for EnumDeclaration {
@@ -7644,14 +7653,14 @@ make_node_enum!(ModuleName, [Identifier, StringLiteral,]);
 pub struct ModuleDeclaration {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
-    pub decorators: Option<NodeArray<Decorator>>,
+    pub decorators: Option<NodeArray<Rc<Decorator>>>,
     pub modifiers: Option<NodeArray<Modifier>>,
 
     // readonly kind: SyntaxKind.ModuleDeclaration;
     // readonly parent: ModuleBody | SourceFile;
     pub name: ModuleName,
     // TODO:
-    pub body: Option<ModuleBlock>,
+    pub body: Option<Rc<ModuleBlock>>,
     // pub body?: ModuleBody | JSDocNamespaceDeclaration,
 }
 
@@ -7744,11 +7753,11 @@ make_node_enum!(
 pub struct ImportEqualsDeclaration {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
-    pub decorators: Option<NodeArray<Decorator>>,
+    pub decorators: Option<NodeArray<Rc<Decorator>>>,
     pub modifiers: Option<NodeArray<Modifier>>,
 
     // readonly parent: SourceFile | ModuleBlock;
-    pub name: Identifier,
+    pub name: Rc<Identifier>,
     pub isTypeOnly: bool,
 
     // 'EntityName' for an internal module reference, 'ExternalModuleReference' for an external
@@ -7815,14 +7824,14 @@ impl IsNode for ExternalModuleReference {
 pub struct ImportDeclaration {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
-    pub decorators: Option<NodeArray<Decorator>>,
+    pub decorators: Option<NodeArray<Rc<Decorator>>>,
     pub modifiers: Option<NodeArray<Modifier>>,
 
     // readonly parent: SourceFile | ModuleBlock;
-    pub importClause: Option<ImportClause>,
+    pub importClause: Option<Rc<ImportClause>>,
     /** If this is not a StringLiteral it will be a grammar error. */
     pub moduleSpecifier: Expression,
-    pub assertClause: Option<AssertClause>,
+    pub assertClause: Option<Rc<AssertClause>>,
 }
 
 impl HasNodeId for ImportDeclaration {
@@ -7897,7 +7906,7 @@ pub struct AssertEntry {
 
     // readonly parent: AssertClause,
     pub name: AssertionKey,
-    pub value: StringLiteral,
+    pub value: Rc<StringLiteral>,
 }
 
 impl HasNodeId for AssertEntry {
@@ -7926,7 +7935,7 @@ pub struct AssertClause {
     pub node_id: NodeId,
 
     // readonly parent: ImportDeclaration | ExportDeclaration,
-    pub elements: NodeArray<AssertEntry>,
+    pub elements: NodeArray<Rc<AssertEntry>>,
     pub multiLine: Option<bool>,
 }
 
@@ -7985,7 +7994,7 @@ pub struct NamespaceExport {
     pub node_id: NodeId,
 
     // readonly parent: ExportDeclaration;
-    pub name: Identifier,
+    pub name: Rc<Identifier>,
 }
 
 impl HasNodeId for NamespaceExport {
@@ -8014,9 +8023,9 @@ pub struct NamespaceExportDeclaration {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
 
-    pub name: Identifier,
-    pub decorators: Option<NodeArray<Decorator>>, // Present for use with reporting a grammar error
-    pub modifiers: Option<ModifiersArray>,        // Present for use with reporting a grammar error
+    pub name: Rc<Identifier>,
+    pub decorators: Option<NodeArray<Rc<Decorator>>>, // Present for use with reporting a grammar error
+    pub modifiers: Option<ModifiersArray>, // Present for use with reporting a grammar error
 }
 
 impl HasNodeId for NamespaceExportDeclaration {
@@ -8046,7 +8055,7 @@ impl_has_js_doc!(NamespaceExportDeclaration);
 pub struct ExportDeclaration {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
-    pub decorators: Option<NodeArray<Decorator>>,
+    pub decorators: Option<NodeArray<Rc<Decorator>>>,
     pub modifiers: Option<NodeArray<Modifier>>,
 
     // readonly parent: SourceFile | ModuleBlock;
@@ -8055,7 +8064,7 @@ pub struct ExportDeclaration {
     pub exportClause: Option<NamedExportBindings>,
     /** If this is not a StringLiteral it will be a grammar error. */
     pub moduleSpecifier: Option<Expression>,
-    pub assertClause: Option<AssertClause>,
+    pub assertClause: Option<Rc<AssertClause>>,
 }
 
 impl HasNodeId for ExportDeclaration {
@@ -8086,7 +8095,7 @@ pub struct NamedImports {
     pub node_id: NodeId,
 
     // readonly parent: ImportClause;
-    pub elements: NodeArray<ImportSpecifier>,
+    pub elements: NodeArray<Rc<ImportSpecifier>>,
 }
 
 impl HasNodeId for NamedImports {
@@ -8115,7 +8124,7 @@ pub struct NamedExports {
     pub node_id: NodeId,
 
     // readonly parent: ExportDeclaration;
-    pub elements: NodeArray<ExportSpecifier>,
+    pub elements: NodeArray<Rc<ExportSpecifier>>,
 }
 
 impl HasNodeId for NamedExports {
@@ -8147,8 +8156,8 @@ pub struct ImportSpecifier {
     // pub js_doc_container: JSDocContainer,
 
     // readonly parent: NamedImports;
-    pub propertyName: Option<Identifier>, // Name preceding "as" keyword (or undefined when "as" is absent)
-    pub name: Rc<Identifier>,             // Declared name
+    pub propertyName: Option<Rc<Identifier>>, // Name preceding "as" keyword (or undefined when "as" is absent)
+    pub name: Rc<Identifier>,                 // Declared name
     pub isTypeOnly: bool,
 }
 
@@ -8181,8 +8190,8 @@ pub struct ExportSpecifier {
 
     // readonly parent: NamedExports;
     pub isTypeOnly: bool,
-    pub propertyName: Option<Identifier>, // Name preceding "as" keyword (or undefined when "as" is absent)
-    pub name: Rc<Identifier>,             // Declared name
+    pub propertyName: Option<Rc<Identifier>>, // Name preceding "as" keyword (or undefined when "as" is absent)
+    pub name: Rc<Identifier>,                 // Declared name
 }
 
 impl HasNodeId for ExportSpecifier {
@@ -8234,7 +8243,7 @@ impl IsNode for ExportSpecifier {
 pub struct ExportAssignment {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
-    pub decorators: Option<NodeArray<Decorator>>,
+    pub decorators: Option<NodeArray<Rc<Decorator>>>,
     pub modifiers: Option<NodeArray<Modifier>>,
 
     // readonly parent: SourceFile;
@@ -8286,11 +8295,34 @@ impl_has_js_doc!(ExportAssignment);
 //         hasLeadingNewline?: boolean;
 //     }
 
-//     // represents a top level: { type } expression in a JSDoc comment.
-//     export interface JSDocTypeExpression extends TypeNode {
-//         readonly kind: SyntaxKind.JSDocTypeExpression;
-//         readonly type: TypeNode;
-//     }
+// represents a top level: { type } expression in a JSDoc comment.
+// export interface JSDocTypeExpression extends TypeNode {
+#[derive(Debug)]
+pub struct JSDocTypeExpression {
+    pub node_id: NodeId,
+
+    pub ty: TypeNode,
+}
+
+impl HasNodeId for JSDocTypeExpression {
+    fn node_id(&self) -> NodeId {
+        self.node_id
+    }
+}
+
+impl IsNode for JSDocTypeExpression {
+    fn kind(&self) -> SyntaxKind {
+        SyntaxKind::JSDocTypeExpression
+    }
+
+    fn name(&self) -> Option<Node> {
+        None
+    }
+
+    fn isPropertyName(&self) -> bool {
+        false
+    }
+}
 
 //     export interface JSDocNameReference extends Node {
 //         readonly kind: SyntaxKind.JSDocNameReference;
@@ -8415,10 +8447,33 @@ impl IsNode for JSDocNullableType {
     }
 }
 
-//     export interface JSDocOptionalType extends JSDocType {
-//         readonly kind: SyntaxKind.JSDocOptionalType;
-//         readonly type: TypeNode;
-//     }
+// export interface JSDocOptionalType extends JSDocType {
+#[derive(Debug)]
+pub struct JSDocOptionalType {
+    pub node_id: NodeId,
+
+    pub ty: TypeNode,
+}
+
+impl HasNodeId for JSDocOptionalType {
+    fn node_id(&self) -> NodeId {
+        self.node_id
+    }
+}
+
+impl IsNode for JSDocOptionalType {
+    fn kind(&self) -> SyntaxKind {
+        SyntaxKind::JSDocOptionalType
+    }
+
+    fn name(&self) -> Option<Node> {
+        None
+    }
+
+    fn isPropertyName(&self) -> bool {
+        false
+    }
+}
 
 // export interface JSDocFunctionType extends JSDocType, SignatureDeclarationBase {
 #[derive(Debug)]
@@ -8426,7 +8481,7 @@ pub struct JSDocFunctionType {
     pub node_id: NodeId,
     pub js_doc_container: JSDocContainer,
 
-    pub parameters: NodeArray<ParameterDeclaration>,
+    pub parameters: NodeArray<Rc<ParameterDeclaration>>,
     pub ty: Option<TypeNode>,
     pub typeArguments: Option<NodeArray<TypeNode>>, // Used for quick info, replaces typeParameters for instantiated signatures
 }
@@ -8453,10 +8508,33 @@ impl IsNode for JSDocFunctionType {
 
 impl_has_js_doc!(JSDocFunctionType);
 
-//     export interface JSDocVariadicType extends JSDocType {
-//         readonly kind: SyntaxKind.JSDocVariadicType;
-//         readonly type: TypeNode;
-//     }
+// export interface JSDocVariadicType extends JSDocType {
+#[derive(Debug)]
+pub struct JSDocVariadicType {
+    pub node_id: NodeId,
+
+    pub ty: TypeNode,
+}
+
+impl HasNodeId for JSDocVariadicType {
+    fn node_id(&self) -> NodeId {
+        self.node_id
+    }
+}
+
+impl IsNode for JSDocVariadicType {
+    fn kind(&self) -> SyntaxKind {
+        SyntaxKind::JSDocVariadicType
+    }
+
+    fn name(&self) -> Option<Node> {
+        None
+    }
+
+    fn isPropertyName(&self) -> bool {
+        false
+    }
+}
 
 //     export interface JSDocNamepathType extends JSDocType {
 //         readonly kind: SyntaxKind.JSDocNamepathType;
@@ -8768,7 +8846,7 @@ pub struct SourceFile {
     pub node_id: NodeId,
     //         readonly kind: SyntaxKind.SourceFile;
     pub statements: NodeArray<Statement>,
-    pub endOfFileToken: EndOfFileToken,
+    pub endOfFileToken: Rc<EndOfFileToken>,
     pub fileName: Rc<str>,
     //         /* @internal */ path: Path;
     pub text: Rc<str>,
