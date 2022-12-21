@@ -851,9 +851,9 @@ fn isHexDigit(ch: char) -> bool {
     isDigit(ch) || ch >= 'A' && ch <= 'F' || ch >= 'a' && ch <= 'f'
 }
 
-//     function isCodePoint(code: number): boolean {
-//         return code <= 0x10FFFF;
-//     }
+fn isCodePoint(code: u32) -> bool {
+    code <= 0x10FFFF
+}
 
 fn isOctalDigit(ch: char) -> bool {
     ch >= '0' && ch <= '7'
@@ -1904,15 +1904,14 @@ impl Scanner {
                 if isTaggedTemplate {
                     // '\u' or '\u0' or '\u00' or '\u000'
                     for escapePos in self.pos..(self.pos + 4) {
-                        todo!();
-                        // if escapePos < self.end
-                        //     && !isHexDigit(text.charCodeAt(escapePos))
-                        //     && self.text.as_bytes()[escapePos] != b'{'
-                        // {
-                        //     self.pos = escapePos;
-                        //     self.tokenFlags |= TokenFlags::ContainsInvalidEscape;
-                        //     return String::from(&self.text[start..self.pos]);
-                        // }
+                        if escapePos < self.end
+                            && !isHexDigit(self.char_at(escapePos).unwrap())
+                            && self.char_at(escapePos).unwrap() != '{'
+                        {
+                            self.pos = escapePos;
+                            self.tokenFlags |= TokenFlags::ContainsInvalidEscape;
+                            return String::from(&self.text[start..self.pos]);
+                        }
                     }
                 }
                 // '\u{DDDDDDDD}'
@@ -1926,24 +1925,24 @@ impl Scanner {
                     }
 
                     if isTaggedTemplate {
-                        // let savePos = self.pos;
-                        // let escapedValueString = self.scanMinimumNumberOfHexDigits(1, false);
-                        // let escapedValue = if !escapedValueString.is_empty() {
-                        //     todo!();
-                        //     // parseInt(escapedValueString, 16)
-                        // } else {
-                        //     None
-                        // };
-
-                        todo!();
+                        let savePos = self.pos;
+                        let escapedValueString = self.scanMinimumNumberOfHexDigits(1, false);
+                        let escapedValue = if !escapedValueString.is_empty() {
+                            u32::from_str_radix(&escapedValueString, 16).ok()
+                        } else {
+                            None
+                        };
 
                         // '\u{Not Code Point' or '\u{CodePoint'
-                        // if !isCodePoint(escapedValue) || self.cur() != Some('}') {
-                        //     self.tokenFlags |= TokenFlags::ContainsInvalidEscape;
-                        //     return String::from(&self.text[start..self.pos]);
-                        // } else {
-                        //     self.pos = savePos;
-                        // }
+                        if escapedValue.is_none()
+                            || !isCodePoint(escapedValue.unwrap())
+                            || self.cur() != Some('}')
+                        {
+                            self.tokenFlags |= TokenFlags::ContainsInvalidEscape;
+                            return String::from(&self.text[start..self.pos]);
+                        } else {
+                            self.pos = savePos;
+                        }
                     }
                     self.tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
                     return self.scanExtendedUnicodeEscape();
@@ -3232,31 +3231,30 @@ impl Scanner {
         self.inJSDocType = context.inJSDocType;
     }
 
-    fn speculationHelper<F, T>(&mut self, mut callback: F, isLookahead: bool) -> T
+    fn speculationHelper<F, T>(&mut self, callback: F, isLookahead: bool) -> T
     where
         F: FnOnce(&mut Scanner) -> T,
         T: IsFalsy,
     {
-        todo!();
-        // let savePos = self.pos;
-        // let saveStartPos = self.startPos;
-        // let saveTokenPos = self.tokenPos;
-        // let saveToken = self.token;
-        // let saveTokenValue = self.tokenValue.clone();
-        // let saveTokenFlags = self.tokenFlags;
-        // let result = callback();
+        let savePos = self.pos;
+        let saveStartPos = self.startPos;
+        let saveTokenPos = self.tokenPos;
+        let saveToken = self.token;
+        let saveTokenValue = self.tokenValue.clone();
+        let saveTokenFlags = self.tokenFlags;
+        let result = callback(self);
 
-        // // If our callback returned something 'falsy' or we're just looking ahead,
-        // // then unconditionally restore us to where we were.
-        // if !result || isLookahead {
-        //     self.pos = savePos;
-        //     self.startPos = saveStartPos;
-        //     self.tokenPos = saveTokenPos;
-        //     self.token = saveToken;
-        //     self.tokenValue = saveTokenValue;
-        //     self.tokenFlags = saveTokenFlags;
-        // }
-        // result
+        // If our callback returned something 'falsy' or we're just looking ahead,
+        // then unconditionally restore us to where we were.
+        if result.is_falsy() || isLookahead {
+            self.pos = savePos;
+            self.startPos = saveStartPos;
+            self.tokenPos = saveTokenPos;
+            self.token = saveToken;
+            self.tokenValue = saveTokenValue;
+            self.tokenFlags = saveTokenFlags;
+        }
+        result
     }
 
     // function scanRange<T>(start: number, length: number, callback: () => T): T {

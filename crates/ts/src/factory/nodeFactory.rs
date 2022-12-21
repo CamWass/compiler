@@ -2387,16 +2387,28 @@ impl NodeFactory {
     //         return updateUnionOrIntersectionTypeNode(node, types);
     //     }
 
-    //     // @api
-    //     function createConditionalTypeNode(checkType: TypeNode, extendsType: TypeNode, trueType: TypeNode, falseType: TypeNode) {
-    //         const node = createBaseNode<ConditionalTypeNode>(SyntaxKind::ConditionalType);
-    //         node.checkType = parenthesizerRules().parenthesizeMemberOfConditionalType(checkType);
-    //         node.extendsType = parenthesizerRules().parenthesizeMemberOfConditionalType(extendsType);
-    //         node.trueType = trueType;
-    //         node.falseType = falseType;
-    //         node.transformFlags = TransformFlags::ContainsTypeScript;
-    //         return node;
-    //     }
+    pub fn createConditionalTypeNode(
+        &mut self,
+        checkType: TypeNode,
+        extendsType: TypeNode,
+        trueType: TypeNode,
+        falseType: TypeNode,
+    ) -> ConditionalTypeNode {
+        let node = ConditionalTypeNode {
+            node_id: self.node_id_gen.next(),
+            // TODO:
+            // checkType: parenthesizerRules().parenthesizeMemberOfConditionalType(checkType),
+            checkType,
+            // TODO:
+            // extendsType: parenthesizerRules().parenthesizeMemberOfConditionalType(extendsType),
+            extendsType,
+            trueType,
+            falseType,
+        };
+
+        self.node_data_mut(&node).transformFlags = TransformFlags::ContainsTypeScript;
+        node
+    }
 
     //     // @api
     //     function updateConditionalTypeNode(node: ConditionalTypeNode, checkType: TypeNode, extendsType: TypeNode, trueType: TypeNode, falseType: TypeNode) {

@@ -3634,13 +3634,16 @@ impl Parser {
             self.reScanTemplateToken(isTaggedTemplate);
             self.parseTemplateMiddleOrTemplateTail()
         } else {
-            todo!();
-            // TODO(rbuckton): Do we need to call `parseExpectedToken` or can we just call `createMissingNode` directly?
-            // self.parseExpectedToken(
-            //     SyntaxKind::TemplateTail,
-            //     Some(Diagnostics::_0_expected),
-            //     Some(tokenToString(SyntaxKind::CloseBraceToken)),
-            // ) as TemplateTail
+            self.parseErrorAtCurrentToken(
+                Diagnostics::_0_expected,
+                tokenToString(SyntaxKind::CloseBraceToken),
+            );
+
+            let pos = self.getNodePos();
+            let result =
+                self.factory
+                    .createTemplateTailUnchecked("".into(), None, TokenFlags::default());
+            TemplateSpanLiteral::TemplateTail(Rc::new(self.finishNode(result, pos, None)))
         }
     }
 
@@ -5412,14 +5415,16 @@ impl Parser {
             && !self.scanner.hasPrecedingLineBreak()
             && self.parseOptional(SyntaxKind::ExtendsKeyword)
         {
-            todo!();
             // The type following 'extends' is not permitted to be another conditional type
-            // let extendsType = self.parseTypeWorker(/*noConditionalTypes*/ true);
-            // self.parseExpected(SyntaxKind::QuestionToken,None,None);
-            // let trueType = self.parseTypeWorker(false);
-            // self.parseExpected(SyntaxKind::ColonToken,None,None);
-            // let falseType = self.parseTypeWorker(false);
-            // return self.finishNode(self.factory.createConditionalTypeNode(ty, extendsType, trueType, falseType), pos,None);
+            let extendsType = self.parseTypeWorker(true);
+            self.parseExpected(SyntaxKind::QuestionToken, None, None);
+            let trueType = self.parseTypeWorker(false);
+            self.parseExpected(SyntaxKind::ColonToken, None, None);
+            let falseType = self.parseTypeWorker(false);
+            let node = self
+                .factory
+                .createConditionalTypeNode(ty, extendsType, trueType, falseType);
+            return TypeNode::ConditionalTypeNode(Rc::new(self.finishNode(node, pos, None)));
         }
         ty
     }
@@ -6550,8 +6555,7 @@ impl Parser {
                 //      import * as foo1 from "module-from-node
                 // We want this import to be a statement rather than import call expression
                 self.sourceFlags |= NodeFlags::PossiblyContainsDynamicImport;
-                // self.parseTokenNode::<PrimaryExpression>()
-                todo!();
+                LeftHandSideExpression::ImportExpression(Rc::new(self.parseTokenNode()))
             } else if self.lookAhead(|p| p.nextTokenIsDot()) {
                 // This is an 'import.*' metaproperty (i.e. 'import.meta')
                 self.nextToken(); // advance past the 'import'
@@ -8537,13 +8541,13 @@ impl Parser {
             .unwrap_or_default()
             .iter()
             .any(|m| self.isDeclareModifier(m));
-        if isAmbient {
-            todo!();
-            // let node = self.tryReuseAmbientDeclaration();
-            // if let Some(node) = node {
-            //     return node;
-            // }
-        }
+        // TODO:
+        // if isAmbient {
+        //     let node = self.tryReuseAmbientDeclaration();
+        //     if let Some(node) = node {
+        //         return node;
+        //     }
+        // }
 
         let pos = self.getNodePos();
         let hasJSDoc = self.hasPrecedingJSDocComment();

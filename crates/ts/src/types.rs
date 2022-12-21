@@ -2846,7 +2846,7 @@ make_node_enum!(
         RestTypeNode,
         UnionTypeNode,
         IntersectionTypeNode,
-        // SyntaxKind::ConditionalType,
+        ConditionalTypeNode,
         InferTypeNode,
         ParenthesizedTypeNode,
         ThisTypeNode,
@@ -3354,13 +3354,36 @@ impl IsNode for IntersectionTypeNode {
     }
 }
 
-//     export interface ConditionalTypeNode extends TypeNode {
-//         readonly kind: SyntaxKind.ConditionalType;
-//         readonly checkType: TypeNode;
-//         readonly extendsType: TypeNode;
-//         readonly trueType: TypeNode;
-//         readonly falseType: TypeNode;
-//     }
+// export interface ConditionalTypeNode extends TypeNode {
+#[derive(Debug)]
+pub struct ConditionalTypeNode {
+    pub node_id: NodeId,
+
+    pub checkType: TypeNode,
+    pub extendsType: TypeNode,
+    pub trueType: TypeNode,
+    pub falseType: TypeNode,
+}
+
+impl HasNodeId for ConditionalTypeNode {
+    fn node_id(&self) -> NodeId {
+        self.node_id
+    }
+}
+
+impl IsNode for ConditionalTypeNode {
+    fn kind(&self) -> SyntaxKind {
+        SyntaxKind::ConditionalType
+    }
+
+    fn name(&self) -> Option<Node> {
+        None
+    }
+
+    fn isPropertyName(&self) -> bool {
+        false
+    }
+}
 
 // export interface InferTypeNode extends TypeNode {
 #[derive(Debug)]
@@ -3708,6 +3731,7 @@ make_node_enum!(
         BinaryExpression,
         CallExpression,
         ConditionalExpression,
+        ImportExpression,
     ]
 );
 
@@ -3788,7 +3812,7 @@ make_node_enum!(
         NonNullExpression,
         MetaProperty,
         // technically this is only an Expression if it's in a CallExpression
-        // ImportKeyword,
+        ImportExpression,
     ]
 );
 
@@ -3829,6 +3853,7 @@ impl From<UnaryExpression> for Expression {
             UnaryExpression::NonNullExpression(n) => Self::NonNullExpression(n),
             UnaryExpression::PostfixUnaryExpression(n) => Self::PostfixUnaryExpression(n),
             UnaryExpression::CallExpression(n) => Self::CallExpression(n),
+            UnaryExpression::ImportExpression(n) => Self::ImportExpression(n),
         }
     }
 }
@@ -3874,7 +3899,7 @@ make_node_enum!(
         NonNullExpression,
         MetaProperty,
         // technically this is only an Expression if it's in a CallExpression
-        // ImportKeyword,
+        ImportExpression,
     ]
 );
 
@@ -3910,6 +3935,7 @@ impl From<UpdateExpression> for UnaryExpression {
             UpdateExpression::NonNullExpression(n) => Self::NonNullExpression(n),
             UpdateExpression::PostfixUnaryExpression(n) => Self::PostfixUnaryExpression(n),
             UpdateExpression::CallExpression(n) => Self::CallExpression(n),
+            UpdateExpression::ImportExpression(n) => Self::ImportExpression(n),
         }
     }
 }
@@ -3946,6 +3972,7 @@ impl From<UpdateExpression> for Expression {
             UpdateExpression::NonNullExpression(n) => Self::NonNullExpression(n),
             UpdateExpression::PostfixUnaryExpression(n) => Self::PostfixUnaryExpression(n),
             UpdateExpression::CallExpression(n) => Self::CallExpression(n),
+            UpdateExpression::ImportExpression(n) => Self::ImportExpression(n),
         }
     }
 }
@@ -4063,7 +4090,7 @@ make_node_enum!(
         NonNullExpression,
         MetaProperty,
         // technically this is only an Expression if it's in a CallExpression
-        // ImportKeyword,
+        ImportExpression,
     ]
 );
 
@@ -4105,6 +4132,7 @@ impl From<LeftHandSideExpression> for Expression {
             LeftHandSideExpression::ElementAccessExpression(n) => Self::ElementAccessExpression(n),
             LeftHandSideExpression::NonNullExpression(n) => Self::NonNullExpression(n),
             LeftHandSideExpression::CallExpression(n) => Self::CallExpression(n),
+            LeftHandSideExpression::ImportExpression(n) => Self::ImportExpression(n),
         }
     }
 }
@@ -4147,6 +4175,7 @@ impl From<LeftHandSideExpression> for UpdateExpression {
             LeftHandSideExpression::ElementAccessExpression(n) => Self::ElementAccessExpression(n),
             LeftHandSideExpression::NonNullExpression(n) => Self::NonNullExpression(n),
             LeftHandSideExpression::CallExpression(n) => Self::CallExpression(n),
+            LeftHandSideExpression::ImportExpression(n) => Self::ImportExpression(n),
         }
     }
 }
@@ -4475,9 +4504,41 @@ impl IsSimpleTokenNode for SuperExpression {
     }
 }
 
-//     export interface ImportExpression extends PrimaryExpression {
-//         readonly kind: SyntaxKind.ImportKeyword;
-//     }
+// export interface ImportExpression extends PrimaryExpression {
+#[derive(Debug)]
+pub struct ImportExpression {
+    pub node_id: NodeId,
+}
+
+impl HasNodeId for ImportExpression {
+    fn node_id(&self) -> NodeId {
+        self.node_id
+    }
+}
+
+impl IsNode for ImportExpression {
+    fn kind(&self) -> SyntaxKind {
+        SyntaxKind::ImportKeyword
+    }
+
+    fn name(&self) -> Option<Node> {
+        None
+    }
+
+    fn isPropertyName(&self) -> bool {
+        false
+    }
+}
+
+impl IsSimpleTokenNode for ImportExpression {
+    fn try_from_kind(kind: SyntaxKind, node_id: NodeId) -> Option<Self> {
+        if kind == SyntaxKind::ImportKeyword {
+            Some(Self { node_id })
+        } else {
+            None
+        }
+    }
+}
 
 // export interface DeleteExpression extends UnaryExpression {
 #[derive(Debug)]
@@ -7556,7 +7617,7 @@ impl IsNode for TypeAliasDeclaration {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        Some(Node::Identifier(self.name.clone()))
     }
 
     fn isPropertyName(&self) -> bool {
@@ -7591,7 +7652,7 @@ impl IsNode for EnumMember {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        Some(self.name.clone().into())
     }
 
     fn isPropertyName(&self) -> bool {
@@ -7625,7 +7686,7 @@ impl IsNode for EnumDeclaration {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        Some(Node::Identifier(self.name.clone()))
     }
 
     fn isPropertyName(&self) -> bool {
@@ -7676,7 +7737,7 @@ impl IsNode for ModuleDeclaration {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        Some(self.name.clone().into())
     }
 
     fn isPropertyName(&self) -> bool {
@@ -7777,7 +7838,7 @@ impl IsNode for ImportEqualsDeclaration {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        Some(Node::Identifier(self.name.clone()))
     }
 
     fn isPropertyName(&self) -> bool {
@@ -7921,7 +7982,7 @@ impl IsNode for AssertEntry {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        Some(self.name.clone().into())
     }
 
     fn isPropertyName(&self) -> bool {
@@ -8009,7 +8070,7 @@ impl IsNode for NamespaceExport {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        Some(Node::Identifier(self.name.clone()))
     }
 
     fn isPropertyName(&self) -> bool {
@@ -8040,7 +8101,7 @@ impl IsNode for NamespaceExportDeclaration {
     }
 
     fn name(&self) -> Option<Node> {
-        todo!()
+        Some(Node::Identifier(self.name.clone()))
     }
 
     fn isPropertyName(&self) -> bool {
@@ -11658,15 +11719,15 @@ pub enum LanguageVariant {
 
 //     /** Either a parsed command line or a parsed tsconfig.json */
 //     export interface ParsedCommandLine {
-//         options: CompilerOptions;
-//         typeAcquisition?: TypeAcquisition;
-//         fileNames: string[];
-//         projectReferences?: readonly ProjectReference[];
-//         watchOptions?: WatchOptions;
-//         raw?: any;
-//         errors: Diagnostic[];
-//         wildcardDirectories?: MapLike<WatchDirectoryFlags>;
-//         compileOnSave?: boolean;
+    //         options: CompilerOptions;
+    //         typeAcquisition?: TypeAcquisition;
+    //         fileNames: string[];
+    //         projectReferences?: readonly ProjectReference[];
+    //         watchOptions?: WatchOptions;
+    //         raw?: any;
+    //         errors: Diagnostic[];
+    //         wildcardDirectories?: MapLike<WatchDirectoryFlags>;
+    //         compileOnSave?: boolean;
 //     }
 
 //     export const enum WatchDirectoryFlags {
