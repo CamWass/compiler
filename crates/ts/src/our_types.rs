@@ -1,7 +1,4 @@
-use crate::{
-    node::Node,
-    types::{NodeData, SyntaxKind},
-};
+use crate::{node::Node, types::*};
 
 use std::rc::Rc;
 
@@ -68,6 +65,8 @@ pub trait IsNode: HasNodeId {
     fn name(&self) -> Option<Node>;
 
     fn isPropertyName(&self) -> bool;
+
+    fn modifiers(&self) -> Option<&NodeArray<Modifier>>;
 }
 
 impl<T> IsNode for Rc<T>
@@ -84,6 +83,10 @@ where
 
     fn isPropertyName(&self) -> bool {
         self.as_ref().isPropertyName()
+    }
+
+    fn modifiers(&self) -> Option<&NodeArray<Modifier>> {
+        self.as_ref().modifiers()
     }
 }
 
@@ -133,3 +136,36 @@ impl<T> IsFalsy for Option<T> {
 }
 
 pub struct NodeAndData<'n, 'd, T: IsNode>(pub &'n T, pub &'d NodeData);
+
+#[derive(Default)]
+pub struct NodeDataStore {
+    pub node_id_gen: NodeIdGen,
+    pub node_data: Vec<Option<NodeData>>,
+}
+
+impl NodeDataStore {
+    fn ensure_node_data_capacity(&mut self, node_id: NodeId) {
+        if node_id.as_usize() >= self.node_data.len() {
+            let additional = node_id.as_usize() - self.node_data.len() + 1;
+            self.node_data.reserve(additional);
+            for _ in 0..additional {
+                self.node_data.push(None);
+            }
+        }
+    }
+
+    pub fn node_data<T: HasNodeId>(&mut self, node: T) -> &NodeData {
+        self.node_data_mut(node)
+    }
+
+    pub fn node_data_mut<T: HasNodeId>(&mut self, node: T) -> &mut NodeData {
+        let node_id = node.node_id();
+        self.ensure_node_data_capacity(node_id);
+        self.node_data[node_id.as_usize()].get_or_insert_with(|| NodeData::default())
+    }
+
+    pub fn node_and_data<'n, 'd, T: IsNode>(&'d mut self, node: &'n T) -> NodeAndData<'n, 'd, T> {
+        let data = self.node_data(node);
+        NodeAndData(node, data)
+    }
+}

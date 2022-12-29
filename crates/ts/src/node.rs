@@ -1,6 +1,76 @@
 use crate::{our_types::*, types::*};
 
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
+
+#[derive(Debug)]
+pub struct BoundNode {
+    pub node: Node,
+    parent: Weak<BoundNode>,
+}
+
+impl BoundNode {
+    pub fn parent(&self) -> Option<Rc<BoundNode>> {
+        self.parent.upgrade()
+    }
+
+    pub fn parent_node(&self) -> Option<Node> {
+        self.parent().map(|p| p.node.clone())
+    }
+
+    pub fn new(node: Node, parent: Option<&Rc<BoundNode>>) -> Self {
+        let parent = match parent {
+            Some(p) => Rc::downgrade(p),
+            None => Weak::new(),
+        };
+        Self { node: node, parent }
+    }
+}
+
+impl HasNodeId for BoundNode {
+    fn node_id(&self) -> NodeId {
+        self.node.node_id()
+    }
+}
+
+impl IsNode for BoundNode {
+    fn kind(&self) -> SyntaxKind {
+        self.node.kind()
+    }
+
+    fn name(&self) -> Option<Node> {
+        self.node.name()
+    }
+
+    fn isPropertyName(&self) -> bool {
+        self.node.isPropertyName()
+    }
+
+    fn modifiers(&self) -> Option<&NodeArray<Modifier>> {
+        self.node.modifiers()
+    }
+}
+
+pub trait Bind {
+    fn bind(&self, parent: &Rc<BoundNode>) -> Rc<BoundNode> {
+        self.bind_to_opt_parent(Some(parent))
+    }
+
+    fn bind_to_opt_parent(&self, parent: Option<&Rc<BoundNode>>) -> Rc<BoundNode>;
+}
+
+impl<T> Bind for T
+where
+    T: Into<Node> + Clone,
+{
+    fn bind_to_opt_parent(&self, parent: Option<&Rc<BoundNode>>) -> Rc<BoundNode> {
+        Rc::new(BoundNode::new(self.clone().into(), parent))
+    }
+}
+
+pub trait AsBound {
+    type Bound;
+    fn as_bound(&self, parent: Option<&Rc<BoundNode>>) -> Self::Bound;
+}
 
 macro_rules! make {
     ($($field:ident,)*) => {
@@ -35,6 +105,12 @@ macro_rules! make {
                     $(Self::$field(n) => n.isPropertyName(),)*
                 }
             }
+
+            fn modifiers(&self) -> Option<&NodeArray<Modifier>>  {
+                match self {
+                    $(Self::$field(n) => n.modifiers(),)*
+                }
+            }
         }
 
         $(
@@ -43,7 +119,80 @@ macro_rules! make {
                     Self::$field(inner)
                 }
             }
+
+            impl AsBound for Rc<$field> {
+                type Bound = bound::$field;
+                fn as_bound(&self, parent: Option<&Rc<BoundNode>>) -> Self::Bound {
+                    bound::$field::new(self, parent)
+                }
+            }
         )*
+
+        pub mod bound {
+            use crate::types;
+            use crate::our_types;
+            use std::rc::{Rc, Weak};
+            use super::{BoundNode,Node};
+
+            $(
+                #[derive(Debug, Clone)]
+                pub struct $field {
+                    pub node: Rc<types::$field>,
+                    parent: Weak<BoundNode>,
+                }
+
+                impl $field {
+                    pub fn parent(&self) -> Option<Rc<BoundNode>> {
+                        self.parent.upgrade()
+                    }
+
+                    pub fn parent_node(&self) -> Option<Node> {
+                        self.parent().map(|p| p.node.clone())
+                    }
+
+                    pub fn new(node: &Rc<types::$field>, parent: Option<&Rc<BoundNode>>) -> Self {
+                        let parent = match parent {
+                            Some(p) => Rc::downgrade(p),
+                            None => Weak::new(),
+                        };
+                        Self {
+                            node: node.clone(),
+                            parent
+                        }
+                    }
+                }
+
+                impl our_types::IsNode for $field {
+                    fn kind(&self) -> types::SyntaxKind {
+                        self.node.kind()
+                    }
+
+                    fn name(&self) -> Option<Node> {
+                        self.node.name()
+                    }
+
+                    fn isPropertyName(&self) -> bool {
+                        self.node.isPropertyName()
+                    }
+
+                    fn modifiers(&self) -> Option<&types::NodeArray<types::Modifier>>  {
+                        self.node.modifiers()
+                    }
+                }
+
+                impl our_types::HasNodeId for $field {
+                    fn node_id(&self) -> our_types::NodeId {
+                        self.node.node_id()
+                    }
+                }
+
+                impl From<$field> for BoundNode {
+                    fn from(other: $field)-> BoundNode {
+                        BoundNode::new(other.node.into(), other.parent.upgrade().as_ref())
+                    }
+                }
+            )*
+        }
 
 
     };

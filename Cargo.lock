@@ -1577,11 +1577,11 @@ dependencies = [
  "criterion",
  "diagnostics",
  "glob",
+ "index",
  "lexical",
  "once_cell",
  "regex",
  "rustc-hash",
- "swc_atoms",
  "unicode-id",
 ]
 

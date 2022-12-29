@@ -235,6 +235,7 @@ fn parse_script(file_name: &str, source: Rc<str>) -> Result<SourceFile, ()> {
         ScriptTarget::ESNext,
         false,
         Some(ScriptKind::JS),
+        &mut Default::default(),
     );
 
     if res.parseDiagnostics.is_empty() {

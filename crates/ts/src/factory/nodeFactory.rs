@@ -8,46 +8,30 @@ use crate::utilities::*;
 use crate::utilitiesPublic::*;
 
 use bitflags::bitflags;
-use swc_atoms::JsWord;
 
 use super::nodeTests::*;
 use super::utilities::*;
 use super::utilitiesPublic::setTextRange;
 
-#[derive(Default)]
-pub struct NodeFactory {
+pub struct NodeFactory<'a> {
     flags: NodeFactoryFlags,
-    node_data: Vec<Option<NodeData>>,
-    node_id_gen: NodeIdGen,
+    pub store: &'a mut NodeDataStore,
 }
 
-impl NodeFactory {
-    fn ensure_node_data_capacity(&mut self, node_id: NodeId) {
-        if node_id.as_usize() >= self.node_data.len() {
-            let additional = node_id.as_usize() - self.node_data.len() + 1;
-            self.node_data.reserve(additional);
-            for _ in 0..additional {
-                self.node_data.push(None);
-            }
-        }
-    }
-
+impl<'a> NodeFactory<'a> {
     pub fn node_data<T: HasNodeId>(&mut self, node: T) -> &NodeData {
-        self.node_data_mut(node)
+        self.store.node_data(node)
     }
 
     pub fn node_data_mut<T: HasNodeId>(&mut self, node: T) -> &mut NodeData {
-        let node_id = node.node_id();
-        self.ensure_node_data_capacity(node_id);
-        self.node_data[node_id.as_usize()].get_or_insert_with(|| NodeData::default())
+        self.store.node_data_mut(node)
     }
-
     /**
      * Creates a `NodeFactory` that can be used to create and update a syntax tree.
      * @param flags Flags that control factory behavior.
      * @param baseFactory A `BaseNodeFactory` used to create the base `Node` objects.
      */
-    pub fn createNodeFactory(flags: NodeFactoryFlags) -> Self {
+    pub fn createNodeFactory(flags: NodeFactoryFlags, store: &'a mut NodeDataStore) -> Self {
         // let update = if flags.intersects(NodeFactoryFlags::NoOriginalNode) {
         //     updateWithoutOriginal
         // } else {
@@ -70,10 +54,7 @@ impl NodeFactory {
         // const getJSDocTypeLikeTagCreateFunction = memoizeOne(<T extends JSDocTag & { typeExpression?: JSDocTypeExpression }>(kind: T["kind"]) => (tagName: Identifier | undefined, typeExpression?: JSDocTypeExpression, comment?: NodeArray<JSDocComment>) => createJSDocTypeLikeTagWorker(kind, tagName, typeExpression, comment));
         // const getJSDocTypeLikeTagUpdateFunction = memoizeOne(<T extends JSDocTag & { typeExpression?: JSDocTypeExpression }>(kind: T["kind"]) => (node: T, tagName: Identifier | undefined, typeExpression?: JSDocTypeExpression, comment?: NodeArray<JSDocComment>) => updateJSDocTypeLikeTagWorker(kind, node, tagName, typeExpression, comment));
 
-        let factory = NodeFactory {
-            flags,
-            ..NodeFactory::default()
-        };
+        let factory = NodeFactory { flags, store };
         factory
 
         // const factory: NodeFactory = {
@@ -878,7 +859,7 @@ impl NodeFactory {
         numericLiteralFlags: Option<TokenFlags>,
     ) -> NumericLiteral {
         let node = NumericLiteral {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             text: value,
             numericLiteralFlags: numericLiteralFlags.unwrap_or_default(),
         };
@@ -893,7 +874,7 @@ impl NodeFactory {
 
     pub fn createBigIntLiteral(&mut self, value: Rc<str>) -> BigIntLiteral {
         let node = BigIntLiteral {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             text: value,
             isUnterminated: None,
             hasExtendedUnicodeEscape: None,
@@ -915,7 +896,7 @@ impl NodeFactory {
         hasExtendedUnicodeEscape: bool,
     ) -> StringLiteral {
         let node = StringLiteral {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             text,
             isUnterminated: None,
             hasExtendedUnicodeEscape: Some(hasExtendedUnicodeEscape),
@@ -936,7 +917,7 @@ impl NodeFactory {
 
     pub fn createRegularExpressionLiteral(&mut self, text: Rc<str>) -> RegularExpressionLiteral {
         let node = RegularExpressionLiteral {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             text,
             isUnterminated: None,
             hasExtendedUnicodeEscape: None,
@@ -963,7 +944,7 @@ impl NodeFactory {
 
     fn createBaseIdentifier(
         &mut self,
-        text: JsWord,
+        text: Rc<str>,
         mut originalKeywordKind: Option<SyntaxKind>,
     ) -> Identifier {
         if originalKeywordKind.is_none() && !text.is_empty() {
@@ -973,11 +954,12 @@ impl NodeFactory {
             originalKeywordKind = None;
         }
         let node = Identifier {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             escapedText: escapeLeadingUnderscores(text),
             originalKeywordKind,
             autoGenerateFlags: GeneratedIdentifierFlags::default(),
             jsdocDotPos: None,
+            isInJSDocNamespace: false,
         };
         node
     }
@@ -993,7 +975,7 @@ impl NodeFactory {
     // fn createIdentifier(&mut self, text: String, typeArguments: Option<Vec<TypeNode | TypeParameterDeclaration>, originalKeywordKind: Option<SyntaxKind>)-> Identifier {
     pub fn createIdentifier(
         &mut self,
-        text: JsWord,
+        text: Rc<str>,
         typeArguments: Option<Vec<()>>,
         originalKeywordKind: Option<SyntaxKind>,
     ) -> Identifier {
@@ -1053,14 +1035,14 @@ impl NodeFactory {
     //         return name;
     //     }
 
-    pub fn createPrivateIdentifier(&mut self, text: JsWord) -> PrivateIdentifier {
+    pub fn createPrivateIdentifier(&mut self, text: Rc<str>) -> PrivateIdentifier {
         debug_assert!(
             text.starts_with("#"),
             "First character of private identifier must be #: {}",
             text
         );
         let node = PrivateIdentifier {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             escapedText: escapeLeadingUnderscores(text),
         };
         self.node_data_mut(&node).transformFlags |= TransformFlags::ContainsClassFields;
@@ -1105,7 +1087,7 @@ impl NodeFactory {
             token != SyntaxKind::Identifier,
             "Invalid token. Use 'createIdentifier' to create identifiers"
         );
-        let node = T::try_from_kind(token, self.node_id_gen.next()).unwrap();
+        let node = T::try_from_kind(token, self.store.node_id_gen.next()).unwrap();
         let mut transformFlags = TransformFlags::None;
         match token {
             SyntaxKind::AsyncKeyword => {
@@ -1219,7 +1201,7 @@ impl NodeFactory {
         right: Rc<Identifier>,
     ) -> QualifiedName {
         let node = QualifiedName {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             left,
             right,
             jsdocDotPos: None,
@@ -1240,7 +1222,7 @@ impl NodeFactory {
 
     pub fn createComputedPropertyName(&mut self, expression: Expression) -> ComputedPropertyName {
         let node = ComputedPropertyName {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // expression: parenthesizerRules().parenthesizeExpressionOfComputedPropertyName(expression),
             expression,
@@ -1270,7 +1252,7 @@ impl NodeFactory {
         defaultType: Option<TypeNode>,
     ) -> TypeParameterDeclaration {
         let node = TypeParameterDeclaration {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             name,
             constraint,
             default: defaultType,
@@ -1303,7 +1285,7 @@ impl NodeFactory {
         initializer: Option<Expression>,
     ) -> ParameterDeclaration {
         let node = ParameterDeclaration {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             decorators: self.asNodeArray(decorators),
             modifiers: self.asNodeArray(modifiers),
@@ -1367,7 +1349,7 @@ impl NodeFactory {
 
     pub fn createDecorator(&mut self, expression: LeftHandSideExpression) -> Decorator {
         let node = Decorator {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // expression: parenthesizerRules().parenthesizeLeftSideOfAccess(expression),
             expression,
@@ -1398,7 +1380,7 @@ impl NodeFactory {
         ty: Option<TypeNode>,
     ) -> PropertySignature {
         let node = PropertySignature {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             modifiers: self.asNodeArray(modifiers),
             name,
@@ -1450,7 +1432,7 @@ impl NodeFactory {
         debug_assert!(questionToken.is_none() || exclamationToken.is_none());
 
         let node = PropertyDeclaration {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             decorators: self.asNodeArray(decorators),
             modifiers: self.asNodeArray(modifiers),
@@ -1527,7 +1509,7 @@ impl NodeFactory {
         ty: Option<TypeNode>,
     ) -> MethodSignature {
         let node = MethodSignature {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             questionToken,
             modifiers: self.asNodeArray(modifiers),
@@ -1587,7 +1569,7 @@ impl NodeFactory {
         body: Option<Rc<Block>>,
     ) -> MethodDeclaration {
         let node = MethodDeclaration {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             decorators: self.asNodeArray(decorators),
             modifiers: self.asNodeArray(modifiers),
@@ -1681,7 +1663,7 @@ impl NodeFactory {
         body: Rc<Block>,
     ) -> ClassStaticBlockDeclaration {
         let node = ClassStaticBlockDeclaration {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             body,
             decorators: self.asNodeArray(decorators),
@@ -1717,7 +1699,7 @@ impl NodeFactory {
         body: Option<Rc<Block>>,
     ) -> ConstructorDeclaration {
         let node = ConstructorDeclaration {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             decorators: self.asNodeArray(decorators),
             modifiers: self.asNodeArray(modifiers),
@@ -1766,7 +1748,7 @@ impl NodeFactory {
         body: Option<Rc<Block>>,
     ) -> GetAccessorDeclaration {
         let node = GetAccessorDeclaration {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             decorators: self.asNodeArray(decorators),
             modifiers: self.asNodeArray(modifiers),
@@ -1832,7 +1814,7 @@ impl NodeFactory {
         body: Option<Rc<Block>>,
     ) -> SetAccessorDeclaration {
         let node = SetAccessorDeclaration {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             decorators: self.asNodeArray(decorators),
             modifiers: self.asNodeArray(modifiers),
@@ -1891,7 +1873,7 @@ impl NodeFactory {
         ty: Option<TypeNode>,
     ) -> CallSignatureDeclaration {
         let node = CallSignatureDeclaration {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             typeParameters: self.asNodeArray(typeParameters),
             parameters: self.updateNodeArray(Some(parameters), None),
@@ -1927,7 +1909,7 @@ impl NodeFactory {
         ty: Option<TypeNode>,
     ) -> ConstructSignatureDeclaration {
         let node = ConstructSignatureDeclaration {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             typeParameters: self.asNodeArray(typeParameters),
             parameters: self.updateNodeArray(Some(parameters), None),
@@ -1964,7 +1946,7 @@ impl NodeFactory {
         ty: Option<TypeNode>,
     ) -> IndexSignatureDeclaration {
         let node = IndexSignatureDeclaration {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             decorators: self.asNodeArray(decorators),
             modifiers: self.asNodeArray(modifiers),
             js_doc_container: JSDocContainer::default(),
@@ -2004,7 +1986,7 @@ impl NodeFactory {
         literal: TemplateSpanLiteral,
     ) -> TemplateLiteralTypeSpan {
         let node = TemplateLiteralTypeSpan {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             ty,
             literal,
         };
@@ -2036,7 +2018,7 @@ impl NodeFactory {
         ty: Option<TypeNode>,
     ) -> TypePredicateNode {
         let node = TypePredicateNode {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             assertsModifier,
             parameterName,
             ty,
@@ -2060,7 +2042,7 @@ impl NodeFactory {
         typeArguments: Option<NodeArray<TypeNode>>,
     ) -> TypeReferenceNode {
         let node = TypeReferenceNode {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // typeArguments: typeArguments && parenthesizerRules().parenthesizeTypeArguments(createNodeArray(typeArguments)),
             typeArguments,
@@ -2085,7 +2067,7 @@ impl NodeFactory {
         ty: Option<TypeNode>,
     ) -> FunctionTypeNode {
         let node = FunctionTypeNode {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             modifiers: None,
             typeParameters: self.asNodeArray(typeParameters),
@@ -2123,7 +2105,7 @@ impl NodeFactory {
         ty: Option<TypeNode>,
     ) -> ConstructorTypeNode {
         let node = ConstructorTypeNode {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             modifiers: self.asNodeArray(modifiers),
             typeParameters: self.asNodeArray(typeParameters),
@@ -2209,7 +2191,7 @@ impl NodeFactory {
 
     pub fn createTypeQueryNode(&mut self, exprName: EntityName) -> TypeQueryNode {
         let node = TypeQueryNode {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             exprName,
         };
         self.node_data_mut(&node).transformFlags |= TransformFlags::ContainsTypeScript;
@@ -2228,7 +2210,7 @@ impl NodeFactory {
         members: Option<NodeArray<TypeElement>>,
     ) -> TypeLiteralNode {
         let node = TypeLiteralNode {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             members: self.updateNodeArray(members, None),
         };
         self.node_data_mut(&node).transformFlags |= TransformFlags::ContainsTypeScript;
@@ -2244,7 +2226,7 @@ impl NodeFactory {
 
     pub fn createArrayTypeNode(&mut self, elementType: TypeNode) -> ArrayTypeNode {
         let node = ArrayTypeNode {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // elementType: parenthesizerRules().parenthesizeElementTypeOfArrayType(elementType),
             elementType,
@@ -2262,7 +2244,7 @@ impl NodeFactory {
 
     pub fn createTupleTypeNode(&mut self, elements: NodeArray<TypeNode>) -> TupleTypeNode {
         let node = TupleTypeNode {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             elements: self.updateNodeArray(Some(elements), None),
         };
         self.node_data_mut(&node).transformFlags |= TransformFlags::ContainsTypeScript;
@@ -2284,7 +2266,7 @@ impl NodeFactory {
         ty: TypeNode,
     ) -> NamedTupleMember {
         let node = NamedTupleMember {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             dotDotDotToken,
             name,
@@ -2307,7 +2289,7 @@ impl NodeFactory {
 
     pub fn createOptionalTypeNode(&mut self, ty: TypeNode) -> OptionalTypeNode {
         let node = OptionalTypeNode {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // ty: parenthesizerRules().parenthesizeElementTypeOfArrayType(ty),
             ty,
@@ -2325,7 +2307,7 @@ impl NodeFactory {
 
     pub fn createRestTypeNode(&mut self, ty: TypeNode) -> RestTypeNode {
         let node = RestTypeNode {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             ty,
         };
         self.node_data_mut(&node).transformFlags |= TransformFlags::ContainsTypeScript;
@@ -2354,7 +2336,7 @@ impl NodeFactory {
 
     pub fn createUnionTypeNode(&mut self, types: NodeArray<TypeNode>) -> UnionTypeNode {
         let node = UnionTypeNode {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // types: parenthesizerRules().parenthesizeConstituentTypesOfUnionOrIntersectionType(types),
             types,
@@ -2373,7 +2355,7 @@ impl NodeFactory {
         types: NodeArray<TypeNode>,
     ) -> IntersectionTypeNode {
         let node = IntersectionTypeNode {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // types: parenthesizerRules().parenthesizeConstituentTypesOfUnionOrIntersectionType(types),
             types,
@@ -2395,7 +2377,7 @@ impl NodeFactory {
         falseType: TypeNode,
     ) -> ConditionalTypeNode {
         let node = ConditionalTypeNode {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // checkType: parenthesizerRules().parenthesizeMemberOfConditionalType(checkType),
             checkType,
@@ -2425,7 +2407,7 @@ impl NodeFactory {
         typeParameter: Rc<TypeParameterDeclaration>,
     ) -> InferTypeNode {
         let node = InferTypeNode {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             typeParameter,
         };
         self.node_data_mut(&node).transformFlags |= TransformFlags::ContainsTypeScript;
@@ -2445,7 +2427,7 @@ impl NodeFactory {
         templateSpans: NodeArray<Rc<TemplateLiteralTypeSpan>>,
     ) -> TemplateLiteralTypeNode {
         let node = TemplateLiteralTypeNode {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             head,
             templateSpans: self.updateNodeArray(Some(templateSpans), None),
         };
@@ -2469,7 +2451,7 @@ impl NodeFactory {
         isTypeOf: bool,
     ) -> ImportTypeNode {
         let node = ImportTypeNode {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // typeArguments: typeArguments && parenthesizerRules().parenthesizeTypeArguments(typeArguments),
             typeArguments,
@@ -2493,7 +2475,7 @@ impl NodeFactory {
 
     pub fn createParenthesizedType(&mut self, ty: TypeNode) -> ParenthesizedTypeNode {
         let node = ParenthesizedTypeNode {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             ty,
         };
         self.node_data_mut(&node).transformFlags |= TransformFlags::ContainsTypeScript;
@@ -2509,7 +2491,7 @@ impl NodeFactory {
 
     pub fn createThisTypeNode(&mut self) -> ThisTypeNode {
         let node = ThisTypeNode {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
         };
         self.node_data_mut(&node).transformFlags |= TransformFlags::ContainsTypeScript;
         node
@@ -2525,7 +2507,7 @@ impl NodeFactory {
             SyntaxKind::KeyOfKeyword | SyntaxKind::UniqueKeyword | SyntaxKind::ReadonlyKeyword
         ));
         let node = TypeOperatorNode {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             operator,
             // TODO:
             // ty: parenthesizerRules().parenthesizeMemberOfElementType(ty),
@@ -2548,7 +2530,7 @@ impl NodeFactory {
         indexType: TypeNode,
     ) -> IndexedAccessTypeNode {
         let node = IndexedAccessTypeNode {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // objectType: parenthesizerRules().parenthesizeMemberOfElementType(objectType),
             objectType,
@@ -2584,7 +2566,7 @@ impl NodeFactory {
             Some(SyntaxKind::QuestionToken | SyntaxKind::PlusToken | SyntaxKind::MinusToken) | None
         ));
         let node = MappedTypeNode {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             readonlyToken,
             typeParameter,
             nameType,
@@ -2608,7 +2590,7 @@ impl NodeFactory {
 
     pub fn createLiteralTypeNode(&mut self, literal: LiteralTypeNodeKind) -> LiteralTypeNode {
         let node = LiteralTypeNode {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             literal,
         };
         self.node_data_mut(&node).transformFlags |= TransformFlags::ContainsTypeScript;
@@ -2631,7 +2613,7 @@ impl NodeFactory {
         elements: NodeArray<Rc<BindingElement>>,
     ) -> ObjectBindingPattern {
         let node = ObjectBindingPattern {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             elements: self.updateNodeArray(Some(elements), None),
         };
         let mut transform_flags = propagateChildrenFlags(Some(&node.elements))
@@ -2657,7 +2639,7 @@ impl NodeFactory {
         elements: NodeArray<ArrayBindingElement>,
     ) -> ArrayBindingPattern {
         let node = ArrayBindingPattern {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             elements: self.updateNodeArray(Some(elements), None),
         };
         let transform_flags = propagateChildrenFlags(Some(&node.elements))
@@ -2682,7 +2664,7 @@ impl NodeFactory {
         initializer: Option<Expression>,
     ) -> BindingElement {
         let node = BindingElement {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             propertyName,
             dotDotDotToken,
             name,
@@ -2746,7 +2728,7 @@ impl NodeFactory {
         let elementsArray = self.updateNodeArray(elements, hasTrailingComma);
 
         let node = ArrayLiteralExpression {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // elements: parenthesizerRules().parenthesizeExpressionsOfCommaDelimitedList(elementsArray),
             elements: elementsArray,
@@ -2770,7 +2752,7 @@ impl NodeFactory {
         multiLine: bool,
     ) -> ObjectLiteralExpression {
         let node = ObjectLiteralExpression {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             properties: self.updateNodeArray(properties, None),
             multiLine,
         };
@@ -2792,7 +2774,7 @@ impl NodeFactory {
         name: MemberName,
     ) -> PropertyAccessExpression {
         let node = PropertyAccessExpression {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // expression: parenthesizerRules().parenthesizeLeftSideOfAccess(expression),
             expression,
@@ -2832,7 +2814,7 @@ impl NodeFactory {
         name: MemberName,
     ) -> PropertyAccessChain {
         let node = PropertyAccessChain {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // expression: parenthesizerRules().parenthesizeLeftSideOfAccess(expression),
             expression,
@@ -2878,7 +2860,7 @@ impl NodeFactory {
         index: Expression,
     ) -> ElementAccessExpression {
         let node = ElementAccessExpression {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // expression: parenthesizerRules().parenthesizeLeftSideOfAccess(expression),
             expression,
@@ -2914,7 +2896,7 @@ impl NodeFactory {
         index: Expression,
     ) -> ElementAccessChain {
         let node = ElementAccessChain {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // expression: parenthesizerRules().parenthesizeLeftSideOfAccess(expression),
             expression,
@@ -2957,7 +2939,7 @@ impl NodeFactory {
         argumentsArray: Option<NodeArray<Expression>>,
     ) -> CallExpression {
         let node = CallExpression {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // expression: parenthesizerRules().parenthesizeLeftSideOfAccess(expression),
             expression,
@@ -3002,7 +2984,7 @@ impl NodeFactory {
         argumentsArray: Option<NodeArray<Expression>>,
     ) -> CallChain {
         let node = CallChain {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // expression:  parenthesizerRules().parenthesizeLeftSideOfAccess(expression),
             expression,
@@ -3046,7 +3028,7 @@ impl NodeFactory {
         argumentsArray: Option<NodeArray<Expression>>,
     ) -> NewExpression {
         let node = NewExpression {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // expression: parenthesizerRules().parenthesizeExpressionOfNew(expression),
             expression,
@@ -3082,7 +3064,7 @@ impl NodeFactory {
         template: TemplateLiteral,
     ) -> TaggedTemplateExpression {
         let node = TaggedTemplateExpression {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // tag: parenthesizerRules().parenthesizeLeftSideOfAccess(tag),
             tag,
@@ -3119,7 +3101,7 @@ impl NodeFactory {
         expression: UnaryExpression,
     ) -> TypeAssertion {
         let node = TypeAssertion {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             ty,
             // TODO:
             // expression: parenthesizerRules().parenthesizeOperandOfPrefixUnary(expression),
@@ -3145,7 +3127,7 @@ impl NodeFactory {
         expression: Expression,
     ) -> ParenthesizedExpression {
         let node = ParenthesizedExpression {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             expression,
         };
@@ -3172,7 +3154,7 @@ impl NodeFactory {
         body: Rc<Block>,
     ) -> FunctionExpression {
         let node = FunctionExpression {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             modifiers: self.asNodeArray(modifiers),
             typeParameters: self.asNodeArray(typeParameters),
@@ -3249,7 +3231,7 @@ impl NodeFactory {
         body: ConciseBody,
     ) -> ArrowFunction {
         let node = ArrowFunction {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             modifiers: self.asNodeArray(modifiers),
             typeParameters: self.asNodeArray(typeParameters),
@@ -3308,7 +3290,7 @@ impl NodeFactory {
 
     pub fn createDeleteExpression(&mut self, expression: UnaryExpression) -> DeleteExpression {
         let node = DeleteExpression {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // expression: parenthesizerRules().parenthesizeOperandOfPrefixUnary(expression),
             expression,
@@ -3327,7 +3309,7 @@ impl NodeFactory {
 
     pub fn createTypeOfExpression(&mut self, expression: UnaryExpression) -> TypeOfExpression {
         let node = TypeOfExpression {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // expression: parenthesizerRules().parenthesizeOperandOfPrefixUnary(expression),
             expression,
@@ -3346,7 +3328,7 @@ impl NodeFactory {
 
     pub fn createVoidExpression(&mut self, expression: UnaryExpression) -> VoidExpression {
         let node = VoidExpression {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // expression: parenthesizerRules().parenthesizeOperandOfPrefixUnary(expression),
             expression,
@@ -3365,7 +3347,7 @@ impl NodeFactory {
 
     pub fn createAwaitExpression(&mut self, expression: UnaryExpression) -> AwaitExpression {
         let node = AwaitExpression {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // expression: parenthesizerRules().parenthesizeOperandOfPrefixUnary(expression),
             expression,
@@ -3400,7 +3382,7 @@ impl NodeFactory {
                 | SyntaxKind::ExclamationToken
         ));
         let node = PrefixUnaryExpression {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             operator,
             // TODO:
             // operand: parenthesizerRules().parenthesizeOperandOfPrefixUnary(operand),
@@ -3439,7 +3421,7 @@ impl NodeFactory {
             SyntaxKind::PlusPlusToken | SyntaxKind::MinusMinusToken
         ));
         let node = PostfixUnaryExpression {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // operand: parenthesizerRules().parenthesizeOperandOfPostfixUnary(operand),
             operand,
@@ -3473,7 +3455,7 @@ impl NodeFactory {
     ) -> BinaryExpression {
         let operatorKind = operatorToken.kind();
         let node = BinaryExpression {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // left: parenthesizerRules().parenthesizeLeftSideOfBinary(operatorKind, left),
             left,
@@ -3577,7 +3559,7 @@ impl NodeFactory {
         whenFalse: Expression,
     ) -> ConditionalExpression {
         let node = ConditionalExpression {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             condition,
             // TODO:
             // condition: parenthesizerRules().parenthesizeConditionOfConditionalExpression(condition),
@@ -3625,7 +3607,7 @@ impl NodeFactory {
         templateSpans: NodeArray<Rc<TemplateSpan>>,
     ) -> TemplateExpression {
         let node = TemplateExpression {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             head,
             templateSpans: self.updateNodeArray(Some(templateSpans), None),
         };
@@ -3693,7 +3675,7 @@ impl NodeFactory {
         templateFlags: TokenFlags,
     ) -> TemplateHead {
         let node = TemplateHead {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             text,
             isUnterminated: None,
             hasExtendedUnicodeEscape: None,
@@ -3720,7 +3702,7 @@ impl NodeFactory {
         templateFlags: TokenFlags,
     ) -> TemplateMiddle {
         let node = TemplateMiddle {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             text,
             isUnterminated: None,
             hasExtendedUnicodeEscape: None,
@@ -3747,7 +3729,7 @@ impl NodeFactory {
         templateFlags: TokenFlags,
     ) -> TemplateTail {
         let node = TemplateTail {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             text,
             isUnterminated: None,
             hasExtendedUnicodeEscape: None,
@@ -3775,7 +3757,7 @@ impl NodeFactory {
         templateFlags: TokenFlags,
     ) -> NoSubstitutionTemplateLiteral {
         let node = NoSubstitutionTemplateLiteral {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             text,
             isUnterminated: None,
             hasExtendedUnicodeEscape: None,
@@ -3800,7 +3782,7 @@ impl NodeFactory {
             "A `YieldExpression` with an asteriskToken must have an expression."
         );
         let node = YieldExpression {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             asteriskToken,
             // TODO:
             // expression: expression && parenthesizerRules().parenthesizeExpressionForDisallowedComma(expression),
@@ -3825,7 +3807,7 @@ impl NodeFactory {
 
     pub fn createSpreadElement(&mut self, expression: Expression) -> SpreadElement {
         let node = SpreadElement {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // expression: parenthesizerRules().parenthesizeExpressionForDisallowedComma(expression),
             expression,
@@ -3854,7 +3836,7 @@ impl NodeFactory {
         members: NodeArray<ClassElement>,
     ) -> ClassExpression {
         let node = ClassExpression {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             decorators: self.asNodeArray(decorators),
             modifiers: self.asNodeArray(modifiers),
@@ -3900,7 +3882,7 @@ impl NodeFactory {
 
     pub fn createOmittedExpression(&mut self) -> OmittedExpression {
         OmittedExpression {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
         }
     }
 
@@ -3910,7 +3892,7 @@ impl NodeFactory {
         typeArguments: Option<NodeArray<TypeNode>>,
     ) -> ExpressionWithTypeArguments {
         let node = ExpressionWithTypeArguments {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // typeArguments: typeArguments && parenthesizerRules().parenthesizeTypeArguments(typeArguments),
             typeArguments,
@@ -3935,7 +3917,7 @@ impl NodeFactory {
 
     pub fn createAsExpression(&mut self, expression: Expression, ty: TypeNode) -> AsExpression {
         let node = AsExpression {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             expression,
             ty,
         };
@@ -3959,7 +3941,7 @@ impl NodeFactory {
         expression: LeftHandSideExpression,
     ) -> NonNullExpression {
         let node = NonNullExpression {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // expression:parenthesizerRules().parenthesizeLeftSideOfAccess(expression),
             expression,
@@ -4005,7 +3987,7 @@ impl NodeFactory {
         name: Rc<Identifier>,
     ) -> MetaProperty {
         let node = MetaProperty {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             keywordToken,
             name,
         };
@@ -4040,7 +4022,7 @@ impl NodeFactory {
         literal: TemplateSpanLiteral,
     ) -> TemplateSpan {
         let node = TemplateSpan {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             expression,
             literal,
         };
@@ -4061,7 +4043,7 @@ impl NodeFactory {
 
     pub fn createSemicolonClassElement(&mut self) -> SemicolonClassElement {
         let node = SemicolonClassElement {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
         };
         self.node_data_mut(&node).transformFlags |= TransformFlags::ContainsES2015;
         node
@@ -4077,7 +4059,7 @@ impl NodeFactory {
         multiLine: Option<bool>,
     ) -> Block {
         let node = Block {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             statements: self.updateNodeArray(Some(statements), None),
             multiLine,
@@ -4099,7 +4081,7 @@ impl NodeFactory {
         declarationList: Rc<VariableDeclarationList>,
     ) -> VariableStatement {
         let node = VariableStatement {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             decorators: None,
             // TODO:
@@ -4126,14 +4108,14 @@ impl NodeFactory {
 
     pub fn createEmptyStatement(&mut self) -> EmptyStatement {
         EmptyStatement {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
         }
     }
 
     pub fn createExpressionStatement(&mut self, expression: Expression) -> ExpressionStatement {
         let node = ExpressionStatement {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             // TODO:
             // expression: parenthesizerRules().parenthesizeExpressionOfExpressionStatement(expression),
@@ -4158,7 +4140,7 @@ impl NodeFactory {
         elseStatement: Option<Statement>,
     ) -> IfStatement {
         let node = IfStatement {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             expression,
             thenStatement: self.asEmbeddedStatement(thenStatement),
@@ -4186,7 +4168,7 @@ impl NodeFactory {
         expression: Expression,
     ) -> DoStatement {
         let node = DoStatement {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             statement: self.asEmbeddedStatement(statement),
             expression,
@@ -4211,7 +4193,7 @@ impl NodeFactory {
         statement: Statement,
     ) -> WhileStatement {
         let node = WhileStatement {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             statement: self.asEmbeddedStatement(statement),
             expression,
@@ -4238,7 +4220,7 @@ impl NodeFactory {
         statement: Statement,
     ) -> ForStatement {
         let node = ForStatement {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             statement: self.asEmbeddedStatement(statement),
             initializer,
@@ -4270,7 +4252,7 @@ impl NodeFactory {
         statement: Statement,
     ) -> ForInStatement {
         let node = ForInStatement {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             statement: self.asEmbeddedStatement(statement),
             initializer,
@@ -4300,7 +4282,7 @@ impl NodeFactory {
         statement: Statement,
     ) -> ForOfStatement {
         let node = ForOfStatement {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             statement: self.asEmbeddedStatement(statement),
             awaitModifier,
@@ -4334,7 +4316,7 @@ impl NodeFactory {
 
     pub fn createContinueStatement(&mut self, label: Option<Rc<Identifier>>) -> ContinueStatement {
         let node = ContinueStatement {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             label,
         };
@@ -4353,7 +4335,7 @@ impl NodeFactory {
 
     pub fn createBreakStatement(&mut self, label: Option<Rc<Identifier>>) -> BreakStatement {
         let node = BreakStatement {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             label,
         };
@@ -4372,7 +4354,7 @@ impl NodeFactory {
 
     pub fn createReturnStatement(&mut self, expression: Option<Expression>) -> ReturnStatement {
         let node = ReturnStatement {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             expression,
         };
@@ -4397,7 +4379,7 @@ impl NodeFactory {
         statement: Statement,
     ) -> WithStatement {
         let node = WithStatement {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             expression,
             statement: self.asEmbeddedStatement(statement),
@@ -4422,7 +4404,7 @@ impl NodeFactory {
         caseBlock: Rc<CaseBlock>,
     ) -> SwitchStatement {
         let node = SwitchStatement {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             // TODO:
             // expression: parenthesizerRules().parenthesizeExpressionForDisallowedComma(expression),
@@ -4449,7 +4431,7 @@ impl NodeFactory {
         statement: Statement,
     ) -> LabeledStatement {
         let node = LabeledStatement {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             label,
             // TODO:
@@ -4472,7 +4454,7 @@ impl NodeFactory {
 
     pub fn createThrowStatement(&mut self, expression: Expression) -> ThrowStatement {
         let node = ThrowStatement {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             expression,
         };
@@ -4495,7 +4477,7 @@ impl NodeFactory {
         finallyBlock: Option<Rc<Block>>,
     ) -> TryStatement {
         let node = TryStatement {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             tryBlock,
             catchClause,
@@ -4519,7 +4501,7 @@ impl NodeFactory {
 
     pub fn createDebuggerStatement(&mut self) -> DebuggerStatement {
         DebuggerStatement {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
         }
     }
@@ -4533,7 +4515,7 @@ impl NodeFactory {
     ) -> VariableDeclaration {
         ////////////////////////////////////// Inlined createBaseVariableLikeDeclaration
         let node = VariableDeclaration {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             name,
             exclamationToken,
@@ -4577,7 +4559,7 @@ impl NodeFactory {
     ) -> VariableDeclarationList {
         let flags = flags.unwrap_or_default();
         let node = VariableDeclarationList {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             declarations: self.updateNodeArray(Some(declarations), None),
         };
         self.node_data_mut(&node).flags |= flags & NodeFlags::BlockScoped;
@@ -4610,7 +4592,7 @@ impl NodeFactory {
         body: Option<Rc<Block>>,
     ) -> FunctionDeclaration {
         let node = FunctionDeclaration {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             decorators: self.asNodeArray(decorators),
             modifiers: self.asNodeArray(modifiers),
@@ -4695,7 +4677,7 @@ impl NodeFactory {
         members: NodeArray<ClassElement>,
     ) -> ClassDeclaration {
         let node = ClassDeclaration {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             decorators: self.asNodeArray(decorators),
             modifiers: self.asNodeArray(modifiers),
@@ -4757,7 +4739,7 @@ impl NodeFactory {
         members: NodeArray<TypeElement>,
     ) -> InterfaceDeclaration {
         let node = InterfaceDeclaration {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             decorators: self.asNodeArray(decorators),
             modifiers: self.asNodeArray(modifiers),
@@ -4805,7 +4787,7 @@ impl NodeFactory {
         ty: TypeNode,
     ) -> TypeAliasDeclaration {
         let node = TypeAliasDeclaration {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             decorators: self.asNodeArray(decorators),
             modifiers: self.asNodeArray(modifiers),
@@ -4848,7 +4830,7 @@ impl NodeFactory {
         members: NodeArray<Rc<EnumMember>>,
     ) -> EnumDeclaration {
         let node = EnumDeclaration {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             decorators: self.asNodeArray(decorators),
             modifiers: self.asNodeArray(modifiers),
@@ -4891,7 +4873,7 @@ impl NodeFactory {
         flags: Option<NodeFlags>,
     ) -> ModuleDeclaration {
         let node = ModuleDeclaration {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             decorators: self.asNodeArray(decorators),
             modifiers: self.asNodeArray(modifiers),
@@ -4932,7 +4914,7 @@ impl NodeFactory {
 
     pub fn createModuleBlock(&mut self, statements: NodeArray<Statement>) -> ModuleBlock {
         let node = ModuleBlock {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             statements: self.updateNodeArray(Some(statements), None),
         };
@@ -4949,7 +4931,7 @@ impl NodeFactory {
 
     pub fn createCaseBlock(&mut self, clauses: NodeArray<CaseOrDefaultClause>) -> CaseBlock {
         let node = CaseBlock {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             clauses: self.updateNodeArray(Some(clauses), None),
         };
         self.node_data_mut(&node).transformFlags |= propagateChildrenFlags(Some(&node.clauses));
@@ -4968,7 +4950,7 @@ impl NodeFactory {
         name: Rc<Identifier>,
     ) -> NamespaceExportDeclaration {
         let node = NamespaceExportDeclaration {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             name,
             decorators: None,
@@ -4997,7 +4979,7 @@ impl NodeFactory {
         moduleReference: ModuleReference,
     ) -> ImportEqualsDeclaration {
         let node = ImportEqualsDeclaration {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             decorators: self.asNodeArray(decorators),
             modifiers: self.asNodeArray(modifiers),
@@ -5047,7 +5029,7 @@ impl NodeFactory {
         assertClause: Option<Rc<AssertClause>>,
     ) -> ImportDeclaration {
         let node = ImportDeclaration {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             decorators: self.asNodeArray(decorators),
             modifiers: self.asNodeArray(modifiers),
@@ -5089,7 +5071,7 @@ impl NodeFactory {
         namedBindings: Option<NamedImportBindings>,
     ) -> ImportClause {
         let node = ImportClause {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             isTypeOnly,
             name,
             namedBindings,
@@ -5119,7 +5101,7 @@ impl NodeFactory {
         multiLine: Option<bool>,
     ) -> AssertClause {
         let node = AssertClause {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             elements,
             multiLine,
         };
@@ -5142,7 +5124,7 @@ impl NodeFactory {
         value: Rc<StringLiteral>,
     ) -> AssertEntry {
         let node = AssertEntry {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             name,
             value,
         };
@@ -5160,7 +5142,7 @@ impl NodeFactory {
 
     pub fn createNamespaceImport(&mut self, name: Rc<Identifier>) -> NamespaceImport {
         let node = NamespaceImport {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             name,
         };
         let mut transform_flags = self.propagateChildFlags(Some(&node.name));
@@ -5178,7 +5160,7 @@ impl NodeFactory {
 
     pub fn createNamespaceExport(&mut self, name: Rc<Identifier>) -> NamespaceExport {
         let node = NamespaceExport {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             name,
         };
         let mut transform_flags =
@@ -5197,7 +5179,7 @@ impl NodeFactory {
 
     pub fn createNamedImports(&mut self, elements: NodeArray<Rc<ImportSpecifier>>) -> NamedImports {
         let node = NamedImports {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             elements: self.updateNodeArray(Some(elements), None),
         };
         let mut transform_flags = propagateChildrenFlags(Some(&node.elements));
@@ -5220,7 +5202,7 @@ impl NodeFactory {
         name: Rc<Identifier>,
     ) -> ImportSpecifier {
         let node = ImportSpecifier {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             isTypeOnly,
             propertyName,
             name,
@@ -5245,10 +5227,10 @@ impl NodeFactory {
         &mut self,
         decorators: Option<NodeArray<Rc<Decorator>>>,
         modifiers: Option<NodeArray<Modifier>>,
-        isExportEquals: Option<bool>,
+        isExportEquals: bool,
         expression: Expression,
     ) -> ExportAssignment {
-        let expression = if isExportEquals.unwrap_or_default() {
+        let expression = if isExportEquals {
             // TODO:
             // parenthesizerRules().parenthesizeRightSideOfBinary(
             //     SyntaxKind::EqualsToken,
@@ -5262,7 +5244,7 @@ impl NodeFactory {
             expression
         };
         let node = ExportAssignment {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             decorators: self.asNodeArray(decorators),
             modifiers: self.asNodeArray(modifiers),
@@ -5301,7 +5283,7 @@ impl NodeFactory {
         assertClause: Option<Rc<AssertClause>>,
     ) -> ExportDeclaration {
         let node = ExportDeclaration {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             decorators: self.asNodeArray(decorators),
             modifiers: self.asNodeArray(modifiers),
@@ -5341,7 +5323,7 @@ impl NodeFactory {
 
     pub fn createNamedExports(&mut self, elements: NodeArray<Rc<ExportSpecifier>>) -> NamedExports {
         let node = NamedExports {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             elements: self.updateNodeArray(Some(elements), None),
         };
         let mut transform_flags = propagateChildrenFlags(Some(&node.elements));
@@ -5364,7 +5346,7 @@ impl NodeFactory {
         name: Rc<Identifier>,
     ) -> ExportSpecifier {
         let node = ExportSpecifier {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             isTypeOnly,
             propertyName,
             name,
@@ -5387,7 +5369,7 @@ impl NodeFactory {
 
     pub fn createMissingDeclaration(&mut self) -> MissingDeclaration {
         MissingDeclaration {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             decorators: None,
             modifiers: None,
@@ -5404,7 +5386,7 @@ impl NodeFactory {
         expression: Expression,
     ) -> ExternalModuleReference {
         let node = ExternalModuleReference {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             expression,
         };
         let mut transform_flags = self.propagateChildFlags(Some(&node.expression));
@@ -5426,13 +5408,13 @@ impl NodeFactory {
 
     pub fn createJSDocUnknownType(&mut self) -> JSDocUnknownType {
         JSDocUnknownType {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
         }
     }
 
     pub fn createJSDocAllType(&mut self) -> JSDocAllType {
         JSDocAllType {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
         }
     }
 
@@ -5450,14 +5432,14 @@ impl NodeFactory {
 
     pub fn createJSDocNullableType(&mut self, ty: TypeNode) -> JSDocNullableType {
         JSDocNullableType {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             ty,
         }
     }
 
     pub fn createJSDocNonNullableType(&mut self, ty: TypeNode) -> JSDocNonNullableType {
         JSDocNonNullableType {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             ty,
         }
     }
@@ -5480,7 +5462,7 @@ impl NodeFactory {
         ty: Option<TypeNode>,
     ) -> JSDocFunctionType {
         let node = JSDocFunctionType {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             parameters: self.updateNodeArray(Some(parameters), None),
             ty,
@@ -6121,7 +6103,7 @@ impl NodeFactory {
         statements: NodeArray<Statement>,
     ) -> CaseClause {
         let node = CaseClause {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             // TODO:
             // expression: parenthesizerRules().parenthesizeExpressionForDisallowedComma(expression),
             expression,
@@ -6143,7 +6125,7 @@ impl NodeFactory {
 
     pub fn createDefaultClause(&mut self, statements: NodeArray<Statement>) -> DefaultClause {
         let node = DefaultClause {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             statements: self.updateNodeArray(Some(statements), None),
         };
         self.node_data_mut(&node).transformFlags = propagateChildrenFlags(Some(&node.statements));
@@ -6163,7 +6145,7 @@ impl NodeFactory {
         types: NodeArray<Rc<ExpressionWithTypeArguments>>,
     ) -> HeritageClause {
         let node = HeritageClause {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             token,
             types: self.updateNodeArray(Some(types), None),
         };
@@ -6194,7 +6176,7 @@ impl NodeFactory {
         block: Rc<Block>,
     ) -> CatchClause {
         let node = CatchClause {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             variableDeclaration,
             block,
         };
@@ -6233,7 +6215,7 @@ impl NodeFactory {
         initializer: Expression,
     ) -> PropertyAssignment {
         let node = PropertyAssignment {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             decorators: None,
             modifiers: None,
@@ -6283,7 +6265,7 @@ impl NodeFactory {
         objectAssignmentInitializer: Option<Expression>,
     ) -> ShorthandPropertyAssignment {
         let node = ShorthandPropertyAssignment {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             decorators: None,
             modifiers: None,
@@ -6323,7 +6305,7 @@ impl NodeFactory {
 
     pub fn createSpreadAssignment(&mut self, expression: Expression) -> SpreadAssignment {
         let node = SpreadAssignment {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             // TODO:
             // expression: parenthesizerRules().parenthesizeExpressionForDisallowedComma(expression),
@@ -6354,7 +6336,7 @@ impl NodeFactory {
         initializer: Option<Expression>,
     ) -> EnumMember {
         let node = EnumMember {
-            node_id: self.node_id_gen.next(),
+            node_id: self.store.node_id_gen.next(),
             js_doc_container: JSDocContainer::default(),
             name,
             // TODO:
@@ -6386,7 +6368,7 @@ impl NodeFactory {
         endOfFileToken: Rc<EndOfFileToken>,
         flags: NodeFlags,
     ) -> SourceFile {
-        let node_id = self.node_id_gen.next();
+        let node_id = self.store.node_id_gen.next();
         let eof_flags = self.propagateChildFlags(Some(&endOfFileToken));
         self.node_data_mut(node_id).transformFlags |=
             propagateChildrenFlags(Some(&statements)) | eof_flags;
@@ -7543,7 +7525,7 @@ bitflags! {
 //         return tokenValue;
 //     }
 
-impl NodeFactory {
+impl NodeFactory<'_> {
     fn propagateIdentifierNameFlags(&mut self, node: &Identifier) -> TransformFlags {
         // An IdentifierName is allowed to be `await`
         self.propagateChildFlags(Some(node)) & !TransformFlags::ContainsPossibleTopLevelAwait
@@ -7908,7 +7890,7 @@ fn getTransformFlagsSubtreeExclusions(kind: SyntaxKind) -> TransformFlags {
 
 // Utilities
 
-impl NodeFactory {
+impl NodeFactory<'_> {
     pub fn setOriginalNode<T: IsNode>(&mut self, node: T, original: Option<Node>) -> T {
         self.node_data_mut(&node).original = original.clone();
         if let Some(original) = original {

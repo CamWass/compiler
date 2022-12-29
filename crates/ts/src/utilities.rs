@@ -8,7 +8,8 @@ use std::rc::Rc;
 use rustc_hash::FxHashMap;
 
 use crate::factory::nodeTests::*;
-use crate::node::Node;
+use crate::factory::utilities::*;
+use crate::node::*;
 use crate::our_types::*;
 use crate::types::*;
 use crate::utilitiesPublic::*;
@@ -365,7 +366,7 @@ pub fn getFullWidth<T: HasTextRange>(node: &T) -> usize {
 // code). So the parser will attempt to parse out a type, and will create an actual node.
 // However, this node will be 'missing' in the sense that no actual source-code/tokens are
 // contained within it.
-pub fn nodeIsMissing<'n, 'd, T: IsNode>(node: Option<NodeAndData<'n, 'd, T>>) -> bool {
+pub fn nodeIsMissing<T: IsNode>(node: Option<NodeAndData<T>>) -> bool {
     match node {
         Some(n) => {
             let range = n.1.get_range();
@@ -375,7 +376,7 @@ pub fn nodeIsMissing<'n, 'd, T: IsNode>(node: Option<NodeAndData<'n, 'd, T>>) ->
     }
 }
 
-pub fn nodeIsPresent<'n, 'd, T: IsNode>(node: Option<NodeAndData<'n, 'd, T>>) -> bool {
+pub fn nodeIsPresent<T: IsNode>(node: Option<NodeAndData<T>>) -> bool {
     !nodeIsMissing(node)
 }
 
@@ -738,19 +739,24 @@ pub fn getEmitFlags(node_data: &NodeData) -> EmitFlags {
 //         return getBaseFileName(moduleName).replace(/^(\d)/, "_$1").replace(/\W/g, "_");
 //     }
 
-//     export function isBlockOrCatchScoped(declaration: Declaration) {
-//         return (getCombinedNodeFlags(declaration) & NodeFlags.BlockScoped) !== 0 ||
-//             isCatchClauseVariableDeclarationOrBindingElement(declaration);
-//     }
+pub fn isBlockOrCatchScoped(declaration: Rc<BoundNode>, node_data: &mut NodeDataStore) -> bool {
+    getCombinedNodeFlags(declaration.clone(), node_data).intersects(NodeFlags::BlockScoped)
+        || isCatchClauseVariableDeclarationOrBindingElement(declaration)
+}
 
-//     export function isCatchClauseVariableDeclarationOrBindingElement(declaration: Declaration) {
-//         const node = getRootDeclaration(declaration);
-//         return node.kind === SyntaxKind::VariableDeclaration && node.parent.kind === SyntaxKind::CatchClause;
-//     }
+pub fn isCatchClauseVariableDeclarationOrBindingElement(declaration: Rc<BoundNode>) -> bool {
+    let node = getRootDeclaration(declaration);
+    node.kind() == SyntaxKind::VariableDeclaration
+        && matches!(node.parent_node(), Some(Node::CatchClause(_)))
+}
 
-//     export function isAmbientModule(node: Node): node is AmbientModuleDeclaration {
-//         return isModuleDeclaration(node) && (node.name.kind === SyntaxKind::StringLiteral || isGlobalScopeAugmentation(node));
-//     }
+pub fn isAmbientModule(node: NodeAndData<Node>) -> bool {
+    if let Node::ModuleDeclaration(n) = node.0 {
+        n.name.kind() == SyntaxKind::StringLiteral || isGlobalScopeAugmentation(node.1)
+    } else {
+        false
+    }
+}
 
 //     export function isModuleWithStringLiteralName(node: Node): node is ModuleDeclaration {
 //         return isModuleDeclaration(node) && node.name.kind === SyntaxKind::StringLiteral;
@@ -760,15 +766,15 @@ pub fn getEmitFlags(node_data: &NodeData) -> EmitFlags {
 //         return isModuleDeclaration(node) && isStringLiteral(node.name);
 //     }
 
-//     /**
-//      * An effective module (namespace) declaration is either
-//      * 1. An actual declaration: namespace X { ... }
-//      * 2. A Javascript declaration, which is:
-//      *    An identifier in a nested property access expression: Y in `X.Y.Z = { ... }`
-//      */
-//     export function isEffectiveModuleDeclaration(node: Node) {
-//         return isModuleDeclaration(node) || isIdentifier(node);
-//     }
+/**
+ * An effective module (namespace) declaration is either
+ * 1. An actual declaration: namespace X { ... }
+ * 2. A Javascript declaration, which is:
+ *    An identifier in a nested property access expression: Y in `X.Y.Z = { ... }`
+ */
+pub fn isEffectiveModuleDeclaration<T: IsNode>(node: &T) -> bool {
+    isModuleDeclaration(node) || isIdentifier(node)
+}
 
 //     /** Given a symbol for a module, checks that it is a shorthand ambient module. */
 //     export function isShorthandAmbientModuleSymbol(moduleSymbol: Symbol): boolean {
@@ -786,9 +792,9 @@ pub fn getEmitFlags(node_data: &NodeData) -> EmitFlags {
 //             isFunctionLikeOrClassStaticBlockDeclaration(node);
 //     }
 
-//     export function isGlobalScopeAugmentation(module: ModuleDeclaration): boolean {
-//         return !!(module.flags & NodeFlags.GlobalAugmentation);
-//     }
+pub fn isGlobalScopeAugmentation(module: &NodeData) -> bool {
+    module.flags.intersects(NodeFlags::GlobalAugmentation)
+}
 
 //     export function isExternalModuleAugmentation(node: Node): node is AmbientModuleDeclaration {
 //         return isAmbientModule(node) && isModuleAugmentationExternal(node);
@@ -1189,13 +1195,14 @@ fn assertDiagnosticLocation(file: Option<&SourceFile>, start: usize, length: usi
 //         return (file.externalModuleIndicator || file.commonJsModuleIndicator) !== undefined;
 //     }
 
-//     export function isJsonSourceFile(file: SourceFile): file is JsonSourceFile {
-//         return file.scriptKind === ScriptKind.JSON;
-//     }
+pub fn isJsonSourceFile(file: &SourceFile) -> bool {
+    file.scriptKind == ScriptKind::JSON
+}
 
-//     export function isEnumConst(node: EnumDeclaration): boolean {
-//         return !!(getCombinedModifierFlags(node) & ModifierFlags.Const);
-//     }
+pub fn isEnumConst(node: Rc<BoundNode>, node_data: &mut NodeDataStore) -> bool {
+    debug_assert!(matches!(&node.node, Node::EnumDeclaration(_)));
+    getCombinedModifierFlags(node, node_data).intersects(ModifierFlags::Const)
+}
 
 //     export function isDeclarationReadonly(declaration: Declaration): boolean {
 //         return !!(getCombinedModifierFlags(declaration) & ModifierFlags.Readonly && !isParameterPropertyDeclaration(declaration, declaration.parent));
@@ -1545,15 +1552,25 @@ fn assertDiagnosticLocation(file: Option<&SourceFile>, start: usize, length: usi
 //         return node && node.kind === SyntaxKind::Block && isFunctionLike(node.parent);
 //     }
 
-//     export function isObjectLiteralMethod(node: Node): node is MethodDeclaration {
-//         return node && node.kind === SyntaxKind::MethodDeclaration && node.parent.kind === SyntaxKind::ObjectLiteralExpression;
-//     }
+pub fn isObjectLiteralMethod(node: Option<&Rc<BoundNode>>) -> bool {
+    node.map(|n| {
+        matches!(&n.node, Node::MethodDeclaration(_))
+            && matches!(n.parent_node(), Some(Node::ObjectLiteralExpression(_)))
+    })
+    .unwrap_or_default()
+}
 
-//     export function isObjectLiteralOrClassExpressionMethodOrAccessor(node: Node): node is MethodDeclaration {
-//         return (node.kind === SyntaxKind::MethodDeclaration || node.kind === SyntaxKind::GetAccessor || node.kind === SyntaxKind::SetAccessor) &&
-//             (node.parent.kind === SyntaxKind::ObjectLiteralExpression ||
-//                 node.parent.kind === SyntaxKind::ClassExpression);
-//     }
+pub fn isObjectLiteralOrClassExpressionMethodOrAccessor(node: &BoundNode) -> bool {
+    matches!(
+        &node.node,
+        Node::MethodDeclaration(_)
+            | Node::GetAccessorDeclaration(_)
+            | Node::SetAccessorDeclaration(_)
+    ) && matches!(
+        node.parent_node(),
+        Some(Node::ObjectLiteralExpression(_) | Node::ClassExpression(_))
+    )
+}
 
 //     export function isIdentifierTypePredicate(predicate: TypePredicate): predicate is IdentifierTypePredicate {
 //         return predicate && predicate.kind === TypePredicateKind.Identifier;
@@ -1607,9 +1624,17 @@ fn assertDiagnosticLocation(file: Option<&SourceFile>, start: usize, length: usi
 //         return findAncestor(node.parent, isFunctionLikeDeclaration);
 //     }
 
-//     export function getContainingClass(node: Node): ClassLikeDeclaration | undefined {
-//         return findAncestor(node.parent, isClassLike);
-//     }
+pub fn getContainingClass(node: &Rc<BoundNode>) -> Option<ClassLikeDeclaration> {
+    findAncestor(node.parent(), |n| match &node.node {
+        Node::ClassDeclaration(c) => {
+            FindResult::Some(ClassLikeDeclaration::ClassDeclaration(c.clone()))
+        }
+        Node::ClassExpression(c) => {
+            FindResult::Some(ClassLikeDeclaration::ClassExpression(c.clone()))
+        }
+        _ => FindResult::None,
+    })
+}
 
 //     export function getContainingClassStaticBlock(node: Node): Node | undefined {
 //         return findAncestor(node.parent, n => {
@@ -1624,77 +1649,99 @@ fn assertDiagnosticLocation(file: Option<&SourceFile>, start: usize, length: usi
 //         return findAncestor(node.parent, isFunctionLikeOrClassStaticBlockDeclaration);
 //     }
 
-//     export function getThisContainer(node: Node, includeArrowFunctions: boolean): Node {
-//         Debug.assert(node.kind !== SyntaxKind::SourceFile);
-//         while (true) {
-//             node = node.parent;
-//             if (!node) {
-//                 return Debug.fail(); // If we never pass in a SourceFile, this should be unreachable, since we'll stop when we reach that.
-//             }
-//             switch (node.kind) {
-//                 case SyntaxKind::ComputedPropertyName:
-//                     // If the grandparent node is an object literal (as opposed to a class),
-//                     // then the computed property is not a 'this' container.
-//                     // A computed property name in a class needs to be a this container
-//                     // so that we can error on it.
-//                     if (isClassLike(node.parent.parent)) {
-//                         return node;
-//                     }
-//                     // If this is a computed property, then the parent should not
-//                     // make it a this container. The parent might be a property
-//                     // in an object literal, like a method or accessor. But in order for
-//                     // such a parent to be a this container, the reference must be in
-//                     // the *body* of the container.
-//                     node = node.parent;
-//                     break;
-//                 case SyntaxKind::Decorator:
-//                     // Decorators are always applied outside of the body of a class or method.
-//                     if (node.parent.kind === SyntaxKind::Parameter && isClassElement(node.parent.parent)) {
-//                         // If the decorator's parent is a Parameter, we resolve the this container from
-//                         // the grandparent class declaration.
-//                         node = node.parent.parent;
-//                     }
-//                     else if (isClassElement(node.parent)) {
-//                         // If the decorator's parent is a class element, we resolve the 'this' container
-//                         // from the parent class declaration.
-//                         node = node.parent;
-//                     }
-//                     break;
-//                 case SyntaxKind::ArrowFunction:
-//                     if (!includeArrowFunctions) {
-//                         continue;
-//                     }
-//                     // falls through
+pub fn getThisContainer(mut node: Rc<BoundNode>, includeArrowFunctions: bool) -> Rc<BoundNode> {
+    debug_assert!(node.kind() != SyntaxKind::SourceFile);
+    loop {
+        node = match node.parent() {
+            Some(n) => n,
+            None => {
+                unreachable!(); // If we never pass in a SourceFile, this should be unreachable, since we'll stop when we reach that.
+            }
+        };
+        match &node.node {
+            Node::ComputedPropertyName(_) => {
+                // If the grandparent node is an object literal (as opposed to a class),
+                // then the computed property is not a 'this' container.
+                // A computed property name in a class needs to be a this container
+                // so that we can error on it.
+                if isClassLike(node.parent().unwrap().parent().as_ref()) {
+                    return node;
+                }
+                // If this is a computed property, then the parent should not
+                // make it a this container. The parent might be a property
+                // in an object literal, like a method or accessor. But in order for
+                // such a parent to be a this container, the reference must be in
+                // the *body* of the container.
+                node = node.parent().unwrap();
+            }
+            Node::Decorator(_) => {
+                // Decorators are always applied outside of the body of a class or method.
+                if node.parent().unwrap().kind() == SyntaxKind::Parameter
+                    && isClassElement(&node.parent().unwrap().parent().unwrap())
+                {
+                    // If the decorator's parent is a Parameter, we resolve the this container from
+                    // the grandparent class declaration.
+                    node = node.parent().unwrap().parent().unwrap();
+                } else if isClassElement(&node.parent().unwrap()) {
+                    // If the decorator's parent is a class element, we resolve the 'this' container
+                    // from the parent class declaration.
+                    node = node.parent().unwrap();
+                }
+            }
+            Node::ArrowFunction(_) => {
+                if !includeArrowFunctions {
+                    continue;
+                }
+                return node;
+            }
 
-//                 case SyntaxKind::FunctionDeclaration:
-//                 case SyntaxKind::FunctionExpression:
-//                 case SyntaxKind::ModuleDeclaration:
-//                 case SyntaxKind::ClassStaticBlockDeclaration:
-//                 case SyntaxKind::PropertyDeclaration:
-//                 case SyntaxKind::PropertySignature:
-//                 case SyntaxKind::MethodDeclaration:
-//                 case SyntaxKind::MethodSignature:
-//                 case SyntaxKind::Constructor:
-//                 case SyntaxKind::GetAccessor:
-//                 case SyntaxKind::SetAccessor:
-//                 case SyntaxKind::CallSignature:
-//                 case SyntaxKind::ConstructSignature:
-//                 case SyntaxKind::IndexSignature:
-//                 case SyntaxKind::EnumDeclaration:
-//                 case SyntaxKind::SourceFile:
-//                     return node;
-//             }
-//         }
-//     }
+            Node::FunctionDeclaration(_)
+            | Node::FunctionExpression(_)
+            | Node::ModuleDeclaration(_)
+            | Node::ClassStaticBlockDeclaration(_)
+            | Node::PropertyDeclaration(_)
+            | Node::PropertySignature(_)
+            | Node::MethodDeclaration(_)
+            | Node::MethodSignature(_)
+            | Node::ConstructorDeclaration(_)
+            | Node::GetAccessorDeclaration(_)
+            | Node::SetAccessorDeclaration(_)
+            | Node::CallSignatureDeclaration(_)
+            | Node::ConstructSignatureDeclaration(_)
+            | Node::IndexSignatureDeclaration(_)
+            | Node::EnumDeclaration(_)
+            | Node::SourceFile(_) => return node,
+            _ => {}
+        }
+    }
+}
 
-//     export function isInTopLevelContext(node: Node) {
-//         // The name of a class or function declaration is a BindingIdentifier in its surrounding scope.
-//         if (isIdentifier(node) && (isClassDeclaration(node.parent) || isFunctionDeclaration(node.parent)) && node.parent.name === node) {
-//             node = node.parent;
-//         }
-//         const container = getThisContainer(node, /*includeArrowFunctions*/ true);
-//         return isSourceFile(container);
-//     }
+pub fn isInTopLevelContext(mut node: Rc<BoundNode>) -> bool {
+    // The name of a class or function declaration is a BindingIdentifier in its surrounding scope.
+    if isIdentifier(&node) {
+        match node.parent_node() {
+            Some(Node::ClassDeclaration(n))
+                if n.name
+                    .as_ref()
+                    .map(|n| n.node_id() == node.node_id())
+                    .unwrap_or_default() =>
+            {
+                node = node.parent().unwrap()
+            }
+            Some(Node::FunctionDeclaration(n))
+                if n.name
+                    .as_ref()
+                    .map(|n| n.node_id() == node.node_id())
+                    .unwrap_or_default() =>
+            {
+                node = node.parent().unwrap()
+            }
+            _ => {}
+        }
+    }
+    let container = getThisContainer(node, true);
+    isSourceFile(&container)
+}
 
 //     export function getNewTargetContainer(node: Node) {
 //         const container = getThisContainer(node, /*includeArrowFunctions*/ false);
@@ -1801,9 +1848,13 @@ pub fn isSuperProperty(node: &Node) -> bool {
 //             && (node as PropertyAccessExpression | ElementAccessExpression).expression.kind === SyntaxKind::ThisKeyword;
 //     }
 
-//     export function isThisInitializedDeclaration(node: Node | undefined): boolean {
-//         return !!node && isVariableDeclaration(node) && node.initializer?.kind === SyntaxKind::ThisKeyword;
-//     }
+pub fn isThisInitializedDeclaration(node: Option<&Node>) -> bool {
+    if let Some(Node::VariableDeclaration(node)) = node {
+        matches!(node.initializer, Some(Expression::ThisExpression(_)))
+    } else {
+        false
+    }
+}
 
 //     export function isThisInitializedObjectBindingExpression(node: Node | undefined): boolean {
 //         return !!node
@@ -2045,12 +2096,12 @@ pub fn isSuperProperty(node: &Node) -> bool {
 //         }
 //     }
 
-//     export function isPartOfTypeQuery(node: Node) {
-//         while (node.kind === SyntaxKind::QualifiedName || node.kind === SyntaxKind::Identifier) {
-//             node = node.parent;
-//         }
-//         return node.kind === SyntaxKind::TypeQuery;
-//     }
+pub fn isPartOfTypeQuery(mut node: Rc<BoundNode>) -> bool {
+    while node.kind() == SyntaxKind::QualifiedName || node.kind() == SyntaxKind::Identifier {
+        node = node.parent().unwrap();
+    }
+    node.kind() == SyntaxKind::TypeQuery
+}
 
 //     export function isNamespaceReexportDeclaration(node: Node): boolean {
 //         return isNamespaceExport(node) && !!node.parent.moduleSpecifier;
@@ -2081,9 +2132,10 @@ pub fn isSuperProperty(node: &Node) -> bool {
 //         return !isInJSFile(file);
 //     }
 
-//     export function isInJSFile(node: Node | undefined): boolean {
-//         return !!node && !!(node.flags & NodeFlags.JavaScriptFile);
-//     }
+pub fn isInJSFile<T: IsNode>(node: Option<NodeAndData<T>>) -> bool {
+    node.map(|n| n.1.flags.intersects(NodeFlags::JavaScriptFile))
+        .unwrap_or_default()
+}
 
 //     export function isInJsonFile(node: Node | undefined): boolean {
 //         return !!node && !!(node.flags & NodeFlags.JsonFile);
@@ -2154,9 +2206,12 @@ pub fn isSuperProperty(node: &Node) -> bool {
 //         return getSourceTextOfNodeFromSourceFile(sourceFile, str).charCodeAt(0) === CharacterCodes.doubleQuote;
 //     }
 
-//     export function isAssignmentDeclaration(decl: Declaration) {
-//         return isBinaryExpression(decl) || isAccessExpression(decl) || isIdentifier(decl) || isCallExpression(decl);
-//     }
+pub fn isAssignmentDeclaration<T: IsNode>(decl: &T) -> bool {
+    isBinaryExpression(decl)
+        || isAccessExpression(decl)
+        || isIdentifier(decl)
+        || isCallExpression(decl)
+}
 
 //     /** Get the initializer, taking into account defaulted Javascript initializers */
 //     export function getEffectiveInitializer(node: HasExpressionInitializer) {
@@ -2318,12 +2373,16 @@ pub fn isSuperProperty(node: &Node) -> bool {
 //             && getElementOrPropertyAccessName(node) === "exports";
 //     }
 
-//     /// Given a BinaryExpression, returns SpecialPropertyAssignmentKind for the various kinds of property
-//     /// assignments we treat as special in the binder
-//     export function getAssignmentDeclarationKind(expr: BinaryExpression | CallExpression): AssignmentDeclarationKind {
-//         const special = getAssignmentDeclarationKindWorker(expr);
-//         return special === AssignmentDeclarationKind.Property || isInJSFile(expr) ? special : AssignmentDeclarationKind.None;
-//     }
+/// Given a BinaryExpression, returns SpecialPropertyAssignmentKind for the various kinds of property
+/// assignments we treat as special in the binder
+pub fn getAssignmentDeclarationKind(expr: NodeAndData<Node>) -> AssignmentDeclarationKind {
+    let special = getAssignmentDeclarationKindWorker(expr.0);
+    if special == AssignmentDeclarationKind::Property || isInJSFile(Some(expr)) {
+        special
+    } else {
+        AssignmentDeclarationKind::None
+    }
+}
 
 //     export function isBindableObjectDefinePropertyCall(expr: CallExpression): expr is BindableObjectDefinePropertyCall {
 //         return length(expr.arguments) === 3 &&
@@ -2370,29 +2429,34 @@ pub fn isSuperProperty(node: &Node) -> bool {
 //         return expr.argumentExpression;
 //     }
 
-//     function getAssignmentDeclarationKindWorker(expr: BinaryExpression | CallExpression): AssignmentDeclarationKind {
-//         if (isCallExpression(expr)) {
-//             if (!isBindableObjectDefinePropertyCall(expr)) {
-//                 return AssignmentDeclarationKind.None;
-//             }
-//             const entityName = expr.arguments[0];
-//             if (isExportsIdentifier(entityName) || isModuleExportsAccessExpression(entityName)) {
-//                 return AssignmentDeclarationKind.ObjectDefinePropertyExports;
-//             }
-//             if (isBindableStaticAccessExpression(entityName) && getElementOrPropertyAccessName(entityName) === "prototype") {
-//                 return AssignmentDeclarationKind.ObjectDefinePrototypeProperty;
-//             }
-//             return AssignmentDeclarationKind.ObjectDefinePropertyValue;
-//         }
-//         if (expr.operatorToken.kind !== SyntaxKind::EqualsToken || !isAccessExpression(expr.left) || isVoidZero(getRightMostAssignedExpression(expr))) {
-//             return AssignmentDeclarationKind.None;
-//         }
-//         if (isBindableStaticNameExpression(expr.left.expression, /*excludeThisKeyword*/ true) && getElementOrPropertyAccessName(expr.left) === "prototype" && isObjectLiteralExpression(getInitializerOfBinaryExpression(expr))) {
-//             // F.prototype = { ... }
-//             return AssignmentDeclarationKind.Prototype;
-//         }
-//         return getAssignmentDeclarationPropertyAccessKind(expr.left);
-//     }
+fn getAssignmentDeclarationKindWorker(expr: &Node) -> AssignmentDeclarationKind {
+    if let Node::CallExpression(expr) = expr {
+        todo!();
+        // if !isBindableObjectDefinePropertyCall(expr) {
+        //     return AssignmentDeclarationKind::None;
+        // }
+        // let entityName = expr.arguments[0];
+        // if isExportsIdentifier(entityName) || isModuleExportsAccessExpression(entityName) {
+        //     return AssignmentDeclarationKind::ObjectDefinePropertyExports;
+        // }
+        // if isBindableStaticAccessExpression(entityName) && getElementOrPropertyAccessName(entityName) == "prototype" {
+        //     return AssignmentDeclarationKind::ObjectDefinePrototypeProperty;
+        // }
+        // AssignmentDeclarationKind::ObjectDefinePropertyValue
+    } else if let Node::BinaryExpression(expr) = expr {
+        todo!();
+        // if expr.operatorToken.kind() != SyntaxKind::EqualsToken || !isAccessExpression(&expr.left) || isVoidZero(getRightMostAssignedExpression(expr)) {
+        //     return AssignmentDeclarationKind::None;
+        // }
+        // if isBindableStaticNameExpression(expr.left.expression, /*excludeThisKeyword*/ true) && getElementOrPropertyAccessName(expr.left) == "prototype" && isObjectLiteralExpression(getInitializerOfBinaryExpression(expr)) {
+        //     // F.prototype = { ... }
+        //     return AssignmentDeclarationKind::Prototype;
+        // }
+        // getAssignmentDeclarationPropertyAccessKind(expr.left)
+    } else {
+        unreachable!();
+    }
+}
 
 //     function isVoidZero(node: Node) {
 //         return isVoidExpression(node) && isNumericLiteral(node.expression) && node.expression.text === "0";
@@ -2432,16 +2496,16 @@ pub fn isSuperProperty(node: &Node) -> bool {
 
 //     export function getAssignmentDeclarationPropertyAccessKind(lhs: AccessExpression): AssignmentDeclarationKind {
 //         if (lhs.expression.kind === SyntaxKind::ThisKeyword) {
-//             return AssignmentDeclarationKind.ThisProperty;
+//             return AssignmentDeclarationKind::ThisProperty;
 //         }
 //         else if (isModuleExportsAccessExpression(lhs)) {
 //             // module.exports = expr
-//             return AssignmentDeclarationKind.ModuleExports;
+//             return AssignmentDeclarationKind::ModuleExports;
 //         }
 //         else if (isBindableStaticNameExpression(lhs.expression, /*excludeThisKeyword*/ true)) {
 //             if (isPrototypeAccess(lhs.expression)) {
 //                 // F.G....prototype.x = expr
-//                 return AssignmentDeclarationKind.PrototypeProperty;
+//                 return AssignmentDeclarationKind::PrototypeProperty;
 //             }
 
 //             let nextToLast = lhs;
@@ -2454,15 +2518,15 @@ pub fn isSuperProperty(node: &Node) -> bool {
 //                 // ExportsProperty does not support binding with computed names
 //                 isBindableStaticAccessExpression(lhs)) {
 //                 // exports.name = expr OR module.exports.name = expr OR exports["name"] = expr ...
-//                 return AssignmentDeclarationKind.ExportsProperty;
+//                 return AssignmentDeclarationKind::ExportsProperty;
 //             }
 //             if (isBindableStaticNameExpression(lhs, /*excludeThisKeyword*/ true) || (isElementAccessExpression(lhs) && isDynamicName(lhs))) {
 //                 // F.G...x = expr
-//                 return AssignmentDeclarationKind.Property;
+//                 return AssignmentDeclarationKind::Property;
 //             }
 //         }
 
-//         return AssignmentDeclarationKind.None;
+//         return AssignmentDeclarationKind::None;
 //     }
 
 //     export function getInitializerOfBinaryExpression(expr: BinaryExpression) {
@@ -2473,7 +2537,7 @@ pub fn isSuperProperty(node: &Node) -> bool {
 //     }
 
 //     export function isPrototypePropertyAssignment(node: Node): boolean {
-//         return isBinaryExpression(node) && getAssignmentDeclarationKind(node) === AssignmentDeclarationKind.PrototypeProperty;
+//         return isBinaryExpression(node) && getAssignmentDeclarationKind(node) === AssignmentDeclarationKind::PrototypeProperty;
 //     }
 
 //     export function isSpecialPropertyDeclaration(expr: PropertyAccessExpression | ElementAccessExpression): expr is PropertyAccessExpression | LiteralLikeElementAccessExpression {
@@ -2483,16 +2547,36 @@ pub fn isSuperProperty(node: &Node) -> bool {
 //             !!getJSDocTypeTag(expr.parent);
 //     }
 
-//     export function setValueDeclaration(symbol: Symbol, node: Declaration): void {
-//         const { valueDeclaration } = symbol;
-//         if (!valueDeclaration ||
-//             !(node.flags & NodeFlags.Ambient && !(valueDeclaration.flags & NodeFlags.Ambient)) &&
-//             (isAssignmentDeclaration(valueDeclaration) && !isAssignmentDeclaration(node)) ||
-//             (valueDeclaration.kind !== node.kind && isEffectiveModuleDeclaration(valueDeclaration))) {
-//             // other kinds of value declarations take precedence over modules and assignment declarations
-//             symbol.valueDeclaration = node;
-//         }
-//     }
+pub fn setValueDeclaration(
+    symbol: &mut Symbol,
+    node: &Rc<BoundNode>,
+    node_data: &mut NodeDataStore,
+) {
+    match &mut symbol.valueDeclaration {
+        Some(valueDeclaration) => {
+            // other kinds of value declarations take precedence over modules and assignment declarations
+            if !(node_data
+                .node_data(node)
+                .flags
+                .intersects(NodeFlags::Ambient)
+                && !node_data
+                    .node_data(&*valueDeclaration)
+                    .flags
+                    .intersects(NodeFlags::Ambient))
+                && (isAssignmentDeclaration(valueDeclaration) && !isAssignmentDeclaration(node))
+            {
+                *valueDeclaration = node.clone();
+            } else if valueDeclaration.kind() != node.kind()
+                && isEffectiveModuleDeclaration(valueDeclaration)
+            {
+                *valueDeclaration = node.clone();
+            }
+        }
+        None => {
+            symbol.valueDeclaration = Some(node.clone());
+        }
+    }
+}
 
 //     export function isFunctionSymbol(symbol: Symbol | undefined) {
 //         if (!symbol || !symbol.valueDeclaration) {
@@ -2601,15 +2685,24 @@ pub fn isSuperProperty(node: &Node) -> bool {
 //         return false;
 //     }
 
-//     export function isJSDocConstructSignature(node: Node) {
-//         const param = isJSDocFunctionType(node) ? firstOrUndefined(node.parameters) : undefined;
-//         const name = tryCast(param && param.name, isIdentifier);
-//         return !!name && name.escapedText === "new";
-//     }
+pub fn isJSDocConstructSignature(node: &Node) -> bool {
+    let param = match node {
+        Node::JSDocFunctionType(n) => n.parameters.first(),
+        _ => None,
+    };
+    if let Some(param) = param {
+        if let BindingName::Identifier(name) = &param.name {
+            return name.escapedText == "new";
+        }
+    }
+    false
+}
 
-//     export function isJSDocTypeAlias(node: Node): node is JSDocTypedefTag | JSDocCallbackTag | JSDocEnumTag {
-//         return node.kind === SyntaxKind::JSDocTypedefTag || node.kind === SyntaxKind::JSDocCallbackTag || node.kind === SyntaxKind::JSDocEnumTag;
-//     }
+pub fn isJSDocTypeAlias<T: IsNode>(node: &T) -> bool {
+    node.kind() == SyntaxKind::JSDocTypedefTag
+        || node.kind() == SyntaxKind::JSDocCallbackTag
+        || node.kind() == SyntaxKind::JSDocEnumTag
+}
 
 //     export function isTypeAlias(node: Node): node is JSDocTypedefTag | JSDocCallbackTag | JSDocEnumTag | TypeAliasDeclaration {
 //         return isJSDocTypeAlias(node) || isTypeAliasDeclaration(node);
@@ -2626,7 +2719,7 @@ pub fn isSuperProperty(node: &Node) -> bool {
 //     function getSourceOfDefaultedAssignment(node: Node): Node | undefined {
 //         return isExpressionStatement(node) &&
 //             isBinaryExpression(node.expression) &&
-//             getAssignmentDeclarationKind(node.expression) !== AssignmentDeclarationKind.None &&
+//             getAssignmentDeclarationKind(node.expression) !== AssignmentDeclarationKind::None &&
 //             isBinaryExpression(node.expression.right) &&
 //             (node.expression.right.operatorToken.kind === SyntaxKind::BarBarToken || node.expression.right.operatorToken.kind === SyntaxKind::QuestionQuestionToken)
 //             ? node.expression.right.right
@@ -2958,14 +3051,14 @@ pub fn isSuperProperty(node: &Node) -> bool {
 //         return [child, node];
 //     }
 
-//     export function skipParentheses(node: Expression, excludeJSDocTypeAssertions?: boolean): Expression;
-//     export function skipParentheses(node: Node, excludeJSDocTypeAssertions?: boolean): Node;
-//     export function skipParentheses(node: Node, excludeJSDocTypeAssertions?: boolean): Node {
-//         const flags = excludeJSDocTypeAssertions ?
-//             OuterExpressionKinds.Parentheses | OuterExpressionKinds.ExcludeJSDocTypeAssertion :
-//             OuterExpressionKinds.Parentheses;
-//         return skipOuterExpressions(node, flags);
-//     }
+pub fn skipParentheses(node: Node, excludeJSDocTypeAssertions: bool) -> Node {
+    let flags = if excludeJSDocTypeAssertions {
+        OuterExpressionKinds::Parentheses | OuterExpressionKinds::ExcludeJSDocTypeAssertion
+    } else {
+        OuterExpressionKinds::Parentheses
+    };
+    skipOuterExpressionsOfNode(node, Some(flags))
+}
 
 //     // a node is delete target iff. it is PropertyAccessExpression/ElementAccessExpression with parentheses skipped
 //     export function isDeleteTarget(node: Node): boolean {
@@ -3009,7 +3102,7 @@ pub fn isSuperProperty(node: &Node) -> bool {
 //                 else {
 //                     const binExp = parent.parent;
 //                     return isBinaryExpression(binExp) &&
-//                         getAssignmentDeclarationKind(binExp) !== AssignmentDeclarationKind.None &&
+//                         getAssignmentDeclarationKind(binExp) !== AssignmentDeclarationKind::None &&
 //                         (binExp.left.symbol || binExp.symbol) &&
 //                         getNameOfDeclaration(binExp) === name
 //                         ? binExp
@@ -3028,35 +3121,45 @@ pub fn isSuperProperty(node: &Node) -> bool {
 //             isDeclaration(node.parent.parent);
 //     }
 
-//     // Return true if the given identifier is classified as an IdentifierName
-//     export function isIdentifierName(node: Identifier): boolean {
-//         const parent = node.parent;
-//         switch (parent.kind) {
-//             case SyntaxKind::PropertyDeclaration:
-//             case SyntaxKind::PropertySignature:
-//             case SyntaxKind::MethodDeclaration:
-//             case SyntaxKind::MethodSignature:
-//             case SyntaxKind::GetAccessor:
-//             case SyntaxKind::SetAccessor:
-//             case SyntaxKind::EnumMember:
-//             case SyntaxKind::PropertyAssignment:
-//             case SyntaxKind::PropertyAccessExpression:
-//                 // Name in member declaration or property name in property access
-//                 return (parent as NamedDeclaration | PropertyAccessExpression).name === node;
-//             case SyntaxKind::QualifiedName:
-//                 // Name on right hand side of dot in a type query or type reference
-//                 return (parent as QualifiedName).right === node;
-//             case SyntaxKind::BindingElement:
-//             case SyntaxKind::ImportSpecifier:
-//                 // Property name in binding element or import specifier
-//                 return (parent as BindingElement | ImportSpecifier).propertyName === node;
-//             case SyntaxKind::ExportSpecifier:
-//             case SyntaxKind::JsxAttribute:
-//                 // Any name in an export specifier or JSX Attribute
-//                 return true;
-//         }
-//         return false;
-//     }
+// Return true if the given identifier is classified as an IdentifierName
+pub fn isIdentifierName(node: &Rc<BoundNode>) -> bool {
+    debug_assert!(matches!(&node.node, Node::Identifier(_)));
+    let parent = match node.parent() {
+        Some(p) => p,
+        None => return false,
+    };
+    let node = node.node_id();
+    match &parent.node {
+        // Name in member declaration or property name in property access
+        Node::PropertyDeclaration(n) => n.name.node_id() == node,
+        Node::PropertySignature(n) => n.name.node_id() == node,
+        Node::MethodDeclaration(n) => n.name.node_id() == node,
+        Node::MethodSignature(n) => n.name.node_id() == node,
+        Node::GetAccessorDeclaration(n) => n.name.node_id() == node,
+        Node::SetAccessorDeclaration(n) => n.name.node_id() == node,
+        Node::EnumMember(n) => n.name.node_id() == node,
+        Node::PropertyAssignment(n) => n.name.node_id() == node,
+        Node::PropertyAccessExpression(n) => n.name.node_id() == node,
+        // Name on right hand side of dot in a type query or type reference
+        Node::QualifiedName(n) => n.right.node_id() == node,
+        // Property name in binding element or import specifier
+        Node::BindingElement(n) => n
+            .propertyName
+            .as_ref()
+            .map(|n| n.node_id() == node)
+            .unwrap_or_default(),
+        Node::ImportSpecifier(n) => n
+            .propertyName
+            .as_ref()
+            .map(|n| n.node_id() == node)
+            .unwrap_or_default(),
+        // Any name in an export specifier or JSX Attribute
+        // TODO: jsx:
+        // | Node::JsxAttribute(_)
+        Node::ExportSpecifier(_) => true,
+        _ => false,
+    }
+}
 
 //     // An alias symbol is created by one of the following declarations:
 //     // import <symbol> = ...
@@ -3079,7 +3182,7 @@ pub fn isSuperProperty(node: &Node) -> bool {
 //             node.kind === SyntaxKind::ImportSpecifier ||
 //             node.kind === SyntaxKind::ExportSpecifier ||
 //             node.kind === SyntaxKind::ExportAssignment && exportAssignmentIsAlias(node as ExportAssignment) ||
-//             isBinaryExpression(node) && getAssignmentDeclarationKind(node) === AssignmentDeclarationKind.ModuleExports && exportAssignmentIsAlias(node) ||
+//             isBinaryExpression(node) && getAssignmentDeclarationKind(node) === AssignmentDeclarationKind::ModuleExports && exportAssignmentIsAlias(node) ||
 //             isPropertyAccessExpression(node) && isBinaryExpression(node.parent) && node.parent.left === node && node.parent.operatorToken.kind === SyntaxKind::EqualsToken && isAliasableExpression(node.parent.right) ||
 //             node.kind === SyntaxKind::ShorthandPropertyAssignment ||
 //             node.kind === SyntaxKind::PropertyAssignment && isAliasableExpression((node as PropertyAssignment).initializer);
@@ -3252,48 +3355,65 @@ pub fn isKeyword(token: SyntaxKind) -> bool {
 //         return flags;
 //     }
 
-//     export function isAsyncFunction(node: Node): boolean {
-//         switch (node.kind) {
-//             case SyntaxKind::FunctionDeclaration:
-//             case SyntaxKind::FunctionExpression:
-//             case SyntaxKind::ArrowFunction:
-//             case SyntaxKind::MethodDeclaration:
-//                 return (node as FunctionLikeDeclaration).body !== undefined
-//                     && (node as FunctionLikeDeclaration).asteriskToken === undefined
-//                     && hasSyntacticModifier(node, ModifierFlags.Async);
-//         }
-//         return false;
-//     }
+pub fn isAsyncFunction(node: NodeAndData<Node>) -> bool {
+    match node.0 {
+        Node::FunctionDeclaration(n) => {
+            n.body.is_some()
+                && n.asteriskToken.is_none()
+                && hasSyntacticModifier(node, ModifierFlags::Async)
+        }
+        Node::FunctionExpression(n) => {
+            n.asteriskToken.is_none() && hasSyntacticModifier(node, ModifierFlags::Async)
+        }
+        Node::ArrowFunction(_) => hasSyntacticModifier(node, ModifierFlags::Async),
+        Node::MethodDeclaration(n) => {
+            n.body.is_some()
+                && n.asteriskToken.is_none()
+                && hasSyntacticModifier(node, ModifierFlags::Async)
+        }
+        _ => false,
+    }
+}
 
 pub fn isStringOrNumericLiteralLike<T: IsNode>(node: &T) -> bool {
     isStringLiteralLike(node) || isNumericLiteral(node)
 }
 
-//     export function isSignedNumericLiteral(node: Node): node is PrefixUnaryExpression & { operand: NumericLiteral } {
-//         return isPrefixUnaryExpression(node) && (node.operator === SyntaxKind::PlusToken || node.operator === SyntaxKind::MinusToken) && isNumericLiteral(node.operand);
-//     }
+pub fn isSignedNumericLiteral(node: &Node) -> bool {
+    if let Node::PrefixUnaryExpression(expr) = node {
+        (expr.operator == SyntaxKind::PlusToken || expr.operator == SyntaxKind::MinusToken)
+            && isNumericLiteral(&expr.operand)
+    } else {
+        false
+    }
+}
 
-//     /**
-//      * A declaration has a dynamic name if all of the following are true:
-//      *   1. The declaration has a computed property name.
-//      *   2. The computed name is *not* expressed as a StringLiteral.
-//      *   3. The computed name is *not* expressed as a NumericLiteral.
-//      *   4. The computed name is *not* expressed as a PlusToken or MinusToken
-//      *      immediately followed by a NumericLiteral.
-//      */
-//     export function hasDynamicName(declaration: Declaration): declaration is DynamicNamedDeclaration | DynamicNamedBinaryExpression {
-//         const name = getNameOfDeclaration(declaration);
-//         return !!name && isDynamicName(name);
-//     }
+/**
+ * A declaration has a dynamic name if all of the following are true:
+ *   1. The declaration has a computed property name.
+ *   2. The computed name is *not* expressed as a StringLiteral.
+ *   3. The computed name is *not* expressed as a NumericLiteral.
+ *   4. The computed name is *not* expressed as a PlusToken or MinusToken
+ *      immediately followed by a NumericLiteral.
+ */
+pub fn hasDynamicName(declaration: &Rc<BoundNode>) -> bool {
+    let name = getNameOfDeclaration(Some(declaration));
+    name.map(|n| isDynamicName(&n)).unwrap_or_default()
+}
 
-//     export function isDynamicName(name: DeclarationName): boolean {
-//         if (!(name.kind === SyntaxKind::ComputedPropertyName || name.kind === SyntaxKind::ElementAccessExpression)) {
-//             return false;
-//         }
-//         const expr = isElementAccessExpression(name) ? skipParentheses(name.argumentExpression) : name.expression;
-//         return !isStringOrNumericLiteralLike(expr) &&
-//             !isSignedNumericLiteral(expr);
-//     }
+pub fn isDynamicName(name: &Node) -> bool {
+    match name {
+        Node::ComputedPropertyName(n) => {
+            let expr = &n.expression;
+            !isStringOrNumericLiteralLike(expr) && !isSignedNumericLiteral(&expr.clone().into())
+        }
+        Node::ElementAccessExpression(n) => {
+            let expr = skipParentheses(n.argumentExpression.clone().into(), false);
+            !isStringOrNumericLiteralLike(&expr) && !isSignedNumericLiteral(&expr)
+        }
+        _ => false,
+    }
+}
 
 //     export function getPropertyNameForPropertyNameNode(name: PropertyName): __String | undefined {
 //         switch (name.kind) {
@@ -3320,32 +3440,45 @@ pub fn isStringOrNumericLiteralLike<T: IsNode>(node: &T) -> bool {
 //         }
 //     }
 
-//     export function isPropertyNameLiteral(node: Node): node is PropertyNameLiteral {
-//         switch (node.kind) {
-//             case SyntaxKind::Identifier:
-//             case SyntaxKind::StringLiteral:
-//             case SyntaxKind::NoSubstitutionTemplateLiteral:
-//             case SyntaxKind::NumericLiteral:
-//                 return true;
-//             default:
-//                 return false;
-//         }
-//     }
-//     export function getTextOfIdentifierOrLiteral(node: PropertyNameLiteral): string {
-//         return isMemberName(node) ? idText(node) : node.text;
-//     }
+pub fn isPropertyNameLiteral<T: IsNode>(node: &T) -> bool {
+    matches!(
+        node.kind(),
+        SyntaxKind::Identifier
+            | SyntaxKind::StringLiteral
+            | SyntaxKind::NoSubstitutionTemplateLiteral
+            | SyntaxKind::NumericLiteral
+    )
+}
+pub fn getTextOfIdentifierOrLiteral(node: &Node) -> Rc<str> {
+    match node {
+        Node::Identifier(n) => idText(n.as_ref()),
+        Node::NumericLiteral(n) => n.text.clone(),
+        Node::StringLiteral(n) => n.text.clone(),
+        Node::NoSubstitutionTemplateLiteral(n) => n.text.clone(),
+        _ => unreachable!(),
+    }
+}
 
-//     export function getEscapedTextOfIdentifierOrLiteral(node: PropertyNameLiteral): __String {
-//         return isMemberName(node) ? node.escapedText : escapeLeadingUnderscores(node.text);
-//     }
+pub fn getEscapedTextOfIdentifierOrLiteral(node: &Node) -> __String {
+    match node {
+        Node::Identifier(n) => n.escapedText.clone(),
+        Node::NumericLiteral(n) => escapeLeadingUnderscores(n.text.clone()),
+        Node::StringLiteral(n) => escapeLeadingUnderscores(n.text.clone()),
+        Node::NoSubstitutionTemplateLiteral(n) => escapeLeadingUnderscores(n.text.clone()),
+        _ => unreachable!(),
+    }
+}
 
 //     export function getPropertyNameForUniqueESSymbol(symbol: Symbol): __String {
 //         return `__@${getSymbolId(symbol)}@${symbol.escapedName}` as __String;
 //     }
 
-//     export function getSymbolNameForPrivateIdentifier(containingClassSymbol: Symbol, description: __String): __String {
-//         return `__#${getSymbolId(containingClassSymbol)}@${description}` as __String;
-//     }
+pub fn getSymbolNameForPrivateIdentifier(
+    containingClassSymbol: SymbolId,
+    description: &__String,
+) -> __String {
+    __String(format!("__#{}@{}", containingClassSymbol.as_u32(), description.0).into())
+}
 
 //     export function isKnownSymbol(symbol: Symbol): boolean {
 //         return startsWith(symbol.escapedName as string, "__@");
@@ -3366,17 +3499,17 @@ pub fn isStringOrNumericLiteralLike<T: IsNode>(node: &T) -> bool {
 //         return node.escapedText === "push" || node.escapedText === "unshift";
 //     }
 
-//     export function isParameterDeclaration(node: VariableLikeDeclaration) {
-//         const root = getRootDeclaration(node);
-//         return root.kind === SyntaxKind::Parameter;
-//     }
+pub fn isParameterDeclaration(node: Rc<BoundNode>) -> bool {
+    let root = getRootDeclaration(node);
+    root.kind() == SyntaxKind::Parameter
+}
 
-//     export function getRootDeclaration(node: Node): Node {
-//         while (node.kind === SyntaxKind::BindingElement) {
-//             node = node.parent.parent;
-//         }
-//         return node;
-//     }
+pub fn getRootDeclaration(mut node: Rc<BoundNode>) -> Rc<BoundNode> {
+    while node.kind() == SyntaxKind::BindingElement {
+        node = node.parent().unwrap().parent().unwrap();
+    }
+    node
+}
 
 //     export function nodeStartsNewLexicalEnvironment(node: Node): boolean {
 //         const kind = node.kind;
@@ -4798,17 +4931,17 @@ pub fn identifierIsThisKeyword(id: &Identifier) -> bool {
 //         return getEffectiveModifierFlags(node) !== ModifierFlags.None;
 //     }
 
-//     export function hasSyntacticModifiers(node: Node) {
-//         return getSyntacticModifierFlags(node) !== ModifierFlags.None;
-//     }
+pub fn hasSyntacticModifiers(node: NodeAndData<Node>) -> bool {
+    getSyntacticModifierFlags(node) != ModifierFlags::None
+}
 
 //     export function hasEffectiveModifier(node: Node, flags: ModifierFlags): boolean {
 //         return !!getSelectedEffectiveModifierFlags(node, flags);
 //     }
 
-//     export function hasSyntacticModifier(node: Node, flags: ModifierFlags): boolean {
-//         return !!getSelectedSyntacticModifierFlags(node, flags);
-//     }
+pub fn hasSyntacticModifier(node: NodeAndData<Node>, flags: ModifierFlags) -> bool {
+    !getSelectedSyntacticModifierFlags(node, flags).is_empty()
+}
 
 //     export function isStatic(node: Node) {
 //         // https://tc39.es/ecma262/#sec-static-semantics-isstatic
@@ -4839,47 +4972,68 @@ pub fn identifierIsThisKeyword(id: &Identifier) -> bool {
 //         return getEffectiveModifierFlags(node) & flags;
 //     }
 
-//     export function getSelectedSyntacticModifierFlags(node: Node, flags: ModifierFlags): ModifierFlags {
-//         return getSyntacticModifierFlags(node) & flags;
-//     }
+pub fn getSelectedSyntacticModifierFlags(
+    node: NodeAndData<Node>,
+    flags: ModifierFlags,
+) -> ModifierFlags {
+    getSyntacticModifierFlags(node) & flags
+}
 
-//     function getModifierFlagsWorker(node: Node, includeJSDoc: boolean, alwaysIncludeJSDoc?: boolean): ModifierFlags {
-//         if (node.kind >= SyntaxKind::FirstToken && node.kind <= SyntaxKind::LastToken) {
-//             return ModifierFlags.None;
-//         }
+pub fn getModifierFlagsWorker(
+    node: NodeAndData<Node>,
+    includeJSDoc: bool,
+    alwaysIncludeJSDoc: bool,
+) -> ModifierFlags {
+    if node.0.kind() >= SyntaxKind::FirstToken && node.0.kind() <= SyntaxKind::LastToken {
+        return ModifierFlags::None;
+    }
 
-//         if (!(node.modifierFlagsCache & ModifierFlags.HasComputedFlags)) {
-//             node.modifierFlagsCache = getSyntacticModifierFlagsNoCache(node) | ModifierFlags.HasComputedFlags;
-//         }
+    // TODO: investigate modifierFlagsCache
 
-//         if (includeJSDoc && !(node.modifierFlagsCache & ModifierFlags.HasComputedJSDocModifiers) && (alwaysIncludeJSDoc || isInJSFile(node)) && node.parent) {
-//             node.modifierFlagsCache |= getJSDocModifierFlagsNoCache(node) | ModifierFlags.HasComputedJSDocModifiers;
-//         }
+    // if !(node.modifierFlagsCache & ModifierFlags.HasComputedFlags) {
+    //     node.modifierFlagsCache = getSyntacticModifierFlagsNoCache(node) | ModifierFlags.HasComputedFlags;
+    // }
 
-//         return node.modifierFlagsCache & ~(ModifierFlags.HasComputedFlags | ModifierFlags.HasComputedJSDocModifiers);
-//     }
+    // if includeJSDoc && !(node.modifierFlagsCache & ModifierFlags.HasComputedJSDocModifiers) && (alwaysIncludeJSDoc || isInJSFile(node)) && node.parent {
+    //     node.modifierFlagsCache |= getJSDocModifierFlagsNoCache(node) | ModifierFlags.HasComputedJSDocModifiers;
+    // }
 
-//     /**
-//      * Gets the effective ModifierFlags for the provided node, including JSDoc modifiers. The modifiers will be cached on the node to improve performance.
-//      *
-//      * NOTE: This function may use `parent` pointers.
-//      */
-//     export function getEffectiveModifierFlags(node: Node): ModifierFlags {
-//         return getModifierFlagsWorker(node, /*includeJSDoc*/ true);
-//     }
+    // node.modifierFlagsCache & !(ModifierFlags.HasComputedFlags | ModifierFlags.HasComputedJSDocModifiers)
+
+    let mut flags = getSyntacticModifierFlagsNoCache(node);
+
+    // TODO:
+    // if includeJSDoc &&  (alwaysIncludeJSDoc || isInJSFile(node)) && node.parent {
+    //     flags |= getJSDocModifierFlagsNoCache(node) ;
+    // }
+    if includeJSDoc {
+        todo!("see above");
+    }
+
+    flags
+}
+
+/**
+ * Gets the effective ModifierFlags for the provided node, including JSDoc modifiers. The modifiers will be cached on the node to improve performance.
+ *
+ * NOTE: This function may use `parent` pointers.
+ */
+pub fn getEffectiveModifierFlags(node: NodeAndData<Node>) -> ModifierFlags {
+    getModifierFlagsWorker(node, true, false)
+}
 
 //     export function getEffectiveModifierFlagsAlwaysIncludeJSDoc(node: Node): ModifierFlags {
 //         return getModifierFlagsWorker(node, /*includeJSDOc*/ true, /*alwaysIncludeJSDOc*/ true);
 //     }
 
-//     /**
-//      * Gets the ModifierFlags for syntactic modifiers on the provided node. The modifiers will be cached on the node to improve performance.
-//      *
-//      * NOTE: This function does not use `parent` pointers and will not include modifiers from JSDoc.
-//      */
-//     export function getSyntacticModifierFlags(node: Node): ModifierFlags {
-//         return getModifierFlagsWorker(node, /*includeJSDoc*/ false);
-//     }
+/**
+ * Gets the ModifierFlags for syntactic modifiers on the provided node. The modifiers will be cached on the node to improve performance.
+ *
+ * NOTE: This function does not use `parent` pointers and will not include modifiers from JSDoc.
+ */
+pub fn getSyntacticModifierFlags(node: NodeAndData<Node>) -> ModifierFlags {
+    getModifierFlagsWorker(node, false, false)
+}
 
 //     function getJSDocModifierFlagsNoCache(node: Node): ModifierFlags {
 //         let flags = ModifierFlags.None;
@@ -4906,18 +5060,22 @@ pub fn identifierIsThisKeyword(id: &Identifier) -> bool {
 //         return getSyntacticModifierFlagsNoCache(node) | getJSDocModifierFlagsNoCache(node);
 //     }
 
-//     /**
-//      * Gets the ModifierFlags for syntactic modifiers on the provided node. The modifier flags cache on the node is ignored.
-//      *
-//      * NOTE: This function does not use `parent` pointers and will not include modifiers from JSDoc.
-//      */
-//     export function getSyntacticModifierFlagsNoCache(node: Node): ModifierFlags {
-//         let flags = modifiersToFlags(node.modifiers);
-//         if (node.flags & NodeFlags.NestedNamespace || (node.kind === SyntaxKind::Identifier && (node as Identifier).isInJSDocNamespace)) {
-//             flags |= ModifierFlags.Export;
-//         }
-//         return flags;
-//     }
+/**
+ * Gets the ModifierFlags for syntactic modifiers on the provided node. The modifier flags cache on the node is ignored.
+ *
+ * NOTE: This function does not use `parent` pointers and will not include modifiers from JSDoc.
+ */
+pub fn getSyntacticModifierFlagsNoCache(node: NodeAndData<Node>) -> ModifierFlags {
+    let mut flags = modifiersToFlags(node.0.modifiers());
+    if node.1.flags.intersects(NodeFlags::NestedNamespace) {
+        flags |= ModifierFlags::Export;
+    } else if let Node::Identifier(n) = node.0 {
+        if n.isInJSDocNamespace {
+            flags |= ModifierFlags::Export
+        }
+    }
+    flags
+}
 
 pub fn modifiersToFlags(modifiers: Option<&NodeArray<Modifier>>) -> ModifierFlags {
     let mut flags = ModifierFlags::None;
@@ -5732,9 +5890,10 @@ pub fn isAssignmentOperator(token: SyntaxKind) -> bool {
 //             || kind === SyntaxKind::JSDocVariadicType;
 //     }
 
-//     export function isAccessExpression(node: Node): node is AccessExpression {
-//         return node.kind === SyntaxKind::PropertyAccessExpression || node.kind === SyntaxKind::ElementAccessExpression;
-//     }
+pub fn isAccessExpression<T: IsNode>(node: &T) -> bool {
+    node.kind() == SyntaxKind::PropertyAccessExpression
+        || node.kind() == SyntaxKind::ElementAccessExpression
+}
 
 //     export function getNameOfAccessExpression(node: AccessExpression) {
 //         if (node.kind === SyntaxKind::PropertyAccessExpression) {
@@ -6178,12 +6337,17 @@ pub fn getLanguageVariant(scriptKind: ScriptKind) -> LanguageVariant {
     }
 }
 
-//     export function getEmitScriptTarget(compilerOptions: {module?: CompilerOptions["module"], target?: CompilerOptions["target"]}) {
-//         return compilerOptions.target ||
-//             (compilerOptions.module === ModuleKind.Node12 && ScriptTarget.ES2020) ||
-//             (compilerOptions.module === ModuleKind.NodeNext && ScriptTarget.ESNext) ||
-//             ScriptTarget.ES3;
-//     }
+pub fn getEmitScriptTarget(compilerOptions: &CompilerOptions) -> ScriptTarget {
+    compilerOptions.target.unwrap_or_else(|| {
+        if compilerOptions.module == Some(ModuleKind::Node12) {
+            ScriptTarget::ES2020
+        } else if compilerOptions.module == Some(ModuleKind::NodeNext) {
+            ScriptTarget::ESNext
+        } else {
+            ScriptTarget::ES3
+        }
+    })
+}
 
 //     export function getEmitModuleKind(compilerOptions: {module?: CompilerOptions["module"], target?: CompilerOptions["target"]}) {
 //         return typeof compilerOptions.module === "number" ?

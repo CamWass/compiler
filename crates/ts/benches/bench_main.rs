@@ -23,6 +23,7 @@ pub fn bench(c: &mut Criterion) {
                     ts::types::ScriptTarget::ESNext,
                     false,
                     None,
+                    &mut Default::default(),
                 );
                 black_box(source_file);
             });

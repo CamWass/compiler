@@ -4,7 +4,6 @@ use std::rc::Rc;
 use bitflags::bitflags;
 use diagnostics::Diagnostics;
 use rustc_hash::FxHashSet;
-use swc_atoms::JsWord;
 
 use crate::core::*;
 use crate::factory::nodeFactory::*;
@@ -716,12 +715,13 @@ where
 //     }
 // }
 
-pub fn createSourceFile(
+pub fn createSourceFile<'a>(
     fileName: Rc<str>,
     sourceText: Rc<str>,
     languageVersion: ScriptTarget,
     setParentNodes: bool,
     mut scriptKind: Option<ScriptKind>,
+    store: &'a mut NodeDataStore,
 ) -> SourceFile {
     // tracing?.push(tracing.Phase.Parse, "createSourceFile", { path: fileName }, /*separateBeginAndEnd*/ true);
     // performance.mark("beforeParse");
@@ -735,6 +735,7 @@ pub fn createSourceFile(
             None,
             setParentNodes,
             Some(ScriptKind::JSON),
+            store,
         )
     } else {
         Parser::parseSourceFile(
@@ -744,6 +745,7 @@ pub fn createSourceFile(
             None,
             setParentNodes,
             scriptKind,
+            store,
         )
     };
     // perfLogger.logStopParseSourceFile();
@@ -768,7 +770,7 @@ pub fn createSourceFile(
 // }
 
 // See also `isExternalOrCommonJsModule` in utilities.ts
-fn isExternalModule(file: &SourceFile) -> bool {
+pub fn isExternalModule(file: &SourceFile) -> bool {
     file.externalModuleIndicator.is_some()
 }
 
@@ -826,8 +828,8 @@ const disallowInAndDecoratorContext: NodeFlags = NodeFlags::from_bits_truncate(
 
 // }
 
-struct Parser {
-    factory: NodeFactory,
+struct Parser<'a> {
+    factory: NodeFactory<'a>,
     fileName: Rc<str>,
     sourceFlags: NodeFlags,
     sourceText: Rc<str>,
@@ -960,14 +962,15 @@ struct Parser {
 //     }
 // }
 
-impl Parser {
+impl<'a> Parser<'a> {
     fn new(
         fileName: Rc<str>,
         sourceText: Rc<str>,
         languageVersion: ScriptTarget,
         syntaxCursor: Option<SyntaxCursor>,
         scriptKind: ScriptKind,
-    ) -> Parser {
+        store: &'a mut NodeDataStore,
+    ) -> Self {
         let contextFlags = match scriptKind {
             ScriptKind::JS | ScriptKind::JSX => NodeFlags::JavaScriptFile,
             ScriptKind::JSON => NodeFlags::JavaScriptFile | NodeFlags::JsonFile,
@@ -979,6 +982,7 @@ impl Parser {
             NodeFactoryFlags::NoParenthesizerRules
                 | NodeFactoryFlags::NoNodeConverters
                 | NodeFactoryFlags::NoOriginalNode,
+            store,
         );
 
         Self {
@@ -1020,12 +1024,12 @@ impl Parser {
     }
 
     fn node_and_data<'n, 'd, T: IsNode>(&'d mut self, node: &'n T) -> NodeAndData<'n, 'd, T> {
-        let data = self.factory.node_data(node);
+        let data = self.factory.store.node_data(node);
         NodeAndData(node, data)
     }
 }
 
-impl Parser {
+impl<'a> Parser<'a> {
     fn parseSourceFile(
         fileName: Rc<str>,
         sourceText: Rc<str>,
@@ -1033,6 +1037,7 @@ impl Parser {
         syntaxCursor: Option<SyntaxCursor>,
         setParentNodes: bool,
         scriptKind: Option<ScriptKind>,
+        store: &'a mut NodeDataStore,
     ) -> SourceFile {
         let scriptKind = ensureScriptKind(&fileName, scriptKind);
         if scriptKind == ScriptKind::JSON {
@@ -1067,6 +1072,7 @@ impl Parser {
             languageVersion,
             syntaxCursor,
             scriptKind,
+            store,
         );
 
         let result = parser.parseSourceFileWorker(languageVersion, setParentNodes, scriptKind);
@@ -1462,6 +1468,7 @@ impl Parser {
             .factory
             .createSourceFile(statements, endOfFileToken, flags);
         self.factory
+            .store
             .node_data_mut(&sourceFile)
             .setTextRangePosWidth(0, self.sourceText.len());
         // TODO:
@@ -1472,6 +1479,7 @@ impl Parser {
             && isExternalModule(&sourceFile)
             && self
                 .factory
+                .store
                 .node_data(&sourceFile)
                 .transformFlags
                 .intersects(TransformFlags::ContainsPossibleTopLevelAwait)
@@ -1935,7 +1943,7 @@ impl Parser {
         //   module `M1` {
         //   ^^^^^^^^^^^ This block is parsed as a template literal like module`M1`.
         if let Node::TaggedTemplateExpression(node) = &node {
-            let template_range = *self.factory.node_data(&node.template).get_range();
+            let template_range = *self.factory.store.node_data(&node.template).get_range();
             self.parseErrorAt::<u8>(
                 skipTrivia(&self.sourceText, template_range.pos, false, false, false),
                 template_range.end,
@@ -1966,7 +1974,7 @@ impl Parser {
         }
         let expressionText = expressionText.unwrap();
 
-        let node_range = self.factory.node_data(&node).get_range();
+        let node_range = self.factory.store.node_data(&node).get_range();
         let node_end = node_range.end;
 
         let pos = skipTrivia(&self.sourceText, node_range.pos, false, false, false);
@@ -2282,10 +2290,11 @@ impl Parser {
 
     fn finishNode<T: IsNode>(&mut self, node: T, pos: usize, end: Option<usize>) -> T {
         self.factory
+            .store
             .node_data_mut(&node)
             .setTextRangePosEnd(pos, end.unwrap_or(self.scanner.getStartPos()));
         if !self.contextFlags.is_empty() {
-            self.factory.node_data_mut(&node).flags |= self.contextFlags;
+            self.factory.store.node_data_mut(&node).flags |= self.contextFlags;
         }
 
         // Keep track on the node if we encountered an error while parsing it.  If we did, then
@@ -2293,7 +2302,7 @@ impl Parser {
         // flag so that we don't mark any subsequent nodes.
         if self.parseErrorBeforeNextFinishedNode {
             self.parseErrorBeforeNextFinishedNode = false;
-            self.factory.node_data_mut(&node).flags |= NodeFlags::ThisNodeHasError;
+            self.factory.store.node_data_mut(&node).flags |= NodeFlags::ThisNodeHasError;
         }
 
         node
@@ -2364,9 +2373,7 @@ impl Parser {
         }
 
         let pos = self.getNodePos();
-        let node = self
-            .factory
-            .createIdentifier(Default::default(), None, None);
+        let node = self.factory.createIdentifier("".into(), None, None);
         self.finishNode(node, pos, None)
     }
 
@@ -2392,7 +2399,7 @@ impl Parser {
             let pos = self.getNodePos();
             // Store original token kind if it is not just an Identifier so we can report appropriate error later in type checker
             let originalKeywordKind = self.token();
-            let text = JsWord::from(self.scanner.getTokenValue());
+            let text = self.scanner.getTokenValue().into();
             self.nextTokenWithoutCheck();
             let node = self
                 .factory
@@ -2528,7 +2535,7 @@ impl Parser {
         let pos = self.getNodePos();
         let node = self
             .factory
-            .createPrivateIdentifier(JsWord::from(self.scanner.getTokenText()));
+            .createPrivateIdentifier(self.scanner.getTokenText().into());
         self.nextToken();
         self.finishNode(node, pos, None)
     }
@@ -3971,7 +3978,7 @@ impl Parser {
     fn parseThisTypePredicate(&mut self, lhs: ThisTypeNode) -> TypePredicateNode {
         self.nextToken();
         let ty = self.parseType();
-        let pos = self.factory.node_data(&lhs).get_range().pos;
+        let pos = self.factory.store.node_data(&lhs).get_range().pos;
         let node = self.factory.createTypePredicateNode(
             None,
             TypePredicateParameterName::ThisTypeNode(Rc::new(lhs)),
@@ -4182,7 +4189,7 @@ impl Parser {
         let name = self.parseIdentifierOrPattern(Some(
             Diagnostics::Private_identifiers_cannot_be_used_as_parameters,
         ));
-        if getFullWidth(self.factory.node_data(&name)) == 0
+        if getFullWidth(self.factory.store.node_data(&name)) == 0
             && !has_modifiers
             && isModifierKind(self.token())
         {
@@ -4225,7 +4232,7 @@ impl Parser {
             let name = BindingName::Identifier(Rc::new(self.createIdentifier(true, None, None)));
             let ty = self.parseTypeAnnotation();
             if let Some(decorators) = &decorators {
-                let range = *self.factory.node_data(&decorators[0]).get_range();
+                let range = *self.factory.store.node_data(&decorators[0]).get_range();
                 self.parseErrorAtRange::<u8>(
                     range,
                     Diagnostics::Decorators_may_not_be_applied_to_this_parameters,
@@ -4721,14 +4728,14 @@ impl Parser {
         }
         let ty = self.parseType();
         if let TypeNode::JSDocNullableType(ty) = &ty {
-            if self.factory.node_data(ty).get_range().pos
-                == self.factory.node_data(&ty.ty).get_range().pos
+            if self.factory.store.node_data(ty).get_range().pos
+                == self.factory.store.node_data(&ty.ty).get_range().pos
             {
                 let node = self.factory.createOptionalTypeNode(ty.ty.clone());
-                let text_range = *self.factory.node_data(&ty).get_range();
-                setTextRange(self.factory.node_data_mut(&node), Some(text_range));
-                let flags = self.factory.node_data(&ty).flags;
-                self.factory.node_data_mut(&node).flags = flags;
+                let text_range = *self.factory.store.node_data(&ty).get_range();
+                setTextRange(self.factory.store.node_data_mut(&node), Some(text_range));
+                let flags = self.factory.store.node_data(&ty).flags;
+                self.factory.store.node_data_mut(&node).flags = flags;
                 return TypeNode::OptionalTypeNode(Rc::new(node));
             }
         }
@@ -5210,7 +5217,7 @@ impl Parser {
                     Diagnostics::Constructor_type_notation_must_be_parenthesized_when_used_in_an_intersection_type
                 }
             };
-            let range = self.factory.node_data(&ty).range;
+            let range = self.factory.store.node_data(&ty).range;
             self.parseErrorAtRange::<u8>(range, diagnostic, None);
             return Some(ty);
         }
@@ -5704,7 +5711,7 @@ impl Parser {
             self.token() == SyntaxKind::EqualsGreaterThanToken,
             "parseSimpleArrowFunctionExpression should only have been called if we had a =>"
         );
-        let identifier_pos = self.factory.node_data(&identifier).get_range().pos;
+        let identifier_pos = self.factory.store.node_data(&identifier).get_range().pos;
         let parameter = self.factory.createParameterDeclaration(
             None,
             None,
@@ -5715,7 +5722,7 @@ impl Parser {
             None,
         );
         let parameter = self.finishNode(parameter, identifier_pos, None);
-        let paremeter_range = *self.factory.node_data(&parameter).get_range();
+        let paremeter_range = *self.factory.store.node_data(&parameter).get_range();
 
         let parameters = self.createNodeArray(
             vec![Rc::new(parameter)],
@@ -6267,7 +6274,7 @@ impl Parser {
     }
 
     fn makeAsExpression(&mut self, left: Expression, right: TypeNode) -> AsExpression {
-        let pos = self.factory.node_data(&left).get_range().pos;
+        let pos = self.factory.store.node_data(&left).get_range().pos;
         let node = self.factory.createAsExpression(left, right);
         self.finishNode(node, pos, None)
     }
@@ -6368,7 +6375,11 @@ impl Parser {
         let unaryOperator = self.token();
         let simpleUnaryExpression = self.parseSimpleUnaryExpression();
         if self.token() == SyntaxKind::AsteriskAsteriskToken {
-            let range = self.factory.node_data(&simpleUnaryExpression).get_range();
+            let range = self
+                .factory
+                .store
+                .node_data(&simpleUnaryExpression)
+                .get_range();
             let pos = skipTrivia(self.sourceText.as_ref(), range.pos, false, false, false);
             let end = range.end;
             if matches!(simpleUnaryExpression, UnaryExpression::TypeAssertion(_)) {
@@ -6502,7 +6513,7 @@ impl Parser {
         {
             let operator = self.token();
             self.nextToken();
-            let pos = self.factory.node_data(&expression).get_range().pos;
+            let pos = self.factory.store.node_data(&expression).get_range().pos;
             let node = self
                 .factory
                 .createPostfixUnaryExpression(expression, operator);
@@ -6980,6 +6991,7 @@ impl Parser {
     fn tryReparseOptionalChain(&mut self, mut node: &LeftHandSideExpression) -> bool {
         if self
             .factory
+            .store
             .node_data(&node)
             .flags
             .intersects(NodeFlags::OptionalChain)
@@ -6993,6 +7005,7 @@ impl Parser {
                 if let LeftHandSideExpression::NonNullExpression(n) = expr {
                     if self
                         .factory
+                        .store
                         .node_data(&n)
                         .flags
                         .intersects(NodeFlags::OptionalChain)
@@ -7005,13 +7018,14 @@ impl Parser {
             }
             if self
                 .factory
+                .store
                 .node_data(&expr)
                 .flags
                 .intersects(NodeFlags::OptionalChain)
             {
                 // this is part of an optional chain. Walk down from `node` to `expression` and set the flag.
                 while let LeftHandSideExpression::NonNullExpression(n) = node {
-                    self.factory.node_data_mut(&n).flags |= NodeFlags::OptionalChain;
+                    self.factory.store.node_data_mut(&n).flags |= NodeFlags::OptionalChain;
                     node = &n.expression;
                 }
                 return true;
@@ -7037,7 +7051,11 @@ impl Parser {
                 .createPropertyAccessExpression(expression, name)
         };
         if isOptionalChain && matches!(propertyAccess.name, MemberName::PrivateIdentifier(_)) {
-            let range = *self.factory.node_data(&propertyAccess.name).get_range();
+            let range = *self
+                .factory
+                .store
+                .node_data(&propertyAccess.name)
+                .get_range();
             self.parseErrorAtRange::<u8>(
                 range,
                 Diagnostics::An_optional_chain_cannot_contain_private_identifiers,
@@ -7159,6 +7177,7 @@ impl Parser {
         };
         let tag_has_optional_chain = self
             .factory
+            .store
             .node_data(&tag)
             .flags
             .intersects(NodeFlags::OptionalChain);
@@ -7166,7 +7185,7 @@ impl Parser {
             self.factory
                 .createTaggedTemplateExpression(tag, typeArguments, template);
         if questionDotToken.is_some() || tag_has_optional_chain {
-            self.factory.node_data_mut(&tagExpression).flags |= NodeFlags::OptionalChain;
+            self.factory.store.node_data_mut(&tagExpression).flags |= NodeFlags::OptionalChain;
         }
         tagExpression.questionDotToken = questionDotToken;
         self.finishNode(tagExpression, pos, None)
@@ -8124,7 +8143,7 @@ impl Parser {
             Some(e) => e,
             None => {
                 // identifierCount++;
-                let node = self.factory.createIdentifier(JsWord::from(""), None, None);
+                let node = self.factory.createIdentifier("".into(), None, None);
                 Expression::Identifier(Rc::new(self.finishNode(node, self.getNodePos(), None)))
             }
         };
@@ -8556,7 +8575,7 @@ impl Parser {
         if isAmbient {
             if let Some(modifiers) = &modifiers {
                 for m in modifiers.iter() {
-                    self.factory.node_data_mut(m).flags |= NodeFlags::Ambient;
+                    self.factory.store.node_data_mut(m).flags |= NodeFlags::Ambient;
                 }
             }
 
@@ -8657,7 +8676,10 @@ impl Parser {
                     let pos = self.getNodePos();
                     let missing = self.factory.createMissingDeclaration();
                     let mut missing = self.finishNode(missing, pos, None);
-                    self.factory.node_data_mut(&missing).setTextRangePos(pos);
+                    self.factory
+                        .store
+                        .node_data_mut(&missing)
+                        .setTextRangePos(pos);
                     missing.decorators = decorators;
                     missing.modifiers = modifiers;
                     return Statement::MissingDeclaration(Rc::new(missing));
@@ -9474,7 +9496,7 @@ impl Parser {
                 .unwrap_or_default();
             if isAmbient {
                 for m in modifiers.as_ref().unwrap().iter() {
-                    self.factory.node_data_mut(m).flags |= NodeFlags::Ambient;
+                    self.factory.store.node_data_mut(m).flags |= NodeFlags::Ambient;
                 }
                 return self.doInsideOfContext(NodeFlags::Ambient, |p| {
                     p.parsePropertyOrMethodDeclaration(pos, hasJSDoc, decorators, modifiers)
@@ -10208,7 +10230,7 @@ impl Parser {
         let mut propertyName = None;
         let mut canParseAsKeyword = true;
         let mut name = self.parseIdentifierName(None);
-        if &name.escapedText.0 == "type" {
+        if name.escapedText == "type" {
             // If the first token of an import specifier is 'type', there are a lot of possibilities,
             // especially if we see 'as' afterwards:
             //
@@ -10339,9 +10361,9 @@ impl Parser {
     ) -> ExportAssignment {
         let savedAwaitContext = self.inAwaitContext();
         self.setAwaitContext(true);
-        let mut isExportEquals = None;
+        let mut isExportEquals = false;
         if self.parseOptional(SyntaxKind::EqualsToken) {
-            isExportEquals = Some(true);
+            isExportEquals = true;
         } else {
             self.parseExpected(SyntaxKind::DefaultKeyword, None, None);
         }

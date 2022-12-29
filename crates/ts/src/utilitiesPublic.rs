@@ -1,5 +1,7 @@
-use swc_atoms::JsWord;
+use std::ops::BitOrAssign;
+use std::rc::Rc;
 
+use crate::factory::nodeTests::*;
 use crate::factory::utilities::*;
 use crate::node::*;
 use crate::our_types::*;
@@ -264,9 +266,10 @@ use crate::utilities::*;
 //     }
 
 //     export type ParameterPropertyDeclaration = ParameterDeclaration & { parent: ConstructorDeclaration, name: Identifier };
-//     export function isParameterPropertyDeclaration(node: Node, parent: Node): node is ParameterPropertyDeclaration {
-//         return hasSyntacticModifier(node, ModifierFlags.ParameterPropertyModifier) && parent.kind === SyntaxKind::Constructor;
-//     }
+pub fn isParameterPropertyDeclaration(node: NodeAndData<Node>, parent: Node) -> bool {
+    hasSyntacticModifier(node, ModifierFlags::ParameterPropertyModifier)
+        && parent.kind() == SyntaxKind::Constructor
+}
 
 //     export function isEmptyBindingPattern(node: BindingName): node is BindingPattern {
 //         if (isBindingPattern(node)) {
@@ -282,51 +285,66 @@ use crate::utilities::*;
 //         return isEmptyBindingPattern(node.name);
 //     }
 
-//     export function walkUpBindingElementsAndPatterns(binding: BindingElement): VariableDeclaration | ParameterDeclaration {
-//         let node = binding.parent;
-//         while (isBindingElement(node.parent)) {
-//             node = node.parent.parent;
-//         }
-//         return node.parent;
-//     }
+pub fn walkUpBindingElementsAndPatterns(binding: bound::BindingElement) -> Rc<BoundNode> {
+    let mut node = binding.parent().unwrap();
+    while matches!(node.parent_node(), Some(Node::BindingElement(_))) {
+        node = node.parent().unwrap().parent().unwrap();
+    }
+    node.parent().unwrap()
+}
 
-//     function getCombinedFlags(node: Node, getFlags: (n: Node) => number): number {
-//         if (isBindingElement(node)) {
-//             node = walkUpBindingElementsAndPatterns(node);
-//         }
-//         let flags = getFlags(node);
-//         if (node.kind === SyntaxKind::VariableDeclaration) {
-//             node = node.parent;
-//         }
-//         if (node && node.kind === SyntaxKind::VariableDeclarationList) {
-//             flags |= getFlags(node);
-//             node = node.parent;
-//         }
-//         if (node && node.kind === SyntaxKind::VariableStatement) {
-//             flags |= getFlags(node);
-//         }
-//         return flags;
-//     }
+fn getCombinedFlags<T, F>(mut node: Rc<BoundNode>, node_data: &mut NodeDataStore, getFlags: F) -> T
+where
+    T: BitOrAssign,
+    F: Fn(NodeAndData<Node>) -> T,
+{
+    if let Node::BindingElement(n) = &node.node {
+        node =
+            walkUpBindingElementsAndPatterns(bound::BindingElement::new(n, node.parent().as_ref()));
+    }
+    let mut flags = getFlags(node_data.node_and_data(&node.node));
+    let mut node = if node.kind() == SyntaxKind::VariableDeclaration {
+        node.parent()
+    } else {
+        Some(node)
+    };
+    if let Some(n) = &node {
+        if n.kind() == SyntaxKind::VariableDeclarationList {
+            flags |= getFlags(node_data.node_and_data(&n.node));
+            node = n.parent();
+        }
+    }
+    if let Some(node) = node {
+        if node.kind() == SyntaxKind::VariableStatement {
+            flags |= getFlags(node_data.node_and_data(&node.node));
+        }
+    }
 
-//     export function getCombinedModifierFlags(node: Declaration): ModifierFlags {
-//         return getCombinedFlags(node, getEffectiveModifierFlags);
-//     }
+    flags
+}
+
+pub fn getCombinedModifierFlags(
+    node: Rc<BoundNode>,
+    node_data: &mut NodeDataStore,
+) -> ModifierFlags {
+    getCombinedFlags(node, node_data, |n| getEffectiveModifierFlags(n))
+}
 
 //     /* @internal */
 //     export function getCombinedNodeFlagsAlwaysIncludeJSDoc(node: Declaration): ModifierFlags {
 //         return getCombinedFlags(node, getEffectiveModifierFlagsAlwaysIncludeJSDoc);
 //     }
 
-//     // Returns the node flags for this node and all relevant parent nodes.  This is done so that
-//     // nodes like variable declarations and binding elements can returned a view of their flags
-//     // that includes the modifiers from their container.  i.e. flags like export/declare aren't
-//     // stored on the variable declaration directly, but on the containing variable statement
-//     // (if it has one).  Similarly, flags for let/const are stored on the variable declaration
-//     // list.  By calling this function, all those flags are combined so that the client can treat
-//     // the node as if it actually had those flags.
-//     export function getCombinedNodeFlags(node: Node): NodeFlags {
-//         return getCombinedFlags(node, n => n.flags);
-//     }
+// Returns the node flags for this node and all relevant parent nodes.  This is done so that
+// nodes like variable declarations and binding elements can returned a view of their flags
+// that includes the modifiers from their container.  i.e. flags like export/declare aren't
+// stored on the variable declaration directly, but on the containing variable statement
+// (if it has one).  Similarly, flags for let/const are stored on the variable declaration
+// list.  By calling this function, all those flags are combined so that the client can treat
+// the node as if it actually had those flags.
+pub fn getCombinedNodeFlags(node: Rc<BoundNode>, node_data: &mut NodeDataStore) -> NodeFlags {
+    getCombinedFlags(node, node_data, |n| n.1.flags)
+}
 
 //     /* @internal */
 //     export const supportedLocaleDirectories = ["cs", "de", "es", "fr", "it", "ja", "ko", "pl", "pt-br", "ru", "tr", "zh-cn", "zh-tw"];
@@ -417,27 +435,33 @@ use crate::utilities::*;
 //         return !nodeTest || nodeTest(node) ? node : undefined;
 //     }
 
-//     /**
-//      * Iterates through the parent chain of a node and performs the callback on each parent until the callback
-//      * returns a truthy value, then returns that value.
-//      * If no such value is found, it applies the callback until the parent pointer is undefined or the callback returns "quit"
-//      * At that point findAncestor returns undefined.
-//      */
-//     export function findAncestor<T extends Node>(node: Node | undefined, callback: (element: Node) => element is T): T | undefined;
-//     export function findAncestor(node: Node | undefined, callback: (element: Node) => boolean | "quit"): Node | undefined;
-//     export function findAncestor(node: Node, callback: (element: Node) => boolean | "quit"): Node | undefined {
-//         while (node) {
-//             const result = callback(node);
-//             if (result === "quit") {
-//                 return undefined;
-//             }
-//             else if (result) {
-//                 return node;
-//             }
-//             node = node.parent;
-//         }
-//         return undefined;
-//     }
+pub enum FindResult<T> {
+    Some(T),
+    None,
+    Quit,
+}
+
+/**
+ * Iterates through the parent chain of a node and performs the callback on each parent until the callback
+ * returns a truthy value, then returns that value.
+ * If no such value is found, it applies the callback until the parent pointer is undefined or the callback returns "quit"
+ * At that point findAncestor returns undefined.
+ */
+pub fn findAncestor<T, F>(mut node: Option<Rc<BoundNode>>, callback: F) -> Option<T>
+where
+    F: Fn(&Rc<BoundNode>) -> FindResult<T>,
+{
+    while let Some(n) = node {
+        match callback(&n) {
+            FindResult::Some(n) => return Some(n),
+            FindResult::Quit => return None,
+            FindResult::None => {
+                node = n.parent();
+            }
+        }
+    }
+    None
+}
 
 //     /**
 //      * Gets a value indicating whether a node originated in the parse tree.
@@ -479,13 +503,13 @@ use crate::utilities::*;
 //     }
 
 /** Add an extra underscore to identifiers that start with two underscores to avoid issues with magic names like '__proto__' */
-pub fn escapeLeadingUnderscores(identifier: JsWord) -> __String {
+pub fn escapeLeadingUnderscores(identifier: Rc<str>) -> __String {
     if identifier.len() >= 2 && identifier.as_bytes()[0] == b'_' && identifier.as_bytes()[1] == b'_'
     {
         let mut s = String::with_capacity(1 + identifier.len());
         s.push('_');
         s.push_str(&identifier);
-        __String(JsWord::from(s))
+        __String(s.into())
     } else {
         __String(identifier)
     }
@@ -497,15 +521,15 @@ pub fn escapeLeadingUnderscores(identifier: JsWord) -> __String {
  * @param identifier The escaped identifier text.
  * @returns The unescaped identifier text.
  */
-pub fn unescapeLeadingUnderscores(identifier: &__String) -> JsWord {
+pub fn unescapeLeadingUnderscores(identifier: &__String) -> Rc<str> {
     if identifier.0.starts_with("___") {
-        JsWord::from(&identifier.0[1..])
+        identifier.0[1..].into()
     } else {
         identifier.0.clone()
     }
 }
 
-pub fn idText(identifierOrPrivateName: &Identifier) -> JsWord {
+pub fn idText(identifierOrPrivateName: &Identifier) -> Rc<str> {
     unescapeLeadingUnderscores(&identifierOrPrivateName.escapedText)
 }
 //     export function symbolName(symbol: Symbol): string {
@@ -588,58 +612,80 @@ pub fn idText(identifierOrPrivateName: &Identifier) -> JsWord {
 //         return !!(node as NamedDeclaration).name; // A 'name' property should always be a DeclarationName.
 //     }
 
-//     /** @internal */
-//     export function getNonAssignedNameOfDeclaration(declaration: Declaration | Expression): DeclarationName | undefined {
-//         switch (declaration.kind) {
-//             case SyntaxKind::Identifier:
-//                 return declaration as Identifier;
-//             case SyntaxKind::JSDocPropertyTag:
-//             case SyntaxKind::JSDocParameterTag: {
-//                 const { name } = declaration as JSDocPropertyLikeTag;
-//                 if (name.kind === SyntaxKind::QualifiedName) {
-//                     return name.right;
-//                 }
-//                 break;
-//             }
-//             case SyntaxKind::CallExpression:
-//             case SyntaxKind::BinaryExpression: {
-//                 const expr = declaration as BinaryExpression | CallExpression;
-//                 switch (getAssignmentDeclarationKind(expr)) {
-//                     case AssignmentDeclarationKind.ExportsProperty:
-//                     case AssignmentDeclarationKind.ThisProperty:
-//                     case AssignmentDeclarationKind.Property:
-//                     case AssignmentDeclarationKind.PrototypeProperty:
-//                         return getElementOrPropertyAccessArgumentExpressionOrName((expr as BinaryExpression).left as AccessExpression);
-//                     case AssignmentDeclarationKind.ObjectDefinePropertyValue:
-//                     case AssignmentDeclarationKind.ObjectDefinePropertyExports:
-//                     case AssignmentDeclarationKind.ObjectDefinePrototypeProperty:
-//                         return (expr as BindableObjectDefinePropertyCall).arguments[1];
-//                     default:
-//                         return undefined;
-//                 }
-//             }
-//             case SyntaxKind::JSDocTypedefTag:
-//                 return getNameOfJSDocTypedef(declaration as JSDocTypedefTag);
-//             case SyntaxKind::JSDocEnumTag:
-//                 return nameForNamelessJSDocTypedef(declaration as JSDocEnumTag);
-//             case SyntaxKind::ExportAssignment: {
-//                 const { expression } = declaration as ExportAssignment;
-//                 return isIdentifier(expression) ? expression : undefined;
-//             }
-//             case SyntaxKind::ElementAccessExpression:
-//                 const expr = declaration as ElementAccessExpression;
-//                 if (isBindableStaticElementAccessExpression(expr)) {
-//                     return expr.argumentExpression;
-//                 }
-//         }
-//         return (declaration as NamedDeclaration).name;
-//     }
+pub fn getNonAssignedNameOfDeclaration(declaration: &Node) -> Option<Node> {
+    match declaration {
+        Node::Identifier(_) => {
+            return Some(declaration.clone());
+        }
+        // TODO: jsdoc:
+        // Node::JSDocPropertyTag(_) | Node::JSDocParameterTag(_) => {
+        //     // const { name } = declaration as JSDocPropertyLikeTag;
+        //     // if (name.kind === SyntaxKind::QualifiedName) {
+        //     //     return name.right;
+        //     // }
+        // }
+        Node::CallExpression(_) | Node::BinaryExpression(_) => {
+            todo!();
+            // const expr = declaration as BinaryExpression | CallExpression;
+            // switch (getAssignmentDeclarationKind(expr)) {
+            //     case AssignmentDeclarationKind.ExportsProperty:
+            //     case AssignmentDeclarationKind.ThisProperty:
+            //     case AssignmentDeclarationKind.Property:
+            //     case AssignmentDeclarationKind.PrototypeProperty:
+            //         return getElementOrPropertyAccessArgumentExpressionOrName((expr as BinaryExpression).left as AccessExpression);
+            //     case AssignmentDeclarationKind.ObjectDefinePropertyValue:
+            //     case AssignmentDeclarationKind.ObjectDefinePropertyExports:
+            //     case AssignmentDeclarationKind.ObjectDefinePrototypeProperty:
+            //         return (expr as BindableObjectDefinePropertyCall).arguments[1];
+            //     default:
+            //         return undefined;
+            // }
+        }
+        // TODO: jsdoc:
+        // Node::JSDocTypedefTag(_) => {
+        //     todo!();
+        //     // return getNameOfJSDocTypedef(declaration as JSDocTypedefTag);
+        // }
+        // Node::JSDocEnumTag(_) => {
+        //     todo!();
+        //     // return nameForNamelessJSDocTypedef(declaration as JSDocEnumTag);
+        // }
+        Node::ExportAssignment(d) => {
+            return if let Expression::Identifier(e) = &d.expression {
+                Some(Node::Identifier(e.clone()))
+            } else {
+                None
+            };
+        }
+        Node::ElementAccessExpression(d) => {
+            todo!();
+            // let expr = d;
+            // if (isBindableStaticElementAccessExpression(expr)) {
+            //     return expr.argumentExpression;
+            // }
+        }
+        _ => {}
+    }
+    declaration.name()
+}
 
-//     export function getNameOfDeclaration(declaration: Declaration | Expression | undefined): DeclarationName | undefined {
-//         if (declaration === undefined) return undefined;
-//         return getNonAssignedNameOfDeclaration(declaration) ||
-//             (isFunctionExpression(declaration) || isArrowFunction(declaration) || isClassExpression(declaration) ? getAssignedName(declaration) : undefined);
-//     }
+pub fn getNameOfDeclaration(declaration: Option<&Rc<BoundNode>>) -> Option<Node> {
+    let declaration = declaration?;
+    let name = getNonAssignedNameOfDeclaration(&declaration.node);
+    if name.is_some() {
+        return name;
+    }
+
+    if isFunctionExpression(declaration)
+        || isArrowFunction(declaration)
+        || isClassExpression(declaration)
+    {
+        todo!();
+        // getAssignedName(declaration)
+    } else {
+        None
+    }
+}
 
 //     /*@internal*/
 //     export function getAssignedName(node: Node): DeclarationName | undefined {
@@ -1251,16 +1297,17 @@ pub fn isClassMemberModifier(idToken: SyntaxKind) -> bool {
 //             || kind === SyntaxKind::ArrayBindingPattern;
 //     }
 
-//     // Functions
+// Functions
 
-//     export function isFunctionLike(node: Node | undefined): node is SignatureDeclaration {
-//         return !!node && isFunctionLikeKind(node.kind);
-//     }
+pub fn isFunctionLike<T: IsNode>(node: Option<&T>) -> bool {
+    node.map(|n| isFunctionLikeKind(n.kind()))
+        .unwrap_or_default()
+}
 
-//     /* @internal */
-//     export function isFunctionLikeOrClassStaticBlockDeclaration(node: Node | undefined): node is SignatureDeclaration | ClassStaticBlockDeclaration {
-//         return !!node && (isFunctionLikeKind(node.kind) || isClassStaticBlockDeclaration(node));
-//     }
+pub fn isFunctionLikeOrClassStaticBlockDeclaration<T: IsNode>(node: Option<&T>) -> bool {
+    node.map(|n| isFunctionLikeKind(n.kind()) || isClassStaticBlockDeclaration(n))
+        .unwrap_or_default()
+}
 
 //     /* @internal */
 //     export function isFunctionLikeDeclaration(node: Node): node is FunctionLikeDeclaration {
@@ -1272,59 +1319,59 @@ pub fn isClassMemberModifier(idToken: SyntaxKind) -> bool {
 //         return node.kind === SyntaxKind::TrueKeyword || node.kind === SyntaxKind::FalseKeyword;
 //     }
 
-//     function isFunctionLikeDeclarationKind(kind: SyntaxKind): boolean {
-//         switch (kind) {
-//             case SyntaxKind::FunctionDeclaration:
-//             case SyntaxKind::MethodDeclaration:
-//             case SyntaxKind::Constructor:
-//             case SyntaxKind::GetAccessor:
-//             case SyntaxKind::SetAccessor:
-//             case SyntaxKind::FunctionExpression:
-//             case SyntaxKind::ArrowFunction:
-//                 return true;
-//             default:
-//                 return false;
-//         }
-//     }
+fn isFunctionLikeDeclarationKind(kind: SyntaxKind) -> bool {
+    match kind {
+        SyntaxKind::FunctionDeclaration
+        | SyntaxKind::MethodDeclaration
+        | SyntaxKind::Constructor
+        | SyntaxKind::GetAccessor
+        | SyntaxKind::SetAccessor
+        | SyntaxKind::FunctionExpression
+        | SyntaxKind::ArrowFunction => true,
+        _ => false,
+    }
+}
 
-//     /* @internal */
-//     export function isFunctionLikeKind(kind: SyntaxKind): boolean {
-//         switch (kind) {
-//             case SyntaxKind::MethodSignature:
-//             case SyntaxKind::CallSignature:
-//             case SyntaxKind::JSDocSignature:
-//             case SyntaxKind::ConstructSignature:
-//             case SyntaxKind::IndexSignature:
-//             case SyntaxKind::FunctionType:
-//             case SyntaxKind::JSDocFunctionType:
-//             case SyntaxKind::ConstructorType:
-//                 return true;
-//             default:
-//                 return isFunctionLikeDeclarationKind(kind);
-//         }
-//     }
+pub fn isFunctionLikeKind(kind: SyntaxKind) -> bool {
+    match kind {
+        SyntaxKind::MethodSignature
+        | SyntaxKind::CallSignature
+        | SyntaxKind::JSDocSignature
+        | SyntaxKind::ConstructSignature
+        | SyntaxKind::IndexSignature
+        | SyntaxKind::FunctionType
+        | SyntaxKind::JSDocFunctionType
+        | SyntaxKind::ConstructorType => true,
+        _ => isFunctionLikeDeclarationKind(kind),
+    }
+}
 
 //     /* @internal */
 //     export function isFunctionOrModuleBlock(node: Node): boolean {
 //         return isSourceFile(node) || isModuleBlock(node) || isBlock(node) && isFunctionLike(node.parent);
 //     }
 
-//     // Classes
-//     export function isClassElement(node: Node): node is ClassElement {
-//         const kind = node.kind;
-//         return kind === SyntaxKind::Constructor
-//             || kind === SyntaxKind::PropertyDeclaration
-//             || kind === SyntaxKind::MethodDeclaration
-//             || kind === SyntaxKind::GetAccessor
-//             || kind === SyntaxKind::SetAccessor
-//             || kind === SyntaxKind::IndexSignature
-//             || kind === SyntaxKind::ClassStaticBlockDeclaration
-//             || kind === SyntaxKind::SemicolonClassElement;
-//     }
+// Classes
+pub fn isClassElement<T: IsNode>(node: &T) -> bool {
+    matches!(
+        node.kind(),
+        SyntaxKind::Constructor
+            | SyntaxKind::PropertyDeclaration
+            | SyntaxKind::MethodDeclaration
+            | SyntaxKind::GetAccessor
+            | SyntaxKind::SetAccessor
+            | SyntaxKind::IndexSignature
+            | SyntaxKind::ClassStaticBlockDeclaration
+            | SyntaxKind::SemicolonClassElement
+    )
+}
 
-//     export function isClassLike(node: Node): node is ClassLikeDeclaration {
-//         return node && (node.kind === SyntaxKind::ClassDeclaration || node.kind === SyntaxKind::ClassExpression);
-//     }
+pub fn isClassLike<T: IsNode>(node: Option<&T>) -> bool {
+    node.map(|n| {
+        n.kind() == SyntaxKind::ClassDeclaration || n.kind() == SyntaxKind::ClassExpression
+    })
+    .unwrap_or_default()
+}
 
 //     export function isAccessor(node: Node): node is AccessorDeclaration {
 //         return node && (node.kind === SyntaxKind::GetAccessor || node.kind === SyntaxKind::SetAccessor);
@@ -1388,18 +1435,17 @@ pub fn isClassMemberModifier(idToken: SyntaxKind) -> bool {
 //         return false;
 //     }
 
-//     // Binding patterns
+// Binding patterns
 
-//     /* @internal */
-//     export function isBindingPattern(node: Node | undefined): node is BindingPattern {
-//         if (node) {
-//             const kind = node.kind;
-//             return kind === SyntaxKind::ArrayBindingPattern
-//                 || kind === SyntaxKind::ObjectBindingPattern;
-//         }
-
-//         return false;
-//     }
+pub fn isBindingPattern<T: IsNode>(node: Option<&T>) -> bool {
+    node.map(|n| {
+        matches!(
+            n.kind(),
+            SyntaxKind::ArrayBindingPattern | SyntaxKind::ObjectBindingPattern
+        )
+    })
+    .unwrap_or_default()
+}
 
 pub fn isAssignmentPattern<T: IsNode>(node: &T) -> bool {
     node.kind() == SyntaxKind::ArrayLiteralExpression
@@ -1565,20 +1611,18 @@ fn isLeftHandSideExpressionKind(kind: SyntaxKind) -> bool {
 //         return isUnaryExpressionKind(skipPartiallyEmittedExpressions(node).kind);
 //     }
 
-//     function isUnaryExpressionKind(kind: SyntaxKind): boolean {
-//         switch (kind) {
-//             case SyntaxKind::PrefixUnaryExpression:
-//             case SyntaxKind::PostfixUnaryExpression:
-//             case SyntaxKind::DeleteExpression:
-//             case SyntaxKind::TypeOfExpression:
-//             case SyntaxKind::VoidExpression:
-//             case SyntaxKind::AwaitExpression:
-//             case SyntaxKind::TypeAssertionExpression:
-//                 return true;
-//             default:
-//                 return isLeftHandSideExpressionKind(kind);
-//         }
-//     }
+fn isUnaryExpressionKind(kind: SyntaxKind) -> bool {
+    match kind {
+        SyntaxKind::PrefixUnaryExpression
+        | SyntaxKind::PostfixUnaryExpression
+        | SyntaxKind::DeleteExpression
+        | SyntaxKind::TypeOfExpression
+        | SyntaxKind::VoidExpression
+        | SyntaxKind::AwaitExpression
+        | SyntaxKind::TypeAssertionExpression => true,
+        _ => isLeftHandSideExpressionKind(kind),
+    }
+}
 
 //     /* @internal */
 //     export function isUnaryExpressionWithWrite(expr: Node): expr is PrefixUnaryExpression | PostfixUnaryExpression {
@@ -1593,31 +1637,28 @@ fn isLeftHandSideExpressionKind(kind: SyntaxKind) -> bool {
 //         }
 //     }
 
-//     /* @internal */
-//     /**
-//      * Determines whether a node is an expression based only on its kind.
-//      * Use `isExpressionNode` if not in transforms.
-//      */
-//     export function isExpression(node: Node): node is Expression {
-//         return isExpressionKind(skipPartiallyEmittedExpressions(node).kind);
-//     }
+/**
+ * Determines whether a node is an expression based only on its kind.
+ * Use `isExpressionNode` if not in transforms.
+ */
+pub fn isExpression(node: Node) -> bool {
+    isExpressionKind(skipPartiallyEmittedExpressionsOfNode(node).kind())
+}
 
-//     function isExpressionKind(kind: SyntaxKind): boolean {
-//         switch (kind) {
-//             case SyntaxKind::ConditionalExpression:
-//             case SyntaxKind::YieldExpression:
-//             case SyntaxKind::ArrowFunction:
-//             case SyntaxKind::BinaryExpression:
-//             case SyntaxKind::SpreadElement:
-//             case SyntaxKind::AsExpression:
-//             case SyntaxKind::OmittedExpression:
-//             case SyntaxKind::CommaListExpression:
-//             case SyntaxKind::PartiallyEmittedExpression:
-//                 return true;
-//             default:
-//                 return isUnaryExpressionKind(kind);
-//         }
-//     }
+fn isExpressionKind(kind: SyntaxKind) -> bool {
+    match kind {
+        SyntaxKind::ConditionalExpression
+        | SyntaxKind::YieldExpression
+        | SyntaxKind::ArrowFunction
+        | SyntaxKind::BinaryExpression
+        | SyntaxKind::SpreadElement
+        | SyntaxKind::AsExpression
+        | SyntaxKind::OmittedExpression
+        | SyntaxKind::CommaListExpression
+        | SyntaxKind::PartiallyEmittedExpression => true,
+        _ => isUnaryExpressionKind(kind),
+    }
+}
 
 //     export function isAssertionExpression(node: Node): node is AssertionExpression {
 //         const kind = node.kind;
@@ -1671,10 +1712,9 @@ fn isLeftHandSideExpressionKind(kind: SyntaxKind) -> bool {
 //         return isAnyImportOrReExport(result) || isExportAssignment(result) || hasSyntacticModifier(result, ModifierFlags.Export);
 //     }
 
-//     /* @internal */
-//     export function isForInOrOfStatement(node: Node): node is ForInOrOfStatement {
-//         return node.kind === SyntaxKind::ForInStatement || node.kind === SyntaxKind::ForOfStatement;
-//     }
+pub fn isForInOrOfStatement<T: IsNode>(node: &T) -> bool {
+    node.kind() == SyntaxKind::ForInStatement || node.kind() == SyntaxKind::ForOfStatement
+}
 
 //     // Element
 
@@ -1767,20 +1807,23 @@ fn isLeftHandSideExpressionKind(kind: SyntaxKind) -> bool {
 //             || kind === SyntaxKind::JSDocPropertyTag;
 //     }
 
-//     function isDeclarationStatementKind(kind: SyntaxKind) {
-//         return kind === SyntaxKind::FunctionDeclaration
-//             || kind === SyntaxKind::MissingDeclaration
-//             || kind === SyntaxKind::ClassDeclaration
-//             || kind === SyntaxKind::InterfaceDeclaration
-//             || kind === SyntaxKind::TypeAliasDeclaration
-//             || kind === SyntaxKind::EnumDeclaration
-//             || kind === SyntaxKind::ModuleDeclaration
-//             || kind === SyntaxKind::ImportDeclaration
-//             || kind === SyntaxKind::ImportEqualsDeclaration
-//             || kind === SyntaxKind::ExportDeclaration
-//             || kind === SyntaxKind::ExportAssignment
-//             || kind === SyntaxKind::NamespaceExportDeclaration;
-//     }
+fn isDeclarationStatementKind(kind: SyntaxKind) -> bool {
+    matches!(
+        kind,
+        SyntaxKind::FunctionDeclaration
+            | SyntaxKind::MissingDeclaration
+            | SyntaxKind::ClassDeclaration
+            | SyntaxKind::InterfaceDeclaration
+            | SyntaxKind::TypeAliasDeclaration
+            | SyntaxKind::EnumDeclaration
+            | SyntaxKind::ModuleDeclaration
+            | SyntaxKind::ImportDeclaration
+            | SyntaxKind::ImportEqualsDeclaration
+            | SyntaxKind::ExportDeclaration
+            | SyntaxKind::ExportAssignment
+            | SyntaxKind::NamespaceExportDeclaration
+    )
+}
 
 //     function isStatementKindButNotDeclarationKind(kind: SyntaxKind) {
 //         return kind === SyntaxKind::BreakStatement
@@ -1815,10 +1858,9 @@ fn isLeftHandSideExpressionKind(kind: SyntaxKind) -> bool {
 //         return isDeclarationKind(node.kind);
 //     }
 
-//     /* @internal */
-//     export function isDeclarationStatement(node: Node): node is DeclarationStatement {
-//         return isDeclarationStatementKind(node.kind);
-//     }
+pub fn isDeclarationStatement<T: IsNode>(node: &T) -> bool {
+    isDeclarationStatementKind(node.kind())
+}
 
 //     /**
 //      * Determines whether the node is a statement that is not also a declaration
@@ -1948,13 +1990,247 @@ fn isLeftHandSideExpressionKind(kind: SyntaxKind) -> bool {
 //         return node.kind === SyntaxKind::GetAccessor;
 //     }
 
-//     /** True if has jsdoc nodes attached to it. */
-//     /* @internal */
-//     // TODO: GH#19856 Would like to return `node is Node & { jsDoc: JSDoc[] }` but it causes long compile times
-//     export function hasJSDocNodes(node: Node): node is HasJSDoc {
-//         const { jsDoc } = node as JSDocContainer;
-//         return !!jsDoc && jsDoc.length > 0;
-//     }
+/** True if has jsdoc nodes attached to it. */
+/* @internal */
+// TODO: GH#19856 Would like to return `node is Node & { jsDoc: JSDoc[] }` but it causes long compile times
+pub fn hasJSDocNodes(node: &Node) -> bool {
+    let jsDoc = match node {
+        Node::PropertyDeclaration(n) => n.js_doc_container(),
+        Node::MethodSignature(n) => n.js_doc_container(),
+        Node::MethodDeclaration(n) => n.js_doc_container(),
+        Node::ClassStaticBlockDeclaration(n) => n.js_doc_container(),
+        Node::ConstructorDeclaration(n) => n.js_doc_container(),
+        Node::GetAccessorDeclaration(n) => n.js_doc_container(),
+        Node::SetAccessorDeclaration(n) => n.js_doc_container(),
+        Node::CallSignatureDeclaration(n) => n.js_doc_container(),
+        Node::ConstructSignatureDeclaration(n) => n.js_doc_container(),
+        Node::IndexSignatureDeclaration(n) => n.js_doc_container(),
+        Node::FunctionTypeNode(n) => n.js_doc_container(),
+        Node::ConstructorTypeNode(n) => n.js_doc_container(),
+        Node::PropertySignature(n) => n.js_doc_container(),
+        Node::NamedTupleMember(n) => n.js_doc_container(),
+        Node::ParenthesizedExpression(n) => n.js_doc_container(),
+        Node::FunctionExpression(n) => n.js_doc_container(),
+        Node::ArrowFunction(n) => n.js_doc_container(),
+        Node::ClassExpression(n) => n.js_doc_container(),
+        Node::Block(n) => n.js_doc_container(),
+        Node::EmptyStatement(n) => n.js_doc_container(),
+        Node::VariableStatement(n) => n.js_doc_container(),
+        Node::ExpressionStatement(n) => n.js_doc_container(),
+        Node::IfStatement(n) => n.js_doc_container(),
+        Node::DoStatement(n) => n.js_doc_container(),
+        Node::WhileStatement(n) => n.js_doc_container(),
+        Node::ForStatement(n) => n.js_doc_container(),
+        Node::ForInStatement(n) => n.js_doc_container(),
+        Node::ForOfStatement(n) => n.js_doc_container(),
+        Node::ContinueStatement(n) => n.js_doc_container(),
+        Node::BreakStatement(n) => n.js_doc_container(),
+        Node::ReturnStatement(n) => n.js_doc_container(),
+        Node::WithStatement(n) => n.js_doc_container(),
+        Node::SwitchStatement(n) => n.js_doc_container(),
+        Node::LabeledStatement(n) => n.js_doc_container(),
+        Node::ThrowStatement(n) => n.js_doc_container(),
+        Node::TryStatement(n) => n.js_doc_container(),
+        Node::DebuggerStatement(n) => n.js_doc_container(),
+        Node::VariableDeclaration(n) => n.js_doc_container(),
+        Node::FunctionDeclaration(n) => n.js_doc_container(),
+        Node::ClassDeclaration(n) => n.js_doc_container(),
+        Node::InterfaceDeclaration(n) => n.js_doc_container(),
+        Node::TypeAliasDeclaration(n) => n.js_doc_container(),
+        Node::EnumDeclaration(n) => n.js_doc_container(),
+        Node::ModuleDeclaration(n) => n.js_doc_container(),
+        Node::ModuleBlock(n) => n.js_doc_container(),
+        Node::NamespaceExportDeclaration(n) => n.js_doc_container(),
+        Node::ImportEqualsDeclaration(n) => n.js_doc_container(),
+        Node::ImportDeclaration(n) => n.js_doc_container(),
+        Node::ExportAssignment(n) => n.js_doc_container(),
+        Node::ExportDeclaration(n) => n.js_doc_container(),
+        Node::MissingDeclaration(n) => n.js_doc_container(),
+        Node::PropertyAssignment(n) => n.js_doc_container(),
+        Node::ShorthandPropertyAssignment(n) => n.js_doc_container(),
+        Node::SpreadAssignment(n) => n.js_doc_container(),
+        Node::EnumMember(n) => n.js_doc_container(),
+        Node::JSDocFunctionType(n) => n.js_doc_container(),
+        Node::NotEmittedStatement(n) => n.js_doc_container(),
+        Node::EndOfFileToken(n) => n.js_doc_container(),
+        Node::ParameterDeclaration(n) => n.js_doc_container(),
+
+        Node::SourceFile(_)
+        | Node::JSDocTypeExpression(_)
+        | Node::JSDocAllType(_)
+        | Node::JSDocUnknownType(_)
+        | Node::JSDocNullableType(_)
+        | Node::JSDocNonNullableType(_)
+        | Node::JSDocOptionalType(_)
+        | Node::JSDocVariadicType(_)
+        | Node::NumericLiteral(_)
+        | Node::BigIntLiteral(_)
+        | Node::StringLiteral(_)
+        | Node::RegularExpressionLiteral(_)
+        | Node::NoSubstitutionTemplateLiteral(_)
+        | Node::TemplateHead(_)
+        | Node::TemplateMiddle(_)
+        | Node::TemplateTail(_)
+        | Node::DotToken(_)
+        | Node::DotDotDotToken(_)
+        | Node::CommaToken(_)
+        | Node::QuestionDotToken(_)
+        | Node::LessThanToken(_)
+        | Node::GreaterThanToken(_)
+        | Node::LessThanEqualsToken(_)
+        | Node::GreaterThanEqualsToken(_)
+        | Node::EqualsEqualsToken(_)
+        | Node::ExclamationEqualsToken(_)
+        | Node::EqualsEqualsEqualsToken(_)
+        | Node::ExclamationEqualsEqualsToken(_)
+        | Node::EqualsGreaterThanToken(_)
+        | Node::PlusToken(_)
+        | Node::MinusToken(_)
+        | Node::AsteriskToken(_)
+        | Node::AsteriskAsteriskToken(_)
+        | Node::SlashToken(_)
+        | Node::PercentToken(_)
+        | Node::LessThanLessThanToken(_)
+        | Node::GreaterThanGreaterThanToken(_)
+        | Node::GreaterThanGreaterThanGreaterThanToken(_)
+        | Node::AmpersandToken(_)
+        | Node::BarToken(_)
+        | Node::CaretToken(_)
+        | Node::ExclamationToken(_)
+        | Node::AmpersandAmpersandToken(_)
+        | Node::BarBarToken(_)
+        | Node::QuestionToken(_)
+        | Node::ColonToken(_)
+        | Node::QuestionQuestionToken(_)
+        | Node::EqualsToken(_)
+        | Node::PlusEqualsToken(_)
+        | Node::MinusEqualsToken(_)
+        | Node::AsteriskEqualsToken(_)
+        | Node::AsteriskAsteriskEqualsToken(_)
+        | Node::SlashEqualsToken(_)
+        | Node::PercentEqualsToken(_)
+        | Node::LessThanLessThanEqualsToken(_)
+        | Node::GreaterThanGreaterThanEqualsToken(_)
+        | Node::GreaterThanGreaterThanGreaterThanEqualsToken(_)
+        | Node::AmpersandEqualsToken(_)
+        | Node::BarEqualsToken(_)
+        | Node::BarBarEqualsToken(_)
+        | Node::AmpersandAmpersandEqualsToken(_)
+        | Node::QuestionQuestionEqualsToken(_)
+        | Node::CaretEqualsToken(_)
+        | Node::Identifier(_)
+        | Node::PrivateIdentifier(_)
+        | Node::ConstKeyword(_)
+        | Node::DefaultKeyword(_)
+        | Node::ExportKeyword(_)
+        | Node::FalseLiteral(_)
+        | Node::ImportExpression(_)
+        | Node::InKeyword(_)
+        | Node::InstanceOfKeyword(_)
+        | Node::NullLiteral(_)
+        | Node::SuperExpression(_)
+        | Node::ThisExpression(_)
+        | Node::TrueLiteral(_)
+        | Node::VoidKeyword(_)
+        | Node::PrivateKeyword(_)
+        | Node::ProtectedKeyword(_)
+        | Node::PublicKeyword(_)
+        | Node::StaticKeyword(_)
+        | Node::AbstractKeyword(_)
+        | Node::AssertsKeyword(_)
+        | Node::AnyKeyword(_)
+        | Node::AsyncKeyword(_)
+        | Node::AwaitKeyword(_)
+        | Node::BooleanKeyword(_)
+        | Node::DeclareKeyword(_)
+        | Node::IntrinsicKeyword(_)
+        | Node::NeverKeyword(_)
+        | Node::ReadonlyKeyword(_)
+        | Node::NumberKeyword(_)
+        | Node::ObjectKeyword(_)
+        | Node::StringKeyword(_)
+        | Node::SymbolKeyword(_)
+        | Node::UndefinedKeyword(_)
+        | Node::UnknownKeyword(_)
+        | Node::BigIntKeyword(_)
+        | Node::OverrideKeyword(_)
+        | Node::QualifiedName(_)
+        | Node::ComputedPropertyName(_)
+        | Node::TypeParameterDeclaration(_)
+        | Node::Decorator(_)
+        | Node::TypePredicateNode(_)
+        | Node::TypeReferenceNode(_)
+        | Node::ImportTypeNode(_)
+        | Node::ObjectBindingPattern(_)
+        | Node::ArrayBindingPattern(_)
+        | Node::BindingElement(_)
+        | Node::ArrayLiteralExpression(_)
+        | Node::ObjectLiteralExpression(_)
+        | Node::PropertyAccessExpression(_)
+        | Node::ElementAccessExpression(_)
+        | Node::CallExpression(_)
+        | Node::NewExpression(_)
+        | Node::TaggedTemplateExpression(_)
+        | Node::TypeAssertion(_)
+        | Node::DeleteExpression(_)
+        | Node::TypeOfExpression(_)
+        | Node::VoidExpression(_)
+        | Node::AwaitExpression(_)
+        | Node::PrefixUnaryExpression(_)
+        | Node::PostfixUnaryExpression(_)
+        | Node::BinaryExpression(_)
+        | Node::ConditionalExpression(_)
+        | Node::TemplateExpression(_)
+        | Node::YieldExpression(_)
+        | Node::SpreadElement(_)
+        | Node::OmittedExpression(_)
+        | Node::ExpressionWithTypeArguments(_)
+        | Node::AsExpression(_)
+        | Node::NonNullExpression(_)
+        | Node::MetaProperty(_)
+        | Node::TemplateSpan(_)
+        | Node::SemicolonClassElement(_)
+        | Node::TypeQueryNode(_)
+        | Node::TypeLiteralNode(_)
+        | Node::ArrayTypeNode(_)
+        | Node::TupleTypeNode(_)
+        | Node::OptionalTypeNode(_)
+        | Node::RestTypeNode(_)
+        | Node::UnionTypeNode(_)
+        | Node::IntersectionTypeNode(_)
+        | Node::ConditionalTypeNode(_)
+        | Node::InferTypeNode(_)
+        | Node::ParenthesizedTypeNode(_)
+        | Node::ThisTypeNode(_)
+        | Node::TypeOperatorNode(_)
+        | Node::IndexedAccessTypeNode(_)
+        | Node::MappedTypeNode(_)
+        | Node::LiteralTypeNode(_)
+        | Node::TemplateLiteralTypeNode(_)
+        | Node::TemplateLiteralTypeSpan(_)
+        | Node::VariableDeclarationList(_)
+        | Node::CaseBlock(_)
+        | Node::ImportClause(_)
+        | Node::NamespaceImport(_)
+        | Node::NamedImports(_)
+        | Node::ImportSpecifier(_)
+        | Node::NamedExports(_)
+        | Node::NamespaceExport(_)
+        | Node::ExportSpecifier(_)
+        | Node::ExternalModuleReference(_)
+        | Node::CaseClause(_)
+        | Node::DefaultClause(_)
+        | Node::HeritageClause(_)
+        | Node::CatchClause(_)
+        | Node::AssertClause(_)
+        | Node::AssertEntry(_) => return false,
+    };
+    jsDoc
+        .jsDoc
+        .as_ref()
+        .map(|j| !j.is_empty())
+        .unwrap_or_default()
+}
 
 //     /** True if has type node attached to it. */
 //     /* @internal */

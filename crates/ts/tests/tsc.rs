@@ -75,6 +75,7 @@ fn tsc_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), std::io::Error> {
                 ScriptTarget::ESNext,
                 false,
                 Some(ScriptKind::TS),
+                &mut Default::default(),
             );
 
             eprintln!("{:#?}", res.parseDiagnostics);

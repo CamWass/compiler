@@ -1017,31 +1017,34 @@
 //         return to;
 //     }
 
-//     /**
-//      * @return Whether the value was added.
-//      */
-//     export function pushIfUnique<T>(array: T[], toAdd: T, equalityComparer?: EqualityComparer<T>): boolean {
-//         if (contains(array, toAdd, equalityComparer)) {
-//             return false;
-//         }
-//         else {
-//             array.push(toAdd);
-//             return true;
-//         }
-//     }
+/**
+ * @return Whether the value was added.
+ */
+pub fn pushIfUnique<T, F>(array: &mut Vec<T>, toAdd: T, equalityComparer: F) -> bool
+where
+    F: Fn(&T, &T) -> bool,
+{
+    if array.iter().any(|e| equalityComparer(e, &toAdd)) {
+        false
+    } else {
+        array.push(toAdd);
+        true
+    }
+}
 
-//     /**
-//      * Unlike `pushIfUnique`, this can take `undefined` as an input, and returns a new array.
-//      */
-//     export function appendIfUnique<T>(array: T[] | undefined, toAdd: T, equalityComparer?: EqualityComparer<T>): T[] {
-//         if (array) {
-//             pushIfUnique(array, toAdd, equalityComparer);
-//             return array;
-//         }
-//         else {
-//             return [toAdd];
-//         }
-//     }
+/**
+ * Unlike `pushIfUnique`, this can take `undefined` as an input, and returns a new array.
+ */
+pub fn appendIfUnique<T, F>(array: &mut Option<Vec<T>>, toAdd: T, equalityComparer: F)
+where
+    F: Fn(&T, &T) -> bool,
+{
+    if let Some(array) = array {
+        pushIfUnique(array, toAdd, equalityComparer);
+    } else {
+        *array = Some(vec![toAdd]);
+    }
+}
 
 //     function stableSortIndices<T>(array: readonly T[], indices: number[], comparer: Comparer<T>) {
 //         // sort indices by value then position

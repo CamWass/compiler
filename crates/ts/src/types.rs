@@ -2,10 +2,32 @@ use std::rc::Rc;
 use std::{borrow::Cow, ops::Deref};
 
 use bitflags::bitflags;
-use swc_atoms::JsWord;
+use rustc_hash::FxHashMap;
 
-use crate::node::Node;
+use crate::node::{BoundNode, Node};
 use crate::our_types::*;
+
+macro_rules! impl_is_node {
+    ($t:ident, $syntax_kind:ident, $this:ident, name: $name:expr, is_property_name: $is_property_name:expr, modifiers: $modifiers:expr,) => {
+        impl IsNode for $t {
+            fn kind(&$this) -> SyntaxKind {
+                SyntaxKind::$syntax_kind
+            }
+
+            fn name(&$this) -> Option<Node> {
+                $name
+            }
+
+            fn isPropertyName(&$this) -> bool {
+                $is_property_name
+            }
+
+            fn modifiers(&$this) -> Option<&NodeArray<Modifier>> {
+                $modifiers
+            }
+        }
+    };
+}
 
 macro_rules! make_node_enum {
     ($name:ident, [$($field:ident,)*]) => {
@@ -38,6 +60,12 @@ macro_rules! make_node_enum {
             fn isPropertyName(&self) -> bool {
                 match self {
                     $(Self::$field(n) => n.isPropertyName(),)*
+                }
+            }
+
+            fn modifiers(&self) -> Option<&NodeArray<Modifier>>  {
+                match self {
+                    $(Self::$field(n) => n.modifiers(),)*
                 }
             }
         }
@@ -1001,14 +1029,14 @@ pub struct NodeData {
     //         /* @internal */ id?: NodeId;                          // Unique id (used to look up NodeLinks)
     //         readonly parent: Node;                                // Parent node (initialized by binding)
     pub original: Option<Node>, // The original node if this is an updated node.
-    //         /* @internal */ symbol: Symbol;                       // Symbol declared by node (initialized by binding)
-    //         /* @internal */ locals?: SymbolTable;                 // Locals associated with node (initialized by binding)
-    //         /* @internal */ nextContainer?: Node;                 // Next container in declaration order (initialized by binding)
+    pub symbol: Option<SymbolId>, // Symbol declared by node (initialized by binding)
+    pub locals: Option<SymbolTableId>, // Locals associated with node (initialized by binding)
+    pub nextContainer: Option<Rc<BoundNode>>, // Next container in declaration order (initialized by binding)
     //         /* @internal */ localSymbol?: Symbol;                 // Local symbol declared by node (initialized by binding only for exported nodes)
-    //         /* @internal */ flowNode?: FlowNode;                  // Associated FlowNode (initialized by binding)
-    pub emitNode: Option<EmitNode>, // Associated EmitNode (initialized by transforms)
-                                    //         /* @internal */ contextualType?: Type;                // Used to temporarily assign a contextual type during overload resolution
-                                    //         /* @internal */ inferenceContext?: InferenceContext;  // Inference context for contextual type
+    pub flowNode: Option<FlowNodeId>, // Associated FlowNode (initialized by binding)
+    pub emitNode: Option<EmitNode>,   // Associated EmitNode (initialized by transforms)
+                                      //         /* @internal */ contextualType?: Type;                // Used to temporarily assign a contextual type during overload resolution
+                                      //         /* @internal */ inferenceContext?: InferenceContext;  // Inference context for contextual type
 }
 
 impl_has_text_range!(NodeData);
@@ -1313,6 +1341,10 @@ macro_rules! make_simple_token_node {
             fn isPropertyName(&self) -> bool {
                 false
             }
+
+            fn modifiers(&self) -> Option<&NodeArray<Modifier>> {
+                None
+            }
         }
 
         impl IsSimpleTokenNode for $node_name {
@@ -1357,19 +1389,14 @@ impl HasNodeId for EndOfFileToken {
     }
 }
 
-impl IsNode for EndOfFileToken {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::EndOfFileToken
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    EndOfFileToken,
+    EndOfFileToken,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl IsSimpleTokenNode for EndOfFileToken {
     fn try_from_kind(kind: SyntaxKind, node_id: NodeId) -> Option<Self> {
@@ -1612,7 +1639,7 @@ pub struct Identifier {
     pub autoGenerateFlags: GeneratedIdentifierFlags, // Specifies whether to auto-generate the text for an identifier.
     // autoGenerateId: Option<number>,           // Ensures unique generated identifiers get unique names, but clones get the same name.
     // generatedImportReference: Option<ImportSpecifier>, // Reference to the generated import specifier this identifier refers to
-    // isInJSDocNamespace: Option<bool>,                             // if the node is a member in a JSDoc namespace
+    pub isInJSDocNamespace: bool, // if the node is a member in a JSDoc namespace
     // typeArguments?: NodeArray<TypeNode | TypeParameterDeclaration>, // Only defined on synthesized nodes. Though not syntactically valid, used in emitting diagnostics, quickinfo, and signature help.
     pub jsdocDotPos: Option<usize>, // Identifier occurs in JSDoc-style generic: Id.<T>
 }
@@ -1623,19 +1650,14 @@ impl HasNodeId for Identifier {
     }
 }
 
-impl IsNode for Identifier {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::Identifier
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        true
-    }
-}
+impl_is_node!(
+    Identifier,
+    Identifier,
+    self,
+    name: None,
+    is_property_name: true,
+    modifiers: None,
+);
 
 //     // Transient identifier node (marked by id === -1)
 //     export interface TransientIdentifier extends Identifier {
@@ -1663,19 +1685,14 @@ impl HasNodeId for QualifiedName {
     }
 }
 
-impl IsNode for QualifiedName {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::QualifiedName
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    QualifiedName,
+    QualifiedName,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 make_node_enum!(EntityName, [Identifier, QualifiedName,]);
 
@@ -1755,19 +1772,14 @@ impl HasNodeId for ComputedPropertyName {
     }
 }
 
-impl IsNode for ComputedPropertyName {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ComputedPropertyName
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        true
-    }
-}
+impl_is_node!(
+    ComputedPropertyName,
+    ComputedPropertyName,
+    self,
+    name: None,
+    is_property_name: true,
+    modifiers: None,
+);
 
 //     // Typed as a PrimaryExpression due to its presence in BinaryExpressions (#field in expr)
 // export interface PrivateIdentifier extends PrimaryExpression {
@@ -1786,19 +1798,14 @@ impl HasNodeId for PrivateIdentifier {
     }
 }
 
-impl IsNode for PrivateIdentifier {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::PrivateIdentifier
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        true
-    }
-}
+impl_is_node!(
+    PrivateIdentifier,
+    PrivateIdentifier,
+    self,
+    name: None,
+    is_property_name: true,
+    modifiers: None,
+);
 
 //     /* @internal */
 //     // A name that supports late-binding (used in checker)
@@ -1821,19 +1828,14 @@ impl HasNodeId for Decorator {
     }
 }
 
-impl IsNode for Decorator {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::Decorator
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    Decorator,
+    Decorator,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface TypeParameterDeclaration extends NamedDeclaration {
 #[derive(Debug)]
@@ -1856,19 +1858,14 @@ impl HasNodeId for TypeParameterDeclaration {
     }
 }
 
-impl IsNode for TypeParameterDeclaration {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::TypeParameter
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(Node::Identifier(self.name.clone()))
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    TypeParameterDeclaration,
+    TypeParameter,
+    self,
+    name: Some(Node::Identifier(self.name.clone())),
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     export interface SignatureDeclarationBase extends NamedDeclaration, JSDocContainer {
 //         readonly kind: SignatureDeclaration["kind"];
@@ -1912,19 +1909,14 @@ impl HasNodeId for CallSignatureDeclaration {
     }
 }
 
-impl IsNode for CallSignatureDeclaration {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::CallSignature
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    CallSignatureDeclaration,
+    CallSignature,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(CallSignatureDeclaration);
 
@@ -1946,19 +1938,14 @@ impl HasNodeId for ConstructSignatureDeclaration {
     }
 }
 
-impl IsNode for ConstructSignatureDeclaration {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ConstructSignature
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ConstructSignatureDeclaration,
+    ConstructSignature,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(ConstructSignatureDeclaration);
 
@@ -1986,19 +1973,14 @@ impl HasNodeId for VariableDeclaration {
     }
 }
 
-impl IsNode for VariableDeclaration {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::VariableDeclaration
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(self.name.clone().into())
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    VariableDeclaration,
+    VariableDeclaration,
+    self,
+    name: Some(self.name.clone().into()),
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(VariableDeclaration);
 
@@ -2020,19 +2002,14 @@ impl HasNodeId for VariableDeclarationList {
     }
 }
 
-impl IsNode for VariableDeclarationList {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::VariableDeclarationList
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    VariableDeclarationList,
+    VariableDeclarationList,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface ParameterDeclaration extends NamedDeclaration, JSDocContainer {
 #[derive(Debug)]
@@ -2056,19 +2033,14 @@ impl HasNodeId for ParameterDeclaration {
     }
 }
 
-impl IsNode for ParameterDeclaration {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::Parameter
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(self.name.clone().into())
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ParameterDeclaration,
+    Parameter,
+    self,
+    name: Some(self.name.clone().into()),
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(ParameterDeclaration);
 
@@ -2090,19 +2062,14 @@ impl HasNodeId for BindingElement {
     }
 }
 
-impl IsNode for BindingElement {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::BindingElement
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(self.name.clone().into())
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    BindingElement,
+    BindingElement,
+    self,
+    name: Some(self.name.clone().into()),
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     /*@internal*/
 //     export type BindingElementGrandparent = BindingElement["parent"]["parent"];
@@ -2126,19 +2093,14 @@ impl HasNodeId for PropertySignature {
     }
 }
 
-impl IsNode for PropertySignature {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::PropertySignature
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(self.name.clone().into())
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    PropertySignature,
+    PropertySignature,
+    self,
+    name: Some(self.name.clone().into()),
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(PropertySignature);
 
@@ -2164,19 +2126,14 @@ impl HasNodeId for PropertyDeclaration {
     }
 }
 
-impl IsNode for PropertyDeclaration {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::PropertyDeclaration
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(self.name.clone().into())
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    PropertyDeclaration,
+    PropertyDeclaration,
+    self,
+    name: Some(self.name.clone().into()),
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(PropertyDeclaration);
 
@@ -2247,19 +2204,14 @@ impl HasNodeId for PropertyAssignment {
     }
 }
 
-impl IsNode for PropertyAssignment {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::PropertyAssignment
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(self.name.clone().into())
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    PropertyAssignment,
+    PropertyAssignment,
+    self,
+    name: Some(self.name.clone().into()),
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(PropertyAssignment);
 
@@ -2287,19 +2239,14 @@ impl HasNodeId for ShorthandPropertyAssignment {
     }
 }
 
-impl IsNode for ShorthandPropertyAssignment {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ShorthandPropertyAssignment
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(Node::Identifier(self.name.clone()))
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ShorthandPropertyAssignment,
+    ShorthandPropertyAssignment,
+    self,
+    name: Some(Node::Identifier(self.name.clone())),
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(ShorthandPropertyAssignment);
 
@@ -2319,19 +2266,14 @@ impl HasNodeId for SpreadAssignment {
     }
 }
 
-impl IsNode for SpreadAssignment {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::SpreadAssignment
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    SpreadAssignment,
+    SpreadAssignment,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(SpreadAssignment);
 
@@ -2367,19 +2309,14 @@ impl HasNodeId for ObjectBindingPattern {
     }
 }
 
-impl IsNode for ObjectBindingPattern {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ObjectBindingPattern
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ObjectBindingPattern,
+    ObjectBindingPattern,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface ArrayBindingPattern extends Node {
 #[derive(Debug)]
@@ -2395,19 +2332,14 @@ impl HasNodeId for ArrayBindingPattern {
     }
 }
 
-impl IsNode for ArrayBindingPattern {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ArrayBindingPattern
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ArrayBindingPattern,
+    ArrayBindingPattern,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 make_node_enum!(BindingPattern, [ObjectBindingPattern, ArrayBindingPattern,]);
 
@@ -2469,19 +2401,14 @@ impl HasNodeId for FunctionDeclaration {
     }
 }
 
-impl IsNode for FunctionDeclaration {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::FunctionDeclaration
-    }
-
-    fn name(&self) -> Option<Node> {
-        self.name.clone().map(|n| Node::Identifier(n))
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    FunctionDeclaration,
+    FunctionDeclaration,
+    self,
+    name: self.name.clone().map(|n| Node::Identifier(n)),
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(FunctionDeclaration);
 
@@ -2509,19 +2436,14 @@ impl HasNodeId for MethodSignature {
     }
 }
 
-impl IsNode for MethodSignature {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::MethodSignature
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(self.name.clone().into())
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    MethodSignature,
+    MethodSignature,
+    self,
+    name: Some(self.name.clone().into()),
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(MethodSignature);
 
@@ -2564,19 +2486,14 @@ impl HasNodeId for MethodDeclaration {
     }
 }
 
-impl IsNode for MethodDeclaration {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::MethodDeclaration
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(self.name.clone().into())
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    MethodDeclaration,
+    MethodDeclaration,
+    self,
+    name: Some(self.name.clone().into()),
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(MethodDeclaration);
 
@@ -2606,19 +2523,14 @@ impl HasNodeId for ConstructorDeclaration {
     }
 }
 
-impl IsNode for ConstructorDeclaration {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::Constructor
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ConstructorDeclaration,
+    Constructor,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(ConstructorDeclaration);
 
@@ -2636,19 +2548,14 @@ impl HasNodeId for SemicolonClassElement {
     }
 }
 
-impl IsNode for SemicolonClassElement {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::SemicolonClassElement
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    SemicolonClassElement,
+    SemicolonClassElement,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // See the comment on MethodDeclaration for the intuition behind GetAccessorDeclaration being a
 // ClassElement and an ObjectLiteralElement.
@@ -2680,19 +2587,14 @@ impl HasNodeId for GetAccessorDeclaration {
     }
 }
 
-impl IsNode for GetAccessorDeclaration {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::GetAccessor
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(self.name.clone().into())
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    GetAccessorDeclaration,
+    GetAccessor,
+    self,
+    name: Some(self.name.clone().into()),
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(GetAccessorDeclaration);
 
@@ -2726,19 +2628,14 @@ impl HasNodeId for SetAccessorDeclaration {
     }
 }
 
-impl IsNode for SetAccessorDeclaration {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::SetAccessor
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(self.name.clone().into())
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    SetAccessorDeclaration,
+    SetAccessor,
+    self,
+    name: Some(self.name.clone().into()),
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(SetAccessorDeclaration);
 
@@ -2766,19 +2663,14 @@ impl HasNodeId for IndexSignatureDeclaration {
     }
 }
 
-impl IsNode for IndexSignatureDeclaration {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::IndexSignature
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    IndexSignatureDeclaration,
+    IndexSignature,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(IndexSignatureDeclaration);
 
@@ -2802,19 +2694,14 @@ impl HasNodeId for ClassStaticBlockDeclaration {
     }
 }
 
-impl IsNode for ClassStaticBlockDeclaration {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ClassStaticBlockDeclaration
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ClassStaticBlockDeclaration,
+    ClassStaticBlockDeclaration,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(ClassStaticBlockDeclaration);
 
@@ -2903,19 +2790,14 @@ impl HasNodeId for ImportTypeNode {
     }
 }
 
-impl IsNode for ImportTypeNode {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ImportType
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ImportTypeNode,
+    ImportType,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     /* @internal */
 //     export type LiteralImportTypeNode = ImportTypeNode & { readonly argument: LiteralTypeNode & { readonly literal: StringLiteral } };
@@ -2932,19 +2814,14 @@ impl HasNodeId for ThisTypeNode {
     }
 }
 
-impl IsNode for ThisTypeNode {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ThisType
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ThisTypeNode,
+    ThisType,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     export type FunctionOrConstructorTypeNode = FunctionTypeNode | ConstructorTypeNode;
 
@@ -2973,19 +2850,14 @@ impl HasNodeId for FunctionTypeNode {
     }
 }
 
-impl IsNode for FunctionTypeNode {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::FunctionType
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    FunctionTypeNode,
+    FunctionType,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(FunctionTypeNode);
 
@@ -3009,19 +2881,14 @@ impl HasNodeId for ConstructorTypeNode {
     }
 }
 
-impl IsNode for ConstructorTypeNode {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ConstructorType
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ConstructorTypeNode,
+    ConstructorType,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(ConstructorTypeNode);
 
@@ -3046,19 +2913,14 @@ impl HasNodeId for TypeReferenceNode {
     }
 }
 
-impl IsNode for TypeReferenceNode {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::TypeReference
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    TypeReferenceNode,
+    TypeReference,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 make_node_enum!(TypePredicateParameterName, [Identifier, ThisTypeNode,]);
 
@@ -3079,19 +2941,14 @@ impl HasNodeId for TypePredicateNode {
     }
 }
 
-impl IsNode for TypePredicateNode {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::TypePredicate
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    TypePredicateNode,
+    TypePredicate,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface TypeQueryNode extends TypeNode {
 #[derive(Debug)]
@@ -3107,19 +2964,14 @@ impl HasNodeId for TypeQueryNode {
     }
 }
 
-impl IsNode for TypeQueryNode {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::TypeQuery
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    TypeQueryNode,
+    TypeQuery,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // A TypeLiteral is the declaration node for an anonymous symbol.
 // export interface TypeLiteralNode extends TypeNode, Declaration {
@@ -3136,19 +2988,14 @@ impl HasNodeId for TypeLiteralNode {
     }
 }
 
-impl IsNode for TypeLiteralNode {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::TypeLiteral
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    TypeLiteralNode,
+    TypeLiteral,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface ArrayTypeNode extends TypeNode {
 #[derive(Debug)]
@@ -3164,19 +3011,14 @@ impl HasNodeId for ArrayTypeNode {
     }
 }
 
-impl IsNode for ArrayTypeNode {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ArrayType
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ArrayTypeNode,
+    ArrayType,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface TupleTypeNode extends TypeNode {
 #[derive(Debug)]
@@ -3192,19 +3034,14 @@ impl HasNodeId for TupleTypeNode {
     }
 }
 
-impl IsNode for TupleTypeNode {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::TupleType
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    TupleTypeNode,
+    TupleType,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface NamedTupleMember extends TypeNode, JSDocContainer, Declaration {
 #[derive(Debug)]
@@ -3224,19 +3061,14 @@ impl HasNodeId for NamedTupleMember {
     }
 }
 
-impl IsNode for NamedTupleMember {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::NamedTupleMember
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(Node::Identifier(self.name.clone()))
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    NamedTupleMember,
+    NamedTupleMember,
+    self,
+    name: Some(Node::Identifier(self.name.clone())),
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(NamedTupleMember);
 
@@ -3254,19 +3086,14 @@ impl HasNodeId for OptionalTypeNode {
     }
 }
 
-impl IsNode for OptionalTypeNode {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::OptionalType
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    OptionalTypeNode,
+    OptionalType,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface RestTypeNode extends TypeNode {
 #[derive(Debug)]
@@ -3282,19 +3109,14 @@ impl HasNodeId for RestTypeNode {
     }
 }
 
-impl IsNode for RestTypeNode {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::RestType
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    RestTypeNode,
+    RestType,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     export type UnionOrIntersectionTypeNode = UnionTypeNode | IntersectionTypeNode;
 
@@ -3312,19 +3134,14 @@ impl HasNodeId for UnionTypeNode {
     }
 }
 
-impl IsNode for UnionTypeNode {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::UnionType
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    UnionTypeNode,
+    UnionType,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface IntersectionTypeNode extends TypeNode {
 #[derive(Debug)]
@@ -3340,19 +3157,14 @@ impl HasNodeId for IntersectionTypeNode {
     }
 }
 
-impl IsNode for IntersectionTypeNode {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::IntersectionType
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    IntersectionTypeNode,
+    IntersectionType,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface ConditionalTypeNode extends TypeNode {
 #[derive(Debug)]
@@ -3371,19 +3183,14 @@ impl HasNodeId for ConditionalTypeNode {
     }
 }
 
-impl IsNode for ConditionalTypeNode {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ConditionalType
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ConditionalTypeNode,
+    ConditionalType,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface InferTypeNode extends TypeNode {
 #[derive(Debug)]
@@ -3398,19 +3205,14 @@ impl HasNodeId for InferTypeNode {
     }
 }
 
-impl IsNode for InferTypeNode {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::InferType
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    InferTypeNode,
+    InferType,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface ParenthesizedTypeNode extends TypeNode {
 #[derive(Debug)]
@@ -3426,19 +3228,14 @@ impl HasNodeId for ParenthesizedTypeNode {
     }
 }
 
-impl IsNode for ParenthesizedTypeNode {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ParenthesizedType
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ParenthesizedTypeNode,
+    ParenthesizedType,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface TypeOperatorNode extends TypeNode {
 #[derive(Debug)]
@@ -3456,19 +3253,14 @@ impl HasNodeId for TypeOperatorNode {
     }
 }
 
-impl IsNode for TypeOperatorNode {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::TypeOperator
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    TypeOperatorNode,
+    TypeOperator,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     /* @internal */
 //     export interface UniqueTypeOperatorNode extends TypeOperatorNode {
@@ -3490,19 +3282,14 @@ impl HasNodeId for IndexedAccessTypeNode {
     }
 }
 
-impl IsNode for IndexedAccessTypeNode {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::IndexedAccessType
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    IndexedAccessTypeNode,
+    IndexedAccessType,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface MappedTypeNode extends TypeNode, Declaration {
 #[derive(Debug)]
@@ -3524,19 +3311,14 @@ impl HasNodeId for MappedTypeNode {
     }
 }
 
-impl IsNode for MappedTypeNode {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::MappedType
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    MappedTypeNode,
+    MappedType,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 make_node_enum!(
     LiteralTypeNodeKind,
@@ -3567,19 +3349,14 @@ impl HasNodeId for LiteralTypeNode {
     }
 }
 
-impl IsNode for LiteralTypeNode {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::LiteralType
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    LiteralTypeNode,
+    LiteralType,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface StringLiteral extends LiteralExpression, Declaration {
 #[derive(Debug)]
@@ -3602,19 +3379,14 @@ impl HasNodeId for StringLiteral {
     }
 }
 
-impl IsNode for StringLiteral {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::StringLiteral
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        true
-    }
-}
+impl_is_node!(
+    StringLiteral,
+    StringLiteral,
+    self,
+    name: None,
+    is_property_name: true,
+    modifiers: None,
+);
 
 //     export type StringLiteralLike = StringLiteral | NoSubstitutionTemplateLiteral;
 //     export type PropertyNameLiteral = Identifier | StringLiteralLike | NumericLiteral;
@@ -3634,19 +3406,14 @@ impl HasNodeId for TemplateLiteralTypeNode {
     }
 }
 
-impl IsNode for TemplateLiteralTypeNode {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::TemplateLiteralType
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    TemplateLiteralTypeNode,
+    TemplateLiteralType,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface TemplateLiteralTypeSpan extends TypeNode {
 #[derive(Debug)]
@@ -3664,19 +3431,14 @@ impl HasNodeId for TemplateLiteralTypeSpan {
     }
 }
 
-impl IsNode for TemplateLiteralTypeSpan {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::TemplateLiteralTypeSpan
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    TemplateLiteralTypeSpan,
+    TemplateLiteralTypeSpan,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     // Note: 'brands' in our syntax nodes serve to give us a small amount of nominal typing.
 //     // Consider 'Expression'.  Without the brand, 'Expression' is actually no different
@@ -3747,19 +3509,14 @@ impl HasNodeId for OmittedExpression {
     }
 }
 
-impl IsNode for OmittedExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::OmittedExpression
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    OmittedExpression,
+    OmittedExpression,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     // Represents an expression that is elided as part of a transformation to emit comments on a
 //     // not-emitted node. The 'expression' property of a PartiallyEmittedExpression should be emitted.
@@ -4002,19 +3759,14 @@ impl HasNodeId for PrefixUnaryExpression {
     }
 }
 
-impl IsNode for PrefixUnaryExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::PrefixUnaryExpression
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    PrefixUnaryExpression,
+    PrefixUnaryExpression,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     // see: https://tc39.github.io/ecma262/#prod-UpdateExpression
 //     export type PostfixUnaryOperator
@@ -4039,19 +3791,14 @@ impl HasNodeId for PostfixUnaryExpression {
     }
 }
 
-impl IsNode for PostfixUnaryExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::PostfixUnaryExpression
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    PostfixUnaryExpression,
+    PostfixUnaryExpression,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     export interface LeftHandSideExpression extends UpdateExpression {
 //         _leftHandSideExpressionBrand: any;
@@ -4334,19 +4081,14 @@ impl HasNodeId for NullLiteral {
     }
 }
 
-impl IsNode for NullLiteral {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::NullKeyword
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    NullLiteral,
+    NullKeyword,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl IsSimpleTokenNode for NullLiteral {
     fn try_from_kind(kind: SyntaxKind, node_id: NodeId) -> Option<Self> {
@@ -4370,19 +4112,14 @@ impl HasNodeId for TrueLiteral {
     }
 }
 
-impl IsNode for TrueLiteral {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::TrueKeyword
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    TrueLiteral,
+    TrueKeyword,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl IsSimpleTokenNode for TrueLiteral {
     fn try_from_kind(kind: SyntaxKind, node_id: NodeId) -> Option<Self> {
@@ -4406,19 +4143,14 @@ impl HasNodeId for FalseLiteral {
     }
 }
 
-impl IsNode for FalseLiteral {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::FalseKeyword
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    FalseLiteral,
+    FalseKeyword,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl IsSimpleTokenNode for FalseLiteral {
     fn try_from_kind(kind: SyntaxKind, node_id: NodeId) -> Option<Self> {
@@ -4444,19 +4176,14 @@ impl HasNodeId for ThisExpression {
     }
 }
 
-impl IsNode for ThisExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ThisKeyword
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ThisExpression,
+    ThisKeyword,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl IsSimpleTokenNode for ThisExpression {
     fn try_from_kind(kind: SyntaxKind, node_id: NodeId) -> Option<Self> {
@@ -4480,19 +4207,14 @@ impl HasNodeId for SuperExpression {
     }
 }
 
-impl IsNode for SuperExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::SuperKeyword
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    SuperExpression,
+    SuperKeyword,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl IsSimpleTokenNode for SuperExpression {
     fn try_from_kind(kind: SyntaxKind, node_id: NodeId) -> Option<Self> {
@@ -4516,19 +4238,14 @@ impl HasNodeId for ImportExpression {
     }
 }
 
-impl IsNode for ImportExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ImportKeyword
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ImportExpression,
+    ImportKeyword,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl IsSimpleTokenNode for ImportExpression {
     fn try_from_kind(kind: SyntaxKind, node_id: NodeId) -> Option<Self> {
@@ -4554,19 +4271,14 @@ impl HasNodeId for DeleteExpression {
     }
 }
 
-impl IsNode for DeleteExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::DeleteExpression
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    DeleteExpression,
+    DeleteExpression,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface TypeOfExpression extends UnaryExpression {
 #[derive(Debug)]
@@ -4582,19 +4294,14 @@ impl HasNodeId for TypeOfExpression {
     }
 }
 
-impl IsNode for TypeOfExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::TypeOfExpression
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    TypeOfExpression,
+    TypeOfExpression,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface VoidExpression extends UnaryExpression {
 #[derive(Debug)]
@@ -4610,19 +4317,14 @@ impl HasNodeId for VoidExpression {
     }
 }
 
-impl IsNode for VoidExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::VoidExpression
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    VoidExpression,
+    VoidExpression,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface AwaitExpression extends UnaryExpression {
 #[derive(Debug)]
@@ -4638,19 +4340,14 @@ impl HasNodeId for AwaitExpression {
     }
 }
 
-impl IsNode for AwaitExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::AwaitExpression
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    AwaitExpression,
+    AwaitExpression,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface YieldExpression extends Expression {
 #[derive(Debug)]
@@ -4667,19 +4364,14 @@ impl HasNodeId for YieldExpression {
     }
 }
 
-impl IsNode for YieldExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::YieldExpression
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    YieldExpression,
+    YieldExpression,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     export interface SyntheticExpression extends Expression {
 //         readonly kind: SyntaxKind.SyntheticExpression;
@@ -5041,19 +4733,14 @@ impl HasNodeId for BinaryExpression {
     }
 }
 
-impl IsNode for BinaryExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::BinaryExpression
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    BinaryExpression,
+    BinaryExpression,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     export type AssignmentOperatorToken = Token<AssignmentOperator>;
 
@@ -5130,6 +4817,17 @@ impl IsNode for BindingOrAssignmentElement {
             BindingOrAssignmentElement::ArrayBindingElement(n) => n.isPropertyName(),
             BindingOrAssignmentElement::ObjectLiteralElementLike(n) => n.isPropertyName(),
             BindingOrAssignmentElement::Expression(n) => n.isPropertyName(),
+        }
+    }
+
+    fn modifiers(&self) -> Option<&NodeArray<Modifier>> {
+        match self {
+            BindingOrAssignmentElement::VariableDeclaration(n) => n.modifiers(),
+            BindingOrAssignmentElement::ParameterDeclaration(n) => n.modifiers(),
+            BindingOrAssignmentElement::BindingElement(n) => n.modifiers(),
+            BindingOrAssignmentElement::ArrayBindingElement(n) => n.modifiers(),
+            BindingOrAssignmentElement::ObjectLiteralElementLike(n) => n.modifiers(),
+            BindingOrAssignmentElement::Expression(n) => n.modifiers(),
         }
     }
 }
@@ -5210,19 +4908,14 @@ impl HasNodeId for ConditionalExpression {
     }
 }
 
-impl IsNode for ConditionalExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ConditionalExpression
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ConditionalExpression,
+    ConditionalExpression,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 pub type FunctionBody = Block;
 
@@ -5260,6 +4953,13 @@ impl IsNode for ConciseBody {
         match self {
             ConciseBody::FunctionBody(n) => n.isPropertyName(),
             ConciseBody::Expression(n) => n.isPropertyName(),
+        }
+    }
+
+    fn modifiers(&self) -> Option<&NodeArray<Modifier>> {
+        match self {
+            ConciseBody::FunctionBody(n) => n.modifiers(),
+            ConciseBody::Expression(n) => n.modifiers(),
         }
     }
 }
@@ -5300,19 +5000,14 @@ impl HasNodeId for FunctionExpression {
     }
 }
 
-impl IsNode for FunctionExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::FunctionExpression
-    }
-
-    fn name(&self) -> Option<Node> {
-        self.name.clone().map(|n| Node::Identifier(n))
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    FunctionExpression,
+    FunctionExpression,
+    self,
+    name: self.name.clone().map(|n| Node::Identifier(n)),
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(FunctionExpression);
 
@@ -5343,19 +5038,14 @@ impl HasNodeId for ArrowFunction {
     }
 }
 
-impl IsNode for ArrowFunction {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ArrowFunction
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ArrowFunction,
+    ArrowFunction,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(ArrowFunction);
 
@@ -5398,19 +5088,14 @@ impl HasNodeId for RegularExpressionLiteral {
     }
 }
 
-impl IsNode for RegularExpressionLiteral {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::RegularExpressionLiteral
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    RegularExpressionLiteral,
+    RegularExpressionLiteral,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface NoSubstitutionTemplateLiteral extends LiteralExpression, TemplateLiteralLikeNode, Declaration {
 #[derive(Debug)]
@@ -5433,19 +5118,14 @@ impl HasNodeId for NoSubstitutionTemplateLiteral {
     }
 }
 
-impl IsNode for NoSubstitutionTemplateLiteral {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::NoSubstitutionTemplateLiteral
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    NoSubstitutionTemplateLiteral,
+    NoSubstitutionTemplateLiteral,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 bitflags! {
     #[derive(Default)]
@@ -5486,19 +5166,14 @@ impl HasNodeId for NumericLiteral {
     }
 }
 
-impl IsNode for NumericLiteral {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::NumericLiteral
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        true
-    }
-}
+impl_is_node!(
+    NumericLiteral,
+    NumericLiteral,
+    self,
+    name: None,
+    is_property_name: true,
+    modifiers: None,
+);
 
 // export interface BigIntLiteral extends LiteralExpression {
 #[derive(Debug)]
@@ -5517,19 +5192,14 @@ impl HasNodeId for BigIntLiteral {
     }
 }
 
-impl IsNode for BigIntLiteral {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::BigIntLiteral
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    BigIntLiteral,
+    BigIntLiteral,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     export type LiteralToken =
 //         | NumericLiteral
@@ -5562,19 +5232,14 @@ impl HasNodeId for TemplateHead {
     }
 }
 
-impl IsNode for TemplateHead {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::TemplateHead
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    TemplateHead,
+    TemplateHead,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface TemplateMiddle extends TemplateLiteralLikeNode {
 #[derive(Debug)]
@@ -5598,19 +5263,14 @@ impl HasNodeId for TemplateMiddle {
     }
 }
 
-impl IsNode for TemplateMiddle {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::TemplateMiddle
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    TemplateMiddle,
+    TemplateMiddle,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface TemplateTail extends TemplateLiteralLikeNode {
 #[derive(Debug)]
@@ -5634,19 +5294,14 @@ impl HasNodeId for TemplateTail {
     }
 }
 
-impl IsNode for TemplateTail {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::TemplateTail
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    TemplateTail,
+    TemplateTail,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     export type PseudoLiteralToken =
 //         | TemplateHead
@@ -5674,19 +5329,14 @@ impl HasNodeId for TemplateExpression {
     }
 }
 
-impl IsNode for TemplateExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::TemplateExpression
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    TemplateExpression,
+    TemplateExpression,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 make_node_enum!(
     TemplateLiteral,
@@ -5713,19 +5363,14 @@ impl HasNodeId for TemplateSpan {
     }
 }
 
-impl IsNode for TemplateSpan {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::TemplateSpan
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    TemplateSpan,
+    TemplateSpan,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface ParenthesizedExpression extends PrimaryExpression, JSDocContainer {
 #[derive(Debug)]
@@ -5742,19 +5387,14 @@ impl HasNodeId for ParenthesizedExpression {
     }
 }
 
-impl IsNode for ParenthesizedExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ParenthesizedExpression
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ParenthesizedExpression,
+    ParenthesizedExpression,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(ParenthesizedExpression);
 
@@ -5778,19 +5418,14 @@ impl HasNodeId for ArrayLiteralExpression {
     }
 }
 
-impl IsNode for ArrayLiteralExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ArrayLiteralExpression
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ArrayLiteralExpression,
+    ArrayLiteralExpression,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface SpreadElement extends Expression {
 #[derive(Debug)]
@@ -5807,19 +5442,14 @@ impl HasNodeId for SpreadElement {
     }
 }
 
-impl IsNode for SpreadElement {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::SpreadElement
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    SpreadElement,
+    SpreadElement,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     /**
 //      * This interface is a base interface for ObjectLiteralExpression and JSXAttributes to extend from. JSXAttributes is similar to
@@ -5848,19 +5478,14 @@ impl HasNodeId for ObjectLiteralExpression {
     }
 }
 
-impl IsNode for ObjectLiteralExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ObjectLiteralExpression
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ObjectLiteralExpression,
+    ObjectLiteralExpression,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     export type EntityNameExpression = Identifier | PropertyAccessEntityNameExpression;
 //     export type EntityNameOrEntityNameExpression = EntityName | EntityNameExpression;
@@ -5882,19 +5507,14 @@ impl HasNodeId for PropertyAccessExpression {
     }
 }
 
-impl IsNode for PropertyAccessExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::PropertyAccessExpression
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(self.name.clone().into())
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    PropertyAccessExpression,
+    PropertyAccessExpression,
+    self,
+    name: Some(self.name.clone().into()),
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     /*@internal*/
 //     export interface PrivateIdentifierPropertyAccessExpression extends PropertyAccessExpression {
@@ -5940,19 +5560,14 @@ impl HasNodeId for ElementAccessExpression {
     }
 }
 
-impl IsNode for ElementAccessExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ElementAccessExpression
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ElementAccessExpression,
+    ElementAccessExpression,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     export interface ElementAccessChain extends ElementAccessExpression {
 //         _optionalChainBrand: any;
@@ -5990,19 +5605,14 @@ impl HasNodeId for CallExpression {
     }
 }
 
-impl IsNode for CallExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::CallExpression
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    CallExpression,
+    CallExpression,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     export interface CallChain extends CallExpression {
 //         _optionalChainBrand: any;
@@ -6103,19 +5713,14 @@ impl HasNodeId for ExpressionWithTypeArguments {
     }
 }
 
-impl IsNode for ExpressionWithTypeArguments {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ExpressionWithTypeArguments
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ExpressionWithTypeArguments,
+    ExpressionWithTypeArguments,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface NewExpression extends PrimaryExpression, Declaration {
 #[derive(Debug)]
@@ -6133,19 +5738,14 @@ impl HasNodeId for NewExpression {
     }
 }
 
-impl IsNode for NewExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::NewExpression
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    NewExpression,
+    NewExpression,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface TaggedTemplateExpression extends MemberExpression {
 #[derive(Debug)]
@@ -6164,19 +5764,14 @@ impl HasNodeId for TaggedTemplateExpression {
     }
 }
 
-impl IsNode for TaggedTemplateExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::TaggedTemplateExpression
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    TaggedTemplateExpression,
+    TaggedTemplateExpression,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     export type CallLikeExpression =
 //         | CallExpression
@@ -6201,19 +5796,14 @@ impl HasNodeId for AsExpression {
     }
 }
 
-impl IsNode for AsExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::AsExpression
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    AsExpression,
+    AsExpression,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface TypeAssertion extends UnaryExpression {
 #[derive(Debug)]
@@ -6230,19 +5820,14 @@ impl HasNodeId for TypeAssertion {
     }
 }
 
-impl IsNode for TypeAssertion {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::TypeAssertionExpression
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    TypeAssertion,
+    TypeAssertionExpression,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     export type AssertionExpression =
 //         | TypeAssertion
@@ -6263,19 +5848,14 @@ impl HasNodeId for NonNullExpression {
     }
 }
 
-impl IsNode for NonNullExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::NonNullExpression
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    NonNullExpression,
+    NonNullExpression,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     export interface NonNullChain extends NonNullExpression {
 //         _optionalChainBrand: any;
@@ -6298,19 +5878,14 @@ impl HasNodeId for MetaProperty {
     }
 }
 
-impl IsNode for MetaProperty {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::MetaProperty
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(Node::Identifier(self.name.clone()))
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    MetaProperty,
+    MetaProperty,
+    self,
+    name: Some(Node::Identifier(self.name.clone())),
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     /* @internal */
 //     export interface ImportMetaProperty extends MetaProperty {
@@ -6491,19 +6066,14 @@ impl HasNodeId for NotEmittedStatement {
     }
 }
 
-impl IsNode for NotEmittedStatement {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::NotEmittedStatement
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    NotEmittedStatement,
+    NotEmittedStatement,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(NotEmittedStatement);
 
@@ -6551,19 +6121,14 @@ impl HasNodeId for EmptyStatement {
     }
 }
 
-impl IsNode for EmptyStatement {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::EmptyStatement
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    EmptyStatement,
+    EmptyStatement,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface DebuggerStatement extends Statement {
 #[derive(Debug)]
@@ -6578,19 +6143,14 @@ impl HasNodeId for DebuggerStatement {
     }
 }
 
-impl IsNode for DebuggerStatement {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::DebuggerStatement
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    DebuggerStatement,
+    DebuggerStatement,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(DebuggerStatement);
 
@@ -6611,19 +6171,14 @@ impl HasNodeId for MissingDeclaration {
     }
 }
 
-impl IsNode for MissingDeclaration {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::MissingDeclaration
-    }
-
-    fn name(&self) -> Option<Node> {
-        self.name.clone().map(|n| Node::Identifier(n))
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    MissingDeclaration,
+    MissingDeclaration,
+    self,
+    name: self.name.clone().map(|n| Node::Identifier(n)),
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(MissingDeclaration);
 
@@ -6650,19 +6205,14 @@ impl HasNodeId for Block {
     }
 }
 
-impl IsNode for Block {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::Block
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    Block,
+    Block,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(Block);
 
@@ -6683,19 +6233,14 @@ impl HasNodeId for VariableStatement {
     }
 }
 
-impl IsNode for VariableStatement {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::VariableStatement
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    VariableStatement,
+    VariableStatement,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(VariableStatement);
 
@@ -6714,19 +6259,14 @@ impl HasNodeId for ExpressionStatement {
     }
 }
 
-impl IsNode for ExpressionStatement {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ExpressionStatement
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ExpressionStatement,
+    ExpressionStatement,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(ExpressionStatement);
 
@@ -6752,19 +6292,14 @@ impl HasNodeId for IfStatement {
     }
 }
 
-impl IsNode for IfStatement {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::IfStatement
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    IfStatement,
+    IfStatement,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(IfStatement);
 
@@ -6794,19 +6329,14 @@ impl HasNodeId for DoStatement {
     }
 }
 
-impl IsNode for DoStatement {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::DoStatement
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    DoStatement,
+    DoStatement,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(DoStatement);
 
@@ -6827,19 +6357,14 @@ impl HasNodeId for WhileStatement {
     }
 }
 
-impl IsNode for WhileStatement {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::WhileStatement
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    WhileStatement,
+    WhileStatement,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(WhileStatement);
 
@@ -6879,6 +6404,13 @@ impl IsNode for ForInitializer {
             ForInitializer::Expression(n) => n.isPropertyName(),
         }
     }
+
+    fn modifiers(&self) -> Option<&NodeArray<Modifier>> {
+        match self {
+            ForInitializer::VariableDeclarationList(n) => n.modifiers(),
+            ForInitializer::Expression(n) => n.modifiers(),
+        }
+    }
 }
 
 impl From<ForInitializer> for Node {
@@ -6909,19 +6441,14 @@ impl HasNodeId for ForStatement {
     }
 }
 
-impl IsNode for ForStatement {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ForStatement
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ForStatement,
+    ForStatement,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(ForStatement);
 
@@ -6948,19 +6475,14 @@ impl HasNodeId for ForInStatement {
     }
 }
 
-impl IsNode for ForInStatement {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ForInStatement
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ForInStatement,
+    ForInStatement,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(ForInStatement);
 
@@ -6983,19 +6505,14 @@ impl HasNodeId for ForOfStatement {
     }
 }
 
-impl IsNode for ForOfStatement {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ForOfStatement
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ForOfStatement,
+    ForOfStatement,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(ForOfStatement);
 
@@ -7014,19 +6531,14 @@ impl HasNodeId for BreakStatement {
     }
 }
 
-impl IsNode for BreakStatement {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::BreakStatement
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    BreakStatement,
+    BreakStatement,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(BreakStatement);
 
@@ -7045,19 +6557,14 @@ impl HasNodeId for ContinueStatement {
     }
 }
 
-impl IsNode for ContinueStatement {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ContinueStatement
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ContinueStatement,
+    ContinueStatement,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(ContinueStatement);
 
@@ -7081,19 +6588,14 @@ impl HasNodeId for ReturnStatement {
     }
 }
 
-impl IsNode for ReturnStatement {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ReturnStatement
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ReturnStatement,
+    ReturnStatement,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(ReturnStatement);
 
@@ -7113,19 +6615,14 @@ impl HasNodeId for WithStatement {
     }
 }
 
-impl IsNode for WithStatement {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::WithStatement
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    WithStatement,
+    WithStatement,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(WithStatement);
 
@@ -7146,19 +6643,14 @@ impl HasNodeId for SwitchStatement {
     }
 }
 
-impl IsNode for SwitchStatement {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::SwitchStatement
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    SwitchStatement,
+    SwitchStatement,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(SwitchStatement);
 
@@ -7177,19 +6669,14 @@ impl HasNodeId for CaseBlock {
     }
 }
 
-impl IsNode for CaseBlock {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::CaseBlock
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    CaseBlock,
+    CaseBlock,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface CaseClause extends Node {
 #[derive(Debug)]
@@ -7208,19 +6695,14 @@ impl HasNodeId for CaseClause {
     }
 }
 
-impl IsNode for CaseClause {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::CaseClause
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    CaseClause,
+    CaseClause,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface DefaultClause extends Node {
 #[derive(Debug)]
@@ -7237,19 +6719,14 @@ impl HasNodeId for DefaultClause {
     }
 }
 
-impl IsNode for DefaultClause {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::DefaultClause
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    DefaultClause,
+    DefaultClause,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 make_node_enum!(CaseOrDefaultClause, [CaseClause, DefaultClause,]);
 
@@ -7269,19 +6746,14 @@ impl HasNodeId for LabeledStatement {
     }
 }
 
-impl IsNode for LabeledStatement {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::LabeledStatement
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    LabeledStatement,
+    LabeledStatement,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(LabeledStatement);
 
@@ -7300,19 +6772,14 @@ impl HasNodeId for ThrowStatement {
     }
 }
 
-impl IsNode for ThrowStatement {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ThrowStatement
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ThrowStatement,
+    ThrowStatement,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(ThrowStatement);
 
@@ -7333,19 +6800,14 @@ impl HasNodeId for TryStatement {
     }
 }
 
-impl IsNode for TryStatement {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::TryStatement
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    TryStatement,
+    TryStatement,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(TryStatement);
 
@@ -7365,19 +6827,14 @@ impl HasNodeId for CatchClause {
     }
 }
 
-impl IsNode for CatchClause {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::CatchClause
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    CatchClause,
+    CatchClause,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     export type ObjectTypeDeclaration =
 //         | ClassLikeDeclaration
@@ -7430,19 +6887,14 @@ impl HasNodeId for ClassDeclaration {
     }
 }
 
-impl IsNode for ClassDeclaration {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ClassDeclaration
-    }
-
-    fn name(&self) -> Option<Node> {
-        self.name.clone().map(|n| Node::Identifier(n))
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ClassDeclaration,
+    ClassDeclaration,
+    self,
+    name: self.name.clone().map(|n| Node::Identifier(n)),
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(ClassDeclaration);
 
@@ -7466,26 +6918,18 @@ impl HasNodeId for ClassExpression {
     }
 }
 
-impl IsNode for ClassExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ClassExpression
-    }
-
-    fn name(&self) -> Option<Node> {
-        self.name.clone().map(|n| Node::Identifier(n))
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ClassExpression,
+    ClassExpression,
+    self,
+    name: self.name.clone().map(|n| Node::Identifier(n)),
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(ClassExpression);
 
-//     export type ClassLikeDeclaration =
-//         | ClassDeclaration
-//         | ClassExpression
-//         ;
+make_node_enum!(ClassLikeDeclaration, [ClassDeclaration, ClassExpression,]);
 
 //     export interface ClassElement extends NamedDeclaration {
 //         _classElementBrand: any;
@@ -7545,19 +6989,14 @@ impl HasNodeId for InterfaceDeclaration {
     }
 }
 
-impl IsNode for InterfaceDeclaration {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::InterfaceDeclaration
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(Node::Identifier(self.name.clone()))
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    InterfaceDeclaration,
+    InterfaceDeclaration,
+    self,
+    name: Some(Node::Identifier(self.name.clone())),
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(InterfaceDeclaration);
 
@@ -7578,19 +7017,14 @@ impl HasNodeId for HeritageClause {
     }
 }
 
-impl IsNode for HeritageClause {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::HeritageClause
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    HeritageClause,
+    HeritageClause,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface TypeAliasDeclaration extends DeclarationStatement, JSDocContainer {
 #[derive(Debug)]
@@ -7611,19 +7045,14 @@ impl HasNodeId for TypeAliasDeclaration {
     }
 }
 
-impl IsNode for TypeAliasDeclaration {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::TypeAliasDeclaration
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(Node::Identifier(self.name.clone()))
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    TypeAliasDeclaration,
+    TypeAliasDeclaration,
+    self,
+    name:  Some(Node::Identifier(self.name.clone())),
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(TypeAliasDeclaration);
 
@@ -7646,19 +7075,14 @@ impl HasNodeId for EnumMember {
     }
 }
 
-impl IsNode for EnumMember {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::EnumMember
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(self.name.clone().into())
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    EnumMember,
+    EnumMember,
+    self,
+    name: Some(self.name.clone().into()),
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(EnumMember);
 
@@ -7680,19 +7104,14 @@ impl HasNodeId for EnumDeclaration {
     }
 }
 
-impl IsNode for EnumDeclaration {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::EnumDeclaration
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(Node::Identifier(self.name.clone()))
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    EnumDeclaration,
+    EnumDeclaration,
+    self,
+    name: Some(Node::Identifier(self.name.clone())),
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(EnumDeclaration);
 
@@ -7731,19 +7150,14 @@ impl HasNodeId for ModuleDeclaration {
     }
 }
 
-impl IsNode for ModuleDeclaration {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ModuleDeclaration
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(self.name.clone().into())
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ModuleDeclaration,
+    ModuleDeclaration,
+    self,
+    name: Some(self.name.clone().into()),
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(ModuleDeclaration);
 
@@ -7783,19 +7197,14 @@ impl HasNodeId for ModuleBlock {
     }
 }
 
-impl IsNode for ModuleBlock {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ModuleBlock
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ModuleBlock,
+    ModuleBlock,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(ModuleBlock);
 
@@ -7832,19 +7241,14 @@ impl HasNodeId for ImportEqualsDeclaration {
     }
 }
 
-impl IsNode for ImportEqualsDeclaration {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ImportEqualsDeclaration
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(Node::Identifier(self.name.clone()))
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ImportEqualsDeclaration,
+    ImportEqualsDeclaration,
+    self,
+    name: Some(Node::Identifier(self.name.clone())),
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(ImportEqualsDeclaration);
 
@@ -7863,19 +7267,15 @@ impl HasNodeId for ExternalModuleReference {
     }
 }
 
-impl IsNode for ExternalModuleReference {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ExternalModuleReference
-    }
+impl_is_node!(
+    ExternalModuleReference,
+    ExternalModuleReference,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
 // In case of:
 // import "mod"  => importClause = undefined, moduleSpecifier = "mod"
 // In rest of the cases, module specifier is string literal corresponding to module
@@ -7901,19 +7301,14 @@ impl HasNodeId for ImportDeclaration {
     }
 }
 
-impl IsNode for ImportDeclaration {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ImportDeclaration
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ImportDeclaration,
+    ImportDeclaration,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(ImportDeclaration);
 
@@ -7944,19 +7339,14 @@ impl HasNodeId for ImportClause {
     }
 }
 
-impl IsNode for ImportClause {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ImportClause
-    }
-
-    fn name(&self) -> Option<Node> {
-        self.name.clone().map(|n| Node::Identifier(n))
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ImportClause,
+    ImportClause,
+    self,
+    name: self.name.clone().map(|n| Node::Identifier(n)),
+    is_property_name: false,
+    modifiers: None,
+);
 
 make_node_enum!(AssertionKey, [Identifier, StringLiteral,]);
 
@@ -7976,19 +7366,14 @@ impl HasNodeId for AssertEntry {
     }
 }
 
-impl IsNode for AssertEntry {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::AssertEntry
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(self.name.clone().into())
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    AssertEntry,
+    AssertEntry,
+    self,
+    name: Some(self.name.clone().into()),
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface AssertClause extends Node {
 #[derive(Debug)]
@@ -8006,19 +7391,14 @@ impl HasNodeId for AssertClause {
     }
 }
 
-impl IsNode for AssertClause {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::AssertClause
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    AssertClause,
+    AssertClause,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface NamespaceImport extends NamedDeclaration {
 #[derive(Debug)]
@@ -8035,19 +7415,14 @@ impl HasNodeId for NamespaceImport {
     }
 }
 
-impl IsNode for NamespaceImport {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::NamespaceImport
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(Node::Identifier(self.name.clone()))
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    NamespaceImport,
+    NamespaceImport,
+    self,
+    name: Some(Node::Identifier(self.name.clone())),
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface NamespaceExport extends NamedDeclaration {
 #[derive(Debug)]
@@ -8064,19 +7439,14 @@ impl HasNodeId for NamespaceExport {
     }
 }
 
-impl IsNode for NamespaceExport {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::NamespaceExport
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(Node::Identifier(self.name.clone()))
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    NamespaceExport,
+    NamespaceExport,
+    self,
+    name:  Some(Node::Identifier(self.name.clone())),
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface NamespaceExportDeclaration extends DeclarationStatement, JSDocContainer {
 #[derive(Debug)]
@@ -8095,19 +7465,14 @@ impl HasNodeId for NamespaceExportDeclaration {
     }
 }
 
-impl IsNode for NamespaceExportDeclaration {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::NamespaceExportDeclaration
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(Node::Identifier(self.name.clone()))
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    NamespaceExportDeclaration,
+    NamespaceExportDeclaration,
+    self,
+    name: Some(Node::Identifier(self.name.clone())),
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(NamespaceExportDeclaration);
 
@@ -8134,19 +7499,14 @@ impl HasNodeId for ExportDeclaration {
     }
 }
 
-impl IsNode for ExportDeclaration {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ExportDeclaration
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ExportDeclaration,
+    ExportDeclaration,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(ExportDeclaration);
 
@@ -8165,19 +7525,14 @@ impl HasNodeId for NamedImports {
     }
 }
 
-impl IsNode for NamedImports {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::NamedImports
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    NamedImports,
+    NamedImports,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface NamedExports extends Node {
 #[derive(Debug)]
@@ -8194,19 +7549,14 @@ impl HasNodeId for NamedExports {
     }
 }
 
-impl IsNode for NamedExports {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::NamedExports
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    NamedExports,
+    NamedExports,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     export type NamedImportsOrExports = NamedImports | NamedExports;
 
@@ -8228,19 +7578,14 @@ impl HasNodeId for ImportSpecifier {
     }
 }
 
-impl IsNode for ImportSpecifier {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ImportSpecifier
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(Node::Identifier(self.name.clone()))
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ImportSpecifier,
+    ImportSpecifier,
+    self,
+    name: Some(Node::Identifier(self.name.clone())),
+    is_property_name: false,
+    modifiers: None,
+);
 
 // impl_has_js_doc!(ImportSpecifier);
 
@@ -8261,19 +7606,14 @@ impl HasNodeId for ExportSpecifier {
     }
 }
 
-impl IsNode for ExportSpecifier {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ExportSpecifier
-    }
-
-    fn name(&self) -> Option<Node> {
-        Some(Node::Identifier(self.name.clone()))
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ExportSpecifier,
+    ExportSpecifier,
+    self,
+    name:  Some(Node::Identifier(self.name.clone())),
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     export type ImportOrExportSpecifier =
 //         | ImportSpecifier
@@ -8308,7 +7648,7 @@ pub struct ExportAssignment {
     pub modifiers: Option<NodeArray<Modifier>>,
 
     // readonly parent: SourceFile;
-    pub isExportEquals: Option<bool>,
+    pub isExportEquals: bool,
     pub expression: Expression,
 }
 
@@ -8318,19 +7658,14 @@ impl HasNodeId for ExportAssignment {
     }
 }
 
-impl IsNode for ExportAssignment {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::ExportAssignment
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    ExportAssignment,
+    ExportAssignment,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: self.modifiers.as_ref(),
+);
 
 impl_has_js_doc!(ExportAssignment);
 
@@ -8371,19 +7706,14 @@ impl HasNodeId for JSDocTypeExpression {
     }
 }
 
-impl IsNode for JSDocTypeExpression {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::JSDocTypeExpression
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    JSDocTypeExpression,
+    JSDocTypeExpression,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     export interface JSDocNameReference extends Node {
 //         readonly kind: SyntaxKind.JSDocNameReference;
@@ -8413,19 +7743,14 @@ impl HasNodeId for JSDocAllType {
     }
 }
 
-impl IsNode for JSDocAllType {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::JSDocAllType
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    JSDocAllType,
+    JSDocAllType,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface JSDocUnknownType extends JSDocType {
 #[derive(Debug)]
@@ -8439,19 +7764,14 @@ impl HasNodeId for JSDocUnknownType {
     }
 }
 
-impl IsNode for JSDocUnknownType {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::JSDocUnknownType
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    JSDocUnknownType,
+    JSDocUnknownType,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface JSDocNonNullableType extends JSDocType {
 #[derive(Debug)]
@@ -8466,19 +7786,14 @@ impl HasNodeId for JSDocNonNullableType {
     }
 }
 
-impl IsNode for JSDocNonNullableType {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::JSDocNonNullableType
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    JSDocNonNullableType,
+    JSDocNonNullableType,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface JSDocNullableType extends JSDocType {
 #[derive(Debug)]
@@ -8494,19 +7809,14 @@ impl HasNodeId for JSDocNullableType {
     }
 }
 
-impl IsNode for JSDocNullableType {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::JSDocNullableType
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    JSDocNullableType,
+    JSDocNullableType,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface JSDocOptionalType extends JSDocType {
 #[derive(Debug)]
@@ -8522,19 +7832,14 @@ impl HasNodeId for JSDocOptionalType {
     }
 }
 
-impl IsNode for JSDocOptionalType {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::JSDocOptionalType
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    JSDocOptionalType,
+    JSDocOptionalType,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 // export interface JSDocFunctionType extends JSDocType, SignatureDeclarationBase {
 #[derive(Debug)]
@@ -8553,19 +7858,14 @@ impl HasNodeId for JSDocFunctionType {
     }
 }
 
-impl IsNode for JSDocFunctionType {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::JSDocFunctionType
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    JSDocFunctionType,
+    JSDocFunctionType,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 impl_has_js_doc!(JSDocFunctionType);
 
@@ -8583,19 +7883,14 @@ impl HasNodeId for JSDocVariadicType {
     }
 }
 
-impl IsNode for JSDocVariadicType {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::JSDocVariadicType
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    JSDocVariadicType,
+    JSDocVariadicType,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     export interface JSDocNamepathType extends JSDocType {
 //         readonly kind: SyntaxKind.JSDocNamepathType;
@@ -8776,92 +8071,166 @@ impl IsNode for JSDocVariadicType {
 //         readonly isArrayType: boolean;
 //     }
 
-//     // NOTE: Ensure this is up-to-date with src/debug/debug.ts
-//     export const enum FlowFlags {
-//         Unreachable    = 1 << 0,  // Unreachable code
-//         Start          = 1 << 1,  // Start of flow graph
-//         BranchLabel    = 1 << 2,  // Non-looping junction
-//         LoopLabel      = 1 << 3,  // Looping junction
-//         Assignment     = 1 << 4,  // Assignment
-//         TrueCondition  = 1 << 5,  // Condition known to be true
-//         FalseCondition = 1 << 6,  // Condition known to be false
-//         SwitchClause   = 1 << 7,  // Switch statement clause
-//         ArrayMutation  = 1 << 8,  // Potential array mutation
-//         Call           = 1 << 9,  // Potential assertion call
-//         ReduceLabel    = 1 << 10, // Temporarily reduce antecedents of label
-//         Referenced     = 1 << 11, // Referenced as antecedent once
-//         Shared         = 1 << 12, // Referenced as antecedent more than once
+bitflags! {
+    // NOTE: Ensure this is up-to-date with src/debug/debug.ts
+    pub struct FlowFlags: u16 {
+        const Unreachable    = 1 << 0;  // Unreachable code
+        const Start          = 1 << 1;  // Start of flow graph
+        const BranchLabel    = 1 << 2;  // Non-looping junction
+        const LoopLabel      = 1 << 3;  // Looping junction
+        const Assignment     = 1 << 4;  // Assignment
+        const TrueCondition  = 1 << 5;  // Condition known to be true
+        const FalseCondition = 1 << 6;  // Condition known to be false
+        const SwitchClause   = 1 << 7;  // Switch statement clause
+        const ArrayMutation  = 1 << 8;  // Potential array mutation
+        const Call           = 1 << 9;  // Potential assertion call
+        const ReduceLabel    = 1 << 10; // Temporarily reduce antecedents of label
+        const Referenced     = 1 << 11; // Referenced as antecedent once
+        const Shared         = 1 << 12; // Referenced as antecedent more than once
 
-//         Label = BranchLabel | LoopLabel,
-//         Condition = TrueCondition | FalseCondition,
-//     }
+        const Label = Self::BranchLabel.bits | Self::LoopLabel.bits;
+        const Condition = Self::TrueCondition.bits | Self::FalseCondition.bits;
+    }
+}
 
-//     export type FlowNode =
-//         | FlowStart
-//         | FlowLabel
-//         | FlowAssignment
-//         | FlowCall
-//         | FlowCondition
-//         | FlowSwitchClause
-//         | FlowArrayMutation
-//         | FlowCall
-//         | FlowReduceLabel;
+index::newtype_index! {
+    pub struct FlowNodeId {
+        DEBUG_FORMAT = "FlowNodeId({})"
+    }
+}
 
-//     export interface FlowNodeBase {
-//         flags: FlowFlags;
-//         id?: number;     // Node id used by flow type cache in checker
-//     }
+index::newtype_index! {
+    pub struct FlowLabelId {
+        DEBUG_FORMAT = "FlowLabelId({})"
+    }
+}
 
-//     // FlowStart represents the start of a control flow. For a function expression or arrow
-//     // function, the node property references the function (which in turn has a flowNode
-//     // property for the containing control flow).
-//     export interface FlowStart extends FlowNodeBase {
-//         node?: FunctionExpression | ArrowFunction | MethodDeclaration | GetAccessorDeclaration | SetAccessorDeclaration;
-//     }
+pub enum FlowNodeKind {
+    None,
+    FlowStart(FlowStart),
+    FlowLabel(FlowLabel),
+    FlowAssignment(FlowAssignment),
+    FlowCall(FlowCall),
+    FlowCondition(FlowCondition),
+    FlowSwitchClause(FlowSwitchClause),
+    FlowArrayMutation(FlowArrayMutation),
+    FlowReduceLabel(FlowReduceLabel),
+}
 
-//     // FlowLabel represents a junction with multiple possible preceding control flows.
-//     export interface FlowLabel extends FlowNodeBase {
-//         antecedents: FlowNode[] | undefined;
-//     }
+impl FlowNodeKind {
+    pub fn unwrap_flow_label(&self) -> &FlowLabel {
+        match self {
+            FlowNodeKind::FlowLabel(label) => &label,
+            _ => unreachable!(),
+        }
+    }
 
-//     // FlowAssignment represents a node that assigns a value to a narrowable reference,
-//     // i.e. an identifier or a dotted name that starts with an identifier or 'this'.
-//     export interface FlowAssignment extends FlowNodeBase {
-//         node: Expression | VariableDeclaration | BindingElement;
-//         antecedent: FlowNode;
-//     }
+    pub fn unwrap_flow_label_mut(&mut self) -> &mut FlowLabel {
+        match self {
+            FlowNodeKind::FlowLabel(label) => label,
+            _ => unreachable!(),
+        }
+    }
+}
 
-//     export interface FlowCall extends FlowNodeBase {
-//         node: CallExpression;
-//         antecedent: FlowNode;
-//     }
+pub struct FlowNode {
+    pub flags: FlowFlags,
+    pub kind: FlowNodeKind,
+}
 
-//     // FlowCondition represents a condition that is known to be true or false at the
-//     // node's location in the control flow.
-//     export interface FlowCondition extends FlowNodeBase {
-//         node: Expression;
-//         antecedent: FlowNode;
-//     }
+impl FlowNode {
+    pub fn new_branch_label() -> Self {
+        Self {
+            flags: FlowFlags::BranchLabel,
+            kind: FlowNodeKind::FlowLabel(FlowLabel { antecedents: None }),
+        }
+    }
 
-//     export interface FlowSwitchClause extends FlowNodeBase {
-//         switchStatement: SwitchStatement;
-//         clauseStart: number;   // Start index of case/default clause range
-//         clauseEnd: number;     // End index of case/default clause range
-//         antecedent: FlowNode;
-//     }
+    pub fn new_branch_label_with_antecedents(antecedents: Vec<FlowNodeId>) -> Self {
+        Self {
+            flags: FlowFlags::BranchLabel,
+            kind: FlowNodeKind::FlowLabel(FlowLabel {
+                antecedents: Some(Rc::new(antecedents)),
+            }),
+        }
+    }
 
-//     // FlowArrayMutation represents a node potentially mutates an array, i.e. an
-//     // operation of the form 'x.push(value)', 'x.unshift(value)' or 'x[n] = value'.
-//     export interface FlowArrayMutation extends FlowNodeBase {
-//         node: CallExpression | BinaryExpression;
-//         antecedent: FlowNode;
-//     }
+    pub fn new_loop_label() -> Self {
+        Self {
+            flags: FlowFlags::LoopLabel,
+            kind: FlowNodeKind::FlowLabel(FlowLabel { antecedents: None }),
+        }
+    }
 
-//     export interface FlowReduceLabel extends FlowNodeBase {
-//         target: FlowLabel;
-//         antecedents: FlowNode[];
-//         antecedent: FlowNode;
-//     }
+    pub fn new_reduce_label(
+        target: FlowLabelId,
+        antecedents: Rc<Vec<FlowNodeId>>,
+        antecedent: FlowNodeId,
+    ) -> Self {
+        Self {
+            flags: FlowFlags::ReduceLabel,
+            kind: FlowNodeKind::FlowReduceLabel(FlowReduceLabel {
+                target,
+                antecedents: antecedents,
+                antecedent,
+            }),
+        }
+    }
+}
+
+// FlowStart represents the start of a control flow. For a function expression or arrow
+// function, the node property references the function (which in turn has a flowNode
+// property for the containing control flow).
+pub struct FlowStart {
+    // node?: FunctionExpression | ArrowFunction | MethodDeclaration | GetAccessorDeclaration | SetAccessorDeclaration;
+    pub node: Option<Rc<BoundNode>>,
+}
+
+// FlowLabel represents a junction with multiple possible preceding control flows.
+pub struct FlowLabel {
+    pub antecedents: Option<Rc<Vec<FlowNodeId>>>,
+}
+
+// FlowAssignment represents a node that assigns a value to a narrowable reference,
+// i.e. an identifier or a dotted name that starts with an identifier or 'this'.
+pub struct FlowAssignment {
+    // node: Expression | VariableDeclaration | BindingElement;
+    pub node: Rc<BoundNode>,
+    pub antecedent: FlowNodeId,
+}
+
+pub struct FlowCall {
+    pub node: Rc<CallExpression>,
+    pub antecedent: FlowNodeId,
+}
+
+// FlowCondition represents a condition that is known to be true or false at the
+// node's location in the control flow.
+pub struct FlowCondition {
+    pub node: Expression,
+    pub antecedent: FlowNodeId,
+}
+
+pub struct FlowSwitchClause {
+    pub switchStatement: Rc<SwitchStatement>,
+    pub clauseStart: u32, // Start index of case/default clause range
+    pub clauseEnd: u32,   // End index of case/default clause range
+    pub antecedent: FlowNodeId,
+}
+
+// FlowArrayMutation represents a node potentially mutates an array, i.e. an
+// operation of the form 'x.push(value)', 'x.unshift(value)' or 'x[n] = value'.
+pub struct FlowArrayMutation {
+    // node: CallExpression | BinaryExpression;
+    pub node: Rc<BoundNode>,
+    pub antecedent: FlowNodeId,
+}
+
+pub struct FlowReduceLabel {
+    pub target: FlowLabelId,
+    pub antecedents: Rc<Vec<FlowNodeId>>,
+    pub antecedent: FlowNodeId,
+}
 
 //     export type FlowType = Type | IncompleteType;
 
@@ -9029,19 +8398,14 @@ impl HasNodeId for SourceFile {
     }
 }
 
-impl IsNode for SourceFile {
-    fn kind(&self) -> SyntaxKind {
-        SyntaxKind::SourceFile
-    }
-
-    fn name(&self) -> Option<Node> {
-        None
-    }
-
-    fn isPropertyName(&self) -> bool {
-        false
-    }
-}
+impl_is_node!(
+    SourceFile,
+    SourceFile,
+    self,
+    name: None,
+    is_property_name: false,
+    modifiers: None,
+);
 
 //     /* @internal */
 //     export interface CommentDirective {
@@ -10169,119 +9533,144 @@ impl IsNode for SourceFile {
 //         isImportRequiredByAugmentation(decl: ImportDeclaration): boolean;
 //     }
 
-//     export const enum SymbolFlags {
-//         None                    = 0,
-//         FunctionScopedVariable  = 1 << 0,   // Variable (var) or parameter
-//         BlockScopedVariable     = 1 << 1,   // A block-scoped variable (let or const)
-//         Property                = 1 << 2,   // Property or enum member
-//         EnumMember              = 1 << 3,   // Enum member
-//         Function                = 1 << 4,   // Function
-//         Class                   = 1 << 5,   // Class
-//         Interface               = 1 << 6,   // Interface
-//         ConstEnum               = 1 << 7,   // Const enum
-//         RegularEnum             = 1 << 8,   // Enum
-//         ValueModule             = 1 << 9,   // Instantiated module
-//         NamespaceModule         = 1 << 10,  // Uninstantiated module
-//         TypeLiteral             = 1 << 11,  // Type Literal or mapped type
-//         ObjectLiteral           = 1 << 12,  // Object Literal
-//         Method                  = 1 << 13,  // Method
-//         Constructor             = 1 << 14,  // Constructor
-//         GetAccessor             = 1 << 15,  // Get accessor
-//         SetAccessor             = 1 << 16,  // Set accessor
-//         Signature               = 1 << 17,  // Call, construct, or index signature
-//         TypeParameter           = 1 << 18,  // Type parameter
-//         TypeAlias               = 1 << 19,  // Type alias
-//         ExportValue             = 1 << 20,  // Exported value marker (see comment in declareModuleMember in binder)
-//         Alias                   = 1 << 21,  // An alias for another symbol (see comment in isAliasSymbolDeclaration in checker)
-//         Prototype               = 1 << 22,  // Prototype property (no source representation)
-//         ExportStar              = 1 << 23,  // Export * declaration
-//         Optional                = 1 << 24,  // Optional property
-//         Transient               = 1 << 25,  // Transient symbol (created during type check)
-//         Assignment              = 1 << 26,  // Assignment treated as declaration (eg `this.prop = 1`)
-//         ModuleExports           = 1 << 27,  // Symbol for CommonJS `module` of `module.exports`
-//         /* @internal */
-//         All = FunctionScopedVariable | BlockScopedVariable | Property | EnumMember | Function | Class | Interface | ConstEnum | RegularEnum | ValueModule | NamespaceModule | TypeLiteral
-//             | ObjectLiteral | Method | Constructor | GetAccessor | SetAccessor | Signature | TypeParameter | TypeAlias | ExportValue | Alias | Prototype | ExportStar | Optional | Transient,
+bitflags! {
+    #[derive(Default)]
+    pub struct SymbolFlags: u32 {
+        const None                    = 0;
+        const FunctionScopedVariable  = 1 << 0;   // Variable (var) or parameter
+        const BlockScopedVariable     = 1 << 1;   // A block-scoped variable (let or const)
+        const Property                = 1 << 2;   // Property or enum member
+        const EnumMember              = 1 << 3;   // Enum member
+        const Function                = 1 << 4;   // Function
+        const Class                   = 1 << 5;   // Class
+        const Interface               = 1 << 6;   // Interface
+        const ConstEnum               = 1 << 7;   // Const enum
+        const RegularEnum             = 1 << 8;   // Enum
+        const ValueModule             = 1 << 9;   // Instantiated module
+        const NamespaceModule         = 1 << 10;  // Uninstantiated module
+        const TypeLiteral             = 1 << 11;  // Type Literal or mapped type
+        const ObjectLiteral           = 1 << 12;  // Object Literal
+        const Method                  = 1 << 13;  // Method
+        const Constructor             = 1 << 14;  // Constructor
+        const GetAccessor             = 1 << 15;  // Get accessor
+        const SetAccessor             = 1 << 16;  // Set accessor
+        const Signature               = 1 << 17;  // Call, construct, or index signature
+        const TypeParameter           = 1 << 18;  // Type parameter
+        const TypeAlias               = 1 << 19;  // Type alias
+        const ExportValue             = 1 << 20;  // Exported value marker (see comment in declareModuleMember in binder)
+        const Alias                   = 1 << 21;  // An alias for another symbol (see comment in isAliasSymbolDeclaration in checker)
+        const Prototype               = 1 << 22;  // Prototype property (no source representation)
+        const ExportStar              = 1 << 23;  // Export * declaration
+        const Optional                = 1 << 24;  // Optional property
+        const Transient               = 1 << 25;  // Transient symbol (created during type check)
+        const Assignment              = 1 << 26;  // Assignment treated as declaration (eg `this.prop = 1`)
+        const ModuleExports           = 1 << 27;  // Symbol for CommonJS `module` of `module.exports`
+        /* @internal */
+        const All = Self::FunctionScopedVariable.bits | Self::BlockScopedVariable.bits | Self::Property.bits | Self::EnumMember.bits | Self::Function.bits | Self::Class.bits | Self::Interface.bits | Self::ConstEnum.bits | Self::RegularEnum.bits | Self::ValueModule.bits | Self::NamespaceModule.bits | Self::TypeLiteral.bits
+            | Self::ObjectLiteral.bits | Self::Method.bits | Self::Constructor.bits | Self::GetAccessor.bits | Self::SetAccessor.bits | Self::Signature.bits | Self::TypeParameter.bits | Self::TypeAlias.bits | Self::ExportValue.bits | Self::Alias.bits | Self::Prototype.bits | Self::ExportStar.bits | Self::Optional.bits | Self::Transient.bits;
 
-//         Enum = RegularEnum | ConstEnum,
-//         Variable = FunctionScopedVariable | BlockScopedVariable,
-//         Value = Variable | Property | EnumMember | ObjectLiteral | Function | Class | Enum | ValueModule | Method | GetAccessor | SetAccessor,
-//         Type = Class | Interface | Enum | EnumMember | TypeLiteral | TypeParameter | TypeAlias,
-//         Namespace = ValueModule | NamespaceModule | Enum,
-//         Module = ValueModule | NamespaceModule,
-//         Accessor = GetAccessor | SetAccessor,
+        const Enum = Self::RegularEnum.bits | Self::ConstEnum.bits;
+        const Variable = Self::FunctionScopedVariable.bits | Self::BlockScopedVariable.bits;
+        const Value = Self::Variable.bits | Self::Property.bits | Self::EnumMember.bits | Self::ObjectLiteral.bits | Self::Function.bits | Self::Class.bits | Self::Enum.bits | Self::ValueModule.bits | Self::Method.bits | Self::GetAccessor.bits | Self::SetAccessor.bits;
+        const Type = Self::Class.bits | Self::Interface.bits | Self::Enum.bits | Self::EnumMember.bits | Self::TypeLiteral.bits | Self::TypeParameter.bits | Self::TypeAlias.bits;
+        const Namespace = Self::ValueModule.bits | Self::NamespaceModule.bits | Self::Enum.bits;
+        const Module = Self::ValueModule.bits | Self::NamespaceModule.bits;
+        const Accessor = Self::GetAccessor.bits | Self::SetAccessor.bits;
 
-//         // Variables can be redeclared, but can not redeclare a block-scoped declaration with the
-//         // same name, or any other value that is not a variable, e.g. ValueModule or Class
-//         FunctionScopedVariableExcludes = Value & ~FunctionScopedVariable,
+        // Variables can be redeclared, but can not redeclare a block-scoped declaration with the
+        // same name, or any other value that is not a variable, e.g. ValueModule or Class
+        const FunctionScopedVariableExcludes = Self::Value.bits & !Self::FunctionScopedVariable.bits;
 
-//         // Block-scoped declarations are not allowed to be re-declared
-//         // they can not merge with anything in the value space
-//         BlockScopedVariableExcludes = Value,
+        // Block-scoped declarations are not allowed to be re-declared
+        // they can not merge with anything in the value space
+        const BlockScopedVariableExcludes = Self::Value.bits;
 
-//         ParameterExcludes = Value,
-//         PropertyExcludes = None,
-//         EnumMemberExcludes = Value | Type,
-//         FunctionExcludes = Value & ~(Function | ValueModule | Class),
-//         ClassExcludes = (Value | Type) & ~(ValueModule | Interface | Function), // class-interface mergability done in checker.ts
-//         InterfaceExcludes = Type & ~(Interface | Class),
-//         RegularEnumExcludes = (Value | Type) & ~(RegularEnum | ValueModule), // regular enums merge only with regular enums and modules
-//         ConstEnumExcludes = (Value | Type) & ~ConstEnum, // const enums merge only with const enums
-//         ValueModuleExcludes = Value & ~(Function | Class | RegularEnum | ValueModule),
-//         NamespaceModuleExcludes = 0,
-//         MethodExcludes = Value & ~Method,
-//         GetAccessorExcludes = Value & ~SetAccessor,
-//         SetAccessorExcludes = Value & ~GetAccessor,
-//         TypeParameterExcludes = Type & ~TypeParameter,
-//         TypeAliasExcludes = Type,
-//         AliasExcludes = Alias,
+        const ParameterExcludes = Self::Value.bits;
+        const PropertyExcludes = Self::None.bits;
+        const EnumMemberExcludes = Self::Value.bits | Self::Type.bits;
+        const FunctionExcludes = Self::Value.bits & !(Self::Function.bits | Self::ValueModule.bits | Self::Class.bits);
+        const ClassExcludes = (Self::Value.bits | Self::Type.bits) & !(Self::ValueModule.bits | Self::Interface.bits | Self::Function.bits); // class-interface mergability done in checker.ts
+        const InterfaceExcludes = Self::Type.bits & !(Self::Interface.bits | Self::Class.bits);
+        const RegularEnumExcludes = (Self::Value.bits | Self::Type.bits) & !(Self::RegularEnum.bits | Self::ValueModule.bits); // regular enums merge only with regular enums and modules
+        const ConstEnumExcludes = (Self::Value.bits | Self::Type.bits) & !Self::ConstEnum.bits; // const enums merge only with const enums
+        const ValueModuleExcludes = Self::Value.bits & !(Self::Function.bits | Self::Class.bits | Self::RegularEnum.bits | Self::ValueModule.bits);
+        const NamespaceModuleExcludes = 0;
+        const MethodExcludes = Self::Value.bits & !Self::Method.bits;
+        const GetAccessorExcludes = Self::Value.bits & !Self::SetAccessor.bits;
+        const SetAccessorExcludes = Self::Value.bits & !Self::GetAccessor.bits;
+        const TypeParameterExcludes = Self::Type.bits & !Self::TypeParameter.bits;
+        const TypeAliasExcludes = Self::Type.bits;
+        const AliasExcludes = Self::Alias.bits;
 
-//         ModuleMember = Variable | Function | Class | Interface | Enum | Module | TypeAlias | Alias,
+        const ModuleMember = Self::Variable.bits | Self::Function.bits | Self::Class.bits | Self::Interface.bits | Self::Enum.bits | Self::Module.bits | Self::TypeAlias.bits | Self::Alias.bits;
 
-//         ExportHasLocal = Function | Class | Enum | ValueModule,
+        const ExportHasLocal = Self::Function.bits | Self::Class.bits | Self::Enum.bits | Self::ValueModule.bits;
 
-//         BlockScoped = BlockScopedVariable | Class | Enum,
+        const BlockScoped = Self::BlockScopedVariable.bits | Self::Class.bits | Self::Enum.bits;
 
-//         PropertyOrAccessor = Property | Accessor,
+        const PropertyOrAccessor = Self::Property.bits | Self::Accessor.bits;
 
-//         ClassMember = Method | Accessor | Property,
+        const ClassMember = Self::Method.bits | Self::Accessor.bits | Self::Property.bits;
 
-//         /* @internal */
-//         ExportSupportsDefaultModifier = Class | Function | Interface,
+        /* @internal */
+        const ExportSupportsDefaultModifier = Self::Class.bits | Self::Function.bits | Self::Interface.bits;
 
-//         /* @internal */
-//         ExportDoesNotSupportDefaultModifier = ~ExportSupportsDefaultModifier,
+        /* @internal */
+        const ExportDoesNotSupportDefaultModifier = !Self::ExportSupportsDefaultModifier.bits;
 
-//         /* @internal */
-//         // The set of things we consider semantically classifiable.  Used to speed up the LS during
-//         // classification.
-//         Classifiable = Class | Enum | TypeAlias | Interface | TypeParameter | Module | Alias,
+        /* @internal */
+        // The set of things we consider semantically classifiable.  Used to speed up the LS during
+        // classification.
+        const Classifiable = Self::Class.bits | Self::Enum.bits | Self::TypeAlias.bits | Self::Interface.bits | Self::TypeParameter.bits | Self::Module.bits | Self::Alias.bits;
 
-//         /* @internal */
-//         LateBindingContainer = Class | Interface | TypeLiteral | ObjectLiteral | Function,
-//     }
+        /* @internal */
+        const LateBindingContainer = Self::Class.bits | Self::Interface.bits | Self::TypeLiteral.bits | Self::ObjectLiteral.bits | Self::Function.bits;
+    }
+}
 
-//     /* @internal */
-//     export type SymbolId = number;
+index::newtype_index! {
+    pub struct SymbolId {
+        DEBUG_FORMAT = "SymbolId({})"
+    }
+}
 
-//     export interface Symbol {
-//         flags: SymbolFlags;                     // Symbol flags
-//         escapedName: __String;                  // Name of symbol
-//         declarations?: Declaration[];           // Declarations associated with this symbol
-//         valueDeclaration?: Declaration;         // First value declaration of the symbol
-//         members?: SymbolTable;                  // Class, interface or object literal instance members
-//         exports?: SymbolTable;                  // Module exports
-//         globalExports?: SymbolTable;            // Conditional global UMD exports
-//         /* @internal */ id?: SymbolId;          // Unique id (used to look up SymbolLinks)
-//         /* @internal */ mergeId?: number;       // Merge id (used to look up merged symbol)
-//         /* @internal */ parent?: Symbol;        // Parent symbol
-//         /* @internal */ exportSymbol?: Symbol;  // Exported symbol associated with this symbol
-//         /* @internal */ constEnumOnlyModule?: boolean; // True if module contains only const enums or other modules with only const enums
-//         /* @internal */ isReferenced?: SymbolFlags; // True if the symbol is referenced elsewhere. Keeps track of the meaning of a reference in case a symbol is both a type parameter and parameter.
-//         /* @internal */ isReplaceableByMethod?: boolean; // Can this Javascript class property be replaced by a method symbol?
-//         /* @internal */ isAssigned?: boolean;   // True if the symbol is a parameter with assignments
-//         /* @internal */ assignmentDeclarationMembers?: ESMap<number, Declaration>; // detected late-bound assignment declarations associated with the symbol
-//     }
+pub struct Symbol {
+    pub flags: SymbolFlags,                      // Symbol flags
+    pub escapedName: __String,                   // Name of symbol
+    pub declarations: Vec<Rc<BoundNode>>,        // Declarations associated with this symbol
+    pub valueDeclaration: Option<Rc<BoundNode>>, // First value declaration of the symbol
+    pub members: Option<SymbolTableId>, // Class, interface or object literal instance members
+    pub exports: Option<SymbolTableId>, // Module exports
+    pub globalExports: Option<SymbolTableId>, // Conditional global UMD exports
+    // pub id?: SymbolId;          // Unique id (used to look up SymbolLinks)
+    // pub mergeId?: number;       // Merge id (used to look up merged symbol)
+    pub parent: Option<SymbolId>,          // Parent symbol
+    pub exportSymbol: Option<SymbolId>,    // Exported symbol associated with this symbol
+    pub constEnumOnlyModule: Option<bool>, // True if module contains only const enums or other modules with only const enums
+    // pub isReferenced?: SymbolFlags; // True if the symbol is referenced elsewhere. Keeps track of the meaning of a reference in case a symbol is both a type parameter and parameter.
+    pub isReplaceableByMethod: bool, // Can this Javascript class property be replaced by a method symbol?
+    pub isAssigned: bool,            // True if the symbol is a parameter with assignments
+                                     // pub assignmentDeclarationMembers?: ESMap<number, Declaration>; // detected late-bound assignment declarations associated with the symbol
+}
+
+impl Symbol {
+    pub fn new(flags: SymbolFlags, name: __String) -> Self {
+        Self {
+            flags,
+            escapedName: name,
+            declarations: Vec::new(),
+            valueDeclaration: None,
+            members: None,
+            exports: None,
+            globalExports: None,
+            parent: None,
+            exportSymbol: None,
+            constEnumOnlyModule: None,
+            isReplaceableByMethod: false,
+            isAssigned: false,
+        }
+    }
+}
 
 //     /* @internal */
 //     export interface SymbolLinks {
@@ -10381,25 +9770,41 @@ impl IsNode for SourceFile {
 //         constraintType: IndexType;
 //     }
 
-//     export const enum InternalSymbolName {
-//         Call = "__call", // Call signatures
-//         Constructor = "__constructor", // Constructor implementations
-//         New = "__new", // Constructor signatures
-//         Index = "__index", // Index signatures
-//         ExportStar = "__export", // Module export * declarations
-//         Global = "__global", // Global self-reference
-//         Missing = "__missing", // Indicates missing symbol
-//         Type = "__type", // Anonymous type literal symbol
-//         Object = "__object", // Anonymous object literal declaration
-//         JSXAttributes = "__jsxAttributes", // Anonymous JSX attributes object literal declaration
-//         Class = "__class", // Unnamed class expression
-//         Function = "__function", // Unnamed function expression
-//         Computed = "__computed", // Computed property name declaration with dynamic name
-//         Resolving = "__resolving__", // Indicator symbol used to mark partially resolved type aliases
-//         ExportEquals = "export=", // Export assignment symbol
-//         Default = "default", // Default export symbol (technically not wholly internal, but included here for usability)
-//         This = "this",
-//     }
+pub mod InternalSymbolName {
+    /// Call signatures.
+    pub const Call: &'static str = "__call";
+    /// Constructor implementations.
+    pub const Constructor: &'static str = "__constructor";
+    /// Constructor signatures.
+    pub const New: &'static str = "__new";
+    /// Index signatures.
+    pub const Index: &'static str = "__index";
+    /// Module export * declarations.
+    pub const ExportStar: &'static str = "__export";
+    /// Global self-reference.
+    pub const Global: &'static str = "__global";
+    /// Indicates missing symbol.
+    pub const Missing: &'static str = "__missing";
+    /// Anonymous type literal symbol.
+    pub const Type: &'static str = "__type";
+    /// Anonymous object literal declaration.
+    pub const Object: &'static str = "__object";
+    /// Anonymous JSX attributes object literal declaration.
+    pub const JSXAttributes: &'static str = "__jsxAttributes";
+    /// Unnamed class expression.
+    pub const Class: &'static str = "__class";
+    /// Unnamed function expression.
+    pub const Function: &'static str = "__function";
+    /// Computed property name declaration with dynamic name.
+    pub const Computed: &'static str = "__computed";
+    /// Indicator symbol used to mark partially resolved type aliases.
+    pub const Resolving: &'static str = "__resolving__";
+    /// Export assignment symbol.
+    pub const ExportEquals: &'static str = "export=";
+    /// Default export symbol (technically not wholly internal, but included here for usability).
+    pub const Default: &'static str = "default";
+    pub const This: &'static str = "this";
+}
 
 /**
  * This represents a string whose leading underscore have been escaped by adding extra leading underscores.
@@ -10409,8 +9814,14 @@ impl IsNode for SourceFile {
  * with a normal string (which is good, it cannot be misused on assignment or on usage),
  * while still being comparable with a normal string via === (also good) and castable from a string.
  */
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct __String(pub JsWord);
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct __String(pub Rc<str>);
+
+impl<'a> PartialEq<&'a str> for __String {
+    fn eq(&self, other: &&'a str) -> bool {
+        self.0.as_ref() == *other
+    }
+}
 
 //     export type __String = (string & { __escapedIdentifier: void }) | (void & { __escapedIdentifier: void }) | InternalSymbolName; // eslint-disable-line @typescript-eslint/naming-convention
 
@@ -10422,8 +9833,13 @@ pub struct __String(pub JsWord);
 //     export interface UnderscoreEscapedMap<T> extends ESMap<__String, T>, ReadonlyUnderscoreEscapedMap<T> {
 //     }
 
-//     /** SymbolTable based on ES6 Map interface. */
-//     export type SymbolTable = UnderscoreEscapedMap<Symbol>;
+pub type SymbolTable = FxHashMap<__String, SymbolId>;
+
+index::newtype_index! {
+    pub struct SymbolTableId {
+        DEBUG_FORMAT = "SymbolTableId({})"
+    }
+}
 
 //     /** Used to track a `declare module "foo*"`-like declaration. */
 //     /* @internal */
@@ -11259,32 +10675,32 @@ pub struct __String(pub JsWord);
 //         resolvedProperties?: Symbol[];  // Properties occurring in sibling object literals
 //     }
 
-//     /* @internal */
-//     export const enum AssignmentDeclarationKind {
-//         None,
-//         /// exports.name = expr
-//         /// module.exports.name = expr
-//         ExportsProperty,
-//         /// module.exports = expr
-//         ModuleExports,
-//         /// className.prototype.name = expr
-//         PrototypeProperty,
-//         /// this.name = expr
-//         ThisProperty,
-//         // F.name = expr
-//         Property,
-//         // F.prototype = { ... }
-//         Prototype,
-//         // Object.defineProperty(x, 'name', { value: any, writable?: boolean (false by default) });
-//         // Object.defineProperty(x, 'name', { get: Function, set: Function });
-//         // Object.defineProperty(x, 'name', { get: Function });
-//         // Object.defineProperty(x, 'name', { set: Function });
-//         ObjectDefinePropertyValue,
-//         // Object.defineProperty(exports || module.exports, 'name', ...);
-//         ObjectDefinePropertyExports,
-//         // Object.defineProperty(Foo.prototype, 'name', ...);
-//         ObjectDefinePrototypeProperty,
-//     }
+#[derive(PartialEq, Eq)]
+pub enum AssignmentDeclarationKind {
+    None,
+    /// exports.name = expr
+    /// module.exports.name = expr
+    ExportsProperty,
+    /// module.exports = expr
+    ModuleExports,
+    /// className.prototype.name = expr
+    PrototypeProperty,
+    /// this.name = expr
+    ThisProperty,
+    // F.name = expr
+    Property,
+    // F.prototype = { ... }
+    Prototype,
+    // Object.defineProperty(x, 'name', { value: any, writable?: boolean (false by default) });
+    // Object.defineProperty(x, 'name', { get: Function, set: Function });
+    // Object.defineProperty(x, 'name', { get: Function });
+    // Object.defineProperty(x, 'name', { set: Function });
+    ObjectDefinePropertyValue,
+    // Object.defineProperty(exports || module.exports, 'name', ...);
+    ObjectDefinePropertyExports,
+    // Object.defineProperty(Foo.prototype, 'name', ...);
+    ObjectDefinePrototypeProperty,
+}
 
 //     /** @deprecated Use FileExtensionInfo instead. */
 //     export type JsFileExtensionInfo = FileExtensionInfo;
@@ -11470,132 +10886,133 @@ pub type DiagnosticWithDetachedLocation = Diagnostic;
 
 //     export type CompilerOptionsValue = string | number | boolean | (string | number)[] | string[] | MapLike<string[]> | PluginImport[] | ProjectReference[] | null | undefined;
 
-//     export interface CompilerOptions {
-//         /*@internal*/ all?: boolean;
-//         allowJs?: boolean;
-//         /*@internal*/ allowNonTsExtensions?: boolean;
-//         allowSyntheticDefaultImports?: boolean;
-//         allowUmdGlobalAccess?: boolean;
-//         allowUnreachableCode?: boolean;
-//         allowUnusedLabels?: boolean;
-//         alwaysStrict?: boolean;  // Always combine with strict property
-//         baseUrl?: string;
-//         /** An error if set - this should only go through the -b pipeline and not actually be observed */
-//         /*@internal*/
-//         build?: boolean;
-//         charset?: string;
-//         checkJs?: boolean;
-//         /* @internal */ configFilePath?: string;
-//         /** configFile is set as non enumerable property so as to avoid checking of json source files */
-//         /* @internal */ readonly configFile?: TsConfigSourceFile;
-//         declaration?: boolean;
-//         declarationMap?: boolean;
-//         emitDeclarationOnly?: boolean;
-//         declarationDir?: string;
-//         /* @internal */ diagnostics?: boolean;
-//         /* @internal */ extendedDiagnostics?: boolean;
-//         disableSizeLimit?: boolean;
-//         disableSourceOfProjectReferenceRedirect?: boolean;
-//         disableSolutionSearching?: boolean;
-//         disableReferencedProjectLoad?: boolean;
-//         downlevelIteration?: boolean;
-//         emitBOM?: boolean;
-//         emitDecoratorMetadata?: boolean;
-//         exactOptionalPropertyTypes?: boolean;
-//         experimentalDecorators?: boolean;
-//         forceConsistentCasingInFileNames?: boolean;
-//         /*@internal*/generateCpuProfile?: string;
-//         /*@internal*/generateTrace?: string;
-//         /*@internal*/help?: boolean;
-//         importHelpers?: boolean;
-//         importsNotUsedAsValues?: ImportsNotUsedAsValues;
-//         /*@internal*/init?: boolean;
-//         inlineSourceMap?: boolean;
-//         inlineSources?: boolean;
-//         isolatedModules?: boolean;
-//         jsx?: JsxEmit;
-//         keyofStringsOnly?: boolean;
-//         lib?: string[];
-//         /*@internal*/listEmittedFiles?: boolean;
-//         /*@internal*/listFiles?: boolean;
-//         /*@internal*/explainFiles?: boolean;
-//         /*@internal*/listFilesOnly?: boolean;
-//         locale?: string;
-//         mapRoot?: string;
-//         maxNodeModuleJsDepth?: number;
-//         module?: ModuleKind;
-//         moduleResolution?: ModuleResolutionKind;
-//         newLine?: NewLineKind;
-//         noEmit?: boolean;
-//         /*@internal*/noEmitForJsFiles?: boolean;
-//         noEmitHelpers?: boolean;
-//         noEmitOnError?: boolean;
-//         noErrorTruncation?: boolean;
-//         noFallthroughCasesInSwitch?: boolean;
-//         noImplicitAny?: boolean;  // Always combine with strict property
-//         noImplicitReturns?: boolean;
-//         noImplicitThis?: boolean;  // Always combine with strict property
-//         noStrictGenericChecks?: boolean;
-//         noUnusedLocals?: boolean;
-//         noUnusedParameters?: boolean;
-//         noImplicitUseStrict?: boolean;
-//         noPropertyAccessFromIndexSignature?: boolean;
-//         assumeChangesOnlyAffectDirectDependencies?: boolean;
-//         noLib?: boolean;
-//         noResolve?: boolean;
-//         noUncheckedIndexedAccess?: boolean;
-//         out?: string;
-//         outDir?: string;
-//         outFile?: string;
-//         paths?: MapLike<string[]>;
-//         /** The directory of the config file that specified 'paths'. Used to resolve relative paths when 'baseUrl' is absent. */
-//         /*@internal*/ pathsBasePath?: string;
-//         /*@internal*/ plugins?: PluginImport[];
-//         preserveConstEnums?: boolean;
-//         noImplicitOverride?: boolean;
-//         preserveSymlinks?: boolean;
-//         preserveValueImports?: boolean;
-//         /* @internal */ preserveWatchOutput?: boolean;
-//         project?: string;
-//         /* @internal */ pretty?: boolean;
-//         reactNamespace?: string;
-//         jsxFactory?: string;
-//         jsxFragmentFactory?: string;
-//         jsxImportSource?: string;
-//         composite?: boolean;
-//         incremental?: boolean;
-//         tsBuildInfoFile?: string;
-//         removeComments?: boolean;
-//         rootDir?: string;
-//         rootDirs?: string[];
-//         skipLibCheck?: boolean;
-//         skipDefaultLibCheck?: boolean;
-//         sourceMap?: boolean;
-//         sourceRoot?: string;
-//         strict?: boolean;
-//         strictFunctionTypes?: boolean;  // Always combine with strict property
-//         strictBindCallApply?: boolean;  // Always combine with strict property
-//         strictNullChecks?: boolean;  // Always combine with strict property
-//         strictPropertyInitialization?: boolean;  // Always combine with strict property
-//         stripInternal?: boolean;
-//         suppressExcessPropertyErrors?: boolean;
-//         suppressImplicitAnyIndexErrors?: boolean;
-//         /* @internal */ suppressOutputPathCheck?: boolean;
-//         target?: ScriptTarget;
-//         traceResolution?: boolean;
-//         useUnknownInCatchVariables?: boolean;
-//         resolveJsonModule?: boolean;
-//         types?: string[];
-//         /** Paths used to compute primary types search locations */
-//         typeRoots?: string[];
-//         /*@internal*/ version?: boolean;
-//         /*@internal*/ watch?: boolean;
-//         esModuleInterop?: boolean;
-//         /* @internal */ showConfig?: boolean;
-//         useDefineForClassFields?: boolean;
+// TODO:
+#[derive(Default)]
+pub struct CompilerOptions {
+    //         /*@internal*/ all?: boolean;
+    //         allowJs?: boolean;
+    //         /*@internal*/ allowNonTsExtensions?: boolean;
+    //         allowSyntheticDefaultImports?: boolean;
+    //         allowUmdGlobalAccess?: boolean;
+    pub allowUnreachableCode: bool, //         allowUnusedLabels?: boolean;
+    //         alwaysStrict?: boolean;  // Always combine with strict property
+    //         baseUrl?: string;
+    //         /** An error if set - this should only go through the -b pipeline and not actually be observed */
+    //         /*@internal*/
+    //         build?: boolean;
+    //         charset?: string;
+    //         checkJs?: boolean;
+    //         /* @internal */ configFilePath?: string;
+    //         /** configFile is set as non enumerable property so as to avoid checking of json source files */
+    //         /* @internal */ readonly configFile?: TsConfigSourceFile;
+    //         declaration?: boolean;
+    //         declarationMap?: boolean;
+    //         emitDeclarationOnly?: boolean;
+    //         declarationDir?: string;
+    //         /* @internal */ diagnostics?: boolean;
+    //         /* @internal */ extendedDiagnostics?: boolean;
+    //         disableSizeLimit?: boolean;
+    //         disableSourceOfProjectReferenceRedirect?: boolean;
+    //         disableSolutionSearching?: boolean;
+    //         disableReferencedProjectLoad?: boolean;
+    //         downlevelIteration?: boolean;
+    //         emitBOM?: boolean;
+    //         emitDecoratorMetadata?: boolean;
+    //         exactOptionalPropertyTypes?: boolean;
+    //         experimentalDecorators?: boolean;
+    //         forceConsistentCasingInFileNames?: boolean;
+    //         /*@internal*/generateCpuProfile?: string;
+    //         /*@internal*/generateTrace?: string;
+    //         /*@internal*/help?: boolean;
+    //         importHelpers?: boolean;
+    //         importsNotUsedAsValues?: ImportsNotUsedAsValues;
+    //         /*@internal*/init?: boolean;
+    //         inlineSourceMap?: boolean;
+    //         inlineSources?: boolean;
+    //         isolatedModules?: boolean;
+    //         jsx?: JsxEmit;
+    //         keyofStringsOnly?: boolean;
+    //         lib?: string[];
+    //         /*@internal*/listEmittedFiles?: boolean;
+    //         /*@internal*/listFiles?: boolean;
+    //         /*@internal*/explainFiles?: boolean;
+    //         /*@internal*/listFilesOnly?: boolean;
+    //         locale?: string;
+    //         mapRoot?: string;
+    //         maxNodeModuleJsDepth?: number;
+    pub module: Option<ModuleKind>,
+    //         moduleResolution?: ModuleResolutionKind;
+    //         newLine?: NewLineKind;
+    //         noEmit?: boolean;
+    //         /*@internal*/noEmitForJsFiles?: boolean;
+    //         noEmitHelpers?: boolean;
+    //         noEmitOnError?: boolean;
+    //         noErrorTruncation?: boolean;
+    //         noFallthroughCasesInSwitch?: boolean;
+    //         noImplicitAny?: boolean;  // Always combine with strict property
+    //         noImplicitReturns?: boolean;
+    //         noImplicitThis?: boolean;  // Always combine with strict property
+    //         noStrictGenericChecks?: boolean;
+    //         noUnusedLocals?: boolean;
+    //         noUnusedParameters?: boolean;
+    //         noImplicitUseStrict?: boolean;
+    //         noPropertyAccessFromIndexSignature?: boolean;
+    //         assumeChangesOnlyAffectDirectDependencies?: boolean;
+    //         noLib?: boolean;
+    //         noResolve?: boolean;
+    //         noUncheckedIndexedAccess?: boolean;
+    //         out?: string;
+    //         outDir?: string;
+    //         outFile?: string;
+    //         paths?: MapLike<string[]>;
+    //         /** The directory of the config file that specified 'paths'. Used to resolve relative paths when 'baseUrl' is absent. */
+    //         /*@internal*/ pathsBasePath?: string;
+    //         /*@internal*/ plugins?: PluginImport[];
+    //         preserveConstEnums?: boolean;
+    //         noImplicitOverride?: boolean;
+    //         preserveSymlinks?: boolean;
+    //         preserveValueImports?: boolean;
+    //         /* @internal */ preserveWatchOutput?: boolean;
+    //         project?: string;
+    //         /* @internal */ pretty?: boolean;
+    //         reactNamespace?: string;
+    //         jsxFactory?: string;
+    //         jsxFragmentFactory?: string;
+    //         jsxImportSource?: string;
+    //         composite?: boolean;
+    //         incremental?: boolean;
+    //         tsBuildInfoFile?: string;
+    //         removeComments?: boolean;
+    //         rootDir?: string;
+    //         rootDirs?: string[];
+    //         skipLibCheck?: boolean;
+    //         skipDefaultLibCheck?: boolean;
+    //         sourceMap?: boolean;
+    //         sourceRoot?: string;
+    //         strict?: boolean;
+    //         strictFunctionTypes?: boolean;  // Always combine with strict property
+    //         strictBindCallApply?: boolean;  // Always combine with strict property
+    //         strictNullChecks?: boolean;  // Always combine with strict property
+    //         strictPropertyInitialization?: boolean;  // Always combine with strict property
+    //         stripInternal?: boolean;
+    //         suppressExcessPropertyErrors?: boolean;
+    //         suppressImplicitAnyIndexErrors?: boolean;
+    //         /* @internal */ suppressOutputPathCheck?: boolean;
+    pub target: Option<ScriptTarget>,
+    //         traceResolution?: boolean;
+    //         useUnknownInCatchVariables?: boolean;
+    //         resolveJsonModule?: boolean;
+    //         types?: string[];
+    //         /** Paths used to compute primary types search locations */
+    //         typeRoots?: string[];
+    //         /*@internal*/ version?: boolean;
+    //         /*@internal*/ watch?: boolean;
+    //         esModuleInterop?: boolean;
+    //         /* @internal */ showConfig?: boolean;
+    //         useDefineForClassFields?: boolean;
 
-//         [option: string]: CompilerOptionsValue | TsConfigSourceFile | undefined;
-//     }
+    //         [option: string]: CompilerOptionsValue | TsConfigSourceFile | undefined;
+}
 
 //     export interface WatchOptions {
 //         watchFile?: WatchFileKind;
@@ -11621,25 +11038,26 @@ pub type DiagnosticWithDetachedLocation = Diagnostic;
 //         [option: string]: CompilerOptionsValue | undefined;
 //     }
 
-//     export enum ModuleKind {
-//         None = 0,
-//         CommonJS = 1,
-//         AMD = 2,
-//         UMD = 3,
-//         System = 4,
+#[derive(PartialEq, Eq)]
+pub enum ModuleKind {
+    None = 0,
+    CommonJS = 1,
+    AMD = 2,
+    UMD = 3,
+    System = 4,
 
-//         // NOTE: ES module kinds should be contiguous to more easily check whether a module kind is *any* ES module kind.
-//         //       Non-ES module kinds should not come between ES2015 (the earliest ES module kind) and ESNext (the last ES
-//         //       module kind).
-//         ES2015 = 5,
-//         ES2020 = 6,
-//         ES2022 = 7,
-//         ESNext = 99,
+    // NOTE: ES module kinds should be contiguous to more easily check whether a module kind is *any* ES module kind.
+    //       Non-ES module kinds should not come between ES2015 (the earliest ES module kind) and ESNext (the last ES
+    //       module kind).
+    ES2015 = 5,
+    ES2020 = 6,
+    ES2022 = 7,
+    ESNext = 99,
 
-//         // Node12+ is an amalgam of commonjs (albeit updated) and es2020+, and represents a distinct module system from es2020/esnext
-//         Node12 = 100,
-//         NodeNext = 199,
-//     }
+    // Node12+ is an amalgam of commonjs (albeit updated) and es2020+, and represents a distinct module system from es2020/esnext
+    Node12 = 100,
+    NodeNext = 199,
+}
 
 //     export const enum JsxEmit {
 //         None = 0,
@@ -11719,15 +11137,15 @@ pub enum LanguageVariant {
 
 //     /** Either a parsed command line or a parsed tsconfig.json */
 //     export interface ParsedCommandLine {
-    //         options: CompilerOptions;
-    //         typeAcquisition?: TypeAcquisition;
-    //         fileNames: string[];
-    //         projectReferences?: readonly ProjectReference[];
-    //         watchOptions?: WatchOptions;
-    //         raw?: any;
-    //         errors: Diagnostic[];
-    //         wildcardDirectories?: MapLike<WatchDirectoryFlags>;
-    //         compileOnSave?: boolean;
+//         options: CompilerOptions;
+//         typeAcquisition?: TypeAcquisition;
+//         fileNames: string[];
+//         projectReferences?: readonly ProjectReference[];
+//         watchOptions?: WatchOptions;
+//         raw?: any;
+//         errors: Diagnostic[];
+//         wildcardDirectories?: MapLike<WatchDirectoryFlags>;
+//         compileOnSave?: boolean;
 //     }
 
 //     export const enum WatchDirectoryFlags {
