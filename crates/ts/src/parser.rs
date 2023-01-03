@@ -9,6 +9,8 @@ use crate::core::*;
 use crate::factory::nodeFactory::*;
 use crate::factory::nodeTests::*;
 use crate::factory::utilitiesPublic::setTextRange;
+use crate::node::Bind;
+use crate::node::BoundNode;
 use crate::node::Node;
 use crate::our_types::*;
 use crate::our_utils::*;
@@ -58,18 +60,23 @@ enum SpeculationKind {
 // /* @internal */
 // export const parseNodeFactory = createNodeFactory(NodeFactoryFlags.NoParenthesizerRules, parseBaseNodeFactory);
 
-fn visitNode<T, F>(cbNode: &mut F, node: Option<Node>) -> Option<T>
+fn visitNode<T, F>(cbNode: &mut F, node: Option<Rc<BoundNode>>) -> Option<T>
 where
-    F: FnMut(Node) -> Option<T>,
+    F: FnMut(Rc<BoundNode>) -> Option<T>,
 {
     node.and_then(|n| cbNode(n))
 }
 
-fn visitNodes<N, T, F, G>(mut cbNode: F, cbNodes: G, nodes: Option<&NodeArray<N>>) -> Option<T>
+fn visitNodes<N, T, F, G>(
+    mut cbNode: F,
+    cbNodes: G,
+    nodes: Option<&NodeArray<N>>,
+    parent: Option<&Rc<BoundNode>>,
+) -> Option<T>
 where
-    N: Into<Node> + Clone,
-    F: FnMut(Node) -> Option<T>,
-    G: FnMut(NodeArray<Node>) -> Option<T>,
+    N: Bind<Bound = Rc<BoundNode>>,
+    F: FnMut(Rc<BoundNode>) -> Option<T>,
+    G: FnMut(NodeArray<Rc<BoundNode>>) -> Option<T>,
 {
     if let Some(nodes) = nodes {
         // TODO:
@@ -77,7 +84,7 @@ where
         //     return cbNodes(nodes);
         // }
         for node in nodes.iter() {
-            let result = cbNode(node.clone().into());
+            let result = cbNode(node.bind_to_opt_parent(parent));
             if result.is_some() {
                 return result;
             }
@@ -106,9 +113,39 @@ where
  * @remarks `forEachChild` must visit the children of a node in the order
  * that they appear in the source code. The language service depends on this property to locate nodes by position.
  */
-pub fn forEachChild<T, F>(node: Option<Node>, mut cbNode: F /*, cbNodes: G*/) -> Option<T>
+pub fn forEachBoundChild<T, F>(
+    node: Option<Rc<BoundNode>>,
+    cbNode: F, /*, cbNodes: G*/
+) -> Option<T>
 where
-    F: FnMut(Node) -> Option<T>,
+    F: FnMut(Rc<BoundNode>) -> Option<T>,
+    // G: FnMut(NodeArray<Node>) -> Option<T>,
+{
+    let parent = node.as_ref().and_then(|n| n.parent());
+    let node = node.map(|n| n.node.clone());
+    forEachChild(node, parent.as_ref(), cbNode)
+}
+
+/**
+ * Invokes a callback for each child of the given node. The 'cbNode' callback is invoked for all child nodes
+ * stored in properties. If a 'cbNodes' callback is specified, it is invoked for embedded arrays; otherwise,
+ * embedded arrays are flattened and the 'cbNode' callback is invoked for each element. If a callback returns
+ * a truthy value, iteration stops and that value is returned. Otherwise, undefined is returned.
+ *
+ * @param node a given node to visit its children
+ * @param cbNode a callback to be invoked for all child nodes
+ * @param cbNodes a callback to be invoked for embedded array
+ *
+ * @remarks `forEachChild` must visit the children of a node in the order
+ * that they appear in the source code. The language service depends on this property to locate nodes by position.
+ */
+pub fn forEachChild<T, F>(
+    node: Option<Node>,
+    parent: Option<&Rc<BoundNode>>,
+    mut cbNode: F, /*, cbNodes: G*/
+) -> Option<T>
+where
+    F: FnMut(Rc<BoundNode>) -> Option<T>,
     // G: FnMut(NodeArray<Node>) -> Option<T>,
 {
     let node = match node {
@@ -124,28 +161,28 @@ where
         (@fields $name:ident { $fields:expr } Option<NodeArray<$field_name:ident>>, $($rest:tt)*) => {
             visit!(@fields
                 $name {
-                    $fields.or_else(|| visitNodes(&mut cbNode, |_|None, $name.$field_name.as_ref()))
+                    $fields.or_else(|| visitNodes(&mut cbNode, |_|None, $name.$field_name.as_ref(), parent))
                 }
                 $($rest)*)
         };
         (@fields $name:ident { $fields:expr } Option<$field_name:ident>, $($rest:tt)*) => {
             visit!(@fields
                 $name {
-                    $fields.or_else(|| visitNode(&mut cbNode, $name.$field_name.clone().map(Node::from)))
+                    $fields.or_else(|| visitNode(&mut cbNode, $name.$field_name.bind_to_opt_parent(parent)))
                 }
                 $($rest)*)
         };
         (@fields $name:ident { $fields:expr } NodeArray<$field_name:ident>, $($rest:tt)*) => {
             visit!(@fields
                 $name {
-                    $fields.or_else(|| visitNodes(&mut cbNode, |_|None, Some(&$name.$field_name)))
+                    $fields.or_else(|| visitNodes(&mut cbNode, |_|None, Some(&$name.$field_name), parent))
                 }
                 $($rest)*)
         };
         (@fields $name:ident { $fields:expr } $field_name:ident, $($rest:tt)*) => {
             visit!(@fields
                 $name {
-                    $fields.or_else(|| visitNode(&mut cbNode, Some($name.$field_name.clone().into())))
+                    $fields.or_else(|| visitNode(&mut cbNode, Some($name.$field_name.bind_to_opt_parent(parent))))
                 }
                 $($rest)*)
         };
@@ -1954,8 +1991,8 @@ impl<'a> Parser<'a> {
         }
 
         // Otherwise, if this isn't a well-known keyword-like identifier, give the generic fallback message.
-        let expressionText = if let Node::Identifier(node) = &node {
-            Some(idText(node))
+        let expressionText = if matches!(node, Node::Identifier(_)) {
+            Some(idText(&node))
         } else {
             None
         };

@@ -6386,6 +6386,7 @@ impl<'a> NodeFactory<'a> {
             hasNoDefaultLib: false,
 
             externalModuleIndicator: None,
+            commonJsModuleIndicator: None,
             bindDiagnostics: Vec::new(),
             bindSuggestionDiagnostics: None,
             parseDiagnostics: Vec::new(),

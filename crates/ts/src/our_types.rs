@@ -1,6 +1,11 @@
-use crate::{node::Node, types::*};
+use index::vec::IndexVec;
 
-use std::rc::Rc;
+use crate::{node::Node, our_utils::unwrap_as, types::*};
+
+use std::{
+    ops::{Index, IndexMut},
+    rc::Rc,
+};
 
 #[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NodeId(u32);
@@ -137,6 +142,14 @@ impl<T> IsFalsy for Option<T> {
 
 pub struct NodeAndData<'n, 'd, T: IsNode>(pub &'n T, pub &'d NodeData);
 
+impl<T: IsNode> Clone for NodeAndData<'_, '_, T> {
+    fn clone(&self) -> Self {
+        Self(self.0, self.1)
+    }
+}
+
+impl<T: IsNode> Copy for NodeAndData<'_, '_, T> {}
+
 #[derive(Default)]
 pub struct NodeDataStore {
     pub node_id_gen: NodeIdGen,
@@ -167,5 +180,52 @@ impl NodeDataStore {
     pub fn node_and_data<'n, 'd, T: IsNode>(&'d mut self, node: &'n T) -> NodeAndData<'n, 'd, T> {
         let data = self.node_data(node);
         NodeAndData(node, data)
+    }
+}
+
+#[derive(Default)]
+pub struct FlowNodeStore(IndexVec<FlowNodeId, FlowNode>);
+
+impl FlowNodeStore {
+    pub fn push_flow_node(&mut self, node: FlowNode) -> FlowNodeId {
+        self.0.push(node)
+    }
+
+    pub fn push_flow_label(&mut self, node: FlowNode) -> FlowLabelId {
+        debug_assert!(matches!(&node.kind, FlowNodeKind::FlowLabel(_)));
+        let id = self.0.push(node).as_u32();
+        FlowLabelId::from_u32(id)
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self(IndexVec::with_capacity(capacity))
+    }
+}
+
+impl Index<FlowNodeId> for FlowNodeStore {
+    type Output = FlowNode;
+    fn index(&self, index: FlowNodeId) -> &Self::Output {
+        &self.0[index]
+    }
+}
+impl IndexMut<FlowNodeId> for FlowNodeStore {
+    fn index_mut(&mut self, index: FlowNodeId) -> &mut Self::Output {
+        &mut self.0[index]
+    }
+}
+
+impl Index<FlowLabelId> for FlowNodeStore {
+    type Output = FlowLabel;
+    fn index(&self, index: FlowLabelId) -> &Self::Output {
+        unwrap_as!(&self.0[index.into()].kind, FlowNodeKind::FlowLabel(l), l)
+    }
+}
+impl IndexMut<FlowLabelId> for FlowNodeStore {
+    fn index_mut(&mut self, index: FlowLabelId) -> &mut Self::Output {
+        unwrap_as!(
+            &mut self.0[index.into()].kind,
+            FlowNodeKind::FlowLabel(l),
+            l
+        )
     }
 }

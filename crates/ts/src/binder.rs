@@ -1,7 +1,11 @@
+use std::collections::hash_map::Entry;
+use std::collections::VecDeque;
 use std::rc::Rc;
 
 use bitflags::bitflags;
+use diagnostics::Diagnostics;
 use index::vec::IndexVec;
+use rustc_hash::FxHashMap;
 
 use crate::core::*;
 use crate::factory::nodeTests::*;
@@ -14,11 +18,12 @@ use crate::types::*;
 use crate::utilities::*;
 use crate::utilitiesPublic::*;
 
-// export const enum ModuleInstanceState {
-//     NonInstantiated = 0,
-//     Instantiated = 1,
-//     ConstEnumOnly = 2
-// }
+#[derive(PartialEq, PartialOrd, Clone, Copy)]
+pub enum ModuleInstanceState {
+    NonInstantiated,
+    Instantiated,
+    ConstEnumOnly,
+}
 
 #[derive(Clone)]
 struct ActiveLabel {
@@ -28,128 +33,159 @@ struct ActiveLabel {
     referenced: bool,
 }
 
-// export function getModuleInstanceState(node: ModuleDeclaration, visited?: ESMap<number, ModuleInstanceState | undefined>): ModuleInstanceState {
-//     if (node.body && !node.body.parent) {
-//         // getModuleInstanceStateForAliasTarget needs to walk up the parent chain, so parent pointers must be set on this tree already
-//         setParent(node.body, node);
-//         setParentRecursive(node.body, /*incremental*/ false);
-//     }
-//     return node.body ? getModuleInstanceStateCached(node.body, visited) : ModuleInstanceState.Instantiated;
-// }
+pub fn getModuleInstanceState(
+    node: &Rc<BoundNode>,
+    decl: &Rc<ModuleDeclaration>,
+    node_data: &mut NodeDataStore,
+    visited: &mut Option<FxHashMap<NodeId, Option<ModuleInstanceState>>>,
+) -> ModuleInstanceState {
+    if let Some(body) = &decl.body {
+        getModuleInstanceStateCached(&body.bind(node), node_data, visited)
+    } else {
+        ModuleInstanceState::Instantiated
+    }
+}
 
-// function getModuleInstanceStateCached(node: Node, visited = new Map<number, ModuleInstanceState | undefined>()) {
-//     const nodeId = getNodeId(node);
-//     if (visited.has(nodeId)) {
-//         return visited.get(nodeId) || ModuleInstanceState.NonInstantiated;
-//     }
-//     visited.set(nodeId, undefined);
-//     const result = getModuleInstanceStateWorker(node, visited);
-//     visited.set(nodeId, result);
-//     return result;
-// }
+fn getModuleInstanceStateCached(
+    node: &Rc<BoundNode>,
+    node_data: &mut NodeDataStore,
+    visited: &mut Option<FxHashMap<NodeId, Option<ModuleInstanceState>>>,
+) -> ModuleInstanceState {
+    visited.get_or_insert_with(|| FxHashMap::default());
+    let nodeId = node.node_id();
+    if let Some(cached) = visited.as_ref().unwrap().get(&nodeId) {
+        return cached.unwrap_or(ModuleInstanceState::NonInstantiated);
+    }
+    visited.as_mut().unwrap().insert(nodeId, None);
+    let result = getModuleInstanceStateWorker(node, node_data, visited);
+    visited.as_mut().unwrap().insert(nodeId, Some(result));
+    result
+}
 
-// function getModuleInstanceStateWorker(node: Node, visited: ESMap<number, ModuleInstanceState | undefined>): ModuleInstanceState {
-//     // A module is uninstantiated if it contains only
-//     switch (node.kind) {
-//         // 1. interface declarations, type alias declarations
-//         case SyntaxKind::InterfaceDeclaration:
-//         case SyntaxKind::TypeAliasDeclaration:
-//             return ModuleInstanceState.NonInstantiated;
-//         // 2. const enum declarations
-//         case SyntaxKind::EnumDeclaration:
-//             if (isEnumConst(node as EnumDeclaration)) {
-//                 return ModuleInstanceState.ConstEnumOnly;
-//             }
-//             break;
-//         // 3. non-exported import declarations
-//         case SyntaxKind::ImportDeclaration:
-//         case SyntaxKind::ImportEqualsDeclaration:
-//             if (!(hasSyntacticModifier(node, ModifierFlags.Export))) {
-//                 return ModuleInstanceState.NonInstantiated;
-//             }
-//             break;
-//         // 4. Export alias declarations pointing at only uninstantiated modules or things uninstantiated modules contain
-//         case SyntaxKind::ExportDeclaration:
-//             const exportDeclaration = node as ExportDeclaration;
-//             if (!exportDeclaration.moduleSpecifier && exportDeclaration.exportClause && exportDeclaration.exportClause.kind === SyntaxKind::NamedExports) {
-//                 let state = ModuleInstanceState.NonInstantiated;
-//                 for (const specifier of exportDeclaration.exportClause.elements) {
-//                     const specifierState = getModuleInstanceStateForAliasTarget(specifier, visited);
-//                     if (specifierState > state) {
-//                         state = specifierState;
-//                     }
-//                     if (state === ModuleInstanceState.Instantiated) {
-//                         return state;
-//                     }
-//                 }
-//                 return state;
-//             }
-//             break;
-//         // 5. other uninstantiated module declarations.
-//         case SyntaxKind::ModuleBlock: {
-//             let state = ModuleInstanceState.NonInstantiated;
-//             forEachChild(node, n => {
-//                 const childState = getModuleInstanceStateCached(n, visited);
-//                 switch (childState) {
-//                     case ModuleInstanceState.NonInstantiated:
-//                         // child is non-instantiated - continue searching
-//                         return;
-//                     case ModuleInstanceState.ConstEnumOnly:
-//                         // child is const enum only - record state and continue searching
-//                         state = ModuleInstanceState.ConstEnumOnly;
-//                         return;
-//                     case ModuleInstanceState.Instantiated:
-//                         // child is instantiated - record state and stop
-//                         state = ModuleInstanceState.Instantiated;
-//                         return true;
-//                     default:
-//                         Debug.assertNever(childState);
-//                 }
-//             });
-//             return state;
-//         }
-//         case SyntaxKind::ModuleDeclaration:
-//             return getModuleInstanceState(node as ModuleDeclaration, visited);
-//         case SyntaxKind::Identifier:
-//             // Only jsdoc typedef definition can exist in jsdoc namespace, and it should
-//             // be considered the same as type alias
-//             if ((node as Identifier).isInJSDocNamespace) {
-//                 return ModuleInstanceState.NonInstantiated;
-//             }
-//     }
-//     return ModuleInstanceState.Instantiated;
-// }
+fn getModuleInstanceStateWorker(
+    node: &Rc<BoundNode>,
+    node_data: &mut NodeDataStore,
+    visited: &mut Option<FxHashMap<NodeId, Option<ModuleInstanceState>>>,
+) -> ModuleInstanceState {
+    // A module is uninstantiated if it contains only
+    match &node.node {
+        // 1. interface declarations, type alias declarations
+        Node::InterfaceDeclaration(_) | Node::TypeAliasDeclaration(_) => {
+            return ModuleInstanceState::NonInstantiated;
+        }
+        // 2. const enum declarations
+        Node::EnumDeclaration(_) => {
+            if isEnumConst(node.clone(), node_data) {
+                return ModuleInstanceState::ConstEnumOnly;
+            }
+        }
+        // 3. non-exported import declarations
+        Node::ImportDeclaration(_) | Node::ImportEqualsDeclaration(_) => {
+            if !hasSyntacticModifier(node_data.node_and_data(&node.node), ModifierFlags::Export) {
+                return ModuleInstanceState::NonInstantiated;
+            }
+        }
+        // 4. Export alias declarations pointing at only uninstantiated modules or things uninstantiated modules contain
+        Node::ExportDeclaration(exportDeclaration) => {
+            if exportDeclaration.moduleSpecifier.is_none() {
+                if let Some(NamedExportBindings::NamedExports(exportClause)) =
+                    &exportDeclaration.exportClause
+                {
+                    let mut state = ModuleInstanceState::NonInstantiated;
+                    for specifier in exportClause.elements.iter() {
+                        let specifierState = getModuleInstanceStateForAliasTarget(
+                            &specifier.bind(&exportClause.bind(node)),
+                            specifier,
+                            node_data,
+                            visited,
+                        );
+                        if specifierState > state {
+                            state = specifierState;
+                        }
+                        if state == ModuleInstanceState::Instantiated {
+                            return state;
+                        }
+                    }
+                    return state;
+                }
+            }
+        }
+        // 5. other uninstantiated module declarations.
+        Node::ModuleBlock(_) => {
+            let mut state = ModuleInstanceState::NonInstantiated;
+            forEachChild(Some(node.node.clone()), node.parent().as_ref(), |n| {
+                let childState = getModuleInstanceStateCached(&n, node_data, visited);
+                match childState {
+                    ModuleInstanceState::NonInstantiated => {
+                        // child is non-instantiated - continue searching
+                        None
+                    }
+                    ModuleInstanceState::ConstEnumOnly => {
+                        // child is const enum only - record state and continue searching
+                        state = ModuleInstanceState::ConstEnumOnly;
+                        None
+                    }
+                    ModuleInstanceState::Instantiated => {
+                        // child is instantiated - record state and stop
+                        state = ModuleInstanceState::Instantiated;
+                        Some(())
+                    }
+                }
+            });
+            return state;
+        }
+        Node::ModuleDeclaration(n) => {
+            return getModuleInstanceState(node, n, node_data, visited);
+        }
+        Node::Identifier(n) => {
+            // Only jsdoc typedef definition can exist in jsdoc namespace, and it should
+            // be considered the same as type alias
+            if n.isInJSDocNamespace {
+                return ModuleInstanceState::NonInstantiated;
+            }
+        }
+        _ => {}
+    }
+    ModuleInstanceState::Instantiated
+}
 
-// function getModuleInstanceStateForAliasTarget(specifier: ExportSpecifier, visited: ESMap<number, ModuleInstanceState | undefined>) {
-//     const name = specifier.propertyName || specifier.name;
-//     let p: Node | undefined = specifier.parent;
-//     while (p) {
-//         if (isBlock(p) || isModuleBlock(p) || isSourceFile(p)) {
-//             const statements = p.statements;
-//             let found: ModuleInstanceState | undefined;
-//             for (const statement of statements) {
-//                 if (nodeHasName(statement, name)) {
-//                     if (!statement.parent) {
-//                         setParent(statement, p);
-//                         setParentRecursive(statement, /*incremental*/ false);
-//                     }
-//                     const state = getModuleInstanceStateCached(statement, visited);
-//                     if (found === undefined || state > found) {
-//                         found = state;
-//                     }
-//                     if (found === ModuleInstanceState.Instantiated) {
-//                         return found;
-//                     }
-//                 }
-//             }
-//             if (found !== undefined) {
-//                 return found;
-//             }
-//         }
-//         p = p.parent;
-//     }
-//     return ModuleInstanceState.Instantiated; // Couldn't locate, assume could refer to a value
-// }
+fn getModuleInstanceStateForAliasTarget(
+    node: &Rc<BoundNode>,
+    specifier: &Rc<ExportSpecifier>,
+    node_data: &mut NodeDataStore,
+    visited: &mut Option<FxHashMap<NodeId, Option<ModuleInstanceState>>>,
+) -> ModuleInstanceState {
+    let name = specifier.propertyName.as_ref().unwrap_or(&specifier.name);
+    let mut parent = node.parent();
+    while let Some(p) = parent {
+        let statements = match &p.node {
+            Node::SourceFile(n) => Some(&n.statements),
+            Node::ModuleBlock(n) => Some(&n.statements),
+            Node::Block(n) => Some(&n.statements),
+            _ => None,
+        };
+        if let Some(statements) = statements {
+            let mut found = None;
+            for statement in statements.iter() {
+                if nodeHasName(&statement.clone().into(), name) {
+                    let state =
+                        getModuleInstanceStateCached(&statement.bind(&p), node_data, visited);
+                    if found.is_none() || state > found.unwrap() {
+                        found = Some(state);
+                    }
+                    if found.unwrap() == ModuleInstanceState::Instantiated {
+                        return found.unwrap();
+                    }
+                }
+            }
+            if let Some(found) = found {
+                return found;
+            }
+        }
+        parent = p.parent();
+    }
+    ModuleInstanceState::Instantiated // Couldn't locate, assume could refer to a value
+}
 
 bitflags! {
     struct ContainerFlags: u8 {
@@ -225,12 +261,11 @@ pub struct Binder<'a> {
 
     //     let Symbol: new (flags: SymbolFlags, name: __String) => Symbol;
     //     let classifiableNames: Set<__String>;
-
-    //     const unreachableFlow: FlowNode = { flags: FlowFlags.Unreachable };
-    //     const reportedUnreachableFlow: FlowNode = { flags: FlowFlags.Unreachable };
+    unreachableFlow: FlowNodeId,
+    reportedUnreachableFlow: FlowNodeId,
     //     const bindBinaryExpressionFlow = createBindBinaryExpressionFlow();
     store: &'a mut NodeDataStore,
-    flow_nodes: IndexVec<FlowNodeId, FlowNode>,
+    flow_nodes: FlowNodeStore,
     symbols: IndexVec<SymbolId, Symbol>,
     symbol_tables: IndexVec<SymbolTableId, SymbolTable>,
 }
@@ -241,6 +276,15 @@ impl<'a> Binder<'a> {
         intitial_file: Rc<SourceFile>,
         store: &'a mut NodeDataStore,
     ) -> Binder {
+        let mut flow_nodes = FlowNodeStore::with_capacity(2);
+        let unreachableFlow = flow_nodes.push_flow_node(FlowNode {
+            flags: FlowFlags::Unreachable,
+            kind: FlowNodeKind::None,
+        });
+        let reportedUnreachableFlow = flow_nodes.push_flow_node(FlowNode {
+            flags: FlowFlags::Unreachable,
+            kind: FlowNodeKind::None,
+        });
         Binder {
             file: intitial_file,
             options,
@@ -274,8 +318,11 @@ impl<'a> Binder<'a> {
 
             inStrictMode: false,
             inAssignmentPattern: false,
+            unreachableFlow,
+            reportedUnreachableFlow,
+
             store,
-            flow_nodes: IndexVec::default(),
+            flow_nodes,
             symbols: IndexVec::default(),
             symbol_tables: IndexVec::default(),
         }
@@ -310,7 +357,10 @@ impl<'a> Binder<'a> {
     }
 
     fn alloc_flow_node(&mut self, node: FlowNode) -> FlowNodeId {
-        self.flow_nodes.push(node)
+        self.flow_nodes.push_flow_node(node)
+    }
+    fn alloc_flow_label(&mut self, node: FlowNode) -> FlowLabelId {
+        self.flow_nodes.push_flow_label(node)
     }
 }
 
@@ -539,13 +589,15 @@ impl<'a> Binder<'a> {
                 }))
             }
             Node::ParameterDeclaration(_) => {
-                todo!();
                 // Parameters with names are handled at the top of this function.  Parameters
                 // without names can only come from JSDocFunctionTypes.
-                // Debug.assert(node.parent.kind == SyntaxKind::JSDocFunctionType, "Impossible parameter parent kind", () => `parent is: ${(ts as any).SyntaxKind ? (ts as any).SyntaxKind[node.parent.kind] : node.parent.kind}, expected JSDocFunctionType`);
-                // let functionType = node.parent as JSDocFunctionType;
-                // let index = functionType.parameters.indexOf(node as ParameterDeclaration);
-                // "arg" + index as __String
+                let functionType =
+                    unwrap_as!(node.parent_node(), Some(Node::JSDocFunctionType(n)), n);
+                let index = functionType
+                    .parameters
+                    .iter()
+                    .position(|n| n.node_id() == node.node_id());
+                Some(__String(format!("arg{}", index.unwrap()).into()))
             }
             _ => None,
         }
@@ -736,66 +788,159 @@ impl<'a> Binder<'a> {
         symbol
     }
 
-    //     function declareModuleMember(node: Declaration, symbolFlags: SymbolFlags, symbolExcludes: SymbolFlags): Symbol {
-    //         const hasExportModifier = !!(getCombinedModifierFlags(node) & ModifierFlags.Export) || jsdocTreatAsExported(node);
-    //         if (symbolFlags & SymbolFlags::Alias) {
-    //             if (node.kind === SyntaxKind::ExportSpecifier || (node.kind === SyntaxKind::ImportEqualsDeclaration && hasExportModifier)) {
-    //                 return declareSymbol(container.symbol.exports!, container.symbol, node, symbolFlags, symbolExcludes);
-    //             }
-    //             else {
-    //                 return declareSymbol(container.locals!, /*parent*/ undefined, node, symbolFlags, symbolExcludes);
-    //             }
-    //         }
-    //         else {
-    //             // Exported module members are given 2 symbols: A local symbol that is classified with an ExportValue flag,
-    //             // and an associated export symbol with all the correct flags set on it. There are 2 main reasons:
-    //             //
-    //             //   1. We treat locals and exports of the same name as mutually exclusive within a container.
-    //             //      That means the binder will issue a Duplicate Identifier error if you mix locals and exports
-    //             //      with the same name in the same container.
-    //             //      TODO: Make this a more specific error and decouple it from the exclusion logic.
-    //             //   2. When we checkIdentifier in the checker, we set its resolved symbol to the local symbol,
-    //             //      but return the export symbol (by calling getExportSymbolOfValueSymbolIfExported). That way
-    //             //      when the emitter comes back to it, it knows not to qualify the name if it was found in a containing scope.
+    fn declareModuleMember(
+        &mut self,
+        node: &Rc<BoundNode>,
+        symbolFlags: SymbolFlags,
+        symbolExcludes: SymbolFlags,
+    ) -> SymbolId {
+        let container = self.container.clone().unwrap();
+        let container_symbol = self.node_data(&container).symbol.unwrap();
+        let container_exports = self.symbols[container_symbol].exports.unwrap();
+        let container_locals = self.node_data(&container).locals;
+        let hasExportModifier = getCombinedModifierFlags(node.clone(), &mut self.store)
+            .intersects(ModifierFlags::Export)
+            || self.jsdocTreatAsExported(node.clone());
+        if symbolFlags.intersects(SymbolFlags::Alias) {
+            if node.kind() == SyntaxKind::ExportSpecifier
+                || (node.kind() == SyntaxKind::ImportEqualsDeclaration && hasExportModifier)
+            {
+                self.declareSymbol(
+                    container_exports,
+                    Some(container_symbol),
+                    node,
+                    symbolFlags,
+                    symbolExcludes,
+                    false,
+                    false,
+                )
+            } else {
+                self.declareSymbol(
+                    container_locals.unwrap(),
+                    None,
+                    node,
+                    symbolFlags,
+                    symbolExcludes,
+                    false,
+                    false,
+                )
+            }
+        } else {
+            // Exported module members are given 2 symbols: A local symbol that is classified with an ExportValue flag,
+            // and an associated export symbol with all the correct flags set on it. There are 2 main reasons:
+            //
+            //   1. We treat locals and exports of the same name as mutually exclusive within a container.
+            //      That means the binder will issue a Duplicate Identifier error if you mix locals and exports
+            //      with the same name in the same container.
+            //      TODO: Make this a more specific error and decouple it from the exclusion logic.
+            //   2. When we checkIdentifier in the checker, we set its resolved symbol to the local symbol,
+            //      but return the export symbol (by calling getExportSymbolOfValueSymbolIfExported). That way
+            //      when the emitter comes back to it, it knows not to qualify the name if it was found in a containing scope.
 
-    //             // NOTE: Nested ambient modules always should go to to 'locals' table to prevent their automatic merge
-    //             //       during global merging in the checker. Why? The only case when ambient module is permitted inside another module is module augmentation
-    //             //       and this case is specially handled. Module augmentations should only be merged with original module definition
-    //             //       and should never be merged directly with other augmentation, and the latter case would be possible if automatic merge is allowed.
-    //             if (isJSDocTypeAlias(node)) Debug.assert(isInJSFile(node)); // We shouldn't add symbols for JSDoc nodes if not in a JS file.
-    //             if (!isAmbientModule(node) && (hasExportModifier || container.flags & NodeFlags::ExportContext)) {
-    //                 if (!container.locals || (hasSyntacticModifier(node, ModifierFlags.Default) && !getDeclarationName(node))) {
-    //                     return declareSymbol(container.symbol.exports!, container.symbol, node, symbolFlags, symbolExcludes); // No local symbol for an unnamed default!
-    //                 }
-    //                 const exportKind = symbolFlags & SymbolFlags::Value ? SymbolFlags::ExportValue : 0;
-    //                 const local = declareSymbol(container.locals, /*parent*/ undefined, node, exportKind, symbolExcludes);
-    //                 local.exportSymbol = declareSymbol(container.symbol.exports!, container.symbol, node, symbolFlags, symbolExcludes);
-    //                 node.localSymbol = local;
-    //                 return local;
-    //             }
-    //             else {
-    //                 return declareSymbol(container.locals!, /*parent*/ undefined, node, symbolFlags, symbolExcludes);
-    //             }
-    //         }
-    //     }
+            // NOTE: Nested ambient modules always should go to to 'locals' table to prevent their automatic merge
+            //       during global merging in the checker. Why? The only case when ambient module is permitted inside another module is module augmentation
+            //       and this case is specially handled. Module augmentations should only be merged with original module definition
+            //       and should never be merged directly with other augmentation, and the latter case would be possible if automatic merge is allowed.
+            if isJSDocTypeAlias(node) {
+                debug_assert!(isInJSFile(Some(self.store.node_and_data(&node.node))));
+                // We shouldn't add symbols for JSDoc nodes if not in a JS file.
+            }
+            if !isAmbientModule(self.store.node_and_data(&node.node))
+                && (hasExportModifier
+                    || self
+                        .node_data(&container)
+                        .flags
+                        .intersects(NodeFlags::ExportContext))
+            {
+                if container_locals.is_none()
+                    || (hasSyntacticModifier(
+                        self.store.node_and_data(&node.node),
+                        ModifierFlags::Default,
+                    ) && self.getDeclarationName(node).is_none())
+                {
+                    return self.declareSymbol(
+                        container_exports,
+                        Some(container_symbol),
+                        node,
+                        symbolFlags,
+                        symbolExcludes,
+                        false,
+                        false,
+                    ); // No local symbol for an unnamed default!
+                }
+                let exportKind = if symbolFlags.intersects(SymbolFlags::Value) {
+                    SymbolFlags::ExportValue
+                } else {
+                    SymbolFlags::None
+                };
+                let local = self.declareSymbol(
+                    container_locals.unwrap(),
+                    None,
+                    node,
+                    exportKind,
+                    symbolExcludes,
+                    false,
+                    false,
+                );
+                self.symbols[local].exportSymbol = Some(self.declareSymbol(
+                    container_exports,
+                    Some(container_symbol),
+                    node,
+                    symbolFlags,
+                    symbolExcludes,
+                    false,
+                    false,
+                ));
+                self.node_data_mut(&node).localSymbol = Some(local);
+                local
+            } else {
+                self.declareSymbol(
+                    container_locals.unwrap(),
+                    None,
+                    node,
+                    symbolFlags,
+                    symbolExcludes,
+                    false,
+                    false,
+                )
+            }
+        }
+    }
 
-    //     function jsdocTreatAsExported(node: Node) {
-    //         if (node.parent && isModuleDeclaration(node)) {
-    //             node = node.parent;
-    //         }
-    //         if (!isJSDocTypeAlias(node)) return false;
-    //         // jsdoc typedef handling is a bit of a doozy, but to summarize, treat the typedef as exported if:
-    //         // 1. It has an explicit name (since by default typedefs are always directly exported, either at the top level or in a container), or
-    //         if (!isJSDocEnumTag(node) && !!node.fullName) return true;
-    //         // 2. The thing a nameless typedef pulls its name from is implicitly a direct export (either by assignment or actual export flag).
-    //         const declName = getNameOfDeclaration(node);
-    //         if (!declName) return false;
-    //         if (isPropertyAccessEntityNameExpression(declName.parent) && isTopLevelNamespaceAssignment(declName.parent)) return true;
-    //         if (isDeclaration(declName.parent) && getCombinedModifierFlags(declName.parent) & ModifierFlags.Export) return true;
-    //         // This could potentially be simplified by having `delayedBindJSDocTypedefTag` pass in an override for `hasExportModifier`, since it should
-    //         // already have calculated and branched on most of this.
-    //         return false;
-    //     }
+    fn jsdocTreatAsExported(&mut self, mut node: Rc<BoundNode>) -> bool {
+        if let Some(parent) = node.parent() {
+            if isModuleDeclaration(&node) {
+                node = parent;
+            }
+        }
+        if !isJSDocTypeAlias(&node) {
+            return false;
+        }
+        todo!();
+        // // jsdoc typedef handling is a bit of a doozy, but to summarize, treat the typedef as exported if:
+        // // 1. It has an explicit name (since by default typedefs are always directly exported, either at the top level or in a container), or
+        // if !isJSDocEnumTag(node) && !!node.fullName {
+        //     return true;
+        // }
+        // // 2. The thing a nameless typedef pulls its name from is implicitly a direct export (either by assignment or actual export flag).
+        // let declName = match getNameOfDeclaration(node){
+        //     Some(n)=>n,
+        //     None => return false,
+        // };
+        // if isPropertyAccessEntityNameExpression(declName.parent)
+        //     && isTopLevelNamespaceAssignment(declName.parent)
+        // {
+        //     return true;
+        // }
+        // if isDeclaration(declName.parent)
+        //     && getCombinedModifierFlags(declName.parent).intersects(ModifierFlags::Export)
+        // {
+        //     return true;
+        // }
+        // // This could potentially be simplified by having `delayedBindJSDocTypedefTag` pass in an override for `hasExportModifier`, since it should
+        // // already have calculated and branched on most of this.
+        // return false;
+    }
 
     // All container nodes are kept on a linked list in declaration order. This list is used by
     // the getLocalNameOfContainer function in the type checker to validate that the local name
@@ -845,20 +990,16 @@ impl<'a> Binder<'a> {
             let saveContinueTarget = self.currentContinueTarget;
             let saveReturnTarget = self.currentReturnTarget;
             let saveExceptionTarget = self.currentExceptionTarget;
-            // TODO: if activeLabelList is used a stack, we might be able to just
-            // keep track of an index, then truncate the list to that index.
-            let saveActiveLabelList = self.activeLabelList.clone();
+            let saveActiveLabelListLength = self.activeLabelList.len();
             let saveHasExplicitReturn = self.hasExplicitReturn;
-            let isIIFE = if containerFlags.intersects(ContainerFlags::IsFunctionExpression) {
-                todo!("see below")
-            } else {
-                false
-            };
-            // TODO:
-            // let isIIFE = containerFlags.intersects(ContainerFlags::IsFunctionExpression)
-            //     && !hasSyntacticModifier(node, ModifierFlags::Async)
-            //     && !(node as FunctionLikeDeclaration).asteriskToken
-            //     && !!getImmediatelyInvokedFunctionExpression(node);
+
+            let isIIFE = containerFlags.intersects(ContainerFlags::IsFunctionExpression)
+                && !hasSyntacticModifier(
+                    self.store.node_and_data(&node.node),
+                    ModifierFlags::Async,
+                )
+                && !matches!(&node.node, Node::FunctionExpression(n) if n.asteriskToken.is_some())
+                && getImmediatelyInvokedFunctionExpression(&node).is_some();
             // A non-async, non-generator IIFE is considered part of the containing control flow. Return statements behave
             // similarly to break statements that exit to a label just past the statement body.
             if !isIIFE {
@@ -883,15 +1024,13 @@ impl<'a> Binder<'a> {
                     && (node.kind() == SyntaxKind::FunctionDeclaration
                         || node.kind() == SyntaxKind::FunctionExpression))
             {
-                todo!()
-                // Some(FlowNode::new_branch_label())
+                Some(self.createBranchLabel())
             } else {
                 None
             };
             self.currentExceptionTarget = None;
             self.currentBreakTarget = None;
             self.currentContinueTarget = None;
-            self.activeLabelList = Vec::new();
             self.hasExplicitReturn = false;
             self.bindChildren(&node);
             // Reset all reachability check related flags on node (for incremental scenarios)
@@ -939,7 +1078,7 @@ impl<'a> Binder<'a> {
             self.currentContinueTarget = saveContinueTarget;
             self.currentReturnTarget = saveReturnTarget;
             self.currentExceptionTarget = saveExceptionTarget;
-            self.activeLabelList = saveActiveLabelList;
+            self.activeLabelList.truncate(saveActiveLabelListLength);
             self.hasExplicitReturn = saveHasExplicitReturn;
         } else if containerFlags.intersects(ContainerFlags::IsInterface) {
             self.seenThisKeyword = false;
@@ -963,7 +1102,7 @@ impl<'a> Binder<'a> {
         parent: Option<&Rc<BoundNode>>,
         nodes: Option<&NodeArray<T>>,
     ) where
-        T: Bind,
+        T: Bind<Bound = Rc<BoundNode>>,
     {
         self.bindEachWith(parent, nodes, |b, n| {
             if n.kind() == SyntaxKind::FunctionDeclaration {
@@ -979,7 +1118,7 @@ impl<'a> Binder<'a> {
 
     fn bindEach<T>(&mut self, parent: Option<&Rc<BoundNode>>, nodes: Option<&NodeArray<T>>)
     where
-        T: Bind,
+        T: Bind<Bound = Rc<BoundNode>>,
     {
         if let Some(nodes) = nodes {
             for n in nodes.iter() {
@@ -994,7 +1133,7 @@ impl<'a> Binder<'a> {
         nodes: Option<&NodeArray<T>>,
         mut bindFunction: F,
     ) where
-        T: Bind,
+        T: Bind<Bound = Rc<BoundNode>>,
         F: FnMut(&mut Self, Rc<BoundNode>),
     {
         if let Some(nodes) = nodes {
@@ -1005,8 +1144,8 @@ impl<'a> Binder<'a> {
     }
 
     fn bindEachChild(&mut self, parent: Option<&Rc<BoundNode>>, node: Node) {
-        forEachChild::<(), _>(Some(node), |n| {
-            self.bind(Some(n.bind_to_opt_parent(parent)));
+        forEachChild::<(), _>(Some(node), parent, |n| {
+            self.bind(Some(n));
             None
         });
     }
@@ -1017,11 +1156,10 @@ impl<'a> Binder<'a> {
         // and set it before we descend into nodes that could actually be part of an assignment pattern.
         self.inAssignmentPattern = false;
         if self.checkUnreachable(node) {
-            todo!();
-            // self.bindEachChild(node);
-            // self.bindJSDoc(node);
-            // self.inAssignmentPattern = saveInAssignmentPattern;
-            // return;
+            self.bindEachChild(node.parent().as_ref(), node.node.clone());
+            self.bindJSDoc(node);
+            self.inAssignmentPattern = saveInAssignmentPattern;
+            return;
         }
         if node.kind() >= SyntaxKind::FirstStatement
             && node.kind() <= SyntaxKind::LastStatement
@@ -1031,98 +1169,105 @@ impl<'a> Binder<'a> {
         }
         match &node.node {
             Node::WhileStatement(n) => {
-                todo!();
-                // self.bindWhileStatement(n);
+                self.bindWhileStatement(node, n);
             }
             Node::DoStatement(n) => {
-                todo!();
-                // self.bindDoStatement(n);
+                self.bindDoStatement(node, n);
             }
             Node::ForStatement(n) => {
-                todo!();
-                // self.bindForStatement(n);
+                self.bindForStatement(node, n);
             }
-            Node::ForInStatement(_) | Node::ForOfStatement(_) => {
-                todo!();
-                // self.bindForInOrForOfStatement(node as ForInOrOfStatement);
+            Node::ForInStatement(n) => {
+                self.bindForInOrForOfStatement(
+                    node,
+                    &n.expression,
+                    &None,
+                    &n.statement,
+                    &n.initializer,
+                );
             }
-            Node::IfStatement(_) => {
-                todo!();
-                // self.bindIfStatement(n);
+            Node::ForOfStatement(n) => {
+                self.bindForInOrForOfStatement(
+                    node,
+                    &n.expression,
+                    &n.awaitModifier,
+                    &n.statement,
+                    &n.initializer,
+                );
             }
-            Node::ReturnStatement(_) | Node::ThrowStatement(_) => {
-                todo!();
-                // self.bindReturnOrThrow(node as ReturnStatement | ThrowStatement);
+            Node::IfStatement(n) => {
+                self.bindIfStatement(node, n);
             }
-            Node::BreakStatement(_) | Node::ContinueStatement(_) => {
-                todo!();
-                // self.bindBreakOrContinueStatement(node as BreakOrContinueStatement);
+            Node::ReturnStatement(n) => {
+                self.bindReturn(node, n);
+            }
+            Node::ThrowStatement(n) => {
+                self.bindThrow(node, n);
+            }
+            Node::BreakStatement(n) => {
+                self.bindBreakOrContinueStatement(
+                    node,
+                    BreakOrContinueStatement::BreakStatement(n.clone()),
+                );
+            }
+            Node::ContinueStatement(n) => {
+                self.bindBreakOrContinueStatement(
+                    node,
+                    BreakOrContinueStatement::ContinueStatement(n.clone()),
+                );
             }
             Node::TryStatement(n) => {
-                todo!();
-                // self.bindTryStatement(n);
+                self.bindTryStatement(node, n);
             }
             Node::SwitchStatement(n) => {
-                todo!();
-                // self.bindSwitchStatement(n);
+                self.bindSwitchStatement(node, n);
             }
             Node::CaseBlock(n) => {
-                todo!();
-                // self.bindCaseBlock(n);
+                self.bindCaseBlock(node, n);
             }
             Node::CaseClause(n) => {
-                todo!();
-                // self.bindCaseClause(n);
+                self.bindCaseClause(node, n);
             }
             Node::ExpressionStatement(n) => {
-                todo!();
-                // self.bindExpressionStatement(n);
+                self.bindExpressionStatement(node, n);
             }
             Node::LabeledStatement(n) => {
-                todo!();
-                // self.bindLabeledStatement(n);
+                self.bindLabeledStatement(node, n);
             }
             Node::PrefixUnaryExpression(n) => {
-                todo!();
-                // self.bindPrefixUnaryExpressionFlow(n);
+                self.bindPrefixUnaryExpressionFlow(node, n);
             }
             Node::PostfixUnaryExpression(n) => {
-                todo!();
-                // self.bindPostfixUnaryExpressionFlow(n);
+                self.bindPostfixUnaryExpressionFlow(node, n);
             }
-            Node::BinaryExpression(_) => {
-                todo!();
-                // if isDestructuringAssignment(node) {
-                //     // Carry over whether we are in an assignment pattern to
-                //     // binary expressions that could actually be an initializer
-                //     self.inAssignmentPattern = saveInAssignmentPattern;
-                //     self.bindDestructuringAssignmentFlow(node);
-                //     return;
-                // }
-                // self.bindBinaryExpressionFlow(node as BinaryExpression);
+            Node::BinaryExpression(n) => {
+                if isDestructuringAssignment(&node.node) {
+                    // Carry over whether we are in an assignment pattern to
+                    // binary expressions that could actually be an initializer
+                    self.inAssignmentPattern = saveInAssignmentPattern;
+                    self.bindDestructuringAssignmentFlow(node, n);
+                    return;
+                }
+                todo!("binary expression");
+                // self.bindBinaryExpressionFlow(node, n);
             }
-            Node::DeleteExpression(_) => {
-                todo!();
-                // self.bindDeleteExpressionFlow(node as DeleteExpression);
+            Node::DeleteExpression(n) => {
+                self.bindDeleteExpressionFlow(node, n);
             }
-            Node::ConditionalExpression(_) => {
-                todo!();
-                // self.bindConditionalExpressionFlow(node as ConditionalExpression);
+            Node::ConditionalExpression(n) => {
+                self.bindConditionalExpressionFlow(node, n);
             }
             Node::VariableDeclaration(n) => {
                 self.bindVariableDeclarationFlow(node, n);
             }
             Node::PropertyAccessExpression(_) | Node::ElementAccessExpression(_) => {
-                todo!();
-                // self.bindAccessExpressionFlow(node as AccessExpression);
+                self.bindAccessExpressionFlow(node);
             }
-            Node::CallExpression(_) => {
-                todo!();
-                // self.bindCallExpressionFlow(node as CallExpression);
+            Node::CallExpression(n) => {
+                self.bindCallExpressionFlow(node, n);
             }
             Node::NonNullExpression(_) => {
-                todo!();
-                // self.bindNonNullExpressionFlow(node as NonNullExpression);
+                self.bindNonNullExpressionFlow(node);
             }
             // TODO: jsdoc
             // Node::JSDocTypedefTag(_) | Node::JSDocCallbackTag(_) | Node::JSDocEnumTag(_) => {
@@ -1134,23 +1279,23 @@ impl<'a> Binder<'a> {
                 self.bindEachFunctionsFirst(Some(node), Some(&n.statements));
                 self.bind(Some(n.endOfFileToken.bind(node)));
             }
-            Node::Block(_) | Node::ModuleBlock(_) => {
-                todo!();
-                // self.bindEachFunctionsFirst((node as Block).statements);
+            Node::Block(n) => {
+                self.bindEachFunctionsFirst(Some(node), Some(&n.statements));
             }
-            Node::BindingElement(_) => {
-                todo!();
-                // self.bindBindingElementFlow(node as BindingElement);
+            Node::ModuleBlock(n) => {
+                self.bindEachFunctionsFirst(Some(node), Some(&n.statements));
+            }
+            Node::BindingElement(n) => {
+                self.bindBindingElementFlow(node, n);
             }
             Node::ObjectLiteralExpression(_)
             | Node::ArrayLiteralExpression(_)
             | Node::PropertyAssignment(_)
             | Node::SpreadElement(_) => {
-                todo!();
-                // // Carry over whether we are in an assignment pattern of Object and Array literals
-                // // as well as their children that are valid assignment targets.
-                // self.inAssignmentPattern = saveInAssignmentPattern;
-                // self.bindEachChild(node);
+                // Carry over whether we are in an assignment pattern of Object and Array literals
+                // as well as their children that are valid assignment targets.
+                self.inAssignmentPattern = saveInAssignmentPattern;
+                self.bindEachChild(node.parent().as_ref(), node.node.clone());
             }
             _ => {
                 self.bindEachChild(node.parent().as_ref(), node.node.clone());
@@ -1160,109 +1305,150 @@ impl<'a> Binder<'a> {
         self.inAssignmentPattern = saveInAssignmentPattern;
     }
 
-    //     function isNarrowingExpression(expr: Expression): boolean {
-    //         switch (expr.kind) {
-    //             case SyntaxKind::Identifier:
-    //             case SyntaxKind::PrivateIdentifier:
-    //             case SyntaxKind::ThisKeyword:
-    //             case SyntaxKind::PropertyAccessExpression:
-    //             case SyntaxKind::ElementAccessExpression:
-    //                 return containsNarrowableReference(expr);
-    //             case SyntaxKind::CallExpression:
-    //                 return hasNarrowableArgument(expr as CallExpression);
-    //             case SyntaxKind::ParenthesizedExpression:
-    //             case SyntaxKind::NonNullExpression:
-    //                 return isNarrowingExpression((expr as ParenthesizedExpression | NonNullExpression).expression);
-    //             case SyntaxKind::BinaryExpression:
-    //                 return isNarrowingBinaryExpression(expr as BinaryExpression);
-    //             case SyntaxKind::PrefixUnaryExpression:
-    //                 return (expr as PrefixUnaryExpression).operator === SyntaxKind::ExclamationToken && isNarrowingExpression((expr as PrefixUnaryExpression).operand);
-    //             case SyntaxKind::TypeOfExpression:
-    //                 return isNarrowingExpression((expr as TypeOfExpression).expression);
-    //         }
-    //         return false;
-    //     }
+    fn isNarrowingExpression(&mut self, expr: &Node) -> bool {
+        match expr {
+            Node::Identifier(_)
+            | Node::PrivateIdentifier(_)
+            | Node::ThisExpression(_)
+            | Node::PropertyAccessExpression(_)
+            | Node::ElementAccessExpression(_) => self.containsNarrowableReference(expr),
+            Node::CallExpression(n) => self.hasNarrowableArgument(n),
+            Node::ParenthesizedExpression(n) => {
+                self.isNarrowingExpression(&n.expression.clone().into())
+            }
+            Node::NonNullExpression(n) => self.isNarrowingExpression(&n.expression.clone().into()),
+            Node::BinaryExpression(n) => self.isNarrowingBinaryExpression(n),
+            Node::PrefixUnaryExpression(n) => {
+                n.operator == SyntaxKind::ExclamationToken
+                    && self.isNarrowingExpression(&n.operand.clone().into())
+            }
+            Node::TypeOfExpression(n) => self.isNarrowingExpression(&n.expression.clone().into()),
+            _ => false,
+        }
+    }
 
-    //     function isNarrowableReference(expr: Expression): boolean {
-    //         return isDottedName(expr)
-    //             || (isPropertyAccessExpression(expr) || isNonNullExpression(expr) || isParenthesizedExpression(expr)) && isNarrowableReference(expr.expression)
-    //             || isBinaryExpression(expr) && expr.operatorToken.kind === SyntaxKind::CommaToken && isNarrowableReference(expr.right)
-    //             || isElementAccessExpression(expr) && isStringOrNumericLiteralLike(expr.argumentExpression) && isNarrowableReference(expr.expression)
-    //             || isAssignmentExpression(expr) && isNarrowableReference(expr.left);
-    //     }
+    fn isNarrowableReference(&mut self, expr: &Node) -> bool {
+        if isDottedName(expr) {
+            return true;
+        }
+        match expr {
+            Node::PropertyAccessExpression(n) => {
+                self.isNarrowableReference(&n.expression.clone().into())
+            }
+            Node::NonNullExpression(n) => self.isNarrowableReference(&n.expression.clone().into()),
+            Node::ParenthesizedExpression(n) => {
+                self.isNarrowableReference(&n.expression.clone().into())
+            }
+            Node::BinaryExpression(n) if n.operatorToken.kind() == SyntaxKind::CommaToken => {
+                self.isNarrowableReference(&n.right.clone().into())
+            }
+            Node::ElementAccessExpression(n) => {
+                isStringOrNumericLiteralLike(&n.argumentExpression)
+                    && self.isNarrowableReference(&n.expression.clone().into())
+            }
+            Node::BinaryExpression(n) => {
+                isAssignmentExpression(expr, false)
+                    && self.isNarrowableReference(&n.left.clone().into())
+            }
+            _ => false,
+        }
+    }
 
-    //     function containsNarrowableReference(expr: Expression): boolean {
-    //         return isNarrowableReference(expr) || isOptionalChain(expr) && containsNarrowableReference(expr.expression);
-    //     }
+    fn containsNarrowableReference(&mut self, expr: &Node) -> bool {
+        self.isNarrowableReference(expr)
+            || if let Some(expr) = asOptionalChain(self.store.node_and_data(expr)) {
+                let expr = match expr {
+                    OptionalChain::PropertyAccessExpression(n) => n.expression.clone(),
+                    OptionalChain::ElementAccessExpression(n) => n.expression.clone(),
+                    OptionalChain::CallExpression(n) => n.expression.clone(),
+                    OptionalChain::NonNullExpression(n) => n.expression.clone(),
+                };
+                self.containsNarrowableReference(&expr.into())
+            } else {
+                false
+            }
+    }
 
-    //     function hasNarrowableArgument(expr: CallExpression) {
-    //         if (expr.arguments) {
-    //             for (const argument of expr.arguments) {
-    //                 if (containsNarrowableReference(argument)) {
-    //                     return true;
-    //                 }
-    //             }
-    //         }
-    //         if (expr.expression.kind === SyntaxKind::PropertyAccessExpression &&
-    //             containsNarrowableReference((expr.expression as PropertyAccessExpression).expression)) {
-    //             return true;
-    //         }
-    //         return false;
-    //     }
+    fn hasNarrowableArgument(&mut self, expr: &Rc<CallExpression>) -> bool {
+        for argument in expr.arguments.iter() {
+            if self.containsNarrowableReference(&argument.clone().into()) {
+                return true;
+            }
+        }
+        if let LeftHandSideExpression::PropertyAccessExpression(e) = &expr.expression {
+            return self.containsNarrowableReference(&e.expression.clone().into());
+        }
+        false
+    }
 
-    //     function isNarrowingTypeofOperands(expr1: Expression, expr2: Expression) {
-    //         return isTypeOfExpression(expr1) && isNarrowableOperand(expr1.expression) && isStringLiteralLike(expr2);
-    //     }
+    fn isNarrowingTypeofOperands(&mut self, expr1: &Expression, expr2: &Expression) -> bool {
+        if let Expression::TypeOfExpression(expr1) = expr1 {
+            self.isNarrowableOperand(&expr1.expression.clone().into()) && isStringLiteralLike(expr2)
+        } else {
+            false
+        }
+    }
 
-    //     function isNarrowingBinaryExpression(expr: BinaryExpression) {
-    //         switch (expr.operatorToken.kind) {
-    //             case SyntaxKind::EqualsToken:
-    //             case SyntaxKind::BarBarEqualsToken:
-    //             case SyntaxKind::AmpersandAmpersandEqualsToken:
-    //             case SyntaxKind::QuestionQuestionEqualsToken:
-    //                 return containsNarrowableReference(expr.left);
-    //             case SyntaxKind::EqualsEqualsToken:
-    //             case SyntaxKind::ExclamationEqualsToken:
-    //             case SyntaxKind::EqualsEqualsEqualsToken:
-    //             case SyntaxKind::ExclamationEqualsEqualsToken:
-    //                 return isNarrowableOperand(expr.left) || isNarrowableOperand(expr.right) ||
-    //                     isNarrowingTypeofOperands(expr.right, expr.left) || isNarrowingTypeofOperands(expr.left, expr.right);
-    //             case SyntaxKind::InstanceOfKeyword:
-    //                 return isNarrowableOperand(expr.left);
-    //             case SyntaxKind::InKeyword:
-    //                 return isNarrowingExpression(expr.right);
-    //             case SyntaxKind::CommaToken:
-    //                 return isNarrowingExpression(expr.right);
-    //         }
-    //         return false;
-    //     }
+    fn isNarrowingBinaryExpression(&mut self, expr: &Rc<BinaryExpression>) -> bool {
+        match expr.operatorToken.kind() {
+            SyntaxKind::EqualsToken
+            | SyntaxKind::BarBarEqualsToken
+            | SyntaxKind::AmpersandAmpersandEqualsToken
+            | SyntaxKind::QuestionQuestionEqualsToken => {
+                self.containsNarrowableReference(&expr.left.clone().into())
+            }
+            SyntaxKind::EqualsEqualsToken
+            | SyntaxKind::ExclamationEqualsToken
+            | SyntaxKind::EqualsEqualsEqualsToken
+            | SyntaxKind::ExclamationEqualsEqualsToken => {
+                self.isNarrowableOperand(&expr.left)
+                    || self.isNarrowableOperand(&expr.right)
+                    || self.isNarrowingTypeofOperands(&expr.right, &expr.left)
+                    || self.isNarrowingTypeofOperands(&expr.left, &expr.right)
+            }
+            SyntaxKind::InstanceOfKeyword => self.isNarrowableOperand(&expr.left),
+            SyntaxKind::InKeyword => self.isNarrowingExpression(&expr.right.clone().into()),
+            SyntaxKind::CommaToken => self.isNarrowingExpression(&expr.right.clone().into()),
+            _ => false,
+        }
+    }
 
-    //     function isNarrowableOperand(expr: Expression): boolean {
-    //         switch (expr.kind) {
-    //             case SyntaxKind::ParenthesizedExpression:
-    //                 return isNarrowableOperand((expr as ParenthesizedExpression).expression);
-    //             case SyntaxKind::BinaryExpression:
-    //                 switch ((expr as BinaryExpression).operatorToken.kind) {
-    //                     case SyntaxKind::EqualsToken:
-    //                         return isNarrowableOperand((expr as BinaryExpression).left);
-    //                     case SyntaxKind::CommaToken:
-    //                         return isNarrowableOperand((expr as BinaryExpression).right);
-    //                 }
-    //         }
-    //         return containsNarrowableReference(expr);
-    //     }
+    fn isNarrowableOperand(&mut self, expr: &Expression) -> bool {
+        match expr {
+            Expression::ParenthesizedExpression(n) => {
+                return self.isNarrowableOperand(&n.expression);
+            }
+            Expression::BinaryExpression(n) => match n.operatorToken.kind() {
+                SyntaxKind::EqualsToken => {
+                    return self.isNarrowableOperand(&n.left);
+                }
+                SyntaxKind::CommaToken => {
+                    return self.isNarrowableOperand(&n.right);
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+        self.containsNarrowableReference(&expr.clone().into())
+    }
 
-    //     function createBranchLabel(): FlowLabel {
-    //         return initFlowNode({ flags: FlowFlags.BranchLabel, antecedents: undefined });
-    //     }
+    fn createBranchLabel(&mut self) -> FlowLabelId {
+        self.alloc_flow_label(FlowNode::new_branch_label())
+    }
 
-    //     function createLoopLabel(): FlowLabel {
-    //         return initFlowNode({ flags: FlowFlags.LoopLabel, antecedents: undefined });
-    //     }
+    fn createLoopLabel(&mut self) -> FlowLabelId {
+        self.alloc_flow_label(FlowNode::new_loop_label())
+    }
 
-    //     function createReduceLabel(target: FlowLabel, antecedents: FlowNode[], antecedent: FlowNode): FlowReduceLabel {
-    //         return initFlowNode({ flags: FlowFlags.ReduceLabel, target, antecedents, antecedent });
-    //     }
+    fn createReduceLabel(
+        &mut self,
+        target: FlowLabelId,
+        antecedents: Rc<Vec<FlowNodeId>>,
+        antecedent: FlowNodeId,
+    ) -> FlowNodeId {
+        let antecedent = FlowNode::new_reduce_label(target, antecedents, antecedent);
+        self.alloc_flow_node(antecedent)
+    }
 
     fn setFlowNodeReferenced(&mut self, flow: FlowNodeId) {
         // On first reference we set the Referenced flag, thereafter we set the Shared flag
@@ -1277,36 +1463,89 @@ impl<'a> Binder<'a> {
     }
 
     fn addAntecedent(&mut self, label: FlowLabelId, antecedent: FlowNodeId) {
-        todo!();
-        // if (!(antecedent.flags & FlowFlags.Unreachable) && !contains(label.antecedents, antecedent)) {
-        //     (label.antecedents || (label.antecedents = [])).push(antecedent);
-        //     setFlowNodeReferenced(antecedent);
-        // }
+        if !self.flow_nodes[antecedent]
+            .flags
+            .intersects(FlowFlags::Unreachable)
+        {
+            if let Some(antecedents) = &mut self.flow_nodes[label].antecedents {
+                if !antecedents.contains(&antecedent) {
+                    Rc::make_mut(antecedents).push(antecedent);
+                    self.setFlowNodeReferenced(antecedent);
+                }
+            } else {
+                self.flow_nodes[label].antecedents = Some(vec![antecedent].into());
+                self.setFlowNodeReferenced(antecedent);
+            }
+        }
     }
 
-    //     function createFlowCondition(flags: FlowFlags, antecedent: FlowNode, expression: Expression | undefined): FlowNode {
-    //         if (antecedent.flags & FlowFlags.Unreachable) {
-    //             return antecedent;
-    //         }
-    //         if (!expression) {
-    //             return flags & FlowFlags.TrueCondition ? antecedent : unreachableFlow;
-    //         }
-    //         if ((expression.kind === SyntaxKind::TrueKeyword && flags & FlowFlags.FalseCondition ||
-    //             expression.kind === SyntaxKind::FalseKeyword && flags & FlowFlags.TrueCondition) &&
-    //             !isExpressionOfOptionalChainRoot(expression) && !isNullishCoalesce(expression.parent)) {
-    //             return unreachableFlow;
-    //         }
-    //         if (!isNarrowingExpression(expression)) {
-    //             return antecedent;
-    //         }
-    //         setFlowNodeReferenced(antecedent);
-    //         return initFlowNode({ flags, antecedent, node: expression });
-    //     }
+    fn createFlowCondition(
+        &mut self,
+        flags: FlowFlags,
+        antecedent: FlowNodeId,
+        expression: Option<&Rc<BoundNode>>,
+    ) -> FlowNodeId {
+        if self.flow_nodes[antecedent]
+            .flags
+            .intersects(FlowFlags::Unreachable)
+        {
+            return antecedent;
+        }
+        let expression = match expression {
+            Some(e) => e,
+            None => {
+                return if flags.intersects(FlowFlags::TrueCondition) {
+                    antecedent
+                } else {
+                    self.unreachableFlow
+                };
+            }
+        };
+        if (expression.kind() == SyntaxKind::TrueKeyword
+            && flags.intersects(FlowFlags::FalseCondition)
+            || expression.kind() == SyntaxKind::FalseKeyword
+                && flags.intersects(FlowFlags::TrueCondition))
+            && !isExpressionOfOptionalChainRoot(
+                &expression.node,
+                self.store.node_and_data(&expression.parent_node().unwrap()),
+            )
+            && !isNullishCoalesce(&expression.parent_node().unwrap())
+        {
+            return self.unreachableFlow;
+        }
+        if !self.isNarrowingExpression(&expression.node) {
+            return antecedent;
+        }
+        self.setFlowNodeReferenced(antecedent);
+        let node = FlowNode {
+            flags,
+            kind: FlowNodeKind::FlowCondition(FlowCondition {
+                antecedent,
+                node: expression.clone(),
+            }),
+        };
+        self.alloc_flow_node(node)
+    }
 
-    //     function createFlowSwitchClause(antecedent: FlowNode, switchStatement: SwitchStatement, clauseStart: number, clauseEnd: number): FlowNode {
-    //         setFlowNodeReferenced(antecedent);
-    //         return initFlowNode({ flags: FlowFlags.SwitchClause, antecedent, switchStatement, clauseStart, clauseEnd });
-    //     }
+    fn createFlowSwitchClause(
+        &mut self,
+        antecedent: FlowNodeId,
+        switchStatement: Rc<SwitchStatement>,
+        clauseStart: u32,
+        clauseEnd: u32,
+    ) -> FlowNodeId {
+        self.setFlowNodeReferenced(antecedent);
+        let node = FlowNode {
+            flags: FlowFlags::SwitchClause,
+            kind: FlowNodeKind::FlowSwitchClause(FlowSwitchClause {
+                switchStatement,
+                clauseStart,
+                clauseEnd,
+                antecedent,
+            }),
+        };
+        self.alloc_flow_node(node)
+    }
 
     fn createFlowAssignment(&mut self, antecedent: FlowNodeId, node: Rc<BoundNode>) -> FlowNodeId {
         self.setFlowNodeReferenced(antecedent);
@@ -1321,427 +1560,601 @@ impl<'a> Binder<'a> {
         id
     }
 
-    //     function createFlowCall(antecedent: FlowNode, node: CallExpression): FlowNode {
-    //         setFlowNodeReferenced(antecedent);
-    //         return initFlowNode({ flags: FlowFlags.Call, antecedent, node });
-    //     }
-
-    fn finishFlowLabel(&mut self, flow: FlowLabelId) -> FlowNodeId {
-        todo!();
-        // const antecedents = flow.antecedents;
-        // if (!antecedents) {
-        //     return unreachableFlow;
-        // }
-        // if (antecedents.length === 1) {
-        //     return antecedents[0];
-        // }
-        // return flow;
+    fn createFlowArrayMutation(
+        &mut self,
+        antecedent: FlowNodeId,
+        node: Rc<BoundNode>,
+    ) -> FlowNodeId {
+        self.setFlowNodeReferenced(antecedent);
+        let node = FlowNode {
+            flags: FlowFlags::ArrayMutation,
+            kind: FlowNodeKind::FlowArrayMutation(FlowArrayMutation { antecedent, node }),
+        };
+        let id = self.alloc_flow_node(node);
+        if let Some(currentExceptionTarget) = self.currentExceptionTarget {
+            self.addAntecedent(currentExceptionTarget, id);
+        }
+        id
     }
 
-    //     function isStatementCondition(node: Node) {
-    //         const parent = node.parent;
-    //         switch (parent.kind) {
-    //             case SyntaxKind::IfStatement:
-    //             case SyntaxKind::WhileStatement:
-    //             case SyntaxKind::DoStatement:
-    //                 return (parent as IfStatement | WhileStatement | DoStatement).expression === node;
-    //             case SyntaxKind::ForStatement:
-    //             case SyntaxKind::ConditionalExpression:
-    //                 return (parent as ForStatement | ConditionalExpression).condition === node;
-    //         }
-    //         return false;
-    //     }
+    fn createFlowCall(&mut self, antecedent: FlowNodeId, node: Rc<CallExpression>) -> FlowNodeId {
+        self.setFlowNodeReferenced(antecedent);
+        let node = FlowNode {
+            flags: FlowFlags::Call,
+            kind: FlowNodeKind::FlowCall(FlowCall { antecedent, node }),
+        };
+        self.alloc_flow_node(node)
+    }
 
-    //     function isLogicalExpression(node: Node) {
-    //         while (true) {
-    //             if (node.kind === SyntaxKind::ParenthesizedExpression) {
-    //                 node = (node as ParenthesizedExpression).expression;
-    //             }
-    //             else if (node.kind === SyntaxKind::PrefixUnaryExpression && (node as PrefixUnaryExpression).operator === SyntaxKind::ExclamationToken) {
-    //                 node = (node as PrefixUnaryExpression).operand;
-    //             }
-    //             else {
-    //                 return node.kind === SyntaxKind::BinaryExpression && (
-    //                     (node as BinaryExpression).operatorToken.kind === SyntaxKind::AmpersandAmpersandToken ||
-    //                     (node as BinaryExpression).operatorToken.kind === SyntaxKind::BarBarToken ||
-    //                     (node as BinaryExpression).operatorToken.kind === SyntaxKind::QuestionQuestionToken);
-    //             }
-    //         }
-    //     }
+    fn finishFlowLabel(&mut self, flow: FlowLabelId) -> FlowNodeId {
+        let antecedents = match &self.flow_nodes[flow].antecedents {
+            Some(a) => a,
+            None => return self.unreachableFlow,
+        };
+        if antecedents.len() == 1 {
+            return antecedents[0];
+        }
+        flow.into()
+    }
 
-    //     function isLogicalAssignmentExpression(node: Node) {
-    //         node = skipParentheses(node);
-    //         return isBinaryExpression(node) && isLogicalOrCoalescingAssignmentOperator(node.operatorToken.kind);
-    //     }
+    fn isStatementCondition(node: &Rc<BoundNode>) -> bool {
+        let parent = node.parent_node();
+        match parent {
+            Some(Node::IfStatement(n)) => n.expression.node_id() == node.node_id(),
+            Some(Node::WhileStatement(n)) => n.expression.node_id() == node.node_id(),
+            Some(Node::DoStatement(n)) => n.expression.node_id() == node.node_id(),
+            Some(Node::ForStatement(n)) => n
+                .condition
+                .as_ref()
+                .map(|c| c.node_id() == node.node_id())
+                .unwrap_or_default(),
+            Some(Node::ConditionalExpression(n)) => n.condition.node_id() == node.node_id(),
+            _ => false,
+        }
+    }
 
-    //     function isTopLevelLogicalExpression(node: Node): boolean {
-    //         while (isParenthesizedExpression(node.parent) ||
-    //             isPrefixUnaryExpression(node.parent) && node.parent.operator === SyntaxKind::ExclamationToken) {
-    //             node = node.parent;
-    //         }
-    //         return !isStatementCondition(node) &&
-    //             !isLogicalAssignmentExpression(node.parent) &&
-    //             !isLogicalExpression(node.parent) &&
-    //             !(isOptionalChain(node.parent) && node.parent.expression === node);
-    //     }
+    fn isLogicalExpression(mut node: Node) -> bool {
+        loop {
+            match node {
+                Node::ParenthesizedExpression(n) => {
+                    node = n.expression.clone().into();
+                }
+                Node::PrefixUnaryExpression(n) if n.operator == SyntaxKind::ExclamationToken => {
+                    node = n.operand.clone().into()
+                }
+                Node::BinaryExpression(n) => {
+                    return n.operatorToken.kind() == SyntaxKind::AmpersandAmpersandToken
+                        || n.operatorToken.kind() == SyntaxKind::BarBarToken
+                        || n.operatorToken.kind() == SyntaxKind::QuestionQuestionToken;
+                }
+                _ => return false,
+            }
+        }
+    }
 
-    //     function doWithConditionalBranches<T>(action: (value: T) => void, value: T, trueTarget: FlowLabel, falseTarget: FlowLabel) {
-    //         const savedTrueTarget = currentTrueTarget;
-    //         const savedFalseTarget = currentFalseTarget;
-    //         currentTrueTarget = trueTarget;
-    //         currentFalseTarget = falseTarget;
-    //         action(value);
-    //         currentTrueTarget = savedTrueTarget;
-    //         currentFalseTarget = savedFalseTarget;
-    //     }
+    fn isLogicalAssignmentExpression(node: Node) -> bool {
+        let node = skipParentheses(node, false);
+        if let Node::BinaryExpression(n) = node {
+            isLogicalOrCoalescingAssignmentOperator(n.operatorToken.kind())
+        } else {
+            false
+        }
+    }
 
-    //     function bindCondition(node: Expression | undefined, trueTarget: FlowLabel, falseTarget: FlowLabel) {
-    //         doWithConditionalBranches(bind, node, trueTarget, falseTarget);
-    //         if (!node || !isLogicalAssignmentExpression(node) && !isLogicalExpression(node) && !(isOptionalChain(node) && isOutermostOptionalChain(node))) {
-    //             addAntecedent(trueTarget, createFlowCondition(FlowFlags.TrueCondition, currentFlow, node));
-    //             addAntecedent(falseTarget, createFlowCondition(FlowFlags.FalseCondition, currentFlow, node));
-    //         }
-    //     }
+    fn isTopLevelLogicalExpression(mut node: Rc<BoundNode>) -> bool {
+        loop {
+            let parent = node.parent().unwrap();
+            if isParenthesizedExpression(&parent) {
+                node = parent;
+                continue;
+            }
+            if let Node::PrefixUnaryExpression(p) = &parent.node {
+                if p.operator == SyntaxKind::ExclamationToken {
+                    node = parent;
+                    continue;
+                }
+            }
+            break;
+        }
+        if Self::isStatementCondition(&node)
+            || Self::isLogicalAssignmentExpression(node.parent_node().unwrap())
+            || Self::isLogicalExpression(node.parent_node().unwrap())
+        {
+            return false;
+        }
+        match node.parent_node().unwrap() {
+            Node::PropertyAccessExpression(n) => n.expression.node_id() != node.node_id(),
+            Node::ElementAccessExpression(n) => n.expression.node_id() != node.node_id(),
+            Node::CallExpression(n) => n.expression.node_id() != node.node_id(),
+            Node::NonNullExpression(n) => n.expression.node_id() != node.node_id(),
+            _ => true,
+        }
+    }
 
-    //     function bindIterativeStatement(node: Statement, breakTarget: FlowLabel, continueTarget: FlowLabel): void {
-    //         const saveBreakTarget = currentBreakTarget;
-    //         const saveContinueTarget = currentContinueTarget;
-    //         currentBreakTarget = breakTarget;
-    //         currentContinueTarget = continueTarget;
-    //         bind(node);
-    //         currentBreakTarget = saveBreakTarget;
-    //         currentContinueTarget = saveContinueTarget;
-    //     }
+    fn doWithConditionalBranches<T, F>(
+        &mut self,
+        action: F,
+        value: T,
+        trueTarget: FlowLabelId,
+        falseTarget: FlowLabelId,
+    ) where
+        F: Fn(&mut Self, T),
+    {
+        let savedTrueTarget = self.currentTrueTarget;
+        let savedFalseTarget = self.currentFalseTarget;
+        self.currentTrueTarget = Some(trueTarget);
+        self.currentFalseTarget = Some(falseTarget);
+        action(self, value);
+        self.currentTrueTarget = savedTrueTarget;
+        self.currentFalseTarget = savedFalseTarget;
+    }
 
-    //     function setContinueTarget(node: Node, target: FlowLabel) {
-    //         let label = activeLabelList;
-    //         while (label && node.parent.kind === SyntaxKind::LabeledStatement) {
-    //             label.continueTarget = target;
-    //             label = label.next;
-    //             node = node.parent;
-    //         }
-    //         return target;
-    //     }
+    fn bindCondition(
+        &mut self,
+        node: Option<&Rc<BoundNode>>,
+        trueTarget: FlowLabelId,
+        falseTarget: FlowLabelId,
+    ) {
+        self.doWithConditionalBranches(|b, n| b.bind(n.cloned()), node, trueTarget, falseTarget);
+        if node.is_none() || {
+            let node = node.unwrap();
+            !Self::isLogicalAssignmentExpression(node.node.clone())
+                && !Self::isLogicalExpression(node.node.clone())
+                && !(isOptionalChain(self.store.node_and_data(&node.node))
+                    && isOutermostOptionalChain(
+                        node,
+                        self.store.node_and_data(&node.parent_node().unwrap()),
+                    ))
+        } {
+            let true_antecedent =
+                self.createFlowCondition(FlowFlags::TrueCondition, self.currentFlow, node);
+            self.addAntecedent(trueTarget, true_antecedent);
+            let false_antecedent =
+                self.createFlowCondition(FlowFlags::FalseCondition, self.currentFlow, node);
+            self.addAntecedent(falseTarget, false_antecedent);
+        }
+    }
 
-    //     function bindWhileStatement(node: WhileStatement): void {
-    //         const preWhileLabel = setContinueTarget(node, createLoopLabel());
-    //         const preBodyLabel = createBranchLabel();
-    //         const postWhileLabel = createBranchLabel();
-    //         addAntecedent(preWhileLabel, currentFlow);
-    //         currentFlow = preWhileLabel;
-    //         bindCondition(node.expression, preBodyLabel, postWhileLabel);
-    //         currentFlow = finishFlowLabel(preBodyLabel);
-    //         bindIterativeStatement(node.statement, postWhileLabel, preWhileLabel);
-    //         addAntecedent(preWhileLabel, currentFlow);
-    //         currentFlow = finishFlowLabel(postWhileLabel);
-    //     }
+    fn bindIterativeStatement(
+        &mut self,
+        node: Rc<BoundNode>,
+        breakTarget: FlowLabelId,
+        continueTarget: FlowLabelId,
+    ) {
+        let saveBreakTarget = self.currentBreakTarget;
+        let saveContinueTarget = self.currentContinueTarget;
+        self.currentBreakTarget = Some(breakTarget);
+        self.currentContinueTarget = Some(continueTarget);
+        self.bind(Some(node));
+        self.currentBreakTarget = saveBreakTarget;
+        self.currentContinueTarget = saveContinueTarget;
+    }
 
-    //     function bindDoStatement(node: DoStatement): void {
-    //         const preDoLabel = createLoopLabel();
-    //         const preConditionLabel = setContinueTarget(node, createBranchLabel());
-    //         const postDoLabel = createBranchLabel();
-    //         addAntecedent(preDoLabel, currentFlow);
-    //         currentFlow = preDoLabel;
-    //         bindIterativeStatement(node.statement, postDoLabel, preConditionLabel);
-    //         addAntecedent(preConditionLabel, currentFlow);
-    //         currentFlow = finishFlowLabel(preConditionLabel);
-    //         bindCondition(node.expression, preDoLabel, postDoLabel);
-    //         currentFlow = finishFlowLabel(postDoLabel);
-    //     }
+    fn setContinueTarget(&mut self, mut node: Rc<BoundNode>, target: FlowLabelId) -> FlowLabelId {
+        for label in self.activeLabelList.iter_mut().rev() {
+            if let Some(Node::LabeledStatement(_)) = node.parent_node() {
+                label.continueTarget = Some(target);
+                node = node.parent().unwrap();
+            } else {
+                break;
+            }
+        }
+        target
+    }
 
-    //     function bindForStatement(node: ForStatement): void {
-    //         const preLoopLabel = setContinueTarget(node, createLoopLabel());
-    //         const preBodyLabel = createBranchLabel();
-    //         const postLoopLabel = createBranchLabel();
-    //         bind(node.initializer);
-    //         addAntecedent(preLoopLabel, currentFlow);
-    //         currentFlow = preLoopLabel;
-    //         bindCondition(node.condition, preBodyLabel, postLoopLabel);
-    //         currentFlow = finishFlowLabel(preBodyLabel);
-    //         bindIterativeStatement(node.statement, postLoopLabel, preLoopLabel);
-    //         bind(node.incrementor);
-    //         addAntecedent(preLoopLabel, currentFlow);
-    //         currentFlow = finishFlowLabel(postLoopLabel);
-    //     }
+    fn bindWhileStatement(&mut self, node: &Rc<BoundNode>, stmt: &Rc<WhileStatement>) {
+        let continue_target = self.createLoopLabel();
+        let preWhileLabel = self.setContinueTarget(node.clone(), continue_target);
+        let preBodyLabel = self.createBranchLabel();
+        let postWhileLabel = self.createBranchLabel();
+        self.addAntecedent(preWhileLabel, self.currentFlow);
+        self.currentFlow = preWhileLabel.into();
+        self.bindCondition(
+            Some(&stmt.expression.bind(node)),
+            preBodyLabel,
+            postWhileLabel,
+        );
+        self.currentFlow = self.finishFlowLabel(preBodyLabel);
+        self.bindIterativeStatement(stmt.statement.bind(node), postWhileLabel, preWhileLabel);
+        self.addAntecedent(preWhileLabel, self.currentFlow);
+        self.currentFlow = self.finishFlowLabel(postWhileLabel);
+    }
 
-    //     function bindForInOrForOfStatement(node: ForInOrOfStatement): void {
-    //         const preLoopLabel = setContinueTarget(node, createLoopLabel());
-    //         const postLoopLabel = createBranchLabel();
-    //         bind(node.expression);
-    //         addAntecedent(preLoopLabel, currentFlow);
-    //         currentFlow = preLoopLabel;
-    //         if (node.kind === SyntaxKind::ForOfStatement) {
-    //             bind(node.awaitModifier);
-    //         }
-    //         addAntecedent(postLoopLabel, currentFlow);
-    //         bind(node.initializer);
-    //         if (node.initializer.kind !== SyntaxKind::VariableDeclarationList) {
-    //             bindAssignmentTargetFlow(node.initializer);
-    //         }
-    //         bindIterativeStatement(node.statement, postLoopLabel, preLoopLabel);
-    //         addAntecedent(preLoopLabel, currentFlow);
-    //         currentFlow = finishFlowLabel(postLoopLabel);
-    //     }
+    fn bindDoStatement(&mut self, node: &Rc<BoundNode>, stmt: &Rc<DoStatement>) {
+        let preDoLabel = self.createLoopLabel();
+        let continue_target = self.createBranchLabel();
+        let preConditionLabel = self.setContinueTarget(node.clone(), continue_target);
+        let postDoLabel = self.createBranchLabel();
+        self.addAntecedent(preDoLabel, self.currentFlow);
+        self.currentFlow = preDoLabel.into();
+        self.bindIterativeStatement(stmt.statement.bind(node), postDoLabel, preConditionLabel);
+        self.addAntecedent(preConditionLabel, self.currentFlow);
+        self.currentFlow = self.finishFlowLabel(preConditionLabel);
+        self.bindCondition(Some(&stmt.expression.bind(node)), preDoLabel, postDoLabel);
+        self.currentFlow = self.finishFlowLabel(postDoLabel);
+    }
 
-    //     function bindIfStatement(node: IfStatement): void {
-    //         const thenLabel = createBranchLabel();
-    //         const elseLabel = createBranchLabel();
-    //         const postIfLabel = createBranchLabel();
-    //         bindCondition(node.expression, thenLabel, elseLabel);
-    //         currentFlow = finishFlowLabel(thenLabel);
-    //         bind(node.thenStatement);
-    //         addAntecedent(postIfLabel, currentFlow);
-    //         currentFlow = finishFlowLabel(elseLabel);
-    //         bind(node.elseStatement);
-    //         addAntecedent(postIfLabel, currentFlow);
-    //         currentFlow = finishFlowLabel(postIfLabel);
-    //     }
+    fn bindForStatement(&mut self, node: &Rc<BoundNode>, stmt: &Rc<ForStatement>) {
+        let continue_target = self.createLoopLabel();
+        let preLoopLabel = self.setContinueTarget(node.clone(), continue_target);
+        let preBodyLabel = self.createBranchLabel();
+        let postLoopLabel = self.createBranchLabel();
+        self.bind(stmt.initializer.bind(node));
+        self.addAntecedent(preLoopLabel, self.currentFlow);
+        self.currentFlow = preLoopLabel.into();
+        self.bindCondition(
+            stmt.condition.bind(node).as_ref(),
+            preBodyLabel,
+            postLoopLabel,
+        );
+        self.currentFlow = self.finishFlowLabel(preBodyLabel);
+        self.bindIterativeStatement(stmt.statement.bind(node), postLoopLabel, preLoopLabel);
+        self.bind(stmt.incrementor.bind(node));
+        self.addAntecedent(preLoopLabel, self.currentFlow);
+        self.currentFlow = self.finishFlowLabel(postLoopLabel);
+    }
 
-    //     function bindReturnOrThrow(node: ReturnStatement | ThrowStatement): void {
-    //         bind(node.expression);
-    //         if (node.kind === SyntaxKind::ReturnStatement) {
-    //             hasExplicitReturn = true;
-    //             if (currentReturnTarget) {
-    //                 addAntecedent(currentReturnTarget, currentFlow);
-    //             }
-    //         }
-    //         currentFlow = unreachableFlow;
-    //     }
+    fn bindForInOrForOfStatement(
+        &mut self,
+        node: &Rc<BoundNode>,
+        expression: &Expression,
+        awaitModifier: &Option<Rc<AwaitKeyword>>,
+        statement: &Statement,
+        initializer: &ForInitializer,
+    ) {
+        let continue_target = self.createLoopLabel();
+        let preLoopLabel = self.setContinueTarget(node.clone(), continue_target);
+        let postLoopLabel = self.createBranchLabel();
+        self.bind(Some(expression.bind(node)));
+        self.addAntecedent(preLoopLabel, self.currentFlow);
+        self.currentFlow = preLoopLabel.into();
+        self.bind(awaitModifier.bind(node));
+        self.addAntecedent(postLoopLabel, self.currentFlow);
+        self.bind(Some(initializer.bind(node)));
+        if initializer.kind() != SyntaxKind::VariableDeclarationList {
+            self.bindAssignmentTargetFlow(&initializer.bind(node));
+        }
+        self.bindIterativeStatement(statement.bind(node), postLoopLabel, preLoopLabel);
+        self.addAntecedent(preLoopLabel, self.currentFlow);
+        self.currentFlow = self.finishFlowLabel(postLoopLabel);
+    }
 
-    //     function findActiveLabel(name: __String) {
-    //         for (let label = activeLabelList; label; label = label.next) {
-    //             if (label.name === name) {
-    //                 return label;
-    //             }
-    //         }
-    //         return undefined;
-    //     }
+    fn bindIfStatement(&mut self, node: &Rc<BoundNode>, stmt: &Rc<IfStatement>) {
+        let thenLabel = self.createBranchLabel();
+        let elseLabel = self.createBranchLabel();
+        let postIfLabel = self.createBranchLabel();
+        self.bindCondition(Some(&stmt.expression.bind(node)), thenLabel, elseLabel);
+        self.currentFlow = self.finishFlowLabel(thenLabel);
+        self.bind(Some(stmt.thenStatement.bind(node)));
+        self.addAntecedent(postIfLabel, self.currentFlow);
+        self.currentFlow = self.finishFlowLabel(elseLabel);
+        self.bind(stmt.elseStatement.bind(node));
+        self.addAntecedent(postIfLabel, self.currentFlow);
+        self.currentFlow = self.finishFlowLabel(postIfLabel);
+    }
 
-    //     function bindBreakOrContinueFlow(node: BreakOrContinueStatement, breakTarget: FlowLabel | undefined, continueTarget: FlowLabel | undefined) {
-    //         const flowLabel = node.kind === SyntaxKind::BreakStatement ? breakTarget : continueTarget;
-    //         if (flowLabel) {
-    //             addAntecedent(flowLabel, currentFlow);
-    //             currentFlow = unreachableFlow;
-    //         }
-    //     }
+    fn bindReturn(&mut self, node: &Rc<BoundNode>, stmt: &Rc<ReturnStatement>) {
+        self.bind(stmt.expression.bind(node));
+        self.hasExplicitReturn = true;
+        if let Some(currentReturnTarget) = self.currentReturnTarget {
+            self.addAntecedent(currentReturnTarget, self.currentFlow);
+        }
+        self.currentFlow = self.unreachableFlow;
+    }
 
-    //     function bindBreakOrContinueStatement(node: BreakOrContinueStatement): void {
-    //         bind(node.label);
-    //         if (node.label) {
-    //             const activeLabel = findActiveLabel(node.label.escapedText);
-    //             if (activeLabel) {
-    //                 activeLabel.referenced = true;
-    //                 bindBreakOrContinueFlow(node, activeLabel.breakTarget, activeLabel.continueTarget);
-    //             }
-    //         }
-    //         else {
-    //             bindBreakOrContinueFlow(node, currentBreakTarget, currentContinueTarget);
-    //         }
-    //     }
+    fn bindThrow(&mut self, node: &Rc<BoundNode>, stmt: &Rc<ThrowStatement>) {
+        self.bind(Some(stmt.expression.bind(node)));
+        self.currentFlow = self.unreachableFlow;
+    }
 
-    //     function bindTryStatement(node: TryStatement): void {
-    //         // We conservatively assume that *any* code in the try block can cause an exception, but we only need
-    //         // to track code that causes mutations (because only mutations widen the possible control flow type of
-    //         // a variable). The exceptionLabel is the target label for control flows that result from exceptions.
-    //         // We add all mutation flow nodes as antecedents of this label such that we can analyze them as possible
-    //         // antecedents of the start of catch or finally blocks. Furthermore, we add the current control flow to
-    //         // represent exceptions that occur before any mutations.
-    //         const saveReturnTarget = currentReturnTarget;
-    //         const saveExceptionTarget = currentExceptionTarget;
-    //         const normalExitLabel = createBranchLabel();
-    //         const returnLabel = createBranchLabel();
-    //         let exceptionLabel = createBranchLabel();
-    //         if (node.finallyBlock) {
-    //             currentReturnTarget = returnLabel;
-    //         }
-    //         addAntecedent(exceptionLabel, currentFlow);
-    //         currentExceptionTarget = exceptionLabel;
-    //         bind(node.tryBlock);
-    //         addAntecedent(normalExitLabel, currentFlow);
-    //         if (node.catchClause) {
-    //             // Start of catch clause is the target of exceptions from try block.
-    //             currentFlow = finishFlowLabel(exceptionLabel);
-    //             // The currentExceptionTarget now represents control flows from exceptions in the catch clause.
-    //             // Effectively, in a try-catch-finally, if an exception occurs in the try block, the catch block
-    //             // acts like a second try block.
-    //             exceptionLabel = createBranchLabel();
-    //             addAntecedent(exceptionLabel, currentFlow);
-    //             currentExceptionTarget = exceptionLabel;
-    //             bind(node.catchClause);
-    //             addAntecedent(normalExitLabel, currentFlow);
-    //         }
-    //         currentReturnTarget = saveReturnTarget;
-    //         currentExceptionTarget = saveExceptionTarget;
-    //         if (node.finallyBlock) {
-    //             // Possible ways control can reach the finally block:
-    //             // 1) Normal completion of try block of a try-finally or try-catch-finally
-    //             // 2) Normal completion of catch block (following exception in try block) of a try-catch-finally
-    //             // 3) Return in try or catch block of a try-finally or try-catch-finally
-    //             // 4) Exception in try block of a try-finally
-    //             // 5) Exception in catch block of a try-catch-finally
-    //             // When analyzing a control flow graph that starts inside a finally block we want to consider all
-    //             // five possibilities above. However, when analyzing a control flow graph that starts outside (past)
-    //             // the finally block, we only want to consider the first two (if we're past a finally block then it
-    //             // must have completed normally). Likewise, when analyzing a control flow graph from return statements
-    //             // in try or catch blocks in an IIFE, we only want to consider the third. To make this possible, we
-    //             // inject a ReduceLabel node into the control flow graph. This node contains an alternate reduced
-    //             // set of antecedents for the pre-finally label. As control flow analysis passes by a ReduceLabel
-    //             // node, the pre-finally label is temporarily switched to the reduced antecedent set.
-    //             const finallyLabel = createBranchLabel();
-    //             finallyLabel.antecedents = concatenate(concatenate(normalExitLabel.antecedents, exceptionLabel.antecedents), returnLabel.antecedents);
-    //             currentFlow = finallyLabel;
-    //             bind(node.finallyBlock);
-    //             if (currentFlow.flags & FlowFlags.Unreachable) {
-    //                 // If the end of the finally block is unreachable, the end of the entire try statement is unreachable.
-    //                 currentFlow = unreachableFlow;
-    //             }
-    //             else {
-    //                 // If we have an IIFE return target and return statements in the try or catch blocks, add a control
-    //                 // flow that goes back through the finally block and back through only the return statements.
-    //                 if (currentReturnTarget && returnLabel.antecedents) {
-    //                     addAntecedent(currentReturnTarget, createReduceLabel(finallyLabel, returnLabel.antecedents, currentFlow));
-    //                 }
-    //                 // If we have an outer exception target (i.e. a containing try-finally or try-catch-finally), add a
-    //                 // control flow that goes back through the finally blok and back through each possible exception source.
-    //                 if (currentExceptionTarget && exceptionLabel.antecedents) {
-    //                     addAntecedent(currentExceptionTarget, createReduceLabel(finallyLabel, exceptionLabel.antecedents, currentFlow));
-    //                 }
-    //                 // If the end of the finally block is reachable, but the end of the try and catch blocks are not,
-    //                 // convert the current flow to unreachable. For example, 'try { return 1; } finally { ... }' should
-    //                 // result in an unreachable current control flow.
-    //                 currentFlow = normalExitLabel.antecedents ? createReduceLabel(finallyLabel, normalExitLabel.antecedents, currentFlow) : unreachableFlow;
-    //             }
-    //         }
-    //         else {
-    //             currentFlow = finishFlowLabel(normalExitLabel);
-    //         }
-    //     }
+    fn findActiveLabel(&mut self, name: &__String) -> Option<&mut ActiveLabel> {
+        self.activeLabelList
+            .iter_mut()
+            .rfind(|label| &label.name == name)
+    }
 
-    //     function bindSwitchStatement(node: SwitchStatement): void {
-    //         const postSwitchLabel = createBranchLabel();
-    //         bind(node.expression);
-    //         const saveBreakTarget = currentBreakTarget;
-    //         const savePreSwitchCaseFlow = preSwitchCaseFlow;
-    //         currentBreakTarget = postSwitchLabel;
-    //         preSwitchCaseFlow = currentFlow;
-    //         bind(node.caseBlock);
-    //         addAntecedent(postSwitchLabel, currentFlow);
-    //         const hasDefault = forEach(node.caseBlock.clauses, c => c.kind === SyntaxKind::DefaultClause);
-    //         // We mark a switch statement as possibly exhaustive if it has no default clause and if all
-    //         // case clauses have unreachable end points (e.g. they all return). Note, we no longer need
-    //         // this property in control flow analysis, it's there only for backwards compatibility.
-    //         node.possiblyExhaustive = !hasDefault && !postSwitchLabel.antecedents;
-    //         if (!hasDefault) {
-    //             addAntecedent(postSwitchLabel, createFlowSwitchClause(preSwitchCaseFlow, node, 0, 0));
-    //         }
-    //         currentBreakTarget = saveBreakTarget;
-    //         preSwitchCaseFlow = savePreSwitchCaseFlow;
-    //         currentFlow = finishFlowLabel(postSwitchLabel);
-    //     }
+    fn bindBreakOrContinueFlow(
+        &mut self,
+        node: BreakOrContinueStatement,
+        breakTarget: Option<FlowLabelId>,
+        continueTarget: Option<FlowLabelId>,
+    ) {
+        let flowLabel = if matches!(node, BreakOrContinueStatement::BreakStatement(_)) {
+            breakTarget
+        } else {
+            continueTarget
+        };
+        if let Some(flowLabel) = flowLabel {
+            self.addAntecedent(flowLabel, self.currentFlow);
+            self.currentFlow = self.unreachableFlow;
+        }
+    }
 
-    //     function bindCaseBlock(node: CaseBlock): void {
-    //         const clauses = node.clauses;
-    //         const isNarrowingSwitch = isNarrowingExpression(node.parent.expression);
-    //         let fallthroughFlow = unreachableFlow;
-    //         for (let i = 0; i < clauses.length; i++) {
-    //             const clauseStart = i;
-    //             while (!clauses[i].statements.length && i + 1 < clauses.length) {
-    //                 bind(clauses[i]);
-    //                 i++;
-    //             }
-    //             const preCaseLabel = createBranchLabel();
-    //             addAntecedent(preCaseLabel, isNarrowingSwitch ? createFlowSwitchClause(preSwitchCaseFlow!, node.parent, clauseStart, i + 1) : preSwitchCaseFlow!);
-    //             addAntecedent(preCaseLabel, fallthroughFlow);
-    //             currentFlow = finishFlowLabel(preCaseLabel);
-    //             const clause = clauses[i];
-    //             bind(clause);
-    //             fallthroughFlow = currentFlow;
-    //             if (!(currentFlow.flags & FlowFlags.Unreachable) && i !== clauses.length - 1 && options.noFallthroughCasesInSwitch) {
-    //                 clause.fallthroughFlowNode = currentFlow;
-    //             }
-    //         }
-    //     }
+    fn bindBreakOrContinueStatement(
+        &mut self,
+        node: &Rc<BoundNode>,
+        stmt: BreakOrContinueStatement,
+    ) {
+        self.bind(stmt.label().bind(node));
+        if let Some(label) = stmt.label() {
+            if let Some(activeLabel) = self.findActiveLabel(&label.escapedText) {
+                activeLabel.referenced = true;
+                let breakTarget = activeLabel.breakTarget;
+                let continueTarget = activeLabel.continueTarget;
+                self.bindBreakOrContinueFlow(stmt, Some(breakTarget), continueTarget);
+            }
+        } else {
+            self.bindBreakOrContinueFlow(stmt, self.currentBreakTarget, self.currentContinueTarget);
+        }
+    }
 
-    //     function bindCaseClause(node: CaseClause): void {
-    //         const saveCurrentFlow = currentFlow;
-    //         currentFlow = preSwitchCaseFlow!;
-    //         bind(node.expression);
-    //         currentFlow = saveCurrentFlow;
-    //         bindEach(node.statements);
-    //     }
+    fn bindTryStatement(&mut self, node: &Rc<BoundNode>, stmt: &Rc<TryStatement>) {
+        // We conservatively assume that *any* code in the try block can cause an exception, but we only need
+        // to track code that causes mutations (because only mutations widen the possible control flow type of
+        // a variable). The exceptionLabel is the target label for control flows that result from exceptions.
+        // We add all mutation flow nodes as antecedents of this label such that we can analyze them as possible
+        // antecedents of the start of catch or finally blocks. Furthermore, we add the current control flow to
+        // represent exceptions that occur before any mutations.
+        let saveReturnTarget = self.currentReturnTarget;
+        let saveExceptionTarget = self.currentExceptionTarget;
+        let normalExitLabel = self.createBranchLabel();
+        let returnLabel = self.createBranchLabel();
+        let mut exceptionLabel = self.createBranchLabel();
+        if stmt.finallyBlock.is_some() {
+            self.currentReturnTarget = Some(returnLabel);
+        }
+        self.addAntecedent(exceptionLabel, self.currentFlow);
+        self.currentExceptionTarget = Some(exceptionLabel);
+        self.bind(Some(stmt.tryBlock.bind(node)));
+        self.addAntecedent(normalExitLabel, self.currentFlow);
+        if stmt.catchClause.is_some() {
+            // Start of catch clause is the target of exceptions from try block.
+            self.currentFlow = self.finishFlowLabel(exceptionLabel);
+            // The currentExceptionTarget now represents control flows from exceptions in the catch clause.
+            // Effectively, in a try-catch-finally, if an exception occurs in the try block, the catch block
+            // acts like a second try block.
+            exceptionLabel = self.createBranchLabel();
+            self.addAntecedent(exceptionLabel, self.currentFlow);
+            self.currentExceptionTarget = Some(exceptionLabel);
+            self.bind(stmt.catchClause.bind(node));
+            self.addAntecedent(normalExitLabel, self.currentFlow);
+        }
+        self.currentReturnTarget = saveReturnTarget;
+        self.currentExceptionTarget = saveExceptionTarget;
+        if stmt.finallyBlock.is_some() {
+            // Possible ways control can reach the finally block:
+            // 1) Normal completion of try block of a try-finally or try-catch-finally
+            // 2) Normal completion of catch block (following exception in try block) of a try-catch-finally
+            // 3) Return in try or catch block of a try-finally or try-catch-finally
+            // 4) Exception in try block of a try-finally
+            // 5) Exception in catch block of a try-catch-finally
+            // When analyzing a control flow graph that starts inside a finally block we want to consider all
+            // five possibilities above. However, when analyzing a control flow graph that starts outside (past)
+            // the finally block, we only want to consider the first two (if we're past a finally block then it
+            // must have completed normally). Likewise, when analyzing a control flow graph from return statements
+            // in try or catch blocks in an IIFE, we only want to consider the third. To make this possible, we
+            // inject a ReduceLabel node into the control flow graph. This node contains an alternate reduced
+            // set of antecedents for the pre-finally label. As control flow analysis passes by a ReduceLabel
+            // node, the pre-finally label is temporarily switched to the reduced antecedent set.
+            let finallyLabel = self.createBranchLabel();
+            let mut finally_label_antecedents = Vec::new();
+            finally_label_antecedents.extend(
+                self.flow_nodes[normalExitLabel]
+                    .antecedents
+                    .iter()
+                    .flat_map(|a| a.iter()),
+            );
+            finally_label_antecedents.extend(
+                self.flow_nodes[exceptionLabel]
+                    .antecedents
+                    .iter()
+                    .flat_map(|a| a.iter()),
+            );
+            finally_label_antecedents.extend(
+                self.flow_nodes[returnLabel]
+                    .antecedents
+                    .iter()
+                    .flat_map(|a| a.iter()),
+            );
+            self.flow_nodes[finallyLabel].antecedents = Some(finally_label_antecedents.into());
+            self.currentFlow = finallyLabel.into();
+            self.bind(stmt.finallyBlock.bind(node));
+            if self.flow_nodes[self.currentFlow]
+                .flags
+                .intersects(FlowFlags::Unreachable)
+            {
+                // If the end of the finally block is unreachable, the end of the entire try statement is unreachable.
+                self.currentFlow = self.unreachableFlow;
+            } else {
+                // If we have an IIFE return target and return statements in the try or catch blocks, add a control
+                // flow that goes back through the finally block and back through only the return statements.
+                if let Some(currentReturnTarget) = self.currentReturnTarget {
+                    if let Some(antecedents) = &self.flow_nodes[returnLabel].antecedents {
+                        let antecedent = self.createReduceLabel(
+                            finallyLabel,
+                            antecedents.clone(),
+                            self.currentFlow,
+                        );
+                        self.addAntecedent(currentReturnTarget, antecedent);
+                    }
+                }
+                // If we have an outer exception target (i.e. a containing try-finally or try-catch-finally), add a
+                // control flow that goes back through the finally blok and back through each possible exception source.
+                if let Some(currentExceptionTarget) = self.currentExceptionTarget {
+                    if let Some(antecedents) = &self.flow_nodes[exceptionLabel].antecedents {
+                        let antecedent = self.createReduceLabel(
+                            finallyLabel,
+                            antecedents.clone(),
+                            self.currentFlow,
+                        );
+                        self.addAntecedent(currentExceptionTarget, antecedent);
+                    }
+                }
+                // If the end of the finally block is reachable, but the end of the try and catch blocks are not,
+                // convert the current flow to unreachable. For example, 'try { return 1; } finally { ... }' should
+                // result in an unreachable current control flow.
+                self.currentFlow =
+                    if let Some(antecedents) = &self.flow_nodes[normalExitLabel].antecedents {
+                        self.createReduceLabel(finallyLabel, antecedents.clone(), self.currentFlow)
+                    } else {
+                        self.unreachableFlow
+                    };
+            }
+        } else {
+            self.currentFlow = self.finishFlowLabel(normalExitLabel);
+        }
+    }
 
-    //     function bindExpressionStatement(node: ExpressionStatement): void {
-    //         bind(node.expression);
-    //         maybeBindExpressionFlowIfCall(node.expression);
-    //     }
+    fn bindSwitchStatement(&mut self, node: &Rc<BoundNode>, stmt: &Rc<SwitchStatement>) {
+        let postSwitchLabel = self.createBranchLabel();
+        self.bind(Some(stmt.expression.bind(node)));
+        let saveBreakTarget = self.currentBreakTarget;
+        let savePreSwitchCaseFlow = self.preSwitchCaseFlow;
+        self.currentBreakTarget = Some(postSwitchLabel);
+        self.preSwitchCaseFlow = Some(self.currentFlow);
+        self.bind(Some(stmt.caseBlock.bind(node)));
+        self.addAntecedent(postSwitchLabel, self.currentFlow);
+        let hasDefault = stmt
+            .caseBlock
+            .clauses
+            .iter()
+            .any(|c| matches!(c, CaseOrDefaultClause::DefaultClause(_)));
+        // We mark a switch statement as possibly exhaustive if it has no default clause and if all
+        // case clauses have unreachable end points (e.g. they all return). Note, we no longer need
+        // this property in control flow analysis, it's there only for backwards compatibility.
+        // TODO: possiblyExhaustive
+        // stmt.possiblyExhaustive =
+        //     !hasDefault && self.flow_nodes[postSwitchLabel].antecedents.is_none();
+        if !hasDefault {
+            let antecedent =
+                self.createFlowSwitchClause(self.preSwitchCaseFlow.unwrap(), stmt.clone(), 0, 0);
+            self.addAntecedent(postSwitchLabel, antecedent);
+        }
+        self.currentBreakTarget = saveBreakTarget;
+        self.preSwitchCaseFlow = savePreSwitchCaseFlow;
+        self.currentFlow = self.finishFlowLabel(postSwitchLabel);
+    }
 
-    //     function maybeBindExpressionFlowIfCall(node: Expression) {
-    //         // A top level or LHS of comma expression call expression with a dotted function name and at least one argument
-    //         // is potentially an assertion and is therefore included in the control flow.
-    //         if (node.kind === SyntaxKind::CallExpression) {
-    //             const call = node as CallExpression;
-    //             if (call.expression.kind !== SyntaxKind::SuperKeyword && isDottedName(call.expression)) {
-    //                 currentFlow = createFlowCall(currentFlow, call);
-    //             }
-    //         }
-    //     }
+    fn bindCaseBlock(&mut self, node: &Rc<BoundNode>, case: &Rc<CaseBlock>) {
+        let clauses = &case.clauses;
+        let parent = node.parent().unwrap();
+        let parent_switch = unwrap_as!(&parent.node, Node::SwitchStatement(n), n);
+        let isNarrowingSwitch =
+            self.isNarrowingExpression(&parent_switch.expression.clone().into());
+        let mut fallthroughFlow = self.unreachableFlow;
+        let mut i = 0;
+        while i < clauses.len() {
+            let clauseStart = i;
+            while clauses[i].statements().is_empty() && i + 1 < clauses.len() {
+                self.bind(Some(clauses[i].bind(node)));
+                i += 1;
+            }
+            let preCaseLabel = self.createBranchLabel();
+            let pre_case_label_antecedent = if isNarrowingSwitch {
+                self.createFlowSwitchClause(
+                    self.preSwitchCaseFlow.unwrap(),
+                    parent_switch.clone(),
+                    clauseStart as u32,
+                    i as u32 + 1,
+                )
+            } else {
+                self.preSwitchCaseFlow.unwrap()
+            };
+            self.addAntecedent(preCaseLabel, pre_case_label_antecedent);
+            self.addAntecedent(preCaseLabel, fallthroughFlow);
+            self.currentFlow = self.finishFlowLabel(preCaseLabel);
+            let clause = &clauses[i];
+            self.bind(Some(clause.bind(node)));
+            fallthroughFlow = self.currentFlow;
+            if !self.flow_nodes[self.currentFlow]
+                .flags
+                .intersects(FlowFlags::Unreachable)
+                && i != clauses.len() - 1
+                && self.options.noFallthroughCasesInSwitch
+            {
+                todo!();
+                // clause.fallthroughFlowNode = self.currentFlow;
+            }
+            i += 1;
+        }
+    }
 
-    //     function bindLabeledStatement(node: LabeledStatement): void {
-    //         const postStatementLabel = createBranchLabel();
-    //         activeLabelList = {
-    //             next: activeLabelList,
-    //             name: node.label.escapedText,
-    //             breakTarget: postStatementLabel,
-    //             continueTarget: undefined,
-    //             referenced: false
-    //         };
-    //         bind(node.label);
-    //         bind(node.statement);
-    //         if (!activeLabelList.referenced && !options.allowUnusedLabels) {
-    //             errorOrSuggestionOnNode(unusedLabelIsError(options), node.label, Diagnostics.Unused_label);
-    //         }
-    //         activeLabelList = activeLabelList.next;
-    //         addAntecedent(postStatementLabel, currentFlow);
-    //         currentFlow = finishFlowLabel(postStatementLabel);
-    //     }
+    fn bindCaseClause(&mut self, node: &Rc<BoundNode>, clause: &Rc<CaseClause>) {
+        let saveCurrentFlow = self.currentFlow;
+        self.currentFlow = self.preSwitchCaseFlow.unwrap();
+        self.bind(Some(clause.expression.bind(node)));
+        self.currentFlow = saveCurrentFlow;
+        self.bindEach(Some(node), Some(&clause.statements));
+    }
 
-    //     function bindDestructuringTargetFlow(node: Expression) {
-    //         if (node.kind === SyntaxKind::BinaryExpression && (node as BinaryExpression).operatorToken.kind === SyntaxKind::EqualsToken) {
-    //             bindAssignmentTargetFlow((node as BinaryExpression).left);
-    //         }
-    //         else {
-    //             bindAssignmentTargetFlow(node);
-    //         }
-    //     }
+    fn bindExpressionStatement(&mut self, node: &Rc<BoundNode>, stmt: &Rc<ExpressionStatement>) {
+        self.bind(Some(stmt.expression.bind(node)));
+        self.maybeBindExpressionFlowIfCall(&stmt.expression);
+    }
 
-    //     function bindAssignmentTargetFlow(node: Expression) {
-    //         if (isNarrowableReference(node)) {
-    //             currentFlow = createFlowMutation(FlowFlags.Assignment, currentFlow, node);
-    //         }
-    //         else if (node.kind === SyntaxKind::ArrayLiteralExpression) {
-    //             for (const e of (node as ArrayLiteralExpression).elements) {
-    //                 if (e.kind === SyntaxKind::SpreadElement) {
-    //                     bindAssignmentTargetFlow((e as SpreadElement).expression);
-    //                 }
-    //                 else {
-    //                     bindDestructuringTargetFlow(e);
-    //                 }
-    //             }
-    //         }
-    //         else if (node.kind === SyntaxKind::ObjectLiteralExpression) {
-    //             for (const p of (node as ObjectLiteralExpression).properties) {
-    //                 if (p.kind === SyntaxKind::PropertyAssignment) {
-    //                     bindDestructuringTargetFlow(p.initializer);
-    //                 }
-    //                 else if (p.kind === SyntaxKind::ShorthandPropertyAssignment) {
-    //                     bindAssignmentTargetFlow(p.name);
-    //                 }
-    //                 else if (p.kind === SyntaxKind::SpreadAssignment) {
-    //                     bindAssignmentTargetFlow(p.expression);
-    //                 }
-    //             }
-    //         }
-    //     }
+    fn maybeBindExpressionFlowIfCall(&mut self, node: &Expression) {
+        // A top level or LHS of comma expression call expression with a dotted function name and at least one argument
+        // is potentially an assertion and is therefore included in the control flow.
+        if let Expression::CallExpression(call) = node {
+            if call.expression.kind() != SyntaxKind::SuperKeyword
+                && isDottedName(&call.expression.clone().into())
+            {
+                self.currentFlow = self.createFlowCall(self.currentFlow, call.clone());
+            }
+        }
+    }
+
+    fn bindLabeledStatement(&mut self, node: &Rc<BoundNode>, stmt: &Rc<LabeledStatement>) {
+        let postStatementLabel = self.createBranchLabel();
+        self.activeLabelList.push(ActiveLabel {
+            name: stmt.label.escapedText.clone(),
+            breakTarget: postStatementLabel,
+            continueTarget: None,
+            referenced: false,
+        });
+        self.bind(Some(stmt.label.bind(node)));
+        self.bind(Some(stmt.statement.bind(node)));
+        if !self.activeLabelList.last().unwrap().referenced && !self.options.allowUnusedLabels {
+            todo!();
+            // errorOrSuggestionOnNode(unusedLabelIsError(options), node.label, Diagnostics.Unused_label);
+        }
+        self.activeLabelList.pop();
+        self.addAntecedent(postStatementLabel, self.currentFlow);
+        self.currentFlow = self.finishFlowLabel(postStatementLabel);
+    }
+
+    fn bindDestructuringTargetFlow(&mut self, node: &Rc<BoundNode>) {
+        if let Node::BinaryExpression(n) = &node.node {
+            if n.operatorToken.kind() == SyntaxKind::EqualsToken {
+                return self.bindAssignmentTargetFlow(&n.left.bind(node));
+            }
+        }
+        self.bindAssignmentTargetFlow(node);
+    }
+
+    fn bindAssignmentTargetFlow(&mut self, node: &Rc<BoundNode>) {
+        if self.isNarrowableReference(&node.node) {
+            self.currentFlow = self.createFlowAssignment(self.currentFlow, node.clone());
+        } else if let Node::ArrayLiteralExpression(n) = &node.node {
+            for e in n.elements.iter() {
+                if let Expression::SpreadElement(e) = e {
+                    self.bindAssignmentTargetFlow(&e.expression.bind(&e.bind(node)));
+                } else {
+                    self.bindDestructuringTargetFlow(&e.bind(&node));
+                }
+            }
+        } else if let Node::ObjectLiteralExpression(n) = &node.node {
+            for p in n.properties.iter() {
+                if let ObjectLiteralElementLike::PropertyAssignment(p) = p {
+                    self.bindDestructuringTargetFlow(&p.initializer.bind(&p.bind(node)));
+                } else if let ObjectLiteralElementLike::ShorthandPropertyAssignment(p) = p {
+                    self.bindAssignmentTargetFlow(&p.name.bind(&p.bind(node)));
+                } else if let ObjectLiteralElementLike::SpreadAssignment(p) = p {
+                    self.bindAssignmentTargetFlow(&p.expression.bind(&p.bind(node)));
+                }
+            }
+        }
+    }
 
     //     function bindLogicalLikeExpression(node: BinaryExpression, trueTarget: FlowLabel, falseTarget: FlowLabel) {
     //         const preRightLabel = createBranchLabel();
@@ -1766,47 +2179,61 @@ impl<'a> Binder<'a> {
     //         }
     //     }
 
-    //     function bindPrefixUnaryExpressionFlow(node: PrefixUnaryExpression) {
-    //         if (node.operator === SyntaxKind::ExclamationToken) {
-    //             const saveTrueTarget = currentTrueTarget;
-    //             currentTrueTarget = currentFalseTarget;
-    //             currentFalseTarget = saveTrueTarget;
-    //             bindEachChild(node);
-    //             currentFalseTarget = currentTrueTarget;
-    //             currentTrueTarget = saveTrueTarget;
-    //         }
-    //         else {
-    //             bindEachChild(node);
-    //             if (node.operator === SyntaxKind::PlusPlusToken || node.operator === SyntaxKind::MinusMinusToken) {
-    //                 bindAssignmentTargetFlow(node.operand);
-    //             }
-    //         }
-    //     }
+    fn bindPrefixUnaryExpressionFlow(
+        &mut self,
+        node: &Rc<BoundNode>,
+        expr: &Rc<PrefixUnaryExpression>,
+    ) {
+        if expr.operator == SyntaxKind::ExclamationToken {
+            let saveTrueTarget = self.currentTrueTarget;
+            self.currentTrueTarget = self.currentFalseTarget;
+            self.currentFalseTarget = saveTrueTarget;
+            self.bindEachChild(node.parent().as_ref(), node.node.clone());
+            self.currentFalseTarget = self.currentTrueTarget;
+            self.currentTrueTarget = saveTrueTarget;
+        } else {
+            self.bindEachChild(node.parent().as_ref(), node.node.clone());
+            if expr.operator == SyntaxKind::PlusPlusToken
+                || expr.operator == SyntaxKind::MinusMinusToken
+            {
+                self.bindAssignmentTargetFlow(&expr.operand.bind(node));
+            }
+        }
+    }
 
-    //     function bindPostfixUnaryExpressionFlow(node: PostfixUnaryExpression) {
-    //         bindEachChild(node);
-    //         if (node.operator === SyntaxKind::PlusPlusToken || node.operator === SyntaxKind::MinusMinusToken) {
-    //             bindAssignmentTargetFlow(node.operand);
-    //         }
-    //     }
+    fn bindPostfixUnaryExpressionFlow(
+        &mut self,
+        node: &Rc<BoundNode>,
+        expr: &Rc<PostfixUnaryExpression>,
+    ) {
+        self.bindEachChild(node.parent().as_ref(), node.node.clone());
+        if expr.operator == SyntaxKind::PlusPlusToken
+            || expr.operator == SyntaxKind::MinusMinusToken
+        {
+            self.bindAssignmentTargetFlow(&expr.operand.bind(node));
+        }
+    }
 
-    //     function bindDestructuringAssignmentFlow(node: DestructuringAssignment) {
-    //         if (inAssignmentPattern) {
-    //             inAssignmentPattern = false;
-    //             bind(node.operatorToken);
-    //             bind(node.right);
-    //             inAssignmentPattern = true;
-    //             bind(node.left);
-    //         }
-    //         else {
-    //             inAssignmentPattern = true;
-    //             bind(node.left);
-    //             inAssignmentPattern = false;
-    //             bind(node.operatorToken);
-    //             bind(node.right);
-    //         }
-    //         bindAssignmentTargetFlow(node.left);
-    //     }
+    fn bindDestructuringAssignmentFlow(
+        &mut self,
+        node: &Rc<BoundNode>,
+        expr: &Rc<BinaryExpression>,
+    ) {
+        if self.inAssignmentPattern {
+            self.inAssignmentPattern = false;
+            self.bind(Some(expr.operatorToken.bind(node)));
+            self.bind(Some(expr.right.bind(node)));
+            self.inAssignmentPattern = true;
+            self.bind(Some(expr.left.bind(node)));
+        } else {
+            self.inAssignmentPattern = true;
+            self.bind(Some(expr.left.bind(node)));
+            self.inAssignmentPattern = false;
+            self.bind(Some(expr.operatorToken.bind(node)));
+            self.bind(Some(expr.right.bind(node)));
+        }
+        self.bindAssignmentTargetFlow(&expr.left.bind(node));
+    }
 
     //     function createBindBinaryExpressionFlow() {
     //         interface WorkArea {
@@ -1915,28 +2342,32 @@ impl<'a> Binder<'a> {
     //         }
     //     }
 
-    //     function bindDeleteExpressionFlow(node: DeleteExpression) {
-    //         bindEachChild(node);
-    //         if (node.expression.kind === SyntaxKind::PropertyAccessExpression) {
-    //             bindAssignmentTargetFlow(node.expression);
-    //         }
-    //     }
+    fn bindDeleteExpressionFlow(&mut self, node: &Rc<BoundNode>, expr: &Rc<DeleteExpression>) {
+        self.bindEachChild(node.parent().as_ref(), node.node.clone());
+        if expr.expression.kind() == SyntaxKind::PropertyAccessExpression {
+            self.bindAssignmentTargetFlow(&expr.expression.bind(node));
+        }
+    }
 
-    //     function bindConditionalExpressionFlow(node: ConditionalExpression) {
-    //         const trueLabel = createBranchLabel();
-    //         const falseLabel = createBranchLabel();
-    //         const postExpressionLabel = createBranchLabel();
-    //         bindCondition(node.condition, trueLabel, falseLabel);
-    //         currentFlow = finishFlowLabel(trueLabel);
-    //         bind(node.questionToken);
-    //         bind(node.whenTrue);
-    //         addAntecedent(postExpressionLabel, currentFlow);
-    //         currentFlow = finishFlowLabel(falseLabel);
-    //         bind(node.colonToken);
-    //         bind(node.whenFalse);
-    //         addAntecedent(postExpressionLabel, currentFlow);
-    //         currentFlow = finishFlowLabel(postExpressionLabel);
-    //     }
+    fn bindConditionalExpressionFlow(
+        &mut self,
+        node: &Rc<BoundNode>,
+        expr: &Rc<ConditionalExpression>,
+    ) {
+        let trueLabel = self.createBranchLabel();
+        let falseLabel = self.createBranchLabel();
+        let postExpressionLabel = self.createBranchLabel();
+        self.bindCondition(Some(&expr.condition.bind(node)), trueLabel, falseLabel);
+        self.currentFlow = self.finishFlowLabel(trueLabel);
+        self.bind(Some(expr.questionToken.bind(node)));
+        self.bind(Some(expr.whenTrue.bind(node)));
+        self.addAntecedent(postExpressionLabel, self.currentFlow);
+        self.currentFlow = self.finishFlowLabel(falseLabel);
+        self.bind(Some(expr.colonToken.bind(node)));
+        self.bind(Some(expr.whenFalse.bind(node)));
+        self.addAntecedent(postExpressionLabel, self.currentFlow);
+        self.currentFlow = self.finishFlowLabel(postExpressionLabel);
+    }
 
     fn bindInitializedVariableFlow(&mut self, node: &Rc<BoundNode>) {
         let name = match &node.node {
@@ -1975,24 +2406,24 @@ impl<'a> Binder<'a> {
         }
     }
 
-    //     function bindBindingElementFlow(node: BindingElement) {
-    //         if (isBindingPattern(node.name)) {
-    //             // When evaluating a binding pattern, the initializer is evaluated before the binding pattern, per:
-    //             // - https://tc39.es/ecma262/#sec-destructuring-binding-patterns-runtime-semantics-iteratorbindinginitialization
-    //             //   - `BindingElement: BindingPattern Initializer?`
-    //             // - https://tc39.es/ecma262/#sec-runtime-semantics-keyedbindinginitialization
-    //             //   - `BindingElement: BindingPattern Initializer?`
-    //             bindEach(node.decorators);
-    //             bindEach(node.modifiers);
-    //             bind(node.dotDotDotToken);
-    //             bind(node.propertyName);
-    //             bind(node.initializer);
-    //             bind(node.name);
-    //         }
-    //         else {
-    //             bindEachChild(node);
-    //         }
-    //     }
+    fn bindBindingElementFlow(&mut self, node: &Rc<BoundNode>, element: &Rc<BindingElement>) {
+        if isBindingPattern(Some(&element.name)) {
+            // When evaluating a binding pattern, the initializer is evaluated before the binding pattern, per:
+            // - https://tc39.es/ecma262/#sec-destructuring-binding-patterns-runtime-semantics-iteratorbindinginitialization
+            //   - `BindingElement: BindingPattern Initializer?`
+            // - https://tc39.es/ecma262/#sec-runtime-semantics-keyedbindinginitialization
+            //   - `BindingElement: BindingPattern Initializer?`
+            // TODO:
+            // self.bindEach(element.decorators);
+            // self.bindEach(element.modifiers);
+            self.bind(element.dotDotDotToken.bind(node));
+            self.bind(element.propertyName.bind(node));
+            self.bind(element.initializer.bind(node));
+            self.bind(Some(element.name.bind(node)));
+        } else {
+            self.bindEachChild(node.parent().as_ref(), node.node.clone());
+        }
+    }
 
     //     function bindJSDocTypeAlias(node: JSDocTypedefTag | JSDocCallbackTag | JSDocEnumTag) {
     //         bind(node.tagName);
@@ -2014,113 +2445,161 @@ impl<'a> Binder<'a> {
     //         }
     //     }
 
-    //     function bindOptionalExpression(node: Expression, trueTarget: FlowLabel, falseTarget: FlowLabel) {
-    //         doWithConditionalBranches(bind, node, trueTarget, falseTarget);
-    //         if (!isOptionalChain(node) || isOutermostOptionalChain(node)) {
-    //             addAntecedent(trueTarget, createFlowCondition(FlowFlags.TrueCondition, currentFlow, node));
-    //             addAntecedent(falseTarget, createFlowCondition(FlowFlags.FalseCondition, currentFlow, node));
-    //         }
-    //     }
+    fn bindOptionalExpression(
+        &mut self,
+        node: &Rc<BoundNode>,
+        trueTarget: FlowLabelId,
+        falseTarget: FlowLabelId,
+    ) {
+        self.doWithConditionalBranches(
+            |b, n| b.bind(Some(n.clone())),
+            node,
+            trueTarget,
+            falseTarget,
+        );
+        if !isOptionalChain(self.store.node_and_data(&node.node))
+            || isOutermostOptionalChain(
+                node,
+                self.store.node_and_data(&node.parent_node().unwrap()),
+            )
+        {
+            let true_antecedent =
+                self.createFlowCondition(FlowFlags::TrueCondition, self.currentFlow, Some(node));
+            self.addAntecedent(trueTarget, true_antecedent);
+            let false_antecedent =
+                self.createFlowCondition(FlowFlags::FalseCondition, self.currentFlow, Some(node));
+            self.addAntecedent(falseTarget, false_antecedent);
+        }
+    }
 
-    //     function bindOptionalChainRest(node: OptionalChain) {
-    //         switch (node.kind) {
-    //             case SyntaxKind::PropertyAccessExpression:
-    //                 bind(node.questionDotToken);
-    //                 bind(node.name);
-    //                 break;
-    //             case SyntaxKind::ElementAccessExpression:
-    //                 bind(node.questionDotToken);
-    //                 bind(node.argumentExpression);
-    //                 break;
-    //             case SyntaxKind::CallExpression:
-    //                 bind(node.questionDotToken);
-    //                 bindEach(node.typeArguments);
-    //                 bindEach(node.arguments);
-    //                 break;
-    //         }
-    //     }
+    fn bindOptionalChainRest(&mut self, node: &Rc<BoundNode>, chain: OptionalChain) {
+        match chain {
+            OptionalChain::PropertyAccessExpression(n) => {
+                self.bind(n.questionDotToken.bind(node));
+                self.bind(Some(n.name.bind(node)));
+            }
+            OptionalChain::ElementAccessExpression(n) => {
+                self.bind(n.questionDotToken.bind(node));
+                self.bind(Some(n.argumentExpression.bind(node)));
+            }
+            OptionalChain::CallExpression(n) => {
+                self.bind(n.questionDotToken.bind(node));
+                self.bindEach(Some(&n.bind(node)), n.typeArguments.as_ref());
+                self.bindEach(Some(&n.bind(node)), Some(&n.arguments));
+            }
+            OptionalChain::NonNullExpression(_) => {}
+        }
+    }
 
-    //     function bindOptionalChain(node: OptionalChain, trueTarget: FlowLabel, falseTarget: FlowLabel) {
-    //         // For an optional chain, we emulate the behavior of a logical expression:
-    //         //
-    //         // a?.b         -> a && a.b
-    //         // a?.b.c       -> a && a.b.c
-    //         // a?.b?.c      -> a && a.b && a.b.c
-    //         // a?.[x = 1]   -> a && a[x = 1]
-    //         //
-    //         // To do this we descend through the chain until we reach the root of a chain (the expression with a `?.`)
-    //         // and build it's CFA graph as if it were the first condition (`a && ...`). Then we bind the rest
-    //         // of the node as part of the "true" branch, and continue to do so as we ascend back up to the outermost
-    //         // chain node. We then treat the entire node as the right side of the expression.
-    //         const preChainLabel = isOptionalChainRoot(node) ? createBranchLabel() : undefined;
-    //         bindOptionalExpression(node.expression, preChainLabel || trueTarget, falseTarget);
-    //         if (preChainLabel) {
-    //             currentFlow = finishFlowLabel(preChainLabel);
-    //         }
-    //         doWithConditionalBranches(bindOptionalChainRest, node, trueTarget, falseTarget);
-    //         if (isOutermostOptionalChain(node)) {
-    //             addAntecedent(trueTarget, createFlowCondition(FlowFlags.TrueCondition, currentFlow, node));
-    //             addAntecedent(falseTarget, createFlowCondition(FlowFlags.FalseCondition, currentFlow, node));
-    //         }
-    //     }
+    fn bindOptionalChain(
+        &mut self,
+        node: &Rc<BoundNode>,
+        chain: OptionalChain,
+        trueTarget: FlowLabelId,
+        falseTarget: FlowLabelId,
+    ) {
+        // For an optional chain, we emulate the behavior of a logical expression:
+        //
+        // a?.b         -> a && a.b
+        // a?.b.c       -> a && a.b.c
+        // a?.b?.c      -> a && a.b && a.b.c
+        // a?.[x = 1]   -> a && a[x = 1]
+        //
+        // To do this we descend through the chain until we reach the root of a chain (the expression with a `?.`)
+        // and build it's CFA graph as if it were the first condition (`a && ...`). Then we bind the rest
+        // of the node as part of the "true" branch, and continue to do so as we ascend back up to the outermost
+        // chain node. We then treat the entire node as the right side of the expression.
+        let preChainLabel = if isOptionalChainRoot(self.store.node_and_data(&node.node)) {
+            Some(self.createBranchLabel())
+        } else {
+            None
+        };
+        self.bindOptionalExpression(
+            &chain.expression().bind(node),
+            preChainLabel.unwrap_or(trueTarget),
+            falseTarget,
+        );
+        if let Some(preChainLabel) = preChainLabel {
+            self.currentFlow = self.finishFlowLabel(preChainLabel);
+        }
+        self.doWithConditionalBranches(
+            |b, (node, chain)| b.bindOptionalChainRest(node, chain),
+            (node, chain),
+            trueTarget,
+            falseTarget,
+        );
+        if isOutermostOptionalChain(node, self.store.node_and_data(&node.parent_node().unwrap())) {
+            let true_antecedent =
+                self.createFlowCondition(FlowFlags::TrueCondition, self.currentFlow, Some(node));
+            self.addAntecedent(trueTarget, true_antecedent);
+            let false_antecedent =
+                self.createFlowCondition(FlowFlags::FalseCondition, self.currentFlow, Some(node));
+            self.addAntecedent(falseTarget, false_antecedent);
+        }
+    }
 
-    //     function bindOptionalChainFlow(node: OptionalChain) {
-    //         if (isTopLevelLogicalExpression(node)) {
-    //             const postExpressionLabel = createBranchLabel();
-    //             bindOptionalChain(node, postExpressionLabel, postExpressionLabel);
-    //             currentFlow = finishFlowLabel(postExpressionLabel);
-    //         }
-    //         else {
-    //             bindOptionalChain(node, currentTrueTarget!, currentFalseTarget!);
-    //         }
-    //     }
+    fn bindOptionalChainFlow(&mut self, node: &Rc<BoundNode>, chain: OptionalChain) {
+        if Self::isTopLevelLogicalExpression(node.clone()) {
+            let postExpressionLabel = self.createBranchLabel();
+            self.bindOptionalChain(node, chain, postExpressionLabel, postExpressionLabel);
+            self.currentFlow = self.finishFlowLabel(postExpressionLabel);
+        } else {
+            self.bindOptionalChain(
+                node,
+                chain,
+                self.currentTrueTarget.unwrap(),
+                self.currentFalseTarget.unwrap(),
+            );
+        }
+    }
 
-    //     function bindNonNullExpressionFlow(node: NonNullExpression | NonNullChain) {
-    //         if (isOptionalChain(node)) {
-    //             bindOptionalChainFlow(node);
-    //         }
-    //         else {
-    //             bindEachChild(node);
-    //         }
-    //     }
+    fn bindNonNullExpressionFlow(&mut self, node: &Rc<BoundNode>) {
+        if let Some(chain) = asOptionalChain(self.store.node_and_data(&node.node)) {
+            self.bindOptionalChainFlow(node, chain);
+        } else {
+            self.bindEachChild(node.parent().as_ref(), node.node.clone());
+        }
+    }
 
-    //     function bindAccessExpressionFlow(node: AccessExpression | PropertyAccessChain | ElementAccessChain) {
-    //         if (isOptionalChain(node)) {
-    //             bindOptionalChainFlow(node);
-    //         }
-    //         else {
-    //             bindEachChild(node);
-    //         }
-    //     }
+    fn bindAccessExpressionFlow(&mut self, node: &Rc<BoundNode>) {
+        if let Some(optional_chain) = asOptionalChain(self.store.node_and_data(&node.node)) {
+            self.bindOptionalChainFlow(node, optional_chain);
+        } else {
+            self.bindEachChild(node.parent().as_ref(), node.node.clone());
+        }
+    }
 
-    //     function bindCallExpressionFlow(node: CallExpression | CallChain) {
-    //         if (isOptionalChain(node)) {
-    //             bindOptionalChainFlow(node);
-    //         }
-    //         else {
-    //             // If the target of the call expression is a function expression or arrow function we have
-    //             // an immediately invoked function expression (IIFE). Initialize the flowNode property to
-    //             // the current control flow (which includes evaluation of the IIFE arguments).
-    //             const expr = skipParentheses(node.expression);
-    //             if (expr.kind === SyntaxKind::FunctionExpression || expr.kind === SyntaxKind::ArrowFunction) {
-    //                 bindEach(node.typeArguments);
-    //                 bindEach(node.arguments);
-    //                 bind(node.expression);
-    //             }
-    //             else {
-    //                 bindEachChild(node);
-    //                 if (node.expression.kind === SyntaxKind::SuperKeyword) {
-    //                     currentFlow = createFlowCall(currentFlow, node);
-    //                 }
-    //             }
-    //         }
-    //         if (node.expression.kind === SyntaxKind::PropertyAccessExpression) {
-    //             const propertyAccess = node.expression as PropertyAccessExpression;
-    //             if (isIdentifier(propertyAccess.name) && isNarrowableOperand(propertyAccess.expression) && isPushOrUnshiftIdentifier(propertyAccess.name)) {
-    //                 currentFlow = createFlowMutation(FlowFlags.ArrayMutation, currentFlow, node);
-    //             }
-    //         }
-    //     }
+    fn bindCallExpressionFlow(&mut self, node: &Rc<BoundNode>, call: &Rc<CallExpression>) {
+        if let Some(chain) = asOptionalChain(self.store.node_and_data(&node.node)) {
+            self.bindOptionalChainFlow(node, chain);
+        } else {
+            // If the target of the call expression is a function expression or arrow function we have
+            // an immediately invoked function expression (IIFE). Initialize the flowNode property to
+            // the current control flow (which includes evaluation of the IIFE arguments).
+            let expr = skipParentheses(call.expression.clone().into(), false);
+            if expr.kind() == SyntaxKind::FunctionExpression
+                || expr.kind() == SyntaxKind::ArrowFunction
+            {
+                self.bindEach(Some(node), call.typeArguments.as_ref());
+                self.bindEach(Some(node), Some(&call.arguments));
+                self.bind(Some(call.expression.bind(node)));
+            } else {
+                self.bindEachChild(node.parent().as_ref(), node.node.clone());
+                if call.expression.kind() == SyntaxKind::SuperKeyword {
+                    self.currentFlow = self.createFlowCall(self.currentFlow, call.clone());
+                }
+            }
+        }
+        if let LeftHandSideExpression::PropertyAccessExpression(propertyAccess) = &call.expression {
+            if let MemberName::Identifier(name) = &propertyAccess.name {
+                if self.isNarrowableOperand(&propertyAccess.expression.clone().into())
+                    && isPushOrUnshiftIdentifier(name)
+                {
+                    self.currentFlow = self.createFlowArrayMutation(self.currentFlow, node.clone());
+                }
+            }
+        }
+    }
 
     fn getContainerFlags(node: &BoundNode) -> ContainerFlags {
         match &node.node {
@@ -2242,25 +2721,33 @@ impl<'a> Binder<'a> {
         symbolFlags: SymbolFlags,
         symbolExcludes: SymbolFlags,
     ) -> Option<SymbolId> {
-        match &self.container.as_ref().unwrap().node {
+        let container = self.container.clone().unwrap();
+        match &container.node {
             // Modules, source files, and classes need specialized handling for how their
             // members are declared (for example, a member of a class will go into a specific
             // symbol table depending on if it is static or not). We defer to specialized
             // handlers to take care of declaring these child members.
             Node::ModuleDeclaration(_) => {
-                todo!()
-                // self.declareModuleMember(node, symbolFlags, symbolExcludes)
+                Some(self.declareModuleMember(node, symbolFlags, symbolExcludes))
             }
             Node::SourceFile(_) => {
                 Some(self.declareSourceFileMember(node, symbolFlags, symbolExcludes))
             }
             Node::ClassExpression(_) | Node::ClassDeclaration(_) => {
-                todo!()
-                // self.declareClassMember(node, symbolFlags, symbolExcludes)
+                Some(self.declareClassMember(node, symbolFlags, symbolExcludes))
             }
             Node::EnumDeclaration(_) => {
-                todo!()
-                // self.declareSymbol(container.symbol.exports, container.symbol, node, symbolFlags, symbolExcludes)
+                let container_symbol = self.node_data(&container).symbol.unwrap();
+                let container_exports = self.symbols[container_symbol].exports.unwrap();
+                Some(self.declareSymbol(
+                    container_exports,
+                    Some(container_symbol),
+                    node,
+                    symbolFlags,
+                    symbolExcludes,
+                    false,
+                    false,
+                ))
             }
             // TODO: jsdoc
             // Node::JSDocTypeLiteral(_)|
@@ -2269,13 +2756,22 @@ impl<'a> Binder<'a> {
             Node::TypeLiteralNode(_)
             | Node::ObjectLiteralExpression(_)
             | Node::InterfaceDeclaration(_) => {
+                let container_symbol = self.node_data(&container).symbol.unwrap();
+                let container_members = self.symbols[container_symbol].members.unwrap();
                 // Interface/Object-types always have their children added to the 'members' of
                 // their container. They are only accessible through an instance of their
                 // container, and are never in scope otherwise (even inside the body of the
                 // object / type / interface declaring them). An exception is type parameters,
                 // which are in scope without qualification (similar to 'locals').
-                todo!()
-                // self.declareSymbol(container.symbol.members, container.symbol, node, symbolFlags, symbolExcludes)
+                Some(self.declareSymbol(
+                    container_members,
+                    Some(container_symbol),
+                    node,
+                    symbolFlags,
+                    symbolExcludes,
+                    false,
+                    false,
+                ))
             }
             // TODO: jsdoc
             // Node::JSDocSignature(_)|
@@ -2298,24 +2794,62 @@ impl<'a> Binder<'a> {
             | Node::ClassStaticBlockDeclaration(_)
             | Node::TypeAliasDeclaration(_)
             | Node::MappedTypeNode(_) => {
+                let container_locals = self.node_data(&container).locals.unwrap();
                 // All the children of these container types are never visible through another
                 // symbol (i.e. through another symbol's 'exports' or 'members').  Instead,
                 // they're only accessed 'lexically' (i.e. from code that exists underneath
                 // their container in the tree). To accomplish this, we simply add their declared
                 // symbol to the 'locals' of the container.  These symbols can then be found as
                 // the type checker walks up the containers, checking them for matching names.
-                todo!()
-                // self.declareSymbol(container.locals, /*parent*/ undefined, node, symbolFlags, symbolExcludes)
+                Some(self.declareSymbol(
+                    container_locals,
+                    None,
+                    node,
+                    symbolFlags,
+                    symbolExcludes,
+                    false,
+                    false,
+                ))
             }
             _ => unreachable!("container must be declaration"),
         }
     }
 
-    //     function declareClassMember(node: Declaration, symbolFlags: SymbolFlags, symbolExcludes: SymbolFlags) {
-    //         return isStatic(node)
-    //             ? declareSymbol(container.symbol.exports!, container.symbol, node, symbolFlags, symbolExcludes)
-    //             : declareSymbol(container.symbol.members!, container.symbol, node, symbolFlags, symbolExcludes);
-    //     }
+    fn declareClassMember(
+        &mut self,
+        node: &Rc<BoundNode>,
+        symbolFlags: SymbolFlags,
+        symbolExcludes: SymbolFlags,
+    ) -> SymbolId {
+        let container_symbol = self
+            .node_data(&self.container.clone().unwrap())
+            .symbol
+            .unwrap();
+
+        if isStatic(self.store.node_and_data(&node.node)) {
+            let container_exports = self.symbols[container_symbol].exports.unwrap();
+            self.declareSymbol(
+                container_exports,
+                Some(container_symbol),
+                node,
+                symbolFlags,
+                symbolExcludes,
+                false,
+                false,
+            )
+        } else {
+            let container_members = self.symbols[container_symbol].members.unwrap();
+            self.declareSymbol(
+                container_members,
+                Some(container_symbol),
+                node,
+                symbolFlags,
+                symbolExcludes,
+                false,
+                false,
+            )
+        }
+    }
 
     fn declareSourceFileMember(
         &mut self,
@@ -2324,8 +2858,7 @@ impl<'a> Binder<'a> {
         symbolExcludes: SymbolFlags,
     ) -> SymbolId {
         if isExternalModule(&self.file) {
-            todo!();
-            // self.declareModuleMember(node, symbolFlags, symbolExcludes)
+            self.declareModuleMember(node, symbolFlags, symbolExcludes)
         } else {
             let file = self.file.node_id();
             let symbolTable = self.node_data(file).locals.unwrap();
@@ -2341,128 +2874,190 @@ impl<'a> Binder<'a> {
         }
     }
 
-    //     function hasExportDeclarations(node: ModuleDeclaration | SourceFile): boolean {
-    //         const body = isSourceFile(node) ? node : tryCast(node.body, isModuleBlock);
-    //         return !!body && body.statements.some(s => isExportDeclaration(s) || isExportAssignment(s));
-    //     }
+    fn hasExportDeclarations(node: &Node) -> bool {
+        let statements = match node {
+            Node::SourceFile(n) => Some(&n.statements),
+            Node::ModuleDeclaration(n) => n.body.as_ref().map(|b| &b.statements),
+            _ => unreachable!(),
+        };
+        if let Some(statements) = statements {
+            statements
+                .iter()
+                .any(|s| isExportDeclaration(s) || isExportAssignment(s))
+        } else {
+            false
+        }
+    }
 
-    //     function setExportContextFlag(node: Mutable<ModuleDeclaration | SourceFile>) {
-    //         // A declaration source file or ambient module declaration that contains no export declarations (but possibly regular
-    //         // declarations with export modifiers) is an export context in which declarations are implicitly exported.
-    //         if (node.flags & NodeFlags::Ambient && !hasExportDeclarations(node)) {
-    //             node.flags |= NodeFlags::ExportContext;
-    //         }
-    //         else {
-    //             node.flags &= ~NodeFlags::ExportContext;
-    //         }
-    //     }
+    fn setExportContextFlag(&mut self, node: &Node) {
+        debug_assert!(matches!(
+            node,
+            Node::ModuleDeclaration(_) | Node::SourceFile(_)
+        ));
+        // A declaration source file or ambient module declaration that contains no export declarations (but possibly regular
+        // declarations with export modifiers) is an export context in which declarations are implicitly exported.
+        if self.node_data(node).flags.intersects(NodeFlags::Ambient)
+            && !Self::hasExportDeclarations(node)
+        {
+            self.node_data_mut(node).flags |= NodeFlags::ExportContext;
+        } else {
+            self.node_data_mut(node).flags &= !NodeFlags::ExportContext;
+        }
+    }
 
-    //     function bindModuleDeclaration(node: ModuleDeclaration) {
-    //         setExportContextFlag(node);
-    //         if (isAmbientModule(node)) {
-    //             if (hasSyntacticModifier(node, ModifierFlags.Export)) {
-    //                 errorOnFirstToken(node, Diagnostics.export_modifier_cannot_be_applied_to_ambient_modules_and_module_augmentations_since_they_are_always_visible);
-    //             }
-    //             if (isModuleAugmentationExternal(node)) {
-    //                 declareModuleSymbol(node);
-    //             }
-    //             else {
-    //                 let pattern: string | Pattern | undefined;
-    //                 if (node.name.kind === SyntaxKind::StringLiteral) {
-    //                     const { text } = node.name;
-    //                     pattern = tryParsePattern(text);
-    //                     if (pattern === undefined) {
-    //                         errorOnFirstToken(node.name, Diagnostics.Pattern_0_can_have_at_most_one_Asterisk_character, text);
-    //                     }
-    //                 }
+    fn bindModuleDeclaration(&mut self, node: &Rc<BoundNode>, decl: &Rc<ModuleDeclaration>) {
+        self.setExportContextFlag(&node.node);
+        if isAmbientModule(self.store.node_and_data(&node.node)) {
+            if hasSyntacticModifier(self.store.node_and_data(&node.node), ModifierFlags::Export) {
+                todo!();
+                // errorOnFirstToken(node, Diagnostics.export_modifier_cannot_be_applied_to_ambient_modules_and_module_augmentations_since_they_are_always_visible);
+            }
+            if isModuleAugmentationExternal(node, &mut self.store) {
+                self.declareModuleSymbol(node, decl);
+            } else {
+                todo!();
+                // let mut pattern = None;
+                // if (node.name.kind == SyntaxKind::StringLiteral) {
+                //     let text= node.name.text;
+                //     pattern = tryParsePattern(text);
+                //     if (pattern == undefined) {
+                //         errorOnFirstToken(node.name, Diagnostics.Pattern_0_can_have_at_most_one_Asterisk_character, text);
+                //     }
+                // }
 
-    //                 const symbol = declareSymbolAndAddToSymbolTable(node, SymbolFlags::ValueModule, SymbolFlags::ValueModuleExcludes)!;
-    //                 file.patternAmbientModules = append<PatternAmbientModule>(file.patternAmbientModules, pattern && !isString(pattern) ? { pattern, symbol } : undefined);
-    //             }
-    //         }
-    //         else {
-    //             const state = declareModuleSymbol(node);
-    //             if (state !== ModuleInstanceState.NonInstantiated) {
-    //                 const { symbol } = node;
-    //                 // if module was already merged with some function, class or non-const enum, treat it as non-const-enum-only
-    //                 symbol.constEnumOnlyModule = (!(symbol.flags & (SymbolFlags::Function | SymbolFlags::Class | SymbolFlags::RegularEnum)))
-    //                     // Current must be `const enum` only
-    //                     && state === ModuleInstanceState.ConstEnumOnly
-    //                     // Can't have been set to 'false' in a previous merged symbol. ('undefined' OK)
-    //                     && symbol.constEnumOnlyModule !== false;
-    //             }
-    //         }
-    //     }
+                // let symbol = self.declareSymbolAndAddToSymbolTable(node, SymbolFlags::ValueModule, SymbolFlags::ValueModuleExcludes)!;
+                // file.patternAmbientModules = append<PatternAmbientModule>(file.patternAmbientModules, pattern && !isString(pattern) ? { pattern, symbol } : undefined);
+            }
+        } else {
+            let state = self.declareModuleSymbol(node, decl);
+            if state != ModuleInstanceState::NonInstantiated {
+                let symbol = &mut self.symbols[self.store.node_data(node).symbol.unwrap()];
+                // if module was already merged with some function, class or non-const enum, treat it as non-const-enum-only
+                symbol.constEnumOnlyModule = Some(
+                    !symbol.flags.intersects(SymbolFlags::Function | SymbolFlags::Class | SymbolFlags::RegularEnum)
+                        // Current must be `const enum` only
+                        && state == ModuleInstanceState::ConstEnumOnly
+                        // Can't have been set to 'false' in a previous merged symbol. ('undefined' OK)
+                        && symbol.constEnumOnlyModule != Some(false),
+                );
+            }
+        }
+    }
 
-    //     function declareModuleSymbol(node: ModuleDeclaration): ModuleInstanceState {
-    //         const state = getModuleInstanceState(node);
-    //         const instantiated = state !== ModuleInstanceState.NonInstantiated;
-    //         declareSymbolAndAddToSymbolTable(node,
-    //             instantiated ? SymbolFlags::ValueModule : SymbolFlags::NamespaceModule,
-    //             instantiated ? SymbolFlags::ValueModuleExcludes : SymbolFlags::NamespaceModuleExcludes);
-    //         return state;
-    //     }
+    fn declareModuleSymbol(
+        &mut self,
+        node: &Rc<BoundNode>,
+        decl: &Rc<ModuleDeclaration>,
+    ) -> ModuleInstanceState {
+        let state = getModuleInstanceState(node, decl, &mut self.store, &mut None);
+        let instantiated = state != ModuleInstanceState::NonInstantiated;
+        self.declareSymbolAndAddToSymbolTable(
+            node,
+            if instantiated {
+                SymbolFlags::ValueModule
+            } else {
+                SymbolFlags::NamespaceModule
+            },
+            if instantiated {
+                SymbolFlags::ValueModuleExcludes
+            } else {
+                SymbolFlags::NamespaceModuleExcludes
+            },
+        );
+        state
+    }
 
-    //     function bindFunctionOrConstructorType(node: SignatureDeclaration | JSDocSignature): void {
-    //         // For a given function symbol "<...>(...) => T" we want to generate a symbol identical
-    //         // to the one we would get for: { <...>(...): T }
-    //         //
-    //         // We do that by making an anonymous type literal symbol, and then setting the function
-    //         // symbol as its sole member. To the rest of the system, this symbol will be indistinguishable
-    //         // from an actual type literal symbol you would have gotten had you used the long form.
-    //         const symbol = createSymbol(SymbolFlags::Signature, getDeclarationName(node)!); // TODO: GH#18217
-    //         addDeclarationToSymbol(symbol, node, SymbolFlags::Signature);
+    fn bindFunctionOrConstructorType(&mut self, node: &Rc<BoundNode>) {
+        // For a given function symbol "<...>(...) => T" we want to generate a symbol identical
+        // to the one we would get for: { <...>(...): T }
+        //
+        // We do that by making an anonymous type literal symbol, and then setting the function
+        // symbol as its sole member. To the rest of the system, this symbol will be indistinguishable
+        // from an actual type literal symbol you would have gotten had you used the long form.
+        let name = self.getDeclarationName(node).unwrap(); // TODO: GH#18217
+        let symbol = self.createSymbol(SymbolFlags::Signature, name);
+        self.addDeclarationToSymbol(symbol, node, SymbolFlags::Signature);
 
-    //         const typeLiteralSymbol = createSymbol(SymbolFlags::TypeLiteral, InternalSymbolName.Type);
-    //         addDeclarationToSymbol(typeLiteralSymbol, node, SymbolFlags::TypeLiteral);
-    //         typeLiteralSymbol.members = createSymbolTable();
-    //         typeLiteralSymbol.members.set(symbol.escapedName, symbol);
-    //     }
+        let typeLiteralSymbol = self.createSymbol(
+            SymbolFlags::TypeLiteral,
+            __String(InternalSymbolName::Type.into()),
+        );
+        self.addDeclarationToSymbol(typeLiteralSymbol, node, SymbolFlags::TypeLiteral);
+        let members = self.createSymbolTable();
+        self.symbols[typeLiteralSymbol].members = Some(members);
+        self.symbol_tables[members].insert(self.symbols[symbol].escapedName.clone(), symbol);
+    }
 
-    //     function bindObjectLiteralExpression(node: ObjectLiteralExpression) {
-    //         const enum ElementKind {
-    //             Property = 1,
-    //             Accessor = 2
-    //         }
+    fn bindObjectLiteralExpression(
+        &mut self,
+        node: &Rc<BoundNode>,
+        object: &Rc<ObjectLiteralExpression>,
+    ) {
+        #[derive(PartialEq, Clone, Copy)]
+        enum ElementKind {
+            Property,
+            Accessor,
+        }
 
-    //         if (inStrictMode && !isAssignmentTarget(node)) {
-    //             const seen = new Map<__String, ElementKind>();
+        if self.inStrictMode && !isAssignmentTarget(node.clone()) {
+            let mut seen = FxHashMap::default();
 
-    //             for (const prop of node.properties) {
-    //                 if (prop.kind === SyntaxKind::SpreadAssignment || prop.name.kind !== SyntaxKind::Identifier) {
-    //                     continue;
-    //                 }
+            for prop in object.properties.iter() {
+                let identifier = match prop {
+                    ObjectLiteralElementLike::PropertyAssignment(n) => n.name.clone().into(),
+                    ObjectLiteralElementLike::ShorthandPropertyAssignment(n) => {
+                        n.name.clone().into()
+                    }
+                    ObjectLiteralElementLike::MethodDeclaration(n) => n.name.clone().into(),
+                    ObjectLiteralElementLike::GetAccessorDeclaration(n) => n.name.clone().into(),
+                    ObjectLiteralElementLike::SetAccessorDeclaration(n) => n.name.clone().into(),
+                    ObjectLiteralElementLike::SpreadAssignment(_) => continue,
+                };
+                let identifier = match identifier {
+                    Node::Identifier(i) => i,
+                    _ => continue,
+                };
 
-    //                 const identifier = prop.name;
+                // ECMA-262 11.1.5 Object Initializer
+                // If previous is not undefined then throw a SyntaxError exception if any of the following conditions are true
+                // a.This production is contained in strict code and IsDataDescriptor(previous) is true and
+                // IsDataDescriptor(propId.descriptor) is true.
+                //    b.IsDataDescriptor(previous) is true and IsAccessorDescriptor(propId.descriptor) is true.
+                //    c.IsAccessorDescriptor(previous) is true and IsDataDescriptor(propId.descriptor) is true.
+                //    d.IsAccessorDescriptor(previous) is true and IsAccessorDescriptor(propId.descriptor) is true
+                // and either both previous and propId.descriptor have[[Get]] fields or both previous and propId.descriptor have[[Set]] fields
+                let currentKind = if prop.kind() == SyntaxKind::PropertyAssignment
+                    || prop.kind() == SyntaxKind::ShorthandPropertyAssignment
+                    || prop.kind() == SyntaxKind::MethodDeclaration
+                {
+                    ElementKind::Property
+                } else {
+                    ElementKind::Accessor
+                };
 
-    //                 // ECMA-262 11.1.5 Object Initializer
-    //                 // If previous is not undefined then throw a SyntaxError exception if any of the following conditions are true
-    //                 // a.This production is contained in strict code and IsDataDescriptor(previous) is true and
-    //                 // IsDataDescriptor(propId.descriptor) is true.
-    //                 //    b.IsDataDescriptor(previous) is true and IsAccessorDescriptor(propId.descriptor) is true.
-    //                 //    c.IsAccessorDescriptor(previous) is true and IsDataDescriptor(propId.descriptor) is true.
-    //                 //    d.IsAccessorDescriptor(previous) is true and IsAccessorDescriptor(propId.descriptor) is true
-    //                 // and either both previous and propId.descriptor have[[Get]] fields or both previous and propId.descriptor have[[Set]] fields
-    //                 const currentKind = prop.kind === SyntaxKind::PropertyAssignment || prop.kind === SyntaxKind::ShorthandPropertyAssignment || prop.kind === SyntaxKind::MethodDeclaration
-    //                     ? ElementKind.Property
-    //                     : ElementKind.Accessor;
+                let existingKind = match seen.entry(identifier.escapedText.clone()) {
+                    Entry::Occupied(entry) => *entry.get(),
+                    Entry::Vacant(entry) => {
+                        entry.insert(currentKind);
+                        continue;
+                    }
+                };
 
-    //                 const existingKind = seen.get(identifier.escapedText);
-    //                 if (!existingKind) {
-    //                     seen.set(identifier.escapedText, currentKind);
-    //                     continue;
-    //                 }
+                if currentKind == ElementKind::Property && existingKind == ElementKind::Property {
+                    todo!();
+                    // let span = getErrorSpanForNode(file, identifier);
+                    // file.bindDiagnostics.push(createFileDiagnostic(file, span.start, span.length,
+                    //     Diagnostics.An_object_literal_cannot_have_multiple_properties_with_the_same_name_in_strict_mode));
+                }
+            }
+        }
 
-    //                 if (currentKind === ElementKind.Property && existingKind === ElementKind.Property) {
-    //                     const span = getErrorSpanForNode(file, identifier);
-    //                     file.bindDiagnostics.push(createFileDiagnostic(file, span.start, span.length,
-    //                         Diagnostics.An_object_literal_cannot_have_multiple_properties_with_the_same_name_in_strict_mode));
-    //                 }
-    //             }
-    //         }
-
-    //         return bindAnonymousDeclaration(node, SymbolFlags::ObjectLiteral, InternalSymbolName.Object);
-    //     }
+        self.bindAnonymousDeclaration(
+            node,
+            SymbolFlags::ObjectLiteral,
+            __String(InternalSymbolName::Object.into()),
+        );
+    }
 
     //     function bindJsxAttributes(node: JsxAttributes) {
     //         return bindAnonymousDeclaration(node, SymbolFlags::ObjectLiteral, InternalSymbolName.JSXAttributes);
@@ -2492,32 +3087,38 @@ impl<'a> Binder<'a> {
         symbolFlags: SymbolFlags,
         symbolExcludes: SymbolFlags,
     ) {
-        match &self.blockScopeContainer.as_ref().unwrap().node {
+        let blockScopeContainer = self.blockScopeContainer.clone().unwrap();
+        match &blockScopeContainer.node {
             Node::ModuleDeclaration(_) => {
-                todo!();
-                // self.declareModuleMember(node, symbolFlags, symbolExcludes);
+                self.declareModuleMember(node, symbolFlags, symbolExcludes);
+                return;
             }
-            Node::SourceFile(_) => {
-                todo!();
-                // if (isExternalOrCommonJsModule(container as SourceFile)) {
-                //     self.declareModuleMember(node, symbolFlags, symbolExcludes);
-                //     return;
-                // }
-                // if (!blockScopeContainer.locals) {
-                //     blockScopeContainer.locals = createSymbolTable();
-                //     self.addToContainerChain(blockScopeContainer);
-                // }
-                // self.declareSymbol(blockScopeContainer.locals, /*parent*/ undefined, node, symbolFlags, symbolExcludes);
+            Node::SourceFile(n) => {
+                if isExternalOrCommonJsModule(n) {
+                    self.declareModuleMember(node, symbolFlags, symbolExcludes);
+                    return;
+                }
             }
-            _ => {
-                todo!();
-                // if !self.blockScopeContainer.locals {
-                //     self.blockScopeContainer.locals = self.createSymbolTable();
-                //     self.addToContainerChain(blockScopeContainer);
-                // }
-                // self.declareSymbol(blockScopeContainer.locals, /*parent*/ undefined, node, symbolFlags, symbolExcludes);
-            }
+            _ => {}
         }
+        let locals = match self.node_data(&blockScopeContainer).locals {
+            Some(locals) => locals,
+            None => {
+                let locals = self.createSymbolTable();
+                self.node_data_mut(&blockScopeContainer).locals = Some(locals);
+                self.addToContainerChain(blockScopeContainer);
+                locals
+            }
+        };
+        self.declareSymbol(
+            locals,
+            None,
+            node,
+            symbolFlags,
+            symbolExcludes,
+            false,
+            false,
+        );
     }
 
     //     function delayedBindJSDocTypedefTag() {
@@ -2841,15 +3442,15 @@ impl<'a> Binder<'a> {
     //         file.bindDiagnostics.push(createFileDiagnostic(file, span.start, span.length, message, arg0, arg1, arg2));
     //     }
 
-    //     function errorOrSuggestionOnNode(isError: boolean, node: Node, message: DiagnosticMessage): void {
+    //     function errorOrSuggestionOnNode(isError: boolean, node: Node, message: DiagnosticMessage) {
     //         errorOrSuggestionOnRange(isError, node, node, message);
     //     }
 
-    //     function errorOrSuggestionOnRange(isError: boolean, startNode: Node, endNode: Node, message: DiagnosticMessage): void {
+    //     function errorOrSuggestionOnRange(isError: boolean, startNode: Node, endNode: Node, message: DiagnosticMessage) {
     //         addErrorOrSuggestionDiagnostic(isError, { pos: getTokenPosOfNode(startNode, file), end: endNode.end }, message);
     //     }
 
-    //     function addErrorOrSuggestionDiagnostic(isError: boolean, range: TextRange, message: DiagnosticMessage): void {
+    //     function addErrorOrSuggestionDiagnostic(isError: boolean, range: TextRange, message: DiagnosticMessage) {
     //         const diag = createFileDiagnostic(file, range.pos, range.end - range.pos, message);
     //         if (isError) {
     //             file.bindDiagnostics.push(diag);
@@ -2931,30 +3532,45 @@ impl<'a> Binder<'a> {
         }
     }
 
-    fn updateStrictModeStatementList(&mut self, statements: &NodeArray<Statement>) {
+    fn updateStrictModeStatementList(
+        &mut self,
+        parent: &Rc<BoundNode>,
+        statements: &NodeArray<Statement>,
+    ) {
         if !self.inStrictMode {
-            todo!();
-            // for statement in statements.iter() {
-            //     if !isPrologueDirective(statement) {
-            //         return;
-            //     }
+            for statement in statements.iter() {
+                if !isPrologueDirective(&statement.clone().into()) {
+                    return;
+                }
 
-            //     if isUseStrictPrologueDirective(statement as ExpressionStatement) {
-            //         self.inStrictMode = true;
-            //         return;
-            //     }
-            // }
+                let node = statement.bind(parent);
+                let stmt = unwrap_as!(&statement, Statement::ExpressionStatement(n), n);
+
+                if self.isUseStrictPrologueDirective(&node, stmt) {
+                    self.inStrictMode = true;
+                    return;
+                }
+            }
         }
     }
 
-    //     /// Should be called only on prologue directives (isPrologueDirective(node) should be true)
-    //     function isUseStrictPrologueDirective(node: ExpressionStatement): boolean {
-    //         const nodeText = getSourceTextOfNodeFromSourceFile(file, node.expression);
+    /// Should be called only on prologue directives (isPrologueDirective(node) should be true)
+    fn isUseStrictPrologueDirective(
+        &mut self,
+        node: &Rc<BoundNode>,
+        stmt: &Rc<ExpressionStatement>,
+    ) -> bool {
+        let expression = stmt.expression.bind(node);
+        let nodeText = getSourceTextOfNodeFromSourceFile(
+            &self.file,
+            self.store.node_and_data(&expression),
+            false,
+        );
 
-    //         // Note: the node text must be exactly "use strict" or 'use strict'.  It is not ok for the
-    //         // string to contain unicode escapes (as per ES5).
-    //         return nodeText === '"use strict"' || nodeText === "'use strict'";
-    //     }
+        // Note: the node text must be exactly "use strict" or 'use strict'.  It is not ok for the
+        // string to contain unicode escapes (as per ES5).
+        nodeText == "\"use strict\"" || nodeText == "'use strict'"
+    }
 
     fn bindWorker(&mut self, node: &Rc<BoundNode>) {
         match &node.node {
@@ -3021,45 +3637,60 @@ impl<'a> Binder<'a> {
                 self.checkPrivateIdentifier(n);
             }
             Node::PropertyAccessExpression(_) | Node::ElementAccessExpression(_) => {
-                todo!();
-                // const expr = node as PropertyAccessExpression | ElementAccessExpression;
-                // if (currentFlow && isNarrowableReference(expr)) {
-                //     expr.flowNode = currentFlow;
+                // TODO: check currentFlow
+                if self.isNarrowableReference(&node.node) {
+                    self.node_data_mut(node).flowNode = Some(self.currentFlow);
+                }
+                // if self.currentFlow && self.isNarrowableReference(&node.node) {
+                //     self.node_data_mut(node).flowNode = Some(self.currentFlow);
                 // }
-                // if (isSpecialPropertyDeclaration(expr)) {
-                //     bindSpecialPropertyDeclaration(expr);
-                // }
-                // if (isInJSFile(expr) &&
-                //     file.commonJsModuleIndicator &&
-                //     isModuleExportsAccessExpression(expr) &&
-                //     !lookupSymbolForName(blockScopeContainer, "module" as __String)) {
-                //     declareSymbol(file.locals!, /*parent*/ undefined, expr.expression,
-                //         SymbolFlags::FunctionScopedVariable | SymbolFlags::ModuleExports, SymbolFlags::FunctionScopedVariableExcludes);
-                // }
+                if isSpecialPropertyDeclaration(self.store.node_and_data(node)) {
+                    self.bindSpecialPropertyDeclaration(node);
+                }
+                if isInJSFile(Some(self.store.node_and_data(node)))
+                    && self.file.commonJsModuleIndicator.is_some()
+                    && isModuleExportsAccessExpression(&node.node)
+                    && {
+                        let container = self.blockScopeContainer.as_ref().unwrap().node.clone();
+                        self.lookupSymbolForName(&container, &__String("module".into()))
+                            .is_none()
+                    }
+                {
+                    let expression = match &node.node {
+                        Node::PropertyAccessExpression(n) => &n.expression,
+                        Node::ElementAccessExpression(n) => &n.expression,
+                        _ => unreachable!(),
+                    };
+                    let symbolTable = self.store.node_data(&self.file).locals.unwrap();
+                    self.declareSymbol(
+                        symbolTable,
+                        None,
+                        &expression.bind(node),
+                        SymbolFlags::FunctionScopedVariable | SymbolFlags::ModuleExports,
+                        SymbolFlags::FunctionScopedVariableExcludes,
+                        false,
+                        false,
+                    );
+                }
             }
             Node::BinaryExpression(n) => {
                 let specialKind =
                     getAssignmentDeclarationKind(self.store.node_and_data(&node.node));
                 match specialKind {
                     AssignmentDeclarationKind::ExportsProperty => {
-                        todo!();
-                        // self.bindExportsPropertyAssignment(node as BindableStaticPropertyAssignmentExpression);
+                        self.bindExportsPropertyAssignment(node, n);
                     }
                     AssignmentDeclarationKind::ModuleExports => {
-                        todo!();
-                        // self.bindModuleExportsAssignment(node as BindablePropertyAssignmentExpression);
+                        self.bindModuleExportsAssignment(node, n);
                     }
                     AssignmentDeclarationKind::PrototypeProperty => {
-                        todo!();
-                        // self.bindPrototypePropertyAssignment((node as BindableStaticPropertyAssignmentExpression).left, node);
+                        self.bindPrototypePropertyAssignment(&n.left.bind(node));
                     }
                     AssignmentDeclarationKind::Prototype => {
-                        todo!();
-                        // self.bindPrototypeAssignment(node as BindableStaticPropertyAssignmentExpression);
+                        self.bindPrototypeAssignment(node, n);
                     }
                     AssignmentDeclarationKind::ThisProperty => {
-                        todo!();
-                        // self.bindThisPropertyAssignment(node as BindablePropertyAssignmentExpression);
+                        self.bindThisPropertyAssignment(node);
                     }
                     AssignmentDeclarationKind::Property => {
                         let expression = match &n.left {
@@ -3077,19 +3708,15 @@ impl<'a> Binder<'a> {
                                     .and_then(|s| self.symbols[s].valueDeclaration.as_ref())
                                     .map(|n| &n.node);
                                 if isThisInitializedDeclaration(value_declaration) {
-                                    todo!();
-                                    // self.bindThisPropertyAssignment(node as BindablePropertyAssignmentExpression);
+                                    self.bindThisPropertyAssignment(node);
                                 } else {
-                                    todo!();
-                                    // self.bindSpecialPropertyAssignment(node as BindablePropertyAssignmentExpression);
+                                    self.bindSpecialPropertyAssignment(node, n);
                                 }
                             } else {
-                                todo!();
-                                // self.bindSpecialPropertyAssignment(node as BindablePropertyAssignmentExpression);
+                                self.bindSpecialPropertyAssignment(node, n);
                             }
                         } else {
-                            todo!();
-                            // self.bindSpecialPropertyAssignment(node as BindablePropertyAssignmentExpression);
+                            self.bindSpecialPropertyAssignment(node, n);
                         }
                     }
                     AssignmentDeclarationKind::None => {
@@ -3239,47 +3866,47 @@ impl<'a> Binder<'a> {
             Node::FunctionTypeNode(_)
             | Node::JSDocFunctionType(_)
             | Node::ConstructorTypeNode(_) => {
-                todo!();
-                // bindFunctionOrConstructorType(node as SignatureDeclaration | JSDocSignature);
+                self.bindFunctionOrConstructorType(node);
             }
             // TODO: jsdoc
             // | Node::JSDocTypeLiteral(_)
             Node::TypeLiteralNode(_) | Node::MappedTypeNode(_) => {
-                todo!();
-                // bindAnonymousTypeWorker(node as TypeLiteralNode | MappedTypeNode | JSDocTypeLiteral);
+                self.bindAnonymousTypeWorker(node);
             }
             // TODO: jsdoc
             // Node::JSDocClassTag(_) => {
             //     todo!();
             //     // bindJSDocClassTag(node as JSDocClassTag);
             // }
-            Node::ObjectLiteralExpression(_) => {
-                todo!();
-                // bindObjectLiteralExpression(node as ObjectLiteralExpression);
+            Node::ObjectLiteralExpression(n) => {
+                self.bindObjectLiteralExpression(node, n);
             }
             Node::FunctionExpression(_) | Node::ArrowFunction(_) => {
                 self.bindFunctionExpression(node);
             }
 
-            Node::CallExpression(_) => {
-                todo!();
-                // let assignmentKind = getAssignmentDeclarationKind(node as CallExpression);
-                // switch (assignmentKind) {
-                //     case AssignmentDeclarationKind.ObjectDefinePropertyValue:
-                //         return bindObjectDefinePropertyAssignment(node as BindableObjectDefinePropertyCall);
-                //     case AssignmentDeclarationKind.ObjectDefinePropertyExports:
-                //         return bindObjectDefinePropertyExport(node as BindableObjectDefinePropertyCall);
-                //     case AssignmentDeclarationKind.ObjectDefinePrototypeProperty:
-                //         return bindObjectDefinePrototypeProperty(node as BindableObjectDefinePropertyCall);
-                //     case AssignmentDeclarationKind.None:
-                //         break; // Nothing to do
-                //     default:
-                //         return Debug.fail("Unknown call expression assignment declaration kind");
-                // }
-                // if (isInJSFile(node)) {
-                //     bindCallExpression(node as CallExpression);
-                // }
-                // break;
+            Node::CallExpression(n) => {
+                let assignmentKind =
+                    getAssignmentDeclarationKind(self.store.node_and_data(&node.node));
+                match assignmentKind {
+                    AssignmentDeclarationKind::ObjectDefinePropertyValue => {
+                        self.bindObjectDefinePropertyAssignment(node, n);
+                    }
+                    AssignmentDeclarationKind::ObjectDefinePropertyExports => {
+                        self.bindObjectDefinePropertyExport(node, n);
+                    }
+                    AssignmentDeclarationKind::ObjectDefinePrototypeProperty => {
+                        self.bindObjectDefinePrototypeProperty(node, n);
+                    }
+                    AssignmentDeclarationKind::None => {
+                        if isInJSFile(Some(self.store.node_and_data(node))) {
+                            self.bindCallExpression(&node.node);
+                        }
+                    }
+                    _ => {
+                        unreachable!("Unknown call expression assignment declaration kind");
+                    }
+                }
             }
             // Members of classes, interfaces, and modules
             Node::ClassExpression(_) | Node::ClassDeclaration(_) => {
@@ -3304,9 +3931,8 @@ impl<'a> Binder<'a> {
             Node::EnumDeclaration(_) => {
                 self.bindEnumDeclaration(node);
             }
-            Node::ModuleDeclaration(_) => {
-                todo!();
-                // bindModuleDeclaration(node as ModuleDeclaration);
+            Node::ModuleDeclaration(n) => {
+                self.bindModuleDeclaration(node, n);
             }
             // TODO: jsx
             // Jsx-attributes
@@ -3330,34 +3956,30 @@ impl<'a> Binder<'a> {
                     SymbolFlags::AliasExcludes,
                 );
             }
-            Node::NamespaceExportDeclaration(_) => {
-                todo!();
-                // bindNamespaceExportDeclaration(node as NamespaceExportDeclaration);
+            Node::NamespaceExportDeclaration(n) => {
+                self.bindNamespaceExportDeclaration(node, n);
             }
-            Node::ImportClause(_) => {
-                todo!();
-                // bindImportClause(node as ImportClause);
+            Node::ImportClause(n) => {
+                self.bindImportClause(node, n);
             }
-            Node::ExportDeclaration(_) => {
-                todo!();
-                // bindExportDeclaration(node as ExportDeclaration);
+            Node::ExportDeclaration(n) => {
+                self.bindExportDeclaration(node, n);
             }
-            Node::ExportAssignment(_) => {
-                todo!();
-                // bindExportAssignment(node as ExportAssignment);
+            Node::ExportAssignment(n) => {
+                self.bindExportAssignment(node, n);
             }
             Node::SourceFile(n) => {
-                self.updateStrictModeStatementList(&n.statements);
+                self.updateStrictModeStatementList(node, &n.statements);
                 self.bindSourceFileIfExternalModule();
             }
             Node::Block(n) => {
                 if !isFunctionLikeOrClassStaticBlockDeclaration(node.parent().as_ref()) {
                     return;
                 }
-                self.updateStrictModeStatementList(&n.statements);
+                self.updateStrictModeStatementList(node, &n.statements);
             }
             Node::ModuleBlock(n) => {
-                self.updateStrictModeStatementList(&n.statements);
+                self.updateStrictModeStatementList(node, &n.statements);
             }
             // TODO: jsdoc
             // Node::JSDocParameterTag(_) => {
@@ -3403,500 +4025,1042 @@ impl<'a> Binder<'a> {
         );
     }
 
-    //     function bindAnonymousTypeWorker(node: TypeLiteralNode | MappedTypeNode | JSDocTypeLiteral) {
-    //         return bindAnonymousDeclaration(node as Declaration, SymbolFlags::TypeLiteral, InternalSymbolName.Type);
-    //     }
+    fn bindAnonymousTypeWorker(&mut self, node: &Rc<BoundNode>) {
+        self.bindAnonymousDeclaration(
+            node,
+            SymbolFlags::TypeLiteral,
+            __String(InternalSymbolName::Type.into()),
+        );
+    }
 
     fn bindSourceFileIfExternalModule(&mut self) {
-        // TODO:
-        // self.setExportContextFlag(self.file);
+        self.setExportContextFlag(&self.file.clone().into());
         if isExternalModule(self.file.as_ref()) {
-            todo!();
-            // self.bindSourceFileAsExternalModule();
+            self.bindSourceFileAsExternalModule();
         } else if isJsonSourceFile(self.file.as_ref()) {
-            todo!();
-            // self.bindSourceFileAsExternalModule();
-            // // Create symbol equivalent for the module.exports = {}
-            // const originalSymbol = self.file.symbol;
-            // self.declareSymbol(self.file.symbol.exports!, self.file.symbol, self.file, SymbolFlags::Property, SymbolFlags::All);
-            // self.file.symbol = originalSymbol;
+            self.bindSourceFileAsExternalModule();
+            // Create symbol equivalent for the module.exports = {}
+            let originalSymbol = self.store.node_data(&self.file).symbol;
+            let exports = self.symbols[originalSymbol.unwrap()].exports.unwrap();
+            self.declareSymbol(
+                exports,
+                originalSymbol,
+                &self.file.bind_to_opt_parent(None),
+                SymbolFlags::Property,
+                SymbolFlags::All,
+                false,
+                false,
+            );
+            self.store.node_data_mut(&self.file).symbol = originalSymbol;
         }
     }
 
-    //     function bindSourceFileAsExternalModule() {
-    //         bindAnonymousDeclaration(file, SymbolFlags::ValueModule, `"${removeFileExtension(file.fileName)}"` as __String);
-    //     }
+    fn bindSourceFileAsExternalModule(&mut self) {
+        self.bindAnonymousDeclaration(
+            &self.file.bind_to_opt_parent(None),
+            SymbolFlags::ValueModule,
+            __String(format!("\"{}\"", removeFileExtension(&self.file.fileName)).into()),
+        );
+    }
 
-    //     function bindExportAssignment(node: ExportAssignment) {
-    //         if (!container.symbol || !container.symbol.exports) {
-    //             // Incorrect export assignment in some sort of block construct
-    //             bindAnonymousDeclaration(node, SymbolFlags::Value, getDeclarationName(node)!);
-    //         }
-    //         else {
-    //             const flags = exportAssignmentIsAlias(node)
-    //                 // An export default clause with an EntityNameExpression or a class expression exports all meanings of that identifier or expression;
-    //                 ? SymbolFlags::Alias
-    //                 // An export default clause with any other expression exports a value
-    //                 : SymbolFlags::Property;
-    //             // If there is an `export default x;` alias declaration, can't `export default` anything else.
-    //             // (In contrast, you can still have `export default function f() {}` and `export default interface I {}`.)
-    //             const symbol = declareSymbol(container.symbol.exports, container.symbol, node, flags, SymbolFlags::All);
+    fn bindExportAssignment(&mut self, node: &Rc<BoundNode>, assignment: &Rc<ExportAssignment>) {
+        let container_symbol = self
+            .container
+            .as_ref()
+            .and_then(|c| self.store.node_data(c).symbol);
+        let container_exports = container_symbol.and_then(|s| self.symbols[s].exports);
+        if let (Some(container_symbol), Some(container_exports)) =
+            (container_symbol, container_exports)
+        {
+            let flags = if exportAssignmentIsAlias(&node.node) {
+                // An export default clause with an EntityNameExpression or a class expression exports all meanings of that identifier or expression;
+                SymbolFlags::Alias
+            } else {
+                // An export default clause with any other expression exports a value
+                SymbolFlags::Property
+            };
+            // If there is an `export default x;` alias declaration, can't `export default` anything else.
+            // (In contrast, you can still have `export default function f() {}` and `export default interface I {}`.)
+            let symbol = self.declareSymbol(
+                container_exports,
+                Some(container_symbol),
+                node,
+                flags,
+                SymbolFlags::All,
+                false,
+                false,
+            );
 
-    //             if (node.isExportEquals) {
-    //                 // Will be an error later, since the module already has other exports. Just make sure this has a valueDeclaration set.
-    //                 setValueDeclaration(symbol, node);
-    //             }
-    //         }
-    //     }
+            if assignment.isExportEquals {
+                // Will be an error later, since the module already has other exports. Just make sure this has a valueDeclaration set.
+                setValueDeclaration(&mut self.symbols[symbol], node, &mut self.store);
+            }
+        } else {
+            // Incorrect export assignment in some sort of block construct
+            let name = self.getDeclarationName(node).unwrap();
+            self.bindAnonymousDeclaration(node, SymbolFlags::Value, name);
+        }
+    }
 
-    //     function bindNamespaceExportDeclaration(node: NamespaceExportDeclaration) {
-    //         if (node.modifiers && node.modifiers.length) {
-    //             file.bindDiagnostics.push(createDiagnosticForNode(node, Diagnostics.Modifiers_cannot_appear_here));
-    //         }
-    //         const diag = !isSourceFile(node.parent) ? Diagnostics.Global_module_exports_may_only_appear_at_top_level
-    //             : !isExternalModule(node.parent) ? Diagnostics.Global_module_exports_may_only_appear_in_module_files
-    //             : !node.parent.isDeclarationFile ? Diagnostics.Global_module_exports_may_only_appear_in_declaration_files
-    //             : undefined;
-    //         if (diag) {
-    //             file.bindDiagnostics.push(createDiagnosticForNode(node, diag));
-    //         }
-    //         else {
-    //             file.symbol.globalExports = file.symbol.globalExports || createSymbolTable();
-    //             declareSymbol(file.symbol.globalExports, file.symbol, node, SymbolFlags::Alias, SymbolFlags::AliasExcludes);
-    //         }
-    //     }
+    fn bindNamespaceExportDeclaration(
+        &mut self,
+        node: &Rc<BoundNode>,
+        decl: &Rc<NamespaceExportDeclaration>,
+    ) {
+        if decl
+            .modifiers
+            .as_ref()
+            .map(|m| !m.is_empty())
+            .unwrap_or_default()
+        {
+            todo!();
+            // file.bindDiagnostics.push(createDiagnosticForNode(node, Diagnostics.Modifiers_cannot_appear_here));
+        }
+        let mut diag = None;
+        if let Some(Node::SourceFile(parent)) = node.parent_node() {
+            if !isExternalModule(&parent) {
+                diag = Some(Diagnostics::Global_module_exports_may_only_appear_in_module_files);
+            } else if !parent.isDeclarationFile {
+                diag =
+                    Some(Diagnostics::Global_module_exports_may_only_appear_in_declaration_files);
+            }
+        } else {
+            diag = Some(Diagnostics::Global_module_exports_may_only_appear_at_top_level);
+        }
+        if let Some(diag) = diag {
+            todo!();
+            // file.bindDiagnostics.push(createDiagnosticForNode(node, diag));
+        } else {
+            let file_symbol = self.store.node_data(&self.file).symbol.unwrap();
+            let globalExports = match self.symbols[file_symbol].globalExports {
+                Some(e) => e,
+                None => {
+                    let globalExports = self.createSymbolTable();
+                    self.symbols[file_symbol].globalExports = Some(globalExports);
+                    globalExports
+                }
+            };
+            self.declareSymbol(
+                globalExports,
+                Some(file_symbol),
+                node,
+                SymbolFlags::Alias,
+                SymbolFlags::AliasExcludes,
+                false,
+                false,
+            );
+        }
+    }
 
-    //     function bindExportDeclaration(node: ExportDeclaration) {
-    //         if (!container.symbol || !container.symbol.exports) {
-    //             // Export * in some sort of block construct
-    //             bindAnonymousDeclaration(node, SymbolFlags::ExportStar, getDeclarationName(node)!);
-    //         }
-    //         else if (!node.exportClause) {
-    //             // All export * declarations are collected in an __export symbol
-    //             declareSymbol(container.symbol.exports, container.symbol, node, SymbolFlags::ExportStar, SymbolFlags::None);
-    //         }
-    //         else if (isNamespaceExport(node.exportClause)) {
-    //             // declareSymbol walks up parents to find name text, parent _must_ be set
-    //             // but won't be set by the normal binder walk until `bindChildren` later on.
-    //             setParent(node.exportClause, node);
-    //             declareSymbol(container.symbol.exports, container.symbol, node.exportClause, SymbolFlags::Alias, SymbolFlags::AliasExcludes);
-    //         }
-    //     }
+    fn bindExportDeclaration(&mut self, node: &Rc<BoundNode>, decl: &Rc<ExportDeclaration>) {
+        let container_symbol = self
+            .container
+            .as_ref()
+            .and_then(|c| self.store.node_data(c).symbol);
+        let container_exports = container_symbol.and_then(|s| self.symbols[s].exports);
+        if let (Some(container_symbol), Some(container_exports)) =
+            (container_symbol, container_exports)
+        {
+            if let Some(exportClause) = &decl.exportClause {
+                if isNamespaceExport(exportClause) {
+                    self.declareSymbol(
+                        container_exports,
+                        Some(container_symbol),
+                        &exportClause.bind(node),
+                        SymbolFlags::Alias,
+                        SymbolFlags::AliasExcludes,
+                        false,
+                        false,
+                    );
+                }
+            } else {
+                // All export * declarations are collected in an __export symbol
+                self.declareSymbol(
+                    container_exports,
+                    Some(container_symbol),
+                    node,
+                    SymbolFlags::ExportStar,
+                    SymbolFlags::None,
+                    false,
+                    false,
+                );
+            }
+        } else {
+            // Export * in some sort of block construct
+            let name = self.getDeclarationName(node).unwrap();
+            self.bindAnonymousDeclaration(node, SymbolFlags::ExportStar, name);
+        }
+    }
 
-    //     function bindImportClause(node: ImportClause) {
-    //         if (node.name) {
-    //             declareSymbolAndAddToSymbolTable(node, SymbolFlags::Alias, SymbolFlags::AliasExcludes);
-    //         }
-    //     }
+    fn bindImportClause(&mut self, node: &Rc<BoundNode>, clause: &Rc<ImportClause>) {
+        if clause.name.is_some() {
+            self.declareSymbolAndAddToSymbolTable(
+                node,
+                SymbolFlags::Alias,
+                SymbolFlags::AliasExcludes,
+            );
+        }
+    }
 
-    //     function setCommonJsModuleIndicator(node: Node) {
-    //         if (file.externalModuleIndicator) {
-    //             return false;
-    //         }
-    //         if (!file.commonJsModuleIndicator) {
-    //             file.commonJsModuleIndicator = node;
-    //             bindSourceFileAsExternalModule();
-    //         }
-    //         return true;
-    //     }
+    fn setCommonJsModuleIndicator(&mut self, node: &Node) -> bool {
+        if self.file.externalModuleIndicator.is_some() {
+            return false;
+        }
+        if self.file.commonJsModuleIndicator.is_none() {
+            todo!();
+            // self.file.commonJsModuleIndicator = node;
+            // self.bindSourceFileAsExternalModule();
+        }
+        true
+    }
 
-    //     function bindObjectDefinePropertyExport(node: BindableObjectDefinePropertyCall) {
-    //         if (!setCommonJsModuleIndicator(node)) {
-    //             return;
-    //         }
-    //         const symbol = forEachIdentifierInEntityName(node.arguments[0], /*parent*/ undefined, (id, symbol) => {
-    //             if (symbol) {
-    //                 addDeclarationToSymbol(symbol, id, SymbolFlags::Module | SymbolFlags::Assignment);
-    //             }
-    //             return symbol;
-    //         });
-    //         if (symbol) {
-    //             const flags = SymbolFlags::Property | SymbolFlags::ExportValue;
-    //             declareSymbol(symbol.exports!, symbol, node, flags, SymbolFlags::None);
-    //         }
-    //     }
+    fn bindObjectDefinePropertyExport(&mut self, node: &Rc<BoundNode>, call: &Rc<CallExpression>) {
+        if !self.setCommonJsModuleIndicator(&node.node) {
+            return;
+        }
+        let symbol = self.forEachIdentifierInEntityName(
+            &call.arguments[0].bind(node),
+            None,
+            |binder, id, symbol, _| {
+                if let Some(symbol) = symbol {
+                    binder.addDeclarationToSymbol(
+                        symbol,
+                        id,
+                        SymbolFlags::Module | SymbolFlags::Assignment,
+                    );
+                }
+                symbol
+            },
+        );
+        if let Some(symbol) = symbol {
+            let flags = SymbolFlags::Property | SymbolFlags::ExportValue;
+            self.declareSymbol(
+                self.symbols[symbol].exports.unwrap(),
+                Some(symbol),
+                node,
+                flags,
+                SymbolFlags::None,
+                false,
+                false,
+            );
+        }
+    }
 
-    //     function bindExportsPropertyAssignment(node: BindableStaticPropertyAssignmentExpression) {
-    //         // When we create a property via 'exports.foo = bar', the 'exports.foo' property access
-    //         // expression is the declaration
-    //         if (!setCommonJsModuleIndicator(node)) {
-    //             return;
-    //         }
-    //         const symbol = forEachIdentifierInEntityName(node.left.expression, /*parent*/ undefined, (id, symbol) => {
-    //             if (symbol) {
-    //                 addDeclarationToSymbol(symbol, id, SymbolFlags::Module | SymbolFlags::Assignment);
-    //             }
-    //             return symbol;
-    //         });
-    //         if (symbol) {
-    //             const isAlias = isAliasableExpression(node.right) && (isExportsIdentifier(node.left.expression) || isModuleExportsAccessExpression(node.left.expression));
-    //             const flags = isAlias ? SymbolFlags::Alias : SymbolFlags::Property | SymbolFlags::ExportValue;
-    //             setParent(node.left, node);
-    //             declareSymbol(symbol.exports!, symbol, node.left, flags, SymbolFlags::None);
-    //         }
-    //     }
+    fn bindExportsPropertyAssignment(
+        &mut self,
+        node: &Rc<BoundNode>,
+        assignment: &Rc<BinaryExpression>,
+    ) {
+        // When we create a property via 'exports.foo = bar', the 'exports.foo' property access
+        // expression is the declaration
+        if !self.setCommonJsModuleIndicator(&node.node) {
+            return;
+        }
+        let left = match &assignment.left {
+            Expression::ElementAccessExpression(n) => n.expression.bind(&n.bind(node)),
+            Expression::PropertyAccessExpression(n) => n.expression.bind(&n.bind(node)),
+            _ => unreachable!(),
+        };
+        let symbol = self.forEachIdentifierInEntityName(&left, None, |binder, id, symbol, _| {
+            if let Some(symbol) = symbol {
+                binder.addDeclarationToSymbol(
+                    symbol,
+                    id,
+                    SymbolFlags::Module | SymbolFlags::Assignment,
+                );
+            }
+            symbol
+        });
+        if let Some(symbol) = symbol {
+            let isAlias = isAliasableExpression(&assignment.right.clone().into())
+                && (isExportsIdentifier(&left.node) || isModuleExportsAccessExpression(&left.node));
+            let flags = if isAlias {
+                SymbolFlags::Alias
+            } else {
+                SymbolFlags::Property | SymbolFlags::ExportValue
+            };
+            self.declareSymbol(
+                self.symbols[symbol].exports.unwrap(),
+                Some(symbol),
+                &assignment.left.bind(node),
+                flags,
+                SymbolFlags::None,
+                false,
+                false,
+            );
+        }
+    }
 
-    //     function bindModuleExportsAssignment(node: BindablePropertyAssignmentExpression) {
-    //         // A common practice in node modules is to set 'export = module.exports = {}', this ensures that 'exports'
-    //         // is still pointing to 'module.exports'.
-    //         // We do not want to consider this as 'export=' since a module can have only one of these.
-    //         // Similarly we do not want to treat 'module.exports = exports' as an 'export='.
-    //         if (!setCommonJsModuleIndicator(node)) {
-    //             return;
-    //         }
-    //         const assignedExpression = getRightMostAssignedExpression(node.right);
-    //         if (isEmptyObjectLiteral(assignedExpression) || container === file && isExportsOrModuleExportsOrAlias(file, assignedExpression)) {
-    //             return;
-    //         }
+    fn bindModuleExportsAssignment(
+        &mut self,
+        node: &Rc<BoundNode>,
+        assignment: &Rc<BinaryExpression>,
+    ) {
+        // A common practice in node modules is to set 'export = module.exports = {}', this ensures that 'exports'
+        // is still pointing to 'module.exports'.
+        // We do not want to consider this as 'export=' since a module can have only one of these.
+        // Similarly we do not want to treat 'module.exports = exports' as an 'export='.
+        if !self.setCommonJsModuleIndicator(&node.node) {
+            return;
+        }
+        let assignedExpression = getRightMostAssignedExpression(assignment.right.bind(node));
+        if isEmptyObjectLiteral(&assignedExpression.node)
+            || self.container.as_ref().unwrap().node_id() == self.file.node_id()
+                && self.isExportsOrModuleExportsOrAlias(
+                    &self.file.clone(),
+                    assignedExpression.node.clone(),
+                )
+        {
+            return;
+        }
 
-    //         if (isObjectLiteralExpression(assignedExpression) && every(assignedExpression.properties, isShorthandPropertyAssignment)) {
-    //             forEach(assignedExpression.properties, bindExportAssignedObjectMemberAlias);
-    //             return;
-    //         }
+        if let Node::ObjectLiteralExpression(assigned_object) = &assignedExpression.node {
+            if assigned_object
+                .properties
+                .iter()
+                .all(|p| matches!(p, ObjectLiteralElementLike::ShorthandPropertyAssignment(_)))
+            {
+                for prop in assigned_object.properties.iter() {
+                    self.bindExportAssignedObjectMemberAlias(&prop.bind(&assignedExpression))
+                }
+                return;
+            }
+        }
 
-    //         // 'module.exports = expr' assignment
-    //         const flags = exportAssignmentIsAlias(node)
-    //             ? SymbolFlags::Alias // An export= with an EntityNameExpression or a ClassExpression exports all meanings of that identifier or class
-    //             : SymbolFlags::Property | SymbolFlags::ExportValue | SymbolFlags::ValueModule;
-    //         const symbol = declareSymbol(file.symbol.exports!, file.symbol, node, flags | SymbolFlags::Assignment, SymbolFlags::None);
-    //         setValueDeclaration(symbol, node);
-    //     }
+        // 'module.exports = expr' assignment
+        let flags = if exportAssignmentIsAlias(&node.node) {
+            SymbolFlags::Alias
+        }
+        // An export= with an EntityNameExpression or a ClassExpression exports all meanings of that identifier or class
+        else {
+            SymbolFlags::Property | SymbolFlags::ExportValue | SymbolFlags::ValueModule
+        };
+        let file_symbol = self.store.node_data(&self.file).symbol.unwrap();
+        let symbol = self.declareSymbol(
+            self.symbols[file_symbol].exports.unwrap(),
+            Some(file_symbol),
+            node,
+            flags | SymbolFlags::Assignment,
+            SymbolFlags::None,
+            false,
+            false,
+        );
+        setValueDeclaration(&mut self.symbols[symbol], node, &mut self.store);
+    }
 
-    //     function bindExportAssignedObjectMemberAlias(node: ShorthandPropertyAssignment) {
-    //         declareSymbol(file.symbol.exports!, file.symbol, node, SymbolFlags::Alias | SymbolFlags::Assignment, SymbolFlags::None);
-    //     }
+    fn bindExportAssignedObjectMemberAlias(&mut self, node: &Rc<BoundNode>) {
+        let file_symbol = self.store.node_data(&self.file).symbol.unwrap();
+        self.declareSymbol(
+            self.symbols[file_symbol].exports.unwrap(),
+            Some(file_symbol),
+            node,
+            SymbolFlags::Alias | SymbolFlags::Assignment,
+            SymbolFlags::None,
+            false,
+            false,
+        );
+    }
 
-    //     function bindThisPropertyAssignment(node: BindablePropertyAssignmentExpression | PropertyAccessExpression | LiteralLikeElementAccessExpression) {
-    //         Debug.assert(isInJSFile(node));
-    //         // private identifiers *must* be declared (even in JS files)
-    //         const hasPrivateIdentifier = (isBinaryExpression(node) && isPropertyAccessExpression(node.left) && isPrivateIdentifier(node.left.name))
-    //             || (isPropertyAccessExpression(node) && isPrivateIdentifier(node.name));
-    //         if (hasPrivateIdentifier) {
-    //             return;
-    //         }
-    //         const thisContainer = getThisContainer(node, /*includeArrowFunctions*/ false);
-    //         switch (thisContainer.kind) {
-    //             case SyntaxKind::FunctionDeclaration:
-    //             case SyntaxKind::FunctionExpression:
-    //                 let constructorSymbol: Symbol | undefined = thisContainer.symbol;
-    //                 // For `f.prototype.m = function() { this.x = 0; }`, `this.x = 0` should modify `f`'s members, not the function expression.
-    //                 if (isBinaryExpression(thisContainer.parent) && thisContainer.parent.operatorToken.kind === SyntaxKind::EqualsToken) {
-    //                     const l = thisContainer.parent.left;
-    //                     if (isBindableStaticAccessExpression(l) && isPrototypeAccess(l.expression)) {
-    //                         constructorSymbol = lookupSymbolForPropertyAccess(l.expression.expression, thisParentContainer);
-    //                     }
-    //                 }
+    fn bindThisPropertyAssignment(
+        &mut self,
+        node: &Rc<BoundNode>, /*BindablePropertyAssignmentExpression | PropertyAccessExpression | LiteralLikeElementAccessExpression*/
+    ) {
+        debug_assert!(isInJSFile(Some(self.store.node_and_data(node))));
+        // private identifiers *must* be declared (even in JS files)
+        let hasPrivateIdentifier = match &node.node {
+            Node::BinaryExpression(n) => {
+                if let Expression::PropertyAccessExpression(left) = &n.left {
+                    isPrivateIdentifier(&left.name)
+                } else {
+                    false
+                }
+            }
+            Node::PropertyAccessExpression(n) => isPrivateIdentifier(&n.name),
+            _ => false,
+        };
+        if hasPrivateIdentifier {
+            return;
+        }
+        let thisContainer = getThisContainer(node.clone(), false);
+        match &thisContainer.node {
+            Node::FunctionDeclaration(_) | Node::FunctionExpression(_) => {
+                let mut constructorSymbol = self.node_data(&thisContainer).symbol;
+                // For `f.prototype.m = function() { this.x = 0; }`, `this.x = 0` should modify `f`'s members, not the function expression.
+                if let Some(Node::BinaryExpression(parent)) = thisContainer.parent_node() {
+                    if parent.operatorToken.kind() == SyntaxKind::EqualsToken {
+                        let l = &parent.left;
+                        if isBindableStaticAccessExpression(&l.clone().into(), false) {
+                            let bindable_static_access_expression = match l {
+                                Expression::ElementAccessExpression(n) => &n.expression,
+                                Expression::PropertyAccessExpression(n) => &n.expression,
+                                _ => unreachable!(),
+                            };
+                            if isPrototypeAccess(&bindable_static_access_expression.clone().into())
+                            {
+                                let prototype_access_expression =
+                                    match bindable_static_access_expression {
+                                        LeftHandSideExpression::ElementAccessExpression(n) => {
+                                            &n.expression
+                                        }
+                                        LeftHandSideExpression::PropertyAccessExpression(n) => {
+                                            &n.expression
+                                        }
+                                        _ => unreachable!(),
+                                    };
+                                constructorSymbol = self.lookupSymbolForPropertyAccess(
+                                    &prototype_access_expression.clone().into(),
+                                    self.thisParentContainer.as_ref().map(|n| n.node.clone()),
+                                );
+                            }
+                        }
+                    }
+                }
 
-    //                 if (constructorSymbol && constructorSymbol.valueDeclaration) {
-    //                     // Declare a 'member' if the container is an ES5 class or ES6 constructor
-    //                     constructorSymbol.members = constructorSymbol.members || createSymbolTable();
-    //                     // It's acceptable for multiple 'this' assignments of the same identifier to occur
-    //                     if (hasDynamicName(node)) {
-    //                         bindDynamicallyNamedThisPropertyAssignment(node, constructorSymbol, constructorSymbol.members);
-    //                     }
-    //                     else {
-    //                         declareSymbol(constructorSymbol.members, constructorSymbol, node, SymbolFlags::Property | SymbolFlags::Assignment, SymbolFlags::PropertyExcludes & ~SymbolFlags::Property);
-    //                     }
-    //                     addDeclarationToSymbol(constructorSymbol, constructorSymbol.valueDeclaration, SymbolFlags::Class);
-    //                 }
-    //                 break;
+                if let Some(constructorSymbol) = constructorSymbol {
+                    if let Some(valueDeclaration) =
+                        self.symbols[constructorSymbol].valueDeclaration.clone()
+                    {
+                        // Declare a 'member' if the container is an ES5 class or ES6 constructor
+                        let constructor_members = match self.symbols[constructorSymbol].members {
+                            Some(m) => m,
+                            None => {
+                                let members = self.createSymbolTable();
+                                self.symbols[constructorSymbol].members = Some(members);
+                                members
+                            }
+                        };
+                        // It's acceptable for multiple 'this' assignments of the same identifier to occur
+                        if hasDynamicName(node) {
+                            self.bindDynamicallyNamedThisPropertyAssignment(
+                                node,
+                                constructorSymbol,
+                                constructor_members,
+                            );
+                        } else {
+                            self.declareSymbol(
+                                constructor_members,
+                                Some(constructorSymbol),
+                                node,
+                                SymbolFlags::Property | SymbolFlags::Assignment,
+                                SymbolFlags::PropertyExcludes & !SymbolFlags::Property,
+                                false,
+                                false,
+                            );
+                        }
+                        self.addDeclarationToSymbol(
+                            constructorSymbol,
+                            &valueDeclaration,
+                            SymbolFlags::Class,
+                        );
+                    }
+                }
+            }
+            Node::ConstructorDeclaration(_)
+            | Node::PropertyDeclaration(_)
+            | Node::MethodDeclaration(_)
+            | Node::GetAccessorDeclaration(_)
+            | Node::SetAccessorDeclaration(_) => {
+                // this.foo assignment in a JavaScript class
+                // Bind this property to the containing class
+                let containingClass = thisContainer.parent_node().unwrap();
+                let containingClass_symbol = self.node_data(&containingClass).symbol.unwrap();
+                let symbolTable = if isStatic(self.store.node_and_data(&thisContainer.node)) {
+                    self.symbols[containingClass_symbol].exports.unwrap()
+                } else {
+                    self.symbols[containingClass_symbol].members.unwrap()
+                };
+                if hasDynamicName(node) {
+                    self.bindDynamicallyNamedThisPropertyAssignment(
+                        node,
+                        containingClass_symbol,
+                        symbolTable,
+                    );
+                } else {
+                    self.declareSymbol(
+                        symbolTable,
+                        Some(containingClass_symbol),
+                        node,
+                        SymbolFlags::Property | SymbolFlags::Assignment,
+                        SymbolFlags::None,
+                        true,
+                        false,
+                    );
+                }
+            }
+            Node::SourceFile(n) => {
+                // this.property = assignment in a source file -- declare symbol in exports for a module, in locals for a script
+                if hasDynamicName(node) {
+                    return;
+                } else if n.commonJsModuleIndicator.is_some() {
+                    let thisContainer_symbol = self.node_data(n).symbol.unwrap();
+                    let thisContainer_exports = self.symbols[thisContainer_symbol].exports.unwrap();
+                    self.declareSymbol(
+                        thisContainer_exports,
+                        Some(thisContainer_symbol),
+                        node,
+                        SymbolFlags::Property | SymbolFlags::ExportValue,
+                        SymbolFlags::None,
+                        false,
+                        false,
+                    );
+                } else {
+                    self.declareSymbolAndAddToSymbolTable(
+                        node,
+                        SymbolFlags::FunctionScopedVariable,
+                        SymbolFlags::FunctionScopedVariableExcludes,
+                    );
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
 
-    //             case SyntaxKind::Constructor:
-    //             case SyntaxKind::PropertyDeclaration:
-    //             case SyntaxKind::MethodDeclaration:
-    //             case SyntaxKind::GetAccessor:
-    //             case SyntaxKind::SetAccessor:
-    //                 // this.foo assignment in a JavaScript class
-    //                 // Bind this property to the containing class
-    //                 const containingClass = thisContainer.parent;
-    //                 const symbolTable = isStatic(thisContainer) ? containingClass.symbol.exports! : containingClass.symbol.members!;
-    //                 if (hasDynamicName(node)) {
-    //                     bindDynamicallyNamedThisPropertyAssignment(node, containingClass.symbol, symbolTable);
-    //                 }
-    //                 else {
-    //                     declareSymbol(symbolTable, containingClass.symbol, node, SymbolFlags::Property | SymbolFlags::Assignment, SymbolFlags::None, /*isReplaceableByMethod*/ true);
-    //                 }
-    //                 break;
-    //             case SyntaxKind::SourceFile:
-    //                 // this.property = assignment in a source file -- declare symbol in exports for a module, in locals for a script
-    //                 if (hasDynamicName(node)) {
-    //                     break;
-    //                 }
-    //                 else if ((thisContainer as SourceFile).commonJsModuleIndicator) {
-    //                     declareSymbol(thisContainer.symbol.exports!, thisContainer.symbol, node, SymbolFlags::Property | SymbolFlags::ExportValue, SymbolFlags::None);
-    //                 }
-    //                 else {
-    //                     declareSymbolAndAddToSymbolTable(node, SymbolFlags::FunctionScopedVariable, SymbolFlags::FunctionScopedVariableExcludes);
-    //                 }
-    //                 break;
+    fn bindDynamicallyNamedThisPropertyAssignment(
+        &mut self,
+        node: &Rc<BoundNode>,
+        symbol: SymbolId,
+        symbolTable: SymbolTableId,
+    ) {
+        self.declareSymbol(
+            symbolTable,
+            Some(symbol),
+            node,
+            SymbolFlags::Property,
+            SymbolFlags::None,
+            true,
+            true,
+        );
+        self.addLateBoundAssignmentDeclarationToSymbol(node, Some(symbol));
+    }
 
-    //             default:
-    //                 Debug.failBadSyntaxKind(thisContainer);
-    //         }
-    //     }
+    fn addLateBoundAssignmentDeclarationToSymbol(
+        &mut self,
+        node: &Rc<BoundNode>,
+        symbol: Option<SymbolId>,
+    ) {
+        if let Some(symbol) = symbol {
+            self.symbols[symbol]
+                .assignmentDeclarationMembers
+                .insert(node.node_id(), node.clone());
+        }
+    }
 
-    //     function bindDynamicallyNamedThisPropertyAssignment(node: BinaryExpression | DynamicNamedDeclaration, symbol: Symbol, symbolTable: SymbolTable) {
-    //         declareSymbol(symbolTable, symbol, node, SymbolFlags::Property, SymbolFlags::None, /*isReplaceableByMethod*/ true, /*isComputedName*/ true);
-    //         addLateBoundAssignmentDeclarationToSymbol(node, symbol);
-    //     }
+    fn bindSpecialPropertyDeclaration(&mut self, node: &Rc<BoundNode>) {
+        let expression = match &node.node {
+            Node::PropertyAccessExpression(n) => &n.expression,
+            Node::ElementAccessExpression(n) => &n.expression,
+            _ => unreachable!(),
+        };
+        if expression.kind() == SyntaxKind::ThisKeyword {
+            self.bindThisPropertyAssignment(node);
+        } else if isBindableStaticAccessExpression(&node.node, false)
+            && matches!(
+                node.parent().unwrap().parent_node(),
+                Some(Node::SourceFile(_))
+            )
+        {
+            if isPrototypeAccess(&expression.clone().into()) {
+                self.bindPrototypePropertyAssignment(node);
+            } else {
+                self.bindStaticPropertyAssignment(node);
+            }
+        }
+    }
 
-    //     function addLateBoundAssignmentDeclarationToSymbol(node: BinaryExpression | DynamicNamedDeclaration, symbol: Symbol | undefined) {
-    //         if (symbol) {
-    //             (symbol.assignmentDeclarationMembers || (symbol.assignmentDeclarationMembers = new Map())).set(getNodeId(node), node);
-    //         }
-    //     }
+    /** For `x.prototype = { p, ... }`, declare members p,... if `x` is function/class/{}, or not declared. */
+    fn bindPrototypeAssignment(&mut self, node: &Rc<BoundNode>, assignment: &Rc<BinaryExpression>) {
+        let left_expression = match &assignment.left {
+            Expression::ElementAccessExpression(n) => &n.expression,
+            Expression::PropertyAccessExpression(n) => &n.expression,
+            _ => unreachable!(),
+        };
+        self.bindPropertyAssignment(
+            &left_expression.clone().into(),
+            &assignment.left.bind(node),
+            false,
+            true,
+        );
+    }
 
-    //     function bindSpecialPropertyDeclaration(node: PropertyAccessExpression | LiteralLikeElementAccessExpression) {
-    //         if (node.expression.kind === SyntaxKind::ThisKeyword) {
-    //             bindThisPropertyAssignment(node);
-    //         }
-    //         else if (isBindableStaticAccessExpression(node) && node.parent.parent.kind === SyntaxKind::SourceFile) {
-    //             if (isPrototypeAccess(node.expression)) {
-    //                 bindPrototypePropertyAssignment(node, node.parent);
-    //             }
-    //             else {
-    //                 bindStaticPropertyAssignment(node);
-    //             }
-    //         }
-    //     }
+    fn bindObjectDefinePrototypeProperty(
+        &mut self,
+        node: &Rc<BoundNode>,
+        call: &Rc<CallExpression>,
+    ) {
+        let arg = match &call.arguments[0] {
+            Expression::ElementAccessExpression(n) => &n.expression,
+            Expression::PropertyAccessExpression(n) => &n.expression,
+            _ => unreachable!(),
+        };
+        let namespaceSymbol = self.lookupSymbolForPropertyAccess(&arg.clone().into(), None);
+        if let Some(namespaceSymbol) = namespaceSymbol {
+            if let Some(valueDeclaration) = self.symbols[namespaceSymbol].valueDeclaration.clone() {
+                // Ensure the namespace symbol becomes class-like
+                self.addDeclarationToSymbol(namespaceSymbol, &valueDeclaration, SymbolFlags::Class);
+            }
+        }
+        self.bindPotentiallyNewExpandoMemberToNamespace(node, namespaceSymbol, true);
+    }
 
-    //     /** For `x.prototype = { p, ... }`, declare members p,... if `x` is function/class/{}, or not declared. */
-    //     function bindPrototypeAssignment(node: BindableStaticPropertyAssignmentExpression) {
-    //         setParent(node.left, node);
-    //         setParent(node.right, node);
-    //         bindPropertyAssignment(node.left.expression, node.left, /*isPrototypeProperty*/ false, /*containerIsClass*/ true);
-    //     }
+    /**
+     * For `x.prototype.y = z`, declare a member `y` on `x` if `x` is a function or class, or not declared.
+     * Note that jsdoc preceding an ExpressionStatement like `x.prototype.y;` is also treated as a declaration.
+     */
+    fn bindPrototypePropertyAssignment(&mut self, lhs: &Rc<BoundNode>) {
+        // Look up the function in the local scope, since prototype assignments should
+        // follow the function declaration
+        let classPrototype = match &lhs.node {
+            Node::PropertyAccessExpression(n) => &n.expression,
+            Node::ElementAccessExpression(n) => &n.expression,
+            _ => unreachable!(),
+        };
+        let constructorFunction = match classPrototype {
+            LeftHandSideExpression::PropertyAccessExpression(n) => &n.expression,
+            LeftHandSideExpression::ElementAccessExpression(n) => &n.expression,
+            _ => unreachable!(),
+        };
 
-    //     function bindObjectDefinePrototypeProperty(node: BindableObjectDefinePropertyCall) {
-    //         const namespaceSymbol = lookupSymbolForPropertyAccess((node.arguments[0] as PropertyAccessExpression).expression as EntityNameExpression);
-    //         if (namespaceSymbol && namespaceSymbol.valueDeclaration) {
-    //             // Ensure the namespace symbol becomes class-like
-    //             addDeclarationToSymbol(namespaceSymbol, namespaceSymbol.valueDeclaration, SymbolFlags::Class);
-    //         }
-    //         bindPotentiallyNewExpandoMemberToNamespace(node, namespaceSymbol, /*isPrototypeProperty*/ true);
-    //     }
+        self.bindPropertyAssignment(&constructorFunction.clone().into(), lhs, true, true);
+    }
 
-    //     /**
-    //      * For `x.prototype.y = z`, declare a member `y` on `x` if `x` is a function or class, or not declared.
-    //      * Note that jsdoc preceding an ExpressionStatement like `x.prototype.y;` is also treated as a declaration.
-    //      */
-    //     function bindPrototypePropertyAssignment(lhs: BindableStaticAccessExpression, parent: Node) {
-    //         // Look up the function in the local scope, since prototype assignments should
-    //         // follow the function declaration
-    //         const classPrototype = lhs.expression as BindableStaticAccessExpression;
-    //         const constructorFunction = classPrototype.expression;
+    fn bindObjectDefinePropertyAssignment(
+        &mut self,
+        node: &Rc<BoundNode>,
+        call: &Rc<CallExpression>,
+    ) {
+        let mut namespaceSymbol =
+            self.lookupSymbolForPropertyAccess(&call.arguments[0].clone().into(), None);
+        let isToplevel = matches!(
+            node.parent().unwrap().parent_node(),
+            Some(Node::SourceFile(_))
+        );
+        namespaceSymbol = self.bindPotentiallyMissingNamespaces(
+            namespaceSymbol,
+            &call.arguments[0].bind(node),
+            isToplevel,
+            false,
+            false,
+        );
+        self.bindPotentiallyNewExpandoMemberToNamespace(node, namespaceSymbol, false);
+    }
 
-    //         // Fix up parent pointers since we're going to use these nodes before we bind into them
-    //         setParent(constructorFunction, classPrototype);
-    //         setParent(classPrototype, lhs);
-    //         setParent(lhs, parent);
+    fn bindSpecialPropertyAssignment(
+        &mut self,
+        node: &Rc<BoundNode>,
+        assignment: &Rc<BinaryExpression>,
+    ) {
+        let container = self.container.as_ref().unwrap().node.clone();
+        let property_access = match &assignment.left {
+            Expression::ElementAccessExpression(n) => n.expression.bind(node),
+            Expression::PropertyAccessExpression(n) => n.expression.bind(node),
+            _ => unreachable!(),
+        };
+        // Class declarations in Typescript do not allow property declarations
+        let parentSymbol = self
+            .lookupSymbolForPropertyAccess(&property_access.node, Some(container.clone()))
+            .or_else(|| {
+                self.lookupSymbolForPropertyAccess(
+                    &property_access.node,
+                    self.blockScopeContainer.as_ref().map(|n| n.node.clone()),
+                )
+            });
+        if !isInJSFile(Some(self.store.node_and_data(node)))
+            && !isFunctionSymbol(parentSymbol.map(|s| &self.symbols[s]))
+        {
+            return;
+        }
+        let rootExpr = getLeftmostAccessExpression(assignment.left.clone().into());
+        if let Node::Identifier(rootExpr) = rootExpr {
+            let rootExpr_symbol_flags = self
+                .lookupSymbolForName(&container, &rootExpr.escapedText)
+                .map(|s| self.symbols[s].flags);
+            if rootExpr_symbol_flags
+                .unwrap_or_default()
+                .intersects(SymbolFlags::Alias)
+            {
+                return;
+            }
+        }
+        if isIdentifier(&property_access)
+            && container.node_id() == self.file.node_id()
+            && self
+                .isExportsOrModuleExportsOrAlias(&self.file.clone(), property_access.node.clone())
+        {
+            // This can be an alias for the 'exports' or 'module.exports' names, e.g.
+            //    var util = module.exports;
+            //    util.property = function ...
+            self.bindExportsPropertyAssignment(node, assignment);
+        } else if hasDynamicName(node) {
+            self.bindAnonymousDeclaration(
+                node,
+                SymbolFlags::Property | SymbolFlags::Assignment,
+                __String(InternalSymbolName::Computed.into()),
+            );
+            let sym = self.bindPotentiallyMissingNamespaces(
+                parentSymbol,
+                &property_access,
+                Self::isTopLevelNamespaceAssignment(&assignment.left.bind(node)),
+                false,
+                false,
+            );
+            self.addLateBoundAssignmentDeclarationToSymbol(node, sym);
+        } else {
+            self.bindStaticPropertyAssignment(&assignment.left.bind(node));
+        }
+    }
 
-    //         bindPropertyAssignment(constructorFunction, lhs, /*isPrototypeProperty*/ true, /*containerIsClass*/ true);
-    //     }
+    /**
+     * For nodes like `x.y = z`, declare a member 'y' on 'x' if x is a function (or IIFE) or class or {}, or not declared.
+     * Also works for expression statements preceded by JSDoc, like / ** @type number * / x.y;
+     */
+    fn bindStaticPropertyAssignment(&mut self, node: &Rc<BoundNode>) {
+        let expression = match &node.node {
+            Node::ElementAccessExpression(n) => &n.expression,
+            Node::PropertyAccessExpression(n) => &n.expression,
+            _ => unreachable!(),
+        };
+        self.bindPropertyAssignment(&expression.clone().into(), node, false, false);
+    }
 
-    //     function bindObjectDefinePropertyAssignment(node: BindableObjectDefinePropertyCall) {
-    //         let namespaceSymbol = lookupSymbolForPropertyAccess(node.arguments[0]);
-    //         const isToplevel = node.parent.parent.kind === SyntaxKind::SourceFile;
-    //         namespaceSymbol = bindPotentiallyMissingNamespaces(namespaceSymbol, node.arguments[0], isToplevel, /*isPrototypeProperty*/ false, /*containerIsClass*/ false);
-    //         bindPotentiallyNewExpandoMemberToNamespace(node, namespaceSymbol, /*isPrototypeProperty*/ false);
-    //     }
+    fn bindPotentiallyMissingNamespaces(
+        &mut self,
+        mut namespaceSymbol: Option<SymbolId>,
+        entityName: &Rc<BoundNode>,
+        isToplevel: bool,
+        isPrototypeProperty: bool,
+        containerIsClass: bool,
+    ) -> Option<SymbolId> {
+        if let Some(namespaceSymbol) = namespaceSymbol {
+            if self.symbols[namespaceSymbol]
+                .flags
+                .intersects(SymbolFlags::Alias)
+            {
+                return Some(namespaceSymbol);
+            }
+        }
+        if isToplevel && !isPrototypeProperty {
+            // make symbols or add declarations for intermediate containers
+            let flags = SymbolFlags::Module | SymbolFlags::Assignment;
+            let excludeFlags = SymbolFlags::ValueModuleExcludes & !SymbolFlags::Assignment;
+            namespaceSymbol = self.forEachIdentifierInEntityName(
+                entityName,
+                namespaceSymbol,
+                |binder, id, symbol, parent| {
+                    if let Some(symbol) = symbol {
+                        binder.addDeclarationToSymbol(symbol, id, flags);
+                        return Some(symbol);
+                    } else {
+                        let table = if let Some(parent) = parent {
+                            binder.symbols[parent].exports.unwrap()
+                        } else {
+                            todo!();
+                            // binder.file.jsGlobalAugmentations
+                            //     || (binder.file.jsGlobalAugmentations = createSymbolTable())
+                        };
+                        return Some(binder.declareSymbol(
+                            table,
+                            parent,
+                            id,
+                            flags,
+                            excludeFlags,
+                            false,
+                            false,
+                        ));
+                    }
+                },
+            );
+        }
+        if containerIsClass {
+            if let Some(namespaceSymbol) = namespaceSymbol {
+                if let Some(valueDeclaration) =
+                    self.symbols[namespaceSymbol].valueDeclaration.clone()
+                {
+                    self.addDeclarationToSymbol(
+                        namespaceSymbol,
+                        &valueDeclaration,
+                        SymbolFlags::Class,
+                    );
+                }
+            }
+        }
+        namespaceSymbol
+    }
 
-    //     function bindSpecialPropertyAssignment(node: BindablePropertyAssignmentExpression) {
-    //         // Class declarations in Typescript do not allow property declarations
-    //         const parentSymbol = lookupSymbolForPropertyAccess(node.left.expression, container) || lookupSymbolForPropertyAccess(node.left.expression, blockScopeContainer) ;
-    //         if (!isInJSFile(node) && !isFunctionSymbol(parentSymbol)) {
-    //             return;
-    //         }
-    //         const rootExpr = getLeftmostAccessExpression(node.left);
-    //         if (isIdentifier(rootExpr) && lookupSymbolForName(container, rootExpr.escapedText)!?.flags & SymbolFlags::Alias) {
-    //             return;
-    //         }
-    //         // Fix up parent pointers since we're going to use these nodes before we bind into them
-    //         setParent(node.left, node);
-    //         setParent(node.right, node);
-    //         if (isIdentifier(node.left.expression) && container === file && isExportsOrModuleExportsOrAlias(file, node.left.expression)) {
-    //             // This can be an alias for the 'exports' or 'module.exports' names, e.g.
-    //             //    var util = module.exports;
-    //             //    util.property = function ...
-    //             bindExportsPropertyAssignment(node as BindableStaticPropertyAssignmentExpression);
-    //         }
-    //         else if (hasDynamicName(node)) {
-    //             bindAnonymousDeclaration(node, SymbolFlags::Property | SymbolFlags::Assignment, InternalSymbolName.Computed);
-    //             const sym = bindPotentiallyMissingNamespaces(parentSymbol, node.left.expression, isTopLevelNamespaceAssignment(node.left), /*isPrototype*/ false, /*containerIsClass*/ false);
-    //             addLateBoundAssignmentDeclarationToSymbol(node, sym);
-    //         }
-    //         else {
-    //             bindStaticPropertyAssignment(cast(node.left, isBindableStaticNameExpression));
-    //         }
-    //     }
+    fn bindPotentiallyNewExpandoMemberToNamespace(
+        &mut self,
+        declaration: &Rc<BoundNode>,
+        namespaceSymbol: Option<SymbolId>,
+        isPrototypeProperty: bool,
+    ) {
+        let namespaceSymbol = match namespaceSymbol {
+            Some(s) => s,
+            None => return,
+        };
+        if !self.isExpandoSymbol(namespaceSymbol) {
+            return;
+        }
 
-    //     /**
-    //      * For nodes like `x.y = z`, declare a member 'y' on 'x' if x is a function (or IIFE) or class or {}, or not declared.
-    //      * Also works for expression statements preceded by JSDoc, like / ** @type number * / x.y;
-    //      */
-    //     function bindStaticPropertyAssignment(node: BindableStaticNameExpression) {
-    //         Debug.assert(!isIdentifier(node));
-    //         setParent(node.expression, node);
-    //         bindPropertyAssignment(node.expression, node, /*isPrototypeProperty*/ false, /*containerIsClass*/ false);
-    //     }
+        // Set up the members collection if it doesn't exist already
+        let symbolTable = if isPrototypeProperty {
+            match self.symbols[namespaceSymbol].members {
+                Some(t) => t,
+                None => {
+                    let table = self.createSymbolTable();
+                    self.symbols[namespaceSymbol].members = Some(table);
+                    table
+                }
+            }
+        } else {
+            match self.symbols[namespaceSymbol].exports {
+                Some(t) => t,
+                None => {
+                    let table = self.createSymbolTable();
+                    self.symbols[namespaceSymbol].exports = Some(table);
+                    table
+                }
+            }
+        };
 
-    //     function bindPotentiallyMissingNamespaces(namespaceSymbol: Symbol | undefined, entityName: BindableStaticNameExpression, isToplevel: boolean, isPrototypeProperty: boolean, containerIsClass: boolean) {
-    //         if (namespaceSymbol?.flags! & SymbolFlags::Alias) {
-    //             return namespaceSymbol;
-    //         }
-    //         if (isToplevel && !isPrototypeProperty) {
-    //             // make symbols or add declarations for intermediate containers
-    //             const flags = SymbolFlags::Module | SymbolFlags::Assignment;
-    //             const excludeFlags = SymbolFlags::ValueModuleExcludes & ~SymbolFlags::Assignment;
-    //             namespaceSymbol = forEachIdentifierInEntityName(entityName, namespaceSymbol, (id, symbol, parent) => {
-    //                 if (symbol) {
-    //                     addDeclarationToSymbol(symbol, id, flags);
-    //                     return symbol;
-    //                 }
-    //                 else {
-    //                     const table = parent ? parent.exports! :
-    //                         file.jsGlobalAugmentations || (file.jsGlobalAugmentations = createSymbolTable());
-    //                     return declareSymbol(table, parent, id, flags, excludeFlags);
-    //                 }
-    //             });
-    //         }
-    //         if (containerIsClass && namespaceSymbol && namespaceSymbol.valueDeclaration) {
-    //             addDeclarationToSymbol(namespaceSymbol, namespaceSymbol.valueDeclaration, SymbolFlags::Class);
-    //         }
-    //         return namespaceSymbol;
-    //     }
+        let mut includes = SymbolFlags::None;
+        let mut excludes = SymbolFlags::None;
+        // Method-like
+        if isFunctionLikeDeclaration(
+            getAssignedExpandoInitializer(Some(declaration.clone())).as_ref(),
+        ) {
+            includes = SymbolFlags::Method;
+            excludes = SymbolFlags::MethodExcludes;
+        }
+        // Maybe accessor-like
+        else if let Node::CallExpression(call) = &declaration.node {
+            if isBindableObjectDefinePropertyCall(call) {
+                if let Expression::ObjectLiteralExpression(attributes) = &call.arguments[2] {
+                    if attributes.properties.iter().any(|p| {
+                        getNameOfDeclaration(Some(&p.bind(&attributes.bind(declaration))))
+                            .map(|id| isIdentifier(&id) && idText(&id).as_ref() == "set")
+                            .unwrap_or_default()
+                    }) {
+                        // We mix in `SymbolFLags.Property` so in the checker `getTypeOfVariableParameterOrProperty` is used for this
+                        // symbol, instead of `getTypeOfAccessor` (which will assert as there is no real accessor declaration)
+                        includes |= SymbolFlags::SetAccessor | SymbolFlags::Property;
+                        excludes |= SymbolFlags::SetAccessorExcludes;
+                    }
+                    if attributes.properties.iter().any(|p| {
+                        getNameOfDeclaration(Some(&p.bind(&attributes.bind(declaration))))
+                            .map(|id| isIdentifier(&id) && idText(&id).as_ref() == "get")
+                            .unwrap_or_default()
+                    }) {
+                        includes |= SymbolFlags::GetAccessor | SymbolFlags::Property;
+                        excludes |= SymbolFlags::GetAccessorExcludes;
+                    }
+                }
+            }
+        }
 
-    //     function bindPotentiallyNewExpandoMemberToNamespace(declaration: BindableStaticAccessExpression | CallExpression, namespaceSymbol: Symbol | undefined, isPrototypeProperty: boolean) {
-    //         if (!namespaceSymbol || !isExpandoSymbol(namespaceSymbol)) {
-    //             return;
-    //         }
+        if includes == SymbolFlags::None {
+            includes = SymbolFlags::Property;
+            excludes = SymbolFlags::PropertyExcludes;
+        }
 
-    //         // Set up the members collection if it doesn't exist already
-    //         const symbolTable = isPrototypeProperty ?
-    //             (namespaceSymbol.members || (namespaceSymbol.members = createSymbolTable())) :
-    //             (namespaceSymbol.exports || (namespaceSymbol.exports = createSymbolTable()));
+        self.declareSymbol(
+            symbolTable,
+            Some(namespaceSymbol),
+            declaration,
+            includes | SymbolFlags::Assignment,
+            excludes & !SymbolFlags::Assignment,
+            false,
+            false,
+        );
+    }
 
-    //         let includes = SymbolFlags::None;
-    //         let excludes = SymbolFlags::None;
-    //         // Method-like
-    //         if (isFunctionLikeDeclaration(getAssignedExpandoInitializer(declaration)!)) {
-    //             includes = SymbolFlags::Method;
-    //             excludes = SymbolFlags::MethodExcludes;
-    //         }
-    //         // Maybe accessor-like
-    //         else if (isCallExpression(declaration) && isBindableObjectDefinePropertyCall(declaration)) {
-    //             if (some(declaration.arguments[2].properties, p => {
-    //                 const id = getNameOfDeclaration(p);
-    //                 return !!id && isIdentifier(id) && idText(id) === "set";
-    //             })) {
-    //                 // We mix in `SymbolFLags.Property` so in the checker `getTypeOfVariableParameterOrProperty` is used for this
-    //                 // symbol, instead of `getTypeOfAccessor` (which will assert as there is no real accessor declaration)
-    //                 includes |= SymbolFlags::SetAccessor | SymbolFlags::Property;
-    //                 excludes |= SymbolFlags::SetAccessorExcludes;
-    //             }
-    //             if (some(declaration.arguments[2].properties, p => {
-    //                 const id = getNameOfDeclaration(p);
-    //                 return !!id && isIdentifier(id) && idText(id) === "get";
-    //             })) {
-    //                 includes |= SymbolFlags::GetAccessor | SymbolFlags::Property;
-    //                 excludes |= SymbolFlags::GetAccessorExcludes;
-    //             }
-    //         }
+    fn isTopLevelNamespaceAssignment(propertyAccess: &Rc<BoundNode>) -> bool {
+        if let Some(Node::BinaryExpression(_)) = propertyAccess.parent_node() {
+            let parentOfBinaryExpression =
+                Self::getParentOfBinaryExpression(propertyAccess.parent().unwrap());
+            matches!(
+                parentOfBinaryExpression.parent_node(),
+                Some(Node::SourceFile(_))
+            )
+        } else {
+            matches!(
+                propertyAccess.parent().unwrap().parent_node(),
+                Some(Node::SourceFile(_))
+            )
+        }
+    }
 
-    //         if (includes === SymbolFlags::None) {
-    //             includes = SymbolFlags::Property;
-    //             excludes = SymbolFlags::PropertyExcludes;
-    //         }
+    fn bindPropertyAssignment(
+        &mut self,
+        name: &Node,
+        propertyAccess: &Rc<BoundNode>,
+        isPrototypeProperty: bool,
+        containerIsClass: bool,
+    ) {
+        let mut namespaceSymbol = self
+            .lookupSymbolForPropertyAccess(name, self.container.as_ref().map(|n| n.node.clone()))
+            .or_else(|| {
+                self.lookupSymbolForPropertyAccess(
+                    name,
+                    self.blockScopeContainer.as_ref().map(|n| n.node.clone()),
+                )
+            });
+        let isToplevel = Self::isTopLevelNamespaceAssignment(propertyAccess);
+        let expression = match &propertyAccess.node {
+            Node::ElementAccessExpression(n) => &n.expression,
+            Node::PropertyAccessExpression(n) => &n.expression,
+            _ => unreachable!(),
+        };
+        namespaceSymbol = self.bindPotentiallyMissingNamespaces(
+            namespaceSymbol,
+            &expression.bind(propertyAccess),
+            isToplevel,
+            isPrototypeProperty,
+            containerIsClass,
+        );
+        self.bindPotentiallyNewExpandoMemberToNamespace(
+            propertyAccess,
+            namespaceSymbol,
+            isPrototypeProperty,
+        );
+    }
 
-    //         declareSymbol(symbolTable, namespaceSymbol, declaration, includes | SymbolFlags::Assignment, excludes & ~SymbolFlags::Assignment);
-    //     }
+    /**
+     * Javascript expando values are:
+     * - Functions
+     * - classes
+     * - namespaces
+     * - variables initialized with function expressions
+     * -                       with class expressions
+     * -                       with empty object literals
+     * -                       with non-empty object literals if assigned to the prototype property
+     */
+    fn isExpandoSymbol(&mut self, symbol: SymbolId) -> bool {
+        if self.symbols[symbol]
+            .flags
+            .intersects(SymbolFlags::Function | SymbolFlags::Class | SymbolFlags::NamespaceModule)
+        {
+            return true;
+        }
+        let valueDeclaration = self.symbols[symbol].valueDeclaration.clone();
+        let valueDeclaration_node = valueDeclaration.as_ref().map(|n| &n.node);
+        if matches!(valueDeclaration_node, Some(Node::CallExpression(_))) {
+            return getAssignedExpandoInitializer(valueDeclaration).is_some();
+        }
+        let init = match valueDeclaration_node {
+            Some(Node::VariableDeclaration(n)) => {
+                n.initializer.bind_to_opt_parent(valueDeclaration.as_ref())
+            }
+            Some(Node::BinaryExpression(n)) => {
+                Some(n.right.bind_to_opt_parent(valueDeclaration.as_ref()))
+            }
+            Some(Node::PropertyAccessExpression(_)) => {
+                let parent = valueDeclaration.as_ref().unwrap().parent();
+                match parent.as_ref().map(|p| &p.node) {
+                    Some(Node::BinaryExpression(p)) => {
+                        Some(p.right.bind_to_opt_parent(parent.as_ref()))
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        let init = init.map(|init| getRightMostAssignedExpression(init));
+        if let Some(init) = init {
+            let valueDeclaration = valueDeclaration.unwrap();
+            let node = match &valueDeclaration.node {
+                Node::VariableDeclaration(n) => n.name.clone().into(),
+                Node::BinaryExpression(n) => n.left.clone().into(),
+                _ => valueDeclaration.node.clone(),
+            };
+            let isPrototypeAssignment = isPrototypeAccess(&node);
+            let mut initializer = init;
+            if let Node::BinaryExpression(i) = &initializer.node {
+                if i.operatorToken.kind() == SyntaxKind::BarBarToken
+                    || i.operatorToken.kind() == SyntaxKind::QuestionQuestionToken
+                {
+                    initializer = i.right.bind(&initializer);
+                }
+            }
+            return getExpandoInitializer(&initializer, isPrototypeAssignment).is_some();
+        }
+        false
+    }
 
-    //     function isTopLevelNamespaceAssignment(propertyAccess: BindableAccessExpression) {
-    //         return isBinaryExpression(propertyAccess.parent)
-    //             ? getParentOfBinaryExpression(propertyAccess.parent).parent.kind === SyntaxKind::SourceFile
-    //             : propertyAccess.parent.parent.kind === SyntaxKind::SourceFile;
-    //     }
+    fn getParentOfBinaryExpression(mut expr: Rc<BoundNode>) -> Rc<BoundNode> {
+        while matches!(expr.parent_node(), Some(Node::BinaryExpression(_))) {
+            expr = expr.parent().unwrap();
+        }
+        expr.parent().unwrap()
+    }
 
-    //     function bindPropertyAssignment(name: BindableStaticNameExpression, propertyAccess: BindableStaticAccessExpression, isPrototypeProperty: boolean, containerIsClass: boolean) {
-    //         let namespaceSymbol = lookupSymbolForPropertyAccess(name, container) || lookupSymbolForPropertyAccess(name, blockScopeContainer);
-    //         const isToplevel = isTopLevelNamespaceAssignment(propertyAccess);
-    //         namespaceSymbol = bindPotentiallyMissingNamespaces(namespaceSymbol, propertyAccess.expression, isToplevel, isPrototypeProperty, containerIsClass);
-    //         bindPotentiallyNewExpandoMemberToNamespace(propertyAccess, namespaceSymbol, isPrototypeProperty);
-    //     }
+    fn lookupSymbolForPropertyAccess(
+        &mut self,
+        node: &Node,
+        lookupContainer: Option<Node>,
+    ) -> Option<SymbolId> {
+        let lookupContainer =
+            lookupContainer.unwrap_or_else(|| self.container.as_ref().unwrap().node.clone());
+        if let Node::Identifier(node) = node {
+            self.lookupSymbolForName(&lookupContainer, &node.escapedText)
+        } else {
+            let expression = match node {
+                Node::ElementAccessExpression(n) => &n.expression,
+                Node::PropertyAccessExpression(n) => &n.expression,
+                _ => unreachable!(),
+            };
+            let symbol = self.lookupSymbolForPropertyAccess(&expression.clone().into(), None);
+            symbol
+                .and_then(|s| self.symbols[s].exports)
+                .and_then(|e| {
+                    self.symbol_tables[e].get(&getElementOrPropertyAccessName(node).unwrap())
+                })
+                .copied()
+        }
+    }
 
-    //     /**
-    //      * Javascript expando values are:
-    //      * - Functions
-    //      * - classes
-    //      * - namespaces
-    //      * - variables initialized with function expressions
-    //      * -                       with class expressions
-    //      * -                       with empty object literals
-    //      * -                       with non-empty object literals if assigned to the prototype property
-    //      */
-    //     function isExpandoSymbol(symbol: Symbol): boolean {
-    //         if (symbol.flags & (SymbolFlags::Function | SymbolFlags::Class | SymbolFlags::NamespaceModule)) {
-    //             return true;
-    //         }
-    //         const node = symbol.valueDeclaration;
-    //         if (node && isCallExpression(node)) {
-    //             return !!getAssignedExpandoInitializer(node);
-    //         }
-    //         let init = !node ? undefined :
-    //             isVariableDeclaration(node) ? node.initializer :
-    //             isBinaryExpression(node) ? node.right :
-    //             isPropertyAccessExpression(node) && isBinaryExpression(node.parent) ? node.parent.right :
-    //             undefined;
-    //         init = init && getRightMostAssignedExpression(init);
-    //         if (init) {
-    //             const isPrototypeAssignment = isPrototypeAccess(isVariableDeclaration(node!) ? node.name : isBinaryExpression(node!) ? node.left : node!);
-    //             return !!getExpandoInitializer(isBinaryExpression(init) && (init.operatorToken.kind === SyntaxKind::BarBarToken || init.operatorToken.kind === SyntaxKind::QuestionQuestionToken) ? init.right : init, isPrototypeAssignment);
-    //         }
-    //         return false;
-    //     }
+    fn forEachIdentifierInEntityName<F>(
+        &mut self,
+        e: &Rc<BoundNode>,
+        parent: Option<SymbolId>,
+        mut action: F,
+    ) -> Option<SymbolId>
+    where
+        F: FnMut(&mut Self, &Rc<BoundNode>, Option<SymbolId>, Option<SymbolId>) -> Option<SymbolId>,
+    {
+        if self.isExportsOrModuleExportsOrAlias(&self.file.clone(), e.node.clone()) {
+            self.store.node_data(&self.file).symbol
+        } else if isIdentifier(e) {
+            let symbol = self.lookupSymbolForPropertyAccess(&e.node, None);
+            action(self, e, symbol, parent)
+        } else {
+            let expression = match &e.node {
+                Node::ElementAccessExpression(n) => &n.expression,
+                Node::PropertyAccessExpression(n) => &n.expression,
+                _ => unreachable!(),
+            };
+            let s = self.forEachIdentifierInEntityName(&expression.bind(e), parent, &mut action);
+            let name = getNameOrArgument(e);
+            // unreachable
+            if isPrivateIdentifier(&name) {
+                unreachable!("unexpected PrivateIdentifier");
+            }
+            let symbol = s
+                .and_then(|s| self.symbols[s].exports)
+                .and_then(|exports| {
+                    self.symbol_tables[exports]
+                        .get(&getElementOrPropertyAccessName(&e.node).unwrap())
+                })
+                .copied();
+            action(self, &name, symbol, s)
+        }
+    }
 
-    //     function getParentOfBinaryExpression(expr: Node) {
-    //         while (isBinaryExpression(expr.parent)) {
-    //             expr = expr.parent;
-    //         }
-    //         return expr.parent;
-    //     }
-
-    //     function lookupSymbolForPropertyAccess(node: BindableStaticNameExpression, lookupContainer: Node = container): Symbol | undefined {
-    //         if (isIdentifier(node)) {
-    //             return lookupSymbolForName(lookupContainer, node.escapedText);
-    //         }
-    //         else {
-    //             const symbol = lookupSymbolForPropertyAccess(node.expression);
-    //             return symbol && symbol.exports && symbol.exports.get(getElementOrPropertyAccessName(node));
-    //         }
-    //     }
-
-    //     function forEachIdentifierInEntityName(e: BindableStaticNameExpression, parent: Symbol | undefined, action: (e: Declaration, symbol: Symbol | undefined, parent: Symbol | undefined) => Symbol | undefined): Symbol | undefined {
-    //         if (isExportsOrModuleExportsOrAlias(file, e)) {
-    //             return file.symbol;
-    //         }
-    //         else if (isIdentifier(e)) {
-    //             return action(e, lookupSymbolForPropertyAccess(e), parent);
-    //         }
-    //         else {
-    //             const s = forEachIdentifierInEntityName(e.expression, parent, action);
-    //             const name = getNameOrArgument(e);
-    //             // unreachable
-    //             if (isPrivateIdentifier(name)) {
-    //                 Debug.fail("unexpected PrivateIdentifier");
-    //             }
-    //             return action(name, s && s.exports && s.exports.get(getElementOrPropertyAccessName(e)), s);
-    //         }
-    //     }
-
-    //     function bindCallExpression(node: CallExpression) {
-    //         // We're only inspecting call expressions to detect CommonJS modules, so we can skip
-    //         // this check if we've already seen the module indicator
-    //         if (!file.commonJsModuleIndicator && isRequireCall(node, /*checkArgumentIsStringLiteralLike*/ false)) {
-    //             setCommonJsModuleIndicator(node);
-    //         }
-    //     }
+    fn bindCallExpression(&mut self, node: &Node) {
+        // We're only inspecting call expressions to detect CommonJS modules, so we can skip
+        // this check if we've already seen the module indicator
+        if self.file.commonJsModuleIndicator.is_none() && isRequireCall(node, false) {
+            self.setCommonJsModuleIndicator(node);
+        }
+    }
 
     fn bindClassLikeDeclaration(&mut self, node: &Rc<BoundNode>) {
         match &node.node {
@@ -4230,10 +5394,17 @@ impl<'a> Binder<'a> {
         }
     }
 
-    // function getInferTypeContainer(node: Node): ConditionalTypeNode | undefined {
-    //     const extendsType = findAncestor(node, n => n.parent && isConditionalTypeNode(n.parent) && n.parent.extendsType === n);
-    //     return extendsType && extendsType.parent as ConditionalTypeNode;
-    // }
+    fn getInferTypeContainer(node: Option<Rc<BoundNode>>) -> Option<Rc<BoundNode>> {
+        let extendsType = findAncestor(node, |n| {
+            if let Some(Node::ConditionalTypeNode(parent)) = n.parent_node() {
+                if parent.extendsType.node_id() == n.node_id() {
+                    return FindResult::Some(n.clone());
+                }
+            }
+            FindResult::None
+        });
+        extendsType.and_then(|n| n.parent())
+    }
 
     fn bindTypeParameter(&mut self, node: &Rc<BoundNode>) {
         // TODO: jsdoc
@@ -4262,28 +5433,29 @@ impl<'a> Binder<'a> {
         //     // }
         // } else
         if matches!(node.parent_node(), Some(Node::InferTypeNode(_))) {
-            todo!();
-            // let container = getInferTypeContainer(node.parent);
-            // if (container) {
-            //     if (!container.locals) {
-            //         container.locals = createSymbolTable();
-            //     }
-            //     self.declareSymbol(
-            //         container.locals,
-            //         None,
-            //         node,
-            //         SymbolFlags::TypeParameter,
-            //         SymbolFlags::TypeParameterExcludes,
-            //         false,
-            //         false,
-            //     );
-            // } else {
-            //     self.bindAnonymousDeclaration(
-            //         node,
-            //         SymbolFlags::TypeParameter,
-            //         getDeclarationName(node),
-            //     ); // TODO: GH#18217
-            // }
+            let container = Self::getInferTypeContainer(node.parent());
+            if let Some(container) = container {
+                let locals = match self.node_data(&container).locals {
+                    Some(l) => l,
+                    None => {
+                        let locals = self.createSymbolTable();
+                        self.node_data_mut(&container).locals = Some(locals);
+                        locals
+                    }
+                };
+                self.declareSymbol(
+                    locals,
+                    None,
+                    node,
+                    SymbolFlags::TypeParameter,
+                    SymbolFlags::TypeParameterExcludes,
+                    false,
+                    false,
+                );
+            } else {
+                let name = self.getDeclarationName(node).unwrap(); // TODO: GH#18217
+                self.bindAnonymousDeclaration(node, SymbolFlags::TypeParameter, name);
+            }
         } else {
             self.declareSymbolAndAddToSymbolTable(
                 node,
@@ -4346,6 +5518,40 @@ impl<'a> Binder<'a> {
         // return true;
     }
 
+    fn isExportsOrModuleExportsOrAlias(
+        &mut self,
+        sourceFile: &Rc<SourceFile>,
+        mut node: Node,
+    ) -> bool {
+        let sourceFile = sourceFile.clone().into();
+        let mut i = 0;
+        let mut q = VecDeque::from([node]);
+        while !q.is_empty() && i < 100 {
+            i += 1;
+            node = q.pop_front().unwrap();
+            if isExportsIdentifier(&node) || isModuleExportsAccessExpression(&node) {
+                return true;
+            } else if let Node::Identifier(node) = node {
+                if let Some(symbol) = self.lookupSymbolForName(&sourceFile, &node.escapedText) {
+                    if let Some(valueDeclaration) = &self.symbols[symbol].valueDeclaration {
+                        if let Node::VariableDeclaration(valueDeclaration) = &valueDeclaration.node
+                        {
+                            if let Some(init) = &valueDeclaration.initializer {
+                                q.push_back(init.clone().into());
+                                if isAssignmentExpression(&init.clone().into(), true) {
+                                    let init = unwrap_as!(init, Expression::BinaryExpression(n), n);
+                                    q.push_back(init.left.clone().into());
+                                    q.push_back(init.right.clone().into());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
     fn lookupSymbolForName(&mut self, container: &Node, name: &__String) -> Option<SymbolId> {
         let locals = self.node_data(container).locals;
         let local = locals.and_then(|l| self.symbol_tables[l].get(name));
@@ -4366,7 +5572,7 @@ impl<'a> Binder<'a> {
     }
 }
 
-// function eachUnreachableRange(node: Node, cb: (start: Node, last: Node) => void): void {
+// function eachUnreachableRange(node: Node, cb: (start: Node, last: Node) => void) {
 //     if (isStatement(node) && isExecutableStatement(node) && isBlock(node.parent)) {
 //         const { statements } = node.parent;
 //         const slice = sliceAfter(statements, node);
@@ -4396,28 +5602,4 @@ impl<'a> Binder<'a> {
 //         default:
 //             return false;
 //     }
-// }
-
-// export function isExportsOrModuleExportsOrAlias(sourceFile: SourceFile, node: Expression): boolean {
-//     let i = 0;
-//     const q = [node];
-//     while (q.length && i < 100) {
-//         i++;
-//         node = q.shift()!;
-//         if (isExportsIdentifier(node) || isModuleExportsAccessExpression(node)) {
-//             return true;
-//         }
-//         else if (isIdentifier(node)) {
-//             const symbol = lookupSymbolForName(sourceFile, node.escapedText);
-//             if (!!symbol && !!symbol.valueDeclaration && isVariableDeclaration(symbol.valueDeclaration) && !!symbol.valueDeclaration.initializer) {
-//                 const init = symbol.valueDeclaration.initializer;
-//                 q.push(init);
-//                 if (isAssignmentExpression(init, /*excludeCompoundAssignment*/ true)) {
-//                     q.push(init.left);
-//                     q.push(init.right);
-//                 }
-//             }
-//         }
-//     }
-//     return false;
 // }

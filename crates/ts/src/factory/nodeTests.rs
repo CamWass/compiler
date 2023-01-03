@@ -96,11 +96,11 @@ pub fn isIdentifier<T: IsNode>(node: &T) -> bool {
     node.kind() == SyntaxKind::Identifier
 }
 
-//     export function isPrivateIdentifier(node: Node): node is PrivateIdentifier {
-//         return node.kind === SyntaxKind::PrivateIdentifier;
-//     }
+pub fn isPrivateIdentifier<T: IsNode>(node: &T) -> bool {
+    node.kind() == SyntaxKind::PrivateIdentifier
+}
 
-//     // Reserved Words
+// Reserved Words
 
 pub fn isExportModifier<T: IsNode>(node: &T) -> bool {
     node.kind() == SyntaxKind::ExportKeyword
@@ -337,13 +337,13 @@ pub fn isObjectLiteralExpression<T: IsNode>(node: &T) -> bool {
     node.kind() == SyntaxKind::ObjectLiteralExpression
 }
 
-//     export function isPropertyAccessExpression(node: Node): node is PropertyAccessExpression {
-//         return node.kind === SyntaxKind::PropertyAccessExpression;
-//     }
+pub fn isPropertyAccessExpression<T: IsNode>(node: &T) -> bool {
+    node.kind() == SyntaxKind::PropertyAccessExpression
+}
 
-//     export function isElementAccessExpression(node: Node): node is ElementAccessExpression {
-//         return node.kind === SyntaxKind::ElementAccessExpression;
-//     }
+pub fn isElementAccessExpression<T: IsNode>(node: &T) -> bool {
+    node.kind() == SyntaxKind::ElementAccessExpression
+}
 
 pub fn isCallExpression<T: IsNode>(node: &T) -> bool {
     node.kind() == SyntaxKind::CallExpression
@@ -433,9 +433,9 @@ pub fn isOmittedExpression<T: IsNode>(node: &T) -> bool {
 //         return node.kind === SyntaxKind::AsExpression;
 //     }
 
-//     export function isNonNullExpression(node: Node): node is NonNullExpression {
-//         return node.kind === SyntaxKind::NonNullExpression;
-//     }
+pub fn isNonNullExpression<T: IsNode>(node: &T) -> bool {
+    node.kind() == SyntaxKind::NonNullExpression
+}
 
 //     export function isMetaProperty(node: Node): node is MetaProperty {
 //         return node.kind === SyntaxKind::MetaProperty;
@@ -609,9 +609,9 @@ pub fn isModuleDeclaration<T: IsNode>(node: &T) -> bool {
 //         return node.kind === SyntaxKind::NamespaceImport;
 //     }
 
-//     export function isNamespaceExport(node: Node): node is NamespaceExport {
-//         return node.kind === SyntaxKind::NamespaceExport;
-//     }
+pub fn isNamespaceExport<T: IsNode>(node: &T) -> bool {
+    node.kind() == SyntaxKind::NamespaceExport
+}
 
 //     export function isNamedImports(node: Node): node is NamedImports {
 //         return node.kind === SyntaxKind::NamedImports;
@@ -621,13 +621,13 @@ pub fn isModuleDeclaration<T: IsNode>(node: &T) -> bool {
 //         return node.kind === SyntaxKind::ImportSpecifier;
 //     }
 
-//     export function isExportAssignment(node: Node): node is ExportAssignment {
-//         return node.kind === SyntaxKind::ExportAssignment;
-//     }
+pub fn isExportAssignment<T: IsNode>(node: &T) -> bool {
+    node.kind() == SyntaxKind::ExportAssignment
+}
 
-//     export function isExportDeclaration(node: Node): node is ExportDeclaration {
-//         return node.kind === SyntaxKind::ExportDeclaration;
-//     }
+pub fn isExportDeclaration<T: IsNode>(node: &T) -> bool {
+    node.kind() == SyntaxKind::ExportDeclaration
+}
 
 //     export function isNamedExports(node: Node): node is NamedExports {
 //         return node.kind === SyntaxKind::NamedExports;
@@ -777,11 +777,11 @@ pub fn isSourceFile<T: IsNode>(node: &T) -> bool {
 
 //     // TODO(rbuckton): isInputFiles
 
-//     // JSDoc Elements
+// JSDoc Elements
 
-//     export function isJSDocTypeExpression(node: Node): node is JSDocTypeExpression {
-//         return node.kind === SyntaxKind::JSDocTypeExpression;
-//     }
+pub fn isJSDocTypeExpression<T: IsNode>(node: &T) -> bool {
+    node.kind() == SyntaxKind::JSDocTypeExpression
+}
 
 //     export function isJSDocNameReference(node: Node): node is JSDocNameReference {
 //         return node.kind === SyntaxKind::JSDocNameReference;

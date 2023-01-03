@@ -529,8 +529,13 @@ pub fn unescapeLeadingUnderscores(identifier: &__String) -> Rc<str> {
     }
 }
 
-pub fn idText(identifierOrPrivateName: &Identifier) -> Rc<str> {
-    unescapeLeadingUnderscores(&identifierOrPrivateName.escapedText)
+pub fn idText(identifierOrPrivateName: &Node) -> Rc<str> {
+    let escapedText = match identifierOrPrivateName {
+        Node::Identifier(n) => &n.escapedText,
+        Node::PrivateIdentifier(n) => &n.escapedText,
+        _ => unreachable!(),
+    };
+    unescapeLeadingUnderscores(escapedText)
 }
 //     export function symbolName(symbol: Symbol): string {
 //         if (symbol.valueDeclaration && isPrivateIdentifierClassElementDeclaration(symbol.valueDeclaration)) {
@@ -592,16 +597,24 @@ pub fn idText(identifierOrPrivateName: &Identifier) -> Rc<str> {
 //         return name && isIdentifier(name) ? name : undefined;
 //     }
 
-//     /** @internal */
-//     export function nodeHasName(statement: Node, name: Identifier) {
-//         if (isNamedDeclaration(statement) && isIdentifier(statement.name) && idText(statement.name as Identifier) === idText(name)) {
-//             return true;
-//         }
-//         if (isVariableStatement(statement) && some(statement.declarationList.declarations, d => nodeHasName(d, name))) {
-//             return true;
-//         }
-//         return false;
-//     }
+pub fn nodeHasName(statement: &Node, name: &Rc<Identifier>) -> bool {
+    if let Some(statement_name @ Node::Identifier(_)) = statement.name() {
+        if idText(&statement_name) == idText(&name.clone().into()) {
+            return true;
+        }
+    }
+    if let Node::VariableStatement(statement) = statement {
+        if statement
+            .declarationList
+            .declarations
+            .iter()
+            .any(|d| nodeHasName(&d.clone().into(), name))
+        {
+            return true;
+        }
+    }
+    false
+}
 
 //     export function getNameOfJSDocTypedef(declaration: JSDocTypedefTag): Identifier | PrivateIdentifier | undefined {
 //         return declaration.name || nameForNamelessJSDocTypedef(declaration);
@@ -1030,49 +1043,89 @@ pub fn getNameOfDeclaration(declaration: Option<&Rc<BoundNode>>) -> Option<Node>
 //         return isCallExpression(node) && !!(node.flags & NodeFlags.OptionalChain);
 //     }
 
-//     export function isOptionalChain(node: Node): node is PropertyAccessChain | ElementAccessChain | CallChain | NonNullChain {
-//         const kind = node.kind;
-//         return !!(node.flags & NodeFlags.OptionalChain) &&
-//             (kind === SyntaxKind::PropertyAccessExpression
-//                 || kind === SyntaxKind::ElementAccessExpression
-//                 || kind === SyntaxKind::CallExpression
-//                 || kind === SyntaxKind::NonNullExpression);
-//     }
+pub fn asOptionalChain(node: NodeAndData<Node>) -> Option<OptionalChain> {
+    if node.1.flags.intersects(NodeFlags::OptionalChain) {
+        match node.0 {
+            Node::PropertyAccessExpression(n) => {
+                Some(OptionalChain::PropertyAccessExpression(n.clone()))
+            }
+            Node::ElementAccessExpression(n) => {
+                Some(OptionalChain::ElementAccessExpression(n.clone()))
+            }
+            Node::CallExpression(n) => Some(OptionalChain::CallExpression(n.clone())),
+            Node::NonNullExpression(n) => Some(OptionalChain::NonNullExpression(n.clone())),
+            _ => None,
+        }
+    } else {
+        None
+    }
+}
+pub fn isOptionalChain(node: NodeAndData<Node>) -> bool {
+    asOptionalChain(node).is_some()
+}
 
-//     /* @internal */
-//     export function isOptionalChainRoot(node: Node): node is OptionalChainRoot {
-//         return isOptionalChain(node) && !isNonNullExpression(node) && !!node.questionDotToken;
-//     }
+pub fn asOptionalChainRoot(node: NodeAndData<Node>) -> Option<OptionalChainRoot> {
+    if let Some(node) = asOptionalChain(node) {
+        match node {
+            OptionalChain::PropertyAccessExpression(n) if n.questionDotToken.is_some() => {
+                Some(OptionalChainRoot::PropertyAccessExpression(n))
+            }
+            OptionalChain::ElementAccessExpression(n) if n.questionDotToken.is_some() => {
+                Some(OptionalChainRoot::ElementAccessExpression(n))
+            }
+            OptionalChain::CallExpression(n) if n.questionDotToken.is_some() => {
+                Some(OptionalChainRoot::CallExpression(n))
+            }
+            _ => None,
+        }
+    } else {
+        None
+    }
+}
+pub fn isOptionalChainRoot(node: NodeAndData<Node>) -> bool {
+    asOptionalChainRoot(node).is_some()
+}
 
-//     /**
-//      * Determines whether a node is the expression preceding an optional chain (i.e. `a` in `a?.b`).
-//      */
-//     /* @internal */
-//     export function isExpressionOfOptionalChainRoot(node: Node): node is Expression & { parent: OptionalChainRoot } {
-//         return isOptionalChainRoot(node.parent) && node.parent.expression === node;
-//     }
+/**
+ * Determines whether a node is the expression preceding an optional chain (i.e. `a` in `a?.b`).
+ */
+pub fn isExpressionOfOptionalChainRoot(node: &Node, parent: NodeAndData<Node>) -> bool {
+    if let Some(parent) = asOptionalChainRoot(parent) {
+        node.node_id() == parent.expression().node_id()
+    } else {
+        false
+    }
+}
 
-//     /**
-//      * Determines whether a node is the outermost `OptionalChain` in an ECMAScript `OptionalExpression`:
-//      *
-//      * 1. For `a?.b.c`, the outermost chain is `a?.b.c` (`c` is the end of the chain starting at `a?.`)
-//      * 2. For `a?.b!`, the outermost chain is `a?.b` (`b` is the end of the chain starting at `a?.`)
-//      * 3. For `(a?.b.c).d`, the outermost chain is `a?.b.c` (`c` is the end of the chain starting at `a?.` since parens end the chain)
-//      * 4. For `a?.b.c?.d`, both `a?.b.c` and `a?.b.c?.d` are outermost (`c` is the end of the chain starting at `a?.`, and `d` is
-//      *   the end of the chain starting at `c?.`)
-//      * 5. For `a?.(b?.c).d`, both `b?.c` and `a?.(b?.c)d` are outermost (`c` is the end of the chain starting at `b`, and `d` is
-//      *   the end of the chain starting at `a?.`)
-//      */
-//     /* @internal */
-//     export function isOutermostOptionalChain(node: OptionalChain) {
-//         return !isOptionalChain(node.parent) // cases 1, 2, and 3
-//             || isOptionalChainRoot(node.parent) // case 4
-//             || node !== node.parent.expression; // case 5
-//     }
+/**
+ * Determines whether a node is the outermost `OptionalChain` in an ECMAScript `OptionalExpression`:
+ *
+ * 1. For `a?.b.c`, the outermost chain is `a?.b.c` (`c` is the end of the chain starting at `a?.`)
+ * 2. For `a?.b!`, the outermost chain is `a?.b` (`b` is the end of the chain starting at `a?.`)
+ * 3. For `(a?.b.c).d`, the outermost chain is `a?.b.c` (`c` is the end of the chain starting at `a?.` since parens end the chain)
+ * 4. For `a?.b.c?.d`, both `a?.b.c` and `a?.b.c?.d` are outermost (`c` is the end of the chain starting at `a?.`, and `d` is
+ *   the end of the chain starting at `c?.`)
+ * 5. For `a?.(b?.c).d`, both `b?.c` and `a?.(b?.c)d` are outermost (`c` is the end of the chain starting at `b`, and `d` is
+ *   the end of the chain starting at `a?.`)
+ */
+pub fn isOutermostOptionalChain(node: &Rc<BoundNode>, parent: NodeAndData<Node>) -> bool {
+    let parent_chain = match asOptionalChain(parent) {
+        Some(parent) => parent,
+        None => return true, // cases 1, 2, and 3
+    };
+    if isOptionalChainRoot(parent) {
+        return true; // case 4
+    }
+    node.node_id() != parent_chain.expression().node_id() // case 5
+}
 
-//     export function isNullishCoalesce(node: Node) {
-//         return node.kind === SyntaxKind::BinaryExpression && (node as BinaryExpression).operatorToken.kind === SyntaxKind::QuestionQuestionToken;
-//     }
+pub fn isNullishCoalesce(node: &Node) -> bool {
+    if let Node::BinaryExpression(node) = node {
+        node.operatorToken.kind() == SyntaxKind::QuestionQuestionToken
+    } else {
+        false
+    }
+}
 
 //     export function isConstTypeReference(node: Node) {
 //         return isTypeReferenceNode(node) && isIdentifier(node.typeName) &&
@@ -1309,10 +1362,10 @@ pub fn isFunctionLikeOrClassStaticBlockDeclaration<T: IsNode>(node: Option<&T>) 
         .unwrap_or_default()
 }
 
-//     /* @internal */
-//     export function isFunctionLikeDeclaration(node: Node): node is FunctionLikeDeclaration {
-//         return node && isFunctionLikeDeclarationKind(node.kind);
-//     }
+pub fn isFunctionLikeDeclaration<T: IsNode>(node: Option<&T>) -> bool {
+    node.map(|n| isFunctionLikeDeclarationKind(n.kind()))
+        .unwrap_or_default()
+}
 
 //     /* @internal */
 //     export function isBooleanLiteral(node: Node): node is BooleanLiteral {

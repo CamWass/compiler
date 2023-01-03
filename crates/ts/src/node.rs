@@ -51,19 +51,31 @@ impl IsNode for BoundNode {
 }
 
 pub trait Bind {
-    fn bind(&self, parent: &Rc<BoundNode>) -> Rc<BoundNode> {
+    type Bound;
+    fn bind(&self, parent: &Rc<BoundNode>) -> Self::Bound {
         self.bind_to_opt_parent(Some(parent))
     }
 
-    fn bind_to_opt_parent(&self, parent: Option<&Rc<BoundNode>>) -> Rc<BoundNode>;
+    fn bind_to_opt_parent(&self, parent: Option<&Rc<BoundNode>>) -> Self::Bound;
 }
 
 impl<T> Bind for T
 where
     T: Into<Node> + Clone,
 {
-    fn bind_to_opt_parent(&self, parent: Option<&Rc<BoundNode>>) -> Rc<BoundNode> {
+    type Bound = Rc<BoundNode>;
+    fn bind_to_opt_parent(&self, parent: Option<&Rc<BoundNode>>) -> Self::Bound {
         Rc::new(BoundNode::new(self.clone().into(), parent))
+    }
+}
+
+impl<T> Bind for Option<T>
+where
+    T: Bind,
+{
+    type Bound = Option<T::Bound>;
+    fn bind_to_opt_parent(&self, parent: Option<&Rc<BoundNode>>) -> Self::Bound {
+        self.as_ref().map(|v| v.bind_to_opt_parent(parent))
     }
 }
 

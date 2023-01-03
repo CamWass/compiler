@@ -1032,11 +1032,11 @@ pub struct NodeData {
     pub symbol: Option<SymbolId>, // Symbol declared by node (initialized by binding)
     pub locals: Option<SymbolTableId>, // Locals associated with node (initialized by binding)
     pub nextContainer: Option<Rc<BoundNode>>, // Next container in declaration order (initialized by binding)
-    //         /* @internal */ localSymbol?: Symbol;                 // Local symbol declared by node (initialized by binding only for exported nodes)
-    pub flowNode: Option<FlowNodeId>, // Associated FlowNode (initialized by binding)
-    pub emitNode: Option<EmitNode>,   // Associated EmitNode (initialized by transforms)
-                                      //         /* @internal */ contextualType?: Type;                // Used to temporarily assign a contextual type during overload resolution
-                                      //         /* @internal */ inferenceContext?: InferenceContext;  // Inference context for contextual type
+    pub localSymbol: Option<SymbolId>, // Local symbol declared by node (initialized by binding only for exported nodes)
+    pub flowNode: Option<FlowNodeId>,  // Associated FlowNode (initialized by binding)
+    pub emitNode: Option<EmitNode>,    // Associated EmitNode (initialized by transforms)
+                                       //         /* @internal */ contextualType?: Type;                // Used to temporarily assign a contextual type during overload resolution
+                                       //         /* @internal */ inferenceContext?: InferenceContext;  // Inference context for contextual type
 }
 
 impl_has_text_range!(NodeData);
@@ -5625,19 +5625,45 @@ pub type CallChain = CallExpression;
 //         readonly questionDotToken: QuestionDotToken;
 //     }
 
-//     export type OptionalChain =
-//         | PropertyAccessChain
-//         | ElementAccessChain
-//         | CallChain
-//         | NonNullChain
-//         ;
+make_node_enum!(
+    OptionalChain,
+    [
+        PropertyAccessExpression,
+        ElementAccessExpression,
+        CallExpression,
+        NonNullExpression,
+    ]
+);
 
-//     /* @internal */
-//     export type OptionalChainRoot =
-//         | PropertyAccessChainRoot
-//         | ElementAccessChainRoot
-//         | CallChainRoot
-//         ;
+impl OptionalChain {
+    pub fn expression(&self) -> &LeftHandSideExpression {
+        match self {
+            OptionalChain::PropertyAccessExpression(n) => &n.expression,
+            OptionalChain::ElementAccessExpression(n) => &n.expression,
+            OptionalChain::CallExpression(n) => &n.expression,
+            OptionalChain::NonNullExpression(n) => &n.expression,
+        }
+    }
+}
+
+make_node_enum!(
+    OptionalChainRoot,
+    [
+        PropertyAccessExpression,
+        ElementAccessExpression,
+        CallExpression,
+    ]
+);
+
+impl OptionalChainRoot {
+    pub fn expression(&self) -> &LeftHandSideExpression {
+        match self {
+            OptionalChainRoot::PropertyAccessExpression(n) => &n.expression,
+            OptionalChainRoot::ElementAccessExpression(n) => &n.expression,
+            OptionalChainRoot::CallExpression(n) => &n.expression,
+        }
+    }
+}
 
 //     /** @internal */
 //     export type BindableObjectDefinePropertyCall = CallExpression & {
@@ -6573,6 +6599,15 @@ make_node_enum!(
     [BreakStatement, ContinueStatement,]
 );
 
+impl BreakOrContinueStatement {
+    pub fn label(&self) -> &Option<Rc<Identifier>> {
+        match self {
+            BreakOrContinueStatement::BreakStatement(n) => &n.label,
+            BreakOrContinueStatement::ContinueStatement(n) => &n.label,
+        }
+    }
+}
+
 // export interface ReturnStatement extends Statement {
 #[derive(Debug)]
 pub struct ReturnStatement {
@@ -6729,6 +6764,15 @@ impl_is_node!(
 );
 
 make_node_enum!(CaseOrDefaultClause, [CaseClause, DefaultClause,]);
+
+impl CaseOrDefaultClause {
+    pub fn statements(&self) -> &NodeArray<Statement> {
+        match self {
+            CaseOrDefaultClause::CaseClause(n) => &n.statements,
+            CaseOrDefaultClause::DefaultClause(n) => &n.statements,
+        }
+    }
+}
 
 // export interface LabeledStatement extends Statement {
 #[derive(Debug)]
@@ -8105,6 +8149,12 @@ index::newtype_index! {
     }
 }
 
+impl From<FlowLabelId> for FlowNodeId {
+    fn from(other: FlowLabelId) -> Self {
+        Self::from_u32(other.as_u32())
+    }
+}
+
 pub enum FlowNodeKind {
     None,
     FlowStart(FlowStart),
@@ -8207,7 +8257,7 @@ pub struct FlowCall {
 // FlowCondition represents a condition that is known to be true or false at the
 // node's location in the control flow.
 pub struct FlowCondition {
-    pub node: Expression,
+    pub node: Rc<BoundNode>,
     pub antecedent: FlowNodeId,
 }
 
@@ -8342,8 +8392,8 @@ pub struct SourceFile {
     //          * but could be arbitrarily nested (e.g. `import.meta`).
     //          */
     pub externalModuleIndicator: Option<Node>,
-    //         // The first node that causes this file to be a CommonJS module
-    //         /* @internal */ commonJsModuleIndicator?: Node;
+    // The first node that causes this file to be a CommonJS module
+    pub commonJsModuleIndicator: Option<Node>,
     //         // JS identifier-declarations that are intended to merge with globals
     //         /* @internal */ jsGlobalAugmentations?: SymbolTable;
 
@@ -9650,7 +9700,7 @@ pub struct Symbol {
     // pub isReferenced?: SymbolFlags; // True if the symbol is referenced elsewhere. Keeps track of the meaning of a reference in case a symbol is both a type parameter and parameter.
     pub isReplaceableByMethod: bool, // Can this Javascript class property be replaced by a method symbol?
     pub isAssigned: bool,            // True if the symbol is a parameter with assignments
-                                     // pub assignmentDeclarationMembers?: ESMap<number, Declaration>; // detected late-bound assignment declarations associated with the symbol
+    pub assignmentDeclarationMembers: FxHashMap<NodeId, Rc<BoundNode>>, // detected late-bound assignment declarations associated with the symbol
 }
 
 impl Symbol {
@@ -9668,6 +9718,7 @@ impl Symbol {
             constEnumOnlyModule: None,
             isReplaceableByMethod: false,
             isAssigned: false,
+            assignmentDeclarationMembers: FxHashMap::default(),
         }
     }
 }
@@ -10894,7 +10945,8 @@ pub struct CompilerOptions {
     //         /*@internal*/ allowNonTsExtensions?: boolean;
     //         allowSyntheticDefaultImports?: boolean;
     //         allowUmdGlobalAccess?: boolean;
-    pub allowUnreachableCode: bool, //         allowUnusedLabels?: boolean;
+    pub allowUnreachableCode: bool,
+    pub allowUnusedLabels: bool,
     //         alwaysStrict?: boolean;  // Always combine with strict property
     //         baseUrl?: string;
     //         /** An error if set - this should only go through the -b pipeline and not actually be observed */
@@ -10948,7 +11000,7 @@ pub struct CompilerOptions {
     //         noEmitHelpers?: boolean;
     //         noEmitOnError?: boolean;
     //         noErrorTruncation?: boolean;
-    //         noFallthroughCasesInSwitch?: boolean;
+    pub noFallthroughCasesInSwitch: bool,
     //         noImplicitAny?: boolean;  // Always combine with strict property
     //         noImplicitReturns?: boolean;
     //         noImplicitThis?: boolean;  // Always combine with strict property

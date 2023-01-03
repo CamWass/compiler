@@ -80,9 +80,9 @@
 //         return stringContains(getBaseFileName(fileName), ".");
 //     }
 
-//     export function fileExtensionIs(path: string, extension: string): boolean {
-//         return path.length > extension.length && endsWith(path, extension);
-//     }
+pub fn fileExtensionIs(path: &str, extension: &str) -> bool {
+    path.len() > extension.len() && path.ends_with(extension)
+}
 
 //     export function fileExtensionIsOneOf(path: string, extensions: readonly string[]): boolean {
 //         for (const extension of extensions) {
