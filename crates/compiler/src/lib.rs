@@ -27,6 +27,7 @@ mod graph;
 pub mod node;
 pub mod normalize;
 mod normalize_shorthand;
+mod optimize_properties;
 pub mod resolver;
 mod transform_ts;
 pub mod types;
@@ -224,6 +225,8 @@ impl Compiler {
             transform_ts::transform_param_props(&mut program_ast, node_id_gen, colours.as_mut());
 
             let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
+
+            optimize_properties::process(&mut program_ast);
 
             if passes.optimize_arguments_array {
                 OptimizeArgumentsArray::OptimizeArgumentsArray::process(
