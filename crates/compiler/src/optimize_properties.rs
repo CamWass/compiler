@@ -9,6 +9,7 @@ use swc_atoms::JsWord;
 
 use crate::find_vars::*;
 use crate::utils::unwrap_as;
+use crate::DataFlowAnalysis::computeEscaped;
 use crate::DefaultNameGenerator::DefaultNameGenerator;
 use crate::{Id, ToId};
 
