@@ -167,7 +167,8 @@ impl Compiler {
 
             normalize_shorthand::normalize_shorthand(&mut program_ast, node_id_gen);
 
-            let mut colours = {
+            let needs_colors = passes.disambiguate_properties || passes.ambiguate_properties;
+            let mut colours = if needs_colors {
                 let mut source_files = Vec::with_capacity(libs.len() + 1);
 
                 let program_source_file = SourceFile {
@@ -205,8 +206,9 @@ impl Compiler {
                     libs: Vec::new(),
                     source: program.source.clone(),
                 };
-
-                colors::color_collector::collect(&mut checker, &p)
+                Some(colors::color_collector::collect(&mut checker, &p))
+            } else {
+                None
             };
 
             // Note: The Rc based AST is only to be used by the checker and passes that directly access
@@ -219,7 +221,7 @@ impl Compiler {
 
             normalize::normalize(&mut program_ast, node_id_gen);
 
-            transform_ts::transform_param_props(&mut program_ast, node_id_gen, &mut colours);
+            transform_ts::transform_param_props(&mut program_ast, node_id_gen, colours.as_mut());
 
             let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 
@@ -243,7 +245,7 @@ impl Compiler {
             if passes.disambiguate_properties {
                 disambiguate::DisambiguateProperties::DisambiguateProperties::process(
                     &mut program_ast,
-                    &mut colours,
+                    colours.as_mut().unwrap(),
                 );
             }
 
@@ -268,7 +270,7 @@ impl Compiler {
             if passes.ambiguate_properties {
                 disambiguate::AmbiguateProperties::AmbiguateProperties::process(
                     &mut program_ast,
-                    &mut colours,
+                    colours.as_mut().unwrap(),
                 );
             }
 

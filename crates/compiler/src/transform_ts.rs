@@ -1,4 +1,4 @@
-use ast::{self, op};
+use ast::{self, op, NodeId};
 use ecma_visit::{VisitMut, VisitMutWith};
 use global_common::{util::take::Take, DUMMY_SP};
 use global_visit::util::move_map::MoveMap;
@@ -8,7 +8,7 @@ use crate::colors::{color_registry::ColorRegistry, ColorId};
 pub fn transform_param_props(
     ast: &mut ast::Program,
     node_id_gen: &mut ast::NodeIdGen,
-    colours: &mut ColorRegistry,
+    colours: Option<&mut ColorRegistry>,
 ) {
     let mut visitor = ParamPropTransformer {
         node_id_gen,
@@ -20,15 +20,25 @@ pub fn transform_param_props(
 
 struct ParamPropTransformer<'a> {
     node_id_gen: &'a mut ast::NodeIdGen,
-    colours: &'a mut ColorRegistry,
+    colours: Option<&'a mut ColorRegistry>,
 }
 
 impl ParamPropTransformer<'_> {
-    fn handle_class(&mut self, class: &mut ast::Class, class_colour: ColorId) {
+    fn get_color_of_node(&self, node_id: NodeId) -> Option<ColorId> {
+        self.colours
+            .as_ref()
+            .and_then(|colours| colours.get_color_of_node(node_id))
+    }
+}
+
+impl ParamPropTransformer<'_> {
+    fn handle_class(&mut self, class: &mut ast::Class, class_colour: Option<ColorId>) {
         macro_rules! set_colour {
             ($colour:ident, $node:expr) => {{
                 let node = $node;
-                self.colours.set_color_of_node(node.node_id, $colour);
+                if let (Some(colours), Some(colour)) = (&mut self.colours, $colour) {
+                    colours.set_color_of_node(node.node_id, colour);
+                }
                 node
             }};
         }
@@ -42,8 +52,7 @@ impl ParamPropTransformer<'_> {
                         ast::ParamOrTsParamProp::TsParamProp(param) => {
                             let (prop_colour, ident_sym, ident_span, param) = match param.param {
                                 ast::TsParamPropParam::Ident(i) => {
-                                    let colour =
-                                        self.colours.get_color_of_node(i.id.node_id).unwrap();
+                                    let colour = self.get_color_of_node(i.id.node_id);
                                     (
                                         colour,
                                         i.id.sym.clone(),
@@ -67,9 +76,7 @@ impl ParamPropTransformer<'_> {
                                         ),
                                     };
 
-                                    let colour =
-                                        self.colours.get_color_of_node(i.id.node_id).unwrap();
-
+                                    let colour = self.get_color_of_node(i.id.node_id);
                                     (
                                         colour,
                                         i.id.sym.clone(),
@@ -181,11 +188,11 @@ impl ParamPropTransformer<'_> {
 
 impl VisitMut<'_> for ParamPropTransformer<'_> {
     fn visit_mut_class_decl(&mut self, node: &mut ast::ClassDecl) {
-        let class_colour = self.colours.get_color_of_node(node.node_id).unwrap();
+        let class_colour = self.get_color_of_node(node.node_id);
         self.handle_class(&mut node.class, class_colour);
     }
     fn visit_mut_class_expr(&mut self, node: &mut ast::ClassExpr) {
-        let class_colour = self.colours.get_color_of_node(node.node_id).unwrap();
+        let class_colour = self.get_color_of_node(node.node_id);
         self.handle_class(&mut node.class, class_colour);
     }
 }
@@ -196,7 +203,7 @@ mod tests {
         crate::testing::test_transform(
             |mut program, mut node_id_gen| {
                 let mut colours = crate::testing::get_colours(program.clone());
-                super::transform_param_props(&mut program, &mut node_id_gen, &mut colours);
+                super::transform_param_props(&mut program, &mut node_id_gen, Some(&mut colours));
                 program
             },
             input,
