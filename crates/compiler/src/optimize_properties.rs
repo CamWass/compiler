@@ -13,6 +13,9 @@ use crate::DataFlowAnalysis::computeEscaped;
 use crate::DefaultNameGenerator::DefaultNameGenerator;
 use crate::{Id, ToId};
 
+#[cfg(test)]
+mod tests;
+
 pub fn process(ast: &mut ast::Program) {
     let mut visitor = MainVisitor::default();
     ast.visit_with(&mut visitor);
@@ -225,12 +228,7 @@ impl InnerVisitor {
             Expr::MetaProp(_) | Expr::Lit(_) => {}
 
             Expr::Paren(n) => {
-                let mut vars = FxHashSet::default();
-                self.extract_vars(&n.expr, &mut vars);
-                for var in vars {
-                    self.invalidate_var(var);
-                }
-                n.visit_with(self);
+                self.invalidate_if_var(&n.expr);
             }
             Expr::Bin(n) => match n.op {
                 BinaryOp::EqEq
@@ -257,36 +255,27 @@ impl InnerVisitor {
                 }
 
                 BinaryOp::LogicalOr | BinaryOp::LogicalAnd | BinaryOp::NullishCoalescing => {
-                    let mut vars = FxHashSet::default();
-                    self.extract_vars(&n.left, &mut vars);
-                    self.extract_vars(&n.right, &mut vars);
-                    for var in vars {
-                        self.invalidate_var(var);
-                    }
-                    n.visit_with(self);
+                    self.invalidate_if_var(&n.left);
+                    self.invalidate_if_var(&n.right);
                 }
 
                 BinaryOp::In => todo!(),
                 BinaryOp::InstanceOf => todo!(),
             },
             Expr::Cond(n) => {
-                let mut vars = FxHashSet::default();
-                self.extract_vars(&n.cons, &mut vars);
-                self.extract_vars(&n.alt, &mut vars);
-                for var in vars {
-                    self.invalidate_var(var);
-                }
-                n.visit_with(self);
+                self.invalidate_if_var(&n.cons);
+                self.invalidate_if_var(&n.alt);
             }
             Expr::Seq(n) => {
-                if let Some(last) = n.exprs.last() {
-                    let mut vars = FxHashSet::default();
-                    self.extract_vars(last, &mut vars);
-                    for var in vars {
-                        self.invalidate_var(var);
-                    }
+                if n.exprs.len() < 1 {
+                    unreachable!();
                 }
-                n.visit_with(self);
+                let mut i = 0;
+                while i < n.exprs.len() - 1 {
+                    n.exprs[i].visit_with(self);
+                    i += 1;
+                }
+                self.invalidate_if_var(&n.exprs[i]);
             }
 
             Expr::Assign(_) => todo!(),
@@ -332,6 +321,7 @@ impl Visit<'_> for InnerVisitor {
                         }
                     }
                 } else {
+                    self.invalidate_var(obj);
                     self.invalidate_if_var(node.prop.as_ref());
                     return;
                 }
@@ -342,12 +332,49 @@ impl Visit<'_> for InnerVisitor {
     }
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
-        if let PatOrExpr::Expr(lhs) = &node.left {
-            if let Expr::Ident(lhs) = lhs.as_ref() {
-                self.invalidate_var(lhs);
-                node.right.visit_with(self);
-                return;
+        let lhs_ident = match &node.left {
+            PatOrExpr::Expr(n) => match n.as_ref() {
+                Expr::Ident(i) => Some(i),
+                _ => None,
+            },
+            PatOrExpr::Pat(n) => match n.as_ref() {
+                Pat::Expr(n) => match n.as_ref() {
+                    Expr::Ident(i) => Some(i),
+                    _ => None,
+                },
+                Pat::Ident(i) => Some(&i.id),
+                _ => None,
+            },
+        };
+
+        if let Some(lhs) = lhs_ident {
+            // lhs = {}
+            if let Expr::Object(rhs) = node.right.as_ref() {
+                let lhs_id = lhs.to_id();
+                if let Some(lhs_ty) = self.vars.get(&lhs_id) {
+                    let rhs_is_simple_obj_lit = rhs.props.iter().all(|p| match p {
+                        Prop::KeyValue(p) => !matches!(&p.key, PropName::Computed(_)),
+                        _ => false,
+                    });
+
+                    if rhs_is_simple_obj_lit {
+                        for prop in &rhs.props {
+                            let prop = unwrap_as!(&prop, Prop::KeyValue(p), p);
+                            match &prop.key {
+                                PropName::Ident(i) => self.types[*lhs_ty].declare_property(i),
+                                PropName::Str(_) | PropName::Num(_) => todo!(),
+                                PropName::Computed(_) => unreachable!(),
+                            }
+                        }
+                        rhs.visit_with(self);
+                        return;
+                    }
+                }
             }
+
+            self.invalidate_var(lhs);
+            self.invalidate_if_var(&node.right);
+            return;
         }
 
         // AddAssign is the only op that is not guaranteed to declare a prop.
@@ -376,10 +403,11 @@ impl Visit<'_> for InnerVisitor {
                             if self.is_valid_type(*ty) {
                                 if is_simple_rhs(&node.right) {
                                     self.types[*ty].declare_property(prop);
-                                    // Still need to visit RHS in case it invalidates any variables.
-                                    node.right.visit_with(self);
-                                    return;
+                                } else {
+                                    self.invalidate_var(obj);
                                 }
+                                self.invalidate_if_var(&node.right);
+                                return;
                             }
                         }
                     }
@@ -387,7 +415,11 @@ impl Visit<'_> for InnerVisitor {
             }
         }
 
-        node.left.visit_with(self);
+        if let Some(lhs) = lhs_expr {
+            self.invalidate_if_var(lhs);
+        } else {
+            node.left.visit_with(self);
+        }
         self.invalidate_if_var(&node.right);
     }
 
@@ -423,13 +455,27 @@ impl Visit<'_> for InnerVisitor {
                         }
                         let ty = self.types.push(ty);
                         self.vars.insert(id, ty);
+                        rhs.visit_with(self);
+                        return;
+                    }
+                } else if let Expr::Ident(rhs) = rhs.as_ref() {
+                    let rhs_id = rhs.to_id();
+                    if let Some(rhs_ty) = self.vars.get(&rhs_id) {
+                        let lhs_id = lhs.to_id();
+                        if self.vars.contains_key(&lhs_id) {
+                            todo!("Redeclaration of block-scoped variable");
+                        }
+                        self.vars.insert(lhs_id, *rhs_ty);
                         return;
                     }
                 }
             }
         }
 
-        decl.visit_children_with(self);
+        if let Some(rhs) = &decl.init {
+            self.invalidate_if_var(rhs);
+        }
+        decl.name.visit_with(self);
     }
 
     fn visit_extends_clause(&mut self, node: &ExtendsClause) {
