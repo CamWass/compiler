@@ -4,15 +4,13 @@ use std::{collections::BTreeSet, ops::Index};
 
 use ecma_visit::{noop_visit_type, Visit, VisitWith};
 use index::newtype_index;
-use petgraph::{graph::EdgeReference, visit::EdgeRef, EdgeDirection};
+use petgraph::{
+    graph::{EdgeIndex, NodeIndex},
+    EdgeDirection,
+};
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::control_flow::ControlFlowGraph::AnnotationPrinter;
-use crate::control_flow::{
-    node::CfgNode,
-    ControlFlowAnalysis::ControlFlowAnalysisResult,
-    ControlFlowGraph::{Annotation, Branch, ControlFlowGraph},
-};
+use crate::control_flow::{node::CfgNode, ControlFlowGraph::*};
 use crate::Id;
 use crate::{find_vars::*, ToId};
 
@@ -28,7 +26,7 @@ where
     N: CfgNode,
     I: DataFlowAnalysisInner<N, L, J>,
     L: LatticeElement,
-    J: FlowJoiner<L>,
+    J: FlowJoiner<L, I>,
 {
     fn print(
         &self,
@@ -96,11 +94,10 @@ where
     N: CfgNode,
     I: DataFlowAnalysisInner<N, L, J>,
     L: LatticeElement,
-    J: FlowJoiner<L>,
+    J: FlowJoiner<L, I>,
 {
     pub inner: I,
 
-    pub cfg: ControlFlowGraph<N, LinearFlowState, L>,
     /// The set of nodes that need to be considered, orderd by their priority
     /// as determined by control flow analysis and data flow direction.
     workQueue: UniqueQueue<N>,
@@ -114,7 +111,7 @@ where
     N: CfgNode,
     I: DataFlowAnalysisInner<N, L, J>,
     L: LatticeElement,
-    J: FlowJoiner<L>,
+    J: FlowJoiner<L, I>,
 {
     /**
      * Constructs a data flow analysis.
@@ -135,10 +132,9 @@ where
      *     graph requires a separate call to {@link #analyze()}.
      * @see #analyze()
      */
-    pub fn new(inner: I, cfa: ControlFlowAnalysisResult<N, LinearFlowState, L>) -> Self {
+    pub fn new(inner: I, nodePriorities: FxHashMap<N, usize>) -> Self {
         Self {
-            cfg: cfa.cfg,
-            workQueue: UniqueQueue::new(cfa.nodePriorities, inner.isForward()),
+            workQueue: UniqueQueue::new(nodePriorities, inner.isForward()),
 
             inner,
 
@@ -171,35 +167,31 @@ where
     fn analyze_inner(&mut self) -> Result<(), N> {
         self.initialize();
         while let Some(curNode) = self.workQueue.pop() {
-            if self.cfg.node_annotations[&curNode].stepCount > MAX_STEPS_PER_NODE {
+            if self.inner.cfg().node_annotations[&curNode].stepCount > MAX_STEPS_PER_NODE {
                 return Err(curNode);
             }
-            self.cfg
-                .node_annotations
-                .get_mut(&curNode)
-                .unwrap()
-                .stepCount += 1;
+            self.get_flow_state_mut(&curNode).stepCount += 1;
 
             self.joinInputs(curNode);
             if self.flow(curNode) {
                 // If there is a change in the current node, we want to grab the list
                 // of nodes that this node affects.
                 let nextNodes = if self.inner.isForward() {
-                    self.cfg.getDirectedSuccNodes(curNode)
+                    self.inner.cfg().getDirectedSuccNodes(curNode)
                 } else {
-                    self.cfg.getDirectedPredNodes(curNode)
+                    self.inner.cfg().getDirectedPredNodes(curNode)
                 };
 
                 for nextNode in nextNodes {
-                    let node = self.cfg[nextNode];
-                    if node != self.cfg.implicit_return {
+                    let node = self.inner.cfg()[nextNode];
+                    if node != self.inner.cfg().implicit_return {
                         self.workQueue.push(node);
                     }
                 }
             }
         }
         if self.inner.isForward() {
-            self.joinInputs(self.cfg.implicit_return);
+            self.joinInputs(self.inner.cfg().implicit_return);
         }
         Ok(())
     }
@@ -207,17 +199,20 @@ where
     /** Initializes the work list and the control flow graph. */
     fn initialize(&mut self) {
         self.workQueue.clear();
-        for &node in self.cfg.graph.node_weights() {
-            self.cfg.node_annotations.insert(
-                node,
-                LinearFlowState::new(
-                    self.inner.createInitialEstimateLattice(),
-                    self.inner.createInitialEstimateLattice(),
-                ),
-            );
-            if node != self.cfg.implicit_return {
+
+        let mut i = 0;
+        while i < self.inner.cfg().graph.raw_nodes().len() {
+            let node = self.inner.cfg().graph.raw_nodes()[i].weight;
+            let in_ = self.inner.createInitialEstimateLattice();
+            let out = self.inner.createInitialEstimateLattice();
+            self.inner
+                .cfg_mut()
+                .node_annotations
+                .insert(node, LinearFlowState::new(in_, out));
+            if node != self.inner.cfg().implicit_return {
                 self.workQueue.push(node);
             }
+            i += 1;
         }
     }
 
@@ -227,16 +222,16 @@ where
      * @return {@code true} if the flow state differs from the previous state.
      */
     fn flow(&mut self, node: N) -> bool {
-        let state = &self.cfg.node_annotations[&node];
+        let state = &self.inner.cfg().node_annotations[&node];
         if self.inner.isForward() {
             let outBefore = state.out;
-            let new_out = self.inner.flowThrough(node, state.in_, &self.cfg);
-            self.cfg.node_annotations.get_mut(&node).unwrap().out = new_out;
+            let new_out = self.inner.flowThrough(node, state.in_);
+            self.get_flow_state_mut(&node).out = new_out;
             self.inner[outBefore] != self.inner[new_out]
         } else {
             let inBefore = state.in_;
-            let new_in = self.inner.flowThrough(node, state.out, &self.cfg);
-            self.cfg.node_annotations.get_mut(&node).unwrap().in_ = new_in;
+            let new_in = self.inner.flowThrough(node, state.out);
+            self.get_flow_state_mut(&node).in_ = new_in;
             self.inner[inBefore] != self.inner[new_in]
         }
     }
@@ -248,8 +243,8 @@ where
      * @param node Node to compute new join.
      */
     fn joinInputs(&mut self, node: N) {
-        if self.inner.isForward() && self.cfg.entry == node {
-            self.cfg.node_annotations.get_mut(&node).unwrap().in_ = self.inner.createEntryLattice();
+        if self.inner.isForward() && self.inner.cfg().entry == node {
+            self.get_flow_state_mut(&node).in_ = self.inner.createEntryLattice();
             return;
         }
 
@@ -259,26 +254,27 @@ where
             EdgeDirection::Outgoing
         };
         let mut inEdges = self
-            .cfg
+            .inner
+            .cfg()
             .graph
-            .edges_directed(self.cfg.map[&node], dir)
-            .peekable();
+            .neighbors_directed(self.inner.cfg().map[&node], dir)
+            .detach();
 
-        let result = if let Some(first) = inEdges.next() {
-            if let Some(second) = inEdges.next() {
+        let result = if let Some(first) = inEdges.next(&self.inner.cfg().graph) {
+            if let Some(second) = inEdges.next(&self.inner.cfg().graph) {
                 let mut joiner = self.inner.createFlowJoiner();
-                let first = getInputFromEdge(&mut self.inner, &self.cfg, first);
-                joiner.joinFlow(&self.inner[first]);
-                let second = getInputFromEdge(&mut self.inner, &self.cfg, second);
-                joiner.joinFlow(&self.inner[second]);
-                for inEdge in inEdges {
-                    let id = getInputFromEdge(&mut self.inner, &self.cfg, inEdge);
-                    joiner.joinFlow(&self.inner[id]);
+                let first = getInputFromEdge(&mut self.inner, first);
+                joiner.joinFlow(&mut self.inner, first);
+                let second = getInputFromEdge(&mut self.inner, second);
+                joiner.joinFlow(&mut self.inner, second);
+                while let Some(inEdge) = inEdges.next(&self.inner.cfg().graph) {
+                    let id = getInputFromEdge(&mut self.inner, inEdge);
+                    joiner.joinFlow(&mut self.inner, id);
                 }
                 self.inner.add_lattice_element(joiner.finish())
             } else {
                 // Only one relevant edge.
-                getInputFromEdge(&mut self.inner, &self.cfg, first)
+                getInputFromEdge(&mut self.inner, first)
             }
         } else {
             // No relevant edges.
@@ -286,34 +282,37 @@ where
         };
 
         if self.inner.isForward() {
-            self.cfg.node_annotations.get_mut(&node).unwrap().in_ = result;
+            self.get_flow_state_mut(&node).in_ = result;
         } else {
-            self.cfg.node_annotations.get_mut(&node).unwrap().out = result;
+            self.get_flow_state_mut(&node).out = result;
         }
+    }
+
+    fn get_flow_state_mut(&mut self, node: &N) -> &mut LinearFlowState {
+        // All nodes should have had their state initialized.
+        self.inner.cfg_mut().node_annotations.get_mut(node).unwrap()
     }
 }
 
-fn getInputFromEdge<N, I, L, J>(
-    inner: &mut I,
-    cfg: &ControlFlowGraph<N, LinearFlowState, L>,
-    edge: EdgeReference<Branch>,
-) -> LatticeElementId
+fn getInputFromEdge<N, I, L, J>(inner: &mut I, edge: (EdgeIndex, NodeIndex)) -> LatticeElementId
 where
     N: CfgNode,
     I: DataFlowAnalysisInner<N, L, J>,
     L: LatticeElement,
-    J: FlowJoiner<L>,
+    J: FlowJoiner<L, I>,
 {
     if inner.isForward() {
-        let node = cfg.graph[edge.source()];
-        let state = &cfg.node_annotations[&node];
+        let source = inner.cfg().graph.edge_endpoints(edge.0).unwrap().0;
+        let node = inner.cfg().graph[source];
+        let state = &inner.cfg().node_annotations[&node];
         state.out
     } else {
-        let node = cfg.graph[edge.target()];
-        if node == cfg.implicit_return {
+        let target = inner.cfg().graph.edge_endpoints(edge.0).unwrap().1;
+        let node = inner.cfg().graph[target];
+        if node == inner.cfg().implicit_return {
             return inner.createEntryLattice();
         }
-        let state = &cfg.node_annotations[&node];
+        let state = &inner.cfg().node_annotations[&node];
         state.in_
     }
 }
@@ -322,7 +321,8 @@ pub trait DataFlowAnalysisInner<N, L, J>: Index<LatticeElementId, Output = L>
 where
     N: CfgNode,
     L: LatticeElement,
-    J: FlowJoiner<L>,
+    J: FlowJoiner<L, Self>,
+    Self: Sized,
 {
     fn add_lattice_element(&mut self, element: L) -> LatticeElementId;
     /**
@@ -357,20 +357,15 @@ where
      * @param input Input lattice that should be read-only.
      * @return Output lattice.
      */
-    fn flowThrough(
-        &mut self,
-        node: N,
-        input: LatticeElementId,
-        cfg: &ControlFlowGraph<N, LinearFlowState, L>,
-    ) -> LatticeElementId;
+    fn flowThrough(&mut self, node: N, input: LatticeElementId) -> LatticeElementId;
+
+    fn cfg(&self) -> &ControlFlowGraph<N, LinearFlowState, LatticeElementId>;
+    fn cfg_mut(&mut self) -> &mut ControlFlowGraph<N, LinearFlowState, LatticeElementId>;
 }
 
 /** A reducer that joins flow states from distinct input states into a single input state. */
-pub trait FlowJoiner<L>
-where
-    L: LatticeElement,
-{
-    fn joinFlow(&mut self, input: &L);
+pub trait FlowJoiner<L, I> {
+    fn joinFlow(&mut self, inner: &mut I, input: LatticeElementId);
 
     fn finish(self) -> L;
 }
@@ -398,6 +393,8 @@ impl LinearFlowState {
 impl Annotation for LinearFlowState {}
 
 newtype_index!(pub struct LatticeElementId { .. });
+
+impl Annotation for LatticeElementId {}
 
 #[derive(Debug)]
 struct PrioritizedNode<N>(usize, N);
@@ -510,6 +507,7 @@ macro_rules! visit_fn {
                 allVarsInFn: self.allVarsInFn,
                 escaped: self.escaped,
             };
+            // TODO: I think the function's params can also access vars from parent scope (e.g. in default values).
             node.body.visit_children_with(&mut v);
         }
     };

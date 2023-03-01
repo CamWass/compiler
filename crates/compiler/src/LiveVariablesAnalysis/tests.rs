@@ -730,13 +730,23 @@ fn getFlowStateAtX<'a>(
             if let Stmt::Labeled(labeled) = stmt {
                 if &labeled.label.sym == "X" {
                     let body = Node::from(labeled.body.as_ref());
-                    return liveness.data_flow_analysis.cfg.node_annotations.get(&body);
+                    return liveness
+                        .data_flow_analysis
+                        .inner
+                        .cfg
+                        .node_annotations
+                        .get(&body);
                 }
             }
             None
         },
     };
-    liveness.data_flow_analysis.cfg.entry.visit_with(&mut v);
+    liveness
+        .data_flow_analysis
+        .inner
+        .cfg
+        .entry
+        .visit_with(&mut v);
     v.flow_state
 }
 
@@ -806,14 +816,24 @@ fn getFlowStateAtDeclaration<'a>(
                 if let Pat::Ident(n) = &decl.name {
                     if &n.id.sym == name {
                         let decl = Node::VarDecl(d);
-                        return liveness.data_flow_analysis.cfg.node_annotations.get(&decl);
+                        return liveness
+                            .data_flow_analysis
+                            .inner
+                            .cfg
+                            .node_annotations
+                            .get(&decl);
                     }
                 }
             }
             None
         },
     };
-    liveness.data_flow_analysis.cfg.entry.visit_with(&mut v);
+    liveness
+        .data_flow_analysis
+        .inner
+        .cfg
+        .entry
+        .visit_with(&mut v);
     v.flow_state
 }
 

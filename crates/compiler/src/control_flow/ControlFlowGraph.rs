@@ -261,7 +261,7 @@ pub trait AnnotationPrinter<A: Annotation> {
 }
 
 /// Default [`AnnotationPrinter`] that uses the annotations impl of [`Debug`][std::fmt::Debug].
-struct DefaultPrinter;
+pub struct DefaultPrinter;
 
 impl<A> AnnotationPrinter<A> for DefaultPrinter
 where

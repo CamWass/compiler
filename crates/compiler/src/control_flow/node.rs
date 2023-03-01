@@ -445,3 +445,44 @@ impl<'ast> From<&'ast ::ast::BlockStmtOrExpr> for Node<'ast> {
         }
     }
 }
+
+impl<'ast> From<&'ast ::ast::Prop> for Node<'ast> {
+    fn from(other: &'ast ::ast::Prop) -> Node<'ast> {
+        match other {
+            ast::Prop::Shorthand(n) => unreachable!("removed by normalization"),
+            ast::Prop::KeyValue(n) => Node::KeyValueProp(n),
+            ast::Prop::Assign(n) => Node::AssignProp(n),
+            ast::Prop::Getter(n) => Node::GetterProp(n),
+            ast::Prop::Setter(n) => Node::SetterProp(n),
+            ast::Prop::Method(n) => Node::MethodProp(n),
+            ast::Prop::Spread(n) => Node::SpreadAssignment(n),
+        }
+    }
+}
+
+impl<'ast> From<&'ast ::ast::ExprOrSpread> for Node<'ast> {
+    fn from(other: &'ast ::ast::ExprOrSpread) -> Node<'ast> {
+        match other {
+            ::ast::ExprOrSpread::Spread(n) => Node::SpreadElement(n),
+            ::ast::ExprOrSpread::Expr(n) => Node::from(&**n),
+        }
+    }
+}
+
+impl<'ast> From<&'ast ::ast::ExprOrSuper> for Node<'ast> {
+    fn from(other: &'ast ::ast::ExprOrSuper) -> Node<'ast> {
+        match other {
+            ::ast::ExprOrSuper::Super(n) => Node::Super(n),
+            ::ast::ExprOrSuper::Expr(n) => Node::from(&**n),
+        }
+    }
+}
+
+impl<'ast> From<&'ast ::ast::PatOrExpr> for Node<'ast> {
+    fn from(other: &'ast ::ast::PatOrExpr) -> Node<'ast> {
+        match other {
+            ast::PatOrExpr::Expr(n) => Node::from(&**n),
+            ast::PatOrExpr::Pat(n) => Node::from(&**n),
+        }
+    }
+}

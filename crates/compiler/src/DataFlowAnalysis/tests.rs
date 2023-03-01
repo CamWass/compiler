@@ -11,7 +11,7 @@ use rustc_hash::FxHashMap;
 use std::{iter::FromIterator, sync::atomic::AtomicU32};
 use swc_atoms::JsWord;
 
-use crate::control_flow::ControlFlowAnalysis::{ControlFlowAnalysis, ControlFlowRoot};
+use crate::control_flow::{ControlFlowAnalysis::*, ControlFlowGraph::Branch};
 use crate::resolver::resolver;
 use crate::DataFlowAnalysis::LinearFlowState;
 use crate::Id;
@@ -177,12 +177,25 @@ impl ConstPropLatticeElement {
 impl LatticeElement for ConstPropLatticeElement {}
 impl Annotation for ConstPropLatticeElement {}
 
-#[derive(Default)]
-struct ConstPropJoinOp {
-    result: Option<ConstPropLatticeElement>,
+trait HasLatticeElements<L> {
+    fn get_lattice_element(&self, element: LatticeElementId) -> &L;
 }
 
-impl ConstPropJoinOp {
+struct ConstPropJoinOp<I> {
+    result: Option<ConstPropLatticeElement>,
+    _phantom: PhantomData<I>,
+}
+
+impl<I> Default for ConstPropJoinOp<I> {
+    fn default() -> Self {
+        Self {
+            result: None,
+            _phantom: PhantomData::default(),
+        }
+    }
+}
+
+impl<I> ConstPropJoinOp<I> {
     fn apply(a: &ConstPropLatticeElement, b: &ConstPropLatticeElement) -> ConstPropLatticeElement {
         let mut result = ConstPropLatticeElement::default();
         // By the definition of TOP of the lattice.
@@ -206,13 +219,16 @@ impl ConstPropJoinOp {
     }
 }
 
-impl FlowJoiner<ConstPropLatticeElement> for ConstPropJoinOp {
-    fn joinFlow(&mut self, input: &ConstPropLatticeElement) {
+impl<I> FlowJoiner<ConstPropLatticeElement, I> for ConstPropJoinOp<I>
+where
+    I: HasLatticeElements<ConstPropLatticeElement>,
+{
+    fn joinFlow(&mut self, inner: &mut I, input: LatticeElementId) {
         self.result = Some(if let Some(result) = &self.result {
-            ConstPropJoinOp::apply(result, input)
+            ConstPropJoinOp::<I>::apply(result, inner.get_lattice_element(input))
         } else {
             // TODO: this will make a copy of the lattice element, so changes will not be synced between 'input' and 'result'.
-            input.clone()
+            inner.get_lattice_element(input).clone()
         });
     }
 
@@ -221,13 +237,23 @@ impl FlowJoiner<ConstPropLatticeElement> for ConstPropJoinOp {
     }
 }
 
-#[derive(Default)]
 struct DummyConstPropagationInner {
     lattice_elements: IndexVec<LatticeElementId, ConstPropLatticeElement>,
+    cfg: ControlFlowGraph<Instruction, LinearFlowState, LatticeElementId>,
 }
 
-impl DataFlowAnalysisInner<Instruction, ConstPropLatticeElement, ConstPropJoinOp>
-    for DummyConstPropagationInner
+impl HasLatticeElements<ConstPropLatticeElement> for DummyConstPropagationInner {
+    fn get_lattice_element(&self, element: LatticeElementId) -> &ConstPropLatticeElement {
+        &self.lattice_elements[element]
+    }
+}
+
+impl
+    DataFlowAnalysisInner<
+        Instruction,
+        ConstPropLatticeElement,
+        ConstPropJoinOp<DummyConstPropagationInner>,
+    > for DummyConstPropagationInner
 {
     fn add_lattice_element(&mut self, element: ConstPropLatticeElement) -> LatticeElementId {
         self.lattice_elements.push(element)
@@ -245,16 +271,11 @@ impl DataFlowAnalysisInner<Instruction, ConstPropLatticeElement, ConstPropJoinOp
         self.add_lattice_element(ConstPropLatticeElement::new(true))
     }
 
-    fn createFlowJoiner(&self) -> ConstPropJoinOp {
+    fn createFlowJoiner(&self) -> ConstPropJoinOp<DummyConstPropagationInner> {
         ConstPropJoinOp::default()
     }
 
-    fn flowThrough(
-        &mut self,
-        node: Instruction,
-        input: LatticeElementId,
-        _cfg: &ControlFlowGraph<Instruction, LinearFlowState, ConstPropLatticeElement>,
-    ) -> LatticeElementId {
+    fn flowThrough(&mut self, node: Instruction, input: LatticeElementId) -> LatticeElementId {
         let elem = match node {
             Instruction::BranchInstruction(_) => self.lattice_elements[input].clone(),
             Instruction::ArithmeticInstruction(n) => {
@@ -263,6 +284,12 @@ impl DataFlowAnalysisInner<Instruction, ConstPropLatticeElement, ConstPropJoinOp
             _ => unreachable!(),
         };
         self.add_lattice_element(elem)
+    }
+    fn cfg(&self) -> &ControlFlowGraph<Instruction, LinearFlowState, LatticeElementId> {
+        &self.cfg
+    }
+    fn cfg_mut(&mut self) -> &mut ControlFlowGraph<Instruction, LinearFlowState, LatticeElementId> {
+        &mut self.cfg
     }
 }
 
@@ -326,16 +353,20 @@ struct DummyConstPropagation {
         Instruction,
         DummyConstPropagationInner,
         ConstPropLatticeElement,
-        ConstPropJoinOp,
+        ConstPropJoinOp<DummyConstPropagationInner>,
     >,
 }
 
 impl DummyConstPropagation {
-    fn new(
-        cfa: ControlFlowAnalysisResult<Instruction, LinearFlowState, ConstPropLatticeElement>,
-    ) -> Self {
+    fn new(cfa: ControlFlowAnalysisResult<Instruction, LinearFlowState, LatticeElementId>) -> Self {
         Self {
-            data_flow_analysis: DataFlowAnalysis::new(DummyConstPropagationInner::default(), cfa),
+            data_flow_analysis: DataFlowAnalysis::new(
+                DummyConstPropagationInner {
+                    lattice_elements: IndexVec::default(),
+                    cfg: cfa.cfg,
+                },
+                cfa.nodePriorities,
+            ),
         }
     }
 
@@ -344,12 +375,12 @@ impl DummyConstPropagation {
     }
 
     fn verifyInHas(&self, node: Instruction, var: Variable, constant: Option<usize>) {
-        let fState = &self.data_flow_analysis.cfg.node_annotations[&node];
+        let fState = &self.data_flow_analysis.inner.cfg.node_annotations[&node];
         veritfyLatticeElementHas(&self.data_flow_analysis.inner[fState.in_], var, constant);
     }
 
     fn verifyOutHas(&self, node: Instruction, var: Variable, constant: Option<usize>) {
-        let fState = &self.data_flow_analysis.cfg.node_annotations[&node];
+        let fState = &self.data_flow_analysis.inner.cfg.node_annotations[&node];
         veritfyLatticeElementHas(&self.data_flow_analysis.inner[fState.out], var, constant);
     }
 }
@@ -625,10 +656,11 @@ fn parse_script(input: &str) -> Script {
     res
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 struct DivergentAnalysisInner {
     lattice_elements: IndexVec<LatticeElementId, Step>,
     counts: FxHashMap<Counter, usize>,
+    cfg: ControlFlowGraph<Counter, LinearFlowState, LatticeElementId>,
 }
 
 impl DataFlowAnalysisInner<Counter, Step, DivergentFlowJoiner> for DivergentAnalysisInner {
@@ -652,14 +684,16 @@ impl DataFlowAnalysisInner<Counter, Step, DivergentFlowJoiner> for DivergentAnal
         DivergentFlowJoiner(Step::new())
     }
 
-    fn flowThrough(
-        &mut self,
-        node: Counter,
-        input: LatticeElementId,
-        _cfg: &ControlFlowGraph<Counter, LinearFlowState, Step>,
-    ) -> LatticeElementId {
+    fn flowThrough(&mut self, node: Counter, input: LatticeElementId) -> LatticeElementId {
         *self.counts.entry(node).or_default() += 1;
         input
+    }
+
+    fn cfg(&self) -> &ControlFlowGraph<Counter, LinearFlowState, LatticeElementId> {
+        &self.cfg
+    }
+    fn cfg_mut(&mut self) -> &mut ControlFlowGraph<Counter, LinearFlowState, LatticeElementId> {
+        &mut self.cfg
     }
 }
 
@@ -673,8 +707,8 @@ impl Index<LatticeElementId> for DivergentAnalysisInner {
 
 struct DivergentFlowJoiner(Step);
 
-impl FlowJoiner<Step> for DivergentFlowJoiner {
-    fn joinFlow(&mut self, input: &Step) {}
+impl FlowJoiner<Step, DivergentAnalysisInner> for DivergentFlowJoiner {
+    fn joinFlow(&mut self, _: &mut DivergentAnalysisInner, input: LatticeElementId) {}
 
     fn finish(self) -> Step {
         self.0
@@ -713,9 +747,16 @@ struct DivergentAnalysis {
 }
 
 impl DivergentAnalysis {
-    fn new(cfa: ControlFlowAnalysisResult<Counter, LinearFlowState, Step>) -> Self {
+    fn new(cfa: ControlFlowAnalysisResult<Counter, LinearFlowState, LatticeElementId>) -> Self {
         Self {
-            data_flow_analysis: DataFlowAnalysis::new(DivergentAnalysisInner::default(), cfa),
+            data_flow_analysis: DataFlowAnalysis::new(
+                DivergentAnalysisInner {
+                    lattice_elements: IndexVec::default(),
+                    counts: FxHashMap::default(),
+                    cfg: cfa.cfg,
+                },
+                cfa.nodePriorities,
+            ),
         }
     }
 }

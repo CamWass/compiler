@@ -28,6 +28,7 @@ pub mod node;
 pub mod normalize;
 mod normalize_shorthand;
 mod optimize_properties;
+mod optimize_properties2;
 pub mod resolver;
 mod transform_ts;
 pub mod types;
@@ -226,7 +227,8 @@ impl Compiler {
 
             let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 
-            optimize_properties::process(&mut program_ast);
+            // optimize_properties::process(&mut program_ast);
+            optimize_properties2::process(&mut program_ast);
 
             if passes.optimize_arguments_array {
                 OptimizeArgumentsArray::OptimizeArgumentsArray::process(

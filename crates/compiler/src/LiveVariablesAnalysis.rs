@@ -48,7 +48,7 @@ where
     T: FunctionLike<'a>,
 {
     data_flow_analysis:
-        DataFlowAnalysis<Node<'ast>, Inner<'a, T>, LiveVariableLattice, LiveVariableJoinOp>,
+        DataFlowAnalysis<Node<'ast>, Inner<'ast, 'a, T>, LiveVariableLattice, LiveVariableJoinOp>,
 }
 
 impl<'ast, 'a, T> LiveVariablesAnalysis<'ast, 'a, T>
@@ -73,7 +73,7 @@ where
      * @param allVarsDeclaredInFunction mapping of names to vars of everything reachable in a function
      */
     pub fn new(
-        cfa: ControlFlowAnalysisResult<Node<'ast>, LinearFlowState, LiveVariableLattice>,
+        cfa: ControlFlowAnalysisResult<Node<'ast>, LinearFlowState, LatticeElementId>,
         fn_scope: &'a T,
         allVarsDeclaredInFunction: AllVarsDeclaredInFunction,
         unresolved_ctxt: SyntaxContext,
@@ -93,8 +93,9 @@ where
             params: allVarsDeclaredInFunction.params,
             fn_and_class_names: allVarsDeclaredInFunction.fn_and_class_names,
             lattice_elements: IndexVec::default(),
+            cfg: cfa.cfg,
         };
-        let data_flow_analysis = DataFlowAnalysis::new(inner, cfa);
+        let data_flow_analysis = DataFlowAnalysis::new(inner, cfa.nodePriorities);
 
         Self { data_flow_analysis }
     }
@@ -103,7 +104,7 @@ where
         mut self,
     ) -> (
         LiveVariablesAnalysisResult,
-        ControlFlowGraph<Node<'ast>, LinearFlowState, LiveVariableLattice>,
+        ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
     ) {
         self.data_flow_analysis.analyze();
 
@@ -115,7 +116,7 @@ where
             fn_and_class_names: self.data_flow_analysis.inner.fn_and_class_names,
             lattice_elements: self.data_flow_analysis.inner.lattice_elements,
         };
-        (liveness_result, self.data_flow_analysis.cfg)
+        (liveness_result, self.data_flow_analysis.inner.cfg)
     }
 
     fn getVarIndex(&self, var: &Id) -> Option<VarId> {
@@ -124,7 +125,7 @@ where
 }
 
 #[derive(Debug)]
-struct Inner<'a, T>
+struct Inner<'ast, 'a, T>
 where
     T: FunctionLike<'a>,
 {
@@ -143,9 +144,11 @@ where
     fn_and_class_names: FxHashSet<VarId>,
 
     lattice_elements: IndexVec<LatticeElementId, LiveVariableLattice>,
+
+    cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
 }
 
-impl<'a, T> Inner<'a, T>
+impl<'ast, 'a, T> Inner<'ast, 'a, T>
 where
     T: FunctionLike<'a>,
 {
@@ -166,7 +169,7 @@ where
      */
     fn computeGenKill<'b>(
         &mut self,
-        n: Node,
+        n: Node<'ast>,
         gen: &'b mut BitSet<VarId>,
         kill: &'b mut BitSet<VarId>,
         conditional: bool,
@@ -218,7 +221,7 @@ where
     }
 }
 
-struct GenKillComputer<'a, 'b, T>
+struct GenKillComputer<'ast, 'a, 'b, T>
 where
     T: FunctionLike<'a>,
 {
@@ -226,12 +229,12 @@ where
     gen: &'b mut BitSet<VarId>,
     kill: &'b mut BitSet<VarId>,
     conditional: bool,
-    analysis: &'b mut Inner<'a, T>,
+    analysis: &'b mut Inner<'ast, 'a, T>,
     in_lhs: bool,
     in_destructuring: bool,
 }
 
-impl<'a, 'b, 'ast, T> Visit<'ast> for GenKillComputer<'a, 'b, T>
+impl<'a, 'b, 'ast, T> Visit<'ast> for GenKillComputer<'ast, 'a, 'b, T>
 where
     T: FunctionLike<'a>,
 {
@@ -524,7 +527,7 @@ where
 }
 
 impl<'ast, 'a, T> DataFlowAnalysisInner<Node<'ast>, LiveVariableLattice, LiveVariableJoinOp>
-    for Inner<'a, T>
+    for Inner<'ast, 'a, T>
 where
     T: FunctionLike<'a>,
 {
@@ -548,19 +551,15 @@ where
         LiveVariableJoinOp::new(self.num_vars)
     }
 
-    fn flowThrough(
-        &mut self,
-        node: Node<'ast>,
-        input: LatticeElementId,
-        cfg: &ControlFlowGraph<Node<'ast>, LinearFlowState, LiveVariableLattice>,
-    ) -> LatticeElementId {
+    fn flowThrough(&mut self, node: Node<'ast>, input: LatticeElementId) -> LatticeElementId {
         let mut gen = BitSet::new_empty(self.num_vars);
         let mut kill = BitSet::new_empty(self.num_vars);
 
         // Make kills conditional if the node can end abruptly by an exception.
-        let conditional = cfg
+        let conditional = self
+            .cfg
             .graph
-            .edges(cfg.map[&node])
+            .edges(self.cfg.map[&node])
             .any(|e| *e.weight() == Branch::ON_EX);
         self.computeGenKill(node, &mut gen, &mut kill, conditional);
 
@@ -582,9 +581,16 @@ where
             }
         }
     }
+
+    fn cfg(&self) -> &ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId> {
+        &self.cfg
+    }
+    fn cfg_mut(&mut self) -> &mut ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId> {
+        &mut self.cfg
+    }
 }
 
-impl<'a, T> Index<LatticeElementId> for Inner<'a, T>
+impl<'a, T> Index<LatticeElementId> for Inner<'_, 'a, T>
 where
     T: FunctionLike<'a>,
 {
@@ -607,9 +613,14 @@ impl LiveVariableJoinOp {
     }
 }
 
-impl FlowJoiner<LiveVariableLattice> for LiveVariableJoinOp {
-    fn joinFlow(&mut self, input: &LiveVariableLattice) {
-        self.result.liveSet.union(&input.liveSet);
+impl<'ast, 'a, T> FlowJoiner<LiveVariableLattice, Inner<'ast, 'a, T>> for LiveVariableJoinOp
+where
+    T: FunctionLike<'a>,
+{
+    fn joinFlow(&mut self, inner: &mut Inner<'ast, 'a, T>, input: LatticeElementId) {
+        self.result
+            .liveSet
+            .union(&inner.lattice_elements[input].liveSet);
     }
 
     fn finish(self) -> LiveVariableLattice {

@@ -278,7 +278,10 @@ impl InnerVisitor {
                 self.invalidate_if_var(&n.exprs[i]);
             }
 
-            Expr::Assign(_) => todo!(),
+            Expr::Assign(n) => {
+                n.left.visit_with(self);
+                self.invalidate_if_var(&n.right);
+            }
             Expr::Call(_) => todo!(),
             Expr::New(_) => todo!(),
             Expr::Yield(_) => todo!(),
