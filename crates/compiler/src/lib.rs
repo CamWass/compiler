@@ -12,6 +12,7 @@ pub mod CoalesceVariableNames;
 mod DataFlowAnalysis;
 mod DefaultNameGenerator;
 mod LiveVariablesAnalysis;
+mod MaybeReachingVariableUse;
 mod OptimizeArgumentsArray;
 mod RenameLabels;
 mod RenameVars;

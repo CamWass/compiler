@@ -301,6 +301,7 @@ impl<'ast> PartialEq<ExceptionHandler<'ast>> for ExceptionHandler<'ast> {
     }
 }
 
+#[derive(PartialEq, Clone, Debug)]
 pub struct MultiMap<K, V>(FxHashMap<K, Vec<V>>)
 where
     K: Eq + Hash;
@@ -308,13 +309,16 @@ where
 impl<K, V> MultiMap<K, V>
 where
     K: Eq + Hash,
+    V: PartialEq,
 {
     pub fn put(&mut self, key: K, value: V) {
         let existing = self.0.get_mut(&key);
 
         match existing {
             Some(vec) => {
-                vec.push(value);
+                if !vec.contains(&value) {
+                    vec.push(value);
+                }
             }
             None => {
                 self.0.insert(key, vec![value]);
@@ -322,8 +326,16 @@ where
         }
     }
 
+    pub fn remove(&mut self, key: &K) {
+        self.0.remove(key);
+    }
+
     pub fn get(&self, key: K) -> Option<&Vec<V>> {
         self.0.get(&key)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&K, &Vec<V>)> {
+        self.0.iter()
     }
 }
 
