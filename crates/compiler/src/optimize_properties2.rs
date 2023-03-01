@@ -37,7 +37,7 @@ where
 
     let cfa = ControlFlowAnalysis::analyze(node.into(), false);
 
-    let result = Analysis::new(cfa, node, vars).analyze();
+    let result = Analysis::new(cfa, vars.scopeVariables).analyze();
 
     // result.1.print_full_with_annotations::<DefaultPrinter>(None);
 
@@ -55,7 +55,7 @@ where
     let end = &result.0.lattice_elements[end.in_];
     // dbg!(end);
 
-    for entity in end.objects.values() {
+    for entity in end.entities.values() {
         if let Entity::Object(object) = entity {
             if object.invalidated {
                 continue;
@@ -120,48 +120,24 @@ impl Visit<'_> for GlobalVisitor {
 
 #[derive(Debug)]
 pub struct AnalysisResult {
-    pub escaped_locals: FxHashSet<Id>,
-    pub scopeVariables: FxHashMap<Id, VarId>,
-    pub orderedVars: IndexVec<VarId, Id>,
-    pub params: FxHashSet<VarId>,
-    pub fn_and_class_names: FxHashSet<VarId>,
     pub lattice_elements: IndexVec<LatticeElementId, Lattice>,
 }
 
-pub struct Analysis<'ast, 'a, T>
-where
-    T: FunctionLike<'a>,
-{
-    data_flow_analysis: DataFlowAnalysis<Node<'ast>, Inner<'ast, 'a, T>, Lattice, TODOJoinOp>,
+pub struct Analysis<'ast> {
+    data_flow_analysis: DataFlowAnalysis<Node<'ast>, Inner<'ast>, Lattice, JoinOp>,
 }
 
-impl<'ast, 'a, T> Analysis<'ast, 'a, T>
-where
-    T: FunctionLike<'a>,
-{
+impl<'ast> Analysis<'ast> {
     pub fn new(
         cfa: ControlFlowAnalysisResult<Node<'ast>, LinearFlowState, LatticeElementId>,
-        fn_scope: &'a T,
-        allVarsDeclaredInFunction: AllVarsDeclaredInFunction,
+        vars: FxHashMap<Id, VarId>,
     ) -> Self {
         let inner = Inner {
-            num_vars: allVarsDeclaredInFunction.ordered_vars.len(),
-            fn_scope,
-
-            escaped: computeEscaped(
-                fn_scope,
-                &allVarsDeclaredInFunction.scopeVariables,
-                allVarsDeclaredInFunction.catch_vars,
-            ),
-            scopeVariables: allVarsDeclaredInFunction.scopeVariables,
-            orderedVars: allVarsDeclaredInFunction.ordered_vars,
-            params: allVarsDeclaredInFunction.params,
-            fn_and_class_names: allVarsDeclaredInFunction.fn_and_class_names,
             lattice_elements: IndexVec::default(),
             cfg: cfa.cfg,
 
-            next_TODO_ID: TODOId::from_u32(0),
-            next_object_ID: ObjectId::from_u32(0),
+            vars,
+            id_gen: IdGen::new(),
         };
         let data_flow_analysis = DataFlowAnalysis::new(inner, cfa.nodePriorities);
 
@@ -177,11 +153,6 @@ where
         self.data_flow_analysis.analyze();
 
         let result = AnalysisResult {
-            escaped_locals: self.data_flow_analysis.inner.escaped,
-            scopeVariables: self.data_flow_analysis.inner.scopeVariables,
-            orderedVars: self.data_flow_analysis.inner.orderedVars,
-            params: self.data_flow_analysis.inner.params,
-            fn_and_class_names: self.data_flow_analysis.inner.fn_and_class_names,
             lattice_elements: self.data_flow_analysis.inner.lattice_elements,
         };
         (result, self.data_flow_analysis.inner.cfg)
@@ -189,37 +160,17 @@ where
 }
 
 #[derive(Debug)]
-struct Inner<'ast, 'a, T>
-where
-    T: FunctionLike<'a>,
-{
-    num_vars: usize,
-    fn_scope: &'a T,
-
-    escaped: FxHashSet<Id>,
-    // Maps the variable name to it's position
-    // in this jsScope were we to combine the function and function body scopes. The Integer
-    // represents the equivalent of the variable index property within a scope
-    scopeVariables: FxHashMap<Id, VarId>,
-    // obtain variables in the order in which they appear in the code
-    orderedVars: IndexVec<VarId, Id>,
-    params: FxHashSet<VarId>,
-    fn_and_class_names: FxHashSet<VarId>,
-
+struct Inner<'ast> {
     lattice_elements: IndexVec<LatticeElementId, Lattice>,
-
     cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
 
-    next_TODO_ID: TODOId,
-    next_object_ID: ObjectId,
+    vars: FxHashMap<Id, VarId>,
+    id_gen: IdGen,
 }
 
-impl<'ast, 'a, T> Inner<'ast, 'a, T>
-where
-    T: FunctionLike<'a>,
-{
-    fn computeGenKill<'b>(&mut self, n: Node<'ast>, lattice: &'b mut Lattice, conditional: bool) {
-        let mut v = GenKillComputer {
+impl<'ast> Inner<'ast> {
+    fn analyze_node<'a>(&mut self, n: Node<'ast>, lattice: &'a mut Lattice, conditional: bool) {
+        let mut v = Analyser {
             analysis: self,
             lattice,
         };
@@ -229,14 +180,38 @@ where
 }
 
 index::newtype_index!(struct ObjectId { .. });
-index::newtype_index!(struct TODOId { .. });
-index::newtype_index!(struct DeclarationId { .. });
+index::newtype_index!(struct EntityId { .. });
+
+#[derive(Debug)]
+struct IdGen {
+    entity_id: EntityId,
+    object_id: ObjectId,
+}
+
+impl IdGen {
+    fn new() -> Self {
+        Self {
+            entity_id: EntityId::from_u32(0),
+            object_id: ObjectId::from_u32(0),
+        }
+    }
+
+    fn next_entity_id(&mut self) -> EntityId {
+        let id = self.entity_id;
+        self.entity_id.increment_by(1);
+        id
+    }
+    fn next_object_id(&mut self) -> ObjectId {
+        let id = self.object_id;
+        self.object_id.increment_by(1);
+        id
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 struct Property {
     value: Option<ObjectId>,
     references: FxHashSet<NodeId>,
-    conditional: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -247,7 +222,6 @@ enum Entity {
 
 #[derive(Default, Debug, Clone, PartialEq)]
 struct Object {
-    // TODO: allow, and recursively conflate, nested props.
     properties: FxHashMap<Id, Property>,
     invalidated: bool,
 }
@@ -257,97 +231,26 @@ struct Assignment {
     rhs: Option<ObjectId>,
 }
 
+/// A place where a variable can be stored.
 enum Slot<'ast> {
     Var(Id),
     Prop(ObjectId, &'ast Ident),
 }
 
-struct GenKillComputer<'ast, 'a, 'b, T>
-where
-    T: FunctionLike<'a>,
-{
-    analysis: &'b mut Inner<'ast, 'a, T>,
-
-    lattice: &'b mut Lattice,
+struct Analyser<'ast, 'a> {
+    analysis: &'a mut Inner<'ast>,
+    lattice: &'a mut Lattice,
 }
 
-impl<'ast, 'a, 'b, T> GenKillComputer<'ast, 'a, 'b, T>
-where
-    T: FunctionLike<'a>,
-{
-    fn ensure_conflated(&mut self, obj: ObjectId) {
-        let TODO_ID = self.lattice.object_map.get(&obj).unwrap();
-
-        let entity = self.lattice.objects.get_mut(TODO_ID).unwrap();
-
-        let entity = match entity {
-            Entity::Conflation(_) => std::mem::replace(entity, Entity::Object(Object::default())),
-            Entity::Object(_) => return,
-        };
-        let mut queue = unwrap_as!(entity, Entity::Conflation(o), o)
-            .into_iter()
-            .collect::<Vec<_>>();
-        let mut done = FxHashSet::default();
-
-        // println!("conflating objects `{:#?}`", &queue);
-
-        while let Some(constituent) = queue.pop() {
-            if done.contains(&constituent) {
-                continue;
-            }
-
-            let TODO_ID = self.lattice.object_map.get(&constituent).unwrap();
-            match self.lattice.objects.remove(TODO_ID).unwrap() {
-                Entity::Conflation(objects) => {
-                    for obj in objects {
-                        if !done.contains(&obj) {
-                            queue.push(obj);
-                        }
-                    }
-                }
-                Entity::Object(incoming) => {
-                    self.get_object_mut(obj).invalidated |= incoming.invalidated;
-
-                    for (key, prop) in incoming.properties {
-                        match self.get_object_mut(obj).properties.get(&key) {
-                            Some(existing) => {
-                                // conflate
-                                let existing = existing.value;
-                                let value = self.conflate_objects(existing, prop.value);
-                                let existing =
-                                    self.get_object_mut(obj).properties.get_mut(&key).unwrap();
-                                existing.value = value;
-                                existing.conditional |= prop.conditional;
-                                existing.references.extend(prop.references);
-                            }
-                            None => {
-                                // initialize
-                                self.get_object_mut(obj).properties.insert(key, prop);
-                            }
-                        }
-                    }
-                }
-            }
-
-            done.insert(obj);
-        }
-    }
-
-    fn get_object_mut(&mut self, obj: ObjectId) -> &mut Object {
-        let TODO_ID = *self.lattice.object_map.get(&obj).unwrap();
-
-        self.ensure_conflated(obj);
-        unwrap_as!(
-            self.lattice.objects.get_mut(&TODO_ID).unwrap(),
-            Entity::Object(o),
-            o
-        )
-    }
-
-    fn declare_property(
+impl<'ast, 'a> Analyser<'ast, 'a> {
+    /// Adds a property with the given name and value to the entity that `obj`
+    /// points to. If a property with that name already exists, it is replaced,
+    /// unless this assignment is conditional, in which case the property is
+    /// assigned a conflation of the old and new values.
+    fn record_prop_assignment(
         &mut self,
         obj: ObjectId,
-        prop: &Ident,
+        name: &Ident,
         value: Option<ObjectId>,
         conditional: bool,
     ) {
@@ -355,10 +258,10 @@ where
         //     "declaring prop `{:#?}` with value `{:#?}` on object `{:#?}` ",
         //     prop, value, obj
         // );
-        let object = self.get_object_mut(obj);
-        let prop_id = prop.to_id();
+        let object = self.lattice.get_object_mut(obj, &mut self.analysis.id_gen);
+        let name_id = name.to_id();
 
-        match object.properties.get(&prop_id) {
+        match object.properties.get(&name_id) {
             Some(existing) => {
                 let value = if !conditional {
                     // supersede
@@ -366,88 +269,87 @@ where
                 } else {
                     // conflate
                     let id1 = existing.value;
-                    self.conflate_objects(id1, value)
+                    self.lattice
+                        .record_conflation(id1, value, &mut self.analysis.id_gen)
                 };
                 let existing = self
-                    .get_object_mut(obj)
+                    .lattice
+                    .get_object_mut(obj, &mut self.analysis.id_gen)
                     .properties
-                    .get_mut(&prop_id)
+                    .get_mut(&name_id)
                     .unwrap();
                 existing.value = value;
-                existing.conditional = conditional;
-                existing.references.insert(prop.node_id);
+                existing.references.insert(name.node_id);
             }
             None => {
                 // initialize
                 let mut references = FxHashSet::default();
-                references.insert(prop.node_id);
-                object.properties.insert(
-                    prop_id,
-                    Property {
-                        value,
-                        references,
-                        conditional,
-                    },
-                );
+                references.insert(name.node_id);
+                object
+                    .properties
+                    .insert(name_id, Property { value, references });
             }
         }
     }
 
-    fn invalidate(&mut self, obj: ObjectId) {
-        // println!("invalidating object `{:#?}`", obj);
-        self.get_object_mut(obj).invalidated = true;
-    }
-
-    fn conflate_objects(
-        &mut self,
-        id1: Option<ObjectId>,
-        id2: Option<ObjectId>,
-    ) -> Option<ObjectId> {
-        // println!("conflating objects `{:#?}` and `{:#?}` ", id1, id2);
-        // TODO: invalidate if either is None. This can be avoided if we have a Some() and a None,
-        // and the None represents a literal/primitive, in which case we know its properties and
-        // the conflated object's props will be the properties of the non-primitive argument (Some)
-        // subtract the primitive's props.
-        // This is simplified if the primitive is null/undefined, since they have no props.
-        let (id1, id2) = match (id1, id2) {
-            (None, None) => return None,
-            (None, Some(id2)) => {
-                self.invalidate(id2);
-                return Some(id2);
-            }
-            (Some(id1), None) => {
-                self.invalidate(id1);
-                return Some(id1);
-            }
-            (Some(id1), Some(id2)) => (id1, id2),
-        };
-
-        let TODO_ID1 = *self.lattice.object_map.get(&id1).unwrap();
-        let TODO_ID2 = *self.lattice.object_map.get(&id2).unwrap();
-
-        if TODO_ID1 == TODO_ID2 {
-            // Already been conflated.
-            todo!("reachable?");
-            // return;
-        }
-
-        let mut objects = FxHashSet::default();
-        objects.insert(id1);
-        objects.insert(id2);
-        let conflation = Entity::Conflation(objects);
-
-        let new_TODO_ID = self.analysis.next_TODO_ID;
-        self.analysis.next_TODO_ID.increment_by(1);
-        self.lattice.objects.insert(new_TODO_ID, conflation);
-
-        let next_object_ID = self.analysis.next_object_ID;
-        self.analysis.next_object_ID.increment_by(1);
-        self.lattice.object_map.insert(next_object_ID, new_TODO_ID);
-
-        Some(next_object_ID)
-    }
-
+    /// Assigns the given value to the variable with the given name. Any existing
+    /// value is replaced, unless this assignment is conditional, in which case
+    /// the variable is assigned a conflation of the old and new values.
     fn record_var_assignment(
+        &mut self,
+        name: Id,
+        rhs: Option<ObjectId>,
+        conditional: bool,
+    ) -> Option<ObjectId> {
+        if let Some(rhs_object) = rhs {
+            if let Some(existing) = self.lattice.var_assignments.get(&name) {
+                let rhs = if !conditional {
+                    // supersede
+                    Some(rhs_object)
+                } else {
+                    // conflate
+                    self.lattice.record_conflation(
+                        existing.rhs,
+                        Some(rhs_object),
+                        &mut self.analysis.id_gen,
+                    )
+                };
+                let assign = Assignment { rhs };
+                self.lattice.var_assignments.insert(name, assign);
+            } else {
+                // initialize
+                let assign = Assignment {
+                    rhs: Some(rhs_object),
+                };
+                self.lattice.var_assignments.insert(name, assign);
+            }
+            Some(rhs_object)
+        } else {
+            // Non-object assignment
+            let assign = Assignment { rhs: None };
+            self.lattice.var_assignments.insert(name, assign);
+            None
+        }
+    }
+
+    /// Records an assignment of the form `LHS OP RHS` e.g.
+    /// ```js
+    /// let a = 1
+    /// ```
+    /// ```js
+    /// a.b = c
+    /// ```
+    /// ```js
+    /// a ||= b
+    /// ```
+    /// ```js
+    /// a().b ||= c
+    /// ```
+    ///
+    /// `conditional` - Whether the entire assignment (LHS and RHS) is conditionally executed.
+    ///
+    /// `conditional_assign` - Whether the RHS is conditionally executed.
+    fn record_assignment(
         &mut self,
         lhs: Node<'ast>,
         rhs: Node<'ast>,
@@ -463,40 +365,15 @@ where
         let rhs = self.visit_and_get_object(rhs, conditional);
 
         match lhs {
-            Some(Slot::Var(lhs)) => {
-                if let Some(rhs_object) = rhs {
-                    if let Some(existing) = self.lattice.var_assignments.get(&lhs) {
-                        let rhs = if !conditional {
-                            // supersede
-                            Some(rhs_object)
-                        } else {
-                            // conflate
-                            self.conflate_objects(existing.rhs, Some(rhs_object))
-                        };
-                        let assign = Assignment { rhs };
-                        self.lattice.var_assignments.insert(lhs, assign);
-                    } else {
-                        // initialize
-                        let assign = Assignment {
-                            rhs: Some(rhs_object),
-                        };
-                        self.lattice.var_assignments.insert(lhs, assign);
-                    }
-                    Some(rhs_object)
-                } else {
-                    // Non-object assignment
-                    let assign = Assignment { rhs: None };
-                    self.lattice.var_assignments.insert(lhs, assign);
-                    None
-                }
-            }
+            Some(Slot::Var(lhs)) => self.record_var_assignment(lhs, rhs, conditional),
             Some(Slot::Prop(obj, prop)) => {
-                self.declare_property(obj, prop, rhs, conditional);
+                self.record_prop_assignment(obj, prop, rhs, conditional);
                 Some(obj)
             }
             None => {
+                // Unknown/invalid assignment target.
                 if let Some(rhs) = rhs {
-                    self.invalidate(rhs);
+                    self.lattice.invalidate(rhs, &mut self.analysis.id_gen);
                 }
                 rhs
             }
@@ -507,7 +384,7 @@ where
         match node {
             Node::Ident(node) => {
                 let id = node.to_id();
-                if self.analysis.scopeVariables.contains_key(&id) {
+                if self.analysis.vars.contains_key(&id) {
                     Some(Slot::Var(id))
                 } else {
                     None
@@ -518,7 +395,7 @@ where
                 let obj = self.visit_and_get_object(Node::from(&node.obj), conditional);
                 if node.computed {
                     if let Some(obj) = obj {
-                        self.invalidate(obj);
+                        self.lattice.invalidate(obj, &mut self.analysis.id_gen);
                     }
                     self.visit_and_get_slot(Node::from(node.prop.as_ref()), conditional);
                     None
@@ -619,10 +496,10 @@ where
 
             Node::AssignExpr(node) => {
                 let expr_lhs = match &node.left {
-                    PatOrExpr::Expr(n) => true,
+                    PatOrExpr::Expr(_) => true,
                     PatOrExpr::Pat(n) => match n.as_ref() {
-                        Pat::Expr(n) => true,
-                        Pat::Ident(i) => true,
+                        Pat::Expr(_) => true,
+                        Pat::Ident(_) => true,
                         _ => false,
                     },
                 };
@@ -633,7 +510,7 @@ where
                 );
 
                 if expr_lhs {
-                    self.record_var_assignment(
+                    self.record_assignment(
                         Node::from(&node.left),
                         Node::from(node.right.as_ref()),
                         conditional,
@@ -658,12 +535,7 @@ where
                     let lhs_ident = matches!(&node.name, Pat::Ident(_));
 
                     if lhs_ident {
-                        self.record_var_assignment(
-                            lhs,
-                            Node::from(rhs.as_ref()),
-                            conditional,
-                            false,
-                        )
+                        self.record_assignment(lhs, Node::from(rhs.as_ref()), conditional, false)
                     } else {
                         todo!("destructuring");
                     }
@@ -684,15 +556,15 @@ where
                     let mut obj = Object::default();
                     obj.properties.reserve(node.props.len());
 
-                    let new_TODO_ID = self.analysis.next_TODO_ID;
-                    self.analysis.next_TODO_ID.increment_by(1);
+                    let new_entity_id = self.analysis.id_gen.next_entity_id();
                     self.lattice
-                        .objects
-                        .insert(new_TODO_ID, Entity::Object(obj));
+                        .entities
+                        .insert(new_entity_id, Entity::Object(obj));
 
-                    let next_object_ID = self.analysis.next_object_ID;
-                    self.analysis.next_object_ID.increment_by(1);
-                    self.lattice.object_map.insert(next_object_ID, new_TODO_ID);
+                    let next_object_id = self.analysis.id_gen.next_object_id();
+                    self.lattice
+                        .object_map
+                        .insert(next_object_id, new_entity_id);
 
                     for prop in &node.props {
                         let prop = unwrap_as!(prop, Prop::KeyValue(p), p);
@@ -700,10 +572,10 @@ where
                         let value =
                             self.visit_and_get_object(Node::from(prop.value.as_ref()), conditional);
 
-                        self.declare_property(next_object_ID, key, value, conditional);
+                        self.record_prop_assignment(next_object_id, key, value, conditional);
                     }
 
-                    Some(next_object_ID)
+                    Some(next_object_id)
                 } else {
                     None
                 }
@@ -725,7 +597,8 @@ where
                             self.visit_and_get_object(Node::from(node.left.as_ref()), conditional);
                         let right =
                             self.visit_and_get_object(Node::from(node.right.as_ref()), true);
-                        self.conflate_objects(left, right)
+                        self.lattice
+                            .record_conflation(left, right, &mut self.analysis.id_gen)
                     }
                     _ => {
                         self.visit_and_get_object(Node::from(node.left.as_ref()), conditional);
@@ -739,7 +612,7 @@ where
                 let obj = self.visit_and_get_object(Node::from(&node.obj), conditional);
                 if node.computed {
                     if let Some(obj) = obj {
-                        self.invalidate(obj);
+                        self.lattice.invalidate(obj, &mut self.analysis.id_gen);
                     }
                     self.visit_and_get_object(Node::from(node.prop.as_ref()), conditional);
                     None
@@ -747,7 +620,8 @@ where
                     if let Some(obj) = obj {
                         let ident = unwrap_as!(node.prop.as_ref(), Expr::Ident(i), i);
                         let id = ident.to_id();
-                        if let Some(prop) = self.get_object_mut(obj).properties.get_mut(&id) {
+                        let object = self.lattice.get_object_mut(obj, &mut self.analysis.id_gen);
+                        if let Some(prop) = object.properties.get_mut(&id) {
                             prop.references.insert(ident.node_id);
                             prop.value
                         } else {
@@ -762,7 +636,8 @@ where
                 self.visit_and_get_object(Node::from(node.test.as_ref()), conditional);
                 let cons = self.visit_and_get_object(Node::from(node.cons.as_ref()), true);
                 let alt = self.visit_and_get_object(Node::from(node.alt.as_ref()), true);
-                self.conflate_objects(cons, alt)
+                self.lattice
+                    .record_conflation(cons, alt, &mut self.analysis.id_gen)
             }
             Node::CallExpr(_) => todo!(),
             Node::NewExpr(_) => todo!(),
@@ -868,10 +743,7 @@ where
     }
 }
 
-impl<'ast, 'a, T> DataFlowAnalysisInner<Node<'ast>, Lattice, TODOJoinOp> for Inner<'ast, 'a, T>
-where
-    T: FunctionLike<'a>,
-{
+impl<'ast> DataFlowAnalysisInner<Node<'ast>, Lattice, JoinOp> for Inner<'ast> {
     fn add_lattice_element(&mut self, element: Lattice) -> LatticeElementId {
         self.lattice_elements.push(element)
     }
@@ -888,8 +760,8 @@ where
         self.createEntryLattice()
     }
 
-    fn createFlowJoiner(&self) -> TODOJoinOp {
-        TODOJoinOp::new()
+    fn createFlowJoiner(&self) -> JoinOp {
+        JoinOp::new()
     }
 
     fn flowThrough(&mut self, node: Node<'ast>, input: LatticeElementId) -> LatticeElementId {
@@ -902,7 +774,7 @@ where
 
         let mut new = self.lattice_elements[input].clone();
 
-        self.computeGenKill(node, &mut new, conditional);
+        self.analyze_node(node, &mut new, conditional);
 
         if new != self.lattice_elements[input] {
             self.add_lattice_element(new)
@@ -920,10 +792,7 @@ where
     }
 }
 
-impl<'a, T> Index<LatticeElementId> for Inner<'_, 'a, T>
-where
-    T: FunctionLike<'a>,
-{
+impl Index<LatticeElementId> for Inner<'_> {
     type Output = Lattice;
 
     fn index(&self, index: LatticeElementId) -> &Self::Output {
@@ -931,26 +800,150 @@ where
     }
 }
 
-struct TODOJoinOp {
+struct JoinOp {
     result: Lattice,
 }
 
-impl TODOJoinOp {
+impl JoinOp {
     fn new() -> Self {
         Self {
             result: Lattice::default(),
         }
     }
 
-    fn ensure_conflated(
-        &mut self,
-        obj: ObjectId,
-        next_TODO_ID: &mut TODOId,
-        next_object_ID: &mut ObjectId,
-    ) {
-        let TODO_ID = self.result.object_map.get(&obj).unwrap();
+    fn record_var_assignment(&mut self, lhs: &Id, incoming: &Assignment, id_gen: &mut IdGen) {
+        // println!("JOIN: record_var_assignment: id: {:?}", lhs);
+        if let Some(existing) = self.result.var_assignments.get(lhs) {
+            // conflate
+            // println!(
+            //     "JOIN: record_var_assignment: conflating {:?} and {:?}",
+            //     existing.rhs, incoming.rhs
+            // );
+            let conflation = self
+                .result
+                .record_conflation(existing.rhs, incoming.rhs, id_gen);
+            self.result
+                .var_assignments
+                .insert(lhs.clone(), Assignment { rhs: conflation });
+        } else {
+            // initialize with incoming
+            // println!(
+            //     "JOIN: record_var_assignment: initializing {:?}",
+            //     incoming.rhs
+            // );
+            self.result
+                .var_assignments
+                .insert(lhs.clone(), incoming.clone());
+        }
+    }
+}
 
-        let entity = self.result.objects.get_mut(TODO_ID).unwrap();
+impl<'ast> FlowJoiner<Lattice, Inner<'ast>> for JoinOp {
+    fn joinFlow(&mut self, inner: &mut Inner<'ast>, input: LatticeElementId) {
+        let input = &inner.lattice_elements[input];
+
+        // println!("======================JOIN:");
+        // dbg!(&self.result);
+        // dbg!(input);
+
+        for (obj_id, entity_id) in &input.object_map {
+            if let Some(existing) = self.result.object_map.get(obj_id) {
+                debug_assert_eq!(&input.entities[entity_id], &self.result.entities[existing]);
+            } else {
+                self.result.object_map.insert(*obj_id, *entity_id);
+            }
+        }
+
+        for (&entity_id, entity) in &input.entities {
+            match self.result.entities.entry(entity_id) {
+                std::collections::hash_map::Entry::Occupied(entry) => {
+                    debug_assert_eq!(entity, entry.get());
+                }
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(entity.clone());
+                }
+            }
+        }
+
+        for (lhs, incoming) in &input.var_assignments {
+            self.record_var_assignment(lhs, incoming, &mut inner.id_gen);
+        }
+
+        // dbg!(&self.result);
+        // println!("======================:");
+    }
+
+    fn finish(self) -> Lattice {
+        self.result
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct Lattice {
+    entities: FxHashMap<EntityId, Entity>,
+    object_map: FxHashMap<ObjectId, EntityId>,
+    var_assignments: FxHashMap<Id, Assignment>,
+}
+
+impl Lattice {
+    /// Conflates the [`Entities`][`Entity`] that `id1` and `id2` point to.
+    ///
+    /// Note that this merely records the conflation - the objects are not merged
+    /// until the conflation is used as a single object (e.g. property is accessed).
+    fn record_conflation(
+        &mut self,
+        id1: Option<ObjectId>,
+        id2: Option<ObjectId>,
+        id_gen: &mut IdGen,
+    ) -> Option<ObjectId> {
+        // println!("conflating objects `{:#?}` and `{:#?}` ", id1, id2);
+        // TODO: invalidate if either is None. This can be avoided if we have a Some() and a None,
+        // and the None represents a literal/primitive, in which case we know its properties and
+        // the conflated object's props will be the properties of the non-primitive argument (Some)
+        // subtract the primitive's props.
+        // This is simplified if the primitive is null/undefined, since they have no props.
+        let (id1, id2) = match (id1, id2) {
+            (None, None) => return None,
+            (None, Some(id2)) => {
+                self.invalidate(id2, id_gen);
+                return Some(id2);
+            }
+            (Some(id1), None) => {
+                self.invalidate(id1, id_gen);
+                return Some(id1);
+            }
+            (Some(id1), Some(id2)) => (id1, id2),
+        };
+
+        let entity_id1 = *self.object_map.get(&id1).unwrap();
+        let entity_id2 = *self.object_map.get(&id2).unwrap();
+
+        if entity_id1 == entity_id2 {
+            // Already been conflated.
+            todo!("reachable?");
+            // return;
+        }
+
+        let mut objects = FxHashSet::default();
+        objects.insert(id1);
+        objects.insert(id2);
+        let conflation = Entity::Conflation(objects);
+
+        let new_entity_id = id_gen.next_entity_id();
+        self.entities.insert(new_entity_id, conflation);
+
+        let next_object_id = id_gen.next_object_id();
+        self.object_map.insert(next_object_id, new_entity_id);
+
+        Some(next_object_id)
+    }
+
+    /// Performs any outstanding conflations for the [`Entity`] that `obj` points to.
+    /// This recursively merges the constituents into a single object.
+    fn ensure_conflated(&mut self, obj: ObjectId, id_gen: &mut IdGen) {
+        let entity_id = self.object_map.get(&obj).unwrap();
+
+        let entity = self.entities.get_mut(entity_id).unwrap();
 
         let entity = match entity {
             Entity::Conflation(_) => std::mem::replace(entity, Entity::Object(Object::default())),
@@ -968,8 +961,8 @@ impl TODOJoinOp {
                 continue;
             }
 
-            let TODO_ID = self.result.object_map.get(&constituent).unwrap();
-            match self.result.objects.remove(TODO_ID).unwrap() {
+            let entity_id = self.object_map.get(&constituent).unwrap();
+            match self.entities.remove(entity_id).unwrap() {
                 Entity::Conflation(objects) => {
                     for obj in objects {
                         if !done.contains(&obj) {
@@ -978,36 +971,25 @@ impl TODOJoinOp {
                     }
                 }
                 Entity::Object(incoming) => {
-                    self.get_object_mut(obj, next_TODO_ID, next_object_ID)
-                        .invalidated |= incoming.invalidated;
+                    self.get_object_mut(obj, id_gen).invalidated |= incoming.invalidated;
 
                     for (key, prop) in incoming.properties {
-                        match self
-                            .get_object_mut(obj, next_TODO_ID, next_object_ID)
-                            .properties
-                            .get(&key)
-                        {
+                        match self.get_object_mut(obj, id_gen).properties.get(&key) {
                             Some(existing) => {
                                 // conflate
                                 let existing = existing.value;
-                                let value = self.conflate_objects(
-                                    existing,
-                                    prop.value,
-                                    next_TODO_ID,
-                                    next_object_ID,
-                                );
+                                let value = self.record_conflation(existing, prop.value, id_gen);
                                 let existing = self
-                                    .get_object_mut(obj, next_TODO_ID, next_object_ID)
+                                    .get_object_mut(obj, id_gen)
                                     .properties
                                     .get_mut(&key)
                                     .unwrap();
                                 existing.value = value;
-                                existing.conditional |= prop.conditional;
                                 existing.references.extend(prop.references);
                             }
                             None => {
                                 // initialize
-                                self.get_object_mut(obj, next_TODO_ID, next_object_ID)
+                                self.get_object_mut(obj, id_gen)
                                     .properties
                                     .insert(key, prop);
                             }
@@ -1020,169 +1002,25 @@ impl TODOJoinOp {
         }
     }
 
-    fn get_object_mut(
-        &mut self,
-        obj: ObjectId,
-        next_TODO_ID: &mut TODOId,
-        next_object_ID: &mut ObjectId,
-    ) -> &mut Object {
-        let TODO_ID = *self.result.object_map.get(&obj).unwrap();
+    /// Returns the canonical representation of the [`Entity`] that `obj` points to.
+    /// This involves performing any outstanding conflations.
+    fn get_object_mut(&mut self, obj: ObjectId, id_gen: &mut IdGen) -> &mut Object {
+        let entity_id = *self.object_map.get(&obj).unwrap();
 
-        self.ensure_conflated(obj, next_TODO_ID, next_object_ID);
+        self.ensure_conflated(obj, id_gen);
         unwrap_as!(
-            self.result.objects.get_mut(&TODO_ID).unwrap(),
+            self.entities.get_mut(&entity_id).unwrap(),
             Entity::Object(o),
             o
         )
     }
 
-    fn invalidate(
-        &mut self,
-        obj: ObjectId,
-        next_TODO_ID: &mut TODOId,
-        next_object_ID: &mut ObjectId,
-    ) {
-        self.get_object_mut(obj, next_TODO_ID, next_object_ID)
-            .invalidated = true;
+    /// Invalidates the [`Entity`] that `obj` points to.
+    /// This involves performing any outstanding conflations.
+    fn invalidate(&mut self, obj: ObjectId, id_gen: &mut IdGen) {
+        // println!("invalidating object `{:#?}`", obj);
+        self.get_object_mut(obj, id_gen).invalidated = true;
     }
-
-    fn conflate_objects(
-        &mut self,
-        id1: Option<ObjectId>,
-        id2: Option<ObjectId>,
-        next_TODO_ID: &mut TODOId,
-        next_object_ID: &mut ObjectId,
-    ) -> Option<ObjectId> {
-        // println!("conflating objects `{:#?}` and `{:#?}` ", id1, id2);
-        // TODO: invalidate if either is None. This can be avoided if we have a Some() and a None,
-        // and the None represents a literal/primitive, in which case we know its properties and
-        // the conflated object's props will be the properties of the non-primitive argument (Some)
-        // subtract the primitive's props.
-        // This is simplified if the primitive is null/undefined, since they have no props.
-        let (id1, id2) = match (id1, id2) {
-            (None, None) => return None,
-            (None, Some(id2)) => {
-                self.invalidate(id2, next_TODO_ID, next_object_ID);
-                return Some(id2);
-            }
-            (Some(id1), None) => {
-                self.invalidate(id1, next_TODO_ID, next_object_ID);
-                return Some(id1);
-            }
-            (Some(id1), Some(id2)) => (id1, id2),
-        };
-
-        let TODO_ID1 = *self.result.object_map.get(&id1).unwrap();
-        let TODO_ID2 = *self.result.object_map.get(&id2).unwrap();
-
-        if TODO_ID1 == TODO_ID2 {
-            // Already been conflated.
-            todo!("reachable?");
-            // return;
-        }
-
-        let mut objects = FxHashSet::default();
-        objects.insert(id1);
-        objects.insert(id2);
-        let conflation = Entity::Conflation(objects);
-
-        let new_TODO_ID = *next_TODO_ID;
-        next_TODO_ID.increment_by(1);
-        self.result.objects.insert(new_TODO_ID, conflation);
-
-        let mut next_object_ID = *next_object_ID;
-        next_object_ID.increment_by(1);
-        self.result.object_map.insert(next_object_ID, new_TODO_ID);
-
-        Some(next_object_ID)
-    }
-
-    fn record_var_assignment(
-        &mut self,
-        lhs: &Id,
-        incoming: &Assignment,
-        next_TODO_ID: &mut TODOId,
-        next_object_ID: &mut ObjectId,
-    ) {
-        // println!("JOIN: record_var_assignment: id: {:?}", lhs);
-        if let Some(existing) = self.result.var_assignments.get(lhs) {
-            // conflate
-            // println!(
-            //     "JOIN: record_var_assignment: conflating {:?} and {:?}",
-            //     existing.rhs, incoming.rhs
-            // );
-            let conflation =
-                self.conflate_objects(existing.rhs, incoming.rhs, next_TODO_ID, next_object_ID);
-            self.result
-                .var_assignments
-                .insert(lhs.clone(), Assignment { rhs: conflation });
-        } else {
-            // initialize with incoming
-            // println!(
-            //     "JOIN: record_var_assignment: initializing {:?}",
-            //     incoming.rhs
-            // );
-            self.result
-                .var_assignments
-                .insert(lhs.clone(), incoming.clone());
-        }
-    }
-}
-
-impl<'ast, 'a, T> FlowJoiner<Lattice, Inner<'ast, 'a, T>> for TODOJoinOp
-where
-    T: FunctionLike<'a>,
-{
-    fn joinFlow(&mut self, inner: &mut Inner<'ast, 'a, T>, input: LatticeElementId) {
-        let input = &inner.lattice_elements[input];
-
-        // println!("======================JOIN:");
-        // dbg!(&self.result);
-        // dbg!(input);
-
-        for (obj_id, TODO_ID) in &input.object_map {
-            if let Some(existing) = self.result.object_map.get(obj_id) {
-                debug_assert_eq!(&input.objects[TODO_ID], &self.result.objects[existing]);
-                // self.conflate_TODOS(TODO_ID, existing, &mut inner.next_TODO_ID);
-            } else {
-                self.result.object_map.insert(*obj_id, *TODO_ID);
-            }
-        }
-
-        for (&TODO_ID, object) in &input.objects {
-            match self.result.objects.entry(TODO_ID) {
-                std::collections::hash_map::Entry::Occupied(entry) => {
-                    debug_assert_eq!(object, entry.get());
-                }
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    entry.insert(object.clone());
-                }
-            }
-        }
-
-        for (lhs, incoming) in &input.var_assignments {
-            self.record_var_assignment(
-                lhs,
-                incoming,
-                &mut inner.next_TODO_ID,
-                &mut inner.next_object_ID,
-            );
-        }
-
-        // dbg!(&self.result);
-        // println!("======================:");
-    }
-
-    fn finish(self) -> Lattice {
-        self.result
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Default)]
-pub struct Lattice {
-    objects: FxHashMap<TODOId, Entity>,
-    object_map: FxHashMap<ObjectId, TODOId>,
-    var_assignments: FxHashMap<Id, Assignment>,
 }
 
 impl Annotation for Lattice {}
