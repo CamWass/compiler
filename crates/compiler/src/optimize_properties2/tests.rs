@@ -1,4 +1,4 @@
-use global_common::{Globals, Mark, SyntaxContext, GLOBALS};
+use global_common::{Globals, Mark, GLOBALS};
 
 use crate::resolver::resolver;
 
@@ -13,9 +13,7 @@ fn test_transform(input: &str, expected: &str) {
 
                 program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark, false));
 
-                crate::normalize_shorthand::normalize_shorthand(&mut program, &mut node_id_gen);
-
-                let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
+                crate::normalize_properties::normalize_properties(&mut program, &mut node_id_gen);
 
                 process(&mut program);
 
@@ -31,9 +29,6 @@ fn test_transform_in_fn(input: &str, expected: &str) {
         &format!("function FUNCTION(){{{}}}", input),
         &format!("function FUNCTION(){{{}}}", expected),
     );
-}
-fn test_same(input: &str) {
-    test_transform(input, input);
 }
 fn test_same_in_fn(input: &str) {
     test_transform_in_fn(input, input);
@@ -52,11 +47,11 @@ obj1.prop1 = 1;
 obj1.prop2 = 2;
 ",
         "
-const obj1 = { b: 1 };
-obj1.b;
+const obj1 = { a: 1 };
+obj1.a;
 
-obj1.b = 1;
-obj1.a = 2;
+obj1.a = 1;
+obj1.b = 2;
 ",
     );
 }
@@ -67,6 +62,12 @@ fn test_invalidation() {
         "
 const obj1 = { prop1: 1 };
 obj1[1] = a;
+",
+    );
+    test_same_in_fn(
+        "
+const obj1 = { prop1: { inner1 : 1 } };
+window.foo = obj1;
 ",
     );
 }
@@ -214,10 +215,10 @@ const v1 = a ? obj1 : obj2;
 v1.prop1;
     ",
         "
-const obj1 = { a: 1 };
-const obj2 = { b: 2 };
+const obj1 = { b: 1 };
+const obj2 = { a: 2 };
 const v1 = a ? obj1 : obj2;
-v1.a;
+v1.b;
     ",
     );
     // Invalidation: conflation and merge.
@@ -257,10 +258,159 @@ obj1 ||= cond ? { prop2: 2 } : { prop3: 3 };
 obj1.prop1;
     ",
         "
-let obj1 = { a: 1 };
-obj1 ||= cond ? { c: 2 } : { b: 3 };
-obj1.a;
+let obj1 = { c: 1 };
+obj1 ||= cond ? { b: 2 } : { a: 3 };
+obj1.c;
     ",
+    );
+}
+
+#[test]
+fn test_destructuring() {
+    test_transform_in_fn(
+        "
+const obj = { prop1: 1 };
+( { prop1: v1 } = obj );
+",
+        "
+const obj = { a: 1 };
+( { a: v1 } = obj );
+",
+    );
+
+    test_transform_in_fn(
+        "
+const obj = { prop1: [1] };
+( { prop1: [v1] } = obj );
+",
+        "
+const obj = { a: [1] };
+( { a: [v1] } = obj );
+",
+    );
+
+    // We can't infer anything once we hit non-object destructuring.
+    test_same_in_fn(
+        "
+const array = [ { prop1: 1 } ];
+[ { prop1: v1 } ] = array;
+    ",
+    );
+    test_transform_in_fn(
+        "
+const obj = { prop1: [ { prop2: 2} ] };
+( { prop1: [ { prop2: v1 } ] } = obj );
+",
+        "
+const obj = { a: [ { prop2: 2} ] };
+( { a: [ { prop2: v1 } ] } = obj );
+",
+    );
+
+    // Invalidated by dynamic property access.
+    test_same_in_fn(
+        "
+const obj = { prop1: 1 };
+( { [expr]: v1 } = obj );
+",
+    );
+
+    test_transform_in_fn(
+        "
+const obj1 = { prop1: 1 };
+( { prop2: obj1.prop1 } = { prop2: 2 } );
+",
+        "
+const obj1 = { a: 1 };
+( { a: obj1.a } = { a: 2 } );
+",
+    );
+
+    test_transform_in_fn(
+        "
+const obj1 = { prop1: { prop2: 2 } };
+( { prop3: obj1.prop1 } = { prop3: { prop4: 4 } } );
+",
+        "
+const obj1 = { a: { a: 2 } };
+( { a: obj1.a } = { a: { a: 4 } } );
+",
+    );
+
+    test_transform_in_fn(
+        "
+const obj1 = { prop1: 1, prop2: { prop3: 3 } };
+const { prop1: v1, ...rest } = obj1;
+rest.prop2.prop3;
+",
+        "
+const obj1 = { a: 1, b: { a: 3 } };
+const { a: v1, ...rest } = obj1;
+rest.b.a;
+",
+    );
+
+    test_transform_in_fn(
+        "
+const obj1 = { prop1: 1 };
+const { prop2 = obj1 } = { prop2: 2 };
+prop2.prop1;
+",
+        "
+const obj1 = { prop1: 1 };
+const { a: prop2 = obj1 } = { a: 2 };
+prop2.prop1;
+",
+    );
+
+    // obj1 is invalidated because it is conflated with 2 by the destructuring
+    // assignment.
+    test_transform_in_fn(
+        "
+const obj1 = { prop1: 1 };
+const { prop2: foo = obj1 } = { prop1: 2, prop2: 2 };
+",
+        "
+const obj1 = { prop1: 1 };
+const { b: foo = obj1 } = { a: 2, b: 2 };
+",
+    );
+
+    // obj1 and `prop2: { prop3: 3 }` are conflated, but are not merged.
+    test_transform_in_fn(
+        "
+const obj1 = { prop1: 1 };
+const { prop2 = obj1 } = { prop2: { prop3: 3 }, prop4: 4 };
+",
+        "
+const obj1 = { a: 1 };
+const { a: prop2 = obj1 } = { a: { a: 3 }, b: 4 };
+",
+    );
+    // Same as above, but the prop access causes that conflation to be merged.
+    test_transform_in_fn(
+        "
+const obj1 = { prop1: 1 };
+const { prop2 = obj1 } = { prop2: { prop3: 3 }, prop4: 4 };
+prop2.prop1;
+",
+        "
+const obj1 = { b: 1 };
+const { a: prop2 = obj1 } = { a: { a: 3 }, b: 4 };
+prop2.b;
+",
+    );
+
+    // Like plain property accesses, undefined properties are ignored.
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1 };
+let { prop1, prop2 } = obj;
+",
+        "
+let obj = { a: 1 };
+let { a: prop1, prop2: prop2 } = obj;
+",
     );
 }
 

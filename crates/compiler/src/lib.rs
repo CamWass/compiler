@@ -27,7 +27,7 @@ mod find_vars;
 mod graph;
 pub mod node;
 pub mod normalize;
-mod normalize_shorthand;
+mod normalize_properties;
 mod optimize_properties;
 mod optimize_properties2;
 pub mod resolver;
@@ -168,7 +168,7 @@ impl Compiler {
 
             let mut program_ast = program.1;
 
-            normalize_shorthand::normalize_shorthand(&mut program_ast, node_id_gen);
+            normalize_properties::normalize_properties(&mut program_ast, node_id_gen);
 
             let needs_colors = passes.disambiguate_properties || passes.ambiguate_properties;
             let mut colours = if needs_colors {

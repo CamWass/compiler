@@ -13,7 +13,7 @@ fn test_transform(input: &str, expected: &str) {
 
                 program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark, false));
 
-                crate::normalize_shorthand::normalize_shorthand(&mut program, &mut node_id_gen);
+                crate::normalize_properties::normalize_properties(&mut program, &mut node_id_gen);
                 crate::normalize::normalize(&mut program, &mut node_id_gen);
 
                 let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);

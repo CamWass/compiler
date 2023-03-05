@@ -486,3 +486,13 @@ impl<'ast> From<&'ast ::ast::PatOrExpr> for Node<'ast> {
         }
     }
 }
+
+impl<'ast> From<&'ast ::ast::ObjectPatProp> for Node<'ast> {
+    fn from(other: &'ast ::ast::ObjectPatProp) -> Node<'ast> {
+        match other {
+            ast::ObjectPatProp::KeyValue(n) => Node::KeyValuePatProp(n),
+            ast::ObjectPatProp::Assign(n) => Node::AssignPatProp(n),
+            ast::ObjectPatProp::Rest(n) => Node::RestPat(n),
+        }
+    }
+}

@@ -320,7 +320,7 @@ where
 
         // let mut node_id_gen = NodeIdGen::default();
 
-        // crate::normalize_shorthand::normalize_shorthand(&mut program, &mut node_id_gen);
+        // crate::normalize_properties::normalize_properties(&mut program, &mut node_id_gen);
         // crate::normalize::normalize(&mut program, &mut node_id_gen);
 
         let script = unwrap_as!(program, Program::Script(s), s);

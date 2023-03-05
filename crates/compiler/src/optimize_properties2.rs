@@ -222,7 +222,7 @@ enum Entity {
 
 #[derive(Default, Debug, Clone, PartialEq)]
 struct Object {
-    properties: FxHashMap<Id, Property>,
+    properties: FxHashMap<JsWord, Property>,
     invalidated: bool,
 }
 
@@ -259,9 +259,8 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
         //     prop, value, obj
         // );
         let object = self.lattice.get_object_mut(obj, &mut self.analysis.id_gen);
-        let name_id = name.to_id();
 
-        match object.properties.get(&name_id) {
+        match object.properties.get(&name.sym) {
             Some(existing) => {
                 let value = if !conditional {
                     // supersede
@@ -276,7 +275,7 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
                     .lattice
                     .get_object_mut(obj, &mut self.analysis.id_gen)
                     .properties
-                    .get_mut(&name_id)
+                    .get_mut(&name.sym)
                     .unwrap();
                 existing.value = value;
                 existing.references.insert(name.node_id);
@@ -287,7 +286,7 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
                 references.insert(name.node_id);
                 object
                     .properties
-                    .insert(name_id, Property { value, references });
+                    .insert(name.sym.clone(), Property { value, references });
             }
         }
     }
@@ -332,6 +331,26 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
         }
     }
 
+    fn assign_to_slot(
+        &mut self,
+        slot: Option<Slot<'ast>>,
+        rhs: Option<ObjectId>,
+        conditional: bool,
+    ) -> Option<ObjectId> {
+        match slot {
+            Some(Slot::Var(lhs)) => self.record_var_assignment(lhs, rhs, conditional),
+            Some(Slot::Prop(obj, prop)) => {
+                self.record_prop_assignment(obj, prop, rhs, conditional);
+                Some(obj)
+            }
+            None => {
+                // Unknown/invalid assignment target.
+                self.invalidate(rhs);
+                rhs
+            }
+        }
+    }
+
     /// Records an assignment of the form `LHS OP RHS` e.g.
     /// ```js
     /// let a = 1
@@ -347,39 +366,190 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
     /// ```
     ///
     /// `conditional` - Whether the entire assignment (LHS and RHS) is conditionally executed.
-    ///
-    /// `conditional_assign` - Whether the RHS is conditionally executed.
     fn record_assignment(
         &mut self,
         lhs: Node<'ast>,
-        rhs: Node<'ast>,
+        rhs: &'ast Expr,
         conditional: bool,
-        conditional_assign: bool,
+        op: AssignOp,
     ) -> Option<ObjectId> {
         // println!(
         //     "recording assignment of value `{:#?}` to var `{:#?}` ",
         //     rhs, lhs
         // );
-        let lhs = self.visit_and_get_slot(lhs, conditional);
-        let conditional = conditional || conditional_assign;
-        let rhs = self.visit_and_get_object(rhs, conditional);
-
+        let conditional_assign = matches!(
+            op,
+            AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
+        );
         match lhs {
-            Some(Slot::Var(lhs)) => self.record_var_assignment(lhs, rhs, conditional),
-            Some(Slot::Prop(obj, prop)) => {
-                self.record_prop_assignment(obj, prop, rhs, conditional);
-                Some(obj)
+            Node::ArrayPat(_) | Node::ObjectPat(_) => {
+                debug_assert!(!conditional_assign, "invalid assignment target");
+                self.handle_destructuring(lhs, rhs, conditional)
             }
-            None => {
-                // Unknown/invalid assignment target.
-                if let Some(rhs) = rhs {
-                    self.lattice.invalidate(rhs, &mut self.analysis.id_gen);
-                }
-                rhs
+            _ => {
+                let lhs = self.visit_and_get_slot(lhs, conditional);
+                let conditional = conditional || conditional_assign;
+                let rhs = self.visit_and_get_object(Node::from(rhs), conditional);
+
+                self.assign_to_slot(lhs, rhs, conditional)
             }
         }
     }
 
+    fn handle_destructuring(
+        &mut self,
+        lhs: Node<'ast>,
+        rhs: &'ast Expr,
+        conditional: bool,
+    ) -> Option<ObjectId> {
+        let rhs = self.visit_and_get_object(Node::from(rhs), conditional);
+        self.visit_destructuring(lhs, rhs, conditional);
+        rhs
+    }
+
+    fn invalidate_slot(&mut self, node: Node<'ast>, conditional: bool) {
+        let lhs = self.visit_and_get_slot(node, conditional);
+
+        match lhs {
+            Some(Slot::Var(lhs)) => {
+                if let Some(existing) = self.lattice.var_assignments.get(&lhs) {
+                    self.invalidate(existing.rhs);
+                }
+            }
+            Some(Slot::Prop(obj, prop)) => {
+                let object = self.lattice.get_object_mut(obj, &mut self.analysis.id_gen);
+
+                if let Some(existing) = object.properties.get(&prop.sym) {
+                    let value = existing.value;
+                    self.invalidate(value);
+                }
+            }
+            None => {}
+        }
+    }
+
+    fn invalidate(&mut self, obj: Option<ObjectId>) {
+        if let Some(obj) = obj {
+            self.lattice.invalidate(obj, &mut self.analysis.id_gen);
+        }
+    }
+
+    fn visit_destructuring(&mut self, lhs: Node<'ast>, rhs: Option<ObjectId>, conditional: bool) {
+        match lhs {
+            Node::ObjectPat(lhs) => {
+                let has_non_ident_props = lhs.props.iter().any(|p| match p {
+                    ObjectPatProp::KeyValue(p) => !matches!(&p.key, PropName::Ident(_)),
+                    ObjectPatProp::Assign(_) | ObjectPatProp::Rest(_) => false,
+                });
+                if let Some(rhs) = rhs {
+                    if has_non_ident_props {
+                        self.lattice.invalidate(rhs, &mut self.analysis.id_gen);
+                    }
+                    let rhs_obj = self.lattice.get_object_mut(rhs, &mut self.analysis.id_gen);
+                    if !rhs_obj.invalidated {
+                        for prop in &lhs.props {
+                            match prop {
+                                ObjectPatProp::KeyValue(prop) => {
+                                    let key = unwrap_as!(&prop.key, PropName::Ident(k), k);
+                                    let rhs_obj =
+                                        self.lattice.get_object_mut(rhs, &mut self.analysis.id_gen);
+                                    let rhs_prop = rhs_obj.properties.get_mut(&key.sym);
+                                    let rhs_value = rhs_prop.as_ref().and_then(|p| p.value);
+                                    if let Some(rhs_prop) = rhs_prop {
+                                        rhs_prop.references.insert(key.node_id);
+                                    }
+                                    if matches!(prop.value.as_ref(), Pat::Ident(_) | Pat::Expr(_)) {
+                                        let slot = self.visit_and_get_slot(
+                                            Node::from(prop.value.as_ref()),
+                                            conditional,
+                                        );
+                                        self.assign_to_slot(slot, rhs_value, conditional);
+                                    } else {
+                                        self.visit_destructuring(
+                                            Node::from(prop.value.as_ref()),
+                                            rhs_value,
+                                            conditional,
+                                        );
+                                    }
+                                }
+                                ObjectPatProp::Assign(_) => {
+                                    unreachable!("removed my normalization");
+                                }
+                                ObjectPatProp::Rest(rest) => {
+                                    debug_assert!(lhs.props.last().unwrap() == prop);
+
+                                    // TODO: throw error, don't panic.
+                                    // The argument of an object pattern's rest element must be an identifier.
+                                    let arg = unwrap_as!(rest.arg.as_ref(), Pat::Ident(i), i);
+
+                                    // TODO: this is imprecise - rest patterns create a new, distinct, object, which has the remaining non-destructured
+                                    // properties copied over. These properties must have the same names as those in the original object after renaming.
+                                    // But since they are distinct objects, we don't want to conflate them.
+                                    let id = arg.to_id();
+                                    if self.analysis.vars.contains_key(&id) {
+                                        self.record_var_assignment(id, Some(rhs), conditional);
+                                    }
+                                }
+                            }
+                        }
+                        return;
+                    }
+                }
+                for prop in &lhs.props {
+                    self.visit_destructuring(Node::from(prop), None, conditional);
+                }
+            }
+
+            Node::BindingIdent(lhs) => {
+                let id = lhs.to_id();
+                if self.analysis.vars.contains_key(&id) {
+                    self.record_var_assignment(id, rhs, conditional);
+                }
+            }
+            Node::ArrayPat(lhs) => {
+                self.invalidate(rhs);
+                for element in lhs.elems.iter().filter_map(|e| e.as_ref()) {
+                    if let Pat::Expr(elem) = element {
+                        self.invalidate_slot(Node::from(elem.as_ref()), conditional);
+                    } else {
+                        self.visit_destructuring(Node::from(element), None, conditional);
+                    }
+                }
+            }
+            Node::RestPat(lhs) => {
+                self.invalidate(rhs);
+                self.visit_destructuring(Node::from(lhs.arg.as_ref()), None, conditional);
+            }
+            Node::AssignPat(lhs) => {
+                let default_value = self.visit_and_get_object(Node::from(lhs.right.as_ref()), true);
+
+                let result =
+                    self.lattice
+                        .record_conflation(rhs, default_value, &mut self.analysis.id_gen);
+
+                self.visit_destructuring(Node::from(lhs.left.as_ref()), result, conditional);
+            }
+            Node::KeyValuePatProp(lhs) => {
+                self.invalidate(rhs);
+                if matches!(lhs.value.as_ref(), Pat::Ident(_) | Pat::Expr(_)) {
+                    self.invalidate_slot(Node::from(lhs.value.as_ref()), conditional);
+                } else {
+                    self.visit_destructuring(Node::from(lhs.value.as_ref()), None, conditional);
+                }
+            }
+            Node::AssignPatProp(_) => {
+                unreachable!("removed my normalization");
+            }
+
+            _ => {
+                dbg!(lhs);
+                unreachable!();
+            }
+        }
+    }
+
+    /// Visits the given expression. If the expression resolves to a valid assignment target, a [`Slot`]
+    /// representing that target is returned.
     fn visit_and_get_slot(&mut self, node: Node<'ast>, conditional: bool) -> Option<Slot<'ast>> {
         match node {
             Node::Ident(node) => {
@@ -394,9 +564,7 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
             Node::MemberExpr(node) => {
                 let obj = self.visit_and_get_object(Node::from(&node.obj), conditional);
                 if node.computed {
-                    if let Some(obj) = obj {
-                        self.lattice.invalidate(obj, &mut self.analysis.id_gen);
-                    }
+                    self.invalidate(obj);
                     self.visit_and_get_slot(Node::from(node.prop.as_ref()), conditional);
                     None
                 } else {
@@ -409,83 +577,10 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
 
             // All other nodes cannot evaluate to a reference, and should return None (but we still
             // need to visit their children).
-
-            // Don't traverse into new control flow nodes.
-            Node::FnExpr(_) | Node::ArrowExpr(_) => None,
-
-            // Terminals.
-            Node::Str(_)
-            | Node::Bool(_)
-            | Node::Null(_)
-            | Node::Number(_)
-            | Node::BigInt(_)
-            | Node::Regex(_) => None,
-
-            Node::Class(_) => todo!(),
-            Node::ExtendsClause(_) => todo!(),
-            Node::ClassProp(_) => todo!(),
-            Node::PrivateProp(_) => todo!(),
-            Node::ClassMethod(_) => todo!(),
-            Node::PrivateMethod(_) => todo!(),
-            Node::Constructor(_) => todo!(),
-            Node::ThisExpr(_) => todo!(),
-            Node::ArrayLit(_) => todo!(),
-            Node::ObjectLit(_) => todo!(),
-            Node::SpreadElement(_) => todo!(),
-            Node::UnaryExpr(_) => todo!(),
-            Node::UpdateExpr(_) => todo!(),
-            Node::BinExpr(_) => todo!(),
-            Node::ClassExpr(_) => todo!(),
-            Node::AssignExpr(_) => todo!(),
-            Node::CondExpr(_) => todo!(),
-            Node::CallExpr(_) => todo!(),
-            Node::NewExpr(_) => todo!(),
-            Node::SeqExpr(_) => todo!(),
-            Node::YieldExpr(_) => todo!(),
-            Node::MetaPropExpr(_) => todo!(),
-            Node::AwaitExpr(_) => todo!(),
-            Node::Tpl(_) => todo!(),
-            Node::TaggedTpl(_) => todo!(),
-            Node::TplElement(_) => todo!(),
-            Node::ParenExpr(_) => todo!(),
-            Node::Super(_) => todo!(),
-            Node::OptChainExpr(_) => todo!(),
-            Node::Function(_) => todo!(),
-            Node::Param(_) => todo!(),
-            Node::ParamWithoutDecorators(_) => todo!(),
-            Node::PrivateName(_) => todo!(),
-            Node::ExportDefaultExpr(_) => todo!(),
-            Node::ExportDecl(_) => todo!(),
-            Node::ImportDecl(_) => todo!(),
-            Node::ExportAll(_) => todo!(),
-            Node::NamedExport(_) => todo!(),
-            Node::ExportDefaultDecl(_) => todo!(),
-            Node::ImportDefaultSpecifier(_) => todo!(),
-            Node::ImportStarAsSpecifier(_) => todo!(),
-            Node::ImportNamedSpecifier(_) => todo!(),
-            Node::ExportNamespaceSpecifier(_) => todo!(),
-            Node::ExportDefaultSpecifier(_) => todo!(),
-            Node::ExportNamedSpecifier(_) => todo!(),
-            Node::ArrayPat(_) => todo!(),
-            Node::ObjectPat(_) => todo!(),
-            Node::AssignPat(_) => todo!(),
-            Node::RestPat(_) => todo!(),
-            Node::KeyValuePatProp(_) => todo!(),
-            Node::AssignPatProp(_) => todo!(),
-            Node::KeyValueProp(_) => todo!(),
-            Node::AssignProp(_) => todo!(),
-            Node::GetterProp(_) => todo!(),
-            Node::SetterProp(_) => todo!(),
-            Node::MethodProp(_) => todo!(),
-            Node::ComputedPropName(_) => todo!(),
-            Node::SpreadAssignment(_) => todo!(),
-            Node::SwitchCase(_) => todo!(),
-            Node::CatchClause(_) => todo!(),
-
-            // This function is only called on expressions (and their children),
-            // so it can't reach e.g. statements. TypeScript and JSX should have
-            // been removed by now as well.
-            _ => unreachable!(),
+            _ => {
+                self.visit_and_get_object(node, conditional);
+                None
+            }
         }
     }
 
@@ -495,30 +590,7 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
             Node::FnExpr(_) | Node::ArrowExpr(_) => None,
 
             Node::AssignExpr(node) => {
-                let expr_lhs = match &node.left {
-                    PatOrExpr::Expr(_) => true,
-                    PatOrExpr::Pat(n) => match n.as_ref() {
-                        Pat::Expr(_) => true,
-                        Pat::Ident(_) => true,
-                        _ => false,
-                    },
-                };
-
-                let conditional_assign = matches!(
-                    node.op,
-                    AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
-                );
-
-                if expr_lhs {
-                    self.record_assignment(
-                        Node::from(&node.left),
-                        Node::from(node.right.as_ref()),
-                        conditional,
-                        conditional_assign,
-                    )
-                } else {
-                    todo!("destructuring");
-                }
+                self.record_assignment(Node::from(&node.left), &node.right, conditional, node.op)
             }
 
             Node::Class(_) => todo!(),
@@ -531,21 +603,23 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
             Node::VarDeclarator(node) => {
                 let lhs = Node::from(&node.name);
                 if let Some(rhs) = &node.init {
-                    debug_assert!(!matches!(&node.name, Pat::Expr(_)));
-                    let lhs_ident = matches!(&node.name, Pat::Ident(_));
-
-                    if lhs_ident {
-                        self.record_assignment(lhs, Node::from(rhs.as_ref()), conditional, false)
-                    } else {
-                        todo!("destructuring");
-                    }
+                    self.record_assignment(lhs, rhs, conditional, AssignOp::Assign);
                 } else {
                     self.visit_and_get_object(lhs, conditional);
-                    None
                 }
+                None
             }
             Node::ThisExpr(_) => todo!(),
-            Node::ArrayLit(_) => todo!(),
+            Node::ArrayLit(node) => {
+                for element in &node.elems {
+                    if let Some(element) = element {
+                        let obj = self.visit_and_get_object(Node::from(element), conditional);
+                        // Can't track once it's in the array.
+                        self.invalidate(obj);
+                    }
+                }
+                None
+            }
             Node::ObjectLit(node) => {
                 let is_simple_obj_lit = node.props.iter().all(|p| match p {
                     Prop::KeyValue(p) => matches!(&p.key, PropName::Ident(_)),
@@ -577,10 +651,14 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
 
                     Some(next_object_id)
                 } else {
-                    None
+                    todo!();
                 }
             }
-            Node::SpreadElement(_) => todo!(),
+            Node::SpreadElement(node) => {
+                let obj = self.visit_and_get_object(Node::from(node.expr.as_ref()), conditional);
+                self.invalidate(obj);
+                None
+            }
             Node::UnaryExpr(node) => {
                 self.visit_and_get_object(Node::from(node.arg.as_ref()), conditional);
                 None
@@ -611,17 +689,14 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
             Node::MemberExpr(node) => {
                 let obj = self.visit_and_get_object(Node::from(&node.obj), conditional);
                 if node.computed {
-                    if let Some(obj) = obj {
-                        self.lattice.invalidate(obj, &mut self.analysis.id_gen);
-                    }
+                    self.invalidate(obj);
                     self.visit_and_get_object(Node::from(node.prop.as_ref()), conditional);
                     None
                 } else {
                     if let Some(obj) = obj {
                         let ident = unwrap_as!(node.prop.as_ref(), Expr::Ident(i), i);
-                        let id = ident.to_id();
                         let object = self.lattice.get_object_mut(obj, &mut self.analysis.id_gen);
-                        if let Some(prop) = object.properties.get_mut(&id) {
+                        if let Some(prop) = object.properties.get_mut(&ident.sym) {
                             prop.references.insert(ident.node_id);
                             prop.value
                         } else {
@@ -639,8 +714,29 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
                 self.lattice
                     .record_conflation(cons, alt, &mut self.analysis.id_gen)
             }
-            Node::CallExpr(_) => todo!(),
-            Node::NewExpr(_) => todo!(),
+            Node::CallExpr(node) => {
+                let callee = self.visit_and_get_object(Node::from(&node.callee), conditional);
+                self.invalidate(callee);
+
+                for arg in &node.args {
+                    let obj = self.visit_and_get_object(Node::from(arg), conditional);
+                    self.invalidate(obj);
+                }
+                None
+            }
+            Node::NewExpr(node) => {
+                let callee =
+                    self.visit_and_get_object(Node::from(node.callee.as_ref()), conditional);
+                self.invalidate(callee);
+
+                if let Some(args) = &node.args {
+                    for arg in args {
+                        let obj = self.visit_and_get_object(Node::from(arg), conditional);
+                        self.invalidate(obj);
+                    }
+                }
+                None
+            }
             Node::SeqExpr(node) => {
                 debug_assert!(node.exprs.len() > 0);
 
@@ -652,12 +748,31 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
 
                 self.visit_and_get_object(Node::from(node.exprs[i].as_ref()), conditional)
             }
-            Node::YieldExpr(_) => todo!(),
-            Node::MetaPropExpr(_) => todo!(),
-            Node::AwaitExpr(_) => todo!(),
-            Node::Tpl(_) => todo!(),
-            Node::TaggedTpl(_) => todo!(),
-            Node::TplElement(_) => todo!(),
+            Node::YieldExpr(node) => {
+                if let Some(arg) = &node.arg {
+                    let arg = self.visit_and_get_object(Node::from(arg.as_ref()), conditional);
+                    self.invalidate(arg);
+                }
+                None
+            }
+            Node::AwaitExpr(node) => {
+                self.visit_and_get_object(Node::from(node.arg.as_ref()), conditional)
+            }
+            Node::Tpl(node) => {
+                for expr in &node.exprs {
+                    self.visit_and_get_object(Node::from(expr.as_ref()), conditional);
+                }
+                None
+            }
+            Node::TaggedTpl(node) => {
+                self.visit_and_get_object(Node::from(node.tag.as_ref()), conditional);
+                for expr in &node.tpl.exprs {
+                    let obj = self.visit_and_get_object(Node::from(expr.as_ref()), conditional);
+                    // Expressions in tagged templates can be accessed by the tag function.
+                    self.invalidate(obj);
+                }
+                None
+            }
             Node::ParenExpr(node) => {
                 self.visit_and_get_object(Node::from(node.expr.as_ref()), conditional)
             }
@@ -683,35 +798,20 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
             | Node::Null(_)
             | Node::Number(_)
             | Node::BigInt(_)
-            | Node::Regex(_) => None,
+            | Node::Regex(_)
+            | Node::TplElement(_)
+            | Node::MetaPropExpr(_) => None,
 
-            Node::ExportDefaultExpr(_) => todo!(),
-            Node::ExportDecl(_) => todo!(),
-            Node::ImportDecl(_) => todo!(),
-            Node::ExportAll(_) => todo!(),
-            Node::NamedExport(_) => todo!(),
-            Node::ExportDefaultDecl(_) => todo!(),
             Node::ImportDefaultSpecifier(_) => todo!(),
             Node::ImportStarAsSpecifier(_) => todo!(),
             Node::ImportNamedSpecifier(_) => todo!(),
             Node::ExportNamespaceSpecifier(_) => todo!(),
             Node::ExportDefaultSpecifier(_) => todo!(),
             Node::ExportNamedSpecifier(_) => todo!(),
-            Node::Script(_) => todo!(),
-            Node::Module(_) => todo!(),
-            Node::ArrayPat(_) => todo!(),
-            Node::ObjectPat(_) => todo!(),
-            Node::AssignPat(_) => todo!(),
-            Node::RestPat(_) => todo!(),
-            Node::KeyValuePatProp(_) => todo!(),
-            Node::AssignPatProp(_) => todo!(),
-            Node::KeyValueProp(_) => todo!(),
-            Node::AssignProp(_) => todo!(),
-            Node::GetterProp(_) => todo!(),
-            Node::SetterProp(_) => todo!(),
-            Node::MethodProp(_) => todo!(),
-            Node::ComputedPropName(_) => todo!(),
-            Node::SpreadAssignment(_) => todo!(),
+            Node::ComputedPropName(node) => {
+                self.visit_and_get_object(Node::from(node.expr.as_ref()), conditional);
+                None
+            }
             Node::SwitchCase(_) => todo!(),
             Node::CatchClause(_) => todo!(),
 
@@ -772,6 +872,9 @@ impl<'ast> DataFlowAnalysisInner<Node<'ast>, Lattice, JoinOp> for Inner<'ast> {
             .edges(self.cfg.map[&node])
             .any(|e| *e.weight() == Branch::ON_EX);
 
+        // TODO: use Cow to avoid cloning and doing equality checks for nodes
+        // that don't change the state. If the Cow is still Cow::Borrowed after
+        // the analysis then there is no need for equality checks.
         let mut new = self.lattice_elements[input].clone();
 
         self.analyze_node(node, &mut new, conditional);
@@ -941,9 +1044,9 @@ impl Lattice {
     /// Performs any outstanding conflations for the [`Entity`] that `obj` points to.
     /// This recursively merges the constituents into a single object.
     fn ensure_conflated(&mut self, obj: ObjectId, id_gen: &mut IdGen) {
-        let entity_id = self.object_map.get(&obj).unwrap();
+        let entity_id = *self.object_map.get(&obj).unwrap();
 
-        let entity = self.entities.get_mut(entity_id).unwrap();
+        let entity = self.entities.get_mut(&entity_id).unwrap();
 
         let entity = match entity {
             Entity::Conflation(_) => std::mem::replace(entity, Entity::Object(Object::default())),
@@ -961,8 +1064,9 @@ impl Lattice {
                 continue;
             }
 
-            let entity_id = self.object_map.get(&constituent).unwrap();
-            match self.entities.remove(entity_id).unwrap() {
+            // Update mapping so object ID points to new conflation.
+            let old_entity_id = self.object_map.insert(constituent, entity_id).unwrap();
+            match self.entities.remove(&old_entity_id).unwrap() {
                 Entity::Conflation(objects) => {
                     for obj in objects {
                         if !done.contains(&obj) {
@@ -1015,11 +1119,37 @@ impl Lattice {
         )
     }
 
-    /// Invalidates the [`Entity`] that `obj` points to.
+    /// Recursively invalidates the [`Entity`] that `obj` points to.
     /// This involves performing any outstanding conflations.
     fn invalidate(&mut self, obj: ObjectId, id_gen: &mut IdGen) {
         // println!("invalidating object `{:#?}`", obj);
         self.get_object_mut(obj, id_gen).invalidated = true;
+
+        let mut queue = self
+            .get_object_mut(obj, id_gen)
+            .properties
+            .values()
+            .flat_map(|p| p.value)
+            .collect::<Vec<_>>();
+        let mut done = FxHashSet::default();
+
+        while let Some(obj) = queue.pop() {
+            if done.contains(&obj) {
+                continue;
+            }
+
+            let object = self.get_object_mut(obj, id_gen);
+
+            object.invalidated = true;
+
+            for obj in object.properties.values().flat_map(|p| p.value) {
+                if !done.contains(&obj) {
+                    queue.push(obj);
+                }
+            }
+
+            done.insert(obj);
+        }
     }
 }
 

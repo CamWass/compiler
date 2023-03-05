@@ -11,7 +11,7 @@ fn test_transform(input: &str, expected: &str) {
                 let unresolved_mark = Mark::new();
                 let top_level_mark = Mark::new();
 
-                crate::normalize_shorthand::normalize_shorthand(&mut program, &mut node_id_gen);
+                crate::normalize_properties::normalize_properties(&mut program, &mut node_id_gen);
 
                 program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark, false));
 
@@ -37,7 +37,7 @@ fn test_local_var_indices(input: &str, expected: &str) {
                 let unresolved_mark = Mark::new();
                 let top_level_mark = Mark::new();
 
-                crate::normalize_shorthand::normalize_shorthand(&mut program, &mut node_id_gen);
+                crate::normalize_properties::normalize_properties(&mut program, &mut node_id_gen);
 
                 program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark, false));
 
