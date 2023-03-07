@@ -2,8 +2,7 @@ use std::ops::Index;
 
 use ast::*;
 use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
-use index::vec::Idx;
-use index::vec::IndexVec;
+use index::vec::{Idx, IndexVec};
 use rustc_hash::{FxHashMap, FxHashSet};
 use swc_atoms::JsWord;
 
@@ -179,20 +178,24 @@ impl<'ast> Inner<'ast> {
     }
 }
 
-index::newtype_index!(struct ObjectId { .. });
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+/// Points to an [`Entity`]. Its identity is based on its source, so only one
+/// [`Entity`] is ever created per source.
+enum Pointer {
+    ObjectLit(NodeId),
+}
+
 index::newtype_index!(struct EntityId { .. });
 
 #[derive(Debug)]
 struct IdGen {
     entity_id: EntityId,
-    object_id: ObjectId,
 }
 
 impl IdGen {
     fn new() -> Self {
         Self {
             entity_id: EntityId::from_u32(0),
-            object_id: ObjectId::from_u32(0),
         }
     }
 
@@ -201,22 +204,16 @@ impl IdGen {
         self.entity_id.increment_by(1);
         id
     }
-    fn next_object_id(&mut self) -> ObjectId {
-        let id = self.object_id;
-        self.object_id.increment_by(1);
-        id
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 struct Property {
-    value: Option<ObjectId>,
+    value: Option<Pointer>,
     references: FxHashSet<NodeId>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 enum Entity {
-    Conflation(FxHashSet<ObjectId>),
     Object(Object),
 }
 
@@ -228,13 +225,13 @@ struct Object {
 
 #[derive(Debug, Clone, PartialEq)]
 struct Assignment {
-    rhs: Option<ObjectId>,
+    rhs: Option<Pointer>,
 }
 
 /// A place where a variable can be stored.
 enum Slot<'ast> {
     Var(Id),
-    Prop(ObjectId, &'ast Ident),
+    Prop(Pointer, &'ast Ident),
 }
 
 struct Analyser<'ast, 'a> {
@@ -249,9 +246,9 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
     /// assigned a conflation of the old and new values.
     fn record_prop_assignment(
         &mut self,
-        obj: ObjectId,
+        obj: Pointer,
         name: &Ident,
-        value: Option<ObjectId>,
+        value: Option<Pointer>,
         conditional: bool,
     ) {
         // println!(
@@ -297,9 +294,9 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
     fn record_var_assignment(
         &mut self,
         name: Id,
-        rhs: Option<ObjectId>,
+        rhs: Option<Pointer>,
         conditional: bool,
-    ) -> Option<ObjectId> {
+    ) -> Option<Pointer> {
         if let Some(rhs_object) = rhs {
             if let Some(existing) = self.lattice.var_assignments.get(&name) {
                 let rhs = if !conditional {
@@ -334,9 +331,9 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
     fn assign_to_slot(
         &mut self,
         slot: Option<Slot<'ast>>,
-        rhs: Option<ObjectId>,
+        rhs: Option<Pointer>,
         conditional: bool,
-    ) -> Option<ObjectId> {
+    ) -> Option<Pointer> {
         match slot {
             Some(Slot::Var(lhs)) => self.record_var_assignment(lhs, rhs, conditional),
             Some(Slot::Prop(obj, prop)) => {
@@ -372,7 +369,7 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
         rhs: &'ast Expr,
         conditional: bool,
         op: AssignOp,
-    ) -> Option<ObjectId> {
+    ) -> Option<Pointer> {
         // println!(
         //     "recording assignment of value `{:#?}` to var `{:#?}` ",
         //     rhs, lhs
@@ -401,7 +398,7 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
         lhs: Node<'ast>,
         rhs: &'ast Expr,
         conditional: bool,
-    ) -> Option<ObjectId> {
+    ) -> Option<Pointer> {
         let rhs = self.visit_and_get_object(Node::from(rhs), conditional);
         self.visit_destructuring(lhs, rhs, conditional);
         rhs
@@ -428,13 +425,13 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
         }
     }
 
-    fn invalidate(&mut self, obj: Option<ObjectId>) {
+    fn invalidate(&mut self, obj: Option<Pointer>) {
         if let Some(obj) = obj {
             self.lattice.invalidate(obj, &mut self.analysis.id_gen);
         }
     }
 
-    fn visit_destructuring(&mut self, lhs: Node<'ast>, rhs: Option<ObjectId>, conditional: bool) {
+    fn visit_destructuring(&mut self, lhs: Node<'ast>, rhs: Option<Pointer>, conditional: bool) {
         match lhs {
             Node::ObjectPat(lhs) => {
                 let has_non_ident_props = lhs.props.iter().any(|p| match p {
@@ -584,7 +581,7 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
         }
     }
 
-    fn visit_and_get_object(&mut self, node: Node<'ast>, conditional: bool) -> Option<ObjectId> {
+    fn visit_and_get_object(&mut self, node: Node<'ast>, conditional: bool) -> Option<Pointer> {
         match node {
             // Don't traverse into new control flow nodes.
             Node::FnExpr(_) | Node::ArrowExpr(_) => None,
@@ -621,6 +618,10 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
                 None
             }
             Node::ObjectLit(node) => {
+                let pointer = Pointer::ObjectLit(node.node_id);
+                if self.lattice.object_map.contains_key(&pointer) {
+                    Some(pointer)
+                } else {
                 let is_simple_obj_lit = node.props.iter().all(|p| match p {
                     Prop::KeyValue(p) => matches!(&p.key, PropName::Ident(_)),
                     _ => false,
@@ -635,23 +636,21 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
                         .entities
                         .insert(new_entity_id, Entity::Object(obj));
 
-                    let next_object_id = self.analysis.id_gen.next_object_id();
-                    self.lattice
-                        .object_map
-                        .insert(next_object_id, new_entity_id);
+                        self.lattice.object_map.insert(pointer, new_entity_id);
 
                     for prop in &node.props {
                         let prop = unwrap_as!(prop, Prop::KeyValue(p), p);
                         let key = unwrap_as!(&prop.key, PropName::Ident(k), k);
-                        let value =
-                            self.visit_and_get_object(Node::from(prop.value.as_ref()), conditional);
+                            let value = self
+                                .visit_and_get_object(Node::from(prop.value.as_ref()), conditional);
 
-                        self.record_prop_assignment(next_object_id, key, value, conditional);
+                            self.record_prop_assignment(pointer, key, value, conditional);
                     }
 
-                    Some(next_object_id)
+                        Some(pointer)
                 } else {
                     todo!();
+                    }
                 }
             }
             Node::SpreadElement(node) => {
@@ -939,6 +938,52 @@ impl JoinOp {
                 .insert(lhs.clone(), incoming.clone());
         }
     }
+
+    /// Merges an incoming [`Entity`] into an existing one.
+    fn merge_entities(&mut self, existing: EntityId, incoming: &Entity, id_gen: &mut IdGen) {
+        match incoming {
+            Entity::Object(incoming) => {
+                let existing_entity = unwrap_as!(
+                    self.result.entities.get_mut(&existing),
+                    Some(Entity::Object(o)),
+                    o
+                );
+                existing_entity.invalidated |= incoming.invalidated;
+
+                for (key, prop) in &incoming.properties {
+                    let existing_entity = unwrap_as!(
+                        self.result.entities.get_mut(&existing),
+                        Some(Entity::Object(o)),
+                        o
+                    );
+                    match existing_entity.properties.get(key) {
+                        Some(existing_prop) => {
+                            // conflate
+                            let existing_value = existing_prop.value;
+                            let value =
+                                self.result
+                                    .record_conflation(existing_value, prop.value, id_gen);
+
+                            let existing_entity = unwrap_as!(
+                                self.result.entities.get_mut(&existing),
+                                Some(Entity::Object(o)),
+                                o
+                            );
+                            let existing_prop = existing_entity.properties.get_mut(key).unwrap();
+                            existing_prop.value = value;
+                            existing_prop
+                                .references
+                                .extend(prop.references.iter().cloned());
+                        }
+                        None => {
+                            // initialize
+                            existing_entity.properties.insert(key.clone(), prop.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl<'ast> FlowJoiner<Lattice, Inner<'ast>> for JoinOp {
@@ -951,20 +996,13 @@ impl<'ast> FlowJoiner<Lattice, Inner<'ast>> for JoinOp {
 
         for (obj_id, entity_id) in &input.object_map {
             if let Some(existing) = self.result.object_map.get(obj_id) {
-                debug_assert_eq!(&input.entities[entity_id], &self.result.entities[existing]);
+                let incoming = &input.entities[entity_id];
+                self.merge_entities(*existing, incoming, &mut inner.id_gen);
             } else {
                 self.result.object_map.insert(*obj_id, *entity_id);
-            }
-        }
-
-        for (&entity_id, entity) in &input.entities {
-            match self.result.entities.entry(entity_id) {
-                std::collections::hash_map::Entry::Occupied(entry) => {
-                    debug_assert_eq!(entity, entry.get());
-                }
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    entry.insert(entity.clone());
-                }
+                self.result
+                    .entities
+                    .insert(*entity_id, input.entities[entity_id].clone());
             }
         }
 
@@ -984,8 +1022,10 @@ impl<'ast> FlowJoiner<Lattice, Inner<'ast>> for JoinOp {
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct Lattice {
     entities: FxHashMap<EntityId, Entity>,
-    object_map: FxHashMap<ObjectId, EntityId>,
+    object_map: FxHashMap<Pointer, EntityId>,
     var_assignments: FxHashMap<Id, Assignment>,
+    // Records conflations that are yet to be merged.
+    outstanding_conflations: FxHashMap<Pointer, FxHashSet<Pointer>>,
 }
 
 impl Lattice {
@@ -995,10 +1035,10 @@ impl Lattice {
     /// until the conflation is used as a single object (e.g. property is accessed).
     fn record_conflation(
         &mut self,
-        id1: Option<ObjectId>,
-        id2: Option<ObjectId>,
+        id1: Option<Pointer>,
+        id2: Option<Pointer>,
         id_gen: &mut IdGen,
-    ) -> Option<ObjectId> {
+    ) -> Option<Pointer> {
         // println!("conflating objects `{:#?}` and `{:#?}` ", id1, id2);
         // TODO: invalidate if either is None. This can be avoided if we have a Some() and a None,
         // and the None represents a literal/primitive, in which case we know its properties and
@@ -1021,97 +1061,85 @@ impl Lattice {
         let entity_id1 = *self.object_map.get(&id1).unwrap();
         let entity_id2 = *self.object_map.get(&id2).unwrap();
 
-        if entity_id1 == entity_id2 {
-            // Already been conflated.
-            todo!("reachable?");
-            // return;
+        if entity_id1 != entity_id2 {
+            self.outstanding_conflations
+                .entry(id1)
+                .or_default()
+                .insert(id2);
+            self.outstanding_conflations
+                .entry(id2)
+                .or_default()
+                .insert(id1);
         }
 
-        let mut objects = FxHashSet::default();
-        objects.insert(id1);
-        objects.insert(id2);
-        let conflation = Entity::Conflation(objects);
-
-        let new_entity_id = id_gen.next_entity_id();
-        self.entities.insert(new_entity_id, conflation);
-
-        let next_object_id = id_gen.next_object_id();
-        self.object_map.insert(next_object_id, new_entity_id);
-
-        Some(next_object_id)
+        // Just return either of the inputs - they'll be treated as the same
+        // object from now on.
+        Some(id1)
     }
 
     /// Performs any outstanding conflations for the [`Entity`] that `obj` points to.
     /// This recursively merges the constituents into a single object.
-    fn ensure_conflated(&mut self, obj: ObjectId, id_gen: &mut IdGen) {
-        let entity_id = *self.object_map.get(&obj).unwrap();
+    fn ensure_conflated(&mut self, obj: Pointer, id_gen: &mut IdGen) {
+        // Find all objects that will be conflated.
+        let mut queue = vec![obj];
+        let mut flattened = FxHashSet::default();
+        while let Some(obj) = queue.pop() {
+            flattened.insert(obj);
 
-        let entity = self.entities.get_mut(&entity_id).unwrap();
-
-        let entity = match entity {
-            Entity::Conflation(_) => std::mem::replace(entity, Entity::Object(Object::default())),
-            Entity::Object(_) => return,
-        };
-        let mut queue = unwrap_as!(entity, Entity::Conflation(o), o)
-            .into_iter()
-            .collect::<Vec<_>>();
-        let mut done = FxHashSet::default();
-
-        // println!("conflating objects `{:#?}`", &queue);
-
-        while let Some(constituent) = queue.pop() {
-            if done.contains(&constituent) {
-                continue;
-            }
-
-            // Update mapping so object ID points to new conflation.
-            let old_entity_id = self.object_map.insert(constituent, entity_id).unwrap();
-            match self.entities.remove(&old_entity_id).unwrap() {
-                Entity::Conflation(objects) => {
-                    for obj in objects {
-                        if !done.contains(&obj) {
-                            queue.push(obj);
-                        }
+            if let Some(constituents) = self.outstanding_conflations.remove(&obj) {
+                for constituent in constituents {
+                    if !flattened.contains(&constituent) {
+                        queue.push(constituent);
                     }
                 }
+            }
+        }
+
+        if flattened.len() == 1 {
+            // Nothing to conflate.
+            return;
+        }
+
+        let new_entity_id = id_gen.next_entity_id();
+
+        let mut result = Object::default();
+
+        for constituent in flattened {
+            // Update mapping so pointers point to new conflation.
+            if let Some(old_entity_id) = self.object_map.insert(constituent, new_entity_id) {
+            match self.entities.remove(&old_entity_id).unwrap() {
                 Entity::Object(incoming) => {
-                    self.get_object_mut(obj, id_gen).invalidated |= incoming.invalidated;
+                        result.invalidated |= incoming.invalidated;
 
                     for (key, prop) in incoming.properties {
-                        match self.get_object_mut(obj, id_gen).properties.get(&key) {
-                            Some(existing) => {
+                            match result.properties.entry(key) {
+                                std::collections::hash_map::Entry::Occupied(mut entry) => {
                                 // conflate
-                                let existing = existing.value;
-                                let value = self.record_conflation(existing, prop.value, id_gen);
-                                let existing = self
-                                    .get_object_mut(obj, id_gen)
-                                    .properties
-                                    .get_mut(&key)
-                                    .unwrap();
-                                existing.value = value;
-                                existing.references.extend(prop.references);
+                                    let existing = entry.get().value;
+                                    let value =
+                                        self.record_conflation(existing, prop.value, id_gen);
+                                    entry.get_mut().value = value;
+                                    entry.get_mut().references.extend(prop.references);
                             }
-                            None => {
+                                std::collections::hash_map::Entry::Vacant(entry) => {
                                 // initialize
-                                self.get_object_mut(obj, id_gen)
-                                    .properties
-                                    .insert(key, prop);
+                                    entry.insert(prop);
+                                }
+                            }
                             }
                         }
                     }
                 }
             }
 
-            done.insert(obj);
-        }
+        self.entities.insert(new_entity_id, Entity::Object(result));
     }
 
     /// Returns the canonical representation of the [`Entity`] that `obj` points to.
     /// This involves performing any outstanding conflations.
-    fn get_object_mut(&mut self, obj: ObjectId, id_gen: &mut IdGen) -> &mut Object {
-        let entity_id = *self.object_map.get(&obj).unwrap();
-
+    fn get_object_mut(&mut self, obj: Pointer, id_gen: &mut IdGen) -> &mut Object {
         self.ensure_conflated(obj, id_gen);
+        let entity_id = *self.object_map.get(&obj).unwrap();
         unwrap_as!(
             self.entities.get_mut(&entity_id).unwrap(),
             Entity::Object(o),
@@ -1121,7 +1149,7 @@ impl Lattice {
 
     /// Recursively invalidates the [`Entity`] that `obj` points to.
     /// This involves performing any outstanding conflations.
-    fn invalidate(&mut self, obj: ObjectId, id_gen: &mut IdGen) {
+    fn invalidate(&mut self, obj: Pointer, id_gen: &mut IdGen) {
         // println!("invalidating object `{:#?}`", obj);
         self.get_object_mut(obj, id_gen).invalidated = true;
 
