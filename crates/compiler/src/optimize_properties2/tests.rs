@@ -34,7 +34,7 @@ fn test_same_in_fn(input: &str) {
     test_transform_in_fn(input, input);
 }
 
-// TODO: more tests e.g. for branch joins, more invalidations, etc
+// TODO: more tests e.g. for branch joins, more invalidations, infinite loops etc
 
 #[test]
 fn test_object_literal() {
@@ -68,6 +68,14 @@ obj1[1] = a;
         "
 const obj1 = { prop1: { inner1 : 1 } };
 window.foo = obj1;
+",
+    );
+    // Anything assigned to a property of an invalid object should be invalidated.
+    test_same_in_fn(
+        "
+const obj = {};
+window.foo = obj;
+obj.prop1 = { inner1 : 1 };
 ",
     );
 }
@@ -215,10 +223,10 @@ const v1 = a ? obj1 : obj2;
 v1.prop1;
     ",
         "
-const obj1 = { b: 1 };
-const obj2 = { a: 2 };
+const obj1 = { a: 1 };
+const obj2 = { b: 2 };
 const v1 = a ? obj1 : obj2;
-v1.b;
+v1.a;
     ",
     );
     // Invalidation: conflation and merge.
@@ -258,9 +266,9 @@ obj1 ||= cond ? { prop2: 2 } : { prop3: 3 };
 obj1.prop1;
     ",
         "
-let obj1 = { c: 1 };
-obj1 ||= cond ? { b: 2 } : { a: 3 };
-obj1.c;
+let obj1 = { a: 1 };
+obj1 ||= cond ? { b: 2 } : { c: 3 };
+obj1.a;
     ",
     );
 }
@@ -395,9 +403,9 @@ const { prop2 = obj1 } = { prop2: { prop3: 3 }, prop4: 4 };
 prop2.prop1;
 ",
         "
-const obj1 = { b: 1 };
-const { a: prop2 = obj1 } = { a: { a: 3 }, b: 4 };
-prop2.b;
+const obj1 = { a: 1 };
+const { a: prop2 = obj1 } = { a: { b: 3 }, b: 4 };
+prop2.a;
 ",
     );
 
@@ -410,6 +418,252 @@ let { prop1, prop2 } = obj;
         "
 let obj = { a: 1 };
 let { a: prop1, prop2: prop2 } = obj;
+",
+    );
+}
+
+#[test]
+fn test_for_loops() {
+    test_transform_in_fn(
+        "
+let obj = { count: 0 };
+for (let i = 0; i < 5; i++) {
+    obj = { count: i };
+}
+",
+        "
+let obj = { a: 0 };
+for (let i = 0; i < 5; i++) {
+    obj = { a: i };
+}
+",
+    );
+    test_transform_in_fn(
+        "
+let obj = { count: 0 };
+for (let i = 0; i < 5; i++) {
+    obj.count = i;
+}
+",
+        "
+let obj = { a: 0 };
+for (let i = 0; i < 5; i++) {
+    obj.a = i;
+}
+",
+    );
+    // Conflation but no merge.
+    test_transform_in_fn(
+        "
+let obj = { count: 0 };
+for (let i = 0; i < 5; obj = { prop1: 1, prop2: 2, count: i++ });
+",
+        "
+let obj = { a: 0 };
+for (let i = 0; i < 5; obj = { a: 1, b: 2, c: i++ });
+",
+    );
+    // Conflation and merge.
+    test_transform_in_fn(
+        "
+let obj = { count: 0 };
+for (let i = 0; i < 5; obj = { prop1: 1, prop2: 2, count: i++ }) {
+    obj.count;
+}
+",
+        "
+let obj = { c: 0 };
+for (let i = 0; i < 5; obj = { a: 1, b: 2, c: i++ }) {
+    obj.c;
+}
+",
+    );
+}
+
+#[test]
+fn test_while_loops() {
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1 };
+while (cond) {
+    obj = { prop2: 2 };
+}
+",
+        "
+let obj = { a: 1 };
+while (cond) {
+    obj = { a: 2 };
+}
+",
+    );
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1 };
+while (cond) {
+    obj = { prop2: 2 };
+}
+obj.prop1;
+",
+        "
+let obj = { a: 1 };
+while (cond) {
+    obj = { b: 2 };
+}
+obj.a;
+",
+    );
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1 };
+while (obj = { prop2: 2 });
+",
+        "
+let obj = { a: 1 };
+while (obj = { a: 2 });
+",
+    );
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1 };
+while (obj = { prop2: 2 }) {
+    obj.prop2;
+}
+",
+        "
+let obj = { a: 1 };
+while (obj = { a: 2 }) {
+    obj.a;
+}
+",
+    );
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1 };
+while (cond1) {
+    if (cond3) {
+        obj = { prop2: 2 };
+    }
+
+    if (cond2) {
+        obj = { prop3: 3 };
+    }
+    obj.prop2;
+}
+",
+        "
+let obj = { a: 1 };
+while (cond1) {
+    if (cond3) {
+        obj = { b: 2 };
+    }
+
+    if (cond2) {
+        obj = { c: 3 };
+    }
+    obj.b;
+}
+",
+    );
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1 };
+while ( (obj.prop1, (obj = { prop2: 2 })) );
+",
+        "
+let obj = { a: 1 };
+while ( (obj.a, (obj = { b: 2 })) );
+",
+    );
+}
+
+#[test]
+fn test_do_while_loops() {
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1 };
+do {
+    obj = { prop2: 2 };
+} while (cond);
+",
+        "
+let obj = { a: 1 };
+do {
+    obj = { a: 2 };
+} while (cond);
+",
+    );
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1 };
+do {
+    obj = { prop2: 2 };
+} while (cond);
+obj.prop1;
+",
+        "
+let obj = { a: 1 };
+do {
+    obj = { b: 2 };
+} while (cond);
+obj.a;
+",
+    );
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1 };
+do {} while (obj = { prop2: 2 });
+",
+        "
+let obj = { a: 1 };
+do {} while (obj = { a: 2 });
+",
+    );
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1 };
+do { obj.prop1; } while (obj = { prop2: 2 });
+",
+        "
+let obj = { a: 1 };
+do { obj.a; } while (obj = {b: 2 });
+",
+    );
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1 };
+do {
+    if (cond3) {
+        obj = { prop2: 2 };
+    }
+
+    if (cond2) {
+        obj = { prop3: 3 };
+    }
+    obj.prop2;
+} while (cond1);
+",
+        "
+let obj = { a: 1 };
+do {
+    if (cond3) {
+        obj = { b: 2 };
+    }
+
+    if (cond2) {
+        obj = { c: 3 };
+    }
+    obj.b;
+} while (cond1);
+",
+    );
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1 };
+do {} while ( (obj.prop1, (obj = { prop2: 2 })) );
+",
+        "
+let obj = { a: 1 };
+do {} while ( (obj.a, (obj = { b: 2 })) );
 ",
     );
 }
