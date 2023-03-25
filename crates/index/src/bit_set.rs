@@ -726,6 +726,10 @@ impl<T: Idx> GrowableBitSet<T> {
         }
     }
 
+    pub fn capacity(&self) -> usize {
+        self.bit_set.domain_size
+    }
+
     /// Returns `true` if the set has changed.
     #[inline]
     pub fn insert(&mut self, elem: T) -> bool {

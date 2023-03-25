@@ -185,8 +185,8 @@ obj.a;
 }
 
 #[test]
-fn test_objects_are_only_merged_when_their_conflation_is_accessed_accessed() {
-    // No reference, no access: conflation but no merge.
+fn test_props_only_conflated_when_union_is_accessed() {
+    // No reference, no access: no conflation.
     test_transform_in_fn(
         "
 const obj1 = { prop1: 1 };
@@ -199,7 +199,7 @@ const obj2 = { a: 2 };
 const v1 = a ? obj1 : obj2;
     ",
     );
-    // Reference, but no access: conflation but no merge.
+    // Reference, but no access: no conflation.
     test_transform_in_fn(
         "
 const obj1 = { prop1: 1 };
@@ -214,7 +214,7 @@ const v1 = a ? obj1 : obj2;
 v1;
         ",
     );
-    // Access: conflation and merge.
+    // Access: conflation.
     test_transform_in_fn(
         "
 const obj1 = { prop1: 1 };
@@ -229,7 +229,7 @@ const v1 = a ? obj1 : obj2;
 v1.a;
     ",
     );
-    // Invalidation: conflation and merge.
+    // Invalidation.
     test_same_in_fn(
         "
 const obj1 = { prop1: 1 };
@@ -247,7 +247,7 @@ v1[1];
 // Same goes for the corresponding binary expressions.
 #[test]
 fn test_logical_assign() {
-    // No reference, no access: conflation but no merge.
+    // No reference, no access: no conflation.
     test_transform_in_fn(
         "
 let obj1 = { prop1: 1 };
@@ -258,7 +258,7 @@ let obj1 = { a: 1 };
 obj1 ||= cond ? { a: 2 } : { a: 3 };
     ",
     );
-    // Access: conflation and merge.
+    // Access: conflation.
     test_transform_in_fn(
         "
 let obj1 = { prop1: 1 };
@@ -267,7 +267,7 @@ obj1.prop1;
     ",
         "
 let obj1 = { a: 1 };
-obj1 ||= cond ? { b: 2 } : { c: 3 };
+obj1 ||= cond ? { b: 2 } : { b: 3 };
 obj1.a;
     ",
     );
@@ -365,26 +365,24 @@ const { prop2 = obj1 } = { prop2: 2 };
 prop2.prop1;
 ",
         "
-const obj1 = { prop1: 1 };
+const obj1 = { a: 1 };
 const { a: prop2 = obj1 } = { a: 2 };
-prop2.prop1;
+prop2.a;
 ",
     );
 
-    // obj1 is invalidated because it is conflated with 2 by the destructuring
-    // assignment.
     test_transform_in_fn(
         "
 const obj1 = { prop1: 1 };
 const { prop2: foo = obj1 } = { prop1: 2, prop2: 2 };
 ",
         "
-const obj1 = { prop1: 1 };
+const obj1 = { a: 1 };
 const { b: foo = obj1 } = { a: 2, b: 2 };
 ",
     );
 
-    // obj1 and `prop2: { prop3: 3 }` are conflated, but are not merged.
+    // obj1 and `prop2: { prop3: 3 }` are not conflated.
     test_transform_in_fn(
         "
 const obj1 = { prop1: 1 };
@@ -395,7 +393,7 @@ const obj1 = { a: 1 };
 const { a: prop2 = obj1 } = { a: { a: 3 }, b: 4 };
 ",
     );
-    // Same as above, but the prop access causes that conflation to be merged.
+    // Same as above, but the prop access causes conflation.
     test_transform_in_fn(
         "
 const obj1 = { prop1: 1 };
@@ -409,7 +407,7 @@ prop2.a;
 ",
     );
 
-    // Like plain property accesses, undefined properties are ignored.
+    // undefined property.
     test_transform_in_fn(
         "
 let obj = { prop1: 1 };
@@ -417,7 +415,7 @@ let { prop1, prop2 } = obj;
 ",
         "
 let obj = { a: 1 };
-let { a: prop1, prop2: prop2 } = obj;
+let { a: prop1, b: prop2 } = obj;
 ",
     );
 }
@@ -452,7 +450,7 @@ for (let i = 0; i < 5; i++) {
 }
 ",
     );
-    // Conflation but no merge.
+    // No conflation.
     test_transform_in_fn(
         "
 let obj = { count: 0 };
@@ -460,10 +458,10 @@ for (let i = 0; i < 5; obj = { prop1: 1, prop2: 2, count: i++ });
 ",
         "
 let obj = { a: 0 };
-for (let i = 0; i < 5; obj = { a: 1, b: 2, c: i++ });
+for (let i = 0; i < 5; obj = { b: 1, c: 2, a: i++ });
 ",
     );
-    // Conflation and merge.
+    // Conflation.
     test_transform_in_fn(
         "
 let obj = { count: 0 };
@@ -472,9 +470,9 @@ for (let i = 0; i < 5; obj = { prop1: 1, prop2: 2, count: i++ }) {
 }
 ",
         "
-let obj = { c: 0 };
-for (let i = 0; i < 5; obj = { a: 1, b: 2, c: i++ }) {
-    obj.c;
+let obj = { a: 0 };
+for (let i = 0; i < 5; obj = { b: 1, c: 2, a: i++ }) {
+    obj.a;
 }
 ",
     );
@@ -551,16 +549,16 @@ while (cond1) {
 }
 ",
         "
-let obj = { a: 1 };
+let obj = { b: 1 };
 while (cond1) {
     if (cond3) {
-        obj = { b: 2 };
+        obj = { a: 2 };
     }
 
     if (cond2) {
-        obj = { c: 3 };
+        obj = { b: 3 };
     }
-    obj.b;
+    obj.a;
 }
 ",
     );
@@ -643,16 +641,16 @@ do {
 } while (cond1);
 ",
         "
-let obj = { a: 1 };
+let obj = { b: 1 };
 do {
     if (cond3) {
-        obj = { b: 2 };
+        obj = { a: 2 };
     }
 
     if (cond2) {
-        obj = { c: 3 };
+        obj = { b: 3 };
     }
-    obj.b;
+    obj.a;
 } while (cond1);
 ",
     );

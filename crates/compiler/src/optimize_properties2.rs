@@ -2,6 +2,7 @@ use std::ops::Index;
 
 use ast::*;
 use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
+use index::bit_set::GrowableBitSet;
 use index::vec::{Idx, IndexVec};
 use rustc_hash::{FxHashMap, FxHashSet};
 use swc_atoms::JsWord;
@@ -10,6 +11,8 @@ use crate::control_flow::node::Node;
 use crate::control_flow::ControlFlowAnalysis::*;
 use crate::control_flow::ControlFlowGraph::*;
 use crate::find_vars::*;
+use crate::graph::FixedPointGraphTraversal::{EdgeCallback, FixedPointGraphTraversal};
+use crate::graph::GraphColoring::{GreedyGraphColoring, SubGraph};
 use crate::utils::unwrap_as;
 use crate::DefaultNameGenerator::DefaultNameGenerator;
 use crate::{DataFlowAnalysis::*, Id, ToId};
@@ -17,17 +20,223 @@ use crate::{DataFlowAnalysis::*, Id, ToId};
 #[cfg(test)]
 mod tests;
 
+mod color;
+mod color_graph_builder;
+mod color_graph_node;
+mod color_graph_node_factory;
+mod color_registry;
+
+use color::{Color, ColorId};
+use color_graph_builder::ColorGraphBuilder;
+use color_graph_node::ColorGraphNodeId;
+use color_graph_node_factory::ColorGraphNodeFactory;
+
+use self::color_registry::ColorRegistry;
+
 pub fn process(ast: &mut ast::Program) {
-    let mut visitor = GlobalVisitor::default();
+    let mut store = Store {
+        objects_map: FxHashMap::default(),
+        invalid_objects: GrowableBitSet::new_empty(),
+        unions: IndexVec::default(),
+        references: FxHashMap::default(),
+        cur_object_id: ObjectId::from_u32(0),
+    };
+
+    // Find all property references and record the types on which they occur.
+    // Populate stringNodesToRename, propertyMap, quotedNames.
+    let mut visitor = GlobalVisitor { store: &mut store };
     ast.visit_with(&mut visitor);
 
-    let mut renamer = Renamer {
-        rename_map: visitor.rename_map,
+    let mut nodes_to_rename = FxHashSet::default();
+    let mut properties = IndexVec::default();
+    let mut property_map = FxHashMap::default();
+    let mut colours = ColorRegistry::new();
+    let mut node_factory = ColorGraphNodeFactory::new(&mut colours);
+
+    let mut object_color_map = FxHashMap::default();
+    let mut union_color_map = FxHashMap::default();
+
+    for ((ident_id, name), &object) in &store.references {
+        nodes_to_rename.insert(*ident_id);
+        let prop = match property_map.get(name) {
+            Some(prop) => *prop,
+            None => {
+                let prop = properties.push(Property::new(name.clone()));
+                property_map.insert(name.clone(), prop);
+                prop
+            }
+        };
+        let color = match object {
+            Some(Pointer::Object(obj)) => *object_color_map.entry(obj).or_insert_with(|| {
+                let color = Color {
+                    is_invalidating: store.invalidated(Pointer::Object(obj)),
+                    union_elements: FxHashSet::default(),
+                };
+                node_factory.colours.colors.push(color)
+            }),
+            Some(Pointer::Union(union)) => *union_color_map.entry(union).or_insert_with(|| {
+                let mut union_elements = FxHashSet::default();
+                for &element in &store.unions[union].constituents {
+                    let element_color = *object_color_map.entry(element).or_insert_with(|| {
+                        let color = Color {
+                            is_invalidating: store.invalidated(Pointer::Object(element)),
+                            union_elements: FxHashSet::default(),
+                        };
+                        node_factory.colours.colors.push(color)
+                    });
+                    union_elements.insert(element_color);
+                }
+                let color = Color {
+                    is_invalidating: store.invalidated(Pointer::Union(union)),
+                    union_elements,
+                };
+                node_factory.colours.colors.push(color)
+            }),
+            None => node_factory.colours.unknown_color,
+        };
+        properties[prop].add_related_color(&mut node_factory, color);
+    }
+
+    let types_to_add = node_factory.get_all_known_types();
+    let mut graph_builder = ColorGraphBuilder::new(&mut node_factory);
+    graph_builder.add_all(&types_to_add);
+    let color_graph = graph_builder.build();
+    for node in node_factory.get_all_known_types() {
+        node_factory.nodes[node].subtype_indices.insert(node); // Init subtyping as reflexive.
+    }
+
+    struct Traversal<'col, 'nf> {
+        node_factory: &'nf mut ColorGraphNodeFactory<'col>,
+    }
+
+    impl EdgeCallback<ColorGraphNodeId, ()> for Traversal<'_, '_> {
+        fn traverseEdge(
+            &mut self,
+            subtype: &ColorGraphNodeId,
+            _edge: &(),
+            supertype: &ColorGraphNodeId,
+        ) -> bool {
+            if subtype == supertype {
+                return false;
+            }
+
+            let (subtype, supertype) = self.node_factory.nodes.pick2_mut(*subtype, *supertype);
+            /*
+             * Cheap path for when we're sure there's going to be a change.
+             *
+             * Since bits only ever turn on, using more bits means there are definitely more
+             * elements. This prevents of from needing to check cardinality or equality, which
+             * would otherwise dominate the cost of computing the fixed point.
+             *
+             * We're guaranteed to converge because the sizes will be equal after the OR
+             * operation.
+             */
+            if subtype.subtype_indices.capacity() > supertype.subtype_indices.capacity() {
+                supertype.subtype_indices.union(&subtype.subtype_indices);
+                return true;
+            }
+
+            let start_size = supertype.subtype_indices.count();
+            supertype.subtype_indices.union(&subtype.subtype_indices);
+            return supertype.subtype_indices.count() > start_size;
+        }
+    }
+
+    FixedPointGraphTraversal::newReverseTraversal(Traversal {
+        node_factory: &mut node_factory,
+    })
+    .computeFixedPoint(&color_graph);
+
+    // Fill in all transitive edges in subtyping graph per property
+    for &prop in property_map.values() {
+        // TODO: bad clone():
+        for color in properties[prop].related_colors_seeds.clone() {
+            properties[prop]
+                .related_colors
+                .union(&node_factory[color].subtype_indices);
+        }
+    }
+
+    let mut reserved_names = FxHashSet::default();
+
+    let mut nodes = Vec::with_capacity(property_map.len());
+    for &prop in property_map.values() {
+        if properties[prop].skip_ambiguating {
+            reserved_names.insert(properties[prop].old_name.clone());
+        } else {
+            nodes.push(prop);
+        }
+    }
+
+    let mut coloring = GreedyGraphColoring::new();
+    let num_new_property_names = coloring.color::<_, _, PropertySubGraph, _>(
+        // TODO: bad clone:
+        nodes.clone(),
+        |&a, &b| {
+            /*
+             * Sorts Property objects by their count, breaking ties lexicographically to ensure a deterministic
+             * total ordering.
+             */
+            let result = properties[a]
+                .num_occurrences
+                .cmp(&properties[b].num_occurrences);
+            if result.is_eq() {
+                properties[a].old_name.cmp(&properties[b].old_name)
+            } else {
+                result
+            }
+        },
+        |&prop| properties[prop].num_occurrences,
+        || PropertySubGraph::new(&properties),
+    );
+
+    // Generate new names for the properties that will be renamed.
+    let mut name_gen = DefaultNameGenerator::new(reserved_names);
+    let mut color_map = IndexVec::with_capacity(num_new_property_names);
+    for _ in 0..num_new_property_names {
+        color_map.push(name_gen.generateNextName());
+    }
+
+    // Translate the color of each Property instance to a name.
+    for node in nodes {
+        let color = coloring.get_color_of_node(&node);
+        properties[node].new_name = Some(color_map[color].clone());
+    }
+
+    // Actually assign the new names.
+    let mut renamer = UseSiteRenamer {
+        nodes_to_rename,
+        properties,
+        property_map,
     };
+
     ast.visit_mut_with(&mut renamer);
+
+    struct UseSiteRenamer {
+        nodes_to_rename: FxHashSet<NodeId>,
+        properties: IndexVec<PropertyId, Property>,
+        property_map: FxHashMap<JsWord, PropertyId>,
+    }
+
+    // TODO: since there is a one-to-one relation between idents and use sites,
+    // once we have renamed all id's we collected, we can abort the traversal
+    impl VisitMut<'_> for UseSiteRenamer {
+        fn visit_mut_ident(&mut self, ident: &mut ast::Ident) {
+            if self.nodes_to_rename.contains(&ident.node_id) {
+                let old_name = &ident.sym;
+                if let Some(&p) = self.property_map.get(old_name) {
+                    let prop = &self.properties[p];
+                    if let Some(new_name) = &prop.new_name {
+                        debug_assert!(old_name == &prop.old_name);
+                        ident.sym = new_name.clone();
+                    }
+                }
+            }
+        }
+    }
 }
 
-fn handle_fn<'a, T>(rename_map: &mut FxHashMap<NodeId, JsWord>, node: &'a T)
+fn handle_fn<'a, T>(store: &mut Store, node: &'a T)
 where
     T: FunctionLike<'a> + VisitWith<'a, DeclFinder>,
     &'a T: Into<ControlFlowRoot<'a>>,
@@ -36,7 +245,8 @@ where
 
     let cfa = ControlFlowAnalysis::analyze(node.into(), false);
 
-    let result = Analysis::new(cfa, vars.scopeVariables).analyze();
+    let mut analysis = Analysis::new(cfa, vars.scopeVariables, store);
+    analysis.data_flow_analysis.analyze();
 
     // result.1.print_full_with_annotations::<DefaultPrinter>(None);
 
@@ -46,87 +256,62 @@ where
     //     .iter_enumerated()
     //     .collect::<Vec<_>>());
 
-    for (mut id, object) in result.0.objects {
-        // Manually resolve object.
-        while let Some(mapped) = result.0.merge_map.get(&id) {
-            id = *mapped;
-        }
-        if !result.0.invalid_objects.contains(&id) {
-            let mut name_gen = DefaultNameGenerator::default();
-            for (_, prop) in &object.properties {
-                let new_name = name_gen.generateNextName();
-                for &reference in &prop.references {
-                    rename_map.insert(reference, new_name.clone());
-                }
-            }
-        }
+    node.visit_body_with(&mut FnVisitor { store });
     }
 
-    node.visit_body_with(&mut FnVisitor { rename_map });
-}
-
-struct FnVisitor<'a> {
-    rename_map: &'a mut FxHashMap<NodeId, JsWord>,
+struct FnVisitor<'s> {
+    store: &'s mut Store,
 }
 
 impl Visit<'_> for FnVisitor<'_> {
     fn visit_function(&mut self, node: &Function) {
-        handle_fn(&mut self.rename_map, node);
+        handle_fn(self.store, node);
     }
     fn visit_constructor(&mut self, node: &Constructor) {
-        handle_fn(&mut self.rename_map, node);
+        handle_fn(self.store, node);
     }
     fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
-        handle_fn(&mut self.rename_map, node);
+        handle_fn(self.store, node);
     }
     fn visit_getter_prop(&mut self, node: &GetterProp) {
-        handle_fn(&mut self.rename_map, node);
+        handle_fn(self.store, node);
     }
     fn visit_setter_prop(&mut self, node: &SetterProp) {
-        handle_fn(&mut self.rename_map, node);
+        handle_fn(self.store, node);
     }
 }
 
-#[derive(Default)]
-struct GlobalVisitor {
-    rename_map: FxHashMap<NodeId, JsWord>,
+struct GlobalVisitor<'s> {
+    store: &'s mut Store,
 }
 
-impl Visit<'_> for GlobalVisitor {
+impl Visit<'_> for GlobalVisitor<'_> {
     fn visit_function(&mut self, node: &Function) {
-        handle_fn(&mut self.rename_map, node);
+        handle_fn(self.store, node);
     }
     fn visit_constructor(&mut self, node: &Constructor) {
-        handle_fn(&mut self.rename_map, node);
+        handle_fn(self.store, node);
     }
     fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
-        handle_fn(&mut self.rename_map, node);
+        handle_fn(self.store, node);
     }
     fn visit_getter_prop(&mut self, node: &GetterProp) {
-        handle_fn(&mut self.rename_map, node);
+        handle_fn(self.store, node);
     }
     fn visit_setter_prop(&mut self, node: &SetterProp) {
-        handle_fn(&mut self.rename_map, node);
+        handle_fn(self.store, node);
     }
 }
 
-#[derive(Debug)]
-pub struct AnalysisResult {
-    pub lattice_elements: IndexVec<LatticeElementId, Lattice>,
-
-    objects: FxHashMap<ObjectId, Object>,
-    merge_map: FxHashMap<ObjectId, ObjectId>,
-    invalid_objects: FxHashSet<ObjectId>,
+pub struct Analysis<'ast, 's> {
+    data_flow_analysis: DataFlowAnalysis<Node<'ast>, Inner<'ast, 's>, Lattice, JoinOp>,
 }
 
-pub struct Analysis<'ast> {
-    data_flow_analysis: DataFlowAnalysis<Node<'ast>, Inner<'ast>, Lattice, JoinOp>,
-}
-
-impl<'ast> Analysis<'ast> {
-    pub fn new(
+impl<'ast, 's> Analysis<'ast, 's> {
+    fn new(
         cfa: ControlFlowAnalysisResult<Node<'ast>, LinearFlowState, LatticeElementId>,
         vars: FxHashMap<Id, VarId>,
+        store: &'s mut Store,
     ) -> Self {
         let inner = Inner {
             lattice_elements: IndexVec::default(),
@@ -134,53 +319,24 @@ impl<'ast> Analysis<'ast> {
 
             vars,
 
-            store: Store {
-                objects_map: FxHashMap::default(),
-                objects: FxHashMap::default(),
-                conflations: FxHashMap::default(),
-                merge_map: FxHashMap::default(),
-                finalized_conflations: FxHashMap::default(),
-                invalid_objects: FxHashSet::default(),
-
-                cur_object_id: ObjectId::from_u32(0),
-                cur_conflation_id: ConflationId::from_u32(0),
-            },
+            store,
         };
         let data_flow_analysis = DataFlowAnalysis::new(inner, cfa.nodePriorities);
 
         Self { data_flow_analysis }
     }
-
-    pub fn analyze(
-        mut self,
-    ) -> (
-        AnalysisResult,
-        ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
-    ) {
-        self.data_flow_analysis.analyze();
-
-        let result = AnalysisResult {
-            lattice_elements: self.data_flow_analysis.inner.lattice_elements,
-            objects: self.data_flow_analysis.inner.store.objects,
-            merge_map: self.data_flow_analysis.inner.store.merge_map,
-            invalid_objects: self.data_flow_analysis.inner.store.invalid_objects,
-        };
-        (result, self.data_flow_analysis.inner.cfg)
-    }
 }
 
 #[derive(Debug)]
-/// Info collected during analysis of a function.
+/// Info collected during analysis.
 struct Store {
-    objects_map: FxHashMap<NodeId, Pointer>,
-    objects: FxHashMap<ObjectId, Object>,
-    conflations: FxHashMap<ConflationId, FxHashSet<ObjectId>>,
-    merge_map: FxHashMap<ObjectId, ObjectId>,
-    finalized_conflations: FxHashMap<ConflationId, ObjectId>,
-    invalid_objects: FxHashSet<ObjectId>,
+    objects_map: FxHashMap<NodeId, ObjectId>,
+    invalid_objects: GrowableBitSet<ObjectId>,
+    unions: IndexVec<UnionId, Union>,
+
+    references: FxHashMap<(NodeId, JsWord), Option<Pointer>>,
 
     cur_object_id: ObjectId,
-    cur_conflation_id: ConflationId,
 }
 
 impl Store {
@@ -189,53 +345,12 @@ impl Store {
         self.cur_object_id.increment_by(1);
         id
     }
-    fn next_conflation_id(&mut self) -> ConflationId {
-        let id = self.cur_conflation_id;
-        self.cur_conflation_id.increment_by(1);
-        id
-    }
 
-    /// Recursively follows any merge mappings for `obj`, returning the
-    /// [`ObjectId`] of the current representation of the object.
-    fn resolve_object(&self, mut obj: ObjectId) -> ObjectId {
-        while let Some(mapped) = self.merge_map.get(&obj) {
-            obj = *mapped;
-        }
-        obj
-    }
-
-    /// Recursively follows any merge mappings for `pointer`, returning the
-    /// [`ObjectId`] of the current representation of the object.
-    fn resolve_pointer(&self, mut pointer: Pointer) -> Pointer {
-        loop {
-            match pointer {
-                Pointer::Object(obj) => {
-                    if let Some(mapped) = self.merge_map.get(&obj) {
-                        pointer = Pointer::Object(*mapped);
-                    } else {
-                        return pointer;
-                    }
-                }
-                Pointer::Conflation(conflation) => {
-                    if let Some(mapped) = self.finalized_conflations.get(&conflation) {
-                        pointer = Pointer::Object(*mapped);
-                    } else {
-                        return pointer;
-                    }
-                }
-            }
-        }
-    }
-
-    /// Conflates the entities that `pointer1` and `pointer2` point to.
-    ///
-    /// Note that this merely records the conflation - the objects are not merged
-    /// until the conflation is used as a single object (e.g. property is accessed).
-    fn record_conflation(
+    /// Returns a [`Pointer`] to a union of `pointer1`'s type and `pointer2`'s type.
+    fn create_union(
         &mut self,
         pointer1: Option<Pointer>,
         pointer2: Option<Pointer>,
-        lattice: &Lattice,
     ) -> Option<Pointer> {
         // TODO: invalidate if either is None. This can be avoided if we have a Some() and a None,
         // and the None represents a literal/primitive, in which case we know its properties and
@@ -245,11 +360,9 @@ impl Store {
         let (id1, id2) = match (pointer1, pointer2) {
             (None, None) => return None,
             (None, Some(id2)) => {
-                self.invalidate(Some(id2), lattice);
                 return Some(id2);
             }
             (Some(id1), None) => {
-                self.invalidate(Some(id1), lattice);
                 return Some(id1);
             }
             (Some(id1), Some(id2)) => (id1, id2),
@@ -259,38 +372,39 @@ impl Store {
             return Some(id1);
         }
 
-        let mut conflation = FxHashSet::default();
+        let mut constituents = FxHashSet::default();
 
-        match (self.resolve_pointer(id1), self.resolve_pointer(id2)) {
+        match (id1, id2) {
             (Pointer::Object(left), Pointer::Object(right)) => {
-                conflation.insert(left);
-                conflation.insert(right);
+                constituents.insert(left);
+                constituents.insert(right);
             }
-            (Pointer::Object(obj), Pointer::Conflation(conf)) => {
-                conflation.insert(obj);
-                conflation.extend(self.conflations.get(&conf).unwrap().iter().copied());
+            (Pointer::Object(obj), Pointer::Union(union)) => {
+                constituents.insert(obj);
+                constituents.extend(self.unions[union].constituents.iter().copied());
             }
-            (Pointer::Conflation(conf), Pointer::Object(obj)) => {
-                conflation.insert(obj);
-                conflation.extend(self.conflations.get(&conf).unwrap().iter().copied());
+            (Pointer::Union(union), Pointer::Object(obj)) => {
+                constituents.insert(obj);
+                constituents.extend(self.unions[union].constituents.iter().copied());
             }
-            (Pointer::Conflation(left), Pointer::Conflation(right)) => {
-                conflation.extend(self.conflations.get(&left).unwrap().iter().copied());
-                conflation.extend(self.conflations.get(&right).unwrap().iter().copied());
+            (Pointer::Union(left), Pointer::Union(right)) => {
+                constituents.extend(self.unions[left].constituents.iter().copied());
+                constituents.extend(self.unions[right].constituents.iter().copied());
             }
         }
 
-        let conflation_id = self.next_conflation_id();
+        let union = Union { constituents };
 
-        self.conflations.insert(conflation_id, conflation);
-
-        Some(Pointer::Conflation(conflation_id))
+        if let Some((existing, _)) = self.unions.iter_enumerated().find(|(_, u)| *u == &union) {
+            Some(Pointer::Union(existing))
+        } else {
+            Some(Pointer::Union(self.unions.push(union)))
+        }
     }
 
     /// Recursively invalidates the entity that `pointer` points to.
     fn invalidate(&mut self, pointer: Option<Pointer>, lattice: &Lattice) {
         if let Some(pointer) = pointer {
-            let pointer = self.resolve_pointer(pointer);
             let mut queue = vec![pointer];
             let mut done = FxHashSet::default();
 
@@ -304,7 +418,6 @@ impl Store {
                         if let Some(props) = lattice.prop_assignments.get(&obj) {
                             for prop in props.values() {
                                 if let Some(value) = prop.rhs {
-                                    let value = self.resolve_pointer(value);
                                     if !done.contains(&value) {
                                         queue.push(value);
                                     }
@@ -312,9 +425,8 @@ impl Store {
                             }
                         }
                     }
-                    Pointer::Conflation(conflation) => {
-                        for &constituent in self.conflations.get(&conflation).unwrap() {
-                            let constituent = self.resolve_object(constituent);
+                    Pointer::Union(union) => {
+                        for &constituent in &self.unions[union].constituents {
                             let pointer = Pointer::Object(constituent);
                             if !done.contains(&pointer) {
                                 queue.push(pointer);
@@ -328,33 +440,27 @@ impl Store {
 
     /// Returns true if `pointer` points to an invalid object.
     fn invalidated(&self, pointer: Pointer) -> bool {
-        let pointer = self.resolve_pointer(pointer);
         match pointer {
-            Pointer::Object(obj) => self.invalid_objects.contains(&obj),
-            Pointer::Conflation(conflation) => self
-                .conflations
-                .get(&conflation)
-                .unwrap()
+            Pointer::Object(obj) => self.invalid_objects.contains(obj),
+            Pointer::Union(union) => self.unions[union]
+                .constituents
                 .iter()
-                .any(|&obj| {
-                    let obj = self.resolve_object(obj);
-                    self.invalid_objects.contains(&obj)
-                }),
+                .any(|&obj| self.invalid_objects.contains(obj)),
         }
     }
 }
 
 #[derive(Debug)]
-struct Inner<'ast> {
+struct Inner<'ast, 's> {
     lattice_elements: IndexVec<LatticeElementId, Lattice>,
     cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
 
     vars: FxHashMap<Id, VarId>,
 
-    store: Store,
+    store: &'s mut Store,
 }
 
-impl<'ast> Inner<'ast> {
+impl<'ast> Inner<'ast, '_> {
     fn analyze_node<'a>(&mut self, n: Node<'ast>, lattice: &'a mut Lattice, conditional: bool) {
         let mut v = Analyser {
             analysis: self,
@@ -373,216 +479,203 @@ impl<'ast> Inner<'ast> {
 /// pointer should be resolved before trying to access the underlying object.
 enum Pointer {
     Object(ObjectId),
-    Conflation(ConflationId),
+    Union(UnionId),
 }
 
 index::newtype_index!(struct ObjectId { .. });
-index::newtype_index!(struct ConflationId { .. });
+index::newtype_index!(struct UnionId { .. });
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, PartialEq)]
+struct Union {
+    constituents: FxHashSet<ObjectId>,
+}
+
+/** Encapsulates the information needed for renaming a property. */
+#[derive(Debug)]
 struct Property {
-    references: FxHashSet<NodeId>,
+    old_name: JsWord,
+    new_name: Option<JsWord>,
+    num_occurrences: usize,
+    skip_ambiguating: bool,
+    // All colors upon which this property was directly accessed. For "a.b" this includes "a"'s type
+    related_colors_seeds: FxHashSet<ColorGraphNodeId>,
+    // includes relatedTypesSeeds + all subtypes of those seed colors. For example if this property
+    // was accessed off of Iterable, then this bitset will include Array as well.
+    related_colors: GrowableBitSet<ColorGraphNodeId>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq)]
-struct Object {
-    properties: FxHashMap<JsWord, Property>,
+impl Property {
+    pub fn new(name: JsWord) -> Self {
+        Self {
+            old_name: name,
+            new_name: None,
+            num_occurrences: 0,
+            skip_ambiguating: false,
+            related_colors_seeds: Default::default(),
+            related_colors: GrowableBitSet::new_empty(),
+        }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+    /** Marks this color as related to this property */
+    pub fn add_related_color<'c>(
+        &mut self,
+        node_factory: &mut ColorGraphNodeFactory<'c>,
+        color_id: ColorId,
+    ) {
+        if self.skip_ambiguating {
+            return;
+}
+
+        self.num_occurrences += 1;
+
+        let color = &node_factory.colours[color_id];
+
+        if color.is_invalidating
+        /*|| color.getPropertiesKeepOriginalName()*/
+        {
+            self.skip_ambiguating = true;
+            return;
+}
+
+        let node = node_factory.create_node(Some(color_id));
+        self.related_colors_seeds.insert(node);
+    }
+    }
+
+index::newtype_index! {
+    pub struct PropertyId {
+        DEBUG_FORMAT = "PropertyId({})"
+        }
+    }
+
+/**
+ * A {@link SubGraph} that represents properties. The related types of
+ * the properties are used to efficiently calculate adjacency information.
+ */
+struct PropertySubGraph<'a> {
+    properties: &'a IndexVec<PropertyId, Property>,
+    /** Types related to properties referenced in this subgraph. */
+    related_types: GrowableBitSet<ColorGraphNodeId>,
+            }
+
+impl<'a> PropertySubGraph<'a> {
+    pub fn new(properties: &'a IndexVec<PropertyId, Property>) -> Self {
+        Self {
+            properties,
+            related_types: GrowableBitSet::new_empty(),
+        }
+                }
+            }
+
+impl SubGraph<PropertyId> for PropertySubGraph<'_> {
+    /**
+     * Returns true if prop is in an independent set from all properties in this
+     * sub graph.  That is, if none of its related types intersects with the
+     * related types for this sub graph.
+     */
+    fn isIndependentOf(&self, prop: &PropertyId) -> bool {
+        !self
+            .related_types
+            .intersects(&self.properties[*prop].related_colors)
+                    }
+
+    /**
+     * Adds the node to the sub graph, adding all its related types to the
+     * related types for the sub graph.
+     */
+    fn addNode(&mut self, prop: PropertyId) {
+        self.related_types
+            .union(&self.properties[prop].related_colors);
+            }
+        }
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct Assignment {
     rhs: Option<Pointer>,
-}
+        }
 
 /// A place where a variable can be stored.
 #[derive(Debug)]
 enum Slot<'ast> {
     Var(Id),
-    Prop(ObjectId, &'ast Ident),
-}
+    Prop(Pointer, &'ast Ident),
+        }
 
 #[derive(Debug)]
-struct Analyser<'ast, 'a> {
-    analysis: &'a mut Inner<'ast>,
+struct Analyser<'ast, 'a, 's> {
+    analysis: &'a mut Inner<'ast, 's>,
     lattice: &'a mut Lattice,
-}
-
-impl<'ast, 'a> Analyser<'ast, 'a> {
-    fn get_property(&self, object: ObjectId, key: &JsWord) -> Option<&Assignment> {
-        self.lattice
-            .prop_assignments
-            .get(&object)
-            .and_then(|props| props.get(key))
-    }
-
-    fn has_property(&self, object: ObjectId, key: &JsWord) -> bool {
-        self.get_property(object, key).is_some()
-    }
-
-    /// Records `key` as a reference to a property on the object that `pointer`
-    /// points to. No reference is recorded if the property has not been assigned
-    /// yet.
-    ///
-    /// Note: this has the side effect of merging any conflation that `pointer`
-    /// points to.
-    fn reference_prop(&mut self, pointer: Pointer, key: &Ident) {
-        let object = self.ensure_conflated(pointer);
-        // Only add references to assigned properties.
-        if self.has_property(object, &key.sym) {
-            self.analysis
-                .store
-                .objects
-                .get_mut(&object)
-                .unwrap()
-                .properties
-                .entry(key.sym.clone())
-                .or_default()
-                .references
-                .insert(key.node_id);
-        }
-    }
-
-    /// Performs any outstanding conflations for the entity that `pointer` points to.
-    /// This recursively merges the constituents into a single object.
-    fn ensure_conflated(&mut self, pointer: Pointer) -> ObjectId {
-        let mut finalized = FxHashSet::default();
-        // Find all objects that will be conflated.
-        let pointer = self.analysis.store.resolve_pointer(pointer);
-        let mut queue = match pointer {
-            Pointer::Object(obj) => vec![obj],
-            Pointer::Conflation(conflation) => {
-                finalized.insert(conflation);
-                self.analysis
-                    .store
-                    .conflations
-                    .remove(&conflation)
-                    .unwrap()
-                    .into_iter()
-                    .collect()
-            }
-        };
-        let mut flattened = FxHashSet::default();
-        while let Some(obj) = queue.pop() {
-            let obj = self.analysis.store.resolve_object(obj);
-
-            flattened.insert(obj);
-
-            let mut matching_groups = FxHashSet::default();
-
-            for (id, group) in &self.analysis.store.conflations {
-                if group.contains(&obj) {
-                    matching_groups.insert(*id);
-                }
             }
 
-            for id in matching_groups {
-                finalized.insert(id);
-                let group = self.analysis.store.conflations.remove(&id).unwrap();
-                for constituent in group {
-                    let constituent = self.analysis.store.resolve_object(constituent);
-                    if !flattened.contains(&constituent) {
-                        queue.push(constituent);
-                    }
-                }
-            }
-        }
-
-        if flattened.len() == 1 {
-            // Nothing to conflate.
-            return flattened.into_iter().next().unwrap();
-        }
-
-        let result_id = self.analysis.store.next_object_id();
-
-        for finalized in finalized {
-            self.analysis
-                .store
-                .finalized_conflations
-                .insert(finalized, result_id);
-        }
-
-        self.analysis
-            .store
-            .objects
-            .insert(result_id, Object::default());
-
-        let mut invalid = false;
-
-        for constituent in flattened {
-            self.analysis.store.merge_map.insert(constituent, result_id);
-
-            let mut incoming = self.analysis.store.objects.remove(&constituent).unwrap();
-
-            if !invalid && self.analysis.store.invalid_objects.contains(&constituent) {
-                invalid = true;
-            }
-
-            let properties = self
+impl<'ast> Analyser<'ast, '_, '_> {
+    fn get_property(&mut self, pointer: Pointer, key: &JsWord) -> Option<Assignment> {
+        match pointer {
+            Pointer::Object(obj) => self
                 .lattice
                 .prop_assignments
-                .remove(&constituent)
-                .unwrap_or_default();
+                .get(&obj)
+                .and_then(|props| props.get(key))
+                .copied(),
+            Pointer::Union(union) => {
+                let mut constituents = FxHashSet::default();
 
-            for (key, value) in properties {
-                let references = incoming
-                    .properties
-                    .remove(&key)
-                    .unwrap_or_default()
-                    .references;
-                self.analysis
-                    .store
-                    .objects
-                    .get_mut(&result_id)
-                    .unwrap()
-                    .properties
-                    .entry(key.clone())
-                    .or_default()
-                    .references
-                    .extend(references);
+                let mut invalid = false;
 
-                match self
+                for constituent in &self.analysis.store.unions[union].constituents {
+                    let constituent = self
                     .lattice
                     .prop_assignments
-                    .entry(result_id)
-                    .or_default()
-                    .entry(key.clone())
-                {
-                    std::collections::hash_map::Entry::Occupied(entry) => {
-                        // conflate
-                        let existing = entry.get().rhs;
-                        let value = self.analysis.store.record_conflation(
-                            existing,
-                            value.rhs,
-                            &self.lattice,
-                        );
-                        self.lattice
-                            .prop_assignments
-                            .entry(result_id)
-                            .or_default()
-                            .get_mut(&key)
-                            .unwrap()
-                            .rhs = value;
+                        .get(&constituent)
+                        .and_then(|props| props.get(key))
+                        .and_then(|assign| assign.rhs);
+
+                    match constituent {
+                        Some(Pointer::Object(obj)) => {
+                            constituents.insert(obj);
                     }
-                    std::collections::hash_map::Entry::Vacant(entry) => {
-                        // initialize
-                        entry.insert(value);
+                        Some(Pointer::Union(union)) => {
+                            constituents.extend(
+                                self.analysis.store.unions[union]
+                                    .constituents
+                                    .iter()
+                                    .copied(),
+                            );
                     }
+                        None => {
+                            invalid = true;
                 }
+                    };
             }
+
+                if constituents.len() == 0 {
+                    return None;
         }
+
+                let rhs = if constituents.len() == 1 {
+                    Pointer::Object(constituents.into_iter().next().unwrap())
+                } else {
+                    let union = Union { constituents };
+                    Pointer::Union(self.analysis.store.unions.push(union))
+                };
+                let result = Assignment { rhs: Some(rhs) };
 
         if invalid {
-            self.analysis
-                .store
-                .invalidate(Some(Pointer::Object(result_id)), &self.lattice);
+                    self.analysis.store.invalidate(result.rhs, &self.lattice);
         }
 
-        result_id
+                Some(result)
+            }
+        }
+    }
+
+    fn reference_prop(&mut self, object: Option<Pointer>, key: &Ident) {
+        let key = (key.node_id, key.sym.clone());
+        self.analysis.store.references.insert(key, object);
     }
 
     /// Assigns the given value to the [`Slot`] with the given name. Any existing
     /// value is replaced, unless this assignment is conditional, in which case
-    /// the slot is assigned a conflation of the old and new values.
+    /// the slot is assigned a union of the old and new values.
     fn assign_to_slot(
         &mut self,
         slot: Option<Slot<'ast>>,
@@ -591,7 +684,7 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
     ) -> Option<Pointer> {
         if let Some(slot) = slot {
             let existing = match &slot {
-                Slot::Var(name) => self.lattice.var_assignments.get(&name),
+                Slot::Var(name) => self.lattice.var_assignments.get(&name).cloned(),
                 Slot::Prop(obj, key) => self.get_property(*obj, &key.sym),
             };
 
@@ -601,13 +694,9 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
                         // supersede
                         Some(rhs_object)
                     } else {
-                        // conflate
+                        // union
                         let existing = existing.rhs;
-                        self.analysis.store.record_conflation(
-                            existing,
-                            Some(rhs_object),
-                            &self.lattice,
-                        )
+                        self.analysis.store.create_union(existing, Some(rhs_object))
                     };
                     Assignment { rhs }
                 } else {
@@ -626,24 +715,27 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
                     self.lattice.var_assignments.insert(name, new);
                 }
                 Slot::Prop(obj, key) => {
-                    if self.analysis.store.invalid_objects.contains(&obj) {
+                    if self.analysis.store.invalidated(obj) {
                         self.analysis.store.invalidate(rhs, &self.lattice);
                     }
+                    match obj {
+                        Pointer::Object(obj) => {
                     self.lattice
                         .prop_assignments
                         .entry(obj)
                         .or_default()
                         .insert(key.sym.clone(), new);
-                    self.analysis
-                        .store
-                        .objects
-                        .get_mut(&obj)
-                        .unwrap()
-                        .properties
-                        .entry(key.sym.clone())
+                        }
+                        Pointer::Union(union) => {
+                            for &constituent in &self.analysis.store.unions[union].constituents {
+                                self.lattice
+                                    .prop_assignments
+                                    .entry(constituent)
                         .or_default()
-                        .references
-                        .insert(key.node_id);
+                                    .insert(key.sym.clone(), new);
+                            }
+                        }
+                    }
                 }
             };
             rhs
@@ -712,10 +804,12 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
     fn invalidate_slot(&mut self, node: Node<'ast>, conditional: bool) {
         if let Some(lhs) = self.visit_and_get_slot(node, conditional) {
             let value = match lhs {
-                Slot::Var(name) => self.lattice.var_assignments.get(&name).and_then(|a| a.rhs),
-                Slot::Prop(obj, key) => self.get_property(obj, &key.sym).and_then(|a| a.rhs),
+                Slot::Var(name) => self.lattice.var_assignments.get(&name).copied(),
+                Slot::Prop(obj, key) => self.get_property(obj, &key.sym),
             };
-            self.analysis.store.invalidate(value, &self.lattice);
+            self.analysis
+                .store
+                .invalidate(value.and_then(|a| a.rhs), &self.lattice);
         }
     }
 
@@ -735,11 +829,9 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
                             match prop {
                                 ObjectPatProp::KeyValue(prop) => {
                                     let key = unwrap_as!(&prop.key, PropName::Ident(k), k);
-                                    self.reference_prop(rhs, key);
-                                    let rhs = self.ensure_conflated(rhs);
-                                    let rhs_value = self
-                                        .get_property(rhs, &key.sym)
-                                        .and_then(|assign| assign.rhs);
+                                    self.reference_prop(Some(rhs), key);
+                                    let rhs_value =
+                                        self.get_property(rhs, &key.sym).and_then(|a| a.rhs);
 
                                     if matches!(prop.value.as_ref(), Pat::Ident(_) | Pat::Expr(_)) {
                                         let slot = self.visit_and_get_slot(
@@ -810,10 +902,7 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
             Node::AssignPat(lhs) => {
                 let default_value = self.visit_and_get_object(Node::from(lhs.right.as_ref()), true);
 
-                let result =
-                    self.analysis
-                        .store
-                        .record_conflation(rhs, default_value, &self.lattice);
+                let result = self.analysis.store.create_union(rhs, default_value);
 
                 self.visit_destructuring(Node::from(lhs.left.as_ref()), result, conditional);
             }
@@ -857,10 +946,9 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
                     None
                 } else {
                     obj.map(|obj| {
-                        let object = self.ensure_conflated(obj);
                         let prop = unwrap_as!(node.prop.as_ref(), Expr::Ident(i), i);
-                        self.reference_prop(obj, prop);
-                        Slot::Prop(object, prop)
+                        self.reference_prop(Some(obj), prop);
+                        Slot::Prop(obj, prop)
                     })
                 }
             }
@@ -912,7 +1000,7 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
             }
             Node::ObjectLit(node) => {
                 if let Some(existing) = self.analysis.store.objects_map.get(&node.node_id) {
-                    Some(*existing)
+                    Some(Pointer::Object(*existing))
                 } else {
                     let is_simple_obj_lit = node.props.iter().all(|p| match p {
                         Prop::KeyValue(p) => matches!(&p.key, PropName::Ident(_)),
@@ -920,44 +1008,28 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
                     });
 
                     if is_simple_obj_lit {
-                        let mut obj = Object::default();
-                        obj.properties.reserve(node.props.len());
-
                         let object_id = self.analysis.store.next_object_id();
-
-                        self.analysis.store.objects.insert(object_id, obj);
 
                         self.analysis
                             .store
                             .objects_map
-                            .insert(node.node_id, Pointer::Object(object_id));
+                            .insert(node.node_id, object_id);
+
+                        let pointer = Pointer::Object(object_id);
 
                         for prop in &node.props {
                             let prop = unwrap_as!(prop, Prop::KeyValue(p), p);
                             let key = unwrap_as!(&prop.key, PropName::Ident(k), k);
 
+                            self.reference_prop(Some(pointer), key);
+
                             let value = self
                                 .visit_and_get_object(Node::from(prop.value.as_ref()), conditional);
 
-                            self.assign_to_slot(
-                                Some(Slot::Prop(object_id, key)),
-                                value,
-                                conditional,
-                            );
-
-                            self.analysis
-                                .store
-                                .objects
-                                .get_mut(&object_id)
-                                .unwrap()
-                                .properties
-                                .entry(key.sym.clone())
-                                .or_default()
-                                .references
-                                .insert(key.node_id);
+                            self.assign_to_slot(Some(Slot::Prop(pointer, key)), value, conditional);
                         }
 
-                        Some(Pointer::Object(object_id))
+                        Some(pointer)
                     } else {
                         dbg!(node);
                         todo!();
@@ -985,9 +1057,7 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
                             self.visit_and_get_object(Node::from(node.left.as_ref()), conditional);
                         let right =
                             self.visit_and_get_object(Node::from(node.right.as_ref()), true);
-                        self.analysis
-                            .store
-                            .record_conflation(left, right, &self.lattice)
+                        self.analysis.store.create_union(left, right)
                     }
                     _ => {
                         self.visit_and_get_object(Node::from(node.left.as_ref()), conditional);
@@ -1006,9 +1076,8 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
                 } else {
                     if let Some(obj) = obj {
                         let ident = unwrap_as!(node.prop.as_ref(), Expr::Ident(i), i);
-                        let object = self.ensure_conflated(obj);
-                        self.reference_prop(obj, ident);
-                        if let Some(value) = self.get_property(object, &ident.sym).map(|a| a.rhs) {
+                        self.reference_prop(Some(obj), ident);
+                        if let Some(value) = self.get_property(obj, &ident.sym).map(|a| a.rhs) {
                             value
                         } else {
                             None
@@ -1022,9 +1091,7 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
                 self.visit_and_get_object(Node::from(node.test.as_ref()), conditional);
                 let cons = self.visit_and_get_object(Node::from(node.cons.as_ref()), true);
                 let alt = self.visit_and_get_object(Node::from(node.alt.as_ref()), true);
-                self.analysis
-                    .store
-                    .record_conflation(cons, alt, &self.lattice)
+                self.analysis.store.create_union(cons, alt)
             }
             Node::CallExpr(node) => {
                 let callee = self.visit_and_get_object(Node::from(&node.callee), conditional);
@@ -1267,7 +1334,7 @@ impl<'ast, 'a> Analyser<'ast, 'a> {
     }
 }
 
-impl<'ast> DataFlowAnalysisInner<Node<'ast>, Lattice, JoinOp> for Inner<'ast> {
+impl<'ast> DataFlowAnalysisInner<Node<'ast>, Lattice, JoinOp> for Inner<'ast, '_> {
     fn add_lattice_element(&mut self, element: Lattice) -> LatticeElementId {
         self.lattice_elements.push(element)
     }
@@ -1319,7 +1386,7 @@ impl<'ast> DataFlowAnalysisInner<Node<'ast>, Lattice, JoinOp> for Inner<'ast> {
     }
 }
 
-impl Index<LatticeElementId> for Inner<'_> {
+impl Index<LatticeElementId> for Inner<'_, '_> {
     type Output = Lattice;
 
     fn index(&self, index: LatticeElementId) -> &Self::Output {
@@ -1332,8 +1399,8 @@ struct JoinOp {
     result: Lattice,
 }
 
-impl<'ast> FlowJoiner<Lattice, Inner<'ast>> for JoinOp {
-    fn joinFlow(&mut self, inner: &mut Inner<'ast>, input: LatticeElementId) {
+impl<'ast> FlowJoiner<Lattice, Inner<'ast, '_>> for JoinOp {
+    fn joinFlow(&mut self, inner: &mut Inner<'ast, '_>, input: LatticeElementId) {
         let input = &inner.lattice_elements[input];
 
         // Merge property assignments.
@@ -1346,10 +1413,9 @@ impl<'ast> FlowJoiner<Lattice, Inner<'ast>> for JoinOp {
                     .or_default()
                     .entry(key.clone())
                 {
-                    std::collections::hash_map::Entry::Occupied(entry) => {
-                        inner
-                            .store
-                            .record_conflation(entry.get().rhs, prop.rhs, &self.result);
+                    std::collections::hash_map::Entry::Occupied(mut entry) => {
+                        let union = inner.store.create_union(entry.get().rhs, prop.rhs);
+                        entry.insert(Assignment { rhs: union });
                     }
                     std::collections::hash_map::Entry::Vacant(entry) => {
                         entry.insert(prop.clone());
@@ -1361,10 +1427,9 @@ impl<'ast> FlowJoiner<Lattice, Inner<'ast>> for JoinOp {
         // Merge variable assignments.
         for (name, assignment) in &input.var_assignments {
             match self.result.var_assignments.entry(name.clone()) {
-                std::collections::hash_map::Entry::Occupied(entry) => {
-                    inner
-                        .store
-                        .record_conflation(entry.get().rhs, assignment.rhs, &self.result);
+                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                    let union = inner.store.create_union(entry.get().rhs, assignment.rhs);
+                    entry.insert(Assignment { rhs: union });
                 }
                 std::collections::hash_map::Entry::Vacant(entry) => {
                     entry.insert(assignment.clone());
