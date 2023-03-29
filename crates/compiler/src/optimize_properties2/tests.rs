@@ -78,6 +78,18 @@ window.foo = obj;
 obj.prop1 = { inner1 : 1 };
 ",
     );
+    test_transform_in_fn(
+        "
+const obj1 = { prop1: 1 };
+const obj2 = { prop1: 1 };
+window.obj2 = obj2;
+",
+        "
+const obj1 = { a: 1 };
+const obj2 = { prop1: 1 };
+window.obj2 = obj2;
+",
+    );
 }
 
 #[test]
@@ -378,7 +390,7 @@ const { prop2: foo = obj1 } = { prop1: 2, prop2: 2 };
 ",
         "
 const obj1 = { a: 1 };
-const { b: foo = obj1 } = { a: 2, b: 2 };
+const { a: foo = obj1 } = { b: 2, a: 2 };
 ",
     );
 
@@ -667,9 +679,45 @@ do {} while ( (obj.a, (obj = { b: 2 })) );
 }
 
 #[test]
+fn test_name_assignment() {
+    // Independent objects; all props have same number of references;
+    // names assigned lexicographically. zzzCommon gets longer name.
+    test_transform_in_fn(
+        "
+let obj1 = { zzzCommon: true, aProp: 1 };
+let obj2 = { zzzCommon: true, aProp: 1 };
+",
+        "
+let obj1 = { b: true, a: 1 };
+let obj2 = { b: true, a: 1 };
+",
+    );
+    // Same as above, but with a union.
+    // zzzCommon now has more references, so it gets shorter name across both objects.
+    test_transform_in_fn(
+        "
+let obj1 = { zzzCommon: true, aProp: 1 };
+let obj2 = { zzzCommon: true, aProp: 1 };
+
+if (cond) {
+    obj1 = obj2;
+}
+obj1.zzzCommon
+",
+        "
+let obj1 = { a: true, b: 1 };
+let obj2 = { a: true, b: 1 };
+
+if (cond) {
+    obj1 = obj2;
+}
+obj1.a
+",
+    );
+}
+
+#[test]
 fn test() {
-    // TODO: is this behaviour ideal? would it be better to invalidate the prop
-    // when it's referenced on an unknown type?
     test_transform_in_fn(
         "
 let variable = {propX: 1};
@@ -688,7 +736,7 @@ variable.a;
 
 variable = null;
 
-variable.propX;
+variable.a;
 
 variable = {a: 1};
 variable.a;
@@ -727,6 +775,126 @@ v1 = { prop1: obj1 };
 const obj1 = { a: 1 };
 let v1;
 v1 = { a: obj1 };
+    ",
+    );
+    test_transform_in_fn(
+        "
+const obj1 = { prop1: 1 };
+let v1;
+let v2 = v1 = obj1;
+obj1.prop1;
+v1.prop1;
+v2.prop1;
+    ",
+        "
+const obj1 = { a: 1 };
+let v1;
+let v2 = v1 = obj1;
+obj1.a;
+v1.a;
+v2.a;
+    ",
+    );
+    test_transform_in_fn(
+        "
+({ prop1: 1 }.prop1);
+    ",
+        "
+({ a: 1 }.a);
+    ",
+    );
+    test_transform_in_fn(
+        "
+let obj1 = { prop1: 1 };
+obj1.prop2 || (obj1.prop2 = 2);
+    ",
+        "
+let obj1 = { b: 1 };
+obj1.a || (obj1.a = 2);
+    ",
+    );
+    test_transform_in_fn(
+        "
+let obj1 = { prop1: 1 };
+obj1.self = obj1;
+    ",
+        "
+let obj1 = { a: 1 };
+obj1.b = obj1;
+    ",
+    );
+    test_transform_in_fn(
+        "
+let obj1 = { prop1: { prop2: 2 } };
+let obj2 = { prop3: obj1, prop4: obj1.prop1 };
+    ",
+        "
+let obj1 = { a: { a: 2 } };
+let obj2 = { a: obj1, b: obj1.a };
+    ",
+    );
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1 };
+cond ? ((obj = { prop2: 2 }, 1)) : null;
+    ",
+        "
+let obj = { a: 1 };
+cond ? ((obj = { a: 2 }, 1)) : null;
+    ",
+    );
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1 };
+cond ? (obj = { prop2: 2 }) : null;
+    ",
+        "
+let obj = { a: 1 };
+cond ? (obj = { a: 2 }) : null;
+    ",
+    );
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1 };
+
+obj = { prop1: 1, prop2: 2 };
+
+if (cond) {
+    obj = { prop3: 3, prop1: 1, };
+}
+
+obj.prop1;
+
+if (cond) {
+    if (cond) {
+        obj = { prop4: 4, prop1: 1, };
+    }
+    obj.prop1;
+    obj = { prop5: 5, prop1: 1, };
+}
+
+obj.prop1;
+    ",
+        "
+let obj = { a: 1 };
+
+obj = { a: 1, b: 2 };
+
+if (cond) {
+    obj = { b: 3, a: 1, };
+}
+
+obj.a;
+
+if (cond) {
+    if (cond) {
+        obj = { b: 4, a: 1, };
+    }
+    obj.a;
+    obj = { b: 5, a: 1, };
+}
+
+obj.a;
     ",
     );
 }
