@@ -10,14 +10,16 @@ use std::ops::Index;
 
 use ast::*;
 use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
+use global_common::{SyntaxContext, DUMMY_SP};
 use index::bit_set::{BitMatrix, BitSet, GrowableBitSet};
 use index::vec::{Idx, IndexVec};
 use rustc_hash::{FxHashMap, FxHashSet};
-use swc_atoms::JsWord;
+use swc_atoms::{js_word, JsWord};
 
 use crate::control_flow::node::Node;
 use crate::control_flow::ControlFlowAnalysis::*;
 use crate::control_flow::ControlFlowGraph::*;
+use crate::convert::ecma_number_to_string;
 use crate::find_vars::*;
 use crate::utils::unwrap_as;
 use crate::DefaultNameGenerator::DefaultNameGenerator;
@@ -53,7 +55,7 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
 
     let mut union_accesses = FxHashMap::<_, FxHashMap<_, FxHashSet<_>>>::default();
 
-    for ((ident_id, name), &pointer) in &store.references {
+    for (PropKey(name, node_id), &pointer) in &store.references {
         if let Some(pointer) = pointer {
             match pointer {
                 Pointer::Object(object_id) => {
@@ -80,11 +82,7 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
                             back_id
                         }
                     };
-                    properties
-                        .get_mut(&id)
-                        .unwrap()
-                        .references
-                        .insert(*ident_id);
+                    properties.get_mut(&id).unwrap().references.insert(*node_id);
                 }
                 Pointer::Union(union) => {
                     union_accesses
@@ -92,7 +90,7 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
                         .or_default()
                         .entry(name)
                         .or_default()
-                        .insert(*ident_id);
+                        .insert(*node_id);
                     for &constituent in &store.unions[union].constituents {
                         objects.entry(constituent).or_default();
                     }
@@ -213,7 +211,6 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
             cur_word_offset += 1;
             offset += index::bit_set::WORD_BITS;
         }
-        dbg!(cur_colour, &remaining_nodes);
         cur_colour += 1;
 
         if remaining_nodes.is_empty() {
@@ -223,20 +220,18 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
 
     // Generate new names for the properties that will be renamed.
     let mut name_gen = DefaultNameGenerator::new(FxHashSet::default());
-    let mut color_map = Vec::with_capacity(cur_colour as usize);
+    let mut colour_map = Vec::with_capacity(cur_colour as usize);
     for _ in 0..cur_colour {
-        color_map.push(name_gen.generateNextName());
+        colour_map.push(name_gen.generateNextName());
     }
 
     let mut rename_map = FxHashMap::default();
 
-    dbg!(&objects, &property_map, &properties,);
-
-    // Translate the color of each Property instance to a name.
+    // Translate the colour of each Property instance to a name.
     for id in props {
         let node = graph_map[&id];
         let colour = colours[node];
-        let new_name = &color_map[colour as usize];
+        let new_name = &colour_map[colour as usize];
         for &reference in &properties[&id].references {
             rename_map.insert(reference, new_name.clone());
         }
@@ -245,7 +240,11 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
     rename_map
 }
 
-pub fn process(ast: &mut ast::Program) {
+pub fn process(
+    ast: &mut ast::Program,
+    node_id_gen: &mut NodeIdGen,
+    unresolved_ctxt: SyntaxContext,
+) {
     let null_or_void = ObjectId::from_u32(0);
     let mut store = Store {
         objects_map: FxHashMap::default(),
@@ -254,17 +253,20 @@ pub fn process(ast: &mut ast::Program) {
         references: FxHashMap::default(),
         null_or_void,
         cur_object_id: ObjectId::from_u32(1),
+        unresolved_ctxt,
     };
 
     // Find all property references and record the types on which they occur.
-    // Populate stringNodesToRename, propertyMap, quotedNames.
     let mut visitor = GlobalVisitor { store: &mut store };
     ast.visit_with(&mut visitor);
 
     let rename_map = create_renaming_map(&store);
 
     // Actually assign the new names.
-    let mut renamer = Renamer { rename_map };
+    let mut renamer = Renamer {
+        node_id_gen,
+        rename_map,
+    };
 
     ast.visit_mut_with(&mut renamer);
 }
@@ -367,11 +369,12 @@ struct Store {
     invalid_objects: GrowableBitSet<ObjectId>,
     unions: IndexVec<UnionId, Union>,
 
-    references: FxHashMap<(NodeId, JsWord), Option<Pointer>>,
+    references: FxHashMap<PropKey, Option<Pointer>>,
 
     null_or_void: ObjectId,
 
     cur_object_id: ObjectId,
+    unresolved_ctxt: SyntaxContext,
 }
 
 impl Store {
@@ -508,10 +511,6 @@ impl<'ast> Inner<'ast, '_> {
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Copy)]
 /// Points to an abstraction of a javascript object.
-///
-/// Note: the underlying, object may change during the course of the analysis,
-/// leaving the pointer pointing to a non-existant object. For this reason, the
-/// pointer should be resolved before trying to access the underlying object.
 enum Pointer {
     Object(ObjectId),
     Union(UnionId),
@@ -532,9 +531,72 @@ struct Assignment {
 
 /// A place where a variable can be stored.
 #[derive(Debug)]
-enum Slot<'ast> {
+enum Slot {
     Var(Id),
-    Prop(Pointer, &'ast Ident),
+    /// (Object, Property name)
+    Prop(Pointer, JsWord),
+}
+
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+struct PropKey(JsWord, NodeId);
+
+impl PropKey {
+    fn from_prop_name(prop: &PropName, unresolved_ctxt: SyntaxContext) -> Option<PropKey> {
+        match prop {
+            PropName::Ident(p) => Some(PropKey(p.sym.clone(), p.node_id)),
+            PropName::Str(p) => Some(PropKey(p.value.clone(), p.node_id)),
+            PropName::Num(p) => Some(PropKey(ecma_number_to_string(p.value).into(), p.node_id)),
+            PropName::Computed(p) => PropKey::from_expr(&p.expr, unresolved_ctxt, true),
+        }
+    }
+
+    fn from_expr(expr: &Expr, unresolved_ctxt: SyntaxContext, computed: bool) -> Option<PropKey> {
+        match expr {
+            Expr::Ident(e) => {
+                if !computed
+                    || e.span.ctxt == unresolved_ctxt
+                        && (e.sym == js_word!("undefined") || e.sym == js_word!("NaN"))
+                {
+                    Some(PropKey(e.sym.clone(), e.node_id))
+                } else {
+                    None
+                }
+            }
+            Expr::Lit(e) => match e {
+                Lit::Str(e) => Some(PropKey(e.value.clone(), e.node_id)),
+                Lit::Bool(e) => {
+                    if e.value {
+                        Some(PropKey(js_word!("true"), e.node_id))
+                    } else {
+                        Some(PropKey(js_word!("false"), e.node_id))
+                    }
+                }
+                Lit::Null(e) => Some(PropKey(js_word!("null"), e.node_id)),
+                Lit::Num(e) => Some(PropKey(ecma_number_to_string(e.value).into(), e.node_id)),
+                Lit::BigInt(e) => Some(PropKey(e.value.to_str_radix(10).into(), e.node_id)),
+                Lit::Regex(_) | Lit::JSXText(_) => None,
+            },
+            _ => None,
+        }
+    }
+}
+
+/// Returns true if the string value of the [`PropName`] is statically determinable.
+fn is_simple_prop_name(prop_name: &PropName, unresolved_ctxt: SyntaxContext) -> bool {
+    match prop_name {
+        PropName::Ident(_) | PropName::Str(_) | PropName::Num(_) => true,
+        PropName::Computed(p) => match p.expr.as_ref() {
+            Expr::Lit(e) => match e {
+                Lit::Str(_) | Lit::Bool(_) | Lit::Null(_) | Lit::Num(_) | Lit::BigInt(_) => true,
+                Lit::Regex(_) | Lit::JSXText(_) => false,
+            },
+            Expr::Ident(e) => {
+                e.span.ctxt == unresolved_ctxt
+                    && (e.sym == js_word!("undefined") || e.sym == js_word!("NaN"))
+            }
+            _ => false,
+        },
+    }
 }
 
 #[derive(Debug)]
@@ -604,8 +666,7 @@ impl<'ast> Analyser<'ast, '_, '_> {
         }
     }
 
-    fn reference_prop(&mut self, object: Option<Pointer>, key: &Ident) {
-        let key = (key.node_id, key.sym.clone());
+    fn reference_prop(&mut self, object: Option<Pointer>, key: PropKey) {
         self.analysis.store.references.insert(key, object);
     }
 
@@ -614,14 +675,14 @@ impl<'ast> Analyser<'ast, '_, '_> {
     /// the slot is assigned a union of the old and new values.
     fn assign_to_slot(
         &mut self,
-        slot: Option<Slot<'ast>>,
+        slot: Option<Slot>,
         rhs: Option<Pointer>,
         conditional: bool,
     ) -> Option<Pointer> {
         if let Some(slot) = slot {
             let existing = match &slot {
                 Slot::Var(name) => self.lattice.var_assignments.get(&name).cloned(),
-                Slot::Prop(obj, key) => self.get_property(*obj, &key.sym),
+                Slot::Prop(obj, key) => self.get_property(*obj, &key),
             };
 
             let new = if let Some(rhs_object) = rhs {
@@ -660,7 +721,7 @@ impl<'ast> Analyser<'ast, '_, '_> {
                                 .prop_assignments
                                 .entry(obj)
                                 .or_default()
-                                .insert(key.sym.clone(), new);
+                                .insert(key, new);
                         }
                         Pointer::Union(union) => {
                             for &constituent in &self.analysis.store.unions[union].constituents {
@@ -668,7 +729,7 @@ impl<'ast> Analyser<'ast, '_, '_> {
                                     .prop_assignments
                                     .entry(constituent)
                                     .or_default()
-                                    .insert(key.sym.clone(), new);
+                                    .insert(key.clone(), new);
                             }
                         }
                     }
@@ -741,7 +802,7 @@ impl<'ast> Analyser<'ast, '_, '_> {
         if let Some(lhs) = self.visit_and_get_slot(node, conditional) {
             let value = match lhs {
                 Slot::Var(name) => self.lattice.var_assignments.get(&name).copied(),
-                Slot::Prop(obj, key) => self.get_property(obj, &key.sym),
+                Slot::Prop(obj, key) => self.get_property(obj, &key),
             };
             self.analysis
                 .store
@@ -752,22 +813,28 @@ impl<'ast> Analyser<'ast, '_, '_> {
     fn visit_destructuring(&mut self, lhs: Node<'ast>, rhs: Option<Pointer>, conditional: bool) {
         match lhs {
             Node::ObjectPat(lhs) => {
-                let has_non_ident_props = lhs.props.iter().any(|p| match p {
-                    ObjectPatProp::KeyValue(p) => !matches!(&p.key, PropName::Ident(_)),
+                let has_complex_props = lhs.props.iter().any(|p| match p {
+                    ObjectPatProp::KeyValue(p) => {
+                        !is_simple_prop_name(&p.key, self.analysis.store.unresolved_ctxt)
+                    }
                     ObjectPatProp::Assign(_) | ObjectPatProp::Rest(_) => false,
                 });
                 if let Some(rhs) = rhs {
-                    if has_non_ident_props {
+                    if has_complex_props {
                         self.analysis.store.invalidate(Some(rhs), &self.lattice);
                     }
                     if !self.analysis.store.invalidated(rhs) {
                         for prop in &lhs.props {
                             match prop {
                                 ObjectPatProp::KeyValue(prop) => {
-                                    let key = unwrap_as!(&prop.key, PropName::Ident(k), k);
-                                    self.reference_prop(Some(rhs), key);
+                                    let key = PropKey::from_prop_name(
+                                        &prop.key,
+                                        self.analysis.store.unresolved_ctxt,
+                                    )
+                                    .unwrap();
+                                    self.reference_prop(Some(rhs), key.clone());
                                     let rhs_value =
-                                        self.get_property(rhs, &key.sym).and_then(|a| a.rhs);
+                                        self.get_property(rhs, &key.0).and_then(|a| a.rhs);
 
                                     if matches!(prop.value.as_ref(), Pat::Ident(_) | Pat::Expr(_)) {
                                         let slot = self.visit_and_get_slot(
@@ -863,7 +930,7 @@ impl<'ast> Analyser<'ast, '_, '_> {
 
     /// Visits the given expression. If the expression resolves to a valid assignment target, a [`Slot`]
     /// representing that target is returned.
-    fn visit_and_get_slot(&mut self, node: Node<'ast>, conditional: bool) -> Option<Slot<'ast>> {
+    fn visit_and_get_slot(&mut self, node: Node<'ast>, conditional: bool) -> Option<Slot> {
         match node {
             Node::Ident(node) => {
                 let id = node.to_id();
@@ -876,16 +943,19 @@ impl<'ast> Analyser<'ast, '_, '_> {
             Node::BindingIdent(node) => self.visit_and_get_slot(Node::Ident(&node.id), conditional),
             Node::MemberExpr(node) => {
                 let obj = self.visit_and_get_object(Node::from(&node.obj), conditional);
-                if node.computed {
+                if let Some(prop) = PropKey::from_expr(
+                    &node.prop,
+                    self.analysis.store.unresolved_ctxt,
+                    node.computed,
+                ) {
+                    obj.map(|obj| {
+                        self.reference_prop(Some(obj), prop.clone());
+                        Slot::Prop(obj, prop.0)
+                    })
+                } else {
                     self.analysis.store.invalidate(obj, &self.lattice);
                     self.visit_and_get_slot(Node::from(node.prop.as_ref()), conditional);
                     None
-                } else {
-                    obj.map(|obj| {
-                        let prop = unwrap_as!(node.prop.as_ref(), Expr::Ident(i), i);
-                        self.reference_prop(Some(obj), prop);
-                        Slot::Prop(obj, prop)
-                    })
                 }
             }
 
@@ -938,38 +1008,46 @@ impl<'ast> Analyser<'ast, '_, '_> {
                 if let Some(existing) = self.analysis.store.objects_map.get(&node.node_id) {
                     Some(Pointer::Object(*existing))
                 } else {
+                    let object_id = self.analysis.store.next_object_id();
+
+                    self.analysis
+                        .store
+                        .objects_map
+                        .insert(node.node_id, object_id);
+
+                    let pointer = Pointer::Object(object_id);
+
                     let is_simple_obj_lit = node.props.iter().all(|p| match p {
-                        Prop::KeyValue(p) => matches!(&p.key, PropName::Ident(_)),
+                        Prop::KeyValue(p) => {
+                            is_simple_prop_name(&p.key, self.analysis.store.unresolved_ctxt)
+                        }
                         _ => false,
                     });
 
                     if is_simple_obj_lit {
-                        let object_id = self.analysis.store.next_object_id();
-
-                        self.analysis
-                            .store
-                            .objects_map
-                            .insert(node.node_id, object_id);
-
-                        let pointer = Pointer::Object(object_id);
-
                         for prop in &node.props {
                             let prop = unwrap_as!(prop, Prop::KeyValue(p), p);
-                            let key = unwrap_as!(&prop.key, PropName::Ident(k), k);
+                            let key = PropKey::from_prop_name(
+                                &prop.key,
+                                self.analysis.store.unresolved_ctxt,
+                            )
+                            .unwrap();
 
-                            self.reference_prop(Some(pointer), key);
+                            self.reference_prop(Some(pointer), key.clone());
 
                             let value = self
                                 .visit_and_get_object(Node::from(prop.value.as_ref()), conditional);
 
-                            self.assign_to_slot(Some(Slot::Prop(pointer, key)), value, conditional);
+                            self.assign_to_slot(
+                                Some(Slot::Prop(pointer, key.0)),
+                                value,
+                                conditional,
+                            );
                         }
-
-                        Some(pointer)
                     } else {
-                        dbg!(node);
-                        todo!();
+                        self.analysis.store.invalidate(Some(pointer), &self.lattice);
                     }
+                    Some(pointer)
                 }
             }
             Node::SpreadElement(node) => {
@@ -1005,15 +1083,14 @@ impl<'ast> Analyser<'ast, '_, '_> {
             Node::ClassExpr(_) => todo!(),
             Node::MemberExpr(node) => {
                 let obj = self.visit_and_get_object(Node::from(&node.obj), conditional);
-                if node.computed {
-                    self.analysis.store.invalidate(obj, &self.lattice);
-                    self.visit_and_get_object(Node::from(node.prop.as_ref()), conditional);
-                    None
-                } else {
+                if let Some(prop) = PropKey::from_expr(
+                    &node.prop,
+                    self.analysis.store.unresolved_ctxt,
+                    node.computed,
+                ) {
                     if let Some(obj) = obj {
-                        let ident = unwrap_as!(node.prop.as_ref(), Expr::Ident(i), i);
-                        self.reference_prop(Some(obj), ident);
-                        if let Some(value) = self.get_property(obj, &ident.sym).map(|a| a.rhs) {
+                        self.reference_prop(Some(obj), prop.clone());
+                        if let Some(value) = self.get_property(obj, &prop.0).map(|a| a.rhs) {
                             value
                         } else {
                             None
@@ -1021,6 +1098,10 @@ impl<'ast> Analyser<'ast, '_, '_> {
                     } else {
                         None
                     }
+                } else {
+                    self.analysis.store.invalidate(obj, &self.lattice);
+                    self.visit_and_get_object(Node::from(node.prop.as_ref()), conditional);
+                    None
                 }
             }
             Node::CondExpr(node) => {
@@ -1389,14 +1470,54 @@ pub struct Lattice {
 impl Annotation for Lattice {}
 impl LatticeElement for Lattice {}
 
-struct Renamer {
+struct Renamer<'a> {
+    node_id_gen: &'a mut NodeIdGen,
     rename_map: FxHashMap<NodeId, JsWord>,
 }
 
-impl VisitMut<'_> for Renamer {
+// TODO: node id's are unique. use rename_map.remove to get owned JsWord - no other node will access the entry anyway.
+impl VisitMut<'_> for Renamer<'_> {
     fn visit_mut_ident(&mut self, node: &mut Ident) {
         if let Some(new_name) = self.rename_map.get(&node.node_id) {
             node.sym = new_name.clone();
         }
+    }
+
+    fn visit_mut_prop_name(&mut self, node: &mut PropName) {
+        let node_id_to_rename = match node {
+            // Handled by visit_mut_ident
+            PropName::Ident(_) => None,
+            PropName::Str(p) => Some(p.node_id),
+            PropName::Num(p) => Some(p.node_id),
+            PropName::Computed(p) => Some(p.expr.node_id()),
+        };
+        if let Some(node_id_to_rename) = node_id_to_rename {
+            if let Some(new_name) = self.rename_map.get(&node_id_to_rename) {
+                *node = PropName::Ident(Ident {
+                    node_id: self.node_id_gen.next(),
+                    span: DUMMY_SP,
+                    sym: new_name.clone(),
+                    optional: false,
+                });
+                return;
+            }
+        }
+        node.visit_mut_children_with(self);
+    }
+
+    fn visit_mut_member_expr(&mut self, node: &mut MemberExpr) {
+        if node.computed {
+            if let Some(new_name) = self.rename_map.get(&node.prop.node_id()) {
+                *node.prop.as_mut() = Expr::Ident(Ident {
+                    node_id: self.node_id_gen.next(),
+                    span: DUMMY_SP,
+                    sym: new_name.clone(),
+                    optional: false,
+                });
+                node.computed = false;
+                return;
+            }
+        }
+        node.visit_mut_children_with(self);
     }
 }

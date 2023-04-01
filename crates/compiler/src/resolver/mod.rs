@@ -4,7 +4,7 @@ use ast::*;
 use ecma_visit::{noop_visit_mut_type, noop_visit_type, Visit, VisitMut, VisitMutWith, VisitWith};
 use global_common::{Mark, SyntaxContext};
 use rustc_hash::FxHashSet;
-use swc_atoms::{js_word, JsWord};
+use swc_atoms::JsWord;
 // use tracing::{debug, span, Level};
 
 use scope::{IdentType, ScopeKind};
@@ -257,11 +257,6 @@ impl<'a> Resolver<'a> {
     }
 
     fn mark_for_ref_inner(&self, sym: &JsWord, stop_an_fn_scope: bool) -> Option<Mark> {
-        // NaN always points the globals
-        if *sym == js_word!("NaN") {
-            return Some(self.config.unresolved_mark);
-        }
-
         if self.config.handle_types && self.in_type {
             let mut mark = self.current.mark;
             let mut scope = Some(&self.current);

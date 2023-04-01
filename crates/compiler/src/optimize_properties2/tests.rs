@@ -15,7 +15,9 @@ fn test_transform(input: &str, expected: &str) {
 
                 crate::normalize_properties::normalize_properties(&mut program, &mut node_id_gen);
 
-                process(&mut program);
+                let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
+
+                process(&mut program, &mut node_id_gen, unresolved_ctxt);
 
                 program
             })
@@ -61,7 +63,7 @@ fn test_invalidation() {
     test_same_in_fn(
         "
 const obj1 = { prop1: 1 };
-obj1[1] = a;
+obj1[foo] = a;
 ",
     );
     test_same_in_fn(
@@ -88,6 +90,50 @@ window.obj2 = obj2;
 const obj1 = { a: 1 };
 const obj2 = { prop1: 1 };
 window.obj2 = obj2;
+",
+    );
+    // Access creates union with invalidated object; renaming not possible
+    test_same_in_fn(
+        "
+let obj = { prop1: 1 };
+window.foo = obj;
+while (cond) {
+    obj.prop1;
+    obj = { prop1: 2 };
+    obj.prop1;
+}
+",
+    );
+    // Always reassigned before access; renaming possible
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1 };
+window.foo = obj;
+while (cond) {
+    obj = { prop1: 2 };
+    obj.prop1;
+}
+",
+        "
+let obj = { prop1: 1 };
+window.foo = obj;
+while (cond) {
+    obj = { a: 2 };
+    obj.a;
+}
+",
+    );
+    // The call to window.func may access/change the properties of obj, so we can't know
+    // if other code depends on the name 'prop1'.
+    test_same_in_fn(
+        "
+let obj = {};
+window.func(obj);
+let thing = obj;
+if (cond) {
+    thing = {prop1:1};
+}
+thing.prop1;
 ",
     );
 }
@@ -247,7 +293,7 @@ v1.a;
 const obj1 = { prop1: 1 };
 const obj2 = { prop2: 2 };
 const v1 = a ? obj1 : obj2;
-v1[1];
+v1[foo];
     ",
     );
 }
@@ -712,6 +758,203 @@ if (cond) {
     obj1 = obj2;
 }
 obj1.a
+",
+    );
+
+    // No prop can have the same name as person_id (it's used as a discriminant).
+    // All other props can share names, so long as they are distinct within their
+    // defining object.
+    test_transform_in_fn(
+        "
+let obj = { person_id: 1, name: 'jeff', age: 'old', height: '>10' };
+
+if (cond) {
+  obj = { pet_id: 1, name: 'doug', age: 'also old', kind: 'dog' };
+}
+
+if (obj.person_id !== undefined) {
+  // obj is a person
+} else {
+  // obj is not a person
+}
+",
+        "
+let obj = { a: 1, d: 'jeff', b: 'old', c: '>10' };
+
+if (cond) {
+  obj = { e: 1, d: 'doug', b: 'also old', c: 'dog' };
+}
+
+if (obj.a !== undefined) {
+  // obj is a person
+} else {
+  // obj is not a person
+}
+",
+    )
+}
+
+#[test]
+fn test_literal_prop_keys() {
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1, 'prop2': 2, };
+obj.prop2;
+",
+        "
+let obj = { b: 1, a: 2, };
+obj.a;
+",
+    );
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1, 'prop2': 2, };
+let { 'prop2': foo } = obj;
+",
+        "
+let obj = { b: 1, a: 2, };
+let { a: foo } = obj;
+",
+    );
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1, 2: 2, };
+",
+        "
+let obj = { b: 1, a: 2, };
+",
+    );
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1, 2: 2,};
+let { 2: foo } = obj;
+",
+        "
+let obj = { b: 1, a: 2,};
+let { a: foo } = obj;
+",
+    );
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1, 'prop2': 2, };
+obj['prop2'];
+",
+        "
+let obj = { b: 1, a: 2, };
+obj.a;
+",
+    );
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1, 2: 2, };
+obj[2];
+",
+        "
+let obj = { b: 1, a: 2, };
+obj.a;
+",
+    );
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1, ['foo']: 2, };
+obj['foo'];
+",
+        "
+let obj = { b: 1, a: 2, };
+obj.a;
+",
+    );
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1, [2]: 2, };
+obj[2];
+",
+        "
+let obj = { b: 1, a: 2, };
+obj.a;
+",
+    );
+    // Big-int
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1, [123n]: 2, 123: 3, '123': 4, ['123']: 5 };
+",
+        "
+let obj = { b: 1, a: 2, a: 3, a: 4, a: 5 };
+",
+    );
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1, null: 2, [null]:3, 'null': 4, ['null']:5 };
+obj.null;
+obj[null];
+obj['null'];
+",
+        "
+let obj = { b: 1, a: 2, a:3, a: 4, a:5 };
+obj.a;
+obj.a;
+obj.a;
+",
+    );
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1, undefined: 2, [undefined]:3, 'undefined': 4, ['undefined']:5 };
+obj.undefined;
+obj[undefined];
+obj['undefined'];
+",
+        "
+let obj = { b: 1, a: 2, a:3, a: 4, a:5 };
+obj.a;
+obj.a;
+obj.a;
+",
+    );
+    // The identifier `undefined` doesn't always refer to the value of the same name
+    test_same_in_fn(
+        "
+let undefined = 'something';
+let obj = { prop1: 1, [undefined]:3, };
+",
+    );
+    test_transform_in_fn(
+        "
+let obj = { prop1: 1, NaN: 2, [NaN]:3, 'NaN': 4, ['NaN']:5 };
+obj.NaN;
+obj[NaN];
+obj['NaN'];
+",
+        "
+let obj = { b: 1, a: 2, a:3, a: 4, a:5 };
+obj.a;
+obj.a;
+obj.a;
+",
+    );
+    // The identifier `NaN` doesn't always refer to the value of the same name
+    test_same_in_fn(
+        "
+let NaN = 'something';
+let obj = { prop1: 1, [NaN]:3 };
+",
+    );
+    // Keys are parsed as the same number, so use the same string for indexing.
+    test_transform_in_fn(
+        "
+let obj = { 0xF00D: 1, 0xf00D: 2, 0170015: 3, 61453: 4 };
+",
+        "
+let obj = { a: 1, a: 2, a: 3, a: 4 };
+",
+    );
+    // Keys are parsed as the same number, so use the same string for indexing.
+    test_transform_in_fn(
+        "
+let obj = { 1.3333333333333339: 1, 1.333333333333334: 2 };
+",
+        "
+let obj = { a: 1, a: 2 };
 ",
     );
 }

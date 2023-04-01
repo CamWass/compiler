@@ -21,6 +21,7 @@ mod binder;
 mod checker;
 mod colors;
 mod control_flow;
+mod convert;
 mod denormalize;
 mod disambiguate;
 mod find_vars;
@@ -229,7 +230,7 @@ impl Compiler {
             let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 
             // optimize_properties::process(&mut program_ast);
-            optimize_properties2::process(&mut program_ast);
+            optimize_properties2::process(&mut program_ast, node_id_gen, unresolved_ctxt);
 
             if passes.optimize_arguments_array {
                 OptimizeArgumentsArray::OptimizeArgumentsArray::process(

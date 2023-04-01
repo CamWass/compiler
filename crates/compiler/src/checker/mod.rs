@@ -1,10 +1,10 @@
-mod convert;
 mod flow;
 mod index_set;
 mod node_builder;
 
 use crate::ast;
 use crate::binder::Binder;
+use crate::convert::{ecma_number_to_string, ecma_string_to_number, is_numeric_literal_name};
 use crate::node::*;
 use crate::types::*;
 use crate::types_composition::*;
@@ -14,7 +14,6 @@ use crate::TypeCheckerHost;
 use crate::{Visit, VisitWith};
 use ahash::{AHashMap, AHashSet};
 use bitflags::bitflags;
-use convert::{ecma_number_to_string, ecma_string_to_number, is_numeric_literal_name};
 use global_common::integer_decode::{integer_decode, DecodedF64};
 use index::vec::IndexVec;
 use index_set::IndexSet;
