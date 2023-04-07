@@ -1209,7 +1209,6 @@ impl<'ast> Analyser<'ast, '_, '_> {
                 self.visit_and_get_object(Node::from(node.expr.as_ref()), conditional);
                 None
             }
-            Node::SwitchCase(_) => todo!(),
             Node::CatchClause(_) => todo!(),
 
             // This function is only called on expressions (and their children),
@@ -1272,7 +1271,7 @@ impl<'ast> Analyser<'ast, '_, '_> {
                 self.visit_and_get_object(node, conditional);
             }
 
-            Node::ImplicitReturn => todo!(),
+            Node::ImplicitReturn => {}
             Node::Class(_) => todo!(),
             Node::ExtendsClause(_) => todo!(),
             Node::ClassProp(_) => todo!(),
@@ -1286,7 +1285,6 @@ impl<'ast> Analyser<'ast, '_, '_> {
             Node::VarDeclarator(_) => todo!(),
             Node::Param(_) => todo!(),
             Node::ParamWithoutDecorators(_) => todo!(),
-            Node::Invalid(_) => todo!(),
             Node::ExportDefaultExpr(_) => todo!(),
             Node::ExportDecl(_) => todo!(),
             Node::ImportDecl(_) => todo!(),
@@ -1299,8 +1297,8 @@ impl<'ast> Analyser<'ast, '_, '_> {
             Node::ExportNamespaceSpecifier(_) => todo!(),
             Node::ExportDefaultSpecifier(_) => todo!(),
             Node::ExportNamedSpecifier(_) => todo!(),
-            Node::Script(_) => todo!(),
-            Node::Module(_) => todo!(),
+            Node::Script(_) => {}
+            Node::Module(_) => {}
             Node::ArrayPat(_) => todo!(),
             Node::ObjectPat(_) => todo!(),
             Node::AssignPat(_) => todo!(),
@@ -1314,7 +1312,7 @@ impl<'ast> Analyser<'ast, '_, '_> {
             Node::MethodProp(_) => todo!(),
             Node::ComputedPropName(_) => todo!(),
             Node::SpreadAssignment(_) => todo!(),
-            Node::DebuggerStmt(_) => todo!(),
+            Node::DebuggerStmt(_) => {}
             Node::WithStmt(_) => todo!(),
             Node::ReturnStmt(node) => {
                 if let Some(arg) = &node.arg {
@@ -1322,9 +1320,13 @@ impl<'ast> Analyser<'ast, '_, '_> {
                     self.analysis.store.invalidate(obj, &self.lattice);
                 }
             }
-            Node::LabeledStmt(_) => todo!(),
-            Node::SwitchStmt(_) => todo!(),
-            Node::ThrowStmt(_) => todo!(),
+            Node::LabeledStmt(_) => {}
+            Node::SwitchStmt(node) => {
+                self.visit_and_get_object(Node::from(node.discriminant.as_ref()), conditional);
+            }
+            Node::ThrowStmt(node) => {
+                self.visit_and_get_object(Node::from(node.arg.as_ref()), conditional);
+            }
             Node::TryStmt(_) => todo!(),
             Node::WhileStmt(node) => {
                 self.visit_and_get_object(Node::from(node.test.as_ref()), conditional);
@@ -1334,7 +1336,11 @@ impl<'ast> Analyser<'ast, '_, '_> {
             }
             Node::ForInStmt(_) => todo!(),
             Node::ForOfStmt(_) => todo!(),
-            Node::SwitchCase(_) => todo!(),
+            Node::SwitchCase(node) => {
+                if let Some(test) = &node.test {
+                    self.visit_and_get_object(Node::from(test.as_ref()), conditional);
+                }
+            }
             Node::CatchClause(_) => todo!(),
 
             Node::Str(_)
