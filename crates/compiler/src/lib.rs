@@ -1,5 +1,6 @@
 #![feature(iter_order_by)]
 #![feature(map_first_last)]
+#![feature(map_many_mut)]
 // TODO:
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
@@ -229,7 +230,6 @@ impl Compiler {
 
             let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 
-            // optimize_properties::process(&mut program_ast);
             optimize_properties2::process(&mut program_ast, node_id_gen, unresolved_ctxt);
 
             if passes.optimize_arguments_array {

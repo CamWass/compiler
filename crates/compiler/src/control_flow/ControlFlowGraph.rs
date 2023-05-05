@@ -294,7 +294,7 @@ where
     /// The resulting graph contains represents the full AST of the entry node,
     /// as well as any control flow edges.
     pub fn print_full(&self) {
-        self.print_full_inner::<DefaultPrinter>(None)
+        self.print_full_inner::<DefaultPrinter>(None, "cfg")
     }
     /// Same as `print_full` but also prints node annotations using `printer`.
     /// If `printer` is `None`, the annotations will be printed using [`Debug`][std::fmt::Debug].
@@ -303,13 +303,17 @@ where
         P: AnnotationPrinter<NA>,
     {
         match printer {
-            Some(p) => self.print_full_inner(Some(p)),
-            None => self.print_full_inner(Some(&DefaultPrinter)),
+            Some(p) => self.print_full_inner(Some(p), "cfg"),
+            None => self.print_full_inner(Some(&DefaultPrinter), "cfg"),
         }
     }
 
+    pub fn print_full_with_annotations_name(&self, name: &str) {
+        self.print_full_inner::<DefaultPrinter>(Some(&DefaultPrinter), name);
+    }
+
     /// If `printer` is `None`, node annotations are not printed.
-    fn print_full_inner<P>(&self, printer: Option<&P>)
+    fn print_full_inner<P>(&self, printer: Option<&P>, name: &str)
     where
         P: AnnotationPrinter<NA>,
     {
@@ -392,9 +396,14 @@ where
 
         dot = recolour_graph(dot, graph.node_count());
 
-        println!("creating dot file");
+        // println!("creating dot file");
 
-        std::fs::write(CFG_DOT_FILE_NAME, dot).expect("Failed to output control flow graph");
+        std::fs::create_dir_all("cfg").expect("failed to create cfg dir");
+
+        std::fs::write(format!("cfg/{}.dot", name), dot)
+            .expect("Failed to output control flow graph");
+
+        // std::fs::write(CFG_DOT_FILE_NAME, dot).expect("Failed to output control flow graph");
     }
 }
 

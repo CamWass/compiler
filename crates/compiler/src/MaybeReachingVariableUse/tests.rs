@@ -336,8 +336,13 @@ where
         // All variables declared in function
         let allVarsDeclaredInFunction = find_vars_declared_in_fn(function, false);
 
-        let result =
-            MaybeReachingVariableUse::new(cfa, function, allVarsDeclaredInFunction).analyze();
+        let result = MaybeReachingVariableUse::new(
+            cfa.cfg,
+            &cfa.nodePriorities,
+            function,
+            allVarsDeclaredInFunction,
+        )
+        .analyze();
 
         result
             .cfg

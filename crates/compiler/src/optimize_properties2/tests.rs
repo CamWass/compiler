@@ -39,6 +39,613 @@ fn test_same_in_fn(input: &str) {
 // TODO: more tests e.g. for branch joins, more invalidations, infinite loops etc
 
 #[test]
+fn test_calls_do_not_interfere() {
+    test_transform(
+        "
+function foo(a) {
+    let obj = { inner: a };
+    return obj;
+}
+
+let obj1 = foo({ prop1: 1 }); // { inner: { prop1: 1 } }
+obj1.inner.prop1;
+let obj2 = foo({ prop2: 2 }); // { inner: { prop2: 2 } }
+obj2.inner.prop2;
+",
+        "
+function foo(a) {
+    let obj = { a: a };
+    return obj;
+}
+
+let obj1 = foo({ a: 1 });
+obj1.a.a;
+let obj2 = foo({ a: 2 });
+obj2.a.a;
+",
+    );
+
+    // Each call to addFoo should get its own object assigned to 'foo' prop.
+    // Each of these objects must share the properties of the original, but all
+    // other properties are not shared (unless accessed on union etc).
+    test_transform(
+        "
+function addFoo(arg) {
+    arg.foo = { foo1: 'f1', foo2: 'f2' };
+}
+
+const obj1 = {};
+addFoo(obj1);
+obj1.foo.prop1 = 'p1';
+
+const obj2 = {};
+addFoo(obj2);
+obj2.foo.prop2 = 'p2';
+obj2.foo.prop3 = 'p3';
+",
+        "
+function addFoo(arg) {
+    arg.a = { a: 'f1', b: 'f2' };
+}
+
+const obj1 = {};
+addFoo(obj1);
+obj1.a.c = 'p1';
+
+const obj2 = {};
+addFoo(obj2);
+obj2.a.c = 'p2';
+obj2.a.d = 'p3';
+",
+    );
+    test_transform(
+        "
+function addFoo(arg) {
+    arg.foo = { foo1: 'f1', foo2: 'f2' };
+}
+
+const obj1 = {};
+addFoo(obj1);
+obj1.foo.prop1 = 'p1';
+
+const obj2 = {};
+addFoo(obj2);
+obj2.foo.prop2 = 'p2';
+obj2.foo.prop3 = 'p3';
+
+const obj = cond ? obj1 : obj2;
+obj.foo.prop1
+",
+        "
+function addFoo(arg) {
+    arg.a = { b: 'f1', c: 'f2' };
+}
+
+const obj1 = {};
+addFoo(obj1);
+obj1.a.a = 'p1';
+
+const obj2 = {};
+addFoo(obj2);
+obj2.a.d = 'p2';
+obj2.a.e = 'p3';
+
+const obj = cond ? obj1 : obj2;
+obj.a.a
+",
+    );
+    test_transform(
+        "
+function addFoo(arg) {
+    arg.foo = { foo1: 'f1', foo2: 'f2' };
+}
+
+const obj1 = {};
+addFoo(obj1);
+obj1.foo.prop1 = 'p1';
+
+const obj2 = {};
+addFoo(obj2);
+obj2.foo.prop2 = 'p2';
+obj2.foo.prop3 = 'p3';
+
+const obj = cond ? obj1 : obj2;
+obj.foo.prop2
+",
+        "
+function addFoo(arg) {
+    arg.a = { b: 'f1', c: 'f2' };
+}
+
+const obj1 = {};
+addFoo(obj1);
+obj1.a.d = 'p1';
+
+const obj2 = {};
+addFoo(obj2);
+obj2.a.a = 'p2';
+obj2.a.d = 'p3';
+
+const obj = cond ? obj1 : obj2;
+obj.a.a
+",
+    );
+}
+
+#[test]
+fn test_functions() {
+    test_transform(
+        "
+function foo(a, b) {
+    return cond ? a : b;
+}
+const obj = { prop3: 3 };
+foo({prop1: 1}, obj).prop1;
+foo({prop2: 2}, obj).prop2;
+",
+        "
+function foo(a, b) {
+    return cond ? a : b;
+}
+const obj = { c: 3 };
+foo({a: 1}, obj).a;
+foo({b: 2}, obj).b;
+",
+    );
+    test_transform(
+        "
+function addInner(a) {
+    a.inner = { zCommon: 1, prop3: 3 };
+    return a;
+}
+function getInner(a) {
+    if (noInner) {
+        return addInner(a).inner;
+    } else {
+        return a.inner;
+    }
+}
+function f3() {
+    let obj = { inner: { zCommon: 1, prop2: 2 } };
+    if (cond) {
+        return obj;
+    }
+    const a = getInner(obj);
+    a.zCommon;
+    return a;
+}
+const o = f3();
+const i = o.inner;
+i.zCommon; i.zCommon; i.zCommon;
+i.prop3;
+o.prop3;
+    ",
+        "
+function addInner(a) {
+    a.b = { a: 1, c: 3 };
+    return a;
+}
+function getInner(a) {
+    if (noInner) {
+        return addInner(a).b;
+    } else {
+        return a.b;
+    }
+}
+function f3() {
+    let obj = { b: { a: 1, d: 2 } };
+    if (cond) {
+        return obj;
+    }
+    const a = getInner(obj);
+    a.a;
+    return a;
+}
+const o = f3();
+const i = o.b;
+i.a; i.a; i.a;
+i.c;
+o.c;
+    ",
+    );
+    test_transform(
+        "
+function getProp1(arg) {
+    arg.hasProp1 = true;
+    return { prop1: 1, parent: arg };
+}
+function getProp2(arg) {
+    arg.hasProp2 = true;
+    return { prop2: 2, parent: arg };
+}
+function foo(arg) {
+    if (cond) {
+        arg.inner = getProp1(arg);
+    } else {
+        arg.inner = getProp2(arg);
+    }
+    return arg;
+}
+foo({ prop: 1 }).inner.prop2;
+foo({ prop: 1 }).hasProp2;
+    ",
+        "
+function getProp1(arg) {
+    arg.c = true;
+    return { c: 1, b: arg };
+}
+function getProp2(arg) {
+    arg.b = true;
+    return { a: 2, b: arg };
+}
+function foo(arg) {
+    if (cond) {
+        arg.a = getProp1(arg);
+    } else {
+        arg.a = getProp2(arg);
+    }
+    return arg;
+}
+foo({ d: 1 }).a.a;
+foo({ d: 1 }).b;
+    ",
+    );
+    test_transform(
+        "
+function assignProp1(arg) {
+    arg.inner = { prop1: 1 };
+}
+function assignProp2(arg) {
+    arg.inner = { prop2: 2 };
+}
+function foo(arg) {
+    if (cond) {
+        assignProp1(arg);
+    } else {
+        assignProp2(arg);
+    }
+    return arg;
+}
+foo({ prop: 1 }).inner.prop2;
+    ",
+        "
+function assignProp1(arg) {
+    arg.a = { b: 1 };
+}
+function assignProp2(arg) {
+    arg.a = { a: 2 };
+}
+function foo(arg) {
+    if (cond) {
+        assignProp1(arg);
+    } else {
+        assignProp2(arg);
+    }
+    return arg;
+}
+foo({ b: 1 }).a.a;
+    ",
+    );
+    test_transform(
+        "
+function foo7(count) {
+  if (cond) {
+    return foo8(count + 1);
+  } else {
+    return { foo7_count: count };
+  }
+}
+function foo8(count) {
+  if (cond) {
+    return foo7(count + 1);
+  } else {
+    return { foo8_count: count };
+  }
+}
+const b = foo8(0).foo8_count; // { foo7_count, foo8_count }
+    ",
+        "
+function foo7(count) {
+  if (cond) {
+    return foo8(count + 1);
+  } else {
+    return { b: count };
+  }
+}
+function foo8(count) {
+  if (cond) {
+    return foo7(count + 1);
+  } else {
+    return { a: count };
+  }
+}
+const b = foo8(0).a;
+    ",
+    );
+    test_transform(
+        "
+function foo9(count) {
+  if (cond) {
+    return foo9(count + 1);
+  } else {
+    return { count: count, other: 1 };
+  }
+}
+const a = foo9(0); // { count, other }
+a.count; a.other; a.other;
+    ",
+        "
+function foo9(count) {
+  if (cond) {
+    return foo9(count + 1);
+  } else {
+    return { b: count, a: 1 };
+  }
+}
+const a = foo9(0);
+a.b; a.a; a.a;
+    ",
+    );
+    // 'rotate' can return any on its 3 params
+    test_transform(
+        "
+function rotate(a, b, c) {
+    if (cond) {
+        return rotate(c, a, b);
+    } else {
+        return a;
+    }
+}
+const res = rotate( { prop1: 1 }, { prop2: 2 }, { prop3: 3 } );
+res.prop2;
+",
+        "
+function rotate(a, b, c) {
+    if (cond) {
+        return rotate(c, a, b);
+    } else {
+        return a;
+    }
+}
+const res = rotate( { b: 1 }, { a: 2 }, { b: 3 } );
+res.a;
+",
+    );
+    test_transform(
+        "
+function inner() {
+    return { prop1: 1, prop2: 2};
+}
+function outer() {
+    return inner();
+}
+const a = outer().prop2;
+    ",
+        "
+function inner() {
+    return { b: 1, a: 2};
+}
+function outer() {
+    return inner();
+}
+const a = outer().a;
+    ",
+    );
+    test_transform(
+        "
+function identity(a) {
+    return a;
+}
+function f2() { // returns obj or obj.inner
+    let obj = { inner: { prop1: 1 } };
+    const a = identity(obj); // obj
+    if (cond) {
+        return a.inner;
+    }
+    const b = identity(obj); // obj
+    return b;
+}
+function f3() {
+    f2().inner;
+    f2().prop1;
+}
+    ",
+        "
+function identity(a) {
+    return a;
+}
+function f2() { // returns obj or obj.inner
+    let obj = { a: { b: 1 } };
+    const a = identity(obj); // obj
+    if (cond) {
+        return a.a;
+    }
+    const b = identity(obj); // obj
+    return b;
+}
+function f3() {
+    f2().a;
+    f2().b;
+}
+    ",
+    );
+    // Two mutually recursive functions that only return the 'obj' param.
+    test_transform(
+        "
+function f7(num, obj) {
+    if (cond) {
+        return f8(obj, num);
+    } else {
+        return obj;
+    }
+}
+function f8(obj, num) {
+    if (cond) {
+        return f7(num, obj);
+    } else {
+        return obj;
+    }
+}
+const obj = { prop1: 1, prop2: 2};
+const res = f8(obj, 123).prop2;
+    ",
+        "
+function f7(num, obj) {
+    if (cond) {
+        return f8(obj, num);
+    } else {
+        return obj;
+    }
+}
+function f8(obj, num) {
+    if (cond) {
+        return f7(num, obj);
+    } else {
+        return obj;
+    }
+}
+const obj = { b: 1, a: 2};
+const res = f8(obj, 123).a;
+    ",
+    );
+    // Recursive function that conditionally flips params.
+    test_transform(
+        "
+function f1(a, b) {
+    if (cond) {
+        return f1(b, a);
+    } else {
+        return a;
+    }
+}
+f1({ prop1: 1 }, { prop2: 2 }).prop2;
+    ",
+        "
+function f1(a, b) {
+    if (cond) {
+        return f1(b, a);
+    } else {
+        return a;
+    }
+}
+f1({ b: 1 }, { a: 2 }).a;
+    ",
+    );
+    test_transform(
+        "
+function foo(a) {
+    a.common;
+}
+foo({ prop1: 1, common: true });
+foo({ prop2: 2, common: true });
+    ",
+        "
+function foo(a) {
+    a.a;
+}
+foo({ b: 1, a: true });
+foo({ b: 2, a: true });
+    ",
+    );
+    test_transform(
+        "
+function foo(a) {
+    return a;
+}
+const obj1 = { prop1: 1, prop2: 2 };
+obj1.prop1;
+foo(obj1).prop2;
+const obj2 = { prop3: 3, prop4: 4 };
+obj2.prop3;
+foo(obj2).prop4;
+",
+        "
+function foo(a) {
+    return a;
+}
+const obj1 = { a: 1, b: 2 };
+obj1.a;
+foo(obj1).b;
+const obj2 = { a: 3, b: 4 };
+obj2.a;
+foo(obj2).b;
+",
+    );
+    test_transform(
+        "
+function foo() {
+    return { prop: { prop1: 1, prop2: 2 } };
+}
+function bar() {
+    foo().prop.prop1;
+    return foo().prop;
+}
+bar().prop2;
+",
+        "
+function foo() {
+    return { a: { a: 1, b: 2 } };
+}
+function bar() {
+    foo().a.a;
+    return foo().a;
+}
+bar().b;
+",
+    );
+    test_transform(
+        "
+function thing() {
+    const obj = { prop1: 1, prop2: 2 };
+    obj.prop1; obj.prop1; obj.prop1;
+    return obj;
+}
+thing().prop2;
+",
+        "
+function thing() {
+    const obj = { a: 1, b: 2 };
+    obj.a; obj.a; obj.a;
+    return obj;
+}
+thing().b;
+",
+    );
+    test_transform(
+        "
+function foo(obj, prop) {
+    obj.inner = prop;
+}
+
+function bar() {
+    let obj = {};
+    let prop = { prop1: 1 };
+    for (; foo(obj, prop);) {
+      prop = { prop2: 2 };
+    }
+    obj.inner.prop1;
+}
+bar();
+",
+        "
+function foo(obj, prop) {
+    obj.a = prop;
+}
+
+function bar() {
+    let obj = {};
+    let prop = { a: 1 };
+    for (; foo(obj, prop);) {
+      prop = { b: 2 };
+    }
+    obj.a.a;
+}
+bar();
+",
+    );
+}
+
+#[test]
 fn test_object_literal() {
     test_transform_in_fn(
         "

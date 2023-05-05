@@ -1,0 +1,1 @@
+dot -Tsvg props.dot -o props.svg & start props.svg

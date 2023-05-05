@@ -15,6 +15,9 @@
   "[typescript]": {
     "editor.formatOnSave": true
   },
+  "[javascript]": {
+    "editor.formatOnSave": false
+  },
   "rust.rustflags": "--cfg procmacro2_semver_exempt",
   // Important
   "rust.cfg_test": false,

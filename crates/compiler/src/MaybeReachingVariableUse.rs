@@ -7,10 +7,7 @@ use petgraph::Direction::Outgoing;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::control_flow::ControlFlowGraph::{Branch, ControlFlowGraph};
-use crate::control_flow::{
-    node::Node, util::MultiMap, ControlFlowAnalysis::ControlFlowAnalysisResult,
-    ControlFlowGraph::Annotation,
-};
+use crate::control_flow::{node::Node, util::MultiMap, ControlFlowGraph::Annotation};
 use crate::{find_vars::*, ToId};
 use crate::{DataFlowAnalysis::*, Id};
 
@@ -58,6 +55,7 @@ where
     T: FunctionLike<'a>,
 {
     data_flow_analysis: DataFlowAnalysis<
+        'a,
         Node<'ast>,
         Inner<'ast, 'a, T>,
         ReachingUses<'ast>,
@@ -70,7 +68,8 @@ where
     T: FunctionLike<'a>,
 {
     pub fn new(
-        cfa: ControlFlowAnalysisResult<Node<'ast>, LinearFlowState, LatticeElementId>,
+        cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
+        nodePriorities: &'a FxHashMap<Node<'ast>, usize>,
         fn_scope: &'a T,
         allVarsDeclaredInFunction: AllVarsDeclaredInFunction,
     ) -> Self {
@@ -88,9 +87,9 @@ where
             params: allVarsDeclaredInFunction.params,
             fn_and_class_names: allVarsDeclaredInFunction.fn_and_class_names,
             lattice_elements: IndexVec::default(),
-            cfg: cfa.cfg,
+            cfg,
         };
-        let data_flow_analysis = DataFlowAnalysis::new(inner, cfa.nodePriorities);
+        let data_flow_analysis = DataFlowAnalysis::new(inner, nodePriorities);
 
         Self { data_flow_analysis }
     }

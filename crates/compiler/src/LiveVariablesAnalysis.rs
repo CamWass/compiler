@@ -8,9 +8,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use swc_atoms::js_word;
 
 use crate::control_flow::ControlFlowGraph::{Branch, ControlFlowGraph};
-use crate::control_flow::{
-    node::Node, ControlFlowAnalysis::ControlFlowAnalysisResult, ControlFlowGraph::Annotation,
-};
+use crate::control_flow::{node::Node, ControlFlowGraph::Annotation};
 use crate::find_vars::*;
 use crate::{DataFlowAnalysis::*, Id, ToId};
 
@@ -47,8 +45,13 @@ pub struct LiveVariablesAnalysis<'ast, 'a, T>
 where
     T: FunctionLike<'a>,
 {
-    data_flow_analysis:
-        DataFlowAnalysis<Node<'ast>, Inner<'ast, 'a, T>, LiveVariableLattice, LiveVariableJoinOp>,
+    data_flow_analysis: DataFlowAnalysis<
+        'a,
+        Node<'ast>,
+        Inner<'ast, 'a, T>,
+        LiveVariableLattice,
+        LiveVariableJoinOp,
+    >,
 }
 
 impl<'ast, 'a, T> LiveVariablesAnalysis<'ast, 'a, T>
@@ -73,7 +76,8 @@ where
      * @param allVarsDeclaredInFunction mapping of names to vars of everything reachable in a function
      */
     pub fn new(
-        cfa: ControlFlowAnalysisResult<Node<'ast>, LinearFlowState, LatticeElementId>,
+        cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
+        nodePriorities: &'a FxHashMap<Node<'ast>, usize>,
         fn_scope: &'a T,
         allVarsDeclaredInFunction: AllVarsDeclaredInFunction,
         unresolved_ctxt: SyntaxContext,
@@ -93,9 +97,9 @@ where
             params: allVarsDeclaredInFunction.params,
             fn_and_class_names: allVarsDeclaredInFunction.fn_and_class_names,
             lattice_elements: IndexVec::default(),
-            cfg: cfa.cfg,
+            cfg,
         };
-        let data_flow_analysis = DataFlowAnalysis::new(inner, cfa.nodePriorities);
+        let data_flow_analysis = DataFlowAnalysis::new(inner, nodePriorities);
 
         Self { data_flow_analysis }
     }

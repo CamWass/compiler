@@ -76,7 +76,7 @@ macro_rules! handle_fn {
 
             let cfa = ControlFlowAnalysis::analyze(ControlFlowRoot::from(&*$function), false);
             let (liveness, cfg) =
-                LiveVariablesAnalysis::new(cfa, $function, allVarsDeclaredInFunction, $parent_visitor.unresolved_ctxt).analyze();
+                LiveVariablesAnalysis::new(cfa.cfg, &cfa.nodePriorities, $function, allVarsDeclaredInFunction, $parent_visitor.unresolved_ctxt).analyze();
 
             // TODO:
             // if (FeatureSet.ES3.contains(compiler.getOptions().getOutputFeatureSet())) {

@@ -348,8 +348,9 @@ fn flowThroughArithmeticInstruction(
 /**
  * A simple forward constant propagation.
  */
-struct DummyConstPropagation {
+struct DummyConstPropagation<'p> {
     data_flow_analysis: DataFlowAnalysis<
+        'p,
         Instruction,
         DummyConstPropagationInner,
         ConstPropLatticeElement,
@@ -357,15 +358,18 @@ struct DummyConstPropagation {
     >,
 }
 
-impl DummyConstPropagation {
-    fn new(cfa: ControlFlowAnalysisResult<Instruction, LinearFlowState, LatticeElementId>) -> Self {
+impl<'p> DummyConstPropagation<'p> {
+    fn new(
+        cfg: ControlFlowGraph<Instruction, LinearFlowState, LatticeElementId>,
+        nodePriorities: &'p FxHashMap<Instruction, usize>,
+    ) -> Self {
         Self {
             data_flow_analysis: DataFlowAnalysis::new(
                 DummyConstPropagationInner {
                     lattice_elements: IndexVec::default(),
-                    cfg: cfa.cfg,
+                    cfg,
                 },
-                cfa.nodePriorities,
+                nodePriorities,
             ),
         }
     }
@@ -420,7 +424,7 @@ fn testSimpleIf() {
         cfg,
     };
 
-    let mut constProp = DummyConstPropagation::new(cfa);
+    let mut constProp = DummyConstPropagation::new(cfa.cfg, &cfa.nodePriorities);
     constProp.analyze();
 
     // We cannot conclude anything from if (a).
@@ -488,7 +492,7 @@ fn testSimpleLoop() {
         cfg,
     };
 
-    let mut constProp = DummyConstPropagation::new(cfa);
+    let mut constProp = DummyConstPropagation::new(cfa.cfg, &cfa.nodePriorities);
     // This will also show that the framework terminates properly.
     constProp.data_flow_analysis.analyze();
 
@@ -621,8 +625,13 @@ fn computeEscapedLocals(src: &str) -> FxHashSet<Id> {
         let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 
         // Compute liveness of variables
-        let mut liveness =
-            LiveVariablesAnalysis::new(cfa, function, allVarsDeclaredInFunction, unresolved_ctxt);
+        let mut liveness = LiveVariablesAnalysis::new(
+            cfa.cfg,
+            &cfa.nodePriorities,
+            function,
+            allVarsDeclaredInFunction,
+            unresolved_ctxt,
+        );
         liveness.analyze().0.escaped_locals
     })
 }
@@ -741,21 +750,24 @@ impl LatticeElement for Step {}
 
 impl Annotation for Step {}
 
-struct DivergentAnalysis {
+struct DivergentAnalysis<'p> {
     data_flow_analysis:
-        DataFlowAnalysis<Counter, DivergentAnalysisInner, Step, DivergentFlowJoiner>,
+        DataFlowAnalysis<'p, Counter, DivergentAnalysisInner, Step, DivergentFlowJoiner>,
 }
 
-impl DivergentAnalysis {
-    fn new(cfa: ControlFlowAnalysisResult<Counter, LinearFlowState, LatticeElementId>) -> Self {
+impl<'p> DivergentAnalysis<'p> {
+    fn new(
+        cfg: ControlFlowGraph<Counter, LinearFlowState, LatticeElementId>,
+        nodePriorities: &'p FxHashMap<Counter, usize>,
+    ) -> Self {
         Self {
             data_flow_analysis: DataFlowAnalysis::new(
                 DivergentAnalysisInner {
                     lattice_elements: IndexVec::default(),
                     counts: FxHashMap::default(),
-                    cfg: cfa.cfg,
+                    cfg,
                 },
-                cfa.nodePriorities,
+                nodePriorities,
             ),
         }
     }
@@ -772,7 +784,7 @@ fn testMaxIterationsExceededException() {
         nodePriorities: FxHashMap::from_iter([(entrypoint, 0)]),
     };
 
-    let mut constProp = DivergentAnalysis::new(cfa);
+    let mut constProp = DivergentAnalysis::new(cfa.cfg, &cfa.nodePriorities);
 
     assert!(constProp.data_flow_analysis.analyze_inner().is_err());
 

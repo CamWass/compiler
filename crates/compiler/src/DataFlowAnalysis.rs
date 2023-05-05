@@ -18,10 +18,10 @@ use crate::{find_vars::*, ToId};
 mod tests;
 
 /// The maximum number of steps per individual CFG node before we assume the analysis is divergent.
-// <p>TODO(b/196398705): This is way too high. Find traversal ordering heurisitc that reduces it.
+// <p>TODO(b/196398705): This is way too high. Find traversal ordering heuristic that reduces it.
 pub const MAX_STEPS_PER_NODE: usize = 20000;
 
-impl<N, I, L, J> AnnotationPrinter<LinearFlowState> for DataFlowAnalysis<N, I, L, J>
+impl<N, I, L, J> AnnotationPrinter<LinearFlowState> for DataFlowAnalysis<'_, N, I, L, J>
 where
     N: CfgNode,
     I: DataFlowAnalysisInner<N, L, J>,
@@ -89,7 +89,7 @@ where
  * @param <N> The control flow graph's node value type.
  * @param <L> Lattice element type.
  */
-pub struct DataFlowAnalysis<N, I, L, J>
+pub struct DataFlowAnalysis<'p, N, I, L, J>
 where
     N: CfgNode,
     I: DataFlowAnalysisInner<N, L, J>,
@@ -100,13 +100,13 @@ where
 
     /// The set of nodes that need to be considered, orderd by their priority
     /// as determined by control flow analysis and data flow direction.
-    workQueue: UniqueQueue<N>,
+    workQueue: UniqueQueue<'p, N>,
 
     _phantom1: PhantomData<L>,
     _phantom2: PhantomData<J>,
 }
 
-impl<N, I, L, J> DataFlowAnalysis<N, I, L, J>
+impl<'p, N, I, L, J> DataFlowAnalysis<'p, N, I, L, J>
 where
     N: CfgNode,
     I: DataFlowAnalysisInner<N, L, J>,
@@ -132,7 +132,7 @@ where
      *     graph requires a separate call to {@link #analyze()}.
      * @see #analyze()
      */
-    pub fn new(inner: I, nodePriorities: FxHashMap<N, usize>) -> Self {
+    pub fn new(inner: I, nodePriorities: &'p FxHashMap<N, usize>) -> Self {
         Self {
             workQueue: UniqueQueue::new(nodePriorities, inner.isForward()),
 
@@ -381,7 +381,7 @@ pub struct LinearFlowState {
 }
 
 impl LinearFlowState {
-    fn new(in_: LatticeElementId, out: LatticeElementId) -> Self {
+    pub fn new(in_: LatticeElementId, out: LatticeElementId) -> Self {
         Self {
             stepCount: 0,
             in_,
@@ -407,12 +407,6 @@ impl<N> PartialEq for PrioritizedNode<N> {
 
 impl<N> Eq for PrioritizedNode<N> {}
 
-impl<N> PrioritizedNode<N> {
-    fn mk(priority: usize, node: N) -> Self {
-        Self(priority, node)
-    }
-}
-
 impl<N> std::cmp::Ord for PrioritizedNode<N> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.0.cmp(&other.0)
@@ -427,17 +421,17 @@ impl<N> std::cmp::PartialOrd for PrioritizedNode<N> {
 }
 
 #[derive(Debug)]
-struct UniqueQueue<N> {
+pub struct UniqueQueue<'p, N> {
     inner: BTreeSet<PrioritizedNode<N>>,
-    priorities: FxHashMap<N, usize>,
+    priorities: &'p FxHashMap<N, usize>,
     forwards: bool,
 }
 
-impl<N> UniqueQueue<N>
+impl<'p, N> UniqueQueue<'p, N>
 where
     N: Copy + Hash + Eq,
 {
-    fn new(priorities: FxHashMap<N, usize>, forwards: bool) -> Self {
+    pub fn new(priorities: &'p FxHashMap<N, usize>, forwards: bool) -> Self {
         Self {
             inner: BTreeSet::new(),
             priorities,
@@ -445,22 +439,22 @@ where
         }
     }
 
-    fn pop(&mut self) -> Option<N> {
+    pub fn pop(&mut self) -> Option<N> {
         if self.forwards {
-            // Forwards analyses visit nodes with lower priorites first.
+            // Forwards analyses visit nodes with lower priorities first.
             self.inner.pop_first().map(|p| p.1)
         } else {
-            // Backwards analyses visit nodes with higher priorites first.
+            // Backwards analyses visit nodes with higher priorities first.
             self.inner.pop_last().map(|p| p.1)
         }
     }
 
-    fn push(&mut self, node: N) {
+    pub fn push(&mut self, node: N) {
         self.inner
             .insert(PrioritizedNode(self.priorities[&node], node));
     }
 
-    fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.inner.clear()
     }
 }

@@ -712,8 +712,13 @@ where
         let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 
         // Compute liveness of variables
-        let mut liveness =
-            LiveVariablesAnalysis::new(cfa, function, allVarsDeclaredInFunction, unresolved_ctxt);
+        let mut liveness = LiveVariablesAnalysis::new(
+            cfa.cfg,
+            &cfa.nodePriorities,
+            function,
+            allVarsDeclaredInFunction,
+            unresolved_ctxt,
+        );
         liveness.data_flow_analysis.analyze();
 
         op(&mut liveness, &vars);
