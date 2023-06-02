@@ -279,6 +279,7 @@ pub struct ExceptionHandler<'ast> {
 
 impl<'ast> ExceptionHandler<'ast> {
     pub fn new(ancestors: &ParentStack<'ast>, node: Node<'ast>) -> Self {
+        // TODO: other function like nodes
         // We only care about try, catch, and function ancestors.
         let parent_stack = ancestors
             .into_iter()

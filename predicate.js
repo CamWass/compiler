@@ -5,6 +5,7 @@ var execSucc = function (filename) {
   const options = {
     stdio: "pipe",
     encoding: "utf8",
+    // timeout: 20 * 1000
   };
 
   try {

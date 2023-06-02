@@ -8,7 +8,7 @@ use crate::control_flow::ControlFlowGraph::*;
 use crate::utils::unwrap_as;
 use crate::{Id, ToId};
 
-use super::{is_simple_prop_name, FnId, PropKey, Store};
+use super::{is_simple_prop_name, FnId, PropKey, SimpleCFG, Store};
 
 /// Builds a map containing the [`Steps`][Step] required to symbolically evaluate
 /// each node in the given function.
@@ -18,7 +18,7 @@ pub(super) fn create_step_map<'ast>(
 ) -> FxHashMap<Node<'ast>, Vec<Step>> {
     let mut map = FxHashMap::default();
 
-    let graph = &store.functions[func].cfg.graph;
+    let graph = &store.static_fn_data[func].cfg.graph;
 
     for node in graph.node_indices() {
         // Make assignments conditional if the node can end abruptly by an exception.
@@ -28,11 +28,14 @@ pub(super) fn create_step_map<'ast>(
 
         let mut analyser = Analyser {
             steps: &mut steps,
+            cfg: &store.static_fn_data[func].cfg,
             unresolved_ctxt: store.unresolved_ctxt,
         };
         analyser.init(graph[node], conditional);
 
-        map.insert(graph[node], steps);
+        if !steps.is_empty() {
+            map.insert(graph[node], steps);
+        }
     }
 
     map
@@ -43,8 +46,8 @@ pub(super) fn create_step_map<'ast>(
 pub enum LValue {
     /// Named variable.
     Var(Id),
-    /// Property of the current LValue.
-    Prop(JsWord),
+    /// Property of the current RValue.
+    RValueProp(JsWord),
     /// Property of the object type that represents the given object literal.
     ObjectProp(NodeId, JsWord),
 }
@@ -76,8 +79,9 @@ pub enum Step {
     InvalidateRValue,
     /// Invalidates the value in the LValue register.
     InvalidateLValue,
-    /// Begins a new call by pushing it onto the call creation stack.
-    StartCall,
+    /// Begins a new call, with the specified number of argument, by pushing it
+    /// onto the call creation stack.
+    StartCall(usize),
     /// Stores the value in the RValue register as the next argument to the current call.
     StoreArg,
     /// Executes a call, popping it from the stack and storing the result in the
@@ -102,12 +106,13 @@ pub enum Step {
 }
 
 #[derive(Debug)]
-struct Analyser<'a> {
+struct Analyser<'a, 'ast> {
     steps: &'a mut Vec<Step>,
+    cfg: &'a SimpleCFG<'ast>,
     unresolved_ctxt: SyntaxContext,
 }
 
-impl<'ast> Analyser<'_> {
+impl<'ast> Analyser<'_, 'ast> {
     /// Records the given step. Redundant steps may be skipped.
     fn push(&mut self, step: Step) {
         // Redundant store elimination
@@ -156,8 +161,10 @@ impl<'ast> Analyser<'_> {
             }
             _ => {
                 self.visit_and_get_r_value(Node::from(rhs), conditional);
+                self.steps.push(Step::SaveRValue);
                 let conditional = conditional || conditional_assign;
                 self.visit_and_get_slot(lhs, conditional);
+                self.steps.push(Step::RestoreRValue);
 
                 self.push(Step::Assign(conditional));
             }
@@ -272,7 +279,7 @@ impl<'ast> Analyser<'_> {
                 }
             }
             Node::AssignPatProp(_) => {
-                unreachable!("removed my normalization");
+                unreachable!("removed by normalization");
             }
 
             _ => {
@@ -282,29 +289,7 @@ impl<'ast> Analyser<'_> {
         }
     }
 
-    fn visit_and_get_l_value(&mut self, node: Node<'ast>, conditional: bool) {
-        match node {
-            Node::Ident(ident) | Node::BindingIdent(BindingIdent { id: ident, .. }) => {
-                let id = ident.to_id();
-                self.push(Step::StoreLValue(Some(LValue::Var(id))));
-            }
-            Node::MemberExpr(node) => {
-                self.visit_and_get_l_value(Node::from(&node.obj), conditional);
-                if let Some(prop) =
-                    PropKey::from_expr(&node.prop, self.unresolved_ctxt, node.computed)
-                {
-                    self.push(Step::StoreLValue(Some(LValue::Prop(prop.0))));
-                } else {
-                    self.invalidate_l_value();
-                    self.visit_and_get_r_value(Node::from(node.prop.as_ref()), conditional);
-                    self.push(Step::StoreLValue(None));
-                }
-            }
-
-            _ => todo!("{:#?}", node),
-        }
-    }
-
+    /// May change the current RValue, so use [`Step::SaveRValue`] if that matters.
     fn visit_and_get_slot(&mut self, node: Node<'ast>, conditional: bool) {
         match node {
             Node::Ident(ident) | Node::BindingIdent(BindingIdent { id: ident, .. }) => {
@@ -312,13 +297,13 @@ impl<'ast> Analyser<'_> {
                 self.push(Step::StoreLValue(Some(LValue::Var(id))));
             }
             Node::MemberExpr(node) => {
-                self.visit_and_get_l_value(Node::from(&node.obj), conditional);
+                self.visit_and_get_r_value(Node::from(&node.obj), conditional);
                 if let Some(prop) =
                     PropKey::from_expr(&node.prop, self.unresolved_ctxt, node.computed)
                 {
-                    self.push(Step::StoreLValue(Some(LValue::Prop(prop.0))));
+                    self.push(Step::StoreLValue(Some(LValue::RValueProp(prop.0))));
                 } else {
-                    self.invalidate_l_value();
+                    self.invalidate_r_value();
                     self.visit_and_get_r_value(Node::from(node.prop.as_ref()), conditional);
                     self.push(Step::StoreLValue(None));
                 }
@@ -351,7 +336,9 @@ impl<'ast> Analyser<'_> {
                     self.visit_and_get_r_value(lhs, conditional);
                 }
             }
-            Node::ThisExpr(_) => todo!(),
+            Node::ThisExpr(_) => {
+                self.push(Step::StoreRValue(None));
+            }
             Node::ArrayLit(node) => {
                 for element in &node.elems {
                     if let Some(element) = element {
@@ -441,7 +428,7 @@ impl<'ast> Analyser<'_> {
             }
             Node::CallExpr(node) => {
                 self.visit_and_get_r_value(Node::from(&node.callee), conditional);
-                self.push(Step::StartCall);
+                self.push(Step::StartCall(node.args.len()));
                 for arg in &node.args {
                     self.visit_and_get_r_value(Node::from(arg), conditional);
                     self.push(Step::StoreArg);
@@ -636,9 +623,8 @@ impl<'ast> Analyser<'_> {
             Node::AssignPatProp(_) => todo!(),
             Node::KeyValueProp(_) => todo!(),
             Node::AssignProp(_) => todo!(),
-            Node::GetterProp(_) => todo!(),
-            Node::SetterProp(_) => todo!(),
-            Node::MethodProp(_) => todo!(),
+            Node::GetterProp(_) => {}
+            Node::SetterProp(_) => {}
             Node::ComputedPropName(_) => todo!(),
             Node::SpreadAssignment(_) => todo!(),
             Node::DebuggerStmt(_) => {}
@@ -658,22 +644,43 @@ impl<'ast> Analyser<'_> {
             }
             Node::ThrowStmt(node) => {
                 self.visit_and_get_r_value(Node::from(node.arg.as_ref()), conditional);
+                self.invalidate_r_value();
+                if self.cfg.get_successors(Node::ThrowStmt(node)).count() == 0 {
+                    self.push(Step::Return);
+                }
             }
-            Node::TryStmt(_) => todo!(),
+            Node::TryStmt(_) => {}
             Node::WhileStmt(node) => {
                 self.visit_and_get_r_value(Node::from(node.test.as_ref()), conditional);
             }
             Node::DoWhileStmt(node) => {
                 self.visit_and_get_r_value(Node::from(node.test.as_ref()), conditional);
             }
-            Node::ForInStmt(_) => todo!(),
+            Node::ForInStmt(node) => {
+                self.visit_and_get_r_value(Node::from(node.right.as_ref()), conditional);
+                self.invalidate_r_value();
+            }
             Node::ForOfStmt(_) => todo!(),
             Node::SwitchCase(node) => {
                 if let Some(test) = &node.test {
                     self.visit_and_get_r_value(Node::from(test.as_ref()), conditional);
                 }
             }
-            Node::CatchClause(_) => todo!(),
+            Node::CatchClause(node) => {
+                if let Some(param) = &node.param {
+                    match param {
+                        Pat::Array(_) | Pat::Object(_) => {
+                            self.push(Step::StoreRValue(None));
+                            self.visit_destructuring(Node::from(param), conditional)
+                        }
+                        _ => {
+                            self.visit_and_get_slot(Node::from(param), conditional);
+                            self.push(Step::StoreRValue(None));
+                            self.push(Step::Assign(conditional));
+                        }
+                    }
+                }
+            }
 
             Node::Str(_)
             | Node::Bool(_)

@@ -1,0 +1,280 @@
+use std::{hash::BuildHasherDefault, iter::FusedIterator, num::NonZeroU32, ops::Index};
+
+use indexmap::IndexSet;
+use rustc_hash::FxHasher;
+
+use super::{ObjectId, Pointer};
+
+#[derive(Debug)]
+pub(super) struct UnionStore {
+    inner: IndexSet<Union, BuildHasherDefault<FxHasher>>,
+    null_or_void: ObjectId,
+}
+
+impl UnionStore {
+    pub fn new(null_or_void: ObjectId) -> Self {
+        Self {
+            inner: IndexSet::default(),
+            null_or_void,
+        }
+    }
+
+    pub fn build_union(&mut self, builder: UnionBuilder) -> Option<Pointer> {
+        if let Union::Inline(inline) = &builder.union {
+            if inline[0].is_none() {
+                // Empty union.
+                return None;
+            }
+            if inline[0] == Some(self.null_or_void) {
+                // null_or_void is ignored unless it is the only constituent.
+                return Some(Pointer::Object(self.null_or_void));
+            }
+
+            if inline[1].is_none() && !builder.invalid {
+                // Only one constituent. If the union is valid then we flatten it.
+                // If it is invalid, we must still create a union to persist the
+                // fact that the constituent was in a union with something invalid.
+                return Some(Pointer::Object(inline[0].unwrap()));
+            }
+        }
+
+        let mut idx = UnionId::from_usize(self.inner.insert_full(builder.union).0);
+        if builder.invalid {
+            idx.0 |= UnionId::INVALID_FLAG;
+        }
+
+        Some(Pointer::Union(idx))
+    }
+}
+
+impl Index<UnionId> for UnionStore {
+    type Output = Union;
+
+    fn index(&self, index: UnionId) -> &Self::Output {
+        &self.inner[index.as_usize()]
+    }
+}
+
+pub(super) struct UnionBuilder {
+    union: Union,
+    null_or_void: ObjectId,
+    invalid: bool,
+}
+
+impl UnionBuilder {
+    pub fn new(null_or_void: ObjectId) -> UnionBuilder {
+        UnionBuilder {
+            union: Union::Inline([None, None, None, None]),
+            null_or_void,
+            invalid: false,
+        }
+    }
+
+    pub fn add_object(&mut self, constituent: Option<ObjectId>) {
+        match constituent {
+            Some(constituent) => {
+                if constituent == self.null_or_void {
+                    if self.union.is_empty() {
+                        self.union = Union::Inline([Some(self.null_or_void), None, None, None]);
+                    }
+                    return;
+                }
+
+                match &mut self.union {
+                    Union::Heap(heap) => {
+                        match heap.binary_search(&constituent) {
+                            Ok(_) => {
+                                // Already in union
+                            }
+                            Err(insert_idx) => {
+                                heap.insert(insert_idx, constituent);
+                            }
+                        }
+                    }
+                    Union::Inline(inline) => {
+                        if inline[0] == Some(self.null_or_void) {
+                            inline[0] = Some(constituent);
+                            return;
+                        }
+
+                        let mut insert_idx = 0;
+                        while insert_idx <= MAX_INLINE_SIZE {
+                            if insert_idx == MAX_INLINE_SIZE {
+                                break;
+                            }
+                            if inline[insert_idx].is_none() {
+                                inline[insert_idx] = Some(constituent);
+                                return;
+                            }
+
+                            if inline[insert_idx] == Some(constituent) {
+                                return;
+                            }
+
+                            if inline[insert_idx].unwrap() > constituent {
+                                // insert
+                                break;
+                            }
+
+                            insert_idx += 1;
+                        }
+
+                        if inline[MAX_INLINE_SIZE - 1].is_some() || insert_idx == MAX_INLINE_SIZE {
+                            // Inline capacity exhausted; swap to heap.
+                            let mut heap = Vec::new();
+                            heap.reserve_exact(MAX_INLINE_SIZE + 1);
+                            for i in 0..insert_idx {
+                                heap.push(inline[i].unwrap());
+                            }
+                            heap.push(constituent);
+                            for i in insert_idx..MAX_INLINE_SIZE {
+                                heap.push(inline[i].unwrap());
+                            }
+                            self.union = Union::Heap(heap);
+                        } else {
+                            inline.copy_within(insert_idx..MAX_INLINE_SIZE - 1, insert_idx + 1);
+                            inline[insert_idx] = Some(constituent);
+                        }
+                    }
+                }
+            }
+            None => {
+                self.invalid = true;
+            }
+        }
+    }
+
+    pub fn add(&mut self, constituent: Option<Pointer>, store: &UnionStore) {
+        match constituent {
+            Some(Pointer::Object(constituent)) => {
+                self.add_object(Some(constituent));
+            }
+            Some(Pointer::Union(union)) => {
+                if union.invalid() {
+                    self.invalid = true;
+                }
+
+                // TODO: this could be smarter/more efficient if necessary.
+                for constituent in store[union].constituents() {
+                    self.add_object(Some(constituent));
+                }
+            }
+            Some(Pointer::Fn(_)) | None => {
+                self.invalid = true;
+            }
+        }
+    }
+}
+
+// Chosen so inline `Union` is same size as its `Heap` variant.
+const MAX_INLINE_SIZE: usize = 4;
+
+#[derive(Eq, PartialEq, Hash, Debug)]
+pub(super) enum Union {
+    Heap(Vec<ObjectId>),
+    Inline([Option<ObjectId>; MAX_INLINE_SIZE]),
+}
+
+impl Union {
+    fn is_empty(&self) -> bool {
+        match self {
+            Union::Inline(a) => a[0].is_none(),
+            _ => false,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Union::Heap(heap) => heap.len(),
+            Union::Inline(inline) => {
+                let mut len = 0;
+                let mut iter = inline.iter();
+                while let Some(_) = iter.next() {
+                    len += 1;
+                }
+                len
+            }
+        }
+    }
+
+    pub fn constituents(&self) -> impl Iterator<Item = ObjectId> + '_ {
+        Constituents {
+            union: self,
+            index: 0,
+            len: self.len(),
+        }
+    }
+
+    pub fn contains(&self, value: ObjectId) -> bool {
+        match self {
+            Union::Heap(heap) => heap.binary_search(&value).is_ok(),
+            Union::Inline(inline) => inline.contains(&Some(value)),
+        }
+    }
+}
+
+pub(super) struct Constituents<'a> {
+    union: &'a Union,
+    index: usize,
+    len: usize,
+}
+
+impl<'a> Iterator for Constituents<'a> {
+    type Item = ObjectId;
+    fn next(&mut self) -> Option<ObjectId> {
+        if self.index < self.len {
+            match self.union {
+                Union::Heap(heap) => {
+                    let r = heap.get(self.index);
+                    self.index += 1;
+                    r.copied()
+                }
+                Union::Inline(inline) => {
+                    let r = inline.get(self.index);
+                    self.index += 1;
+                    *r.unwrap()
+                }
+            }
+        } else {
+            None
+        }
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, Some(self.len))
+    }
+}
+
+impl FusedIterator for Constituents<'_> {}
+
+// TODO: this is true in rust playground, may require newer nightly compiler.
+// assert_eq_size!(Union, Vec<ObjectId>);
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
+pub(super) struct UnionId(NonZeroU32);
+
+impl UnionId {
+    const INVALID_FLAG: u32 = u32::MAX ^ (u32::MAX >> 1);
+    const VALID_BITS_MASK: u32 = !Self::INVALID_FLAG;
+    #[inline]
+    const fn from_usize(mut value: usize) -> Self {
+        value += 1;
+        assert!(value & Self::INVALID_FLAG as usize == 0);
+        assert!(value != 0);
+        unsafe { Self(NonZeroU32::new_unchecked(value as u32)) }
+    }
+
+    #[doc = " Extracts the value of this index as a `u32`."]
+    #[inline]
+    const fn as_u32(self) -> u32 {
+        self.0.get() - 1
+    }
+    #[doc = " Extracts the value of this index as a `usize`."]
+    #[inline]
+    const fn as_usize(self) -> usize {
+        (self.as_u32() & Self::VALID_BITS_MASK) as usize
+    }
+    #[inline]
+    pub const fn invalid(&self) -> bool {
+        self.as_u32() & Self::INVALID_FLAG != 0
+    }
+}

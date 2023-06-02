@@ -1,7 +1,6 @@
 use std::fmt::Debug;
 use std::ops::Index;
 
-use index::vec::IndexVec;
 use petgraph::{
     graph::{EdgeIndex, NodeIndex},
     EdgeDirection,
@@ -11,9 +10,8 @@ use rustc_hash::FxHashMap;
 use crate::control_flow::node::Node;
 use crate::control_flow::ControlFlowGraph::*;
 use crate::DataFlowAnalysis::{LatticeElementId, LinearFlowState, UniqueQueue, MAX_STEPS_PER_NODE};
-use crate::Id;
 
-use super::{Assignment, JoinOp, Lattice, Store};
+use super::{simple_set::IndexSet, JoinOp, Lattice, Store};
 
 #[derive(Debug)]
 pub(super) struct DataFlowAnalysis<'ast, 'p> {
@@ -21,7 +19,7 @@ pub(super) struct DataFlowAnalysis<'ast, 'p> {
     /// as determined by control flow analysis and data flow direction.
     workQueue: UniqueQueue<'p, Node<'ast>>,
 
-    pub(super) lattice_elements: IndexVec<LatticeElementId, Lattice>,
+    pub(super) lattice_elements: IndexSet<LatticeElementId, Lattice>,
     pub(super) cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
     initial_lattice: LatticeElementId,
     in_fn: bool,
@@ -31,14 +29,10 @@ impl<'ast, 'p> DataFlowAnalysis<'ast, 'p> {
     pub fn new(
         cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
         nodePriorities: &'p FxHashMap<Node<'ast>, usize>,
-        fn_assignments: &FxHashMap<Id, Assignment>,
         in_fn: bool,
     ) -> Self {
-        let mut lattice_elements = IndexVec::default();
-        let initial_lattice = lattice_elements.push(Lattice {
-            var_assignments: fn_assignments.clone(),
-            prop_assignments: FxHashMap::default(),
-        });
+        let mut lattice_elements = IndexSet::default();
+        let initial_lattice = lattice_elements.insert(Lattice::default());
         Self {
             workQueue: UniqueQueue::new(nodePriorities, true),
             cfg,
@@ -113,7 +107,7 @@ impl<'ast, 'p> DataFlowAnalysis<'ast, 'p> {
         let outBefore = state.out;
         let new_out = self.flowThrough(node, store, state.in_, self.in_fn);
         self.get_flow_state_mut(&node).out = new_out;
-        self[outBefore] != self[new_out]
+        outBefore != new_out
     }
 
     /**
@@ -172,7 +166,7 @@ impl<'ast, 'p> DataFlowAnalysis<'ast, 'p> {
     }
 
     pub(super) fn add_lattice_element(&mut self, element: Lattice) -> LatticeElementId {
-        self.lattice_elements.push(element)
+        self.lattice_elements.insert(element)
     }
 
     fn createEntryLattice(&mut self) -> LatticeElementId {

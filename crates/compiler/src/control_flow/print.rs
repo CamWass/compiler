@@ -39,6 +39,8 @@ where
 {
     let mut v = NodeVisitor::new();
 
+    v.create_node(*node);
+
     node.visit_with(&mut v);
 
     (v.map, v.graph)

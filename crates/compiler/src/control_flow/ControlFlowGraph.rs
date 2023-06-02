@@ -290,6 +290,60 @@ where
         std::fs::write(CFG_DOT_FILE_NAME, dot).expect("Failed to output control flow graph");
     }
 
+    pub fn print_simple_with_annotations(&self) {
+        // Only used for custom debug impl.
+        struct CustomNode<'ast, 'a, NA>
+        where
+            NA: Annotation,
+        {
+            node: Node<'ast>,
+            annotation: Option<&'a NA>,
+        }
+
+        impl<NA> fmt::Debug for CustomNode<'_, '_, NA>
+        where
+            NA: Annotation,
+        {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                match self.node {
+                    Node::Str(s) => {
+                        f.write_fmt(format_args!("Str({})", s.value.escape_debug()))?;
+                    }
+                    Node::Number(n) => {
+                        f.write_fmt(format_args!("Number({})", n.value))?;
+                    }
+                    Node::Ident(s) => {
+                        f.write_fmt(format_args!("Ident({})", s.sym))?;
+                    }
+                    _ => {
+                        f.write_fmt(format_args!("{:?}", self.node))?;
+                    }
+                }
+                if let Some(ann) = self.annotation {
+                    f.write_char('\n');
+                    DefaultPrinter.print(ann, f)
+                } else {
+                    Ok(())
+                }
+            }
+        }
+
+        let custom_node = |node| CustomNode {
+            node,
+            annotation: self.node_annotations.get(&node),
+        };
+
+        let mut graph = self.graph.map(|_, n| custom_node(*n), |_, e| *e);
+
+        let mut dot = format!("{:?}", Dot::with_config(&graph, &[]));
+
+        dot = recolour_graph(dot, graph.node_count());
+
+        // println!("creating dot file");
+
+        std::fs::write(CFG_DOT_FILE_NAME, dot).expect("Failed to output control flow graph");
+    }
+
     /// Prints a rich representation of the control flow graph to dot format.
     /// The resulting graph contains represents the full AST of the entry node,
     /// as well as any control flow edges.
@@ -336,7 +390,7 @@ where
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 match self.node {
                     Node::Str(s) => {
-                        f.write_fmt(format_args!("Str({})", s.value))?;
+                        f.write_fmt(format_args!("Str({})", s.value.escape_debug()))?;
                     }
                     Node::Number(n) => {
                         f.write_fmt(format_args!("Number({})", n.value))?;

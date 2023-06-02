@@ -730,6 +730,10 @@ impl<T: Idx> GrowableBitSet<T> {
         self.bit_set.domain_size
     }
 
+    pub fn clear(&mut self) {
+        self.bit_set.clear();
+    }
+
     /// Returns `true` if the set has changed.
     #[inline]
     pub fn insert(&mut self, elem: T) -> bool {

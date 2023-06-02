@@ -9,6 +9,9 @@
 #![allow(warnings)]
 #![deny(unused_imports)]
 
+// #[macro_use]
+// extern crate static_assertions;
+
 pub mod CoalesceVariableNames;
 mod DataFlowAnalysis;
 mod DefaultNameGenerator;
@@ -29,9 +32,9 @@ mod find_vars;
 mod graph;
 pub mod node;
 pub mod normalize;
-mod normalize_properties;
+pub mod normalize_properties;
 mod optimize_properties;
-mod optimize_properties2;
+pub mod optimize_properties2;
 pub mod resolver;
 mod transform_ts;
 pub mod types;

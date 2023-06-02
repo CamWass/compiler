@@ -8,10 +8,17 @@
 
 mod DataFlowAnalysis2;
 mod function;
+mod graph;
+mod hashable_map;
+mod simple_set;
 mod template;
 mod unionfind;
+mod unions;
 
+use std::borrow::Cow;
 use std::collections::hash_map::Entry;
+use std::hash::Hash;
+use std::ops::Deref;
 
 use ast::*;
 use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
@@ -39,6 +46,10 @@ use crate::{Id, ToId};
 use template::*;
 use unionfind::UnionFind;
 use DataFlowAnalysis2::*;
+
+use self::hashable_map::HashableHashMap;
+use self::simple_set::IndexSet;
+use self::unions::{UnionBuilder, UnionId, UnionStore};
 
 #[cfg(test)]
 mod tests;
@@ -125,11 +136,11 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
                         .entry(name)
                         .or_default()
                         .insert(*node_id);
-                    for &constituent in &store.unions[union].constituents {
+                    for constituent in store.unions[union].constituents() {
                         objects.entry(constituent).or_default();
                     }
                 }
-                _ => todo!(),
+                Pointer::Fn(_) => {}
             }
         } else {
             todo!();
@@ -165,15 +176,14 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
     // Process unions.
     for (union, accesses) in union_accesses {
         let invalid = store.invalidated(Pointer::Union(union));
-        for &constituent_id in &store.unions[union].constituents {
+        for constituent_id in store.unions[union].constituents() {
             let constituent = objects.entry(constituent_id).or_default();
             constituent.invalid |= invalid;
         }
 
         for (name, references) in accesses {
             let mut props = store.unions[union]
-                .constituents
-                .iter()
+                .constituents()
                 .map(|c| objects.get(&c).and_then(|c| c.properties.get(name)))
                 .filter_map(|c| c);
 
@@ -190,9 +200,9 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
                 prop_id
             };
 
-            for constituent in store.unions[union].constituents.iter() {
+            for constituent in store.unions[union].constituents() {
                 match objects
-                    .get_mut(constituent)
+                    .get_mut(&constituent)
                     .unwrap()
                     .properties
                     .entry(name.clone())
@@ -318,8 +328,8 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
     // representatives can be assigned the colour, move on the the next, until
     // no uncoloured representatives remain.
     let mut remaining_nodes = BitSet::<RepId>::new_filled(representatives.len());
-    let mut colours = vec![0u8; representatives.len()];
-    let mut cur_colour = 0u8;
+    let mut colours = vec![0u16; representatives.len()];
+    let mut cur_colour = 0u16;
     let mut subgraph = BitSet::new_empty(representatives.len());
     loop {
         subgraph.clear();
@@ -374,27 +384,33 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
     rename_map
 }
 
-pub fn process(
-    ast: &mut ast::Program,
-    node_id_gen: &mut NodeIdGen,
-    unresolved_ctxt: SyntaxContext,
-) {
+struct NameLenVisitor {
+    names: FxHashSet<JsWord>,
+}
+impl Visit<'_> for NameLenVisitor {
+    fn visit_ident(&mut self, node: &Ident) {
+        self.names.insert(node.sym.clone());
+    }
+}
+
+pub fn analyse<'ast>(ast: &'ast ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'ast> {
     let null_or_void = ObjectId::from_u32(0);
     let mut store = Store {
-        calls: IndexVec::default(),
+        calls: IndexSet::default(),
         functions: IndexVec::default(),
+        static_fn_data: IndexVec::default(),
         function_map: FxHashMap::default(),
         objects_map: FxHashMap::default(),
         invalid_objects: GrowableBitSet::new_empty(),
-        unions: IndexVec::default(),
+        unions: UnionStore::new(null_or_void),
         references: FxHashMap::default(),
         null_or_void,
-        cur_object_id: ObjectId::from_u32(1),
+        cur_object_id: ObjectId::from_u32(2),
+        resolving_call_object: ObjectId::from_u32(1),
         unresolved_ctxt,
         resolved_calls: FxHashMap::default(),
         call_templates: FxHashMap::default(),
-        fn_assignments: FxHashMap::default(),
-        call_objects: FxHashMap::default(),
+        fn_assignments: HashableHashMap::default(),
         object_links: FxHashMap::default(),
     };
 
@@ -415,29 +431,100 @@ pub fn process(
     };
     let cfa = ControlFlowAnalysis::analyze(root, false);
 
-    let data_flow_analysis =
-        DataFlowAnalysis::new(cfa.cfg, &cfa.nodePriorities, &store.fn_assignments, false);
+    let data_flow_analysis = DataFlowAnalysis::new(cfa.cfg, &cfa.nodePriorities, false);
 
     let mut analysis = Analysis { data_flow_analysis };
     analysis.data_flow_analysis.analyze(&mut store);
 
     let mut i = 0;
     while i < store.functions.len() {
-        let func = &store.functions[i.into()];
+        let static_data = &store.static_fn_data[i.into()];
+
         let cfa = ControlFlowAnalysisResult {
             cfg: ControlFlowGraph {
-                map: func.cfg.map.clone(),
-                implicit_return: func.cfg.implicit_return.clone(),
-                entry: func.cfg.entry.clone(),
-                graph: func.cfg.graph.clone(),
+                map: static_data.cfg.map.clone(),
+                implicit_return: static_data.cfg.implicit_return.clone(),
+                entry: static_data.cfg.entry.clone(),
+                graph: static_data.cfg.graph.clone(),
                 node_annotations: FxHashMap::default(),
                 edge_annotations: FxHashMap::default(),
             },
-            nodePriorities: func.node_priorities.clone(),
+            nodePriorities: static_data.node_priorities.clone(),
         };
 
-        let data_flow_analysis =
-            DataFlowAnalysis::new(cfa.cfg, &cfa.nodePriorities, &store.fn_assignments, true);
+        let data_flow_analysis = DataFlowAnalysis::new(cfa.cfg, &cfa.nodePriorities, true);
+
+        let mut analysis = Analysis { data_flow_analysis };
+        analysis.data_flow_analysis.analyze(&mut store);
+        i += 1;
+    }
+    store
+}
+
+pub fn process(
+    ast: &mut ast::Program,
+    node_id_gen: &mut NodeIdGen,
+    unresolved_ctxt: SyntaxContext,
+) {
+    let null_or_void = ObjectId::from_u32(0);
+    let mut store = Store {
+        calls: IndexSet::default(),
+        functions: IndexVec::default(),
+        static_fn_data: IndexVec::default(),
+        function_map: FxHashMap::default(),
+        objects_map: FxHashMap::default(),
+        invalid_objects: GrowableBitSet::new_empty(),
+        unions: UnionStore::new(null_or_void),
+        references: FxHashMap::default(),
+        null_or_void,
+        cur_object_id: ObjectId::from_u32(2),
+        resolving_call_object: ObjectId::from_u32(1),
+        unresolved_ctxt,
+        resolved_calls: FxHashMap::default(),
+        call_templates: FxHashMap::default(),
+        fn_assignments: HashableHashMap::default(),
+        object_links: FxHashMap::default(),
+    };
+
+    let mut visitor = FnVisitor { store: &mut store };
+    ast.visit_with(&mut visitor);
+
+    let mut i = 0;
+    while i < store.functions.len() {
+        let func = FnId::from_usize(i);
+        let template = CallTemplate::new(&mut store, func);
+        store.call_templates.insert(func, template);
+        i += 1;
+    }
+
+    let root = match &ast {
+        Program::Module(n) => ControlFlowRoot::Module(n),
+        Program::Script(n) => ControlFlowRoot::Script(n),
+    };
+    let cfa = ControlFlowAnalysis::analyze(root, false);
+
+    let data_flow_analysis = DataFlowAnalysis::new(cfa.cfg, &cfa.nodePriorities, false);
+
+    let mut analysis = Analysis { data_flow_analysis };
+    analysis.data_flow_analysis.analyze(&mut store);
+
+    let mut i = 0;
+    while i < store.functions.len() {
+        let static_data = &store.static_fn_data[i.into()];
+
+        let cfa = ControlFlowAnalysisResult {
+            cfg: ControlFlowGraph {
+                map: static_data.cfg.map.clone(),
+                implicit_return: static_data.cfg.implicit_return.clone(),
+                entry: static_data.cfg.entry.clone(),
+                graph: static_data.cfg.graph.clone(),
+                node_annotations: FxHashMap::default(),
+                edge_annotations: FxHashMap::default(),
+            },
+            nodePriorities: static_data.node_priorities.clone(),
+        };
+
+        let data_flow_analysis = DataFlowAnalysis::new(cfa.cfg, &cfa.nodePriorities, true);
 
         let mut analysis = Analysis { data_flow_analysis };
         analysis.data_flow_analysis.analyze(&mut store);
@@ -473,7 +560,7 @@ impl<'ast> FnVisitor<'ast, '_> {
         let cfa =
             ControlFlowAnalysis::<DummyAnnotation, DummyAnnotation>::analyze(node.into(), false);
 
-        cfa.cfg.print_simple();
+        // cfa.cfg.print_full();
         let cfg = SimpleCFG {
             map: cfa.cfg.map,
             implicit_return: cfa.cfg.implicit_return,
@@ -492,16 +579,22 @@ impl<'ast> FnVisitor<'ast, '_> {
             })
             .collect();
 
-        let func = Func {
+        let static_data = StaticFunctionData {
             cfg,
             node_priorities: cfa.nodePriorities,
-            args: Vec::new(),
-            arg_values: Lattice::default(),
             param_names,
+        };
+
+        let func = Func {
+            args: Vec::new(),
+            arg_values: HashableHashMap::default(),
         };
 
         let id = self.store.functions.push(func);
         self.store.function_map.insert(node.node_id(), id);
+
+        let static_id = self.store.static_fn_data.push(static_data);
+        debug_assert_eq!(static_id, id);
 
         node.visit_body_with(self);
         id
@@ -542,26 +635,27 @@ struct Analysis<'ast, 'p> {
 
 #[derive(Debug)]
 /// Info collected during analysis.
-pub(super) struct Store<'ast> {
-    calls: IndexVec<CallId, Call>,
-    pub(super) functions: IndexVec<FnId, Func<'ast>>,
+pub struct Store<'ast> {
+    calls: IndexSet<CallId, Call>,
+    pub(super) functions: IndexVec<FnId, Func>,
+    static_fn_data: IndexVec<FnId, StaticFunctionData<'ast>>,
     function_map: FxHashMap<NodeId, FnId>,
     objects_map: FxHashMap<NodeId, ObjectId>,
     invalid_objects: GrowableBitSet<ObjectId>,
-    unions: IndexVec<UnionId, Union>,
+    unions: UnionStore,
 
     references: FxHashMap<PropKey, Option<Pointer>>,
 
     null_or_void: ObjectId,
+    resolving_call_object: ObjectId,
 
     cur_object_id: ObjectId,
     pub(super) unresolved_ctxt: SyntaxContext,
 
     resolved_calls: FxHashMap<CallId, ResolvedCall>,
     call_templates: FxHashMap<FnId, CallTemplate<'ast>>,
-    fn_assignments: FxHashMap<Id, Assignment>,
+    fn_assignments: HashableHashMap<Id, Assignment>,
 
-    call_objects: FxHashMap<(CallId, NodeId), ObjectId>,
     object_links: FxHashMap<ObjectId, Vec<ObjectId>>,
 }
 
@@ -578,12 +672,7 @@ impl Store<'_> {
         pointer1: Option<Pointer>,
         pointer2: Option<Pointer>,
     ) -> Option<Pointer> {
-        create_union(
-            &mut self.unions,
-            pointer1,
-            pointer2,
-            Some(Pointer::Object(self.null_or_void)),
-        )
+        create_union(&mut self.unions, pointer1, pointer2, self.null_or_void)
     }
 
     /// Recursively invalidates the entity that `pointer` points to.
@@ -592,8 +681,8 @@ impl Store<'_> {
             &mut self.invalid_objects,
             &self.unions,
             pointer,
-            lattice,
-            self.null_or_void,
+            &lattice.prop_assignments,
+            Some(Pointer::Object(self.null_or_void)),
         );
     }
 
@@ -607,95 +696,61 @@ impl Store<'_> {
 fn invalidated(
     pointer: Pointer,
     invalid_objects: &GrowableBitSet<ObjectId>,
-    unions: &IndexVec<UnionId, Union>,
+    unions: &UnionStore,
 ) -> bool {
     match pointer {
         Pointer::Object(obj) => invalid_objects.contains(obj),
-        Pointer::Union(union) => unions[union]
-            .constituents
-            .iter()
-            .any(|&obj| invalid_objects.contains(obj)),
-        _ => todo!(),
+        Pointer::Union(union) => {
+            union.invalid()
+                || unions[union]
+                    .constituents()
+                    .any(|obj| invalid_objects.contains(obj))
+        }
+        Pointer::Fn(_) => true,
     }
 }
 
 /// Returns a [`Pointer`] to a union of `pointer1`'s type and `pointer2`'s type.
 fn create_union(
-    unions: &mut IndexVec<UnionId, Union>,
+    unions: &mut UnionStore,
     pointer1: Option<Pointer>,
     pointer2: Option<Pointer>,
-    null_or_void: Option<Pointer>,
+    null_or_void: ObjectId,
 ) -> Option<Pointer> {
     if pointer1 == pointer2 {
         return pointer1;
     }
 
-    if pointer1 == null_or_void {
-        return pointer2;
-    }
-    if pointer2 == null_or_void {
-        return pointer1;
-    }
+    let mut builder = UnionBuilder::new(null_or_void);
 
-    // TODO: invalidate if either is None. This can be avoided if we have a Some() and a None,
-    // and the None represents a literal/primitive, in which case we know its properties and
-    // the conflated object's props will be the properties of the non-primitive argument (Some)
-    // subtract the primitive's props.
-    // This is simplified if the primitive is null/undefined, since they have no props.
-    let (id1, id2) = match (pointer1, pointer2) {
-        (None, None) => return None,
-        (None, Some(id2)) => {
-            return Some(id2);
-        }
-        (Some(id1), None) => {
-            return Some(id1);
-        }
-        (Some(id1), Some(id2)) => (id1, id2),
-    };
+    builder.add(pointer1, unions);
+    builder.add(pointer2, unions);
 
-    let mut constituents = FxHashSet::default();
-
-    match (id1, id2) {
-        (Pointer::Object(left), Pointer::Object(right)) => {
-            constituents.insert(left);
-            constituents.insert(right);
-        }
-        (Pointer::Object(obj), Pointer::Union(union)) => {
-            constituents.insert(obj);
-            constituents.extend(unions[union].constituents.iter().copied());
-        }
-        (Pointer::Union(union), Pointer::Object(obj)) => {
-            constituents.insert(obj);
-            constituents.extend(unions[union].constituents.iter().copied());
-        }
-        (Pointer::Union(left), Pointer::Union(right)) => {
-            constituents.extend(unions[left].constituents.iter().copied());
-            constituents.extend(unions[right].constituents.iter().copied());
-        }
-        _ => todo!(),
-    }
-
-    let union = Union { constituents };
-
-    if let Some((existing, _)) = unions.iter_enumerated().find(|(_, u)| *u == &union) {
-        Some(Pointer::Union(existing))
-    } else {
-        Some(Pointer::Union(unions.push(union)))
-    }
+    unions.build_union(builder)
 }
 
 /// Recursively invalidates the entity that `pointer` points to.
 fn invalidate(
     invalid_objects: &mut GrowableBitSet<ObjectId>,
-    unions: &IndexVec<UnionId, Union>,
+    unions: &UnionStore,
     pointer: Option<Pointer>,
-    lattice: &Lattice,
-    null_or_void: ObjectId,
+    prop_assignments: &HashableHashMap<(ObjectId, JsWord), Assignment>,
+    null_or_void: Option<Pointer>,
 ) {
+    if pointer == null_or_void {
+        return;
+    }
     if let Some(pointer) = pointer {
-        if pointer == Pointer::Object(null_or_void) {
-            return;
+        match pointer {
+            Pointer::Object(obj) => {
+                if invalid_objects.contains(obj) {
+                    return;
+                }
+            }
+            Pointer::Union(_) => {}
+            Pointer::Fn(_) => return,
         }
+
         let mut queue = vec![pointer];
         let mut done = FxHashSet::default();
 
@@ -704,27 +759,29 @@ fn invalidate(
 
             match pointer {
                 Pointer::Object(obj) => {
-                    invalid_objects.insert(obj);
+                    let new_invalidation = invalid_objects.insert(obj);
 
-                    if let Some(props) = lattice.prop_assignments.get(&obj) {
-                        for prop in props.values() {
-                            if let Some(value) = prop.rhs {
-                                if !done.contains(&value) {
-                                    queue.push(value);
+                    if new_invalidation {
+                        for ((o, _), prop) in prop_assignments.iter() {
+                            if *o == obj {
+                                if let Some(value) = prop.rhs {
+                                    if !done.contains(&value) {
+                                        queue.push(value);
+                                    }
                                 }
                             }
                         }
                     }
                 }
                 Pointer::Union(union) => {
-                    for &constituent in &unions[union].constituents {
+                    for constituent in unions[union].constituents() {
                         let pointer = Pointer::Object(constituent);
                         if !done.contains(&pointer) {
                             queue.push(pointer);
                         }
                     }
                 }
-                _ => todo!(),
+                Pointer::Fn(_) => {}
             }
         }
     }
@@ -732,14 +789,13 @@ fn invalidate(
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Copy)]
 /// Points to an abstraction of a javascript object.
-pub(super) enum Pointer {
+pub(self) enum Pointer {
     Object(ObjectId),
     Union(UnionId),
     Fn(FnId),
 }
 
 index::newtype_index!(pub(super) struct ObjectId { .. });
-index::newtype_index!(pub(super) struct UnionId { .. });
 index::newtype_index!(pub(super) struct FnId { .. });
 index::newtype_index!(pub(super) struct CallId { .. });
 
@@ -759,33 +815,106 @@ impl<'ast> SimpleCFG<'ast> {
 }
 
 #[derive(Debug)]
-pub(super) struct Func<'ast> {
+pub(super) struct Func {
+    args: Vec<Option<Pointer>>,
+    arg_values: HashableHashMap<(ObjectId, JsWord), Assignment>,
+}
+
+#[derive(Debug)]
+pub(super) struct StaticFunctionData<'ast> {
     cfg: SimpleCFG<'ast>,
     node_priorities: FxHashMap<Node<'ast>, usize>,
-    args: Vec<Option<Pointer>>,
-    arg_values: Lattice,
     param_names: Vec<Id>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub(super) struct Call {
     func: FnId,
-    args: Vec<Option<Pointer>>,
-    prop_assignments: FxHashMap<ObjectId, FxHashMap<JsWord, Assignment>>,
+    args: CallArgs,
+    prop_assignments: HashableHashMap<(ObjectId, JsWord), Assignment>,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+enum CallArgs {
+    Heap(Box<[Option<Pointer>]>),
+    /// Number of consecutive `None`s
+    Invalid(usize),
+}
+
+impl CallArgs {
+    fn get(&self, index: usize) -> Option<Option<Pointer>> {
+        match self {
+            CallArgs::Heap(args) => args.get(index).copied(),
+            CallArgs::Invalid(len) => {
+                if index >= *len {
+                    None
+                } else {
+                    Some(None)
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+struct CallArgBuilder {
+    len: usize,
+    args: Option<Vec<Option<Pointer>>>,
+    none_count: usize,
+}
+
+impl CallArgBuilder {
+    fn new(len: usize) -> Self {
+        Self {
+            len,
+            args: None,
+            none_count: 0,
+        }
+    }
+
+    fn push(&mut self, arg: Option<Pointer>) {
+        if let Some(args) = &mut self.args {
+            args.push(arg);
+        } else {
+            if arg.is_none() {
+                self.none_count += 1;
+            } else {
+                let mut new = Vec::new();
+                new.reserve_exact(self.len);
+                new.extend(std::iter::repeat(None).take(self.none_count));
+                new.push(arg);
+                self.args = Some(new);
+            }
+        }
+    }
+
+    fn finish(self) -> CallArgs {
+        match self.args {
+            Some(args) => {
+                debug_assert_eq!(self.len, args.len());
+                debug_assert!(self.len > 0);
+                CallArgs::Heap(args.into_boxed_slice())
+            }
+            None => {
+                debug_assert_eq!(self.len, self.none_count);
+                CallArgs::Invalid(self.none_count)
+            }
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
 pub(super) struct ResolvedCall {
-    return_type: FxHashSet<Option<Pointer>>,
-    prop_assignments: FxHashMap<ObjectId, FxHashMap<JsWord, Assignment>>,
+    return_type: Option<Pointer>,
+    prop_assignments: HashableHashMap<(ObjectId, JsWord), Assignment>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Hash, Eq)]
 pub(super) struct Union {
-    constituents: FxHashSet<ObjectId>,
+    constituents: Vec<ObjectId>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) struct Assignment {
     rhs: Option<Pointer>,
 }
@@ -862,76 +991,135 @@ fn is_simple_prop_name(prop_name: &PropName, unresolved_ctxt: SyntaxContext) -> 
 
 fn get_property(
     lattice: &Lattice,
-    unions: &mut IndexVec<UnionId, Union>,
-    invalid_objects: &mut GrowableBitSet<ObjectId>,
+    unions: &mut UnionStore,
     pointer: Pointer,
     key: &JsWord,
     null_or_void: ObjectId,
+    invalid_objects: &mut GrowableBitSet<ObjectId>,
 ) -> Option<Pointer> {
+    let invalid = match pointer {
+        Pointer::Object(obj) => invalid_objects.contains(obj),
+        Pointer::Union(_) => {
+            if invalidated(pointer, invalid_objects, unions) {
+                invalidate(
+                    invalid_objects,
+                    unions,
+                    Some(pointer),
+                    &lattice.prop_assignments,
+                    Some(Pointer::Object(null_or_void)),
+                );
+                true
+            } else {
+                false
+            }
+        }
+        _ => true,
+    };
+    if invalid {
+        if cfg!(debug_assertions) {
+            match pointer {
+                Pointer::Object(obj) => {
+                    let prop = lattice
+                        .prop_assignments
+                        .get(&(obj, key.clone()))
+                        .map(|a| a.rhs)
+                        .unwrap_or_default();
+                    debug_assert!(
+                        prop.is_none() || invalidated(prop.unwrap(), invalid_objects, unions)
+                    );
+                }
+                Pointer::Union(union) => {
+                    for constituent in unions[union].constituents() {
+                        let constituent = lattice
+                            .prop_assignments
+                            .get(&(constituent, key.clone()))
+                            .map(|a| a.rhs)
+                            .unwrap_or_default();
+                        debug_assert!(
+                            constituent.is_none()
+                                || invalidated(constituent.unwrap(), invalid_objects, unions)
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        return None;
+    }
     match pointer {
         Pointer::Object(obj) => lattice
             .prop_assignments
-            .get(&obj)
-            .and_then(|props| props.get(key))
+            .get(&(obj, key.clone()))
             .map(|a| a.rhs)
             .unwrap_or(Some(Pointer::Object(null_or_void))),
         Pointer::Union(union) => {
-            let mut constituents = FxHashSet::default();
+            let mut builder = UnionBuilder::new(null_or_void);
 
-            let mut invalid = false;
-
-            for constituent in &unions[union].constituents {
+            for constituent in unions[union].constituents() {
                 let constituent = lattice
                     .prop_assignments
-                    .get(&constituent)
-                    .and_then(|props| props.get(key))
+                    .get(&(constituent, key.clone()))
                     .map(|a| a.rhs)
                     .unwrap_or(Some(Pointer::Object(null_or_void)));
 
-                match constituent {
-                    Some(Pointer::Object(obj)) => {
-                        constituents.insert(obj);
-                    }
-                    Some(Pointer::Union(union)) => {
-                        constituents.extend(unions[union].constituents.iter().copied());
-                    }
-                    None => {
-                        invalid = true;
-                    }
-                    _ => todo!(),
-                };
+                builder.add(constituent, &unions);
             }
 
-            if constituents.len() == 0 {
-                return None;
-            }
-
-            let result = if constituents.len() == 1 {
-                Some(Pointer::Object(constituents.into_iter().next().unwrap()))
-            } else {
-                constituents.remove(&null_or_void);
-                let union = Union { constituents };
-
-                if let Some((existing, _)) = unions.iter_enumerated().find(|(_, u)| *u == &union) {
-                    Some(Pointer::Union(existing))
-                } else {
-                    Some(Pointer::Union(unions.push(union)))
-                }
-            };
-
-            if invalid {
-                invalidate(invalid_objects, &unions, result, &lattice, null_or_void);
-            }
-
-            result
+            unions.build_union(builder)
         }
-        _ => todo!(),
+        Pointer::Fn(_) => None,
+    }
+}
+
+#[derive(Debug)]
+struct CowLattice<'a>(Cow<'a, Lattice>);
+
+impl Deref for CowLattice<'_> {
+    type Target = Lattice;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl CowLattice<'_> {
+    fn insert_var_assignment(&mut self, name: Id, value: Assignment) {
+        if let Some(existing) = self.0.var_assignments.get(&name) {
+            if *existing == value {
+                return;
+            }
+        }
+
+        self.0.to_mut().var_assignments.insert(name, value);
+    }
+
+    fn insert_prop_assignment(&mut self, prop: (ObjectId, JsWord), value: Assignment) {
+        if let Some(existing) = self.0.prop_assignments.get(&prop) {
+            if *existing == value {
+                return;
+            }
+        }
+
+        self.0.to_mut().prop_assignments.insert(prop, value);
+    }
+
+    fn get_var(
+        &self,
+        id: &Id,
+        fn_assignments: &HashableHashMap<Id, Assignment>,
+    ) -> Option<Assignment> {
+        self.0
+            .var_assignments
+            .get(id)
+            .or_else(|| fn_assignments.get(id))
+            .copied()
     }
 }
 
 #[derive(Debug)]
 struct Analyser<'ast, 'a> {
-    lattice: &'a mut Lattice,
+    lattice: CowLattice<'a>,
     store: &'a mut Store<'ast>,
     in_fn: bool,
 }
@@ -941,10 +1129,10 @@ impl<'ast> Analyser<'ast, '_> {
         get_property(
             &self.lattice,
             &mut self.store.unions,
-            &mut self.store.invalid_objects,
             pointer,
             key,
             self.store.null_or_void,
+            &mut self.store.invalid_objects,
         )
     }
 
@@ -963,7 +1151,10 @@ impl<'ast> Analyser<'ast, '_> {
     ) -> Option<Pointer> {
         if let Some(slot) = slot {
             let existing = match &slot {
-                Slot::Var(name) => self.lattice.var_assignments.get(&name).and_then(|a| a.rhs),
+                Slot::Var(name) => self
+                    .lattice
+                    .get_var(&name, &self.store.fn_assignments)
+                    .and_then(|a| a.rhs),
                 Slot::Prop(obj, key) => self.get_property(*obj, &key),
             };
 
@@ -977,30 +1168,26 @@ impl<'ast> Analyser<'ast, '_> {
             let new = Assignment { rhs };
             match slot {
                 Slot::Var(name) => {
-                    self.lattice.var_assignments.insert(name, new);
+                    self.lattice.insert_var_assignment(name, new);
                 }
                 Slot::Prop(obj, key) => {
                     if self.store.invalidated(obj) {
                         self.store.invalidate(rhs, &self.lattice);
-                    }
-                    match obj {
-                        Pointer::Object(obj) => {
-                            self.lattice
-                                .prop_assignments
-                                .entry(obj)
-                                .or_default()
-                                .insert(key, new);
-                        }
-                        Pointer::Union(union) => {
-                            for &constituent in &self.store.unions[union].constituents {
-                                self.lattice
-                                    .prop_assignments
-                                    .entry(constituent)
-                                    .or_default()
-                                    .insert(key.clone(), new);
+                    } else {
+                        match obj {
+                            Pointer::Object(obj) => {
+                                self.lattice.insert_prop_assignment((obj, key), new);
+                            }
+                            Pointer::Union(union) => {
+                                for constituent in self.store.unions[union].constituents() {
+                                    self.lattice
+                                        .insert_prop_assignment((constituent, key.clone()), new);
+                                }
+                            }
+                            Pointer::Fn(_) => {
+                                unreachable!();
                             }
                         }
-                        _ => todo!(),
                     }
                 }
             };
@@ -1070,7 +1257,10 @@ impl<'ast> Analyser<'ast, '_> {
     fn invalidate_slot(&mut self, node: Node<'ast>, conditional: bool) {
         if let Some(lhs) = self.visit_and_get_slot(node, conditional) {
             let value = match lhs {
-                Slot::Var(name) => self.lattice.var_assignments.get(&name).and_then(|a| a.rhs),
+                Slot::Var(name) => self
+                    .lattice
+                    .get_var(&name, &self.store.fn_assignments)
+                    .and_then(|a| a.rhs),
                 Slot::Prop(obj, key) => self.get_property(obj, &key),
             };
             self.store.invalidate(value, &self.lattice);
@@ -1117,7 +1307,7 @@ impl<'ast> Analyser<'ast, '_> {
                                     }
                                 }
                                 ObjectPatProp::Assign(_) => {
-                                    unreachable!("removed my normalization");
+                                    unreachable!("removed by normalization");
                                 }
                                 ObjectPatProp::Rest(rest) => {
                                     debug_assert!(lhs.props.last().unwrap() == prop);
@@ -1232,142 +1422,114 @@ impl<'ast> Analyser<'ast, '_> {
         }
     }
 
-    fn call_fn(&mut self, func: FnId, args: Vec<Option<Pointer>>) -> Option<Pointer> {
-        // println!("Calling func {:?}, args: {:#?}", func, &args);
-        // dbg!(&self.store.functions[func]);
-        // let mut prop_assignments: FxHashMap<ObjectId, FxHashMap<JsWord, Option<Pointer>>> =
-        //     FxHashMap::default();
+    fn call_fn(&mut self, func: FnId, args: CallArgs) -> Option<Pointer> {
+        let mut prop_assignments: HashableHashMap<(ObjectId, JsWord), Assignment> =
+            HashableHashMap::default();
 
-        // let mut queue = args.clone();
+        if let CallArgs::Heap(args) = &args {
+            let mut queue = Vec::new();
+            for arg in args.iter() {
+                match arg {
+                    Some(Pointer::Object(o)) => {
+                        queue.push(*o);
+                    }
+                    Some(Pointer::Union(union)) => {
+                        queue.extend(self.store.unions[*union].constituents());
+                    }
+                    _ => {}
+                }
+            }
 
-        // while let Some(pointer) = queue.pop() {
-        //     match pointer {
-        //         Some(Pointer::Object(o)) => match prop_assignments.entry(o) {
-        //             std::collections::hash_map::Entry::Occupied(_) => {}
-        //             std::collections::hash_map::Entry::Vacant(entry) => {
-        //                 if let Some(props) = self.lattice.prop_assignments.get(&o) {
-        //                     let mut new = FxHashMap::default();
-        //                     new.reserve(props.len());
-        //                     for (key, rhs) in props {
-        //                         new.insert(key.clone(), rhs.rhs);
-        //                         queue.push(rhs.rhs);
-        //                     }
-        //                     entry.insert(new);
-        //                 }
-        //             }
-        //         },
-        //         Some(Pointer::Union(u)) => {
-        //             for constituent in &self.store.unions[u].constituents {
-        //                 match prop_assignments.entry(*constituent) {
-        //                     std::collections::hash_map::Entry::Occupied(_) => {}
-        //                     std::collections::hash_map::Entry::Vacant(entry) => {
-        //                         if let Some(props) = self.lattice.prop_assignments.get(constituent)
-        //                         {
-        //                             let mut new = FxHashMap::default();
-        //                             new.reserve(props.len());
-        //                             for (key, rhs) in props {
-        //                                 new.insert(key.clone(), rhs.rhs);
-        //                                 queue.push(rhs.rhs);
-        //                             }
-        //                             entry.insert(new);
-        //                         }
-        //                     }
-        //                 }
-        //             }
-        //         }
-        //         None => {}
-        //         _ => todo!(),
-        //     }
-        // }
+            let mut done = FxHashSet::default();
+
+            while let Some(o) = queue.pop() {
+                if self.store.invalid_objects.contains(o) || done.contains(&o) {
+                    continue;
+                }
+
+                done.insert(o);
+
+                for (key, value) in self.lattice.prop_assignments.iter() {
+                    if key.0 == o {
+                        prop_assignments.insert(key.clone(), *value);
+                        match value.rhs {
+                            Some(Pointer::Object(o)) => {
+                                if !done.contains(&o) {
+                                    queue.push(o);
+                                }
+                            }
+                            Some(Pointer::Union(union)) => {
+                                for constituent in self.store.unions[union].constituents() {
+                                    if !done.contains(&constituent) {
+                                        queue.push(constituent);
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
 
         let call = Call {
             func,
             args,
-            prop_assignments: self.lattice.prop_assignments.clone(),
+            prop_assignments,
         };
 
-        let call = if let Some((existing, _)) = self
-            .store
-            .calls
-            .iter_enumerated()
-            .find(|(_, c)| *c == &call)
-        {
-            existing
-        } else {
-            self.store.calls.push(call)
+        let depends_on_unresolved_call = |pointer| match pointer {
+            Some(Pointer::Object(o)) => o == self.store.resolving_call_object,
+            Some(Pointer::Union(union)) => {
+                self.store.unions[union].contains(self.store.resolving_call_object)
+            }
+            Some(Pointer::Fn(_)) => false,
+            None => false,
         };
+
+        if cfg!(debug_assertions) {
+            if let CallArgs::Heap(args) = &call.args {
+                for &arg in args.iter() {
+                    debug_assert!(!depends_on_unresolved_call(arg));
+                }
+            }
+
+            debug_assert!(!call
+                .prop_assignments
+                .keys()
+                .any(|(o, _)| *o == self.store.resolving_call_object));
+            debug_assert!(!call
+                .prop_assignments
+                .values()
+                .any(|p| depends_on_unresolved_call(p.rhs)));
+        }
+
+        let call = self.store.calls.insert(call);
 
         resolve_call(call, self.store);
 
         // Merge property assignments.
-        for (obj, props) in &self.store.resolved_calls[&call].prop_assignments {
-            for (key, prop) in props {
-                match self
-                    .lattice
-                    .prop_assignments
-                    .entry(*obj)
-                    .or_default()
-                    .entry(key.clone())
-                {
-                    Entry::Occupied(mut entry) => {
-                        let union = create_union(
-                            &mut self.store.unions,
-                            entry.get().rhs,
-                            prop.rhs,
-                            Some(Pointer::Object(self.store.null_or_void)),
-                        );
-                        entry.insert(Assignment { rhs: union });
-                    }
-                    Entry::Vacant(entry) => {
-                        entry.insert(prop.clone());
-                    }
-                }
+        for ((obj, key), prop) in self.store.resolved_calls[&call].prop_assignments.iter() {
+            if self.store.invalid_objects.contains(*obj) {
+                debug_assert!(prop.rhs.is_none() || self.store.invalidated(prop.rhs.unwrap()));
+                continue;
             }
+            let key = (*obj, key.clone());
+            let new = if let Some(existing) = self.lattice.prop_assignments.get(&key) {
+                let union = create_union(
+                    &mut self.store.unions,
+                    existing.rhs,
+                    prop.rhs,
+                    self.store.null_or_void,
+                );
+                Assignment { rhs: union }
+            } else {
+                prop.clone()
+            };
+            self.lattice.insert_prop_assignment(key, new);
         }
 
-        let return_types = &self.store.resolved_calls[&call].return_type;
-
-        let mut constituents = FxHashSet::default();
-        let mut invalid = false;
-
-        for ty in return_types {
-            match ty {
-                Some(Pointer::Object(o)) => {
-                    constituents.insert(*o);
-                }
-                Some(Pointer::Union(union)) => {
-                    constituents.extend(self.store.unions[*union].constituents.iter().copied());
-                }
-                None => {
-                    invalid = true;
-                }
-                t => todo!("{:#?}", t),
-            }
-        }
-
-        let pointer = match constituents.len() {
-            0 => None,
-            1 => Some(Pointer::Object(constituents.into_iter().next().unwrap())),
-            _ => {
-                constituents.remove(&self.store.null_or_void);
-                let union = Union { constituents };
-
-                if let Some((existing, _)) = self
-                    .store
-                    .unions
-                    .iter_enumerated()
-                    .find(|(_, u)| *u == &union)
-                {
-                    Some(Pointer::Union(existing))
-                } else {
-                    Some(Pointer::Union(self.store.unions.push(union)))
-                }
-            }
-        };
-        if invalid {
-            self.store.invalidate(pointer, &self.lattice);
-        }
-        pointer
+        self.store.resolved_calls[&call].return_type
     }
 
     fn visit_and_get_object(&mut self, node: Node<'ast>, conditional: bool) -> Option<Pointer> {
@@ -1395,7 +1557,7 @@ impl<'ast> Analyser<'ast, '_> {
                 }
                 None
             }
-            Node::ThisExpr(_) => todo!(),
+            Node::ThisExpr(_) => None,
             Node::ArrayLit(node) => {
                 for element in &node.elems {
                     if let Some(element) = element {
@@ -1497,13 +1659,23 @@ impl<'ast> Analyser<'ast, '_> {
             Node::CallExpr(node) => {
                 let callee = self.visit_and_get_object(Node::from(&node.callee), conditional);
                 if let Some(Pointer::Fn(func)) = callee {
-                    let args = node
-                        .args
-                        .iter()
-                        .map(|arg| self.visit_and_get_object(Node::from(arg), conditional))
-                        .collect();
+                    let mut args = CallArgBuilder::new(node.args.len());
+                    for arg in &node.args {
+                        let mut arg = self.visit_and_get_object(Node::from(arg), conditional);
+                        if let Some(Pointer::Object(o)) = arg {
+                            if self.store.invalid_objects.contains(o) {
+                                arg = None;
+                            }
+                        }
+                        if let Some(Pointer::Union(union)) = arg {
+                            if union.invalid() {
+                                arg = None;
+                            }
+                        }
+                        args.push(arg);
+                    }
                     // TODO: only call whe in_fn is true?
-                    self.call_fn(func, args)
+                    self.call_fn(func, args.finish())
                 } else {
                     self.store.invalidate(callee, &self.lattice);
 
@@ -1577,8 +1749,7 @@ impl<'ast> Analyser<'ast, '_> {
             Node::Ident(node) => {
                 let id = node.to_id();
                 self.lattice
-                    .var_assignments
-                    .get(&id)
+                    .get_var(&id, &self.store.fn_assignments)
                     .and_then(|assign| assign.rhs)
             }
             Node::PrivateName(_) => todo!(),
@@ -1629,7 +1800,11 @@ impl<'ast> Analyser<'ast, '_> {
             Node::Function(node) => {
                 let func = *self.store.function_map.get(&node.node_id).unwrap();
 
-                for (i, param_name) in self.store.functions[func].param_names.iter().enumerate() {
+                for (i, param_name) in self.store.static_fn_data[func]
+                    .param_names
+                    .iter()
+                    .enumerate()
+                {
                     let value = self.store.functions[func]
                         .args
                         .get(i)
@@ -1637,33 +1812,29 @@ impl<'ast> Analyser<'ast, '_> {
                         .unwrap_or(Some(Pointer::Object(self.store.null_or_void)));
 
                     self.lattice
-                        .var_assignments
-                        .insert(param_name.clone(), Assignment { rhs: value });
+                        .insert_var_assignment(param_name.clone(), Assignment { rhs: value });
                 }
 
-                for (obj, props) in &self.store.functions[func].arg_values.prop_assignments {
-                    for (key, prop) in props {
-                        match self
-                            .lattice
-                            .prop_assignments
-                            .entry(*obj)
-                            .or_default()
-                            .entry(key.clone())
-                        {
-                            Entry::Occupied(mut entry) => {
-                                let union = create_union(
-                                    &mut self.store.unions,
-                                    entry.get().rhs,
-                                    prop.rhs,
-                                    Some(Pointer::Object(self.store.null_or_void)),
-                                );
-                                entry.insert(Assignment { rhs: union });
-                            }
-                            Entry::Vacant(entry) => {
-                                entry.insert(prop.clone());
-                            }
-                        }
+                for ((obj, key), prop) in self.store.functions[func].arg_values.iter() {
+                    if self.store.invalid_objects.contains(*obj) {
+                        debug_assert!(
+                            prop.rhs.is_none() || self.store.invalidated(prop.rhs.unwrap())
+                        );
+                        continue;
                     }
+                    let key = (*obj, key.clone());
+                    let new = if let Some(existing) = self.lattice.prop_assignments.get(&key) {
+                        let union = create_union(
+                            &mut self.store.unions,
+                            existing.rhs,
+                            prop.rhs,
+                            self.store.null_or_void,
+                        );
+                        Assignment { rhs: union }
+                    } else {
+                        prop.clone()
+                    };
+                    self.lattice.insert_prop_assignment(key, new);
                 }
             }
             Node::VarDecl(node) => {
@@ -1738,8 +1909,8 @@ impl<'ast> Analyser<'ast, '_> {
             Node::AssignPatProp(_) => todo!(),
             Node::KeyValueProp(_) => todo!(),
             Node::AssignProp(_) => todo!(),
-            Node::GetterProp(_) => todo!(),
-            Node::SetterProp(_) => todo!(),
+            Node::GetterProp(_) => {}
+            Node::SetterProp(_) => {}
             Node::MethodProp(_) => todo!(),
             Node::ComputedPropName(_) => todo!(),
             Node::SpreadAssignment(_) => todo!(),
@@ -1760,21 +1931,35 @@ impl<'ast> Analyser<'ast, '_> {
             Node::ThrowStmt(node) => {
                 self.visit_and_get_object(Node::from(node.arg.as_ref()), conditional);
             }
-            Node::TryStmt(_) => todo!(),
+            Node::TryStmt(_) => {}
             Node::WhileStmt(node) => {
                 self.visit_and_get_object(Node::from(node.test.as_ref()), conditional);
             }
             Node::DoWhileStmt(node) => {
                 self.visit_and_get_object(Node::from(node.test.as_ref()), conditional);
             }
-            Node::ForInStmt(_) => todo!(),
+            Node::ForInStmt(node) => {
+                let right = self.visit_and_get_object(Node::from(node.right.as_ref()), conditional);
+                self.store.invalidate(right, &self.lattice);
+            }
             Node::ForOfStmt(_) => todo!(),
             Node::SwitchCase(node) => {
                 if let Some(test) = &node.test {
                     self.visit_and_get_object(Node::from(test.as_ref()), conditional);
                 }
             }
-            Node::CatchClause(_) => todo!(),
+            Node::CatchClause(node) => {
+                if let Some(param) = &node.param {
+                    match param {
+                        Pat::Array(_) | Pat::Object(_) => {
+                            self.visit_destructuring(Node::from(param), None, conditional);
+                        }
+                        _ => {
+                            self.invalidate_slot(Node::from(param), conditional);
+                        }
+                    }
+                }
+            }
 
             Node::Str(_)
             | Node::Bool(_)
@@ -1806,24 +1991,20 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
             .edges(self.cfg.map[&node])
             .any(|e| *e.weight() == Branch::ON_EX);
 
-        // TODO: use Cow to avoid cloning and doing equality checks for nodes
-        // that don't change the state. If the Cow is still Cow::Borrowed after
-        // the analysis then there is no need for equality checks.
-        let mut new = self.lattice_elements[input].clone();
-
         let mut v = Analyser {
-            lattice: &mut new,
+            lattice: CowLattice(Cow::Borrowed(&self.lattice_elements[input])),
             store,
             in_fn,
         };
 
         v.init(node, conditional);
 
-        if new != self.lattice_elements[input] {
-            self.add_lattice_element(new)
-        } else {
-            // No changes compared to input.
-            input
+        match v.lattice.0 {
+            Cow::Borrowed(_) => {
+                // No changes compared to input.
+                input
+            }
+            Cow::Owned(new) => self.add_lattice_element(new),
         }
     }
 }
@@ -1843,31 +2024,39 @@ impl<'ast> JoinOp {
         let input = &analysis[input];
 
         // Merge property assignments.
-        for (obj, props) in &input.prop_assignments {
-            for (key, prop) in props {
-                match self
-                    .result
-                    .prop_assignments
-                    .entry(*obj)
-                    .or_default()
-                    .entry(key.clone())
-                {
-                    Entry::Occupied(mut entry) => {
-                        let union = store.create_union(entry.get().rhs, prop.rhs);
-                        entry.insert(Assignment { rhs: union });
-                    }
-                    Entry::Vacant(entry) => {
-                        entry.insert(prop.clone());
-                    }
+        for ((obj, key), prop) in input.prop_assignments.iter() {
+            if store.invalid_objects.contains(*obj) {
+                debug_assert!(prop.rhs.is_none() || store.invalidated(prop.rhs.unwrap()));
+                continue;
+            }
+            match self.result.prop_assignments.entry((*obj, key.clone())) {
+                Entry::Occupied(entry) => {
+                    let union = create_union(
+                        &mut store.unions,
+                        entry.get().rhs,
+                        prop.rhs,
+                        store.null_or_void,
+                    );
+                    self.result
+                        .prop_assignments
+                        .insert((*obj, key.clone()), Assignment { rhs: union });
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(prop.clone());
                 }
             }
         }
 
         // Merge variable assignments.
-        for (name, assignment) in &input.var_assignments {
+        for (name, assignment) in input.var_assignments.iter() {
             match self.result.var_assignments.entry(name.clone()) {
                 Entry::Occupied(mut entry) => {
-                    let union = store.create_union(entry.get().rhs, assignment.rhs);
+                    let union = create_union(
+                        &mut store.unions,
+                        entry.get().rhs,
+                        assignment.rhs,
+                        store.null_or_void,
+                    );
                     entry.insert(Assignment { rhs: union });
                 }
                 Entry::Vacant(entry) => {
@@ -1882,10 +2071,10 @@ impl<'ast> JoinOp {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Default)]
+#[derive(Clone, Debug, PartialEq, Default, Hash, Eq)]
 pub(super) struct Lattice {
-    var_assignments: FxHashMap<Id, Assignment>,
-    prop_assignments: FxHashMap<ObjectId, FxHashMap<JsWord, Assignment>>,
+    var_assignments: HashableHashMap<Id, Assignment>,
+    prop_assignments: HashableHashMap<(ObjectId, JsWord), Assignment>,
 }
 
 impl Annotation for Lattice {}
