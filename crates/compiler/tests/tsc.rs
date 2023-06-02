@@ -37,7 +37,7 @@ use testing::{NormalizedOutput, StdErr};
 //     panic!();
 // }
 
-fn add_test<F: FnOnce() + Send + 'static>(
+fn add_test<F: FnOnce() -> Result<(), String> + Send + 'static>(
     tests: &mut Vec<TestDescAndFn>,
     name: String,
     ignore: bool,
