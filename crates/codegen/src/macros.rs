@@ -26,10 +26,10 @@ macro_rules! emit {
 
 macro_rules! keyword {
     ($emitter:expr, $span:expr, $s:expr) => {
-        $emitter.wr.write_keyword(Some($span), $s)?;
+        $emitter.wr.write_keyword(Some($span), $s)?
     };
     ($emitter:expr, $s:expr) => {
-        $emitter.wr.write_keyword(None, $s)?;
+        $emitter.wr.write_keyword(None, $s)?
     };
 }
 
@@ -45,7 +45,7 @@ macro_rules! punct {
         $emitter.wr.write_semi(None)?;
     };
     ($emitter:expr, $s:expr) => {
-        $emitter.wr.write_punct(None, $s)?;
+        $emitter.wr.write_punct(None, $s)?
     };
 }
 

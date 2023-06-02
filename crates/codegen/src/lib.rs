@@ -1019,7 +1019,7 @@ impl<'a> Emitter<'a> {
             formatting_space!();
             emit!(body);
         } else {
-            formatting_semi!()
+            formatting_semi!();
         }
     }
 
@@ -1070,7 +1070,7 @@ impl<'a> Emitter<'a> {
 
         if n.readonly {
             keyword!("readonly");
-            space!()
+            space!();
         }
 
         if n.is_static {
@@ -1172,7 +1172,7 @@ impl<'a> Emitter<'a> {
 
         if node.function.is_async {
             keyword!("async");
-            space!()
+            space!();
         }
         keyword!("function");
 
@@ -1210,7 +1210,7 @@ impl<'a> Emitter<'a> {
             formatting_space!();
             emit!(body);
         } else {
-            formatting_semi!()
+            formatting_semi!();
         }
     }
 
@@ -1323,9 +1323,9 @@ impl<'a> Emitter<'a> {
 
         if let Some(ref arg) = node.arg {
             if arg.starts_with_alpha_num() {
-                space!()
+                space!();
             } else {
-                formatting_space!()
+                formatting_space!();
             }
             emit!(node.arg);
         }
@@ -2250,7 +2250,7 @@ impl<'a> Emitter<'a> {
         if node.body.starts_with_alpha_num() {
             space!();
         } else {
-            formatting_space!()
+            formatting_space!();
         }
         emit!(node.body);
 

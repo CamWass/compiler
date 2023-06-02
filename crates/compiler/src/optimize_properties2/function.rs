@@ -219,7 +219,7 @@ impl<'ast> Analyser<'_, 'ast> {
                                 }
                             }
                             ObjectPatProp::Assign(_) => {
-                                unreachable!("removed my normalization");
+                                unreachable!("removed by normalization");
                             }
                             ObjectPatProp::Rest(rest) => {
                                 debug_assert!(lhs.props.last().unwrap() == prop);

@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 extern crate proc_macro;
 
 use ahash::AHashSet;
@@ -17,20 +19,18 @@ use syn::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Mode {
     Visit,
-    VisitAll,
 }
 
 impl Mode {
     fn trait_name(self) -> &'static str {
         match self {
-            Mode::VisitAll => "VisitAll",
             Mode::Visit => "Visit",
         }
     }
 
     fn prefix(self) -> &'static str {
         match self {
-            Mode::Visit | Mode::VisitAll => "visit",
+            Mode::Visit => "visit",
         }
     }
 }
@@ -215,10 +215,6 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
                     }
                 })
                 .parse(),
-                Mode::VisitAll => Block {
-                    brace_token: def_site(),
-                    stmts: Default::default(),
-                },
             }),
         );
 
@@ -295,89 +291,89 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
     // Add VisitWith
     {
         match mode {
-        Mode::Visit => {
-            tokens.push_tokens(&q!({
-            pub trait VisitWith<V: Visit> {
-                fn visit_with(&self, v: &mut V, parent: Option<BoundNode>);
+            Mode::Visit => {
+                tokens.push_tokens(&q!({
+                    pub trait VisitWith<V: Visit> {
+                        fn visit_with(&self, v: &mut V, parent: Option<BoundNode>);
 
-                /// Visit children nodes of self with `v`
-                fn visit_children_with(&self, v: &mut V, parent: Option<BoundNode>);
+                        /// Visit children nodes of self with `v`
+                        fn visit_children_with(&self, v: &mut V, parent: Option<BoundNode>);
+                    }
+                }));
+
+                tokens.push_tokens(&q!({
+                    impl<V, T> VisitWith<V> for Box<T>
+                    where
+                        V: Visit,
+                        T: VisitWith<V>,
+                    {
+                        fn visit_with(&self, v: &mut V, parent: Option<BoundNode>) {
+                            (**self).visit_with(v, parent)
+                        }
+
+                        /// Visit children nodes of self with `v`
+                        fn visit_children_with(&self, v: &mut V, parent: Option<BoundNode>) {
+                            (**self).visit_children_with(v, parent)
+                        }
+                    }
+
+                    impl<V, T> VisitWith<V> for Vec<T>
+                    where
+                        V: Visit,
+                        T: VisitWith<V>,
+                    {
+                        fn visit_with(&self, v: &mut V, parent: Option<BoundNode>) {
+                            self.iter().for_each(|n| n.visit_with(v, parent.clone()))
+                        }
+
+                        /// Visit children nodes of self with `v`
+                        fn visit_children_with(&self, v: &mut V, parent: Option<BoundNode>) {
+                            self.iter()
+                                .for_each(|n| n.visit_children_with(v, parent.clone()))
+                        }
+                    }
+
+                    impl<V, T> VisitWith<V> for Option<T>
+                    where
+                        V: Visit,
+                        T: VisitWith<V>,
+                    {
+                        fn visit_with(&self, v: &mut V, parent: Option<BoundNode>) {
+                            self.as_ref().map(|n| n.visit_with(v, parent));
+                        }
+
+                        /// Visit children nodes of self with `v`
+                        fn visit_children_with(&self, v: &mut V, parent: Option<BoundNode>) {
+                            self.as_ref().map(|n| n.visit_children_with(v, parent));
+                        }
+                    }
+                }));
             }
-        }));
+            // Mode::VisitAll => q!({
+            //     pub trait VisitAllWith<V: VisitAll> {
+            //         fn visit_all_with(&self, _parent: &dyn Node, v: &mut V);
 
-        tokens.push_tokens(&q!({
-            impl<V, T> VisitWith<V> for Box<T>
-            where
-                V: Visit,
-                T: VisitWith<V>,
-            {
-                fn visit_with(&self, v: &mut V, parent: Option<BoundNode>) {
-                    (**self).visit_with(v, parent)
-                }
+            //         /// Visit children nodes of self with `v`
+            //         fn visit_all_children_with(&self, v: &mut V);
+            //     }
 
-                /// Visit children nodes of self with `v`
-                fn visit_children_with(&self, v: &mut V, parent: Option<BoundNode>) {
-                    (**self).visit_children_with(v, parent)
-                }
-            }
+            //     impl<V, T> VisitAllWith<V> for Box<T>
+            //     where
+            //         V: VisitAll,
+            //         T: 'static + VisitAllWith<V>,
+            //     {
+            //         fn visit_all_with(&self, _parent: &dyn Node, v: &mut V) {
+            //             (**self).visit_all_with(_parent, v)
+            //         }
 
-            impl<V, T> VisitWith<V> for Vec<T>
-            where
-                V: Visit,
-                T: VisitWith<V>,
-            {
-                fn visit_with(&self, v: &mut V, parent: Option<BoundNode>) {
-                    self.iter().for_each(|n| n.visit_with(v, parent.clone()))
-                }
-
-                /// Visit children nodes of self with `v`
-                fn visit_children_with(&self, v: &mut V, parent: Option<BoundNode>) {
-                    self.iter().for_each(|n| n.visit_children_with(v, parent.clone()))
-                }
-            }
-
-            impl<V, T> VisitWith<V> for Option<T>
-            where
-                V: Visit,
-                T: VisitWith<V>,
-            {
-                fn visit_with(&self, v: &mut V, parent: Option<BoundNode>) {
-                    self.as_ref().map(|n| n.visit_with(v, parent));
-                }
-
-                /// Visit children nodes of self with `v`
-                fn visit_children_with(&self, v: &mut V, parent: Option<BoundNode>) {
-                    self.as_ref().map(|n| n.visit_children_with(v, parent));
-                }
-            }
-        }));
-    },
-        _ => todo!()
-        // Mode::VisitAll => q!({
-        //     pub trait VisitAllWith<V: VisitAll> {
-        //         fn visit_all_with(&self, _parent: &dyn Node, v: &mut V);
-
-        //         /// Visit children nodes of self with `v`
-        //         fn visit_all_children_with(&self, v: &mut V);
-        //     }
-
-        //     impl<V, T> VisitAllWith<V> for Box<T>
-        //     where
-        //         V: VisitAll,
-        //         T: 'static + VisitAllWith<V>,
-        //     {
-        //         fn visit_all_with(&self, _parent: &dyn Node, v: &mut V) {
-        //             (**self).visit_all_with(_parent, v)
-        //         }
-
-        //         /// Visit children nodes of self with `v`
-        //         fn visit_all_children_with(&self, v: &mut V) {
-        //             let _parent = self as &dyn Node;
-        //             (**self).visit_all_children_with(v)
-        //         }
-        //     }
-        // }),
-    }
+            //         /// Visit children nodes of self with `v`
+            //         fn visit_all_children_with(&self, v: &mut V) {
+            //             let _parent = self as &dyn Node;
+            //             (**self).visit_all_children_with(v)
+            //         }
+            //     }
+            // }),
+        }
         // tokens.push_tokens(&trait_decl);
     }
 
@@ -510,11 +506,14 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
 //     }
 // }
 
-fn make_visit_expr(mode: Mode, ty: &Type, expr: Expr) -> Expr {
-    // let visit_name = method_name(mode, ty);
+// fn make_visit_expr(mode: Mode, ty: &Type, expr: Expr) -> Expr {
+//     // let visit_name = method_name(mode, ty);
 
-    // adjust_expr(ty, expr)
+//     // adjust_expr(ty, expr)
 
+//     q!(Vars { expr }, { expr.visit_with(visitor, parent.clone()) }).parse()
+// }
+fn make_visit_expr(expr: Expr) -> Expr {
     q!(Vars { expr }, { expr.visit_with(visitor, parent.clone()) }).parse()
 }
 
@@ -543,7 +542,6 @@ fn extract_base_type(ty: &Type) -> Type {
 }
 
 fn make_arm_from_struct(
-    mode: Mode,
     path: &Path,
     variant: &Fields,
     root_names: &AHashSet<String>,
@@ -572,7 +570,7 @@ fn make_arm_from_struct(
             )
             .parse();
 
-            let expr = make_visit_expr(mode, ty, expr);
+            let expr = make_visit_expr(expr);
             stmts.push(Stmt::Semi(expr, call_site()));
         }
 
@@ -671,7 +669,6 @@ fn make_method(
 
             let block = {
                 let arm = make_arm_from_struct(
-                    mode,
                     &s.ident.clone().into(),
                     &s.fields,
                     root_names,
@@ -686,7 +683,7 @@ fn make_method(
                     stmts: vec![
                         q!(
                             Vars {
-                                a: &s.ident.clone().to_string()
+                                // a: &s.ident.clone().to_string()
                             },
                             {
                                 {
@@ -740,7 +737,6 @@ fn make_method(
                     // }
 
                     let arm = make_arm_from_struct(
-                        mode,
                         &q!(
                             Vars {
                                 Enum: &e.ident,

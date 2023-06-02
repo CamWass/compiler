@@ -6,11 +6,6 @@ use syn::*;
 #[derive(Debug, FromField)]
 #[darling(attributes(span))]
 struct MyField {
-    /// Name of the field.
-    pub ident: Option<Ident>,
-    /// Type of the field.
-    pub ty: Type,
-
     /// `#[span(lo)]`
     #[darling(default)]
     pub lo: bool,

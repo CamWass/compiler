@@ -1,4 +1,4 @@
-#![warn(non_snake_case)]
+#![allow(non_snake_case)]
 #![warn(non_upper_case_globals)]
 #![warn(unused_variables)]
 #![deny(non_shorthand_field_patterns)]
@@ -1374,7 +1374,7 @@ impl<'ast> Analyser<'ast, '_> {
                 }
             }
             Node::AssignPatProp(_) => {
-                unreachable!("removed my normalization");
+                unreachable!("removed by normalization");
             }
 
             _ => {

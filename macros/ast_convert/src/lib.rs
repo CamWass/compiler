@@ -92,7 +92,7 @@ fn make_hash_impl(s: &ItemStruct) -> ItemImpl {
         Vars {
             ty: s.ident.clone(),
             cached_hash_field_name: Ident::new(CACHED_HASH_FIELD_NAME, call_site()),
-            default_block
+            // default_block
         },
         {
             impl Hash for ty {

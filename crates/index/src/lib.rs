@@ -1,5 +1,4 @@
 #![feature(allow_internal_unstable)]
-#![feature(bench_black_box)]
 #![feature(extend_one)]
 #![feature(unboxed_closures)]
 #![feature(test)]
