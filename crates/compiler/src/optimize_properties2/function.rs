@@ -116,16 +116,14 @@ impl<'ast> Analyser<'_, 'ast> {
     /// Records the given step. Redundant steps may be skipped.
     fn push(&mut self, step: Step) {
         // Redundant store elimination
-        if let Some(last) = self.steps.last() {
-            if let Step::StoreRValue(old_value) = last {
-                if let Step::StoreRValue(new_value) = &step {
-                    match (old_value, new_value) {
-                        (None, None) => return,
-                        (Some(RValue::NullOrVoid), Some(RValue::NullOrVoid)) => return,
-                        // (Some(RValue::Register(_)), Some(RValue::Register(_))) => todo!(),
-                        (Some(RValue::Object(o1)), Some(RValue::Object(o2))) if o1 == o2 => return,
-                        _ => {}
-                    }
+        if let Some(Step::StoreRValue(old_value)) = self.steps.last() {
+            if let Step::StoreRValue(new_value) = &step {
+                match (old_value, new_value) {
+                    (None, None) => return,
+                    (Some(RValue::NullOrVoid), Some(RValue::NullOrVoid)) => return,
+                    // (Some(RValue::Register(_)), Some(RValue::Register(_))) => todo!(),
+                    (Some(RValue::Object(o1)), Some(RValue::Object(o2))) if o1 == o2 => return,
+                    _ => {}
                 }
             }
         }
@@ -448,7 +446,7 @@ impl<'ast> Analyser<'_, 'ast> {
                 self.push(Step::StoreRValue(None));
             }
             Node::SeqExpr(node) => {
-                debug_assert!(node.exprs.len() > 0);
+                debug_assert!(!node.exprs.is_empty());
 
                 let mut i = 0;
                 while i < node.exprs.len() - 1 {

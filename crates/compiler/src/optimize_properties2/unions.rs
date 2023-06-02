@@ -175,6 +175,10 @@ pub(super) enum Union {
     Inline([Option<ObjectId>; MAX_INLINE_SIZE]),
 }
 
+// TODO: this is true in rust playground, may require newer nightly compiler.
+// See https://play.rust-lang.org/?version=nightly&mode=debug&edition=2021&gist=f869b77427f67327c5ea6ebf82b20e0a
+// assert_eq_size!(Union, Vec<ObjectId>);
+
 impl Union {
     fn is_empty(&self) -> bool {
         match self {
@@ -188,8 +192,7 @@ impl Union {
             Union::Heap(heap) => heap.len(),
             Union::Inline(inline) => {
                 let mut len = 0;
-                let mut iter = inline.iter();
-                while let Some(_) = iter.next() {
+                for _ in inline.iter() {
                     len += 1;
                 }
                 len
@@ -245,9 +248,6 @@ impl<'a> Iterator for Constituents<'a> {
 }
 
 impl FusedIterator for Constituents<'_> {}
-
-// TODO: this is true in rust playground, may require newer nightly compiler.
-// assert_eq_size!(Union, Vec<ObjectId>);
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
 pub(super) struct UnionId(NonZeroU32);

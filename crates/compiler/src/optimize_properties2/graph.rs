@@ -346,11 +346,9 @@ where
         self.index += 1;
 
         for w in g.neighbors(v) {
-            if node![w].rootindex.is_none() {
-                if self.visit(w, g) {
-                    // propagate abort
-                    return true;
-                }
+            if node![w].rootindex.is_none() && self.visit(w, g) {
+                // propagate abort
+                return true;
             }
             if node![w].rootindex < node![v].rootindex {
                 node![v].rootindex = node![w].rootindex;

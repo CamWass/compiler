@@ -22,10 +22,9 @@ use super::graph::{process, Visitor};
 use super::hashable_map::HashableHashMap;
 use super::simple_set::IndexSet;
 use super::unions::{UnionBuilder, UnionStore};
-use super::{function::*, CallArgBuilder, Func, StaticFunctionData};
 use super::{
-    Assignment, Call, CallArgs, CallId, FnId, Lattice, ObjectId, Pointer, ResolvedCall, SimpleCFG,
-    Store,
+    function::*, Assignment, Call, CallArgBuilder, CallArgs, CallId, FnId, Func, Lattice, ObjectId,
+    Pointer, PropertyAssignments, ResolvedCall, SimpleCFG, StaticFunctionData, Store,
 };
 
 struct Resolver<'a, 'ast> {
@@ -49,7 +48,7 @@ struct Resolver<'a, 'ast> {
     fn_assignments: &'a HashableHashMap<Id, Assignment>,
 
     return_types: RwLock<FxHashMap<CallId, FxHashSet<Option<ObjectId>>>>,
-    return_states: RwLock<FxHashMap<CallId, HashableHashMap<(ObjectId, JsWord), Assignment>>>,
+    return_states: RwLock<FxHashMap<CallId, PropertyAssignments>>,
 }
 
 impl Visitor<CallId> for Resolver<'_, '_> {
@@ -205,7 +204,7 @@ impl Visitor<CallId> for Resolver<'_, '_> {
                     None => {
                         self.functions.write().unwrap()[func]
                             .arg_values
-                            .insert(key, prop.clone());
+                            .insert(key, *prop);
                     }
                 }
             }
@@ -244,7 +243,7 @@ pub(super) fn resolve_call(call: CallId, store: &mut Store) {
         return;
     }
 
-    let mut visitor = Resolver {
+    let visitor = Resolver {
         call_templates: &store.call_templates,
         functions: RwLock::new(&mut store.functions),
         static_fn_data: &store.static_fn_data,
@@ -262,13 +261,13 @@ pub(super) fn resolve_call(call: CallId, store: &mut Store) {
         return_states: RwLock::default(),
     };
 
-    process(call, &mut visitor);
+    process(call, &visitor);
 
     debug_assert!(store.resolved_calls.contains_key(&call));
 }
 
 fn get_property(
-    prop_assignments: &HashableHashMap<(ObjectId, JsWord), Assignment>,
+    prop_assignments: &PropertyAssignments,
     unions: &RwLock<&mut UnionStore>,
     object: Option<Pointer>,
     key: &JsWord,
@@ -381,7 +380,7 @@ trait GetPropAssignments: Copy {
     );
 }
 
-impl<'a> GetPropAssignments for &'a HashableHashMap<(ObjectId, JsWord), Assignment> {
+impl<'a> GetPropAssignments for &'a PropertyAssignments {
     fn prop_assignments(
         &self,
         object: ObjectId,
@@ -676,11 +675,11 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                             RValue::Object(o) => self.get_call_obj(*o),
                             RValue::Prop(prop) => get_property(
                                 &machine.state.get(&self.lattice_elements).prop_assignments,
-                                &self.unions,
+                                self.unions,
                                 machine.get_r_value(),
                                 prop,
                                 self.null_or_void,
-                                &self.invalid_objects,
+                                self.invalid_objects,
                             ),
                         };
                         machine.set_r_value(value);
@@ -706,15 +705,15 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                     if let Some(slot) = &machine.l_value {
                         let existing = match &slot {
                             AssignTarget::Var(name) => machine
-                                .get_var(&name, &self.lattice_elements)
+                                .get_var(name, &self.lattice_elements)
                                 .and_then(|a| a.rhs),
                             AssignTarget::Prop(obj, key) => get_property(
                                 &machine.state.get(&self.lattice_elements).prop_assignments,
-                                &self.unions,
+                                self.unions,
                                 *obj,
-                                &key,
+                                key,
                                 self.null_or_void,
-                                &self.invalid_objects,
+                                self.invalid_objects,
                             ),
                         };
 
@@ -724,7 +723,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                         } else {
                             // union
                             create_union(
-                                &self.unions,
+                                self.unions,
                                 existing,
                                 machine.get_r_value(),
                                 self.null_or_void,
@@ -742,10 +741,10 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                             AssignTarget::Prop(obj, prop) => {
                                 if let Some(obj) = *obj {
                                     {
-                                        if invalidated(obj, &self.invalid_objects, &self.unions) {
+                                        if invalidated(obj, self.invalid_objects, self.unions) {
                                             invalidate(
-                                                &self.invalid_objects,
-                                                &self.unions,
+                                                self.invalid_objects,
+                                                self.unions,
                                                 rhs,
                                                 &machine
                                                     .state
@@ -781,8 +780,8 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                 } else {
                                     // Unknown/invalid assignment target.
                                     invalidate(
-                                        &self.invalid_objects,
-                                        &self.unions,
+                                        self.invalid_objects,
+                                        self.unions,
                                         machine.get_r_value(),
                                         &machine.state.get(&self.lattice_elements).prop_assignments,
                                         self.null_or_void_p,
@@ -793,8 +792,8 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                     } else {
                         // Unknown/invalid assignment target.
                         invalidate(
-                            &self.invalid_objects,
-                            &self.unions,
+                            self.invalid_objects,
+                            self.unions,
                             machine.get_r_value(),
                             &machine.state.get(&self.lattice_elements).prop_assignments,
                             self.null_or_void_p,
@@ -803,8 +802,8 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                 }
                 Step::InvalidateRValue => {
                     invalidate(
-                        &self.invalid_objects,
-                        &self.unions,
+                        self.invalid_objects,
+                        self.unions,
                         machine.get_r_value(),
                         &machine.state.get(&self.lattice_elements).prop_assignments,
                         self.null_or_void_p,
@@ -816,8 +815,8 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                             machine.get_var(id, &self.lattice_elements).map(|a| a.rhs)
                         {
                             invalidate(
-                                &self.invalid_objects,
-                                &self.unions,
+                                self.invalid_objects,
+                                self.unions,
                                 rhs,
                                 &machine.state.get(&self.lattice_elements).prop_assignments,
                                 self.null_or_void_p,
@@ -831,12 +830,12 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                             *obj,
                             prop,
                             self.null_or_void,
-                            &self.invalid_objects,
+                            self.invalid_objects,
                         );
 
                         invalidate(
-                            &self.invalid_objects,
-                            &self.unions,
+                            self.invalid_objects,
+                            self.unions,
                             prop,
                             &machine.state.get(&self.lattice_elements).prop_assignments,
                             self.null_or_void_p,
@@ -873,8 +872,8 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                     match machine.calls.last_mut().unwrap() {
                         MachineCall::Invalid => {
                             invalidate(
-                                &self.invalid_objects,
-                                &self.unions,
+                                self.invalid_objects,
+                                self.unions,
                                 arg,
                                 &machine.state.get(&self.lattice_elements).prop_assignments,
                                 self.null_or_void_p,
@@ -907,8 +906,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                     }
                     let args = args.finish();
 
-                    let mut prop_assignments: HashableHashMap<(ObjectId, JsWord), Assignment> =
-                        HashableHashMap::default();
+                    let mut prop_assignments: PropertyAssignments = HashableHashMap::default();
 
                     if let CallArgs::Heap(args) = &args {
                         let mut done = FxHashSet::default();
@@ -1018,19 +1016,18 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
 
                     let inner_call_id = { self.calls.write().unwrap().insert(inner_call) };
 
-                    let existing = {
-                        if let Some(resolved) =
-                            self.resolved_calls.read().unwrap().get(&inner_call_id)
+                    let existing =
                         {
                             // TODO: bad clone
-                            Some((
-                                resolved.return_type,
-                                Some(resolved.prop_assignments.clone()),
-                            ))
-                        } else {
-                            None
-                        }
-                    };
+                            self.resolved_calls.read().unwrap().get(&inner_call_id).map(
+                                |resolved| {
+                                    (
+                                        resolved.return_type,
+                                        Some(resolved.prop_assignments.clone()),
+                                    )
+                                },
+                            )
+                        };
 
                     let (return_type, incoming_assignments) = match existing {
                         Some((t, a)) => (t, a),
@@ -1104,7 +1101,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                 );
                                 Assignment { rhs: union }
                             } else {
-                                prop.clone()
+                                *prop
                             };
                             machine
                                 .state
@@ -1212,7 +1209,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                             continue;
                         }
                         if depends_on_unresolved_call(
-                            &self.unions,
+                            self.unions,
                             prop.rhs,
                             self.resolving_call_object,
                         ) {
@@ -1281,7 +1278,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                         let unions = &mut self.unions.write().unwrap();
                         let mut builder = UnionBuilder::new(self.null_or_void);
                         for ty in parts {
-                            builder.add(ty, &unions);
+                            builder.add(ty, unions);
                         }
                         unions.build_union(builder)
                     };
@@ -1355,7 +1352,7 @@ impl JoinOp {
                         .insert((*obj, key.clone()), Assignment { rhs: union });
                 }
                 Entry::Vacant(entry) => {
-                    entry.insert(prop.clone());
+                    entry.insert(*prop);
                 }
             }
         }
@@ -1368,7 +1365,7 @@ impl JoinOp {
                     entry.insert(Assignment { rhs: union });
                 }
                 Entry::Vacant(entry) => {
-                    entry.insert(assignment.clone());
+                    entry.insert(*assignment);
                 }
             }
         }
@@ -1400,7 +1397,7 @@ struct DataFlowAnalysis<'ast, 'a> {
     incomplete_dependencies: &'a mut FxHashSet<CallId>,
 
     return_types: &'a RwLock<FxHashMap<CallId, FxHashSet<Option<ObjectId>>>>,
-    return_states: &'a RwLock<FxHashMap<CallId, HashableHashMap<(ObjectId, JsWord), Assignment>>>,
+    return_states: &'a RwLock<FxHashMap<CallId, PropertyAssignments>>,
     cur_object_id: &'a Mutex<&'ast mut ObjectId>,
     objects_map: &'a RwLock<&'ast mut FxHashMap<NodeId, ObjectId>>,
     null_or_void: ObjectId,
@@ -1535,28 +1532,28 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
                 if let Some(first) = self.getInputFromEdge(first) {
                     joiner.joinFlow(
                         &self.lattice_elements[first],
-                        &self.unions,
+                        self.unions,
                         self.null_or_void,
-                        &self.invalid_objects,
+                        self.invalid_objects,
                     );
                     has_non_empty_input = true;
                 }
                 if let Some(second) = self.getInputFromEdge(second) {
                     joiner.joinFlow(
                         &self.lattice_elements[second],
-                        &self.unions,
+                        self.unions,
                         self.null_or_void,
-                        &self.invalid_objects,
+                        self.invalid_objects,
                     );
                     has_non_empty_input = true;
                 }
-                while let Some(inEdge) = inEdges.next() {
+                for inEdge in inEdges {
                     if let Some(id) = self.getInputFromEdge(inEdge) {
                         joiner.joinFlow(
                             &self.lattice_elements[id],
-                            &self.unions,
+                            self.unions,
                             self.null_or_void,
-                            &self.invalid_objects,
+                            self.invalid_objects,
                         );
                         has_non_empty_input = true;
                     }

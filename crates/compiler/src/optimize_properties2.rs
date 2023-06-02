@@ -184,8 +184,7 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
         for (name, references) in accesses {
             let mut props = store.unions[union]
                 .constituents()
-                .map(|c| objects.get(&c).and_then(|c| c.properties.get(name)))
-                .filter_map(|c| c);
+                .filter_map(|c| objects.get(&c).and_then(|c| c.properties.get(name)));
 
             let representative = if let Some(&representative) = props.next() {
                 properties[representative].references.extend(references);
@@ -393,7 +392,7 @@ impl Visit<'_> for NameLenVisitor {
     }
 }
 
-pub fn analyse<'ast>(ast: &'ast ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'ast> {
+pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> {
     let null_or_void = ObjectId::from_u32(0);
     let mut store = Store {
         calls: IndexSet::default(),
@@ -443,8 +442,8 @@ pub fn analyse<'ast>(ast: &'ast ast::Program, unresolved_ctxt: SyntaxContext) ->
         let cfa = ControlFlowAnalysisResult {
             cfg: ControlFlowGraph {
                 map: static_data.cfg.map.clone(),
-                implicit_return: static_data.cfg.implicit_return.clone(),
-                entry: static_data.cfg.entry.clone(),
+                implicit_return: static_data.cfg.implicit_return,
+                entry: static_data.cfg.entry,
                 graph: static_data.cfg.graph.clone(),
                 node_annotations: FxHashMap::default(),
                 edge_annotations: FxHashMap::default(),
@@ -515,8 +514,8 @@ pub fn process(
         let cfa = ControlFlowAnalysisResult {
             cfg: ControlFlowGraph {
                 map: static_data.cfg.map.clone(),
-                implicit_return: static_data.cfg.implicit_return.clone(),
-                entry: static_data.cfg.entry.clone(),
+                implicit_return: static_data.cfg.implicit_return,
+                entry: static_data.cfg.entry,
                 graph: static_data.cfg.graph.clone(),
                 node_annotations: FxHashMap::default(),
                 edge_annotations: FxHashMap::default(),
@@ -734,7 +733,7 @@ fn invalidate(
     invalid_objects: &mut GrowableBitSet<ObjectId>,
     unions: &UnionStore,
     pointer: Option<Pointer>,
-    prop_assignments: &HashableHashMap<(ObjectId, JsWord), Assignment>,
+    prop_assignments: &PropertyAssignments,
     null_or_void: Option<Pointer>,
 ) {
     if pointer == null_or_void {
@@ -817,7 +816,7 @@ impl<'ast> SimpleCFG<'ast> {
 #[derive(Debug)]
 pub(super) struct Func {
     args: Vec<Option<Pointer>>,
-    arg_values: HashableHashMap<(ObjectId, JsWord), Assignment>,
+    arg_values: PropertyAssignments,
 }
 
 #[derive(Debug)]
@@ -831,7 +830,7 @@ pub(super) struct StaticFunctionData<'ast> {
 pub(super) struct Call {
     func: FnId,
     args: CallArgs,
-    prop_assignments: HashableHashMap<(ObjectId, JsWord), Assignment>,
+    prop_assignments: PropertyAssignments,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -875,16 +874,14 @@ impl CallArgBuilder {
     fn push(&mut self, arg: Option<Pointer>) {
         if let Some(args) = &mut self.args {
             args.push(arg);
+        } else if arg.is_none() {
+            self.none_count += 1;
         } else {
-            if arg.is_none() {
-                self.none_count += 1;
-            } else {
-                let mut new = Vec::new();
-                new.reserve_exact(self.len);
-                new.extend(std::iter::repeat(None).take(self.none_count));
-                new.push(arg);
-                self.args = Some(new);
-            }
+            let mut new = Vec::new();
+            new.reserve_exact(self.len);
+            new.extend(std::iter::repeat(None).take(self.none_count));
+            new.push(arg);
+            self.args = Some(new);
         }
     }
 
@@ -906,7 +903,7 @@ impl CallArgBuilder {
 #[derive(Debug, PartialEq)]
 pub(super) struct ResolvedCall {
     return_type: Option<Pointer>,
-    prop_assignments: HashableHashMap<(ObjectId, JsWord), Assignment>,
+    prop_assignments: PropertyAssignments,
 }
 
 #[derive(Debug, PartialEq, Hash, Eq)]
@@ -1063,7 +1060,7 @@ fn get_property(
                     .map(|a| a.rhs)
                     .unwrap_or(Some(Pointer::Object(null_or_void)));
 
-                builder.add(constituent, &unions);
+                builder.add(constituent, unions);
             }
 
             unions.build_union(builder)
@@ -1153,9 +1150,9 @@ impl<'ast> Analyser<'ast, '_> {
             let existing = match &slot {
                 Slot::Var(name) => self
                     .lattice
-                    .get_var(&name, &self.store.fn_assignments)
+                    .get_var(name, &self.store.fn_assignments)
                     .and_then(|a| a.rhs),
-                Slot::Prop(obj, key) => self.get_property(*obj, &key),
+                Slot::Prop(obj, key) => self.get_property(*obj, key),
             };
 
             let rhs = if !conditional {
@@ -1423,8 +1420,7 @@ impl<'ast> Analyser<'ast, '_> {
     }
 
     fn call_fn(&mut self, func: FnId, args: CallArgs) -> Option<Pointer> {
-        let mut prop_assignments: HashableHashMap<(ObjectId, JsWord), Assignment> =
-            HashableHashMap::default();
+        let mut prop_assignments: PropertyAssignments = HashableHashMap::default();
 
         if let CallArgs::Heap(args) = &args {
             let mut queue = Vec::new();
@@ -1524,7 +1520,7 @@ impl<'ast> Analyser<'ast, '_> {
                 );
                 Assignment { rhs: union }
             } else {
-                prop.clone()
+                *prop
             };
             self.lattice.insert_prop_assignment(key, new);
         }
@@ -1700,7 +1696,7 @@ impl<'ast> Analyser<'ast, '_> {
                 None
             }
             Node::SeqExpr(node) => {
-                debug_assert!(node.exprs.len() > 0);
+                debug_assert!(!node.exprs.is_empty());
 
                 let mut i = 0;
                 while i < node.exprs.len() - 1 {
@@ -1832,7 +1828,7 @@ impl<'ast> Analyser<'ast, '_> {
                         );
                         Assignment { rhs: union }
                     } else {
-                        prop.clone()
+                        *prop
                     };
                     self.lattice.insert_prop_assignment(key, new);
                 }
@@ -2042,7 +2038,7 @@ impl<'ast> JoinOp {
                         .insert((*obj, key.clone()), Assignment { rhs: union });
                 }
                 Entry::Vacant(entry) => {
-                    entry.insert(prop.clone());
+                    entry.insert(*prop);
                 }
             }
         }
@@ -2060,7 +2056,7 @@ impl<'ast> JoinOp {
                     entry.insert(Assignment { rhs: union });
                 }
                 Entry::Vacant(entry) => {
-                    entry.insert(assignment.clone());
+                    entry.insert(*assignment);
                 }
             }
         }
@@ -2071,10 +2067,12 @@ impl<'ast> JoinOp {
     }
 }
 
+type PropertyAssignments = HashableHashMap<(ObjectId, JsWord), Assignment>;
+
 #[derive(Clone, Debug, PartialEq, Default, Hash, Eq)]
 pub(super) struct Lattice {
     var_assignments: HashableHashMap<Id, Assignment>,
-    prop_assignments: HashableHashMap<(ObjectId, JsWord), Assignment>,
+    prop_assignments: PropertyAssignments,
 }
 
 impl Annotation for Lattice {}
