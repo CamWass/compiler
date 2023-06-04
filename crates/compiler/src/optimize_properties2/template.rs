@@ -289,7 +289,7 @@ fn get_property(
             }
             invalid
         }
-        _ => true,
+        Some(Pointer::Fn(_)) | None => true,
     };
     if invalid {
         if cfg!(debug_assertions) {
@@ -320,7 +320,7 @@ fn get_property(
                         );
                     }
                 }
-                _ => {}
+                Some(Pointer::Fn(_)) | None => {}
             }
         }
 
@@ -867,7 +867,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                 arg = None;
                             }
                         }
-                        _ => {}
+                        Some(Pointer::Fn(_)) | None => {}
                     }
                     match machine.calls.last_mut().unwrap() {
                         MachineCall::Invalid => {
@@ -897,7 +897,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                             if heap.iter().all(|a| match a {
                                 Some(Pointer::Union(union)) => union.invalid(),
                                 Some(Pointer::Object(obj)) => invalid_objects.contains(*obj),
-                                _ => true,
+                                Some(Pointer::Fn(_)) | None => true,
                             }) {
                                 args.args = None;
                                 args.none_count = args.len;
@@ -922,7 +922,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                 Some(Pointer::Union(union)) => {
                                     queue.extend(unions[*union].constituents());
                                 }
-                                _ => {}
+                                Some(Pointer::Fn(_)) | None => {}
                             }
                         }
 
@@ -971,7 +971,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                                 }
                                             }
                                         }
-                                        _ => {}
+                                        Some(Pointer::Fn(_)) | None => {}
                                     }
                                 }
                             }
@@ -1175,7 +1175,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                 }
                             }
                         }
-                        _ => {
+                        Some(Pointer::Fn(_)) | None => {
                             if !none_in_return_ty {
                                 add_return_ty!(None);
                                 changed = true;

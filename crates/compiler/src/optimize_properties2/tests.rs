@@ -1030,9 +1030,9 @@ const { prop2 = obj1 } = { prop2: 2 };
 prop2.prop1;
 ",
         "
-const obj1 = { a: 1 };
+const obj1 = { prop1: 1 };
 const { a: prop2 = obj1 } = { a: 2 };
-prop2.a;
+prop2.prop1;
 ",
     );
 

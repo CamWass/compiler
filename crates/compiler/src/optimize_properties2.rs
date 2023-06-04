@@ -90,7 +90,6 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
 
     #[derive(Default, Debug)]
     struct Object {
-        invalid: bool,
         properties: FxHashMap<JsWord, PropId>,
     }
 
@@ -99,6 +98,7 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
         name: JsWord,
         prop_id: PropId,
         references: FxHashSet<NodeId>,
+        invalid: bool,
     }
 
     index::newtype_index!(struct PropId { .. });
@@ -113,7 +113,6 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
             match pointer {
                 Pointer::Object(object_id) => {
                     let object = objects.entry(object_id).or_default();
-                    object.invalid |= store.invalid_objects.contains(object_id);
                     let id = match object.properties.entry(name.clone()) {
                         Entry::Occupied(entry) => *entry.get(),
                         Entry::Vacant(entry) => {
@@ -121,6 +120,7 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
                                 name: name.clone(),
                                 prop_id: properties.next_index(),
                                 references: FxHashSet::default(),
+                                invalid: store.invalid_objects.contains(object_id),
                             });
                             entry.insert(prop_id);
                             prop_id
@@ -149,25 +149,21 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
 
     let mut union_find = UnionFind::new(properties.len());
 
-    // Process root/child relations.
-    for (root, children) in &store.object_links {
-        let invalid = store.invalid_objects.contains(*root)
-            || children.iter().any(|c| store.invalid_objects.contains(*c));
-        objects.entry(*root).or_default().invalid |= invalid;
-        for child in children {
-            objects.entry(*child).or_default().invalid |= invalid;
-        }
+    // Process super/sub type relations.
+    for (super_ty, sub_ty) in &store.object_links {
+        objects.entry(*super_ty).or_default();
+        objects.entry(*sub_ty).or_default();
 
-        for child in children {
-            let [parent, child] = objects.get_many_mut([root, child]).unwrap();
-            for (name, parent_prop) in &parent.properties {
-                match child.properties.entry(name.clone()) {
-                    Entry::Occupied(entry) => {
-                        union_find.union(*parent_prop, *entry.get());
-                    }
-                    Entry::Vacant(entry) => {
-                        entry.insert(*parent_prop);
-                    }
+        let invalid = store.invalid_objects.contains(*sub_ty);
+        let [super_ty, sub_ty] = objects.get_many_mut([super_ty, sub_ty]).unwrap();
+        for (name, super_prop) in &super_ty.properties {
+            match sub_ty.properties.entry(name.clone()) {
+                Entry::Occupied(entry) => {
+                    union_find.union(*super_prop, *entry.get());
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(*super_prop);
+                    properties[*super_prop].invalid |= invalid;
                 }
             }
         }
@@ -176,10 +172,6 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
     // Process unions.
     for (union, accesses) in union_accesses {
         let invalid = store.invalidated(Pointer::Union(union));
-        for constituent_id in store.unions[union].constituents() {
-            let constituent = objects.entry(constituent_id).or_default();
-            constituent.invalid |= invalid;
-        }
 
         for (name, references) in accesses {
             let mut props = store.unions[union]
@@ -188,12 +180,14 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
 
             let representative = if let Some(&representative) = props.next() {
                 properties[representative].references.extend(references);
+                properties[representative].invalid |= invalid;
                 representative
             } else {
                 let prop_id = properties.push(Property {
                     name: name.clone(),
                     prop_id: properties.next_index(),
                     references,
+                    invalid,
                 });
                 union_find.add(prop_id);
                 prop_id
@@ -226,19 +220,21 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
     {
         let mut map = FxHashMap::default();
         for obj in objects.values() {
-            if obj.invalid {
-                continue;
-            }
             for &prop in obj.properties.values() {
                 let representative = labeling[prop.index()];
+                let prop = &properties[prop];
+                if prop.invalid {
+                    continue;
+                }
                 let representative = *map.entry(representative).or_insert_with(|| {
                     let index = representatives.len();
                     representatives.push(properties[representative].clone());
                     index
                 });
-                representatives[representative]
+                let representative = &mut representatives[representative];
+                representative
                     .references
-                    .extend(properties[prop].references.iter().copied());
+                    .extend(prop.references.iter().copied());
             }
         }
     }
@@ -264,14 +260,12 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
     // TODO: only need to store half/triangle since graph is undirected, and therefore reflexivity is implied.
     let mut graph = BitMatrix::new(representatives.len(), representatives.len());
     for obj in objects.values() {
-        if obj.invalid {
-            continue;
-        }
-        let mut outer = obj.properties.values();
-        while let Some(outer_prop) = outer.next() {
-            let outer_node = representatives_map[&labeling[outer_prop.index()]];
-            for inner_prop in outer.clone() {
-                let inner_node = representatives_map[&labeling[inner_prop.index()]];
+        let mut outer = obj
+            .properties
+            .values()
+            .filter_map(|p| representatives_map.get(&labeling[p.index()]));
+        while let Some(&outer_node) = outer.next() {
+            for &inner_node in outer.clone() {
                 graph.insert(outer_node, inner_node);
                 graph.insert(inner_node, outer_node);
             }
@@ -285,27 +279,28 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
         let mut debug_graph_map = FxHashMap::default();
 
         for obj in objects.values() {
-            if obj.invalid {
-                continue;
-            }
             if obj.properties.len() == 1 {
                 let prop = *obj.properties.values().next().unwrap();
-                let rep_id = representatives_map[&labeling[prop.index()]];
+                let rep_id = match representatives_map.get(&labeling[prop.index()]) {
+                    Some(r) => *r,
+                    None => continue,
+                };
                 debug_graph_map.entry(rep_id).or_insert_with(|| {
                     debug_graph.add_node((rep_id, properties[prop].name.clone()))
                 });
                 continue;
             }
-            let mut outer = obj.properties.values();
-            while let Some(&outer_prop) = outer.next() {
-                let outer_node = representatives_map[&labeling[outer_prop.index()]];
-                for &inner_prop in outer.clone() {
-                    let inner_node = representatives_map[&labeling[inner_prop.index()]];
-                    let a = *debug_graph_map.entry(outer_node).or_insert_with(|| {
-                        debug_graph.add_node((outer_node, properties[outer_prop].name.clone()))
-                    });
+            let mut outer = obj
+                .properties
+                .values()
+                .filter_map(|p| representatives_map.get(&labeling[p.index()]));
+            while let Some(&outer_node) = outer.next() {
+                let a = *debug_graph_map.entry(outer_node).or_insert_with(|| {
+                    debug_graph.add_node((outer_node, representatives[outer_node].name.clone()))
+                });
+                for &inner_node in outer.clone() {
                     let b = *debug_graph_map.entry(inner_node).or_insert_with(|| {
-                        debug_graph.add_node((inner_node, properties[inner_prop].name.clone()))
+                        debug_graph.add_node((inner_node, representatives[inner_node].name.clone()))
                     });
                     debug_graph.update_edge(a, b, ());
                 }
@@ -410,7 +405,7 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
         resolved_calls: FxHashMap::default(),
         call_templates: FxHashMap::default(),
         fn_assignments: HashableHashMap::default(),
-        object_links: FxHashMap::default(),
+        object_links: FxHashSet::default(),
     };
 
     let mut visitor = FnVisitor { store: &mut store };
@@ -482,7 +477,7 @@ pub fn process(
         resolved_calls: FxHashMap::default(),
         call_templates: FxHashMap::default(),
         fn_assignments: HashableHashMap::default(),
-        object_links: FxHashMap::default(),
+        object_links: FxHashSet::default(),
     };
 
     let mut visitor = FnVisitor { store: &mut store };
@@ -655,7 +650,7 @@ pub struct Store<'ast> {
     call_templates: FxHashMap<FnId, CallTemplate<'ast>>,
     fn_assignments: HashableHashMap<Id, Assignment>,
 
-    object_links: FxHashMap<ObjectId, Vec<ObjectId>>,
+    object_links: FxHashSet<(ObjectId, ObjectId)>,
 }
 
 impl Store<'_> {
@@ -1010,7 +1005,7 @@ fn get_property(
                 false
             }
         }
-        _ => true,
+        Pointer::Fn(_) => true,
     };
     if invalid {
         if cfg!(debug_assertions) {
@@ -1038,7 +1033,7 @@ fn get_property(
                         );
                     }
                 }
-                _ => {}
+                Pointer::Fn(_) => {}
             }
         }
 
@@ -1432,7 +1427,7 @@ impl<'ast> Analyser<'ast, '_> {
                     Some(Pointer::Union(union)) => {
                         queue.extend(self.store.unions[*union].constituents());
                     }
-                    _ => {}
+                    Some(Pointer::Fn(_)) | None => {}
                 }
             }
 
@@ -1461,7 +1456,7 @@ impl<'ast> Analyser<'ast, '_> {
                                     }
                                 }
                             }
-                            _ => {}
+                            Some(Pointer::Fn(_)) | None => {}
                         }
                     }
                 }
