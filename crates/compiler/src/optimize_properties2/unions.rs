@@ -5,37 +5,15 @@ use rustc_hash::FxHasher;
 
 use super::{ObjectId, Pointer};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(super) struct UnionStore {
     inner: IndexSet<Union, BuildHasherDefault<FxHasher>>,
-    null_or_void: ObjectId,
 }
 
 impl UnionStore {
-    pub fn new(null_or_void: ObjectId) -> Self {
-        Self {
-            inner: IndexSet::default(),
-            null_or_void,
-        }
-    }
-
     pub fn build_union(&mut self, builder: UnionBuilder) -> Option<Pointer> {
-        if let Union::Inline(inline) = &builder.union {
-            if inline[0].is_none() {
-                // Empty union.
-                return None;
-            }
-            if inline[0] == Some(self.null_or_void) {
-                // null_or_void is ignored unless it is the only constituent.
-                return Some(Pointer::Object(self.null_or_void));
-            }
-
-            if inline[1].is_none() && !builder.invalid {
-                // Only one constituent. If the union is valid then we flatten it.
-                // If it is invalid, we must still create a union to persist the
-                // fact that the constituent was in a union with something invalid.
-                return Some(Pointer::Object(inline[0].unwrap()));
-            }
+        if let Ok(res) = builder.try_build() {
+            return res;
         }
 
         let mut idx = UnionId::from_usize(self.inner.insert_full(builder.union).0);
@@ -55,31 +33,45 @@ impl Index<UnionId> for UnionStore {
     }
 }
 
+#[derive(Clone, Debug, Default)]
 pub(super) struct UnionBuilder {
     union: Union,
-    null_or_void: ObjectId,
+    has_null_or_void: bool,
     invalid: bool,
 }
 
 impl UnionBuilder {
-    pub fn new(null_or_void: ObjectId) -> UnionBuilder {
-        UnionBuilder {
-            union: Union::Inline([None, None, None, None]),
-            null_or_void,
-            invalid: false,
+    /// Tries to build a union without consulting a [`UnionStore`].
+    /// This is only possible for simple unions, but helps to avoid acquiring a
+    /// write lock if the [`UnionStore`] is within a [`RwLock`][std::sync::RwLock].
+    pub fn try_build(&self) -> Result<Option<Pointer>, ()> {
+        if let Union::Inline(inline) = &self.union {
+            if inline[0].is_none() {
+                if self.has_null_or_void && !self.invalid {
+                    // NullOrVoid is ignored unless it is the only constituent.
+                    return Ok(Some(Pointer::NullOrVoid));
+                }
+                // Empty union.
+                return Ok(None);
+            }
+
+            if inline[1].is_none() && !self.invalid {
+                // Only one constituent. If the union is valid then we flatten it.
+                // If it is invalid, we must still create a union to persist the
+                // fact that the constituent was in a union with something invalid.
+                return Ok(Some(Pointer::Object(inline[0].unwrap())));
+            }
         }
+        Err(())
+    }
+
+    pub fn add_null_or_void(&mut self) {
+        self.has_null_or_void = true;
     }
 
     pub fn add_object(&mut self, constituent: Option<ObjectId>) {
         match constituent {
             Some(constituent) => {
-                if constituent == self.null_or_void {
-                    if self.union.is_empty() {
-                        self.union = Union::Inline([Some(self.null_or_void), None, None, None]);
-                    }
-                    return;
-                }
-
                 match &mut self.union {
                     Union::Heap(heap) => {
                         match heap.binary_search(&constituent) {
@@ -92,11 +84,6 @@ impl UnionBuilder {
                         }
                     }
                     Union::Inline(inline) => {
-                        if inline[0] == Some(self.null_or_void) {
-                            inline[0] = Some(constituent);
-                            return;
-                        }
-
                         let mut insert_idx = 0;
                         while insert_idx <= MAX_INLINE_SIZE {
                             if insert_idx == MAX_INLINE_SIZE {
@@ -162,6 +149,9 @@ impl UnionBuilder {
             Some(Pointer::Fn(_)) | None => {
                 self.invalid = true;
             }
+            Some(Pointer::NullOrVoid) => {
+                self.has_null_or_void = true;
+            }
         }
     }
 }
@@ -169,10 +159,16 @@ impl UnionBuilder {
 // Chosen so inline `Union` is same size as its `Heap` variant.
 const MAX_INLINE_SIZE: usize = 4;
 
-#[derive(Eq, PartialEq, Hash, Debug)]
+#[derive(Eq, PartialEq, Hash, Debug, Clone)]
 pub(super) enum Union {
     Heap(Vec<ObjectId>),
     Inline([Option<ObjectId>; MAX_INLINE_SIZE]),
+}
+
+impl Default for Union {
+    fn default() -> Self {
+        Union::Inline([None, None, None, None])
+    }
 }
 
 // TODO: this is true in rust playground, may require newer nightly compiler.
@@ -180,13 +176,6 @@ pub(super) enum Union {
 // assert_eq_size!(Union, Vec<ObjectId>);
 
 impl Union {
-    fn is_empty(&self) -> bool {
-        match self {
-            Union::Inline(a) => a[0].is_none(),
-            _ => false,
-        }
-    }
-
     pub fn len(&self) -> usize {
         match self {
             Union::Heap(heap) => heap.len(),

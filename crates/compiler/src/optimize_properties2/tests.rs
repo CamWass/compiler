@@ -39,7 +39,62 @@ fn test_same_in_fn(input: &str) {
 // TODO: more tests e.g. for branch joins, more invalidations, infinite loops etc
 
 #[test]
+fn test_null_or_void() {
+    // Null and undefined are not included in unions.
+    test_transform(
+        "
+let obj1 = { prop1: 1 };
+(obj1 || null || undefined).prop1;
+let obj2 = { prop2: 2 };
+(obj2 || null || undefined).prop2;
+",
+        "
+let obj1 = { a: 1 };
+(obj1 || null || undefined).a;
+let obj2 = { a: 2 };
+(obj2 || null || undefined).a;
+",
+    );
+
+    // This code is invalid, but still tests useful behaviour.
+    test_same_in_fn(
+        "
+(undefined).prop1;
+(undefined).prop2;
+(null).prop3;
+(null).prop4;
+    ",
+    );
+}
+
+#[test]
 fn test_calls_do_not_interfere() {
+    test_transform(
+        "
+function foo(a) {
+    let obj = { inner: a };
+    return obj;
+}
+
+let obj1 = foo({ prop1: 1 }); // { inner: { prop1: 1 } }
+obj1.aProp; obj1.aProp; obj1.aProp;
+obj1.inner.prop1;
+let obj2 = foo({ prop2: 2 }); // { inner: { prop2: 2 } }
+obj2.inner.prop2;
+",
+        "
+function foo(a) {
+    let obj = { b: a };
+    return obj;
+}
+
+let obj1 = foo({ a: 1 });
+obj1.a; obj1.a; obj1.a;
+obj1.b.a;
+let obj2 = foo({ a: 2 });
+obj2.b.a;
+",
+    );
     test_transform(
         "
 function foo(a) {
@@ -1586,7 +1641,7 @@ variable.a;
 
 variable = null;
 
-variable.a;
+variable.propX;
 
 variable = {a: 1};
 variable.a;

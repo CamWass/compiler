@@ -31,10 +31,6 @@ where
     pub fn insert(&mut self, value: T) -> I {
         I::new(self.inner.insert_full(value).0)
     }
-
-    pub fn len(&self) -> usize {
-        self.inner.len()
-    }
 }
 
 impl<'a, I: Idx, T> IntoIterator for &'a IndexSet<I, T> {

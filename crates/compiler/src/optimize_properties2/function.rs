@@ -1,7 +1,7 @@
 use ast::*;
 use global_common::SyntaxContext;
 use rustc_hash::FxHashMap;
-use swc_atoms::JsWord;
+use swc_atoms::{js_word, JsWord};
 
 use crate::control_flow::node::Node;
 use crate::control_flow::ControlFlowGraph::*;
@@ -493,8 +493,12 @@ impl<'ast> Analyser<'_, 'ast> {
                 self.visit_and_get_r_value(Node::Ident(&node.id), conditional)
             }
             Node::Ident(node) => {
-                let id = node.to_id();
-                self.push(Step::StoreRValue(Some(RValue::Var(id))));
+                if node.span.ctxt == self.unresolved_ctxt && node.sym == js_word!("undefined") {
+                    self.push(Step::StoreRValue(Some(RValue::NullOrVoid)));
+                } else {
+                    let id = node.to_id();
+                    self.push(Step::StoreRValue(Some(RValue::Var(id))));
+                }
             }
             Node::PrivateName(_) => todo!(),
 

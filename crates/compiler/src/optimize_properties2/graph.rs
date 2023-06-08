@@ -1,6 +1,5 @@
 use std::{collections::VecDeque, fmt::Debug, hash::Hash, num::NonZeroUsize};
 
-use index::{bit_set::GrowableBitSet, vec::Idx};
 use petgraph::{graphmap::NodeTrait, prelude::DiGraphMap, visit::NodeIndexable, Direction::*};
 use rayon::prelude::*;
 use rustc_hash::FxHashSet;
@@ -18,7 +17,7 @@ where
 
 pub fn process<N, V>(root: N, visitor: &V)
 where
-    N: Copy + Ord + Hash + Debug + Idx + Send + Eq + Sync,
+    N: Copy + Ord + Hash + Debug + Send + Eq + Sync,
     V: Visitor<N>,
 {
     let mut graph: DiGraphMap<N, ()> = DiGraphMap::default();
@@ -236,7 +235,7 @@ where
 
                             for external_dependant in graph
                                 .neighbors_directed(node, Incoming)
-                                .filter(|n| !scc_state.yielded.contains(*n))
+                                .filter(|n| !scc_state.yielded.contains(n))
                             {
                                 fringe_candidates.insert(external_dependant);
                             }
@@ -278,7 +277,7 @@ struct NodeData {
 
 /// A reusable state for computing the strongly connected components Tarjan's algorithm.
 #[derive(Debug)]
-struct TarjanScc<N: Idx> {
+struct TarjanScc<N> {
     // From petgraph:
     index: usize,
     componentcount: usize,
@@ -286,7 +285,7 @@ struct TarjanScc<N: Idx> {
     stack: Vec<N>,
 
     /// Nodes that have been emitted as a part of an SCC.
-    yielded: GrowableBitSet<N>,
+    yielded: FxHashSet<N>,
     /// Nodes of emitted all SCCs. SCCs are returned as regions of this buffer.
     components: Vec<N>,
     /// (start, end)
@@ -295,7 +294,7 @@ struct TarjanScc<N: Idx> {
 
 impl<N> TarjanScc<N>
 where
-    N: NodeTrait + Idx,
+    N: NodeTrait,
 {
     fn new() -> Self {
         TarjanScc {
@@ -304,7 +303,7 @@ where
             nodes: Vec::new(),
             stack: Vec::new(),
 
-            yielded: GrowableBitSet::new_empty(),
+            yielded: FxHashSet::default(),
             components: Vec::new(),
             starts: Vec::new(),
         }
@@ -382,11 +381,11 @@ where
             // This SCC should not be depended on by any previous ones.
             debug_assert!(self.stack[start..].iter().all(|n| g
                 .neighbors_directed(*n, Incoming)
-                .all(|n| !self.yielded.contains(n))));
+                .all(|n| !self.yielded.contains(&n))));
 
             if self.stack[start..].iter().any(|n| {
                 g.neighbors_directed(*n, Outgoing)
-                    .any(|n| self.yielded.contains(n))
+                    .any(|n| self.yielded.contains(&n))
             }) {
                 // This SCC depends on a previous one; stop the search.
                 return true;
@@ -417,7 +416,7 @@ where
 
 fn tarjan_scc<N>(g: &DiGraphMap<N, ()>, state: &mut TarjanScc<N>, start: N)
 where
-    N: NodeTrait + Idx,
+    N: NodeTrait,
 {
     debug_assert!(g.contains_node(start));
     state.clear();
