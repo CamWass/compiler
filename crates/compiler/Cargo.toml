@@ -21,7 +21,6 @@ indexmap = "1.9.1"
 ecma_visit = {path = "../visit"}
 lexical = {version = "6.1.0", features = ["power-of-two", "format"]}
 petgraph = "0.6.0"
-rayon = "1.7.0"
 rustc-hash = "1.1.0"
 serde = {version = "1", features = ["derive"]}
 static_assertions = "1.1.0"

@@ -15,24 +15,22 @@ mod template;
 mod unionfind;
 mod unions;
 
-use std::borrow::{Borrow, Cow};
+use std::borrow::Cow;
 use std::collections::hash_map::Entry;
-use std::hash::{BuildHasherDefault, Hash, Hasher};
+use std::hash::Hash;
 use std::ops::Deref;
-use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 use ast::*;
 use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use global_common::{SyntaxContext, DUMMY_SP};
 use index::bit_set::{BitMatrix, BitSet, GrowableBitSet};
 use index::vec::{Idx, IndexVec};
-use indexmap::IndexSet;
 use petgraph::prelude::UnGraph;
 use petgraph::{
     graph::{DiGraph, Neighbors, NodeIndex},
     EdgeDirection::*,
 };
-use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
+use rustc_hash::{FxHashMap, FxHashSet};
 use swc_atoms::{js_word, JsWord};
 
 use crate::control_flow::node::Node;
@@ -45,6 +43,7 @@ use crate::DataFlowAnalysis::LatticeElementId;
 use crate::DefaultNameGenerator::DefaultNameGenerator;
 use crate::{Id, ToId};
 
+use simple_set::IndexSet;
 use template::*;
 use unionfind::UnionFind;
 use DataFlowAnalysis2::*;
@@ -390,7 +389,7 @@ impl Visit<'_> for NameLenVisitor {
 
 pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> {
     let mut store = Store {
-        calls: ParIndexSet::default(),
+        calls: IndexSet::default(),
         functions: IndexVec::default(),
         static_fn_data: IndexVec::default(),
         function_map: FxHashMap::default(),
@@ -461,7 +460,7 @@ pub fn process(
     unresolved_ctxt: SyntaxContext,
 ) {
     let mut store = Store {
-        calls: ParIndexSet::default(),
+        calls: IndexSet::default(),
         functions: IndexVec::default(),
         static_fn_data: IndexVec::default(),
         function_map: FxHashMap::default(),
@@ -627,119 +626,9 @@ struct Analysis<'ast, 'p> {
 }
 
 #[derive(Debug)]
-struct ParIndexSet<T> {
-    shards: [RwLock<IndexSet<Wrapped<T>, BuildHasherDefault<FxHasher>>>; NUM_SHARDS as usize],
-}
-
-impl<T> Default for ParIndexSet<T> {
-    fn default() -> Self {
-        Self {
-            shards: Default::default(),
-        }
-    }
-}
-
-const NUM_SHARDS: u32 = 8;
-// Log2 of NUM_SHARDS
-const SHARD_BITS: u32 = 3;
-
-#[derive(Eq, PartialEq, Hash, Clone, Copy, Debug, Ord, PartialOrd)]
-pub(super) struct CallId(u32);
-
-// Shard number is stored in upper SHARD_BITS number of bits.
-impl CallId {
-    fn make_id(index: u32, shard: u32) -> u32 {
-        index | (shard << (32 - SHARD_BITS))
-    }
-
-    fn get_index_and_shard(id: u32) -> (u32, u32) {
-        (id & (u32::MAX >> SHARD_BITS), id >> (32 - SHARD_BITS))
-    }
-}
-
-#[derive(Debug)]
-struct Wrapped<T>(T, usize);
-
-impl<T> Hash for Wrapped<T> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_usize(self.1);
-    }
-}
-
-impl<T> PartialEq<Wrapped<T>> for Wrapped<T>
-where
-    T: PartialEq,
-{
-    fn eq(&self, other: &Wrapped<T>) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl<T> Eq for Wrapped<T> where T: Eq {}
-
-impl<T> Borrow<T> for Wrapped<T> {
-    fn borrow(&self) -> &T {
-        &self.0
-    }
-}
-
-struct ReadLock<'a, T> {
-    guard: RwLockReadGuard<'a, IndexSet<Wrapped<T>, BuildHasherDefault<FxHasher>>>,
-    index: u32,
-}
-
-impl<T> ReadLock<'_, T> {
-    fn get(&self) -> &T {
-        &self.guard[self.index as usize].0
-    }
-}
-
-impl<T> ParIndexSet<T>
-where
-    T: Eq + Hash,
-{
-    fn insert(&self, value: T) -> CallId {
-        let mut hasher = FxHasher::default();
-        value.hash(&mut hasher);
-        let hash = hasher.finish() as usize;
-        let wrapped = Wrapped(value, hash);
-        let shard_num = hash % NUM_SHARDS as usize;
-
-        let existing = {
-            self.shards[shard_num]
-                .read()
-                .unwrap()
-                .get_full(&wrapped)
-                .map(|(i, _)| i)
-        };
-
-        let index = match existing {
-            Some(existing) => existing,
-            None => {
-                self.shards[shard_num]
-                    .write()
-                    .unwrap()
-                    .insert_full(wrapped)
-                    .0
-            }
-        };
-
-        CallId(CallId::make_id(index as u32, shard_num as u32))
-    }
-
-    fn get(&self, id: CallId) -> ReadLock<T> {
-        let (index, shard) = CallId::get_index_and_shard(id.0);
-
-        let guard = self.shards[shard as usize].read().unwrap();
-
-        ReadLock { guard, index }
-    }
-}
-
-#[derive(Debug)]
 /// Info collected during analysis.
 pub struct Store<'ast> {
-    calls: ParIndexSet<Call>,
+    calls: IndexSet<CallId, Call>,
     pub(super) functions: IndexVec<FnId, Func>,
     static_fn_data: IndexVec<FnId, StaticFunctionData<'ast>>,
     function_map: FxHashMap<NodeId, FnId>,
@@ -896,6 +785,7 @@ pub(self) enum Pointer {
 
 index::newtype_index!(pub(super) struct ObjectId { .. });
 index::newtype_index!(pub(super) struct FnId { .. });
+index::newtype_index!(pub(super) struct CallId { .. });
 
 #[derive(Debug)]
 pub(super) struct SimpleCFG<'ast> {
@@ -932,9 +822,9 @@ pub(super) struct Call {
     prop_assignments: PropertyAssignments,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 enum CallArgs {
-    Heap(Arc<[Option<Pointer>]>),
+    Heap(Box<[Option<Pointer>]>),
     /// Number of consecutive `None`s
     Invalid(usize),
 }

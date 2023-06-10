@@ -12,8 +12,22 @@ pub(super) struct UnionStore {
 
 impl UnionStore {
     pub fn build_union(&mut self, builder: UnionBuilder) -> Option<Pointer> {
-        if let Ok(res) = builder.try_build() {
-            return res;
+        if let Union::Inline(inline) = &builder.union {
+            if inline[0].is_none() {
+                if builder.has_null_or_void && !builder.invalid {
+                    // NullOrVoid is ignored unless it is the only constituent.
+                    return Some(Pointer::NullOrVoid);
+                }
+                // Empty union.
+                return None;
+            }
+
+            if inline[1].is_none() && !builder.invalid {
+                // Only one constituent. If the union is valid then we flatten it.
+                // If it is invalid, we must still create a union to persist the
+                // fact that the constituent was in a union with something invalid.
+                return Some(Pointer::Object(inline[0].unwrap()));
+            }
         }
 
         let mut idx = UnionId::from_usize(self.inner.insert_full(builder.union).0);
@@ -41,30 +55,6 @@ pub(super) struct UnionBuilder {
 }
 
 impl UnionBuilder {
-    /// Tries to build a union without consulting a [`UnionStore`].
-    /// This is only possible for simple unions, but helps to avoid acquiring a
-    /// write lock if the [`UnionStore`] is within a [`RwLock`][std::sync::RwLock].
-    pub fn try_build(&self) -> Result<Option<Pointer>, ()> {
-        if let Union::Inline(inline) = &self.union {
-            if inline[0].is_none() {
-                if self.has_null_or_void && !self.invalid {
-                    // NullOrVoid is ignored unless it is the only constituent.
-                    return Ok(Some(Pointer::NullOrVoid));
-                }
-                // Empty union.
-                return Ok(None);
-            }
-
-            if inline[1].is_none() && !self.invalid {
-                // Only one constituent. If the union is valid then we flatten it.
-                // If it is invalid, we must still create a union to persist the
-                // fact that the constituent was in a union with something invalid.
-                return Ok(Some(Pointer::Object(inline[0].unwrap())));
-            }
-        }
-        Err(())
-    }
-
     pub fn add_null_or_void(&mut self) {
         self.has_null_or_void = true;
     }

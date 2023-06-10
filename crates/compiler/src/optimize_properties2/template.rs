@@ -1,7 +1,6 @@
 #![deny(unused_imports)]
 
 use std::collections::hash_map::Entry;
-use std::sync::{Mutex, RwLock};
 
 use ast::NodeId;
 use index::bit_set::GrowableBitSet;
@@ -24,7 +23,7 @@ use super::simple_set::IndexSet;
 use super::unions::{UnionBuilder, UnionStore};
 use super::{
     function::*, Assignment, Call, CallArgBuilder, CallArgs, CallId, FnId, Func, Lattice, ObjectId,
-    ParIndexSet, Pointer, PropertyAssignments, ResolvedCall, SimpleCFG, StaticFunctionData, Store,
+    Pointer, PropertyAssignments, ResolvedCall, SimpleCFG, StaticFunctionData, Store,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -35,61 +34,54 @@ enum ReturnTypeConstituent {
 }
 
 struct Resolver<'a, 'ast> {
-    functions: RwLock<&'a mut IndexVec<FnId, Func>>,
+    functions: &'a mut IndexVec<FnId, Func>,
     static_fn_data: &'a IndexVec<FnId, StaticFunctionData<'ast>>,
 
     call_templates: &'a FxHashMap<FnId, CallTemplate<'ast>>,
 
-    resolved_calls: RwLock<&'a mut FxHashMap<CallId, ResolvedCall>>,
+    resolved_calls: &'a mut FxHashMap<CallId, ResolvedCall>,
 
-    cur_object_id: Mutex<&'a mut ObjectId>,
-    objects_map: RwLock<&'a mut FxHashMap<NodeId, ObjectId>>,
-    call_objects: RwLock<&'a mut FxHashMap<(CallId, NodeId), ObjectId>>,
-    object_links: RwLock<&'a mut FxHashSet<(ObjectId, ObjectId)>>,
+    cur_object_id: &'a mut ObjectId,
+    objects_map: &'a mut FxHashMap<NodeId, ObjectId>,
+    call_objects: &'a mut FxHashMap<(CallId, NodeId), ObjectId>,
+    object_links: &'a mut FxHashSet<(ObjectId, ObjectId)>,
 
     resolving_call_object: ObjectId,
-    unions: RwLock<&'a mut UnionStore>,
-    invalid_objects: RwLock<&'a mut GrowableBitSet<ObjectId>>,
-    calls: &'a ParIndexSet<Call>,
+    unions: &'a mut UnionStore,
+    invalid_objects: &'a mut GrowableBitSet<ObjectId>,
+    calls: &'a mut IndexSet<CallId, Call>,
 
     fn_assignments: &'a HashableHashMap<Id, Assignment>,
 
-    return_types: RwLock<FxHashMap<CallId, FxHashSet<ReturnTypeConstituent>>>,
-    return_states: RwLock<FxHashMap<CallId, PropertyAssignments>>,
+    return_types: FxHashMap<CallId, FxHashSet<ReturnTypeConstituent>>,
+    return_states: FxHashMap<CallId, PropertyAssignments>,
 
     root_call: CallId,
 }
 
 impl Visitor<CallId> for Resolver<'_, '_> {
-    fn visit_node(&self, node: CallId, dependencies: &mut FxHashSet<CallId>) -> bool {
+    fn visit_node(&mut self, node: CallId, dependencies: &mut FxHashSet<CallId>) -> bool {
         let mut changed = false;
 
-        let (func, lattice_elements, initial_lattice, entry_lattice) = {
-            {
-                debug_assert!(!self.resolved_calls.read().unwrap().contains_key(&node));
-            }
+        debug_assert!(!self.resolved_calls.contains_key(&node));
 
-            let call = self.calls.get(node);
-            let call = call.get();
+        let call = &self.calls[node];
 
-            let func = call.func;
+        let func = call.func;
 
-            let mut lattice_elements = IndexSet::default();
-            let initial_lattice = lattice_elements.insert(Lattice::default());
-            let mut entry_lattice = Lattice {
-                prop_assignments: call.prop_assignments.clone(),
-                var_assignments: HashableHashMap::default(),
-            };
-            for (i, param_name) in self.static_fn_data[func].param_names.iter().enumerate() {
-                let value = call.args.get(i).unwrap_or(Some(Pointer::NullOrVoid));
-                entry_lattice
-                    .var_assignments
-                    .insert(param_name.clone(), Assignment { rhs: value });
-            }
-            let entry_lattice = lattice_elements.insert(entry_lattice);
-
-            (func, lattice_elements, initial_lattice, entry_lattice)
+        let mut lattice_elements = IndexSet::default();
+        let initial_lattice = lattice_elements.insert(Lattice::default());
+        let mut entry_lattice = Lattice {
+            prop_assignments: call.prop_assignments.clone(),
+            var_assignments: HashableHashMap::default(),
         };
+        for (i, param_name) in self.static_fn_data[func].param_names.iter().enumerate() {
+            let value = call.args.get(i).unwrap_or(Some(Pointer::NullOrVoid));
+            entry_lattice
+                .var_assignments
+                .insert(param_name.clone(), Assignment { rhs: value });
+        }
+        let entry_lattice = lattice_elements.insert(entry_lattice);
 
         let mut analysis = DataFlowAnalysis {
             workQueue: UniqueQueue::new(&self.static_fn_data[func].node_priorities, true),
@@ -101,17 +93,17 @@ impl Visitor<CallId> for Resolver<'_, '_> {
 
             call: node,
             path_map: &self.call_templates[&func].step_map,
-            resolved_calls: &self.resolved_calls,
-            return_types: &self.return_types,
-            return_states: &self.return_states,
-            cur_object_id: &self.cur_object_id,
-            objects_map: &self.objects_map,
-            call_objects: &self.call_objects,
-            object_links: &self.object_links,
+            resolved_calls: self.resolved_calls,
+            return_types: &mut self.return_types,
+            return_states: &mut self.return_states,
+            cur_object_id: self.cur_object_id,
+            objects_map: self.objects_map,
+            call_objects: self.call_objects,
+            object_links: self.object_links,
             resolving_call_object: self.resolving_call_object,
-            unions: &self.unions,
-            invalid_objects: &self.invalid_objects,
-            calls: &self.calls,
+            unions: self.unions,
+            invalid_objects: self.invalid_objects,
+            calls: self.calls,
 
             incomplete_dependencies: dependencies,
 
@@ -125,47 +117,35 @@ impl Visitor<CallId> for Resolver<'_, '_> {
         changed
     }
 
-    fn finish_node(&self, node: CallId) {
-        let (func, args) = {
-            let call = &self.calls.get(node);
-            let call = call.get();
-            (call.func, call.args.clone())
-        };
-
-        macro_rules! read_fn {
-            () => {
-                self.functions.read().unwrap()[func]
-            };
-        }
+    fn finish_node(&mut self, node: CallId) {
+        let func = self.calls[node].func;
 
         // Merge arguments.
-        match args {
+        match &self.calls[node].args {
             CallArgs::Heap(args) => {
                 for (i, &arg) in args.iter().enumerate() {
-                    let existing = { read_fn!().args.get(i).copied() };
-                    match existing {
+                    match self.functions[func].args.get_mut(i) {
                         Some(existing) => {
-                            let union = create_union(&self.unions, existing, arg);
-                            self.functions.write().unwrap()[func].args[i] = union;
+                            let union = create_union(self.unions, *existing, arg);
+                            *existing = union;
                         }
                         None => {
-                            self.functions.write().unwrap()[func].args.push(arg);
+                            self.functions[func].args.push(arg);
                         }
                     }
                 }
             }
             CallArgs::Invalid(len) => {
-                for i in 0..len {
-                    let existing = { read_fn!().args.get(i).copied() };
-                    match existing {
+                for i in 0..*len {
+                    match self.functions[func].args.get_mut(i) {
                         Some(existing) => {
                             if existing.is_some() {
-                                let union = create_union(&self.unions, existing, None);
-                                self.functions.write().unwrap()[func].args[i] = union;
+                                let union = create_union(self.unions, *existing, None);
+                                *existing = union;
                             }
                         }
                         None => {
-                            self.functions.write().unwrap()[func].args.push(None);
+                            self.functions[func].args.push(None);
                         }
                     }
                 }
@@ -173,71 +153,45 @@ impl Visitor<CallId> for Resolver<'_, '_> {
         }
 
         {
-            // TODO: bad clone:
-            let prop_assignments = { self.calls.get(node).get().prop_assignments.clone() };
             // Merge property assignments.
-            for ((obj, key), prop) in prop_assignments.iter() {
-                let obj_invalid = { self.invalid_objects.read().unwrap().contains(*obj) };
-                if obj_invalid {
+            for ((obj, key), prop) in self.calls[node].prop_assignments.iter() {
+                if self.invalid_objects.contains(*obj) {
                     continue;
                 }
-                let key = (*obj, key.clone());
-                let existing = { read_fn!().arg_values.get(&key).copied() };
-                match existing {
-                    Some(existing) => {
-                        let union = create_union(&self.unions, existing.rhs, prop.rhs);
-                        self.functions.write().unwrap()[func]
-                            .arg_values
-                            .insert(key, Assignment { rhs: union });
+                match self.functions[func].arg_values.entry((*obj, key.clone())) {
+                    Entry::Occupied(mut entry) => {
+                        let union = create_union(self.unions, entry.get().rhs, prop.rhs);
+                        entry.insert(Assignment { rhs: union });
                     }
-                    None => {
-                        self.functions.write().unwrap()[func]
-                            .arg_values
-                            .insert(key, *prop);
+                    Entry::Vacant(entry) => {
+                        entry.insert(*prop);
                     }
                 }
             }
         }
 
-        let return_type = {
-            let ty = {
-                self.return_types
-                    .write()
-                    .unwrap()
-                    .remove(&node)
-                    .unwrap_or_default()
+        let return_types = self.return_types.remove(&node).unwrap_or_default();
+
+        let mut builder = UnionBuilder::default();
+
+        for ty in return_types {
+            match ty {
+                ReturnTypeConstituent::Object(obj) => builder.add_object(Some(obj)),
+                ReturnTypeConstituent::Invalid => builder.add_object(None),
+                ReturnTypeConstituent::NullOrVoid => builder.add_null_or_void(),
             };
+        }
 
-            let mut builder = UnionBuilder::default();
+        let return_type = self.unions.build_union(builder);
 
-            for ty in ty {
-                match ty {
-                    ReturnTypeConstituent::Object(obj) => builder.add_object(Some(obj)),
-                    ReturnTypeConstituent::Invalid => builder.add_object(None),
-                    ReturnTypeConstituent::NullOrVoid => builder.add_null_or_void(),
-                };
-            }
-
-            match builder.try_build() {
-                Ok(t) => t,
-                Err(_) => self.unions.write().unwrap().build_union(builder),
-            }
-        };
-
-        let prop_assignments = {
-            self.return_states
-                .write()
-                .unwrap()
-                .remove(&node)
-                .unwrap_or_default()
-        };
+        let prop_assignments = self.return_states.remove(&node).unwrap_or_default();
 
         let resolved = ResolvedCall {
             return_type,
             prop_assignments,
         };
 
-        self.resolved_calls.write().unwrap().insert(node, resolved);
+        self.resolved_calls.insert(node, resolved);
     }
 }
 
@@ -247,42 +201,42 @@ pub(super) fn resolve_call(call: CallId, store: &mut Store) {
         return;
     }
 
-    let visitor = Resolver {
+    let mut visitor = Resolver {
         call_templates: &store.call_templates,
-        functions: RwLock::new(&mut store.functions),
+        functions: &mut store.functions,
         static_fn_data: &store.static_fn_data,
-        resolved_calls: RwLock::new(&mut store.resolved_calls),
-        cur_object_id: Mutex::new(&mut store.cur_object_id),
-        objects_map: RwLock::new(&mut store.objects_map),
-        call_objects: RwLock::new(&mut store.call_objects),
-        object_links: RwLock::new(&mut store.object_links),
+        resolved_calls: &mut store.resolved_calls,
+        cur_object_id: &mut store.cur_object_id,
+        objects_map: &mut store.objects_map,
+        call_objects: &mut store.call_objects,
+        object_links: &mut store.object_links,
         resolving_call_object: store.resolving_call_object,
-        unions: RwLock::new(&mut store.unions),
-        invalid_objects: RwLock::new(&mut store.invalid_objects),
-        calls: &store.calls,
+        unions: &mut store.unions,
+        invalid_objects: &mut store.invalid_objects,
+        calls: &mut store.calls,
         fn_assignments: &store.fn_assignments,
-        return_types: RwLock::default(),
-        return_states: RwLock::default(),
+        return_types: Default::default(),
+        return_states: Default::default(),
         root_call: call,
     };
 
-    process(call, &visitor);
+    process(call, &mut visitor);
 
     debug_assert!(store.resolved_calls.contains_key(&call));
 }
 
 fn get_property(
     prop_assignments: &PropertyAssignments,
-    unions: &RwLock<&mut UnionStore>,
+    unions: &mut UnionStore,
     object: Option<Pointer>,
     key: &JsWord,
-    invalid_objects: &RwLock<&mut GrowableBitSet<ObjectId>>,
+    invalid_objects: &mut GrowableBitSet<ObjectId>,
 ) -> Option<Pointer> {
     if let Some(Pointer::NullOrVoid) = object {
         return Some(Pointer::NullOrVoid);
     }
     let invalid = match object {
-        Some(Pointer::Object(obj)) => invalid_objects.read().unwrap().contains(obj),
+        Some(Pointer::Object(obj)) => invalid_objects.contains(obj),
         Some(Pointer::Union(union)) => {
             let invalid = { invalidated(Pointer::Union(union), invalid_objects, unions) };
             if invalid {
@@ -307,12 +261,7 @@ fn get_property(
                     );
                 }
                 Some(Pointer::Union(union)) => {
-                    let constituents = {
-                        unions.read().unwrap()[union]
-                            .constituents()
-                            .collect::<Vec<_>>()
-                    };
-                    for constituent in constituents {
+                    for constituent in unions[union].constituents() {
                         let constituent = prop_assignments
                             .get(&(constituent, key.clone()))
                             .map(|a| a.rhs)
@@ -339,7 +288,6 @@ fn get_property(
         Some(Pointer::Union(union)) => {
             let mut builder = UnionBuilder::default();
 
-            let unions = &mut unions.write().unwrap();
             for constituent in unions[union].constituents() {
                 let constituent = prop_assignments
                     .get(&(constituent, key.clone()))
@@ -357,7 +305,7 @@ fn get_property(
 
 /// Returns a [`Pointer`] to a union of `pointer1`'s type and `pointer2`'s type.
 fn create_union(
-    unions: &RwLock<&mut UnionStore>,
+    unions: &mut UnionStore,
     pointer1: Option<Pointer>,
     pointer2: Option<Pointer>,
 ) -> Option<Pointer> {
@@ -365,33 +313,11 @@ fn create_union(
         return pointer1;
     }
 
-    let simple1 = match pointer1 {
-        Some(Pointer::Union(_)) => None,
-        Some(Pointer::Object(o)) => Some(Some(o)),
-        Some(Pointer::Fn(_) | Pointer::NullOrVoid) | None => Some(None),
-    };
-    let simple2 = match pointer2 {
-        Some(Pointer::Union(_)) => None,
-        Some(Pointer::Object(o)) => Some(Some(o)),
-        Some(Pointer::Fn(_) | Pointer::NullOrVoid) | None => Some(None),
-    };
-
     let mut builder = UnionBuilder::default();
 
-    // Try to avoid any read/write locks for simple unions.
-    if let (Some(simple1), Some(simple2)) = (simple1, simple2) {
-        builder.add_object(simple1);
-        builder.add_object(simple2);
-        match builder.try_build() {
-            Ok(t) => t,
-            Err(_) => unions.write().unwrap().build_union(builder),
-        }
-    } else {
-        let unions = &mut unions.write().unwrap();
-        builder.add(pointer1, unions);
-        builder.add(pointer2, unions);
-        unions.build_union(builder)
-    }
+    builder.add(pointer1, unions);
+    builder.add(pointer2, unions);
+    unions.build_union(builder)
 }
 
 trait GetPropAssignments: Copy {
@@ -422,15 +348,14 @@ impl<'a> GetPropAssignments for &'a PropertyAssignments {
     }
 }
 
-impl<'a, 'b> GetPropAssignments for (&'a ParIndexSet<Call>, CallId) {
+impl<'a, 'b> GetPropAssignments for (&'a IndexSet<CallId, Call>, CallId) {
     fn prop_assignments(
         &self,
         object: ObjectId,
         queue: &mut Vec<Pointer>,
         done: &FxHashSet<Pointer>,
     ) {
-        let lock = self.0.get(self.1);
-        let props = &lock.get().prop_assignments;
+        let props = &self.0[self.1].prop_assignments;
         for ((o, _), prop) in props.iter() {
             if *o == object {
                 if let Some(value) = prop.rhs {
@@ -445,8 +370,8 @@ impl<'a, 'b> GetPropAssignments for (&'a ParIndexSet<Call>, CallId) {
 
 /// Recursively invalidates the entity that `pointer` points to.
 fn invalidate(
-    invalid_objects: &RwLock<&mut GrowableBitSet<ObjectId>>,
-    unions: &RwLock<&mut UnionStore>,
+    invalid_objects: &mut GrowableBitSet<ObjectId>,
+    unions: &UnionStore,
     pointer: Option<Pointer>,
     prop_assignments: impl GetPropAssignments,
 ) {
@@ -463,14 +388,14 @@ fn invalidate(
 
             match pointer {
                 Pointer::Object(obj) => {
-                    let new_invalidation = { invalid_objects.write().unwrap().insert(obj) };
+                    let new_invalidation = invalid_objects.insert(obj);
 
                     if new_invalidation {
                         prop_assignments.prop_assignments(obj, &mut queue, &done);
                     }
                 }
                 Pointer::Union(union) => {
-                    for constituent in unions.read().unwrap()[union].constituents() {
+                    for constituent in unions[union].constituents() {
                         let pointer = Pointer::Object(constituent);
                         if !done.contains(&pointer) {
                             queue.push(pointer);
@@ -486,23 +411,16 @@ fn invalidate(
 /// Returns true if `pointer` points to an invalid object.
 fn invalidated(
     pointer: Pointer,
-    invalid_objects: &RwLock<&mut GrowableBitSet<ObjectId>>,
-    unions: &RwLock<&mut UnionStore>,
+    invalid_objects: &GrowableBitSet<ObjectId>,
+    unions: &UnionStore,
 ) -> bool {
     match pointer {
-        Pointer::Object(obj) => invalid_objects.read().unwrap().contains(obj),
+        Pointer::Object(obj) => invalid_objects.contains(obj),
         Pointer::Union(union) => {
-            union.invalid() || {
-                // TODO: bad clone
-                let constituents = {
-                    unions.read().unwrap()[union]
-                        .constituents()
-                        .collect::<Vec<_>>()
-                };
-                constituents
-                    .iter()
-                    .any(|&obj| invalid_objects.read().unwrap().contains(obj))
-            }
+            union.invalid()
+                || unions[union]
+                    .constituents()
+                    .any(|obj| invalid_objects.contains(obj))
         }
         Pointer::Fn(_) => true,
         Pointer::NullOrVoid => false,
@@ -760,9 +678,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                             );
                                         }
                                         Pointer::Union(union) => {
-                                            for constituent in
-                                                self.unions.read().unwrap()[union].constituents()
-                                            {
+                                            for constituent in self.unions[union].constituents() {
                                                 machine.state.insert_prop_assignment(
                                                     (constituent, prop.clone()),
                                                     new,
@@ -846,8 +762,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                     let mut arg = machine.get_r_value();
                     match arg {
                         Some(Pointer::Object(o)) => {
-                            let invalid_objects = self.invalid_objects.read().unwrap();
-                            if invalid_objects.contains(o) {
+                            if self.invalid_objects.contains(o) {
                                 arg = None;
                             }
                         }
@@ -881,10 +796,9 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
 
                     if let Some(heap) = &args.args {
                         if !heap.is_empty() {
-                            let invalid_objects = self.invalid_objects.read().unwrap();
                             if heap.iter().all(|a| match a {
                                 Some(Pointer::Union(union)) => union.invalid(),
-                                Some(Pointer::Object(obj)) => invalid_objects.contains(*obj),
+                                Some(Pointer::Object(obj)) => self.invalid_objects.contains(*obj),
                                 Some(Pointer::Fn(_)) | None => true,
                                 Some(Pointer::NullOrVoid) => false,
                             }) {
@@ -902,15 +816,13 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                         let mut queue = Vec::new();
 
                         {
-                            let unions = &self.unions.read().unwrap();
-
                             for arg in args.iter() {
                                 match arg {
                                     Some(Pointer::Object(o)) => {
                                         queue.push(*o);
                                     }
                                     Some(Pointer::Union(union)) => {
-                                        queue.extend(unions[*union].constituents());
+                                        queue.extend(self.unions[*union].constituents());
                                     }
                                     Some(Pointer::Fn(_)) | Some(Pointer::NullOrVoid) | None => {}
                                 }
@@ -929,13 +841,9 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
 
                             done.insert(o);
 
-                            {
-                                if self.invalid_objects.read().unwrap().contains(o) {
-                                    continue;
-                                }
+                            if self.invalid_objects.contains(o) {
+                                continue;
                             }
-
-                            let unions = &self.unions.read().unwrap();
 
                             for (key, value) in machine
                                 .state
@@ -955,7 +863,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                             }
                                         }
                                         Some(Pointer::Union(union)) => {
-                                            for constituent in unions[union].constituents() {
+                                            for constituent in self.unions[union].constituents() {
                                                 if o == self.resolving_call_object {
                                                     return None;
                                                 }
@@ -981,14 +889,9 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                     if cfg!(debug_assertions) {
                         let depends_on_unresolved_call = |pointer| match pointer {
                             Some(Pointer::Object(o)) => o == self.resolving_call_object,
-                            Some(Pointer::Union(union)) => {
-                                let constituents = {
-                                    self.unions.read().unwrap()[union]
-                                        .constituents()
-                                        .collect::<Vec<_>>()
-                                };
-                                constituents.contains(&self.resolving_call_object)
-                            }
+                            Some(Pointer::Union(union)) => self.unions[union]
+                                .constituents()
+                                .any(|c| c == self.resolving_call_object),
                             Some(Pointer::Fn(_)) | Some(Pointer::NullOrVoid) | None => false,
                         };
                         if let CallArgs::Heap(args) = &inner_call.args {
@@ -1009,18 +912,10 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
 
                     let inner_call_id = self.calls.insert(inner_call);
 
-                    let existing =
-                        {
-                            // TODO: bad clone
-                            self.resolved_calls.read().unwrap().get(&inner_call_id).map(
-                                |resolved| {
-                                    (
-                                        resolved.return_type,
-                                        Some(resolved.prop_assignments.clone()),
-                                    )
-                                },
-                            )
-                        };
+                    let existing = self
+                        .resolved_calls
+                        .get(&inner_call_id)
+                        .map(|resolved| (resolved.return_type, Some(&resolved.prop_assignments)));
 
                     let (return_type, incoming_assignments) = match existing {
                         Some((t, a)) => (t, a),
@@ -1029,65 +924,42 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                 self.incomplete_dependencies.insert(inner_call_id);
                             }
 
-                            let builder = {
-                                let return_types = self.return_types.read().unwrap();
-                                let return_types = {
-                                    match return_types.get(&inner_call_id) {
-                                        Some(t) => t,
-                                        None => {
-                                            machine.set_r_value(Some(Pointer::Object(
-                                                self.resolving_call_object,
-                                            )));
-                                            continue;
-                                        }
-                                    }
-                                };
-                                if return_types.is_empty() {
+                            let return_types = match self.return_types.get(&inner_call_id) {
+                                Some(t) => t,
+                                None => {
                                     machine.set_r_value(Some(Pointer::Object(
                                         self.resolving_call_object,
                                     )));
                                     continue;
                                 }
-
-                                let mut builder = UnionBuilder::default();
-
-                                for &ty in return_types {
-                                    match ty {
-                                        ReturnTypeConstituent::Object(obj) => {
-                                            builder.add_object(Some(obj))
-                                        }
-                                        ReturnTypeConstituent::Invalid => builder.add_object(None),
-                                        ReturnTypeConstituent::NullOrVoid => {
-                                            builder.add_null_or_void()
-                                        }
-                                    };
-                                }
-
-                                builder
                             };
+                            if return_types.is_empty() {
+                                machine
+                                    .set_r_value(Some(Pointer::Object(self.resolving_call_object)));
+                                continue;
+                            }
 
-                            let result = match builder.try_build() {
-                                Ok(t) => t,
-                                Err(_) => self.unions.write().unwrap().build_union(builder),
-                            };
+                            let mut builder = UnionBuilder::default();
 
-                            // TODO: bad clone
-                            (
-                                result,
-                                self.return_states
-                                    .read()
-                                    .unwrap()
-                                    .get(&inner_call_id)
-                                    .cloned(),
-                            )
+                            for &ty in return_types {
+                                match ty {
+                                    ReturnTypeConstituent::Object(obj) => {
+                                        builder.add_object(Some(obj))
+                                    }
+                                    ReturnTypeConstituent::Invalid => builder.add_object(None),
+                                    ReturnTypeConstituent::NullOrVoid => builder.add_null_or_void(),
+                                };
+                            }
+
+                            let result = self.unions.build_union(builder);
+
+                            (result, self.return_states.get(&inner_call_id))
                         }
                     };
 
                     if let Some(incoming_assignments) = incoming_assignments {
                         for ((obj, key), prop) in incoming_assignments.iter() {
-                            let obj_invalid =
-                                { self.invalid_objects.read().unwrap().contains(*obj) };
-                            if obj_invalid {
+                            if self.invalid_objects.contains(*obj) {
                                 continue;
                             }
                             let key = (*obj, key.clone());
@@ -1115,32 +987,23 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
 
                     macro_rules! add_return_ty {
                         ($ty:expr) => {
-                            self.return_types
-                                .write()
-                                .unwrap()
-                                .entry(self.call)
-                                .or_default()
-                                .insert($ty)
+                            self.return_types.entry(self.call).or_default().insert($ty)
                         };
                     }
 
                     let r_value = machine.get_r_value();
-                    let none_in_return_ty = {
-                        self.return_types
-                            .read()
-                            .unwrap()
-                            .get(&self.call)
-                            .map(|ty| ty.contains(&ReturnTypeConstituent::Invalid))
-                            .unwrap_or_default()
-                    };
+                    let none_in_return_ty = self
+                        .return_types
+                        .get(&self.call)
+                        .map(|ty| ty.contains(&ReturnTypeConstituent::Invalid))
+                        .unwrap_or_default();
                     let mut queue = Vec::new();
                     match r_value {
                         Some(Pointer::Object(o)) => {
                             if o == self.resolving_call_object {
                                 return None;
                             }
-                            let invalid = { self.invalid_objects.read().unwrap().contains(o) };
-                            if invalid {
+                            if self.invalid_objects.contains(o) {
                                 if !none_in_return_ty {
                                     add_return_ty!(ReturnTypeConstituent::Invalid);
                                     changed = true;
@@ -1157,20 +1020,12 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                     changed = true;
                                 }
                             } else {
-                                let constituents = {
-                                    let unions = self.unions.read().unwrap();
-                                    let union = &unions[union];
-                                    if union.contains(self.resolving_call_object)
-                                        && union.len() == 1
-                                    {
-                                        return None;
-                                    }
-                                    // TODO: bad clone
-                                    union.constituents().collect::<Vec<_>>()
-                                };
-
-                                queue.extend_from_slice(&constituents);
-                                for constituent in constituents {
+                                let union = &self.unions[union];
+                                if union.contains(self.resolving_call_object) && union.len() == 1 {
+                                    return None;
+                                }
+                                queue.extend(union.constituents());
+                                for constituent in union.constituents() {
                                     if constituent != self.resolving_call_object {
                                         changed |= add_return_ty!(ReturnTypeConstituent::Object(
                                             constituent
@@ -1190,14 +1045,14 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                         }
                     }
 
-                    if let CallArgs::Heap(args) = { self.calls.get(self.call).get().args.clone() } {
+                    if let CallArgs::Heap(args) = &self.calls[self.call].args {
                         for &arg in args.iter() {
                             match arg {
                                 Some(Pointer::Object(o)) => {
                                     queue.push(o);
                                 }
                                 Some(Pointer::Union(union)) => {
-                                    queue.extend(self.unions.read().unwrap()[union].constituents());
+                                    queue.extend(self.unions[union].constituents());
                                 }
                                 Some(Pointer::Fn(_)) | Some(Pointer::NullOrVoid) | None => {}
                             }
@@ -1205,14 +1060,14 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                     }
 
                     fn depends_on_unresolved_call(
-                        unions: &RwLock<&mut UnionStore>,
+                        unions: &UnionStore,
                         pointer: Option<Pointer>,
                         resolving_call_object: ObjectId,
                     ) -> bool {
                         match pointer {
                             Some(Pointer::Object(o)) => o == resolving_call_object,
                             Some(Pointer::Union(union)) => {
-                                unions.read().unwrap()[union].contains(resolving_call_object)
+                                unions[union].contains(resolving_call_object)
                             }
                             Some(Pointer::Fn(_)) | Some(Pointer::NullOrVoid) | None => false,
                         }
@@ -1229,8 +1084,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                             changed = true;
                             continue;
                         }
-                        let obj_invalid = { self.invalid_objects.read().unwrap().contains(obj) };
-                        if obj_invalid {
+                        if self.invalid_objects.contains(obj) {
                             continue;
                         }
                         for ((o, key), prop) in machine
@@ -1259,9 +1113,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                 }
                                 Some(Pointer::Union(union)) => {
                                     if !union.invalid() {
-                                        for constituent in
-                                            self.unions.read().unwrap()[union].constituents()
-                                        {
+                                        for constituent in self.unions[union].constituents() {
                                             if !done.contains(&constituent) {
                                                 queue.push(constituent);
                                             }
@@ -1271,21 +1123,16 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                 Some(Pointer::Fn(_) | Pointer::NullOrVoid) | None => {}
                             }
                             let key = (obj, key.clone());
-                            let existing = {
-                                self.return_states
-                                    .read()
-                                    .unwrap()
-                                    .get(&self.call)
-                                    .and_then(|m| m.get(&key))
-                                    .copied()
-                            };
+                            let existing = self
+                                .return_states
+                                .get(&self.call)
+                                .and_then(|m| m.get(&key))
+                                .copied();
                             match existing {
                                 Some(existing) => {
                                     let union = create_union(self.unions, existing.rhs, prop.rhs);
                                     let old = self
                                         .return_states
-                                        .write()
-                                        .unwrap()
                                         .entry(self.call)
                                         .or_default()
                                         .insert(key, Assignment { rhs: union })
@@ -1295,8 +1142,6 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                 }
                                 None => {
                                     self.return_states
-                                        .write()
-                                        .unwrap()
                                         .entry(self.call)
                                         .or_default()
                                         .insert(key, *prop);
@@ -1320,14 +1165,11 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                 Step::StoreUnion => {
                     let parts = machine.unions.pop().unwrap();
 
-                    let result = {
-                        let unions = &mut self.unions.write().unwrap();
-                        let mut builder = UnionBuilder::default();
-                        for ty in parts {
-                            builder.add(ty, unions);
-                        }
-                        unions.build_union(builder)
-                    };
+                    let mut builder = UnionBuilder::default();
+                    for ty in parts {
+                        builder.add(ty, self.unions);
+                    }
+                    let result = self.unions.build_union(builder);
 
                     machine.set_r_value(result);
                 }
@@ -1353,47 +1195,25 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
     /// calls from interfering with each other, unless required for correctness.
     /// See test `test_calls_do_not_interfere`
     fn get_call_obj(&mut self, node_id: NodeId) -> Option<Pointer> {
-        let existing = { self.objects_map.read().unwrap().get(&node_id).copied() };
-        let root = if let Some(existing) = existing {
-            existing
-        } else {
-            let object_id = {
-                let mut lock = self.cur_object_id.lock().unwrap();
-                let object_id = **lock;
-                lock.increment_by(1);
+        let root = match self.objects_map.entry(node_id) {
+            Entry::Occupied(entry) => *entry.get(),
+            Entry::Vacant(entry) => {
+                let object_id = *self.cur_object_id;
+                self.cur_object_id.increment_by(1);
+                entry.insert(object_id);
                 object_id
-            };
-            self.objects_map.write().unwrap().insert(node_id, object_id);
-            object_id
+            }
         };
 
-        let existing = {
-            self.call_objects
-                .read()
-                .unwrap()
-                .get(&(self.root_call, node_id))
-                .copied()
-        };
-
-        let local_id = if let Some(existing) = existing {
-            existing
-        } else {
-            let object_id = {
-                let mut lock = self.cur_object_id.lock().unwrap();
-                let object_id = **lock;
-                lock.increment_by(1);
+        let local_id = match self.call_objects.entry((self.root_call, node_id)) {
+            Entry::Occupied(entry) => *entry.get(),
+            Entry::Vacant(entry) => {
+                let object_id = *self.cur_object_id;
+                self.cur_object_id.increment_by(1);
+                entry.insert(object_id);
+                self.object_links.insert((root, object_id));
                 object_id
-            };
-            {
-                self.call_objects
-                    .write()
-                    .unwrap()
-                    .insert((self.root_call, node_id), object_id)
-            };
-            {
-                self.object_links.write().unwrap().insert((root, object_id))
-            };
-            object_id
+            }
         };
 
         debug_assert!(root < local_id);
@@ -1411,13 +1231,12 @@ impl JoinOp {
     fn joinFlow(
         &mut self,
         input: &Lattice,
-        unions: &RwLock<&mut UnionStore>,
-        invalid_objects: &RwLock<&mut GrowableBitSet<ObjectId>>,
+        unions: &mut UnionStore,
+        invalid_objects: &mut GrowableBitSet<ObjectId>,
     ) {
         // Merge property assignments.
         for ((obj, key), prop) in input.prop_assignments.iter() {
-            let obj_invalid = { invalid_objects.read().unwrap().contains(*obj) };
-            if obj_invalid {
+            if invalid_objects.contains(*obj) {
                 continue;
             }
             match self.result.prop_assignments.entry((*obj, key.clone())) {
@@ -1468,20 +1287,20 @@ struct DataFlowAnalysis<'ast, 'a> {
 
     path_map: &'a FxHashMap<Node<'ast>, Vec<Step>>,
 
-    resolved_calls: &'a RwLock<&'ast mut FxHashMap<CallId, ResolvedCall>>,
+    resolved_calls: &'ast mut FxHashMap<CallId, ResolvedCall>,
 
     incomplete_dependencies: &'a mut FxHashSet<CallId>,
 
-    return_types: &'a RwLock<FxHashMap<CallId, FxHashSet<ReturnTypeConstituent>>>,
-    return_states: &'a RwLock<FxHashMap<CallId, PropertyAssignments>>,
-    cur_object_id: &'a Mutex<&'ast mut ObjectId>,
-    objects_map: &'a RwLock<&'ast mut FxHashMap<NodeId, ObjectId>>,
-    call_objects: &'a RwLock<&'ast mut FxHashMap<(CallId, NodeId), ObjectId>>,
-    object_links: &'a RwLock<&'ast mut FxHashSet<(ObjectId, ObjectId)>>,
+    return_types: &'ast mut FxHashMap<CallId, FxHashSet<ReturnTypeConstituent>>,
+    return_states: &'ast mut FxHashMap<CallId, PropertyAssignments>,
+    cur_object_id: &'ast mut ObjectId,
+    objects_map: &'ast mut FxHashMap<NodeId, ObjectId>,
+    call_objects: &'ast mut FxHashMap<(CallId, NodeId), ObjectId>,
+    object_links: &'ast mut FxHashSet<(ObjectId, ObjectId)>,
     resolving_call_object: ObjectId,
-    unions: &'a RwLock<&'ast mut UnionStore>,
-    invalid_objects: &'a RwLock<&'ast mut GrowableBitSet<ObjectId>>,
-    calls: &'a ParIndexSet<Call>,
+    unions: &'ast mut UnionStore,
+    invalid_objects: &'ast mut GrowableBitSet<ObjectId>,
+    calls: &'a mut IndexSet<CallId, Call>,
     changed: &'a mut bool,
 
     fn_assignments: &'a HashableHashMap<Id, Assignment>,

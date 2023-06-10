@@ -1,7 +1,6 @@
 use std::{collections::VecDeque, fmt::Debug, hash::Hash, num::NonZeroUsize};
 
 use petgraph::{graphmap::NodeTrait, prelude::DiGraphMap, visit::NodeIndexable, Direction::*};
-use rayon::prelude::*;
 use rustc_hash::FxHashSet;
 
 pub trait Visitor<N>: Sync
@@ -10,12 +9,12 @@ where
 {
     /// Visit a node, adding its dependencies to `dependencies` and returning
     /// `true` if the node's state changed.
-    fn visit_node(&self, node: N, dependencies: &mut FxHashSet<N>) -> bool;
+    fn visit_node(&mut self, node: N, dependencies: &mut FxHashSet<N>) -> bool;
 
-    fn finish_node(&self, node: N);
+    fn finish_node(&mut self, node: N);
 }
 
-pub fn process<N, V>(root: N, visitor: &V)
+pub fn process<N, V>(root: N, visitor: &mut V)
 where
     N: Copy + Ord + Hash + Debug + Send + Eq + Sync,
     V: Visitor<N>,
@@ -24,8 +23,6 @@ where
     graph.add_node(root);
 
     let mut fringe = vec![root];
-
-    let mut dep_updates: Vec<(N, bool, FxHashSet<N>)> = Vec::new();
 
     let mut fringe_candidates = FxHashSet::default();
 
@@ -38,13 +35,9 @@ where
         Update(N, FxHashSet<N>),
     }
 
-    let mut scc_results: Vec<SCCResult<N>> = Vec::new();
-
     let mut finished = FxHashSet::default();
 
     loop {
-        debug_assert!(dep_updates.is_empty());
-
         fringe_candidates.clear();
 
         debug_assert!(fringe
@@ -54,19 +47,10 @@ where
         if !fringe.is_empty() {
             // Fast(er) path; pull from pre-computed fringe.
 
-            finished.clear();
+            for &node in &fringe {
+                let mut updated_deps = FxHashSet::default();
+                let node_changed = visitor.visit_node(node, &mut updated_deps);
 
-            fringe
-                .par_drain(..)
-                .map(|node| {
-                    let mut updated_dependencies = FxHashSet::default();
-                    let node_changed = visitor.visit_node(node, &mut updated_dependencies);
-
-                    (node, node_changed, updated_dependencies)
-                })
-                .collect_into_vec(&mut dep_updates);
-
-            for (node, node_changed, updated_deps) in dep_updates.drain(..) {
                 debug_assert!(!updated_deps.contains(&node));
 
                 existing_dependencies.clear();
@@ -114,6 +98,7 @@ where
                     fringe_candidates.insert(node);
                 }
             }
+            fringe.clear();
         } else {
             // Slow(er) path; use Tarjan to find a batch of SCCs we can process in parallel.
 
@@ -123,72 +108,64 @@ where
                 unreachable!("root should be present and form SCC");
             }
 
-            debug_assert!(scc_results.is_empty());
+            for &(start, end) in &scc_state.starts {
+                let scc = &scc_state.components[start..end];
 
-            scc_state
-                .starts
-                .par_iter()
-                .map(|&(start, end)| {
-                    let scc = &scc_state.components[start..end];
+                let mut queue: VecDeque<N> = VecDeque::default();
+                let mut queue_set: FxHashSet<N> = FxHashSet::default();
 
-                    let mut queue: VecDeque<N> = VecDeque::default();
-                    let mut queue_set: FxHashSet<N> = FxHashSet::default();
+                queue.extend(scc);
+                queue_set.extend(scc);
 
-                    queue.extend(scc);
-                    queue_set.extend(scc);
+                let mut updated_deps = FxHashSet::default();
 
-                    let mut updated_deps = FxHashSet::default();
+                let mut scc_invalidated = false;
 
-                    let mut scc_invalidated = false;
+                let mut existing_dependencies = FxHashSet::default();
 
-                    let mut existing_dependencies = FxHashSet::default();
+                let mut node;
+                loop {
+                    node = queue.pop_front();
+                    let node = match node {
+                        Some(n) => n,
+                        None => break,
+                    };
 
-                    let mut node;
-                    loop {
-                        node = queue.pop_front();
-                        let node = match node {
-                            Some(n) => n,
-                            None => break,
-                        };
+                    queue_set.remove(&node);
+                    updated_deps.clear();
+                    let node_changed = visitor.visit_node(node, &mut updated_deps);
 
-                        queue_set.remove(&node);
-                        updated_deps.clear();
-                        let node_changed = visitor.visit_node(node, &mut updated_deps);
+                    debug_assert!(!updated_deps.contains(&node));
 
-                        debug_assert!(!updated_deps.contains(&node));
+                    existing_dependencies.clear();
+                    existing_dependencies.extend(graph.neighbors_directed(node, Outgoing));
 
-                        existing_dependencies.clear();
-                        existing_dependencies.extend(graph.neighbors_directed(node, Outgoing));
+                    let mut old_dependencies = existing_dependencies.difference(&updated_deps);
+                    let mut new_dependencies = updated_deps.difference(&existing_dependencies);
 
-                        let mut old_dependencies = existing_dependencies.difference(&updated_deps);
-                        let mut new_dependencies = updated_deps.difference(&existing_dependencies);
+                    let deps_changed =
+                        old_dependencies.next().is_some() || new_dependencies.next().is_some();
 
-                        let deps_changed =
-                            old_dependencies.next().is_some() || new_dependencies.next().is_some();
+                    if deps_changed {
+                        scc_invalidated = true;
+                        break;
+                    }
 
-                        if deps_changed {
-                            scc_invalidated = true;
-                            break;
-                        }
-
-                        if node_changed {
-                            for dependant in graph.neighbors_directed(node, Incoming) {
-                                if queue_set.insert(dependant) {
-                                    queue.push_back(dependant);
-                                }
+                    if node_changed {
+                        for dependant in graph.neighbors_directed(node, Incoming) {
+                            if queue_set.insert(dependant) {
+                                queue.push_back(dependant);
                             }
                         }
                     }
+                }
 
-                    if scc_invalidated {
-                        SCCResult::Update(node.unwrap(), updated_deps)
-                    } else {
-                        SCCResult::Finish
-                    }
-                })
-                .collect_into_vec(&mut scc_results);
+                let result = if scc_invalidated {
+                    SCCResult::Update(node.unwrap(), updated_deps)
+                } else {
+                    SCCResult::Finish
+                };
 
-            for (index, result) in scc_results.drain(..).enumerate() {
                 match result {
                     SCCResult::Update(node, updated_deps) => {
                         debug_assert!(!updated_deps.contains(&node));
@@ -206,6 +183,9 @@ where
 
                         for &new in new_dependencies {
                             debug_assert!(!graph.contains_edge(node, new));
+                            if finished.contains(&new) {
+                                continue;
+                            }
                             if !graph.contains_node(new) {
                                 fringe_candidates.insert(new);
                             }
@@ -217,7 +197,6 @@ where
                         }
                     }
                     SCCResult::Finish => {
-                        let (start, end) = scc_state.starts[index];
                         let scc = &scc_state.components[start..end];
 
                         let contains_root = scc.contains(&root);
@@ -239,6 +218,8 @@ where
                             {
                                 fringe_candidates.insert(external_dependant);
                             }
+
+                            finished.insert(node);
 
                             graph.remove_node(node);
                         }
