@@ -496,6 +496,9 @@ impl MachineState {
             if *existing == value {
                 return;
             }
+        } else if let Some(Pointer::NullOrVoid) = value.rhs {
+            // Assigning null/void is the same as having nothing assigned.
+            return;
         }
 
         self.get_mut(lattice_elements)

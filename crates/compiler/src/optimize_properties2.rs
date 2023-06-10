@@ -378,15 +378,6 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
     rename_map
 }
 
-struct NameLenVisitor {
-    names: FxHashSet<JsWord>,
-}
-impl Visit<'_> for NameLenVisitor {
-    fn visit_ident(&mut self, node: &Ident) {
-        self.names.insert(node.sym.clone());
-    }
-}
-
 pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> {
     let mut store = Store {
         calls: IndexSet::default(),
@@ -1090,6 +1081,9 @@ impl CowLattice<'_> {
             if *existing == value {
                 return;
             }
+        } else if let Some(Pointer::NullOrVoid) = value.rhs {
+            // Assigning null/void is the same as having nothing assigned.
+            return;
         }
 
         self.0.to_mut().prop_assignments.insert(prop, value);
