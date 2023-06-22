@@ -46,7 +46,7 @@ impl Fold for Normalizer {
                     });
                 }
                 Expr::Seq(SeqExpr {
-                    node_id: NodeId::from_u32(0),
+                    node_id: NodeId::DUMMY,
                     exprs,
                     span,
                 })
@@ -91,9 +91,7 @@ impl Fold for Normalizer {
 
         if let Pat::Expr(expr) = node {
             match *expr {
-                Expr::Ident(i) => {
-                    return Pat::Ident(BindingIdent::from_ident(i, NodeId::from_u32(0)))
-                }
+                Expr::Ident(i) => return Pat::Ident(BindingIdent::from_ident(i, NodeId::DUMMY)),
                 _ => {
                     node = Pat::Expr(expr);
                 }
@@ -110,7 +108,7 @@ impl Fold for Normalizer {
             PatOrExpr::Expr(expr) => match *expr {
                 Expr::Ident(i) => PatOrExpr::Pat(Box::new(Pat::Ident(BindingIdent::from_ident(
                     i,
-                    NodeId::from_u32(0),
+                    NodeId::DUMMY,
                 )))),
                 _ => PatOrExpr::Expr(expr),
             },
@@ -130,14 +128,14 @@ impl Fold for Normalizer {
 
         match n {
             PropName::Ident(Ident { span, sym, .. }) => PropName::Str(Str {
-                node_id: NodeId::from_u32(0),
+                node_id: NodeId::DUMMY,
                 span,
                 value: sym,
                 has_escape: false,
                 kind: Default::default(),
             }),
             PropName::Num(num) => PropName::Str(Str {
-                node_id: NodeId::from_u32(0),
+                node_id: NodeId::DUMMY,
                 span: num.span,
                 value: num.to_string().into(),
                 has_escape: false,
@@ -156,7 +154,7 @@ impl Fold for Normalizer {
     }
 
     fn fold_node_id(&mut self, _node_id: NodeId) -> NodeId {
-        NodeId::from_u32(0)
+        NodeId::DUMMY
     }
 
     fn fold_str(&mut self, s: Str) -> Str {

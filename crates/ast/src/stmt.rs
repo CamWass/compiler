@@ -66,7 +66,7 @@ pub enum Stmt {
 impl Take for Stmt {
     fn dummy() -> Self {
         Self::Empty(EmptyStmt {
-            node_id: NodeId::MAX,
+            node_id: NodeId::DUMMY,
             span: DUMMY_SP,
         })
     }

@@ -41,7 +41,7 @@ pub struct Ident {
 impl Take for Ident {
     fn dummy() -> Self {
         Ident {
-            node_id: NodeId::MAX,
+            node_id: NodeId::DUMMY,
             span: DUMMY_SP,
             sym: js_word!(""),
             optional: false,

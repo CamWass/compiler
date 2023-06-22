@@ -59,7 +59,6 @@ version = "0.1.0"
 dependencies = [
  "ast_node",
  "global_common",
- "index",
  "node_id",
  "num-bigint",
  "string_enum",

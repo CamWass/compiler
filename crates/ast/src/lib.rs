@@ -64,7 +64,6 @@ pub use self::{
 };
 use ast_node::ast_node;
 use global_common::{EqIgnoreSpan, Span};
-use index::{newtype_index, vec::Idx};
 
 #[macro_use]
 mod macros;
@@ -83,11 +82,11 @@ mod prop;
 mod stmt;
 mod typescript;
 
-newtype_index! {
-    pub struct NodeId {
-        derive [EqIgnoreSpan]
-        DEBUG_FORMAT = "NodeId({})"
-    }
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, EqIgnoreSpan, Debug)]
+pub struct NodeId(u32);
+
+impl NodeId {
+    pub const DUMMY: NodeId = NodeId(u32::MAX);
 }
 
 pub trait GetNodeId {
@@ -101,9 +100,7 @@ pub struct NodeIdGen {
 
 impl Default for NodeIdGen {
     fn default() -> Self {
-        Self {
-            cur: NodeId::from_u32(0),
-        }
+        Self { cur: NodeId(0) }
     }
 }
 
@@ -111,7 +108,7 @@ impl NodeIdGen {
     pub fn next(&mut self) -> NodeId {
         // Incrementing after we take the id ensures that NodeId(0) is used.
         let id = self.cur;
-        self.cur.increment_by(1);
+        self.cur.0 += 1;
         id
     }
 }

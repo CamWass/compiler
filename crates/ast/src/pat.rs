@@ -30,7 +30,7 @@ pub enum Pat {
 impl Take for Pat {
     fn dummy() -> Self {
         Pat::Invalid(Invalid {
-            node_id: NodeId::MAX,
+            node_id: NodeId::DUMMY,
             span: DUMMY_SP,
         })
     }
@@ -108,7 +108,7 @@ pub enum ObjectPatProp {
 impl Take for ObjectPatProp {
     fn dummy() -> Self {
         ObjectPatProp::Assign(AssignPatProp {
-            node_id: NodeId::MAX,
+            node_id: NodeId::DUMMY,
             span: DUMMY_SP,
             key: Ident::dummy(),
             value: None,

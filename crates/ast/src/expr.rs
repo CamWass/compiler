@@ -109,7 +109,7 @@ pub enum Expr {
 impl Take for Expr {
     fn dummy() -> Self {
         Self::Invalid(Invalid {
-            node_id: NodeId::MAX,
+            node_id: NodeId::DUMMY,
             span: DUMMY_SP,
         })
     }
@@ -438,7 +438,7 @@ pub enum BlockStmtOrExpr {
 impl Take for BlockStmtOrExpr {
     fn dummy() -> Self {
         Self::BlockStmt(BlockStmt {
-            node_id: NodeId::MAX,
+            node_id: NodeId::DUMMY,
             span: DUMMY_SP,
             stmts: Vec::new(),
         })

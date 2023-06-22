@@ -36,7 +36,7 @@ pub enum Prop {
 impl Take for Prop {
     fn dummy() -> Self {
         Self::Shorthand(Ident {
-            node_id: NodeId::MAX,
+            node_id: NodeId::DUMMY,
             span: DUMMY_SP,
             sym: js_word!(""),
             optional: false,
