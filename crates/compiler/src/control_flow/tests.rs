@@ -1,6 +1,6 @@
 use crate::control_flow::ControlFlowAnalysis::ControlFlowRoot;
 
-use super::node::Node;
+use super::node::{Node, NodeKind};
 use super::print::ast_graph;
 use super::ControlFlowAnalysis::ControlFlowAnalysis;
 use super::ControlFlowGraph::{Branch, ControlFlowGraph, DummyAnnotation};
@@ -26,9 +26,9 @@ macro_rules! make {
         }
 
         fn node_matches_token(node: Node, token: Token) -> bool {
-            match (node, token) {
-                (Node::ImplicitReturn, Token::ImplicitReturn) => true,
-                $((Node::$field(_), Token::$field) => true,)*
+            match (node.kind, token) {
+                (NodeKind::ImplicitReturn, Token::ImplicitReturn) => true,
+                $((NodeKind::$field(_), Token::$field) => true,)*
                 _ => false,
             }
         }
@@ -222,7 +222,7 @@ where
 {
     let root = parse_script(src);
     let cfg = createCfg(&root);
-    let root_node = Node::Script(&root);
+    let root_node = Node::from(&root);
     let ast_graph = AstGraph::new(&root_node);
 
     op(&cfg, &ast_graph);
@@ -569,7 +569,7 @@ fn assertReturnEdge(
     for edge in edges {
         let source = cfg.graph[edge.source()];
         let target = cfg.graph[edge.target()];
-        if node_matches_token(source, startToken) && target == Node::ImplicitReturn {
+        if node_matches_token(source, startToken) && target.is_implicit_return() {
             return;
         }
     }
@@ -591,7 +591,7 @@ fn assertNoReturnEdge(
         let target = cfg.graph[edge.target()];
         if node_matches_token(source, startToken) {
             assert!(
-                target != Node::ImplicitReturn,
+                !target.is_implicit_return(),
                 "Token {:?} should not have an out going edge to the implicit return",
                 startToken
             );
@@ -1046,7 +1046,7 @@ fn testSimpleSwitch() {
             cfg,
             ast_graph,
             |n| node_matches_token(n, Token::SwitchCase),
-            |n| matches!(n, Node::SwitchCase(c) if c.is_default()),
+            |n| matches!(n.kind, NodeKind::SwitchCase(c) if c.is_default()),
             Branch::ON_FALSE,
         );
         // Within each case.
@@ -1092,7 +1092,7 @@ fn testSwitchDefaultFirst() {
             cfg,
             ast_graph,
             |n| node_matches_token(n, Token::SwitchCase),
-            |n| matches!(n, Node::SwitchCase(c) if c.is_default()),
+            |n| matches!(n.kind, NodeKind::SwitchCase(c) if c.is_default()),
             Branch::ON_FALSE,
         );
     });
@@ -1121,7 +1121,7 @@ fn testSwitchDefaultInMiddle() {
             cfg,
             ast_graph,
             |n| node_matches_token(n, Token::SwitchCase),
-            |n| matches!(n, Node::SwitchCase(c) if c.is_default()),
+            |n| matches!(n.kind, NodeKind::SwitchCase(c) if c.is_default()),
             Branch::ON_FALSE,
         );
     });
@@ -2628,7 +2628,7 @@ alert(action)";
 fn assertNodeOrder(src: &str, expected: &[Token]) {
     let root = parse_script(src);
     let cfg = createCfg(&root);
-    let root_node = Node::Script(&root);
+    let root_node = Node::from(&root);
     let root = ControlFlowRoot::Script(&root);
     let ast_graph = AstGraph::new(&root_node);
 
@@ -2643,7 +2643,7 @@ fn assertNodeOrder(src: &str, expected: &[Token]) {
     let mut actual = actual.into_iter().map(|(n, p)| n).collect::<Vec<_>>();
 
     // Implicit return must always be last
-    assert!(actual.pop().unwrap() == Node::ImplicitReturn);
+    assert!(actual.pop().unwrap().is_implicit_return());
 
     let eq = actual
         .iter()

@@ -23,13 +23,13 @@ pub enum ControlFlowRoot<'ast> {
 impl<'ast> Into<Node<'ast>> for ControlFlowRoot<'ast> {
     fn into(self) -> Node<'ast> {
         match self {
-            ControlFlowRoot::Script(n) => Node::Script(n),
-            ControlFlowRoot::Module(n) => Node::Module(n),
-            ControlFlowRoot::Function(n) => Node::Function(n),
-            ControlFlowRoot::Constructor(n) => Node::Constructor(n),
-            ControlFlowRoot::ArrowExpr(n) => Node::ArrowExpr(n),
-            ControlFlowRoot::GetterProp(n) => Node::GetterProp(n),
-            ControlFlowRoot::SetterProp(n) => Node::SetterProp(n),
+            ControlFlowRoot::Script(n) => Node::from(n),
+            ControlFlowRoot::Module(n) => Node::from(n),
+            ControlFlowRoot::Function(n) => Node::from(n),
+            ControlFlowRoot::Constructor(n) => Node::from(n),
+            ControlFlowRoot::ArrowExpr(n) => Node::from(n),
+            ControlFlowRoot::GetterProp(n) => Node::from(n),
+            ControlFlowRoot::SetterProp(n) => Node::from(n),
         }
     }
 }
@@ -284,10 +284,13 @@ where
     }
 
     fn handle_enhanced_for(&mut self, for_node: Node<'ast>) {
-        debug_assert!(matches!(for_node, Node::ForInStmt(_) | Node::ForOfStmt(_)));
-        let (right, body) = match for_node {
-            Node::ForInStmt(ForInStmt { right, body, .. })
-            | Node::ForOfStmt(ForOfStmt { right, body, .. }) => (right, body),
+        debug_assert!(matches!(
+            for_node.kind,
+            NodeKind::ForInStmt(_) | NodeKind::ForOfStmt(_)
+        ));
+        let (right, body) = match for_node.kind {
+            NodeKind::ForInStmt(ForInStmt { right, body, .. })
+            | NodeKind::ForOfStmt(ForOfStmt { right, body, .. }) => (right, body),
             _ => unreachable!(),
         };
 
@@ -336,7 +339,13 @@ where
 
         if self.should_traverse_functions || node == self.cfg.entry {
             // We don't want to descend into an expr body of an ArrowExpr e.g. `a => foo()`.
-            if let Some(body @ Node::BlockStmt(_)) = body {
+            if let Some(
+                body @ Node {
+                    kind: NodeKind::BlockStmt(_),
+                    ..
+                },
+            ) = body
+            {
                 self.exception_handler
                     .push(ExceptionHandler::new(&self.parent_stack, node));
 
@@ -371,7 +380,7 @@ where
         while let Some(current_case) = cases_iter.next() {
             // p!(self, SwitchCase);
 
-            let case_node = Node::SwitchCase(current_case);
+            let case_node = Node::from(current_case);
             self.prioritize_node(case_node);
 
             self.parent_stack.push_with_child_nodes(
@@ -418,7 +427,7 @@ where
                                     // are all empty, it goes to the follow node
                                     // of the parent switch stmt.
                                     let follow_node = self.compute_follow_node_with_parent(
-                                        Node::SwitchStmt(switch),
+                                        Node::from(switch),
                                         self.parent_stack.len() - 1,
                                     );
 
@@ -444,11 +453,8 @@ where
                     match next {
                         Some(next) => {
                             // Found next case.
-                            self.cfg.create_edge(
-                                case_node,
-                                Branch::ON_FALSE,
-                                Node::SwitchCase(next),
-                            );
+                            self.cfg
+                                .create_edge(case_node, Branch::ON_FALSE, Node::from(next));
                         }
                         None => {
                             // No more cases.
@@ -459,7 +465,7 @@ where
                                         self.cfg.create_edge(
                                             case_node,
                                             Branch::ON_FALSE,
-                                            Node::SwitchCase(default),
+                                            Node::from(default),
                                         );
                                     }
                                     None => {
@@ -521,8 +527,8 @@ where
         if may_throw_exception(target) && !self.exception_handler.is_empty() {
             let mut last_jump = &cfg_node;
             for handler in self.exception_handler.iter().rev() {
-                let handler_node = match handler.node {
-                    Node::TryStmt(t) => t,
+                let handler_node = match handler.node.kind {
+                    NodeKind::TryStmt(t) => t,
                     _ if handler.node.is_function_like() => return,
                     _ => unreachable!(),
                 };
@@ -531,9 +537,9 @@ where
 
                 let mut last_jump_in_catch_block = false;
                 for &ancestor in last_jump.parent_stack.iter().rev() {
-                    if ancestor == Node::TryStmt(handler_node) {
+                    if ancestor.node_id == Some(handler_node.node_id) {
                         break;
-                    } else if Some(ancestor) == catch.as_ref().map(|c| Node::CatchClause(c)) {
+                    } else if ancestor.node_id == catch.as_ref().map(|c| c.node_id) {
                         last_jump_in_catch_block = true;
                         break;
                     }
@@ -541,7 +547,7 @@ where
 
                 // No catch but a FINALLY, or lastJump is inside the catch block.
                 if catch.is_none() || last_jump_in_catch_block {
-                    let finally = Node::BlockStmt(&handler_node.finalizer.as_ref().unwrap());
+                    let finally = Node::from(handler_node.finalizer.as_ref().unwrap());
 
                     if last_jump == &cfg_node {
                         self.cfg.create_edge(cfg_node.node, Branch::ON_EX, finally);
@@ -554,12 +560,12 @@ where
                         self.cfg.create_edge(
                             cfg_node.node,
                             Branch::ON_EX,
-                            Node::CatchClause(&catch.unwrap()),
+                            Node::from(catch.unwrap()),
                         );
                         return;
                     } else {
                         self.finally_map
-                            .put(last_jump.node, Node::CatchClause(&catch.unwrap()));
+                            .put(last_jump.node, Node::from(catch.unwrap()));
                     }
                 }
 
@@ -614,16 +620,16 @@ where
             }
 
             // If we are just before a IF/WHILE/DO/FOR:
-            match parent.node {
+            match parent.node.kind {
                 // The follow() of any of the path from IF would be what follows IF.
-                Node::IfStmt(_) => {
+                NodeKind::IfStmt(_) => {
                     // Control is transferred up the AST to the parent's follow
                     // node.
                     node = parent.node;
                     continue;
                 }
-                Node::ForInStmt(_) | Node::ForOfStmt(_) => return parent.node,
-                Node::ForStmt(for_stmt) => {
+                NodeKind::ForInStmt(_) | NodeKind::ForOfStmt(_) => return parent.node,
+                NodeKind::ForStmt(for_stmt) => {
                     return match &for_stmt.update {
                         Some(update) => Node::from(update.as_ref()),
                         // If there is no update expr for the for loop, control is
@@ -631,14 +637,14 @@ where
                         None => parent.node,
                     };
                 }
-                Node::WhileStmt(_) | Node::DoWhileStmt(_) => return parent.node,
-                Node::TryStmt(try_stmt) => {
+                NodeKind::WhileStmt(_) | NodeKind::DoWhileStmt(_) => return parent.node,
+                NodeKind::TryStmt(try_stmt) => {
                     // If we are coming out of the TRY block...
-                    if Node::BlockStmt(&try_stmt.block) == node {
+                    if Some(try_stmt.block.node_id) == node.node_id {
                         match &try_stmt.finalizer {
                             Some(finally) => {
                                 // and have FINALLY block.
-                                return compute_fall_through(Node::BlockStmt(finally));
+                                return compute_fall_through(Node::from(finally));
                             }
                             None => {
                                 // and have no FINALLY.
@@ -650,12 +656,11 @@ where
                         }
 
                     // CATCH block.
-                    } else if try_stmt.handler.as_ref().map(|s| Node::CatchClause(&s)) == Some(node)
-                    {
+                    } else if try_stmt.handler.as_ref().map(|s| Node::from(s)) == Some(node) {
                         match &try_stmt.finalizer {
                             Some(finally) => {
                                 // and have FINALLY block.
-                                return compute_fall_through(Node::BlockStmt(finally));
+                                return compute_fall_through(Node::from(finally));
                             }
                             None => {
                                 // Control is transferred up the AST to the parent's follow
@@ -666,8 +671,7 @@ where
                         }
 
                     // If we are coming out of the FINALLY block...
-                    } else if try_stmt.finalizer.as_ref().map(|s| Node::BlockStmt(&s)) == Some(node)
-                    {
+                    } else if try_stmt.finalizer.as_ref().map(|s| Node::from(s)) == Some(node) {
                         if let Some(nodes) = self.finally_map.get(parent.node) {
                             for finally_node in nodes {
                                 self.cfg
@@ -701,7 +705,7 @@ where
                 .iter()
                 .advance_while(|&&child| child != node)
                 // Skip function declarations because control doesn't get passed into it.
-                .find(|sibling| !matches!(sibling, Node::FnDecl(_)));
+                .find(|sibling| !matches!(sibling.kind, NodeKind::FnDecl(_)));
 
             match next_sibling {
                 Some(next_sibling) => return compute_fall_through(*next_sibling),
@@ -721,7 +725,7 @@ where
         // p!(self, Class);
 
         // Node: the class decl node will be prioritized by handle_simple_stmt.
-        self.handle_simple_stmt(Node::ClassDecl(class));
+        self.handle_simple_stmt(Node::from(class));
 
         if self.should_traverse_functions {
             // Only traverse class body.
@@ -747,7 +751,7 @@ macro_rules! generate_visitors {
         $(
             #[inline]
             fn $name(&mut self, node: &'ast $N) {
-                let cfg_node = Node::$N(node);
+                let cfg_node = Node::from(node);
                 self.prioritize_node(cfg_node);
                 node.visit_children_with(self);
             }
@@ -780,17 +784,17 @@ where
 
     fn visit_for_in_stmt(&mut self, node: &'ast ForInStmt) {
         p!(self, ForInStmt);
-        self.handle_enhanced_for(Node::ForInStmt(node));
+        self.handle_enhanced_for(Node::from(node));
     }
 
     fn visit_for_of_stmt(&mut self, node: &'ast ForOfStmt) {
         p!(self, ForOfStmt);
-        self.handle_enhanced_for(Node::ForOfStmt(node));
+        self.handle_enhanced_for(Node::from(node));
     }
 
     fn visit_for_stmt(&mut self, node: &'ast ForStmt) {
         p!(self, ForStmt);
-        let for_node = Node::ForStmt(node);
+        let for_node = Node::from(node);
         self.prioritize_node(for_node);
         self.parent_stack.push_with_child(for_node, &*node.body);
         // Skip for-loop-head, only traverse the body.
@@ -805,7 +809,7 @@ where
 
         let init_node = node.init.as_ref().map(|init| match init {
             VarDeclOrExpr::Expr(expr) => Node::from(expr.as_ref()),
-            VarDeclOrExpr::VarDecl(ref decl) => Node::VarDecl(decl),
+            VarDeclOrExpr::VarDecl(ref decl) => Node::from(decl),
         });
         let update_node = node.update.as_ref().map(|update| Node::from(&**update));
 
@@ -845,7 +849,7 @@ where
         if let Some(init_node) = init_node {
             self.connect_to_possible_exception_handler(
                 ExceptionHandler::new(&self.parent_stack, init_node),
-                init_node.into(),
+                init_node,
             );
         }
         if let Some(test) = &node.test {
@@ -853,20 +857,20 @@ where
             self.prioritize_node(test_node);
             self.connect_to_possible_exception_handler(
                 ExceptionHandler::new(&self.parent_stack, for_node),
-                test_node.into(),
+                test_node,
             );
         }
         if let Some(update_node) = update_node {
             self.connect_to_possible_exception_handler(
                 ExceptionHandler::new(&self.parent_stack, update_node),
-                update_node.into(),
+                update_node,
             );
         }
     }
 
     fn visit_do_while_stmt(&mut self, node: &'ast DoWhileStmt) {
         p!(self, DoWhileStmt);
-        let do_while_node = Node::DoWhileStmt(node);
+        let do_while_node = Node::from(node);
         self.prioritize_node(do_while_node);
 
         self.parent_stack
@@ -902,19 +906,18 @@ where
 
     fn visit_if_stmt(&mut self, node: &'ast IfStmt) {
         p!(self, IfStmt);
-        let if_node = Node::IfStmt(node);
+        let if_node = Node::from(node);
         self.prioritize_node(if_node);
         let test_node = Node::from(node.test.as_ref());
         self.prioritize_node(test_node);
         let then_node = Node::from(&*node.cons);
 
-        self.parent_stack
-            .push_with_child(Node::IfStmt(node), &*node.cons);
+        self.parent_stack.push_with_child(if_node, &*node.cons);
         // Skip test expression, only traverse the bodies.
         node.cons.visit_with(self);
         self.parent_stack.pop();
         self.parent_stack
-            .push_with_optional_child(Node::IfStmt(node), node.alt.as_ref().map(|s| &**s));
+            .push_with_optional_child(if_node, node.alt.as_ref().map(|s| &**s));
         node.alt.visit_with(self);
         self.parent_stack.pop();
 
@@ -936,13 +939,13 @@ where
 
         self.connect_to_possible_exception_handler(
             ExceptionHandler::new(&self.parent_stack, if_node),
-            test_node.into(),
+            Node::from(&*node.test),
         );
     }
 
     fn visit_while_stmt(&mut self, node: &'ast WhileStmt) {
         p!(self, WhileStmt);
-        let while_node = Node::WhileStmt(node);
+        let while_node = Node::from(node);
         self.prioritize_node(while_node);
 
         self.parent_stack.push_with_child(while_node, &*node.body);
@@ -978,7 +981,7 @@ where
 
     fn visit_with_stmt(&mut self, node: &'ast WithStmt) {
         p!(self, WithStmt);
-        let with_node = Node::WithStmt(node);
+        let with_node = Node::from(node);
         self.prioritize_node(with_node);
         self.parent_stack.push_with_child(with_node, &*node.body);
         // Only traverse the body.
@@ -999,12 +1002,12 @@ where
     fn visit_switch_stmt(&mut self, node: &'ast SwitchStmt) {
         p!(self, SwitchStmt);
 
-        let switch_node = Node::SwitchStmt(node);
+        let switch_node = Node::from(node);
         self.prioritize_node(switch_node);
 
         self.parent_stack.push_with_child_nodes(
             switch_node,
-            node.cases.iter().map(|s| Node::SwitchCase(s)).collect(),
+            node.cases.iter().map(|s| Node::from(s)).collect(),
         );
         // Skip discriminant expression, only traverse the cases.
         self.handle_switch_cases(node);
@@ -1017,12 +1020,12 @@ where
             Some(next) => {
                 // Has at least one CASE or EMPTY
                 self.cfg
-                    .create_edge(switch_node, Branch::UNCOND, Node::SwitchCase(next));
+                    .create_edge(switch_node, Branch::UNCOND, Node::from(next));
             }
             None => {
                 // Has no CASE but possibly a DEFAULT
                 if node.cases.len() > 0 {
-                    let default_node = Node::SwitchCase(&node.cases[0]);
+                    let default_node = Node::from(&node.cases[0]);
                     self.cfg
                         .create_edge(switch_node, Branch::UNCOND, default_node);
                 } else {
@@ -1174,26 +1177,25 @@ where
     fn visit_catch_clause(&mut self, node: &'ast CatchClause) {
         p!(self, CatchClause);
 
-        let catch_node = Node::CatchClause(node);
+        let catch_node = Node::from(node);
         self.prioritize_node(catch_node);
 
         self.parent_stack
-            .push_with_child_node(catch_node, Node::BlockStmt(&node.body));
+            .push_with_child_node(catch_node, Node::from(&node.body));
 
         // Skip exception binding, only traverse the body.
         node.body.visit_with(self);
         self.parent_stack.pop();
 
         self.cfg
-            .create_edge(catch_node, Branch::UNCOND, Node::BlockStmt(&node.body));
+            .create_edge(catch_node, Branch::UNCOND, Node::from(&node.body));
     }
 
     fn visit_labeled_stmt(&mut self, node: &'ast LabeledStmt) {
         p!(self, LabeledStmt);
-        let label_node = Node::LabeledStmt(node);
+        let label_node = Node::from(node);
         self.prioritize_node(label_node);
-        self.parent_stack
-            .push_with_child(Node::LabeledStmt(node), &*node.body);
+        self.parent_stack.push_with_child(label_node, &*node.body);
         // Skip label, only traverse the body.
         node.body.visit_with(self);
         self.parent_stack.pop();
@@ -1226,12 +1228,12 @@ where
 
     fn visit_try_stmt(&mut self, node: &'ast TryStmt) {
         p!(self, TryStmt);
-        let try_node = Node::TryStmt(node);
+        let try_node = Node::from(node);
         self.prioritize_node(try_node);
         self.exception_handler
             .push(ExceptionHandler::new(&self.parent_stack, try_node));
         self.parent_stack
-            .push_with_child_node(try_node, Node::BlockStmt(&node.block));
+            .push_with_child_node(try_node, Node::from(&node.block));
 
         node.block.visit_with(self);
 
@@ -1264,13 +1266,13 @@ where
         self.parent_stack.pop();
 
         self.cfg
-            .create_edge(try_node, Branch::UNCOND, Node::BlockStmt(&node.block))
+            .create_edge(try_node, Branch::UNCOND, Node::from(&node.block))
     }
 
     fn visit_script(&mut self, node: &'ast Script) {
         p!(self, Script);
 
-        let script_node = Node::Script(node);
+        let script_node = Node::from(node);
         self.prioritize_node(script_node);
         self.parent_stack.push_with_child_nodes(
             script_node,
@@ -1307,7 +1309,7 @@ where
     fn visit_module(&mut self, node: &'ast Module) {
         p!(self, Module);
 
-        let module_node = Node::Module(node);
+        let module_node = Node::from(node);
         self.prioritize_node(module_node);
         let children = node
             .body
@@ -1330,7 +1332,7 @@ where
                 ModuleItem::ModuleDecl(_) => todo!(),
                 ModuleItem::Stmt(s) => Node::from(s),
             })
-            .find(|node| !matches!(node, Node::FnDecl(_)));
+            .find(|node| !matches!(node.kind, NodeKind::FnDecl(_)));
 
         match child {
             Some(child) => {
@@ -1350,7 +1352,7 @@ where
 
     fn visit_block_stmt(&mut self, node: &'ast BlockStmt) {
         p!(self, BlockStmt);
-        let block_node = Node::BlockStmt(node);
+        let block_node = Node::from(node);
         self.prioritize_node(block_node);
 
         // A block transfer control to its first child if it is not empty.
@@ -1418,7 +1420,7 @@ where
     // case IMPORT:
 
     fn visit_continue_stmt(&mut self, node: &'ast ContinueStmt) {
-        let continue_node = Node::ContinueStmt(node);
+        let continue_node = Node::from(node);
         self.prioritize_node(continue_node);
 
         let mut cur = continue_node;
@@ -1433,9 +1435,9 @@ where
             parents.clone(),
             node.label.as_ref().map(|ident| &ident.sym),
         ) {
-            if let Node::TryStmt(t) = cur {
+            if let NodeKind::TryStmt(t) = cur.kind {
                 if let Some(finally) = &t.finalizer {
-                    let finally_node = Node::BlockStmt(finally);
+                    let finally_node = Node::from(finally);
                     if Some(finally_node) != previous {
                         if last_jump == continue_node {
                             self.cfg
@@ -1461,7 +1463,7 @@ where
 
         let mut iter = cur;
 
-        if let Node::ForStmt(f) = cur {
+        if let NodeKind::ForStmt(f) = cur.kind {
             if let Some(update) = &f.update {
                 // the update expression happens after the continue
                 iter = Node::from(update.as_ref());
@@ -1475,7 +1477,7 @@ where
         }
     }
     fn visit_break_stmt(&mut self, node: &'ast BreakStmt) {
-        let break_node = Node::BreakStmt(node);
+        let break_node = Node::from(node);
         self.prioritize_node(break_node);
 
         let mut cur = break_node;
@@ -1501,9 +1503,9 @@ where
             parents.clone(),
             node.label.as_ref().map(|ident| &ident.sym),
         ) {
-            if let Node::TryStmt(t) = cur {
+            if let NodeKind::TryStmt(t) = cur.kind {
                 if let Some(finally) = &t.finalizer {
-                    let finally_node = Node::BlockStmt(finally);
+                    let finally_node = Node::from(finally);
                     if Some(finally_node) != previous {
                         let to = compute_fall_through(finally_node);
                         if last_jump == break_node {
@@ -1536,21 +1538,21 @@ where
         }
     }
     fn visit_expr_stmt(&mut self, node: &'ast ExprStmt) {
-        self.handle_simple_stmt(Node::ExprStmt(node));
+        self.handle_simple_stmt(Node::from(node));
     }
     fn visit_var_decl(&mut self, _node: &'ast VarDecl) {
         unreachable!("handled by visit_stmt");
     }
     fn visit_return_stmt(&mut self, node: &'ast ReturnStmt) {
-        let return_node = Node::ReturnStmt(node);
+        let return_node = Node::from(node);
         self.prioritize_node(return_node);
 
         let mut last_jump = None;
         for cur_handler in self.exception_handler.iter().rev() {
-            match cur_handler.node {
-                Node::TryStmt(t) => {
+            match cur_handler.node.kind {
+                NodeKind::TryStmt(t) => {
                     if let Some(finally) = &t.finalizer {
-                        let finally_node = Node::BlockStmt(finally);
+                        let finally_node = Node::from(finally);
                         match last_jump {
                             Some(last_jump) => {
                                 self.finally_map
@@ -1587,10 +1589,10 @@ where
         }
     }
     fn visit_throw_stmt(&mut self, node: &'ast ThrowStmt) {
-        let throw_node = Node::ThrowStmt(node);
+        let throw_node = Node::from(node);
         self.prioritize_node(throw_node);
         self.connect_to_possible_exception_handler(
-            ExceptionHandler::new(&self.parent_stack, Node::ThrowStmt(node)),
+            ExceptionHandler::new(&self.parent_stack, throw_node),
             node.into(),
         );
     }

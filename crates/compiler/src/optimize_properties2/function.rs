@@ -3,7 +3,7 @@ use global_common::SyntaxContext;
 use rustc_hash::FxHashMap;
 use swc_atoms::{js_word, JsWord};
 
-use crate::control_flow::node::Node;
+use crate::control_flow::node::{Node, NodeKind};
 use crate::control_flow::ControlFlowGraph::*;
 use crate::utils::unwrap_as;
 use crate::{Id, ToId};
@@ -152,8 +152,8 @@ impl<'ast> Analyser<'_, 'ast> {
             op,
             AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
         );
-        match lhs {
-            Node::ArrayPat(_) | Node::ObjectPat(_) => {
+        match lhs.kind {
+            NodeKind::ArrayPat(_) | NodeKind::ObjectPat(_) => {
                 debug_assert!(!conditional_assign, "invalid assignment target");
                 self.handle_destructuring(lhs, rhs, conditional)
             }
@@ -175,8 +175,8 @@ impl<'ast> Analyser<'_, 'ast> {
     }
 
     fn visit_destructuring(&mut self, lhs: Node<'ast>, conditional: bool) {
-        match lhs {
-            Node::ObjectPat(lhs) => {
+        match lhs.kind {
+            NodeKind::ObjectPat(lhs) => {
                 let has_complex_props = lhs.props.iter().any(|p| match p {
                     ObjectPatProp::KeyValue(p) => {
                         !is_simple_prop_name(&p.key, self.unresolved_ctxt)
@@ -238,12 +238,12 @@ impl<'ast> Analyser<'_, 'ast> {
                 }
             }
 
-            Node::BindingIdent(lhs) => {
+            NodeKind::BindingIdent(lhs) => {
                 let id = lhs.to_id();
                 self.push(Step::StoreLValue(Some(LValue::Var(id))));
                 self.push(Step::Assign(conditional));
             }
-            Node::ArrayPat(lhs) => {
+            NodeKind::ArrayPat(lhs) => {
                 self.invalidate_r_value();
                 for element in lhs.elems.iter().filter_map(|e| e.as_ref()) {
                     if let Pat::Expr(elem) = element {
@@ -254,11 +254,11 @@ impl<'ast> Analyser<'_, 'ast> {
                     }
                 }
             }
-            Node::RestPat(lhs) => {
+            NodeKind::RestPat(lhs) => {
                 self.invalidate_r_value();
                 self.visit_destructuring(Node::from(lhs.arg.as_ref()), conditional);
             }
-            Node::AssignPat(lhs) => {
+            NodeKind::AssignPat(lhs) => {
                 self.push(Step::StartUnion);
                 self.push(Step::PushToUnion);
                 self.visit_and_get_r_value(Node::from(lhs.right.as_ref()), true);
@@ -267,7 +267,7 @@ impl<'ast> Analyser<'_, 'ast> {
 
                 self.visit_destructuring(Node::from(lhs.left.as_ref()), conditional);
             }
-            Node::KeyValuePatProp(lhs) => {
+            NodeKind::KeyValuePatProp(lhs) => {
                 self.invalidate_r_value();
                 if matches!(lhs.value.as_ref(), Pat::Ident(_) | Pat::Expr(_)) {
                     self.visit_and_get_slot(Node::from(lhs.value.as_ref()), conditional);
@@ -276,7 +276,7 @@ impl<'ast> Analyser<'_, 'ast> {
                     self.visit_destructuring(Node::from(lhs.value.as_ref()), conditional);
                 }
             }
-            Node::AssignPatProp(_) => {
+            NodeKind::AssignPatProp(_) => {
                 unreachable!("removed by normalization");
             }
 
@@ -289,12 +289,12 @@ impl<'ast> Analyser<'_, 'ast> {
 
     /// May change the current RValue, so use [`Step::SaveRValue`] if that matters.
     fn visit_and_get_slot(&mut self, node: Node<'ast>, conditional: bool) {
-        match node {
-            Node::Ident(ident) | Node::BindingIdent(BindingIdent { id: ident, .. }) => {
+        match node.kind {
+            NodeKind::Ident(ident) | NodeKind::BindingIdent(BindingIdent { id: ident, .. }) => {
                 let id = ident.to_id();
                 self.push(Step::StoreLValue(Some(LValue::Var(id))));
             }
-            Node::MemberExpr(node) => {
+            NodeKind::MemberExpr(node) => {
                 self.visit_and_get_r_value(Node::from(&node.obj), conditional);
                 if let Some(prop) =
                     PropKey::from_expr(&node.prop, self.unresolved_ctxt, node.computed)
@@ -311,22 +311,22 @@ impl<'ast> Analyser<'_, 'ast> {
     }
 
     fn visit_and_get_r_value(&mut self, node: Node<'ast>, conditional: bool) {
-        match node {
+        match node.kind {
             // Don't traverse into new control flow nodes.
-            Node::FnExpr(_) | Node::ArrowExpr(_) => {}
+            NodeKind::FnExpr(_) | NodeKind::ArrowExpr(_) => {}
 
-            Node::AssignExpr(node) => {
+            NodeKind::AssignExpr(node) => {
                 self.record_assignment(Node::from(&node.left), &node.right, conditional, node.op);
             }
 
-            Node::Class(_) => todo!(),
-            Node::ExtendsClause(_) => todo!(),
-            Node::ClassProp(_) => todo!(),
-            Node::PrivateProp(_) => todo!(),
-            Node::ClassMethod(_) => todo!(),
-            Node::PrivateMethod(_) => todo!(),
-            Node::Constructor(_) => todo!(),
-            Node::VarDeclarator(node) => {
+            NodeKind::Class(_) => todo!(),
+            NodeKind::ExtendsClause(_) => todo!(),
+            NodeKind::ClassProp(_) => todo!(),
+            NodeKind::PrivateProp(_) => todo!(),
+            NodeKind::ClassMethod(_) => todo!(),
+            NodeKind::PrivateMethod(_) => todo!(),
+            NodeKind::Constructor(_) => todo!(),
+            NodeKind::VarDeclarator(node) => {
                 let lhs = Node::from(&node.name);
                 if let Some(rhs) = &node.init {
                     self.record_assignment(lhs, rhs, conditional, AssignOp::Assign);
@@ -334,10 +334,10 @@ impl<'ast> Analyser<'_, 'ast> {
                     self.visit_and_get_r_value(lhs, conditional);
                 }
             }
-            Node::ThisExpr(_) => {
+            NodeKind::ThisExpr(_) => {
                 self.push(Step::StoreRValue(None));
             }
-            Node::ArrayLit(node) => {
+            NodeKind::ArrayLit(node) => {
                 for element in &node.elems {
                     if let Some(element) = element {
                         self.visit_and_get_r_value(Node::from(element), conditional);
@@ -347,7 +347,7 @@ impl<'ast> Analyser<'_, 'ast> {
                 }
                 self.push(Step::StoreRValue(None));
             }
-            Node::ObjectLit(node) => {
+            NodeKind::ObjectLit(node) => {
                 let is_simple_obj_lit = node.props.iter().all(|p| match p {
                     Prop::KeyValue(p) => is_simple_prop_name(&p.key, self.unresolved_ctxt),
                     _ => false,
@@ -371,20 +371,20 @@ impl<'ast> Analyser<'_, 'ast> {
                 }
                 self.push(Step::StoreRValue(Some(RValue::Object(node.node_id))));
             }
-            Node::SpreadElement(node) => {
+            NodeKind::SpreadElement(node) => {
                 self.visit_and_get_r_value(Node::from(node.expr.as_ref()), conditional);
                 self.invalidate_r_value();
                 self.push(Step::StoreRValue(None));
             }
-            Node::UnaryExpr(node) => {
+            NodeKind::UnaryExpr(node) => {
                 self.visit_and_get_r_value(Node::from(node.arg.as_ref()), conditional);
                 self.push(Step::StoreRValue(None));
             }
-            Node::UpdateExpr(node) => {
+            NodeKind::UpdateExpr(node) => {
                 self.visit_and_get_r_value(Node::from(node.arg.as_ref()), conditional);
                 self.push(Step::StoreRValue(None));
             }
-            Node::BinExpr(node) => {
+            NodeKind::BinExpr(node) => {
                 match node.op {
                     BinaryOp::LogicalOr | BinaryOp::LogicalAnd | BinaryOp::NullishCoalescing => {
                         // TODO: if LHS is object, then we know if RHS will execute.
@@ -402,8 +402,8 @@ impl<'ast> Analyser<'_, 'ast> {
                     }
                 }
             }
-            Node::ClassExpr(_) => todo!(),
-            Node::MemberExpr(node) => {
+            NodeKind::ClassExpr(_) => todo!(),
+            NodeKind::MemberExpr(node) => {
                 self.visit_and_get_r_value(Node::from(&node.obj), conditional);
                 if let Some(prop) =
                     PropKey::from_expr(&node.prop, self.unresolved_ctxt, node.computed)
@@ -415,7 +415,7 @@ impl<'ast> Analyser<'_, 'ast> {
                     self.push(Step::StoreRValue(None));
                 }
             }
-            Node::CondExpr(node) => {
+            NodeKind::CondExpr(node) => {
                 self.visit_and_get_r_value(Node::from(node.test.as_ref()), conditional);
                 self.push(Step::StartUnion);
                 self.visit_and_get_r_value(Node::from(node.cons.as_ref()), true);
@@ -424,7 +424,7 @@ impl<'ast> Analyser<'_, 'ast> {
                 self.push(Step::PushToUnion);
                 self.push(Step::StoreUnion);
             }
-            Node::CallExpr(node) => {
+            NodeKind::CallExpr(node) => {
                 self.visit_and_get_r_value(Node::from(&node.callee), conditional);
                 self.push(Step::StartCall(node.args.len()));
                 for arg in &node.args {
@@ -433,7 +433,7 @@ impl<'ast> Analyser<'_, 'ast> {
                 }
                 self.push(Step::Call);
             }
-            Node::NewExpr(node) => {
+            NodeKind::NewExpr(node) => {
                 self.visit_and_get_r_value(Node::from(node.callee.as_ref()), conditional);
                 self.invalidate_r_value();
 
@@ -445,7 +445,7 @@ impl<'ast> Analyser<'_, 'ast> {
                 }
                 self.push(Step::StoreRValue(None));
             }
-            Node::SeqExpr(node) => {
+            NodeKind::SeqExpr(node) => {
                 debug_assert!(!node.exprs.is_empty());
 
                 let mut i = 0;
@@ -456,23 +456,23 @@ impl<'ast> Analyser<'_, 'ast> {
 
                 self.visit_and_get_r_value(Node::from(node.exprs[i].as_ref()), conditional);
             }
-            Node::YieldExpr(node) => {
+            NodeKind::YieldExpr(node) => {
                 if let Some(arg) = &node.arg {
                     self.visit_and_get_r_value(Node::from(arg.as_ref()), conditional);
                     self.invalidate_r_value();
                 }
                 self.push(Step::StoreRValue(None));
             }
-            Node::AwaitExpr(node) => {
+            NodeKind::AwaitExpr(node) => {
                 self.visit_and_get_r_value(Node::from(node.arg.as_ref()), conditional)
             }
-            Node::Tpl(node) => {
+            NodeKind::Tpl(node) => {
                 for expr in &node.exprs {
                     self.visit_and_get_r_value(Node::from(expr.as_ref()), conditional);
                 }
                 self.push(Step::StoreRValue(None));
             }
-            Node::TaggedTpl(node) => {
+            NodeKind::TaggedTpl(node) => {
                 self.visit_and_get_r_value(Node::from(node.tag.as_ref()), conditional);
                 for expr in &node.tpl.exprs {
                     self.visit_and_get_r_value(Node::from(expr.as_ref()), conditional);
@@ -481,18 +481,18 @@ impl<'ast> Analyser<'_, 'ast> {
                 }
                 self.push(Step::StoreRValue(None));
             }
-            Node::ParenExpr(node) => {
+            NodeKind::ParenExpr(node) => {
                 self.visit_and_get_r_value(Node::from(node.expr.as_ref()), conditional)
             }
-            Node::Super(_) => todo!(),
-            Node::OptChainExpr(_) => todo!(),
-            Node::Function(_) => todo!(),
-            Node::Param(_) => todo!(),
-            Node::ParamWithoutDecorators(_) => todo!(),
-            Node::BindingIdent(node) => {
-                self.visit_and_get_r_value(Node::Ident(&node.id), conditional)
+            NodeKind::Super(_) => todo!(),
+            NodeKind::OptChainExpr(_) => todo!(),
+            NodeKind::Function(_) => todo!(),
+            NodeKind::Param(_) => todo!(),
+            NodeKind::ParamWithoutDecorators(_) => todo!(),
+            NodeKind::BindingIdent(node) => {
+                self.visit_and_get_r_value(Node::from(&node.id), conditional)
             }
-            Node::Ident(node) => {
+            NodeKind::Ident(node) => {
                 if node.span.ctxt == self.unresolved_ctxt && node.sym == js_word!("undefined") {
                     self.push(Step::StoreRValue(Some(RValue::NullOrVoid)));
                 } else {
@@ -500,32 +500,32 @@ impl<'ast> Analyser<'_, 'ast> {
                     self.push(Step::StoreRValue(Some(RValue::Var(id))));
                 }
             }
-            Node::PrivateName(_) => todo!(),
+            NodeKind::PrivateName(_) => todo!(),
 
-            Node::Null(_) => {
+            NodeKind::Null(_) => {
                 self.push(Step::StoreRValue(Some(RValue::NullOrVoid)));
             }
 
-            Node::Str(_)
-            | Node::Bool(_)
-            | Node::Number(_)
-            | Node::BigInt(_)
-            | Node::Regex(_)
-            | Node::TplElement(_)
-            | Node::MetaPropExpr(_) => {
+            NodeKind::Str(_)
+            | NodeKind::Bool(_)
+            | NodeKind::Number(_)
+            | NodeKind::BigInt(_)
+            | NodeKind::Regex(_)
+            | NodeKind::TplElement(_)
+            | NodeKind::MetaPropExpr(_) => {
                 self.push(Step::StoreRValue(None));
             }
 
-            Node::ImportDefaultSpecifier(_) => todo!(),
-            Node::ImportStarAsSpecifier(_) => todo!(),
-            Node::ImportNamedSpecifier(_) => todo!(),
-            Node::ExportNamespaceSpecifier(_) => todo!(),
-            Node::ExportDefaultSpecifier(_) => todo!(),
-            Node::ExportNamedSpecifier(_) => todo!(),
-            Node::ComputedPropName(node) => {
+            NodeKind::ImportDefaultSpecifier(_) => todo!(),
+            NodeKind::ImportStarAsSpecifier(_) => todo!(),
+            NodeKind::ImportNamedSpecifier(_) => todo!(),
+            NodeKind::ExportNamespaceSpecifier(_) => todo!(),
+            NodeKind::ExportDefaultSpecifier(_) => todo!(),
+            NodeKind::ExportNamedSpecifier(_) => todo!(),
+            NodeKind::ComputedPropName(node) => {
                 self.visit_and_get_r_value(Node::from(node.expr.as_ref()), conditional);
             }
-            Node::CatchClause(_) => todo!(),
+            NodeKind::CatchClause(_) => todo!(),
 
             // This function is only called on expressions (and their children),
             // so it can't reach e.g. statements. TypeScript and JSX should have
@@ -536,102 +536,102 @@ impl<'ast> Analyser<'_, 'ast> {
 
     /// Initiates the analysis of the given node.
     fn init(&mut self, node: Node<'ast>, conditional: bool) {
-        match node {
-            Node::IfStmt(node) => {
+        match node.kind {
+            NodeKind::IfStmt(node) => {
                 self.visit_and_get_r_value(Node::from(node.test.as_ref()), conditional);
             }
-            Node::ExprStmt(node) => {
+            NodeKind::ExprStmt(node) => {
                 self.visit_and_get_r_value(Node::from(node.expr.as_ref()), conditional);
             }
-            Node::BlockStmt(_) => {}
-            Node::ForStmt(node) => {
+            NodeKind::BlockStmt(_) => {}
+            NodeKind::ForStmt(node) => {
                 if let Some(test) = &node.test {
                     self.visit_and_get_r_value(Node::from(test.as_ref()), conditional);
                 }
             }
-            Node::Function(_) => {}
-            Node::VarDecl(node) => {
+            NodeKind::Function(_) => {}
+            NodeKind::VarDecl(node) => {
                 for decl in &node.decls {
-                    self.visit_and_get_r_value(Node::VarDeclarator(decl), conditional);
+                    self.visit_and_get_r_value(Node::from(decl), conditional);
                 }
             }
-            Node::ThisExpr(_)
-            | Node::ArrayLit(_)
-            | Node::ObjectLit(_)
-            | Node::SpreadElement(_)
-            | Node::UnaryExpr(_)
-            | Node::UpdateExpr(_)
-            | Node::BinExpr(_)
-            | Node::FnExpr(_)
-            | Node::ClassExpr(_)
-            | Node::AssignExpr(_)
-            | Node::MemberExpr(_)
-            | Node::CondExpr(_)
-            | Node::CallExpr(_)
-            | Node::NewExpr(_)
-            | Node::SeqExpr(_)
-            | Node::ArrowExpr(_)
-            | Node::YieldExpr(_)
-            | Node::MetaPropExpr(_)
-            | Node::AwaitExpr(_)
-            | Node::Tpl(_)
-            | Node::TaggedTpl(_)
-            | Node::TplElement(_)
-            | Node::ParenExpr(_)
-            | Node::Super(_)
-            | Node::OptChainExpr(_)
-            | Node::BindingIdent(_)
-            | Node::Ident(_)
-            | Node::PrivateName(_) => {
+            NodeKind::ThisExpr(_)
+            | NodeKind::ArrayLit(_)
+            | NodeKind::ObjectLit(_)
+            | NodeKind::SpreadElement(_)
+            | NodeKind::UnaryExpr(_)
+            | NodeKind::UpdateExpr(_)
+            | NodeKind::BinExpr(_)
+            | NodeKind::FnExpr(_)
+            | NodeKind::ClassExpr(_)
+            | NodeKind::AssignExpr(_)
+            | NodeKind::MemberExpr(_)
+            | NodeKind::CondExpr(_)
+            | NodeKind::CallExpr(_)
+            | NodeKind::NewExpr(_)
+            | NodeKind::SeqExpr(_)
+            | NodeKind::ArrowExpr(_)
+            | NodeKind::YieldExpr(_)
+            | NodeKind::MetaPropExpr(_)
+            | NodeKind::AwaitExpr(_)
+            | NodeKind::Tpl(_)
+            | NodeKind::TaggedTpl(_)
+            | NodeKind::TplElement(_)
+            | NodeKind::ParenExpr(_)
+            | NodeKind::Super(_)
+            | NodeKind::OptChainExpr(_)
+            | NodeKind::BindingIdent(_)
+            | NodeKind::Ident(_)
+            | NodeKind::PrivateName(_) => {
                 self.visit_and_get_r_value(node, conditional);
             }
 
-            Node::ImplicitReturn => {
+            NodeKind::ImplicitReturn => {
                 self.push(Step::StoreRValue(Some(RValue::NullOrVoid)));
                 self.push(Step::Return);
             }
-            Node::Class(_) => todo!(),
-            Node::ExtendsClause(_) => todo!(),
-            Node::ClassProp(_) => todo!(),
-            Node::PrivateProp(_) => todo!(),
-            Node::ClassMethod(_) => todo!(),
-            Node::PrivateMethod(_) => todo!(),
-            Node::Constructor(_) => todo!(),
-            Node::Decorator(_) => todo!(),
-            Node::FnDecl(_) => todo!(),
-            Node::ClassDecl(_) => todo!(),
-            Node::VarDeclarator(_) => todo!(),
-            Node::Param(_) => todo!(),
-            Node::ParamWithoutDecorators(_) => todo!(),
-            Node::ExportDefaultExpr(_) => todo!(),
-            Node::ExportDecl(_) => todo!(),
-            Node::ImportDecl(_) => todo!(),
-            Node::ExportAll(_) => todo!(),
-            Node::NamedExport(_) => todo!(),
-            Node::ExportDefaultDecl(_) => todo!(),
-            Node::ImportDefaultSpecifier(_) => todo!(),
-            Node::ImportStarAsSpecifier(_) => todo!(),
-            Node::ImportNamedSpecifier(_) => todo!(),
-            Node::ExportNamespaceSpecifier(_) => todo!(),
-            Node::ExportDefaultSpecifier(_) => todo!(),
-            Node::ExportNamedSpecifier(_) => todo!(),
-            Node::Script(_) => {}
-            Node::Module(_) => {}
-            Node::ArrayPat(_) => todo!(),
-            Node::ObjectPat(_) => todo!(),
-            Node::AssignPat(_) => todo!(),
-            Node::RestPat(_) => todo!(),
-            Node::KeyValuePatProp(_) => todo!(),
-            Node::AssignPatProp(_) => todo!(),
-            Node::KeyValueProp(_) => todo!(),
-            Node::AssignProp(_) => todo!(),
-            Node::GetterProp(_) => {}
-            Node::SetterProp(_) => {}
-            Node::ComputedPropName(_) => todo!(),
-            Node::SpreadAssignment(_) => todo!(),
-            Node::DebuggerStmt(_) => {}
-            Node::WithStmt(_) => todo!(),
-            Node::ReturnStmt(node) => {
+            NodeKind::Class(_) => todo!(),
+            NodeKind::ExtendsClause(_) => todo!(),
+            NodeKind::ClassProp(_) => todo!(),
+            NodeKind::PrivateProp(_) => todo!(),
+            NodeKind::ClassMethod(_) => todo!(),
+            NodeKind::PrivateMethod(_) => todo!(),
+            NodeKind::Constructor(_) => todo!(),
+            NodeKind::Decorator(_) => todo!(),
+            NodeKind::FnDecl(_) => todo!(),
+            NodeKind::ClassDecl(_) => todo!(),
+            NodeKind::VarDeclarator(_) => todo!(),
+            NodeKind::Param(_) => todo!(),
+            NodeKind::ParamWithoutDecorators(_) => todo!(),
+            NodeKind::ExportDefaultExpr(_) => todo!(),
+            NodeKind::ExportDecl(_) => todo!(),
+            NodeKind::ImportDecl(_) => todo!(),
+            NodeKind::ExportAll(_) => todo!(),
+            NodeKind::NamedExport(_) => todo!(),
+            NodeKind::ExportDefaultDecl(_) => todo!(),
+            NodeKind::ImportDefaultSpecifier(_) => todo!(),
+            NodeKind::ImportStarAsSpecifier(_) => todo!(),
+            NodeKind::ImportNamedSpecifier(_) => todo!(),
+            NodeKind::ExportNamespaceSpecifier(_) => todo!(),
+            NodeKind::ExportDefaultSpecifier(_) => todo!(),
+            NodeKind::ExportNamedSpecifier(_) => todo!(),
+            NodeKind::Script(_) => {}
+            NodeKind::Module(_) => {}
+            NodeKind::ArrayPat(_) => todo!(),
+            NodeKind::ObjectPat(_) => todo!(),
+            NodeKind::AssignPat(_) => todo!(),
+            NodeKind::RestPat(_) => todo!(),
+            NodeKind::KeyValuePatProp(_) => todo!(),
+            NodeKind::AssignPatProp(_) => todo!(),
+            NodeKind::KeyValueProp(_) => todo!(),
+            NodeKind::AssignProp(_) => todo!(),
+            NodeKind::GetterProp(_) => {}
+            NodeKind::SetterProp(_) => {}
+            NodeKind::ComputedPropName(_) => todo!(),
+            NodeKind::SpreadAssignment(_) => todo!(),
+            NodeKind::DebuggerStmt(_) => {}
+            NodeKind::WithStmt(_) => todo!(),
+            NodeKind::ReturnStmt(node) => {
                 if let Some(arg) = &node.arg {
                     self.visit_and_get_r_value(Node::from(arg.as_ref()), conditional);
                     self.push(Step::Return);
@@ -640,35 +640,35 @@ impl<'ast> Analyser<'_, 'ast> {
                     self.push(Step::Return);
                 }
             }
-            Node::LabeledStmt(_) => {}
-            Node::SwitchStmt(node) => {
+            NodeKind::LabeledStmt(_) => {}
+            NodeKind::SwitchStmt(node) => {
                 self.visit_and_get_r_value(Node::from(node.discriminant.as_ref()), conditional);
             }
-            Node::ThrowStmt(node) => {
+            NodeKind::ThrowStmt(node) => {
                 self.visit_and_get_r_value(Node::from(node.arg.as_ref()), conditional);
                 self.invalidate_r_value();
-                if self.cfg.get_successors(Node::ThrowStmt(node)).count() == 0 {
+                if self.cfg.get_successors(Node::from(node)).count() == 0 {
                     self.push(Step::Return);
                 }
             }
-            Node::TryStmt(_) => {}
-            Node::WhileStmt(node) => {
+            NodeKind::TryStmt(_) => {}
+            NodeKind::WhileStmt(node) => {
                 self.visit_and_get_r_value(Node::from(node.test.as_ref()), conditional);
             }
-            Node::DoWhileStmt(node) => {
+            NodeKind::DoWhileStmt(node) => {
                 self.visit_and_get_r_value(Node::from(node.test.as_ref()), conditional);
             }
-            Node::ForInStmt(node) => {
+            NodeKind::ForInStmt(node) => {
                 self.visit_and_get_r_value(Node::from(node.right.as_ref()), conditional);
                 self.invalidate_r_value();
             }
-            Node::ForOfStmt(_) => todo!(),
-            Node::SwitchCase(node) => {
+            NodeKind::ForOfStmt(_) => todo!(),
+            NodeKind::SwitchCase(node) => {
                 if let Some(test) = &node.test {
                     self.visit_and_get_r_value(Node::from(test.as_ref()), conditional);
                 }
             }
-            Node::CatchClause(node) => {
+            NodeKind::CatchClause(node) => {
                 if let Some(param) = &node.param {
                     match param {
                         Pat::Array(_) | Pat::Object(_) => {
@@ -684,15 +684,15 @@ impl<'ast> Analyser<'_, 'ast> {
                 }
             }
 
-            Node::Str(_)
-            | Node::Bool(_)
-            | Node::Null(_)
-            | Node::Number(_)
-            | Node::BigInt(_)
-            | Node::Regex(_)
-            | Node::EmptyStmt(_)
-            | Node::BreakStmt(_)
-            | Node::ContinueStmt(_) => {}
+            NodeKind::Str(_)
+            | NodeKind::Bool(_)
+            | NodeKind::Null(_)
+            | NodeKind::Number(_)
+            | NodeKind::BigInt(_)
+            | NodeKind::Regex(_)
+            | NodeKind::EmptyStmt(_)
+            | NodeKind::BreakStmt(_)
+            | NodeKind::ContinueStmt(_) => {}
 
             _ => unreachable!("{:#?}", node),
         }

@@ -185,10 +185,10 @@ pub enum Branch {
  * flow graph.
  */
 pub fn is_entering_new_cfg_node<'ast>(n: Node<'ast>, parent: Node<'ast>) -> bool {
-    match parent {
-        // TODO: what about Node::Module?
-        Node::BlockStmt(_) | Node::Script(_) | Node::TryStmt(_) => true,
-        Node::Function(f) => {
+    match parent.kind {
+        // TODO: what about NodeKind::Module?
+        NodeKind::BlockStmt(_) | NodeKind::Script(_) | NodeKind::TryStmt(_) => true,
+        NodeKind::Function(f) => {
             // A function node represents the start of a function where the name
             // bleeds into the local scope and parameters are assigned
             // to the formal argument names. The node includes the name of the
@@ -196,21 +196,21 @@ pub fn is_entering_new_cfg_node<'ast>(n: Node<'ast>, parent: Node<'ast>) -> bool
             // is atomic without change in control flow. The next change of
             // control is going into the function's body, represented by the second
             // child.
-            Some(n) != f.body.as_ref().map(|s| Node::BlockStmt(s))
+            n.node_id != f.body.as_ref().map(|s| s.node_id)
         }
-        // Node::WhileStmt(_) | Node::DoWhileStmt(_) | Node::IfStmt(_) => {
+        // NodeKind::WhileStmt(_) | NodeKind::DoWhileStmt(_) | NodeKind::IfStmt(_) => {
         //     // These control structures are represented by a node that holds the
         //     // condition. Each of them is a branch node based on its condition.
         //     getConditionExpression(parent) != Some(n)
         // }
-        Node::WhileStmt(WhileStmt { test, .. })
-        | Node::DoWhileStmt(DoWhileStmt { test, .. })
-        | Node::IfStmt(IfStmt { test, .. }) => {
+        NodeKind::WhileStmt(WhileStmt { test, .. })
+        | NodeKind::DoWhileStmt(DoWhileStmt { test, .. })
+        | NodeKind::IfStmt(IfStmt { test, .. }) => {
             // These control structures are represented by a node that holds the
             // condition. Each of them is a branch node based on its condition.
-            Node::from(&**test) != n
+            Some(test.node_id()) != n.node_id
         }
-        // Node::ForStmt(_) => {
+        // NodeKind::ForStmt(_) => {
         //     // The FOR(;;) node differs from other control structures in that
         //     // it has an initialization and an increment statement. Those
         //     // two statements have corresponding CFG nodes to represent them.
@@ -220,7 +220,7 @@ pub fn is_entering_new_cfg_node<'ast>(n: Node<'ast>, parent: Node<'ast>) -> bool
         //     // var x = 0; while(x<10) {  x++; }
         //     getConditionExpression(parent) != Some(n)
         // }
-        Node::ForStmt(ForStmt { test, .. }) => {
+        NodeKind::ForStmt(ForStmt { test, .. }) => {
             // The FOR(;;) node differs from other control structures in that
             // it has an initialization and an increment statement. Those
             // two statements have corresponding CFG nodes to represent them.
@@ -228,27 +228,27 @@ pub fn is_entering_new_cfg_node<'ast>(n: Node<'ast>, parent: Node<'ast>) -> bool
             // That way the following:
             // for(var x = 0; x < 10; x++) { } has a graph that is isomorphic to
             // var x = 0; while(x<10) {  x++; }
-            test.as_ref().map(|test| Node::from(&**test)) != Some(n)
+            test.as_ref().map(|test| Some(test.node_id())) != Some(n.node_id)
         }
-        Node::ForInStmt(f) => {
+        NodeKind::ForInStmt(f) => {
             // TODO(user): Investigate how we should handle the case where
             // we have a very complex expression inside the FOR-IN header.
-            // n != Node::from(&f.left)
+            // n != NodeKind::from(&f.left)
             todo!()
         }
-        Node::SwitchStmt(s) => n != Node::from(&*s.discriminant),
-        Node::SwitchCase(c) => match &c.test {
-            Some(test) => n != Node::from(&**test),
+        NodeKind::SwitchStmt(s) => n.node_id != Some(s.discriminant.node_id()),
+        NodeKind::SwitchCase(c) => match &c.test {
+            Some(test) => n.node_id != Some(test.node_id()),
             None => false,
         },
-        Node::CatchClause(c) => match &c.param {
+        NodeKind::CatchClause(c) => match &c.param {
             Some(param) => {
-                // n != Node::from(&param)
+                // n != NodeKind::from(&param)
                 todo!()
             }
             None => false,
         },
-        Node::WithStmt(w) => n != Node::from(&*w.obj),
+        NodeKind::WithStmt(w) => n.node_id != Some(w.obj.node_id()),
         _ => false,
     }
 }
@@ -305,14 +305,14 @@ where
             NA: Annotation,
         {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                match self.node {
-                    Node::Str(s) => {
+                match self.node.kind {
+                    NodeKind::Str(s) => {
                         f.write_fmt(format_args!("Str({})", s.value.escape_debug()))?;
                     }
-                    Node::Number(n) => {
+                    NodeKind::Number(n) => {
                         f.write_fmt(format_args!("Number({})", n.value))?;
                     }
-                    Node::Ident(s) => {
+                    NodeKind::Ident(s) => {
                         f.write_fmt(format_args!("Ident({})", s.sym))?;
                     }
                     _ => {
@@ -388,14 +388,14 @@ where
             P: AnnotationPrinter<NA>,
         {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                match self.node {
-                    Node::Str(s) => {
+                match self.node.kind {
+                    NodeKind::Str(s) => {
                         f.write_fmt(format_args!("Str({})", s.value.escape_debug()))?;
                     }
-                    Node::Number(n) => {
+                    NodeKind::Number(n) => {
                         f.write_fmt(format_args!("Number({})", n.value))?;
                     }
-                    Node::Ident(s) => {
+                    NodeKind::Ident(s) => {
                         f.write_fmt(format_args!("Ident({})", s.sym))?;
                     }
                     _ => {

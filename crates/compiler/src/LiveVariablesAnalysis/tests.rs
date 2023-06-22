@@ -820,7 +820,7 @@ fn getFlowStateAtDeclaration<'a>(
                 let decl = d.decls.first().unwrap();
                 if let Pat::Ident(n) = &decl.name {
                     if &n.id.sym == name {
-                        let decl = Node::VarDecl(d);
+                        let decl = Node::from(d);
                         return liveness
                             .data_flow_analysis
                             .inner

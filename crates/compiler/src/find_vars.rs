@@ -293,7 +293,7 @@ impl<'a> FunctionLike<'a> for Function {
     }
 
     fn body(&'a self) -> Option<Node<'a>> {
-        self.body.as_ref().map(|b| Node::BlockStmt(b))
+        self.body.as_ref().map(|b| Node::from(b))
     }
 }
 fn get_pat_of_param_or_ts_param_prop<'a>(param: &'a ParamOrTsParamProp) -> &'a Pat {
@@ -315,7 +315,7 @@ impl<'a> FunctionLike<'a> for Constructor {
     }
 
     fn body(&'a self) -> Option<Node<'a>> {
-        self.body.as_ref().map(|b| Node::BlockStmt(b))
+        self.body.as_ref().map(|b| Node::from(b))
     }
 }
 fn get_pat_of_param_without_decorators<'a>(param: &'a ParamWithoutDecorators) -> &'a Pat {
@@ -347,7 +347,7 @@ impl<'a> FunctionLike<'a> for GetterProp {
     }
 
     fn body(&'a self) -> Option<Node<'a>> {
-        self.body.as_ref().map(|b| Node::BlockStmt(b))
+        self.body.as_ref().map(|b| Node::from(b))
     }
 }
 impl<'a> FunctionLike<'a> for SetterProp {
@@ -360,7 +360,7 @@ impl<'a> FunctionLike<'a> for SetterProp {
     }
 
     fn body(&'a self) -> Option<Node<'a>> {
-        self.body.as_ref().map(|b| Node::BlockStmt(b))
+        self.body.as_ref().map(|b| Node::from(b))
     }
 }
 

@@ -1,4 +1,4 @@
-use super::node::Node;
+use super::node::{Node, NodeKind};
 use ast::*;
 use ecma_visit::{noop_visit_type, Visit, VisitWith};
 use rustc_hash::FxHashMap;
@@ -11,12 +11,12 @@ use swc_atoms::JsWord;
 ///
 /// Returns the condition node or `None` if the condition is not obviously a node.
 pub fn get_condition_expression<'ast>(n: Node<'ast>) -> Option<Node<'ast>> {
-    match n {
-        Node::IfStmt(n) => Some(Node::from(&*n.test)),
-        Node::WhileStmt(n) => Some(Node::from(&*n.test)),
-        Node::DoWhileStmt(n) => Some(Node::from(&*n.test)),
-        Node::ForStmt(n) => n.test.as_ref().map(|test| Node::from(test.as_ref())),
-        Node::ForInStmt(..) | Node::ForOfStmt(..) | Node::SwitchCase(..) => None,
+    match n.kind {
+        NodeKind::IfStmt(n) => Some(Node::from(&*n.test)),
+        NodeKind::WhileStmt(n) => Some(Node::from(&*n.test)),
+        NodeKind::DoWhileStmt(n) => Some(Node::from(&*n.test)),
+        NodeKind::ForStmt(n) => n.test.as_ref().map(|test| Node::from(test.as_ref())),
+        NodeKind::ForInStmt(..) | NodeKind::ForOfStmt(..) | NodeKind::SwitchCase(..) => None,
         _ => unreachable!("Node does not have a condition."),
     }
 }
@@ -24,12 +24,12 @@ pub fn get_condition_expression<'ast>(n: Node<'ast>) -> Option<Node<'ast>> {
 /// Determines whether the given node is a FOR, DO, or WHILE node.
 pub fn is_loop_structure(n: Node) -> bool {
     matches!(
-        n,
-        Node::ForStmt(_)
-            | Node::ForInStmt(_)
-            | Node::ForOfStmt(_)
-            | Node::DoWhileStmt(_)
-            | Node::WhileStmt(_)
+        n.kind,
+        NodeKind::ForStmt(_)
+            | NodeKind::ForInStmt(_)
+            | NodeKind::ForOfStmt(_)
+            | NodeKind::DoWhileStmt(_)
+            | NodeKind::WhileStmt(_)
     )
 }
 
@@ -37,38 +37,37 @@ pub fn is_loop_structure(n: Node) -> bool {
 /// subtree of n. We don't always create a CFG edge into n itself because of
 /// DOs and FORs.
 pub fn compute_fall_through(n: Node) -> Node {
-    match n {
-        Node::DoWhileStmt(d) => Node::from(d.body.as_ref()),
-        Node::ForStmt(f) => {
+    match n.kind {
+        NodeKind::DoWhileStmt(d) => Node::from(d.body.as_ref()),
+        NodeKind::ForStmt(f) => {
             match &f.init {
                 Some(init) => match init {
                     VarDeclOrExpr::Expr(expr) => Node::from(expr.as_ref()),
-                    VarDeclOrExpr::VarDecl(ref decl) => Node::VarDecl(decl),
+                    VarDeclOrExpr::VarDecl(ref decl) => Node::from(decl),
                 },
                 // If there is no init, transfer control immediately to the
                 // for-loop.
                 None => n,
             }
         }
-        Node::ForInStmt(ForInStmt { right, .. }) | Node::ForOfStmt(ForOfStmt { right, .. }) => {
-            Node::from(right.as_ref())
-        }
-        Node::LabeledStmt(l) => compute_fall_through(Node::from(&*l.body)),
+        NodeKind::ForInStmt(ForInStmt { right, .. })
+        | NodeKind::ForOfStmt(ForOfStmt { right, .. }) => Node::from(right.as_ref()),
+        NodeKind::LabeledStmt(l) => compute_fall_through(Node::from(&*l.body)),
         _ => n,
     }
 }
 
 /// Determines whether the given node can be terminated with a BREAK node.
 fn is_break_structure(n: Node, labeled: bool) -> bool {
-    match n {
-        Node::ForStmt(_)
-        | Node::ForInStmt(_)
-        | Node::ForOfStmt(_)
-        | Node::DoWhileStmt(_)
-        | Node::WhileStmt(_)
-        | Node::SwitchStmt(_) => true,
+    match n.kind {
+        NodeKind::ForStmt(_)
+        | NodeKind::ForInStmt(_)
+        | NodeKind::ForOfStmt(_)
+        | NodeKind::DoWhileStmt(_)
+        | NodeKind::WhileStmt(_)
+        | NodeKind::SwitchStmt(_) => true,
         // TODO: case ROOT:
-        Node::BlockStmt(_) | Node::IfStmt(_) | Node::TryStmt(_) => labeled,
+        NodeKind::BlockStmt(_) | NodeKind::IfStmt(_) | NodeKind::TryStmt(_) => labeled,
         _ => false,
     }
 }
@@ -192,7 +191,11 @@ pub fn match_label<'ast>(
     let mut target = target_ancestors.next().map(|parent| parent.node);
     match label {
         Some(label) => {
-            while let Some(Node::LabeledStmt(target_label)) = target {
+            while let Some(Node {
+                kind: NodeKind::LabeledStmt(target_label),
+                ..
+            }) = target
+            {
                 if &target_label.label.sym == label {
                     return true;
                 }
@@ -283,11 +286,11 @@ impl<'ast> ExceptionHandler<'ast> {
         // We only care about try, catch, and function ancestors.
         let parent_stack = ancestors
             .into_iter()
-            .filter_map(|parent| match parent.node {
-                Node::TryStmt(_)
-                | Node::Function(_)
-                | Node::Constructor(_)
-                | Node::CatchClause(_) => Some(parent.node),
+            .filter_map(|parent| match parent.node.kind {
+                NodeKind::TryStmt(_)
+                | NodeKind::Function(_)
+                | NodeKind::Constructor(_)
+                | NodeKind::CatchClause(_) => Some(parent.node),
                 _ => None,
             })
             .collect();

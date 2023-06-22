@@ -11,7 +11,7 @@ use petgraph::Direction::Incoming;
 use rustc_hash::{FxHashMap, FxHashSet};
 use swc_atoms::JsWord;
 
-use crate::control_flow::node::Node;
+use crate::control_flow::node::{Node, NodeKind};
 use crate::control_flow::ControlFlowGraph::Branch;
 use crate::utils::unwrap_as;
 use crate::DataFlowAnalysis::{LatticeElementId, LinearFlowState, UniqueQueue, MAX_STEPS_PER_NODE};
@@ -1371,7 +1371,7 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
                 // so we skip processing it when coming from a ReturnStmt as
                 // processing the implicit return would incorrectly add `undefined`
                 // to the call's return type.
-                if !matches!(curNode, Node::ReturnStmt(_)) {
+                if !matches!(curNode.kind, NodeKind::ReturnStmt(_)) {
                     let nextNodes = self.cfg.get_successors(curNode);
 
                     for nextNode in nextNodes {
@@ -1423,7 +1423,7 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
             .cfg
             .graph
             .edges_directed(self.cfg.map[&node], Incoming)
-            .filter(|e| !matches!(graph[e.source()], Node::ReturnStmt(_)));
+            .filter(|e| !matches!(graph[e.source()].kind, NodeKind::ReturnStmt(_)));
 
         if let Some(first) = inEdges.next() {
             if let Some(second) = inEdges.next() {
