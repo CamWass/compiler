@@ -59,7 +59,7 @@ pub struct ControlFlowAnalysisResult<N: CfgNode, NA: Annotation, EA: Annotation>
 
 pub struct ControlFlowAnalysis<'ast, N: Annotation, E: Annotation> {
     pub(super) cfg: ControlFlowGraph<Node<'ast>, N, E>,
-    pub(super) astPosition: FxHashMap<Node<'ast>, usize>,
+    astPosition: FxHashMap<NodeId, usize>,
     pub(super) nodePriorities: FxHashMap<Node<'ast>, usize>,
     astPositionCounter: usize,
     priorityCounter: usize,
@@ -130,17 +130,15 @@ where
 
         root.visit_with(&mut cfa);
 
-        cfa.prioritize_node(cfa.cfg.implicit_return); // the implicit return is last.
-
         // Every node in the cfg should have been prioritized.
         for node in cfa.cfg.graph.node_weights() {
             debug_assert!(
-                cfa.astPosition.contains_key(node),
+                node.is_implicit_return() || cfa.astPosition.contains_key(&node.node_id.unwrap()),
                 "node should have ast position {:#?}",
                 node
             );
         }
-        debug_assert_eq!(cfa.astPosition.len(), cfa.astPositionCounter);
+        debug_assert_eq!(cfa.astPosition.len() - 1, cfa.astPositionCounter); // - 1 for implicit return
 
         // Now, generate the priority of nodes by doing a depth-first
         // search on the CFG.
@@ -227,7 +225,14 @@ where
         }
 
         let mk = |s: &ControlFlowAnalysis<'ast, N, E>, node: Node<'ast>| {
-            PrioritizedNode::mk(*s.astPosition.get(&node).unwrap(), node)
+            let position = match node.node_id {
+                Some(node_id) => *s.astPosition.get(&node_id).unwrap(),
+                None => {
+                    debug_assert!(node.is_implicit_return());
+                    usize::MAX
+                }
+            };
+            PrioritizedNode::mk(position, node)
         };
 
         let mut worklist = BinaryHeap::with_capacity(10);
@@ -249,13 +254,17 @@ where
         }
     }
 
-    fn prioritize_node(&mut self, node: Node<'ast>) {
+    fn prioritize_node(&mut self, node: Node) {
+        let node_id = match node.node_id {
+            Some(id) => id,
+            None => return,
+        };
         debug_assert!(
-            !self.astPosition.contains_key(&node),
+            !self.astPosition.contains_key(&node_id),
             "node has already been prioritized {:#?}",
             node
         );
-        self.astPosition.insert(node, self.astPositionCounter);
+        self.astPosition.insert(node_id, self.astPositionCounter);
         self.astPositionCounter += 1;
     }
 
