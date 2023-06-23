@@ -130,15 +130,17 @@ where
 
         root.visit_with(&mut cfa);
 
+        cfa.prioritize_node(cfa.cfg.implicit_return); // the implicit return is last.
+
         // Every node in the cfg should have been prioritized.
         for node in cfa.cfg.graph.node_weights() {
             debug_assert!(
-                node.is_implicit_return() || cfa.astPosition.contains_key(&node.node_id.unwrap()),
+                cfa.astPosition.contains_key(&node.node_id),
                 "node should have ast position {:#?}",
                 node
             );
         }
-        debug_assert_eq!(cfa.astPosition.len() - 1, cfa.astPositionCounter); // - 1 for implicit return
+        debug_assert_eq!(cfa.astPosition.len(), cfa.astPositionCounter);
 
         // Now, generate the priority of nodes by doing a depth-first
         // search on the CFG.
@@ -225,13 +227,7 @@ where
         }
 
         let mk = |s: &ControlFlowAnalysis<'ast, N, E>, node: Node<'ast>| {
-            let position = match node.node_id {
-                Some(node_id) => *s.astPosition.get(&node_id).unwrap(),
-                None => {
-                    debug_assert!(node.is_implicit_return());
-                    usize::MAX
-                }
-            };
+            let position = *s.astPosition.get(&node.node_id).unwrap();
             PrioritizedNode::mk(position, node)
         };
 
@@ -255,16 +251,13 @@ where
     }
 
     fn prioritize_node(&mut self, node: Node) {
-        let node_id = match node.node_id {
-            Some(id) => id,
-            None => return,
-        };
         debug_assert!(
-            !self.astPosition.contains_key(&node_id),
+            !self.astPosition.contains_key(&node.node_id),
             "node has already been prioritized {:#?}",
             node
         );
-        self.astPosition.insert(node_id, self.astPositionCounter);
+        self.astPosition
+            .insert(node.node_id, self.astPositionCounter);
         self.astPositionCounter += 1;
     }
 
@@ -546,9 +539,9 @@ where
 
                 let mut last_jump_in_catch_block = false;
                 for &ancestor in last_jump.parent_stack.iter().rev() {
-                    if ancestor.node_id == Some(handler_node.node_id) {
+                    if ancestor.node_id == handler_node.node_id {
                         break;
-                    } else if ancestor.node_id == catch.as_ref().map(|c| c.node_id) {
+                    } else if Some(ancestor.node_id) == catch.as_ref().map(|c| c.node_id) {
                         last_jump_in_catch_block = true;
                         break;
                     }
@@ -649,7 +642,7 @@ where
                 NodeKind::WhileStmt(_) | NodeKind::DoWhileStmt(_) => return parent.node,
                 NodeKind::TryStmt(try_stmt) => {
                     // If we are coming out of the TRY block...
-                    if Some(try_stmt.block.node_id) == node.node_id {
+                    if try_stmt.block.node_id == node.node_id {
                         match &try_stmt.finalizer {
                             Some(finally) => {
                                 // and have FINALLY block.

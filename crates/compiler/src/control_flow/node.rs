@@ -10,10 +10,7 @@ pub trait CfgNode: Copy + Eq + Hash + Debug {
 
 impl CfgNode for Node<'_> {
     fn implicit_return() -> Self {
-        Node {
-            node_id: None,
-            kind: NodeKind::ImplicitReturn,
-        }
+        Self::ImplicitReturn
     }
 }
 
@@ -30,7 +27,7 @@ impl Node<'_> {
     }
 
     pub fn is_implicit_return(&self) -> bool {
-        let r = self.node_id == None;
+        let r = self.node_id == NodeId::DUMMY;
         debug_assert!(!r || matches!(self.kind, NodeKind::ImplicitReturn));
         r
     }
@@ -38,13 +35,13 @@ impl Node<'_> {
 
 #[derive(Copy, Clone, Debug)]
 pub struct Node<'ast> {
-    pub node_id: Option<NodeId>,
+    pub node_id: NodeId,
     pub kind: NodeKind<'ast>,
 }
 
 impl Node<'_> {
     pub const ImplicitReturn: Node<'_> = Node {
-        node_id: None,
+        node_id: NodeId::DUMMY,
         kind: NodeKind::ImplicitReturn,
     };
 }
@@ -99,7 +96,7 @@ macro_rules! make {
             impl<'ast> From<&'ast ::ast::$field> for Node<'ast> {
                 fn from(other: &'ast ::ast::$field) -> Node<'ast> {
                     Node {
-                        node_id: Some(other.node_id()),
+                        node_id: other.node_id(),
                         kind: NodeKind::$field(other)
                     }
                 }

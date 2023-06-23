@@ -196,7 +196,7 @@ pub fn is_entering_new_cfg_node<'ast>(n: Node<'ast>, parent: Node<'ast>) -> bool
             // is atomic without change in control flow. The next change of
             // control is going into the function's body, represented by the second
             // child.
-            n.node_id != f.body.as_ref().map(|s| s.node_id)
+            Some(n.node_id) != f.body.as_ref().map(|s| s.node_id)
         }
         // NodeKind::WhileStmt(_) | NodeKind::DoWhileStmt(_) | NodeKind::IfStmt(_) => {
         //     // These control structures are represented by a node that holds the
@@ -208,7 +208,7 @@ pub fn is_entering_new_cfg_node<'ast>(n: Node<'ast>, parent: Node<'ast>) -> bool
         | NodeKind::IfStmt(IfStmt { test, .. }) => {
             // These control structures are represented by a node that holds the
             // condition. Each of them is a branch node based on its condition.
-            Some(test.node_id()) != n.node_id
+            test.node_id() != n.node_id
         }
         // NodeKind::ForStmt(_) => {
         //     // The FOR(;;) node differs from other control structures in that
@@ -228,7 +228,7 @@ pub fn is_entering_new_cfg_node<'ast>(n: Node<'ast>, parent: Node<'ast>) -> bool
             // That way the following:
             // for(var x = 0; x < 10; x++) { } has a graph that is isomorphic to
             // var x = 0; while(x<10) {  x++; }
-            test.as_ref().map(|test| Some(test.node_id())) != Some(n.node_id)
+            test.as_ref().map(|test| test.node_id()) != Some(n.node_id)
         }
         NodeKind::ForInStmt(f) => {
             // TODO(user): Investigate how we should handle the case where
@@ -236,9 +236,9 @@ pub fn is_entering_new_cfg_node<'ast>(n: Node<'ast>, parent: Node<'ast>) -> bool
             // n != NodeKind::from(&f.left)
             todo!()
         }
-        NodeKind::SwitchStmt(s) => n.node_id != Some(s.discriminant.node_id()),
+        NodeKind::SwitchStmt(s) => n.node_id != s.discriminant.node_id(),
         NodeKind::SwitchCase(c) => match &c.test {
-            Some(test) => n.node_id != Some(test.node_id()),
+            Some(test) => n.node_id != test.node_id(),
             None => false,
         },
         NodeKind::CatchClause(c) => match &c.param {
@@ -248,7 +248,7 @@ pub fn is_entering_new_cfg_node<'ast>(n: Node<'ast>, parent: Node<'ast>) -> bool
             }
             None => false,
         },
-        NodeKind::WithStmt(w) => n.node_id != Some(w.obj.node_id()),
+        NodeKind::WithStmt(w) => n.node_id != w.obj.node_id(),
         _ => false,
     }
 }
