@@ -37,7 +37,7 @@ struct Resolver<'a, 'ast> {
     functions: &'a mut IndexVec<FnId, Func>,
     static_fn_data: &'a IndexVec<FnId, StaticFunctionData<'ast>>,
 
-    call_templates: &'a FxHashMap<FnId, CallTemplate<'ast>>,
+    call_templates: &'a FxHashMap<FnId, CallTemplate>,
 
     resolved_calls: &'a mut FxHashMap<CallId, ResolvedCall>,
 
@@ -550,14 +550,14 @@ impl Machine<'_> {
 
 #[derive(Debug, PartialEq, Eq)]
 /// Info required to compute the effects of a call.
-pub(super) struct CallTemplate<'ast> {
+pub(super) struct CallTemplate {
     /// [`Steps`][Step] that represent the effects of each control flow graph
     /// node required to evaluate the call's effects.
-    step_map: FxHashMap<Node<'ast>, Vec<Step>>,
+    step_map: FxHashMap<NodeId, Vec<Step>>,
 }
 
-impl<'ast> CallTemplate<'ast> {
-    pub fn new(store: &mut Store<'ast>, func: FnId) -> CallTemplate<'ast> {
+impl CallTemplate {
+    pub fn new(store: &mut Store, func: FnId) -> CallTemplate {
         let step_map = create_step_map(store, func);
         CallTemplate { step_map }
     }
@@ -569,7 +569,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
         node: Node<'ast>,
         input: LatticeElementId,
     ) -> Option<LatticeElementId> {
-        let steps = match self.path_map.get(&node) {
+        let steps = match self.path_map.get(&node.node_id) {
             Some(steps) => steps,
             None => return Some(input),
         };
@@ -1288,7 +1288,7 @@ struct DataFlowAnalysis<'ast, 'a> {
 
     call: CallId,
 
-    path_map: &'a FxHashMap<Node<'ast>, Vec<Step>>,
+    path_map: &'a FxHashMap<NodeId, Vec<Step>>,
 
     resolved_calls: &'ast mut FxHashMap<CallId, ResolvedCall>,
 

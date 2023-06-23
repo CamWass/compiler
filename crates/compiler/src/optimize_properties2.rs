@@ -635,7 +635,7 @@ pub struct Store<'ast> {
     pub(super) unresolved_ctxt: SyntaxContext,
 
     resolved_calls: FxHashMap<CallId, ResolvedCall>,
-    call_templates: FxHashMap<FnId, CallTemplate<'ast>>,
+    call_templates: FxHashMap<FnId, CallTemplate>,
     fn_assignments: HashableHashMap<Id, Assignment>,
 
     object_links: FxHashSet<(ObjectId, ObjectId)>,

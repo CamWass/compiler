@@ -15,7 +15,7 @@ use super::{is_simple_prop_name, FnId, PropKey, SimpleCFG, Store};
 pub(super) fn create_step_map<'ast>(
     store: &mut Store<'ast>,
     func: FnId,
-) -> FxHashMap<Node<'ast>, Vec<Step>> {
+) -> FxHashMap<NodeId, Vec<Step>> {
     let mut map = FxHashMap::default();
 
     let graph = &store.static_fn_data[func].cfg.graph;
@@ -34,7 +34,7 @@ pub(super) fn create_step_map<'ast>(
         analyser.init(graph[node], conditional);
 
         if !steps.is_empty() {
-            map.insert(graph[node], steps);
+            map.insert(graph[node].node_id, steps);
         }
     }
 
