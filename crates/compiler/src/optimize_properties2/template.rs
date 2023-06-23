@@ -1284,7 +1284,7 @@ struct DataFlowAnalysis<'ast, 'a> {
     cfg: &'a SimpleCFG<'ast>,
     entry_lattice: LatticeElementId,
     initial_lattice: LatticeElementId,
-    node_annotations: FxHashMap<Node<'ast>, LinearFlowState>,
+    node_annotations: FxHashMap<NodeId, LinearFlowState>,
 
     call: CallId,
 
@@ -1335,8 +1335,10 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
         {
             let in_ = self.createInitialEstimateLattice();
             let out = self.createInitialEstimateLattice();
-            self.node_annotations
-                .insert(self.cfg.implicit_return, LinearFlowState::new(in_, out));
+            self.node_annotations.insert(
+                self.cfg.implicit_return.node_id,
+                LinearFlowState::new(in_, out),
+            );
         }
 
         self.workQueue.push(self.cfg.entry);
@@ -1350,7 +1352,7 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
             let mut first_visit = false;
 
             let step_count = &mut node_annotations
-                .entry(curNode)
+                .entry(curNode.node_id)
                 .or_insert_with(|| {
                     first_visit = true;
                     LinearFlowState::new(initial_lattice, initial_lattice)
@@ -1389,10 +1391,10 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
 
     /// Performs a single flow through a node.
     fn flow(&mut self, node: Node<'ast>) -> FlowResult {
-        let state = &self.node_annotations[&node];
+        let state = &self.node_annotations[&node.node_id];
         let outBefore = state.out;
         if let Some(new_out) = self.flowThrough(node, state.in_) {
-            self.get_flow_state_mut(&node).out = new_out;
+            self.get_flow_state_mut(node.node_id).out = new_out;
             if outBefore != new_out {
                 FlowResult::Change
             } else {
@@ -1411,7 +1413,7 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
      */
     fn joinInputs(&mut self, node: Node<'ast>) {
         if self.cfg.entry == node {
-            self.get_flow_state_mut(&node).in_ = self.createEntryLattice();
+            self.get_flow_state_mut(node.node_id).in_ = self.createEntryLattice();
             return;
         }
 
@@ -1456,12 +1458,13 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
                     }
                 }
                 if has_non_empty_input {
-                    self.get_flow_state_mut(&node).in_ = self.add_lattice_element(joiner.finish());
+                    self.get_flow_state_mut(node.node_id).in_ =
+                        self.add_lattice_element(joiner.finish());
                 }
             } else {
                 // Only one relevant edge.
                 if let Some(result) = self.getInputFromEdge(first) {
-                    self.get_flow_state_mut(&node).in_ = result;
+                    self.get_flow_state_mut(node.node_id).in_ = result;
                 }
             }
         } else {
@@ -1469,15 +1472,17 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
         }
     }
 
-    fn get_flow_state_mut(&mut self, node: &Node<'ast>) -> &mut LinearFlowState {
+    fn get_flow_state_mut(&mut self, node: NodeId) -> &mut LinearFlowState {
         // All nodes should have had their state initialized.
-        self.node_annotations.get_mut(node).unwrap()
+        self.node_annotations.get_mut(&node).unwrap()
     }
 
     fn getInputFromEdge(&self, edge: EdgeReference<Branch>) -> Option<LatticeElementId> {
         let source = edge.source();
         let node = self.cfg.graph[source];
-        self.node_annotations.get(&node).map(|state| state.out)
+        self.node_annotations
+            .get(&node.node_id)
+            .map(|state| state.out)
     }
 
     fn add_lattice_element(&mut self, element: Lattice) -> LatticeElementId {
