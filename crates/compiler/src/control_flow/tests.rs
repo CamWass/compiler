@@ -5,6 +5,7 @@ use super::print::ast_graph;
 use super::ControlFlowAnalysis::ControlFlowAnalysis;
 use super::ControlFlowGraph::{Branch, ControlFlowGraph, DummyAnnotation};
 
+use ast::NodeId;
 use global_common::{
     errors::{ColorConfig, Handler},
     sync::Lrc,
@@ -12,27 +13,52 @@ use global_common::{
 };
 use parser::{Parser, Syntax};
 use petgraph::algo::has_path_connecting;
-use petgraph::graph::{DiGraph, Edge, NodeIndex};
+use petgraph::graph::{DiGraph, NodeIndex};
 use rustc_hash::FxHashMap;
 
 // TODO: tests for other function like things (e.g. methods, arrow funcs) and classes.
 
 macro_rules! make {
     ($($field:ident,)*) => {
-        #[derive(Clone, Copy, Debug)]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         pub enum Token {
             ImplicitReturn,
             $($field,)*
         }
 
-        fn node_matches_token(node: Node, token: Token) -> bool {
-            match (node.kind, token) {
-                (NodeKind::ImplicitReturn, Token::ImplicitReturn) => true,
-                $((NodeKind::$field(_), Token::$field) => true,)*
-                _ => false,
+        impl <'a> From<Node<'a>> for Token {
+            fn from(other: Node<'a>) -> Token {
+                match other.kind {
+                    NodeKind::ImplicitReturn => Token::ImplicitReturn,
+                    $(NodeKind::$field(_) => Token::$field,)*
+                }
             }
         }
     };
+}
+
+#[derive(Clone, Copy)]
+struct SimpleNode {
+    node_id: NodeId,
+    token: Token,
+    is_default_switch_case: bool,
+}
+
+impl<'a> From<Node<'a>> for SimpleNode {
+    fn from(value: Node<'a>) -> Self {
+        Self {
+            node_id: value.node_id,
+            token: value.into(),
+            is_default_switch_case: matches!(value.kind, NodeKind::SwitchCase(c) if c.is_default()),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct SimpleEdge {
+    source: SimpleNode,
+    weight: Branch,
+    target: SimpleNode,
 }
 
 make!(
@@ -218,7 +244,7 @@ make!(
 
 fn test_script<F>(src: &str, mut op: F)
 where
-    F: FnMut(&ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>, &AstGraph<'_>),
+    F: FnMut(&ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>, &AstGraph),
 {
     let root = parse_script(src);
     let cfg = createCfg(&root);
@@ -286,18 +312,20 @@ fn parse_module(input: &str) -> ast::Module {
     res
 }
 
-struct AstGraph<'ast> {
-    map: FxHashMap<Node<'ast>, NodeIndex>,
-    graph: DiGraph<Node<'ast>, super::print::Edge<()>>,
+struct AstGraph {
+    map: FxHashMap<NodeId, NodeIndex>,
+    graph: DiGraph<NodeId, super::print::Edge<()>>,
 }
 
-impl<'ast> AstGraph<'ast> {
-    fn new(root: &'ast Node<'ast>) -> Self {
+impl AstGraph {
+    fn new(root: &Node) -> Self {
         let (map, graph) = ast_graph(root);
+        let map = map.into_iter().map(|(k, v)| (k.node_id, v)).collect();
+        let graph = graph.map(|_, n| n.node_id, |_, e| *e);
         Self { map, graph }
     }
 
-    fn isAncestor(&self, node: Node<'ast>, maybeDescendant: Node<'ast>) -> bool {
+    fn isAncestor(&self, node: NodeId, maybeDescendant: NodeId) -> bool {
         let from = *self.map.get(&node).unwrap();
         let to = *self.map.get(&maybeDescendant).unwrap();
         has_path_connecting(&self.graph, from, to, None)
@@ -339,10 +367,18 @@ impl<'ast> AstGraph<'ast> {
 /**
 * Gets all the edges of the graph.
 */
-fn getAllEdgesOfCFG<'a>(
-    cfg: &'a ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
-) -> &'a [Edge<Branch>] {
-    cfg.graph.raw_edges()
+fn getAllEdgesOfCFG(
+    cfg: &ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
+) -> Vec<SimpleEdge> {
+    cfg.graph
+        .raw_edges()
+        .iter()
+        .map(|e| SimpleEdge {
+            source: cfg.graph[e.source()].into(),
+            weight: e.weight,
+            target: cfg.graph[e.target()].into(),
+        })
+        .collect()
 }
 
 /**
@@ -353,14 +389,11 @@ fn getAllEdges<'a>(
     cfg: &'a ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
     startToken: Token,
     endToken: Token,
-) -> impl Iterator<Item = &'a Edge<Branch>> {
-    let edges = getAllEdgesOfCFG(cfg);
-
-    edges.iter().filter(move |e| {
-        let source = cfg.graph[e.source()];
-        let target = cfg.graph[e.target()];
-        node_matches_token(source, startToken) && node_matches_token(target, endToken)
-    })
+) -> Vec<SimpleEdge> {
+    getAllEdgesOfCFG(cfg)
+        .into_iter()
+        .filter(|e| e.source.token == startToken && e.target.token == endToken)
+        .collect()
 }
 
 /**
@@ -371,18 +404,15 @@ fn getAllEdgesPredicate<'a, S, E>(
     cfg: &'a ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
     start: S,
     end: E,
-) -> impl Iterator<Item = &'a Edge<Branch>>
+) -> Vec<SimpleEdge>
 where
-    S: Fn(Node) -> bool,
-    E: Fn(Node) -> bool,
+    S: Fn(SimpleNode) -> bool,
+    E: Fn(SimpleNode) -> bool,
 {
-    let edges = getAllEdgesOfCFG(cfg);
-
-    edges.iter().filter(move |e| {
-        let source = cfg.graph[e.source()];
-        let target = cfg.graph[e.target()];
-        start(source) && end(target)
-    })
+    getAllEdgesOfCFG(cfg)
+        .into_iter()
+        .filter(|e| start(e.source) && end(e.target))
+        .collect()
 }
 
 /**
@@ -394,8 +424,11 @@ fn getAllEdgesOfType<'a>(
     startToken: Token,
     endToken: Token,
     edge_type: Branch,
-) -> impl Iterator<Item = &'a Edge<Branch>> {
-    getAllEdges(cfg, startToken, endToken).filter(move |e| e.weight == edge_type)
+) -> Vec<SimpleEdge> {
+    getAllEdges(cfg, startToken, endToken)
+        .into_iter()
+        .filter(|e| e.weight == edge_type)
+        .collect()
 }
 
 /**
@@ -407,12 +440,15 @@ fn getAllEdgesOfTypePredicate<'a, S, E>(
     start: S,
     end: E,
     edge_type: Branch,
-) -> impl Iterator<Item = &'a Edge<Branch>>
+) -> Vec<SimpleEdge>
 where
-    S: Fn(Node) -> bool,
-    E: Fn(Node) -> bool,
+    S: Fn(SimpleNode) -> bool,
+    E: Fn(SimpleNode) -> bool,
 {
-    getAllEdgesPredicate(cfg, start, end).filter(move |e| e.weight == edge_type)
+    getAllEdgesPredicate(cfg, start, end)
+        .into_iter()
+        .filter(|e| e.weight == edge_type)
+        .collect()
 }
 
 /**
@@ -422,16 +458,15 @@ where
 */
 fn getAllDownEdges<'a>(
     cfg: &'a ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
-    ast_graph: &'a AstGraph<'_>,
+    ast_graph: &'a AstGraph,
     startToken: Token,
     endToken: Token,
     edge_type: Branch,
-) -> impl Iterator<Item = &'a Edge<Branch>> {
-    getAllEdgesOfType(cfg, startToken, endToken, edge_type).filter(move |e| {
-        let source = cfg.graph[e.source()];
-        let target = cfg.graph[e.target()];
-        ast_graph.isAncestor(source.into(), target.into())
-    })
+) -> Vec<SimpleEdge> {
+    getAllEdgesOfType(cfg, startToken, endToken, edge_type)
+        .into_iter()
+        .filter(|e| ast_graph.isAncestor(e.source.node_id, e.target.node_id))
+        .collect()
 }
 
 /**
@@ -441,20 +476,19 @@ fn getAllDownEdges<'a>(
 */
 fn getAllDownEdgesPredicate<'a, S, E>(
     cfg: &'a ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
-    ast_graph: &'a AstGraph<'_>,
+    ast_graph: &'a AstGraph,
     start: S,
     end: E,
     edge_type: Branch,
-) -> impl Iterator<Item = &'a Edge<Branch>>
+) -> Vec<SimpleEdge>
 where
-    S: Fn(Node) -> bool,
-    E: Fn(Node) -> bool,
+    S: Fn(SimpleNode) -> bool,
+    E: Fn(SimpleNode) -> bool,
 {
-    getAllEdgesOfTypePredicate(cfg, start, end, edge_type).filter(move |e| {
-        let source = cfg.graph[e.source()];
-        let target = cfg.graph[e.target()];
-        ast_graph.isAncestor(source.into(), target.into())
-    })
+    getAllEdgesOfTypePredicate(cfg, start, end, edge_type)
+        .into_iter()
+        .filter(|e| ast_graph.isAncestor(e.source.node_id, e.target.node_id))
+        .collect()
 }
 
 /**
@@ -466,7 +500,7 @@ fn assertNoEdge(
     startToken: Token,
     endToken: Token,
 ) {
-    assert!(getAllEdges(cfg, startToken, endToken).next().is_none());
+    assert!(getAllEdges(cfg, startToken, endToken).is_empty());
 }
 
 /**
@@ -476,14 +510,12 @@ fn assertNoEdge(
 */
 fn assertDownEdge(
     cfg: &ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
-    ast_graph: &AstGraph<'_>,
+    ast_graph: &AstGraph,
     startToken: Token,
     endToken: Token,
     edge_type: Branch,
 ) {
-    let edge_exists = getAllDownEdges(cfg, ast_graph, startToken, endToken, edge_type)
-        .next()
-        .is_some();
+    let edge_exists = !getAllDownEdges(cfg, ast_graph, startToken, endToken, edge_type).is_empty();
     assert!(
         edge_exists,
         "No down edge found between {:?} and {:?}",
@@ -498,14 +530,12 @@ fn assertDownEdge(
 */
 fn assertUpEdge(
     cfg: &ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
-    ast_graph: &AstGraph<'_>,
+    ast_graph: &AstGraph,
     startToken: Token,
     endToken: Token,
     edge_type: Branch,
 ) {
-    let edge_exists = getAllDownEdges(cfg, ast_graph, endToken, startToken, edge_type)
-        .next()
-        .is_some();
+    let edge_exists = !getAllDownEdges(cfg, ast_graph, endToken, startToken, edge_type).is_empty();
     assert!(
         edge_exists,
         "No up edge found between {:?} and {:?}",
@@ -520,14 +550,14 @@ fn assertUpEdge(
 */
 fn assertCrossEdge(
     cfg: &ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
-    ast_graph: &AstGraph<'_>,
+    ast_graph: &AstGraph,
     startToken: Token,
     endToken: Token,
     edge_type: Branch,
 ) {
-    let numDownEdges = getAllDownEdges(cfg, ast_graph, startToken, endToken, edge_type).count();
-    let numUpEdges = getAllDownEdges(cfg, ast_graph, endToken, startToken, edge_type).count();
-    let numEdges = getAllEdgesOfType(cfg, startToken, endToken, edge_type).count();
+    let numDownEdges = getAllDownEdges(cfg, ast_graph, startToken, endToken, edge_type).len();
+    let numUpEdges = getAllDownEdges(cfg, ast_graph, endToken, startToken, edge_type).len();
+    let numEdges = getAllEdgesOfType(cfg, startToken, endToken, edge_type).len();
     assert!(
         numDownEdges + numUpEdges < numEdges,
         "No cross edges found between {:?} and {:?}",
@@ -543,17 +573,17 @@ fn assertCrossEdge(
 */
 fn assertCrossEdgePredicate<S, E>(
     cfg: &ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
-    ast_graph: &AstGraph<'_>,
+    ast_graph: &AstGraph,
     start: S,
     end: E,
     edge_type: Branch,
 ) where
-    S: Fn(Node) -> bool,
-    E: Fn(Node) -> bool,
+    S: Fn(SimpleNode) -> bool,
+    E: Fn(SimpleNode) -> bool,
 {
-    let numDownEdges = getAllDownEdgesPredicate(cfg, ast_graph, &start, &end, edge_type).count();
-    let numUpEdges = getAllDownEdgesPredicate(cfg, ast_graph, &end, &start, edge_type).count();
-    let numEdges = getAllEdgesOfTypePredicate(cfg, &start, &end, edge_type).count();
+    let numDownEdges = getAllDownEdgesPredicate(cfg, ast_graph, &start, &end, edge_type).len();
+    let numUpEdges = getAllDownEdgesPredicate(cfg, ast_graph, &end, &start, edge_type).len();
+    let numEdges = getAllEdgesOfTypePredicate(cfg, &start, &end, edge_type).len();
     assert!(numDownEdges + numUpEdges < numEdges, "No cross edges found");
 }
 
@@ -567,9 +597,7 @@ fn assertReturnEdge(
 ) {
     let edges = getAllEdgesOfCFG(cfg);
     for edge in edges {
-        let source = cfg.graph[edge.source()];
-        let target = cfg.graph[edge.target()];
-        if node_matches_token(source, startToken) && target.is_implicit_return() {
+        if edge.source.token == startToken && edge.target.token == Token::ImplicitReturn {
             return;
         }
     }
@@ -587,11 +615,9 @@ fn assertNoReturnEdge(
 ) {
     let edges = getAllEdgesOfCFG(cfg);
     for edge in edges {
-        let source = cfg.graph[edge.source()];
-        let target = cfg.graph[edge.target()];
-        if node_matches_token(source, startToken) {
+        if edge.source.token == startToken {
             assert!(
-                !target.is_implicit_return(),
+                edge.target.token != Token::ImplicitReturn,
                 "Token {:?} should not have an out going edge to the implicit return",
                 startToken
             );
@@ -1045,8 +1071,8 @@ fn testSimpleSwitch() {
         assertCrossEdgePredicate(
             cfg,
             ast_graph,
-            |n| node_matches_token(n, Token::SwitchCase),
-            |n| matches!(n.kind, NodeKind::SwitchCase(c) if c.is_default()),
+            |n| n.token == Token::SwitchCase,
+            |n| n.is_default_switch_case,
             Branch::ON_FALSE,
         );
         // Within each case.
@@ -1091,8 +1117,8 @@ fn testSwitchDefaultFirst() {
         assertCrossEdgePredicate(
             cfg,
             ast_graph,
-            |n| node_matches_token(n, Token::SwitchCase),
-            |n| matches!(n.kind, NodeKind::SwitchCase(c) if c.is_default()),
+            |n| n.token == Token::SwitchCase,
+            |n| n.is_default_switch_case,
             Branch::ON_FALSE,
         );
     });
@@ -1120,8 +1146,8 @@ fn testSwitchDefaultInMiddle() {
         assertCrossEdgePredicate(
             cfg,
             ast_graph,
-            |n| node_matches_token(n, Token::SwitchCase),
-            |n| matches!(n.kind, NodeKind::SwitchCase(c) if c.is_default()),
+            |n| n.token == Token::SwitchCase,
+            |n| n.is_default_switch_case,
             Branch::ON_FALSE,
         );
     });
@@ -2648,7 +2674,7 @@ fn assertNodeOrder(src: &str, expected: &[Token]) {
     let eq = actual
         .iter()
         .copied()
-        .eq_by(expected.iter().copied(), node_matches_token);
+        .eq_by(expected.iter().copied(), |n, t| Token::from(n) == t);
     assert!(
         eq,
         "Expected order: {:#?}, actual order: {:#?}",

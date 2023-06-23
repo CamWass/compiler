@@ -8,7 +8,6 @@ use global_common::{
 use parser::{Parser, Syntax};
 
 use crate::control_flow::{
-    node::Node,
     ControlFlowAnalysis::{ControlFlowAnalysis, ControlFlowRoot},
     ControlFlowGraph::DefaultPrinter,
 };
@@ -289,8 +288,8 @@ fn assertNotMatchInner(src: &str, is_async: bool) {
  */
 fn getComputedUses<'ast>(
     reaching_use: &MaybeReachingResult<'ast>,
-    extracted_info: &ExtractedInfo<'ast>,
-) -> Vec<Node<'ast>> {
+    extracted_info: &ExtractedInfo,
+) -> Vec<NodeId> {
     reaching_use
         .getUses(&extracted_info.var_id, extracted_info.extractedDef)
         .cloned()
@@ -421,7 +420,7 @@ fn extractDefAndUsesFromInputLabels<'ast>(
 struct ExtractedInfo<'ast> {
     // Def and uses extracted from `D:` and `U:` labels respectively
     extractedDef: Node<'ast>,
-    extractedUses: Vec<Node<'ast>>,
+    extractedUses: Vec<NodeId>,
 
     var_id: Id,
 }
@@ -430,7 +429,7 @@ struct ExtractedInfo<'ast> {
 struct InfoExtractor<'ast> {
     // Def and uses extracted from `D:` and `U:` labels respectively
     extractedDef: Option<Node<'ast>>,
-    extractedUses: Vec<Node<'ast>>,
+    extractedUses: Vec<NodeId>,
 
     var_name: &'static str,
     var_id: Option<Id>,
@@ -459,7 +458,7 @@ impl<'ast> Visit<'ast> for InfoExtractor<'ast> {
             assert!(self.extractedDef == None, "Multiple D: labels in test src");
             self.extractedDef = Some(Node::from(node.body.as_ref()));
         } else if node.label.sym.starts_with("U") {
-            self.extractedUses.push(Node::from(node.body.as_ref()));
+            self.extractedUses.push(node.body.node_id());
         }
         node.body.visit_with(self);
     }

@@ -9,10 +9,8 @@ use parser::{Parser, Syntax};
 use rustc_hash::FxHashMap;
 use swc_atoms::JsWord;
 
-use crate::control_flow::{
-    node::Node,
-    ControlFlowAnalysis::{ControlFlowAnalysis, ControlFlowRoot},
-};
+use crate::control_flow::node::Node;
+use crate::control_flow::ControlFlowAnalysis::{ControlFlowAnalysis, ControlFlowRoot};
 use crate::resolver::resolver;
 use crate::DataFlowAnalysis::LinearFlowState;
 use crate::Id;
@@ -725,9 +723,7 @@ where
     });
 }
 
-fn getFlowStateAtX<'a>(
-    liveness: &'a LiveVariablesAnalysis<Function>,
-) -> Option<&'a LinearFlowState> {
+fn getFlowStateAtX(liveness: &LiveVariablesAnalysis<Function>) -> Option<LinearFlowState> {
     let mut v = FlowStateFinder {
         liveness,
         flow_state: None,
@@ -752,7 +748,7 @@ fn getFlowStateAtX<'a>(
         .cfg
         .entry
         .visit_with(&mut v);
-    v.flow_state
+    v.flow_state.cloned()
 }
 
 struct FlowStateFinder<'a, 'ast, P>
@@ -810,7 +806,7 @@ where
 fn getFlowStateAtDeclaration<'a>(
     liveness: &'a LiveVariablesAnalysis<Function>,
     name: &str,
-) -> Option<&'a LinearFlowState> {
+) -> Option<LinearFlowState> {
     let mut v = FlowStateFinder {
         liveness,
         flow_state: None,
@@ -839,7 +835,7 @@ fn getFlowStateAtDeclaration<'a>(
         .cfg
         .entry
         .visit_with(&mut v);
-    v.flow_state
+    v.flow_state.cloned()
 }
 
 fn assertEscaped(src: &str, name: &str) {

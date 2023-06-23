@@ -19,7 +19,7 @@ mod tests;
 pub struct MaybeReachingResult<'ast> {
     pub scopeVariables: FxHashMap<Id, VarId>,
     pub orderedVars: IndexVec<VarId, Id>,
-    pub lattice_elements: IndexVec<LatticeElementId, ReachingUses<'ast>>,
+    pub lattice_elements: IndexVec<LatticeElementId, ReachingUses>,
     pub cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
 }
 
@@ -33,7 +33,7 @@ impl<'ast> MaybeReachingResult<'ast> {
      * @param defNode the control flow graph node that may assign a value to {@code name}
      * @return the list of upward exposed uses of the variable {@code name} at defNode.
      */
-    pub fn getUses(&self, name: &Id, defNode: Node<'ast>) -> Option<&Vec<Node<'ast>>> {
+    pub fn getUses(&self, name: &Id, defNode: Node) -> Option<&Vec<NodeId>> {
         if let Some(var) = self.scopeVariables.get(name) {
             let ann = self.cfg.node_annotations.get(&defNode).unwrap();
             dbg!(
@@ -54,13 +54,8 @@ pub struct MaybeReachingVariableUse<'ast, 'a, T>
 where
     T: FunctionLike<'a>,
 {
-    data_flow_analysis: DataFlowAnalysis<
-        'a,
-        Node<'ast>,
-        Inner<'ast, 'a, T>,
-        ReachingUses<'ast>,
-        ReachingUsesJoinOp<'ast>,
-    >,
+    data_flow_analysis:
+        DataFlowAnalysis<'a, Node<'ast>, Inner<'ast, 'a, T>, ReachingUses, ReachingUsesJoinOp>,
 }
 
 impl<'ast, 'a, T> MaybeReachingVariableUse<'ast, 'a, T>
@@ -123,7 +118,7 @@ where
     params: FxHashSet<VarId>,
     fn_and_class_names: FxHashSet<VarId>,
 
-    lattice_elements: IndexVec<LatticeElementId, ReachingUses<'ast>>,
+    lattice_elements: IndexVec<LatticeElementId, ReachingUses>,
     cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
 }
 
@@ -151,7 +146,7 @@ where
         &mut self,
         n: Node<'ast>,
         cfgNode: Node<'ast>,
-        output: &mut ReachingUses<'ast>,
+        output: &mut ReachingUses,
         conditional: bool,
     ) {
         let mut v = ReachingUseFinder {
@@ -169,12 +164,12 @@ where
      * Sets the variable for the given name to the node value in the upward exposed lattice. Do
      * nothing if the variable name is one of the escaped variable.
      */
-    fn addToUseIfLocal(&mut self, name: &Ident, node: Node<'ast>, usage: &mut ReachingUses<'ast>) {
+    fn addToUseIfLocal(&mut self, name: &Ident, node: Node<'ast>, usage: &mut ReachingUses) {
         let id = name.to_id();
         dbg!(name, self.scopeVariables.get(&id));
         if let Some(var) = self.scopeVariables.get(&id) {
             if !self.escaped.contains(&id) {
-                usage.mayUseMap.put(*var, node);
+                usage.mayUseMap.put(*var, node.node_id);
             }
         }
     }
@@ -183,7 +178,7 @@ where
      * Removes the variable for the given name from the node value in the upward exposed lattice. Do
      * nothing if the variable name is one of the escaped variable.
      */
-    fn removeFromUseIfLocal(&mut self, name: &Ident, usage: &mut ReachingUses<'ast>) {
+    fn removeFromUseIfLocal(&mut self, name: &Ident, usage: &mut ReachingUses) {
         let id = name.to_id();
         if let Some(var) = self.scopeVariables.get(&id) {
             if !self.escaped.contains(&id) {
@@ -197,7 +192,7 @@ struct ReachingUseFinder<'ast, 'a, 'b, T>
 where
     T: FunctionLike<'a>,
 {
-    output: &'b mut ReachingUses<'ast>,
+    output: &'b mut ReachingUses,
     conditional: bool,
     analysis: &'b mut Inner<'ast, 'a, T>,
     cfgNode: Node<'ast>,
@@ -936,12 +931,12 @@ where
     }
 }
 
-impl<'ast, 'a, T> DataFlowAnalysisInner<Node<'ast>, ReachingUses<'ast>, ReachingUsesJoinOp<'ast>>
+impl<'ast, 'a, T> DataFlowAnalysisInner<Node<'ast>, ReachingUses, ReachingUsesJoinOp>
     for Inner<'ast, 'a, T>
 where
     T: FunctionLike<'a>,
 {
-    fn add_lattice_element(&mut self, element: ReachingUses<'ast>) -> LatticeElementId {
+    fn add_lattice_element(&mut self, element: ReachingUses) -> LatticeElementId {
         self.lattice_elements.push(element)
     }
 
@@ -957,7 +952,7 @@ where
         self.createEntryLattice()
     }
 
-    fn createFlowJoiner(&self) -> ReachingUsesJoinOp<'ast> {
+    fn createFlowJoiner(&self) -> ReachingUsesJoinOp {
         ReachingUsesJoinOp::default()
     }
 
@@ -1002,7 +997,7 @@ impl<'ast, 'a, T> Index<LatticeElementId> for Inner<'ast, 'a, T>
 where
     T: FunctionLike<'a>,
 {
-    type Output = ReachingUses<'ast>;
+    type Output = ReachingUses;
 
     fn index(&self, index: LatticeElementId) -> &Self::Output {
         &self.lattice_elements[index]
@@ -1035,9 +1030,9 @@ where
  * <p>At N_3, reads of A in {N_4, N_5} are said to be upward exposed.
  */
 #[derive(Default, Clone, PartialEq, Debug)]
-pub struct ReachingUses<'ast> {
+pub struct ReachingUses {
     // Maps variables to all their uses that are upward exposed at the current cfgNode.
-    mayUseMap: MultiMap<VarId, Node<'ast>>,
+    mayUseMap: MultiMap<VarId, NodeId>,
     // public ReachingUses() {}
 
     // /**
@@ -1061,8 +1056,8 @@ pub struct ReachingUses<'ast> {
     // }
 }
 
-impl Annotation for ReachingUses<'_> {}
-impl LatticeElement for ReachingUses<'_> {}
+impl Annotation for ReachingUses {}
+impl LatticeElement for ReachingUses {}
 
 /**
  * The join is a simple union because of the "may be" nature of the analysis.
@@ -1072,11 +1067,11 @@ impl LatticeElement for ReachingUses<'_> {}
  * <p>The read of A "may be" exposed to A = 1 in the beginning.
  */
 #[derive(Default)]
-struct ReachingUsesJoinOp<'ast> {
-    result: ReachingUses<'ast>,
+struct ReachingUsesJoinOp {
+    result: ReachingUses,
 }
 
-impl<'ast, 'a, T> FlowJoiner<ReachingUses<'ast>, Inner<'ast, 'a, T>> for ReachingUsesJoinOp<'ast>
+impl<'ast, 'a, T> FlowJoiner<ReachingUses, Inner<'ast, 'a, T>> for ReachingUsesJoinOp
 where
     T: FunctionLike<'a>,
 {
@@ -1090,7 +1085,7 @@ where
         //   self.result.mayUseMap.putAll(uses.mayUseMap);
     }
 
-    fn finish(self) -> ReachingUses<'ast> {
+    fn finish(self) -> ReachingUses {
         self.result
     }
 }
