@@ -518,3 +518,12 @@ impl<'ast> From<&'ast ::ast::ObjectPatProp> for Node<'ast> {
         }
     }
 }
+
+impl<'ast> From<&'ast ::ast::VarDeclOrExpr> for Node<'ast> {
+    fn from(other: &'ast ::ast::VarDeclOrExpr) -> Node<'ast> {
+        match other {
+            ast::VarDeclOrExpr::VarDecl(n) => Node::from(n),
+            ast::VarDeclOrExpr::Expr(n) => Node::from(&**n),
+        }
+    }
+}

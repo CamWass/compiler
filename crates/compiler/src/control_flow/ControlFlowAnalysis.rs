@@ -205,12 +205,6 @@ where
 
         impl Eq for PrioritizedNode<'_> {}
 
-        impl<'ast> PrioritizedNode<'ast> {
-            fn mk(priority: usize, node: Node<'ast>) -> Self {
-                Self(priority, node)
-            }
-        }
-
         impl std::cmp::Ord for PrioritizedNode<'_> {
             fn cmp(&self, other: &Self) -> std::cmp::Ordering {
                 // self.0.cmp(&other.0)
@@ -228,7 +222,7 @@ where
 
         let mk = |s: &ControlFlowAnalysis<'ast, N, E>, node: Node<'ast>| {
             let position = *s.astPosition.get(&node.node_id).unwrap();
-            PrioritizedNode::mk(position, node)
+            PrioritizedNode(position, node)
         };
 
         let mut worklist = BinaryHeap::with_capacity(10);
@@ -325,7 +319,7 @@ where
             .create_edge(for_node, Branch::ON_FALSE, follow_node);
         self.connect_to_possible_exception_handler(
             ExceptionHandler::new(&self.parent_stack, for_node),
-            collection_node.into(),
+            collection_node,
         );
     }
 
@@ -809,10 +803,7 @@ where
 
         // We have for (init; cond; update) { body }
 
-        let init_node = node.init.as_ref().map(|init| match init {
-            VarDeclOrExpr::Expr(expr) => Node::from(expr.as_ref()),
-            VarDeclOrExpr::VarDecl(ref decl) => Node::from(decl),
-        });
+        let init_node = node.init.as_ref().map(Node::from);
         let update_node = node.update.as_ref().map(|update| Node::from(&**update));
 
         // After initialization, we transfer to the FOR which is in charge of
@@ -859,7 +850,7 @@ where
             self.prioritize_node(test_node);
             self.connect_to_possible_exception_handler(
                 ExceptionHandler::new(&self.parent_stack, for_node),
-                test_node,
+                Node::from(&**test),
             );
         }
         if let Some(update_node) = update_node {
@@ -902,7 +893,7 @@ where
 
         self.connect_to_possible_exception_handler(
             ExceptionHandler::new(&self.parent_stack, do_while_node),
-            (&*node.test).into(),
+            Node::from(&*node.test),
         );
     }
 
@@ -977,7 +968,7 @@ where
 
         self.connect_to_possible_exception_handler(
             ExceptionHandler::new(&self.parent_stack, while_node),
-            (&*node.test).into(),
+            Node::from(&*node.test),
         );
     }
 
@@ -997,7 +988,7 @@ where
 
         self.connect_to_possible_exception_handler(
             ExceptionHandler::new(&self.parent_stack, with_node),
-            (&*node.obj).into(),
+            Node::from(&*node.obj),
         );
     }
 
@@ -1595,7 +1586,7 @@ where
         self.prioritize_node(throw_node);
         self.connect_to_possible_exception_handler(
             ExceptionHandler::new(&self.parent_stack, throw_node),
-            node.into(),
+            throw_node,
         );
     }
 
