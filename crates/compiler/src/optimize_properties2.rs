@@ -973,6 +973,7 @@ fn get_property(
     key: &JsWord,
     invalid_objects: &mut GrowableBitSet<ObjectId>,
 ) -> Option<Pointer> {
+    // TODO: is this correct (should it return None instead?)
     if let Pointer::NullOrVoid = pointer {
         return Some(Pointer::NullOrVoid);
     }

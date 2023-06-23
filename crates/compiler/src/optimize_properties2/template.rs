@@ -152,6 +152,7 @@ impl Visitor<CallId> for Resolver<'_, '_> {
             }
         }
 
+        // TODO: only do this if in_fn?
         {
             // Merge property assignments.
             for ((obj, key), prop) in self.calls[node].prop_assignments.iter() {
@@ -232,6 +233,7 @@ fn get_property(
     key: &JsWord,
     invalid_objects: &mut GrowableBitSet<ObjectId>,
 ) -> Option<Pointer> {
+    // TODO: is this correct (should it return None instead?)
     if let Some(Pointer::NullOrVoid) = object {
         return Some(Pointer::NullOrVoid);
     }
