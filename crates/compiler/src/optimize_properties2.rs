@@ -450,69 +450,7 @@ pub fn process(
     node_id_gen: &mut NodeIdGen,
     unresolved_ctxt: SyntaxContext,
 ) {
-    let mut store = Store {
-        calls: IndexSet::default(),
-        functions: IndexVec::default(),
-        static_fn_data: IndexVec::default(),
-        function_map: FxHashMap::default(),
-        objects_map: FxHashMap::default(),
-        invalid_objects: GrowableBitSet::new_empty(),
-        unions: UnionStore::default(),
-        references: FxHashMap::default(),
-        cur_object_id: ObjectId::from_u32(1),
-        resolving_call_object: ObjectId::from_u32(0),
-        unresolved_ctxt,
-        resolved_calls: FxHashMap::default(),
-        call_templates: FxHashMap::default(),
-        fn_assignments: HashableHashMap::default(),
-        object_links: FxHashSet::default(),
-        call_objects: FxHashMap::default(),
-    };
-
-    let mut visitor = FnVisitor { store: &mut store };
-    ast.visit_with(&mut visitor);
-
-    let mut i = 0;
-    while i < store.functions.len() {
-        let func = FnId::from_usize(i);
-        let template = CallTemplate::new(&mut store, func);
-        store.call_templates.insert(func, template);
-        i += 1;
-    }
-
-    let root = match &ast {
-        Program::Module(n) => ControlFlowRoot::Module(n),
-        Program::Script(n) => ControlFlowRoot::Script(n),
-    };
-    let cfa = ControlFlowAnalysis::analyze(root, false);
-
-    let data_flow_analysis = DataFlowAnalysis::new(cfa.cfg, &cfa.nodePriorities, false);
-
-    let mut analysis = Analysis { data_flow_analysis };
-    analysis.data_flow_analysis.analyze(&mut store);
-
-    let mut i = 0;
-    while i < store.functions.len() {
-        let static_data = &store.static_fn_data[i.into()];
-
-        let cfa = ControlFlowAnalysisResult {
-            cfg: ControlFlowGraph {
-                map: static_data.cfg.map.clone(),
-                implicit_return: static_data.cfg.implicit_return,
-                entry: static_data.cfg.entry,
-                graph: static_data.cfg.graph.clone(),
-                node_annotations: FxHashMap::default(),
-                edge_annotations: FxHashMap::default(),
-            },
-            nodePriorities: static_data.node_priorities.clone(),
-        };
-
-        let data_flow_analysis = DataFlowAnalysis::new(cfa.cfg, &cfa.nodePriorities, true);
-
-        let mut analysis = Analysis { data_flow_analysis };
-        analysis.data_flow_analysis.analyze(&mut store);
-        i += 1;
-    }
+    let store = analyse(ast, unresolved_ctxt);
 
     let rename_map = create_renaming_map(&store);
 
