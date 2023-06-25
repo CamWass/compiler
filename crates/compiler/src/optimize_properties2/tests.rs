@@ -39,7 +39,7 @@ fn test_same_in_fn(input: &str) {
 // TODO: more tests e.g. for branch joins, more invalidations, infinite loops etc
 
 #[test]
-fn test_null_or_void() {
+fn test_primitive_types() {
     // Null and undefined are not included in unions.
     test_transform(
         "
@@ -64,6 +64,22 @@ let obj2 = { a: 2 };
 (null).prop3;
 (null).prop4;
     ",
+    );
+
+    // Boolean, number, string, and big int have their own distinct and valid object types.
+    test_transform(
+        "
+(1 || { prop1: 1 }).prop1;
+('1' || { prop1: 1 }).prop1;
+(true || { prop1: 1 }).prop1;
+(1n || { prop1: 1 }).prop1;
+",
+        "
+(1 || { a: 1 }).a;
+('1' || { a: 1 }).a;
+(true || { a: 1 }).a;
+(1n || { a: 1 }).a;
+",
     );
 }
 
@@ -1085,9 +1101,9 @@ const { prop2 = obj1 } = { prop2: 2 };
 prop2.prop1;
 ",
         "
-const obj1 = { prop1: 1 };
+const obj1 = { a: 1 };
 const { a: prop2 = obj1 } = { a: 2 };
-prop2.prop1;
+prop2.a;
 ",
     );
 

@@ -62,6 +62,10 @@ pub enum RValue {
     Object(NodeId),
     /// Property of the current RValue.
     Prop(JsWord),
+    String,
+    Boolean,
+    Number,
+    BigInt,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -506,13 +510,20 @@ impl<'ast> Analyser<'_, 'ast> {
                 self.push(Step::StoreRValue(Some(RValue::NullOrVoid)));
             }
 
-            NodeKind::Str(_)
-            | NodeKind::Bool(_)
-            | NodeKind::Number(_)
-            | NodeKind::BigInt(_)
-            | NodeKind::Regex(_)
-            | NodeKind::TplElement(_)
-            | NodeKind::MetaPropExpr(_) => {
+            NodeKind::Str(_) => {
+                self.push(Step::StoreRValue(Some(RValue::String)));
+            }
+            NodeKind::Bool(_) => {
+                self.push(Step::StoreRValue(Some(RValue::Boolean)));
+            }
+            NodeKind::Number(_) => {
+                self.push(Step::StoreRValue(Some(RValue::Number)));
+            }
+            NodeKind::BigInt(_) => {
+                self.push(Step::StoreRValue(Some(RValue::BigInt)));
+            }
+
+            NodeKind::Regex(_) | NodeKind::TplElement(_) | NodeKind::MetaPropExpr(_) => {
                 self.push(Step::StoreRValue(None));
             }
 

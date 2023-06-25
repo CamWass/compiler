@@ -4,7 +4,7 @@ use std::collections::hash_map::Entry;
 
 use ast::NodeId;
 use index::bit_set::GrowableBitSet;
-use index::vec::{Idx, IndexVec};
+use index::vec::IndexVec;
 use petgraph::graph::EdgeReference;
 use petgraph::visit::EdgeRef;
 use petgraph::Direction::Incoming;
@@ -23,7 +23,7 @@ use super::simple_set::IndexSet;
 use super::unions::{UnionBuilder, UnionStore};
 use super::{
     function::*, Assignment, Call, CallArgBuilder, CallArgs, CallId, FnId, Func, Lattice, ObjectId,
-    Pointer, PropertyAssignments, ResolvedCall, SimpleCFG, StaticFunctionData, Store,
+    ObjectStore, Pointer, PropertyAssignments, ResolvedCall, SimpleCFG, StaticFunctionData, Store,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -41,12 +41,12 @@ struct Resolver<'a, 'ast> {
 
     resolved_calls: &'a mut FxHashMap<CallId, ResolvedCall>,
 
-    cur_object_id: &'a mut ObjectId,
     objects_map: &'a mut FxHashMap<NodeId, ObjectId>,
     call_objects: &'a mut FxHashMap<(CallId, NodeId), ObjectId>,
     object_links: &'a mut FxHashSet<(ObjectId, ObjectId)>,
 
-    resolving_call_object: ObjectId,
+    objects: &'a mut ObjectStore,
+
     unions: &'a mut UnionStore,
     invalid_objects: &'a mut GrowableBitSet<ObjectId>,
     calls: &'a mut IndexSet<CallId, Call>,
@@ -96,11 +96,10 @@ impl Visitor<CallId> for Resolver<'_, '_> {
             resolved_calls: self.resolved_calls,
             return_types: &mut self.return_types,
             return_states: &mut self.return_states,
-            cur_object_id: self.cur_object_id,
             objects_map: self.objects_map,
             call_objects: self.call_objects,
             object_links: self.object_links,
-            resolving_call_object: self.resolving_call_object,
+            objects: self.objects,
             unions: self.unions,
             invalid_objects: self.invalid_objects,
             calls: self.calls,
@@ -207,11 +206,10 @@ pub(super) fn resolve_call(call: CallId, store: &mut Store) {
         functions: &mut store.functions,
         static_fn_data: &store.static_fn_data,
         resolved_calls: &mut store.resolved_calls,
-        cur_object_id: &mut store.cur_object_id,
         objects_map: &mut store.objects_map,
         call_objects: &mut store.call_objects,
         object_links: &mut store.object_links,
-        resolving_call_object: store.resolving_call_object,
+        objects: &mut store.objects,
         unions: &mut store.unions,
         invalid_objects: &mut store.invalid_objects,
         calls: &mut store.calls,
@@ -258,7 +256,16 @@ fn get_property(
                         .map(|a| a.rhs)
                         .unwrap_or_default();
                     debug_assert!(
-                        !matches!(prop, Some(Pointer::Object(_) | Pointer::Union(_)))
+                        matches!(
+                            prop,
+                            Some(Pointer::Object(
+                                ObjectStore::RESOLVING_CALL
+                                    | ObjectStore::NUMBER
+                                    | ObjectStore::STRING
+                                    | ObjectStore::BOOL
+                                    | ObjectStore::BIG_INT,
+                            ))
+                        ) || !matches!(prop, Some(Pointer::Object(_) | Pointer::Union(_)))
                             || invalidated(prop.unwrap(), invalid_objects, unions)
                     );
                 }
@@ -269,8 +276,19 @@ fn get_property(
                             .map(|a| a.rhs)
                             .unwrap_or_default();
                         debug_assert!(
-                            !matches!(constituent, Some(Pointer::Object(_) | Pointer::Union(_)))
-                                || invalidated(constituent.unwrap(), invalid_objects, unions)
+                            matches!(
+                                constituent,
+                                Some(Pointer::Object(
+                                    ObjectStore::RESOLVING_CALL
+                                        | ObjectStore::NUMBER
+                                        | ObjectStore::STRING
+                                        | ObjectStore::BOOL
+                                        | ObjectStore::BIG_INT,
+                                ))
+                            ) || !matches!(
+                                constituent,
+                                Some(Pointer::Object(_) | Pointer::Union(_))
+                            ) || invalidated(constituent.unwrap(), invalid_objects, unions)
                         );
                     }
                 }
@@ -378,8 +396,15 @@ fn invalidate(
     prop_assignments: impl GetPropAssignments,
 ) {
     match pointer {
-        Some(Pointer::Object(_) | Pointer::Union(_)) => {}
+        Some(Pointer::Object(
+            ObjectStore::RESOLVING_CALL
+            | ObjectStore::NUMBER
+            | ObjectStore::STRING
+            | ObjectStore::BOOL
+            | ObjectStore::BIG_INT,
+        )) => return,
         None | Some(Pointer::Fn(_) | Pointer::NullOrVoid) => return,
+        Some(Pointer::Object(_) | Pointer::Union(_)) => {}
     }
     if let Some(pointer) = pointer {
         let mut queue = vec![pointer];
@@ -389,6 +414,13 @@ fn invalidate(
             done.insert(pointer);
 
             match pointer {
+                Pointer::Object(
+                    ObjectStore::RESOLVING_CALL
+                    | ObjectStore::NUMBER
+                    | ObjectStore::STRING
+                    | ObjectStore::BOOL
+                    | ObjectStore::BIG_INT,
+                ) => {}
                 Pointer::Object(obj) => {
                     let new_invalidation = invalid_objects.insert(obj);
 
@@ -606,6 +638,10 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                 prop,
                                 self.invalid_objects,
                             ),
+                            RValue::String => Some(Pointer::Object(ObjectStore::STRING)),
+                            RValue::Boolean => Some(Pointer::Object(ObjectStore::BOOL)),
+                            RValue::Number => Some(Pointer::Object(ObjectStore::NUMBER)),
+                            RValue::BigInt => Some(Pointer::Object(ObjectStore::BIG_INT)),
                         };
                         machine.set_r_value(value);
                     }
@@ -836,7 +872,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
 
                         // TODO: check argument prop assignments for unresolved calls
                         while let Some(o) = queue.pop() {
-                            if o == self.resolving_call_object {
+                            if o == ObjectStore::RESOLVING_CALL {
                                 return None;
                             }
 
@@ -860,7 +896,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                     prop_assignments.insert(key.clone(), *value);
                                     match value.rhs {
                                         Some(Pointer::Object(o)) => {
-                                            if o == self.resolving_call_object {
+                                            if o == ObjectStore::RESOLVING_CALL {
                                                 return None;
                                             }
                                             if !done.contains(&o) {
@@ -869,7 +905,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                         }
                                         Some(Pointer::Union(union)) => {
                                             for constituent in self.unions[union].constituents() {
-                                                if o == self.resolving_call_object {
+                                                if o == ObjectStore::RESOLVING_CALL {
                                                     return None;
                                                 }
                                                 if !done.contains(&constituent) {
@@ -893,10 +929,10 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
 
                     if cfg!(debug_assertions) {
                         let depends_on_unresolved_call = |pointer| match pointer {
-                            Some(Pointer::Object(o)) => o == self.resolving_call_object,
+                            Some(Pointer::Object(o)) => o == ObjectStore::RESOLVING_CALL,
                             Some(Pointer::Union(union)) => self.unions[union]
                                 .constituents()
-                                .any(|c| c == self.resolving_call_object),
+                                .any(|c| c == ObjectStore::RESOLVING_CALL),
                             Some(Pointer::Fn(_)) | Some(Pointer::NullOrVoid) | None => false,
                         };
                         if let CallArgs::Heap(args) = &inner_call.args {
@@ -908,7 +944,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                         debug_assert!(!inner_call
                             .prop_assignments
                             .keys()
-                            .any(|(o, _)| *o == self.resolving_call_object));
+                            .any(|(o, _)| *o == ObjectStore::RESOLVING_CALL));
                         debug_assert!(!inner_call
                             .prop_assignments
                             .values()
@@ -933,14 +969,15 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                 Some(t) => t,
                                 None => {
                                     machine.set_r_value(Some(Pointer::Object(
-                                        self.resolving_call_object,
+                                        ObjectStore::RESOLVING_CALL,
                                     )));
                                     continue;
                                 }
                             };
                             if return_types.is_empty() {
-                                machine
-                                    .set_r_value(Some(Pointer::Object(self.resolving_call_object)));
+                                machine.set_r_value(Some(Pointer::Object(
+                                    ObjectStore::RESOLVING_CALL,
+                                )));
                                 continue;
                             }
 
@@ -1005,7 +1042,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                     let mut queue = Vec::new();
                     match r_value {
                         Some(Pointer::Object(o)) => {
-                            if o == self.resolving_call_object {
+                            if o == ObjectStore::RESOLVING_CALL {
                                 return None;
                             }
                             if self.invalid_objects.contains(o) {
@@ -1026,12 +1063,12 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                 }
                             } else {
                                 let union = &self.unions[union];
-                                if union.contains(self.resolving_call_object) && union.len() == 1 {
+                                if union.contains(ObjectStore::RESOLVING_CALL) && union.len() == 1 {
                                     return None;
                                 }
                                 queue.extend(union.constituents());
                                 for constituent in union.constituents() {
-                                    if constituent != self.resolving_call_object {
+                                    if constituent != ObjectStore::RESOLVING_CALL {
                                         changed |= add_return_ty!(ReturnTypeConstituent::Object(
                                             constituent
                                         ));
@@ -1067,12 +1104,11 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                     fn depends_on_unresolved_call(
                         unions: &UnionStore,
                         pointer: Option<Pointer>,
-                        resolving_call_object: ObjectId,
                     ) -> bool {
                         match pointer {
-                            Some(Pointer::Object(o)) => o == resolving_call_object,
+                            Some(Pointer::Object(o)) => o == ObjectStore::RESOLVING_CALL,
                             Some(Pointer::Union(union)) => {
-                                unions[union].contains(resolving_call_object)
+                                unions[union].contains(ObjectStore::RESOLVING_CALL)
                             }
                             Some(Pointer::Fn(_)) | Some(Pointer::NullOrVoid) | None => false,
                         }
@@ -1085,7 +1121,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                             continue;
                         }
                         done.insert(obj);
-                        if obj == self.resolving_call_object {
+                        if obj == ObjectStore::RESOLVING_CALL {
                             changed = true;
                             continue;
                         }
@@ -1101,11 +1137,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                             if *o != obj {
                                 continue;
                             }
-                            if depends_on_unresolved_call(
-                                self.unions,
-                                prop.rhs,
-                                self.resolving_call_object,
-                            ) {
+                            if depends_on_unresolved_call(self.unions, prop.rhs) {
                                 changed = true;
                                 continue;
                             }
@@ -1203,8 +1235,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
         let root = match self.objects_map.entry(node_id) {
             Entry::Occupied(entry) => *entry.get(),
             Entry::Vacant(entry) => {
-                let object_id = *self.cur_object_id;
-                self.cur_object_id.increment_by(1);
+                let object_id = self.objects.next_object_id();
                 entry.insert(object_id);
                 object_id
             }
@@ -1213,8 +1244,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
         let local_id = match self.call_objects.entry((self.root_call, node_id)) {
             Entry::Occupied(entry) => *entry.get(),
             Entry::Vacant(entry) => {
-                let object_id = *self.cur_object_id;
-                self.cur_object_id.increment_by(1);
+                let object_id = self.objects.next_object_id();
                 entry.insert(object_id);
                 self.object_links.insert((root, object_id));
                 object_id
@@ -1298,11 +1328,10 @@ struct DataFlowAnalysis<'ast, 'a> {
 
     return_types: &'ast mut FxHashMap<CallId, FxHashSet<ReturnTypeConstituent>>,
     return_states: &'ast mut FxHashMap<CallId, PropertyAssignments>,
-    cur_object_id: &'ast mut ObjectId,
     objects_map: &'ast mut FxHashMap<NodeId, ObjectId>,
     call_objects: &'ast mut FxHashMap<(CallId, NodeId), ObjectId>,
     object_links: &'ast mut FxHashSet<(ObjectId, ObjectId)>,
-    resolving_call_object: ObjectId,
+    objects: &'ast mut ObjectStore,
     unions: &'ast mut UnionStore,
     invalid_objects: &'ast mut GrowableBitSet<ObjectId>,
     calls: &'a mut IndexSet<CallId, Call>,

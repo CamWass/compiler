@@ -388,8 +388,7 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
         invalid_objects: GrowableBitSet::new_empty(),
         unions: UnionStore::default(),
         references: FxHashMap::default(),
-        cur_object_id: ObjectId::from_u32(1),
-        resolving_call_object: ObjectId::from_u32(0),
+        objects: ObjectStore::new(),
         unresolved_ctxt,
         resolved_calls: FxHashMap::default(),
         call_templates: FxHashMap::default(),
@@ -442,6 +441,12 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
         analysis.data_flow_analysis.analyze(&mut store);
         i += 1;
     }
+
+    debug_assert!(!store.invalid_objects.contains(ObjectStore::RESOLVING_CALL));
+    debug_assert!(!store.invalid_objects.contains(ObjectStore::NUMBER));
+    debug_assert!(!store.invalid_objects.contains(ObjectStore::STRING));
+    debug_assert!(!store.invalid_objects.contains(ObjectStore::BOOL));
+    debug_assert!(!store.invalid_objects.contains(ObjectStore::BIG_INT));
     store
 }
 
@@ -555,6 +560,34 @@ struct Analysis<'ast, 'p> {
 }
 
 #[derive(Debug)]
+struct ObjectStore {
+    cur_object_id: ObjectId,
+}
+
+impl ObjectStore {
+    /// Placeholder for an unresolved call during call resolution.
+    pub const RESOLVING_CALL: ObjectId = ObjectId::from_u32(0);
+    pub const NUMBER: ObjectId = ObjectId::from_u32(1);
+    pub const STRING: ObjectId = ObjectId::from_u32(2);
+    pub const BOOL: ObjectId = ObjectId::from_u32(3);
+    pub const BIG_INT: ObjectId = ObjectId::from_u32(4);
+    // !IMPORTANT! This must be updated when adding built-ins to the above list.
+    const NUM_OF_BUILT_INS: u32 = 5;
+
+    fn new() -> Self {
+        Self {
+            cur_object_id: ObjectId::from_u32(Self::NUM_OF_BUILT_INS),
+        }
+    }
+
+    pub fn next_object_id(&mut self) -> ObjectId {
+        let id = self.cur_object_id;
+        self.cur_object_id.increment_by(1);
+        id
+    }
+}
+
+#[derive(Debug)]
 /// Info collected during analysis.
 pub struct Store<'ast> {
     calls: IndexSet<CallId, Call>,
@@ -567,9 +600,8 @@ pub struct Store<'ast> {
 
     references: FxHashMap<PropKey, Option<Pointer>>,
 
-    resolving_call_object: ObjectId,
+    objects: ObjectStore,
 
-    cur_object_id: ObjectId,
     pub(super) unresolved_ctxt: SyntaxContext,
 
     resolved_calls: FxHashMap<CallId, ResolvedCall>,
@@ -581,12 +613,6 @@ pub struct Store<'ast> {
 }
 
 impl Store<'_> {
-    fn next_object_id(&mut self) -> ObjectId {
-        let id = self.cur_object_id;
-        self.cur_object_id.increment_by(1);
-        id
-    }
-
     /// Returns a [`Pointer`] to a union of `pointer1`'s type and `pointer2`'s type.
     fn create_union(
         &mut self,
@@ -658,6 +684,13 @@ fn invalidate(
 ) {
     if let Some(pointer) = pointer {
         match pointer {
+            Pointer::Object(
+                ObjectStore::RESOLVING_CALL
+                | ObjectStore::NUMBER
+                | ObjectStore::STRING
+                | ObjectStore::BOOL
+                | ObjectStore::BIG_INT,
+            ) => return,
             Pointer::Object(obj) => {
                 if invalid_objects.contains(obj) {
                     return;
@@ -674,6 +707,13 @@ fn invalidate(
             done.insert(pointer);
 
             match pointer {
+                Pointer::Object(
+                    ObjectStore::RESOLVING_CALL
+                    | ObjectStore::NUMBER
+                    | ObjectStore::STRING
+                    | ObjectStore::BOOL
+                    | ObjectStore::BIG_INT,
+                ) => {}
                 Pointer::Object(obj) => {
                     let new_invalidation = invalid_objects.insert(obj);
 
@@ -943,7 +983,16 @@ fn get_property(
                         .map(|a| a.rhs)
                         .unwrap_or_default();
                     debug_assert!(
-                        !matches!(prop, Some(Pointer::Object(_) | Pointer::Union(_)))
+                        matches!(
+                            prop,
+                            Some(Pointer::Object(
+                                ObjectStore::RESOLVING_CALL
+                                    | ObjectStore::NUMBER
+                                    | ObjectStore::STRING
+                                    | ObjectStore::BOOL
+                                    | ObjectStore::BIG_INT,
+                            ))
+                        ) || !matches!(prop, Some(Pointer::Object(_) | Pointer::Union(_)))
                             || invalidated(prop.unwrap(), invalid_objects, unions)
                     );
                 }
@@ -955,8 +1004,19 @@ fn get_property(
                             .map(|a| a.rhs)
                             .unwrap_or_default();
                         debug_assert!(
-                            !matches!(constituent, Some(Pointer::Object(_) | Pointer::Union(_)))
-                                || invalidated(constituent.unwrap(), invalid_objects, unions)
+                            matches!(
+                                constituent,
+                                Some(Pointer::Object(
+                                    ObjectStore::RESOLVING_CALL
+                                        | ObjectStore::NUMBER
+                                        | ObjectStore::STRING
+                                        | ObjectStore::BOOL
+                                        | ObjectStore::BIG_INT,
+                                ))
+                            ) || !matches!(
+                                constituent,
+                                Some(Pointer::Object(_) | Pointer::Union(_))
+                            ) || invalidated(constituent.unwrap(), invalid_objects, unions)
                         );
                     }
                 }
@@ -1404,9 +1464,9 @@ impl<'ast> Analyser<'ast, '_> {
         };
 
         let depends_on_unresolved_call = |pointer| match pointer {
-            Some(Pointer::Object(o)) => o == self.store.resolving_call_object,
+            Some(Pointer::Object(o)) => o == ObjectStore::RESOLVING_CALL,
             Some(Pointer::Union(union)) => {
-                self.store.unions[union].contains(self.store.resolving_call_object)
+                self.store.unions[union].contains(ObjectStore::RESOLVING_CALL)
             }
             Some(Pointer::Fn(_)) | Some(Pointer::NullOrVoid) | None => false,
         };
@@ -1421,7 +1481,7 @@ impl<'ast> Analyser<'ast, '_> {
             debug_assert!(!call
                 .prop_assignments
                 .keys()
-                .any(|(o, _)| *o == self.store.resolving_call_object));
+                .any(|(o, _)| *o == ObjectStore::RESOLVING_CALL));
             debug_assert!(!call
                 .prop_assignments
                 .values()
@@ -1490,7 +1550,7 @@ impl<'ast> Analyser<'ast, '_> {
                 let object_id = if let Some(existing) = self.store.objects_map.get(&node.node_id) {
                     *existing
                 } else {
-                    let object_id = self.store.next_object_id();
+                    let object_id = self.store.objects.next_object_id();
                     self.store.objects_map.insert(node.node_id, object_id);
                     object_id
                 };
@@ -1679,13 +1739,12 @@ impl<'ast> Analyser<'ast, '_> {
 
             NodeKind::Null(_) => Some(Pointer::NullOrVoid),
 
-            NodeKind::Str(_)
-            | NodeKind::Bool(_)
-            | NodeKind::Number(_)
-            | NodeKind::BigInt(_)
-            | NodeKind::Regex(_)
-            | NodeKind::TplElement(_)
-            | NodeKind::MetaPropExpr(_) => None,
+            NodeKind::Str(_) => Some(Pointer::Object(ObjectStore::STRING)),
+            NodeKind::Bool(_) => Some(Pointer::Object(ObjectStore::BOOL)),
+            NodeKind::Number(_) => Some(Pointer::Object(ObjectStore::NUMBER)),
+            NodeKind::BigInt(_) => Some(Pointer::Object(ObjectStore::BIG_INT)),
+
+            NodeKind::Regex(_) | NodeKind::TplElement(_) | NodeKind::MetaPropExpr(_) => None,
 
             NodeKind::ImportDefaultSpecifier(_) => todo!(),
             NodeKind::ImportStarAsSpecifier(_) => todo!(),
