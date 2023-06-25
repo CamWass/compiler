@@ -235,6 +235,9 @@ fn get_property(
     if let Some(Pointer::NullOrVoid) = object {
         return Some(Pointer::NullOrVoid);
     }
+    if let Some(Pointer::Object(ObjectStore::RESOLVING_CALL)) = object {
+        return Some(Pointer::Object(ObjectStore::RESOLVING_CALL));
+    }
     let invalid = match object {
         Some(Pointer::Object(obj)) => invalid_objects.contains(obj),
         Some(Pointer::Union(union)) => {

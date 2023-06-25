@@ -35,6 +35,9 @@ fn test_transform_in_fn(input: &str, expected: &str) {
 fn test_same_in_fn(input: &str) {
     test_transform_in_fn(input, input);
 }
+fn test_same(input: &str) {
+    test_transform(input, input);
+}
 
 // TODO: more tests e.g. for branch joins, more invalidations, infinite loops etc
 
@@ -1817,5 +1820,25 @@ if (cond) {
 
 obj.a;
     ",
+    );
+    // Taken from TSC, this previously broke call resolution;
+    // exact output isn't important, so long as it compiles.
+    test_same(
+        "
+function getTypeFromTypeNode() {
+    return getConditionalFlowTypeOfType();
+}
+function getTypeFromTypeNodeWorker(e) {
+    getTypeFromTypeNode(e.type);
+}
+function instantiateMappedType() {
+    if (a) instantiateMappedType();
+    while (true) {
+        var e = getTypeFromTypeNode(root.node);
+        if (!e) return;
+        root = e;
+    }
+}
+",
     );
 }
