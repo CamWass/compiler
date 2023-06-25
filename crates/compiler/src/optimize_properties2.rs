@@ -12,8 +12,8 @@ mod graph;
 mod hashable_map;
 mod simple_set;
 mod template;
+mod types;
 mod unionfind;
-mod unions;
 
 use std::borrow::Cow;
 use std::collections::hash_map::Entry;
@@ -24,7 +24,7 @@ use ast::*;
 use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use global_common::{SyntaxContext, DUMMY_SP};
 use index::bit_set::{BitMatrix, BitSet, GrowableBitSet};
-use index::vec::{Idx, IndexVec};
+use index::vec::IndexVec;
 use petgraph::prelude::UnGraph;
 use petgraph::{
     graph::{DiGraph, Neighbors, NodeIndex},
@@ -49,7 +49,7 @@ use unionfind::UnionFind;
 use DataFlowAnalysis2::*;
 
 use self::hashable_map::HashableHashMap;
-use self::unions::{UnionBuilder, UnionId, UnionStore};
+use self::types::{ObjectId, ObjectStore, UnionBuilder, UnionId, UnionStore};
 
 #[cfg(test)]
 mod tests;
@@ -560,34 +560,6 @@ struct Analysis<'ast, 'p> {
 }
 
 #[derive(Debug)]
-struct ObjectStore {
-    cur_object_id: ObjectId,
-}
-
-impl ObjectStore {
-    /// Placeholder for an unresolved call during call resolution.
-    pub const RESOLVING_CALL: ObjectId = ObjectId::from_u32(0);
-    pub const NUMBER: ObjectId = ObjectId::from_u32(1);
-    pub const STRING: ObjectId = ObjectId::from_u32(2);
-    pub const BOOL: ObjectId = ObjectId::from_u32(3);
-    pub const BIG_INT: ObjectId = ObjectId::from_u32(4);
-    // !IMPORTANT! This must be updated when adding built-ins to the above list.
-    const NUM_OF_BUILT_INS: u32 = 5;
-
-    fn new() -> Self {
-        Self {
-            cur_object_id: ObjectId::from_u32(Self::NUM_OF_BUILT_INS),
-        }
-    }
-
-    pub fn next_object_id(&mut self) -> ObjectId {
-        let id = self.cur_object_id;
-        self.cur_object_id.increment_by(1);
-        id
-    }
-}
-
-#[derive(Debug)]
 /// Info collected during analysis.
 pub struct Store<'ast> {
     calls: IndexSet<CallId, Call>,
@@ -684,13 +656,7 @@ fn invalidate(
 ) {
     if let Some(pointer) = pointer {
         match pointer {
-            Pointer::Object(
-                ObjectStore::RESOLVING_CALL
-                | ObjectStore::NUMBER
-                | ObjectStore::STRING
-                | ObjectStore::BOOL
-                | ObjectStore::BIG_INT,
-            ) => return,
+            Pointer::Object(o) if o.is_built_in() => return,
             Pointer::Object(obj) => {
                 if invalid_objects.contains(obj) {
                     return;
@@ -707,13 +673,7 @@ fn invalidate(
             done.insert(pointer);
 
             match pointer {
-                Pointer::Object(
-                    ObjectStore::RESOLVING_CALL
-                    | ObjectStore::NUMBER
-                    | ObjectStore::STRING
-                    | ObjectStore::BOOL
-                    | ObjectStore::BIG_INT,
-                ) => {}
+                Pointer::Object(o) if o.is_built_in() => {}
                 Pointer::Object(obj) => {
                     let new_invalidation = invalid_objects.insert(obj);
 
@@ -752,7 +712,6 @@ pub(self) enum Pointer {
     NullOrVoid,
 }
 
-index::newtype_index!(pub(super) struct ObjectId { .. });
 index::newtype_index!(pub(super) struct FnId { .. });
 index::newtype_index!(pub(super) struct CallId { .. });
 
@@ -983,16 +942,8 @@ fn get_property(
                         .map(|a| a.rhs)
                         .unwrap_or_default();
                     debug_assert!(
-                        matches!(
-                            prop,
-                            Some(Pointer::Object(
-                                ObjectStore::RESOLVING_CALL
-                                    | ObjectStore::NUMBER
-                                    | ObjectStore::STRING
-                                    | ObjectStore::BOOL
-                                    | ObjectStore::BIG_INT,
-                            ))
-                        ) || !matches!(prop, Some(Pointer::Object(_) | Pointer::Union(_)))
+                        matches!(prop, Some(Pointer::Object(o)) if o.is_built_in())
+                            || !matches!(prop, Some(Pointer::Object(_) | Pointer::Union(_)))
                             || invalidated(prop.unwrap(), invalid_objects, unions)
                     );
                 }
@@ -1004,19 +955,12 @@ fn get_property(
                             .map(|a| a.rhs)
                             .unwrap_or_default();
                         debug_assert!(
-                            matches!(
-                                constituent,
-                                Some(Pointer::Object(
-                                    ObjectStore::RESOLVING_CALL
-                                        | ObjectStore::NUMBER
-                                        | ObjectStore::STRING
-                                        | ObjectStore::BOOL
-                                        | ObjectStore::BIG_INT,
-                                ))
-                            ) || !matches!(
-                                constituent,
-                                Some(Pointer::Object(_) | Pointer::Union(_))
-                            ) || invalidated(constituent.unwrap(), invalid_objects, unions)
+                            matches!(constituent, Some(Pointer::Object(o)) if o.is_built_in())
+                                || !matches!(
+                                    constituent,
+                                    Some(Pointer::Object(_) | Pointer::Union(_))
+                                )
+                                || invalidated(constituent.unwrap(), invalid_objects, unions)
                         );
                     }
                 }

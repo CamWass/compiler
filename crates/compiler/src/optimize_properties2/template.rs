@@ -20,10 +20,10 @@ use crate::Id;
 use super::graph::{process, Visitor};
 use super::hashable_map::HashableHashMap;
 use super::simple_set::IndexSet;
-use super::unions::{UnionBuilder, UnionStore};
+use super::types::{ObjectId, ObjectStore, UnionBuilder, UnionStore};
 use super::{
-    function::*, Assignment, Call, CallArgBuilder, CallArgs, CallId, FnId, Func, Lattice, ObjectId,
-    ObjectStore, Pointer, PropertyAssignments, ResolvedCall, SimpleCFG, StaticFunctionData, Store,
+    function::*, Assignment, Call, CallArgBuilder, CallArgs, CallId, FnId, Func, Lattice, Pointer,
+    PropertyAssignments, ResolvedCall, SimpleCFG, StaticFunctionData, Store,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -259,16 +259,8 @@ fn get_property(
                         .map(|a| a.rhs)
                         .unwrap_or_default();
                     debug_assert!(
-                        matches!(
-                            prop,
-                            Some(Pointer::Object(
-                                ObjectStore::RESOLVING_CALL
-                                    | ObjectStore::NUMBER
-                                    | ObjectStore::STRING
-                                    | ObjectStore::BOOL
-                                    | ObjectStore::BIG_INT,
-                            ))
-                        ) || !matches!(prop, Some(Pointer::Object(_) | Pointer::Union(_)))
+                        matches!(prop, Some(Pointer::Object(o)) if o.is_built_in())
+                            || !matches!(prop, Some(Pointer::Object(_) | Pointer::Union(_)))
                             || invalidated(prop.unwrap(), invalid_objects, unions)
                     );
                 }
@@ -279,19 +271,12 @@ fn get_property(
                             .map(|a| a.rhs)
                             .unwrap_or_default();
                         debug_assert!(
-                            matches!(
-                                constituent,
-                                Some(Pointer::Object(
-                                    ObjectStore::RESOLVING_CALL
-                                        | ObjectStore::NUMBER
-                                        | ObjectStore::STRING
-                                        | ObjectStore::BOOL
-                                        | ObjectStore::BIG_INT,
-                                ))
-                            ) || !matches!(
-                                constituent,
-                                Some(Pointer::Object(_) | Pointer::Union(_))
-                            ) || invalidated(constituent.unwrap(), invalid_objects, unions)
+                            matches!(constituent, Some(Pointer::Object(o)) if o.is_built_in())
+                                || !matches!(
+                                    constituent,
+                                    Some(Pointer::Object(_) | Pointer::Union(_))
+                                )
+                                || invalidated(constituent.unwrap(), invalid_objects, unions)
                         );
                     }
                 }
@@ -399,13 +384,7 @@ fn invalidate(
     prop_assignments: impl GetPropAssignments,
 ) {
     match pointer {
-        Some(Pointer::Object(
-            ObjectStore::RESOLVING_CALL
-            | ObjectStore::NUMBER
-            | ObjectStore::STRING
-            | ObjectStore::BOOL
-            | ObjectStore::BIG_INT,
-        )) => return,
+        Some(Pointer::Object(o)) if o.is_built_in() => return,
         None | Some(Pointer::Fn(_) | Pointer::NullOrVoid) => return,
         Some(Pointer::Object(_) | Pointer::Union(_)) => {}
     }
@@ -417,13 +396,7 @@ fn invalidate(
             done.insert(pointer);
 
             match pointer {
-                Pointer::Object(
-                    ObjectStore::RESOLVING_CALL
-                    | ObjectStore::NUMBER
-                    | ObjectStore::STRING
-                    | ObjectStore::BOOL
-                    | ObjectStore::BIG_INT,
-                ) => {}
+                Pointer::Object(o) if o.is_built_in() => {}
                 Pointer::Object(obj) => {
                     let new_invalidation = invalid_objects.insert(obj);
 

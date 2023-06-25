@@ -1,9 +1,52 @@
 use std::{hash::BuildHasherDefault, iter::FusedIterator, num::NonZeroU32, ops::Index};
 
+use index::vec::Idx;
 use indexmap::IndexSet;
 use rustc_hash::FxHasher;
 
-use super::{ObjectId, Pointer};
+use super::Pointer;
+
+index::newtype_index!(pub(super) struct ObjectId { .. });
+
+impl ObjectId {
+    pub fn is_built_in(&self) -> bool {
+        ObjectStore::BUILT_INS.contains(self)
+    }
+}
+
+#[derive(Debug)]
+pub(super) struct ObjectStore {
+    cur_object_id: ObjectId,
+}
+
+impl ObjectStore {
+    /// Placeholder for an unresolved call during call resolution.
+    pub const RESOLVING_CALL: ObjectId = ObjectId::from_u32(0);
+    pub const NUMBER: ObjectId = ObjectId::from_u32(1);
+    pub const STRING: ObjectId = ObjectId::from_u32(2);
+    pub const BOOL: ObjectId = ObjectId::from_u32(3);
+    pub const BIG_INT: ObjectId = ObjectId::from_u32(4);
+    // !IMPORTANT! This must be updated when adding built-ins to the above list.
+    const BUILT_INS: &[ObjectId] = &[
+        Self::RESOLVING_CALL,
+        Self::NUMBER,
+        Self::STRING,
+        Self::BOOL,
+        Self::BIG_INT,
+    ];
+
+    pub fn new() -> Self {
+        Self {
+            cur_object_id: ObjectId::from_u32(Self::BUILT_INS.len() as u32),
+        }
+    }
+
+    pub fn next_object_id(&mut self) -> ObjectId {
+        let id = self.cur_object_id;
+        self.cur_object_id.increment_by(1);
+        id
+    }
+}
 
 #[derive(Debug, Default)]
 pub(super) struct UnionStore {
