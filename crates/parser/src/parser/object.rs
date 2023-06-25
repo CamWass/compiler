@@ -1,8 +1,8 @@
 //! Parser for object literal.
 
 use super::{class_and_fn::is_not_this, util::ParseObject, *};
+use atoms::js_word;
 use global_common::Spanned;
-use swc_atoms::js_word;
 
 impl<I: Tokens> Parser<I> {
     /// Parse a object literal or object pattern.

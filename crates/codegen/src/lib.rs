@@ -10,13 +10,13 @@ use self::{
     util::{SourceMapperExt, SpanExt, StartsWithAlphaNum},
 };
 use ast::*;
+use atoms::JsWord;
 use codegen_macros::emitter;
 use global_common::{
     comments::Comments, sync::Lrc, BytePos, SourceMap, Span, Spanned, SyntaxContext, DUMMY_SP,
 };
 use parser::JscTarget;
 use std::{borrow::Cow, fmt::Write, io, sync::Arc};
-use swc_atoms::JsWord;
 
 #[macro_use]
 pub mod macros;

@@ -58,11 +58,11 @@ name = "ast"
 version = "0.1.0"
 dependencies = [
  "ast_node",
+ "atoms",
  "global_common",
  "node_id",
  "num-bigint",
  "string_enum",
- "swc_atoms",
 ]
 
 [[package]]
@@ -89,6 +89,14 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "atoms"
+version = "0.1.0"
+dependencies = [
+ "string_cache",
+ "string_cache_codegen",
 ]
 
 [[package]]
@@ -201,13 +209,13 @@ name = "codegen"
 version = "0.1.0"
 dependencies = [
  "ast",
+ "atoms",
  "bitflags",
  "codegen_macros",
  "global_common",
  "num-bigint",
  "parser",
  "sourcemap",
- "swc_atoms",
  "testing",
 ]
 
@@ -229,6 +237,7 @@ dependencies = [
  "ahash",
  "ast",
  "ast_convert",
+ "atoms",
  "bitflags",
  "codegen",
  "criterion",
@@ -248,7 +257,6 @@ dependencies = [
  "rustc-hash",
  "serde",
  "static_assertions",
- "swc_atoms",
  "testing",
  "visit2",
 ]
@@ -417,10 +425,10 @@ name = "ecma_visit"
 version = "0.1.0"
 dependencies = [
  "ast",
+ "atoms",
  "global_common",
  "global_visit",
  "num-bigint",
- "swc_atoms",
 ]
 
 [[package]]
@@ -900,6 +908,7 @@ version = "0.1.0"
 dependencies = [
  "ast",
  "ast_node",
+ "atoms",
  "criterion",
  "ecma_visit",
  "either",
@@ -909,7 +918,6 @@ dependencies = [
  "serde",
  "serde_json",
  "string_enum",
- "swc_atoms",
  "testing",
  "unicode-xid",
 ]
@@ -1333,19 +1341,6 @@ name = "strsim"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6446ced80d6c486436db5c078dde11a9f73d42b57fb273121e160b84f63d894c"
-
-[[package]]
-name = "swc_atoms"
-version = "0.2.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d99c0ac33707dd1162a3665d6ca1a28b2f6594e9c37c4703e417fc5e1ce532e"
-dependencies = [
- "once_cell",
- "rustc-hash",
- "serde",
- "string_cache",
- "string_cache_codegen",
-]
 
 [[package]]
 name = "swc_macros_common"

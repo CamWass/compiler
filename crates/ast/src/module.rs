@@ -1,7 +1,7 @@
 use crate::{module_decl::ModuleDecl, stmt::Stmt, GetNodeId, NodeId};
 use ast_node::ast_node;
+use atoms::JsWord;
 use global_common::{EqIgnoreSpan, Span};
-use swc_atoms::JsWord;
 
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]

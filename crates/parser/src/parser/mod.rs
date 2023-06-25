@@ -19,13 +19,13 @@ use crate::{
     JscTarget, Syntax,
 };
 use ast::*;
+use atoms::JsWord;
 use global_common::{BytePos, SourceFile, Span};
 use input::Buffer;
 pub use input::Tokens;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use swc_atoms::JsWord;
 
 #[derive(Clone, Default)]
 struct State {

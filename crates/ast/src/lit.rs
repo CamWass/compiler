@@ -1,12 +1,12 @@
 use crate::{jsx::JSXText, GetNodeId, NodeId};
 use ast_node::ast_node;
+use atoms::JsWord;
 use global_common::{integer_decode::integer_decode, EqIgnoreSpan, Span};
 use num_bigint::BigInt as BigIntValue;
 use std::{
     fmt::{self, Display, Formatter},
     hash::{Hash, Hasher},
 };
-use swc_atoms::JsWord;
 
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]

@@ -4,10 +4,10 @@ use super::PropertyClustering::{PropertyClustering, PropertyClusteringId};
 use crate::ast::{GetNodeId, NodeId};
 use crate::colors::ColorId;
 use crate::utils::unwrap_as;
+use atoms::JsWord;
 use ecma_visit::{Visit, VisitWith};
 use index::vec::IndexVec;
 use rustc_hash::FxHashMap;
-use swc_atoms::JsWord;
 
 pub struct ColorFindPropertyReferences<'col, 'nf> {
     propIndex: FxHashMap<JsWord, PropertyClusteringId>,

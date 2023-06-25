@@ -1,10 +1,10 @@
 use crate::{Id, ToId};
 use ast;
+use atoms::{js_word, JsWord};
 use ecma_visit::{noop_visit_type, Visit, VisitMut, VisitMutWith, VisitWith};
 use global_common::{SyntaxContext, DUMMY_SP};
 use std::collections::BTreeMap;
 use std::iter::FromIterator;
-use swc_atoms::{js_word, JsWord};
 
 /// Returns a globally unique [SyntaxContext].
 macro_rules! private_ctxt {
@@ -13,7 +13,7 @@ macro_rules! private_ctxt {
     }};
 }
 
-/// Creates a new [Ident][ast::Ident] from the provided [sym][swc_atoms::JsWord], [syntax_ctxt][global_common::SyntaxContext], and [NodeId][ast::NodeId].
+/// Creates a new [Ident][ast::Ident] from the provided [sym][atoms::JsWord], [syntax_ctxt][global_common::SyntaxContext], and [NodeId][ast::NodeId].
 macro_rules! ident {
     ($sym:expr, $syntax_ctxt:expr,  $id:expr) => {
         ast::Ident {

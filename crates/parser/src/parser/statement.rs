@@ -3,8 +3,8 @@ use crate::{
     context::{Context, YesMaybe},
     token::{Token, Word},
 };
+use atoms::js_word;
 use global_common::{BytePos, Span, Spanned};
-use swc_atoms::js_word;
 
 mod module_item;
 

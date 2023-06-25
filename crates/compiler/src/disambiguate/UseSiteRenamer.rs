@@ -3,10 +3,10 @@ use super::{
     PropertyClustering::{PropertyClustering, PropertyClusteringId},
 };
 use ast::NodeId;
+use atoms::JsWord;
 use ecma_visit::{VisitMut, VisitMutWith};
 use index::vec::IndexVec;
 use rustc_hash::FxHashMap;
-use swc_atoms::JsWord;
 
 pub fn rename_use_sites(
     ast: &mut ::ast::Program,

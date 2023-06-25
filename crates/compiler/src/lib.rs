@@ -48,11 +48,11 @@ use crate::ast as local_ast;
 use crate::node::BoundNode;
 use crate::resolver::resolver;
 use crate::visit::{Visit, VisitWith};
+use atoms::JsWord;
 pub use checker::Checker;
 use ecma_visit::VisitMutWith;
 use global_common::{Globals, Mark, SyntaxContext, GLOBALS};
 use serde::Deserialize;
-use swc_atoms::JsWord;
 use types::*;
 
 pub type Id = (JsWord, SyntaxContext);

@@ -1,5 +1,6 @@
 use std::{hash::BuildHasherDefault, iter::FusedIterator, num::NonZeroU32, ops::Index};
 
+use atoms::{js_word, JsWord};
 use index::vec::Idx;
 use indexmap::IndexSet;
 use rustc_hash::FxHasher;

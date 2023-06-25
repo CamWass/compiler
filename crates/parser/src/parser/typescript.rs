@@ -1,9 +1,9 @@
 use super::*;
 use crate::lexer::TokenContexts;
+use atoms::js_word;
 use either::Either;
 use global_common::{Spanned, SyntaxContext};
 use std::fmt::Write;
-use swc_atoms::js_word;
 
 impl<I: Tokens> Parser<I> {
     /// `tsNextTokenCanFollowModifier`

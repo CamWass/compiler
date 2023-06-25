@@ -2,11 +2,11 @@ use crate::ast::{self, Expr, ExprOrSuper};
 use crate::node::*;
 use crate::types::*;
 use crate::Visit;
+use atoms::{js_word, JsWord};
 use bitflags::bitflags;
 use global_common::EqIgnoreSpan;
 use std::mem;
 use std::rc::Rc;
-use swc_atoms::{js_word, JsWord};
 
 macro_rules! unwrap_as {
     ($expr:expr, $pat:pat, $res:expr) => {

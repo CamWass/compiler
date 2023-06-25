@@ -1,5 +1,5 @@
+use atoms::JsWord;
 use rustc_hash::{FxHashMap, FxHashSet};
-use swc_atoms::JsWord;
 
 // TODO: This can probably be optimised/simplfied:
 

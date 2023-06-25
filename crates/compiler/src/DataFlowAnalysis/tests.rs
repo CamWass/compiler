@@ -1,4 +1,5 @@
 use ast::*;
+use atoms::JsWord;
 use ecma_visit::VisitMutWith;
 use global_common::{
     errors::{ColorConfig, Handler},
@@ -9,7 +10,6 @@ use index::vec::IndexVec;
 use parser::{Parser, Syntax};
 use rustc_hash::FxHashMap;
 use std::{iter::FromIterator, sync::atomic::AtomicU32};
-use swc_atoms::JsWord;
 
 use crate::control_flow::{ControlFlowAnalysis::*, ControlFlowGraph::Branch};
 use crate::resolver::resolver;

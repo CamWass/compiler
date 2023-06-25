@@ -9,12 +9,12 @@ use crate::graph::FixedPointGraphTraversal::{EdgeCallback, FixedPointGraphTraver
 use crate::graph::GraphColoring::{GreedyGraphColoring, SubGraph};
 use crate::utils::unwrap_as;
 use crate::DefaultNameGenerator::DefaultNameGenerator;
+use atoms::JsWord;
 use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use index::bit_set::GrowableBitSet;
 use index::{newtype_index, vec::IndexVec};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::iter::FromIterator;
-use swc_atoms::JsWord;
 
 /**
  * Renames unrelated properties to the same name, using {@link Color}s provided by the typechecker.

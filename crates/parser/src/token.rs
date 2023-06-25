@@ -2,6 +2,7 @@ pub(crate) use self::{AssignOpToken::*, BinOpToken::*, Keyword::*, Token::*};
 use crate::error::Error;
 pub(crate) use ast::AssignOp as AssignOpToken;
 use ast::BinaryOp;
+use atoms::{js_word, JsWord};
 use enum_kind::Kind;
 use global_common::{Span, Spanned};
 use num_bigint::BigInt as BigIntValue;
@@ -9,7 +10,6 @@ use std::{
     borrow::Cow,
     fmt::{self, Debug, Display, Formatter},
 };
-use swc_atoms::{js_word, JsWord};
 
 #[derive(Kind, Clone, PartialEq)]
 #[kind(functions(starts_expr = "bool", before_expr = "bool"))]

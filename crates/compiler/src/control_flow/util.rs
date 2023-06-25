@@ -1,9 +1,9 @@
 use super::node::{Node, NodeKind};
 use ast::*;
+use atoms::JsWord;
 use ecma_visit::{noop_visit_type, Visit, VisitWith};
 use rustc_hash::FxHashMap;
 use std::hash::Hash;
-use swc_atoms::JsWord;
 
 /// Gets the condition of an `ON_TRUE` / `ON_FALSE` CFG edge.
 ///

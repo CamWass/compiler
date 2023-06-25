@@ -3,11 +3,11 @@
 pub extern crate ast;
 
 use ast::*;
+use atoms::JsWord;
 use global_common::{Span, DUMMY_SP};
 use global_visit::{define, AndThen, Repeat, Repeated};
 use num_bigint::BigInt as BigIntValue;
 use std::{any::Any, fmt::Debug};
-use swc_atoms::JsWord;
 
 /// Visitable nodes.
 pub trait Node: Any {}

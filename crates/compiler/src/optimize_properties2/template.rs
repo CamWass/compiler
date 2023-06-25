@@ -3,13 +3,13 @@
 use std::collections::hash_map::Entry;
 
 use ast::NodeId;
+use atoms::JsWord;
 use index::bit_set::GrowableBitSet;
 use index::vec::IndexVec;
 use petgraph::graph::EdgeReference;
 use petgraph::visit::EdgeRef;
 use petgraph::Direction::Incoming;
 use rustc_hash::{FxHashMap, FxHashSet};
-use swc_atoms::JsWord;
 
 use crate::control_flow::node::{Node, NodeKind};
 use crate::control_flow::ControlFlowGraph::Branch;

@@ -1,7 +1,7 @@
+use atoms::JsWord;
 use ecma_visit::{VisitMut, VisitMutWith};
 use global_common::util::take::Take;
 use rustc_hash::FxHashMap;
-use swc_atoms::JsWord;
 
 use crate::DefaultNameGenerator::DefaultNameGenerator;
 

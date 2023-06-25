@@ -3,9 +3,9 @@ use std::rc::Rc;
 use crate::node::BoundNode;
 use crate::types::*;
 use ahash::AHashMap;
+use atoms::JsWord;
 use bitflags::bitflags;
 use num_bigint::BigInt as BigIntValue;
-use swc_atoms::JsWord;
 
 // Properties common to all types
 #[derive(Debug, Default)]

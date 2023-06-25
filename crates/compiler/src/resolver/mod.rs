@@ -1,10 +1,10 @@
 use crate::Id;
 use ahash::AHashSet;
 use ast::*;
+use atoms::JsWord;
 use ecma_visit::{noop_visit_mut_type, noop_visit_type, Visit, VisitMut, VisitMutWith, VisitWith};
 use global_common::{Mark, SyntaxContext};
 use rustc_hash::FxHashSet;
-use swc_atoms::JsWord;
 // use tracing::{debug, span, Level};
 
 use scope::{IdentType, ScopeKind};

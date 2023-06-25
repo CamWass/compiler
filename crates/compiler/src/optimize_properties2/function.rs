@@ -1,7 +1,7 @@
 use ast::*;
+use atoms::{js_word, JsWord};
 use global_common::SyntaxContext;
 use rustc_hash::FxHashMap;
-use swc_atoms::{js_word, JsWord};
 
 use crate::control_flow::node::{Node, NodeKind};
 use crate::control_flow::ControlFlowGraph::*;

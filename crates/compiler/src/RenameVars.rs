@@ -1,10 +1,10 @@
 use ast::*;
+use atoms::{js_word, JsWord};
 use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use global_common::{Mark, SyntaxContext};
 use index::vec::IndexVec;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::{cmp::Ordering, collections::hash_map::Entry};
-use swc_atoms::{js_word, JsWord};
 
 use crate::{DefaultNameGenerator::DefaultNameGenerator, Id, ToId};
 

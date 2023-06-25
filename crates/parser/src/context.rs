@@ -1,6 +1,6 @@
 use crate::token::{Keyword, Word};
+use atoms::{js_word, JsWord};
 use global_common::Span;
-use swc_atoms::{js_word, JsWord};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum YesNoMaybe {

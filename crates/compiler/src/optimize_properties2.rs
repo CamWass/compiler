@@ -21,6 +21,7 @@ use std::hash::Hash;
 use std::ops::Deref;
 
 use ast::*;
+use atoms::{js_word, JsWord};
 use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use global_common::{SyntaxContext, DUMMY_SP};
 use index::bit_set::{BitMatrix, BitSet, GrowableBitSet};
@@ -31,7 +32,6 @@ use petgraph::{
     EdgeDirection::*,
 };
 use rustc_hash::{FxHashMap, FxHashSet};
-use swc_atoms::{js_word, JsWord};
 
 use crate::control_flow::node::{Node, NodeKind};
 use crate::control_flow::ControlFlowAnalysis::*;

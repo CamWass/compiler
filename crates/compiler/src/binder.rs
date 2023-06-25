@@ -4,12 +4,12 @@ use crate::types::*;
 use crate::utils::*;
 use crate::SourceFile;
 use ahash::AHashMap;
+use atoms::JsWord;
 use bitflags::bitflags;
 use index::vec::IndexVec;
 use std::hash::Hash;
 use std::mem;
 use std::rc::Rc;
-use swc_atoms::JsWord;
 
 macro_rules! assert_id_is_for_flow_label {
     ($binder:expr, $id:expr) => {

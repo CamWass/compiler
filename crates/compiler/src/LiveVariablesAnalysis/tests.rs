@@ -1,4 +1,5 @@
 use ast::*;
+use atoms::JsWord;
 use ecma_visit::{noop_visit_type, Visit, VisitMutWith, VisitWith};
 use global_common::{
     errors::{ColorConfig, Handler},
@@ -7,7 +8,6 @@ use global_common::{
 };
 use parser::{Parser, Syntax};
 use rustc_hash::FxHashMap;
-use swc_atoms::JsWord;
 
 use crate::control_flow::node::Node;
 use crate::control_flow::ControlFlowAnalysis::{ControlFlowAnalysis, ControlFlowRoot};

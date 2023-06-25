@@ -1,11 +1,11 @@
 use std::collections::hash_map::Entry;
 
 use ast::*;
+use atoms::JsWord;
 use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use global_common::Span;
 use index::{newtype_index, vec::IndexVec};
 use rustc_hash::{FxHashMap, FxHashSet};
-use swc_atoms::JsWord;
 
 use crate::find_vars::*;
 use crate::utils::unwrap_as;

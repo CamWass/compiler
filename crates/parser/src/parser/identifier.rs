@@ -1,8 +1,8 @@
 //! 12.1 Identifiers
 use super::*;
 use crate::token::Keyword;
+use atoms::js_word;
 use either::Either;
-use swc_atoms::js_word;
 
 impl<I: Tokens> Parser<I> {
     pub(super) fn new_ident(&mut self, sym: JsWord, span: Span) -> Ident {

@@ -1,8 +1,8 @@
 use super::{pat::PatType, util::ExprExt, *};
 use crate::{lexer::TokenContext, token::AssignOpToken};
+use atoms::js_word;
 use either::Either;
 use global_common::{Pos, Spanned};
-use swc_atoms::js_word;
 
 mod ops;
 mod verifier;

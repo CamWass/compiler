@@ -8,8 +8,8 @@ use crate::{
     GetNodeId, NodeId, ParamWithoutDecorators,
 };
 use ast_node::ast_node;
+use atoms::js_word;
 use global_common::{util::take::Take, EqIgnoreSpan, Span, DUMMY_SP};
-use swc_atoms::js_word;
 
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]

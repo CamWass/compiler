@@ -13,6 +13,7 @@ use crate::CompilerOptions;
 use crate::TypeCheckerHost;
 use crate::{Visit, VisitWith};
 use ahash::{AHashMap, AHashSet};
+use atoms::{js_word, JsWord};
 use bitflags::bitflags;
 use global_common::integer_decode::{integer_decode, DecodedF64};
 use index::vec::IndexVec;
@@ -25,7 +26,6 @@ use std::hash::Hasher;
 use std::iter::FromIterator;
 use std::mem;
 use std::rc::Rc;
-use swc_atoms::{js_word, JsWord};
 
 // fn with_table<T: Default, F, Ret>(table: &mut T, op: F) -> Ret
 // where

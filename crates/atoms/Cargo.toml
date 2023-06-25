@@ -1,0 +1,11 @@
+[package]
+build = "build.rs"
+name = "atoms"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+string_cache = "0.8.4"
+
+[build-dependencies]
+string_cache_codegen = "0.5.2"

@@ -2,13 +2,13 @@ use crate::ast;
 use crate::node::*;
 use crate::Checker;
 use ahash::{AHashMap, AHashSet};
+use atoms::JsWord;
 use bitflags::bitflags;
 use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::hash::Hasher;
 use std::rc::Rc;
-use swc_atoms::JsWord;
 
 // TODO: use a hash (u64) instead of string:
 pub type TypeRelationTable = AHashMap<String, RelationComparisonResult>;

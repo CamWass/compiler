@@ -1,9 +1,9 @@
 use super::ColorGraphNode::ColorGraphNodeId;
 use super::Invalidation::Invalidation;
 use crate::graph::StandardUnionFind::StandardUnionFind;
+use atoms::JsWord;
 use index::newtype_index;
 use rustc_hash::FxHashMap;
-use swc_atoms::JsWord;
 
 /**
  * The disambiguation clusters for a given property name.

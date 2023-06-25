@@ -10,7 +10,7 @@ version = "0.1.0"
 bitflags = "1"
 num-bigint = {version = "0.2", features = ["serde"]}
 sourcemap = "6"
-swc_atoms = "0.2.6"
+atoms = {path = "../atoms"}
 global_common = {version = "0.1.0", path = "../common"}
 ast = {version = "0.1.0", path = "../ast"}
 codegen_macros = {version = "0.1.0", path = "./macros"}

@@ -1,8 +1,8 @@
 //! 13.3.3 Destructuring Binding Patterns
 use super::{expression::PatOrExprOrSpread, util::ExprExt, *};
 use crate::token::AssignOpToken;
+use atoms::js_word;
 use global_common::Spanned;
-use swc_atoms::js_word;
 
 impl<I: Tokens> Parser<I> {
     pub(super) fn parse_opt_binding_ident(&mut self) -> PResult<Option<BindingIdent>> {

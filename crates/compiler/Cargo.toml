@@ -15,7 +15,7 @@ ast_convert = {path = "../../macros/ast_convert"}
 node_id = {path = "../../macros/node_id"}
 visit2 = {path = "../../macros/visit2"}
 num-bigint = {version = "0.2"}
-swc_atoms = "0.2"
+atoms = {path = "../atoms"}
 index = {path = "../index"}
 indexmap = "1.9.1"
 ecma_visit = {path = "../visit"}

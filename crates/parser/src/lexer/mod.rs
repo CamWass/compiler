@@ -10,12 +10,12 @@ use crate::{
     JscTarget, Syntax,
 };
 use ast::op;
+use atoms::JsWord;
 use global_common::{chars::char_literals, BytePos, SourceFile, Span};
 use identifier::{is_ident_part, is_ident_start};
 use state::State;
 pub use state::{TokenContext, TokenContexts};
 use std::{cell::RefCell, iter::FusedIterator, rc::Rc};
-use swc_atoms::JsWord;
 use util::{char_bytes, is_line_break, is_valid_regex_flag};
 
 pub(crate) type LexResult<T> = Result<T, Error>;

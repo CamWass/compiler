@@ -6,8 +6,8 @@ use crate::{
     GetNodeId, NodeId,
 };
 use ast_node::ast_node;
+use atoms::JsWord;
 use global_common::{EqIgnoreSpan, Span};
-use swc_atoms::JsWord;
 
 /// Used for `obj` property of `JSXMemberExpr`.
 #[ast_node]

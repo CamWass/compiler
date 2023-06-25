@@ -2,11 +2,11 @@ use crate::node::{Bind, BoundNode};
 use ast;
 pub use ast::{GetNodeId, NodeId};
 use ast_convert::define;
+use atoms::JsWord;
 use global_common::{integer_decode::integer_decode, EqIgnoreSpan, Span, Spanned};
 use num_bigint::BigInt as BigIntValue;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
-use swc_atoms::JsWord;
 
 impl Eq for Number {}
 

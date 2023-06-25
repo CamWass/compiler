@@ -1,8 +1,8 @@
 use super::{identifier::MaybeOptionalIdentParser, *};
 use crate::{error::SyntaxError, lexer::TokenContext, Tokens};
+use atoms::js_word;
 use either::Either;
 use global_common::{Spanned, SyntaxContext};
-use swc_atoms::js_word;
 
 /// Parser for function expression and function declaration.
 impl<I: Tokens> Parser<I> {
