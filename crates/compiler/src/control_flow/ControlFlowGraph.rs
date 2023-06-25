@@ -283,7 +283,8 @@ where
     /// The resulting graph contains only the nodes and edges from the control
     /// flow graph.
     pub fn print_simple(&self) {
-        let mut dot = format!("{:?}", Dot::with_config(&self.graph, &[]));
+        let mut graph = self.graph.map(|_, n| n.kind, |_, e| *e);
+        let mut dot = format!("{:?}", Dot::with_config(&graph, &[]));
 
         dot = recolour_graph(dot, self.graph.node_count());
 
@@ -316,7 +317,7 @@ where
                         f.write_fmt(format_args!("Ident({})", s.sym))?;
                     }
                     _ => {
-                        f.write_fmt(format_args!("{:?}", self.node))?;
+                        f.write_fmt(format_args!("{:?}", self.node.kind))?;
                     }
                 }
                 if let Some(ann) = self.annotation {
@@ -399,7 +400,7 @@ where
                         f.write_fmt(format_args!("Ident({})", s.sym))?;
                     }
                     _ => {
-                        f.write_fmt(format_args!("{:?}", self.node))?;
+                        f.write_fmt(format_args!("{:?}", self.node.kind))?;
                     }
                 }
                 if let (Some(printer), Some(ann)) = (self.printer, self.annotation) {
