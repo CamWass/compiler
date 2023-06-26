@@ -222,22 +222,22 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
         for obj in objects.values() {
             for &prop in obj.properties.values() {
                 let representative = labeling[prop.index()];
-                let prop = &properties[prop];
-                if prop.invalid {
-                    continue;
-                }
                 let representative = *map.entry(representative).or_insert_with(|| {
                     let index = representatives.len();
                     representatives.push(properties[representative].clone());
                     index
                 });
                 let representative = &mut representatives[representative];
+                let prop = &properties[prop];
                 representative
                     .references
                     .extend(prop.references.iter().copied());
+                representative.invalid |= prop.invalid;
             }
         }
     }
+
+    representatives.retain(|r| !r.invalid);
 
     // Sort representatives so those with more references have lower IDs.
     representatives.sort_unstable_by(|a, b| {
