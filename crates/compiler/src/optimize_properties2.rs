@@ -106,6 +106,24 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
     let mut objects: FxHashMap<ObjectId, Object> = FxHashMap::default();
     let mut properties: IndexVec<PropId, Property> = IndexVec::default();
 
+    for builtin in ObjectStore::BUILT_INS {
+        if !builtin.properties.is_empty() {
+            let obj = objects.entry(builtin.id).or_default();
+            let props = builtin.properties.iter().map(|p| {
+                (
+                    p.clone(),
+                    properties.push(Property {
+                        name: p.clone(),
+                        prop_id: properties.next_index(),
+                        references: FxHashSet::default(),
+                        invalid: true,
+                    }),
+                )
+            });
+            obj.properties.extend(props);
+        }
+    }
+
     let mut union_accesses = FxHashMap::<_, FxHashMap<_, FxHashSet<_>>>::default();
 
     for (PropKey(name, node_id), &pointer) in &store.references {

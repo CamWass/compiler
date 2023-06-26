@@ -84,6 +84,75 @@ let obj2 = { a: 2 };
 (1n || { a: 1 }).a;
 ",
     );
+
+    // Build in methods/properties should not be renamed.
+    test_same(
+        "
+(1).constructor;
+(1).toExponential;
+(1).toFixed;
+(1).toLocaleString;
+(1).toPrecision;
+(1).toString;
+(1).valueOf;
+
+(1n).constructor;
+(1n).toLocaleString;
+(1n).toString;
+(1n).valueOf;
+
+(true).constructor;
+(true).toString;
+(true).valueOf;
+
+('a').constructor;
+('a').length;
+('a').at;
+('a').charAt;
+('a').charCodeAt;
+('a').codePointAt;
+('a').concat;
+('a').endsWith;
+('a').includes;
+('a').indexOf;
+('a').isWellFormed;
+('a').lastIndexOf;
+('a').localeCompare;
+('a').match;
+('a').matchAll;
+('a').normalize;
+('a').padEnd;
+('a').padStart;
+('a').repeat;
+('a').replace;
+('a').replaceAll;
+('a').search;
+('a').slice;
+('a').split;
+('a').startsWith;
+('a').substr;
+('a').substring;
+('a').toLocaleLowerCase;
+('a').toLocaleUpperCase;
+('a').toLowerCase;
+('a').toString;
+('a').toUpperCase;
+('a').toWellFormed;
+('a').trim;
+('a').trimEnd;
+('a').trimStart;
+('a').valueOf;
+",
+    );
+    // Same for unions with primitives.
+    test_same(
+        "
+({ constructor: 1 } || 1).constructor;
+({ constructor: 1 } || 1n).constructor;
+({ constructor: 1 } || true).constructor;
+({ constructor: 1 } || 'a').constructor;
+",
+    );
 }
 
 #[test]

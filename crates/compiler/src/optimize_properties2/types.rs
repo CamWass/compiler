@@ -11,7 +11,7 @@ index::newtype_index!(pub(super) struct ObjectId { .. });
 
 impl ObjectId {
     pub fn is_built_in(&self) -> bool {
-        ObjectStore::BUILT_INS.contains(self)
+        self.private < ObjectStore::BUILT_INS.len() as u32
     }
 }
 
@@ -20,22 +20,98 @@ pub(super) struct ObjectStore {
     cur_object_id: ObjectId,
 }
 
-impl ObjectStore {
-    /// Placeholder for an unresolved call during call resolution.
-    pub const RESOLVING_CALL: ObjectId = ObjectId::from_u32(0);
-    pub const NUMBER: ObjectId = ObjectId::from_u32(1);
-    pub const STRING: ObjectId = ObjectId::from_u32(2);
-    pub const BOOL: ObjectId = ObjectId::from_u32(3);
-    pub const BIG_INT: ObjectId = ObjectId::from_u32(4);
-    // !IMPORTANT! This must be updated when adding built-ins to the above list.
-    const BUILT_INS: &[ObjectId] = &[
-        Self::RESOLVING_CALL,
-        Self::NUMBER,
-        Self::STRING,
-        Self::BOOL,
-        Self::BIG_INT,
-    ];
+pub(super) struct BuiltIn {
+    pub id: ObjectId,
+    pub properties: &'static [JsWord],
+}
 
+macro_rules! create_constants {
+    [$id:expr,] => {};
+    [$id:expr, $(#[$attr:meta])* $name:ident, $($tail:tt)*] => {
+        $(#[$attr])*
+        pub const $name: ObjectId = ObjectId::from_u32($id);
+        create_constants![$id + 1u32, $($tail)*];
+    };
+}
+
+macro_rules! create_impl {
+    [$($(#[$attr:meta])* $name:ident : [$($prop:expr$(,)?)*] $(,)?)*] => {
+        impl ObjectStore {
+            pub const BUILT_INS: &[BuiltIn] = &[
+                $(
+                    BuiltIn { id: ObjectStore::$name, properties: &[$($prop,)*] },
+                )*
+            ];
+            create_constants![0u32, $($(#[$attr])* $name,)*];
+        }
+    };
+}
+
+create_impl![
+    /// Placeholder for an unresolved call during call resolution.
+    RESOLVING_CALL: [],
+    NUMBER: [
+        js_word!("constructor"),
+        js_word!("toExponential"),
+        js_word!("toFixed"),
+        js_word!("toLocaleString"),
+        js_word!("toPrecision"),
+        js_word!("toString"),
+        js_word!("valueOf"),
+    ],
+    STRING: [
+        js_word!("constructor"),
+        js_word!("length"),
+        js_word!("at"),
+        js_word!("charAt"),
+        js_word!("charCodeAt"),
+        js_word!("codePointAt"),
+        js_word!("concat"),
+        js_word!("endsWith"),
+        js_word!("includes"),
+        js_word!("indexOf"),
+        js_word!("isWellFormed"),
+        js_word!("lastIndexOf"),
+        js_word!("localeCompare"),
+        js_word!("match"),
+        js_word!("matchAll"),
+        js_word!("normalize"),
+        js_word!("padEnd"),
+        js_word!("padStart"),
+        js_word!("repeat"),
+        js_word!("replace"),
+        js_word!("replaceAll"),
+        js_word!("search"),
+        js_word!("slice"),
+        js_word!("split"),
+        js_word!("startsWith"),
+        js_word!("substr"),
+        js_word!("substring"),
+        js_word!("toLocaleLowerCase"),
+        js_word!("toLocaleUpperCase"),
+        js_word!("toLowerCase"),
+        js_word!("toString"),
+        js_word!("toUpperCase"),
+        js_word!("toWellFormed"),
+        js_word!("trim"),
+        js_word!("trimEnd"),
+        js_word!("trimStart"),
+        js_word!("valueOf"),
+    ],
+    BOOL: [
+        js_word!("constructor"),
+        js_word!("toString"),
+        js_word!("valueOf"),
+    ],
+    BIG_INT: [
+        js_word!("constructor"),
+        js_word!("toLocaleString"),
+        js_word!("toString"),
+        js_word!("valueOf"),
+    ],
+];
+
+impl ObjectStore {
     pub fn new() -> Self {
         Self {
             cur_object_id: ObjectId::from_u32(Self::BUILT_INS.len() as u32),
