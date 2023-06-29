@@ -1,5 +1,3 @@
-use crate::colors::color_registry::ColorRegistry;
-use crate::{Checker, CompProgram, CompilerOptions, SourceFile, TypeCheckerHost};
 use ast::*;
 use codegen::{text_writer::JsWriter, Emitter};
 use ecma_visit::{VisitMut, VisitMutWith};
@@ -81,31 +79,6 @@ impl<'a> Tester<'a> {
         let s = String::from_utf8_lossy(&buf);
         s.to_string()
     }
-}
-
-pub fn get_colours(program: ast::Program) -> ColorRegistry {
-    let program_ast = program;
-
-    let program_source_file = SourceFile {
-        file_name: "input.js".to_string(),
-        program: crate::ast::convert::convert_program(program_ast.clone()),
-        jsGlobalAugmentations: Default::default(),
-    };
-    let source_files = vec![program_source_file.clone()];
-
-    let host = TypeCheckerHost {
-        files: source_files,
-        compiler_options: CompilerOptions::default(),
-    };
-
-    let mut checker = Checker::new(host, false);
-
-    let p = CompProgram {
-        libs: Vec::new(),
-        source: program_source_file.clone(),
-    };
-
-    crate::colors::color_collector::collect(&mut checker, &p)
 }
 
 pub fn test_transform<T>(transform: T, input: &str, expected: &str)

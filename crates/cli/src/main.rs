@@ -20,7 +20,7 @@ fn create_program(
     cm: Lrc<SourceMap>,
     handler: &Handler,
     node_id_gen: Rc<RefCell<ast::NodeIdGen>>,
-) -> Result<(String, ast::Program)> {
+) -> Result<ast::Program> {
     let syntax = if filename.ends_with(".js") {
         Syntax::Es(config.ecmascript)
     } else if filename.ends_with(".ts") {
@@ -55,7 +55,7 @@ fn create_program(
         bail!("Failed to parse");
     }
 
-    Ok((filename.into(), program))
+    Ok(program)
 }
 
 fn main() -> Result<()> {
@@ -70,13 +70,6 @@ fn main() -> Result<()> {
 
     let node_id_gen = Rc::new(RefCell::new(ast::NodeIdGen::default()));
 
-    // let lib = create_program(
-    //     "lib.es5.d.ts",
-    //     &config,
-    //     cm.clone(),
-    //     &handler,
-    //     node_id_gen.clone(),
-    // )?;
     let program = create_program(
         entry_file,
         &config,
@@ -89,7 +82,7 @@ fn main() -> Result<()> {
 
     let compiler = Compiler::new();
 
-    let result = compiler.compile(vec![], program, config.passes, &mut node_id_gen);
+    let result = compiler.compile(program, config.passes, &mut node_id_gen);
 
     // dbg!(result);
 

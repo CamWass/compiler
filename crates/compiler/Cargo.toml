@@ -7,14 +7,9 @@ edition = "2018"
 
 [dependencies]
 ast = {path = "../ast"}
-ahash = "0.7.6"
 bitflags = "1.3"
 global_common = {path = "../common"}
 global_visit = {path = "../../visit"}
-ast_convert = {path = "../../macros/ast_convert"}
-node_id = {path = "../../macros/node_id"}
-visit2 = {path = "../../macros/visit2"}
-num-bigint = {version = "0.2"}
 atoms = {path = "../atoms"}
 index = {path = "../index"}
 indexmap = "1.9.1"
@@ -28,11 +23,8 @@ static_assertions = "1.1.0"
 [dev-dependencies]
 criterion = "0.3"
 testing = {path = "../../testing"}
-once_cell = "1.10.0"
 parser = {path = "../parser"}
 codegen = {path = "../codegen"}
-regex = "1"
-pretty_assertions = "0.7.2"
 
 [[bench]]
 name = "bench_main"

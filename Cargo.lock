@@ -66,19 +66,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ast_convert"
-version = "0.1.0"
-dependencies = [
- "Inflector",
- "ahash",
- "macro_common",
- "pmutil",
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "ast_node"
 version = "0.1.0"
 dependencies = [
@@ -234,9 +221,7 @@ dependencies = [
 name = "compiler"
 version = "0.1.0"
 dependencies = [
- "ahash",
  "ast",
- "ast_convert",
  "atoms",
  "bitflags",
  "codegen",
@@ -247,18 +232,12 @@ dependencies = [
  "index",
  "indexmap",
  "lexical",
- "node_id",
- "num-bigint",
- "once_cell",
  "parser",
  "petgraph",
- "pretty_assertions",
- "regex",
  "rustc-hash",
  "serde",
  "static_assertions",
  "testing",
- "visit2",
 ]
 
 [[package]]
@@ -1569,19 +1548,6 @@ name = "version_check"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
-
-[[package]]
-name = "visit2"
-version = "0.1.0"
-dependencies = [
- "Inflector",
- "ahash",
- "macro_common",
- "pmutil",
- "proc-macro2",
- "quote",
- "syn",
-]
 
 [[package]]
 name = "visit_macros"

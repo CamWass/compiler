@@ -1,5 +1,4 @@
 use crate::Id;
-use ahash::AHashSet;
 use ast::*;
 use atoms::JsWord;
 use ecma_visit::{noop_visit_mut_type, noop_visit_type, Visit, VisitMut, VisitMutWith, VisitWith};
@@ -163,10 +162,10 @@ struct Scope<'a> {
     mark: Mark,
 
     /// All declarations in the scope
-    declared_symbols: AHashSet<JsWord>,
+    declared_symbols: FxHashSet<JsWord>,
 
     /// All types declared in the scope
-    declared_types: AHashSet<JsWord>,
+    declared_types: FxHashSet<JsWord>,
 }
 
 impl<'a> Scope<'a> {

@@ -1,48 +1,20 @@
-use ast::{self, op, NodeId};
+use ast::{self, op};
 use ecma_visit::{VisitMut, VisitMutWith};
 use global_common::{util::take::Take, DUMMY_SP};
 use global_visit::util::move_map::MoveMap;
 
-use crate::colors::{color_registry::ColorRegistry, ColorId};
-
-pub fn transform_param_props(
-    ast: &mut ast::Program,
-    node_id_gen: &mut ast::NodeIdGen,
-    colours: Option<&mut ColorRegistry>,
-) {
-    let mut visitor = ParamPropTransformer {
-        node_id_gen,
-        colours,
-    };
+pub fn transform_param_props(ast: &mut ast::Program, node_id_gen: &mut ast::NodeIdGen) {
+    let mut visitor = ParamPropTransformer { node_id_gen };
 
     ast.visit_mut_with(&mut visitor);
 }
 
 struct ParamPropTransformer<'a> {
     node_id_gen: &'a mut ast::NodeIdGen,
-    colours: Option<&'a mut ColorRegistry>,
 }
 
 impl ParamPropTransformer<'_> {
-    fn get_color_of_node(&self, node_id: NodeId) -> Option<ColorId> {
-        self.colours
-            .as_ref()
-            .and_then(|colours| colours.get_color_of_node(node_id))
-    }
-}
-
-impl ParamPropTransformer<'_> {
-    fn handle_class(&mut self, class: &mut ast::Class, class_colour: Option<ColorId>) {
-        macro_rules! set_colour {
-            ($colour:ident, $node:expr) => {{
-                let node = $node;
-                if let (Some(colours), Some(colour)) = (&mut self.colours, $colour) {
-                    colours.set_color_of_node(node.node_id, colour);
-                }
-                node
-            }};
-        }
-
+    fn handle_class(&mut self, class: &mut ast::Class) {
         for member in &mut class.body {
             if let ast::ClassMember::Constructor(c) = member {
                 let mut assign_exprs = Vec::new();
@@ -50,24 +22,17 @@ impl ParamPropTransformer<'_> {
                     params.move_map(|param| match param {
                         ast::ParamOrTsParamProp::Param(..) => param,
                         ast::ParamOrTsParamProp::TsParamProp(param) => {
-                            let (prop_colour, ident_sym, ident_span, param) = match param.param {
-                                ast::TsParamPropParam::Ident(i) => {
-                                    let colour = self.get_color_of_node(i.id.node_id);
-                                    (
-                                        colour,
-                                        i.id.sym.clone(),
-                                        i.id.span,
-                                        set_colour!(
-                                            colour,
-                                            ast::Param {
-                                                node_id: self.node_id_gen.next(),
-                                                span: DUMMY_SP,
-                                                decorators: Default::default(),
-                                                pat: ast::Pat::Ident(i),
-                                            }
-                                        ),
-                                    )
-                                }
+                            let (ident_sym, ident_span, param) = match param.param {
+                                ast::TsParamPropParam::Ident(i) => (
+                                    i.id.sym.clone(),
+                                    i.id.span,
+                                    ast::Param {
+                                        node_id: self.node_id_gen.next(),
+                                        span: DUMMY_SP,
+                                        decorators: Default::default(),
+                                        pat: ast::Pat::Ident(i),
+                                    },
+                                ),
                                 ast::TsParamPropParam::Assign(p) => {
                                     let i = match *p.left {
                                         ast::Pat::Ident(i) => i,
@@ -76,74 +41,54 @@ impl ParamPropTransformer<'_> {
                                         ),
                                     };
 
-                                    let colour = self.get_color_of_node(i.id.node_id);
                                     (
-                                        colour,
                                         i.id.sym.clone(),
                                         i.id.span,
-                                        set_colour!(
-                                            colour,
-                                            ast::Param {
+                                        ast::Param {
+                                            node_id: self.node_id_gen.next(),
+                                            span: DUMMY_SP,
+                                            decorators: Default::default(),
+                                            pat: ast::Pat::Assign(ast::AssignPat {
                                                 node_id: self.node_id_gen.next(),
-                                                span: DUMMY_SP,
-                                                decorators: Default::default(),
-                                                pat: ast::Pat::Assign(ast::AssignPat {
-                                                    node_id: self.node_id_gen.next(),
-                                                    span: p.span,
-                                                    left: Box::new(i.into()),
-                                                    right: p.right,
-                                                    type_ann: None,
-                                                }),
-                                            }
-                                        ),
+                                                span: p.span,
+                                                left: Box::new(i.into()),
+                                                right: p.right,
+                                                type_ann: None,
+                                            }),
+                                        },
                                     )
                                 }
                             };
-                            let assign_expr = Box::new(ast::Expr::Assign(set_colour!(
-                                prop_colour,
-                                ast::AssignExpr {
-                                    node_id: self.node_id_gen.next(),
-                                    span: DUMMY_SP,
-                                    left: ast::PatOrExpr::Expr(Box::new(ast::Expr::Member(
-                                        set_colour!(
-                                            prop_colour,
-                                            ast::MemberExpr {
+                            let assign_expr = Box::new(ast::Expr::Assign(ast::AssignExpr {
+                                node_id: self.node_id_gen.next(),
+                                span: DUMMY_SP,
+                                left: ast::PatOrExpr::Expr(Box::new(ast::Expr::Member(
+                                    ast::MemberExpr {
+                                        node_id: self.node_id_gen.next(),
+                                        span: DUMMY_SP,
+                                        obj: ast::ExprOrSuper::Expr(Box::new(ast::Expr::This(
+                                            ast::ThisExpr {
                                                 node_id: self.node_id_gen.next(),
                                                 span: DUMMY_SP,
-                                                obj: ast::ExprOrSuper::Expr(Box::new(
-                                                    ast::Expr::This(set_colour!(
-                                                        class_colour,
-                                                        ast::ThisExpr {
-                                                            node_id: self.node_id_gen.next(),
-                                                            span: DUMMY_SP,
-                                                        }
-                                                    ))
-                                                )),
-                                                prop: Box::new(ast::Expr::Ident(set_colour!(
-                                                    prop_colour,
-                                                    ast::Ident {
-                                                        node_id: self.node_id_gen.next(),
-                                                        span: ident_span,
-                                                        sym: ident_sym.clone(),
-                                                        optional: false,
-                                                    }
-                                                ))),
-                                                computed: false,
-                                            }
-                                        )
-                                    ))),
-                                    op: op!("="),
-                                    right: Box::new(ast::Expr::Ident(set_colour!(
-                                        prop_colour,
-                                        ast::Ident {
+                                            },
+                                        ))),
+                                        prop: Box::new(ast::Expr::Ident(ast::Ident {
                                             node_id: self.node_id_gen.next(),
                                             span: ident_span,
-                                            sym: ident_sym,
+                                            sym: ident_sym.clone(),
                                             optional: false,
-                                        }
-                                    ))),
-                                }
-                            )));
+                                        })),
+                                        computed: false,
+                                    },
+                                ))),
+                                op: op!("="),
+                                right: Box::new(ast::Expr::Ident(ast::Ident {
+                                    node_id: self.node_id_gen.next(),
+                                    span: ident_span,
+                                    sym: ident_sym,
+                                    optional: false,
+                                })),
+                            }));
                             assign_exprs.push(assign_expr);
 
                             ast::ParamOrTsParamProp::Param(param)
@@ -188,12 +133,10 @@ impl ParamPropTransformer<'_> {
 
 impl VisitMut<'_> for ParamPropTransformer<'_> {
     fn visit_mut_class_decl(&mut self, node: &mut ast::ClassDecl) {
-        let class_colour = self.get_color_of_node(node.node_id);
-        self.handle_class(&mut node.class, class_colour);
+        self.handle_class(&mut node.class);
     }
     fn visit_mut_class_expr(&mut self, node: &mut ast::ClassExpr) {
-        let class_colour = self.get_color_of_node(node.node_id);
-        self.handle_class(&mut node.class, class_colour);
+        self.handle_class(&mut node.class);
     }
 }
 
@@ -202,8 +145,7 @@ mod tests {
     fn test_transform(input: &str, expected: &str) {
         crate::testing::test_transform(
             |mut program, mut node_id_gen| {
-                let mut colours = crate::testing::get_colours(program.clone());
-                super::transform_param_props(&mut program, &mut node_id_gen, Some(&mut colours));
+                super::transform_param_props(&mut program, &mut node_id_gen);
                 program
             },
             input,
@@ -211,7 +153,6 @@ mod tests {
         );
     }
 
-    // TODO: test to ensure types are copied to new nodes.
     // TODO: test to ensure node ids are unique
 
     #[test]
