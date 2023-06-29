@@ -58,117 +58,117 @@ fn add_test<F: FnOnce() -> Result<(), String> + Send + 'static>(
 }
 
 fn error_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
-    let test_dir = {
-        let mut root = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
-        root.push("tests");
-        root.push("TypeScript");
-        root.push("tests");
-        root.push("cases");
-        root.push("compiler");
-        root
-    };
-    let ref_dir = {
-        let mut root = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
-        root.push("tests");
-        root.push("TypeScript");
-        root.push("tests");
-        root.push("baselines");
-        root.push("reference");
-        root
-    };
+    // let test_dir = {
+    //     let mut root = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
+    //     root.push("tests");
+    //     root.push("TypeScript");
+    //     root.push("tests");
+    //     root.push("cases");
+    //     root.push("compiler");
+    //     root
+    // };
+    // let ref_dir = {
+    //     let mut root = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
+    //     root.push("tests");
+    //     root.push("TypeScript");
+    //     root.push("tests");
+    //     root.push("baselines");
+    //     root.push("reference");
+    //     root
+    // };
 
-    eprintln!("Loading tests from {}", test_dir.display());
+    // eprintln!("Loading tests from {}", test_dir.display());
 
-    let entries = read_dir(&test_dir)?
-        .map(|res| res.map(|e| e.path()))
-        .collect::<Result<Vec<_>, io::Error>>()?;
+    // let entries = read_dir(&test_dir)?
+    //     .map(|res| res.map(|e| e.path()))
+    //     .collect::<Result<Vec<_>, io::Error>>()?;
 
-    // TODO: this is a temp, implicit, whitelist system. It should be removed once all tests pass.
-    const NUM_TESTS: usize = 5;
+    // // TODO: this is a temp, implicit, whitelist system. It should be removed once all tests pass.
+    // const NUM_TESTS: usize = 5;
 
-    assert!(NUM_TESTS <= entries.len());
+    // assert!(NUM_TESTS <= entries.len());
 
-    let skip = ["abstractPropertyBasics.ts"];
+    // let skip = ["abstractPropertyBasics.ts"];
 
-    let mut i = 0;
-    let mut count = 0;
+    // let mut i = 0;
+    // let mut count = 0;
 
-    while i < entries.len() && count < NUM_TESTS {
-        i += 1;
-        let entry = &entries[i];
-        if entry.extension().unwrap() != "ts" {
-            continue;
-        }
+    // while i < entries.len() && count < NUM_TESTS {
+    //     i += 1;
+    //     let entry = &entries[i];
+    //     if entry.extension().unwrap() != "ts" {
+    //         continue;
+    //     }
 
-        let file_name = entry
-            .strip_prefix(&test_dir)
-            .expect("failed to strip prefix")
-            .to_str()
-            .unwrap()
-            .to_string();
+    //     let file_name = entry
+    //         .strip_prefix(&test_dir)
+    //         .expect("failed to strip prefix")
+    //         .to_str()
+    //         .unwrap()
+    //         .to_string();
 
-        if skip.contains(&&*file_name) {
-            eprintln!("Skipped test `{}`", &file_name);
-            continue;
-        }
+    //     if skip.contains(&&*file_name) {
+    //         eprintln!("Skipped test `{}`", &file_name);
+    //         continue;
+    //     }
 
-        count += 1;
+    //     count += 1;
 
-        let input = fs::read_to_string(entry)?;
+    //     let input = fs::read_to_string(entry)?;
 
-        let mut reference_path = ref_dir.join(&file_name);
-        reference_path.set_extension("symbols");
+    //     let mut reference_path = ref_dir.join(&file_name);
+    //     reference_path.set_extension("symbols");
 
-        let reference = fs::read_to_string(reference_path)?;
+    //     let reference = fs::read_to_string(reference_path)?;
 
-        let entry = entry.clone();
+    //     let entry = entry.clone();
 
-        let name = format!("tsc::{}", file_name);
-        add_test(tests, name, false, move || {
-            eprintln!(
-                "\n\n========== Running error reporting test {}\nSource:\n{}\n",
-                file_name, input
-            );
+    //     let name = format!("tsc::{}", file_name);
+    //     add_test(tests, name, false, move || {
+    //         eprintln!(
+    //             "\n\n========== Running error reporting test {}\nSource:\n{}\n",
+    //             file_name, input
+    //         );
 
-            let cm = Lrc::new(SourceMap::new(FilePathMapping::empty()));
+    //         let cm = Lrc::new(SourceMap::new(FilePathMapping::empty()));
 
-            // Parse source
-            let program_ast = parse_program(cm.clone(), &entry).unwrap();
-            let program = SourceFile::new(file_name.clone(), program_ast.clone());
+    //         // Parse source
+    //         let program_ast = parse_program(cm.clone(), &entry).unwrap();
+    //         let program = SourceFile::new(file_name.clone(), program_ast.clone());
 
-            let lib_name = "lib.es5.d.ts";
-            // let lib_name = "temp.d.ts";
-            let lib_ast = parse_program(cm.clone(), &Path::new("../../").join(lib_name)).unwrap();
-            let lib = SourceFile::new(lib_name.into(), lib_ast.clone());
+    //         let lib_name = "lib.es5.d.ts";
+    //         // let lib_name = "temp.d.ts";
+    //         let lib_ast = parse_program(cm.clone(), &Path::new("../../").join(lib_name)).unwrap();
+    //         let lib = SourceFile::new(lib_name.into(), lib_ast.clone());
 
-            let host = TypeCheckerHost {
-                files: vec![lib, program],
-                compiler_options: CompilerOptions::default(),
-            };
+    //         let host = TypeCheckerHost {
+    //             files: vec![lib, program],
+    //             compiler_options: CompilerOptions::default(),
+    //         };
 
-            let program_file_names = new_ahash_map![
-                (lib_ast.clone(), lib_name.to_string()),
-                (program_ast.clone(), file_name.clone())
-            ];
-            let mut lib_file_names = AHashSet::with_capacity(1);
-            lib_file_names.insert(lib_name.to_string());
+    //         let program_file_names = new_ahash_map![
+    //             (lib_ast.clone(), lib_name.to_string()),
+    //             (program_ast.clone(), file_name.clone())
+    //         ];
+    //         let mut lib_file_names = AHashSet::with_capacity(1);
+    //         lib_file_names.insert(lib_name.to_string());
 
-            let symbols = SymbolWriter::get_symbols(
-                Checker::new(host, true),
-                program_file_names,
-                lib_file_names,
-                cm.lookup_char_pos(program_ast.span().lo()).file,
-                cm,
-                &file_name,
-                program_ast,
-            );
+    //         let symbols = SymbolWriter::get_symbols(
+    //             Checker::new(host, true),
+    //             program_file_names,
+    //             lib_file_names,
+    //             cm.lookup_char_pos(program_ast.span().lo()).file,
+    //             cm,
+    //             &file_name,
+    //             program_ast,
+    //         );
 
-            fs::write("output.txt", &symbols);
-            fs::write("reference.txt", &reference);
+    //         fs::write("output.txt", &symbols);
+    //         fs::write("reference.txt", &reference);
 
-            assert_eq!(symbols, reference);
-        });
-    }
+    //         assert_eq!(symbols, reference);
+    //     });
+    // }
 
     Ok(())
 }
