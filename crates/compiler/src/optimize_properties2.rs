@@ -477,8 +477,6 @@ pub fn process(
 
     let rename_map = create_renaming_map(&store);
 
-    dbg!(&store, &rename_map);
-
     // Actually assign the new names.
     let mut renamer = Renamer {
         node_id_gen,
@@ -771,6 +769,7 @@ pub(super) struct Call {
 #[derive(Debug, PartialEq, Eq, Hash)]
 enum CallArgs {
     Heap(Box<[Option<Pointer>]>),
+    // TODO: change this to simple run length encoding. e.g. Repeated(Option<Pointer>, u32) i.e. Repeated(pointer, count)
     /// Number of consecutive `None`s
     Invalid(usize),
 }
