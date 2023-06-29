@@ -61,3 +61,9 @@ objects, member exprs etc.
 Use petgraph::GraphMap in more places? (for its deduping of edges, and auto addition of nodes i.e.GraphMap::add_edge)
 
 TODO: use noop_visit_type every where possible
+
+ControlFlowGraph:
+class Foo111 {
+  a=(console.log(1),1);
+  static [(console.log(2),1)]=(console.log(3),1);
+}
