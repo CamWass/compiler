@@ -1,0 +1,199 @@
+Identify all properties that are "externally visible"/exported. These properties are ineligible for renaming.
+Examples include exported variable, public properties of exported classes, global variables, values passed to
+unknown/blackbox places like DOM methods, proxy/reflection, dynamic property accesses (unless the set of keys is known).
+
+e.g. properties of "Foo" are ineligible in the following:
+window.foo = Foo;
+unknownFn(Foo);
+Foo[unknownKey] = 1;
+
+If two entities, A and B, share a property name ("prop1"), which is eligible for renaming on both entities,
+and it can be proven that "prop1" is never accessed on a value that could be an A OR a B, then A's "prop1"
+and B's "prop1" can be renamed distinctly e.g. to "A$prop1" and "B$prop1".
+
+https://github.com/google/closure-compiler/wiki/Type-Based-Property-Renaming
+
+http://closuretools.blogspot.com/2011/01/property-by-any-other-name-part-1.html
+http://closuretools.blogspot.com/2011/01/property-by-any-other-name-part-2.html
+http://closuretools.blogspot.com/2011/01/property-by-any-other-name-part-3.html
+
+http://closuretools.blogspot.com/2012/09/which-compilation-level-is-right-for-me.html
+
+
+
+Simple version: for all static property accesses (e.g. "obj.prop") and declarations (e.g. "obj = {prop:1}"),
+determine if their object is invalidated (public/exported/dynamic). If none of the objects that have a given
+property are invalidated, then all references to the property can be conflated/renamed.
+
+
+Track 'objects':
+    - Created by object literals
+    - Need to track:
+        * Can flow into variables through assignment/declaration e.g. `a = {}` or `const b = {}`
+          Then need to track variable usage, including all aliasing
+        * Literal can be used directly in expressions e.g. `({a: 1}).a` or `callFn({a:1})`
+        * In all cases, should refer to same 'object'.
+        * Need to record all references to object and its properties.
+    - Properties are declared by writes/declarations e.g. 'a' in `const v1 = {a:...}` or `v2.a = ...`
+    - The properties of an object are the set of all properties that are written to the object, even
+      they occur after a particular read.
+    - If the object is accessed dynamically or in an unknown way, we pessimistically assume that it is
+      modified in any/every way, and invalidate if for optimisation. e.g. for object in variable 'a':
+      `a[someExpression] = ...` or `fnCall(a)` or `window.v = a`
+    - When an expression could be a number of different objects they are conflated e.g.
+                     obj1                obj2   obj1 ∪ obj2
+                     vvvvv               vvvvv       v
+      if (...) { a = {...}; } else { a = {...}; }    a;
+
+
+
+For each function:
+    - Track object invalidations and property reads/writes.
+        * If the object in question can be resolved to a locally defined object, these invalidations/reads/writes
+          can be directly attributed to the correct 'object'.
+        * Else, a stub object is created to record this function's interactions with the object.
+          e.g. `a.foo` and `a.foo = ...` are respectively recorded as a read and write to property 'foo' on some
+          object referenced by 'a'.
+          Similarly, `a().foo` and `a().foo = ...` are recorded as a read/write to property 'foo' on some object
+          returned by the function 'a'.
+        * The info collected in each function is then iteratively reconciled until a fixed point is reached:
+            # Stub objects from variables are matched against, and conflated with, variables from parent functions
+              that may have been captured by the inner function.
+            # Stub objects from function calls are matched against, and conflated with, objects returned from the
+              called function.
+          Once a fixed point is reached, we should 
+        * Else, a stub object is created to record this function's interactions with the object. e.g. for non-local
+          variable 'a': `a.foo` and `a.foo = ...` are respectively recorded as a read and write to property 'foo'
+          on some object referenced by 'a'.
+          Similarly,
+
+
+Invalidations can have dependencies e.g. `foo(a)`: 'a' is invalidated by the call only if 'foo' invalidates its first param
+
+Collections are opaque bags of values - we track the types that go in, and the output type is the union of the inputs.
+We don't care about the specific values that are in a collection at a point in time, or which specific item is outputted.
+insert item and retrieve item e.g.
+array: push, index with [i] etc
+Map: set, get
+
+Object literals are a special kind of collection where we attempt to know the set of possible keys and info about their
+mapped values. This is not possible if the object is accessed dynamically using computed properties, in which case we
+can't track its properties or their values, but we can track the output type (union of inputs).
+
+If a collection is invalidated (e.g. assigned to unknown variable, passed to unknown function), then we can't conclude
+anything about it, and any value entering it is invalidated.
+
+TODO:
+catch and throw
+destructuring
+
+Compute maybe reaching defs.
+For each ref, its type is the union/conflation of types of maybe reaching defs.
+Type of def is union/conflation of types in its RHS
+
+
+A prop access should only force a conflation merge of the conflation constituents that contain the property. More similar to AmbiguateProperties.
+The only properties that must share the same name are those that are:
+(1) in the intersection of a conflation's constituent's properties; and
+(2) accessed as a property of the conflation
+Need to consider sub/super types as well, for classes and object/function prototypes.
+
+For now, accessing the prototype of an entity should invalidate it, and any entity assigned to a prototype should also be invalidated.
+
+if function is invalidated, invalidate its output
+
+two versions of function analysis:
+1. "owned" analysis of the code within the function. Used to do renaming of the function's code.
+2. "other" analysis used to compute side effects and return value at call site
+
+for the code within a function, we need to track the union/join of its possible values.
+e.g.
+function foo(a) {
+  a.prop;
+}
+
+foo({prop: 1});
+foo({prop: 2});
+
+the property ref in the function should be recorded on the union of the two object literals.
+after each call, join function's saved lattices with the final lattices after the call
+
+at call time, gather external dependencies of function and pass them to it (params and non-local vars)
+
+
+for each function create placeholder types for each param and the return type.
+run type inference on te function to discover the relationships between inputs and outputs
+e.g. that a function returns its first parameter. Then each call can substitute the types of its arguments
+for the function's param placeholders to find the return type for those particular args.
+
+Then for the function as a whole, the type of each external dependency within its body for the purpose of renaming
+is the union the types the external dependency had for each call.
+
+simplify the call graph by:
+  for each function:
+      for each non-function return type:
+        if function depends on return type and function and type ae not already directly connected:
+          add edge from function to return type
+  remove all function-function edges
+
+function analysis should yield the return type in terms of the params or constant/static/local objects.
+this template must be in terms of calls, property accesses, unions, and references, to params.
+this template can then hydrated by the caller, passing in arguments to be substituted into the template
+
+visit non recursive paths(no cycles). then propagate that return value through the cyclic paths until fixed point
+
+backwards flow, from leafs inwards
+
+convert return type into a finite state machine of transforms/accesses on the params.
+this can then be executed against the arguments at call time.
+e.g.
+function foo(arg) {
+  if (cond1) {
+    return foo(arg).prop1;
+  } else if (cond2) {
+    return foo(arg).prop2;
+  } else {
+    return arg.prop3;
+  }
+}
+foo could return the value of a any property chain in arg consisting of "prop3" followed by 0 or more "prop1" or "prop2".
+e.g. arg.prop3.prop1.prop1 or arg.prop3 or arg.prop2.prop1.prop2
+
+start at each leaf (should be a param placeholder), try to match. need to find all matchings, so don't
+stop after first match, keep going until no matched possible. at a fork (>1 out edges), fork execution and match all branches
+
+
+for writes to params,union the prop assignments for the param at each return site..
+
+at a call, return "call" type and record the cfg node under the call. Then, when the 'call' type is resolved,
+the call site cfg nodes can be added to the dataflow analysis work queue, and a re-analysis computed.
+this should propagate the new side effects and return type forwards.
+
+maybe have separate analyses for global and each function, so its easier to "call" them
+
+
+todo: computed props aren't really visited/analysed
+
+
+allow each out edge to be traversed n times per path, where n is the in-degree of the node
+
+don't add outdated dependants to call queue. When we pop and process a call, remove outdated dependednts
+
+create DAG by compressing SCCs. Then use (presumable existing) algorithms to process DAG in parallel.
+One 'lower' nodes have been processed, they never need to be touched again, and their resources can be freed/reused
+
+if a function invalidates all of its arguments, we don't need to 
+
+
+TODO: store list of calls with "invalidated return types", which may open up simplifications/work skipping.
+
+Current best typescript.js output size: 8,089,763 bytes
+
+before:
+8,089,763 bytes
+after:
+8,089,729 bytes
+
+
+Sub and super type relation graph. Built-ins are represented as invalid objects (so their props aren't changed).
+Instances of these built-ins (such as number literals) are their own objects that are a subtype of the built-in.
