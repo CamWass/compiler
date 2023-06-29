@@ -50,6 +50,7 @@ use crate::resolver::resolver;
 use crate::visit::{Visit, VisitWith};
 use atoms::JsWord;
 pub use checker::Checker;
+use colors::color_registry::ColorRegistry;
 use ecma_visit::VisitMutWith;
 use global_common::{Globals, Mark, SyntaxContext, GLOBALS};
 use serde::Deserialize;
@@ -136,6 +137,8 @@ pub struct PassConfig {
     pub rename_vars: bool,
     #[serde(default)]
     pub rename_labels: bool,
+    #[serde(default)]
+    pub optimize_properties: bool,
 }
 
 pub struct Compiler {
@@ -170,9 +173,9 @@ impl Compiler {
             // TODO: maybe add an 'AST verifier' that checks basic invariants after
             // each pass (e.g. that no two nodes have the same node_id).
 
-            let mut program_ast = program.1;
+            let mut ast = program.1;
 
-            normalize_properties::normalize_properties(&mut program_ast, node_id_gen);
+            normalize_properties::normalize_properties(&mut ast, node_id_gen);
 
             let needs_colors = passes.disambiguate_properties || passes.ambiguate_properties;
             let mut colours = if needs_colors {
@@ -180,7 +183,7 @@ impl Compiler {
 
                 let program_source_file = SourceFile {
                     file_name: program.0,
-                    program: local_ast::convert::convert_program(program_ast.clone()),
+                    program: local_ast::convert::convert_program(ast.clone()),
                     jsGlobalAugmentations: Default::default(),
                 };
                 source_files.push(program_source_file.clone());
@@ -224,95 +227,58 @@ impl Compiler {
             let unresolved_mark = Mark::new();
             let top_level_mark = Mark::new();
 
-            program_ast.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark, true));
+            ast.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark, true));
 
-            normalize::normalize(&mut program_ast, node_id_gen);
+            normalize::normalize(&mut ast, node_id_gen);
 
-            transform_ts::transform_param_props(&mut program_ast, node_id_gen, colours.as_mut());
+            transform_ts::transform_param_props(&mut ast, node_id_gen, colours.as_mut());
 
             let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 
-            optimize_properties2::process(&mut program_ast, node_id_gen, unresolved_ctxt);
+            optimise(&mut ast, passes, node_id_gen, &mut colours, unresolved_ctxt);
 
-            if passes.optimize_arguments_array {
-                OptimizeArgumentsArray::OptimizeArgumentsArray::process(
-                    &mut program_ast,
-                    node_id_gen,
-                    unresolved_ctxt,
-                );
-            }
+            finalise(&mut ast, passes, node_id_gen, &mut colours, unresolved_ctxt);
 
-            // TODO: inlineAndCollapseProperties
-
-            // TODO: inferConsts
-
-            // TODO: earlyInlineVariables
-            // TODO: earlyPeepholeOptimizations
-
-            // TODO: removeUnusedCodeOnce
-
-            if passes.disambiguate_properties {
-                disambiguate::DisambiguateProperties::DisambiguateProperties::process(
-                    &mut program_ast,
-                    colours.as_mut().unwrap(),
-                );
-            }
-
-            // TODO: markPureFunctions
-
-            getEarlyOptimizationLoopPasses(&mut program_ast);
-
-            // TODO: crossModuleCodeMotion
-            // TODO: devirtualizeMethods
-            // TODO: flowSensitiveInlineVariables
-            getMainOptimizationLoop(&mut program_ast);
-
-            // Finalizations:
-
-            // TODO: flowSensitiveInlineVariables
-            // TODO: removeUnusedCodeOnce
-            // TODO: crossModuleCodeMotion
-            // TODO: crossModuleMethodMotion
-            // TODO: optimizeConstructors
-            // TODO: collapseAnonymousFunctions
-
-            if passes.ambiguate_properties {
-                disambiguate::AmbiguateProperties::AmbiguateProperties::process(
-                    &mut program_ast,
-                    colours.as_mut().unwrap(),
-                );
-            }
-
-            // TODO: renameProperties
-            // TODO: convertToDottedProperties
-            // TODO: rewriteFunctionExpressions
-            // TODO: aliasStrings
-            if passes.coalesce_variable_names {
-                CoalesceVariableNames::coalesce_variable_names(
-                    &mut program_ast,
-                    unresolved_ctxt,
-                    node_id_gen,
-                );
-            }
-            // TODO: coalesceVariableNames
-            // TODO: peepholeOptimizationsOnce
-            // TODO: exploitAssign
-            // TODO: collapseVariableDeclarations
-            denormalize::denormalize(&mut program_ast);
-            if passes.rename_vars {
-                RenameVars::rename_vars(&mut program_ast, unresolved_ctxt);
-            }
-
-            if passes.rename_labels {
-                RenameLabels::process(&mut program_ast);
-            }
-
-            // TODO: latePeepholeOptimizations
-            // TODO: optimizeToEs6
-
-            program_ast
+            ast
         })
     }
+}
+
+fn optimise(
+    ast: &mut ::ast::Program,
+    passes: PassConfig,
+    node_id_gen: &mut ::ast::NodeIdGen,
+    colours: &mut Option<ColorRegistry>,
+    unresolved_ctxt: SyntaxContext,
+) {
+    if passes.optimize_arguments_array {
+        OptimizeArgumentsArray::OptimizeArgumentsArray::process(ast, node_id_gen, unresolved_ctxt);
+    }
+
+    // TODO: inlineAndCollapseProperties
+
+    // TODO: inferConsts
+
+    // TODO: earlyInlineVariables
+    // TODO: earlyPeepholeOptimizations
+
+    // TODO: removeUnusedCodeOnce
+
+    if passes.disambiguate_properties {
+        disambiguate::DisambiguateProperties::DisambiguateProperties::process(
+            ast,
+            colours.as_mut().unwrap(),
+        );
+    }
+
+    // TODO: markPureFunctions
+
+    getEarlyOptimizationLoopPasses(ast);
+
+    // TODO: crossModuleCodeMotion
+    // TODO: devirtualizeMethods
+    // TODO: flowSensitiveInlineVariables
+    getMainOptimizationLoop(ast);
 }
 
 fn getEarlyOptimizationLoopPasses(ast: &mut ::ast::Program) {
@@ -335,6 +301,55 @@ fn getMainOptimizationLoop(ast: &mut ::ast::Program) {
     // TODO: removeUnusedCode
     // TODO: peepholeOptimizations
     // TODO: removeUnreachableCode
+}
+
+fn finalise(
+    ast: &mut ::ast::Program,
+    passes: PassConfig,
+    node_id_gen: &mut ::ast::NodeIdGen,
+    colours: &mut Option<ColorRegistry>,
+    unresolved_ctxt: SyntaxContext,
+) {
+    // TODO: flowSensitiveInlineVariables
+    // TODO: removeUnusedCodeOnce
+    // TODO: crossModuleCodeMotion
+    // TODO: crossModuleMethodMotion
+    // TODO: optimizeConstructors
+    // TODO: collapseAnonymousFunctions
+
+    if passes.ambiguate_properties {
+        disambiguate::AmbiguateProperties::AmbiguateProperties::process(
+            ast,
+            colours.as_mut().unwrap(),
+        );
+    }
+
+    if passes.optimize_properties {
+        optimize_properties2::process(ast, node_id_gen, unresolved_ctxt);
+    }
+
+    // TODO: renameProperties
+    // TODO: convertToDottedProperties
+    // TODO: rewriteFunctionExpressions
+    // TODO: aliasStrings
+    if passes.coalesce_variable_names {
+        CoalesceVariableNames::coalesce_variable_names(ast, unresolved_ctxt, node_id_gen);
+    }
+    // TODO: coalesceVariableNames
+    // TODO: peepholeOptimizationsOnce
+    // TODO: exploitAssign
+    // TODO: collapseVariableDeclarations
+    denormalize::denormalize(ast);
+    if passes.rename_vars {
+        RenameVars::rename_vars(ast, unresolved_ctxt);
+    }
+
+    if passes.rename_labels {
+        RenameLabels::process(ast);
+    }
+
+    // TODO: latePeepholeOptimizations
+    // TODO: optimizeToEs6
 }
 
 #[derive(Default)]
