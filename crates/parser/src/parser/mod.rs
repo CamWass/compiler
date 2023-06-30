@@ -8,6 +8,7 @@ mod jsx;
 mod object;
 mod pat;
 mod statement;
+pub mod strip;
 mod typescript;
 mod util;
 

@@ -1,10 +1,4 @@
-use crate::{
-    class::Decorator,
-    pat::Pat,
-    stmt::BlockStmt,
-    typescript::{TsParamProp, TsTypeAnn, TsTypeParamDecl},
-    GetNodeId, NodeId,
-};
+use crate::{class::Decorator, pat::Pat, stmt::BlockStmt, GetNodeId, NodeId};
 use ast_node::ast_node;
 use global_common::{EqIgnoreSpan, Span};
 
@@ -27,10 +21,6 @@ pub struct Function {
 
     /// if it's an async function.
     pub is_async: bool,
-
-    pub type_params: Option<Vec<TsTypeParamDecl>>,
-
-    pub return_type: Option<TsTypeAnn>,
 }
 
 #[ast_node]
@@ -56,11 +46,4 @@ impl ParamWithoutDecorators {
     pub fn from_pat(pat: Pat, node_id: NodeId) -> Self {
         Self { node_id, pat }
     }
-}
-
-#[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
-pub enum ParamOrTsParamProp {
-    TsParamProp(TsParamProp),
-    Param(Param),
 }

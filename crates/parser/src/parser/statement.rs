@@ -220,10 +220,11 @@ impl<I: Tokens> Parser<I> {
         if self.input.syntax().typescript() && is!(self, "const") && peeked_is!(self, "enum") {
             self.assert_and_bump(&tok!("const"));
             self.assert_and_bump(&tok!("enum"));
-            return self
-                .parse_ts_enum_decl(start, true)
-                .map(Decl::from)
-                .map(Stmt::from);
+            self.parse_ts_enum_decl(start, true)?;
+            return Ok(Stmt::Empty(EmptyStmt {
+                node_id: node_id!(self),
+                span: span!(self, start),
+            }));
         }
 
         match cur!(self, true)? {
@@ -450,10 +451,11 @@ impl<I: Tokens> Parser<I> {
                     js_word!("public") | js_word!("static") | js_word!("abstract") => {
                         if eat!(self, "interface") {
                             self.emit_err(i.span, SyntaxError::TS2427);
-                            return self
-                                .parse_ts_interface_decl(start)
-                                .map(Decl::from)
-                                .map(Stmt::from);
+                            self.parse_ts_interface_decl(start)?;
+                            return Ok(Stmt::Empty(EmptyStmt {
+                                node_id: node_id!(self),
+                                span: span!(self, start),
+                            }));
                         }
                     }
                     _ => {}
@@ -644,20 +646,21 @@ impl<I: Tokens> Parser<I> {
                     }
 
                     if self.syntax().typescript() {
-                        let type_ann = match decl.decls[0].name {
-                            Pat::Ident(ref v) => Some(&v.type_ann),
-                            Pat::Array(ref v) => Some(&v.type_ann),
-                            Pat::Assign(ref v) => Some(&v.type_ann),
-                            Pat::Rest(ref v) => Some(&v.type_ann),
-                            Pat::Object(ref v) => Some(&v.type_ann),
-                            _ => None,
-                        };
+                        // todo!();
+                        // let type_ann = match decl.decls[0].name {
+                        //     Pat::Ident(ref v) => Some(&v.type_ann),
+                        //     Pat::Array(ref v) => Some(&v.type_ann),
+                        //     Pat::Assign(ref v) => Some(&v.type_ann),
+                        //     Pat::Rest(ref v) => Some(&v.type_ann),
+                        //     Pat::Object(ref v) => Some(&v.type_ann),
+                        //     _ => None,
+                        // };
 
-                        if let Some(type_ann) = type_ann {
-                            if type_ann.is_some() {
-                                self.emit_err(decl.decls[0].name.span(), SyntaxError::TS2483);
-                            }
-                        }
+                        // if let Some(type_ann) = type_ann {
+                        //     if type_ann.is_some() {
+                        //         self.emit_err(decl.decls[0].name.span(), SyntaxError::TS2483);
+                        //     }
+                        // }
                     }
                 }
 
@@ -964,22 +967,6 @@ impl<I: Tokens> Parser<I> {
                     .with_ctx(ctx)
                     .parse_with(|parser| parser.parse_ts_type())?;
                 // self.emit_err(ty.span(), SyntaxError::TS1196);
-
-                match &mut pat {
-                    Pat::Ident(BindingIdent { type_ann, .. })
-                    | Pat::Array(ArrayPat { type_ann, .. })
-                    | Pat::Rest(RestPat { type_ann, .. })
-                    | Pat::Object(ObjectPat { type_ann, .. })
-                    | Pat::Assign(AssignPat { type_ann, .. }) => {
-                        *type_ann = Some(TsTypeAnn {
-                            node_id: node_id!(self),
-                            span: span!(self, type_ann_start),
-                            type_ann: ty,
-                        });
-                    }
-                    Pat::Invalid(_) => {}
-                    Pat::Expr(_) => {}
-                }
             }
             expect!(self, ')');
             Ok(Some(pat))
@@ -1025,7 +1012,6 @@ impl<I: Tokens> Parser<I> {
                         node_id: node_id!(self),
                         span: span!(self, start),
                         kind,
-                        declare: false,
                         decls: vec![],
                     });
                 }
@@ -1081,7 +1067,6 @@ impl<I: Tokens> Parser<I> {
         Ok(VarDecl {
             node_id: node_id!(self),
             span: span!(self, start),
-            declare: false,
             kind,
             decls,
         })
@@ -1104,26 +1089,6 @@ impl<I: Tokens> Parser<I> {
         // Typescript extension
         if self.input.syntax().typescript() && is!(self, ':') {
             let type_annotation = self.try_parse_ts_type_ann()?;
-            match name {
-                Pat::Array(ArrayPat {
-                    ref mut type_ann, ..
-                })
-                | Pat::Assign(AssignPat {
-                    ref mut type_ann, ..
-                })
-                | Pat::Ident(BindingIdent {
-                    ref mut type_ann, ..
-                })
-                | Pat::Object(ObjectPat {
-                    ref mut type_ann, ..
-                })
-                | Pat::Rest(RestPat {
-                    ref mut type_ann, ..
-                }) => {
-                    *type_ann = type_annotation;
-                }
-                _ => unreachable!("invalid syntax: Pat: {:?}", name),
-            }
         }
 
         //FIXME(swc): This is wrong. Should check in/of only on first loop.
@@ -1157,7 +1122,6 @@ impl<I: Tokens> Parser<I> {
             span: span!(self, start),
             name,
             init,
-            definite,
         })
     }
 

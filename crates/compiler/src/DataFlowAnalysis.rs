@@ -2,7 +2,7 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 use std::{collections::BTreeSet, ops::Index};
 
-use ecma_visit::{noop_visit_type, Visit, VisitWith};
+use ecma_visit::{Visit, VisitWith};
 use index::newtype_index;
 use petgraph::{
     graph::{EdgeIndex, NodeIndex},
@@ -508,8 +508,6 @@ macro_rules! visit_fn {
 }
 
 impl<'ast, 'a> Visit<'ast> for EscapedVarFinder<'a> {
-    noop_visit_type!();
-
     // Only search for references in nested functions.
     visit_fn!(visit_function, Function);
     visit_fn!(visit_constructor, Constructor);
@@ -523,8 +521,6 @@ struct RefFinder<'a> {
 }
 
 impl<'ast, 'a> Visit<'ast> for RefFinder<'a> {
-    noop_visit_type!();
-
     fn visit_ident(&mut self, node: &'ast ast::Ident) {
         let id = node.to_id();
         if self.allVarsInFn.contains_key(&id) {

@@ -1,7 +1,7 @@
 use crate::{Id, ToId};
 use ast;
 use atoms::{js_word, JsWord};
-use ecma_visit::{noop_visit_type, Visit, VisitMut, VisitMutWith, VisitWith};
+use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use global_common::{SyntaxContext, DUMMY_SP};
 use std::collections::BTreeMap;
 use std::iter::FromIterator;
@@ -20,7 +20,6 @@ macro_rules! ident {
             node_id: $id,
             span: ::global_common::DUMMY_SP.with_ctxt($syntax_ctxt),
             sym: $sym,
-            optional: false,
         }
     };
 }
@@ -114,7 +113,6 @@ impl OptimizeArgumentsArray<'_> {
     fn try_replace_arguments<T>(&mut self, func: &mut T)
     where
         T: AsFn,
-        <T as AsFn>::Param: FromId,
     {
         // The number of parameters that can be accessed without using `arguments`.
         let highest_index = if func.get_params().len() == 0 {
@@ -164,46 +162,32 @@ impl OptimizeArgumentsArray<'_> {
     ///
     /// `arg_names` - maps param index to param name, if the param with that index has a name.
     /// `param_list` - the list of params to modify.
-    fn append_new_params<P>(&mut self, arg_names: &BTreeMap<usize, Id>, param_list: &mut Vec<P>)
-    where
-        P: FromId,
-    {
+    fn append_new_params(
+        &mut self,
+        arg_names: &BTreeMap<usize, Id>,
+        param_list: &mut Vec<ast::Param>,
+    ) {
         let new_params = arg_names
             .range(param_list.len()..)
-            .map(|(_, id)| P::from_id(id, self.node_id_gen));
+            .map(|(_, id)| from_id(id, self.node_id_gen));
         param_list.extend(new_params);
     }
 }
 
-trait FromId {
-    /// Creates a new param from the provided `Id`.
-    fn from_id(id: &Id, node_id_gen: &mut ast::NodeIdGen) -> Self;
-}
-
-impl FromId for ast::Param {
-    fn from_id((sym, ctxt): &Id, node_id_gen: &mut ast::NodeIdGen) -> Self {
-        ast::Param {
+/// Creates a new param from the provided `Id`.
+fn from_id((sym, ctxt): &Id, node_id_gen: &mut ast::NodeIdGen) -> ast::Param {
+    ast::Param {
+        node_id: node_id_gen.next(),
+        span: DUMMY_SP,
+        decorators: Default::default(),
+        pat: ast::Pat::Ident(ast::BindingIdent {
             node_id: node_id_gen.next(),
-            span: DUMMY_SP,
-            decorators: Default::default(),
-            pat: ast::Pat::Ident(ast::BindingIdent {
-                node_id: node_id_gen.next(),
-                id: ident!(sym.clone(), *ctxt, node_id_gen.next()),
-                type_ann: None,
-            }),
-        }
-    }
-}
-
-impl FromId for ast::ParamOrTsParamProp {
-    fn from_id(id: &Id, node_id_gen: &mut ast::NodeIdGen) -> Self {
-        ast::ParamOrTsParamProp::Param(ast::Param::from_id(id, node_id_gen))
+            id: ident!(sym.clone(), *ctxt, node_id_gen.next()),
+        }),
     }
 }
 
 trait AsFn {
-    type Param;
-
     /// Generates a map from argument indices to parameter names.
     ///
     /// A map is used because the sequence may be sparse in the case that there is an
@@ -213,13 +197,11 @@ trait AsFn {
     /// `max_count` - The maximum number of argument names in the returned map.
     fn assemble_param_names(&self, max_count: usize) -> BTreeMap<usize, Id>;
 
-    fn get_params(&mut self) -> &mut Vec<Self::Param>;
+    fn get_params(&mut self) -> &mut Vec<ast::Param>;
     fn get_body(&mut self) -> &mut Option<ast::BlockStmt>;
 }
 
 impl AsFn for ast::Function {
-    type Param = ast::Param;
-
     fn assemble_param_names(&self, max_count: usize) -> BTreeMap<usize, Id> {
         let mut map = BTreeMap::new();
         let mut index = 0;
@@ -253,7 +235,7 @@ impl AsFn for ast::Function {
         map
     }
 
-    fn get_params(&mut self) -> &mut Vec<Self::Param> {
+    fn get_params(&mut self) -> &mut Vec<ast::Param> {
         &mut self.params
     }
     fn get_body(&mut self) -> &mut Option<ast::BlockStmt> {
@@ -262,34 +244,23 @@ impl AsFn for ast::Function {
 }
 
 impl AsFn for ast::Constructor {
-    type Param = ast::ParamOrTsParamProp;
-
     fn assemble_param_names(&self, max_count: usize) -> BTreeMap<usize, Id> {
         let mut map = BTreeMap::new();
         let mut index = 0;
 
         // Collect all existing param names first...
         for param in &self.params {
-            match param {
-                ast::ParamOrTsParamProp::TsParamProp(n) => match &n.param {
-                    ast::TsParamPropParam::Ident(n) => {
-                        map.insert(index, n.to_id());
-                    }
-                    // `arguments` doesn't consider default values. It holds exactly the provided args.
-                    ast::TsParamPropParam::Assign(_) => {}
-                },
-                ast::ParamOrTsParamProp::Param(n) => match &n.pat {
-                    ast::Pat::Ident(n) => {
-                        map.insert(index, n.to_id());
-                    }
-                    // Array and object patterns have no names to substitute into the body.
-                    ast::Pat::Array(_) | ast::Pat::Object(_) => {}
-                    // `arguments` doesn't consider default values. It holds exactly the provided args.
-                    ast::Pat::Assign(_) => {}
-                    // Can't add params after a rest param.
-                    ast::Pat::Rest(_) => return map,
-                    ast::Pat::Invalid(_) | ast::Pat::Expr(_) => unreachable!(),
-                },
+            match &param.pat {
+                ast::Pat::Ident(n) => {
+                    map.insert(index, n.to_id());
+                }
+                // Array and object patterns have no names to substitute into the body.
+                ast::Pat::Array(_) | ast::Pat::Object(_) => {}
+                // `arguments` doesn't consider default values. It holds exactly the provided args.
+                ast::Pat::Assign(_) => {}
+                // Can't add params after a rest param.
+                ast::Pat::Rest(_) => return map,
+                ast::Pat::Invalid(_) | ast::Pat::Expr(_) => unreachable!(),
             }
 
             index += 1;
@@ -306,7 +277,7 @@ impl AsFn for ast::Constructor {
         map
     }
 
-    fn get_params(&mut self) -> &mut Vec<Self::Param> {
+    fn get_params(&mut self) -> &mut Vec<ast::Param> {
         &mut self.params
     }
     fn get_body(&mut self) -> &mut Option<ast::BlockStmt> {
@@ -417,8 +388,6 @@ impl FnBodyVisitor {
 }
 
 impl Visit<'_> for FnBodyVisitor {
-    noop_visit_type!();
-
     // Don't visit nested functions.
     fn visit_function(&mut self, _: &ast::Function) {}
     fn visit_getter_prop(&mut self, _: &ast::GetterProp) {}
@@ -549,7 +518,7 @@ mod tests {
                 let unresolved_mark = Mark::new();
                 let top_level_mark = Mark::new();
 
-                program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark, true));
+                program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark));
 
                 let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 

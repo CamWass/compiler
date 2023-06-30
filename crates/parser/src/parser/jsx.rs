@@ -233,7 +233,6 @@ impl<I: Tokens> Parser<I> {
             name,
             attrs,
             self_closing,
-            type_args,
         })
     }
 

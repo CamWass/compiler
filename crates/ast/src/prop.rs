@@ -4,7 +4,6 @@ use crate::{
     ident::Ident,
     lit::{Number, Str},
     stmt::BlockStmt,
-    typescript::TsTypeAnn,
     GetNodeId, NodeId, ParamWithoutDecorators,
 };
 use ast_node::ast_node;
@@ -39,7 +38,6 @@ impl Take for Prop {
             node_id: NodeId::DUMMY,
             span: DUMMY_SP,
             sym: js_word!(""),
-            optional: false,
         })
     }
 }
@@ -74,7 +72,6 @@ pub struct GetterProp {
 
     pub span: Span,
     pub key: PropName,
-    pub type_ann: Option<TsTypeAnn>,
     pub body: Option<BlockStmt>,
 }
 #[ast_node]

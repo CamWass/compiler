@@ -1,11 +1,5 @@
 use crate::{
-    class::Class,
-    expr::Expr,
-    function::Function,
-    ident::Ident,
-    pat::Pat,
-    typescript::{TsEnumDecl, TsInterfaceDecl, TsModuleDecl, TsTypeAliasDecl},
-    GetNodeId, NodeId,
+    class::Class, expr::Expr, function::Function, ident::Ident, pat::Pat, GetNodeId, NodeId,
 };
 use ast_node::ast_node;
 use global_common::{EqIgnoreSpan, Span};
@@ -17,10 +11,6 @@ pub enum Decl {
     Class(ClassDecl),
     Fn(FnDecl),
     Var(VarDecl),
-    TsInterface(TsInterfaceDecl),
-    TsTypeAlias(TsTypeAliasDecl),
-    TsEnum(TsEnumDecl),
-    TsModule(TsModuleDecl),
 }
 
 #[ast_node]
@@ -29,8 +19,6 @@ pub struct FnDecl {
     pub node_id: NodeId,
 
     pub ident: Ident,
-
-    pub declare: bool,
 
     #[span]
     pub function: Function,
@@ -42,8 +30,6 @@ pub struct ClassDecl {
     pub node_id: NodeId,
 
     pub ident: Ident,
-
-    pub declare: bool,
 
     #[span]
     pub class: Class,
@@ -57,8 +43,6 @@ pub struct VarDecl {
     pub span: Span,
 
     pub kind: VarDeclKind,
-
-    pub declare: bool,
 
     pub decls: Vec<VarDeclarator>,
 }
@@ -84,7 +68,4 @@ pub struct VarDeclarator {
 
     /// Initialization expression.
     pub init: Option<Box<Expr>>,
-
-    /// Typescript only
-    pub definite: bool,
 }

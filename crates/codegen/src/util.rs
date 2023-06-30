@@ -221,13 +221,6 @@ impl StartsWithAlphaNum for Expr {
             Expr::JSXNamespacedName(..) => true,
             Expr::JSXMember(..) => true,
 
-            Expr::TsTypeAssertion(..) => false,
-            Expr::TsNonNull(TsNonNullExpr { ref expr, .. })
-            | Expr::TsAs(TsAsExpr { ref expr, .. })
-            | Expr::TsConstAssertion(TsConstAssertion { ref expr, .. }) => {
-                expr.starts_with_alpha_num()
-            }
-
             Expr::OptChain(ref e) => e.expr.starts_with_alpha_num(),
 
             Expr::Invalid(..) => true,
@@ -300,13 +293,7 @@ impl StartsWithAlphaNum for Stmt {
 impl StartsWithAlphaNum for Decl {
     fn starts_with_alpha_num(&self) -> bool {
         match *self {
-            Decl::Class(..)
-            | Decl::Fn(..)
-            | Decl::Var(..)
-            | Decl::TsEnum(..)
-            | Decl::TsInterface(..)
-            | Decl::TsModule(..)
-            | Decl::TsTypeAlias(..) => true,
+            Decl::Class(..) | Decl::Fn(..) | Decl::Var(..) => true,
         }
     }
 }

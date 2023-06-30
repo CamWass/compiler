@@ -1,5 +1,5 @@
 use ast::*;
-use ecma_visit::{noop_visit_mut_type, VisitMut, VisitMutWith};
+use ecma_visit::{VisitMut, VisitMutWith};
 use global_common::{util::take::Take, DUMMY_SP};
 
 use crate::utils::unwrap_as;
@@ -85,7 +85,6 @@ impl VisitMut<'_> for NormalizeAssignShorthand<'_> {
                     node_id: self.node_id_gen.next(),
                     span: lhs_ident.span,
                     sym: lhs_ident.sym.clone(),
-                    optional: false,
                 })),
                 right: Box::new(right),
             })
@@ -225,8 +224,6 @@ struct VarSplitter<'a> {
 }
 
 impl VisitMut<'_> for VarSplitter<'_> {
-    noop_visit_mut_type!();
-
     // Handle statement lists: If a var stmt has multiple declarations, we replace
     // it with a new stmt for each declaration. E.g. `let a, b;` -> `let a; let b`;
 
@@ -239,7 +236,6 @@ impl VisitMut<'_> for VarSplitter<'_> {
                 let stmt = stmts.remove(i);
                 let var = unwrap_as!(stmt, Stmt::Decl(Decl::Var(v)), v);
                 let kind = var.kind;
-                let declare = var.declare;
                 let num_decls = var.decls.len();
                 // Insert the new statements at the index of the old one to preserve ordering.
                 stmts.splice(
@@ -249,7 +245,6 @@ impl VisitMut<'_> for VarSplitter<'_> {
                             node_id: self.node_id_gen.next(),
                             span: DUMMY_SP,
                             kind,
-                            declare,
                             decls: vec![decl],
                         }))
                     }),
@@ -271,7 +266,6 @@ impl VisitMut<'_> for VarSplitter<'_> {
                 let stmt = items.remove(i);
                 let var = unwrap_as!(stmt, ModuleItem::Stmt(Stmt::Decl(Decl::Var(v))), v);
                 let kind = var.kind;
-                let declare = var.declare;
                 let num_decls = var.decls.len();
                 items.splice(
                     i..i,
@@ -280,7 +274,6 @@ impl VisitMut<'_> for VarSplitter<'_> {
                             node_id: self.node_id_gen.next(),
                             span: DUMMY_SP,
                             kind,
-                            declare,
                             decls: vec![decl],
                         })))
                     }),

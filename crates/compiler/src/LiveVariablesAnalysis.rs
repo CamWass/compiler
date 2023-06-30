@@ -2,7 +2,7 @@ use std::ops::Index;
 
 use ast::*;
 use atoms::js_word;
-use ecma_visit::{noop_visit_type, Visit, VisitWith};
+use ecma_visit::{Visit, VisitWith};
 use global_common::SyntaxContext;
 use index::{bit_set::BitSet, vec::IndexVec};
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -242,8 +242,6 @@ impl<'a, 'b, 'ast, T> Visit<'ast> for GenKillComputer<'ast, 'a, 'b, T>
 where
     T: FunctionLike<'a>,
 {
-    noop_visit_type!();
-
     // Don't enter any new control nodes. They will be handled by later.
     fn visit_block_stmt(&mut self, node: &'ast BlockStmt) {}
     fn visit_for_stmt(&mut self, node: &'ast ForStmt) {

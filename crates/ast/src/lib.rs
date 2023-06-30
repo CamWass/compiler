@@ -16,7 +16,7 @@ pub use self::{
         ObjectLit, OptChainExpr, ParenExpr, PatOrExpr, SeqExpr, SpreadElement, Super, TaggedTpl,
         ThisExpr, Tpl, TplElement, UnaryExpr, UpdateExpr, YieldExpr,
     },
-    function::{Function, Param, ParamOrTsParamProp, ParamWithoutDecorators},
+    function::{Function, Param, ParamWithoutDecorators},
     ident::{BindingIdent, Ident, IdentExt, PrivateName},
     jsx::{
         JSXAttr, JSXAttrName, JSXAttrOrSpread, JSXAttrValue, JSXClosingElement, JSXClosingFragment,
@@ -45,22 +45,6 @@ pub use self::{
         ExprStmt, ForInStmt, ForOfStmt, ForStmt, IfStmt, LabeledStmt, ReturnStmt, Stmt, SwitchCase,
         SwitchStmt, ThrowStmt, TryStmt, VarDeclOrExpr, VarDeclOrPat, WhileStmt, WithStmt,
     },
-    typescript::{
-        Accessibility, TruePlusMinus, TsAmbientParam, TsAmbientParamPat, TsArrayType, TsAsExpr,
-        TsCallSignatureDecl, TsConditionalType, TsConstAssertion, TsConstructSignatureDecl,
-        TsConstructorType, TsEntityName, TsEnumDecl, TsEnumMember, TsEnumMemberId,
-        TsExportAssignment, TsExprWithTypeArgs, TsExternalModuleRef, TsFnOrConstructorType,
-        TsFnType, TsGetterSignature, TsImportEqualsDecl, TsImportType, TsIndexSignature,
-        TsIndexedAccessType, TsInferType, TsInterfaceBody, TsInterfaceDecl, TsIntersectionType,
-        TsKeywordType, TsKeywordTypeKind, TsLit, TsLitType, TsMappedType, TsMethodSignature,
-        TsModuleBlock, TsModuleDecl, TsModuleName, TsModuleRef, TsNamespaceBody, TsNamespaceDecl,
-        TsNamespaceExportDecl, TsNonNullExpr, TsOptionalType, TsParamProp, TsParamPropParam,
-        TsParenthesizedType, TsPropertySignature, TsQualifiedName, TsRestType, TsSetterSignature,
-        TsThisType, TsThisTypeOrIdent, TsTplLitType, TsTupleElement, TsTupleType, TsType,
-        TsTypeAliasDecl, TsTypeAnn, TsTypeAssertion, TsTypeElement, TsTypeLit, TsTypeOperator,
-        TsTypeOperatorOp, TsTypeParamDecl, TsTypeParamInstantiation, TsTypePredicate, TsTypeQuery,
-        TsTypeQueryExpr, TsTypeRef, TsUnionOrIntersectionType, TsUnionType,
-    },
 };
 use ast_node::ast_node;
 use global_common::{EqIgnoreSpan, Span};
@@ -80,7 +64,6 @@ mod operators;
 mod pat;
 mod prop;
 mod stmt;
-mod typescript;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, EqIgnoreSpan, Debug)]
 pub struct NodeId(u32);

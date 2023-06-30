@@ -2,7 +2,6 @@ use crate::{
     expr::{Expr, SpreadElement},
     ident::Ident,
     lit::Lit,
-    typescript::TsTypeParamInstantiation,
     GetNodeId, NodeId,
 };
 use ast_node::ast_node;
@@ -98,10 +97,6 @@ pub struct JSXOpeningElement {
     pub attrs: Vec<JSXAttrOrSpread>,
 
     pub self_closing: bool,
-
-    /// Note: This field's name is different from one from babel because it is
-    /// misleading
-    pub type_args: Option<TsTypeParamInstantiation>,
 }
 
 #[ast_node]

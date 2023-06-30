@@ -10,7 +10,6 @@ impl<I: Tokens> Parser<I> {
             node_id: node_id!(self),
             span,
             sym,
-            optional: false,
         }
     }
 

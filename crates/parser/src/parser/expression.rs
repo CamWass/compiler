@@ -94,13 +94,8 @@ impl<I: Tokens> Parser<I> {
                 let type_parameters = p.parse_ts_type_params()?;
                 let mut arrow = p.parse_assignment_expr_base()?;
                 match *arrow {
-                    Expr::Arrow(ArrowExpr {
-                        ref mut span,
-                        ref mut type_params,
-                        ..
-                    }) => {
+                    Expr::Arrow(ArrowExpr { ref mut span, .. }) => {
                         *span = Span::new(start, span.hi, Default::default());
-                        *type_params = Some(type_parameters);
                     }
                     _ => unexpected!(p, "("),
                 }
@@ -392,8 +387,6 @@ impl<I: Tokens> Parser<I> {
                     body,
                     params,
                     is_async: true,
-                    return_type: None,
-                    type_params: None,
                 })));
             } else if can_be_arrow
                 && !self.input.had_line_break_before_cur()
@@ -411,10 +404,6 @@ impl<I: Tokens> Parser<I> {
                     body,
                     params,
                     is_async: false,
-                    // TODO(swc):
-                    return_type: None,
-                    // TODO(swc):
-                    type_params: None,
                 })));
             } else {
                 return Ok(Box::new(Expr::Ident(id)));
@@ -525,14 +514,7 @@ impl<I: Tokens> Parser<I> {
                     ExprOrSuper::Super(..) => unimplemented!("super!"),
                     ExprOrSuper::Expr(expr) => expr,
                 };
-                return Ok((
-                    Box::new(Expr::TsNonNull(TsNonNullExpr {
-                        node_id: node_id!(self),
-                        span: span!(self, start),
-                        expr,
-                    })),
-                    true,
-                ));
+                return Ok((expr, true));
             }
 
             // super() cannot be generic
@@ -569,19 +551,15 @@ impl<I: Tokens> Parser<I> {
                                 node_id: node_id!(p),
                                 span: span!(p, start),
                                 callee: obj_ref.clone(),
-                                type_args: Some(type_args),
                                 args,
                             })),
                             true,
                         )))
                     } else if is!(p, '`') {
-                        p.parse_tagged_tpl(
-                            match *obj_ref {
-                                ExprOrSuper::Expr(ref obj) => obj.clone(),
-                                _ => unreachable!(),
-                            },
-                            Some(type_args),
-                        )
+                        p.parse_tagged_tpl(match *obj_ref {
+                            ExprOrSuper::Expr(ref obj) => obj.clone(),
+                            _ => unreachable!(),
+                        })
                         .map(|expr| (Box::new(Expr::TaggedTpl(expr)), true))
                         .map(Some)
                     } else if no_call {
@@ -658,7 +636,6 @@ impl<I: Tokens> Parser<I> {
                     span: span!(self, start),
                     callee: obj,
                     args,
-                    type_args: None,
                 }))),
                 true,
             ));
@@ -692,7 +669,7 @@ impl<I: Tokens> Parser<I> {
             ExprOrSuper::Expr(expr) => {
                 // MemberExpression[?Yield, ?Await] TemplateLiteral[?Yield, ?Await, +Tagged]
                 if is!(self, '`') {
-                    let tpl = self.parse_tagged_tpl(expr, None)?;
+                    let tpl = self.parse_tagged_tpl(expr)?;
                     return Ok((Box::new(Expr::TaggedTpl(tpl)), true));
                 }
 
@@ -782,7 +759,7 @@ impl<I: Tokens> Parser<I> {
                 !self.input.is(&tok!('(')),
                 "parse_new_expr() should eat paren if it exists"
             );
-            return Ok(Box::new(Expr::New(NewExpr { type_args, ..ne })));
+            return Ok(Box::new(Expr::New(NewExpr { ..ne })));
         }
         // 'CallExpr' rule contains 'MemberExpr (...)',
         // and 'MemberExpr' rule contains 'new MemberExpr (...)'
@@ -799,7 +776,6 @@ impl<I: Tokens> Parser<I> {
 
                 callee,
                 args,
-                type_args,
             }));
 
             return self.parse_subscripts(ExprOrSuper::Expr(call_expr), false);
@@ -980,12 +956,7 @@ impl<I: Tokens> Parser<I> {
                 };
 
                 let mut pat = self.reparse_expr_as_pat(PatType::BindingPat, expr)?;
-                if optional {
-                    match pat {
-                        Pat::Ident(ref mut i) => i.id.optional = true,
-                        _ => unreachable!(),
-                    }
-                }
+
                 if let Some(span) = spread {
                     if let Some(rest_span) = rest_span {
                         if self.syntax().early_errors() {
@@ -999,41 +970,22 @@ impl<I: Tokens> Parser<I> {
                         span: span!(self, pat_start),
                         dot3_token: span,
                         arg: Box::new(pat),
-                        type_ann: None,
                     });
                 }
                 match pat {
                     Pat::Ident(BindingIdent {
                         id: Ident { ref mut span, .. },
-                        ref mut type_ann,
                         ..
                     })
-                    | Pat::Array(ArrayPat {
-                        ref mut type_ann,
-                        ref mut span,
-                        ..
-                    })
-                    | Pat::Assign(AssignPat {
-                        ref mut type_ann,
-                        ref mut span,
-                        ..
-                    })
-                    | Pat::Object(ObjectPat {
-                        ref mut type_ann,
-                        ref mut span,
-                        ..
-                    })
-                    | Pat::Rest(RestPat {
-                        ref mut type_ann,
-                        ref mut span,
-                        ..
-                    }) => {
+                    | Pat::Array(ArrayPat { ref mut span, .. })
+                    | Pat::Assign(AssignPat { ref mut span, .. })
+                    | Pat::Object(ObjectPat { ref mut span, .. })
+                    | Pat::Rest(RestPat { ref mut span, .. }) => {
                         let new_type_ann = self.try_parse_ts_type_ann()?;
                         if new_type_ann.is_some() {
                             *span =
                                 Span::new(pat_start, self.input.prev_span().hi, Default::default());
                         }
-                        *type_ann = new_type_ann;
                     }
                     Pat::Expr(ref expr) => unreachable!("invalid pattern: Expr({:?})", expr),
                     Pat::Invalid(..) => {
@@ -1053,7 +1005,6 @@ impl<I: Tokens> Parser<I> {
                         span: span!(self, pat_start),
                         left: Box::new(pat),
                         right,
-                        type_ann: None,
                     });
                 }
 
@@ -1100,8 +1051,6 @@ impl<I: Tokens> Parser<I> {
                             body,
                             is_async: false,
                             params,
-                            type_params: None,
-                            return_type: None,
                         }
                         .into(),
                     ),
@@ -1170,7 +1119,6 @@ impl<I: Tokens> Parser<I> {
                     span: span!(self, start),
                     callee,
                     args,
-                    type_args,
                 })));
 
                 // We should parse subscripts for MemberExpression.
@@ -1185,7 +1133,6 @@ impl<I: Tokens> Parser<I> {
                 span: span!(self, start),
                 callee,
                 args: None,
-                type_args,
             })));
         }
 
@@ -1318,8 +1265,6 @@ impl<I: Tokens> Parser<I> {
                     is_async: async_span.is_some(),
                     params,
                     body,
-                    return_type: Some(return_type),
-                    type_params: None,
                 }))))
             }) {
                 return Ok(expr);
@@ -1363,8 +1308,6 @@ impl<I: Tokens> Parser<I> {
                 is_async: async_span.is_some(),
                 params,
                 body,
-                return_type,
-                type_params: None,
             };
             if let BlockStmtOrExpr::BlockStmt(..) = arrow_expr.body {
                 if let Some(&Token::BinOp(..)) = self.input.cur() {
@@ -1402,7 +1345,6 @@ impl<I: Tokens> Parser<I> {
                     self.new_ident("async".into(), async_span),
                 ))),
                 args: expr_or_spreads,
-                type_args: None,
             })));
         }
 
@@ -1488,11 +1430,7 @@ impl<I: Tokens> Parser<I> {
         Ok((exprs, quasis))
     }
 
-    fn parse_tagged_tpl(
-        &mut self,
-        tag: Box<Expr>,
-        type_params: Option<TsTypeParamInstantiation>,
-    ) -> PResult<TaggedTpl> {
+    fn parse_tagged_tpl(&mut self, tag: Box<Expr>) -> PResult<TaggedTpl> {
         trace_cur!(self, parse_tagged_tpl);
 
         let tagged_tpl_start = tag.span().lo();
@@ -1504,7 +1442,6 @@ impl<I: Tokens> Parser<I> {
             node_id: node_id!(self),
             span,
             tag,
-            type_params,
             tpl,
         })
     }
@@ -1727,7 +1664,6 @@ impl<I: Tokens> Parser<I> {
             span: span!(self, start),
             callee: ExprOrSuper::Expr(Box::new(Expr::Ident(import_ident))),
             args,
-            type_args: Default::default(),
         }));
 
         self.parse_subscripts(ExprOrSuper::Expr(import), true)

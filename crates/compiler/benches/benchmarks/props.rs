@@ -72,7 +72,7 @@ fn bench(c: &mut Criterion) {
 
             let mut node_id_gen = Rc::try_unwrap(node_id_gen).unwrap().into_inner();
 
-            program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark, false));
+            program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark));
 
             compiler::normalize_properties::normalize_properties(&mut program, &mut node_id_gen);
 

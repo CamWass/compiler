@@ -1,6 +1,6 @@
 use ast::*;
 use atoms::JsWord;
-use ecma_visit::{noop_visit_type, Visit, VisitMutWith, VisitWith};
+use ecma_visit::{Visit, VisitMutWith, VisitWith};
 use global_common::{
     errors::{ColorConfig, Handler},
     sync::Lrc,
@@ -686,7 +686,7 @@ where
         let unresolved_mark = Mark::new();
         let top_level_mark = Mark::new();
 
-        program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark, false));
+        program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark));
 
         let script = unwrap_as!(program, Program::Script(s), s);
 
@@ -764,8 +764,6 @@ impl<'a, 'ast, P> Visit<'ast> for FlowStateFinder<'a, 'ast, P>
 where
     P: Fn(&'ast Stmt) -> Option<&'a LinearFlowState>,
 {
-    noop_visit_type!();
-
     // fn visit_labeled_stmt(&mut self, node: &'ast LabeledStmt) {
     //     if self.flow_state.is_none() {
     //         if &node.label.sym == "X" {

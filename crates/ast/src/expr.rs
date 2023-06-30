@@ -9,11 +9,7 @@ use crate::{
     pat::Pat,
     prop::Prop,
     stmt::BlockStmt,
-    typescript::{
-        TsAsExpr, TsConstAssertion, TsNonNullExpr, TsTypeAnn, TsTypeAssertion,
-        TsTypeParamInstantiation,
-    },
-    GetNodeId, Invalid, NodeId, ParamWithoutDecorators, TsTypeParamDecl,
+    GetNodeId, Invalid, NodeId, ParamWithoutDecorators,
 };
 use ast_node::ast_node;
 use global_common::{util::take::Take, EqIgnoreSpan, Span, DUMMY_SP};
@@ -90,14 +86,6 @@ pub enum Expr {
     JSXElement(Box<JSXElement>),
 
     JSXFragment(JSXFragment),
-
-    TsTypeAssertion(TsTypeAssertion),
-
-    TsConstAssertion(TsConstAssertion),
-
-    TsNonNull(TsNonNullExpr),
-
-    TsAs(TsAsExpr),
 
     PrivateName(PrivateName),
 
@@ -273,9 +261,6 @@ pub struct CallExpr {
     pub callee: ExprOrSuper,
 
     pub args: Vec<ExprOrSpread>,
-
-    pub type_args: Option<TsTypeParamInstantiation>,
-    // pub type_params: Option<TsTypeParamInstantiation>,
 }
 
 #[ast_node]
@@ -288,9 +273,6 @@ pub struct NewExpr {
     pub callee: Box<Expr>,
 
     pub args: Option<Vec<ExprOrSpread>>,
-
-    pub type_args: Option<TsTypeParamInstantiation>,
-    // pub type_params: Option<TsTypeParamInstantiation>,
 }
 
 #[ast_node]
@@ -316,10 +298,6 @@ pub struct ArrowExpr {
     pub body: BlockStmtOrExpr,
 
     pub is_async: bool,
-
-    pub type_params: Option<Vec<TsTypeParamDecl>>,
-
-    pub return_type: Option<TsTypeAnn>,
 }
 
 #[ast_node]
@@ -376,8 +354,6 @@ pub struct TaggedTpl {
     pub span: Span,
 
     pub tag: Box<Expr>,
-
-    pub type_params: Option<TsTypeParamInstantiation>,
 
     pub tpl: Tpl,
 }

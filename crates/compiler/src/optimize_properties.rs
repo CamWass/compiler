@@ -199,11 +199,7 @@ impl InnerVisitor {
             Expr::PrivateName(_) => todo!(),
             Expr::OptChain(_) => todo!(),
 
-            Expr::Invalid(_)
-            | Expr::TsTypeAssertion(_)
-            | Expr::TsConstAssertion(_)
-            | Expr::TsNonNull(_)
-            | Expr::TsAs(_) => unreachable!(),
+            Expr::Invalid(_) => unreachable!(),
         }
     }
 
@@ -294,11 +290,7 @@ impl InnerVisitor {
             Expr::PrivateName(_) => todo!(),
             Expr::OptChain(_) => todo!(),
 
-            Expr::Invalid(_)
-            | Expr::TsTypeAssertion(_)
-            | Expr::TsConstAssertion(_)
-            | Expr::TsNonNull(_)
-            | Expr::TsAs(_) => unreachable!(),
+            Expr::Invalid(_) => unreachable!(),
         }
     }
 }
@@ -591,9 +583,6 @@ impl Visit<'_> for InnerVisitor {
     fn visit_var_decl_or_expr(&mut self, node: &VarDeclOrExpr) {
         todo!();
     }
-    fn visit_ts_export_assignment(&mut self, node: &TsExportAssignment) {
-        todo!();
-    }
     fn visit_jsx_object(&mut self, node: &JSXObject) {
         todo!();
     }
@@ -642,8 +631,6 @@ fn is_simple_rhs(expr: &Expr) -> bool {
         Expr::PrivateName(_) | Expr::Ident(_) => false,
 
         Expr::Paren(n) => is_simple_rhs(&n.expr),
-        Expr::TsNonNull(n) => is_simple_rhs(&n.expr),
-        Expr::TsAs(n) => is_simple_rhs(&n.expr),
 
         Expr::This(_)
         | Expr::Array(_)
@@ -670,8 +657,6 @@ fn is_simple_rhs(expr: &Expr) -> bool {
         | Expr::JSXEmpty(_)
         | Expr::JSXElement(_)
         | Expr::JSXFragment(_)
-        | Expr::TsTypeAssertion(_)
-        | Expr::TsConstAssertion(_)
         | Expr::OptChain(_)
         | Expr::Invalid(_) => false,
     }

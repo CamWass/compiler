@@ -30,7 +30,6 @@ mod stmt;
 #[cfg(test)]
 mod tests;
 pub mod text_writer;
-mod typescript;
 pub mod util;
 
 pub type Result = io::Result<()>;
@@ -110,9 +109,6 @@ impl<'a> Emitter<'a> {
             ModuleDecl::ExportDefaultDecl(ref d) => emit!(d),
             ModuleDecl::ExportDefaultExpr(ref n) => emit!(n),
             ModuleDecl::ExportAll(ref d) => emit!(d),
-            ModuleDecl::TsExportAssignment(ref n) => emit!(n),
-            ModuleDecl::TsImportEquals(ref n) => emit!(n),
-            ModuleDecl::TsNamespaceExport(ref n) => emit!(n),
         }
         self.wr.write_line()?;
     }
@@ -145,7 +141,6 @@ impl<'a> Emitter<'a> {
         match node.decl {
             DefaultDecl::Class(ref n) => emit!(n),
             DefaultDecl::Fn(ref n) => emit!(n),
-            DefaultDecl::TsInterfaceDecl(ref n) => emit!(n),
         }
         formatting_semi!();
     }
@@ -522,10 +517,6 @@ impl<'a> Emitter<'a> {
             Expr::JSXElement(ref n) => emit!(n),
             Expr::JSXFragment(ref n) => emit!(n),
 
-            Expr::TsAs(ref n) => emit!(n),
-            Expr::TsNonNull(ref n) => emit!(n),
-            Expr::TsTypeAssertion(ref n) => emit!(n),
-            Expr::TsConstAssertion(ref n) => emit!(n),
             Expr::OptChain(ref n) => emit!(n),
             Expr::Invalid(ref n) => emit!(n),
         }
@@ -588,10 +579,6 @@ impl<'a> Emitter<'a> {
         }
         space!();
         emit!(node.callee);
-
-        if let Some(type_args) = &node.type_args {
-            emit!(type_args);
-        }
 
         if let Some(ref args) = node.args {
             punct!("(");
@@ -697,12 +684,6 @@ impl<'a> Emitter<'a> {
                 }] => false,
                 _ => true,
             };
-
-        if let Some(type_params) = &node.type_params {
-            punct!("<");
-            self.emit_list(node.span, Some(type_params), ListFormat::TypeParameters)?;
-            punct!(">");
-        }
 
         if parens {
             punct!("(");
@@ -848,15 +829,6 @@ impl<'a> Emitter<'a> {
         if let Some(ref i) = node.ident {
             space!();
             emit!(i);
-            if let Some(type_params) = &node.class.type_params {
-                punct!("<");
-                self.emit_list(
-                    node.class.span,
-                    Some(type_params),
-                    ListFormat::TypeParameters,
-                )?;
-                punct!(">");
-            }
         }
 
         self.emit_class_trailing(&node.class)?;
@@ -867,17 +839,6 @@ impl<'a> Emitter<'a> {
         if node.extends.is_some() {
             space!();
             emit!(node.extends);
-        }
-
-        if !node.implements.is_empty() {
-            space!();
-            keyword!("implements");
-            space!();
-            self.emit_list(
-                node.span,
-                Some(&node.implements),
-                ListFormat::HeritageClauseTypes,
-            )?;
         }
 
         formatting_space!();
@@ -891,7 +852,6 @@ impl<'a> Emitter<'a> {
         keyword!("extends");
         space!();
         emit!(node.super_class);
-        emit!(node.super_type_params);
     }
 
     #[emitter]
@@ -902,7 +862,6 @@ impl<'a> Emitter<'a> {
             ClassMember::Method(ref n) => emit!(n),
             ClassMember::PrivateMethod(ref n) => emit!(n),
             ClassMember::PrivateProp(ref n) => emit!(n),
-            ClassMember::TsIndexSignature(ref n) => emit!(n),
             ClassMember::Empty(ref n) => emit!(n),
         }
     }
@@ -959,8 +918,6 @@ impl<'a> Emitter<'a> {
     fn emit_class_method(&mut self, n: &ClassMethod) -> Result {
         self.emit_leading_comments_of_span(n.span(), false)?;
 
-        self.emit_accesibility(n.accessibility)?;
-
         if n.is_static {
             keyword!("static");
             space!();
@@ -991,16 +948,6 @@ impl<'a> Emitter<'a> {
             }
         }
 
-        if let Some(type_params) = &n.function.type_params {
-            punct!("<");
-            self.emit_list(
-                n.function.span,
-                Some(type_params),
-                ListFormat::TypeParameters,
-            )?;
-            punct!(">");
-        }
-
         punct!("(");
         self.emit_list(
             n.function.span,
@@ -1008,12 +955,6 @@ impl<'a> Emitter<'a> {
             ListFormat::CommaListElements,
         )?;
         punct!(")");
-
-        if let Some(ty) = &n.function.return_type {
-            punct!(":");
-            formatting_space!();
-            emit!(ty);
-        }
 
         if let Some(body) = &n.function.body {
             formatting_space!();
@@ -1029,19 +970,7 @@ impl<'a> Emitter<'a> {
 
         self.emit_list(n.span, Some(&n.decorators), ListFormat::Decorators)?;
 
-        self.emit_accesibility(n.accessibility)?;
-
-        if n.readonly {
-            keyword!("readonly");
-            space!();
-        }
-
         emit!(n.key);
-        if let Some(type_ann) = &n.type_ann {
-            punct!(":");
-            space!();
-            emit!(type_ann);
-        }
 
         if let Some(value) = &n.value {
             formatting_space!();
@@ -1064,27 +993,12 @@ impl<'a> Emitter<'a> {
     fn emit_class_prop(&mut self, n: &ClassProp) -> Result {
         self.emit_leading_comments_of_span(n.span(), false)?;
 
-        if n.accessibility != Some(Accessibility::Public) {
-            self.emit_accesibility(n.accessibility)?;
-        }
-
-        if n.readonly {
-            keyword!("readonly");
-            space!();
-        }
-
         if n.is_static {
             keyword!("static");
             space!();
         }
 
         emit!(n.key);
-
-        if let Some(ty) = &n.type_ann {
-            punct!(":");
-            space!();
-            emit!(ty);
-        }
 
         if let Some(v) = &n.value {
             formatting_space!();
@@ -1103,24 +1017,9 @@ impl<'a> Emitter<'a> {
         formatting_semi!();
     }
 
-    fn emit_accesibility(&mut self, n: Option<Accessibility>) -> Result {
-        if let Some(a) = n {
-            match a {
-                Accessibility::Public => keyword!(self, "public"),
-                Accessibility::Protected => keyword!(self, "protected"),
-                Accessibility::Private => keyword!(self, "private"),
-            }
-            space!(self);
-        }
-
-        Ok(())
-    }
-
     #[emitter]
     fn emit_class_constructor(&mut self, n: &Constructor) -> Result {
         self.emit_leading_comments_of_span(n.span(), false)?;
-
-        self.emit_accesibility(n.accessibility)?;
 
         keyword!("constructor");
         punct!("(");
@@ -1190,21 +1089,9 @@ impl<'a> Emitter<'a> {
     /// prints `(b){}` from `function a(b){}`
     #[emitter]
     fn emit_fn_trailing(&mut self, node: &Function) -> Result {
-        if let Some(type_params) = &node.type_params {
-            punct!("<");
-            self.emit_list(node.span, Some(type_params), ListFormat::TypeParameters)?;
-            punct!(">");
-        }
-
         punct!("(");
         self.emit_list(node.span, Some(&node.params), ListFormat::CommaListElements)?;
         punct!(")");
-
-        if let Some(ty) = &node.return_type {
-            punct!(":");
-            formatting_space!();
-            emit!(ty);
-        }
 
         if let Some(body) = &node.body {
             formatting_space!();
@@ -1263,7 +1150,6 @@ impl<'a> Emitter<'a> {
         self.emit_leading_comments_of_span(node.span(), false)?;
 
         emit!(node.tag);
-        emit!(node.type_params);
         emit!(node.tpl);
     }
 
@@ -1501,12 +1387,6 @@ impl<'a> Emitter<'a> {
     fn emit_binding_ident(&mut self, ident: &BindingIdent) -> Result {
         emit!(ident.id);
 
-        if let Some(ty) = &ident.type_ann {
-            punct!(":");
-            formatting_space!();
-            emit!(ty);
-        }
-
         // Call emitList directly since it could be an array of
         // TypeParameterDeclarations _or_ type arguments
 
@@ -1521,9 +1401,6 @@ impl<'a> Emitter<'a> {
         // TODO: span
         self.wr
             .write_symbol(ident.span, &handle_invalid_unicodes(&ident.sym))?;
-        if ident.optional {
-            punct!("?");
-        }
 
         // Call emitList directly since it could be an array of
         // TypeParameterDeclarations _or_ type arguments
@@ -1810,12 +1687,6 @@ impl<'a> Emitter<'a> {
 
         punct!("...");
         emit!(node.arg);
-
-        if let Some(type_ann) = &node.type_ann {
-            punct!(":");
-            formatting_space!();
-            emit!(type_ann);
-        }
     }
 
     #[emitter]
@@ -1845,15 +1716,6 @@ impl<'a> Emitter<'a> {
             ListFormat::ArrayBindingPatternElements,
         )?;
         punct!("]");
-        if node.optional {
-            punct!("?");
-        }
-
-        if let Some(type_ann) = &node.type_ann {
-            punct!(":");
-            space!();
-            emit!(type_ann);
-        }
     }
 
     #[emitter]
@@ -1884,15 +1746,6 @@ impl<'a> Emitter<'a> {
         punct!("{");
         self.emit_list(node.span(), Some(&node.props), format)?;
         punct!("}");
-        if node.optional {
-            punct!("?");
-        }
-
-        if let Some(type_ann) = &node.type_ann {
-            punct!(":");
-            space!();
-            emit!(type_ann);
-        }
     }
 
     #[emitter]

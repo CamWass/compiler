@@ -1,0 +1,22 @@
+[package]
+edition       = "2021"
+name          = "transform_testing"
+version       = "0.1.0"
+
+[dependencies]
+ansi_term  = "0.12.1"
+serde      = "1"
+serde_json = "1"
+sourcemap  = "6.2"
+
+global_common = { path = "../common", features = [
+  "sourcemap",
+] }
+ast = { path = "../ast" }
+codegen = { path = "../codegen" }
+parser = { path = "../parser" }
+# testing = { version = "0.20.13", path = "../swc_ecma_testing" }
+# swc_ecma_transforms_base = { version = "0.130.0", path = "../swc_ecma_transforms_base" }
+# swc_ecma_utils = { version = "0.120.0", path = "../swc_ecma_utils" }
+ecma_visit = { path = "../visit" }
+testing = { path = "../../testing" }

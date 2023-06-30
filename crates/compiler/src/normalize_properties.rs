@@ -1,5 +1,5 @@
 use ast::*;
-use ecma_visit::{noop_visit_mut_type, VisitMut, VisitMutWith};
+use ecma_visit::{VisitMut, VisitMutWith};
 use global_common::util::take::Take;
 
 use crate::utils::unwrap_as;
@@ -15,8 +15,6 @@ struct NormalizeShortHand<'a> {
 }
 
 impl VisitMut<'_> for NormalizeShortHand<'_> {
-    noop_visit_mut_type!();
-
     fn visit_mut_prop(&mut self, prop: &mut Prop) {
         prop.visit_mut_children_with(self);
 
@@ -27,13 +25,11 @@ impl VisitMut<'_> for NormalizeShortHand<'_> {
                     node_id: self.node_id_gen.next(),
                     key: PropName::Ident(Ident {
                         node_id: self.node_id_gen.next(),
-                        optional: false,
                         span: id.span,
                         sym: id.sym.clone(),
                     }),
                     value: Box::new(Expr::Ident(Ident {
                         node_id: self.node_id_gen.next(),
-                        optional: false,
                         span: id.span,
                         sym: id.sym,
                     })),
@@ -63,21 +59,17 @@ impl VisitMut<'_> for NormalizeShortHand<'_> {
                             node_id: self.node_id_gen.next(),
                             id: Ident {
                                 node_id: self.node_id_gen.next(),
-                                optional: false,
                                 span: prop.key.span,
                                 sym: prop.key.sym.clone(),
                             },
-                            type_ann: None,
                         })),
                         right: value,
-                        type_ann: None,
                     };
 
                     ObjectPatProp::KeyValue(KeyValuePatProp {
                         node_id: self.node_id_gen.next(),
                         key: PropName::Ident(Ident {
                             node_id: self.node_id_gen.next(),
-                            optional: false,
                             span: prop.key.span,
                             sym: prop.key.sym,
                         }),
@@ -90,7 +82,6 @@ impl VisitMut<'_> for NormalizeShortHand<'_> {
                         node_id: self.node_id_gen.next(),
                         key: PropName::Ident(Ident {
                             node_id: self.node_id_gen.next(),
-                            optional: false,
                             span: prop.key.span,
                             sym: prop.key.sym.clone(),
                         }),
@@ -98,11 +89,9 @@ impl VisitMut<'_> for NormalizeShortHand<'_> {
                             node_id: self.node_id_gen.next(),
                             id: Ident {
                                 node_id: self.node_id_gen.next(),
-                                optional: false,
                                 span: prop.key.span,
                                 sym: prop.key.sym,
                             },
-                            type_ann: None,
                         })),
                     })
                 }

@@ -209,255 +209,17 @@ macro_rules! assert_eq_ignore_span {
 //     method!(fold_stmt, Stmt);
 //     method!(fold_pat, Pat);
 
-//     method!(fold_ts_type, TsType);
-
 //     method!(fold_module, Module);
 //     method!(fold_script, Script);
 //     method!(fold_program, Program);
 // }
-
-/// Note: Ignoring more types is not considered as a breaking change.
-#[macro_export]
-macro_rules! noop_fold_type {
-    ($name:ident, $N:tt) => {
-        #[inline]
-        fn $name(&mut self, node: $crate::ast::$N) -> $crate::ast::$N {
-            node
-        }
-    };
-    () => {
-        noop_fold_type!(fold_accessibility, Accessibility);
-        noop_fold_type!(fold_true_plus_minus, TruePlusMinus);
-        noop_fold_type!(fold_ts_array_type, TsArrayType);
-        noop_fold_type!(fold_ts_call_signature_decl, TsCallSignatureDecl);
-        noop_fold_type!(fold_ts_conditional_type, TsConditionalType);
-        noop_fold_type!(fold_ts_construct_signature_decl, TsConstructSignatureDecl);
-        noop_fold_type!(fold_ts_constructor_type, TsConstructorType);
-        noop_fold_type!(fold_ts_entity_name, TsEntityName);
-        noop_fold_type!(fold_ts_enum_decl, TsEnumDecl);
-        noop_fold_type!(fold_ts_enum_member, TsEnumMember);
-        noop_fold_type!(fold_ts_enum_member_id, TsEnumMemberId);
-        noop_fold_type!(fold_ts_external_module_ref, TsExternalModuleRef);
-        noop_fold_type!(fold_ts_fn_or_constructor_type, TsFnOrConstructorType);
-        noop_fold_type!(fold_ts_ambient_param, TsAmbientParam);
-        noop_fold_type!(fold_ts_ambient_param_pat, TsAmbientParamPat);
-        noop_fold_type!(fold_ts_fn_type, TsFnType);
-        noop_fold_type!(fold_ts_import_equals_decl, TsImportEqualsDecl);
-        noop_fold_type!(fold_ts_import_type, TsImportType);
-        noop_fold_type!(fold_ts_index_signature, TsIndexSignature);
-        noop_fold_type!(fold_ts_indexed_access_type, TsIndexedAccessType);
-        noop_fold_type!(fold_ts_infer_type, TsInferType);
-        noop_fold_type!(fold_ts_interface_body, TsInterfaceBody);
-        noop_fold_type!(fold_ts_interface_decl, TsInterfaceDecl);
-        noop_fold_type!(fold_ts_intersection_type, TsIntersectionType);
-        noop_fold_type!(fold_ts_keyword_type, TsKeywordType);
-        noop_fold_type!(fold_ts_keyword_type_kind, TsKeywordTypeKind);
-        noop_fold_type!(fold_ts_mapped_type, TsMappedType);
-        noop_fold_type!(fold_ts_method_signature, TsMethodSignature);
-        noop_fold_type!(fold_ts_module_block, TsModuleBlock);
-        noop_fold_type!(fold_ts_module_decl, TsModuleDecl);
-        noop_fold_type!(fold_ts_module_name, TsModuleName);
-        noop_fold_type!(fold_ts_module_ref, TsModuleRef);
-        noop_fold_type!(fold_ts_namespace_body, TsNamespaceBody);
-        noop_fold_type!(fold_ts_namespace_decl, TsNamespaceDecl);
-        noop_fold_type!(fold_ts_namespace_export_decl, TsNamespaceExportDecl);
-        noop_fold_type!(fold_ts_optional_type, TsOptionalType);
-        noop_fold_type!(fold_ts_param_prop, TsParamProp);
-        noop_fold_type!(fold_ts_param_prop_param, TsParamPropParam);
-        noop_fold_type!(fold_ts_parenthesized_type, TsParenthesizedType);
-        noop_fold_type!(fold_ts_property_signature, TsPropertySignature);
-        noop_fold_type!(fold_ts_qualified_name, TsQualifiedName);
-        noop_fold_type!(fold_ts_rest_type, TsRestType);
-        noop_fold_type!(fold_ts_this_type, TsThisType);
-        noop_fold_type!(fold_ts_this_type_or_ident, TsThisTypeOrIdent);
-        noop_fold_type!(fold_ts_tuple_type, TsTupleType);
-        noop_fold_type!(fold_ts_type, TsType);
-        noop_fold_type!(fold_ts_type_alias_decl, TsTypeAliasDecl);
-        noop_fold_type!(fold_ts_type_ann, TsTypeAnn);
-        noop_fold_type!(fold_ts_type_assertion, TsTypeAssertion);
-        noop_fold_type!(fold_ts_type_element, TsTypeElement);
-        noop_fold_type!(fold_ts_type_lit, TsTypeLit);
-        noop_fold_type!(fold_ts_type_operator, TsTypeOperator);
-        noop_fold_type!(fold_ts_type_operator_op, TsTypeOperatorOp);
-        noop_fold_type!(fold_ts_type_param_decl, TsTypeParamDecl);
-        noop_fold_type!(fold_ts_type_param_instantiation, TsTypeParamInstantiation);
-        noop_fold_type!(fold_ts_type_predicate, TsTypePredicate);
-        noop_fold_type!(fold_ts_type_query, TsTypeQuery);
-        noop_fold_type!(fold_ts_type_query_expr, TsTypeQueryExpr);
-        noop_fold_type!(fold_ts_type_ref, TsTypeRef);
-        noop_fold_type!(
-            fold_ts_union_or_intersection_type,
-            TsUnionOrIntersectionType
-        );
-        noop_fold_type!(fold_ts_union_type, TsUnionType);
-    };
-}
-
-/// Note: Ignoring more types is not considered as a breaking change.
-#[macro_export]
-macro_rules! noop_visit_type {
-    ($name:ident, $N:tt) => {
-        #[inline]
-        fn $name(&mut self, _: &$crate::ast::$N) {}
-    };
-    () => {
-        noop_visit_type!(visit_accessibility, Accessibility);
-        noop_visit_type!(visit_true_plus_minus, TruePlusMinus);
-        noop_visit_type!(visit_ts_array_type, TsArrayType);
-        noop_visit_type!(visit_ts_call_signature_decl, TsCallSignatureDecl);
-        noop_visit_type!(visit_ts_conditional_type, TsConditionalType);
-        noop_visit_type!(visit_ts_construct_signature_decl, TsConstructSignatureDecl);
-        noop_visit_type!(visit_ts_constructor_type, TsConstructorType);
-        noop_visit_type!(visit_ts_entity_name, TsEntityName);
-        noop_visit_type!(visit_ts_enum_decl, TsEnumDecl);
-        noop_visit_type!(visit_ts_enum_member, TsEnumMember);
-        noop_visit_type!(visit_ts_enum_member_id, TsEnumMemberId);
-        noop_visit_type!(visit_ts_external_module_ref, TsExternalModuleRef);
-        noop_visit_type!(visit_ts_fn_or_constructor_type, TsFnOrConstructorType);
-        noop_visit_type!(visit_ts_ambient_param, TsAmbientParam);
-        noop_visit_type!(visit_ts_ambient_param_pat, TsAmbientParamPat);
-        noop_visit_type!(visit_ts_fn_type, TsFnType);
-        noop_visit_type!(visit_ts_import_equals_decl, TsImportEqualsDecl);
-        noop_visit_type!(visit_ts_import_type, TsImportType);
-        noop_visit_type!(visit_ts_index_signature, TsIndexSignature);
-        noop_visit_type!(visit_ts_indexed_access_type, TsIndexedAccessType);
-        noop_visit_type!(visit_ts_infer_type, TsInferType);
-        noop_visit_type!(visit_ts_interface_body, TsInterfaceBody);
-        noop_visit_type!(visit_ts_interface_decl, TsInterfaceDecl);
-        noop_visit_type!(visit_ts_intersection_type, TsIntersectionType);
-        noop_visit_type!(visit_ts_keyword_type, TsKeywordType);
-        noop_visit_type!(visit_ts_keyword_type_kind, TsKeywordTypeKind);
-        noop_visit_type!(visit_ts_mapped_type, TsMappedType);
-        noop_visit_type!(visit_ts_method_signature, TsMethodSignature);
-        noop_visit_type!(visit_ts_module_block, TsModuleBlock);
-        noop_visit_type!(visit_ts_module_decl, TsModuleDecl);
-        noop_visit_type!(visit_ts_module_name, TsModuleName);
-        noop_visit_type!(visit_ts_module_ref, TsModuleRef);
-        noop_visit_type!(visit_ts_namespace_body, TsNamespaceBody);
-        noop_visit_type!(visit_ts_namespace_decl, TsNamespaceDecl);
-        noop_visit_type!(visit_ts_namespace_export_decl, TsNamespaceExportDecl);
-        noop_visit_type!(visit_ts_optional_type, TsOptionalType);
-        noop_visit_type!(visit_ts_param_prop, TsParamProp);
-        noop_visit_type!(visit_ts_param_prop_param, TsParamPropParam);
-        noop_visit_type!(visit_ts_parenthesized_type, TsParenthesizedType);
-        noop_visit_type!(visit_ts_property_signature, TsPropertySignature);
-        noop_visit_type!(visit_ts_qualified_name, TsQualifiedName);
-        noop_visit_type!(visit_ts_rest_type, TsRestType);
-        noop_visit_type!(visit_ts_this_type, TsThisType);
-        noop_visit_type!(visit_ts_this_type_or_ident, TsThisTypeOrIdent);
-        noop_visit_type!(visit_ts_tuple_type, TsTupleType);
-        noop_visit_type!(visit_ts_type, TsType);
-        noop_visit_type!(visit_ts_type_alias_decl, TsTypeAliasDecl);
-        noop_visit_type!(visit_ts_type_ann, TsTypeAnn);
-        noop_visit_type!(visit_ts_type_assertion, TsTypeAssertion);
-        noop_visit_type!(visit_ts_type_element, TsTypeElement);
-        noop_visit_type!(visit_ts_type_lit, TsTypeLit);
-        noop_visit_type!(visit_ts_type_operator, TsTypeOperator);
-        noop_visit_type!(visit_ts_type_operator_op, TsTypeOperatorOp);
-        noop_visit_type!(visit_ts_type_param_decl, TsTypeParamDecl);
-        noop_visit_type!(visit_ts_type_param_instantiation, TsTypeParamInstantiation);
-        noop_visit_type!(visit_ts_type_predicate, TsTypePredicate);
-        noop_visit_type!(visit_ts_type_query, TsTypeQuery);
-        noop_visit_type!(visit_ts_type_query_expr, TsTypeQueryExpr);
-        noop_visit_type!(visit_ts_type_ref, TsTypeRef);
-        noop_visit_type!(
-            visit_ts_union_or_intersection_type,
-            TsUnionOrIntersectionType
-        );
-        noop_visit_type!(visit_ts_union_type, TsUnionType);
-    };
-}
-
-/// Note: Ignoring more types is not considered as a breaking change.
-#[macro_export]
-macro_rules! noop_visit_mut_type {
-    ($name:ident, $N:ident) => {
-        #[inline]
-        fn $name(&mut self, _: &mut $crate::ast::$N) {}
-    };
-    () => {
-        noop_visit_mut_type!(visit_mut_accessibility, Accessibility);
-        noop_visit_mut_type!(visit_mut_true_plus_minus, TruePlusMinus);
-        noop_visit_mut_type!(visit_mut_ts_array_type, TsArrayType);
-        noop_visit_mut_type!(visit_mut_ts_call_signature_decl, TsCallSignatureDecl);
-        noop_visit_mut_type!(visit_mut_ts_conditional_type, TsConditionalType);
-        noop_visit_mut_type!(
-            visit_mut_ts_construct_signature_decl,
-            TsConstructSignatureDecl
-        );
-        noop_visit_mut_type!(visit_mut_ts_constructor_type, TsConstructorType);
-        noop_visit_mut_type!(visit_mut_ts_entity_name, TsEntityName);
-        noop_visit_mut_type!(visit_mut_ts_enum_decl, TsEnumDecl);
-        noop_visit_mut_type!(visit_mut_ts_enum_member, TsEnumMember);
-        noop_visit_mut_type!(visit_mut_ts_enum_member_id, TsEnumMemberId);
-        noop_visit_mut_type!(visit_mut_ts_external_module_ref, TsExternalModuleRef);
-        noop_visit_mut_type!(visit_mut_ts_fn_or_constructor_type, TsFnOrConstructorType);
-        noop_visit_mut_type!(visit_mut_ts_ambient_param, TsAmbientParam);
-        noop_visit_mut_type!(visit_mut_ts_ambient_param_pat, TsAmbientParamPat);
-        noop_visit_mut_type!(visit_mut_ts_fn_type, TsFnType);
-        noop_visit_mut_type!(visit_mut_ts_import_equals_decl, TsImportEqualsDecl);
-        noop_visit_mut_type!(visit_mut_ts_import_type, TsImportType);
-        noop_visit_mut_type!(visit_mut_ts_index_signature, TsIndexSignature);
-        noop_visit_mut_type!(visit_mut_ts_indexed_access_type, TsIndexedAccessType);
-        noop_visit_mut_type!(visit_mut_ts_infer_type, TsInferType);
-        noop_visit_mut_type!(visit_mut_ts_interface_body, TsInterfaceBody);
-        noop_visit_mut_type!(visit_mut_ts_interface_decl, TsInterfaceDecl);
-        noop_visit_mut_type!(visit_mut_ts_intersection_type, TsIntersectionType);
-        noop_visit_mut_type!(visit_mut_ts_keyword_type, TsKeywordType);
-        noop_visit_mut_type!(visit_mut_ts_keyword_type_kind, TsKeywordTypeKind);
-        noop_visit_mut_type!(visit_mut_ts_mapped_type, TsMappedType);
-        noop_visit_mut_type!(visit_mut_ts_method_signature, TsMethodSignature);
-        noop_visit_mut_type!(visit_mut_ts_module_block, TsModuleBlock);
-        noop_visit_mut_type!(visit_mut_ts_module_decl, TsModuleDecl);
-        noop_visit_mut_type!(visit_mut_ts_module_name, TsModuleName);
-        noop_visit_mut_type!(visit_mut_ts_module_ref, TsModuleRef);
-        noop_visit_mut_type!(visit_mut_ts_namespace_body, TsNamespaceBody);
-        noop_visit_mut_type!(visit_mut_ts_namespace_decl, TsNamespaceDecl);
-        noop_visit_mut_type!(visit_mut_ts_namespace_export_decl, TsNamespaceExportDecl);
-        noop_visit_mut_type!(visit_mut_ts_optional_type, TsOptionalType);
-        noop_visit_mut_type!(visit_mut_ts_param_prop, TsParamProp);
-        noop_visit_mut_type!(visit_mut_ts_param_prop_param, TsParamPropParam);
-        noop_visit_mut_type!(visit_mut_ts_parenthesized_type, TsParenthesizedType);
-        noop_visit_mut_type!(visit_mut_ts_property_signature, TsPropertySignature);
-        noop_visit_mut_type!(visit_mut_ts_qualified_name, TsQualifiedName);
-        noop_visit_mut_type!(visit_mut_ts_rest_type, TsRestType);
-        noop_visit_mut_type!(visit_mut_ts_this_type, TsThisType);
-        noop_visit_mut_type!(visit_mut_ts_this_type_or_ident, TsThisTypeOrIdent);
-        noop_visit_mut_type!(visit_mut_ts_tuple_type, TsTupleType);
-        noop_visit_mut_type!(visit_mut_ts_type, TsType);
-        noop_visit_mut_type!(visit_mut_ts_type_alias_decl, TsTypeAliasDecl);
-        noop_visit_mut_type!(visit_mut_ts_type_ann, TsTypeAnn);
-        noop_visit_mut_type!(visit_mut_ts_type_assertion, TsTypeAssertion);
-        noop_visit_mut_type!(visit_mut_ts_type_element, TsTypeElement);
-        noop_visit_mut_type!(visit_mut_ts_type_lit, TsTypeLit);
-        noop_visit_mut_type!(visit_mut_ts_type_operator, TsTypeOperator);
-        noop_visit_mut_type!(visit_mut_ts_type_operator_op, TsTypeOperatorOp);
-        noop_visit_mut_type!(visit_mut_ts_type_param_decl, TsTypeParamDecl);
-        noop_visit_mut_type!(
-            visit_mut_ts_type_param_instantiation,
-            TsTypeParamInstantiation
-        );
-        noop_visit_mut_type!(visit_mut_ts_type_predicate, TsTypePredicate);
-        noop_visit_mut_type!(visit_mut_ts_type_query, TsTypeQuery);
-        noop_visit_mut_type!(visit_mut_ts_type_query_expr, TsTypeQueryExpr);
-        noop_visit_mut_type!(visit_mut_ts_type_ref, TsTypeRef);
-        noop_visit_mut_type!(
-            visit_mut_ts_union_or_intersection_type,
-            TsUnionOrIntersectionType
-        );
-        noop_visit_mut_type!(visit_mut_ts_union_type, TsUnionType);
-    };
-}
 
 define!({
     pub struct Class {
         pub node_id: NodeId,
         pub span: Span,
         pub decorators: Vec<Decorator>,
-        pub is_abstract: bool,
-        pub type_params: Option<Vec<TsTypeParamDecl>>,
         pub extends: Option<ExtendsClause>,
-        pub implements: Vec<TsExprWithTypeArgs>,
         pub body: Vec<ClassMember>,
     }
 
@@ -465,7 +227,6 @@ define!({
         pub node_id: NodeId,
         pub span: Span,
         pub super_class: Box<Expr>,
-        pub super_type_params: Option<TsTypeParamInstantiation>,
     }
 
     pub enum ClassMember {
@@ -474,7 +235,6 @@ define!({
         PrivateMethod(PrivateMethod),
         ClassProp(ClassProp),
         PrivateProp(PrivateProp),
-        TsIndexSignature(TsIndexSignature),
         Empty(EmptyStmt),
     }
 
@@ -483,31 +243,16 @@ define!({
         pub span: Span,
         pub key: PropName,
         pub value: Option<Box<Expr>>,
-        pub type_ann: Option<TsTypeAnn>,
         pub is_static: bool,
         pub decorators: Vec<Decorator>,
-        pub accessibility: Option<Accessibility>,
-        pub is_abstract: bool,
-        pub is_optional: bool,
-        pub is_override: bool,
-        pub readonly: bool,
-        pub declare: bool,
-        pub definite: bool,
     }
     pub struct PrivateProp {
         pub node_id: NodeId,
         pub span: Span,
         pub key: PrivateName,
         pub value: Option<Box<Expr>>,
-        pub type_ann: Option<TsTypeAnn>,
         pub is_static: bool,
         pub decorators: Vec<Decorator>,
-        pub accessibility: Option<Accessibility>,
-        pub is_abstract: bool,
-        pub is_optional: bool,
-        pub is_override: bool,
-        pub readonly: bool,
-        pub definite: bool,
     }
     pub struct ClassMethod {
         pub node_id: NodeId,
@@ -516,10 +261,6 @@ define!({
         pub function: Function,
         pub kind: MethodKind,
         pub is_static: bool,
-        pub accessibility: Option<Accessibility>,
-        pub is_abstract: bool,
-        pub is_optional: bool,
-        pub is_override: bool,
     }
     pub struct PrivateMethod {
         pub node_id: NodeId,
@@ -528,18 +269,12 @@ define!({
         pub function: Function,
         pub kind: MethodKind,
         pub is_static: bool,
-        pub accessibility: Option<Accessibility>,
-        pub is_abstract: bool,
-        pub is_optional: bool,
-        pub is_override: bool,
     }
     pub struct Constructor {
         pub node_id: NodeId,
         pub span: Span,
-        pub params: Vec<ParamOrTsParamProp>,
+        pub params: Vec<Param>,
         pub body: Option<BlockStmt>,
-        pub accessibility: Option<Accessibility>,
-        pub is_optional: bool,
     }
     pub struct Decorator {
         pub node_id: NodeId,
@@ -555,28 +290,21 @@ define!({
         Class(ClassDecl),
         Fn(FnDecl),
         Var(VarDecl),
-        TsInterface(TsInterfaceDecl),
-        TsTypeAlias(TsTypeAliasDecl),
-        TsEnum(TsEnumDecl),
-        TsModule(TsModuleDecl),
     }
     pub struct FnDecl {
         pub node_id: NodeId,
         pub ident: Ident,
-        pub declare: bool,
         pub function: Function,
     }
     pub struct ClassDecl {
         pub node_id: NodeId,
         pub ident: Ident,
-        pub declare: bool,
         pub class: Class,
     }
     pub struct VarDecl {
         pub node_id: NodeId,
         pub span: Span,
         pub kind: VarDeclKind,
-        pub declare: bool,
         pub decls: Vec<VarDeclarator>,
     }
     pub enum VarDeclKind {
@@ -589,7 +317,6 @@ define!({
         pub span: Span,
         pub name: Pat,
         pub init: Option<Box<Expr>>,
-        pub definite: bool,
     }
     pub enum Expr {
         This(ThisExpr),
@@ -620,10 +347,6 @@ define!({
         JSXEmpty(JSXEmptyExpr),
         JSXElement(Box<JSXElement>),
         JSXFragment(JSXFragment),
-        TsTypeAssertion(TsTypeAssertion),
-        TsConstAssertion(TsConstAssertion),
-        TsNonNull(TsNonNullExpr),
-        TsAs(TsAsExpr),
         PrivateName(PrivateName),
         OptChain(OptChainExpr),
         Invalid(Invalid),
@@ -703,14 +426,12 @@ define!({
         pub span: Span,
         pub callee: ExprOrSuper,
         pub args: Vec<ExprOrSpread>,
-        pub type_args: Option<TsTypeParamInstantiation>,
     }
     pub struct NewExpr {
         pub node_id: NodeId,
         pub span: Span,
         pub callee: Box<Expr>,
         pub args: Option<Vec<ExprOrSpread>>,
-        pub type_args: Option<TsTypeParamInstantiation>,
     }
     pub struct SeqExpr {
         pub node_id: NodeId,
@@ -723,8 +444,6 @@ define!({
         pub params: Vec<ParamWithoutDecorators>,
         pub body: BlockStmtOrExpr,
         pub is_async: bool,
-        pub type_params: Option<Vec<TsTypeParamDecl>>,
-        pub return_type: Option<TsTypeAnn>,
     }
     pub struct YieldExpr {
         pub node_id: NodeId,
@@ -752,7 +471,6 @@ define!({
         pub node_id: NodeId,
         pub span: Span,
         pub tag: Box<Expr>,
-        pub type_params: Option<TsTypeParamInstantiation>,
         pub tpl: Tpl,
     }
     pub struct TplElement {
@@ -801,8 +519,6 @@ define!({
         pub body: Option<BlockStmt>,
         pub is_generator: bool,
         pub is_async: bool,
-        pub type_params: Option<Vec<TsTypeParamDecl>>,
-        pub return_type: Option<TsTypeAnn>,
     }
     pub struct Param {
         pub node_id: NodeId,
@@ -815,22 +531,15 @@ define!({
         pub pat: Pat,
     }
 
-    pub enum ParamOrTsParamProp {
-        TsParamProp(TsParamProp),
-        Param(Param),
-    }
-
     pub struct BindingIdent {
         pub node_id: NodeId,
         pub id: Ident,
-        pub type_ann: Option<TsTypeAnn>,
     }
 
     pub struct Ident {
         pub node_id: NodeId,
         pub span: Span,
         pub sym: JsWord,
-        pub optional: bool,
     }
 
     pub struct PrivateName {
@@ -882,7 +591,6 @@ define!({
         pub span: Span,
         pub attrs: Vec<JSXAttrOrSpread>,
         pub self_closing: bool,
-        pub type_args: Option<TsTypeParamInstantiation>,
     }
     pub enum JSXAttrOrSpread {
         JSXAttr(JSXAttr),
@@ -1017,9 +725,6 @@ define!({
         ExportDefaultDecl(ExportDefaultDecl),
         ExportDefaultExpr(ExportDefaultExpr),
         ExportAll(ExportAll),
-        TsImportEquals(TsImportEqualsDecl),
-        TsExportAssignment(TsExportAssignment),
-        TsNamespaceExport(TsNamespaceExportDecl),
     }
     pub struct ExportDefaultExpr {
         pub node_id: NodeId,
@@ -1036,7 +741,6 @@ define!({
         pub span: Span,
         pub specifiers: Vec<ImportSpecifier>,
         pub src: Str,
-        pub type_only: bool,
         pub asserts: Option<ObjectLit>,
     }
     pub struct ExportAll {
@@ -1050,7 +754,6 @@ define!({
         pub span: Span,
         pub specifiers: Vec<ExportSpecifier>,
         pub src: Option<Str>,
-        pub type_only: bool,
         pub asserts: Option<ObjectLit>,
     }
     pub struct ExportDefaultDecl {
@@ -1061,7 +764,6 @@ define!({
     pub enum DefaultDecl {
         Class(ClassExpr),
         Fn(FnExpr),
-        TsInterfaceDecl(TsInterfaceDecl),
     }
     pub enum ImportSpecifier {
         Named(ImportNamedSpecifier),
@@ -1176,29 +878,23 @@ define!({
         pub node_id: NodeId,
         pub span: Span,
         pub elems: Vec<Option<Pat>>,
-        pub optional: bool,
-        pub type_ann: Option<TsTypeAnn>,
     }
     pub struct ObjectPat {
         pub node_id: NodeId,
         pub span: Span,
         pub props: Vec<ObjectPatProp>,
-        pub optional: bool,
-        pub type_ann: Option<TsTypeAnn>,
     }
     pub struct AssignPat {
         pub node_id: NodeId,
         pub span: Span,
         pub left: Box<Pat>,
         pub right: Box<Expr>,
-        pub type_ann: Option<TsTypeAnn>,
     }
     pub struct RestPat {
         pub node_id: NodeId,
         pub span: Span,
         pub dot3_token: Span,
         pub arg: Box<Pat>,
-        pub type_ann: Option<TsTypeAnn>,
     }
     pub enum ObjectPatProp {
         KeyValue(KeyValuePatProp),
@@ -1239,7 +935,6 @@ define!({
         pub node_id: NodeId,
         pub span: Span,
         pub key: PropName,
-        pub type_ann: Option<TsTypeAnn>,
         pub body: Option<BlockStmt>,
     }
     pub struct SetterProp {
@@ -1415,465 +1110,5 @@ define!({
     pub enum VarDeclOrExpr {
         VarDecl(VarDecl),
         Expr(Box<Expr>),
-    }
-    pub struct TsTypeAnn {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub type_ann: Box<TsType>,
-    }
-    pub struct TsTypeParamDecl {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub name: Ident,
-        pub constraint: Option<Box<TsType>>,
-        pub default: Option<Box<TsType>>,
-    }
-    pub struct TsTypeParamInstantiation {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub params: Vec<Box<TsType>>,
-    }
-    pub struct TsParamProp {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub decorators: Vec<Decorator>,
-        pub accessibility: Option<Accessibility>,
-        pub is_override: bool,
-        pub readonly: bool,
-        pub param: TsParamPropParam,
-    }
-    pub enum TsParamPropParam {
-        Ident(BindingIdent),
-        Assign(AssignPat),
-    }
-    pub struct TsQualifiedName {
-        pub node_id: NodeId,
-        pub left: TsEntityName,
-        pub right: Ident,
-    }
-    pub enum TsEntityName {
-        TsQualifiedName(Box<TsQualifiedName>),
-        Ident(Ident),
-    }
-    pub enum TsTypeElement {
-        TsCallSignatureDecl(TsCallSignatureDecl),
-        TsConstructSignatureDecl(TsConstructSignatureDecl),
-        TsPropertySignature(TsPropertySignature),
-        TsGetterSignature(TsGetterSignature),
-        TsSetterSignature(TsSetterSignature),
-        TsMethodSignature(TsMethodSignature),
-        TsIndexSignature(TsIndexSignature),
-    }
-    pub struct TsCallSignatureDecl {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub params: Vec<TsAmbientParam>,
-        pub type_ann: Option<TsTypeAnn>,
-        pub type_params: Option<Vec<TsTypeParamDecl>>,
-    }
-    pub struct TsConstructSignatureDecl {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub params: Vec<TsAmbientParam>,
-        pub type_ann: Option<TsTypeAnn>,
-        pub type_params: Option<Vec<TsTypeParamDecl>>,
-    }
-    pub struct TsPropertySignature {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub readonly: bool,
-        pub key: PropName,
-        pub optional: bool,
-        pub type_ann: Option<TsTypeAnn>,
-    }
-
-    pub struct TsGetterSignature {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub readonly: bool,
-        pub key: PropName,
-        pub optional: bool,
-        pub type_ann: Option<TsTypeAnn>,
-    }
-
-    pub struct TsSetterSignature {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub readonly: bool,
-        pub key: PropName,
-        pub optional: bool,
-        pub param: TsAmbientParam,
-    }
-    pub struct TsMethodSignature {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub readonly: bool,
-        pub key: PropName,
-        pub optional: bool,
-        pub params: Vec<TsAmbientParam>,
-        pub type_ann: Option<TsTypeAnn>,
-        pub type_params: Option<Vec<TsTypeParamDecl>>,
-    }
-    pub struct TsIndexSignature {
-        pub node_id: NodeId,
-        pub params: Vec<TsAmbientParam>,
-        pub type_ann: Option<TsTypeAnn>,
-        pub readonly: bool,
-        pub is_static: bool,
-        pub span: Span,
-    }
-    pub enum TsType {
-        TsKeywordType(TsKeywordType),
-        TsThisType(TsThisType),
-        TsFnOrConstructorType(TsFnOrConstructorType),
-        TsTypeRef(TsTypeRef),
-        TsTypeQuery(TsTypeQuery),
-        TsTypeLit(TsTypeLit),
-        TsArrayType(TsArrayType),
-        TsTupleType(TsTupleType),
-        TsOptionalType(TsOptionalType),
-        TsRestType(TsRestType),
-        TsUnionOrIntersectionType(TsUnionOrIntersectionType),
-        TsConditionalType(TsConditionalType),
-        TsInferType(TsInferType),
-        TsParenthesizedType(TsParenthesizedType),
-        TsTypeOperator(TsTypeOperator),
-        TsIndexedAccessType(TsIndexedAccessType),
-        TsMappedType(TsMappedType),
-        TsLitType(TsLitType),
-        TsTypePredicate(TsTypePredicate),
-        TsImportType(TsImportType),
-    }
-    pub enum TsFnOrConstructorType {
-        TsFnType(TsFnType),
-        TsConstructorType(TsConstructorType),
-    }
-    pub struct TsKeywordType {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub kind: TsKeywordTypeKind,
-    }
-    pub enum TsKeywordTypeKind {
-        TsAnyKeyword,
-        TsUnknownKeyword,
-        TsNumberKeyword,
-        TsObjectKeyword,
-        TsBooleanKeyword,
-        TsBigIntKeyword,
-        TsStringKeyword,
-        TsSymbolKeyword,
-        TsVoidKeyword,
-        TsUndefinedKeyword,
-        TsNullKeyword,
-        TsNeverKeyword,
-        TsIntrinsicKeyword,
-    }
-    pub struct TsThisType {
-        pub node_id: NodeId,
-        pub span: Span,
-    }
-    pub struct TsAmbientParam {
-        pub node_id: NodeId,
-        pub pat: TsAmbientParamPat,
-    }
-    pub enum TsAmbientParamPat {
-        Ident(BindingIdent),
-        Array(ArrayPat),
-        Rest(RestPat),
-        Object(ObjectPat),
-    }
-    pub struct TsFnType {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub params: Vec<TsAmbientParam>,
-        pub type_params: Option<Vec<TsTypeParamDecl>>,
-        pub type_ann: TsTypeAnn,
-    }
-    pub struct TsConstructorType {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub params: Vec<TsAmbientParam>,
-        pub type_params: Option<Vec<TsTypeParamDecl>>,
-        pub type_ann: TsTypeAnn,
-        pub is_abstract: bool,
-    }
-    pub struct TsTypeRef {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub type_name: TsEntityName,
-        pub type_params: Option<TsTypeParamInstantiation>,
-    }
-    pub struct TsTypePredicate {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub asserts: bool,
-        pub param_name: TsThisTypeOrIdent,
-        pub type_ann: Option<TsTypeAnn>,
-    }
-    pub enum TsThisTypeOrIdent {
-        TsThisType(TsThisType),
-        Ident(Ident),
-    }
-    pub struct TsTypeQuery {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub expr_name: TsTypeQueryExpr,
-    }
-    pub enum TsTypeQueryExpr {
-        TsEntityName(TsEntityName),
-        Import(TsImportType),
-    }
-    pub struct TsImportType {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub arg: Str,
-        pub qualifier: Option<TsEntityName>,
-        pub type_args: Option<TsTypeParamInstantiation>,
-    }
-    pub struct TsTypeLit {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub members: Vec<TsTypeElement>,
-    }
-    pub struct TsArrayType {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub elem_type: Box<TsType>,
-    }
-
-    pub struct TsTupleType {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub elem_types: Vec<TsTupleElement>,
-    }
-
-    pub struct TsTupleElement {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub label: Option<Pat>,
-        pub ty: TsType,
-    }
-
-    pub struct TsOptionalType {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub type_ann: Box<TsType>,
-    }
-    pub struct TsRestType {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub type_ann: Box<TsType>,
-    }
-    pub enum TsUnionOrIntersectionType {
-        TsUnionType(TsUnionType),
-        TsIntersectionType(TsIntersectionType),
-    }
-    pub struct TsUnionType {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub types: Vec<Box<TsType>>,
-    }
-    pub struct TsIntersectionType {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub types: Vec<Box<TsType>>,
-    }
-    pub struct TsConditionalType {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub check_type: Box<TsType>,
-        pub extends_type: Box<TsType>,
-        pub true_type: Box<TsType>,
-        pub false_type: Box<TsType>,
-    }
-    pub struct TsInferType {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub type_param: TsTypeParamDecl,
-    }
-    pub struct TsParenthesizedType {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub type_ann: Box<TsType>,
-    }
-    pub struct TsTypeOperator {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub op: TsTypeOperatorOp,
-        pub type_ann: Box<TsType>,
-    }
-    pub enum TsTypeOperatorOp {
-        KeyOf,
-        Unique,
-        ReadOnly,
-    }
-    pub struct TsIndexedAccessType {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub readonly: bool,
-        pub obj_type: Box<TsType>,
-        pub index_type: Box<TsType>,
-    }
-    pub enum TruePlusMinus {
-        True,
-        Plus,
-        Minus,
-    }
-    pub struct TsMappedType {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub readonly: Option<TruePlusMinus>,
-        pub type_param: TsTypeParamDecl,
-        pub name_type: Option<Box<TsType>>,
-        pub optional: Option<TruePlusMinus>,
-        pub type_ann: Option<Box<TsType>>,
-    }
-    pub struct TsLitType {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub lit: TsLit,
-    }
-    pub enum TsLit {
-        BigInt(BigInt),
-        Number(Number),
-        Str(Str),
-        Bool(Bool),
-        Tpl(TsTplLitType),
-    }
-    pub struct TsTplLitType {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub types: Vec<Box<TsType>>,
-        pub quasis: Vec<TplElement>,
-    }
-    pub struct TsInterfaceDecl {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub id: Ident,
-        pub declare: bool,
-        pub type_params: Option<Vec<TsTypeParamDecl>>,
-        pub extends: Vec<TsExprWithTypeArgs>,
-        pub body: TsInterfaceBody,
-    }
-    pub struct TsInterfaceBody {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub body: Vec<TsTypeElement>,
-    }
-    pub struct TsExprWithTypeArgs {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub expr: TsEntityName,
-        pub type_args: Option<TsTypeParamInstantiation>,
-    }
-    pub struct TsTypeAliasDecl {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub declare: bool,
-        pub id: Ident,
-        pub type_params: Option<Vec<TsTypeParamDecl>>,
-        pub type_ann: Box<TsType>,
-    }
-    pub struct TsEnumDecl {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub declare: bool,
-        pub is_const: bool,
-        pub id: Ident,
-        pub members: Vec<TsEnumMember>,
-    }
-    pub struct TsEnumMember {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub id: TsEnumMemberId,
-        pub init: Option<Box<Expr>>,
-    }
-    pub enum TsEnumMemberId {
-        Ident(Ident),
-        Str(Str),
-    }
-    pub struct TsModuleDecl {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub declare: bool,
-        pub global: bool,
-        pub id: TsModuleName,
-        pub body: Option<TsNamespaceBody>,
-    }
-    pub enum TsNamespaceBody {
-        TsModuleBlock(TsModuleBlock),
-        TsNamespaceDecl(TsNamespaceDecl),
-    }
-    pub struct TsModuleBlock {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub body: Vec<ModuleItem>,
-    }
-    pub struct TsNamespaceDecl {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub declare: bool,
-        pub global: bool,
-        pub id: Ident,
-        pub body: Box<TsNamespaceBody>,
-    }
-    pub enum TsModuleName {
-        Ident(Ident),
-        Str(Str),
-    }
-    pub struct TsImportEqualsDecl {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub declare: bool,
-        pub is_export: bool,
-        pub is_type_only: bool,
-        pub id: Ident,
-        pub module_ref: TsModuleRef,
-    }
-    pub enum TsModuleRef {
-        TsEntityName(TsEntityName),
-        TsExternalModuleRef(TsExternalModuleRef),
-    }
-    pub struct TsExternalModuleRef {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub expr: Str,
-    }
-    pub struct TsExportAssignment {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub expr: Box<Expr>,
-    }
-    pub struct TsNamespaceExportDecl {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub id: Ident,
-    }
-    pub struct TsAsExpr {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub expr: Box<Expr>,
-        pub type_ann: Box<TsType>,
-    }
-    pub struct TsTypeAssertion {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub expr: Box<Expr>,
-        pub type_ann: Box<TsType>,
-    }
-    pub struct TsNonNullExpr {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub expr: Box<Expr>,
-    }
-    pub enum Accessibility {
-        Public,
-        Protected,
-        Private,
-    }
-    pub struct TsConstAssertion {
-        pub node_id: NodeId,
-        pub span: Span,
-        pub expr: Box<Expr>,
     }
 });

@@ -1,5 +1,5 @@
 use super::*;
-use ecma_visit::{noop_visit_type, Visit, VisitWith};
+use ecma_visit::{Visit, VisitWith};
 use global_common::{Span, Spanned};
 
 impl<I: Tokens> Parser<I> {
@@ -21,8 +21,6 @@ pub(super) struct Verifier {
 }
 
 impl Visit<'_> for Verifier {
-    noop_visit_type!();
-
     fn visit_assign_prop(&mut self, p: &AssignProp) {
         self.errors.push((p.span(), SyntaxError::AssignProperty));
     }

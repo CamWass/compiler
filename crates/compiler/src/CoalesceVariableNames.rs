@@ -1,5 +1,5 @@
 use ast::*;
-use ecma_visit::{noop_visit_mut_type, Visit, VisitMut, VisitMutWith, VisitWith};
+use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use global_common::DUMMY_SP;
 use global_common::{util::take::Take, SyntaxContext};
 use index::bit_set::{BitMatrix, BitSet};
@@ -378,8 +378,6 @@ impl CoalesceVariableNames<'_> {
 }
 
 impl<'ast> VisitMut<'ast> for CoalesceVariableNames<'_> {
-    noop_visit_mut_type!();
-
     fn visit_mut_function(&mut self, node: &'ast mut Function) {
         handle_fn!(self, node);
     }
@@ -641,8 +639,6 @@ struct GlobalVisitor<'a> {
 }
 
 impl<'ast> VisitMut<'ast> for GlobalVisitor<'_> {
-    noop_visit_mut_type!();
-
     fn visit_mut_function(&mut self, node: &'ast mut Function) {
         handle_fn!(self, node);
     }

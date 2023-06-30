@@ -2,7 +2,6 @@ use crate::{
     expr::Expr,
     ident::{BindingIdent, Ident},
     prop::PropName,
-    typescript::TsTypeAnn,
     GetNodeId, Invalid, NodeId,
 };
 use ast_node::ast_node;
@@ -44,11 +43,6 @@ pub struct ArrayPat {
     pub span: Span,
 
     pub elems: Vec<Option<Pat>>,
-
-    /// Only in an ambient context
-    pub optional: bool,
-
-    pub type_ann: Option<TsTypeAnn>,
 }
 
 #[ast_node]
@@ -59,11 +53,6 @@ pub struct ObjectPat {
     pub span: Span,
 
     pub props: Vec<ObjectPatProp>,
-
-    /// Only in an ambient context
-    pub optional: bool,
-
-    pub type_ann: Option<TsTypeAnn>,
 }
 
 #[ast_node]
@@ -76,8 +65,6 @@ pub struct AssignPat {
     pub left: Box<Pat>,
 
     pub right: Box<Expr>,
-
-    pub type_ann: Option<TsTypeAnn>,
 }
 
 /// EsTree `RestElement`
@@ -91,8 +78,6 @@ pub struct RestPat {
     pub dot3_token: Span,
 
     pub arg: Box<Pat>,
-
-    pub type_ann: Option<TsTypeAnn>,
 }
 
 #[ast_node]

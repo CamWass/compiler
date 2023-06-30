@@ -1,7 +1,7 @@
 use std::collections::hash_map::Entry;
 
 use ast::*;
-use ecma_visit::{noop_visit_mut_type, noop_visit_type, Visit, VisitMut, VisitMutWith, VisitWith};
+use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use index::vec::IndexVec;
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -94,8 +94,6 @@ function f() {
 "prop"s should not be collected
 */
 impl<'ast> Visit<'ast> for DeclFinder {
-    noop_visit_type!();
-
     // Don't visit nested functions.
     fn visit_function(&mut self, _node: &Function) {}
     fn visit_constructor(&mut self, _node: &Constructor) {}
@@ -189,8 +187,6 @@ pub fn find_pat_ids(node: &Pat) -> Vec<Id> {
 }
 
 impl<'a> Visit<'_> for DestructuringFinder<'a> {
-    noop_visit_type!();
-
     /// No-op (we don't care about expressions)
     fn visit_expr(&mut self, _: &Expr) {}
     fn visit_prop_name(&mut self, _: &PropName) {}
@@ -220,8 +216,6 @@ pub fn find_first_LHS_ident(node: &mut Pat) -> Option<&mut Ident> {
 }
 
 impl<'ast> VisitMut<'ast> for FindFirstLHSIdent<'ast> {
-    noop_visit_mut_type!();
-
     /// No-op (we don't care about expressions)
     fn visit_mut_expr(&mut self, _: &'ast mut Expr) {}
     fn visit_mut_prop_name(&mut self, _: &'ast mut PropName) {}
@@ -296,22 +290,13 @@ impl<'a> FunctionLike<'a> for Function {
         self.body.as_ref().map(|b| Node::from(b))
     }
 }
-fn get_pat_of_param_or_ts_param_prop<'a>(param: &'a ParamOrTsParamProp) -> &'a Pat {
-    match param {
-        ParamOrTsParamProp::Param(p) => &p.pat,
-        ParamOrTsParamProp::TsParamProp(_) => unreachable!("removed by earlier pass"),
-    }
-}
 impl<'a> FunctionLike<'a> for Constructor {
-    type ParamIter = std::iter::Map<
-        std::slice::Iter<'a, ParamOrTsParamProp>,
-        fn(&'a ParamOrTsParamProp) -> &'a Pat,
-    >;
+    type ParamIter = std::iter::Map<std::slice::Iter<'a, Param>, fn(&'a Param) -> &'a Pat>;
 
     visit_body!();
 
     fn params(&'a self) -> Self::ParamIter {
-        self.params.iter().map(get_pat_of_param_or_ts_param_prop)
+        self.params.iter().map(get_pat_of_param)
     }
 
     fn body(&'a self) -> Option<Node<'a>> {

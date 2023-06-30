@@ -2032,7 +2032,6 @@ impl VisitMut<'_> for Renamer<'_> {
                     node_id: self.node_id_gen.next(),
                     span: DUMMY_SP,
                     sym: new_name.clone(),
-                    optional: false,
                 });
                 return;
             }
@@ -2047,7 +2046,6 @@ impl VisitMut<'_> for Renamer<'_> {
                     node_id: self.node_id_gen.next(),
                     span: DUMMY_SP,
                     sym: new_name.clone(),
-                    optional: false,
                 });
                 node.computed = false;
                 return;

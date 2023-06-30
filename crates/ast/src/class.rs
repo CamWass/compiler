@@ -1,13 +1,10 @@
 use crate::{
     expr::Expr,
-    function::{Function, ParamOrTsParamProp},
+    function::{Function, Param},
     ident::PrivateName,
     prop::PropName,
     stmt::BlockStmt,
-    typescript::{
-        Accessibility, TsExprWithTypeArgs, TsIndexSignature, TsTypeAnn, TsTypeParamInstantiation,
-    },
-    EmptyStmt, GetNodeId, NodeId, TsTypeParamDecl,
+    EmptyStmt, GetNodeId, NodeId,
 };
 use ast_node::ast_node;
 use global_common::{EqIgnoreSpan, Span};
@@ -21,14 +18,7 @@ pub struct Class {
 
     pub decorators: Vec<Decorator>,
 
-    pub is_abstract: bool,
-
-    pub type_params: Option<Vec<TsTypeParamDecl>>,
-
     pub extends: Option<ExtendsClause>,
-
-    /// Typescript extension.
-    pub implements: Vec<TsExprWithTypeArgs>,
 
     pub body: Vec<ClassMember>,
 }
@@ -40,8 +30,6 @@ pub struct ExtendsClause {
 
     pub span: Span,
     pub super_class: Box<Expr>,
-    /// Typescript extension.
-    pub super_type_params: Option<TsTypeParamInstantiation>,
 }
 
 #[ast_node]
@@ -54,7 +42,6 @@ pub enum ClassMember {
     /// stage 0 / Typescript
     ClassProp(ClassProp),
     PrivateProp(PrivateProp),
-    TsIndexSignature(TsIndexSignature),
     Empty(EmptyStmt),
 }
 
@@ -69,27 +56,9 @@ pub struct ClassProp {
 
     pub value: Option<Box<Expr>>,
 
-    pub type_ann: Option<TsTypeAnn>,
-
     pub is_static: bool,
 
     pub decorators: Vec<Decorator>,
-
-    /// Typescript extension.
-    pub accessibility: Option<Accessibility>,
-
-    /// Typescript extension.
-    pub is_abstract: bool,
-
-    pub is_optional: bool,
-
-    pub is_override: bool,
-
-    pub readonly: bool,
-
-    pub declare: bool,
-
-    pub definite: bool,
 }
 
 #[ast_node]
@@ -103,25 +72,9 @@ pub struct PrivateProp {
 
     pub value: Option<Box<Expr>>,
 
-    pub type_ann: Option<TsTypeAnn>,
-
     pub is_static: bool,
 
     pub decorators: Vec<Decorator>,
-
-    /// Typescript extension.
-    pub accessibility: Option<Accessibility>,
-
-    /// Typescript extension.
-    pub is_abstract: bool,
-
-    pub is_optional: bool,
-
-    pub is_override: bool,
-
-    pub readonly: bool,
-
-    pub definite: bool,
 }
 
 macro_rules! method {
@@ -141,16 +94,6 @@ macro_rules! method {
             pub kind: MethodKind,
 
             pub is_static: bool,
-
-            /// Typescript extension.
-            pub accessibility: Option<Accessibility>,
-
-            /// Typescript extension.
-            pub is_abstract: bool,
-
-            pub is_optional: bool,
-
-            pub is_override: bool,
         }
     };
 }
@@ -165,13 +108,10 @@ pub struct Constructor {
 
     pub span: Span,
 
-    pub params: Vec<ParamOrTsParamProp>,
+    pub params: Vec<Param>,
 
     pub body: Option<BlockStmt>,
 
-    pub accessibility: Option<Accessibility>,
-
-    pub is_optional: bool,
 }
 
 #[ast_node]

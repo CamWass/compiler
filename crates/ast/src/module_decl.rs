@@ -3,7 +3,6 @@ use crate::{
     expr::{ClassExpr, Expr, FnExpr},
     ident::Ident,
     lit::Str,
-    typescript::{TsExportAssignment, TsImportEqualsDecl, TsInterfaceDecl, TsNamespaceExportDecl},
     GetNodeId, NodeId, ObjectLit,
 };
 use ast_node::ast_node;
@@ -23,12 +22,6 @@ pub enum ModuleDecl {
     ExportDefaultExpr(ExportDefaultExpr),
 
     ExportAll(ExportAll),
-
-    TsImportEquals(TsImportEqualsDecl),
-
-    TsExportAssignment(TsExportAssignment),
-
-    TsNamespaceExport(TsNamespaceExportDecl),
 }
 
 #[ast_node]
@@ -62,8 +55,6 @@ pub struct ImportDecl {
 
     pub src: Str,
 
-    pub type_only: bool,
-
     pub asserts: Option<ObjectLit>,
 }
 
@@ -93,8 +84,6 @@ pub struct NamedExport {
 
     pub src: Option<Str>,
 
-    pub type_only: bool,
-
     pub asserts: Option<ObjectLit>,
 }
 
@@ -114,8 +103,6 @@ pub enum DefaultDecl {
     Class(ClassExpr),
 
     Fn(FnExpr),
-
-    TsInterfaceDecl(TsInterfaceDecl),
 }
 
 #[ast_node]

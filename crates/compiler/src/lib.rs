@@ -29,7 +29,6 @@ pub mod normalize_properties;
 mod optimize_properties;
 pub mod optimize_properties2;
 pub mod resolver;
-mod transform_ts;
 mod utils;
 
 #[cfg(test)]
@@ -109,11 +108,9 @@ impl Compiler {
             let unresolved_mark = Mark::new();
             let top_level_mark = Mark::new();
 
-            ast.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark, true));
+            ast.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark));
 
             normalize::normalize(&mut ast, node_id_gen);
-
-            transform_ts::transform_param_props(&mut ast, node_id_gen);
 
             let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 

@@ -105,19 +105,10 @@ impl<I: Tokens> Parser<I> {
             let node = if peeked_is!(self, "const") {
                 self.input.bump(); // as
                 self.input.bump(); // const
-                Box::new(Expr::TsConstAssertion(TsConstAssertion {
-                    node_id: node_id!(self),
-                    span: span!(self, start),
-                    expr,
-                }))
+                expr
             } else {
                 let type_ann = self.next_then_parse_ts_type()?;
-                Box::new(Expr::TsAs(TsAsExpr {
-                    node_id: node_id!(self),
-                    span: span!(self, start),
-                    expr,
-                    type_ann,
-                }))
+                expr
             };
 
             return self.parse_bin_op_recursively_inner(node, min_prec);
@@ -225,17 +216,10 @@ impl<I: Tokens> Parser<I> {
             if eat!(self, "const") {
                 expect!(self, '>');
                 let expr = self.parse_unary_expr()?;
-                return Ok(Box::new(Expr::TsConstAssertion(TsConstAssertion {
-                    node_id: node_id!(self),
-                    span: span!(self, start),
-                    expr,
-                })));
+                return Ok(expr);
             }
 
-            return self
-                .parse_ts_type_assertion(start)
-                .map(Expr::from)
-                .map(Box::new);
+            return self.parse_ts_type_assertion(start);
         }
 
         // Parse update expression

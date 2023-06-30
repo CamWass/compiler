@@ -72,7 +72,6 @@ impl<I: Tokens> Parser<I> {
                 span: span!(self, start),
                 left: Box::new(left),
                 right,
-                type_ann: None,
             }));
         }
 
@@ -109,7 +108,6 @@ impl<I: Tokens> Parser<I> {
                     span: span!(self, start),
                     dot3_token,
                     arg: Box::new(pat),
-                    type_ann: None,
                 });
                 elems.push(Some(pat));
                 // Trailing comma isn't allowed
@@ -126,8 +124,6 @@ impl<I: Tokens> Parser<I> {
             node_id: node_id!(self),
             span: span!(self, start),
             elems,
-            optional,
-            type_ann: None,
         }))
     }
 
@@ -165,20 +161,7 @@ impl<I: Tokens> Parser<I> {
         if self.input.syntax().typescript() {
             if eat!(self, '?') {
                 match pat {
-                    Pat::Ident(BindingIdent {
-                        id:
-                            Ident {
-                                ref mut optional, ..
-                            },
-                        ..
-                    })
-                    | Pat::Array(ArrayPat {
-                        ref mut optional, ..
-                    })
-                    | Pat::Object(ObjectPat {
-                        ref mut optional, ..
-                    }) => {
-                        *optional = true;
+                    Pat::Ident(_) | Pat::Array(_) | Pat::Object(_) => {
                         opt = true;
                     }
                     _ if self.input.syntax().dts() || self.ctx().in_declare => {}
@@ -193,31 +176,17 @@ impl<I: Tokens> Parser<I> {
             }
 
             match pat {
-                Pat::Array(ArrayPat {
-                    ref mut type_ann,
-                    ref mut span,
-                    ..
-                })
+                Pat::Array(ArrayPat { ref mut span, .. })
                 | Pat::Ident(BindingIdent {
-                    ref mut type_ann,
                     id: Ident { ref mut span, .. },
                     ..
                 })
-                | Pat::Object(ObjectPat {
-                    ref mut type_ann,
-                    ref mut span,
-                    ..
-                })
-                | Pat::Rest(RestPat {
-                    ref mut type_ann,
-                    ref mut span,
-                    ..
-                }) => {
+                | Pat::Object(ObjectPat { ref mut span, .. })
+                | Pat::Rest(RestPat { ref mut span, .. }) => {
                     let new_type_ann = self.try_parse_ts_type_ann()?;
                     if new_type_ann.is_some() {
                         *span = Span::new(pat_start, self.input.prev_span().hi, Default::default());
                     }
-                    *type_ann = new_type_ann;
                 }
                 Pat::Assign(AssignPat { ref mut span, .. }) => {
                     if (self.try_parse_ts_type_ann()?).is_some() {
@@ -245,7 +214,6 @@ impl<I: Tokens> Parser<I> {
                 node_id: node_id!(self),
                 span: span!(self, start),
                 left: Box::new(pat),
-                type_ann: None,
                 right,
             })
         } else {
@@ -260,9 +228,10 @@ impl<I: Tokens> Parser<I> {
         Ok(pat)
     }
 
-    pub(super) fn parse_constructor_params(&mut self) -> PResult<Vec<ParamOrTsParamProp>> {
+    pub(super) fn parse_constructor_params(&mut self) -> PResult<(Vec<Param>, Vec<JsWord>)> {
         let mut first = true;
         let mut params = vec![];
+        let mut props = vec![];
 
         while !eof!(self) && !self.input.is(&tok!(')')) {
             if first {
@@ -295,62 +264,64 @@ impl<I: Tokens> Parser<I> {
                     span: span!(self, pat_start),
                     dot3_token,
                     arg: Box::new(pat),
-                    type_ann,
                 });
-                params.push(ParamOrTsParamProp::Param(Param {
+                params.push(Param {
                     node_id: node_id!(self),
                     span: span!(self, param_start),
                     decorators,
                     pat,
-                }));
+                });
                 break;
             } else {
-                params.push(self.parse_constructor_param(param_start, decorators)?);
+                let (param, prop) = self.parse_constructor_param(param_start, decorators)?;
+                params.push(param);
+                if let Some(prop) = prop {
+                    props.push(prop);
+                }
             }
         }
 
-        Ok(params)
+        Ok((params, props))
     }
 
     fn parse_constructor_param(
         &mut self,
         param_start: BytePos,
         decorators: Vec<Decorator>,
-    ) -> PResult<ParamOrTsParamProp> {
-        let (accessibility, is_override, readonly) = if self.input.syntax().typescript() {
-            let accessibility = self.parse_access_modifier()?;
+    ) -> PResult<(Param, Option<JsWord>)> {
+        let (has_accessibility, is_override, readonly) = if self.input.syntax().typescript() {
+            let has_accessibility = self.parse_access_modifier()?;
             (
-                accessibility,
+                has_accessibility,
                 self.parse_ts_modifier(&["override"])?.is_some(),
                 self.parse_ts_modifier(&["readonly"])?.is_some(),
             )
         } else {
-            (None, false, false)
+            (false, false, false)
         };
-        if accessibility == None && !is_override && !readonly {
-            let pat = self.parse_formal_param_pat()?;
-            Ok(ParamOrTsParamProp::Param(Param {
+        let pat = self.parse_formal_param_pat()?;
+        let prop = if !has_accessibility && !is_override && !readonly {
+            None
+        } else {
+            let prop = match &pat {
+                Pat::Ident(i) => i.id.sym.clone(),
+                Pat::Assign(a) => match a.left.as_ref() {
+                    Pat::Ident(i) => i.id.sym.clone(),
+                    _ => syntax_error!(self, pat.span(), SyntaxError::TsInvalidParamPropPat),
+                },
+                node => syntax_error!(self, node.span(), SyntaxError::TsInvalidParamPropPat),
+            };
+            Some(prop)
+        };
+        Ok((
+            Param {
                 node_id: node_id!(self),
                 span: span!(self, param_start),
                 decorators,
                 pat,
-            }))
-        } else {
-            let param = match self.parse_formal_param_pat()? {
-                Pat::Ident(i) => TsParamPropParam::Ident(i),
-                Pat::Assign(a) => TsParamPropParam::Assign(a),
-                node => syntax_error!(self, node.span(), SyntaxError::TsInvalidParamPropPat),
-            };
-            Ok(ParamOrTsParamProp::TsParamProp(TsParamProp {
-                node_id: node_id!(self),
-                span: span!(self, param_start),
-                accessibility,
-                is_override,
-                readonly,
-                decorators,
-                param,
-            }))
-        }
+            },
+            prop,
+        ))
     }
 
     pub(super) fn parse_formal_params(&mut self) -> PResult<Vec<Param>> {
@@ -394,7 +365,6 @@ impl<I: Tokens> Parser<I> {
                         span: span!(self, pat_start),
                         left: Box::new(pat),
                         right,
-                        type_ann: None,
                     }
                     .into();
                 }
@@ -412,7 +382,6 @@ impl<I: Tokens> Parser<I> {
                     span: span!(self, pat_start),
                     dot3_token,
                     arg: Box::new(pat),
-                    type_ann,
                 });
 
                 if is!(self, ',') {
@@ -594,7 +563,6 @@ impl<I: Tokens> Parser<I> {
                         PatOrExpr::Pat(left) => left,
                     },
                     right,
-                    type_ann: None,
                 }))
             }
             Expr::Object(ObjectLit { span, props, .. }) => {
@@ -642,15 +610,12 @@ impl<I: Tokens> Parser<I> {
                                         arg: Box::new(
                                             self.reparse_expr_as_pat(PatType::BindingPat, expr)?,
                                         ),
-                                        type_ann: None,
                                     }))
                                 }
                                 _ => syntax_error!(self, prop.span(), SyntaxError::InvalidPat),
                             }
                         })
                         .collect::<PResult<_>>()?,
-                    optional: false,
-                    type_ann: None,
                 }))
             }
             Expr::Ident(ident) => Ok(Pat::Ident(BindingIdent::from_ident(ident, node_id!(self)))),
@@ -665,8 +630,6 @@ impl<I: Tokens> Parser<I> {
                         node_id: node_id!(self),
                         span,
                         elems: vec![],
-                        optional: false,
-                        type_ann: None,
                     }));
                 }
 
@@ -728,7 +691,6 @@ impl<I: Tokens> Parser<I> {
                                         span: expr_span,
                                         dot3_token,
                                         arg: Box::new(pat),
-                                        type_ann: None,
                                     })
                                 })
                                 .map(Some)?
@@ -746,8 +708,6 @@ impl<I: Tokens> Parser<I> {
                     node_id: node_id!(self),
                     span,
                     elems: params,
-                    optional: false,
-                    type_ann: None,
                 }))
             }
 
@@ -824,7 +784,6 @@ impl<I: Tokens> Parser<I> {
                         span: expr_span,
                         dot3_token,
                         arg: Box::new(pat),
-                        type_ann: None,
                     })
                 })?
             }

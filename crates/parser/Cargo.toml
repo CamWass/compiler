@@ -24,6 +24,7 @@ unicode-xid = "0.2.1"
 criterion = "0.3"
 serde_json = "1"
 testing = {version = "0.1.0", path = "../../testing"}
+transform_testing = { path = "../transform_testing" }
 
 [[bench]]
 name = "bench_main"

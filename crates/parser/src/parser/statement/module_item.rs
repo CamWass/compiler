@@ -47,10 +47,11 @@ impl<I: Tokens> Parser<I> {
         expect!(self, "import");
 
         if self.input.syntax().typescript() && is!(self, IdentRef) && peeked_is!(self, '=') {
-            return self
-                .parse_ts_import_equals_decl(start, false, false)
-                .map(ModuleDecl::from)
-                .map(ModuleItem::from);
+            todo!();
+            // return self
+            //     .parse_ts_import_equals_decl(start, false, false)
+            //     .map(ModuleDecl::from)
+            //     .map(ModuleItem::from);
         }
 
         // Handle import 'mod.js'
@@ -74,7 +75,6 @@ impl<I: Tokens> Parser<I> {
                 span: span!(self, start),
                 src,
                 specifiers: vec![],
-                type_only: false,
                 asserts: None,
             }))
             .map(ModuleItem::from);
@@ -88,10 +88,11 @@ impl<I: Tokens> Parser<I> {
             self.assert_and_bump(&tok!("type"));
 
             if is!(self, IdentRef) && peeked_is!(self, '=') {
-                return self
-                    .parse_ts_import_equals_decl(start, false, true)
-                    .map(ModuleDecl::from)
-                    .map(ModuleItem::from);
+                todo!();
+                // return self
+                //     .parse_ts_import_equals_decl(start, false, true)
+                //     .map(ModuleDecl::from)
+                //     .map(ModuleItem::from);
             }
         }
 
@@ -175,7 +176,6 @@ impl<I: Tokens> Parser<I> {
             span: span!(self, start),
             specifiers,
             src,
-            type_only,
             asserts,
         }))
         .map(ModuleItem::from)
@@ -280,21 +280,23 @@ impl<I: Tokens> Parser<I> {
         if self.input.syntax().typescript() {
             if eat!(self, "import") {
                 // export import A = B
-                return self
-                    .parse_ts_import_equals_decl(start, /* is_export */ true, false)
-                    .map(From::from);
+                todo!();
+                // return self
+                //     .parse_ts_import_equals_decl(start, /* is_export */ true, false)
+                //     .map(From::from);
             }
 
             if eat!(self, '=') {
                 // `export = x;`
                 let expr = self.parse_expr()?;
                 expect!(self, ';');
-                return Ok(TsExportAssignment {
-                    node_id: node_id!(self),
-                    span: span!(self, start),
-                    expr,
-                }
-                .into());
+                todo!();
+                // return Ok(TsExportAssignment {
+                //     node_id: node_id!(self),
+                //     span: span!(self, start),
+                //     expr,
+                // }
+                // .into());
             }
 
             if eat!(self, "as") {
@@ -303,12 +305,13 @@ impl<I: Tokens> Parser<I> {
                 expect!(self, "namespace");
                 let id = self.parse_ident(false, false)?;
                 expect!(self, ';');
-                return Ok(TsNamespaceExportDecl {
-                    node_id: node_id!(self),
-                    span: span!(self, start),
-                    id,
-                }
-                .into());
+                todo!();
+                // return Ok(TsNamespaceExportDecl {
+                //     node_id: node_id!(self),
+                //     span: span!(self, start),
+                //     id,
+                // }
+                // .into());
             }
         }
 
@@ -351,13 +354,6 @@ impl<I: Tokens> Parser<I> {
                     let class_start = self.input.cur_pos();
                     self.assert_and_bump(&tok!("abstract"));
                     let mut class = self.parse_default_class(start, class_start, decorators)?;
-                    match class {
-                        ExportDefaultDecl {
-                            decl: DefaultDecl::Class(ClassExpr { ref mut class, .. }),
-                            ..
-                        } => class.is_abstract = true,
-                        _ => unreachable!(),
-                    }
                     return Ok(class.into());
                 }
                 if is!(self, "abstract") && peeked_is!(self, "interface") {
@@ -368,15 +364,16 @@ impl<I: Tokens> Parser<I> {
                 if is!(self, "interface") {
                     let interface_start = self.input.cur_pos();
                     self.assert_and_bump(&tok!("interface"));
-                    let decl = self
-                        .parse_ts_interface_decl(interface_start)
-                        .map(DefaultDecl::from)?;
-                    return Ok(ExportDefaultDecl {
-                        node_id: node_id!(self),
-                        span: span!(self, start),
-                        decl,
-                    }
-                    .into());
+                    todo!();
+                    // let decl = self
+                    //     .parse_ts_interface_decl(interface_start)
+                    //     .map(DefaultDecl::from)?;
+                    // return Ok(ExportDefaultDecl {
+                    //     node_id: node_id!(self),
+                    //     span: span!(self, start),
+                    //     decl,
+                    // }
+                    // .into());
                 }
             }
 
@@ -427,16 +424,17 @@ impl<I: Tokens> Parser<I> {
             let start = self.input.cur_pos();
             self.assert_and_bump(&tok!("const"));
             self.assert_and_bump(&tok!("enum"));
-            return self
-                .parse_ts_enum_decl(start, true)
-                .map(Decl::from)
-                .map(|decl| {
-                    ModuleDecl::ExportDecl(ExportDecl {
-                        node_id: node_id!(self),
-                        span: span!(self, start),
-                        decl,
-                    })
-                });
+            todo!();
+            // return self
+            //     .parse_ts_enum_decl(start, true)
+            //     .map(Decl::from)
+            //     .map(|decl| {
+            //         ModuleDecl::ExportDecl(ExportDecl {
+            //             node_id: node_id!(self),
+            //             span: span!(self, start),
+            //             decl,
+            //         })
+            //     });
         } else if !type_only
             && (is!(self, "var")
                 || is!(self, "const")
@@ -460,7 +458,6 @@ impl<I: Tokens> Parser<I> {
                         span: Span::new(start, src.span.hi(), Default::default()),
                         specifiers: vec![s],
                         src: Some(src),
-                        type_only,
                         asserts,
                     }));
                 }
@@ -488,7 +485,6 @@ impl<I: Tokens> Parser<I> {
                             exported: default,
                         })],
                         src: Some(src),
-                        type_only,
                         asserts,
                     }));
                 }
@@ -559,7 +555,6 @@ impl<I: Tokens> Parser<I> {
                 span: span!(self, start),
                 specifiers,
                 src,
-                type_only,
                 asserts,
             }));
         };

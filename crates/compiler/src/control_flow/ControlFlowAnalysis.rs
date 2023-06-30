@@ -4,7 +4,7 @@ use super::node::*;
 use super::util::*;
 use super::ControlFlowGraph::{Annotation, Branch, ControlFlowGraph};
 use ast::*;
-use ecma_visit::{noop_visit_type, Visit, VisitWith};
+use ecma_visit::{Visit, VisitWith};
 use rustc_hash::FxHashMap;
 use std::collections::hash_map::Entry;
 use std::collections::BinaryHeap;
@@ -776,8 +776,6 @@ where
     N: Annotation,
     E: Annotation,
 {
-    noop_visit_type!();
-
     fn visit_for_in_stmt(&mut self, node: &'ast ForInStmt) {
         p!(self, ForInStmt);
         self.handle_enhanced_for(Node::from(node));

@@ -14,10 +14,6 @@ impl<'a> Emitter<'a> {
                 emit!(n);
                 formatting_semi!(); // VarDecl is also used for for-loops
             }
-            Decl::TsEnum(ref n) => emit!(n),
-            Decl::TsInterface(ref n) => emit!(n),
-            Decl::TsModule(ref n) => emit!(n),
-            Decl::TsTypeAlias(ref n) => emit!(n),
         }
     }
 
@@ -25,26 +21,12 @@ impl<'a> Emitter<'a> {
     fn emit_class_decl(&mut self, node: &ClassDecl) -> Result {
         self.emit_leading_comments_of_span(node.span(), false)?;
 
-        if node.declare {
-            keyword!("declare");
-            space!();
-        }
-
         for dec in &node.class.decorators {
             emit!(dec);
         }
         keyword!("class");
         space!();
         emit!(node.ident);
-        if let Some(type_params) = &node.class.type_params {
-            punct!("<");
-            self.emit_list(
-                node.class.span,
-                Some(type_params),
-                ListFormat::TypeParameters,
-            )?;
-            punct!(">");
-        }
 
         self.emit_class_trailing(&node.class)?;
     }
@@ -52,11 +34,6 @@ impl<'a> Emitter<'a> {
     #[emitter]
     fn emit_fn_decl(&mut self, node: &FnDecl) -> Result {
         self.emit_leading_comments_of_span(node.span(), false)?;
-
-        if node.declare {
-            keyword!("declare");
-            space!();
-        }
 
         if node.function.is_async {
             keyword!("async");
@@ -79,11 +56,6 @@ impl<'a> Emitter<'a> {
     #[emitter]
     fn emit_var_decl(&mut self, node: &VarDecl) -> Result {
         self.emit_leading_comments_of_span(node.span, false)?;
-
-        if node.declare {
-            keyword!("declare");
-            space!();
-        }
 
         {
             let span = self.cm.span_until_char(node.span, ' ');

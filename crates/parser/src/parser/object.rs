@@ -301,25 +301,20 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                             false,
                             false,
                         )
-                        .map(
-                            |Function {
-                                 body, return_type, ..
-                             }| {
-                                if self.input.syntax().typescript()
-                                    && self.input.target() == JscTarget::Es3
-                                {
-                                    self.emit_err(key_span, SyntaxError::TS1056);
-                                }
+                        .map(|Function { body, .. }| {
+                            if self.input.syntax().typescript()
+                                && self.input.target() == JscTarget::Es3
+                            {
+                                self.emit_err(key_span, SyntaxError::TS1056);
+                            }
 
-                                Prop::Getter(GetterProp {
-                                    node_id: node_id!(self),
-                                    span: span!(self, start),
-                                    key,
-                                    type_ann: return_type,
-                                    body,
-                                })
-                            },
-                        ),
+                            Prop::Getter(GetterProp {
+                                node_id: node_id!(self),
+                                span: span!(self, start),
+                                key,
+                                body,
+                            })
+                        }),
                     js_word!("set") => self
                         .parse_fn_args_body(
                             // no decorator in an object literal
@@ -440,8 +435,6 @@ impl<I: Tokens> ParseObject<Pat> for Parser<I> {
             node_id: node_id!(self),
             span,
             props,
-            optional,
-            type_ann: None,
         }))
     }
 
@@ -460,7 +453,6 @@ impl<I: Tokens> ParseObject<Pat> for Parser<I> {
                 span: span!(self, start),
                 dot3_token,
                 arg,
-                type_ann: None,
             }));
         }
 

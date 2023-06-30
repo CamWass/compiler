@@ -1,4 +1,3 @@
-use crate::typescript::TsTypeAnn;
 use crate::{GetNodeId, NodeId};
 use ast_node::ast_node;
 use atoms::{js_word, JsWord};
@@ -12,16 +11,11 @@ pub struct BindingIdent {
 
     #[span]
     pub id: Ident,
-    pub type_ann: Option<TsTypeAnn>,
 }
 
 impl BindingIdent {
     pub fn from_ident(id: Ident, node_id: NodeId) -> Self {
-        Self {
-            id,
-            type_ann: None,
-            node_id,
-        }
+        Self { id, node_id }
     }
 }
 
@@ -33,9 +27,6 @@ pub struct Ident {
 
     pub span: Span,
     pub sym: JsWord,
-
-    /// TypeScript only. Used in case of an optional parameter.
-    pub optional: bool,
 }
 
 impl Take for Ident {
@@ -44,7 +35,6 @@ impl Take for Ident {
             node_id: NodeId::DUMMY,
             span: DUMMY_SP,
             sym: js_word!(""),
-            optional: false,
         }
     }
 }
@@ -59,13 +49,7 @@ impl arbitrary::Arbitrary for Ident {
         }
         let sym = sym.into();
 
-        let optional = u.arbitrary()?;
-
-        Ok(Self {
-            span,
-            sym,
-            optional,
-        })
+        Ok(Self { span, sym })
     }
 }
 
@@ -89,7 +73,6 @@ impl AsRef<str> for Ident {
 //         Ident {
 //             span,
 //             sym,
-//             optional: false,
 //         }
 //     }
 // }

@@ -13,7 +13,7 @@ fn test_transform(input: &str, expected: &str) {
 
                 crate::normalize_properties::normalize_properties(&mut program, &mut node_id_gen);
 
-                program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark, false));
+                program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark));
 
                 let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 
@@ -39,7 +39,7 @@ fn test_local_var_indices(input: &str, expected: &str) {
 
                 crate::normalize_properties::normalize_properties(&mut program, &mut node_id_gen);
 
-                program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark, false));
+                program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark));
 
                 let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 

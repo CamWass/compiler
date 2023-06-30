@@ -13,7 +13,7 @@ fn test_transform(input: &str, expected: &str) {
                 let unresolved_mark = Mark::new();
                 let top_level_mark = Mark::new();
 
-                program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark, false));
+                program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark));
 
                 crate::normalize::normalize(&mut program, &mut node_id_gen);
 

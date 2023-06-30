@@ -1,7 +1,7 @@
 use super::node::{Node, NodeKind};
 use ast::*;
 use atoms::JsWord;
-use ecma_visit::{noop_visit_type, Visit, VisitWith};
+use ecma_visit::{Visit, VisitWith};
 use rustc_hash::FxHashMap;
 use std::hash::Hash;
 
@@ -78,8 +78,6 @@ pub struct FindPossibleExceptions {
 }
 
 impl<'ast> Visit<'ast> for FindPossibleExceptions {
-    noop_visit_type!();
-
     fn visit_script(&mut self, _node: &'ast Script) {}
     fn visit_block_stmt(&mut self, _node: &'ast BlockStmt) {}
     fn visit_try_stmt(&mut self, _node: &'ast TryStmt) {}
