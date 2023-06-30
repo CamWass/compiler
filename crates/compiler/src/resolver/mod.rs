@@ -105,13 +105,6 @@ const LOG: bool = false && cfg!(debug_assertions);
 /// variable is top-level.** This is simply a configuration of the `resolver`
 /// pass.
 ///
-///
-/// ## `typescript`
-///
-/// Enable this only if you are going to strip types or apply type-aware
-/// passes like decorators pass.
-///
-///
 /// # FAQ
 ///
 /// ## Does a pair `(JsWord, SyntaxContext)` always uniquely identifiers a

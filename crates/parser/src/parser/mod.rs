@@ -103,31 +103,6 @@ impl<I: Tokens> Parser<I> {
         })
     }
 
-    pub fn parse_typescript_module(&mut self) -> PResult<Module> {
-        trace_cur!(self, parse_typescript_module);
-
-        debug_assert!(self.syntax().typescript());
-
-        //TODO (swc): parse() -> PResult<Program>
-        let ctx = Context {
-            module: YesNoMaybe::Yes,
-            strict: YesMaybe::Yes,
-            ..self.ctx()
-        };
-        // Module code is always in strict mode
-        self.set_ctx(ctx);
-
-        let start = self.input.cur_pos();
-        let shebang = self.parse_shebang()?;
-
-        self.parse_block_body(true, true, None).map(|body| Module {
-            node_id: node_id!(self),
-            span: span!(self, start),
-            body,
-            shebang,
-        })
-    }
-
     /// Returns [Module] if it's a module and returns [Script] if it's not a
     /// module.
     pub fn parse_program(&mut self) -> PResult<Program> {

@@ -646,7 +646,7 @@ impl<I: Tokens> Parser<I> {
                     }
 
                     if self.syntax().typescript() {
-                        // todo!();
+                        todo!();
                         // let type_ann = match decl.decls[0].name {
                         //     Pat::Ident(ref v) => Some(&v.type_ann),
                         //     Pat::Array(ref v) => Some(&v.type_ann),
