@@ -628,6 +628,17 @@ impl<I: Tokens> Parser<I> {
                 };
                 let body: Option<_> = self.with_ctx(ctx).parse_fn_body(false, false)?;
 
+                if body.is_none() {
+                    if let Some(last) = param_props.last().map(|(_, p)| p) {
+                        for (_, param) in &param_props {
+                            if param != last {
+                                self.emit_err(*param, SyntaxError::TS2369);
+                            }
+                        }
+                        syntax_error!(self, *last, SyntaxError::TS2369);
+                    }
+                }
+
                 if self.syntax().typescript() && body.is_none() {
                     // Declare constructors cannot have assignment pattern in parameters
                     for p in &params {
@@ -663,7 +674,7 @@ impl<I: Tokens> Parser<I> {
                             if param_props.is_empty() {
                                 return Ok(None);
                             } else {
-                                todo!("transpile TS param props");
+                                unreachable!("should have thrown error above");
                             }
                         } else {
                             unreachable!("parse_fn_body should have returned Err");

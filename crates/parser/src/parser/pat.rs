@@ -228,7 +228,9 @@ impl<I: Tokens> Parser<I> {
         Ok(pat)
     }
 
-    pub(super) fn parse_constructor_params(&mut self) -> PResult<(Vec<Param>, Vec<JsWord>)> {
+    pub(super) fn parse_constructor_params(
+        &mut self,
+    ) -> PResult<(Vec<Param>, Vec<(JsWord, Span)>)> {
         let mut first = true;
         let mut params = vec![];
         let mut props = vec![];
@@ -274,10 +276,10 @@ impl<I: Tokens> Parser<I> {
                 break;
             } else {
                 let (param, prop) = self.parse_constructor_param(param_start, decorators)?;
-                params.push(param);
                 if let Some(prop) = prop {
-                    props.push(prop);
+                    props.push((prop, param.span));
                 }
+                params.push(param);
             }
         }
 
