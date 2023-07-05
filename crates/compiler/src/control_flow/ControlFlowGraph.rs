@@ -196,7 +196,7 @@ pub fn is_entering_new_cfg_node<'ast>(n: Node<'ast>, parent: Node<'ast>) -> bool
             // is atomic without change in control flow. The next change of
             // control is going into the function's body, represented by the second
             // child.
-            Some(n.node_id) != f.body.as_ref().map(|s| s.node_id)
+            n.node_id != f.body.node_id
         }
         // NodeKind::WhileStmt(_) | NodeKind::DoWhileStmt(_) | NodeKind::IfStmt(_) => {
         //     // These control structures are represented by a node that holds the

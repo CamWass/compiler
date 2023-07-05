@@ -385,11 +385,13 @@ impl<I: Tokens> Parser<I> {
                 && self.input.peeked_is(&tok!("function"))
                 && !self.input.has_linebreak_between_cur_and_peeked()
             {
-                let decl = self.parse_default_async_fn(start, decorators)?;
-                return Ok(ModuleDecl::ExportDefaultDecl(decl));
+                todo!()
+                // let decl = self.parse_default_async_fn(start, decorators)?;
+                // return Ok(ModuleDecl::ExportDefaultDecl(decl));
             } else if is!(self, "function") {
-                let decl = self.parse_default_fn(start, decorators)?;
-                return Ok(ModuleDecl::ExportDefaultDecl(decl));
+                todo!()
+                // let decl = self.parse_default_fn(start, decorators)?;
+                // return Ok(ModuleDecl::ExportDefaultDecl(decl));
             } else if self.input.syntax().export_default_from()
                 && (is!(self, "from") || (is!(self, ',') && peeked_is!(self, '{')))
             {
@@ -413,9 +415,11 @@ impl<I: Tokens> Parser<I> {
             && self.input.peeked_is(&tok!("function"))
             && !self.input.has_linebreak_between_cur_and_peeked()
         {
-            self.parse_async_fn_decl(decorators)?
+            todo!()
+            // self.parse_async_fn_decl(decorators)?
         } else if !type_only && is!(self, "function") {
-            self.parse_fn_decl(decorators)?
+            todo!()
+            // self.parse_fn_decl_or_ts_overload_sig(decorators)?
         } else if !type_only
             && self.input.syntax().typescript()
             && is!(self, "const")

@@ -1726,9 +1726,9 @@ impl<I: Tokens> Parser<I> {
         self.with_ctx(ctx).parse_with(|p| {
             if is!(p, "function") {
                 return p
-                    .parse_fn_decl(decorators)
+                    .parse_fn_decl_or_ts_overload_sig(decorators)
                     .map(|decl| match decl {
-                        Decl::Fn(f) => Decl::Fn(FnDecl {
+                        Some(Decl::Fn(f)) => Some(Decl::Fn(FnDecl {
                             function: Function {
                                 span: Span {
                                     lo: declare_start,
@@ -1737,10 +1737,9 @@ impl<I: Tokens> Parser<I> {
                                 ..f.function
                             },
                             ..f
-                        }),
+                        })),
                         _ => decl,
-                    })
-                    .map(Some);
+                    });
             }
 
             if is!(p, "class") {

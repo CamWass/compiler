@@ -14,7 +14,7 @@ pub struct Function {
 
     pub span: Span,
 
-    pub body: Option<BlockStmt>,
+    pub body: BlockStmt,
 
     /// if it's a generator.
     pub is_generator: bool,

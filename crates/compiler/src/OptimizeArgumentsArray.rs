@@ -99,7 +99,7 @@ impl OptimizeArgumentsArray<'_> {
         func.body.visit_mut_with(self);
     }
 
-    fn handle_setter(&mut self, param_pat: &ast::Pat, body: &mut Option<ast::BlockStmt>) {
+    fn handle_setter(&mut self, param_pat: &ast::Pat, body: &mut ast::BlockStmt) {
         if let ast::Pat::Ident(id) = param_pat {
             let id = id.to_id();
             self.try_replace_setter_argument(id, body);
@@ -141,7 +141,7 @@ impl OptimizeArgumentsArray<'_> {
     }
 
     /// Tries to optimize all of the `arguments` accesses in this setter. Does not look at nested functions.
-    fn try_replace_setter_argument(&mut self, param: Id, setter_body: &mut Option<ast::BlockStmt>) {
+    fn try_replace_setter_argument(&mut self, param: Id, setter_body: &mut ast::BlockStmt) {
         if FnBodyVisitor::get_highest_index(setter_body, Some(0), self.unresolved_ctxt).is_none() {
             // Some 'arguments' accesses were invalidating; abort.
             return;
@@ -198,7 +198,7 @@ trait AsFn {
     fn assemble_param_names(&self, max_count: usize) -> BTreeMap<usize, Id>;
 
     fn get_params(&mut self) -> &mut Vec<ast::Param>;
-    fn get_body(&mut self) -> &mut Option<ast::BlockStmt>;
+    fn get_body(&mut self) -> &mut ast::BlockStmt;
 }
 
 impl AsFn for ast::Function {
@@ -238,7 +238,7 @@ impl AsFn for ast::Function {
     fn get_params(&mut self) -> &mut Vec<ast::Param> {
         &mut self.params
     }
-    fn get_body(&mut self) -> &mut Option<ast::BlockStmt> {
+    fn get_body(&mut self) -> &mut ast::BlockStmt {
         &mut self.body
     }
 }
@@ -280,7 +280,7 @@ impl AsFn for ast::Constructor {
     fn get_params(&mut self) -> &mut Vec<ast::Param> {
         &mut self.params
     }
-    fn get_body(&mut self) -> &mut Option<ast::BlockStmt> {
+    fn get_body(&mut self) -> &mut ast::BlockStmt {
         &mut self.body
     }
 }
@@ -297,7 +297,7 @@ impl FnBodyVisitor {
     ///
     /// `highest_index` - highest index that has been accessed from the `arguments` array.
     fn get_highest_index(
-        func_body: &Option<ast::BlockStmt>,
+        func_body: &ast::BlockStmt,
         highest_index: Option<usize>,
         unresolved_ctxt: SyntaxContext,
     ) -> Option<usize> {
@@ -455,7 +455,7 @@ impl<'a> FnBodyReWriter<'a> {
     ///
     /// `arg_names` - maps param index to param name, if the param with that index has a name.
     fn change_body(
-        func_body: &mut Option<ast::BlockStmt>,
+        func_body: &mut ast::BlockStmt,
         arg_names: &'a BTreeMap<usize, Id>,
         node_id_gen: &'a mut ast::NodeIdGen,
         unresolved_ctxt: SyntaxContext,

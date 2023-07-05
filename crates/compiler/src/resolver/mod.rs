@@ -509,12 +509,7 @@ impl<'a> VisitMut<'_> for Resolver<'a> {
             c.params.visit_mut_with(child);
             child.ident_type = old;
 
-            match &mut c.body {
-                Some(body) => {
-                    body.visit_mut_children_with(child);
-                }
-                None => {}
-            }
+            c.body.visit_mut_children_with(child);
         });
     }
 
@@ -622,13 +617,8 @@ impl<'a> VisitMut<'_> for Resolver<'a> {
         f.params.visit_mut_with(self);
 
         self.ident_type = IdentType::Ref;
-        match &mut f.body {
-            Some(body) => {
-                // Prevent creating new scope.
-                body.visit_mut_children_with(self);
-            }
-            None => {}
-        }
+        // Prevent creating new scope.
+        f.body.visit_mut_children_with(self);
     }
 
     fn visit_mut_ident(&mut self, i: &mut Ident) {

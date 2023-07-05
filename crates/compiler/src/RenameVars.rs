@@ -476,17 +476,13 @@ impl Visit<'_> for VarAnalyzer {
     fn visit_function(&mut self, node: &Function) {
         self.with_scope(true, |visitor| {
             node.params.visit_with(visitor);
-            if let Some(body) = &node.body {
-                body.visit_children_with(visitor);
-            }
+            node.body.visit_children_with(visitor);
         });
     }
     fn visit_constructor(&mut self, node: &Constructor) {
         self.with_scope(true, |visitor| {
             node.params.visit_with(visitor);
-            if let Some(body) = &node.body {
-                body.visit_children_with(visitor);
-            }
+            node.body.visit_children_with(visitor);
         });
     }
     fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
@@ -497,17 +493,13 @@ impl Visit<'_> for VarAnalyzer {
     }
     fn visit_getter_prop(&mut self, node: &GetterProp) {
         self.with_scope(true, |visitor| {
-            if let Some(body) = &node.body {
-                body.visit_children_with(visitor);
-            }
+            node.body.visit_children_with(visitor);
         });
     }
     fn visit_setter_prop(&mut self, node: &SetterProp) {
         self.with_scope(true, |visitor| {
             node.param.visit_with(visitor);
-            if let Some(body) = &node.body {
-                body.visit_children_with(visitor);
-            }
+            node.body.visit_children_with(visitor);
         });
     }
     // A CatchClause isn't a function, but it has a param.

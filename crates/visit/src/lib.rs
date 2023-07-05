@@ -274,7 +274,7 @@ define!({
         pub node_id: NodeId,
         pub span: Span,
         pub params: Vec<Param>,
-        pub body: Option<BlockStmt>,
+        pub body: BlockStmt,
     }
     pub struct Decorator {
         pub node_id: NodeId,
@@ -516,7 +516,7 @@ define!({
         pub params: Vec<Param>,
         pub decorators: Vec<Decorator>,
         pub span: Span,
-        pub body: Option<BlockStmt>,
+        pub body: BlockStmt,
         pub is_generator: bool,
         pub is_async: bool,
     }
@@ -935,14 +935,14 @@ define!({
         pub node_id: NodeId,
         pub span: Span,
         pub key: PropName,
-        pub body: Option<BlockStmt>,
+        pub body: BlockStmt,
     }
     pub struct SetterProp {
         pub node_id: NodeId,
         pub span: Span,
         pub key: PropName,
         pub param: ParamWithoutDecorators,
-        pub body: Option<BlockStmt>,
+        pub body: BlockStmt,
     }
     pub struct MethodProp {
         pub node_id: NodeId,

@@ -72,7 +72,7 @@ pub struct GetterProp {
 
     pub span: Span,
     pub key: PropName,
-    pub body: Option<BlockStmt>,
+    pub body: BlockStmt,
 }
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]
@@ -83,7 +83,7 @@ pub struct SetterProp {
     pub key: PropName,
     // TODO:
     pub param: ParamWithoutDecorators,
-    pub body: Option<BlockStmt>,
+    pub body: BlockStmt,
 }
 #[ast_node]
 #[derive(Eq, Hash, EqIgnoreSpan)]

@@ -956,12 +956,8 @@ impl<'a> Emitter<'a> {
         )?;
         punct!(")");
 
-        if let Some(body) = &n.function.body {
-            formatting_space!();
-            emit!(body);
-        } else {
-            formatting_semi!();
-        }
+        formatting_space!();
+        emit!(n.function.body);
     }
 
     #[emitter]
@@ -1026,11 +1022,7 @@ impl<'a> Emitter<'a> {
         self.emit_list(n.span(), Some(&n.params), ListFormat::Parameters)?;
         punct!(")");
 
-        if let Some(body) = &n.body {
-            emit!(body);
-        } else {
-            formatting_semi!();
-        }
+        emit!(n.body);
     }
 
     #[emitter]
@@ -1093,12 +1085,8 @@ impl<'a> Emitter<'a> {
         self.emit_list(node.span, Some(&node.params), ListFormat::CommaListElements)?;
         punct!(")");
 
-        if let Some(body) = &node.body {
-            formatting_space!();
-            emit!(body);
-        } else {
-            formatting_semi!();
-        }
+        formatting_space!();
+        emit!(node.body);
     }
 
     #[emitter]

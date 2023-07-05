@@ -110,8 +110,7 @@ pub struct Constructor {
 
     pub params: Vec<Param>,
 
-    pub body: Option<BlockStmt>,
-
+    pub body: BlockStmt,
 }
 
 #[ast_node]

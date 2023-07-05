@@ -127,7 +127,13 @@ impl<I: Tokens> Parser<I> {
             let c = self.input.cur();
             c != end
         } {
-            let stmt = self.parse_stmt_like(StmtParseCtx::None, top_level)?;
+            let stmt = match self.parse_stmt_like(StmtParseCtx::None, top_level)? {
+                Some(s) => s,
+                None => {
+                    parsed_non_directive = true;
+                    continue;
+                }
+            };
 
             if allow_directives && !parsed_non_directive {
                 if stmt.is_valid_directive() {
@@ -159,18 +165,26 @@ impl<I: Tokens> Parser<I> {
         Ok(stmts)
     }
 
-    pub fn parse_stmt(&mut self, parse_ctx: StmtParseCtx, top_level: bool) -> PResult<Stmt> {
+    fn parse_stmt(&mut self, parse_ctx: StmtParseCtx, top_level: bool) -> PResult<Stmt> {
         trace_cur!(self, parse_stmt);
-        self.parse_stmt_like(parse_ctx, top_level)
+        debug_assert!(parse_ctx != StmtParseCtx::None);
+        // None is only encountered for typescript things that are stripped.
+        // These should have been handled by parse_stmt_like returning Err or
+        // transpiled code.
+        Ok(self.parse_stmt_like(parse_ctx, top_level)?.unwrap())
     }
 
-    fn parse_stmt_list_item(&mut self, top_level: bool) -> PResult<Stmt> {
+    fn parse_stmt_list_item(&mut self, top_level: bool) -> PResult<Option<Stmt>> {
         trace_cur!(self, parse_stmt_list_item);
         self.parse_stmt_like(StmtParseCtx::None, top_level)
     }
 
     /// Parse a statement, declaration or module item.
-    fn parse_stmt_like<Type>(&mut self, parse_ctx: StmtParseCtx, top_level: bool) -> PResult<Type>
+    fn parse_stmt_like<Type>(
+        &mut self,
+        parse_ctx: StmtParseCtx,
+        top_level: bool,
+    ) -> PResult<Option<Type>>
     where
         Self: StmtLikeParser<Type>,
         Type: IsDirective + From<Stmt>,
@@ -180,11 +194,11 @@ impl<I: Tokens> Parser<I> {
         let decorators = self.parse_decorators(true)?;
 
         if is_one_of!(self, "import", "export") {
-            return self.handle_import_export(top_level, decorators);
+            return self.handle_import_export(top_level, decorators).map(Some);
         }
 
         self.parse_stmt_content(start, parse_ctx, top_level, decorators)
-            .map(From::from)
+            .map(|s| s.map(From::from))
     }
     fn parse_stmt_content(
         &mut self,
@@ -192,7 +206,7 @@ impl<I: Tokens> Parser<I> {
         parse_ctx: StmtParseCtx,
         top_level: bool,
         decorators: Vec<Decorator>,
-    ) -> PResult<Stmt> {
+    ) -> PResult<Option<Stmt>> {
         trace_cur!(self, parse_stmt_content);
 
         // Most types of statements are recognized by the keyword they
@@ -210,21 +224,21 @@ impl<I: Tokens> Parser<I> {
             eat!(self, ';');
 
             let span = span!(self, start);
-            return Ok(Stmt::Expr(ExprStmt {
+            return Ok(Some(Stmt::Expr(ExprStmt {
                 node_id: node_id!(self),
                 span,
                 expr,
-            }));
+            })));
         }
 
         if self.input.syntax().typescript() && is!(self, "const") && peeked_is!(self, "enum") {
             self.assert_and_bump(&tok!("const"));
             self.assert_and_bump(&tok!("enum"));
             self.parse_ts_enum_decl(start, true)?;
-            return Ok(Stmt::Empty(EmptyStmt {
+            return Ok(Some(Stmt::Empty(EmptyStmt {
                 node_id: node_id!(self),
                 span: span!(self, start),
-            }));
+            })));
         }
 
         match cur!(self, true)? {
@@ -245,27 +259,27 @@ impl<I: Tokens> Parser<I> {
                 self.verify_break_continue(is_break, &label, span);
 
                 if is_break {
-                    return Ok(Stmt::Break(BreakStmt {
+                    return Ok(Some(Stmt::Break(BreakStmt {
                         node_id: node_id!(self),
                         span,
                         label,
-                    }));
+                    })));
                 } else {
-                    return Ok(Stmt::Continue(ContinueStmt {
+                    return Ok(Some(Stmt::Continue(ContinueStmt {
                         node_id: node_id!(self),
                         span,
                         label,
-                    }));
+                    })));
                 }
             }
             tok!("debugger") => {
-                return self.parse_debugger_stmt(start);
+                return self.parse_debugger_stmt(start).map(Some);
             }
             tok!("do") => {
-                return self.parse_do_stmt();
+                return self.parse_do_stmt().map(Some);
             }
             tok!("for") => {
-                return self.parse_for_stmt();
+                return self.parse_for_stmt().map(Some);
             }
             tok!("function") => {
                 if parse_ctx != StmtParseCtx::None {
@@ -274,8 +288,13 @@ impl<I: Tokens> Parser<I> {
                     } else if parse_ctx == StmtParseCtx::Other {
                         syntax_error!(self, SyntaxError::SloppyFunction);
                     }
+                    // TODO: disallow generator functions in single statement contexts.
+                    return self.parse_fn_decl(decorators).map(Stmt::from).map(Some);
+                } else {
+                    return self
+                        .parse_fn_decl_or_ts_overload_sig(decorators)
+                        .map(|s| s.map(Stmt::from));
                 }
-                return self.parse_fn_decl(decorators).map(Stmt::from);
             }
             tok!("class") => {
                 if parse_ctx != StmtParseCtx::None {
@@ -283,19 +302,20 @@ impl<I: Tokens> Parser<I> {
                 }
                 return self
                     .parse_class_decl(start, start, decorators)
-                    .map(Stmt::from);
+                    .map(Stmt::from)
+                    .map(Some);
             }
             tok!("if") => {
-                return self.parse_if_stmt();
+                return self.parse_if_stmt().map(Some);
             }
             tok!("return") => {
-                return self.parse_return_stmt();
+                return self.parse_return_stmt().map(Some);
             }
             tok!("switch") => {
-                return self.parse_switch_stmt();
+                return self.parse_switch_stmt().map(Some);
             }
             tok!("throw") => {
-                return self.parse_throw_stmt();
+                return self.parse_throw_stmt().map(Some);
             }
             // Error recovery
             tok!("catch") => {
@@ -305,14 +325,14 @@ impl<I: Tokens> Parser<I> {
                 let _ = self.parse_catch_clause();
                 let _ = self.parse_finally_block();
 
-                return Ok(Stmt::Expr(ExprStmt {
+                return Ok(Some(Stmt::Expr(ExprStmt {
                     node_id: node_id!(self),
                     span,
                     expr: Box::new(Expr::Invalid(Invalid {
                         node_id: node_id!(self),
                         span,
                     })),
-                }));
+                })));
             }
             // Error recovery
             tok!("finally") => {
@@ -321,21 +341,21 @@ impl<I: Tokens> Parser<I> {
 
                 let _ = self.parse_finally_block();
 
-                return Ok(Stmt::Expr(ExprStmt {
+                return Ok(Some(Stmt::Expr(ExprStmt {
                     node_id: node_id!(self),
                     span,
                     expr: Box::new(Expr::Invalid(Invalid {
                         node_id: node_id!(self),
                         span,
                     })),
-                }));
+                })));
             }
             tok!("try") => {
-                return self.parse_try_stmt();
+                return self.parse_try_stmt().map(Some);
             }
             tok!("var") => {
                 let v = self.parse_var_stmt(false)?;
-                return Ok(Stmt::Decl(Decl::Var(v)));
+                return Ok(Some(Stmt::Decl(Decl::Var(v))));
             }
             tok!("const") => {
                 if parse_ctx != StmtParseCtx::None {
@@ -343,7 +363,7 @@ impl<I: Tokens> Parser<I> {
                 }
 
                 let v = self.parse_var_stmt(false)?;
-                return Ok(Stmt::Decl(Decl::Var(v)));
+                return Ok(Some(Stmt::Decl(Decl::Var(v))));
             }
             // 'let' can start an identifier reference.
             tok!("let") => {
@@ -358,24 +378,24 @@ impl<I: Tokens> Parser<I> {
 
                 if is_keyword {
                     let v = self.parse_var_stmt(false)?;
-                    return Ok(Stmt::Decl(Decl::Var(v)));
+                    return Ok(Some(Stmt::Decl(Decl::Var(v))));
                 }
             }
             tok!("while") => {
-                return self.parse_while_stmt();
+                return self.parse_while_stmt().map(Some);
             }
             tok!("with") => {
-                return self.parse_with_stmt();
+                return self.parse_with_stmt().map(Some);
             }
             tok!('{') => {
-                return self.parse_block(false).map(Stmt::Block);
+                return self.parse_block(false).map(Stmt::Block).map(Some);
             }
             tok!(';') => {
                 self.input.bump();
-                return Ok(Stmt::Empty(EmptyStmt {
+                return Ok(Some(Stmt::Empty(EmptyStmt {
                     node_id: node_id!(self),
                     span: span!(self, start),
-                }));
+                })));
             }
 
             _ => {}
@@ -397,7 +417,13 @@ impl<I: Tokens> Parser<I> {
             // self.input.bump();
             // return self.parseFunctionStatement(node, true, context.is_none());
 
-            return self.parse_async_fn_decl(decorators).map(From::from);
+            if parse_ctx != StmtParseCtx::None {
+                todo!("async fn not allowed in single stmt context");
+            } else {
+                return self
+                    .parse_async_fn_decl(decorators)
+                    .map(|s| s.map(Stmt::from));
+            }
         }
 
         // If the statement does not start with a statement keyword or a
@@ -410,7 +436,7 @@ impl<I: Tokens> Parser<I> {
         let expr = match *expr {
             Expr::Ident(ident) => {
                 if self.input.eat(&tok!(':')) {
-                    return self.parse_labelled_stmt(ident);
+                    return self.parse_labelled_stmt(ident).map(Some);
                 }
                 Box::new(Expr::Ident(ident))
             }
@@ -422,16 +448,16 @@ impl<I: Tokens> Parser<I> {
 
                 eat!(self, ';');
 
-                return Ok(Stmt::Expr(ExprStmt {
+                return Ok(Some(Stmt::Expr(ExprStmt {
                     node_id: node_id!(self),
                     span: span!(self, start),
                     expr,
-                }));
+                })));
             }
 
             if self.input.syntax().typescript() {
                 if let Some(decl) = self.parse_ts_expr_stmt(decorators, ident.clone())? {
-                    return Ok(Stmt::Decl(decl));
+                    return Ok(Some(Stmt::Decl(decl)));
                 }
             }
         }
@@ -452,10 +478,10 @@ impl<I: Tokens> Parser<I> {
                         if eat!(self, "interface") {
                             self.emit_err(i.span, SyntaxError::TS2427);
                             self.parse_ts_interface_decl(start)?;
-                            return Ok(Stmt::Empty(EmptyStmt {
+                            return Ok(Some(Stmt::Empty(EmptyStmt {
                                 node_id: node_id!(self),
                                 span: span!(self, start),
-                            }));
+                            })));
                         }
                     }
                     _ => {}
@@ -464,21 +490,20 @@ impl<I: Tokens> Parser<I> {
         }
 
         if eat!(self, ';') {
-            Ok(Stmt::Expr(ExprStmt {
+            Ok(Some(Stmt::Expr(ExprStmt {
                 node_id: node_id!(self),
                 span: span!(self, start),
                 expr,
-            }))
+            })))
         } else {
             if let Token::BinOp(..) = *cur!(self, false)? {
                 self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
                 let expr = self.parse_bin_op_recursively(expr, 0)?;
-                return Ok(ExprStmt {
+                return Ok(Some(Stmt::Expr(ExprStmt {
                     node_id: node_id!(self),
                     span: span!(self, start),
                     expr,
-                }
-                .into());
+                })));
             }
 
             syntax_error!(
@@ -850,7 +875,9 @@ impl<I: Tokens> Parser<I> {
                 expect!(parser, ':');
 
                 while !eof!(parser) && !is_one_of!(parser, "case", "default", '}') {
-                    cons.push(parser.parse_stmt_list_item(false)?);
+                    if let Some(s) = parser.parse_stmt_list_item(false)? {
+                        cons.push(s);
+                    }
                 }
 
                 cases.push(SwitchCase {
@@ -1217,25 +1244,27 @@ impl<I: Tokens> Parser<I> {
             }
             parser.state.labels.push(label.sym.clone());
 
-            let body = Box::new(if parser.input.is(&tok!("function")) {
-                let f = parser.parse_fn_decl(vec![])?;
-                if let Decl::Fn(FnDecl {
-                    function:
-                        Function {
-                            span,
-                            is_generator: true,
-                            ..
-                        },
-                    ..
-                }) = f
-                {
-                    syntax_error!(p, span, SyntaxError::LabelledGenerator)
-                }
+            // TODO:
+            // let body = Box::new(if parser.input.is(&tok!("function")) {
+            //     let f = parser.parse_fn_decl(vec![])?;
+            //     if let Decl::Fn(FnDecl {
+            //         function:
+            //             Function {
+            //                 span,
+            //                 is_generator: true,
+            //                 ..
+            //             },
+            //         ..
+            //     }) = f
+            //     {
+            //         syntax_error!(p, span, SyntaxError::LabelledGenerator)
+            //     }
 
-                f.into()
-            } else {
-                parser.parse_stmt(StmtParseCtx::IfOrLabel, false)?
-            });
+            //     f.into()
+            // } else {
+            //     parser.parse_stmt(StmtParseCtx::IfOrLabel, false)?
+            // });
+            let body = Box::new(parser.parse_stmt(StmtParseCtx::IfOrLabel, false)?);
 
             {
                 let pos = parser.state.labels.iter().position(|v| v == &label.sym);

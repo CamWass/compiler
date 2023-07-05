@@ -17,32 +17,42 @@ impl<I: Tokens> Parser<I> {
         self.parse_fn(None, None, vec![])
     }
 
-    pub(super) fn parse_async_fn_decl(&mut self, decorators: Vec<Decorator>) -> PResult<Decl> {
+    pub(super) fn parse_async_fn_decl(
+        &mut self,
+        decorators: Vec<Decorator>,
+    ) -> PResult<Option<Decl>> {
         let start = self.input.cur_pos();
         expect!(self, "async");
-        self.parse_fn(None, Some(start), decorators)
+        self.parse_fn_or_ts_overload_sig(None, Some(start), decorators)
     }
 
     pub(super) fn parse_fn_decl(&mut self, decorators: Vec<Decorator>) -> PResult<Decl> {
         self.parse_fn(None, None, decorators)
     }
 
+    pub(super) fn parse_fn_decl_or_ts_overload_sig(
+        &mut self,
+        decorators: Vec<Decorator>,
+    ) -> PResult<Option<Decl>> {
+        self.parse_fn_or_ts_overload_sig(None, None, decorators)
+    }
+
     pub(super) fn parse_default_async_fn(
         &mut self,
         start: BytePos,
         decorators: Vec<Decorator>,
-    ) -> PResult<ExportDefaultDecl> {
+    ) -> PResult<Option<ExportDefaultDecl>> {
         let start_of_async = self.input.cur_pos();
         expect!(self, "async");
-        self.parse_fn(Some(start), Some(start_of_async), decorators)
+        self.parse_fn_or_ts_overload_sig(Some(start), Some(start_of_async), decorators)
     }
 
     pub(super) fn parse_default_fn(
         &mut self,
         start: BytePos,
         decorators: Vec<Decorator>,
-    ) -> PResult<ExportDefaultDecl> {
-        self.parse_fn(Some(start), None, decorators)
+    ) -> PResult<Option<ExportDefaultDecl>> {
+        self.parse_fn_or_ts_overload_sig(Some(start), None, decorators)
     }
 
     pub(super) fn parse_class_decl(
@@ -646,6 +656,21 @@ impl<I: Tokens> Parser<I> {
                     }
                 }
 
+                let body = match body {
+                    Some(b) => b,
+                    None => {
+                        if self.syntax().typescript() {
+                            if param_props.is_empty() {
+                                return Ok(None);
+                            } else {
+                                todo!("transpile TS param props");
+                            }
+                        } else {
+                            unreachable!("parse_fn_body should have returned Err");
+                        }
+                    }
+                };
+
                 return Ok(Some(ClassMember::Constructor(Constructor {
                     node_id: node_id!(self),
                     span: span!(self, start),
@@ -811,7 +836,6 @@ impl<I: Tokens> Parser<I> {
         unexpected!(self, "* for generator, private key, identifier or async")
     }
 
-    /// Always returns `Some`.
     fn make_property(
         &mut self,
         start: BytePos,
@@ -850,6 +874,10 @@ impl<I: Tokens> Parser<I> {
 
             if !eat!(parser, ';') {
                 parser.emit_err(parser.input.cur_span(), SyntaxError::TS1005);
+            }
+
+            if is_abstract || declare {
+                return Ok(None);
             }
 
             Ok(Some(match key {
@@ -897,6 +925,22 @@ impl<I: Tokens> Parser<I> {
         Self: MaybeOptionalIdentParser<T::Ident>,
         T::Ident: Spanned,
     {
+        Ok(self
+            .parse_fn_or_ts_overload_sig(start_of_output_type, start_of_async, decorators)?
+            .expect("Error already handled for overload sig"))
+    }
+
+    fn parse_fn_or_ts_overload_sig<T>(
+        &mut self,
+        start_of_output_type: Option<BytePos>,
+        start_of_async: Option<BytePos>,
+        decorators: Vec<Decorator>,
+    ) -> PResult<Option<T>>
+    where
+        T: OutputType,
+        Self: MaybeOptionalIdentParser<T::Ident>,
+        T::Ident: Spanned,
+    {
         let start = start_of_async.unwrap_or_else(|| self.input.cur_pos());
         self.assert_and_bump(&tok!("function"));
         let is_async = start_of_async.is_some();
@@ -935,7 +979,7 @@ impl<I: Tokens> Parser<I> {
         };
 
         self.with_ctx(ctx).parse_with(|parser| {
-            let f = parser.parse_fn_args_body(
+            let f = parser.parse_fn_args_body_or_ts_overload_sig(
                 decorators,
                 start,
                 |parser| parser.parse_formal_params(),
@@ -952,12 +996,14 @@ impl<I: Tokens> Parser<I> {
 
             // let body = p.parse_fn_body(is_async, is_generator)?;
 
-            Ok(T::finish_fn(
-                span!(parser, start_of_output_type.unwrap_or(start)),
-                ident,
-                f,
-                node_id!(parser),
-            ))
+            Ok(f.map(|f| {
+                T::finish_fn(
+                    span!(parser, start_of_output_type.unwrap_or(start)),
+                    ident,
+                    f,
+                    node_id!(parser),
+                )
+            }))
         })
     }
 
@@ -970,6 +1016,30 @@ impl<I: Tokens> Parser<I> {
         is_async: bool,
         is_generator: bool,
     ) -> PResult<Function>
+    where
+        F: FnOnce(&mut Self) -> PResult<Vec<Param>>,
+    {
+        Ok(self
+            .parse_fn_args_body_or_ts_overload_sig(
+                decorators,
+                start,
+                parse_args,
+                is_async,
+                is_generator,
+            )?
+            .expect("Error already handled for overload sig"))
+    }
+
+    /// `parse_args` closure should not eat '(' or ')'.
+    /// Returns `None` an overload signature was parsed.
+    fn parse_fn_args_body_or_ts_overload_sig<F>(
+        &mut self,
+        decorators: Vec<Decorator>,
+        start: BytePos,
+        parse_args: F,
+        is_async: bool,
+        is_generator: bool,
+    ) -> PResult<Option<Function>>
     where
         F: FnOnce(&mut Self) -> PResult<Vec<Param>>,
     {
@@ -1034,23 +1104,31 @@ impl<I: Tokens> Parser<I> {
 
             let body: Option<_> = parser.parse_fn_body(is_async, is_generator)?;
 
-            if parser.syntax().typescript() && body.is_none() {
-                // Declare functions cannot have assignment pattern in parameters
-                for param in &params {
-                    // TODO(swc): Search deeply for assignment pattern using a Visitor
+            let body = match body {
+                Some(b) => b,
+                None => {
+                    if parser.syntax().typescript() {
+                        // Declare functions cannot have assignment pattern in parameters
+                        for param in &params {
+                            // TODO(swc): Search deeply for assignment pattern using a Visitor
 
-                    let span = match &param.pat {
-                        Pat::Assign(ref p) => Some(p.span()),
-                        _ => None,
-                    };
+                            let span = match &param.pat {
+                                Pat::Assign(ref p) => Some(p.span()),
+                                _ => None,
+                            };
 
-                    if let Some(span) = span {
-                        parser.emit_err(span, SyntaxError::TS2371)
+                            if let Some(span) = span {
+                                parser.emit_err(span, SyntaxError::TS2371)
+                            }
+                        }
+                        return Ok(None);
+                    } else {
+                        unreachable!()
                     }
                 }
-            }
+            };
 
-            Ok(Function {
+            Ok(Some(Function {
                 node_id: node_id!(parser),
                 span: span!(parser, start),
                 decorators,
@@ -1058,7 +1136,7 @@ impl<I: Tokens> Parser<I> {
                 body,
                 is_async,
                 is_generator,
-            })
+            }))
         })
     }
 
@@ -1099,7 +1177,6 @@ impl<I: Tokens> Parser<I> {
 }
 
 impl<I: Tokens> Parser<I> {
-    /// Always returns `Some`.
     fn make_method<F>(
         &mut self,
         parse_args: F,
@@ -1127,7 +1204,13 @@ impl<I: Tokens> Parser<I> {
             ..self.ctx()
         };
         let function = self.with_ctx(ctx).parse_with(|parser| {
-            parser.parse_fn_args_body(decorators, start, parse_args, is_async, is_generator)
+            parser.parse_fn_args_body_or_ts_overload_sig(
+                decorators,
+                start,
+                parse_args,
+                is_async,
+                is_generator,
+            )
         })?;
 
         match kind {
@@ -1138,6 +1221,15 @@ impl<I: Tokens> Parser<I> {
             }
             _ => {}
         }
+
+        if is_abstract {
+            return Ok(None);
+        }
+
+        let function = match function {
+            Some(f) => f,
+            None => return Ok(None),
+        };
 
         Ok(Some(match key {
             Either::Left(key) => PrivateMethod {

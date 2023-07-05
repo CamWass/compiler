@@ -335,13 +335,7 @@ where
 
         if self.should_traverse_functions || node == self.cfg.entry {
             // We don't want to descend into an expr body of an ArrowExpr e.g. `a => foo()`.
-            if let Some(
-                body @ Node {
-                    kind: NodeKind::BlockStmt(_),
-                    ..
-                },
-            ) = body
-            {
+            if matches!(body.kind, NodeKind::BlockStmt(_)) {
                 self.exception_handler
                     .push(ExceptionHandler::new(&self.parent_stack, node));
 

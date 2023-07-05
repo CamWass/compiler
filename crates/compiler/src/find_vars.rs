@@ -254,7 +254,7 @@ pub trait FunctionLike<'a> {
 
     fn params(&'a self) -> Self::ParamIter;
 
-    fn body(&'a self) -> Option<Node<'a>>;
+    fn body(&'a self) -> Node<'a>;
 }
 
 macro_rules! visit_body {
@@ -286,8 +286,8 @@ impl<'a> FunctionLike<'a> for Function {
         self.params.iter().map(get_pat_of_param)
     }
 
-    fn body(&'a self) -> Option<Node<'a>> {
-        self.body.as_ref().map(|b| Node::from(b))
+    fn body(&'a self) -> Node<'a> {
+        Node::from(&self.body)
     }
 }
 impl<'a> FunctionLike<'a> for Constructor {
@@ -299,8 +299,8 @@ impl<'a> FunctionLike<'a> for Constructor {
         self.params.iter().map(get_pat_of_param)
     }
 
-    fn body(&'a self) -> Option<Node<'a>> {
-        self.body.as_ref().map(|b| Node::from(b))
+    fn body(&'a self) -> Node<'a> {
+        Node::from(&self.body)
     }
 }
 fn get_pat_of_param_without_decorators<'a>(param: &'a ParamWithoutDecorators) -> &'a Pat {
@@ -318,8 +318,8 @@ impl<'a> FunctionLike<'a> for ArrowExpr {
         self.params.iter().map(get_pat_of_param_without_decorators)
     }
 
-    fn body(&'a self) -> Option<Node<'a>> {
-        Some(Node::from(&self.body))
+    fn body(&'a self) -> Node<'a> {
+        Node::from(&self.body)
     }
 }
 impl<'a> FunctionLike<'a> for GetterProp {
@@ -331,8 +331,8 @@ impl<'a> FunctionLike<'a> for GetterProp {
         std::iter::empty()
     }
 
-    fn body(&'a self) -> Option<Node<'a>> {
-        self.body.as_ref().map(|b| Node::from(b))
+    fn body(&'a self) -> Node<'a> {
+        Node::from(&self.body)
     }
 }
 impl<'a> FunctionLike<'a> for SetterProp {
@@ -344,8 +344,8 @@ impl<'a> FunctionLike<'a> for SetterProp {
         std::iter::once(&self.param.pat)
     }
 
-    fn body(&'a self) -> Option<Node<'a>> {
-        self.body.as_ref().map(|b| Node::from(b))
+    fn body(&'a self) -> Node<'a> {
+        Node::from(&self.body)
     }
 }
 
