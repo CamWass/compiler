@@ -669,24 +669,6 @@ impl<I: Tokens> Parser<I> {
                             SyntaxError::VarInitializerInForInHead,
                         );
                     }
-
-                    if self.syntax().typescript() {
-                        todo!();
-                        // let type_ann = match decl.decls[0].name {
-                        //     Pat::Ident(ref v) => Some(&v.type_ann),
-                        //     Pat::Array(ref v) => Some(&v.type_ann),
-                        //     Pat::Assign(ref v) => Some(&v.type_ann),
-                        //     Pat::Rest(ref v) => Some(&v.type_ann),
-                        //     Pat::Object(ref v) => Some(&v.type_ann),
-                        //     _ => None,
-                        // };
-
-                        // if let Some(type_ann) = type_ann {
-                        //     if type_ann.is_some() {
-                        //         self.emit_err(decl.decls[0].name.span(), SyntaxError::TS2483);
-                        //     }
-                        // }
-                    }
                 }
 
                 return self.parse_for_each_head(VarDeclOrPat::VarDecl(decl));
@@ -1048,6 +1030,7 @@ impl<I: Tokens> Parser<I> {
         }
 
         let mut decls = vec![];
+        let mut type_annotations = vec![];
         let mut first = true;
         while first || self.input.eat(&tok!(',')) {
             if first {
@@ -1078,7 +1061,11 @@ impl<I: Tokens> Parser<I> {
                 break;
             }
 
-            decls.push(self.with_ctx(ctx).parse_var_declarator(for_loop)?);
+            let (decl, type_annotation) = self.with_ctx(ctx).parse_var_declarator(for_loop)?;
+            decls.push(decl);
+            if let Some(type_ann) = type_annotation {
+                type_annotations.push(type_ann);
+            }
         }
 
         if !for_loop && !eat!(self, ';') {
@@ -1091,6 +1078,13 @@ impl<I: Tokens> Parser<I> {
             }
         }
 
+        // Type annotations are not allowed in for-in/for-of variable declarations.
+        if for_loop && self.syntax().typescript() && is_one_of!(self, "in", "of") {
+            for type_ann in type_annotations {
+                self.emit_err(type_ann, SyntaxError::TS2483);
+            }
+        }
+
         Ok(VarDecl {
             node_id: node_id!(self),
             span: span!(self, start),
@@ -1099,7 +1093,7 @@ impl<I: Tokens> Parser<I> {
         })
     }
 
-    fn parse_var_declarator(&mut self, for_loop: bool) -> PResult<VarDeclarator> {
+    fn parse_var_declarator(&mut self, for_loop: bool) -> PResult<(VarDeclarator, Option<Span>)> {
         let start = self.input.cur_pos();
 
         let mut name = self.parse_binding_pat_or_ident()?;
@@ -1114,9 +1108,11 @@ impl<I: Tokens> Parser<I> {
         };
 
         // Typescript extension
-        if self.input.syntax().typescript() && is!(self, ':') {
-            let type_annotation = self.try_parse_ts_type_ann()?;
-        }
+        let type_annotation = if self.input.syntax().typescript() && is!(self, ':') {
+            self.try_parse_ts_type_ann()?
+        } else {
+            None
+        };
 
         //FIXME(swc): This is wrong. Should check in/of only on first loop.
         let init = if !for_loop || !is_one_of!(self, "in", "of") {
@@ -1144,12 +1140,15 @@ impl<I: Tokens> Parser<I> {
             None
         };
 
-        Ok(VarDeclarator {
-            node_id: node_id!(self),
-            span: span!(self, start),
-            name,
-            init,
-        })
+        Ok((
+            VarDeclarator {
+                node_id: node_id!(self),
+                span: span!(self, start),
+                name,
+                init,
+            },
+            type_annotation,
+        ))
     }
 
     fn parse_while_stmt(&mut self) -> PResult<Stmt> {

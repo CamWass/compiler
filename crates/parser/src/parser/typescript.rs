@@ -1449,11 +1449,10 @@ impl<I: Tokens> Parser<I> {
     }
 
     /// `tsTryParseTypeAnnotation`
-    pub(super) fn try_parse_ts_type_ann(&mut self) -> PResult<Option<()>> {
+    pub(super) fn try_parse_ts_type_ann(&mut self) -> PResult<Option<Span>> {
         if is!(self, ':') {
             let pos = self.input.cur_pos();
-            self.parse_ts_type_ann(true, pos)?;
-            return Ok(Some(()));
+            return self.parse_ts_type_ann(true, pos).map(Some);
         }
 
         Ok(None)
