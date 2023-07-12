@@ -1026,14 +1026,32 @@ impl Deref for CowLattice<'_> {
 }
 
 impl CowLattice<'_> {
-    fn insert_var_assignment(&mut self, name: Id, value: Assignment) {
-        if let Some(existing) = self.0.var_assignments.get(&name) {
-            if *existing == value {
-                return;
-            }
+    fn insert_var_assignment(
+        &mut self,
+        name: Id,
+        value: Assignment,
+        fn_assignments: &HashableHashMap<Id, Assignment>,
+    ) {
+        match self.0.var_assignments.get(&name) {
+            Some(existing) if *existing == value => return,
+            None if value.rhs.is_none() => return,
+            _ => {}
         }
 
-        self.0.to_mut().var_assignments.insert(name, value);
+        let var_assignments = &mut self.0.to_mut().var_assignments;
+        if value.rhs.is_none() {
+            if fn_assignments.contains_key(&name) {
+                // If there is a function with the same name, we persist the None
+                // assignment so the function is not retrieved instead.
+                var_assignments.insert(name, value);
+            } else {
+                // Otherwise, if there is no collision, no assignment is equivalent
+                // to a None assignment, so we can remove the assignment.
+                var_assignments.remove(&name);
+            }
+        } else {
+            var_assignments.insert(name, value);
+        }
     }
 
     fn insert_prop_assignment(&mut self, prop: (ObjectId, JsWord), value: Assignment) {
@@ -1112,7 +1130,8 @@ impl<'ast> Analyser<'ast, '_> {
             let new = Assignment { rhs };
             match slot {
                 Slot::Var(name) => {
-                    self.lattice.insert_var_assignment(name, new);
+                    self.lattice
+                        .insert_var_assignment(name, new, &self.store.fn_assignments);
                 }
                 Slot::Prop(obj, key) => {
                     if self.store.invalidated(obj) {
@@ -1754,8 +1773,11 @@ impl<'ast> Analyser<'ast, '_> {
                         .copied()
                         .unwrap_or(Some(Pointer::NullOrVoid));
 
-                    self.lattice
-                        .insert_var_assignment(param_name.clone(), Assignment { rhs: value });
+                    self.lattice.insert_var_assignment(
+                        param_name.clone(),
+                        Assignment { rhs: value },
+                        &self.store.fn_assignments,
+                    );
                 }
 
                 for ((obj, key), prop) in self.store.functions[func].arg_values.iter() {

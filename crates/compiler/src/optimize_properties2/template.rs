@@ -77,9 +77,22 @@ impl Visitor<CallId> for Resolver<'_, '_> {
         };
         for (i, param_name) in self.static_fn_data[func].param_names.iter().enumerate() {
             let value = call.args.get(i).unwrap_or(Some(Pointer::NullOrVoid));
-            entry_lattice
-                .var_assignments
-                .insert(param_name.clone(), Assignment { rhs: value });
+            if value.is_none() {
+                if self.fn_assignments.contains_key(param_name) {
+                    // If there is a function with the same name, we persist the None
+                    // assignment so the function is not retrieved instead.
+                    entry_lattice
+                        .var_assignments
+                        .insert(param_name.clone(), Assignment { rhs: value });
+                } else {
+                    // Otherwise, if there is no collision, no assignment is equivalent
+                    // to a None assignment, so we can ignore the assignment.
+                }
+            } else {
+                entry_lattice
+                    .var_assignments
+                    .insert(param_name.clone(), Assignment { rhs: value });
+            }
         }
         let entry_lattice = lattice_elements.insert(entry_lattice);
 
@@ -484,16 +497,28 @@ impl MachineState {
         name: Id,
         value: Assignment,
         lattice_elements: &IndexSet<LatticeElementId, Lattice>,
+        fn_assignments: &HashableHashMap<Id, Assignment>,
     ) {
-        if let Some(existing) = self.get(lattice_elements).var_assignments.get(&name) {
-            if *existing == value {
-                return;
-            }
+        match self.get(lattice_elements).var_assignments.get(&name) {
+            Some(existing) if *existing == value => return,
+            None if value.rhs.is_none() => return,
+            _ => {}
         }
 
-        self.get_mut(lattice_elements)
-            .var_assignments
-            .insert(name, value);
+        let var_assignments = &mut self.get_mut(lattice_elements).var_assignments;
+        if value.rhs.is_none() {
+            if fn_assignments.contains_key(&name) {
+                // If there is a function with the same name, we persist the None
+                // assignment so the function is not retrieved instead.
+                var_assignments.insert(name, value);
+            } else {
+                // Otherwise, if there is no collision, no assignment is equivalent
+                // to a None assignment, so we can remove the assignment.
+                var_assignments.remove(&name);
+            }
+        } else {
+            var_assignments.insert(name, value);
+        }
     }
 
     fn insert_prop_assignment(
@@ -667,6 +692,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                     id.clone(),
                                     new,
                                     &self.lattice_elements,
+                                    &self.fn_assignments,
                                 );
                             }
                             AssignTarget::Prop(obj, prop) => {
