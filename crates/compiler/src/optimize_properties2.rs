@@ -418,6 +418,7 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
     let mut visitor = FnVisitor { store: &mut store };
     ast.visit_with(&mut visitor);
 
+    store.call_templates.reserve(store.functions.len());
     let mut i = 0;
     while i < store.functions.len() {
         let func = FnId::from_usize(i);
@@ -1406,6 +1407,7 @@ impl<'ast> Analyser<'ast, '_> {
             }
 
             let mut done = FxHashSet::default();
+            done.reserve(queue.len());
 
             while let Some(o) = queue.pop() {
                 if self.store.invalid_objects.contains(o) || done.contains(&o) {
@@ -1980,6 +1982,10 @@ impl<'ast> JoinOp {
     ) {
         let input = &analysis[input];
 
+        if input.prop_assignments.len() > self.result.prop_assignments.len() {
+            let new = input.prop_assignments.len() - self.result.prop_assignments.len();
+            self.result.prop_assignments.reserve(new);
+        }
         // Merge property assignments.
         for ((obj, key), prop) in input.prop_assignments.iter() {
             if store.invalid_objects.contains(*obj) {
@@ -1998,6 +2004,10 @@ impl<'ast> JoinOp {
             }
         }
 
+        if input.var_assignments.len() > self.result.var_assignments.len() {
+            let new = input.var_assignments.len() - self.result.var_assignments.len();
+            self.result.var_assignments.reserve(new);
+        }
         // Merge variable assignments.
         for (name, assignment) in input.var_assignments.iter() {
             match self.result.var_assignments.entry(name.clone()) {

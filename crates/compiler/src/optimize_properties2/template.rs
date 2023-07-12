@@ -73,8 +73,11 @@ impl Visitor<CallId> for Resolver<'_, '_> {
         let initial_lattice = lattice_elements.insert(Lattice::default());
         let mut entry_lattice = Lattice {
             prop_assignments: call.prop_assignments.clone(),
-            var_assignments: HashableHashMap::default(),
+            ..Default::default()
         };
+        entry_lattice
+            .var_assignments
+            .reserve(self.static_fn_data[func].param_names.len());
         for (i, param_name) in self.static_fn_data[func].param_names.iter().enumerate() {
             let value = call.args.get(i).unwrap_or(Some(Pointer::NullOrVoid));
             if value.is_none() {
@@ -872,6 +875,8 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                             }
                         }
 
+                        done.reserve(queue.len());
+
                         // TODO: check argument prop assignments for unresolved calls
                         while let Some(o) = queue.pop() {
                             if o == ObjectStore::RESOLVING_CALL {
@@ -1117,6 +1122,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                     }
 
                     let mut done = FxHashSet::default();
+                    done.reserve(queue.capacity());
 
                     while let Some(obj) = queue.pop() {
                         if done.contains(&obj) {
@@ -1271,6 +1277,10 @@ impl JoinOp {
         unions: &mut UnionStore,
         invalid_objects: &mut GrowableBitSet<ObjectId>,
     ) {
+        if input.prop_assignments.len() > self.result.prop_assignments.len() {
+            let new = input.prop_assignments.len() - self.result.prop_assignments.len();
+            self.result.prop_assignments.reserve(new);
+        }
         // Merge property assignments.
         for ((obj, key), prop) in input.prop_assignments.iter() {
             if invalid_objects.contains(*obj) {
@@ -1289,6 +1299,10 @@ impl JoinOp {
             }
         }
 
+        if input.var_assignments.len() > self.result.var_assignments.len() {
+            let new = input.var_assignments.len() - self.result.var_assignments.len();
+            self.result.var_assignments.reserve(new);
+        }
         // Merge variable assignments.
         for (name, assignment) in input.var_assignments.iter() {
             match self.result.var_assignments.entry(name.clone()) {
