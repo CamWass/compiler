@@ -59,6 +59,7 @@ version = "0.1.0"
 dependencies = [
  "ast_node",
  "atoms",
+ "clone_node",
  "global_common",
  "node_id",
  "num-bigint",
@@ -183,6 +184,15 @@ dependencies = [
  "parser",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "clone_node"
+version = "0.1.0"
+dependencies = [
+ "pmutil",
+ "proc-macro2",
+ "syn",
 ]
 
 [[package]]

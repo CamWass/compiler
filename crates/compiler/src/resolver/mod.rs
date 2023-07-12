@@ -999,9 +999,7 @@ impl VisitMut<'_> for Hoister<'_, '_> {
         if self.in_block {
             // If we are in nested block, and variable named `foo` is declared, we should
             // ignore function foo while handling upper scopes.
-            let i = node.ident.clone();
-
-            if self.resolver.current.is_declared(&i.sym) {
+            if self.resolver.current.is_declared(&node.ident.sym) {
                 return;
             }
         }

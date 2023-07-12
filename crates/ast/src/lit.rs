@@ -1,4 +1,4 @@
-use crate::{jsx::JSXText, GetNodeId, NodeId};
+use crate::{jsx::JSXText, CloneNode, GetNodeId, NodeId};
 use ast_node::ast_node;
 use atoms::JsWord;
 use global_common::{integer_decode::integer_decode, EqIgnoreSpan, Span};
@@ -80,6 +80,12 @@ pub enum StrKind {
     Synthesized,
 }
 
+impl CloneNode for StrKind {
+    fn clone_node(&self, _: &mut crate::NodeIdGen) -> Self {
+        *self
+    }
+}
+
 /// Always returns true as this is not a data of a string literal.
 impl EqIgnoreSpan for StrKind {
     fn eq_ignore_span(&self, _: &Self) -> bool {
@@ -116,7 +122,7 @@ impl Str {
 }
 
 #[ast_node]
-#[derive(Copy, Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct Bool {
     pub node_id: NodeId,
 
@@ -125,7 +131,7 @@ pub struct Bool {
 }
 
 #[ast_node]
-#[derive(Copy, Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct Null {
     pub node_id: NodeId,
 

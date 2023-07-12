@@ -2,6 +2,7 @@ use crate::{
     class::Class, expr::Expr, function::Function, ident::Ident, pat::Pat, GetNodeId, NodeId,
 };
 use ast_node::ast_node;
+use clone_node::CloneNode;
 use global_common::{EqIgnoreSpan, Span};
 use string_enum::StringEnum;
 
@@ -47,7 +48,9 @@ pub struct VarDecl {
     pub decls: Vec<VarDeclarator>,
 }
 
-#[derive(StringEnum, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, EqIgnoreSpan)]
+#[derive(
+    StringEnum, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, EqIgnoreSpan, CloneNode,
+)]
 pub enum VarDeclKind {
     /// `var`
     Var,

@@ -94,7 +94,10 @@ impl<I: Tokens> Parser<I> {
             if comma > 0 {
                 // One comma is used for separating elements
                 let cnt = if elems.is_empty() { comma } else { comma - 1 };
-                elems.extend(std::iter::repeat(None).take(cnt));
+                elems.reserve(cnt);
+                for _ in 0..cnt {
+                    elems.push(None)
+                }
                 comma = 0;
             }
             let start = self.input.cur_pos();

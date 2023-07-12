@@ -104,7 +104,7 @@ impl Take for Expr {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, Copy, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct ThisExpr {
     pub node_id: NodeId,
 
@@ -389,7 +389,7 @@ pub enum ExprOrSuper {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, Copy, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct Super {
     pub node_id: NodeId,
 

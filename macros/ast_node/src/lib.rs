@@ -44,15 +44,21 @@ pub fn ast_node(
             #[derive(
                 ::global_common::FromVariant,
                 ::ast_node::Spanned,
-                Clone,
                 Debug,
                 PartialEq,
                 ::node_id::GetNodeIdMacro,
+                ::clone_node::CloneNode,
             )]
             input
         })),
         _ => item.quote_with(smart_quote!(Vars { input }, {
-            #[derive(::ast_node::Spanned, Clone, Debug, PartialEq, ::node_id::GetNodeIdMacro)]
+            #[derive(
+                ::ast_node::Spanned,
+                Debug,
+                PartialEq,
+                ::node_id::GetNodeIdMacro,
+                ::clone_node::CloneNode,
+            )]
             input
         })),
     };

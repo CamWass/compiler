@@ -253,7 +253,8 @@ impl<I: Tokens> Parser<I> {
 
         if declare {
             // TODO(swc): Remove
-            if let Some(decl) = self.try_parse_ts_declare(after_export_start, decorators.clone())? {
+            let decorators = decorators.clone_node(node_id_gen!(self));
+            if let Some(decl) = self.try_parse_ts_declare(after_export_start, decorators)? {
                 return Ok(ModuleDecl::ExportDecl(ExportDecl {
                     node_id: node_id!(self),
                     span: span!(self, start),
@@ -268,7 +269,8 @@ impl<I: Tokens> Parser<I> {
                 _ => unreachable!(),
             };
             // TODO(swc): remove clone
-            if let Some(decl) = self.try_parse_ts_export_decl(decorators.clone(), sym) {
+            let decorators = decorators.clone_node(node_id_gen!(self));
+            if let Some(decl) = self.try_parse_ts_export_decl(decorators, sym) {
                 return Ok(ModuleDecl::ExportDecl(ExportDecl {
                     node_id: node_id!(self),
                     span: span!(self, start),

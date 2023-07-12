@@ -7,6 +7,7 @@ use crate::{
     EmptyStmt, GetNodeId, NodeId,
 };
 use ast_node::ast_node;
+use clone_node::CloneNode;
 use global_common::{EqIgnoreSpan, Span};
 
 #[ast_node]
@@ -123,7 +124,7 @@ pub struct Decorator {
     pub expr: Box<Expr>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EqIgnoreSpan)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EqIgnoreSpan, CloneNode)]
 pub enum MethodKind {
     Method,
     Getter,

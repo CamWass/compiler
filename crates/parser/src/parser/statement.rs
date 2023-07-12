@@ -456,7 +456,7 @@ impl<I: Tokens> Parser<I> {
             }
 
             if self.input.syntax().typescript() {
-                if let Some(decl) = self.parse_ts_expr_stmt(decorators, ident.clone())? {
+                if let Some(decl) = self.parse_ts_expr_stmt(decorators, &ident)? {
                     return Ok(Some(Stmt::Decl(decl)));
                 }
             }

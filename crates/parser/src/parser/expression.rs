@@ -550,14 +550,14 @@ impl<I: Tokens> Parser<I> {
                             Box::new(Expr::Call(CallExpr {
                                 node_id: node_id!(p),
                                 span: span!(p, start),
-                                callee: obj_ref.clone(),
+                                callee: obj_ref.clone_node(node_id_gen!(p)),
                                 args,
                             })),
                             true,
                         )))
                     } else if is!(p, '`') {
                         p.parse_tagged_tpl(match *obj_ref {
-                            ExprOrSuper::Expr(ref obj) => obj.clone(),
+                            ExprOrSuper::Expr(ref obj) => obj.clone_node(node_id_gen!(p)),
                             _ => unreachable!(),
                         })
                         .map(|expr| (Box::new(Expr::TaggedTpl(expr)), true))
@@ -1251,8 +1251,9 @@ impl<I: Tokens> Parser<I> {
 
                 expect!(p, "=>");
 
+                let exprs = items_ref.clone_node(node_id_gen!(p));
                 let params = p
-                    .parse_paren_items_as_params(items_ref.clone())?
+                    .parse_paren_items_as_params(exprs)?
                     .into_iter()
                     .map(|pat| ParamWithoutDecorators::from_pat(pat, node_id!(p)))
                     .collect();
@@ -1526,11 +1527,20 @@ fn word_contains_escape(span: &Span, word: &'static str) -> bool {
     span.hi.to_usize() - span.lo.to_usize() != word.len()
 }
 
-#[derive(::ast_node::Spanned, Debug, Clone, PartialEq)]
-pub(in crate::parser) enum PatOrExprOrSpread {
+#[derive(::ast_node::Spanned, Debug, PartialEq)]
+pub(crate) enum PatOrExprOrSpread {
     Pat(Pat),
     // TODO: maybe flatten
     ExprOrSpread(ExprOrSpread),
+}
+
+impl CloneNode for PatOrExprOrSpread {
+    fn clone_node(&self, node_id_gen: &mut NodeIdGen) -> Self {
+        match self {
+            Self::Pat(n) => Self::Pat(n.clone_node(node_id_gen)),
+            Self::ExprOrSpread(n) => Self::ExprOrSpread(n.clone_node(node_id_gen)),
+        }
+    }
 }
 
 /// simple leaf methods.

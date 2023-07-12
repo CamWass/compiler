@@ -312,3 +312,9 @@ macro_rules! node_id {
         id
     }};
 }
+
+macro_rules! node_id_gen {
+    ($parser:expr) => {
+        &mut $parser.node_id_gen.borrow_mut()
+    };
+}

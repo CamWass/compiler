@@ -42,7 +42,7 @@ pub struct JSXNamespacedName {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, Copy, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct JSXEmptyExpr {
     pub node_id: NodeId,
 
@@ -207,7 +207,7 @@ pub struct JSXFragment {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, Copy, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct JSXOpeningFragment {
     pub node_id: NodeId,
 
@@ -215,7 +215,7 @@ pub struct JSXOpeningFragment {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, Copy, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct JSXClosingFragment {
     pub node_id: NodeId,
 

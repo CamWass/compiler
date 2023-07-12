@@ -1,7 +1,10 @@
+use clone_node::CloneNode;
 use global_common::EqIgnoreSpan;
 use string_enum::StringEnum;
 
-#[derive(StringEnum, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, EqIgnoreSpan)]
+#[derive(
+    StringEnum, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, EqIgnoreSpan, CloneNode,
+)]
 pub enum BinaryOp {
     /// `==`
     EqEq,
@@ -101,7 +104,9 @@ impl BinaryOp {
     }
 }
 
-#[derive(StringEnum, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, EqIgnoreSpan)]
+#[derive(
+    StringEnum, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, EqIgnoreSpan, CloneNode,
+)]
 pub enum AssignOp {
     /// `=`
     Assign,
@@ -141,7 +146,9 @@ pub enum AssignOp {
     NullishAssign,
 }
 
-#[derive(StringEnum, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, EqIgnoreSpan)]
+#[derive(
+    StringEnum, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, EqIgnoreSpan, CloneNode,
+)]
 pub enum UpdateOp {
     /// `++`
     PlusPlus,
@@ -149,7 +156,9 @@ pub enum UpdateOp {
     MinusMinus,
 }
 
-#[derive(StringEnum, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, EqIgnoreSpan)]
+#[derive(
+    StringEnum, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, EqIgnoreSpan, CloneNode,
+)]
 pub enum UnaryOp {
     /// `-`
     Minus,

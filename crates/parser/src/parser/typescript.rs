@@ -1674,7 +1674,7 @@ impl<I: Tokens> Parser<I> {
     pub(super) fn parse_ts_expr_stmt(
         &mut self,
         decorators: Vec<Decorator>,
-        expr: Ident,
+        expr: &Ident,
     ) -> PResult<Option<Decl>> {
         let start = expr.span().lo();
 
@@ -1696,7 +1696,7 @@ impl<I: Tokens> Parser<I> {
                     Ok(None)
                 }
             }
-            _ => self.parse_ts_decl(start, decorators, expr.sym, false),
+            _ => self.parse_ts_decl(start, decorators, expr.sym.clone(), false),
         }
     }
 

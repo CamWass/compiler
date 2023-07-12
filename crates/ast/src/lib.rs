@@ -47,6 +47,7 @@ pub use self::{
     },
 };
 use ast_node::ast_node;
+use atoms::JsWord;
 use global_common::{EqIgnoreSpan, Span};
 
 #[macro_use]
@@ -98,7 +99,7 @@ impl NodeIdGen {
 
 /// Represents a invalid node.
 #[ast_node]
-#[derive(Eq, Hash, Copy, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct Invalid {
     pub node_id: NodeId,
 
@@ -130,3 +131,44 @@ impl Default for EsVersion {
         EsVersion::Es5
     }
 }
+
+/// Because [`NodeId`]s must be unique, nodes do not implement [`Clone`] directly,
+/// as that would make it too easy to forget to update the [`NodeId`]s of the
+/// cloned nodes. Using [`clone_node`][CloneNode::clone_node] ensures that all
+/// [`NodeId`]s remain unique.
+pub trait CloneNode {
+    /// Clone the node. All new nodes will have unique [`NodeId`]s.
+    fn clone_node(&self, node_id_gen: &mut NodeIdGen) -> Self;
+}
+
+impl<T: CloneNode> CloneNode for Option<T> {
+    fn clone_node(&self, node_id_gen: &mut NodeIdGen) -> Self {
+        self.as_ref().map(|v| v.clone_node(node_id_gen))
+    }
+}
+impl<T: CloneNode> CloneNode for Box<T> {
+    fn clone_node(&self, node_id_gen: &mut NodeIdGen) -> Self {
+        Box::new(self.as_ref().clone_node(node_id_gen))
+    }
+}
+impl<T: CloneNode> CloneNode for Vec<T> {
+    fn clone_node(&self, node_id_gen: &mut NodeIdGen) -> Self {
+        self.iter().map(|v| v.clone_node(node_id_gen)).collect()
+    }
+}
+
+macro_rules! impl_clone_node {
+    ($t:ty) => {
+        impl CloneNode for $t {
+            fn clone_node(&self, _: &mut NodeIdGen) -> Self {
+                self.clone()
+            }
+        }
+    };
+}
+
+impl_clone_node!(bool);
+impl_clone_node!(f64);
+impl_clone_node!(Span);
+impl_clone_node!(JsWord);
+impl_clone_node!(num_bigint::BigInt);

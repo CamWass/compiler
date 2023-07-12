@@ -82,7 +82,7 @@ pub struct ExprStmt {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, Copy, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct EmptyStmt {
     pub node_id: NodeId,
 
@@ -91,7 +91,7 @@ pub struct EmptyStmt {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, Copy, EqIgnoreSpan)]
+#[derive(Eq, Hash, EqIgnoreSpan)]
 pub struct DebuggerStmt {
     pub node_id: NodeId,
 
