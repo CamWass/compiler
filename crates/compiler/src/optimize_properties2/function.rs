@@ -1,6 +1,7 @@
 use ast::*;
 use atoms::{js_word, JsWord};
 use global_common::SyntaxContext;
+use index::vec::IndexVec;
 use rustc_hash::FxHashMap;
 
 use crate::control_flow::node::{Node, NodeKind};
@@ -8,17 +9,18 @@ use crate::control_flow::ControlFlowGraph::*;
 use crate::utils::unwrap_as;
 use crate::{Id, ToId};
 
-use super::{is_simple_prop_name, FnId, PropKey, SimpleCFG, Store};
+use super::{is_simple_prop_name, FnId, PropKey, SimpleCFG, StaticFunctionData};
 
 /// Builds a map containing the [`Steps`][Step] required to symbolically evaluate
 /// each node in the given function.
-pub(super) fn create_step_map<'ast>(
-    store: &mut Store<'ast>,
+pub(super) fn create_step_map(
+    static_fn_data: &IndexVec<FnId, StaticFunctionData>,
+    unresolved_ctxt: SyntaxContext,
     func: FnId,
 ) -> FxHashMap<NodeId, Vec<Step>> {
     let mut map = FxHashMap::default();
 
-    let graph = &store.static_fn_data[func].cfg.graph;
+    let graph = &static_fn_data[func].cfg.graph;
 
     for node in graph.node_indices() {
         // Make assignments conditional if the node can end abruptly by an exception.
@@ -28,8 +30,8 @@ pub(super) fn create_step_map<'ast>(
 
         let mut analyser = Analyser {
             steps: &mut steps,
-            cfg: &store.static_fn_data[func].cfg,
-            unresolved_ctxt: store.unresolved_ctxt,
+            cfg: &static_fn_data[func].cfg,
+            unresolved_ctxt,
         };
         analyser.init(graph[node], conditional);
 

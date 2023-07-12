@@ -127,41 +127,37 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
     let mut union_accesses = FxHashMap::<_, FxHashMap<_, FxHashSet<_>>>::default();
 
     for (PropKey(name, node_id), &pointer) in &store.references {
-        if let Some(pointer) = pointer {
-            match pointer {
-                Pointer::Object(object_id) => {
-                    let object = objects.entry(object_id).or_default();
-                    let id = match object.properties.entry(name.clone()) {
-                        Entry::Occupied(entry) => *entry.get(),
-                        Entry::Vacant(entry) => {
-                            let prop_id = properties.push(Property {
-                                name: name.clone(),
-                                prop_id: properties.next_index(),
-                                references: FxHashSet::default(),
-                                invalid: store.invalid_objects.contains(object_id),
-                            });
-                            entry.insert(prop_id);
-                            prop_id
-                        }
-                    };
-                    properties[id].references.insert(*node_id);
-                }
-                Pointer::Union(union) => {
-                    // Defer union processing.
-                    union_accesses
-                        .entry(union)
-                        .or_default()
-                        .entry(name)
-                        .or_default()
-                        .insert(*node_id);
-                    for constituent in store.unions[union].constituents() {
-                        objects.entry(constituent).or_default();
+        match pointer {
+            Pointer::Object(object_id) => {
+                let object = objects.entry(object_id).or_default();
+                let id = match object.properties.entry(name.clone()) {
+                    Entry::Occupied(entry) => *entry.get(),
+                    Entry::Vacant(entry) => {
+                        let prop_id = properties.push(Property {
+                            name: name.clone(),
+                            prop_id: properties.next_index(),
+                            references: FxHashSet::default(),
+                            invalid: store.invalid_objects.contains(object_id),
+                        });
+                        entry.insert(prop_id);
+                        prop_id
                     }
-                }
-                Pointer::Fn(_) | Pointer::NullOrVoid => {}
+                };
+                properties[id].references.insert(*node_id);
             }
-        } else {
-            todo!();
+            Pointer::Union(union) => {
+                // Defer union processing.
+                union_accesses
+                    .entry(union)
+                    .or_default()
+                    .entry(name)
+                    .or_default()
+                    .insert(*node_id);
+                for constituent in store.unions[union].constituents() {
+                    objects.entry(constituent).or_default();
+                }
+            }
+            Pointer::Fn(_) | Pointer::NullOrVoid => {}
         }
     }
 
@@ -409,7 +405,7 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
         objects: ObjectStore::new(),
         unresolved_ctxt,
         resolved_calls: FxHashMap::default(),
-        call_templates: FxHashMap::default(),
+        call_templates: IndexVec::default(),
         fn_assignments: HashableHashMap::default(),
         object_links: FxHashSet::default(),
         call_objects: FxHashMap::default(),
@@ -418,14 +414,12 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
     let mut visitor = FnVisitor { store: &mut store };
     ast.visit_with(&mut visitor);
 
-    store.call_templates.reserve(store.functions.len());
-    let mut i = 0;
-    while i < store.functions.len() {
-        let func = FnId::from_usize(i);
-        let template = CallTemplate::new(&mut store, func);
-        store.call_templates.insert(func, template);
-        i += 1;
-    }
+    let call_templates = store
+        .functions
+        .indices()
+        .map(|func| CallTemplate::new(&store.static_fn_data, store.unresolved_ctxt, func))
+        .collect();
+    store.call_templates = IndexVec::from_raw(call_templates);
 
     let root = match &ast {
         Program::Module(n) => ControlFlowRoot::Module(n),
@@ -587,14 +581,15 @@ pub struct Store<'ast> {
     invalid_objects: GrowableBitSet<ObjectId>,
     unions: UnionStore,
 
-    references: FxHashMap<PropKey, Option<Pointer>>,
+    references: FxHashMap<PropKey, Pointer>,
 
     objects: ObjectStore,
 
     pub(super) unresolved_ctxt: SyntaxContext,
 
     resolved_calls: FxHashMap<CallId, ResolvedCall>,
-    call_templates: FxHashMap<FnId, CallTemplate>,
+    /// Read-only
+    call_templates: IndexVec<FnId, CallTemplate>,
     fn_assignments: HashableHashMap<Id, Assignment>,
 
     object_links: FxHashSet<(ObjectId, ObjectId)>,
@@ -1099,7 +1094,7 @@ impl<'ast> Analyser<'ast, '_> {
         )
     }
 
-    fn reference_prop(&mut self, object: Option<Pointer>, key: PropKey) {
+    fn reference_prop(&mut self, object: Pointer, key: PropKey) {
         self.store.references.insert(key, object);
     }
 
@@ -1254,7 +1249,7 @@ impl<'ast> Analyser<'ast, '_> {
                                         self.store.unresolved_ctxt,
                                     )
                                     .unwrap();
-                                    self.reference_prop(Some(rhs), key.clone());
+                                    self.reference_prop(rhs, key.clone());
                                     let rhs_value = self.get_property(rhs, &key.0);
 
                                     if matches!(prop.value.as_ref(), Pat::Ident(_) | Pat::Expr(_)) {
@@ -1370,7 +1365,7 @@ impl<'ast> Analyser<'ast, '_> {
                     PropKey::from_expr(&node.prop, self.store.unresolved_ctxt, node.computed)
                 {
                     obj.map(|obj| {
-                        self.reference_prop(Some(obj), prop.clone());
+                        self.reference_prop(obj, prop.clone());
                         Slot::Prop(obj, prop.0)
                     })
                 } else {
@@ -1550,7 +1545,7 @@ impl<'ast> Analyser<'ast, '_> {
                         let key =
                             PropKey::from_prop_name(&prop.key, self.store.unresolved_ctxt).unwrap();
 
-                        self.reference_prop(Some(pointer), key.clone());
+                        self.reference_prop(pointer, key.clone());
 
                         let value =
                             self.visit_and_get_object(Node::from(prop.value.as_ref()), conditional);
@@ -1599,7 +1594,7 @@ impl<'ast> Analyser<'ast, '_> {
                     PropKey::from_expr(&node.prop, self.store.unresolved_ctxt, node.computed)
                 {
                     if let Some(obj) = obj {
-                        self.reference_prop(Some(obj), prop.clone());
+                        self.reference_prop(obj, prop.clone());
                         self.get_property(obj, &prop.0)
                     } else {
                         None

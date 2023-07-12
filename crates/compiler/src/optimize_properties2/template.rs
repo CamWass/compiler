@@ -4,6 +4,7 @@ use std::collections::hash_map::Entry;
 
 use ast::NodeId;
 use atoms::JsWord;
+use global_common::SyntaxContext;
 use index::bit_set::GrowableBitSet;
 use index::vec::IndexVec;
 use petgraph::graph::EdgeReference;
@@ -37,7 +38,7 @@ struct Resolver<'a, 'ast> {
     functions: &'a mut IndexVec<FnId, Func>,
     static_fn_data: &'a IndexVec<FnId, StaticFunctionData<'ast>>,
 
-    call_templates: &'a FxHashMap<FnId, CallTemplate>,
+    call_templates: &'a IndexVec<FnId, CallTemplate>,
 
     resolved_calls: &'a mut FxHashMap<CallId, ResolvedCall>,
 
@@ -108,7 +109,7 @@ impl Visitor<CallId> for Resolver<'_, '_> {
             node_annotations: FxHashMap::default(),
 
             call: node,
-            path_map: &self.call_templates[&func].step_map,
+            path_map: &self.call_templates[func].step_map,
             resolved_calls: self.resolved_calls,
             return_types: &mut self.return_types,
             return_states: &mut self.return_states,
@@ -595,8 +596,12 @@ pub(super) struct CallTemplate {
 }
 
 impl CallTemplate {
-    pub fn new(store: &mut Store, func: FnId) -> CallTemplate {
-        let step_map = create_step_map(store, func);
+    pub fn new(
+        static_fn_data: &IndexVec<FnId, StaticFunctionData>,
+        unresolved_ctxt: SyntaxContext,
+        func: FnId,
+    ) -> CallTemplate {
+        let step_map = create_step_map(static_fn_data, unresolved_ctxt, func);
         CallTemplate { step_map }
     }
 }
