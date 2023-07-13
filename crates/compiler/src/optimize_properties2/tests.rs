@@ -42,6 +42,43 @@ fn test_same(input: &str) {
 // TODO: more tests e.g. for branch joins, more invalidations, infinite loops etc
 
 #[test]
+fn test_nested_unions() {
+    // Had a bug where union constituents were always added to the first/outermost
+    // union being constructed. This meant `bar` returned `obj1 | obj2 | obj3 | obj4`
+    // instead of `obj1 | obj4`.
+    test_transform(
+        "
+function foo(arg) {
+    const obj4 = { prop4: 'prop4', zCommon: 'zCommon' };
+    return obj4;
+}
+function bar() {
+    const obj1 = { prop1: 'prop1', zCommon: 'zCommon' };
+    const obj2 = { prop2: 'prop2', zCommon: 'zCommon' };
+    const obj3 = { prop3: 'prop3', zCommon: 'zCommon' };
+    
+    return obj1 || foo(obj2 || obj3);
+}
+bar().zCommon;
+",
+        "
+function foo(arg) {
+    const obj4 = { b: 'prop4', a: 'zCommon' };
+    return obj4;
+}
+function bar() {
+    const obj1 = { b: 'prop1', a: 'zCommon' };
+    const obj2 = { a: 'prop2', b: 'zCommon' };
+    const obj3 = { a: 'prop3', b: 'zCommon' };
+    
+    return obj1 || foo(obj2 || obj3);
+}
+bar().a;
+",
+    );
+}
+
+#[test]
 fn test_primitive_types() {
     // Null and undefined are not included in unions.
     test_transform(

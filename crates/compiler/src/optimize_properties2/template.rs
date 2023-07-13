@@ -1184,7 +1184,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                 }
                 Step::PushToUnion => {
                     let v = machine.get_r_value();
-                    machine.unions.first_mut().unwrap().insert(v);
+                    machine.unions.last_mut().unwrap().insert(v);
                 }
                 Step::StoreUnion => {
                     let parts = machine.unions.pop().unwrap();
