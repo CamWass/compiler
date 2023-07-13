@@ -14,6 +14,7 @@ mod simple_set;
 mod template;
 mod types;
 mod unionfind;
+mod utils;
 
 use std::borrow::Cow;
 use std::collections::hash_map::Entry;
@@ -409,6 +410,7 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
         fn_assignments: HashableHashMap::default(),
         object_links: FxHashSet::default(),
         call_objects: FxHashMap::default(),
+        call_resolver_state: ResolverState::default(),
     };
 
     let mut visitor = FnVisitor { store: &mut store };
@@ -594,6 +596,8 @@ pub struct Store<'ast> {
 
     object_links: FxHashSet<(ObjectId, ObjectId)>,
     call_objects: FxHashMap<(CallId, NodeId), ObjectId>,
+
+    call_resolver_state: ResolverState<'ast>,
 }
 
 impl Store<'_> {

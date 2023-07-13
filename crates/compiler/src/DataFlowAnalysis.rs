@@ -397,7 +397,7 @@ newtype_index!(pub struct LatticeElementId { .. });
 impl Annotation for LatticeElementId {}
 
 #[derive(Debug)]
-struct PrioritizedNode<N>(usize, N);
+pub struct PrioritizedNode<N>(usize, N);
 
 impl<N> PartialEq for PrioritizedNode<N> {
     fn eq(&self, other: &Self) -> bool {
@@ -434,6 +434,18 @@ where
     pub fn new(priorities: &'p FxHashMap<N, usize>, forwards: bool) -> Self {
         Self {
             inner: BTreeSet::new(),
+            priorities,
+            forwards,
+        }
+    }
+
+    pub fn reuse_inner(
+        inner: BTreeSet<PrioritizedNode<N>>,
+        priorities: &'p FxHashMap<N, usize>,
+        forwards: bool,
+    ) -> Self {
+        Self {
+            inner,
             priorities,
             forwards,
         }

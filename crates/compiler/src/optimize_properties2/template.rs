@@ -1,6 +1,7 @@
 #![deny(unused_imports)]
 
 use std::collections::hash_map::Entry;
+use std::collections::BTreeSet;
 
 use ast::NodeId;
 use atoms::JsWord;
@@ -15,13 +16,16 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use crate::control_flow::node::{Node, NodeKind};
 use crate::control_flow::ControlFlowGraph::Branch;
 use crate::utils::unwrap_as;
-use crate::DataFlowAnalysis::{LatticeElementId, LinearFlowState, UniqueQueue, MAX_STEPS_PER_NODE};
+use crate::DataFlowAnalysis::{
+    LatticeElementId, LinearFlowState, PrioritizedNode, UniqueQueue, MAX_STEPS_PER_NODE,
+};
 use crate::Id;
 
 use super::graph::{process, Visitor};
 use super::hashable_map::HashableHashMap;
 use super::simple_set::IndexSet;
 use super::types::{ObjectId, ObjectStore, UnionBuilder, UnionStore};
+use super::utils::{ReusableState, ReusableStateStack};
 use super::{
     function::*, Assignment, Call, CallArgBuilder, CallArgs, CallId, FnId, Func, Lattice, Pointer,
     PropertyAssignments, ResolvedCall, SimpleCFG, StaticFunctionData, Store,
@@ -32,6 +36,28 @@ enum ReturnTypeConstituent {
     Object(ObjectId),
     Invalid,
     NullOrVoid,
+}
+
+/// Re-usable state for a [`call resolver`][`Resolver`].
+#[derive(Debug, Default)]
+pub struct ResolverState<'ast> {
+    return_types: FxHashMap<CallId, FxHashSet<ReturnTypeConstituent>>,
+    return_states: FxHashMap<CallId, PropertyAssignments>,
+
+    data_flow_state: DataFlowAnalysisState<'ast>,
+}
+
+impl ReusableState for ResolverState<'_> {
+    fn reset(&mut self) {
+        let ResolverState {
+            return_types,
+            return_states,
+            data_flow_state,
+        } = self;
+        return_types.clear();
+        return_states.clear();
+        data_flow_state.reset();
+    }
 }
 
 struct Resolver<'a, 'ast> {
@@ -54,10 +80,9 @@ struct Resolver<'a, 'ast> {
 
     fn_assignments: &'a HashableHashMap<Id, Assignment>,
 
-    return_types: FxHashMap<CallId, FxHashSet<ReturnTypeConstituent>>,
-    return_states: FxHashMap<CallId, PropertyAssignments>,
-
     root_call: CallId,
+
+    state: &'a mut ResolverState<'ast>,
 }
 
 impl Visitor<CallId> for Resolver<'_, '_> {
@@ -70,8 +95,13 @@ impl Visitor<CallId> for Resolver<'_, '_> {
 
         let func = call.func;
 
-        let mut lattice_elements = IndexSet::default();
-        let initial_lattice = lattice_elements.insert(Lattice::default());
+        self.state.data_flow_state.reset();
+
+        let initial_lattice = self
+            .state
+            .data_flow_state
+            .lattice_elements
+            .insert(Lattice::default());
         let mut entry_lattice = Lattice {
             prop_assignments: call.prop_assignments.clone(),
             ..Default::default()
@@ -85,21 +115,27 @@ impl Visitor<CallId> for Resolver<'_, '_> {
                 .var_assignments
                 .insert(param_name.clone(), Assignment { rhs: value });
         }
-        let entry_lattice = lattice_elements.insert(entry_lattice);
+        let entry_lattice = self
+            .state
+            .data_flow_state
+            .lattice_elements
+            .insert(entry_lattice);
 
         let mut analysis = DataFlowAnalysis {
-            workQueue: UniqueQueue::new(&self.static_fn_data[func].node_priorities, true),
+            workQueue: UniqueQueue::reuse_inner(
+                std::mem::take(&mut self.state.data_flow_state.work_queue_inner),
+                &self.static_fn_data[func].node_priorities,
+                true,
+            ),
             cfg: &self.static_fn_data[func].cfg,
-            lattice_elements,
             entry_lattice,
             initial_lattice,
-            node_annotations: FxHashMap::default(),
 
             call: node,
             path_map: &self.call_templates[func].step_map,
             resolved_calls: self.resolved_calls,
-            return_types: &mut self.return_types,
-            return_states: &mut self.return_states,
+            return_types: &mut self.state.return_types,
+            return_states: &mut self.state.return_states,
             objects_map: self.objects_map,
             call_objects: self.call_objects,
             object_links: self.object_links,
@@ -114,6 +150,8 @@ impl Visitor<CallId> for Resolver<'_, '_> {
             fn_assignments: self.fn_assignments,
 
             root_call: self.root_call,
+
+            state: &mut self.state.data_flow_state,
         };
         analysis.analyze();
 
@@ -174,7 +212,7 @@ impl Visitor<CallId> for Resolver<'_, '_> {
             }
         }
 
-        let return_types = self.return_types.remove(&node).unwrap_or_default();
+        let return_types = self.state.return_types.remove(&node).unwrap_or_default();
 
         let mut builder = UnionBuilder::default();
 
@@ -188,7 +226,7 @@ impl Visitor<CallId> for Resolver<'_, '_> {
 
         let return_type = self.unions.build_union(builder);
 
-        let prop_assignments = self.return_states.remove(&node).unwrap_or_default();
+        let prop_assignments = self.state.return_states.remove(&node).unwrap_or_default();
 
         let resolved = ResolvedCall {
             return_type,
@@ -205,6 +243,8 @@ pub(super) fn resolve_call(call: CallId, store: &mut Store) {
         return;
     }
 
+    store.call_resolver_state.reset();
+
     let mut visitor = Resolver {
         call_templates: &store.call_templates,
         functions: &mut store.functions,
@@ -218,9 +258,9 @@ pub(super) fn resolve_call(call: CallId, store: &mut Store) {
         invalid_objects: &mut store.invalid_objects,
         calls: &mut store.calls,
         fn_assignments: &store.fn_assignments,
-        return_types: Default::default(),
-        return_states: Default::default(),
         root_call: call,
+
+        state: &mut store.call_resolver_state,
     };
 
     process(call, &mut visitor);
@@ -458,16 +498,16 @@ enum MachineCall {
 }
 
 #[derive(Debug)]
-enum MachineState {
+enum MachineLattice {
     Owned(Lattice),
     Borrowed(LatticeElementId),
 }
 
-impl MachineState {
+impl MachineLattice {
     fn get<'a>(&'a self, lattice_elements: &'a IndexSet<LatticeElementId, Lattice>) -> &'a Lattice {
         match self {
-            MachineState::Owned(l) => l,
-            MachineState::Borrowed(id) => &lattice_elements[*id],
+            MachineLattice::Owned(l) => l,
+            MachineLattice::Borrowed(id) => &lattice_elements[*id],
         }
     }
     fn get_mut<'a>(
@@ -475,11 +515,11 @@ impl MachineState {
         lattice_elements: &IndexSet<LatticeElementId, Lattice>,
     ) -> &'a mut Lattice {
         match self {
-            MachineState::Owned(l) => l,
-            MachineState::Borrowed(id) => {
+            MachineLattice::Owned(l) => l,
+            MachineLattice::Borrowed(id) => {
                 let id = *id;
-                *self = MachineState::Owned(lattice_elements[id].clone());
-                unwrap_as!(self, MachineState::Owned(l), l)
+                *self = MachineLattice::Owned(lattice_elements[id].clone());
+                unwrap_as!(self, MachineLattice::Owned(l), l)
             }
         }
     }
@@ -522,30 +562,62 @@ impl MachineState {
 }
 
 #[derive(Debug)]
-/// State machine that executes a sequence of [`Steps`][Step] that represent the
-/// effects of a node in the control flow graph.
-struct Machine<'a> {
-    state: MachineState,
-    steps: &'a [Step],
+struct MachineState {
     /// Stack of calls (fn and args) that are currently being built.
     calls: Vec<MachineCall>,
     /// Stack of unions (constituents) that are currently being built.
-    unions: Vec<FxHashSet<Option<Pointer>>>,
+    unions: ReusableStateStack<FxHashSet<Option<Pointer>>>,
     /// Stack of expression values. Using a stack simplifies the [`Step`]
     /// language, allowing us to handle nested expressions by pushing/popping
     /// values on the stack.
     r_value: Vec<Option<Pointer>>,
     /// Register containing the current left-hand-side value.
     l_value: Option<AssignTarget>,
+}
+
+impl ReusableState for MachineState {
+    fn reset(&mut self) {
+        let MachineState {
+            calls,
+            unions,
+            r_value,
+            l_value,
+        } = self;
+        calls.clear();
+        unions.reset();
+        r_value.clear();
+        r_value.push(None);
+        *l_value = None;
+    }
+}
+
+impl Default for MachineState {
+    fn default() -> Self {
+        Self {
+            calls: Vec::new(),
+            r_value: vec![None],
+            l_value: None,
+            unions: Default::default(),
+        }
+    }
+}
+
+#[derive(Debug)]
+/// State machine that executes a sequence of [`Steps`][Step] that represent the
+/// effects of a node in the control flow graph.
+struct Machine<'a> {
+    state: &'a mut MachineState,
+    lattice: MachineLattice,
+    steps: &'a [Step],
     fn_assignments: &'a HashableHashMap<Id, Assignment>,
 }
 
 impl Machine<'_> {
     fn get_r_value(&self) -> Option<Pointer> {
-        *self.r_value.last().unwrap()
+        *self.state.r_value.last().unwrap()
     }
     fn set_r_value(&mut self, value: Option<Pointer>) {
-        *self.r_value.last_mut().unwrap() = value;
+        *self.state.r_value.last_mut().unwrap() = value;
     }
 
     fn get_var(
@@ -553,7 +625,7 @@ impl Machine<'_> {
         id: &Id,
         lattice_elements: &IndexSet<LatticeElementId, Lattice>,
     ) -> Option<Assignment> {
-        self.state
+        self.lattice
             .get(lattice_elements)
             .var_assignments
             .get(id)
@@ -592,13 +664,11 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
             None => return Some(input),
         };
         debug_assert!(!steps.is_empty());
+        self.state.machine_state.reset();
         let mut machine = Machine {
-            state: MachineState::Borrowed(input),
+            lattice: MachineLattice::Borrowed(input),
             steps,
-            calls: Vec::new(),
-            r_value: vec![None],
-            l_value: None,
-            unions: Vec::new(),
+            state: &mut self.state.machine_state,
             fn_assignments: self.fn_assignments,
         };
 
@@ -612,11 +682,21 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                         let value = match value {
                             RValue::NullOrVoid => Some(Pointer::NullOrVoid),
                             RValue::Var(rhs) => machine
-                                .get_var(rhs, &self.lattice_elements)
+                                .get_var(rhs, &self.state.lattice_elements)
                                 .and_then(|a| a.rhs),
-                            RValue::Object(o) => self.get_call_obj(*o),
+                            RValue::Object(o) => get_call_obj(
+                                self.objects_map,
+                                self.call_objects,
+                                self.object_links,
+                                self.objects,
+                                self.root_call,
+                                *o,
+                            ),
                             RValue::Prop(prop) => get_property(
-                                &machine.state.get(&self.lattice_elements).prop_assignments,
+                                &machine
+                                    .lattice
+                                    .get(&self.state.lattice_elements)
+                                    .prop_assignments,
                                 self.unions,
                                 machine.get_r_value(),
                                 prop,
@@ -632,28 +712,40 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                 },
                 Step::StoreLValue(value) => match value {
                     Some(LValue::Var(id)) => {
-                        machine.l_value = Some(AssignTarget::Var(id.clone()));
+                        machine.state.l_value = Some(AssignTarget::Var(id.clone()));
                     }
                     Some(LValue::ObjectProp(obj, prop)) => {
-                        machine.l_value =
-                            Some(AssignTarget::Prop(self.get_call_obj(*obj), prop.clone()));
+                        machine.state.l_value = Some(AssignTarget::Prop(
+                            get_call_obj(
+                                self.objects_map,
+                                self.call_objects,
+                                self.object_links,
+                                self.objects,
+                                self.root_call,
+                                *obj,
+                            ),
+                            prop.clone(),
+                        ));
                     }
                     Some(LValue::RValueProp(prop)) => {
-                        machine.l_value =
+                        machine.state.l_value =
                             Some(AssignTarget::Prop(machine.get_r_value(), prop.clone()));
                     }
                     None => {
-                        machine.l_value = None;
+                        machine.state.l_value = None;
                     }
                 },
                 Step::Assign(conditional) => {
-                    if let Some(slot) = &machine.l_value {
+                    if let Some(slot) = &machine.state.l_value {
                         let existing = match &slot {
                             AssignTarget::Var(name) => machine
-                                .get_var(name, &self.lattice_elements)
+                                .get_var(name, &self.state.lattice_elements)
                                 .and_then(|a| a.rhs),
                             AssignTarget::Prop(obj, key) => get_property(
-                                &machine.state.get(&self.lattice_elements).prop_assignments,
+                                &machine
+                                    .lattice
+                                    .get(&self.state.lattice_elements)
+                                    .prop_assignments,
                                 self.unions,
                                 *obj,
                                 key,
@@ -671,10 +763,10 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                         let new = Assignment { rhs };
                         match slot {
                             AssignTarget::Var(id) => {
-                                machine.state.insert_var_assignment(
+                                machine.lattice.insert_var_assignment(
                                     id.clone(),
                                     new,
-                                    &self.lattice_elements,
+                                    &self.state.lattice_elements,
                                 );
                             }
                             AssignTarget::Prop(obj, prop) => {
@@ -686,8 +778,8 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                                 self.unions,
                                                 rhs,
                                                 &machine
-                                                    .state
-                                                    .get(&self.lattice_elements)
+                                                    .lattice
+                                                    .get(&self.state.lattice_elements)
                                                     .prop_assignments,
                                             );
                                             continue;
@@ -696,18 +788,18 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
 
                                     match obj {
                                         Pointer::Object(obj) => {
-                                            machine.state.insert_prop_assignment(
+                                            machine.lattice.insert_prop_assignment(
                                                 (obj, prop.clone()),
                                                 new,
-                                                &self.lattice_elements,
+                                                &self.state.lattice_elements,
                                             );
                                         }
                                         Pointer::Union(union) => {
                                             for constituent in self.unions[union].constituents() {
-                                                machine.state.insert_prop_assignment(
+                                                machine.lattice.insert_prop_assignment(
                                                     (constituent, prop.clone()),
                                                     new,
-                                                    &self.lattice_elements,
+                                                    &self.state.lattice_elements,
                                                 );
                                             }
                                         }
@@ -719,7 +811,10 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                         self.invalid_objects,
                                         self.unions,
                                         machine.get_r_value(),
-                                        &machine.state.get(&self.lattice_elements).prop_assignments,
+                                        &machine
+                                            .lattice
+                                            .get(&self.state.lattice_elements)
+                                            .prop_assignments,
                                     );
                                 }
                             }
@@ -730,7 +825,10 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                             self.invalid_objects,
                             self.unions,
                             machine.get_r_value(),
-                            &machine.state.get(&self.lattice_elements).prop_assignments,
+                            &machine
+                                .lattice
+                                .get(&self.state.lattice_elements)
+                                .prop_assignments,
                         );
                     }
                 }
@@ -739,25 +837,35 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                         self.invalid_objects,
                         self.unions,
                         machine.get_r_value(),
-                        &machine.state.get(&self.lattice_elements).prop_assignments,
+                        &machine
+                            .lattice
+                            .get(&self.state.lattice_elements)
+                            .prop_assignments,
                     );
                 }
-                Step::InvalidateLValue => match &machine.l_value {
+                Step::InvalidateLValue => match &machine.state.l_value {
                     Some(AssignTarget::Var(id)) => {
-                        if let Some(rhs) =
-                            machine.get_var(id, &self.lattice_elements).map(|a| a.rhs)
+                        if let Some(rhs) = machine
+                            .get_var(id, &self.state.lattice_elements)
+                            .map(|a| a.rhs)
                         {
                             invalidate(
                                 self.invalid_objects,
                                 self.unions,
                                 rhs,
-                                &machine.state.get(&self.lattice_elements).prop_assignments,
+                                &machine
+                                    .lattice
+                                    .get(&self.state.lattice_elements)
+                                    .prop_assignments,
                             );
                         }
                     }
                     Some(AssignTarget::Prop(obj, prop)) => {
                         let prop = get_property(
-                            &machine.state.get(&self.lattice_elements).prop_assignments,
+                            &machine
+                                .lattice
+                                .get(&self.state.lattice_elements)
+                                .prop_assignments,
                             self.unions,
                             *obj,
                             prop,
@@ -768,7 +876,10 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                             self.invalid_objects,
                             self.unions,
                             prop,
-                            &machine.state.get(&self.lattice_elements).prop_assignments,
+                            &machine
+                                .lattice
+                                .get(&self.state.lattice_elements)
+                                .prop_assignments,
                         );
                     }
                     None => {}
@@ -776,11 +887,12 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                 Step::StartCall(num_args) => match machine.get_r_value() {
                     Some(Pointer::Fn(f)) => {
                         machine
+                            .state
                             .calls
                             .push(MachineCall::Valid(f, CallArgBuilder::new(*num_args)));
                     }
                     _ => {
-                        machine.calls.push(MachineCall::Invalid);
+                        machine.state.calls.push(MachineCall::Invalid);
                     }
                 },
                 Step::StoreArg => {
@@ -798,20 +910,23 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                         }
                         Some(Pointer::Fn(_)) | Some(Pointer::NullOrVoid) | None => {}
                     }
-                    match machine.calls.last_mut().unwrap() {
+                    match machine.state.calls.last_mut().unwrap() {
                         MachineCall::Invalid => {
                             invalidate(
                                 self.invalid_objects,
                                 self.unions,
                                 arg,
-                                &machine.state.get(&self.lattice_elements).prop_assignments,
+                                &machine
+                                    .lattice
+                                    .get(&self.state.lattice_elements)
+                                    .prop_assignments,
                             );
                         }
                         MachineCall::Valid(_, args) => args.push(arg),
                     }
                 }
                 Step::Call => {
-                    let (func, mut args) = match machine.calls.pop().unwrap() {
+                    let (func, mut args) = match machine.state.calls.pop().unwrap() {
                         MachineCall::Invalid => {
                             machine.set_r_value(None);
                             continue;
@@ -821,9 +936,10 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
 
                     if let Some(heap) = &args.args {
                         if !heap.is_empty() {
+                            let invalid_objects = &*self.invalid_objects;
                             if heap.iter().all(|a| match a {
                                 Some(Pointer::Union(union)) => union.invalid(),
-                                Some(Pointer::Object(obj)) => self.invalid_objects.contains(*obj),
+                                Some(Pointer::Object(obj)) => invalid_objects.contains(*obj),
                                 Some(Pointer::Fn(_)) | None => true,
                                 Some(Pointer::NullOrVoid) => false,
                             }) {
@@ -873,8 +989,8 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                             }
 
                             for (key, value) in machine
-                                .state
-                                .get(&self.lattice_elements)
+                                .lattice
+                                .get(&self.state.lattice_elements)
                                 .prop_assignments
                                 .iter()
                             {
@@ -914,9 +1030,10 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                     };
 
                     if cfg!(debug_assertions) {
+                        let unions = &*self.unions;
                         let depends_on_unresolved_call = |pointer| match pointer {
                             Some(Pointer::Object(o)) => o == ObjectStore::RESOLVING_CALL,
-                            Some(Pointer::Union(union)) => self.unions[union]
+                            Some(Pointer::Union(union)) => unions[union]
                                 .constituents()
                                 .any(|c| c == ObjectStore::RESOLVING_CALL),
                             Some(Pointer::Fn(_)) | Some(Pointer::NullOrVoid) | None => false,
@@ -992,8 +1109,8 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                             }
                             let key = (*obj, key.clone());
                             let new = if let Some(existing) = machine
-                                .state
-                                .get(&self.lattice_elements)
+                                .lattice
+                                .get(&self.state.lattice_elements)
                                 .prop_assignments
                                 .get(&key)
                             {
@@ -1002,9 +1119,11 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                             } else {
                                 *prop
                             };
-                            machine
-                                .state
-                                .insert_prop_assignment(key, new, &self.lattice_elements);
+                            machine.lattice.insert_prop_assignment(
+                                key,
+                                new,
+                                &self.state.lattice_elements,
+                            );
                         }
                     }
 
@@ -1116,8 +1235,8 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                             continue;
                         }
                         for ((o, key), prop) in machine
-                            .state
-                            .get(&self.lattice_elements)
+                            .lattice
+                            .get(&self.state.lattice_elements)
                             .prop_assignments
                             .iter()
                         {
@@ -1180,68 +1299,77 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                     break;
                 }
                 Step::StartUnion => {
-                    machine.unions.push(FxHashSet::default());
+                    machine.state.unions.push();
                 }
                 Step::PushToUnion => {
                     let v = machine.get_r_value();
-                    machine.unions.last_mut().unwrap().insert(v);
+                    machine.state.unions.cur().insert(v);
                 }
                 Step::StoreUnion => {
-                    let parts = machine.unions.pop().unwrap();
+                    let parts = &*machine.state.unions.cur();
 
                     let mut builder = UnionBuilder::default();
-                    for ty in parts {
+                    for &ty in parts {
                         builder.add(ty, self.unions);
                     }
                     let result = self.unions.build_union(builder);
+
+                    machine.state.unions.pop();
 
                     machine.set_r_value(result);
                 }
                 Step::SaveRValue => {
                     let v = machine.get_r_value();
-                    machine.r_value.push(v);
+                    machine.state.r_value.push(v);
                 }
                 Step::RestoreRValue => {
-                    machine.r_value.pop();
+                    machine.state.r_value.pop();
                 }
             }
         }
 
-        Some(match machine.state {
-            MachineState::Owned(state) => self.add_lattice_element(state),
-            MachineState::Borrowed(_) => input,
+        Some(match machine.lattice {
+            MachineLattice::Owned(state) => self.add_lattice_element(state),
+            MachineLattice::Borrowed(_) => input,
         })
     }
+}
 
-    /// Derives a unique [`ObjectId`] for the given object literal in the current
-    /// call. The derived type will be linked to a root type to record the
-    /// relationship. This approach makes the analysis more accurate by preventing
-    /// calls from interfering with each other, unless required for correctness.
-    /// See test `test_calls_do_not_interfere`
-    fn get_call_obj(&mut self, node_id: NodeId) -> Option<Pointer> {
-        let root = match self.objects_map.entry(node_id) {
-            Entry::Occupied(entry) => *entry.get(),
-            Entry::Vacant(entry) => {
-                let object_id = self.objects.next_object_id();
-                entry.insert(object_id);
-                object_id
-            }
-        };
+/// Derives a unique [`ObjectId`] for the given object literal in the current
+/// call. The derived type will be linked to a root type to record the
+/// relationship. This approach makes the analysis more accurate by preventing
+/// calls from interfering with each other, unless required for correctness.
+/// See test `test_calls_do_not_interfere`
+fn get_call_obj(
+    objects_map: &mut FxHashMap<NodeId, ObjectId>,
+    call_objects: &mut FxHashMap<(CallId, NodeId), ObjectId>,
+    object_links: &mut FxHashSet<(ObjectId, ObjectId)>,
+    objects: &mut ObjectStore,
+    root_call: CallId,
+    node_id: NodeId,
+) -> Option<Pointer> {
+    let root = match objects_map.entry(node_id) {
+        Entry::Occupied(entry) => *entry.get(),
+        Entry::Vacant(entry) => {
+            let object_id = objects.next_object_id();
+            entry.insert(object_id);
+            object_id
+        }
+    };
 
-        let local_id = match self.call_objects.entry((self.root_call, node_id)) {
-            Entry::Occupied(entry) => *entry.get(),
-            Entry::Vacant(entry) => {
-                let object_id = self.objects.next_object_id();
-                entry.insert(object_id);
-                self.object_links.insert((root, object_id));
-                object_id
-            }
-        };
+    let local_id = match call_objects.entry((root_call, node_id)) {
+        Entry::Occupied(entry) => *entry.get(),
+        Entry::Vacant(entry) => {
+            let object_id = objects.next_object_id();
+            entry.insert(object_id);
+            object_links.insert((root, object_id));
+            object_id
+        }
+    };
 
-        debug_assert!(root < local_id);
+    debug_assert!(root < local_id);
 
-        Some(Pointer::Object(local_id))
-    }
+    Some(Pointer::Object(local_id))
 }
 
 #[derive(Default)]
@@ -1301,40 +1429,66 @@ impl JoinOp {
     }
 }
 
+/// Re-usable state for a [`DataFlowAnalysis`].
+#[derive(Debug, Default)]
+struct DataFlowAnalysisState<'ast> {
+    work_queue_inner: BTreeSet<PrioritizedNode<Node<'ast>>>,
+
+    lattice_elements: IndexSet<LatticeElementId, Lattice>,
+    node_annotations: FxHashMap<NodeId, LinearFlowState>,
+
+    machine_state: MachineState,
+}
+
+impl ReusableState for DataFlowAnalysisState<'_> {
+    fn reset(&mut self) {
+        let DataFlowAnalysisState {
+            work_queue_inner,
+            lattice_elements,
+            node_annotations,
+            machine_state,
+        } = self;
+        work_queue_inner.clear();
+        lattice_elements.reset();
+        node_annotations.clear();
+        machine_state.reset();
+    }
+}
+
 #[derive(Debug)]
 struct DataFlowAnalysis<'ast, 'a> {
     /// The set of nodes that need to be considered, ordered by their priority
     /// as determined by control flow analysis and data flow direction.
     workQueue: UniqueQueue<'a, Node<'ast>>,
 
-    lattice_elements: IndexSet<LatticeElementId, Lattice>,
     cfg: &'a SimpleCFG<'ast>,
     entry_lattice: LatticeElementId,
     initial_lattice: LatticeElementId,
-    node_annotations: FxHashMap<NodeId, LinearFlowState>,
 
     call: CallId,
 
     path_map: &'a FxHashMap<NodeId, Vec<Step>>,
 
-    resolved_calls: &'ast mut FxHashMap<CallId, ResolvedCall>,
+    resolved_calls: &'a mut FxHashMap<CallId, ResolvedCall>,
 
     incomplete_dependencies: &'a mut FxHashSet<CallId>,
 
-    return_types: &'ast mut FxHashMap<CallId, FxHashSet<ReturnTypeConstituent>>,
-    return_states: &'ast mut FxHashMap<CallId, PropertyAssignments>,
-    objects_map: &'ast mut FxHashMap<NodeId, ObjectId>,
-    call_objects: &'ast mut FxHashMap<(CallId, NodeId), ObjectId>,
-    object_links: &'ast mut FxHashSet<(ObjectId, ObjectId)>,
-    objects: &'ast mut ObjectStore,
-    unions: &'ast mut UnionStore,
-    invalid_objects: &'ast mut GrowableBitSet<ObjectId>,
+    return_types: &'a mut FxHashMap<CallId, FxHashSet<ReturnTypeConstituent>>,
+    return_states: &'a mut FxHashMap<CallId, PropertyAssignments>,
+    objects_map: &'a mut FxHashMap<NodeId, ObjectId>,
+    call_objects: &'a mut FxHashMap<(CallId, NodeId), ObjectId>,
+    object_links: &'a mut FxHashSet<(ObjectId, ObjectId)>,
+    objects: &'a mut ObjectStore,
+    unions: &'a mut UnionStore,
+    invalid_objects: &'a mut GrowableBitSet<ObjectId>,
     calls: &'a mut IndexSet<CallId, Call>,
     changed: &'a mut bool,
 
     fn_assignments: &'a HashableHashMap<Id, Assignment>,
 
     root_call: CallId,
+
+    state: &'a mut DataFlowAnalysisState<'ast>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1361,7 +1515,7 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
         {
             let in_ = self.createInitialEstimateLattice();
             let out = self.createInitialEstimateLattice();
-            self.node_annotations.insert(
+            self.state.node_annotations.insert(
                 self.cfg.implicit_return.node_id,
                 LinearFlowState::new(in_, out),
             );
@@ -1369,7 +1523,7 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
 
         self.workQueue.push(self.cfg.entry);
         while let Some(curNode) = self.workQueue.pop() {
-            let node_annotations = &mut self.node_annotations;
+            let node_annotations = &mut self.state.node_annotations;
             let initial_lattice = self.initial_lattice;
 
             // We only add nodes to the work queue once we have processed their
@@ -1417,7 +1571,7 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
 
     /// Performs a single flow through a node.
     fn flow(&mut self, node: Node<'ast>) -> FlowResult {
-        let state = &self.node_annotations[&node.node_id];
+        let state = &self.state.node_annotations[&node.node_id];
         let outBefore = state.out;
         if let Some(new_out) = self.flowThrough(node, state.in_) {
             self.get_flow_state_mut(node.node_id).out = new_out;
@@ -1459,7 +1613,7 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
                 let mut has_non_empty_input = false;
                 if let Some(first) = self.getInputFromEdge(first) {
                     joiner.joinFlow(
-                        &self.lattice_elements[first],
+                        &self.state.lattice_elements[first],
                         self.unions,
                         self.invalid_objects,
                     );
@@ -1467,7 +1621,7 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
                 }
                 if let Some(second) = self.getInputFromEdge(second) {
                     joiner.joinFlow(
-                        &self.lattice_elements[second],
+                        &self.state.lattice_elements[second],
                         self.unions,
                         self.invalid_objects,
                     );
@@ -1476,7 +1630,7 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
                 for inEdge in inEdges {
                     if let Some(id) = self.getInputFromEdge(inEdge) {
                         joiner.joinFlow(
-                            &self.lattice_elements[id],
+                            &self.state.lattice_elements[id],
                             self.unions,
                             self.invalid_objects,
                         );
@@ -1500,19 +1654,20 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
 
     fn get_flow_state_mut(&mut self, node: NodeId) -> &mut LinearFlowState {
         // All nodes should have had their state initialized.
-        self.node_annotations.get_mut(&node).unwrap()
+        self.state.node_annotations.get_mut(&node).unwrap()
     }
 
     fn getInputFromEdge(&self, edge: EdgeReference<Branch>) -> Option<LatticeElementId> {
         let source = edge.source();
         let node = self.cfg.graph[source];
-        self.node_annotations
+        self.state
+            .node_annotations
             .get(&node.node_id)
             .map(|state| state.out)
     }
 
     fn add_lattice_element(&mut self, element: Lattice) -> LatticeElementId {
-        self.lattice_elements.insert(element)
+        self.state.lattice_elements.insert(element)
     }
 
     fn createEntryLattice(&mut self) -> LatticeElementId {
