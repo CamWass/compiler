@@ -2,6 +2,7 @@
 
 use std::collections::hash_map::Entry;
 use std::collections::BTreeSet;
+use std::hash::{Hash, Hasher};
 
 use ast::NodeId;
 use atoms::JsWord;
@@ -9,9 +10,10 @@ use global_common::SyntaxContext;
 use index::bit_set::GrowableBitSet;
 use index::vec::IndexVec;
 use petgraph::graph::EdgeReference;
+use petgraph::prelude::DiGraph;
 use petgraph::visit::EdgeRef;
 use petgraph::Direction::Incoming;
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 
 use crate::control_flow::node::{Node, NodeKind};
 use crate::control_flow::ControlFlowGraph::Branch;
@@ -1329,7 +1331,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
         }
 
         Some(match machine.lattice {
-            MachineLattice::Owned(state) => self.add_lattice_element(state),
+            MachineLattice::Owned(state) => self.state.lattice_elements.insert(state),
             MachineLattice::Borrowed(_) => input,
         })
     }
@@ -1394,11 +1396,9 @@ impl JoinOp {
                 continue;
             }
             match self.result.prop_assignments.entry((*obj, key.clone())) {
-                Entry::Occupied(entry) => {
+                Entry::Occupied(mut entry) => {
                     let union = create_union(unions, entry.get().rhs, prop.rhs);
-                    self.result
-                        .prop_assignments
-                        .insert((*obj, key.clone()), Assignment { rhs: union });
+                    entry.insert(Assignment { rhs: union });
                 }
                 Entry::Vacant(entry) => {
                     entry.insert(*prop);
@@ -1438,6 +1438,11 @@ struct DataFlowAnalysisState<'ast> {
     node_annotations: FxHashMap<NodeId, LinearFlowState>,
 
     machine_state: MachineState,
+
+    /// Cache of previously processed lattice joins.
+    cached_joins: FxHashMap<u64, LatticeElementId>,
+    /// Re-usable buffer for storing lattices-to-be-joined.
+    join_input_buffer: Vec<LatticeElementId>,
 }
 
 impl ReusableState for DataFlowAnalysisState<'_> {
@@ -1447,11 +1452,15 @@ impl ReusableState for DataFlowAnalysisState<'_> {
             lattice_elements,
             node_annotations,
             machine_state,
+            cached_joins,
+            // Note: DataFlowAnalysis clears this itself; doing so here would be pointless.
+            join_input_buffer: _,
         } = self;
         work_queue_inner.clear();
         lattice_elements.reset();
         node_annotations.clear();
         machine_state.reset();
+        cached_joins.clear();
     }
 }
 
@@ -1598,76 +1607,76 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
         }
 
         let graph = &self.cfg.graph;
+        let node_annotations = &self.state.node_annotations;
+        let initial_lattice = self.initial_lattice;
 
         // The only edges coming out of a ReturnStmt go to the implicit return,
         // so we skip these edges (see above comment in `analyze_inner`).
-        let mut inEdges = self
+        let inputs = self
             .cfg
             .graph
             .edges_directed(self.cfg.map[&node], Incoming)
-            .filter(|e| !matches!(graph[e.source()].kind, NodeKind::ReturnStmt(_)));
+            .filter(|e| !matches!(graph[e.source()].kind, NodeKind::ReturnStmt(_)))
+            .filter_map(|e| getInputFromEdge(graph, node_annotations, e))
+            .filter(|i| *i != initial_lattice);
 
-        if let Some(first) = inEdges.next() {
-            if let Some(second) = inEdges.next() {
-                let mut joiner = self.createFlowJoiner();
-                let mut has_non_empty_input = false;
-                if let Some(first) = self.getInputFromEdge(first) {
-                    joiner.joinFlow(
-                        &self.state.lattice_elements[first],
-                        self.unions,
-                        self.invalid_objects,
-                    );
-                    has_non_empty_input = true;
-                }
-                if let Some(second) = self.getInputFromEdge(second) {
-                    joiner.joinFlow(
-                        &self.state.lattice_elements[second],
-                        self.unions,
-                        self.invalid_objects,
-                    );
-                    has_non_empty_input = true;
-                }
-                for inEdge in inEdges {
-                    if let Some(id) = self.getInputFromEdge(inEdge) {
-                        joiner.joinFlow(
-                            &self.state.lattice_elements[id],
-                            self.unions,
-                            self.invalid_objects,
-                        );
-                        has_non_empty_input = true;
-                    }
-                }
-                if has_non_empty_input {
-                    self.get_flow_state_mut(node.node_id).in_ =
-                        self.add_lattice_element(joiner.finish());
-                }
-            } else {
-                // Only one relevant edge.
-                if let Some(result) = self.getInputFromEdge(first) {
-                    self.get_flow_state_mut(node.node_id).in_ = result;
-                }
-            }
-        } else {
-            // No relevant edges.
+        self.state.join_input_buffer.clear();
+        self.state.join_input_buffer.extend(inputs);
+
+        if self.state.join_input_buffer.is_empty() {
+            return;
         }
+
+        if self.state.join_input_buffer.len() == 1 {
+            // Only one relevant edge.
+            self.get_flow_state_mut(node.node_id).in_ =
+                *self.state.join_input_buffer.first().unwrap();
+            return;
+        }
+
+        self.state.join_input_buffer.sort_unstable();
+        self.state.join_input_buffer.dedup();
+
+        // De-duping may have dropped us down to one element, check again.
+        if self.state.join_input_buffer.len() == 1 {
+            // Only one relevant edge.
+            self.get_flow_state_mut(node.node_id).in_ =
+                *self.state.join_input_buffer.first().unwrap();
+            return;
+        }
+
+        let input_hash = {
+            let mut h = FxHasher::default();
+            self.state.join_input_buffer.hash(&mut h);
+            h.finish()
+        };
+
+        // Check if we have already joined these inputs.
+        let entry = match self.state.cached_joins.entry(input_hash) {
+            Entry::Occupied(entry) => {
+                self.get_flow_state_mut(node.node_id).in_ = *entry.get(); // Reuse cached join.
+                return;
+            }
+            Entry::Vacant(entry) => entry,
+        };
+
+        let mut joiner = JoinOp::default();
+        for &id in &self.state.join_input_buffer {
+            joiner.joinFlow(
+                &self.state.lattice_elements[id],
+                self.unions,
+                self.invalid_objects,
+            );
+        }
+        let result = self.state.lattice_elements.insert(joiner.finish());
+        // Cache result.
+        entry.insert(result);
+        self.get_flow_state_mut(node.node_id).in_ = result;
     }
 
     fn get_flow_state_mut(&mut self, node: NodeId) -> &mut LinearFlowState {
         // All nodes should have had their state initialized.
         self.state.node_annotations.get_mut(&node).unwrap()
-    }
-
-    fn getInputFromEdge(&self, edge: EdgeReference<Branch>) -> Option<LatticeElementId> {
-        let source = edge.source();
-        let node = self.cfg.graph[source];
-        self.state
-            .node_annotations
-            .get(&node.node_id)
-            .map(|state| state.out)
-    }
-
-    fn add_lattice_element(&mut self, element: Lattice) -> LatticeElementId {
-        self.state.lattice_elements.insert(element)
     }
 
     fn createEntryLattice(&mut self) -> LatticeElementId {
@@ -1677,8 +1686,14 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
     fn createInitialEstimateLattice(&mut self) -> LatticeElementId {
         self.initial_lattice
     }
+}
 
-    fn createFlowJoiner(&self) -> JoinOp {
-        JoinOp::default()
-    }
+fn getInputFromEdge(
+    graph: &DiGraph<Node, Branch>,
+    node_annotations: &FxHashMap<NodeId, LinearFlowState>,
+    edge: EdgeReference<Branch>,
+) -> Option<LatticeElementId> {
+    let source = edge.source();
+    let node = graph[source];
+    node_annotations.get(&node.node_id).map(|state| state.out)
 }
