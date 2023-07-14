@@ -770,7 +770,7 @@ fn testMaxIterationsExceededException() {
     cfg.create_edge(entrypoint, Branch::UNCOND, entrypoint);
 
     let cfa = ControlFlowAnalysisResult {
-        nodePriorities: vec![0],
+        nodePriorities: vec![0, 1],
         cfg,
     };
 
