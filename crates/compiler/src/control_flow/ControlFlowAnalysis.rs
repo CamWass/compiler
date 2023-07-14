@@ -5,8 +5,9 @@ use super::util::*;
 use super::ControlFlowGraph::{Annotation, Branch, ControlFlowGraph};
 use ast::*;
 use ecma_visit::{Visit, VisitWith};
+use petgraph::graph::NodeIndex;
+use petgraph::Direction::Outgoing;
 use rustc_hash::FxHashMap;
-use std::collections::hash_map::Entry;
 use std::collections::BinaryHeap;
 
 pub enum ControlFlowRoot<'ast> {
@@ -52,17 +53,19 @@ impl_from!(&'ast ArrowExpr, ArrowExpr);
 impl_from!(&'ast GetterProp, GetterProp);
 impl_from!(&'ast SetterProp, SetterProp);
 
+pub type NodePriority = u32;
+
 pub struct ControlFlowAnalysisResult<N: CfgNode, NA: Annotation, EA: Annotation> {
     pub cfg: ControlFlowGraph<N, NA, EA>,
-    pub nodePriorities: FxHashMap<N, usize>,
+    pub nodePriorities: Vec<NodePriority>,
 }
 
 pub struct ControlFlowAnalysis<'ast, N: Annotation, E: Annotation> {
     pub(super) cfg: ControlFlowGraph<Node<'ast>, N, E>,
-    astPosition: FxHashMap<NodeId, usize>,
-    pub(super) nodePriorities: FxHashMap<Node<'ast>, usize>,
-    astPositionCounter: usize,
-    priorityCounter: usize,
+    astPosition: FxHashMap<NodeId, NodePriority>,
+    pub(super) nodePriorities: Vec<NodePriority>,
+    astPositionCounter: NodePriority,
+    priorityCounter: NodePriority,
     // We need to store where we started, in case we aren't doing a flow analysis
     // for the whole scope. This happens, for example, when running type inference
     // on only the externs.
@@ -118,7 +121,7 @@ where
         let mut cfa = Self {
             cfg: ControlFlowGraph::new(compute_fall_through(root)),
             astPosition: FxHashMap::default(),
-            nodePriorities: FxHashMap::default(),
+            nodePriorities: Vec::default(),
             astPositionCounter: 0,
             priorityCounter: 0,
             root,
@@ -130,6 +133,8 @@ where
 
         root.visit_with(&mut cfa);
 
+        cfa.nodePriorities = vec![NodePriority::MAX; cfa.cfg.graph.node_count()];
+
         cfa.prioritize_node(cfa.cfg.implicit_return); // the implicit return is last.
 
         // Every node in the cfg should have been prioritized.
@@ -140,12 +145,11 @@ where
                 node
             );
         }
-        debug_assert_eq!(cfa.astPosition.len(), cfa.astPositionCounter);
+        debug_assert_eq!(cfa.astPosition.len(), cfa.astPositionCounter as usize);
 
         // Now, generate the priority of nodes by doing a depth-first
         // search on the CFG.
-        let entry = cfa.cfg.entry;
-        cfa.prioritizeFromEntryNode(entry);
+        cfa.prioritizeFromEntryNode(cfa.cfg.entry_index);
 
         if cfa.should_traverse_functions {
             // If we're traversing inner functions, we need to rank the
@@ -153,10 +157,9 @@ where
 
             // prioritizeFromEntryNode doesn't modify the graph, so we don't have
             // to worry about skipping nodes.
-            for i in 0..cfa.cfg.graph.node_count() {
-                let candidate = cfa.cfg.graph.raw_nodes()[i].weight;
+            for candidate in cfa.cfg.graph.node_indices() {
                 // TODO: classes?
-                if candidate.is_function_like() {
+                if cfa.cfg.graph[candidate].is_function_like() {
                     cfa.prioritizeFromEntryNode(candidate);
                 }
             }
@@ -166,22 +169,22 @@ where
         // unreachable nodes have not been given a priority. Put them last.
         // Presumably, it doesn't really matter what priority they get, since
         // this shouldn't happen in real code.
-        for &candidate in cfa.cfg.graph.node_weights() {
-            if let Entry::Vacant(entry) = cfa.nodePriorities.entry(candidate) {
-                entry.insert(cfa.priorityCounter);
+        for candidate in cfa.nodePriorities.iter_mut() {
+            if *candidate == NodePriority::MAX {
+                *candidate = cfa.priorityCounter;
                 cfa.priorityCounter += 1;
             }
         }
 
         // Again, the implicit return node is always last.
-        cfa.nodePriorities
-            .insert(cfa.cfg.implicit_return, cfa.priorityCounter);
+        cfa.nodePriorities[cfa.cfg.implicit_return_index.index()] = cfa.priorityCounter;
         // TODO: unnecessary? (never read after this?)
         // cfa.priorityCounter += 1;
 
         // Every node in the cfg should have been prioritized.
         debug_assert_eq!(cfa.nodePriorities.len(), cfa.cfg.graph.node_count());
-        debug_assert_eq!(cfa.nodePriorities.len(), cfa.priorityCounter);
+        debug_assert_eq!(cfa.nodePriorities.len(), cfa.priorityCounter as usize);
+        debug_assert!(!cfa.nodePriorities.contains(&NodePriority::MAX));
 
         ControlFlowAnalysisResult {
             cfg: cfa.cfg,
@@ -193,19 +196,19 @@ where
      * Given an entry node, find all the nodes reachable from that node
      * and prioritize them.
      */
-    fn prioritizeFromEntryNode(&mut self, entry: Node<'ast>) {
+    fn prioritizeFromEntryNode(&mut self, entry: NodeIndex) {
         #[derive(Debug)]
-        struct PrioritizedNode<'ast>(usize, Node<'ast>);
+        struct PrioritizedNode(NodePriority, NodeIndex);
 
-        impl PartialEq for PrioritizedNode<'_> {
+        impl PartialEq for PrioritizedNode {
             fn eq(&self, other: &Self) -> bool {
                 self.0 == other.0
             }
         }
 
-        impl Eq for PrioritizedNode<'_> {}
+        impl Eq for PrioritizedNode {}
 
-        impl std::cmp::Ord for PrioritizedNode<'_> {
+        impl std::cmp::Ord for PrioritizedNode {
             fn cmp(&self, other: &Self) -> std::cmp::Ordering {
                 // self.0.cmp(&other.0)
                 // Reversed so lower priorities are visited first.
@@ -214,14 +217,14 @@ where
         }
 
         // `PartialOrd` needs to be implemented as well.
-        impl std::cmp::PartialOrd for PrioritizedNode<'_> {
+        impl std::cmp::PartialOrd for PrioritizedNode {
             fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
                 Some(self.cmp(other))
             }
         }
 
-        let mk = |s: &ControlFlowAnalysis<'ast, N, E>, node: Node<'ast>| {
-            let position = *s.astPosition.get(&node.node_id).unwrap();
+        let mk = |s: &ControlFlowAnalysis<'ast, N, E>, node: NodeIndex| {
+            let position = *s.astPosition.get(&s.cfg.graph[node].node_id).unwrap();
             PrioritizedNode(position, node)
         };
 
@@ -229,17 +232,18 @@ where
         worklist.push(mk(self, entry));
 
         while let Some(PrioritizedNode(_, current)) = worklist.pop() {
-            if self.nodePriorities.contains_key(&current) {
+            if self.nodePriorities[current.index()] != NodePriority::MAX {
                 continue;
             }
 
-            self.nodePriorities.insert(current, self.priorityCounter);
+            self.nodePriorities[current.index()] = self.priorityCounter;
             self.priorityCounter += 1;
 
             let successors = self
                 .cfg
-                .getDirectedSuccNodes(current)
-                .map(|n| mk(self, self.cfg.graph[n]));
+                .graph
+                .neighbors_directed(current, Outgoing)
+                .map(|n| mk(self, n));
             worklist.extend(successors);
         }
     }

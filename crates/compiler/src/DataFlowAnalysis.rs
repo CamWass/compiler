@@ -10,6 +10,7 @@ use petgraph::{
 };
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::control_flow::ControlFlowAnalysis::NodePriority;
 use crate::control_flow::{node::CfgNode, ControlFlowGraph::*};
 use crate::Id;
 use crate::{find_vars::*, ToId};
@@ -100,10 +101,11 @@ where
 
     /// The set of nodes that need to be considered, orderd by their priority
     /// as determined by control flow analysis and data flow direction.
-    workQueue: UniqueQueue<'p, N>,
+    workQueue: UniqueQueue<'p>,
 
     _phantom1: PhantomData<L>,
     _phantom2: PhantomData<J>,
+    _phantom3: PhantomData<N>,
 }
 
 impl<'p, N, I, L, J> DataFlowAnalysis<'p, N, I, L, J>
@@ -132,7 +134,7 @@ where
      *     graph requires a separate call to {@link #analyze()}.
      * @see #analyze()
      */
-    pub fn new(inner: I, nodePriorities: &'p FxHashMap<N, usize>) -> Self {
+    pub fn new(inner: I, nodePriorities: &'p [NodePriority]) -> Self {
         Self {
             workQueue: UniqueQueue::new(nodePriorities, inner.isForward()),
 
@@ -140,6 +142,7 @@ where
 
             _phantom1: PhantomData,
             _phantom2: PhantomData,
+            _phantom3: PhantomData,
         }
     }
 
@@ -166,7 +169,8 @@ where
     // error handling is implemented for the compiler).
     fn analyze_inner(&mut self) -> Result<(), N> {
         self.initialize();
-        while let Some(curNode) = self.workQueue.pop() {
+        while let Some(cur_node_idx) = self.workQueue.pop() {
+            let curNode = self.inner.cfg().graph[cur_node_idx];
             if self.inner.cfg().node_annotations[&curNode].stepCount > MAX_STEPS_PER_NODE {
                 return Err(curNode);
             }
@@ -185,7 +189,7 @@ where
                 for nextNode in nextNodes {
                     let node = self.inner.cfg()[nextNode];
                     if node != self.inner.cfg().implicit_return {
-                        self.workQueue.push(node);
+                        self.workQueue.push(nextNode);
                     }
                 }
             }
@@ -200,9 +204,8 @@ where
     fn initialize(&mut self) {
         self.workQueue.clear();
 
-        let mut i = 0;
-        while i < self.inner.cfg().graph.raw_nodes().len() {
-            let node = self.inner.cfg().graph.raw_nodes()[i].weight;
+        for i in self.inner.cfg().graph.node_indices() {
+            let node = self.inner.cfg().graph[i];
             let in_ = self.inner.createInitialEstimateLattice();
             let out = self.inner.createInitialEstimateLattice();
             self.inner
@@ -210,9 +213,8 @@ where
                 .node_annotations
                 .insert(node, LinearFlowState::new(in_, out));
             if node != self.inner.cfg().implicit_return {
-                self.workQueue.push(node);
+                self.workQueue.push(i);
             }
-            i += 1;
         }
     }
 
@@ -397,41 +399,38 @@ newtype_index!(pub struct LatticeElementId { .. });
 impl Annotation for LatticeElementId {}
 
 #[derive(Debug)]
-pub struct PrioritizedNode<N>(usize, N);
+pub struct PrioritizedNode(NodePriority, NodeIndex);
 
-impl<N> PartialEq for PrioritizedNode<N> {
+impl PartialEq for PrioritizedNode {
     fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
     }
 }
 
-impl<N> Eq for PrioritizedNode<N> {}
+impl Eq for PrioritizedNode {}
 
-impl<N> std::cmp::Ord for PrioritizedNode<N> {
+impl std::cmp::Ord for PrioritizedNode {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.0.cmp(&other.0)
     }
 }
 
 // `PartialOrd` needs to be implemented as well.
-impl<N> std::cmp::PartialOrd for PrioritizedNode<N> {
+impl std::cmp::PartialOrd for PrioritizedNode {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
 #[derive(Debug)]
-pub struct UniqueQueue<'p, N> {
-    inner: BTreeSet<PrioritizedNode<N>>,
-    priorities: &'p FxHashMap<N, usize>,
+pub struct UniqueQueue<'p> {
+    inner: BTreeSet<PrioritizedNode>,
+    priorities: &'p [NodePriority],
     forwards: bool,
 }
 
-impl<'p, N> UniqueQueue<'p, N>
-where
-    N: Copy + Hash + Eq,
-{
-    pub fn new(priorities: &'p FxHashMap<N, usize>, forwards: bool) -> Self {
+impl<'p> UniqueQueue<'p> {
+    pub fn new(priorities: &'p [NodePriority], forwards: bool) -> Self {
         Self {
             inner: BTreeSet::new(),
             priorities,
@@ -440,8 +439,8 @@ where
     }
 
     pub fn reuse_inner(
-        inner: BTreeSet<PrioritizedNode<N>>,
-        priorities: &'p FxHashMap<N, usize>,
+        inner: BTreeSet<PrioritizedNode>,
+        priorities: &'p [NodePriority],
         forwards: bool,
     ) -> Self {
         Self {
@@ -451,7 +450,7 @@ where
         }
     }
 
-    pub fn pop(&mut self) -> Option<N> {
+    pub fn pop(&mut self) -> Option<NodeIndex> {
         if self.forwards {
             // Forwards analyses visit nodes with lower priorities first.
             self.inner.pop_first().map(|p| p.1)
@@ -461,9 +460,9 @@ where
         }
     }
 
-    pub fn push(&mut self, node: N) {
+    pub fn push(&mut self, node: NodeIndex) {
         self.inner
-            .insert(PrioritizedNode(self.priorities[&node], node));
+            .insert(PrioritizedNode(self.priorities[node.index()], node));
     }
 
     pub fn clear(&mut self) {

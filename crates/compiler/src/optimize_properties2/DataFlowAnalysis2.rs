@@ -5,10 +5,9 @@ use petgraph::{
     graph::{EdgeIndex, NodeIndex},
     EdgeDirection,
 };
-use rustc_hash::FxHashMap;
 
-use crate::control_flow::node::Node;
 use crate::control_flow::ControlFlowGraph::*;
+use crate::control_flow::{node::Node, ControlFlowAnalysis::NodePriority};
 use crate::DataFlowAnalysis::{LatticeElementId, LinearFlowState, UniqueQueue, MAX_STEPS_PER_NODE};
 
 use super::{simple_set::IndexSet, JoinOp, Lattice, Store};
@@ -17,7 +16,7 @@ use super::{simple_set::IndexSet, JoinOp, Lattice, Store};
 pub(super) struct DataFlowAnalysis<'ast, 'p> {
     /// The set of nodes that need to be considered, ordered by their priority
     /// as determined by control flow analysis and data flow direction.
-    workQueue: UniqueQueue<'p, Node<'ast>>,
+    workQueue: UniqueQueue<'p>,
 
     pub(super) lattice_elements: IndexSet<LatticeElementId, Lattice>,
     pub(super) cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
@@ -28,7 +27,7 @@ pub(super) struct DataFlowAnalysis<'ast, 'p> {
 impl<'ast, 'p> DataFlowAnalysis<'ast, 'p> {
     pub fn new(
         cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
-        nodePriorities: &'p FxHashMap<Node<'ast>, usize>,
+        nodePriorities: &'p [NodePriority],
         in_fn: bool,
     ) -> Self {
         let mut lattice_elements = IndexSet::default();
@@ -52,7 +51,8 @@ impl<'ast, 'p> DataFlowAnalysis<'ast, 'p> {
     // error handling is implemented for the compiler).
     fn analyze_inner(&mut self, store: &mut Store<'ast>) -> Result<(), Node<'ast>> {
         self.initialize();
-        while let Some(curNode) = self.workQueue.pop() {
+        while let Some(cur_node_idx) = self.workQueue.pop() {
+            let curNode = self.cfg.graph[cur_node_idx];
             if self.cfg.node_annotations[&curNode].stepCount > MAX_STEPS_PER_NODE {
                 return Err(curNode);
             }
@@ -67,7 +67,7 @@ impl<'ast, 'p> DataFlowAnalysis<'ast, 'p> {
                 for nextNode in nextNodes {
                     let node = self.cfg[nextNode];
                     if node != self.cfg.implicit_return {
-                        self.workQueue.push(node);
+                        self.workQueue.push(nextNode);
                     }
                 }
             }
@@ -82,18 +82,16 @@ impl<'ast, 'p> DataFlowAnalysis<'ast, 'p> {
     fn initialize(&mut self) {
         self.workQueue.clear();
 
-        let mut i = 0;
-        while i < self.cfg.graph.raw_nodes().len() {
-            let node = self.cfg.graph.raw_nodes()[i].weight;
+        for i in self.cfg.graph.node_indices() {
+            let node = self.cfg.graph[i];
             let in_ = self.createInitialEstimateLattice();
             let out = self.createInitialEstimateLattice();
             self.cfg
                 .node_annotations
                 .insert(node, LinearFlowState::new(in_, out));
             if node != self.cfg.implicit_return {
-                self.workQueue.push(node);
+                self.workQueue.push(i);
             }
-            i += 1;
         }
     }
 

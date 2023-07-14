@@ -9,7 +9,7 @@ use global_common::{
 use index::vec::IndexVec;
 use parser::{Parser, Syntax};
 use rustc_hash::FxHashMap;
-use std::{iter::FromIterator, sync::atomic::AtomicU32};
+use std::sync::atomic::AtomicU32;
 
 use crate::control_flow::{ControlFlowAnalysis::*, ControlFlowGraph::Branch};
 use crate::resolver::resolver;
@@ -361,7 +361,7 @@ struct DummyConstPropagation<'p> {
 impl<'p> DummyConstPropagation<'p> {
     fn new(
         cfg: ControlFlowGraph<Instruction, LinearFlowState, LatticeElementId>,
-        nodePriorities: &'p FxHashMap<Instruction, usize>,
+        nodePriorities: &'p [NodePriority],
     ) -> Self {
         Self {
             data_flow_analysis: DataFlowAnalysis::new(
@@ -415,12 +415,7 @@ fn testSimpleIf() {
     cfg.create_edge(n3, Branch::UNCOND, n4);
 
     let cfa = ControlFlowAnalysisResult {
-        nodePriorities: cfg
-            .graph
-            .node_weights()
-            .enumerate()
-            .map(|(i, n)| ((*n, i)))
-            .collect(),
+        nodePriorities: cfg.graph.node_indices().map(|i| i.index() as u32).collect(),
         cfg,
     };
 
@@ -483,12 +478,7 @@ fn testSimpleLoop() {
     cfg.create_edge(n3, Branch::ON_FALSE, n4);
 
     let cfa = ControlFlowAnalysisResult {
-        nodePriorities: cfg
-            .graph
-            .node_weights()
-            .enumerate()
-            .map(|(i, n)| ((*n, i)))
-            .collect(),
+        nodePriorities: cfg.graph.node_indices().map(|i| i.index() as u32).collect(),
         cfg,
     };
 
@@ -758,7 +748,7 @@ struct DivergentAnalysis<'p> {
 impl<'p> DivergentAnalysis<'p> {
     fn new(
         cfg: ControlFlowGraph<Counter, LinearFlowState, LatticeElementId>,
-        nodePriorities: &'p FxHashMap<Counter, usize>,
+        nodePriorities: &'p [NodePriority],
     ) -> Self {
         Self {
             data_flow_analysis: DataFlowAnalysis::new(
@@ -780,8 +770,8 @@ fn testMaxIterationsExceededException() {
     cfg.create_edge(entrypoint, Branch::UNCOND, entrypoint);
 
     let cfa = ControlFlowAnalysisResult {
+        nodePriorities: vec![0],
         cfg,
-        nodePriorities: FxHashMap::from_iter([(entrypoint, 0)]),
     };
 
     let mut constProp = DivergentAnalysis::new(cfa.cfg, &cfa.nodePriorities);

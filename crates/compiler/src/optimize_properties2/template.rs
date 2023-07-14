@@ -42,14 +42,14 @@ enum ReturnTypeConstituent {
 
 /// Re-usable state for a [`call resolver`][`Resolver`].
 #[derive(Debug, Default)]
-pub struct ResolverState<'ast> {
+pub struct ResolverState {
     return_types: FxHashMap<CallId, FxHashSet<ReturnTypeConstituent>>,
     return_states: FxHashMap<CallId, PropertyAssignments>,
 
-    data_flow_state: DataFlowAnalysisState<'ast>,
+    data_flow_state: DataFlowAnalysisState,
 }
 
-impl ReusableState for ResolverState<'_> {
+impl ReusableState for ResolverState {
     fn reset(&mut self) {
         let ResolverState {
             return_types,
@@ -84,7 +84,7 @@ struct Resolver<'a, 'ast> {
 
     root_call: CallId,
 
-    state: &'a mut ResolverState<'ast>,
+    state: &'a mut ResolverState,
 }
 
 impl Visitor<CallId> for Resolver<'_, '_> {
@@ -1431,8 +1431,8 @@ impl JoinOp {
 
 /// Re-usable state for a [`DataFlowAnalysis`].
 #[derive(Debug, Default)]
-struct DataFlowAnalysisState<'ast> {
-    work_queue_inner: BTreeSet<PrioritizedNode<Node<'ast>>>,
+struct DataFlowAnalysisState {
+    work_queue_inner: BTreeSet<PrioritizedNode>,
 
     lattice_elements: IndexSet<LatticeElementId, Lattice>,
     node_annotations: FxHashMap<NodeId, LinearFlowState>,
@@ -1445,7 +1445,7 @@ struct DataFlowAnalysisState<'ast> {
     join_input_buffer: Vec<LatticeElementId>,
 }
 
-impl ReusableState for DataFlowAnalysisState<'_> {
+impl ReusableState for DataFlowAnalysisState {
     fn reset(&mut self) {
         let DataFlowAnalysisState {
             work_queue_inner,
@@ -1468,7 +1468,7 @@ impl ReusableState for DataFlowAnalysisState<'_> {
 struct DataFlowAnalysis<'ast, 'a> {
     /// The set of nodes that need to be considered, ordered by their priority
     /// as determined by control flow analysis and data flow direction.
-    workQueue: UniqueQueue<'a, Node<'ast>>,
+    workQueue: UniqueQueue<'a>,
 
     cfg: &'a SimpleCFG<'ast>,
     entry_lattice: LatticeElementId,
@@ -1497,7 +1497,7 @@ struct DataFlowAnalysis<'ast, 'a> {
 
     root_call: CallId,
 
-    state: &'a mut DataFlowAnalysisState<'ast>,
+    state: &'a mut DataFlowAnalysisState,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1530,8 +1530,9 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
             );
         }
 
-        self.workQueue.push(self.cfg.entry);
-        while let Some(curNode) = self.workQueue.pop() {
+        self.workQueue.push(self.cfg.entry_index);
+        while let Some(cur_node_idx) = self.workQueue.pop() {
+            let curNode = self.cfg.graph[cur_node_idx];
             let node_annotations = &mut self.state.node_annotations;
             let initial_lattice = self.initial_lattice;
 
@@ -1566,8 +1567,7 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
                     let nextNodes = self.cfg.get_successors(curNode);
 
                     for nextNode in nextNodes {
-                        let node = self.cfg.graph[nextNode];
-                        self.workQueue.push(node);
+                        self.workQueue.push(nextNode);
                     }
                 }
             }

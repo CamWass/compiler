@@ -505,6 +505,7 @@ impl<'ast> VisitMut<'ast> for CoalesceVariableNames<'_> {
 struct SimpleSubGraph<'a> {
     graph: &'a UnGraph<Id, ()>,
     map: &'a FxHashMap<Id, NodeIndex>,
+    // TODO: bitset?
     nodes: Vec<NodeIndex>,
 }
 

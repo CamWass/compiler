@@ -6,6 +6,7 @@ use index::vec::IndexVec;
 use petgraph::Direction::Outgoing;
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::control_flow::ControlFlowAnalysis::NodePriority;
 use crate::control_flow::ControlFlowGraph::{Branch, ControlFlowGraph};
 use crate::control_flow::{node::Node, util::MultiMap, ControlFlowGraph::Annotation};
 use crate::{find_vars::*, ToId};
@@ -64,7 +65,7 @@ where
 {
     pub fn new(
         cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
-        nodePriorities: &'a FxHashMap<Node<'ast>, usize>,
+        nodePriorities: &'a [NodePriority],
         fn_scope: &'a T,
         allVarsDeclaredInFunction: AllVarsDeclaredInFunction,
     ) -> Self {

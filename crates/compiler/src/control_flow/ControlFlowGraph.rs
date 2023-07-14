@@ -33,7 +33,9 @@ pub struct ControlFlowGraph<N: CfgNode, NA: Annotation, EA: Annotation> {
      * graph.
      */
     pub implicit_return: N,
+    pub implicit_return_index: NodeIndex,
     pub entry: N,
+    pub entry_index: NodeIndex,
     pub graph: DiGraph<N, Branch>,
     pub node_annotations: FxHashMap<N, NA>,
     pub edge_annotations: FxHashMap<EdgeIndex, EA>,
@@ -57,7 +59,9 @@ where
 
         Self {
             implicit_return,
+            implicit_return_index,
             entry,
+            entry_index,
             graph,
             map,
             node_annotations: Default::default(),

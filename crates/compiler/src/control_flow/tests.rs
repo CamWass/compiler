@@ -2608,7 +2608,8 @@ fn assertNodeOrder(src: &str, expected: &[Token]) {
     let mut actual = cfa
         .nodePriorities
         .iter()
-        .map(|(n, p)| (*n, *p))
+        .enumerate()
+        .map(|(n, p)| (cfg.graph[NodeIndex::from(n as u32)], *p))
         .collect::<Vec<_>>();
     actual.sort_unstable_by_key(|(_, p)| *p);
     let mut actual = actual.into_iter().map(|(n, p)| n).collect::<Vec<_>>();

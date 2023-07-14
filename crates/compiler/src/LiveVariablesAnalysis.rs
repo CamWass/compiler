@@ -7,6 +7,7 @@ use global_common::SyntaxContext;
 use index::{bit_set::BitSet, vec::IndexVec};
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::control_flow::ControlFlowAnalysis::NodePriority;
 use crate::control_flow::ControlFlowGraph::{Branch, ControlFlowGraph};
 use crate::control_flow::{node::Node, ControlFlowGraph::Annotation};
 use crate::find_vars::*;
@@ -77,7 +78,7 @@ where
      */
     pub fn new(
         cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
-        nodePriorities: &'a FxHashMap<Node<'ast>, usize>,
+        nodePriorities: &'a [NodePriority],
         fn_scope: &'a T,
         allVarsDeclaredInFunction: AllVarsDeclaredInFunction,
         unresolved_ctxt: SyntaxContext,

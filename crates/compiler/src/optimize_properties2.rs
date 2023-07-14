@@ -445,7 +445,9 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
             cfg: ControlFlowGraph {
                 map: static_data.cfg.map.clone(),
                 implicit_return: static_data.cfg.implicit_return,
+                implicit_return_index: static_data.cfg.implicit_return_index,
                 entry: static_data.cfg.entry,
+                entry_index: static_data.cfg.entry_index,
                 graph: static_data.cfg.graph.clone(),
                 node_annotations: FxHashMap::default(),
                 edge_annotations: FxHashMap::default(),
@@ -506,7 +508,9 @@ impl<'ast> FnVisitor<'ast, '_> {
         let cfg = SimpleCFG {
             map: cfa.cfg.map,
             implicit_return: cfa.cfg.implicit_return,
+            implicit_return_index: cfa.cfg.implicit_return_index,
             entry: cfa.cfg.entry,
+            entry_index: cfa.cfg.entry_index,
             graph: cfa.cfg.graph,
         };
 
@@ -600,7 +604,7 @@ pub struct Store<'ast> {
     object_links: FxHashSet<(ObjectId, ObjectId)>,
     call_objects: FxHashMap<(CallId, NodeId), ObjectId>,
 
-    call_resolver_state: ResolverState<'ast>,
+    call_resolver_state: ResolverState,
 }
 
 impl Store<'_> {
@@ -744,7 +748,9 @@ index::newtype_index!(pub(super) struct CallId { .. });
 pub(super) struct SimpleCFG<'ast> {
     map: FxHashMap<Node<'ast>, NodeIndex>,
     implicit_return: Node<'ast>,
+    implicit_return_index: NodeIndex,
     entry: Node<'ast>,
+    entry_index: NodeIndex,
     graph: DiGraph<Node<'ast>, Branch>,
 }
 
@@ -764,7 +770,7 @@ pub(super) struct Func {
 #[derive(Debug)]
 pub(super) struct StaticFunctionData<'ast> {
     cfg: SimpleCFG<'ast>,
-    node_priorities: FxHashMap<Node<'ast>, usize>,
+    node_priorities: Vec<NodePriority>,
     param_names: Vec<Id>,
 }
 
