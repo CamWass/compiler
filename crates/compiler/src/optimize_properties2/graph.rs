@@ -3,7 +3,7 @@ use std::{collections::VecDeque, fmt::Debug, hash::Hash, num::NonZeroUsize};
 use petgraph::{graphmap::NodeTrait, prelude::DiGraphMap, visit::NodeIndexable, Direction::*};
 use rustc_hash::FxHashSet;
 
-pub trait Visitor<N>: Sync
+pub trait Visitor<N>
 where
     N: Hash + Eq,
 {
@@ -16,7 +16,7 @@ where
 
 pub fn process<N, V>(root: N, visitor: &mut V)
 where
-    N: Copy + Ord + Hash + Debug + Send + Eq + Sync,
+    N: Copy + Ord + Hash + Debug + Eq,
     V: Visitor<N>,
 {
     let mut graph: DiGraphMap<N, ()> = DiGraphMap::default();

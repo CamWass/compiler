@@ -131,7 +131,7 @@ impl<'ast, 'p> DataFlowAnalysis<'ast, 'p> {
 
         let result = if let Some(first) = inEdges.next(&self.cfg.graph) {
             if let Some(second) = inEdges.next(&self.cfg.graph) {
-                let mut joiner = self.createFlowJoiner();
+                let mut joiner = JoinOp::default();
                 let first = self.getInputFromEdge(first);
                 joiner.joinFlow(self, store, first);
                 let second = self.getInputFromEdge(second);
@@ -174,11 +174,7 @@ impl<'ast, 'p> DataFlowAnalysis<'ast, 'p> {
     }
 
     fn createInitialEstimateLattice(&mut self) -> LatticeElementId {
-        self.add_lattice_element(Lattice::default())
-    }
-
-    fn createFlowJoiner(&self) -> JoinOp {
-        JoinOp::default()
+        self.initial_lattice
     }
 }
 

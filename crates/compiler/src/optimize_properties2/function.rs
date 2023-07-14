@@ -18,6 +18,7 @@ pub(super) fn create_step_map(
     unresolved_ctxt: SyntaxContext,
     func: FnId,
 ) -> FxHashMap<NodeId, Vec<Step>> {
+    // TODO: pre-alloc?
     let mut map = FxHashMap::default();
 
     let graph = &static_fn_data[func].cfg.graph;

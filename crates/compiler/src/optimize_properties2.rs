@@ -104,6 +104,9 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
 
     index::newtype_index!(struct PropId { .. });
 
+    // TODO:
+    // These could be reserve space for built-ins using a loop to calculate the capacities, which
+    // the compiler may be able to optimise away, since it's an iteration over a static slice.
     let mut objects: FxHashMap<ObjectId, Object> = FxHashMap::default();
     let mut properties: IndexVec<PropId, Property> = IndexVec::default();
 
@@ -682,6 +685,12 @@ fn invalidate(
             Pointer::Fn(_) | Pointer::NullOrVoid => return,
         }
 
+        // TODO: here, and possibly elsewhere where the queue pattern is used, investigate if
+        // it's worthwhile avoiding pushing the initial element to the queue e.g. by refactoring
+        // the loop body into a fn and then calling it once for the initial value and then in the
+        // loop while draining the queue. This might be worth it if the queue frequently contains
+        // only one item.
+
         let mut queue = vec![pointer];
         let mut done = FxHashSet::default();
 
@@ -1037,6 +1046,7 @@ impl CowLattice<'_> {
     }
 
     fn insert_prop_assignment(&mut self, prop: (ObjectId, JsWord), value: Assignment) {
+        // TODO: here are elsewhere, same optimisation as for vars - remove/skip null/void assignments
         if let Some(existing) = self.0.prop_assignments.get(&prop) {
             if *existing == value {
                 return;
