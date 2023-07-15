@@ -48,7 +48,13 @@ pub(super) fn create_step_map(
             let mut i = steps.len() - 1;
             // TODO: Step::StoreUnion
             while i >= start as usize
-                && matches!(steps[i], Step::StoreRValue(_) | Step::StoreLValue(_))
+                && matches!(
+                    steps[i],
+                    Step::StoreRValue(_)
+                        | Step::StoreLValue(_)
+                        | Step::SaveRValue
+                        | Step::RestoreRValue
+                )
             {
                 steps.pop();
                 i -= 1;
