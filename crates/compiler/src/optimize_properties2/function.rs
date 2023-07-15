@@ -37,6 +37,24 @@ pub(super) fn create_step_map(
         };
         analyser.init(graph[node], conditional);
 
+        // Remove trailing stores. Registers are not shared between CFG nodes
+        // (each gets its own machine), so these writes will never be read. e.g.
+        // if (someExpr) { ... }
+        // someExpr will be stored in the RHS register, which cannot be accessed
+        // by any other code/CFG nodes. There can be multiple trailing stores
+        // (such as property access), so we use a loop.
+        if !steps.is_empty() {
+            // Start from the end and work backwards.
+            let mut i = steps.len() - 1;
+            // TODO: Step::StoreUnion
+            while i >= start as usize
+                && matches!(steps[i], Step::StoreRValue(_) | Step::StoreLValue(_))
+            {
+                steps.pop();
+                i -= 1;
+            }
+        }
+
         let end = steps.len().try_into().unwrap();
 
         map[node.index()] = (start, end);
