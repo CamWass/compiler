@@ -9,7 +9,7 @@ use atoms::JsWord;
 use global_common::SyntaxContext;
 use index::bit_set::GrowableBitSet;
 use index::vec::IndexVec;
-use petgraph::graph::EdgeReference;
+use petgraph::graph::{EdgeReference, NodeIndex};
 use petgraph::prelude::DiGraph;
 use petgraph::visit::EdgeRef;
 use petgraph::Direction::Incoming;
@@ -134,7 +134,8 @@ impl Visitor<CallId> for Resolver<'_, '_> {
             initial_lattice,
 
             call: node,
-            path_map: &self.call_templates[func].step_map,
+            step_map: &self.call_templates[func].map,
+            steps: &self.call_templates[func].steps,
             resolved_calls: self.resolved_calls,
             return_types: &mut self.state.return_types,
             return_states: &mut self.state.return_states,
@@ -641,7 +642,9 @@ impl Machine<'_> {
 pub(super) struct CallTemplate {
     /// [`Steps`][Step] that represent the effects of each control flow graph
     /// node required to evaluate the call's effects.
-    step_map: FxHashMap<NodeId, Vec<Step>>,
+    steps: Vec<Step>,
+    /// Map from CFG [`NodeIndex`] to `(start, end)` indices in the step list.
+    map: Vec<(u32, u32)>,
 }
 
 impl CallTemplate {
@@ -650,20 +653,24 @@ impl CallTemplate {
         unresolved_ctxt: SyntaxContext,
         func: FnId,
     ) -> CallTemplate {
-        let step_map = create_step_map(static_fn_data, unresolved_ctxt, func);
-        CallTemplate { step_map }
+        let (steps, map) = create_step_map(static_fn_data, unresolved_ctxt, func);
+        CallTemplate { steps, map }
     }
 }
 
 impl<'ast> DataFlowAnalysis<'ast, '_> {
     fn flowThrough(
         &mut self,
-        node: Node<'ast>,
+        node: NodeIndex,
         input: LatticeElementId,
     ) -> Option<LatticeElementId> {
-        let steps = match self.path_map.get(&node.node_id) {
-            Some(steps) => steps,
-            None => return Some(input),
+        let steps = {
+            let (start, end) = self.step_map[node.index()];
+            let (start, end) = (start as usize, end as usize);
+            if start > self.steps.len() || end == start {
+                return Some(input);
+            }
+            &self.steps[start..end]
         };
         debug_assert!(!steps.is_empty());
         self.state.machine_state.reset();
@@ -1476,7 +1483,8 @@ struct DataFlowAnalysis<'ast, 'a> {
 
     call: CallId,
 
-    path_map: &'a FxHashMap<NodeId, Vec<Step>>,
+    step_map: &'a [(u32, u32)],
+    steps: &'a [Step],
 
     resolved_calls: &'a mut FxHashMap<CallId, ResolvedCall>,
 
@@ -1555,7 +1563,7 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
             *step_count += 1;
 
             self.joinInputs(curNode);
-            let r = self.flow(curNode);
+            let r = self.flow(curNode, cur_node_idx);
             // If there is a change in the current node, we want to grab the list
             // of nodes that this node affects.
             if r == FlowResult::Change || first_visit && r == FlowResult::NoChange {
@@ -1579,10 +1587,10 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
     }
 
     /// Performs a single flow through a node.
-    fn flow(&mut self, node: Node<'ast>) -> FlowResult {
+    fn flow(&mut self, node: Node<'ast>, node_index: NodeIndex) -> FlowResult {
         let state = &self.state.node_annotations[&node.node_id];
         let outBefore = state.out;
-        if let Some(new_out) = self.flowThrough(node, state.in_) {
+        if let Some(new_out) = self.flowThrough(node_index, state.in_) {
             self.get_flow_state_mut(node.node_id).out = new_out;
             if outBefore != new_out {
                 FlowResult::Change

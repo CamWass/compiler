@@ -1,8 +1,9 @@
+use std::convert::TryInto;
+
 use ast::*;
 use atoms::{js_word, JsWord};
 use global_common::SyntaxContext;
 use index::vec::IndexVec;
-use rustc_hash::FxHashMap;
 
 use crate::control_flow::node::{Node, NodeKind};
 use crate::control_flow::ControlFlowGraph::*;
@@ -17,17 +18,17 @@ pub(super) fn create_step_map(
     static_fn_data: &IndexVec<FnId, StaticFunctionData>,
     unresolved_ctxt: SyntaxContext,
     func: FnId,
-) -> FxHashMap<NodeId, Vec<Step>> {
-    // TODO: pre-alloc?
-    let mut map = FxHashMap::default();
-
+) -> (Vec<Step>, Vec<(u32, u32)>) {
     let graph = &static_fn_data[func].cfg.graph;
+
+    let mut steps = Vec::new();
+    let mut map = vec![(0, 0); graph.node_count()];
 
     for node in graph.node_indices() {
         // Make assignments conditional if the node can end abruptly by an exception.
         let conditional = graph.edges(node).any(|e| *e.weight() == Branch::ON_EX);
 
-        let mut steps = Vec::new();
+        let start = steps.len().try_into().unwrap();
 
         let mut analyser = Analyser {
             steps: &mut steps,
@@ -36,12 +37,12 @@ pub(super) fn create_step_map(
         };
         analyser.init(graph[node], conditional);
 
-        if !steps.is_empty() {
-            map.insert(graph[node].node_id, steps);
-        }
+        let end = steps.len().try_into().unwrap();
+
+        map[node.index()] = (start, end);
     }
 
-    map
+    (steps, map)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
