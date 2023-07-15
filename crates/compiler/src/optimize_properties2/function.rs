@@ -22,8 +22,12 @@ pub(super) fn create_step_map(
     let graph = &static_fn_data[func].cfg.graph;
 
     let mut steps = Vec::new();
-    let mut map = vec![(0, 0); graph.node_count()];
+    let mut map: Vec<(u32, u32)> = vec![(0, 0); graph.node_count()];
 
+    // Used for dead union removal.
+    let mut steps_to_remove = Vec::new();
+
+    // TODO: skip unreachable nodes?
     for node in graph.node_indices() {
         // Make assignments conditional if the node can end abruptly by an exception.
         let conditional = graph.edges(node).any(|e| *e.weight() == Branch::ON_EX);
@@ -45,19 +49,136 @@ pub(super) fn create_step_map(
         // (such as property access), so we use a loop.
         if !steps.is_empty() {
             // Start from the end and work backwards.
-            let mut i = steps.len() - 1;
-            // TODO: Step::StoreUnion
-            while i >= start as usize
-                && matches!(
-                    steps[i],
+            let mut pos = steps.len() - 1;
+            while pos > start as usize {
+                match steps[pos] {
+                    // Dead stores.
                     Step::StoreRValue(_)
-                        | Step::StoreLValue(_)
-                        | Step::SaveRValue
-                        | Step::RestoreRValue
-                )
-            {
-                steps.pop();
-                i -= 1;
+                    | Step::StoreLValue(_)
+                    | Step::SaveRValue
+                    | Step::RestoreRValue => {
+                        steps.pop();
+                    }
+                    // Dead union. Bit tricky to remove - we need to remove:
+                    // (1) StoreUnion
+                    // (2) all PushToUnion steps that correspond to this union
+                    // (3) StoreUnion step
+                    //
+                    // (2) is the tricky one - we have to keep track of the
+                    // current union that any future PushToUnion's correspond to.
+                    // We do this by tracking when unions "open" (StoreUnion
+                    // since we iterate backwards) and "close" (StartUnion). The
+                    // count starts at 1. Any PushToUnion we encounter while
+                    // count is 1 needs to be removed. Every StoreUnion increments
+                    // the count and every StartUnion decrements it.
+                    // When the count is 0, we have found the closing StoreUnion
+                    // for our union and can stop.
+                    Step::StoreUnion => {
+                        let mut open_unions: u32 = 1;
+                        let mut record_union_pushes = true;
+                        steps_to_remove.clear();
+
+                        let mut union_pos = pos - 1;
+                        while union_pos >= start as usize {
+                            match steps[union_pos] {
+                                Step::StartUnion => {
+                                    open_unions -= 1;
+                                    if open_unions == 0 {
+                                        // Found the closing StoreUnion for our
+                                        // union; stop
+                                        steps_to_remove.push(union_pos);
+                                        break;
+                                    } else if open_unions == 1 {
+                                        // Re-entered target union; resume recording.
+                                        record_union_pushes = true;
+                                    }
+                                }
+                                Step::PushToUnion => {
+                                    // Record pushes so they can be removed.
+                                    if record_union_pushes {
+                                        steps_to_remove.push(union_pos);
+                                    }
+                                }
+                                Step::StoreUnion => {
+                                    // Entered a union other than the target.
+                                    // Don't record any pushes as they don't
+                                    // correspond to our union and may not be dead.
+                                    record_union_pushes = false;
+                                    open_unions += 1;
+                                }
+                                _ => {}
+                            }
+                            union_pos -= 1;
+                        }
+                        debug_assert!(open_unions == 0);
+                        debug_assert!(record_union_pushes == true);
+                        debug_assert!(!steps_to_remove.is_empty());
+
+                        // Remove original StoreUnion step.
+                        steps.pop();
+
+                        // Remove closing StartUnion and intermediary PushToUnions.
+                        for &index in &steps_to_remove {
+                            // Adjust outer loop pos since elements to the left
+                            // of it have been removed.
+                            pos -= 1;
+                            // Indices are pushed, and therefore iterated, in
+                            // descending order, so removing an element will not
+                            // invalidate yet-to-be-removed indices.
+                            steps.remove(index);
+                        }
+
+                        // Sanity check that Starts and Stores are balanced.
+                        debug_assert!(
+                            steps[start as usize..]
+                                .iter()
+                                .filter(|s| matches!(s, Step::StartUnion))
+                                .count()
+                                == steps[start as usize..]
+                                    .iter()
+                                    .filter(|s| matches!(s, Step::StoreUnion))
+                                    .count()
+                        )
+                    }
+
+                    // Can't (currently) optimise past these.
+                    Step::Assign(_)
+                    | Step::InvalidateRValue
+                    | Step::InvalidateLValue
+                    | Step::Call
+                    | Step::Return => break,
+
+                    Step::StartCall(_) | Step::StoreArg | Step::StartUnion | Step::PushToUnion => {
+                        unreachable!("invalid last step")
+                    }
+                }
+
+                pos -= 1;
+            }
+
+            if steps.len() - start as usize == 1 {
+                // Final remaining step
+                match steps[0] {
+                    // Dead stores.
+                    Step::StoreRValue(_)
+                    | Step::StoreLValue(_)
+                    | Step::SaveRValue
+                    | Step::RestoreRValue => {
+                        steps.pop();
+                    }
+
+                    Step::Assign(_)
+                    | Step::InvalidateRValue
+                    | Step::InvalidateLValue
+                    | Step::Call
+                    | Step::Return => {}
+
+                    Step::StartCall(_)
+                    | Step::StoreArg
+                    | Step::StartUnion
+                    | Step::PushToUnion
+                    | Step::StoreUnion => unreachable!("invalid last step"),
+                }
             }
         }
 
