@@ -652,8 +652,9 @@ impl CallTemplate {
         static_fn_data: &IndexVec<FnId, StaticFunctionData>,
         unresolved_ctxt: SyntaxContext,
         func: FnId,
+        function_map: &FxHashMap<NodeId, FnId>,
     ) -> CallTemplate {
-        let (steps, map) = create_step_map(static_fn_data, unresolved_ctxt, func);
+        let (steps, map) = create_step_map(static_fn_data, unresolved_ctxt, func, function_map);
         CallTemplate { steps, map }
     }
 }
@@ -715,6 +716,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                             RValue::Boolean => Some(Pointer::Object(ObjectStore::BOOL)),
                             RValue::Number => Some(Pointer::Object(ObjectStore::NUMBER)),
                             RValue::BigInt => Some(Pointer::Object(ObjectStore::BIG_INT)),
+                            RValue::Fn(f) => Some(Pointer::Fn(*f)),
                         };
                         machine.set_r_value(value);
                     }

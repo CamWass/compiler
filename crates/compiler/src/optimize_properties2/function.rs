@@ -4,6 +4,7 @@ use ast::*;
 use atoms::{js_word, JsWord};
 use global_common::SyntaxContext;
 use index::vec::IndexVec;
+use rustc_hash::FxHashMap;
 
 use crate::control_flow::node::{Node, NodeKind};
 use crate::control_flow::ControlFlowGraph::*;
@@ -18,6 +19,7 @@ pub(super) fn create_step_map(
     static_fn_data: &IndexVec<FnId, StaticFunctionData>,
     unresolved_ctxt: SyntaxContext,
     func: FnId,
+    function_map: &FxHashMap<NodeId, FnId>,
 ) -> (Vec<Step>, Vec<(u32, u32)>) {
     let graph = &static_fn_data[func].cfg.graph;
 
@@ -39,6 +41,7 @@ pub(super) fn create_step_map(
             cfg: &static_fn_data[func].cfg,
             unresolved_ctxt,
             start,
+            function_map,
         };
         analyser.init(graph[node], conditional);
 
@@ -204,7 +207,7 @@ pub enum LValue {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// The value of an expression.
-pub enum RValue {
+pub(super) enum RValue {
     NullOrVoid,
     /// Pointer to the value stored in the given named variable.
     Var(Id),
@@ -216,13 +219,14 @@ pub enum RValue {
     Boolean,
     Number,
     BigInt,
+    Fn(FnId),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// An abstract instruction representing part of a a JavaScript program.
 /// Each instruction is largely stateless, and depends on the state created by
 /// the previous steps.
-pub enum Step {
+pub(super) enum Step {
     /// Stores the given value in the RValue register.
     StoreRValue(Option<RValue>),
     /// Stores the given value in the LValue register.
@@ -265,6 +269,7 @@ struct Analyser<'a, 'ast> {
     cfg: &'a SimpleCFG<'ast>,
     unresolved_ctxt: SyntaxContext,
     start: usize,
+    function_map: &'a FxHashMap<NodeId, FnId>,
 }
 
 impl<'ast> Analyser<'_, 'ast> {
@@ -473,8 +478,16 @@ impl<'ast> Analyser<'_, 'ast> {
 
     fn visit_and_get_r_value(&mut self, node: Node<'ast>, conditional: bool) {
         match node.kind {
-            // Don't traverse into new control flow nodes.
-            NodeKind::FnExpr(_) | NodeKind::ArrowExpr(_) => {}
+            NodeKind::FnExpr(f) => {
+                let f = *self.function_map.get(&f.function.node_id).unwrap();
+                self.push(Step::StoreRValue(Some(RValue::Fn(f))));
+                // Don't traverse into new control flow nodes.
+            }
+            NodeKind::ArrowExpr(_) => {
+                let f = *self.function_map.get(&node.node_id).unwrap();
+                self.push(Step::StoreRValue(Some(RValue::Fn(f))));
+                // Don't traverse into new control flow nodes.
+            }
 
             NodeKind::AssignExpr(node) => {
                 self.record_assignment(Node::from(&node.left), &node.right, conditional, node.op);

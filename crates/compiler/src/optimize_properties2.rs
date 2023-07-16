@@ -422,7 +422,14 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
     let call_templates = store
         .functions
         .indices()
-        .map(|func| CallTemplate::new(&store.static_fn_data, store.unresolved_ctxt, func))
+        .map(|func| {
+            CallTemplate::new(
+                &store.static_fn_data,
+                store.unresolved_ctxt,
+                func,
+                &store.function_map,
+            )
+        })
         .collect();
     store.call_templates = IndexVec::from_raw(call_templates);
 
@@ -1490,8 +1497,16 @@ impl<'ast> Analyser<'ast, '_> {
 
     fn visit_and_get_object(&mut self, node: Node<'ast>, conditional: bool) -> Option<Pointer> {
         match node.kind {
-            // Don't traverse into new control flow nodes.
-            NodeKind::FnExpr(_) | NodeKind::ArrowExpr(_) => None,
+            NodeKind::FnExpr(f) => {
+                let f = *self.store.function_map.get(&f.function.node_id).unwrap();
+                // Don't traverse into new control flow nodes.
+                Some(Pointer::Fn(f))
+            }
+            NodeKind::ArrowExpr(_) => {
+                let f = *self.store.function_map.get(&node.node_id).unwrap();
+                // Don't traverse into new control flow nodes.
+                Some(Pointer::Fn(f))
+            }
 
             NodeKind::AssignExpr(node) => {
                 self.record_assignment(Node::from(&node.left), &node.right, conditional, node.op)
