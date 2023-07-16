@@ -13,6 +13,10 @@ use crate::{Id, ToId};
 
 use super::{is_simple_prop_name, FnId, PropKey, SimpleCFG, StaticFunctionData};
 
+/// Controls whether optimisations are applied to the generated steps. Should
+/// be enabled by default, but disabling may be useful for debugging.
+const OPTIMISE: bool = true;
+
 /// Builds a map containing the [`Steps`][Step] required to symbolically evaluate
 /// each node in the given function.
 pub(super) fn create_step_map(
@@ -51,7 +55,7 @@ pub(super) fn create_step_map(
         // someExpr will be stored in the RHS register, which cannot be accessed
         // by any other code/CFG nodes. There can be multiple trailing stores
         // (such as property access), so we use a loop.
-        if !steps.is_empty() {
+        if OPTIMISE && !steps.is_empty() {
             // Start from the end and work backwards.
             let mut pos = steps.len() - 1;
             while pos > start {
@@ -222,6 +226,23 @@ pub(super) enum RValue {
     Fn(FnId),
 }
 
+impl RValue {
+    /// Returns true if this RValue depends on previous ones.
+    fn is_relative(&self) -> bool {
+        match self {
+            RValue::Prop(_) => true,
+            RValue::NullOrVoid
+            | RValue::Var(_)
+            | RValue::Object(_)
+            | RValue::String
+            | RValue::Boolean
+            | RValue::Number
+            | RValue::BigInt
+            | RValue::Fn(_) => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// An abstract instruction representing part of a a JavaScript program.
 /// Each instruction is largely stateless, and depends on the state created by
@@ -275,22 +296,27 @@ struct Analyser<'a, 'ast> {
 impl<'ast> Analyser<'_, 'ast> {
     /// Records the given step. Redundant steps may be skipped.
     fn push(&mut self, step: Step) {
-        let previous = if self.steps.len() == self.start {
+        if OPTIMISE {
+            // Redundant store elimination
+
             // Don't want to access steps for previous node.
-            None
-        } else {
-            self.steps.last()
-        };
-        // Redundant store elimination
-        if let Some(Step::StoreRValue(old_value)) = previous {
-            if let Step::StoreRValue(new_value) = &step {
-                match (old_value, new_value) {
-                    (None, None) => return,
-                    (Some(RValue::NullOrVoid), Some(RValue::NullOrVoid)) => return,
-                    // (Some(RValue::Register(_)), Some(RValue::Register(_))) => todo!(),
-                    (Some(RValue::Object(o1)), Some(RValue::Object(o2))) if o1 == o2 => return,
-                    _ => {}
+            while !self.steps.is_empty() && self.steps.len() != self.start {
+                let previous = self.steps.last().unwrap();
+                if let Step::StoreRValue(_) = previous {
+                    if let Step::StoreRValue(new_value) = &step {
+                        // If the new value does not depend on the previous one, the old
+                        // one is dead and can be replaced.
+                        let overwrite = match new_value {
+                            Some(v) => !v.is_relative(),
+                            None => true,
+                        };
+                        if overwrite {
+                            self.steps.pop();
+                            continue;
+                        }
+                    }
                 }
+                break;
             }
         }
 
