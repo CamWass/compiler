@@ -566,10 +566,11 @@ impl<'ast> Analyser<'_, 'ast> {
                         ))));
                         self.push(Step::Assign(conditional));
                     }
+                    self.push(Step::StoreRValue(Some(RValue::Object(node.node_id))));
                 } else {
+                    self.push(Step::StoreRValue(Some(RValue::Object(node.node_id))));
                     self.invalidate_r_value();
                 }
-                self.push(Step::StoreRValue(Some(RValue::Object(node.node_id))));
             }
             NodeKind::SpreadElement(node) => {
                 self.visit_and_get_r_value(Node::from(node.expr.as_ref()), conditional);

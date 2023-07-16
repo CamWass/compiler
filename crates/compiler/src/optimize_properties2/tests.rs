@@ -923,6 +923,23 @@ if (cond) {
 thing.prop1;
 ",
     );
+    // Had a bug where object `a` was invalidated instead of `{ [v]: 1 }`.
+    test_transform(
+        "
+function f() {
+    let a = { prop1: 1 };
+    return a, { [v]: 1 }, a;
+}
+f().prop1;
+",
+        "
+function f() {
+    let a = { a: 1 };
+    return a, { [v]: 1 }, a;
+}
+f().a;
+",
+    );
 }
 
 #[test]
