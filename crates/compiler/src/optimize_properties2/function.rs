@@ -546,6 +546,7 @@ impl<'ast> Analyser<'_, 'ast> {
                 self.push(Step::StoreRValue(None));
             }
             NodeKind::BinExpr(node) => {
+                // TODO: for comparisons, the result is always a bool
                 match node.op {
                     BinaryOp::LogicalOr | BinaryOp::LogicalAnd | BinaryOp::NullishCoalescing => {
                         // TODO: if LHS is object, then we know if RHS will execute.
