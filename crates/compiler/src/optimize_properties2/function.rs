@@ -38,6 +38,7 @@ pub(super) fn create_step_map(
             steps: &mut steps,
             cfg: &static_fn_data[func].cfg,
             unresolved_ctxt,
+            start,
         };
         analyser.init(graph[node], conditional);
 
@@ -50,7 +51,7 @@ pub(super) fn create_step_map(
         if !steps.is_empty() {
             // Start from the end and work backwards.
             let mut pos = steps.len() - 1;
-            while pos > start as usize {
+            while pos > start {
                 match steps[pos] {
                     // Dead stores.
                     Step::StoreRValue(_)
@@ -79,7 +80,7 @@ pub(super) fn create_step_map(
                         steps_to_remove.clear();
 
                         let mut union_pos = pos - 1;
-                        while union_pos >= start as usize {
+                        while union_pos >= start {
                             match steps[union_pos] {
                                 Step::StartUnion => {
                                     open_unions -= 1;
@@ -130,11 +131,11 @@ pub(super) fn create_step_map(
 
                         // Sanity check that Starts and Stores are balanced.
                         debug_assert!(
-                            steps[start as usize..]
+                            steps[start..]
                                 .iter()
                                 .filter(|s| matches!(s, Step::StartUnion))
                                 .count()
-                                == steps[start as usize..]
+                                == steps[start..]
                                     .iter()
                                     .filter(|s| matches!(s, Step::StoreUnion))
                                     .count()
@@ -156,7 +157,7 @@ pub(super) fn create_step_map(
                 pos -= 1;
             }
 
-            if steps.len() - start as usize == 1 {
+            if steps.len() - start == 1 {
                 // Final remaining step
                 match steps[0] {
                     // Dead stores.
@@ -184,7 +185,7 @@ pub(super) fn create_step_map(
 
         let end = steps.len().try_into().unwrap();
 
-        map[node.index()] = (start, end);
+        map[node.index()] = (start.try_into().unwrap(), end);
     }
 
     (steps, map)
@@ -263,13 +264,20 @@ struct Analyser<'a, 'ast> {
     steps: &'a mut Vec<Step>,
     cfg: &'a SimpleCFG<'ast>,
     unresolved_ctxt: SyntaxContext,
+    start: usize,
 }
 
 impl<'ast> Analyser<'_, 'ast> {
     /// Records the given step. Redundant steps may be skipped.
     fn push(&mut self, step: Step) {
+        let previous = if self.steps.len() == self.start {
+            // Don't want to access steps for previous node.
+            None
+        } else {
+            self.steps.last()
+        };
         // Redundant store elimination
-        if let Some(Step::StoreRValue(old_value)) = self.steps.last() {
+        if let Some(Step::StoreRValue(old_value)) = previous {
             if let Step::StoreRValue(new_value) = &step {
                 match (old_value, new_value) {
                     (None, None) => return,
