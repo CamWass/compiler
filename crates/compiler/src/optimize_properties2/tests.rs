@@ -1280,6 +1280,15 @@ let obj = { a: 1 };
 let { a: prop1, b: prop2 } = obj;
 ",
     );
+    // The value of the assign expression should be the RHS.
+    test_transform_in_fn(
+        "
+({ prop1: prop = def } = { prop1: 1, prop1: 1, prop2: 2 }).prop2;
+",
+        "
+({ a: prop = def } = { a: 1, a: 1, b: 2,  }).b;
+",
+    );
 }
 
 #[test]
