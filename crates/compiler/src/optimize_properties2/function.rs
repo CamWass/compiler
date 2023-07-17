@@ -9,9 +9,9 @@ use rustc_hash::FxHashMap;
 use crate::control_flow::node::{Node, NodeKind};
 use crate::control_flow::ControlFlowGraph::*;
 use crate::utils::unwrap_as;
-use crate::{Id, ToId};
 
-use super::{is_simple_prop_name, FnId, PropKey, SimpleCFG, StaticFunctionData};
+use super::simple_set::IndexSet;
+use super::{is_simple_prop_name, FnId, Id, NameId, PropKey, SimpleCFG, StaticFunctionData};
 
 /// Controls whether optimisations are applied to the generated steps. Should
 /// be enabled by default, but disabling may be useful for debugging.
@@ -24,6 +24,7 @@ pub(super) fn create_step_map(
     unresolved_ctxt: SyntaxContext,
     func: FnId,
     function_map: &FxHashMap<NodeId, FnId>,
+    names: &mut IndexSet<NameId, JsWord>,
 ) -> (Vec<Step>, Vec<(u32, u32)>) {
     let graph = &static_fn_data[func].cfg.graph;
 
@@ -46,6 +47,7 @@ pub(super) fn create_step_map(
             unresolved_ctxt,
             start,
             function_map,
+            names,
         };
         analyser.init(graph[node], conditional);
 
@@ -198,18 +200,18 @@ pub(super) fn create_step_map(
     (steps, map)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// A place where a value can be stored.
-pub enum LValue {
+pub(super) enum LValue {
     /// Named variable.
     Var(Id),
     /// Property of the current RValue.
-    RValueProp(JsWord),
+    RValueProp(NameId),
     /// Property of the object type that represents the given object literal.
-    ObjectProp(NodeId, JsWord),
+    ObjectProp(NodeId, NameId),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// The value of an expression.
 pub(super) enum RValue {
     NullOrVoid,
@@ -218,7 +220,7 @@ pub(super) enum RValue {
     /// Object type that represents the given object literal.
     Object(NodeId),
     /// Property of the current RValue.
-    Prop(JsWord),
+    Prop(NameId),
     String,
     Boolean,
     Number,
@@ -243,7 +245,7 @@ impl RValue {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// An abstract instruction representing part of a a JavaScript program.
 /// Each instruction is largely stateless, and depends on the state created by
 /// the previous steps.
@@ -291,6 +293,7 @@ struct Analyser<'a, 'ast> {
     unresolved_ctxt: SyntaxContext,
     start: usize,
     function_map: &'a FxHashMap<NodeId, FnId>,
+    names: &'a mut IndexSet<NameId, JsWord>,
 }
 
 impl<'ast> Analyser<'_, 'ast> {
@@ -384,8 +387,12 @@ impl<'ast> Analyser<'_, 'ast> {
                     for prop in &lhs.props {
                         match prop {
                             ObjectPatProp::KeyValue(prop) => {
-                                let key = PropKey::from_prop_name(&prop.key, self.unresolved_ctxt)
-                                    .unwrap();
+                                let key = PropKey::from_prop_name(
+                                    &prop.key,
+                                    self.unresolved_ctxt,
+                                    &mut self.names,
+                                )
+                                .unwrap();
 
                                 if matches!(prop.value.as_ref(), Pat::Ident(_) | Pat::Expr(_)) {
                                     self.push(Step::SaveRValue);
@@ -421,7 +428,7 @@ impl<'ast> Analyser<'_, 'ast> {
                                 // TODO: this is imprecise - rest patterns create a new, distinct, object, which has the remaining non-destructured
                                 // properties copied over. These properties must have the same names as those in the original object after renaming.
                                 // But since they are distinct objects, we don't want to conflate them.
-                                let id = arg.to_id();
+                                let id = Id::new(&arg.id, &mut self.names);
                                 self.push(Step::StoreLValue(Some(LValue::Var(id))));
                                 self.push(Step::Assign(conditional));
                             }
@@ -431,7 +438,7 @@ impl<'ast> Analyser<'_, 'ast> {
             }
 
             NodeKind::BindingIdent(lhs) => {
-                let id = lhs.to_id();
+                let id = Id::new(&lhs.id, &mut self.names);
                 self.push(Step::StoreLValue(Some(LValue::Var(id))));
                 self.push(Step::Assign(conditional));
             }
@@ -483,14 +490,17 @@ impl<'ast> Analyser<'_, 'ast> {
     fn visit_and_get_slot(&mut self, node: Node<'ast>, conditional: bool) {
         match node.kind {
             NodeKind::Ident(ident) | NodeKind::BindingIdent(BindingIdent { id: ident, .. }) => {
-                let id = ident.to_id();
+                let id = Id::new(ident, &mut self.names);
                 self.push(Step::StoreLValue(Some(LValue::Var(id))));
             }
             NodeKind::MemberExpr(node) => {
                 self.visit_and_get_r_value(Node::from(&node.obj), conditional);
-                if let Some(prop) =
-                    PropKey::from_expr(&node.prop, self.unresolved_ctxt, node.computed)
-                {
+                if let Some(prop) = PropKey::from_expr(
+                    &node.prop,
+                    self.unresolved_ctxt,
+                    node.computed,
+                    &mut self.names,
+                ) {
                     self.push(Step::StoreLValue(Some(LValue::RValueProp(prop.0))));
                 } else {
                     self.invalidate_r_value();
@@ -556,7 +566,12 @@ impl<'ast> Analyser<'_, 'ast> {
                 if is_simple_obj_lit {
                     for prop in &node.props {
                         let prop = unwrap_as!(prop, Prop::KeyValue(p), p);
-                        let key = PropKey::from_prop_name(&prop.key, self.unresolved_ctxt).unwrap();
+                        let key = PropKey::from_prop_name(
+                            &prop.key,
+                            self.unresolved_ctxt,
+                            &mut self.names,
+                        )
+                        .unwrap();
 
                         self.visit_and_get_r_value(Node::from(prop.value.as_ref()), conditional);
 
@@ -607,9 +622,12 @@ impl<'ast> Analyser<'_, 'ast> {
             NodeKind::ClassExpr(_) => todo!(),
             NodeKind::MemberExpr(node) => {
                 self.visit_and_get_r_value(Node::from(&node.obj), conditional);
-                if let Some(prop) =
-                    PropKey::from_expr(&node.prop, self.unresolved_ctxt, node.computed)
-                {
+                if let Some(prop) = PropKey::from_expr(
+                    &node.prop,
+                    self.unresolved_ctxt,
+                    node.computed,
+                    &mut self.names,
+                ) {
                     self.push(Step::StoreRValue(Some(RValue::Prop(prop.0))));
                 } else {
                     self.invalidate_r_value();
@@ -698,7 +716,7 @@ impl<'ast> Analyser<'_, 'ast> {
                 if node.span.ctxt == self.unresolved_ctxt && node.sym == js_word!("undefined") {
                     self.push(Step::StoreRValue(Some(RValue::NullOrVoid)));
                 } else {
-                    let id = node.to_id();
+                    let id = Id::new(node, &mut self.names);
                     self.push(Step::StoreRValue(Some(RValue::Var(id))));
                 }
             }

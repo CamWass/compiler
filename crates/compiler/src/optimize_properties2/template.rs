@@ -21,7 +21,6 @@ use crate::utils::unwrap_as;
 use crate::DataFlowAnalysis::{
     LatticeElementId, LinearFlowState, PrioritizedNode, UniqueQueue, MAX_STEPS_PER_NODE,
 };
-use crate::Id;
 
 use super::graph::{process, Visitor};
 use super::hashable_map::HashableHashMap;
@@ -29,8 +28,8 @@ use super::simple_set::IndexSet;
 use super::types::{ObjectId, ObjectStore, UnionBuilder, UnionStore};
 use super::utils::{ReusableState, ReusableStateStack};
 use super::{
-    function::*, Assignment, Call, CallArgBuilder, CallArgs, CallId, FnId, Func, Lattice, Pointer,
-    PropertyAssignments, ResolvedCall, SimpleCFG, StaticFunctionData, Store,
+    function::*, Assignment, Call, CallArgBuilder, CallArgs, CallId, FnId, Func, Id, Lattice,
+    NameId, Pointer, PropertyAssignments, ResolvedCall, SimpleCFG, StaticFunctionData, Store,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -275,7 +274,7 @@ fn get_property(
     prop_assignments: &PropertyAssignments,
     unions: &mut UnionStore,
     object: Option<Pointer>,
-    key: &JsWord,
+    key: NameId,
     invalid_objects: &mut GrowableBitSet<ObjectId>,
 ) -> Option<Pointer> {
     // TODO: is this correct (should it return None instead?)
@@ -484,11 +483,11 @@ fn invalidated(
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 /// A slot where a value can be stored.
 enum AssignTarget {
     Var(Id),
-    Prop(Option<Pointer>, JsWord),
+    Prop(Option<Pointer>, NameId),
 }
 
 #[derive(Debug)]
@@ -545,7 +544,7 @@ impl MachineLattice {
 
     fn insert_prop_assignment(
         &mut self,
-        prop: (ObjectId, JsWord),
+        prop: (ObjectId, NameId),
         value: Assignment,
         lattice_elements: &IndexSet<LatticeElementId, Lattice>,
     ) {
@@ -653,8 +652,10 @@ impl CallTemplate {
         unresolved_ctxt: SyntaxContext,
         func: FnId,
         function_map: &FxHashMap<NodeId, FnId>,
+        names: &mut IndexSet<NameId, JsWord>,
     ) -> CallTemplate {
-        let (steps, map) = create_step_map(static_fn_data, unresolved_ctxt, func, function_map);
+        let (steps, map) =
+            create_step_map(static_fn_data, unresolved_ctxt, func, function_map, names);
         CallTemplate { steps, map }
     }
 }
@@ -709,7 +710,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                     .prop_assignments,
                                 self.unions,
                                 machine.get_r_value(),
-                                prop,
+                                *prop,
                                 self.invalid_objects,
                             ),
                             RValue::String => Some(Pointer::Object(ObjectStore::STRING)),
@@ -759,7 +760,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                     .prop_assignments,
                                 self.unions,
                                 *obj,
-                                key,
+                                *key,
                                 self.invalid_objects,
                             ),
                         };
@@ -879,7 +880,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                 .prop_assignments,
                             self.unions,
                             *obj,
-                            prop,
+                            *prop,
                             self.invalid_objects,
                         );
 

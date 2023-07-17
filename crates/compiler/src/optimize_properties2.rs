@@ -42,7 +42,6 @@ use crate::find_vars::*;
 use crate::utils::unwrap_as;
 use crate::DataFlowAnalysis::LatticeElementId;
 use crate::DefaultNameGenerator::DefaultNameGenerator;
-use crate::{Id, ToId};
 
 use simple_set::IndexSet;
 use template::*;
@@ -55,7 +54,7 @@ use self::types::{ObjectId, ObjectStore, UnionBuilder, UnionId, UnionStore};
 #[cfg(test)]
 mod tests;
 
-fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
+fn create_renaming_map(store: &mut Store) -> FxHashMap<NodeId, JsWord> {
     /*
         Idea:
         Assign properties (from different objects but with the same name) to the same
@@ -91,12 +90,12 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
 
     #[derive(Default, Debug)]
     struct Object {
-        properties: FxHashMap<JsWord, PropId>,
+        properties: FxHashMap<NameId, PropId>,
     }
 
     #[derive(Debug, Clone)]
     struct Property {
-        name: JsWord,
+        name: NameId,
         prop_id: PropId,
         references: FxHashSet<NodeId>,
         invalid: bool,
@@ -114,10 +113,11 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
         if !builtin.properties.is_empty() {
             let obj = objects.entry(builtin.id).or_default();
             let props = builtin.properties.iter().map(|p| {
+                let name = store.names.insert(p.clone());
                 (
-                    p.clone(),
+                    name,
                     properties.push(Property {
-                        name: p.clone(),
+                        name,
                         prop_id: properties.next_index(),
                         references: FxHashSet::default(),
                         invalid: true,
@@ -304,7 +304,8 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
                     None => continue,
                 };
                 debug_graph_map.entry(rep_id).or_insert_with(|| {
-                    debug_graph.add_node((rep_id, properties[prop].name.clone()))
+                    let name = store.names[properties[prop].name].clone();
+                    debug_graph.add_node((rep_id, name))
                 });
                 continue;
             }
@@ -314,11 +315,13 @@ fn create_renaming_map(store: &Store) -> FxHashMap<NodeId, JsWord> {
                 .filter_map(|p| representatives_map.get(&labeling[p.index()]));
             while let Some(&outer_node) = outer.next() {
                 let a = *debug_graph_map.entry(outer_node).or_insert_with(|| {
-                    debug_graph.add_node((outer_node, representatives[outer_node].name.clone()))
+                    let name = store.names[representatives[outer_node].name].clone();
+                    debug_graph.add_node((outer_node, name))
                 });
                 for &inner_node in outer.clone() {
                     let b = *debug_graph_map.entry(inner_node).or_insert_with(|| {
-                        debug_graph.add_node((inner_node, representatives[inner_node].name.clone()))
+                        let name = store.names[representatives[inner_node].name].clone();
+                        debug_graph.add_node((inner_node, name))
                     });
                     debug_graph.update_edge(a, b, ());
                 }
@@ -414,6 +417,7 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
         object_links: FxHashSet::default(),
         call_objects: FxHashMap::default(),
         call_resolver_state: ResolverState::default(),
+        names: IndexSet::default(),
     };
 
     let mut visitor = FnVisitor { store: &mut store };
@@ -428,6 +432,7 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
                 store.unresolved_ctxt,
                 func,
                 &store.function_map,
+                &mut store.names,
             )
         })
         .collect();
@@ -482,9 +487,9 @@ pub fn process(
     node_id_gen: &mut NodeIdGen,
     unresolved_ctxt: SyntaxContext,
 ) {
-    let store = analyse(ast, unresolved_ctxt);
+    let mut store = analyse(ast, unresolved_ctxt);
 
-    let rename_map = create_renaming_map(&store);
+    let rename_map = create_renaming_map(&mut store);
 
     // Actually assign the new names.
     let mut renamer = Renamer {
@@ -525,7 +530,7 @@ impl<'ast> FnVisitor<'ast, '_> {
             .params()
             .map(|p| {
                 if let Pat::Ident(param) = &p {
-                    param.to_id()
+                    Id::new(&param.id, &mut self.store.names)
                 } else {
                     todo!("non-ident param");
                 }
@@ -558,7 +563,7 @@ impl<'ast> Visit<'ast> for FnVisitor<'ast, '_> {
     fn visit_fn_decl(&mut self, node: &'ast FnDecl) {
         let id = self.handle_fn(&node.function);
         self.store.fn_assignments.insert(
-            node.ident.to_id(),
+            Id::new(&node.ident, &mut self.store.names),
             Assignment {
                 rhs: Some(Pointer::Fn(id)),
             },
@@ -612,6 +617,8 @@ pub struct Store<'ast> {
     call_objects: FxHashMap<(CallId, NodeId), ObjectId>,
 
     call_resolver_state: ResolverState,
+
+    names: IndexSet<NameId, JsWord>,
 }
 
 impl Store<'_> {
@@ -751,6 +758,17 @@ pub(self) enum Pointer {
 index::newtype_index!(pub(super) struct FnId { .. });
 index::newtype_index!(pub(super) struct CallId { .. });
 
+index::newtype_index!(pub(super) struct NameId { .. });
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) struct Id(NameId, SyntaxContext);
+
+impl Id {
+    fn new(ident: &Ident, names: &mut IndexSet<NameId, JsWord>) -> Self {
+        Self(names.insert(ident.sym.clone()), ident.span.ctxt)
+    }
+}
+
 #[derive(Debug)]
 pub(super) struct SimpleCFG<'ast> {
     map: FxHashMap<Node<'ast>, NodeIndex>,
@@ -873,50 +891,68 @@ pub(super) struct Assignment {
 }
 
 /// A place where a variable can be stored.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 enum Slot {
     Var(Id),
     /// (Object, Property name)
-    Prop(Pointer, JsWord),
+    Prop(Pointer, NameId),
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone)]
-pub(super) struct PropKey(JsWord, NodeId);
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
+pub(super) struct PropKey(NameId, NodeId);
 
 impl PropKey {
-    fn from_prop_name(prop: &PropName, unresolved_ctxt: SyntaxContext) -> Option<PropKey> {
+    fn from_prop_name(
+        prop: &PropName,
+        unresolved_ctxt: SyntaxContext,
+        names: &mut IndexSet<NameId, JsWord>,
+    ) -> Option<PropKey> {
         match prop {
-            PropName::Ident(p) => Some(PropKey(p.sym.clone(), p.node_id)),
-            PropName::Str(p) => Some(PropKey(p.value.clone(), p.node_id)),
-            PropName::Num(p) => Some(PropKey(ecma_number_to_string(p.value).into(), p.node_id)),
-            PropName::Computed(p) => PropKey::from_expr(&p.expr, unresolved_ctxt, true),
+            PropName::Ident(p) => Some(PropKey(names.insert(p.sym.clone()), p.node_id)),
+            PropName::Str(p) => Some(PropKey(names.insert(p.value.clone()), p.node_id)),
+            PropName::Num(p) => Some(PropKey(
+                names.insert(ecma_number_to_string(p.value).into()),
+                p.node_id,
+            )),
+            PropName::Computed(p) => PropKey::from_expr(&p.expr, unresolved_ctxt, true, names),
         }
     }
 
-    fn from_expr(expr: &Expr, unresolved_ctxt: SyntaxContext, computed: bool) -> Option<PropKey> {
+    fn from_expr(
+        expr: &Expr,
+        unresolved_ctxt: SyntaxContext,
+        computed: bool,
+        names: &mut IndexSet<NameId, JsWord>,
+    ) -> Option<PropKey> {
         match expr {
             Expr::Ident(e) => {
                 if !computed
                     || e.span.ctxt == unresolved_ctxt
                         && (e.sym == js_word!("undefined") || e.sym == js_word!("NaN"))
                 {
-                    Some(PropKey(e.sym.clone(), e.node_id))
+                    Some(PropKey(names.insert(e.sym.clone()), e.node_id))
                 } else {
                     None
                 }
             }
             Expr::Lit(e) => match e {
-                Lit::Str(e) => Some(PropKey(e.value.clone(), e.node_id)),
+                Lit::Str(e) => Some(PropKey(names.insert(e.value.clone()), e.node_id)),
                 Lit::Bool(e) => {
                     if e.value {
-                        Some(PropKey(js_word!("true"), e.node_id))
+                        Some(PropKey(names.insert(js_word!("true")), e.node_id))
                     } else {
-                        Some(PropKey(js_word!("false"), e.node_id))
+                        Some(PropKey(names.insert(js_word!("false")), e.node_id))
                     }
                 }
-                Lit::Null(e) => Some(PropKey(js_word!("null"), e.node_id)),
-                Lit::Num(e) => Some(PropKey(ecma_number_to_string(e.value).into(), e.node_id)),
-                Lit::BigInt(e) => Some(PropKey(e.value.to_str_radix(10).into(), e.node_id)),
+                Lit::Null(e) => Some(PropKey(names.insert(js_word!("null")), e.node_id)),
+                Lit::Num(e) => Some(PropKey(
+                    names.insert(ecma_number_to_string(e.value).into()),
+                    e.node_id,
+                )),
+                Lit::BigInt(e) => Some(PropKey(
+                    names.insert(e.value.to_str_radix(10).into()),
+                    e.node_id,
+                )),
                 Lit::Regex(_) | Lit::JSXText(_) => None,
             },
             _ => None,
@@ -946,7 +982,7 @@ fn get_property(
     lattice: &Lattice,
     unions: &mut UnionStore,
     pointer: Pointer,
-    key: &JsWord,
+    key: NameId,
     invalid_objects: &mut GrowableBitSet<ObjectId>,
 ) -> Option<Pointer> {
     // TODO: is this correct (should it return None instead?)
@@ -1058,7 +1094,7 @@ impl CowLattice<'_> {
         self.0.to_mut().var_assignments.insert(name, value);
     }
 
-    fn insert_prop_assignment(&mut self, prop: (ObjectId, JsWord), value: Assignment) {
+    fn insert_prop_assignment(&mut self, prop: (ObjectId, NameId), value: Assignment) {
         // TODO: here are elsewhere, same optimisation as for vars - remove/skip null/void assignments
         if let Some(existing) = self.0.prop_assignments.get(&prop) {
             if *existing == value {
@@ -1074,13 +1110,13 @@ impl CowLattice<'_> {
 
     fn get_var(
         &self,
-        id: &Id,
+        id: Id,
         fn_assignments: &HashableHashMap<Id, Assignment>,
     ) -> Option<Assignment> {
         self.0
             .var_assignments
-            .get(id)
-            .or_else(|| fn_assignments.get(id))
+            .get(&id)
+            .or_else(|| fn_assignments.get(&id))
             .copied()
     }
 }
@@ -1093,7 +1129,7 @@ struct Analyser<'ast, 'a> {
 }
 
 impl<'ast> Analyser<'ast, '_> {
-    fn get_property(&mut self, pointer: Pointer, key: &JsWord) -> Option<Pointer> {
+    fn get_property(&mut self, pointer: Pointer, key: NameId) -> Option<Pointer> {
         get_property(
             &self.lattice,
             &mut self.store.unions,
@@ -1120,9 +1156,9 @@ impl<'ast> Analyser<'ast, '_> {
             let existing = match &slot {
                 Slot::Var(name) => self
                     .lattice
-                    .get_var(name, &self.store.fn_assignments)
+                    .get_var(*name, &self.store.fn_assignments)
                     .and_then(|a| a.rhs),
-                Slot::Prop(obj, key) => self.get_property(*obj, key),
+                Slot::Prop(obj, key) => self.get_property(*obj, *key),
             };
 
             let rhs = if !conditional {
@@ -1227,9 +1263,9 @@ impl<'ast> Analyser<'ast, '_> {
             let value = match lhs {
                 Slot::Var(name) => self
                     .lattice
-                    .get_var(&name, &self.store.fn_assignments)
+                    .get_var(name, &self.store.fn_assignments)
                     .and_then(|a| a.rhs),
-                Slot::Prop(obj, key) => self.get_property(obj, &key),
+                Slot::Prop(obj, key) => self.get_property(obj, key),
             };
             self.store.invalidate(value, &self.lattice);
         }
@@ -1255,10 +1291,11 @@ impl<'ast> Analyser<'ast, '_> {
                                     let key = PropKey::from_prop_name(
                                         &prop.key,
                                         self.store.unresolved_ctxt,
+                                        &mut self.store.names,
                                     )
                                     .unwrap();
                                     self.reference_prop(rhs, key.clone());
-                                    let rhs_value = self.get_property(rhs, &key.0);
+                                    let rhs_value = self.get_property(rhs, key.0);
 
                                     if matches!(prop.value.as_ref(), Pat::Ident(_) | Pat::Expr(_)) {
                                         let slot = self.visit_and_get_slot(
@@ -1287,7 +1324,7 @@ impl<'ast> Analyser<'ast, '_> {
                                     // TODO: this is imprecise - rest patterns create a new, distinct, object, which has the remaining non-destructured
                                     // properties copied over. These properties must have the same names as those in the original object after renaming.
                                     // But since they are distinct objects, we don't want to conflate them.
-                                    let id = arg.to_id();
+                                    let id = Id::new(&arg.id, &mut self.store.names);
                                     // if self.analysis.vars.contains_key(&id) {
                                     self.assign_to_slot(
                                         Some(Slot::Var(id)),
@@ -1307,7 +1344,7 @@ impl<'ast> Analyser<'ast, '_> {
             }
 
             NodeKind::BindingIdent(lhs) => {
-                let id = lhs.to_id();
+                let id = Id::new(&lhs.id, &mut self.store.names);
                 // if self.analysis.vars.contains_key(&id) {
                 self.assign_to_slot(Some(Slot::Var(id)), rhs, conditional);
                 // }
@@ -1357,7 +1394,7 @@ impl<'ast> Analyser<'ast, '_> {
     fn visit_and_get_slot(&mut self, node: Node<'ast>, conditional: bool) -> Option<Slot> {
         match node.kind {
             NodeKind::Ident(node) => {
-                let id = node.to_id();
+                let id = Id::new(node, &mut self.store.names);
                 // if self.analysis.vars.contains_key(&id) {
                 Some(Slot::Var(id))
                 // } else {
@@ -1369,9 +1406,12 @@ impl<'ast> Analyser<'ast, '_> {
             }
             NodeKind::MemberExpr(node) => {
                 let obj = self.visit_and_get_object(Node::from(&node.obj), conditional);
-                if let Some(prop) =
-                    PropKey::from_expr(&node.prop, self.store.unresolved_ctxt, node.computed)
-                {
+                if let Some(prop) = PropKey::from_expr(
+                    &node.prop,
+                    self.store.unresolved_ctxt,
+                    node.computed,
+                    &mut self.store.names,
+                ) {
                     obj.map(|obj| {
                         self.reference_prop(obj, prop.clone());
                         Slot::Prop(obj, prop.0)
@@ -1558,8 +1598,12 @@ impl<'ast> Analyser<'ast, '_> {
                 if is_simple_obj_lit {
                     for prop in &node.props {
                         let prop = unwrap_as!(prop, Prop::KeyValue(p), p);
-                        let key =
-                            PropKey::from_prop_name(&prop.key, self.store.unresolved_ctxt).unwrap();
+                        let key = PropKey::from_prop_name(
+                            &prop.key,
+                            self.store.unresolved_ctxt,
+                            &mut self.store.names,
+                        )
+                        .unwrap();
 
                         self.reference_prop(pointer, key.clone());
 
@@ -1607,12 +1651,15 @@ impl<'ast> Analyser<'ast, '_> {
             NodeKind::ClassExpr(_) => todo!(),
             NodeKind::MemberExpr(node) => {
                 let obj = self.visit_and_get_object(Node::from(&node.obj), conditional);
-                if let Some(prop) =
-                    PropKey::from_expr(&node.prop, self.store.unresolved_ctxt, node.computed)
-                {
+                if let Some(prop) = PropKey::from_expr(
+                    &node.prop,
+                    self.store.unresolved_ctxt,
+                    node.computed,
+                    &mut self.store.names,
+                ) {
                     if let Some(obj) = obj {
                         self.reference_prop(obj, prop.clone());
-                        self.get_property(obj, &prop.0)
+                        self.get_property(obj, prop.0)
                     } else {
                         None
                     }
@@ -1723,9 +1770,9 @@ impl<'ast> Analyser<'ast, '_> {
                 {
                     Some(Pointer::NullOrVoid)
                 } else {
-                    let id = node.to_id();
+                    let id = Id::new(node, &mut self.store.names);
                     self.lattice
-                        .get_var(&id, &self.store.fn_assignments)
+                        .get_var(id, &self.store.fn_assignments)
                         .and_then(|assign| assign.rhs)
                 }
             }
@@ -2036,7 +2083,7 @@ impl<'ast> JoinOp {
     }
 }
 
-type PropertyAssignments = HashableHashMap<(ObjectId, JsWord), Assignment>;
+type PropertyAssignments = HashableHashMap<(ObjectId, NameId), Assignment>;
 
 #[derive(Clone, Debug, PartialEq, Default, Hash, Eq)]
 pub(super) struct Lattice {
