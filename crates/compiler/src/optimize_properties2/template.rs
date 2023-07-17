@@ -197,6 +197,7 @@ impl Visitor<CallId> for Resolver<'_, '_> {
 
         // TODO: only do this if in_fn?
         {
+            // TODO: pre-alloc/bulk reserve capacity for new things?
             // Merge property assignments.
             for ((obj, key), prop) in self.calls[node].prop_assignments.iter() {
                 if self.invalid_objects.contains(*obj) {
@@ -984,6 +985,9 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
 
                         done.reserve(queue.len());
 
+                        // TODO: eagerly check for RESOLVING_CALL e.g. when pushing, not popping, from queue.
+                        // This we we bail sooner.
+
                         // TODO: check argument prop assignments for unresolved calls
                         while let Some(o) = queue.pop() {
                             if o == ObjectStore::RESOLVING_CALL {
@@ -1230,6 +1234,9 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                             Some(Pointer::Fn(_)) | Some(Pointer::NullOrVoid) | None => false,
                         }
                     }
+
+                    // TODO: eagerly check for RESOLVING_CALL e.g. when pushing, not popping, from queue.
+                    // This way we bail sooner.
 
                     let mut done = FxHashSet::default();
                     done.reserve(queue.capacity());
