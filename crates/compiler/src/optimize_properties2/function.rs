@@ -260,7 +260,7 @@ pub(super) enum Step {
     InvalidateRValue,
     /// Invalidates the value in the LValue register.
     InvalidateLValue,
-    /// Begins a new call, with the specified number of argument, by pushing it
+    /// Begins a new call, with the specified number of arguments, by pushing it
     /// onto the call creation stack.
     StartCall(usize),
     /// Stores the value in the RValue register as the next argument to the current call.
@@ -274,7 +274,7 @@ pub(super) enum Step {
     StartUnion,
     /// Adds the value in the RValue register to the current union.
     PushToUnion,
-    /// Finalises the current union, popping it from the stack ans storing in
+    /// Finalises the current union, popping it from the stack and storing in
     /// the the RValue register.
     StoreUnion,
     /// Pushes a new RValue register onto the RValue stack. The current RValue
