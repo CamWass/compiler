@@ -41,6 +41,8 @@ pub(super) fn create_step_map(
     // TODO: comment
     let mut remove_after_union_indices = Vec::new();
 
+    let mut r_value_store_stack = Vec::new();
+
     // TODO: skip unreachable nodes?
     for node in graph.node_indices() {
         if node == cfg.implicit_return_index {
@@ -284,9 +286,14 @@ pub(super) fn create_step_map(
             if run_forwards && !step_buffer.is_empty() {
                 let mut cur_step_l_value = None;
                 let mut cur_step_r_value = Some(None);
+                r_value_store_stack.clear();
+
                 let mut pos = 0;
                 while pos < step_buffer.len() {
                     match step_buffer[pos] {
+                        Step::SaveRValue => {
+                            r_value_store_stack.push((cur_step_r_value, pos, false));
+                        }
                         Step::StoreLValue(new) => {
                             if new == cur_step_l_value {
                                 if new.is_none() || !new.unwrap().is_relative() {
@@ -299,8 +306,27 @@ pub(super) fn create_step_map(
                                 cur_step_l_value = new;
                             }
                         }
+                        Step::RestoreRValue => {
+                            let (saved, store_pos, overwritten) =
+                                r_value_store_stack.pop().unwrap();
+                            if saved.is_some() && saved == cur_step_r_value || !overwritten {
+                                run_backwards = true;
+
+                                step_buffer.remove(pos);
+                                step_buffer.remove(store_pos);
+                                pos -= 1;
+                                continue;
+                            }
+                            if let Some((_, _, overwritten)) = r_value_store_stack.last_mut() {
+                                *overwritten = true;
+                            }
+                            cur_step_r_value = None;
+                        }
                         // These create dynamic RValues we can't/don't track.
-                        Step::StoreUnion | Step::RestoreRValue | Step::Call => {
+                        Step::StoreUnion | Step::Call => {
+                            if let Some((_, _, overwritten)) = r_value_store_stack.last_mut() {
+                                *overwritten = true;
+                            }
                             cur_step_r_value = None;
                         }
                         Step::StoreRValue(new) => {
@@ -314,6 +340,9 @@ pub(super) fn create_step_map(
                             } else {
                                 cur_step_r_value = Some(new);
                             }
+                            if let Some((_, _, overwritten)) = r_value_store_stack.last_mut() {
+                                *overwritten = true;
+                            }
                         }
                         // These don't write to LValue/RValue registers.
                         Step::Assign(_)
@@ -323,7 +352,6 @@ pub(super) fn create_step_map(
                         | Step::Return
                         | Step::StartUnion
                         | Step::PushToUnion
-                        | Step::SaveRValue
                         | Step::StartCall(_) => {}
                     }
                     pos += 1;
@@ -492,8 +520,7 @@ impl<'ast> Analyser<'_, 'ast> {
             // Redundant store elimination
 
             // Don't want to access steps for previous node.
-            while !self.steps.is_empty() && self.steps.len() != 0 {
-                let previous = self.steps.last().unwrap();
+            while let Some(previous) = self.steps.last() {
                 if let Step::StoreRValue(_) = previous {
                     if let Step::StoreRValue(new_value) = &step {
                         // If the new value does not depend on the previous one, the old
@@ -511,15 +538,21 @@ impl<'ast> Analyser<'_, 'ast> {
                 } else if previous == &Step::InvalidateLValue && step == Step::InvalidateLValue
                     || previous == &Step::InvalidateRValue && step == Step::InvalidateRValue
                 {
-                    self.steps.pop();
                     //  Should only be at most one of these in a row.
-                    break;
+                    return;
                 }
                 break;
             }
 
             // Remove stores that don't actually change register values.
             match step {
+                Step::RestoreRValue => {
+                    if let Some(Step::SaveRValue) = self.steps.last() {
+                        self.steps.pop();
+                        return;
+                    }
+                    self.cur_step_r_value.clear();
+                }
                 Step::StoreLValue(new) => {
                     if new == self.cur_step_l_value {
                         if new.is_none() || !new.unwrap().is_relative() {
@@ -531,7 +564,7 @@ impl<'ast> Analyser<'_, 'ast> {
                     }
                 }
                 // These create dynamic RValues we can't/don't track.
-                Step::StoreUnion | Step::RestoreRValue | Step::Call => {
+                Step::StoreUnion | Step::Call => {
                     self.cur_step_r_value.clear();
                 }
                 Step::StoreRValue(new) => {
@@ -588,10 +621,10 @@ impl<'ast> Analyser<'_, 'ast> {
             }
             _ => {
                 self.visit_and_get_r_value(Node::from(rhs), conditional);
-                self.steps.push(Step::SaveRValue);
+                self.push(Step::SaveRValue);
                 let conditional = conditional || conditional_assign;
                 self.visit_and_get_slot(lhs, conditional);
-                self.steps.push(Step::RestoreRValue);
+                self.push(Step::RestoreRValue);
 
                 self.push(Step::Assign(conditional));
             }
