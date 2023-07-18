@@ -261,7 +261,7 @@ fn create_renaming_map(store: &mut Store) -> FxHashMap<NodeId, JsWord> {
     representatives.sort_unstable_by(|a, b| {
         let result = b.references.len().cmp(&a.references.len());
         if result.is_eq() {
-            a.name.cmp(&b.name)
+            store.names[a.name].cmp(&store.names[b.name])
         } else {
             result
         }
