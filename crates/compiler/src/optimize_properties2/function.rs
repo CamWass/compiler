@@ -34,6 +34,9 @@ pub(super) fn create_step_map(
     // Used for dead union removal.
     let mut steps_to_remove = Vec::new();
 
+    // TODO: comment
+    let mut remove_after_union_indices = Vec::new();
+
     // TODO: skip unreachable nodes?
     for node in graph.node_indices() {
         // Make assignments conditional if the node can end abruptly by an exception.
@@ -51,6 +54,8 @@ pub(super) fn create_step_map(
         };
         analyser.init(graph[node], conditional);
 
+        // TODO: update comments to reflect all optimisations.
+
         // Remove trailing stores. Registers are not shared between CFG nodes
         // (each gets its own machine), so these writes will never be read. e.g.
         // if (someExpr) { ... }
@@ -58,17 +63,48 @@ pub(super) fn create_step_map(
         // by any other code/CFG nodes. There can be multiple trailing stores
         // (such as property access), so we use a loop.
         if OPTIMISE && !steps.is_empty() {
+            let mut remove_stores = true;
+            remove_after_union_indices.clear();
+
             // Start from the end and work backwards.
             let mut pos = steps.len() - 1;
-            while pos > start {
-                match steps[pos] {
-                    // Dead stores.
-                    Step::StoreRValue(_)
-                    | Step::StoreLValue(_)
-                    | Step::SaveRValue
-                    | Step::RestoreRValue => {
-                        steps.pop();
+            while pos >= start {
+                let last = pos == steps.len() - 1;
+                match &steps[pos] {
+                    // TODO:
+                    Step::SaveRValue | Step::RestoreRValue => {
+                        remove_stores = false;
                     }
+                    // TODO:
+                    Step::StoreLValue(_) => {
+                        remove_stores = false;
+                    }
+                    // Dead stores.
+                    Step::StoreRValue(v) => {
+                        if last {
+                            steps.pop();
+                        } else if remove_stores {
+                            steps.remove(pos);
+                        } else {
+                            let relative = match v {
+                                Some(v) => v.is_relative(),
+                                None => false,
+                            };
+                            if !relative {
+                                remove_stores = true;
+                            }
+                        }
+                    }
+
+                    Step::StartUnion => {
+                        if remove_after_union_indices.last() == Some(&pos) {
+                            remove_after_union_indices.pop();
+                            remove_stores = true;
+                        } else {
+                            remove_stores = false;
+                        }
+                    }
+
                     // Dead union. Bit tricky to remove - we need to remove:
                     // (1) StoreUnion
                     // (2) all PushToUnion steps that correspond to this union
@@ -84,6 +120,38 @@ pub(super) fn create_step_map(
                     // When the count is 0, we have found the closing StoreUnion
                     // for our union and can stop.
                     Step::StoreUnion => {
+                        if !(last || remove_stores) {
+                            let mut union_start = usize::MAX;
+
+                            let mut open_unions: u32 = 1;
+                            let mut union_pos = pos - 1;
+                            while union_pos >= start {
+                                match steps[union_pos] {
+                                    Step::StartUnion => {
+                                        open_unions -= 1;
+                                        if open_unions == 0 {
+                                            // Found the closing StoreUnion for our
+                                            // union; stop
+                                            union_start = union_pos;
+                                            break;
+                                        }
+                                    }
+                                    Step::StoreUnion => {
+                                        open_unions += 1;
+                                    }
+                                    _ => {}
+                                }
+                                union_pos -= 1;
+                            }
+
+                            debug_assert!(union_start != usize::MAX);
+
+                            remove_after_union_indices.push(union_start);
+                            remove_stores = false;
+                            pos -= 1;
+                            continue;
+                        }
+
                         let mut open_unions: u32 = 1;
                         let mut record_union_pushes = true;
                         steps_to_remove.clear();
@@ -125,13 +193,19 @@ pub(super) fn create_step_map(
                         debug_assert!(!steps_to_remove.is_empty());
 
                         // Remove original StoreUnion step.
-                        steps.pop();
+                        if last {
+                            steps.pop();
+                        } else if remove_stores {
+                            steps.remove(pos);
+                        }
 
                         // Remove closing StartUnion and intermediary PushToUnions.
+
+                        // Adjust outer loop pos since elements to the left
+                        // of it have been removed.
+                        pos -= steps_to_remove.len();
+
                         for &index in &steps_to_remove {
-                            // Adjust outer loop pos since elements to the left
-                            // of it have been removed.
-                            pos -= 1;
                             // Indices are pushed, and therefore iterated, in
                             // descending order, so removing an element will not
                             // invalidate yet-to-be-removed indices.
@@ -151,44 +225,22 @@ pub(super) fn create_step_map(
                         )
                     }
 
-                    // Can't (currently) optimise past these.
                     Step::Assign(_)
                     | Step::InvalidateRValue
                     | Step::InvalidateLValue
                     | Step::Call
-                    | Step::Return => break,
-
-                    Step::StartCall(_) | Step::StoreArg | Step::StartUnion | Step::PushToUnion => {
-                        unreachable!("invalid last step")
-                    }
-                }
-
-                pos -= 1;
-            }
-
-            if steps.len() - start == 1 {
-                // Final remaining step
-                match steps[0] {
-                    // Dead stores.
-                    Step::StoreRValue(_)
-                    | Step::StoreLValue(_)
-                    | Step::SaveRValue
-                    | Step::RestoreRValue => {
-                        steps.pop();
-                    }
-
-                    Step::Assign(_)
-                    | Step::InvalidateRValue
-                    | Step::InvalidateLValue
-                    | Step::Call
-                    | Step::Return => {}
-
-                    Step::StartCall(_)
+                    | Step::Return
+                    | Step::StartCall(_)
                     | Step::StoreArg
-                    | Step::StartUnion
-                    | Step::PushToUnion
-                    | Step::StoreUnion => unreachable!("invalid last step"),
+                    | Step::PushToUnion => {
+                        remove_stores = false;
+                    }
                 }
+
+                if pos == start {
+                    break;
+                }
+                pos -= 1;
             }
         }
 
@@ -300,6 +352,8 @@ impl<'ast> Analyser<'_, 'ast> {
     /// Records the given step. Redundant steps may be skipped.
     fn push(&mut self, step: Step) {
         if OPTIMISE {
+            // TODO: update comments to reflect all optimisations.
+
             // Redundant store elimination
 
             // Don't want to access steps for previous node.
@@ -318,6 +372,12 @@ impl<'ast> Analyser<'_, 'ast> {
                             continue;
                         }
                     }
+                } else if previous == &Step::InvalidateLValue && step == Step::InvalidateLValue
+                    || previous == &Step::InvalidateRValue && step == Step::InvalidateRValue
+                {
+                    self.steps.pop();
+                    //  Should only be at most one of these in a row.
+                    break;
                 }
                 break;
             }
