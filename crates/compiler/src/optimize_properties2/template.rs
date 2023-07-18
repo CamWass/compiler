@@ -668,12 +668,16 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
         input: LatticeElementId,
     ) -> Option<LatticeElementId> {
         let steps = {
-            let (start, end) = self.step_map[node.index()];
-            let (start, end) = (start as usize, end as usize);
-            if start > self.steps.len() || end == start {
-                return Some(input);
+            if node == self.cfg.implicit_return_index {
+                &IMPLICIT_RETURN_STEPS
+            } else {
+                let (start, end) = self.step_map[node.index()];
+                let (start, end) = (start as usize, end as usize);
+                if start > self.steps.len() || end == start {
+                    return Some(input);
+                }
+                &self.steps[start..end]
             }
-            &self.steps[start..end]
         };
         debug_assert!(!steps.is_empty());
         self.state.machine_state.reset();

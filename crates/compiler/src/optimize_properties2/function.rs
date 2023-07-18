@@ -26,7 +26,8 @@ pub(super) fn create_step_map(
     function_map: &FxHashMap<NodeId, FnId>,
     names: &mut IndexSet<NameId, JsWord>,
 ) -> (Vec<Step>, Vec<(u32, u32)>) {
-    let graph = &static_fn_data[func].cfg.graph;
+    let cfg = &static_fn_data[func].cfg;
+    let graph = &cfg.graph;
 
     let mut steps = Vec::new();
     let mut map: Vec<(u32, u32)> = vec![(0, 0); graph.node_count()];
@@ -39,6 +40,10 @@ pub(super) fn create_step_map(
 
     // TODO: skip unreachable nodes?
     for node in graph.node_indices() {
+        if node == cfg.implicit_return_index {
+            continue;
+        }
+
         // Make assignments conditional if the node can end abruptly by an exception.
         let conditional = graph.edges(node).any(|e| *e.weight() == Branch::ON_EX);
 
@@ -252,7 +257,9 @@ pub(super) fn create_step_map(
     (steps, map)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) static IMPLICIT_RETURN_STEPS: [Step; 2] =
+    [Step::StoreRValue(Some(RValue::NullOrVoid)), Step::Return];
+
 /// A place where a value can be stored.
 pub(super) enum LValue {
     /// Named variable.
@@ -874,8 +881,7 @@ impl<'ast> Analyser<'_, 'ast> {
             }
 
             NodeKind::ImplicitReturn => {
-                self.push(Step::StoreRValue(Some(RValue::NullOrVoid)));
-                self.push(Step::Return);
+                unreachable!("analyser should not be called on ImplicitReturn");
             }
             NodeKind::Class(_) => todo!(),
             NodeKind::ExtendsClause(_) => todo!(),
