@@ -260,6 +260,7 @@ pub(super) fn create_step_map(
 pub(super) static IMPLICIT_RETURN_STEPS: [Step; 2] =
     [Step::StoreRValue(Some(RValue::NullOrVoid)), Step::Return];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// A place where a value can be stored.
 pub(super) enum LValue {
     /// Named variable.
