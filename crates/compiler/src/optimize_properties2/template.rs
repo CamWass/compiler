@@ -654,9 +654,16 @@ impl CallTemplate {
         func: FnId,
         function_map: &FxHashMap<NodeId, FnId>,
         names: &mut IndexSet<NameId, JsWord>,
+        builder: &mut StepBuilder,
     ) -> CallTemplate {
-        let (steps, map) =
-            create_step_map(static_fn_data, unresolved_ctxt, func, function_map, names);
+        let (steps, map) = create_step_map(
+            static_fn_data,
+            unresolved_ctxt,
+            func,
+            function_map,
+            names,
+            builder,
+        );
         CallTemplate { steps, map }
     }
 }

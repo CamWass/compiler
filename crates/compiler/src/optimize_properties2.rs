@@ -39,6 +39,7 @@ use crate::control_flow::ControlFlowAnalysis::*;
 use crate::control_flow::ControlFlowGraph::*;
 use crate::convert::ecma_number_to_string;
 use crate::find_vars::*;
+use crate::optimize_properties2::function::StepBuilder;
 use crate::utils::unwrap_as;
 use crate::DataFlowAnalysis::LatticeElementId;
 use crate::DefaultNameGenerator::DefaultNameGenerator;
@@ -423,6 +424,8 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
     let mut visitor = FnVisitor { store: &mut store };
     ast.visit_with(&mut visitor);
 
+    let mut step_builder = StepBuilder::new();
+
     let call_templates = store
         .functions
         .indices()
@@ -433,6 +436,7 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
                 func,
                 &store.function_map,
                 &mut store.names,
+                &mut step_builder,
             )
         })
         .collect();

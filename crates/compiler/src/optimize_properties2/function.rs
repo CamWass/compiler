@@ -3,6 +3,7 @@ use std::convert::TryInto;
 use ast::*;
 use atoms::{js_word, JsWord};
 use global_common::SyntaxContext;
+use index::bit_set::GrowableBitSet;
 use index::vec::IndexVec;
 use rustc_hash::FxHashMap;
 
@@ -25,23 +26,13 @@ pub(super) fn create_step_map(
     func: FnId,
     function_map: &FxHashMap<NodeId, FnId>,
     names: &mut IndexSet<NameId, JsWord>,
+    builder: &mut StepBuilder,
 ) -> (Vec<Step>, Vec<(u32, u32)>) {
     let cfg = &static_fn_data[func].cfg;
     let graph = &cfg.graph;
 
     let mut steps = Vec::new();
     let mut map: Vec<(u32, u32)> = vec![(0, 0); graph.node_count()];
-
-    // Steps for the current node.
-    let mut step_buffer = Vec::new();
-
-    // Used for dead union removal.
-    let mut steps_to_remove = Vec::new();
-
-    // TODO: comment
-    let mut remove_after_union_indices = Vec::new();
-
-    let mut r_value_store_stack = Vec::new();
 
     // TODO: skip unreachable nodes?
     for node in graph.node_indices() {
@@ -52,351 +43,494 @@ pub(super) fn create_step_map(
         // Make assignments conditional if the node can end abruptly by an exception.
         let conditional = graph.edges(node).any(|e| *e.weight() == Branch::ON_EX);
 
-        step_buffer.clear();
+        builder.reset();
 
         let mut analyser = Analyser {
-            steps: &mut step_buffer,
+            step_builder: builder,
             cfg: &static_fn_data[func].cfg,
             unresolved_ctxt,
             function_map,
             names,
-
-            // These should be the same as Machine's initial values.
-            cur_step_l_value: None,
-            cur_step_r_value: vec![None],
         };
         analyser.init(graph[node], conditional);
 
+        if OPTIMISE {
+            builder.optimise();
+        }
+
+        map[node.index()] = builder.build(&mut steps);
+    }
+
+    (steps, map)
+}
+
+#[derive(Debug)]
+pub(super) struct StepBuilder {
+    // Steps for the current node.
+    step_buffer: Vec<Step>,
+
+    // TODO: comment
+    remove_after_union_indices: Vec<usize>,
+
+    r_value_store_stack: Vec<(Option<Option<RValue>>, usize, bool)>,
+
+    indices_to_remove: GrowableBitSet<usize>,
+
+    /// None signifies a dynamic value such as a union or call result.
+    cur_step_r_value: Vec<Option<RValue>>,
+    cur_step_l_value: Option<LValue>,
+}
+
+impl StepBuilder {
+    pub fn new() -> Self {
+        Self {
+            step_buffer: Vec::new(),
+            remove_after_union_indices: Vec::new(),
+            r_value_store_stack: Vec::new(),
+            indices_to_remove: GrowableBitSet::new_empty(),
+            // These should be the same as Machine's initial values.
+            cur_step_r_value: vec![None],
+            cur_step_l_value: None,
+        }
+    }
+
+    fn reset(&mut self) {
+        let Self {
+            step_buffer,
+            remove_after_union_indices,
+            r_value_store_stack,
+            indices_to_remove,
+            cur_step_r_value,
+            cur_step_l_value,
+        } = self;
+        step_buffer.clear();
+        remove_after_union_indices.clear();
+        r_value_store_stack.clear();
+        indices_to_remove.clear();
+        cur_step_r_value.clear();
+        cur_step_r_value.push(None);
+        *cur_step_l_value = None;
+    }
+
+    fn build(&mut self, steps: &mut Vec<Step>) -> (u32, u32) {
+        let start = steps.len().try_into().unwrap();
+        steps.append(&mut self.step_buffer);
+        let end = steps.len().try_into().unwrap();
+        (start, end)
+    }
+
+    /// Records the given step. Redundant steps may be skipped.
+    fn push(&mut self, step: Step) {
+        if OPTIMISE {
+            // TODO: update comments to reflect all optimisations.
+
+            // Redundant store elimination
+
+            // Don't want to access steps for previous node.
+            while let Some(previous) = self.step_buffer.last() {
+                if let Step::StoreRValue(_) = previous {
+                    if let Step::StoreRValue(new_value) = &step {
+                        // If the new value does not depend on the previous one, the old
+                        // one is dead and can be replaced.
+                        let overwrite = match new_value {
+                            Some(v) => !v.is_relative(),
+                            None => true,
+                        };
+                        if overwrite {
+                            self.step_buffer.pop();
+                            self.cur_step_r_value.pop();
+                            continue;
+                        }
+                    }
+                } else if previous == &Step::InvalidateLValue && step == Step::InvalidateLValue
+                    || previous == &Step::InvalidateRValue && step == Step::InvalidateRValue
+                {
+                    //  Should only be at most one of these in a row.
+                    return;
+                }
+                break;
+            }
+
+            // Remove stores that don't actually change register values.
+            match step {
+                Step::RestoreRValue => {
+                    if let Some(Step::SaveRValue) = self.step_buffer.last() {
+                        self.step_buffer.pop();
+                        return;
+                    }
+                    self.cur_step_r_value.clear();
+                }
+                Step::StoreLValue(new) => {
+                    if new == self.cur_step_l_value {
+                        if new.is_none() || !new.unwrap().is_relative() {
+                            // Not relative
+                            return;
+                        }
+                    } else {
+                        self.cur_step_l_value = new;
+                    }
+                }
+                // These create dynamic RValues we can't/don't track.
+                Step::StoreUnion | Step::Call => {
+                    self.cur_step_r_value.clear();
+                }
+                Step::StoreRValue(new) => {
+                    if Some(&new) == self.cur_step_r_value.last() {
+                        if new.is_none() || !new.unwrap().is_relative() {
+                            // Not relative
+                            return;
+                        }
+                    } else {
+                        self.cur_step_r_value.push(new);
+                    }
+                }
+                // These don't write to LValue/RValue registers.
+                Step::Assign(_)
+                | Step::InvalidateRValue
+                | Step::InvalidateLValue
+                | Step::StoreArg
+                | Step::Return
+                | Step::StartUnion
+                | Step::PushToUnion
+                | Step::SaveRValue
+                | Step::StartCall(_) => {}
+            }
+        }
+
+        self.step_buffer.push(step);
+    }
+
+    fn optimise(&mut self) {
+        debug_assert!(OPTIMISE);
+
         // TODO: update comments to reflect all optimisations.
 
-        let mut run_backwards = true;
-        let mut run_forwards = true;
+        if !self.step_buffer.is_empty() {
+            let mut start = 0;
+            let mut end = self.step_buffer.len();
+            let mut removed_count = 0;
+            let mut run_backwards = true;
+            let mut run_forwards = true;
 
-        // Remove trailing stores. Registers are not shared between CFG nodes
-        // (each gets its own machine), so these writes will never be read. e.g.
-        // if (someExpr) { ... }
-        // someExpr will be stored in the RHS register, which cannot be accessed
-        // by any other code/CFG nodes. There can be multiple trailing stores
-        // (such as property access), so we use a loop.
-        while OPTIMISE && (run_backwards || run_forwards) {
-            // Backwards pass
-            if run_backwards && !step_buffer.is_empty() {
-                let mut remove_stores = true;
-                remove_after_union_indices.clear();
-
-                // Start from the end and work backwards.
-                let mut pos = step_buffer.len() - 1;
-                loop {
-                    let last = pos == step_buffer.len() - 1;
-                    match &step_buffer[pos] {
-                        // TODO:
-                        Step::SaveRValue | Step::RestoreRValue => {
-                            remove_stores = false;
+            while (run_backwards || run_forwards) && removed_count != self.step_buffer.len() {
+                // Backwards pass
+                if run_backwards && removed_count != self.step_buffer.len() {
+                    let mut remove_stores = true;
+                    for (pos, step) in self.step_buffer[start..end].iter().enumerate().rev() {
+                        if self.indices_to_remove.contains(pos) {
+                            continue;
                         }
-                        Step::StoreLValue(v) => {
-                            if v.is_none() || !v.unwrap().is_relative() {
-                                // Non-relative - does not rely on RValue.
-                            } else {
-                                // Depends on RValue.
+                        let last = pos == end - 1;
+                        match step {
+                            // TODO:
+                            Step::SaveRValue | Step::RestoreRValue => {
                                 remove_stores = false;
                             }
-                        }
-                        // Dead stores.
-                        Step::StoreRValue(v) => {
-                            if last {
-                                step_buffer.pop();
-                            } else if remove_stores {
-                                run_forwards = true;
-                                step_buffer.remove(pos);
-                            } else {
-                                let relative = match v {
-                                    Some(v) => v.is_relative(),
-                                    None => false,
-                                };
-                                if !relative {
-                                    remove_stores = true;
+                            Step::StoreLValue(v) => {
+                                if v.is_none() || !v.unwrap().is_relative() {
+                                    // Non-relative - does not rely on RValue.
+                                } else {
+                                    // Depends on RValue.
+                                    remove_stores = false;
                                 }
                             }
-                        }
-
-                        Step::StartUnion => {
-                            if remove_after_union_indices.last() == Some(&pos) {
-                                remove_after_union_indices.pop();
-                                remove_stores = true;
-                            } else {
-                                remove_stores = false;
+                            // Dead stores.
+                            Step::StoreRValue(v) => {
+                                if last {
+                                    end = end.saturating_sub(1);
+                                    removed_count += 1;
+                                    self.indices_to_remove.insert(pos);
+                                } else if remove_stores {
+                                    run_forwards = true;
+                                    removed_count += 1;
+                                    self.indices_to_remove.insert(pos);
+                                } else {
+                                    let relative = match v {
+                                        Some(v) => v.is_relative(),
+                                        None => false,
+                                    };
+                                    if !relative {
+                                        remove_stores = true;
+                                    }
+                                }
                             }
-                        }
 
-                        // Dead union. Bit tricky to remove - we need to remove:
-                        // (1) StoreUnion
-                        // (2) all PushToUnion steps that correspond to this union
-                        // (3) StoreUnion step
-                        //
-                        // (2) is the tricky one - we have to keep track of the
-                        // current union that any future PushToUnion's correspond to.
-                        // We do this by tracking when unions "open" (StoreUnion
-                        // since we iterate backwards) and "close" (StartUnion). The
-                        // count starts at 1. Any PushToUnion we encounter while
-                        // count is 1 needs to be removed. Every StoreUnion increments
-                        // the count and every StartUnion decrements it.
-                        // When the count is 0, we have found the closing StoreUnion
-                        // for our union and can stop.
-                        Step::StoreUnion => {
-                            if !(last || remove_stores) {
-                                let mut union_start = usize::MAX;
+                            Step::StartUnion => {
+                                if self.remove_after_union_indices.last() == Some(&pos) {
+                                    self.remove_after_union_indices.pop();
+                                    remove_stores = true;
+                                } else {
+                                    remove_stores = false;
+                                }
+                            }
+
+                            // Dead union. Bit tricky to remove - we need to remove:
+                            // (1) StoreUnion
+                            // (2) all PushToUnion steps that correspond to this union
+                            // (3) StoreUnion step
+                            //
+                            // (2) is the tricky one - we have to keep track of the
+                            // current union that any future PushToUnion's correspond to.
+                            // We do this by tracking when unions "open" (StoreUnion
+                            // since we iterate backwards) and "close" (StartUnion). The
+                            // count starts at 1. Any PushToUnion we encounter while
+                            // count is 1 needs to be removed. Every StoreUnion increments
+                            // the count and every StartUnion decrements it.
+                            // When the count is 0, we have found the closing StoreUnion
+                            // for our union and can stop.
+                            Step::StoreUnion => {
+                                if !(last || remove_stores) {
+                                    let mut union_start = usize::MAX;
+
+                                    let mut open_unions: u32 = 1;
+                                    for (union_pos, step) in
+                                        self.step_buffer[start..pos].iter().enumerate().rev()
+                                    {
+                                        if self.indices_to_remove.contains(union_pos) {
+                                            continue;
+                                        }
+                                        match step {
+                                            Step::StartUnion => {
+                                                open_unions -= 1;
+                                                if open_unions == 0 {
+                                                    // Found the closing StoreUnion for our
+                                                    // union; stop
+                                                    union_start = union_pos;
+                                                    break;
+                                                }
+                                            }
+                                            Step::StoreUnion => {
+                                                open_unions += 1;
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+
+                                    debug_assert!(union_start != usize::MAX);
+
+                                    self.remove_after_union_indices.push(union_start);
+                                    remove_stores = false;
+                                    continue;
+                                }
 
                                 let mut open_unions: u32 = 1;
-                                let mut union_pos = pos - 1;
-                                loop {
-                                    match step_buffer[union_pos] {
+                                let mut record_union_pushes = true;
+
+                                for (union_pos, step) in
+                                    self.step_buffer[start..pos].iter().enumerate().rev()
+                                {
+                                    if self.indices_to_remove.contains(union_pos) {
+                                        continue;
+                                    }
+                                    match step {
                                         Step::StartUnion => {
                                             open_unions -= 1;
                                             if open_unions == 0 {
                                                 // Found the closing StoreUnion for our
                                                 // union; stop
-                                                union_start = union_pos;
+                                                removed_count += 1;
+                                                self.indices_to_remove.insert(union_pos);
                                                 break;
+                                            } else if open_unions == 1 {
+                                                // Re-entered target union; resume recording.
+                                                record_union_pushes = true;
+                                            }
+                                        }
+                                        Step::PushToUnion => {
+                                            // Record pushes so they can be removed.
+                                            if record_union_pushes {
+                                                removed_count += 1;
+                                                self.indices_to_remove.insert(union_pos);
                                             }
                                         }
                                         Step::StoreUnion => {
+                                            // Entered a union other than the target.
+                                            // Don't record any pushes as they don't
+                                            // correspond to our union and may not be dead.
+                                            record_union_pushes = false;
                                             open_unions += 1;
                                         }
                                         _ => {}
                                     }
-                                    union_pos = match union_pos.checked_sub(1) {
-                                        Some(p) => p,
-                                        None => break,
-                                    };
+                                }
+                                debug_assert!(open_unions == 0);
+                                debug_assert!(record_union_pushes == true);
+
+                                // Remove original StoreUnion step.
+                                if last {
+                                    end = end.saturating_sub(1);
                                 }
 
-                                debug_assert!(union_start != usize::MAX);
-
-                                remove_after_union_indices.push(union_start);
-                                remove_stores = false;
-                                // !last, so shouldn't underflow.
-                                pos -= 1;
-                                continue;
-                            }
-
-                            let mut open_unions: u32 = 1;
-                            let mut record_union_pushes = true;
-                            steps_to_remove.clear();
-
-                            let mut union_pos = match pos.checked_sub(1) {
-                                Some(p) => p,
-                                None => break,
-                            };
-                            loop {
-                                match step_buffer[union_pos] {
-                                    Step::StartUnion => {
-                                        open_unions -= 1;
-                                        if open_unions == 0 {
-                                            // Found the closing StoreUnion for our
-                                            // union; stop
-                                            steps_to_remove.push(union_pos);
-                                            break;
-                                        } else if open_unions == 1 {
-                                            // Re-entered target union; resume recording.
-                                            record_union_pushes = true;
-                                        }
-                                    }
-                                    Step::PushToUnion => {
-                                        // Record pushes so they can be removed.
-                                        if record_union_pushes {
-                                            steps_to_remove.push(union_pos);
-                                        }
-                                    }
-                                    Step::StoreUnion => {
-                                        // Entered a union other than the target.
-                                        // Don't record any pushes as they don't
-                                        // correspond to our union and may not be dead.
-                                        record_union_pushes = false;
-                                        open_unions += 1;
-                                    }
-                                    _ => {}
-                                }
-                                union_pos = match union_pos.checked_sub(1) {
-                                    Some(p) => p,
-                                    None => break,
-                                };
-                            }
-                            debug_assert!(open_unions == 0);
-                            debug_assert!(record_union_pushes == true);
-                            debug_assert!(!steps_to_remove.is_empty());
-
-                            // Remove original StoreUnion step.
-                            if last {
-                                step_buffer.pop();
-                            } else if remove_stores {
                                 run_forwards = true;
-                                step_buffer.remove(pos);
-                            }
+                                removed_count += 1;
+                                self.indices_to_remove.insert(pos);
 
-                            // Remove closing StartUnion and intermediary PushToUnions.
+                                // Remove closing StartUnion and intermediary PushToUnions.
 
-                            for &index in &steps_to_remove {
-                                run_forwards |= index + 1 != step_buffer.len();
-                                // Indices are pushed, and therefore iterated, in
-                                // descending order, so removing an element will not
-                                // invalidate yet-to-be-removed indices.
-                                step_buffer.remove(index);
-                            }
-
-                            // Sanity check that Starts and Stores are balanced.
-                            debug_assert!(
-                                step_buffer
-                                    .iter()
-                                    .filter(|s| matches!(s, Step::StartUnion))
-                                    .count()
-                                    == step_buffer
+                                // Sanity check that Starts and Stores are balanced.
+                                debug_assert!(
+                                    self.step_buffer
                                         .iter()
-                                        .filter(|s| matches!(s, Step::StoreUnion))
+                                        .filter(|s| matches!(s, Step::StartUnion))
                                         .count()
-                            );
+                                        == self
+                                            .step_buffer
+                                            .iter()
+                                            .filter(|s| matches!(s, Step::StoreUnion))
+                                            .count()
+                                );
+                            }
 
-                            // Adjust outer loop pos since elements to the left
-                            // of it have been removed.
-                            pos = match pos.checked_sub(steps_to_remove.len()) {
-                                Some(p) => p,
-                                None => break,
-                            };
-                        }
-
-                        Step::Assign(_)
-                        | Step::InvalidateRValue
-                        | Step::InvalidateLValue
-                        | Step::Call
-                        | Step::Return
-                        | Step::StartCall(_)
-                        | Step::StoreArg
-                        | Step::PushToUnion => {
-                            remove_stores = false;
+                            Step::Assign(_)
+                            | Step::InvalidateRValue
+                            | Step::InvalidateLValue
+                            | Step::Call
+                            | Step::Return
+                            | Step::StartCall(_)
+                            | Step::StoreArg
+                            | Step::PushToUnion => {
+                                remove_stores = false;
+                            }
                         }
                     }
-
-                    pos = match pos.checked_sub(1) {
-                        Some(p) => p,
-                        None => break,
-                    };
                 }
-            }
-            run_backwards = false;
-            // Forwards pass
-            if run_forwards && !step_buffer.is_empty() {
-                let mut cur_step_l_value = None;
-                let mut cur_step_r_value = Some(None);
-                r_value_store_stack.clear();
+                run_backwards = false;
+                // Forwards pass
+                if run_forwards && removed_count != self.step_buffer.len() {
+                    let mut cur_step_l_value = None;
+                    let mut cur_step_r_value = Some(None);
+                    self.r_value_store_stack.clear();
 
-                let mut pos = 0;
-                while pos < step_buffer.len() {
-                    match step_buffer[pos] {
-                        Step::SaveRValue => {
-                            r_value_store_stack.push((cur_step_r_value, pos, false));
+                    for (pos, step) in self.step_buffer[start..end].iter().enumerate() {
+                        if self.indices_to_remove.contains(pos) {
+                            continue;
                         }
-                        Step::StoreLValue(new) => {
-                            if new == cur_step_l_value {
-                                if new.is_none() || !new.unwrap().is_relative() {
-                                    // Not relative
+                        let first = pos == start;
+                        match step {
+                            Step::SaveRValue => {
+                                self.r_value_store_stack
+                                    .push((cur_step_r_value, pos, false));
+                            }
+                            Step::StoreLValue(new) => {
+                                if *new == cur_step_l_value {
+                                    if new.is_none() || !new.unwrap().is_relative() {
+                                        // Not relative
+                                        if first {
+                                            start += 1;
+                                        } else {
+                                            run_backwards = true;
+                                        }
+                                        removed_count += 1;
+                                        self.indices_to_remove.insert(pos);
+                                    }
+                                } else {
+                                    cur_step_l_value = *new;
+                                }
+                            }
+                            Step::RestoreRValue => {
+                                let (saved, store_pos, overwritten) =
+                                    self.r_value_store_stack.pop().unwrap();
+                                if saved.is_some() && saved == cur_step_r_value || !overwritten {
                                     run_backwards = true;
-                                    step_buffer.remove(pos);
+
+                                    if store_pos == start {
+                                        // todo
+                                        start += 1;
+                                    }
+                                    removed_count += 2;
+                                    self.indices_to_remove.insert(pos);
+                                    self.indices_to_remove.insert(store_pos);
+
                                     continue;
                                 }
-                            } else {
-                                cur_step_l_value = new;
-                            }
-                        }
-                        Step::RestoreRValue => {
-                            let (saved, store_pos, overwritten) =
-                                r_value_store_stack.pop().unwrap();
-                            if saved.is_some() && saved == cur_step_r_value || !overwritten {
-                                run_backwards = true;
-
-                                step_buffer.remove(pos);
-                                step_buffer.remove(store_pos);
-                                pos -= 1;
-                                continue;
-                            }
-                            if let Some((_, _, overwritten)) = r_value_store_stack.last_mut() {
-                                *overwritten = true;
-                            }
-                            cur_step_r_value = None;
-                        }
-                        // These create dynamic RValues we can't/don't track.
-                        Step::StoreUnion | Step::Call => {
-                            if let Some((_, _, overwritten)) = r_value_store_stack.last_mut() {
-                                *overwritten = true;
-                            }
-                            cur_step_r_value = None;
-                        }
-                        Step::StoreRValue(new) => {
-                            if Some(new) == cur_step_r_value {
-                                if new.is_none() || !new.unwrap().is_relative() {
-                                    // Not relative
-                                    run_backwards = true;
-                                    step_buffer.remove(pos);
-                                    continue;
+                                if let Some((_, _, overwritten)) =
+                                    self.r_value_store_stack.last_mut()
+                                {
+                                    *overwritten = true;
                                 }
-                            } else {
-                                cur_step_r_value = Some(new);
+                                cur_step_r_value = None;
                             }
-                            if let Some((_, _, overwritten)) = r_value_store_stack.last_mut() {
-                                *overwritten = true;
+                            // These create dynamic RValues we can't/don't track.
+                            Step::StoreUnion | Step::Call => {
+                                if let Some((_, _, overwritten)) =
+                                    self.r_value_store_stack.last_mut()
+                                {
+                                    *overwritten = true;
+                                }
+                                cur_step_r_value = None;
                             }
+                            Step::StoreRValue(new) => {
+                                if Some(*new) == cur_step_r_value {
+                                    if new.is_none() || !new.unwrap().is_relative() {
+                                        // Not relative
+                                        if first {
+                                            start += 1;
+                                        } else {
+                                            run_backwards = true;
+                                        }
+                                        removed_count += 1;
+                                        self.indices_to_remove.insert(pos);
+                                    }
+                                } else {
+                                    cur_step_r_value = Some(*new);
+                                }
+                                if let Some((_, _, overwritten)) =
+                                    self.r_value_store_stack.last_mut()
+                                {
+                                    *overwritten = true;
+                                }
+                            }
+                            // These don't write to LValue/RValue registers.
+                            Step::Assign(_)
+                            | Step::InvalidateRValue
+                            | Step::InvalidateLValue
+                            | Step::StoreArg
+                            | Step::Return
+                            | Step::StartUnion
+                            | Step::PushToUnion
+                            | Step::StartCall(_) => {}
                         }
-                        // These don't write to LValue/RValue registers.
-                        Step::Assign(_)
-                        | Step::InvalidateRValue
-                        | Step::InvalidateLValue
-                        | Step::StoreArg
-                        | Step::Return
-                        | Step::StartUnion
-                        | Step::PushToUnion
-                        | Step::StartCall(_) => {}
                     }
-                    pos += 1;
                 }
+                run_forwards = false;
             }
-            run_forwards = false;
         }
 
-        if OPTIMISE {
-            step_buffer.dedup_by(|a, b| {
-                a == b
-                    && match a {
-                        // Only non-relative register stores are idempotent and can be merged.
-                        Step::StoreRValue(v) => v.is_none() || !v.unwrap().is_relative(),
-                        Step::StoreLValue(v) => v.is_none() || !v.unwrap().is_relative(),
-
-                        // These are idempotent and can be merged.
-                        Step::Assign(_)
-                        | Step::InvalidateRValue
-                        | Step::InvalidateLValue
-                        | Step::Return
-                        | Step::PushToUnion => true,
-
-                        // These have side effects and cannot be merged.
-                        Step::StartCall(_)
-                        | Step::StoreArg
-                        | Step::Call
-                        | Step::StartUnion
-                        | Step::StoreUnion
-                        | Step::SaveRValue
-                        | Step::RestoreRValue => false,
-                    }
-            })
+        {
+            let mut pos = 0;
+            let indices_to_remove = &self.indices_to_remove;
+            self.step_buffer.retain(|_| {
+                let remove = indices_to_remove.contains(pos);
+                pos += 1;
+                !remove
+            });
         }
 
-        let start = steps.len().try_into().unwrap();
+        self.step_buffer.dedup_by(|a, b| {
+            a == b
+                && match a {
+                    // Only non-relative register stores are idempotent and can be merged.
+                    Step::StoreRValue(v) => v.is_none() || !v.unwrap().is_relative(),
+                    Step::StoreLValue(v) => v.is_none() || !v.unwrap().is_relative(),
 
-        steps.append(&mut step_buffer);
+                    // These are idempotent and can be merged.
+                    Step::Assign(_)
+                    | Step::InvalidateRValue
+                    | Step::InvalidateLValue
+                    | Step::Return
+                    | Step::PushToUnion => true,
 
-        let end = steps.len().try_into().unwrap();
-
-        map[node.index()] = (start, end);
+                    // These have side effects and cannot be merged.
+                    Step::StartCall(_)
+                    | Step::StoreArg
+                    | Step::Call
+                    | Step::StartUnion
+                    | Step::StoreUnion
+                    | Step::SaveRValue
+                    | Step::RestoreRValue => false,
+                }
+        })
     }
-
-    (steps, map)
 }
 
 pub(super) static IMPLICIT_RETURN_STEPS: [Step; 2] =
@@ -500,97 +634,17 @@ pub(super) enum Step {
 
 #[derive(Debug)]
 struct Analyser<'a, 'ast> {
-    steps: &'a mut Vec<Step>,
+    step_builder: &'a mut StepBuilder,
     cfg: &'a SimpleCFG<'ast>,
     unresolved_ctxt: SyntaxContext,
     function_map: &'a FxHashMap<NodeId, FnId>,
     names: &'a mut IndexSet<NameId, JsWord>,
-
-    /// None signifies a dynamic value such as a union or call result.
-    cur_step_r_value: Vec<Option<RValue>>,
-    cur_step_l_value: Option<LValue>,
 }
 
 impl<'ast> Analyser<'_, 'ast> {
     /// Records the given step. Redundant steps may be skipped.
     fn push(&mut self, step: Step) {
-        if OPTIMISE {
-            // TODO: update comments to reflect all optimisations.
-
-            // Redundant store elimination
-
-            // Don't want to access steps for previous node.
-            while let Some(previous) = self.steps.last() {
-                if let Step::StoreRValue(_) = previous {
-                    if let Step::StoreRValue(new_value) = &step {
-                        // If the new value does not depend on the previous one, the old
-                        // one is dead and can be replaced.
-                        let overwrite = match new_value {
-                            Some(v) => !v.is_relative(),
-                            None => true,
-                        };
-                        if overwrite {
-                            self.steps.pop();
-                            self.cur_step_r_value.pop();
-                            continue;
-                        }
-                    }
-                } else if previous == &Step::InvalidateLValue && step == Step::InvalidateLValue
-                    || previous == &Step::InvalidateRValue && step == Step::InvalidateRValue
-                {
-                    //  Should only be at most one of these in a row.
-                    return;
-                }
-                break;
-            }
-
-            // Remove stores that don't actually change register values.
-            match step {
-                Step::RestoreRValue => {
-                    if let Some(Step::SaveRValue) = self.steps.last() {
-                        self.steps.pop();
-                        return;
-                    }
-                    self.cur_step_r_value.clear();
-                }
-                Step::StoreLValue(new) => {
-                    if new == self.cur_step_l_value {
-                        if new.is_none() || !new.unwrap().is_relative() {
-                            // Not relative
-                            return;
-                        }
-                    } else {
-                        self.cur_step_l_value = new;
-                    }
-                }
-                // These create dynamic RValues we can't/don't track.
-                Step::StoreUnion | Step::Call => {
-                    self.cur_step_r_value.clear();
-                }
-                Step::StoreRValue(new) => {
-                    if Some(&new) == self.cur_step_r_value.last() {
-                        if new.is_none() || !new.unwrap().is_relative() {
-                            // Not relative
-                            return;
-                        }
-                    } else {
-                        self.cur_step_r_value.push(new);
-                    }
-                }
-                // These don't write to LValue/RValue registers.
-                Step::Assign(_)
-                | Step::InvalidateRValue
-                | Step::InvalidateLValue
-                | Step::StoreArg
-                | Step::Return
-                | Step::StartUnion
-                | Step::PushToUnion
-                | Step::SaveRValue
-                | Step::StartCall(_) => {}
-            }
-        }
-
-        self.steps.push(step);
+        self.step_builder.push(step);
     }
 
     /// Invalidate the RValue register.
