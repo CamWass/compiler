@@ -175,11 +175,34 @@ impl StepBuilder {
                         self.cur_step_r_value.push(new);
                     }
                 }
-                // These don't write to LValue/RValue registers.
-                Step::Assign(_)
-                | Step::InvalidateRValue
-                | Step::InvalidateLValue
-                | Step::StoreArg
+                Step::Assign(_) | Step::InvalidateLValue => {
+                    if self.cur_step_l_value.is_none() {
+                        return;
+                    }
+                }
+                Step::InvalidateRValue => {
+                    if let Some(r_value) = self.cur_step_r_value.last() {
+                        let is_primitive = r_value.is_none()
+                            || match r_value.unwrap() {
+                                RValue::Var(_)
+                                | RValue::Object(_)
+                                | RValue::Prop(_)
+                                | RValue::Fn(_) => false,
+
+                                RValue::NullOrVoid
+                                | RValue::String
+                                | RValue::Boolean
+                                | RValue::Number
+                                | RValue::BigInt => true,
+                            };
+                        if is_primitive {
+                            return;
+                        }
+                    } else {
+                        return;
+                    }
+                }
+                Step::StoreArg
                 | Step::Return
                 | Step::StartUnion
                 | Step::PushToUnion
@@ -461,11 +484,40 @@ impl StepBuilder {
                                     *overwritten = true;
                                 }
                             }
+                            Step::Assign(_) | Step::InvalidateLValue => {
+                                if cur_step_l_value.is_none() {
+                                    if !first {
+                                        run_backwards = true;
+                                    }
+                                    remove_step!(pos, "forward Assign/InvalidateLValue");
+                                }
+                            }
+                            Step::InvalidateRValue => {
+                                let mut can_invalidate = true;
+                                if let Some(r_value) = cur_step_r_value {
+                                    can_invalidate = r_value.is_some()
+                                        && match r_value.unwrap() {
+                                            RValue::Var(_)
+                                            | RValue::Object(_)
+                                            | RValue::Prop(_)
+                                            | RValue::Fn(_) => true,
+
+                                            RValue::NullOrVoid
+                                            | RValue::String
+                                            | RValue::Boolean
+                                            | RValue::Number
+                                            | RValue::BigInt => false,
+                                        };
+                                }
+                                if !can_invalidate {
+                                    if !first {
+                                        run_backwards = true;
+                                    }
+                                    remove_step!(pos, "forward InvalidateRValue");
+                                }
+                            }
                             // These don't write to LValue/RValue registers.
-                            Step::Assign(_)
-                            | Step::InvalidateRValue
-                            | Step::InvalidateLValue
-                            | Step::StoreArg
+                            Step::StoreArg
                             | Step::Return
                             | Step::StartUnion
                             | Step::PushToUnion
