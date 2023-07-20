@@ -213,7 +213,9 @@ impl StepBuilder {
                 // Backwards pass
                 if run_backwards && removed_count != self.step_buffer.len() {
                     let mut remove_stores = true;
+                    let iter_start = start;
                     for (pos, step) in self.step_buffer[start..end].iter().enumerate().rev() {
+                        let pos = pos + iter_start;
                         if self.indices_to_remove.contains(pos) {
                             continue;
                         }
@@ -280,9 +282,11 @@ impl StepBuilder {
                                     let mut union_start = usize::MAX;
 
                                     let mut open_unions: u32 = 1;
+                                    let iter_start = start;
                                     for (union_pos, step) in
                                         self.step_buffer[start..pos].iter().enumerate().rev()
                                     {
+                                        let union_pos = union_pos + iter_start;
                                         if self.indices_to_remove.contains(union_pos) {
                                             continue;
                                         }
@@ -313,9 +317,11 @@ impl StepBuilder {
                                 let mut open_unions: u32 = 1;
                                 let mut record_union_pushes = true;
 
+                                let iter_start = start;
                                 for (union_pos, step) in
                                     self.step_buffer[start..pos].iter().enumerate().rev()
                                 {
+                                    let union_pos = union_pos + iter_start;
                                     if self.indices_to_remove.contains(union_pos) {
                                         continue;
                                     }
@@ -398,7 +404,9 @@ impl StepBuilder {
                     let mut cur_step_r_value = Some(None);
                     self.r_value_store_stack.clear();
 
+                    let iter_start = start;
                     for (pos, step) in self.step_buffer[start..end].iter().enumerate() {
+                        let pos = pos + iter_start;
                         if self.indices_to_remove.contains(pos) {
                             continue;
                         }
