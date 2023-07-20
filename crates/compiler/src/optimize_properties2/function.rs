@@ -406,6 +406,10 @@ impl StepBuilder {
                                 );
                             }
 
+                            Step::Call => {
+                                remove_r_stores = true;
+                            }
+
                             Step::Assign(_) => {
                                 remove_r_stores = false;
                                 remove_l_stores = false;
@@ -415,7 +419,6 @@ impl StepBuilder {
                             }
 
                             Step::InvalidateRValue
-                            | Step::Call
                             | Step::Return
                             | Step::StartCall(_)
                             | Step::StoreArg
