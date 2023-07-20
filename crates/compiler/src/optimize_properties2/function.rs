@@ -253,8 +253,24 @@ impl StepBuilder {
                         }
                         let last = pos == end - 1;
                         match step {
-                            // TODO:
-                            Step::SaveRValue | Step::RestoreRValue => {
+                            Step::RestoreRValue => {
+                                if last {
+                                    let save_pos = self.find_r_value_save(pos, start);
+                                    remove_step!(pos, "last RestoreRValue:RestoreRValue");
+                                    remove_step!(save_pos, "last RestoreRValue:SaveRValue");
+                                } else if remove_r_stores {
+                                    let save_pos = self.find_r_value_save(pos, start);
+                                    run_forwards = true;
+                                    remove_step!(pos, "remove_stores RestoreRValue:RestoreRValue");
+                                    remove_step!(
+                                        save_pos,
+                                        "remove_stores RestoreRValue:SaveRValue"
+                                    );
+                                } else {
+                                    remove_r_stores = true;
+                                }
+                            }
+                            Step::SaveRValue => {
                                 remove_r_stores = false;
                             }
                             Step::StoreLValue(v) => {
@@ -582,6 +598,36 @@ impl StepBuilder {
                     | Step::RestoreRValue => false,
                 }
         })
+    }
+
+    /// Returns the position in `step_buffer` of the [`SaveRValue`][Step::SaveRValue]
+    /// that corresponds to the [`RestoreRValue`][Step::RestoreRValue] at
+    /// `restore_pos`. Note: this scans backwards from `restore_pos`, so `end`
+    /// should to the left (<=) of `restore_pos`.
+    fn find_r_value_save(&self, restore_pos: usize, end: usize) -> usize {
+        let mut open_saves: u32 = 1;
+        for (pos, step) in self.step_buffer[end..restore_pos].iter().enumerate().rev() {
+            let pos = pos + end;
+            if self.indices_to_remove.contains(pos) {
+                continue;
+            }
+            match step {
+                Step::SaveRValue => {
+                    open_saves -= 1;
+                    if open_saves == 0 {
+                        // Found corresponding SaveRValue.
+                        return pos;
+                    }
+                }
+                Step::RestoreRValue => {
+                    open_saves += 1;
+                }
+                _ => {}
+            }
+        }
+
+        // Every RestoreRValue should have a corresponding SaveRValue.
+        unreachable!("No matching SaveRValue found");
     }
 }
 
