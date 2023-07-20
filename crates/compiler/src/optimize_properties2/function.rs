@@ -675,6 +675,8 @@ impl<'ast> Analyser<'_, 'ast> {
             }
             _ => {
                 self.visit_and_get_r_value(Node::from(rhs), conditional);
+
+                // TODO: skip SaveRValue/RestoreRValue for simple LHS
                 self.push(Step::SaveRValue);
                 let conditional = conditional || conditional_assign;
                 self.visit_and_get_slot(lhs, conditional);
