@@ -69,13 +69,19 @@ pub(super) struct StepBuilder {
     // Steps for the current node.
     step_buffer: Vec<Step>,
 
+    /// Used by `push` method.
+    /// The vec is empty when the current RValue is unknown.
+    cur_builder_r_value: Vec<Option<RValue>>,
+    /// Used by `push` method.
+    cur_builder_l_value: Option<LValue>,
+
+    // Used for optimisations:
+    /// Stack of `(value, save_pos, overwritten)`.
+    /// Used to remove useless SaveRValue/RestoreRValue steps.
     r_value_store_stack: Vec<(Option<Option<RValue>>, usize, bool)>,
 
+    /// Set of indices of steps that will be removed.
     indices_to_remove: GrowableBitSet<usize>,
-
-    /// None signifies a dynamic value such as a union or call result.
-    cur_step_r_value: Vec<Option<RValue>>,
-    cur_step_l_value: Option<LValue>,
 }
 
 impl StepBuilder {
@@ -85,27 +91,31 @@ impl StepBuilder {
             r_value_store_stack: Vec::new(),
             indices_to_remove: GrowableBitSet::new_empty(),
             // These should be the same as Machine's initial values.
-            cur_step_r_value: vec![None],
-            cur_step_l_value: None,
+            cur_builder_r_value: vec![None],
+            cur_builder_l_value: None,
         }
     }
 
+    /// Resets the state of the builder, allowing it to be used again.
     fn reset(&mut self) {
         let Self {
             step_buffer,
             r_value_store_stack,
             indices_to_remove,
-            cur_step_r_value,
-            cur_step_l_value,
+            cur_builder_r_value,
+            cur_builder_l_value,
         } = self;
         step_buffer.clear();
         r_value_store_stack.clear();
         indices_to_remove.clear();
-        cur_step_r_value.clear();
-        cur_step_r_value.push(None);
-        *cur_step_l_value = None;
+        // These have special initial states.
+        cur_builder_r_value.clear();
+        cur_builder_r_value.push(None);
+        *cur_builder_l_value = None;
     }
 
+    /// Appends the builder's steps to `steps` and returns the `(start, end)`
+    /// indices of the new steps.
     fn build(&mut self, steps: &mut Vec<Step>) -> (u32, u32) {
         let start = steps.len().try_into().unwrap();
         steps.append(&mut self.step_buffer);
@@ -113,17 +123,16 @@ impl StepBuilder {
         (start, end)
     }
 
-    /// Records the given step. Redundant steps may be skipped.
+    /// Records the given step.
     fn push(&mut self, step: Step) {
         if OPTIMISE {
-            // TODO: update comments to reflect all optimisations.
-
-            // Redundant store elimination
-
-            // Don't want to access steps for previous node.
-            while let Some(previous) = self.step_buffer.last() {
-                if let Step::StoreRValue(_) = previous {
-                    if let Step::StoreRValue(new_value) = &step {
+            // Remove any immediately previous StoreRValue steps whose RValue is
+            // superseded by the new step. We use a loop in case there are
+            // multiple steps to remove e.g. if the previous steps stored a
+            // property of a variable.
+            if let Step::StoreRValue(new_value) = &step {
+                while let Some(previous) = self.step_buffer.last() {
+                    if let Step::StoreRValue(_) = previous {
                         // If the new value does not depend on the previous one, the old
                         // one is dead and can be replaced.
                         let overwrite = match new_value {
@@ -131,57 +140,77 @@ impl StepBuilder {
                             None => true,
                         };
                         if overwrite {
-                            self.step_buffer.pop();
-                            self.cur_step_r_value.pop();
+                            // Remove the step.
+                            debug_assert!(self.step_buffer.pop().is_some());
+                            // Remove its RValue from the stack.
+                            debug_assert!(self.cur_builder_r_value.pop().is_some());
                             continue;
                         }
                     }
-                } else if previous == &Step::InvalidateLValue && step == Step::InvalidateLValue
-                    || previous == &Step::InvalidateRValue && step == Step::InvalidateRValue
-                {
-                    //  Should only be at most one of these in a row.
-                    return;
+                    break;
                 }
-                break;
             }
 
-            // Remove stores that don't actually change register values.
+            // Don't record a step if it's equivalent to the previous one.
+            if let Some(previous) = self.step_buffer.last() {
+                if steps_are_duplicates(&step, previous) {
+                    return;
+                }
+            }
+
+            // Remove steps based on tracked register values.
             match step {
                 Step::RestoreRValue => {
                     if let Some(Step::SaveRValue) = self.step_buffer.last() {
-                        self.step_buffer.pop();
+                        // RestoreRValue immediately after SaveRValue means they
+                        // are both useless.
+
+                        self.step_buffer.pop(); // remove SaveRValue
                         return;
                     }
-                    self.cur_step_r_value.clear();
+                    // We don't track the saved/restored values in this function,
+                    // so the current RValue is now unknown.
+                    self.cur_builder_r_value.clear();
                 }
                 Step::StoreLValue(new) => {
-                    if new == self.cur_step_l_value {
+                    // Don't record StoreLValue if stores the same LValue as the
+                    // previous one. LValues do not refer to each other (not
+                    // relative), so simple equality works here.
+                    if new == self.cur_builder_l_value {
                         return;
                     } else {
-                        self.cur_step_l_value = new;
+                        self.cur_builder_l_value = new;
                     }
                 }
-                // These create dynamic RValues we can't/don't track.
+                // These create dynamic RValues we can't/don't track, so the
+                // current RValue is now unknown.
                 Step::StoreUnion | Step::Call => {
-                    self.cur_step_r_value.clear();
+                    self.cur_builder_r_value.clear();
                 }
                 Step::StoreRValue(new) => {
-                    if Some(&new) == self.cur_step_r_value.last() {
-                        if new.is_none() || !new.unwrap().is_relative() {
-                            // Not relative
+                    // Don't record StoreRValue if stores the same RValue as the
+                    // previous one. RValues can evaluate to different values at
+                    // different points in the program e.g. if they access a
+                    // variable. These non-static RValues cannot be considered
+                    // equivalent for this optimisation.
+                    if Some(&new) == self.cur_builder_r_value.last() {
+                        if new.is_none() || new.unwrap().is_static() {
+                            // Static; remove
                             return;
                         }
-                    } else {
-                        self.cur_step_r_value.push(new);
+                        // Non-static; keep
                     }
+                    self.cur_builder_r_value.push(new);
                 }
+                // Invalidating or assigning to an unknown LValue has no effect.
                 Step::Assign(_) | Step::InvalidateLValue => {
-                    if self.cur_step_l_value.is_none() {
+                    if self.cur_builder_l_value.is_none() {
                         return;
                     }
                 }
+                // Invalidating an unknown/primitive RValue has no effect.
                 Step::InvalidateRValue => {
-                    if let Some(r_value) = self.cur_step_r_value.last() {
+                    if let Some(r_value) = self.cur_builder_r_value.last() {
                         let is_primitive = r_value.is_none()
                             || match r_value.unwrap() {
                                 RValue::Var(_)
@@ -214,20 +243,22 @@ impl StepBuilder {
         self.step_buffer.push(step);
     }
 
+    /// Optimises the builder's steps.
     fn optimise(&mut self) {
         debug_assert!(OPTIMISE);
 
-        // TODO: update comments to reflect all optimisations.
-
         if !self.step_buffer.is_empty() {
+            // Start of the step list. All steps before this have been removed.
             let mut start = 0;
+            // End of the step list. All steps after this have been removed.
             let mut end = self.step_buffer.len();
             let mut removed_count = 0;
-            let mut run_backwards = true;
-            let mut run_forwards = true;
+            let mut run_backwards_pass = true;
+            let mut run_forwards_pass = true;
 
+            /// Removes the step at `pos`.
             macro_rules! remove_step {
-                ($pos:expr, $msg:literal) => {
+                ($pos:expr, $debug_msg:literal) => {
                     remove_step(
                         $pos,
                         &mut start,
@@ -235,16 +266,22 @@ impl StepBuilder {
                         &mut removed_count,
                         &mut self.indices_to_remove,
                         &self.step_buffer,
-                        $msg,
+                        $debug_msg,
                     );
                 };
             }
 
-            while (run_backwards || run_forwards) && removed_count != self.step_buffer.len() {
-                // Backwards pass
-                if run_backwards && removed_count != self.step_buffer.len() {
+            while (run_backwards_pass || run_forwards_pass)
+                && removed_count != self.step_buffer.len()
+            {
+                // Backwards pass. Primarily removes steps whose effects are
+                // superseded by future steps before they are observed.
+                if run_backwards_pass && removed_count != self.step_buffer.len() {
+                    // True after an RValue store. False after an RValue read.
                     let mut remove_r_stores = true;
+                    // True after an LValue store. False after an LValue read.
                     let mut remove_l_stores = true;
+
                     let iter_start = start;
                     for (pos, step) in self.step_buffer[start..end].iter().enumerate().rev() {
                         let pos = pos + iter_start;
@@ -254,33 +291,54 @@ impl StepBuilder {
                         let last = pos == end - 1;
                         match step {
                             Step::RestoreRValue => {
+                                // RestoreRValue is effectively a StoreRValue. We can
+                                // remove it (and the corresponding SaveRValue) if...
                                 if last {
+                                    // .. it's the last step, in which case its
+                                    // value is never read. Or...
                                     let save_pos = self.find_r_value_save(pos, start);
                                     remove_step!(pos, "last RestoreRValue:RestoreRValue");
                                     remove_step!(save_pos, "last RestoreRValue:SaveRValue");
                                 } else if remove_r_stores {
+                                    // ... we are removing RValue stores, in which case
+                                    // its value will be overwritten before its read.
                                     let save_pos = self.find_r_value_save(pos, start);
-                                    run_forwards = true;
+                                    run_forwards_pass = true;
                                     remove_step!(pos, "remove_stores RestoreRValue:RestoreRValue");
                                     remove_step!(
                                         save_pos,
                                         "remove_stores RestoreRValue:SaveRValue"
                                     );
                                 } else {
+                                    // Can't remove the save/restore, but this means
+                                    // that RValue stores between them will be
+                                    // overwritten and can be removed.
                                     remove_r_stores = true;
                                 }
                             }
                             Step::SaveRValue => {
+                                // If a SaveRValue has't been removed above, that
+                                // means the value it saves is read and so we want
+                                // to keep the stores whose RValue is saved.
                                 remove_r_stores = false;
                             }
                             Step::StoreLValue(v) => {
+                                // We can remove a StoreLValue if...
                                 if last {
+                                    // .. it's the last step, in which case its
+                                    // value is never read. Or...
                                     remove_step!(pos, "last StoreLValue");
                                 } else if remove_l_stores {
-                                    run_forwards = true;
+                                    // ... we are removing LValue stores, in which case
+                                    // its value will be overwritten before its read.
+                                    run_forwards_pass = true;
                                     remove_step!(pos, "remove_l_stores StoreLValue");
                                 } else {
+                                    // Can't remove this StoreLValue, but that means it
+                                    // overwrites previous ones, which can be removed.
                                     remove_l_stores = true;
+                                    // If the LValue depends on previous RValues, make
+                                    // sure we don't remove them.
                                     if v.is_none() || !v.unwrap().depends_on_r_value() {
                                         // Non-relative - does not rely on RValue.
                                     } else {
@@ -289,14 +347,21 @@ impl StepBuilder {
                                     }
                                 }
                             }
-                            // Dead stores.
                             Step::StoreRValue(v) => {
+                                // We can remove a StoreRValue if...
                                 if last {
+                                    // .. it's the last step, in which case its
+                                    // value is never read. Or...
                                     remove_step!(pos, "last StoreRValue");
                                 } else if remove_r_stores {
-                                    run_forwards = true;
+                                    // ... we are removing RValue stores, in which case
+                                    // its value will be overwritten before its read.
+                                    run_forwards_pass = true;
                                     remove_step!(pos, "remove_stores StoreRValue");
                                 } else {
+                                    // Can't remove this StoreRValue. If it doesn't depend
+                                    // on previous RValues, then it overwrites them and the
+                                    // can be removed.
                                     let relative = match v {
                                         Some(v) => v.is_relative(),
                                         None => false,
@@ -309,55 +374,25 @@ impl StepBuilder {
 
                             Step::StartUnion => {}
 
-                            // Dead union. Bit tricky to remove - we need to remove:
-                            // (1) StoreUnion
-                            // (2) all PushToUnion steps that correspond to this union
-                            // (3) StoreUnion step
-                            //
-                            // (2) is the tricky one - we have to keep track of the
-                            // current union that any future PushToUnion's correspond to.
-                            // We do this by tracking when unions "open" (StoreUnion
-                            // since we iterate backwards) and "close" (StartUnion). The
-                            // count starts at 1. Any PushToUnion we encounter while
-                            // count is 1 needs to be removed. Every StoreUnion increments
-                            // the count and every StartUnion decrements it.
-                            // When the count is 0, we have found the closing StoreUnion
-                            // for our union and can stop.
                             Step::StoreUnion => {
+                                // StoreUnion is an RValue store, so it can be
+                                // removed if its unread or overwritten.
                                 if !(last || remove_r_stores) {
-                                    let mut union_start = usize::MAX;
-
-                                    let mut open_unions: u32 = 1;
-                                    let iter_start = start;
-                                    for (union_pos, step) in
-                                        self.step_buffer[start..pos].iter().enumerate().rev()
-                                    {
-                                        let union_pos = union_pos + iter_start;
-                                        if self.indices_to_remove.contains(union_pos) {
-                                            continue;
-                                        }
-                                        match step {
-                                            Step::StartUnion => {
-                                                open_unions -= 1;
-                                                if open_unions == 0 {
-                                                    // Found the closing StoreUnion for our
-                                                    // union; stop
-                                                    union_start = union_pos;
-                                                    break;
-                                                }
-                                            }
-                                            Step::StoreUnion => {
-                                                open_unions += 1;
-                                            }
-                                            _ => {}
-                                        }
-                                    }
-
-                                    debug_assert!(union_start != usize::MAX);
-
                                     remove_r_stores = false;
                                     continue;
                                 }
+
+                                // Dead StoreUnion. Need to find the corresponding
+                                // StartUnion and PushToUnions. We keep track of
+                                // the current union that any future PushToUnion's
+                                // correspond to by recording when unions "open"
+                                // (StoreUnion since we iterate backwards) and
+                                // "close" (StartUnion). The count starts at 1.
+                                // Any PushToUnion we encounter while count is 1
+                                // needs to be removed. Every StoreUnion increments
+                                // the count and every StartUnion decrements it.
+                                // When the count is 0, we have found the closing
+                                // StoreUnion for our union and can stop.
 
                                 let mut open_unions: u32 = 1;
                                 let mut record_union_pushes = true;
@@ -403,37 +438,28 @@ impl StepBuilder {
                                 debug_assert!(record_union_pushes == true);
 
                                 // Remove original StoreUnion step.
-                                run_forwards = true;
+                                run_forwards_pass = true;
                                 remove_step!(pos, "opening StoreUnion");
-
-                                // Remove closing StartUnion and intermediary PushToUnions.
-
-                                // Sanity check that Starts and Stores are balanced.
-                                debug_assert!(
-                                    self.step_buffer
-                                        .iter()
-                                        .filter(|s| matches!(s, Step::StartUnion))
-                                        .count()
-                                        == self
-                                            .step_buffer
-                                            .iter()
-                                            .filter(|s| matches!(s, Step::StoreUnion))
-                                            .count()
-                                );
                             }
 
                             Step::Call => {
+                                // Call is an RValue store, so overwrites any
+                                // previous ones.
                                 remove_r_stores = true;
                             }
 
                             Step::Assign(_) => {
+                                // Assigns read the RValue and LValue, so we
+                                // can't remove their stores.
                                 remove_r_stores = false;
                                 remove_l_stores = false;
                             }
                             Step::InvalidateLValue => {
+                                // Reads the LValue, so we can't remove LValue stores.
                                 remove_l_stores = false;
                             }
 
+                            // These read the RValue, so we can't remove RValue stores.
                             Step::InvalidateRValue
                             | Step::Return
                             | Step::StartCall(_)
@@ -444,11 +470,14 @@ impl StepBuilder {
                         }
                     }
                 }
-                run_backwards = false;
-                // Forwards pass
-                if run_forwards && removed_count != self.step_buffer.len() {
+                run_backwards_pass = false;
+
+                // Forwards pass. Primarily removes steps that don't have an
+                // observed effect on the tracked registers.
+                if run_forwards_pass && removed_count != self.step_buffer.len() {
                     let mut cur_step_l_value = None;
-                    let mut cur_step_r_value = Some(None);
+                    // None signifies a dynamic value such as a union or call result.
+                    let mut cur_step_r_value: Option<Option<RValue>> = Some(None);
                     self.r_value_store_stack.clear();
 
                     let iter_start = start;
@@ -460,13 +489,20 @@ impl StepBuilder {
                         let first = pos == start;
                         match step {
                             Step::SaveRValue => {
-                                self.r_value_store_stack
-                                    .push((cur_step_r_value, pos, false));
+                                // Record the saved value and the position of the save.
+                                let value = match cur_step_r_value {
+                                    Some(Some(v)) if !v.is_static() => None,
+                                    _ => cur_step_r_value,
+                                };
+                                self.r_value_store_stack.push((value, pos, false));
                             }
                             Step::StoreLValue(new) => {
+                                // Remove StoreLValues that store the same LValue as the
+                                // previous one. LValues do not refer to each other (not
+                                // relative), so simple equality works here.
                                 if *new == cur_step_l_value {
                                     if !first {
-                                        run_backwards = true;
+                                        run_backwards_pass = true;
                                     }
                                     remove_step!(pos, "forward StoreLValue");
                                 } else {
@@ -474,22 +510,35 @@ impl StepBuilder {
                                 }
                             }
                             Step::RestoreRValue => {
+                                // If the restored value is the same as the current RValue,
+                                // then the save/restore is useless and they can be removed.
                                 let (saved, store_pos, overwritten) =
                                     self.r_value_store_stack.pop().unwrap();
-                                if saved.is_some() && saved == cur_step_r_value || !overwritten {
-                                    run_backwards = true;
 
-                                    remove_step!(pos, "forward RestoreRValue:RestoreRValue");
-                                    remove_step!(store_pos, "forward RestoreRValue:SaveRValue");
-
-                                    continue;
+                                // The RestoreRValue/SaveRValue can be removed if...
+                                if !overwritten {
+                                    // ...the RValue is not modified between them. Or...
+                                    run_backwards_pass = true;
+                                    remove_step!(pos, "unmodified RestoreRValue:RestoreRValue");
+                                    remove_step!(store_pos, "unmodified RestoreRValue:SaveRValue");
+                                    cur_step_r_value = saved;
+                                } else if saved.is_some() && saved == cur_step_r_value {
+                                    // ...the modified value is equivalent to the saved value.
+                                    debug_assert!(
+                                        saved.unwrap().is_none()
+                                            || saved.unwrap().unwrap().is_static()
+                                    );
+                                    run_backwards_pass = true;
+                                    remove_step!(pos, "equal RestoreRValue:RestoreRValue");
+                                    remove_step!(store_pos, "equal RestoreRValue:SaveRValue");
+                                } else {
+                                    if let Some((_, _, overwritten)) =
+                                        self.r_value_store_stack.last_mut()
+                                    {
+                                        *overwritten = true;
+                                    }
+                                    cur_step_r_value = saved;
                                 }
-                                if let Some((_, _, overwritten)) =
-                                    self.r_value_store_stack.last_mut()
-                                {
-                                    *overwritten = true;
-                                }
-                                cur_step_r_value = None;
                             }
                             // These create dynamic RValues we can't/don't track.
                             Step::StoreUnion | Step::Call => {
@@ -501,14 +550,20 @@ impl StepBuilder {
                                 cur_step_r_value = None;
                             }
                             Step::StoreRValue(new) => {
+                                // Remove StoreRValues that store the same RValue as the
+                                // previous one. RValues can evaluate to different values
+                                // at different points in the program e.g. if they access
+                                // a variable. These non-static RValues cannot be
+                                // considered equivalent for this optimisation.
                                 if Some(*new) == cur_step_r_value {
-                                    if new.is_none() || !new.unwrap().is_relative() {
-                                        // Not relative
+                                    if new.is_none() || new.unwrap().is_static() {
+                                        // Static; remove
                                         if !first {
-                                            run_backwards = true;
+                                            run_backwards_pass = true;
                                         }
                                         remove_step!(pos, "forward StoreRValue");
                                     }
+                                    // Non-static; keep
                                 } else {
                                     cur_step_r_value = Some(*new);
                                 }
@@ -518,14 +573,16 @@ impl StepBuilder {
                                     *overwritten = true;
                                 }
                             }
+                            // Invalidating or assigning to an unknown LValue has no effect.
                             Step::Assign(_) | Step::InvalidateLValue => {
                                 if cur_step_l_value.is_none() {
                                     if !first {
-                                        run_backwards = true;
+                                        run_backwards_pass = true;
                                     }
                                     remove_step!(pos, "forward Assign/InvalidateLValue");
                                 }
                             }
+                            // Invalidating an unknown/primitive RValue has no effect.
                             Step::InvalidateRValue => {
                                 let mut can_invalidate = true;
                                 if let Some(r_value) = cur_step_r_value {
@@ -545,12 +602,11 @@ impl StepBuilder {
                                 }
                                 if !can_invalidate {
                                     if !first {
-                                        run_backwards = true;
+                                        run_backwards_pass = true;
                                     }
                                     remove_step!(pos, "forward InvalidateRValue");
                                 }
                             }
-                            // These don't write to LValue/RValue registers.
                             Step::StoreArg
                             | Step::Return
                             | Step::StartUnion
@@ -559,45 +615,21 @@ impl StepBuilder {
                         }
                     }
                 }
-                run_forwards = false;
+                run_forwards_pass = false;
             }
         }
 
-        {
-            let mut pos = 0;
-            let indices_to_remove = &self.indices_to_remove;
-            self.step_buffer.retain(|_| {
-                let remove = indices_to_remove.contains(pos);
-                pos += 1;
-                !remove
-            });
-        }
+        // Remove useless steps identified by the analysis.
+        let mut pos = 0;
+        let indices_to_remove = &self.indices_to_remove;
+        self.step_buffer.retain(|_| {
+            let remove = indices_to_remove.contains(pos);
+            pos += 1;
+            !remove
+        });
 
-        self.step_buffer.dedup_by(|a, b| {
-            a == b
-                && match a {
-                    // Only non-relative register stores are idempotent and can be merged.
-                    Step::StoreRValue(v) => v.is_none() || !v.unwrap().is_relative(),
-                    // LValues cannot depend on each other.
-                    Step::StoreLValue(_) => true,
-
-                    // These are idempotent and can be merged.
-                    Step::Assign(_)
-                    | Step::InvalidateRValue
-                    | Step::InvalidateLValue
-                    | Step::Return
-                    | Step::PushToUnion => true,
-
-                    // These have side effects and cannot be merged.
-                    Step::StartCall(_)
-                    | Step::StoreArg
-                    | Step::Call
-                    | Step::StartUnion
-                    | Step::StoreUnion
-                    | Step::SaveRValue
-                    | Step::RestoreRValue => false,
-                }
-        })
+        // Remove consecutive steps that are duplicates.
+        self.step_buffer.dedup_by(|a, b| steps_are_duplicates(a, b))
     }
 
     /// Returns the position in `step_buffer` of the [`SaveRValue`][Step::SaveRValue]
@@ -631,6 +663,7 @@ impl StepBuilder {
     }
 }
 
+/// Removes the step at `pos` from `step_buffer`.
 fn remove_step(
     pos: usize,
     start: &mut usize,
@@ -656,11 +689,40 @@ fn remove_step(
     let first = pos == *start;
     let last = pos == *end - 1;
 
+    // If the removed step was at the ends of the buffer, adjust the bounds so
+    // we don't visit it again.
     if last {
         *end = end.saturating_sub(1);
     } else if first {
         *start += 1;
     }
+}
+
+/// Returns `true` if the consecutive steps `a` and `b` are duplicates and can be merged.
+fn steps_are_duplicates(a: &Step, b: &Step) -> bool {
+    a == b
+        && match a {
+            // Only non-relative register stores are idempotent and can be merged.
+            Step::StoreRValue(v) => v.is_none() || !v.unwrap().is_relative(),
+            // LValues cannot depend on each other.
+            Step::StoreLValue(_) => true,
+
+            // These are idempotent and can be merged.
+            Step::Assign(_)
+            | Step::InvalidateRValue
+            | Step::InvalidateLValue
+            | Step::Return
+            | Step::PushToUnion => true,
+
+            // These have side effects and cannot be merged.
+            Step::StartCall(_)
+            | Step::StoreArg
+            | Step::Call
+            | Step::StartUnion
+            | Step::StoreUnion
+            | Step::SaveRValue
+            | Step::RestoreRValue => false,
+        }
 }
 
 pub(super) static IMPLICIT_RETURN_STEPS: [Step; 2] =
@@ -717,6 +779,21 @@ impl RValue {
             | RValue::Number
             | RValue::BigInt
             | RValue::Fn(_) => false,
+        }
+    }
+    /// Returns true if the RValue is static while evaluating a node (i.e. its
+    /// value does not change).
+    fn is_static(&self) -> bool {
+        match self {
+            RValue::NullOrVoid
+            | RValue::Object(_)
+            | RValue::String
+            | RValue::Boolean
+            | RValue::Number
+            | RValue::BigInt
+            | RValue::Fn(_) => true,
+
+            RValue::Var(_) | RValue::Prop(_) => false,
         }
     }
 }
