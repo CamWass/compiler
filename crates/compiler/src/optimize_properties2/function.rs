@@ -203,6 +203,20 @@ impl StepBuilder {
             let mut run_backwards = true;
             let mut run_forwards = true;
 
+            macro_rules! remove_step {
+                ($pos:expr, $msg:literal) => {
+                    remove_step(
+                        $pos,
+                        &mut start,
+                        &mut end,
+                        &mut removed_count,
+                        &mut self.indices_to_remove,
+                        &self.step_buffer,
+                        $msg,
+                    );
+                };
+            }
+
             while (run_backwards || run_forwards) && removed_count != self.step_buffer.len() {
                 // Backwards pass
                 if run_backwards && removed_count != self.step_buffer.len() {
@@ -230,13 +244,10 @@ impl StepBuilder {
                             // Dead stores.
                             Step::StoreRValue(v) => {
                                 if last {
-                                    end = end.saturating_sub(1);
-                                    removed_count += 1;
-                                    self.indices_to_remove.insert(pos);
+                                    remove_step!(pos, "last StoreRValue");
                                 } else if remove_stores {
                                     run_forwards = true;
-                                    removed_count += 1;
-                                    self.indices_to_remove.insert(pos);
+                                    remove_step!(pos, "remove_stores StoreRValue");
                                 } else {
                                     let relative = match v {
                                         Some(v) => v.is_relative(),
@@ -317,8 +328,7 @@ impl StepBuilder {
                                             if open_unions == 0 {
                                                 // Found the closing StoreUnion for our
                                                 // union; stop
-                                                removed_count += 1;
-                                                self.indices_to_remove.insert(union_pos);
+                                                remove_step!(union_pos, "closing StartUnion");
                                                 break;
                                             } else if open_unions == 1 {
                                                 // Re-entered target union; resume recording.
@@ -328,8 +338,7 @@ impl StepBuilder {
                                         Step::PushToUnion => {
                                             // Record pushes so they can be removed.
                                             if record_union_pushes {
-                                                removed_count += 1;
-                                                self.indices_to_remove.insert(union_pos);
+                                                remove_step!(union_pos, "intermediary PushToUnion");
                                             }
                                         }
                                         Step::StoreUnion => {
@@ -346,13 +355,8 @@ impl StepBuilder {
                                 debug_assert!(record_union_pushes == true);
 
                                 // Remove original StoreUnion step.
-                                if last {
-                                    end = end.saturating_sub(1);
-                                }
-
                                 run_forwards = true;
-                                removed_count += 1;
-                                self.indices_to_remove.insert(pos);
+                                remove_step!(pos, "opening StoreUnion");
 
                                 // Remove closing StartUnion and intermediary PushToUnions.
 
@@ -404,13 +408,10 @@ impl StepBuilder {
                             }
                             Step::StoreLValue(new) => {
                                 if *new == cur_step_l_value {
-                                    if first {
-                                        start += 1;
-                                    } else {
+                                    if !first {
                                         run_backwards = true;
                                     }
-                                    removed_count += 1;
-                                    self.indices_to_remove.insert(pos);
+                                    remove_step!(pos, "forward StoreLValue");
                                 } else {
                                     cur_step_l_value = *new;
                                 }
@@ -421,13 +422,8 @@ impl StepBuilder {
                                 if saved.is_some() && saved == cur_step_r_value || !overwritten {
                                     run_backwards = true;
 
-                                    if store_pos == start {
-                                        // todo
-                                        start += 1;
-                                    }
-                                    removed_count += 2;
-                                    self.indices_to_remove.insert(pos);
-                                    self.indices_to_remove.insert(store_pos);
+                                    remove_step!(pos, "forward RestoreRValue:RestoreRValue");
+                                    remove_step!(store_pos, "forward RestoreRValue:SaveRValue");
 
                                     continue;
                                 }
@@ -451,13 +447,10 @@ impl StepBuilder {
                                 if Some(*new) == cur_step_r_value {
                                     if new.is_none() || !new.unwrap().is_relative() {
                                         // Not relative
-                                        if first {
-                                            start += 1;
-                                        } else {
+                                        if !first {
                                             run_backwards = true;
                                         }
-                                        removed_count += 1;
-                                        self.indices_to_remove.insert(pos);
+                                        remove_step!(pos, "forward StoreRValue");
                                     }
                                 } else {
                                     cur_step_r_value = Some(*new);
@@ -519,6 +512,38 @@ impl StepBuilder {
                     | Step::RestoreRValue => false,
                 }
         })
+    }
+}
+
+fn remove_step(
+    pos: usize,
+    start: &mut usize,
+    end: &mut usize,
+    removed_count: &mut usize,
+    indices_to_remove: &mut GrowableBitSet<usize>,
+    step_buffer: &Vec<Step>,
+    msg: &'static str,
+) {
+    const DEBUG: bool = false;
+    if DEBUG {
+        println!(
+            "removing step {:#?} at pos {} due to: '{}'",
+            &step_buffer[pos], pos, msg
+        );
+    }
+
+    debug_assert!(!indices_to_remove.contains(pos));
+
+    *removed_count += 1;
+    indices_to_remove.insert(pos);
+
+    let first = pos == *start;
+    let last = pos == *end - 1;
+
+    if last {
+        *end = end.saturating_sub(1);
+    } else if first {
+        *start += 1;
     }
 }
 
