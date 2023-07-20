@@ -162,10 +162,7 @@ impl StepBuilder {
                 }
                 Step::StoreLValue(new) => {
                     if new == self.cur_step_l_value {
-                        if new.is_none() || !new.unwrap().is_relative() {
-                            // Not relative
-                            return;
-                        }
+                        return;
                     } else {
                         self.cur_step_l_value = new;
                     }
@@ -227,8 +224,8 @@ impl StepBuilder {
                                 remove_stores = false;
                             }
                             Step::StoreLValue(v) => {
-                                if v.is_none() || !v.unwrap().is_relative() {
-                                    // Non-relative - does not rely on RValue.
+                                if v.is_none() || !v.unwrap().depends_on_r_value() {
+                                    // Does not rely on RValue.
                                 } else {
                                     // Depends on RValue.
                                     remove_stores = false;
@@ -413,16 +410,13 @@ impl StepBuilder {
                             }
                             Step::StoreLValue(new) => {
                                 if *new == cur_step_l_value {
-                                    if new.is_none() || !new.unwrap().is_relative() {
-                                        // Not relative
-                                        if first {
-                                            start += 1;
-                                        } else {
-                                            run_backwards = true;
-                                        }
-                                        removed_count += 1;
-                                        self.indices_to_remove.insert(pos);
+                                    if first {
+                                        start += 1;
+                                    } else {
+                                        run_backwards = true;
                                     }
+                                    removed_count += 1;
+                                    self.indices_to_remove.insert(pos);
                                 } else {
                                     cur_step_l_value = *new;
                                 }
@@ -511,7 +505,8 @@ impl StepBuilder {
                 && match a {
                     // Only non-relative register stores are idempotent and can be merged.
                     Step::StoreRValue(v) => v.is_none() || !v.unwrap().is_relative(),
-                    Step::StoreLValue(v) => v.is_none() || !v.unwrap().is_relative(),
+                    // LValues cannot depend on each other.
+                    Step::StoreLValue(_) => true,
 
                     // These are idempotent and can be merged.
                     Step::Assign(_)
@@ -548,8 +543,8 @@ pub(super) enum LValue {
 }
 
 impl LValue {
-    /// Returns true if this LValue depends on previous steps.
-    fn is_relative(&self) -> bool {
+    /// Returns true if this LValue depends on the current RValue.
+    fn depends_on_r_value(&self) -> bool {
         match self {
             LValue::RValueProp(_) => true,
             LValue::Var(_) | LValue::ObjectProp(_, _) => false,
