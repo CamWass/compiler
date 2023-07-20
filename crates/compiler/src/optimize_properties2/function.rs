@@ -243,7 +243,8 @@ impl StepBuilder {
             while (run_backwards || run_forwards) && removed_count != self.step_buffer.len() {
                 // Backwards pass
                 if run_backwards && removed_count != self.step_buffer.len() {
-                    let mut remove_stores = true;
+                    let mut remove_r_stores = true;
+                    let mut remove_l_stores = true;
                     let iter_start = start;
                     for (pos, step) in self.step_buffer[start..end].iter().enumerate().rev() {
                         let pos = pos + iter_start;
@@ -254,21 +255,29 @@ impl StepBuilder {
                         match step {
                             // TODO:
                             Step::SaveRValue | Step::RestoreRValue => {
-                                remove_stores = false;
+                                remove_r_stores = false;
                             }
                             Step::StoreLValue(v) => {
-                                if v.is_none() || !v.unwrap().depends_on_r_value() {
-                                    // Does not rely on RValue.
+                                if last {
+                                    remove_step!(pos, "last StoreLValue");
+                                } else if remove_l_stores {
+                                    run_forwards = true;
+                                    remove_step!(pos, "remove_l_stores StoreLValue");
                                 } else {
-                                    // Depends on RValue.
-                                    remove_stores = false;
+                                    remove_l_stores = true;
+                                    if v.is_none() || !v.unwrap().depends_on_r_value() {
+                                        // Non-relative - does not rely on RValue.
+                                    } else {
+                                        // Depends on RValue.
+                                        remove_r_stores = false;
+                                    }
                                 }
                             }
                             // Dead stores.
                             Step::StoreRValue(v) => {
                                 if last {
                                     remove_step!(pos, "last StoreRValue");
-                                } else if remove_stores {
+                                } else if remove_r_stores {
                                     run_forwards = true;
                                     remove_step!(pos, "remove_stores StoreRValue");
                                 } else {
@@ -277,7 +286,7 @@ impl StepBuilder {
                                         None => false,
                                     };
                                     if !relative {
-                                        remove_stores = true;
+                                        remove_r_stores = true;
                                     }
                                 }
                             }
@@ -299,7 +308,7 @@ impl StepBuilder {
                             // When the count is 0, we have found the closing StoreUnion
                             // for our union and can stop.
                             Step::StoreUnion => {
-                                if !(last || remove_stores) {
+                                if !(last || remove_r_stores) {
                                     let mut union_start = usize::MAX;
 
                                     let mut open_unions: u32 = 1;
@@ -330,7 +339,7 @@ impl StepBuilder {
 
                                     debug_assert!(union_start != usize::MAX);
 
-                                    remove_stores = false;
+                                    remove_r_stores = false;
                                     continue;
                                 }
 
@@ -397,15 +406,21 @@ impl StepBuilder {
                                 );
                             }
 
-                            Step::Assign(_)
-                            | Step::InvalidateRValue
-                            | Step::InvalidateLValue
+                            Step::Assign(_) => {
+                                remove_r_stores = false;
+                                remove_l_stores = false;
+                            }
+                            Step::InvalidateLValue => {
+                                remove_l_stores = false;
+                            }
+
+                            Step::InvalidateRValue
                             | Step::Call
                             | Step::Return
                             | Step::StartCall(_)
                             | Step::StoreArg
                             | Step::PushToUnion => {
-                                remove_stores = false;
+                                remove_r_stores = false;
                             }
                         }
                     }
