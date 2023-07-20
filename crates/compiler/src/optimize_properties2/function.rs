@@ -69,9 +69,6 @@ pub(super) struct StepBuilder {
     // Steps for the current node.
     step_buffer: Vec<Step>,
 
-    // TODO: comment
-    remove_after_union_indices: Vec<usize>,
-
     r_value_store_stack: Vec<(Option<Option<RValue>>, usize, bool)>,
 
     indices_to_remove: GrowableBitSet<usize>,
@@ -85,7 +82,6 @@ impl StepBuilder {
     pub fn new() -> Self {
         Self {
             step_buffer: Vec::new(),
-            remove_after_union_indices: Vec::new(),
             r_value_store_stack: Vec::new(),
             indices_to_remove: GrowableBitSet::new_empty(),
             // These should be the same as Machine's initial values.
@@ -97,14 +93,12 @@ impl StepBuilder {
     fn reset(&mut self) {
         let Self {
             step_buffer,
-            remove_after_union_indices,
             r_value_store_stack,
             indices_to_remove,
             cur_step_r_value,
             cur_step_l_value,
         } = self;
         step_buffer.clear();
-        remove_after_union_indices.clear();
         r_value_store_stack.clear();
         indices_to_remove.clear();
         cur_step_r_value.clear();
@@ -254,14 +248,7 @@ impl StepBuilder {
                                 }
                             }
 
-                            Step::StartUnion => {
-                                if self.remove_after_union_indices.last() == Some(&pos) {
-                                    self.remove_after_union_indices.pop();
-                                    remove_stores = true;
-                                } else {
-                                    remove_stores = false;
-                                }
-                            }
+                            Step::StartUnion => {}
 
                             // Dead union. Bit tricky to remove - we need to remove:
                             // (1) StoreUnion
@@ -309,7 +296,6 @@ impl StepBuilder {
 
                                     debug_assert!(union_start != usize::MAX);
 
-                                    self.remove_after_union_indices.push(union_start);
                                     remove_stores = false;
                                     continue;
                                 }
