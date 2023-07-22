@@ -135,11 +135,11 @@ fn create_renaming_map(store: &mut Store) -> FxHashMap<NodeId, JsWord> {
         match pointer {
             Pointer::Object(object_id) => {
                 let object = objects.entry(object_id).or_default();
-                let id = match object.properties.entry(name.clone()) {
+                let id = match object.properties.entry(*name) {
                     Entry::Occupied(entry) => *entry.get(),
                     Entry::Vacant(entry) => {
                         let prop_id = properties.push(Property {
-                            name: name.clone(),
+                            name: *name,
                             prop_id: properties.next_index(),
                             references: FxHashSet::default(),
                             invalid: store.invalid_objects.contains(object_id),
@@ -176,7 +176,7 @@ fn create_renaming_map(store: &mut Store) -> FxHashMap<NodeId, JsWord> {
         let invalid = store.invalid_objects.contains(*sub_ty);
         let [super_ty, sub_ty] = objects.get_many_mut([super_ty, sub_ty]).unwrap();
         for (name, super_prop) in &super_ty.properties {
-            match sub_ty.properties.entry(name.clone()) {
+            match sub_ty.properties.entry(*name) {
                 Entry::Occupied(entry) => {
                     union_find.union(*super_prop, *entry.get());
                 }
@@ -192,10 +192,10 @@ fn create_renaming_map(store: &mut Store) -> FxHashMap<NodeId, JsWord> {
     for (union, accesses) in union_accesses {
         let invalid = store.invalidated(Pointer::Union(union));
 
-        for (name, references) in accesses {
+        for (&name, references) in accesses {
             let mut props = store.unions[union]
                 .constituents()
-                .filter_map(|c| objects.get(&c).and_then(|c| c.properties.get(name)));
+                .filter_map(|c| objects.get(&c).and_then(|c| c.properties.get(&name)));
 
             let representative = if let Some(&representative) = props.next() {
                 properties[representative].references.extend(references);
@@ -203,7 +203,7 @@ fn create_renaming_map(store: &mut Store) -> FxHashMap<NodeId, JsWord> {
                 representative
             } else {
                 let prop_id = properties.push(Property {
-                    name: name.clone(),
+                    name,
                     prop_id: properties.next_index(),
                     references,
                     invalid,
@@ -217,7 +217,7 @@ fn create_renaming_map(store: &mut Store) -> FxHashMap<NodeId, JsWord> {
                     .get_mut(&constituent)
                     .unwrap()
                     .properties
-                    .entry(name.clone())
+                    .entry(name)
                 {
                     Entry::Occupied(entry) => {
                         union_find.union(representative, *entry.get());
@@ -1017,7 +1017,7 @@ fn get_property(
                 Pointer::Object(obj) => {
                     let prop = lattice
                         .prop_assignments
-                        .get(&(obj, key.clone()))
+                        .get(&(obj, key))
                         .map(|a| a.rhs)
                         .unwrap_or_default();
                     debug_assert!(
@@ -1030,7 +1030,7 @@ fn get_property(
                     for constituent in unions[union].constituents() {
                         let constituent = lattice
                             .prop_assignments
-                            .get(&(constituent, key.clone()))
+                            .get(&(constituent, key))
                             .map(|a| a.rhs)
                             .unwrap_or_default();
                         debug_assert!(
@@ -1053,7 +1053,7 @@ fn get_property(
     match pointer {
         Pointer::Object(obj) => lattice
             .prop_assignments
-            .get(&(obj, key.clone()))
+            .get(&(obj, key))
             .map(|a| a.rhs)
             .unwrap_or(Some(Pointer::NullOrVoid)),
         Pointer::Union(union) => {
@@ -1062,7 +1062,7 @@ fn get_property(
             for constituent in unions[union].constituents() {
                 let constituent = lattice
                     .prop_assignments
-                    .get(&(constituent, key.clone()))
+                    .get(&(constituent, key))
                     .map(|a| a.rhs)
                     .unwrap_or(Some(Pointer::NullOrVoid));
 
@@ -1187,8 +1187,7 @@ impl<'ast> Analyser<'ast, '_> {
                             }
                             Pointer::Union(union) => {
                                 for constituent in self.store.unions[union].constituents() {
-                                    self.lattice
-                                        .insert_prop_assignment((constituent, key.clone()), new);
+                                    self.lattice.insert_prop_assignment((constituent, key), new);
                                 }
                             }
                             Pointer::Fn(_) => {
@@ -1298,7 +1297,7 @@ impl<'ast> Analyser<'ast, '_> {
                                         &mut self.store.names,
                                     )
                                     .unwrap();
-                                    self.reference_prop(rhs, key.clone());
+                                    self.reference_prop(rhs, key);
                                     let rhs_value = self.get_property(rhs, key.0);
 
                                     if matches!(prop.value.as_ref(), Pat::Ident(_) | Pat::Expr(_)) {
@@ -1417,7 +1416,7 @@ impl<'ast> Analyser<'ast, '_> {
                     &mut self.store.names,
                 ) {
                     obj.map(|obj| {
-                        self.reference_prop(obj, prop.clone());
+                        self.reference_prop(obj, prop);
                         Slot::Prop(obj, prop.0)
                     })
                 } else {
@@ -1465,7 +1464,7 @@ impl<'ast> Analyser<'ast, '_> {
 
                 for (key, value) in self.lattice.prop_assignments.iter() {
                     if key.0 == o {
-                        prop_assignments.insert(key.clone(), *value);
+                        prop_assignments.insert(*key, *value);
                         match value.rhs {
                             Some(Pointer::Object(o)) => {
                                 if !done.contains(&o) {
@@ -1526,7 +1525,7 @@ impl<'ast> Analyser<'ast, '_> {
             if self.store.invalid_objects.contains(*obj) {
                 continue;
             }
-            let key = (*obj, key.clone());
+            let key = (*obj, *key);
             let new = if let Some(existing) = self.lattice.prop_assignments.get(&key) {
                 let union = create_union(&mut self.store.unions, existing.rhs, prop.rhs);
                 Assignment { rhs: union }
@@ -1609,7 +1608,7 @@ impl<'ast> Analyser<'ast, '_> {
                         )
                         .unwrap();
 
-                        self.reference_prop(pointer, key.clone());
+                        self.reference_prop(pointer, key);
 
                         let value =
                             self.visit_and_get_object(Node::from(prop.value.as_ref()), conditional);
@@ -1692,7 +1691,7 @@ impl<'ast> Analyser<'ast, '_> {
                     &mut self.store.names,
                 ) {
                     if let Some(obj) = obj {
-                        self.reference_prop(obj, prop.clone());
+                        self.reference_prop(obj, prop);
                         self.get_property(obj, prop.0)
                     } else {
                         None
@@ -1869,14 +1868,14 @@ impl<'ast> Analyser<'ast, '_> {
                         .unwrap_or(Some(Pointer::NullOrVoid));
 
                     self.lattice
-                        .insert_var_assignment(param_name.clone(), Assignment { rhs: value });
+                        .insert_var_assignment(param_name, Assignment { rhs: value });
                 }
 
                 for ((obj, key), prop) in self.store.functions[func].arg_values.iter() {
                     if self.store.invalid_objects.contains(*obj) {
                         continue;
                     }
-                    let key = (*obj, key.clone());
+                    let key = (*obj, *key);
                     let new = if let Some(existing) = self.lattice.prop_assignments.get(&key) {
                         let union = create_union(&mut self.store.unions, existing.rhs, prop.rhs);
                         Assignment { rhs: union }
@@ -2081,12 +2080,12 @@ impl<'ast> JoinOp {
             if store.invalid_objects.contains(*obj) {
                 continue;
             }
-            match self.result.prop_assignments.entry((*obj, key.clone())) {
+            match self.result.prop_assignments.entry((*obj, *key)) {
                 Entry::Occupied(entry) => {
                     let union = create_union(&mut store.unions, entry.get().rhs, prop.rhs);
                     self.result
                         .prop_assignments
-                        .insert((*obj, key.clone()), Assignment { rhs: union });
+                        .insert((*obj, *key), Assignment { rhs: union });
                 }
                 Entry::Vacant(entry) => {
                     entry.insert(*prop);
@@ -2099,8 +2098,8 @@ impl<'ast> JoinOp {
             self.result.var_assignments.reserve(new);
         }
         // Merge variable assignments.
-        for (name, assignment) in input.var_assignments.iter() {
-            match self.result.var_assignments.entry(name.clone()) {
+        for (&name, assignment) in input.var_assignments.iter() {
+            match self.result.var_assignments.entry(name) {
                 Entry::Occupied(mut entry) => {
                     let union = create_union(&mut store.unions, entry.get().rhs, assignment.rhs);
                     entry.insert(Assignment { rhs: union });

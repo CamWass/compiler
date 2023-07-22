@@ -114,7 +114,7 @@ impl Visitor<CallId> for Resolver<'_, '_> {
             let value = call.args.get(i).unwrap_or(Some(Pointer::NullOrVoid));
             entry_lattice
                 .var_assignments
-                .insert(param_name.clone(), Assignment { rhs: value });
+                .insert(param_name, Assignment { rhs: value });
         }
         let entry_lattice = self
             .state
@@ -203,7 +203,7 @@ impl Visitor<CallId> for Resolver<'_, '_> {
                 if self.invalid_objects.contains(*obj) {
                     continue;
                 }
-                match self.functions[func].arg_values.entry((*obj, key.clone())) {
+                match self.functions[func].arg_values.entry((*obj, *key)) {
                     Entry::Occupied(mut entry) => {
                         let union = create_union(self.unions, entry.get().rhs, prop.rhs);
                         entry.insert(Assignment { rhs: union });
@@ -302,7 +302,7 @@ fn get_property(
             match object {
                 Some(Pointer::Object(obj)) => {
                     let prop = prop_assignments
-                        .get(&(obj, key.clone()))
+                        .get(&(obj, key))
                         .map(|a| a.rhs)
                         .unwrap_or_default();
                     debug_assert!(
@@ -314,7 +314,7 @@ fn get_property(
                 Some(Pointer::Union(union)) => {
                     for constituent in unions[union].constituents() {
                         let constituent = prop_assignments
-                            .get(&(constituent, key.clone()))
+                            .get(&(constituent, key))
                             .map(|a| a.rhs)
                             .unwrap_or_default();
                         debug_assert!(
@@ -337,7 +337,7 @@ fn get_property(
 
     match object {
         Some(Pointer::Object(obj)) => prop_assignments
-            .get(&(obj, key.clone()))
+            .get(&(obj, key))
             .map(|a| a.rhs)
             .unwrap_or(Some(Pointer::NullOrVoid)),
         Some(Pointer::Union(union)) => {
@@ -345,7 +345,7 @@ fn get_property(
 
             for constituent in unions[union].constituents() {
                 let constituent = prop_assignments
-                    .get(&(constituent, key.clone()))
+                    .get(&(constituent, key))
                     .and_then(|a| a.rhs)
                     .or(Some(Pointer::NullOrVoid));
 
@@ -736,7 +736,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                 },
                 Step::StoreLValue(value) => match value {
                     Some(LValue::Var(id)) => {
-                        machine.state.l_value = Some(AssignTarget::Var(id.clone()));
+                        machine.state.l_value = Some(AssignTarget::Var(*id));
                     }
                     Some(LValue::ObjectProp(obj, prop)) => {
                         machine.state.l_value = Some(AssignTarget::Prop(
@@ -748,12 +748,12 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                 self.root_call,
                                 *obj,
                             ),
-                            prop.clone(),
+                            *prop,
                         ));
                     }
                     Some(LValue::RValueProp(prop)) => {
                         machine.state.l_value =
-                            Some(AssignTarget::Prop(machine.get_r_value(), prop.clone()));
+                            Some(AssignTarget::Prop(machine.get_r_value(), *prop));
                     }
                     None => {
                         machine.state.l_value = None;
@@ -788,7 +788,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                         match slot {
                             AssignTarget::Var(id) => {
                                 machine.lattice.insert_var_assignment(
-                                    id.clone(),
+                                    *id,
                                     new,
                                     &self.state.lattice_elements,
                                 );
@@ -813,7 +813,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                     match obj {
                                         Pointer::Object(obj) => {
                                             machine.lattice.insert_prop_assignment(
-                                                (obj, prop.clone()),
+                                                (obj, *prop),
                                                 new,
                                                 &self.state.lattice_elements,
                                             );
@@ -821,7 +821,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                         Pointer::Union(union) => {
                                             for constituent in self.unions[union].constituents() {
                                                 machine.lattice.insert_prop_assignment(
-                                                    (constituent, prop.clone()),
+                                                    (constituent, *prop),
                                                     new,
                                                     &self.state.lattice_elements,
                                                 );
@@ -1022,7 +1022,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                 .iter()
                             {
                                 if key.0 == o {
-                                    prop_assignments.insert(key.clone(), *value);
+                                    prop_assignments.insert(*key, *value);
                                     match value.rhs {
                                         Some(Pointer::Object(o)) => {
                                             if o == ObjectStore::RESOLVING_CALL {
@@ -1134,7 +1134,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                             if self.invalid_objects.contains(*obj) {
                                 continue;
                             }
-                            let key = (*obj, key.clone());
+                            let key = (*obj, *key);
                             let new = if let Some(existing) = machine
                                 .lattice
                                 .get(&self.state.lattice_elements)
@@ -1295,7 +1295,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                 }
                                 Some(Pointer::Fn(_) | Pointer::NullOrVoid) | None => {}
                             }
-                            let key = (obj, key.clone());
+                            let key = (obj, *key);
                             let existing = self
                                 .return_states
                                 .get(&self.call)
@@ -1423,7 +1423,7 @@ impl JoinOp {
             if invalid_objects.contains(*obj) {
                 continue;
             }
-            match self.result.prop_assignments.entry((*obj, key.clone())) {
+            match self.result.prop_assignments.entry((*obj, *key)) {
                 Entry::Occupied(mut entry) => {
                     let union = create_union(unions, entry.get().rhs, prop.rhs);
                     entry.insert(Assignment { rhs: union });
@@ -1440,7 +1440,7 @@ impl JoinOp {
         }
         // Merge variable assignments.
         for (name, assignment) in input.var_assignments.iter() {
-            match self.result.var_assignments.entry(name.clone()) {
+            match self.result.var_assignments.entry(*name) {
                 Entry::Occupied(mut entry) => {
                     let union = create_union(unions, entry.get().rhs, assignment.rhs);
                     entry.insert(Assignment { rhs: union });
