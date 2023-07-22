@@ -1635,7 +1635,6 @@ impl<'ast> Analyser<'ast, '_> {
                 None
             }
             NodeKind::BinExpr(node) => {
-                // TODO: for comparisons, the result is always a bool
                 match node.op {
                     BinaryOp::LogicalOr | BinaryOp::LogicalAnd | BinaryOp::NullishCoalescing => {
                         // TODO: if LHS is object, then we know if RHS will execute.
@@ -1648,7 +1647,38 @@ impl<'ast> Analyser<'ast, '_> {
                     _ => {
                         self.visit_and_get_object(Node::from(node.left.as_ref()), conditional);
                         self.visit_and_get_object(Node::from(node.right.as_ref()), conditional);
-                        None
+                        match node.op {
+                            // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-equality-operators
+                            BinaryOp::EqEq
+                            | BinaryOp::NotEq
+                            | BinaryOp::EqEqEq
+                            | BinaryOp::NotEqEq => Some(Pointer::Object(ObjectStore::BOOL)),
+                            // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-relational-operators
+                            BinaryOp::Lt
+                            | BinaryOp::LtEq
+                            | BinaryOp::Gt
+                            | BinaryOp::GtEq
+                            | BinaryOp::In
+                            | BinaryOp::InstanceOf => Some(Pointer::Object(ObjectStore::BOOL)),
+                            // TODO: we can infer the output type based on the input types.
+                            // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-applystringornumericbinaryoperator
+                            BinaryOp::LShift
+                            | BinaryOp::RShift
+                            | BinaryOp::ZeroFillRShift
+                            | BinaryOp::Add
+                            | BinaryOp::Sub
+                            | BinaryOp::Mul
+                            | BinaryOp::Div
+                            | BinaryOp::Mod
+                            | BinaryOp::BitOr
+                            | BinaryOp::BitXor
+                            | BinaryOp::BitAnd
+                            | BinaryOp::Exp => None,
+
+                            BinaryOp::LogicalOr
+                            | BinaryOp::LogicalAnd
+                            | BinaryOp::NullishCoalescing => unreachable!("handled above"),
+                        }
                     }
                 }
             }

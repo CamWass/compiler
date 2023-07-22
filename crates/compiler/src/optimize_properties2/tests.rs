@@ -42,6 +42,48 @@ fn test_same(input: &str) {
 // TODO: more tests e.g. for branch joins, more invalidations, infinite loops etc
 
 #[test]
+fn test_binary_operators() {
+    // The type of an equality/relative operator should be a boolean.
+    test_transform(
+        "
+function f() {
+    const equality = v1 == v2 || v1 != v2 || v1 === v2 || v1 !== v2;
+    const relative = v1 < v2 || v1 <= v2 || v1 > v2 || v1 >= v2 || v1 in v2 || v1 instanceof v2;
+    const obj = equality || relative || { prop1: 1 };
+    obj.prop1;
+    return obj;
+}
+f().prop1;
+",
+        "
+function f() {
+    const equality = v1 == v2 || v1 != v2 || v1 === v2 || v1 !== v2;
+    const relative = v1 < v2 || v1 <= v2 || v1 > v2 || v1 >= v2 || v1 in v2 || v1 instanceof v2;
+    const obj = equality || relative || { a: 1 };
+    obj.a;
+    return obj;
+}
+f().a;
+",
+    );
+    // We don't currently track the input types, so can't know the output type
+    // for numeric ops.
+    test_same(
+        "
+function f() {
+    const shift = v1 << v2 || v1 >> v2 || v1 >>> v2;
+    const numeric = v1 + v2 || v1 - v2 || v1 * v2 || v1 / v2 || v1 % v2 || v1 ** v2;
+    const bitwise = v1 | v2 || v1 ^ v2 || v1 & v2;
+    const obj = shift || numeric || bitwise || { prop1: 1 };
+    obj.prop1;
+    return obj;
+}
+f().prop1;
+",
+    );
+}
+
+#[test]
 fn test_nested_unions() {
     // Had a bug where union constituents were always added to the first/outermost
     // union being constructed. This meant `bar` returned `obj1 | obj2 | obj3 | obj4`

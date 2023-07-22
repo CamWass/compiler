@@ -1133,7 +1133,6 @@ impl<'ast> Analyser<'_, 'ast> {
                 self.push(Step::StoreRValue(None));
             }
             NodeKind::BinExpr(node) => {
-                // TODO: for comparisons, the result is always a bool
                 match node.op {
                     BinaryOp::LogicalOr | BinaryOp::LogicalAnd | BinaryOp::NullishCoalescing => {
                         // TODO: if LHS is object, then we know if RHS will execute.
@@ -1147,7 +1146,42 @@ impl<'ast> Analyser<'_, 'ast> {
                     _ => {
                         self.visit_and_get_r_value(Node::from(node.left.as_ref()), conditional);
                         self.visit_and_get_r_value(Node::from(node.right.as_ref()), conditional);
-                        self.push(Step::StoreRValue(None));
+                        let value = match node.op {
+                            // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-equality-operators
+                            BinaryOp::EqEq
+                            | BinaryOp::NotEq
+                            | BinaryOp::EqEqEq
+                            | BinaryOp::NotEqEq => Some(RValue::Boolean),
+                            // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-relational-operators
+                            BinaryOp::Lt
+                            | BinaryOp::LtEq
+                            | BinaryOp::Gt
+                            | BinaryOp::GtEq
+                            | BinaryOp::In
+                            | BinaryOp::InstanceOf => Some(RValue::Boolean),
+                            // The output type of these ops is either Number or BigInt,
+                            // depending on the input types. Since we treat Number and
+                            // BigInt as different objects, and we don't know the input
+                            // types, we can't know the output types. See:
+                            // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-applystringornumericbinaryoperator
+                            BinaryOp::LShift
+                            | BinaryOp::RShift
+                            | BinaryOp::ZeroFillRShift
+                            | BinaryOp::Add
+                            | BinaryOp::Sub
+                            | BinaryOp::Mul
+                            | BinaryOp::Div
+                            | BinaryOp::Mod
+                            | BinaryOp::BitOr
+                            | BinaryOp::BitXor
+                            | BinaryOp::BitAnd
+                            | BinaryOp::Exp => None,
+
+                            BinaryOp::LogicalOr
+                            | BinaryOp::LogicalAnd
+                            | BinaryOp::NullishCoalescing => unreachable!("handled above"),
+                        };
+                        self.push(Step::StoreRValue(value));
                     }
                 }
             }
