@@ -141,9 +141,11 @@ impl StepBuilder {
                         };
                         if overwrite {
                             // Remove the step.
-                            debug_assert!(self.step_buffer.pop().is_some());
+                            let s = self.step_buffer.pop();
+                            debug_assert!(s.is_some());
                             // Remove its RValue from the stack.
-                            debug_assert!(self.cur_builder_r_value.pop().is_some());
+                            let v = self.cur_builder_r_value.pop();
+                            debug_assert!(v.is_some());
                             continue;
                         }
                     }
