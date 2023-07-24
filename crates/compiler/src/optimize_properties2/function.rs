@@ -9,6 +9,7 @@ use rustc_hash::FxHashMap;
 
 use crate::control_flow::node::{Node, NodeKind};
 use crate::control_flow::ControlFlowGraph::*;
+use crate::find_vars::VarId;
 use crate::utils::unwrap_as;
 
 use super::simple_set::IndexSet;
@@ -26,6 +27,7 @@ pub(super) fn create_step_map(
     func: FnId,
     function_map: &FxHashMap<NodeId, FnId>,
     names: &mut IndexSet<NameId, JsWord>,
+    vars: &mut IndexSet<VarId, Id>,
     builder: &mut StepBuilder,
 ) -> (Vec<Step>, Vec<(u32, u32)>) {
     let cfg = &static_fn_data[func].cfg;
@@ -51,6 +53,7 @@ pub(super) fn create_step_map(
             unresolved_ctxt,
             function_map,
             names,
+            vars,
         };
         analyser.init(graph[node], conditional);
 
@@ -734,7 +737,7 @@ pub(super) static IMPLICIT_RETURN_STEPS: [Step; 2] =
 /// A place where a value can be stored.
 pub(super) enum LValue {
     /// Named variable.
-    Var(Id),
+    Var(VarId),
     /// Property of the current RValue.
     RValueProp(NameId),
     /// Property of the object type that represents the given object literal.
@@ -756,7 +759,7 @@ impl LValue {
 pub(super) enum RValue {
     NullOrVoid,
     /// Pointer to the value stored in the given named variable.
-    Var(Id),
+    Var(VarId),
     /// Object type that represents the given object literal.
     Object(NodeId),
     /// Property of the current RValue.
@@ -848,6 +851,7 @@ struct Analyser<'a, 'ast> {
     unresolved_ctxt: SyntaxContext,
     function_map: &'a FxHashMap<NodeId, FnId>,
     names: &'a mut IndexSet<NameId, JsWord>,
+    vars: &'a mut IndexSet<VarId, Id>,
 }
 
 impl<'ast> Analyser<'_, 'ast> {
@@ -864,6 +868,17 @@ impl<'ast> Analyser<'_, 'ast> {
     /// Invalidate the LValue register.
     fn invalidate_l_value(&mut self) {
         self.push(Step::InvalidateLValue);
+    }
+
+    fn get_var_id_from_ident(&mut self, ident: &Ident) -> Option<VarId> {
+        if ident.span.ctxt == self.unresolved_ctxt {
+            None
+        } else {
+            let name = self.names.get_index(&ident.sym).unwrap();
+            let id = Id(name, ident.span.ctxt);
+            let id = self.vars.get_index(&id).unwrap();
+            Some(id)
+        }
     }
 
     fn record_assignment(
@@ -960,8 +975,8 @@ impl<'ast> Analyser<'_, 'ast> {
                                 // TODO: this is imprecise - rest patterns create a new, distinct, object, which has the remaining non-destructured
                                 // properties copied over. These properties must have the same names as those in the original object after renaming.
                                 // But since they are distinct objects, we don't want to conflate them.
-                                let id = Id::new(&arg.id, &mut self.names);
-                                self.push(Step::StoreLValue(Some(LValue::Var(id))));
+                                let value = self.get_var_id_from_ident(&arg.id).map(LValue::Var);
+                                self.push(Step::StoreLValue(value));
                                 self.push(Step::Assign(conditional));
                             }
                         }
@@ -970,8 +985,8 @@ impl<'ast> Analyser<'_, 'ast> {
             }
 
             NodeKind::BindingIdent(lhs) => {
-                let id = Id::new(&lhs.id, &mut self.names);
-                self.push(Step::StoreLValue(Some(LValue::Var(id))));
+                let value = self.get_var_id_from_ident(&lhs.id).map(LValue::Var);
+                self.push(Step::StoreLValue(value));
                 self.push(Step::Assign(conditional));
             }
             NodeKind::ArrayPat(lhs) => {
@@ -1022,8 +1037,8 @@ impl<'ast> Analyser<'_, 'ast> {
     fn visit_and_get_slot(&mut self, node: Node<'ast>, conditional: bool) {
         match node.kind {
             NodeKind::Ident(ident) | NodeKind::BindingIdent(BindingIdent { id: ident, .. }) => {
-                let id = Id::new(ident, &mut self.names);
-                self.push(Step::StoreLValue(Some(LValue::Var(id))));
+                let value = self.get_var_id_from_ident(ident).map(LValue::Var);
+                self.push(Step::StoreLValue(value));
             }
             NodeKind::MemberExpr(node) => {
                 self.visit_and_get_r_value(Node::from(&node.obj), conditional);
@@ -1282,8 +1297,8 @@ impl<'ast> Analyser<'_, 'ast> {
                 if node.span.ctxt == self.unresolved_ctxt && node.sym == js_word!("undefined") {
                     self.push(Step::StoreRValue(Some(RValue::NullOrVoid)));
                 } else {
-                    let id = Id::new(node, &mut self.names);
-                    self.push(Step::StoreRValue(Some(RValue::Var(id))));
+                    let value = self.get_var_id_from_ident(node).map(RValue::Var);
+                    self.push(Step::StoreRValue(value));
                 }
             }
             NodeKind::PrivateName(_) => todo!(),

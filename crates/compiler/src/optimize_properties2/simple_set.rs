@@ -33,6 +33,18 @@ where
     pub fn insert(&mut self, value: T) -> I {
         I::new(self.inner.insert_full(value).0)
     }
+
+    pub fn contains(&self, value: &T) -> bool {
+        self.inner.contains(value)
+    }
+
+    pub fn get_index(&self, value: &T) -> Option<I> {
+        self.inner.get_index_of(value).map(I::new)
+    }
+
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
 }
 
 impl<'a, I: Idx, T> IntoIterator for &'a IndexSet<I, T> {

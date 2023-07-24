@@ -18,6 +18,7 @@ mod utils;
 
 use std::borrow::Cow;
 use std::collections::hash_map::Entry;
+use std::convert::TryInto;
 use std::hash::Hash;
 use std::ops::Deref;
 
@@ -419,10 +420,21 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
         call_objects: FxHashMap::default(),
         call_resolver_state: ResolverState::default(),
         names: IndexSet::default(),
+        vars: IndexSet::default(),
     };
 
-    let mut visitor = FnVisitor { store: &mut store };
-    ast.visit_with(&mut visitor);
+    {
+        let mut v = DeclFinder {
+            names: &mut store.names,
+            vars: &mut store.vars,
+            var_start: VarId::from_u32(0),
+        };
+        ast.visit_with(&mut v);
+    }
+    {
+        let mut visitor = FnVisitor { store: &mut store };
+        ast.visit_with(&mut visitor);
+    }
 
     let mut step_builder = StepBuilder::new();
 
@@ -436,6 +448,7 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
                 func,
                 &store.function_map,
                 &mut store.names,
+                &mut store.vars,
                 &mut step_builder,
             )
         })
@@ -483,6 +496,9 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
     debug_assert!(!store.invalid_objects.contains(ObjectStore::STRING));
     debug_assert!(!store.invalid_objects.contains(ObjectStore::BOOL));
     debug_assert!(!store.invalid_objects.contains(ObjectStore::BIG_INT));
+
+    debug_assert!(!store.vars.into_iter().any(|v| v.1 == unresolved_ctxt));
+
     store
 }
 
@@ -504,12 +520,59 @@ pub fn process(
     ast.visit_mut_with(&mut renamer);
 }
 
+struct DeclFinder<'a> {
+    names: &'a mut IndexSet<NameId, JsWord>,
+    vars: &'a mut IndexSet<VarId, Id>,
+
+    var_start: VarId,
+}
+
+impl DeclFinder<'_> {
+    fn record_var(&mut self, ident: &Ident) {
+        let id = Id::new(ident, self.names);
+        // Var should not have been previously defined (unless it was within the
+        // current function).
+        debug_assert!(
+            !self.vars.contains(&id) || self.vars.get_index(&id).unwrap() >= self.var_start
+        );
+        self.vars.insert(id);
+    }
+}
+
+impl<'ast> Visit<'ast> for DeclFinder<'_> {
+    // Don't visit nested functions.
+    fn visit_function(&mut self, _node: &Function) {}
+    fn visit_constructor(&mut self, _node: &Constructor) {}
+    fn visit_arrow_expr(&mut self, _node: &ArrowExpr) {}
+    fn visit_getter_prop(&mut self, _node: &GetterProp) {}
+    fn visit_setter_prop(&mut self, _node: &SetterProp) {}
+
+    // Function names are in scope.
+    fn visit_fn_decl(&mut self, node: &FnDecl) {
+        self.record_var(&node.ident);
+    }
+
+    // Expressions can't declare new vars.
+    fn visit_expr(&mut self, _node: &Expr) {}
+    fn visit_prop_name(&mut self, _node: &PropName) {}
+
+    fn visit_binding_ident(&mut self, node: &BindingIdent) {
+        self.record_var(&node.id);
+    }
+
+    // The key of AssignPatProp is LHS but is an Ident, so won't be caught by
+    // the BindingIdent visitor above.
+    fn visit_assign_pat_prop(&mut self, p: &AssignPatProp) {
+        self.record_var(&p.key);
+    }
+}
+
 struct FnVisitor<'ast, 's> {
     store: &'s mut Store<'ast>,
 }
 
 impl<'ast> FnVisitor<'ast, '_> {
-    fn handle_fn<T>(&mut self, node: &'ast T) -> FnId
+    fn handle_fn<T>(&mut self, node: &'ast T, fn_expr_name: Option<&'ast Ident>) -> FnId
     where
         T: FunctionLike<'ast> + GetNodeId,
         &'ast T: Into<ControlFlowRoot<'ast>>,
@@ -530,21 +593,38 @@ impl<'ast> FnVisitor<'ast, '_> {
             graph: cfa.cfg.graph,
         };
 
-        let param_names = node
-            .params()
-            .map(|p| {
-                if let Pat::Ident(param) = &p {
-                    Id::new(&param.id, &mut self.store.names)
-                } else {
-                    todo!("non-ident param");
-                }
-            })
-            .collect();
+        let var_start = self.store.vars.len().try_into().unwrap();
+
+        let mut v = DeclFinder {
+            names: &mut self.store.names,
+            vars: &mut self.store.vars,
+            var_start: VarId::from_u32(var_start),
+        };
+
+        for param in node.params() {
+            if let Pat::Ident(param) = param {
+                v.record_var(&param.id);
+            } else {
+                todo!("non-ident param");
+            }
+        }
+
+        let param_end = v.vars.len().try_into().unwrap();
+
+        // FnExpr's name is local to it. Although the name comes before the
+        // params, we record it afterwards to simplify tracking of where
+        // vars/params start/end.
+        if let Some(fn_expr_name) = fn_expr_name {
+            v.record_var(fn_expr_name);
+        }
+
+        node.visit_body_with(&mut v);
 
         let static_data = StaticFunctionData {
             cfg,
             node_priorities: cfa.nodePriorities,
-            param_names,
+            var_start,
+            param_end,
         };
 
         let func = Func {
@@ -565,28 +645,33 @@ impl<'ast> FnVisitor<'ast, '_> {
 
 impl<'ast> Visit<'ast> for FnVisitor<'ast, '_> {
     fn visit_fn_decl(&mut self, node: &'ast FnDecl) {
-        let id = self.handle_fn(&node.function);
+        let id = self.handle_fn(&node.function, None);
+        let name = Id::new(&node.ident, &mut self.store.names);
+        let name = self.store.vars.get_index(&name).unwrap();
         self.store.fn_assignments.insert(
-            Id::new(&node.ident, &mut self.store.names),
+            name,
             Assignment {
                 rhs: Some(Pointer::Fn(id)),
             },
         );
     }
+    fn visit_fn_expr(&mut self, node: &'ast FnExpr) {
+        self.handle_fn(&node.function, node.ident.as_ref());
+    }
     fn visit_function(&mut self, node: &'ast Function) {
-        self.handle_fn(node);
+        self.handle_fn(node, None);
     }
     fn visit_constructor(&mut self, node: &'ast Constructor) {
-        self.handle_fn(node);
+        self.handle_fn(node, None);
     }
     fn visit_arrow_expr(&mut self, node: &'ast ArrowExpr) {
-        self.handle_fn(node);
+        self.handle_fn(node, None);
     }
     fn visit_getter_prop(&mut self, node: &'ast GetterProp) {
-        self.handle_fn(node);
+        self.handle_fn(node, None);
     }
     fn visit_setter_prop(&mut self, node: &'ast SetterProp) {
-        self.handle_fn(node);
+        self.handle_fn(node, None);
     }
 }
 
@@ -615,7 +700,7 @@ pub struct Store<'ast> {
     resolved_calls: FxHashMap<CallId, ResolvedCall>,
     /// Read-only
     call_templates: IndexVec<FnId, CallTemplate>,
-    fn_assignments: HashableHashMap<Id, Assignment>,
+    fn_assignments: HashableHashMap<VarId, Assignment>,
 
     object_links: FxHashSet<(ObjectId, ObjectId)>,
     call_objects: FxHashMap<(CallId, NodeId), ObjectId>,
@@ -623,6 +708,7 @@ pub struct Store<'ast> {
     call_resolver_state: ResolverState,
 
     names: IndexSet<NameId, JsWord>,
+    vars: IndexSet<VarId, Id>,
 }
 
 impl Store<'_> {
@@ -800,7 +886,18 @@ pub(super) struct Func {
 pub(super) struct StaticFunctionData<'ast> {
     cfg: SimpleCFG<'ast>,
     node_priorities: Vec<NodePriority>,
-    param_names: Vec<Id>,
+    var_start: u32,
+    param_end: u32,
+}
+
+impl StaticFunctionData<'_> {
+    fn param_indices(&self) -> impl Iterator<Item = VarId> {
+        VarId::from_u32(self.var_start)..VarId::from_u32(self.param_end)
+    }
+
+    fn param_count(&self) -> usize {
+        (self.param_end - self.var_start) as usize
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -897,7 +994,7 @@ pub(super) struct Assignment {
 /// A place where a variable can be stored.
 #[derive(Debug, Clone, Copy)]
 enum Slot {
-    Var(Id),
+    Var(VarId),
     /// (Object, Property name)
     Prop(Pointer, NameId),
 }
@@ -1088,7 +1185,7 @@ impl Deref for CowLattice<'_> {
 }
 
 impl CowLattice<'_> {
-    fn insert_var_assignment(&mut self, name: Id, value: Assignment) {
+    fn insert_var_assignment(&mut self, name: VarId, value: Assignment) {
         if let Some(existing) = self.0.var_assignments.get(&name) {
             if *existing == value {
                 return;
@@ -1114,8 +1211,8 @@ impl CowLattice<'_> {
 
     fn get_var(
         &self,
-        id: Id,
-        fn_assignments: &HashableHashMap<Id, Assignment>,
+        id: VarId,
+        fn_assignments: &HashableHashMap<VarId, Assignment>,
     ) -> Option<Assignment> {
         self.0
             .var_assignments
@@ -1327,14 +1424,8 @@ impl<'ast> Analyser<'ast, '_> {
                                     // TODO: this is imprecise - rest patterns create a new, distinct, object, which has the remaining non-destructured
                                     // properties copied over. These properties must have the same names as those in the original object after renaming.
                                     // But since they are distinct objects, we don't want to conflate them.
-                                    let id = Id::new(&arg.id, &mut self.store.names);
-                                    // if self.analysis.vars.contains_key(&id) {
-                                    self.assign_to_slot(
-                                        Some(Slot::Var(id)),
-                                        Some(rhs),
-                                        conditional,
-                                    );
-                                    // }
+                                    let slot = self.get_var_id_from_ident(&arg.id).map(Slot::Var);
+                                    self.assign_to_slot(slot, Some(rhs), conditional);
                                 }
                             }
                         }
@@ -1347,10 +1438,8 @@ impl<'ast> Analyser<'ast, '_> {
             }
 
             NodeKind::BindingIdent(lhs) => {
-                let id = Id::new(&lhs.id, &mut self.store.names);
-                // if self.analysis.vars.contains_key(&id) {
-                self.assign_to_slot(Some(Slot::Var(id)), rhs, conditional);
-                // }
+                let slot = self.get_var_id_from_ident(&lhs.id).map(Slot::Var);
+                self.assign_to_slot(slot, rhs, conditional);
             }
             NodeKind::ArrayPat(lhs) => {
                 self.store.invalidate(rhs, &self.lattice);
@@ -1392,21 +1481,23 @@ impl<'ast> Analyser<'ast, '_> {
         }
     }
 
+    fn get_var_id_from_ident(&mut self, ident: &Ident) -> Option<VarId> {
+        if ident.span.ctxt == self.store.unresolved_ctxt {
+            None
+        } else {
+            let name = self.store.names.get_index(&ident.sym).unwrap();
+            let id = Id(name, ident.span.ctxt);
+            let id = self.store.vars.get_index(&id).unwrap();
+            Some(id)
+        }
+    }
+
     /// Visits the given expression. If the expression resolves to a valid assignment target, a [`Slot`]
     /// representing that target is returned.
     fn visit_and_get_slot(&mut self, node: Node<'ast>, conditional: bool) -> Option<Slot> {
         match node.kind {
-            NodeKind::Ident(node) => {
-                let id = Id::new(node, &mut self.store.names);
-                // if self.analysis.vars.contains_key(&id) {
-                Some(Slot::Var(id))
-                // } else {
-                //     None
-                // }
-            }
-            NodeKind::BindingIdent(node) => {
-                self.visit_and_get_slot(Node::from(&node.id), conditional)
-            }
+            NodeKind::Ident(node) => self.get_var_id_from_ident(node).map(Slot::Var),
+            NodeKind::BindingIdent(node) => self.get_var_id_from_ident(&node.id).map(Slot::Var),
             NodeKind::MemberExpr(node) => {
                 let obj = self.visit_and_get_object(Node::from(&node.obj), conditional);
                 if let Some(prop) = PropKey::from_expr(
@@ -1803,9 +1894,8 @@ impl<'ast> Analyser<'ast, '_> {
                 {
                     Some(Pointer::NullOrVoid)
                 } else {
-                    let id = Id::new(node, &mut self.store.names);
-                    self.lattice
-                        .get_var(id, &self.store.fn_assignments)
+                    self.get_var_id_from_ident(node)
+                        .and_then(|id| self.lattice.get_var(id, &self.store.fn_assignments))
                         .and_then(|assign| assign.rhs)
                 }
             }
@@ -1856,11 +1946,7 @@ impl<'ast> Analyser<'ast, '_> {
             NodeKind::Function(node) => {
                 let func = *self.store.function_map.get(&node.node_id).unwrap();
 
-                for (i, param_name) in self.store.static_fn_data[func]
-                    .param_names
-                    .iter()
-                    .enumerate()
-                {
+                for (i, param_name) in self.store.static_fn_data[func].param_indices().enumerate() {
                     let value = self.store.functions[func]
                         .args
                         .get(i)
@@ -2120,7 +2206,7 @@ type PropertyAssignments = HashableHashMap<(ObjectId, NameId), Assignment>;
 
 #[derive(Clone, Debug, PartialEq, Default, Hash, Eq)]
 pub(super) struct Lattice {
-    var_assignments: HashableHashMap<Id, Assignment>,
+    var_assignments: HashableHashMap<VarId, Assignment>,
     prop_assignments: PropertyAssignments,
 }
 

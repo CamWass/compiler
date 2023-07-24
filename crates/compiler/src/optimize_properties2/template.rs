@@ -17,6 +17,7 @@ use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 
 use crate::control_flow::node::{Node, NodeKind};
 use crate::control_flow::ControlFlowGraph::Branch;
+use crate::find_vars::VarId;
 use crate::utils::unwrap_as;
 use crate::DataFlowAnalysis::{
     LatticeElementId, LinearFlowState, PrioritizedNode, UniqueQueue, MAX_STEPS_PER_NODE,
@@ -79,7 +80,7 @@ struct Resolver<'a, 'ast> {
     invalid_objects: &'a mut GrowableBitSet<ObjectId>,
     calls: &'a mut IndexSet<CallId, Call>,
 
-    fn_assignments: &'a HashableHashMap<Id, Assignment>,
+    fn_assignments: &'a HashableHashMap<VarId, Assignment>,
 
     root_call: CallId,
 
@@ -109,8 +110,8 @@ impl Visitor<CallId> for Resolver<'_, '_> {
         };
         entry_lattice
             .var_assignments
-            .reserve(self.static_fn_data[func].param_names.len());
-        for (i, param_name) in self.static_fn_data[func].param_names.iter().enumerate() {
+            .reserve(self.static_fn_data[func].param_count());
+        for (i, param_name) in self.static_fn_data[func].param_indices().enumerate() {
             let value = call.args.get(i).unwrap_or(Some(Pointer::NullOrVoid));
             entry_lattice
                 .var_assignments
@@ -487,7 +488,7 @@ fn invalidated(
 #[derive(Debug, Clone, Copy)]
 /// A slot where a value can be stored.
 enum AssignTarget {
-    Var(Id),
+    Var(VarId),
     Prop(Option<Pointer>, NameId),
 }
 
@@ -528,7 +529,7 @@ impl MachineLattice {
     }
     fn insert_var_assignment(
         &mut self,
-        name: Id,
+        name: VarId,
         value: Assignment,
         lattice_elements: &IndexSet<LatticeElementId, Lattice>,
     ) {
@@ -612,7 +613,7 @@ struct Machine<'a> {
     state: &'a mut MachineState,
     lattice: MachineLattice,
     steps: &'a [Step],
-    fn_assignments: &'a HashableHashMap<Id, Assignment>,
+    fn_assignments: &'a HashableHashMap<VarId, Assignment>,
 }
 
 impl Machine<'_> {
@@ -625,7 +626,7 @@ impl Machine<'_> {
 
     fn get_var(
         &self,
-        id: &Id,
+        id: &VarId,
         lattice_elements: &IndexSet<LatticeElementId, Lattice>,
     ) -> Option<Assignment> {
         self.lattice
@@ -654,6 +655,7 @@ impl CallTemplate {
         func: FnId,
         function_map: &FxHashMap<NodeId, FnId>,
         names: &mut IndexSet<NameId, JsWord>,
+        vars: &mut IndexSet<VarId, Id>,
         builder: &mut StepBuilder,
     ) -> CallTemplate {
         let (steps, map) = create_step_map(
@@ -662,6 +664,7 @@ impl CallTemplate {
             func,
             function_map,
             names,
+            vars,
             builder,
         );
         CallTemplate { steps, map }
@@ -1522,7 +1525,7 @@ struct DataFlowAnalysis<'ast, 'a> {
     calls: &'a mut IndexSet<CallId, Call>,
     changed: &'a mut bool,
 
-    fn_assignments: &'a HashableHashMap<Id, Assignment>,
+    fn_assignments: &'a HashableHashMap<VarId, Assignment>,
 
     root_call: CallId,
 
