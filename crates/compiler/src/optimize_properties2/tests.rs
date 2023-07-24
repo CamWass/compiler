@@ -42,6 +42,42 @@ fn test_same(input: &str) {
 // TODO: more tests e.g. for branch joins, more invalidations, infinite loops etc
 
 #[test]
+fn test_unary_operators() {
+    test_transform(
+        "
+function f() {
+    const expr = +true || typeof 1 || void 1 || !1 || delete 1;
+    const obj = expr || { prop1: 1 };
+    obj.prop1;
+    return obj;
+}
+f().prop1;
+",
+        "
+function f() {
+    const expr = +true || typeof 1 || void 1 || !1 || delete 1;
+    const obj = expr || { a: 1 };
+    obj.a;
+    return obj;
+}
+f().a;
+",
+    );
+    // We don't currently track the input type, so can't know the output type
+    // for numeric ops.
+    test_same(
+        "
+function f() {
+    const obj = -1 || ~1 || { prop1: 1 };
+    obj.prop1;
+    return obj;
+}
+f().prop1;
+",
+    );
+}
+
+#[test]
 fn test_binary_operators() {
     // The type of an equality/relative operator should be a boolean.
     test_transform(

@@ -1718,7 +1718,15 @@ impl<'ast> Analyser<'ast, '_> {
             }
             NodeKind::UnaryExpr(node) => {
                 self.visit_and_get_object(Node::from(node.arg.as_ref()), conditional);
-                None
+                // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-unary-operators
+                match node.op {
+                    UnaryOp::Plus => Some(Pointer::Object(ObjectStore::NUMBER)),
+                    UnaryOp::TypeOf => Some(Pointer::Object(ObjectStore::STRING)),
+                    UnaryOp::Void => Some(Pointer::NullOrVoid),
+                    UnaryOp::Bang | UnaryOp::Delete => Some(Pointer::Object(ObjectStore::BOOL)),
+                    // Output type depends in input type.
+                    UnaryOp::Minus | UnaryOp::Tilde => None,
+                }
             }
             NodeKind::UpdateExpr(node) => {
                 self.visit_and_get_object(Node::from(node.arg.as_ref()), conditional);

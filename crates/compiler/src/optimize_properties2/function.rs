@@ -1141,7 +1141,16 @@ impl<'ast> Analyser<'_, 'ast> {
             }
             NodeKind::UnaryExpr(node) => {
                 self.visit_and_get_r_value(Node::from(node.arg.as_ref()), conditional);
-                self.push(Step::StoreRValue(None));
+                // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-unary-operators
+                let value = match node.op {
+                    UnaryOp::Plus => Some(RValue::Number),
+                    UnaryOp::TypeOf => Some(RValue::String),
+                    UnaryOp::Void => Some(RValue::NullOrVoid),
+                    UnaryOp::Bang | UnaryOp::Delete => Some(RValue::Boolean),
+                    // Output type depends in input type.
+                    UnaryOp::Minus | UnaryOp::Tilde => None,
+                };
+                self.push(Step::StoreRValue(value));
             }
             NodeKind::UpdateExpr(node) => {
                 self.visit_and_get_r_value(Node::from(node.arg.as_ref()), conditional);
