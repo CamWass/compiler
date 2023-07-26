@@ -1959,7 +1959,7 @@ impl<'ast> Analyser<'ast, '_> {
                         .args
                         .get(i)
                         .copied()
-                        .unwrap_or(Some(Pointer::NullOrVoid));
+                        .unwrap_or(None);
 
                     self.lattice
                         .insert_var_assignment(param_name, Assignment { rhs: value });

@@ -1037,7 +1037,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                         }
                                         Some(Pointer::Union(union)) => {
                                             for constituent in self.unions[union].constituents() {
-                                                if o == ObjectStore::RESOLVING_CALL {
+                                                if constituent == ObjectStore::RESOLVING_CALL {
                                                     return None;
                                                 }
                                                 if !done.contains(&constituent) {
@@ -1615,8 +1615,8 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
         let state = &self.state.node_annotations[&node.node_id];
         let outBefore = state.out;
         if let Some(new_out) = self.flowThrough(node_index, state.in_) {
-            self.get_flow_state_mut(node.node_id).out = new_out;
             if outBefore != new_out {
+                self.get_flow_state_mut(node.node_id).out = new_out;
                 FlowResult::Change
             } else {
                 FlowResult::NoChange
