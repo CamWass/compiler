@@ -85,6 +85,8 @@ pub(super) struct StepBuilder {
 
     /// Set of indices of steps that will be removed.
     indices_to_remove: GrowableBitSet<usize>,
+
+    l_value_stores_to_set_to_none: Vec<usize>,
 }
 
 impl StepBuilder {
@@ -93,6 +95,7 @@ impl StepBuilder {
             step_buffer: Vec::new(),
             r_value_store_stack: Vec::new(),
             indices_to_remove: GrowableBitSet::new_empty(),
+            l_value_stores_to_set_to_none: Vec::new(),
             // These should be the same as Machine's initial values.
             cur_builder_r_value: vec![None],
             cur_builder_l_value: None,
@@ -107,10 +110,13 @@ impl StepBuilder {
             indices_to_remove,
             cur_builder_r_value,
             cur_builder_l_value,
+            l_value_stores_to_set_to_none,
         } = self;
         step_buffer.clear();
         r_value_store_stack.clear();
         indices_to_remove.clear();
+        // optimise should clear this by itself.
+        debug_assert!(l_value_stores_to_set_to_none.is_empty());
         // These have special initial states.
         cur_builder_r_value.clear();
         cur_builder_r_value.push(None);
@@ -284,6 +290,7 @@ impl StepBuilder {
                         &mut end,
                         &mut removed_count,
                         &mut self.indices_to_remove,
+                        &self.step_buffer,
                         $debug_msg,
                     );
                 };
@@ -493,13 +500,15 @@ impl StepBuilder {
                 // Forwards pass. Primarily removes steps that don't have an
                 // observed effect on the tracked registers.
                 if run_forwards_pass && removed_count != self.step_buffer.len() {
+                    debug_assert!(self.l_value_stores_to_set_to_none.is_empty());
+
                     let mut cur_step_l_value = None;
                     // None signifies a dynamic value such as a union or call result.
                     let mut cur_step_r_value: Option<Option<RValue>> = Some(None);
                     self.r_value_store_stack.clear();
 
                     let iter_start = start;
-                    for (pos, step) in self.step_buffer[start..end].iter_mut().enumerate() {
+                    for (pos, step) in self.step_buffer[start..end].iter().enumerate() {
                         let pos = pos + iter_start;
                         if self.indices_to_remove.contains(pos) {
                             continue;
@@ -534,7 +543,7 @@ impl StepBuilder {
                                             }
                                             remove_step!(pos, "forward prop StoreLValue");
                                         } else {
-                                            *new = None;
+                                            self.l_value_stores_to_set_to_none.push(pos);
                                         }
                                         continue;
                                     }
@@ -656,6 +665,12 @@ impl StepBuilder {
                             | Step::StartCall(_) => {}
                         }
                     }
+
+                    for pos in &self.l_value_stores_to_set_to_none {
+                        let v = unwrap_as!(&mut self.step_buffer[*pos], Step::StoreLValue(v), v);
+                        *v = None;
+                    }
+                    self.l_value_stores_to_set_to_none.clear();
                 }
                 run_forwards_pass = false;
             }
@@ -712,11 +727,15 @@ fn remove_step(
     end: &mut usize,
     removed_count: &mut usize,
     indices_to_remove: &mut GrowableBitSet<usize>,
+    step_buffer: &Vec<Step>,
     msg: &'static str,
 ) {
     const DEBUG: bool = false;
     if DEBUG {
-        println!("removing step at pos {} due to: '{}'", pos, msg);
+        println!(
+            "removing step {:#?} at pos {} due to: '{}'",
+            &step_buffer[pos], pos, msg
+        );
     }
 
     debug_assert!(!indices_to_remove.contains(pos));
