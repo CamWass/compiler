@@ -183,9 +183,17 @@ impl StepBuilder {
                     // relative), so simple equality works here.
                     if new == self.cur_builder_l_value {
                         return;
-                    } else {
-                        self.cur_builder_l_value = new;
                     }
+                    // All properties of an invalid pointer are invalid.
+                    if Some(&None) == self.cur_builder_r_value.last() {
+                        if let Some(LValue::RValueProp(_)) = new {
+                            if self.cur_builder_l_value != None {
+                                self.step_buffer.push(Step::StoreLValue(None));
+                            }
+                            return;
+                        }
+                    }
+                    self.cur_builder_l_value = new;
                 }
                 // These create dynamic RValues we can't/don't track, so the
                 // current RValue is now unknown.
@@ -204,6 +212,12 @@ impl StepBuilder {
                             return;
                         }
                         // Non-static; keep
+                    }
+                    // All properties of an invalid pointer are invalid.
+                    if Some(&None) == self.cur_builder_r_value.last() {
+                        if let Some(RValue::Prop(_)) = new {
+                            return;
+                        }
                     }
                     self.cur_builder_r_value.push(new);
                 }
@@ -270,7 +284,6 @@ impl StepBuilder {
                         &mut end,
                         &mut removed_count,
                         &mut self.indices_to_remove,
-                        &self.step_buffer,
                         $debug_msg,
                     );
                 };
@@ -486,7 +499,7 @@ impl StepBuilder {
                     self.r_value_store_stack.clear();
 
                     let iter_start = start;
-                    for (pos, step) in self.step_buffer[start..end].iter().enumerate() {
+                    for (pos, step) in self.step_buffer[start..end].iter_mut().enumerate() {
                         let pos = pos + iter_start;
                         if self.indices_to_remove.contains(pos) {
                             continue;
@@ -510,9 +523,23 @@ impl StepBuilder {
                                         run_backwards_pass = true;
                                     }
                                     remove_step!(pos, "forward StoreLValue");
-                                } else {
-                                    cur_step_l_value = *new;
+                                    continue;
                                 }
+                                // All properties of an invalid pointer are invalid.
+                                if Some(None) == cur_step_r_value {
+                                    if let Some(LValue::RValueProp(_)) = new {
+                                        if cur_step_l_value == None {
+                                            if !first {
+                                                run_backwards_pass = true;
+                                            }
+                                            remove_step!(pos, "forward prop StoreLValue");
+                                        } else {
+                                            *new = None;
+                                        }
+                                        continue;
+                                    }
+                                }
+                                cur_step_l_value = *new;
                             }
                             Step::RestoreRValue => {
                                 // If the restored value is the same as the current RValue,
@@ -569,6 +596,16 @@ impl StepBuilder {
                                         remove_step!(pos, "forward StoreRValue");
                                     }
                                     // Non-static; keep
+                                } else if Some(None) == cur_step_r_value {
+                                    // All properties of an invalid pointer are invalid.
+                                    if let Some(RValue::Prop(_)) = new {
+                                        if !first {
+                                            run_backwards_pass = true;
+                                        }
+                                        remove_step!(pos, "forward prop StoreRValue");
+                                    } else {
+                                        cur_step_r_value = Some(*new);
+                                    }
                                 } else {
                                     cur_step_r_value = Some(*new);
                                 }
@@ -675,15 +712,11 @@ fn remove_step(
     end: &mut usize,
     removed_count: &mut usize,
     indices_to_remove: &mut GrowableBitSet<usize>,
-    step_buffer: &Vec<Step>,
     msg: &'static str,
 ) {
     const DEBUG: bool = false;
     if DEBUG {
-        println!(
-            "removing step {:#?} at pos {} due to: '{}'",
-            &step_buffer[pos], pos, msg
-        );
+        println!("removing step at pos {} due to: '{}'", pos, msg);
     }
 
     debug_assert!(!indices_to_remove.contains(pos));
