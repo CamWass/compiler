@@ -278,12 +278,12 @@ impl StepBuilder {
             // End of the step list. All steps after this have been removed.
             let mut end = self.step_buffer.len();
             let mut removed_count = 0;
-            let mut run_backwards_pass = true;
-            let mut run_forwards_pass = true;
+            let mut changed = true;
 
             /// Removes the step at `pos`.
             macro_rules! remove_step {
-                ($pos:expr, $debug_msg:literal) => {
+                ($pos:expr, $debug_msg:literal, $($p:pat)|+) => {
+                    debug_assert!(matches!(self.step_buffer[$pos], $($p)|+));
                     remove_step(
                         $pos,
                         &mut start,
@@ -292,16 +292,17 @@ impl StepBuilder {
                         &mut self.indices_to_remove,
                         &self.step_buffer,
                         $debug_msg,
+                        stringify!($($p)|+),
                     );
                 };
             }
 
-            while (run_backwards_pass || run_forwards_pass)
-                && removed_count != self.step_buffer.len()
-            {
+            while changed && removed_count != self.step_buffer.len() {
+                changed = false;
+
                 // Backwards pass. Primarily removes steps whose effects are
                 // superseded by future steps before they are observed.
-                if run_backwards_pass && removed_count != self.step_buffer.len() {
+                if removed_count != self.step_buffer.len() {
                     // True after an RValue store. False after an RValue read.
                     let mut remove_r_stores = true;
                     // True after an LValue store. False after an LValue read.
@@ -322,17 +323,22 @@ impl StepBuilder {
                                     // .. it's the last step, in which case its
                                     // value is never read. Or...
                                     let save_pos = self.find_r_value_save(pos, start);
-                                    remove_step!(pos, "last RestoreRValue:RestoreRValue");
-                                    remove_step!(save_pos, "last RestoreRValue:SaveRValue");
+                                    remove_step!(pos, "last RestoreRValue", Step::RestoreRValue);
+                                    remove_step!(save_pos, "last RestoreRValue", Step::SaveRValue);
                                 } else if remove_r_stores {
                                     // ... we are removing RValue stores, in which case
                                     // its value will be overwritten before its read.
                                     let save_pos = self.find_r_value_save(pos, start);
-                                    run_forwards_pass = true;
-                                    remove_step!(pos, "remove_stores RestoreRValue:RestoreRValue");
+                                    changed = true;
+                                    remove_step!(
+                                        pos,
+                                        "remove_stores RestoreRValue",
+                                        Step::RestoreRValue
+                                    );
                                     remove_step!(
                                         save_pos,
-                                        "remove_stores RestoreRValue:SaveRValue"
+                                        "remove_stores RestoreRValue",
+                                        Step::SaveRValue
                                     );
                                 } else {
                                     // Can't remove the save/restore, but this means
@@ -352,12 +358,12 @@ impl StepBuilder {
                                 if last {
                                     // .. it's the last step, in which case its
                                     // value is never read. Or...
-                                    remove_step!(pos, "last StoreLValue");
+                                    remove_step!(pos, "last", Step::StoreLValue(_));
                                 } else if remove_l_stores {
                                     // ... we are removing LValue stores, in which case
                                     // its value will be overwritten before its read.
-                                    run_forwards_pass = true;
-                                    remove_step!(pos, "remove_l_stores StoreLValue");
+                                    changed = true;
+                                    remove_step!(pos, "remove_l_stores", Step::StoreLValue(_));
                                 } else {
                                     // Can't remove this StoreLValue, but that means it
                                     // overwrites previous ones, which can be removed.
@@ -377,12 +383,12 @@ impl StepBuilder {
                                 if last {
                                     // .. it's the last step, in which case its
                                     // value is never read. Or...
-                                    remove_step!(pos, "last StoreRValue");
+                                    remove_step!(pos, "last", Step::StoreRValue(_));
                                 } else if remove_r_stores {
                                     // ... we are removing RValue stores, in which case
                                     // its value will be overwritten before its read.
-                                    run_forwards_pass = true;
-                                    remove_step!(pos, "remove_stores StoreRValue");
+                                    changed = true;
+                                    remove_step!(pos, "remove_stores", Step::StoreRValue(_));
                                 } else {
                                     // Can't remove this StoreRValue. If it doesn't depend
                                     // on previous RValues, then it overwrites them and the
@@ -436,7 +442,11 @@ impl StepBuilder {
                                             if open_unions == 0 {
                                                 // Found the closing StoreUnion for our
                                                 // union; stop
-                                                remove_step!(union_pos, "closing StartUnion");
+                                                remove_step!(
+                                                    union_pos,
+                                                    "closing",
+                                                    Step::StartUnion
+                                                );
                                                 break;
                                             } else if open_unions == 1 {
                                                 // Re-entered target union; resume recording.
@@ -446,7 +456,11 @@ impl StepBuilder {
                                         Step::PushToUnion => {
                                             // Record pushes so they can be removed.
                                             if record_union_pushes {
-                                                remove_step!(union_pos, "intermediary PushToUnion");
+                                                remove_step!(
+                                                    union_pos,
+                                                    "intermediary",
+                                                    Step::PushToUnion
+                                                );
                                             }
                                         }
                                         Step::StoreUnion => {
@@ -463,8 +477,8 @@ impl StepBuilder {
                                 debug_assert!(record_union_pushes == true);
 
                                 // Remove original StoreUnion step.
-                                run_forwards_pass = true;
-                                remove_step!(pos, "opening StoreUnion");
+                                changed = true;
+                                remove_step!(pos, "opening", Step::StoreUnion);
                             }
 
                             Step::Call => {
@@ -495,11 +509,10 @@ impl StepBuilder {
                         }
                     }
                 }
-                run_backwards_pass = false;
 
                 // Forwards pass. Primarily removes steps that don't have an
                 // observed effect on the tracked registers.
-                if run_forwards_pass && removed_count != self.step_buffer.len() {
+                if removed_count != self.step_buffer.len() {
                     debug_assert!(self.l_value_stores_to_set_to_none.is_empty());
 
                     let mut cur_step_l_value = None;
@@ -529,9 +542,9 @@ impl StepBuilder {
                                 // relative), so simple equality works here.
                                 if *new == cur_step_l_value {
                                     if !first {
-                                        run_backwards_pass = true;
+                                        changed = true;
                                     }
-                                    remove_step!(pos, "forward StoreLValue");
+                                    remove_step!(pos, "forward", Step::StoreLValue(_));
                                     continue;
                                 }
                                 // All properties of an invalid pointer are invalid.
@@ -539,9 +552,9 @@ impl StepBuilder {
                                     if let Some(LValue::RValueProp(_)) = new {
                                         if cur_step_l_value == None {
                                             if !first {
-                                                run_backwards_pass = true;
+                                                changed = true;
                                             }
-                                            remove_step!(pos, "forward prop StoreLValue");
+                                            remove_step!(pos, "forward prop", Step::StoreLValue(_));
                                         } else {
                                             self.l_value_stores_to_set_to_none.push(pos);
                                         }
@@ -559,9 +572,17 @@ impl StepBuilder {
                                 // The RestoreRValue/SaveRValue can be removed if...
                                 if !overwritten {
                                     // ...the RValue is not modified between them. Or...
-                                    run_backwards_pass = true;
-                                    remove_step!(pos, "unmodified RestoreRValue:RestoreRValue");
-                                    remove_step!(store_pos, "unmodified RestoreRValue:SaveRValue");
+                                    changed = true;
+                                    remove_step!(
+                                        pos,
+                                        "unmodified RestoreRValue",
+                                        Step::RestoreRValue
+                                    );
+                                    remove_step!(
+                                        store_pos,
+                                        "unmodified RestoreRValue",
+                                        Step::SaveRValue
+                                    );
                                     cur_step_r_value = saved;
                                 } else if saved.is_some() && saved == cur_step_r_value {
                                     // ...the modified value is equivalent to the saved value.
@@ -569,9 +590,13 @@ impl StepBuilder {
                                         saved.unwrap().is_none()
                                             || saved.unwrap().unwrap().is_static()
                                     );
-                                    run_backwards_pass = true;
-                                    remove_step!(pos, "equal RestoreRValue:RestoreRValue");
-                                    remove_step!(store_pos, "equal RestoreRValue:SaveRValue");
+                                    changed = true;
+                                    remove_step!(pos, "equal RestoreRValue", Step::RestoreRValue);
+                                    remove_step!(
+                                        store_pos,
+                                        "equal RestoreRValue",
+                                        Step::SaveRValue
+                                    );
                                 } else {
                                     if let Some((_, _, overwritten)) =
                                         self.r_value_store_stack.last_mut()
@@ -600,18 +625,18 @@ impl StepBuilder {
                                     if new.is_none() || new.unwrap().is_static() {
                                         // Static; remove
                                         if !first {
-                                            run_backwards_pass = true;
+                                            changed = true;
                                         }
-                                        remove_step!(pos, "forward StoreRValue");
+                                        remove_step!(pos, "forward", Step::StoreRValue(_));
                                     }
                                     // Non-static; keep
                                 } else if Some(None) == cur_step_r_value {
                                     // All properties of an invalid pointer are invalid.
                                     if let Some(RValue::Prop(_)) = new {
                                         if !first {
-                                            run_backwards_pass = true;
+                                            changed = true;
                                         }
-                                        remove_step!(pos, "forward prop StoreRValue");
+                                        remove_step!(pos, "forward prop", Step::StoreRValue(_));
                                     } else {
                                         cur_step_r_value = Some(*new);
                                     }
@@ -628,9 +653,13 @@ impl StepBuilder {
                             Step::Assign(_) | Step::InvalidateLValue => {
                                 if cur_step_l_value.is_none() {
                                     if !first {
-                                        run_backwards_pass = true;
+                                        changed = true;
                                     }
-                                    remove_step!(pos, "forward Assign/InvalidateLValue");
+                                    remove_step!(
+                                        pos,
+                                        "forward",
+                                        Step::Assign(_) | Step::InvalidateLValue
+                                    );
                                 }
                             }
                             // Invalidating an unknown/primitive RValue has no effect.
@@ -653,14 +682,52 @@ impl StepBuilder {
                                 }
                                 if !can_invalidate {
                                     if !first {
-                                        run_backwards_pass = true;
+                                        changed = true;
                                     }
-                                    remove_step!(pos, "forward InvalidateRValue");
+                                    remove_step!(pos, "forward", Step::InvalidateRValue);
                                 }
                             }
+
+                            // Remove unions that only store one constituent. The value
+                            // might come from explicit stores between the StartUnion and
+                            // StoreUnion, or it may implicitly come from the current RValue.
+                            // e.g.
+                            // implicit: [StartUnion, PushToUnion, StoreUnion]
+                            // explicit: [StartUnion, StoreRValue, PushToUnion, StoreUnion]
+                            Step::StartUnion => {
+                                let iter_start = pos + 1;
+                                let next = self.step_buffer[iter_start..end]
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(p, s)| (p + iter_start, s))
+                                    .filter(|(p, _)| !self.indices_to_remove.contains(*p));
+
+                                // Skip over any explicit stores.
+                                let mut next =
+                                    next.skip_while(|(_, s)| matches!(s, Step::StoreRValue(_)));
+
+                                // We already matched the StartUnion and any explicit stores.
+                                // Now look for the closing PushToUnion and StoreUnion.
+                                if let Some((push_pos, Step::PushToUnion)) = next.next() {
+                                    if let Some((store_pos, Step::StoreUnion)) = next.next() {
+                                        changed = true;
+                                        remove_step!(pos, "forward StartUnion", Step::StartUnion);
+                                        remove_step!(
+                                            push_pos,
+                                            "forward PushToUnion",
+                                            Step::PushToUnion
+                                        );
+                                        remove_step!(
+                                            store_pos,
+                                            "forward StoreUnion",
+                                            Step::StoreUnion
+                                        );
+                                    }
+                                }
+                            }
+
                             Step::StoreArg
                             | Step::Return
-                            | Step::StartUnion
                             | Step::PushToUnion
                             | Step::StartCall(_) => {}
                         }
@@ -672,7 +739,25 @@ impl StepBuilder {
                     }
                     self.l_value_stores_to_set_to_none.clear();
                 }
-                run_forwards_pass = false;
+
+                // Remove consecutive steps that are duplicates.
+                if self.step_buffer.len() - removed_count > 1 {
+                    debug_assert!(!self.indices_to_remove.contains(start));
+                    let mut cur = &self.step_buffer[start];
+                    let iter_start = start + 1;
+                    for (pos, step) in self.step_buffer[iter_start..end].iter().enumerate() {
+                        let pos = pos + iter_start;
+                        if self.indices_to_remove.contains(pos) {
+                            continue;
+                        }
+                        if steps_are_duplicates(cur, step) {
+                            changed = true;
+                            remove_step!(pos, "dedup", _);
+                        } else {
+                            cur = step;
+                        }
+                    }
+                }
             }
         }
 
@@ -685,8 +770,10 @@ impl StepBuilder {
             !remove
         });
 
-        // Remove consecutive steps that are duplicates.
-        self.step_buffer.dedup_by(|a, b| steps_are_duplicates(a, b))
+        debug_assert!(self
+            .step_buffer
+            .windows(2)
+            .all(|w| !steps_are_duplicates(&w[0], &w[1])))
     }
 
     /// Returns the position in `step_buffer` of the [`SaveRValue`][Step::SaveRValue]
@@ -729,12 +816,13 @@ fn remove_step(
     indices_to_remove: &mut GrowableBitSet<usize>,
     step_buffer: &Vec<Step>,
     msg: &'static str,
+    step_pattern: &'static str,
 ) {
     const DEBUG: bool = false;
     if DEBUG {
         println!(
-            "removing step {:#?} at pos {} due to: '{}'",
-            &step_buffer[pos], pos, msg
+            "removing step {:#?} at pos {} due to: '{} {}'",
+            &step_buffer[pos], pos, msg, step_pattern
         );
     }
 
@@ -749,9 +837,13 @@ fn remove_step(
     // If the removed step was at the ends of the buffer, adjust the bounds so
     // we don't visit it again.
     if last {
-        *end = end.saturating_sub(1);
+        while *end > *start && indices_to_remove.contains(*end) {
+            *end = end.saturating_sub(1);
+        }
     } else if first {
-        *start += 1;
+        while *end > *start && indices_to_remove.contains(*start) {
+            *start += 1;
+        }
     }
 }
 
