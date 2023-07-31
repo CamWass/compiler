@@ -29,12 +29,14 @@ pub(super) fn create_step_map(
     names: &mut IndexSet<NameId, JsWord>,
     vars: &mut IndexSet<VarId, Id>,
     builder: &mut StepBuilder,
-) -> (Vec<Step>, Vec<(u32, u32)>) {
+) -> (Vec<Step>, Vec<(u32, u32)>, bool) {
     let cfg = &static_fn_data[func].cfg;
     let graph = &cfg.graph;
 
     let mut steps = Vec::new();
     let mut map: Vec<(u32, u32)> = vec![(0, 0); graph.node_count()];
+
+    let mut references_env_vars = false;
 
     // TODO: skip unreachable nodes?
     for node in graph.node_indices() {
@@ -54,6 +56,8 @@ pub(super) fn create_step_map(
             function_map,
             names,
             vars,
+            references_env_vars: &mut references_env_vars,
+            param_end: static_fn_data[func].param_end,
         };
         analyser.init(graph[node], conditional);
 
@@ -64,7 +68,7 @@ pub(super) fn create_step_map(
         map[node.index()] = builder.build(&mut steps);
     }
 
-    (steps, map)
+    (steps, map, references_env_vars)
 }
 
 #[derive(Debug)]
@@ -996,10 +1000,12 @@ struct Analyser<'a, 'ast> {
     function_map: &'a FxHashMap<NodeId, FnId>,
     names: &'a mut IndexSet<NameId, JsWord>,
     vars: &'a mut IndexSet<VarId, Id>,
+    references_env_vars: &'a mut bool,
+    param_end: u32,
 }
 
 impl<'ast> Analyser<'_, 'ast> {
-    /// Records the given step. Redundant steps may be skipped.
+    /// Records the given step.
     fn push(&mut self, step: Step) {
         self.step_builder.push(step);
     }
@@ -1021,6 +1027,9 @@ impl<'ast> Analyser<'_, 'ast> {
             let name = self.names.get_index(&ident.sym).unwrap();
             let id = Id(name, ident.span.ctxt);
             let id = self.vars.get_index(&id).unwrap();
+            if id.as_u32() < self.param_end {
+                *self.references_env_vars = true;
+            }
             Some(id)
         }
     }

@@ -450,6 +450,11 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
                 &mut store.names,
                 &mut store.vars,
                 &mut step_builder,
+                &mut store.unions,
+                &mut store.objects_map,
+                &mut store.objects,
+                &mut store.invalid_objects,
+                &store.fn_assignments,
             )
         })
         .collect();
@@ -1810,6 +1815,13 @@ impl<'ast> Analyser<'ast, '_> {
             NodeKind::CallExpr(node) => {
                 let callee = self.visit_and_get_object(Node::from(&node.callee), conditional);
                 if let Some(Pointer::Fn(func)) = callee {
+                    if let CallTemplate::Simple(return_value) = self.store.call_templates[func] {
+                        for arg in &node.args {
+                            self.visit_and_get_object(Node::from(arg), conditional);
+                        }
+                        return return_value;
+                    }
+
                     let mut args = CallArgBuilder::new(node.args.len());
                     for arg in &node.args {
                         let mut arg = self.visit_and_get_object(Node::from(arg), conditional);

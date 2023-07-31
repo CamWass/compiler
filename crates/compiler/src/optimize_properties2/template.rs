@@ -123,6 +123,11 @@ impl Visitor<CallId> for Resolver<'_, '_> {
             .lattice_elements
             .insert(entry_lattice);
 
+        let (steps, step_map) = match &self.call_templates[func] {
+            CallTemplate::Steps(steps) => (&steps.steps, &steps.map),
+            _ => unreachable!(),
+        };
+
         let mut analysis = DataFlowAnalysis {
             workQueue: UniqueQueue::reuse_inner(
                 std::mem::take(&mut self.state.data_flow_state.work_queue_inner),
@@ -134,8 +139,9 @@ impl Visitor<CallId> for Resolver<'_, '_> {
             initial_lattice,
 
             call: node,
-            step_map: &self.call_templates[func].map,
-            steps: &self.call_templates[func].steps,
+            step_map,
+            steps,
+            call_templates: &self.call_templates,
             resolved_calls: self.resolved_calls,
             return_types: &mut self.state.return_types,
             return_states: &mut self.state.return_states,
@@ -638,14 +644,21 @@ impl Machine<'_> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-/// Info required to compute the effects of a call.
-pub(super) struct CallTemplate {
+#[derive(Debug)]
+pub(super) struct CallSteps {
     /// [`Steps`][Step] that represent the effects of each control flow graph
     /// node required to evaluate the call's effects.
     steps: Vec<Step>,
     /// Map from CFG [`NodeIndex`] to `(start, end)` indices in the step list.
     map: Vec<(u32, u32)>,
+}
+
+#[derive(Debug)]
+/// Info required to compute the effects of a call.
+pub(super) enum CallTemplate {
+    Steps(CallSteps),
+    /// Does not modify/access external state.
+    Simple(Option<Pointer>),
 }
 
 impl CallTemplate {
@@ -657,8 +670,13 @@ impl CallTemplate {
         names: &mut IndexSet<NameId, JsWord>,
         vars: &mut IndexSet<VarId, Id>,
         builder: &mut StepBuilder,
+        unions: &mut UnionStore,
+        objects_map: &mut FxHashMap<NodeId, ObjectId>,
+        objects: &mut ObjectStore,
+        invalid_objects: &mut GrowableBitSet<ObjectId>,
+        fn_assignments: &HashableHashMap<VarId, Assignment>,
     ) -> CallTemplate {
-        let (steps, map) = create_step_map(
+        let (steps, map, references_env_vars) = create_step_map(
             static_fn_data,
             unresolved_ctxt,
             func,
@@ -667,8 +685,320 @@ impl CallTemplate {
             vars,
             builder,
         );
-        CallTemplate { steps, map }
+
+        // Returns true if the function has side effects that cannot be
+        // determined/applied ahead of time. For example, calling another function
+        // can have unknown side effects, but invalidating a static pointer can
+        // safely be done once, ahead of time.
+        // Prop accesses are not side effects by themselves, but we bail on them
+        // to avoid tracking/applying property assignments for the return type.
+        let contains_dynamic_side_effects = || {
+            steps.iter().any(|s| match s {
+                Step::StoreRValue(v) => match v {
+                    Some(RValue::Var(v)) => {
+                        debug_assert!(
+                            !references_env_vars || v.as_u32() >= static_fn_data[func].param_end
+                        );
+                        false
+                    }
+                    None
+                    | Some(
+                        RValue::NullOrVoid
+                        | RValue::Object(_)
+                        | RValue::String
+                        | RValue::Boolean
+                        | RValue::Number
+                        | RValue::BigInt,
+                    ) => false,
+                    Some(RValue::Prop(_) | RValue::Fn(_)) => true,
+                },
+                Step::StoreLValue(v) => match v {
+                    Some(LValue::Var(v)) => {
+                        debug_assert!(
+                            !references_env_vars || v.as_u32() >= static_fn_data[func].param_end
+                        );
+                        false
+                    }
+                    None => false,
+                    Some(LValue::ObjectProp(_, _) | LValue::RValueProp(_)) => true,
+                },
+                // Invalidating can be a side effect, but we check above that the
+                // entity being invalidated is static.
+                Step::InvalidateRValue | Step::InvalidateLValue | Step::Assign(_) => false,
+                // StartCall has no effect, but is always paired with a Call,
+                // which has side effects, so we bail early.
+                Step::StartCall(_) | Step::Call => true,
+                _ => false,
+            })
+        };
+
+        if references_env_vars || contains_dynamic_side_effects() {
+            CallTemplate::Steps(CallSteps { steps, map })
+        } else {
+            let return_ty = compute_call(
+                steps,
+                map,
+                static_fn_data[func].cfg.implicit_return_index.index(),
+                unions,
+                objects_map,
+                objects,
+                invalid_objects,
+                fn_assignments,
+            );
+            CallTemplate::Simple(return_ty)
+        }
     }
+}
+
+#[derive(Debug)]
+struct SimpleMachine<'a> {
+    state: &'a mut SimpleMachineState,
+    steps: &'a [Step],
+    fn_assignments: &'a HashableHashMap<VarId, Assignment>,
+}
+
+impl SimpleMachine<'_> {
+    fn get_r_value(&self) -> Option<Pointer> {
+        *self.state.r_value.last().unwrap()
+    }
+    fn set_r_value(&mut self, value: Option<Pointer>) {
+        *self.state.r_value.last_mut().unwrap() = value;
+    }
+
+    fn get_var(&self, id: &VarId) -> Option<Assignment> {
+        self.state
+            .lattice
+            .var_assignments
+            .get(id)
+            .or_else(|| self.fn_assignments.get(id))
+            .copied()
+    }
+}
+
+#[derive(Debug)]
+struct SimpleMachineState {
+    /// Stack of unions (constituents) that are currently being built.
+    unions: ReusableStateStack<FxHashSet<Option<Pointer>>>,
+    /// Stack of expression values. Using a stack simplifies the [`Step`]
+    /// language, allowing us to handle nested expressions by pushing/popping
+    /// values on the stack.
+    r_value: Vec<Option<Pointer>>,
+    /// Register containing the current left-hand-side value.
+    l_value: Option<VarId>,
+    lattice: Lattice,
+}
+
+impl ReusableState for SimpleMachineState {
+    fn reset(&mut self) {
+        let SimpleMachineState {
+            unions,
+            r_value,
+            l_value,
+            lattice,
+        } = self;
+        unions.reset();
+        r_value.clear();
+        r_value.push(None);
+        *l_value = None;
+        debug_assert!(lattice.prop_assignments.is_empty());
+        lattice.var_assignments.clear();
+    }
+}
+
+impl Default for SimpleMachineState {
+    fn default() -> Self {
+        Self {
+            r_value: vec![None],
+            unions: Default::default(),
+            l_value: None,
+            lattice: Lattice::default(),
+        }
+    }
+}
+
+fn compute_call(
+    steps: Vec<Step>,
+    map: Vec<(u32, u32)>,
+    implicit_return_index: usize,
+    unions: &mut UnionStore,
+    objects_map: &mut FxHashMap<NodeId, ObjectId>,
+    objects: &mut ObjectStore,
+    invalid_objects: &mut GrowableBitSet<ObjectId>,
+    fn_assignments: &HashableHashMap<VarId, Assignment>,
+) -> Option<Pointer> {
+    let mut state = SimpleMachineState::default();
+
+    let mut return_types = FxHashSet::default();
+
+    for (node, (start, end)) in map.iter().enumerate() {
+        let steps = {
+            if node == implicit_return_index {
+                &IMPLICIT_RETURN_STEPS
+            } else {
+                let (start, end) = (*start as usize, *end as usize);
+                if start > steps.len() || end == start {
+                    continue;
+                }
+                &steps[start..end]
+            }
+        };
+        let mut machine = SimpleMachine {
+            state: &mut state,
+            steps,
+            fn_assignments,
+        };
+
+        for step in machine.steps {
+            match step {
+                Step::StoreRValue(value) => match value {
+                    None => {
+                        machine.set_r_value(None);
+                    }
+                    Some(value) => {
+                        let value = match value {
+                            RValue::NullOrVoid => Some(Pointer::NullOrVoid),
+                            RValue::String => Some(Pointer::Object(ObjectStore::STRING)),
+                            RValue::Boolean => Some(Pointer::Object(ObjectStore::BOOL)),
+                            RValue::Number => Some(Pointer::Object(ObjectStore::NUMBER)),
+                            RValue::BigInt => Some(Pointer::Object(ObjectStore::BIG_INT)),
+                            RValue::Object(node_id) => {
+                                let root = match objects_map.entry(*node_id) {
+                                    Entry::Occupied(entry) => *entry.get(),
+                                    Entry::Vacant(entry) => {
+                                        let object_id = objects.next_object_id();
+                                        entry.insert(object_id);
+                                        object_id
+                                    }
+                                };
+                                Some(Pointer::Object(root))
+                            }
+                            RValue::Var(rhs) => machine.get_var(rhs).and_then(|a| a.rhs),
+                            _ => unreachable!(),
+                        };
+                        machine.set_r_value(value);
+                    }
+                },
+                Step::StoreLValue(value) => match value {
+                    Some(LValue::Var(id)) => {
+                        machine.state.l_value = Some(*id);
+                    }
+                    None => {
+                        machine.state.l_value = None;
+                    }
+                    _ => unreachable!(),
+                },
+                Step::Assign(conditional) => {
+                    if let Some(slot) = &machine.state.l_value {
+                        let existing = machine.get_var(slot).and_then(|a| a.rhs);
+
+                        let rhs = if !conditional {
+                            // supersede
+                            machine.get_r_value()
+                        } else {
+                            // union
+                            create_union(unions, existing, machine.get_r_value())
+                        };
+                        let new = Assignment { rhs };
+                        machine.state.lattice.var_assignments.insert(*slot, new);
+                    } else {
+                        // Unknown/invalid assignment target.
+                        invalidate(
+                            invalid_objects,
+                            unions,
+                            machine.get_r_value(),
+                            &machine.state.lattice.prop_assignments,
+                        );
+                    }
+                }
+                Step::InvalidateRValue => {
+                    invalidate(
+                        invalid_objects,
+                        unions,
+                        machine.get_r_value(),
+                        &machine.state.lattice.prop_assignments,
+                    );
+                }
+                Step::InvalidateLValue => match &machine.state.l_value {
+                    Some(id) => {
+                        if let Some(rhs) = machine.get_var(id).map(|a| a.rhs) {
+                            invalidate(
+                                invalid_objects,
+                                unions,
+                                rhs,
+                                &machine.state.lattice.prop_assignments,
+                            );
+                        }
+                    }
+                    None => {}
+                },
+                Step::Return => {
+                    let r_value = machine.get_r_value();
+                    match r_value {
+                        Some(Pointer::Object(o)) => {
+                            if invalid_objects.contains(o) {
+                                return_types.insert(ReturnTypeConstituent::Invalid);
+                            } else {
+                                return_types.insert(ReturnTypeConstituent::Object(o));
+                            }
+                        }
+                        Some(Pointer::Union(union)) => {
+                            for constituent in unions[union].constituents() {
+                                return_types.insert(ReturnTypeConstituent::Object(constituent));
+                            }
+                        }
+                        Some(Pointer::Fn(_)) | None => {
+                            return_types.insert(ReturnTypeConstituent::Invalid);
+                        }
+                        Some(Pointer::NullOrVoid) => {
+                            return_types.insert(ReturnTypeConstituent::NullOrVoid);
+                        }
+                    }
+
+                    break;
+                }
+                Step::StartUnion => {
+                    machine.state.unions.push();
+                }
+                Step::PushToUnion => {
+                    let v = machine.get_r_value();
+                    machine.state.unions.cur().insert(v);
+                }
+                Step::StoreUnion => {
+                    let parts = &*machine.state.unions.cur();
+
+                    let mut builder = UnionBuilder::default();
+                    for &ty in parts {
+                        builder.add(ty, unions);
+                    }
+                    let result = unions.build_union(builder);
+
+                    machine.state.unions.pop();
+
+                    machine.set_r_value(result);
+                }
+                Step::SaveRValue => {
+                    let v = machine.get_r_value();
+                    machine.state.r_value.push(v);
+                }
+                Step::RestoreRValue => {
+                    machine.state.r_value.pop();
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    let mut builder = UnionBuilder::default();
+
+    for ty in return_types {
+        match ty {
+            ReturnTypeConstituent::Object(obj) => builder.add_object(Some(obj)),
+            ReturnTypeConstituent::Invalid => builder.add_object(None),
+            ReturnTypeConstituent::NullOrVoid => builder.add_null_or_void(),
+        };
+    }
+
+    unions.build_union(builder)
 }
 
 impl<'ast> DataFlowAnalysis<'ast, '_> {
@@ -960,6 +1290,11 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                         }
                         MachineCall::Valid(f, a) => (f, a),
                     };
+
+                    if let CallTemplate::Simple(return_value) = self.call_templates[func] {
+                        machine.set_r_value(return_value);
+                        continue;
+                    }
 
                     if let Some(heap) = &args.args {
                         if !heap.is_empty() {
@@ -1509,6 +1844,7 @@ struct DataFlowAnalysis<'ast, 'a> {
 
     step_map: &'a [(u32, u32)],
     steps: &'a [Step],
+    call_templates: &'a IndexVec<FnId, CallTemplate>,
 
     resolved_calls: &'a mut FxHashMap<CallId, ResolvedCall>,
 
