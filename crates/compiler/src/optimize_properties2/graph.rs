@@ -30,9 +30,14 @@ where
 
     let mut existing_dependencies = FxHashSet::default();
 
+    let mut updated_deps = FxHashSet::default();
+
+    let mut queue: VecDeque<N> = VecDeque::default();
+    let mut queue_set: FxHashSet<N> = FxHashSet::default();
+
     enum SCCResult<N> {
         Finish,
-        Update(N, FxHashSet<N>),
+        Update(N),
     }
 
     let mut finished = FxHashSet::default();
@@ -48,7 +53,7 @@ where
             // Fast(er) path; pull from pre-computed fringe.
 
             for &node in &fringe {
-                let mut updated_deps = FxHashSet::default();
+                updated_deps.clear();
                 let node_changed = visitor.visit_node(node, &mut updated_deps);
 
                 debug_assert!(!updated_deps.contains(&node));
@@ -111,17 +116,17 @@ where
             for &(start, end) in &scc_state.starts {
                 let scc = &scc_state.components[start..end];
 
-                let mut queue: VecDeque<N> = VecDeque::default();
-                let mut queue_set: FxHashSet<N> = FxHashSet::default();
+                queue.clear();
+                queue_set.clear();
 
                 queue.extend(scc);
                 queue_set.extend(scc);
 
-                let mut updated_deps = FxHashSet::default();
+                updated_deps.clear();
 
                 let mut scc_invalidated = false;
 
-                let mut existing_dependencies = FxHashSet::default();
+                existing_dependencies.clear();
 
                 let mut node;
                 loop {
@@ -161,13 +166,13 @@ where
                 }
 
                 let result = if scc_invalidated {
-                    SCCResult::Update(node.unwrap(), updated_deps)
+                    SCCResult::Update(node.unwrap())
                 } else {
                     SCCResult::Finish
                 };
 
                 match result {
-                    SCCResult::Update(node, updated_deps) => {
+                    SCCResult::Update(node) => {
                         debug_assert!(!updated_deps.contains(&node));
 
                         existing_dependencies.clear();
