@@ -28,12 +28,12 @@ where
 
     let mut scc_state = TarjanScc::new();
 
-    let mut existing_dependencies = FxHashSet::default();
-
     let mut updated_deps = FxHashSet::default();
 
     let mut queue: VecDeque<N> = VecDeque::default();
     let mut queue_set: FxHashSet<N> = FxHashSet::default();
+
+    let mut old_dependencies = Vec::new();
 
     enum SCCResult<N> {
         Finish,
@@ -58,23 +58,9 @@ where
 
                 debug_assert!(!updated_deps.contains(&node));
 
-                existing_dependencies.clear();
-                existing_dependencies.extend(graph.neighbors_directed(node, Outgoing));
+                let deps_changed = !updated_deps.is_empty();
 
-                let old_dependencies = existing_dependencies.difference(&updated_deps);
-                let new_dependencies = updated_deps.difference(&existing_dependencies);
-
-                let mut deps_changed = false;
-
-                for &old in old_dependencies {
-                    deps_changed = true;
-                    debug_assert!(graph.contains_edge(node, old));
-
-                    graph.remove_edge(node, old);
-                }
-
-                for &new in new_dependencies {
-                    deps_changed = true;
+                for &new in &updated_deps {
                     debug_assert!(!graph.contains_edge(node, new));
 
                     if finished.contains(&new) {
@@ -115,6 +101,7 @@ where
 
             for &(start, end) in &scc_state.starts {
                 let scc = &scc_state.components[start..end];
+                // TODO: check for single node SCC?
 
                 queue.clear();
                 queue_set.clear();
@@ -125,8 +112,6 @@ where
                 updated_deps.clear();
 
                 let mut scc_invalidated = false;
-
-                existing_dependencies.clear();
 
                 let mut node;
                 loop {
@@ -142,14 +127,20 @@ where
 
                     debug_assert!(!updated_deps.contains(&node));
 
-                    existing_dependencies.clear();
-                    existing_dependencies.extend(graph.neighbors_directed(node, Outgoing));
+                    let mut existing_dependency_count = 0;
+                    let mut deps_changed = false;
 
-                    let mut old_dependencies = existing_dependencies.difference(&updated_deps);
-                    let mut new_dependencies = updated_deps.difference(&existing_dependencies);
+                    for dep in graph.neighbors_directed(node, Outgoing) {
+                        existing_dependency_count += 1;
+                        if !updated_deps.contains(&dep) {
+                            deps_changed = true;
+                            break;
+                        }
+                    }
 
-                    let deps_changed =
-                        old_dependencies.next().is_some() || new_dependencies.next().is_some();
+                    if existing_dependency_count != updated_deps.len() {
+                        deps_changed = true;
+                    }
 
                     if deps_changed {
                         scc_invalidated = true;
@@ -175,18 +166,21 @@ where
                     SCCResult::Update(node) => {
                         debug_assert!(!updated_deps.contains(&node));
 
-                        existing_dependencies.clear();
-                        existing_dependencies.extend(graph.neighbors_directed(node, Outgoing));
+                        let has_dependencies = !updated_deps.is_empty();
 
-                        let old_dependencies = existing_dependencies.difference(&updated_deps);
-                        let new_dependencies = updated_deps.difference(&existing_dependencies);
+                        old_dependencies.clear();
 
-                        for &old in old_dependencies {
+                        old_dependencies.extend(
+                            graph
+                                .neighbors_directed(node, Outgoing)
+                                .filter(|n| !updated_deps.remove(n)),
+                        );
+                        for &old in &old_dependencies {
                             debug_assert!(graph.contains_edge(node, old));
                             graph.remove_edge(node, old);
                         }
 
-                        for &new in new_dependencies {
+                        for &new in &updated_deps {
                             debug_assert!(!graph.contains_edge(node, new));
                             if finished.contains(&new) {
                                 continue;
@@ -197,7 +191,7 @@ where
                             graph.add_edge(node, new, ());
                         }
 
-                        if updated_deps.is_empty() {
+                        if !has_dependencies {
                             fringe_candidates.insert(node);
                         }
                     }
