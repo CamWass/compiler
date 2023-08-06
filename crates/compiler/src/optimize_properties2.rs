@@ -18,6 +18,7 @@ mod utils;
 
 use std::borrow::Cow;
 use std::collections::hash_map::Entry;
+use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::hash::Hash;
 use std::ops::Deref;
@@ -28,7 +29,7 @@ use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use global_common::{SyntaxContext, DUMMY_SP};
 use index::bit_set::{BitMatrix, BitSet, GrowableBitSet};
 use index::vec::IndexVec;
-use petgraph::prelude::UnGraph;
+use petgraph::prelude::{DiGraphMap, UnGraph};
 use petgraph::{
     graph::{DiGraph, Neighbors, NodeIndex},
     EdgeDirection::*,
@@ -401,6 +402,8 @@ fn create_renaming_map(store: &mut Store) -> FxHashMap<NodeId, JsWord> {
     rename_map
 }
 
+static DONE_VAR_COUNT: std::sync::Mutex<Vec<usize>> = std::sync::Mutex::new(Vec::new());
+
 pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> {
     let mut store = Store {
         calls: IndexSet::default(),
@@ -421,7 +424,6 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
         call_resolver_state: ResolverState::default(),
         names: IndexSet::default(),
         vars: IndexSet::default(),
-        invalid_vars: GrowableBitSet::new_empty(),
     };
 
     {
@@ -443,6 +445,8 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
 
     let mut step_builder = StepBuilder::new();
 
+    let mut fn_graph = DiGraphMap::default();
+
     let call_templates = store
         .functions
         .indices()
@@ -454,17 +458,52 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
                 &store.function_map,
                 &mut store.names,
                 &mut store.vars,
-                &store.invalid_vars,
                 &mut step_builder,
                 &mut store.unions,
                 &mut store.objects_map,
                 &mut store.objects,
                 &mut store.invalid_objects,
                 &store.fn_assignments,
+                &mut fn_graph,
             )
         })
         .collect();
     store.call_templates = IndexVec::from_raw(call_templates);
+
+    // let mut dot = format!("{:?}", petgraph::dot::Dot::with_config(&fn_graph, &[]));
+
+    // std::fs::write("./fg.dot", dot).expect("Failed to output fn graph");
+
+    // let mut num_simple_templates = 0;
+    // let mut num_simple_with_props_templates = 0;
+    // let mut num_complex_templates = 0;
+
+    // for t in store.call_templates.iter() {
+    //     match t {
+    //         CallTemplate::Steps(_) => {
+    //             num_complex_templates += 1;
+    //         }
+    //         CallTemplate::Simple(_) => {
+    //             num_simple_templates += 1;
+    //         }
+    //         CallTemplate::SimpleWithProps(_, _) => {
+    //             num_simple_with_props_templates += 1;
+    //         }
+    //     }
+    // }
+
+    // println!("num_simple_templates: {}", num_simple_templates);
+    // println!(
+    //     "num_simple_with_props_templates: {}",
+    //     num_simple_with_props_templates
+    // );
+    // println!("num_complex_templates: {}", num_complex_templates);
+
+    // panic!();
+
+    let mut done_objects = GrowableBitSet::new_empty();
+    let mut done_functions = BitSet::new_empty(store.functions.len());
+    let mut done_vars = BitSet::new_empty(store.vars.len());
 
     let root = match &ast {
         Program::Module(n) => ControlFlowRoot::Module(n),
@@ -472,7 +511,15 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
     };
     let cfa = ControlFlowAnalysis::analyze(root, false);
 
-    let data_flow_analysis = DataFlowAnalysis::new(cfa.cfg, &cfa.nodePriorities, false, None);
+    let data_flow_analysis = DataFlowAnalysis::new(
+        cfa.cfg,
+        &cfa.nodePriorities,
+        false,
+        None,
+        &mut done_objects,
+        &mut done_functions,
+        &mut done_vars,
+    );
 
     let mut analysis = Analysis { data_flow_analysis };
     analysis.data_flow_analysis.analyze(&mut store);
@@ -517,7 +564,33 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
 
     let mut i = 0;
     while i < store.functions.len() {
-        // if i > 3771 {
+        // if i > 4000 {
+        //     {
+        //         let mut counts: FxHashMap<usize, usize> = FxHashMap::default();
+        //         for call in &store.calls {
+        //             let names = call
+        //                 .state
+        //                 .prop_assignments
+        //                 .keys()
+        //                 .map(|(_, n)| *n)
+        //                 .collect::<FxHashSet<_>>();
+        //             *counts.entry(names.len()).or_default() += 1;
+        //         }
+        //         let mut counts = counts.into_iter().collect::<Vec<_>>();
+        //         counts.sort_unstable();
+        //         dbg!(counts);
+        //     }
+
+        //     {
+        //         let counts = DONE_VAR_COUNT.lock().unwrap();
+        //         let counts = counts
+        //             .iter()
+        //             .enumerate()
+        //             .filter(|(_, c)| **c != 0)
+        //             .collect::<Vec<_>>();
+        //         dbg!(counts);
+        //     }
+
         //     panic!();
         // }
 
@@ -537,8 +610,15 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
             nodePriorities: static_data.node_priorities.clone(),
         };
 
-        let data_flow_analysis =
-            DataFlowAnalysis::new(cfa.cfg, &cfa.nodePriorities, true, Some(i.into()));
+        let data_flow_analysis = DataFlowAnalysis::new(
+            cfa.cfg,
+            &cfa.nodePriorities,
+            true,
+            Some(i.into()),
+            &mut done_objects,
+            &mut done_functions,
+            &mut done_vars,
+        );
 
         let mut analysis = Analysis { data_flow_analysis };
         analysis.data_flow_analysis.analyze(&mut store);
@@ -547,6 +627,32 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
     }
 
     // println!("Analysed {} functions:", store.functions.len());
+
+    // {
+    //     let mut counts: FxHashMap<usize, usize> = FxHashMap::default();
+    //     for call in &store.calls {
+    //         let names = call
+    //             .state
+    //             .prop_assignments
+    //             .keys()
+    //             .map(|(_, n)| *n)
+    //             .collect::<FxHashSet<_>>();
+    //         *counts.entry(names.len()).or_default() += 1;
+    //     }
+    //     let mut counts = counts.into_iter().collect::<Vec<_>>();
+    //     counts.sort_unstable();
+    //     dbg!(counts);
+    // }
+
+    // {
+    //     let counts = DONE_VAR_COUNT.lock().unwrap();
+    //     let counts = counts
+    //         .iter()
+    //         .enumerate()
+    //         .filter(|(_, c)| **c != 0)
+    //         .collect::<Vec<_>>();
+    //     dbg!(counts);
+    // }
 
     debug_assert!(!store.invalid_objects.contains(ObjectStore::RESOLVING_CALL));
     debug_assert!(!store.invalid_objects.contains(ObjectStore::NUMBER));
@@ -586,24 +692,22 @@ pub fn process(
             call_resolver_state,
             names,
             vars,
-            invalid_vars,
         } = &store;
 
         // dbg!(
         //     calls,
         //     functions,
-        //     static_fn_data,
+        //     // static_fn_data,
         //     function_map,
         //     objects_map,
         //     invalid_objects,
         //     unions,
         //     references,
         //     resolved_calls,
-        //     fn_assignments,
-        //     names,
-        //     vars,
-        //     invalid_vars,
-        //     call_templates
+        //     // fn_assignments,
+        //     // names,
+        //     // vars,
+        //     // call_templates
         // );
     }
 
@@ -725,7 +829,7 @@ impl<'ast> FnVisitor<'ast, '_> {
             node_priorities: cfa.nodePriorities,
             var_start,
             param_end,
-            captured_vars: FxHashSet::default(),
+            captured_vars: Vec::new(),
             accesses_arguments_array: false,
         };
 
@@ -755,14 +859,26 @@ impl<'ast> Visit<'ast> for FnVisitor<'ast, '_> {
         if let Some(func) = self.function_stack.last() {
             if node.sym == js_word!("arguments") && node.span.ctxt == self.store.unresolved_ctxt {
                 self.store.static_fn_data[*func].accesses_arguments_array = true;
+                return;
             }
         }
         let id = Id::new(node, &mut self.store.names);
         if let Some(id) = self.store.vars.get_index(&id) {
             for &func in self.function_stack.iter().rev() {
                 let static_data = &mut self.store.static_fn_data[func];
+
                 if id.as_u32() < static_data.var_start {
-                    static_data.captured_vars.insert(id);
+                    if let Some(i) = static_data.captured_vars.iter().position(|&e| e >= id) {
+                        if static_data.captured_vars[i] == id {
+                            // `id` is already in the set.
+                        } else {
+                            // `id` is smaller than one or more existing elements.
+                            static_data.captured_vars.insert(i, id);
+                        }
+                    } else {
+                        // `id` is larger than all existing elements.
+                        static_data.captured_vars.push(id);
+                    }
                 } else {
                     break;
                 }
@@ -842,8 +958,6 @@ pub struct Store<'ast> {
 
     names: IndexSet<NameId, JsWord>,
     vars: IndexSet<VarId, Id>,
-
-    invalid_vars: GrowableBitSet<VarId>,
 }
 
 impl Store<'_> {
@@ -888,6 +1002,22 @@ fn invalidated(
         }
         Pointer::Fn(_) => true,
         Pointer::NullOrVoid => false,
+    }
+}
+
+/// Returns true if `pointer` points to an invalid object.
+fn fully_invalidated(
+    pointer: Option<Pointer>,
+    invalid_objects: &GrowableBitSet<ObjectId>,
+    unions: &UnionStore,
+) -> bool {
+    match pointer {
+        Some(Pointer::Object(obj)) => invalid_objects.contains(obj),
+        Some(Pointer::Union(union)) => unions[union]
+            .constituents()
+            .all(|obj| invalid_objects.contains(obj)),
+        Some(Pointer::Fn(_)) | Some(Pointer::NullOrVoid) => false,
+        None => true,
     }
 }
 
@@ -946,12 +1076,12 @@ fn invalidate(
                     let new_invalidation = invalid_objects.insert(obj);
 
                     if new_invalidation {
-                        for ((o, _), prop) in prop_assignments.iter() {
-                            if *o == obj {
-                                if let Some(value) = prop.rhs {
-                                    if !done.contains(&value) {
-                                        queue.push(value);
-                                    }
+                        for (_, prop) in
+                            prop_assignments.range((obj, NameId::from_u32(0))..(obj, NameId::MAX))
+                        {
+                            if let Some(value) = prop.rhs {
+                                if !done.contains(&value) {
+                                    queue.push(value);
                                 }
                             }
                         }
@@ -1022,8 +1152,7 @@ pub(super) struct StaticFunctionData<'ast> {
     node_priorities: Vec<NodePriority>,
     var_start: u32,
     param_end: u32,
-    // TODO: what is the best data structure for this.
-    captured_vars: FxHashSet<VarId>,
+    captured_vars: Vec<VarId>,
     accesses_arguments_array: bool,
 }
 
@@ -1063,14 +1192,8 @@ impl CallArgs {
         unions: &UnionStore,
         prop_assignments: &PropertyAssignments,
     ) {
-        match arg {
-            Some(Pointer::Object(o)) => {
-                if invalid_objects.contains(o) {
-                    arg = None;
-                }
-            }
-
-            Some(Pointer::Union(_)) | Some(Pointer::Fn(_)) | Some(Pointer::NullOrVoid) | None => {}
+        if fully_invalidated(arg, invalid_objects, unions) {
+            arg = None;
         }
 
         if arg.is_some() {
@@ -1412,28 +1535,66 @@ impl Deref for CowLattice<'_> {
 }
 
 impl CowLattice<'_> {
-    fn insert_var_assignment(&mut self, name: VarId, value: Assignment) {
+    fn insert_var_assignment(
+        &mut self,
+        name: VarId,
+        value: Assignment,
+        invalid_objects: &GrowableBitSet<ObjectId>,
+        unions: &UnionStore,
+        fn_assignments: &HashableHashMap<VarId, Assignment>,
+    ) {
+        debug_assert!(
+            !matches!(
+                self.0.var_assignments.get(&name).and_then(|a| a.rhs),
+                Some(Pointer::Fn(_))
+            ) || self.0.var_assignments.get(&name) != fn_assignments.get(&name)
+        );
+        let new = if fully_invalidated(value.rhs, invalid_objects, unions) {
+            Assignment { rhs: None }
+        } else {
+            value
+        };
+
         if let Some(existing) = self.0.var_assignments.get(&name) {
-            if *existing == value {
+            if *existing == new {
                 return;
             }
-        }
 
-        self.0.to_mut().var_assignments.insert(name, value);
+            // if new.rhs.is_none() && !fn_assignments.contains_key(&name) {
+            //     self.0.to_mut().var_assignments.remove(&name);
+            //     return;
+            // }
+
+            // self.0.to_mut().var_assignments.insert(name, new);
+        }
+        // else if new.rhs.is_some() || fn_assignments.contains_key(&name) {
+        //     self.0.to_mut().var_assignments.insert(name, new);
+        // }
+        self.0.to_mut().var_assignments.insert(name, new);
     }
 
-    fn insert_prop_assignment(&mut self, prop: (ObjectId, NameId), value: Assignment) {
-        // TODO: here are elsewhere, same optimisation as for vars - remove/skip null/void assignments
+    fn insert_prop_assignment(
+        &mut self,
+        prop: (ObjectId, NameId),
+        value: Assignment,
+        invalid_objects: &GrowableBitSet<ObjectId>,
+        unions: &UnionStore,
+    ) {
+        let new = if fully_invalidated(value.rhs, invalid_objects, unions) {
+            Assignment { rhs: None }
+        } else {
+            value
+        };
         if let Some(existing) = self.0.prop_assignments.get(&prop) {
-            if *existing == value {
+            if *existing == new {
                 return;
             }
-        } else if let Some(Pointer::NullOrVoid) = value.rhs {
+        } else if let Some(Pointer::NullOrVoid) = new.rhs {
             // Assigning null/void is the same as having nothing assigned.
             return;
         }
 
-        self.0.to_mut().prop_assignments.insert(prop, value);
+        self.0.to_mut().prop_assignments.insert(prop, new);
     }
 
     fn get_var(
@@ -1454,6 +1615,9 @@ struct Analyser<'ast, 'a> {
     lattice: CowLattice<'a>,
     store: &'a mut Store<'ast>,
     in_fn: bool,
+    done_objects: &'a mut GrowableBitSet<ObjectId>,
+    done_functions: &'a mut BitSet<FnId>,
+    done_vars: &'a mut BitSet<VarId>,
 }
 
 impl<'ast> Analyser<'ast, '_> {
@@ -1499,7 +1663,13 @@ impl<'ast> Analyser<'ast, '_> {
             let new = Assignment { rhs };
             match slot {
                 Slot::Var(name) => {
-                    self.lattice.insert_var_assignment(name, new);
+                    self.lattice.insert_var_assignment(
+                        name,
+                        new,
+                        &self.store.invalid_objects,
+                        &self.store.unions,
+                        &self.store.fn_assignments,
+                    );
                 }
                 Slot::Prop(obj, key) => {
                     if self.store.invalidated(obj) {
@@ -1507,11 +1677,21 @@ impl<'ast> Analyser<'ast, '_> {
                     } else {
                         match obj {
                             Pointer::Object(obj) => {
-                                self.lattice.insert_prop_assignment((obj, key), new);
+                                self.lattice.insert_prop_assignment(
+                                    (obj, key),
+                                    new,
+                                    &self.store.invalid_objects,
+                                    &self.store.unions,
+                                );
                             }
                             Pointer::Union(union) => {
                                 for constituent in self.store.unions[union].constituents() {
-                                    self.lattice.insert_prop_assignment((constituent, key), new);
+                                    self.lattice.insert_prop_assignment(
+                                        (constituent, key),
+                                        new,
+                                        &self.store.invalid_objects,
+                                        &self.store.unions,
+                                    );
                                 }
                             }
                             Pointer::Fn(_) => {
@@ -1715,11 +1895,8 @@ impl<'ast> Analyser<'ast, '_> {
             let name = self.store.names.get_index(&ident.sym).unwrap();
             let id = Id(name, ident.span.ctxt);
             let id = self.store.vars.get_index(&id).unwrap();
-            if self.store.invalid_vars.contains(id) {
-                None
-            } else {
-                Some(id)
-            }
+
+            Some(id)
         }
     }
 
@@ -1757,7 +1934,7 @@ impl<'ast> Analyser<'ast, '_> {
         }
     }
 
-    fn call_fn(&mut self, func: FnId, args: CallArgs) -> Option<Pointer> {
+    fn call_fn(&mut self, func: FnId, args: CallArgs, conditional: bool) -> Option<Pointer> {
         let call = build_call(
             &self.lattice,
             func,
@@ -1769,12 +1946,21 @@ impl<'ast> Analyser<'ast, '_> {
             &self.store.vars,
             &self.store.names,
             &self.store.resolved_calls,
+            &mut self.done_objects,
+            &mut self.done_functions,
+            &mut self.done_vars,
         )
         .expect("resolving call object should not be present");
 
         let call = self.store.calls.insert(call);
 
-        resolve_call(call, self.store);
+        resolve_call(
+            call,
+            self.store,
+            self.done_objects,
+            self.done_functions,
+            self.done_vars,
+        );
 
         let resolved = &self.store.resolved_calls[&call];
         let fn_assignments = &self.store.fn_assignments;
@@ -1786,13 +1972,14 @@ impl<'ast> Analyser<'ast, '_> {
             &mut self.store.unions,
             &mut self.store.invalid_objects,
             &self.store.calls[call],
-            |lattice, k, v| {
-                lattice.insert_prop_assignment(k, v);
+            conditional,
+            |lattice, k, v, invalid_objects, unions| {
+                lattice.insert_prop_assignment(k, v, invalid_objects, unions);
             },
             |lattice, k| lattice.prop_assignments.get(k).copied(),
             |lattice, v| lattice.get_var(v, fn_assignments),
-            |lattice, name, value| {
-                lattice.0.to_mut().var_assignments.insert(name, value);
+            |lattice, name, value, invalid_objects, unions| {
+                lattice.insert_var_assignment(name, value, invalid_objects, unions, fn_assignments);
             },
         );
 
@@ -1987,6 +2174,48 @@ impl<'ast> Analyser<'ast, '_> {
                         return return_value;
                     }
 
+                    if let CallTemplate::SimpleWithProps(_, _) = self.store.call_templates[func] {
+                        for arg in &node.args {
+                            self.visit_and_get_object(Node::from(arg), conditional);
+                        }
+
+                        if let CallTemplate::SimpleWithProps(return_value, prop_assignments) =
+                            &self.store.call_templates[func]
+                        {
+                            // todo!("also need to give the caller inner locals that were captured");
+                            for ((obj, key), prop) in prop_assignments.iter() {
+                                if self.store.invalid_objects.contains(*obj) {
+                                    continue;
+                                }
+                                let key = (*obj, *key);
+                                let existing = self
+                                    .lattice
+                                    .prop_assignments
+                                    .get(&key)
+                                    .copied()
+                                    .and_then(|a| a.rhs);
+                                let rhs = if !conditional {
+                                    // supersede
+                                    prop.rhs
+                                } else {
+                                    // union
+                                    create_union(&mut self.store.unions, existing, prop.rhs)
+                                };
+                                let new = Assignment { rhs };
+                                self.lattice.insert_prop_assignment(
+                                    key,
+                                    new,
+                                    &mut self.store.invalid_objects,
+                                    &mut self.store.unions,
+                                );
+                            }
+
+                            return *return_value;
+                        } else {
+                            unreachable!();
+                        }
+                    }
+
                     let should_invalidate =
                         self.store.static_fn_data[func].accesses_arguments_array;
                     let mut args = CallArgs::new();
@@ -2005,7 +2234,7 @@ impl<'ast> Analyser<'ast, '_> {
                         }
                     }
                     // TODO: only call whe in_fn is true?
-                    self.call_fn(func, args)
+                    self.call_fn(func, args, conditional)
                 } else {
                     self.store.invalidate(callee, &self.lattice);
 
@@ -2294,6 +2523,9 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
             lattice: CowLattice(Cow::Borrowed(&self.lattice_elements[input])),
             store,
             in_fn,
+            done_objects: self.done_objects,
+            done_functions: self.done_functions,
+            done_vars: self.done_vars,
         };
 
         v.init(node, conditional);
@@ -2322,23 +2554,19 @@ impl<'ast> JoinOp {
     ) {
         let input = &analysis[input];
 
-        if input.prop_assignments.len() > self.result.prop_assignments.len() {
-            let new = input.prop_assignments.len() - self.result.prop_assignments.len();
-            self.result.prop_assignments.reserve(new);
-        }
         // Merge property assignments.
         for ((obj, key), prop) in input.prop_assignments.iter() {
             if store.invalid_objects.contains(*obj) {
                 continue;
             }
             match self.result.prop_assignments.entry((*obj, *key)) {
-                Entry::Occupied(entry) => {
+                std::collections::btree_map::Entry::Occupied(entry) => {
                     let union = create_union(&mut store.unions, entry.get().rhs, prop.rhs);
                     self.result
                         .prop_assignments
                         .insert((*obj, *key), Assignment { rhs: union });
                 }
-                Entry::Vacant(entry) => {
+                std::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(*prop);
                 }
             }
@@ -2372,7 +2600,7 @@ impl<'ast> JoinOp {
 //     fn get_property(&self, key: &(ObjectId, NameId))->Assignment;
 // }
 
-type PropertyAssignments = HashableHashMap<(ObjectId, NameId), Assignment>;
+type PropertyAssignments = BTreeMap<(ObjectId, NameId), Assignment>;
 
 #[derive(Clone, Debug, PartialEq, Default, Hash, Eq)]
 pub(super) struct Lattice {
@@ -2399,10 +2627,23 @@ fn apply_call_side_effects<L>(
     unions: &mut UnionStore,
     invalid_objects: &mut GrowableBitSet<ObjectId>,
     call: &Call,
-    mut insert_prop_assignment: impl FnMut(&mut L, (ObjectId, NameId), Assignment),
+    conditional: bool,
+    mut insert_prop_assignment: impl FnMut(
+        &mut L,
+        (ObjectId, NameId),
+        Assignment,
+        &GrowableBitSet<ObjectId>,
+        &UnionStore,
+    ),
     get_property: impl Fn(&L, &(ObjectId, NameId)) -> Option<Assignment>,
     get_var_assignment: impl Fn(&L, VarId) -> Option<Assignment>,
-    mut insert_var_assignment: impl FnMut(&mut L, VarId, Assignment),
+    mut insert_var_assignment: impl FnMut(
+        &mut L,
+        VarId,
+        Assignment,
+        &GrowableBitSet<ObjectId>,
+        &UnionStore,
+    ),
 ) {
     if cfg!(debug_assertions) {
         let depends_on_unresolved_call = |pointer| match pointer {
@@ -2428,25 +2669,29 @@ fn apply_call_side_effects<L>(
             continue;
         }
         let key = (*obj, *key);
-        let new = if let Some(existing) = get_property(call_site_state, &key) {
-            let union = create_union(unions, existing.rhs, prop.rhs);
-            Assignment { rhs: union }
+        let existing = get_property(call_site_state, &key).and_then(|a| a.rhs);
+        let rhs = if !conditional {
+            // supersede
+            prop.rhs
         } else {
-            *prop
+            // union
+            create_union(unions, existing, prop.rhs)
         };
-        insert_prop_assignment(call_site_state, key, new);
+        let new = Assignment { rhs };
+        insert_prop_assignment(call_site_state, key, new, invalid_objects, unions);
     }
 
     for (&name, assignment) in var_assignments.iter() {
-        if let Some(existing) = get_var_assignment(&call_site_state, name) {
-            if existing == *assignment {
-                return;
-            }
-            let union = create_union(unions, existing.rhs, assignment.rhs);
-            insert_var_assignment(call_site_state, name, Assignment { rhs: union });
-        }
-
-        insert_var_assignment(call_site_state, name, *assignment);
+        let existing = get_var_assignment(&call_site_state, name).and_then(|a| a.rhs);
+        let rhs = if !conditional {
+            // supersede
+            assignment.rhs
+        } else {
+            // union
+            create_union(unions, existing, assignment.rhs)
+        };
+        let new = Assignment { rhs };
+        insert_var_assignment(call_site_state, name, new, invalid_objects, unions);
     }
 }
 
@@ -2464,29 +2709,22 @@ fn build_call(
     vars: &IndexSet<VarId, Id>,
     names: &IndexSet<NameId, JsWord>,
     resolved_calls: &FxHashMap<CallId, ResolvedCall>,
+    done_objects: &mut GrowableBitSet<ObjectId>,
+    done_functions: &mut BitSet<FnId>,
+    done_vars: &mut BitSet<VarId>,
 ) -> Result<Call, ()> {
+    done_objects.clear();
+    done_functions.clear();
+    done_vars.clear();
+
+    let mut done_vars = FxHashSet::default();
+
     // println!("start build call for fn: {:?}", func);
     let mut queue = Vec::new();
 
     let mut var_assignments = HashableHashMap::default();
 
     queue.push(Pointer::Fn(func));
-
-    // TODO:
-    // if let Some(heap) = &args.args {
-    //     if !heap.is_empty() {
-    //         let invalid_objects = &*self.invalid_objects;
-    //         if heap.iter().all(|a| match a {
-    //             Some(Pointer::Union(union)) => union.invalid(),
-    //             Some(Pointer::Object(obj)) => invalid_objects.contains(*obj),
-    //             Some(Pointer::Fn(_)) | None => true,
-    //             Some(Pointer::NullOrVoid) => false,
-    //         }) {
-    //             args.args = None;
-    //             args.none_count = args.len;
-    //         }
-    //     }
-    // }
 
     match &args {
         CallArgs::Heap(args) => {
@@ -2496,102 +2734,166 @@ fn build_call(
                 .chain(std::iter::repeat(Some(Pointer::NullOrVoid)));
             for (id, arg) in static_fn_data[func].param_indices().zip(args) {
                 match arg {
-                    Some(p @ Pointer::Fn(_) | p @ Pointer::Object(_) | p @ Pointer::Union(_)) => {
+                    Some(p @ Pointer::Object(_) | p @ Pointer::Union(_)) => {
+                        if fully_invalidated(Some(p), invalid_objects, unions) {
+                            continue;
+                        }
                         queue.push(p);
                     }
-                    Some(Pointer::NullOrVoid) | None => {}
+                    Some(p @ Pointer::Fn(_)) => {
+                        queue.push(p);
+                        if fn_assignments.get(&id).and_then(|a| a.rhs) == arg {
+                            continue;
+                        }
+                    }
+                    Some(Pointer::NullOrVoid) => {}
+                    None => continue,
                 }
-                // dbg!(
-                //     arg,
-                //     static_fn_data[func]
-                //         .param_indices()
-                //         .map(|v| &names[vars[v].0])
-                //         .collect::<Vec<_>>()
-                // );
                 var_assignments.insert(id, Assignment { rhs: arg });
             }
         }
         CallArgs::Invalid(none_count) => {
-            // for id in static_fn_data[func].param_indices() {
-            //     // TODO: isn't this equivalent to the default behaviour?
-            //     var_assignments.insert(id, Assignment { rhs: None });
-            // }
+            for id in static_fn_data[func].param_indices().skip(*none_count) {
+                var_assignments.insert(
+                    id,
+                    Assignment {
+                        rhs: Some(Pointer::NullOrVoid),
+                    },
+                );
+            }
         }
     }
 
-    // dbg!(&queue);
-
-    let mut prop_assignments: PropertyAssignments = HashableHashMap::default();
-
-    let mut done = FxHashSet::default();
-    done.reserve(queue.len());
+    let mut prop_assignments: PropertyAssignments = PropertyAssignments::default();
 
     // TODO: eagerly check for RESOLVING_CALL e.g. when pushing, not popping, from queue.
     // This we we bail sooner.
 
     while let Some(o) = queue.pop() {
-        if o == Pointer::Object(ObjectStore::RESOLVING_CALL) {
-            // println!("stop build call");
-            return Err(());
-        }
-
-        if done.contains(&o) {
-            continue;
-        }
-
-        done.insert(o);
-
         match o {
             Pointer::Object(o) => {
+                if o == ObjectStore::RESOLVING_CALL {
+                    // println!("stop build call");
+                    return Err(());
+                }
+
+                if !done_objects.insert(o) {
+                    continue;
+                }
+
                 if invalid_objects.contains(o) {
                     continue;
                 }
 
-                for (key, value) in call_site_state.prop_assignments.iter() {
-                    if key.0 == o {
-                        prop_assignments.insert(*key, *value);
-                        match value.rhs {
-                            Some(
-                                p @ Pointer::Fn(_) | p @ Pointer::Object(_) | p @ Pointer::Union(_),
-                            ) => {
-                                if !done.contains(&p) {
-                                    queue.push(p);
-                                }
-                            }
-                            Some(Pointer::NullOrVoid) | None => {}
-                        }
-                    }
-                }
-            }
-            Pointer::Union(union) => {
-                for constituent in unions[union].constituents().map(Pointer::Object) {
-                    if !done.contains(&constituent) {
-                        queue.push(constituent);
-                    }
-                }
-            }
-            Pointer::Fn(f) => {
-                for var in &static_fn_data[f].captured_vars {
-                    let value = match call_site_state.var_assignments.get(var) {
-                        Some(v) => *v,
-                        None => continue,
+                for (key, value) in call_site_state
+                    .prop_assignments
+                    .range((o, NameId::from_u32(0))..(o, NameId::MAX))
+                {
+                    let new = if fully_invalidated(value.rhs, invalid_objects, unions) {
+                        Assignment { rhs: None }
+                    } else {
+                        *value
                     };
-                    match value.rhs {
-                        Some(
-                            p @ Pointer::Fn(_) | p @ Pointer::Object(_) | p @ Pointer::Union(_),
-                        ) => {
-                            if !done.contains(&p) {
-                                queue.push(p);
+                    prop_assignments.insert(*key, new);
+                    match new.rhs {
+                        Some(Pointer::Fn(f)) => {
+                            if !done_functions.contains(f) {
+                                queue.push(Pointer::Fn(f));
+                            }
+                        }
+                        Some(Pointer::Object(o)) => {
+                            if !done_objects.contains(o) {
+                                queue.push(Pointer::Object(o));
+                            }
+                        }
+                        Some(Pointer::Union(u)) => {
+                            for constituent in unions[u].constituents() {
+                                if !done_objects.contains(constituent) {
+                                    queue.push(Pointer::Object(constituent));
+                                }
                             }
                         }
                         Some(Pointer::NullOrVoid) | None => {}
                     }
-                    var_assignments.insert(*var, value);
+                }
+            }
+            Pointer::Union(union) => {
+                for constituent in unions[union].constituents() {
+                    if !done_objects.contains(constituent) {
+                        queue.push(Pointer::Object(constituent));
+                    }
+                }
+            }
+            Pointer::Fn(f) => {
+                if !done_functions.insert(f) {
+                    continue;
+                }
+
+                for var in &static_fn_data[f].captured_vars {
+                    if !done_vars.insert(*var) {
+                        continue;
+                    }
+                    let mut from_fn_assignments = false;
+                    let value = match call_site_state
+                        .var_assignments
+                        .get(var)
+                        .or_else(|| {
+                            from_fn_assignments = true;
+                            fn_assignments.get(var)
+                        })
+                        .copied()
+                    {
+                        Some(v) => v,
+                        None => continue,
+                    };
+                    let new = if fully_invalidated(value.rhs, invalid_objects, unions) {
+                        Assignment { rhs: None }
+                    } else {
+                        value
+                    };
+                    match new.rhs {
+                        Some(Pointer::Fn(f)) => {
+                            if !done_functions.contains(f) {
+                                queue.push(Pointer::Fn(f));
+                            }
+                            if from_fn_assignments {
+                                continue;
+                            }
+                        }
+                        Some(Pointer::Object(o)) => {
+                            if !done_objects.contains(o) {
+                                queue.push(Pointer::Object(o));
+                            }
+                        }
+                        Some(Pointer::Union(u)) => {
+                            for constituent in unions[u].constituents() {
+                                if !done_objects.contains(constituent) {
+                                    queue.push(Pointer::Object(constituent));
+                                }
+                            }
+                        }
+                        Some(Pointer::NullOrVoid) => {}
+                        None => continue,
+                    }
+                    var_assignments.insert(*var, new);
                 }
             }
             Pointer::NullOrVoid => unreachable!(),
         }
     }
+
+    {
+        let mut counts = DONE_VAR_COUNT.lock().unwrap();
+        let count = done_vars.len();
+        if count >= counts.len() {
+            counts.resize(count + 1, 0);
+            counts[count] += 1;
+        }
+    }
+
+    debug_assert!(var_assignments
+        .iter()
+        .all(|(k, v)| Some(v) != fn_assignments.get(k)));
 
     let call = Call {
         func,

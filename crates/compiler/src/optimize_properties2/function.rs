@@ -28,7 +28,6 @@ pub(super) fn create_step_map(
     function_map: &FxHashMap<NodeId, FnId>,
     names: &mut IndexSet<NameId, JsWord>,
     vars: &mut IndexSet<VarId, Id>,
-    invalid_vars: &GrowableBitSet<VarId>,
     builder: &mut StepBuilder,
 ) -> (Vec<Step>, Vec<(u32, u32)>, bool) {
     let cfg = &static_fn_data[func].cfg;
@@ -59,7 +58,6 @@ pub(super) fn create_step_map(
             vars,
             references_env_vars: &mut references_env_vars,
             param_end: static_fn_data[func].param_end,
-            invalid_vars,
         };
         analyser.init(graph[node], conditional);
 
@@ -209,7 +207,7 @@ impl StepBuilder {
                 }
                 // These create dynamic RValues we can't/don't track, so the
                 // current RValue is now unknown.
-                Step::StoreUnion | Step::Call => {
+                Step::StoreUnion | Step::Call(_) => {
                     self.cur_builder_r_value.clear();
                 }
                 Step::StoreRValue(new) => {
@@ -487,7 +485,7 @@ impl StepBuilder {
                                 remove_step!(pos, "opening", Step::StoreUnion);
                             }
 
-                            Step::Call => {
+                            Step::Call(_) => {
                                 // Call is an RValue store, so overwrites any
                                 // previous ones.
                                 remove_r_stores = true;
@@ -613,7 +611,7 @@ impl StepBuilder {
                                 }
                             }
                             // These create dynamic RValues we can't/don't track.
-                            Step::StoreUnion | Step::Call => {
+                            Step::StoreUnion | Step::Call(_) => {
                                 if let Some((_, _, overwritten)) =
                                     self.r_value_store_stack.last_mut()
                                 {
@@ -870,7 +868,7 @@ fn steps_are_duplicates(a: &Step, b: &Step) -> bool {
             // These have side effects and cannot be merged.
             Step::StartCall
             | Step::StoreArg
-            | Step::Call
+            | Step::Call(_)
             | Step::StartUnion
             | Step::StoreUnion
             | Step::SaveRValue
@@ -972,7 +970,7 @@ pub(super) enum Step {
     StoreArg,
     /// Executes a call, popping it from the stack and storing the result in the
     /// RValue register.
-    Call,
+    Call(bool),
     /// Returns the value in the RValue register. Execution will stop after this.
     Return,
     /// Creates a new union, pushing it onto the union creation stack.
@@ -1001,7 +999,6 @@ struct Analyser<'a, 'ast> {
     vars: &'a mut IndexSet<VarId, Id>,
     references_env_vars: &'a mut bool,
     param_end: u32,
-    invalid_vars: &'a GrowableBitSet<VarId>,
 }
 
 impl<'ast> Analyser<'_, 'ast> {
@@ -1394,7 +1391,7 @@ impl<'ast> Analyser<'_, 'ast> {
                     self.visit_and_get_r_value(Node::from(arg), conditional);
                     self.push(Step::StoreArg);
                 }
-                self.push(Step::Call);
+                self.push(Step::Call(conditional));
             }
             NodeKind::NewExpr(node) => {
                 self.visit_and_get_r_value(Node::from(node.callee.as_ref()), conditional);
