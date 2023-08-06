@@ -375,7 +375,7 @@ pub trait FlowJoiner<L, I> {
 pub trait LatticeElement: Annotation + PartialEq {}
 
 /** The in and out states of a node. */
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct LinearFlowState {
     pub stepCount: usize,
     pub in_: LatticeElementId,

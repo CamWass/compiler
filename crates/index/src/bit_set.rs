@@ -788,6 +788,18 @@ impl<T: Idx> GrowableBitSet<T> {
             .zip(other.bit_set.words.iter())
             .any(|(a, b)| a & b != 0)
     }
+
+    /// Iterates over the indices of set bits in a sorted order.
+    #[inline]
+    pub fn iter(&self) -> BitIter<'_, T> {
+        BitIter::new(&self.bit_set.words)
+    }
+}
+
+impl<T: Idx> Default for GrowableBitSet<T> {
+    fn default() -> Self {
+        Self::new_empty()
+    }
 }
 
 /// A fixed-size 2D bit matrix type with a dense representation.

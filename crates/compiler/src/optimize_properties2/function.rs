@@ -28,6 +28,7 @@ pub(super) fn create_step_map(
     function_map: &FxHashMap<NodeId, FnId>,
     names: &mut IndexSet<NameId, JsWord>,
     vars: &mut IndexSet<VarId, Id>,
+    invalid_vars: &GrowableBitSet<VarId>,
     builder: &mut StepBuilder,
 ) -> (Vec<Step>, Vec<(u32, u32)>, bool) {
     let cfg = &static_fn_data[func].cfg;
@@ -58,6 +59,7 @@ pub(super) fn create_step_map(
             vars,
             references_env_vars: &mut references_env_vars,
             param_end: static_fn_data[func].param_end,
+            invalid_vars,
         };
         analyser.init(graph[node], conditional);
 
@@ -265,7 +267,7 @@ impl StepBuilder {
                 | Step::StartUnion
                 | Step::PushToUnion
                 | Step::SaveRValue
-                | Step::StartCall(_) => {}
+                | Step::StartCall => {}
             }
         }
 
@@ -505,7 +507,7 @@ impl StepBuilder {
                             // These read the RValue, so we can't remove RValue stores.
                             Step::InvalidateRValue
                             | Step::Return
-                            | Step::StartCall(_)
+                            | Step::StartCall
                             | Step::StoreArg
                             | Step::PushToUnion => {
                                 remove_r_stores = false;
@@ -730,10 +732,8 @@ impl StepBuilder {
                                 }
                             }
 
-                            Step::StoreArg
-                            | Step::Return
-                            | Step::PushToUnion
-                            | Step::StartCall(_) => {}
+                            Step::StoreArg | Step::Return | Step::PushToUnion | Step::StartCall => {
+                            }
                         }
                     }
 
@@ -868,7 +868,7 @@ fn steps_are_duplicates(a: &Step, b: &Step) -> bool {
             | Step::PushToUnion => true,
 
             // These have side effects and cannot be merged.
-            Step::StartCall(_)
+            Step::StartCall
             | Step::StoreArg
             | Step::Call
             | Step::StartUnion
@@ -966,9 +966,8 @@ pub(super) enum Step {
     InvalidateRValue,
     /// Invalidates the value in the LValue register.
     InvalidateLValue,
-    /// Begins a new call, with the specified number of arguments, by pushing it
-    /// onto the call creation stack.
-    StartCall(usize),
+    /// Begins a new call, by pushing it onto the call creation stack.
+    StartCall,
     /// Stores the value in the RValue register as the next argument to the current call.
     StoreArg,
     /// Executes a call, popping it from the stack and storing the result in the
@@ -1002,6 +1001,7 @@ struct Analyser<'a, 'ast> {
     vars: &'a mut IndexSet<VarId, Id>,
     references_env_vars: &'a mut bool,
     param_end: u32,
+    invalid_vars: &'a GrowableBitSet<VarId>,
 }
 
 impl<'ast> Analyser<'_, 'ast> {
@@ -1389,7 +1389,7 @@ impl<'ast> Analyser<'_, 'ast> {
             }
             NodeKind::CallExpr(node) => {
                 self.visit_and_get_r_value(Node::from(&node.callee), conditional);
-                self.push(Step::StartCall(node.args.len()));
+                self.push(Step::StartCall);
                 for arg in &node.args {
                     self.visit_and_get_r_value(Node::from(arg), conditional);
                     self.push(Step::StoreArg);
