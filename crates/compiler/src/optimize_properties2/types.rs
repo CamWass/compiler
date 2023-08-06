@@ -289,16 +289,11 @@ impl Union {
     pub fn len(&self) -> usize {
         match self {
             Union::Heap(heap) => heap.len(),
-            Union::Inline(inline) => {
-                let mut len = 0;
-                for _ in inline.iter() {
-                    len += 1;
-                }
-                len
-            }
+            Union::Inline(inline) => inline.iter().filter(|c| c.is_some()).count(),
         }
     }
 
+    // TODO: return slice
     pub fn constituents(&self) -> impl Iterator<Item = ObjectId> + '_ {
         Constituents {
             union: self,
@@ -348,14 +343,21 @@ impl<'a> Iterator for Constituents<'a> {
 
 impl FusedIterator for Constituents<'_> {}
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(super) struct UnionId(NonZeroU32);
+
+impl std::fmt::Debug for UnionId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("UnionId").field(&self.as_usize()).finish()
+    }
+}
 
 impl UnionId {
     const INVALID_FLAG: u32 = u32::MAX ^ (u32::MAX >> 1);
     const VALID_BITS_MASK: u32 = !Self::INVALID_FLAG;
+    // TODO: temp pub
     #[inline]
-    const fn from_usize(mut value: usize) -> Self {
+    pub const fn from_usize(mut value: usize) -> Self {
         value += 1;
         assert!(value & Self::INVALID_FLAG as usize == 0);
         assert!(value != 0);

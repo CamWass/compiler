@@ -207,7 +207,7 @@ impl StepBuilder {
                 }
                 // These create dynamic RValues we can't/don't track, so the
                 // current RValue is now unknown.
-                Step::StoreUnion | Step::Call => {
+                Step::StoreUnion | Step::Call(_) => {
                     self.cur_builder_r_value.clear();
                 }
                 Step::StoreRValue(new) => {
@@ -265,7 +265,7 @@ impl StepBuilder {
                 | Step::StartUnion
                 | Step::PushToUnion
                 | Step::SaveRValue
-                | Step::StartCall(_) => {}
+                | Step::StartCall => {}
             }
         }
 
@@ -485,7 +485,7 @@ impl StepBuilder {
                                 remove_step!(pos, "opening", Step::StoreUnion);
                             }
 
-                            Step::Call => {
+                            Step::Call(_) => {
                                 // Call is an RValue store, so overwrites any
                                 // previous ones.
                                 remove_r_stores = true;
@@ -505,7 +505,7 @@ impl StepBuilder {
                             // These read the RValue, so we can't remove RValue stores.
                             Step::InvalidateRValue
                             | Step::Return
-                            | Step::StartCall(_)
+                            | Step::StartCall
                             | Step::StoreArg
                             | Step::PushToUnion => {
                                 remove_r_stores = false;
@@ -611,7 +611,7 @@ impl StepBuilder {
                                 }
                             }
                             // These create dynamic RValues we can't/don't track.
-                            Step::StoreUnion | Step::Call => {
+                            Step::StoreUnion | Step::Call(_) => {
                                 if let Some((_, _, overwritten)) =
                                     self.r_value_store_stack.last_mut()
                                 {
@@ -730,10 +730,8 @@ impl StepBuilder {
                                 }
                             }
 
-                            Step::StoreArg
-                            | Step::Return
-                            | Step::PushToUnion
-                            | Step::StartCall(_) => {}
+                            Step::StoreArg | Step::Return | Step::PushToUnion | Step::StartCall => {
+                            }
                         }
                     }
 
@@ -868,9 +866,9 @@ fn steps_are_duplicates(a: &Step, b: &Step) -> bool {
             | Step::PushToUnion => true,
 
             // These have side effects and cannot be merged.
-            Step::StartCall(_)
+            Step::StartCall
             | Step::StoreArg
-            | Step::Call
+            | Step::Call(_)
             | Step::StartUnion
             | Step::StoreUnion
             | Step::SaveRValue
@@ -966,14 +964,13 @@ pub(super) enum Step {
     InvalidateRValue,
     /// Invalidates the value in the LValue register.
     InvalidateLValue,
-    /// Begins a new call, with the specified number of arguments, by pushing it
-    /// onto the call creation stack.
-    StartCall(usize),
+    /// Begins a new call, by pushing it onto the call creation stack.
+    StartCall,
     /// Stores the value in the RValue register as the next argument to the current call.
     StoreArg,
     /// Executes a call, popping it from the stack and storing the result in the
     /// RValue register.
-    Call,
+    Call(bool),
     /// Returns the value in the RValue register. Execution will stop after this.
     Return,
     /// Creates a new union, pushing it onto the union creation stack.
@@ -1389,12 +1386,12 @@ impl<'ast> Analyser<'_, 'ast> {
             }
             NodeKind::CallExpr(node) => {
                 self.visit_and_get_r_value(Node::from(&node.callee), conditional);
-                self.push(Step::StartCall(node.args.len()));
+                self.push(Step::StartCall);
                 for arg in &node.args {
                     self.visit_and_get_r_value(Node::from(arg), conditional);
                     self.push(Step::StoreArg);
                 }
-                self.push(Step::Call);
+                self.push(Step::Call(conditional));
             }
             NodeKind::NewExpr(node) => {
                 self.visit_and_get_r_value(Node::from(node.callee.as_ref()), conditional);

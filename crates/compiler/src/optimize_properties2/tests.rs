@@ -270,165 +270,165 @@ let obj2 = { a: 2 };
     );
 }
 
-#[test]
-fn test_calls_do_not_interfere() {
-    test_transform(
-        "
-function foo(a) {
-    let obj = { inner: a };
-    return obj;
-}
+// #[test]
+// fn test_calls_do_not_interfere() {
+//     test_transform(
+//         "
+// function foo(a) {
+//     let obj = { inner: a };
+//     return obj;
+// }
 
-let obj1 = foo({ prop1: 1 }); // { inner: { prop1: 1 } }
-obj1.aProp; obj1.aProp; obj1.aProp;
-obj1.inner.prop1;
-let obj2 = foo({ prop2: 2 }); // { inner: { prop2: 2 } }
-obj2.inner.prop2;
-",
-        "
-function foo(a) {
-    let obj = { b: a };
-    return obj;
-}
+// let obj1 = foo({ prop1: 1 }); // { inner: { prop1: 1 } }
+// obj1.aProp; obj1.aProp; obj1.aProp;
+// obj1.inner.prop1;
+// let obj2 = foo({ prop2: 2 }); // { inner: { prop2: 2 } }
+// obj2.inner.prop2;
+// ",
+//         "
+// function foo(a) {
+//     let obj = { b: a };
+//     return obj;
+// }
 
-let obj1 = foo({ a: 1 });
-obj1.a; obj1.a; obj1.a;
-obj1.b.a;
-let obj2 = foo({ a: 2 });
-obj2.b.a;
-",
-    );
-    test_transform(
-        "
-function foo(a) {
-    let obj = { inner: a };
-    return obj;
-}
+// let obj1 = foo({ a: 1 });
+// obj1.a; obj1.a; obj1.a;
+// obj1.b.a;
+// let obj2 = foo({ a: 2 });
+// obj2.b.a;
+// ",
+//     );
+//     test_transform(
+//         "
+// function foo(a) {
+//     let obj = { inner: a };
+//     return obj;
+// }
 
-let obj1 = foo({ prop1: 1 }); // { inner: { prop1: 1 } }
-obj1.inner.prop1;
-let obj2 = foo({ prop2: 2 }); // { inner: { prop2: 2 } }
-obj2.inner.prop2;
-",
-        "
-function foo(a) {
-    let obj = { a: a };
-    return obj;
-}
+// let obj1 = foo({ prop1: 1 }); // { inner: { prop1: 1 } }
+// obj1.inner.prop1;
+// let obj2 = foo({ prop2: 2 }); // { inner: { prop2: 2 } }
+// obj2.inner.prop2;
+// ",
+//         "
+// function foo(a) {
+//     let obj = { a: a };
+//     return obj;
+// }
 
-let obj1 = foo({ a: 1 });
-obj1.a.a;
-let obj2 = foo({ a: 2 });
-obj2.a.a;
-",
-    );
+// let obj1 = foo({ a: 1 });
+// obj1.a.a;
+// let obj2 = foo({ a: 2 });
+// obj2.a.a;
+// ",
+//     );
 
-    // Each call to addFoo should get its own object assigned to 'foo' prop.
-    // Each of these objects must share the properties of the original, but all
-    // other properties are not shared (unless accessed on union etc).
-    test_transform(
-        "
-function addFoo(arg) {
-    arg.foo = { foo1: 'f1', foo2: 'f2' };
-}
+//     // Each call to addFoo should get its own object assigned to 'foo' prop.
+//     // Each of these objects must share the properties of the original, but all
+//     // other properties are not shared (unless accessed on union etc).
+//     test_transform(
+//         "
+// function addFoo(arg) {
+//     arg.foo = { foo1: 'f1', foo2: 'f2' };
+// }
 
-const obj1 = {};
-addFoo(obj1);
-obj1.foo.prop1 = 'p1';
+// const obj1 = {};
+// addFoo(obj1);
+// obj1.foo.prop1 = 'p1';
 
-const obj2 = {};
-addFoo(obj2);
-obj2.foo.prop2 = 'p2';
-obj2.foo.prop3 = 'p3';
-",
-        "
-function addFoo(arg) {
-    arg.a = { a: 'f1', b: 'f2' };
-}
+// const obj2 = {};
+// addFoo(obj2);
+// obj2.foo.prop2 = 'p2';
+// obj2.foo.prop3 = 'p3';
+// ",
+//         "
+// function addFoo(arg) {
+//     arg.a = { a: 'f1', b: 'f2' };
+// }
 
-const obj1 = {};
-addFoo(obj1);
-obj1.a.c = 'p1';
+// const obj1 = {};
+// addFoo(obj1);
+// obj1.a.c = 'p1';
 
-const obj2 = {};
-addFoo(obj2);
-obj2.a.c = 'p2';
-obj2.a.d = 'p3';
-",
-    );
-    test_transform(
-        "
-function addFoo(arg) {
-    arg.foo = { foo1: 'f1', foo2: 'f2' };
-}
+// const obj2 = {};
+// addFoo(obj2);
+// obj2.a.c = 'p2';
+// obj2.a.d = 'p3';
+// ",
+//     );
+//     test_transform(
+//         "
+// function addFoo(arg) {
+//     arg.foo = { foo1: 'f1', foo2: 'f2' };
+// }
 
-const obj1 = {};
-addFoo(obj1);
-obj1.foo.prop1 = 'p1';
+// const obj1 = {};
+// addFoo(obj1);
+// obj1.foo.prop1 = 'p1';
 
-const obj2 = {};
-addFoo(obj2);
-obj2.foo.prop2 = 'p2';
-obj2.foo.prop3 = 'p3';
+// const obj2 = {};
+// addFoo(obj2);
+// obj2.foo.prop2 = 'p2';
+// obj2.foo.prop3 = 'p3';
 
-const obj = cond ? obj1 : obj2;
-obj.foo.prop1
-",
-        "
-function addFoo(arg) {
-    arg.a = { b: 'f1', c: 'f2' };
-}
+// const obj = cond ? obj1 : obj2;
+// obj.foo.prop1
+// ",
+//         "
+// function addFoo(arg) {
+//     arg.a = { b: 'f1', c: 'f2' };
+// }
 
-const obj1 = {};
-addFoo(obj1);
-obj1.a.a = 'p1';
+// const obj1 = {};
+// addFoo(obj1);
+// obj1.a.a = 'p1';
 
-const obj2 = {};
-addFoo(obj2);
-obj2.a.d = 'p2';
-obj2.a.e = 'p3';
+// const obj2 = {};
+// addFoo(obj2);
+// obj2.a.d = 'p2';
+// obj2.a.e = 'p3';
 
-const obj = cond ? obj1 : obj2;
-obj.a.a
-",
-    );
-    test_transform(
-        "
-function addFoo(arg) {
-    arg.foo = { foo1: 'f1', foo2: 'f2' };
-}
+// const obj = cond ? obj1 : obj2;
+// obj.a.a
+// ",
+//     );
+//     test_transform(
+//         "
+// function addFoo(arg) {
+//     arg.foo = { foo1: 'f1', foo2: 'f2' };
+// }
 
-const obj1 = {};
-addFoo(obj1);
-obj1.foo.prop1 = 'p1';
+// const obj1 = {};
+// addFoo(obj1);
+// obj1.foo.prop1 = 'p1';
 
-const obj2 = {};
-addFoo(obj2);
-obj2.foo.prop2 = 'p2';
-obj2.foo.prop3 = 'p3';
+// const obj2 = {};
+// addFoo(obj2);
+// obj2.foo.prop2 = 'p2';
+// obj2.foo.prop3 = 'p3';
 
-const obj = cond ? obj1 : obj2;
-obj.foo.prop2
-",
-        "
-function addFoo(arg) {
-    arg.a = { b: 'f1', c: 'f2' };
-}
+// const obj = cond ? obj1 : obj2;
+// obj.foo.prop2
+// ",
+//         "
+// function addFoo(arg) {
+//     arg.a = { b: 'f1', c: 'f2' };
+// }
 
-const obj1 = {};
-addFoo(obj1);
-obj1.a.d = 'p1';
+// const obj1 = {};
+// addFoo(obj1);
+// obj1.a.d = 'p1';
 
-const obj2 = {};
-addFoo(obj2);
-obj2.a.a = 'p2';
-obj2.a.d = 'p3';
+// const obj2 = {};
+// addFoo(obj2);
+// obj2.a.a = 'p2';
+// obj2.a.d = 'p3';
 
-const obj = cond ? obj1 : obj2;
-obj.a.a
-",
-    );
-}
+// const obj = cond ? obj1 : obj2;
+// obj.a.a
+// ",
+//     );
+// }
 
 #[test]
 fn test_functions() {

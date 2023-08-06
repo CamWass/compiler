@@ -1,16 +1,17 @@
 use std::fmt::Debug;
 use std::ops::Index;
 
+use index::bit_set::{BitSet, GrowableBitSet};
 use petgraph::{
     graph::{EdgeIndex, NodeIndex},
     EdgeDirection,
 };
 
-use crate::control_flow::ControlFlowGraph::*;
 use crate::control_flow::{node::Node, ControlFlowAnalysis::NodePriority};
 use crate::DataFlowAnalysis::{LatticeElementId, LinearFlowState, UniqueQueue, MAX_STEPS_PER_NODE};
+use crate::{control_flow::ControlFlowGraph::*, find_vars::VarId};
 
-use super::{simple_set::IndexSet, JoinOp, Lattice, Store};
+use super::{simple_set::IndexSet, types::ObjectId, FnId, JoinOp, Lattice, Store};
 
 #[derive(Debug)]
 pub(super) struct DataFlowAnalysis<'ast, 'p> {
@@ -22,6 +23,11 @@ pub(super) struct DataFlowAnalysis<'ast, 'p> {
     pub(super) cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
     initial_lattice: LatticeElementId,
     in_fn: bool,
+    fn_id: Option<FnId>,
+
+    pub(super) done_objects: &'p mut GrowableBitSet<ObjectId>,
+    pub(super) done_functions: &'p mut BitSet<FnId>,
+    pub(super) done_vars: &'p mut BitSet<VarId>,
 }
 
 impl<'ast, 'p> DataFlowAnalysis<'ast, 'p> {
@@ -29,6 +35,10 @@ impl<'ast, 'p> DataFlowAnalysis<'ast, 'p> {
         cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
         nodePriorities: &'p [NodePriority],
         in_fn: bool,
+        fn_id: Option<FnId>,
+        done_objects: &'p mut GrowableBitSet<ObjectId>,
+        done_functions: &'p mut BitSet<FnId>,
+        done_vars: &'p mut BitSet<VarId>,
     ) -> Self {
         let mut lattice_elements = IndexSet::default();
         let initial_lattice = lattice_elements.insert(Lattice::default());
@@ -38,6 +48,10 @@ impl<'ast, 'p> DataFlowAnalysis<'ast, 'p> {
             lattice_elements,
             initial_lattice,
             in_fn,
+            fn_id,
+            done_objects,
+            done_functions,
+            done_vars,
         }
     }
 
@@ -51,7 +65,15 @@ impl<'ast, 'p> DataFlowAnalysis<'ast, 'p> {
     // error handling is implemented for the compiler).
     fn analyze_inner(&mut self, store: &mut Store<'ast>) -> Result<(), Node<'ast>> {
         self.initialize();
+        let mut i: usize = 1;
+
         while let Some(cur_node_idx) = self.workQueue.pop() {
+            if i % 500 == 0 {
+                if let Some(f) = self.fn_id {
+                    // println!("On iteration {} for fn {:?}", i, f);
+                }
+            }
+            i += 1;
             let curNode = self.cfg.graph[cur_node_idx];
             if self.cfg.node_annotations[&curNode].stepCount > MAX_STEPS_PER_NODE {
                 return Err(curNode);

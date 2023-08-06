@@ -42,8 +42,15 @@ where
 
     let mut finished = FxHashSet::default();
 
+    let mut i = 1;
+
     loop {
         fringe_candidates.clear();
+
+        if i % 1000 == 0 {
+            // println!("On iteration {} for node {:?}", i, root);
+        }
+        i += 1;
 
         debug_assert!(fringe
             .iter()
