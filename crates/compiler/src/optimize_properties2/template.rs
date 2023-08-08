@@ -30,8 +30,9 @@ use super::simple_set::IndexSet;
 use super::types::{ObjectId, ObjectStore, UnionBuilder, UnionStore};
 use super::utils::{ReusableState, ReusableStateStack};
 use super::{
-    fully_invalidated, function::*, Assignment, Call, CallArgs, CallId, FnId, Func, Id, Lattice,
-    NameId, Pointer, PropertyAssignments, ResolvedCall, SimpleCFG, StaticFunctionData, Store,
+    create_union, fully_invalidated, function::*, Assignment, Call, CallArgs, CallId, FnId, Func,
+    Id, Lattice, NameId, Pointer, PropertyAssignments, ResolvedCall, SimpleCFG, StaticFunctionData,
+    Store,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -403,23 +404,6 @@ fn get_property(
         Some(Pointer::Fn(_)) | None => None,
         Some(Pointer::NullOrVoid) => unreachable!(),
     }
-}
-
-/// Returns a [`Pointer`] to a union of `pointer1`'s type and `pointer2`'s type.
-fn create_union(
-    unions: &mut UnionStore,
-    pointer1: Option<Pointer>,
-    pointer2: Option<Pointer>,
-) -> Option<Pointer> {
-    if pointer1 == pointer2 {
-        return pointer1;
-    }
-
-    let mut builder = UnionBuilder::default();
-
-    builder.add(pointer1, unions);
-    builder.add(pointer2, unions);
-    unions.build_union(builder)
 }
 
 trait GetPropAssignments: Copy {
