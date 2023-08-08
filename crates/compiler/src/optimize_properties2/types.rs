@@ -1,7 +1,7 @@
 use std::{hash::BuildHasherDefault, iter::FusedIterator, num::NonZeroU32, ops::Index};
 
 use atoms::{js_word, JsWord};
-use index::vec::Idx;
+use index::{bit_set::GrowableBitSet, vec::Idx};
 use indexmap::IndexSet;
 use rustc_hash::FxHasher;
 
@@ -142,11 +142,26 @@ impl UnionStore {
                 return None;
             }
 
-            if inline[1].is_none() && !builder.invalid {
-                // Only one constituent. If the union is valid then we flatten it.
-                // If it is invalid, we must still create a union to persist the
-                // fact that the constituent was in a union with something invalid.
-                return Some(Pointer::Object(inline[0].unwrap()));
+            if inline[1].is_none() {
+                // Only one constituent.
+                if !builder.invalid {
+                    // Union is valid; flatten it.
+                    return Some(Pointer::Object(inline[0].unwrap()));
+                }
+                // Invalid; we must still create a union to persist the fact that the
+                // constituent was in a union with something invalid.
+            }
+
+            if builder.invalid
+                && inline.iter().all(|c| match c {
+                    Some(c) => c.is_built_in(),
+                    None => true,
+                })
+            {
+                // Invalid, but the constituents are all primitive (whose properties
+                // are invalid by default), so no need to record their union with an
+                // invalid object.
+                return None;
             }
         }
 
@@ -179,9 +194,17 @@ impl UnionBuilder {
         self.has_null_or_void = true;
     }
 
-    pub fn add_object(&mut self, constituent: Option<ObjectId>) {
+    pub fn add_object(
+        &mut self,
+        constituent: Option<ObjectId>,
+        invalid_objects: &GrowableBitSet<ObjectId>,
+    ) {
         match constituent {
             Some(constituent) => {
+                if invalid_objects.contains(constituent) {
+                    self.invalid = true;
+                    return;
+                }
                 match &mut self.union {
                     Union::Heap(heap) => {
                         match heap.binary_search(&constituent) {
@@ -241,10 +264,15 @@ impl UnionBuilder {
         }
     }
 
-    pub fn add(&mut self, constituent: Option<Pointer>, store: &UnionStore) {
+    pub fn add(
+        &mut self,
+        constituent: Option<Pointer>,
+        store: &UnionStore,
+        invalid_objects: &GrowableBitSet<ObjectId>,
+    ) {
         match constituent {
             Some(Pointer::Object(constituent)) => {
-                self.add_object(Some(constituent));
+                self.add_object(Some(constituent), invalid_objects);
             }
             Some(Pointer::Union(union)) => {
                 if union.invalid() {
@@ -253,7 +281,7 @@ impl UnionBuilder {
 
                 // TODO: this could be smarter/more efficient if necessary.
                 for constituent in store[union].constituents() {
-                    self.add_object(Some(constituent));
+                    self.add_object(Some(constituent), invalid_objects);
                 }
             }
             Some(Pointer::Fn(_)) | None => {

@@ -1131,7 +1131,7 @@ impl Store<'_> {
         pointer1: Option<Pointer>,
         pointer2: Option<Pointer>,
     ) -> Option<Pointer> {
-        create_union(&mut self.unions, pointer1, pointer2)
+        create_union(&mut self.unions, pointer1, pointer2, &self.invalid_objects)
     }
 
     /// Recursively invalidates the entity that `pointer` points to.
@@ -1190,6 +1190,7 @@ fn create_union(
     unions: &mut UnionStore,
     pointer1: Option<Pointer>,
     pointer2: Option<Pointer>,
+    invalid_objects: &GrowableBitSet<ObjectId>,
 ) -> Option<Pointer> {
     if pointer1 == pointer2 {
         return pointer1;
@@ -1197,8 +1198,8 @@ fn create_union(
 
     let mut builder = UnionBuilder::default();
 
-    builder.add(pointer1, unions);
-    builder.add(pointer2, unions);
+    builder.add(pointer1, unions, invalid_objects);
+    builder.add(pointer2, unions, invalid_objects);
 
     unions.build_union(builder)
 }
@@ -1677,7 +1678,7 @@ fn get_property(
                     .map(|a| a.rhs)
                     .unwrap_or(Some(Pointer::NullOrVoid));
 
-                builder.add(constituent, unions);
+                builder.add(constituent, unions, invalid_objects);
             }
 
             unions.build_union(builder)
@@ -2379,7 +2380,12 @@ impl<'ast> Analyser<'ast, '_> {
                                     prop.rhs
                                 } else {
                                     // union
-                                    create_union(&mut self.store.unions, existing, prop.rhs)
+                                    create_union(
+                                        &mut self.store.unions,
+                                        existing,
+                                        prop.rhs,
+                                        &self.store.invalid_objects,
+                                    )
                                 };
                                 let new = Assignment { rhs };
                                 self.lattice.insert_prop_assignment(
@@ -2741,7 +2747,12 @@ impl<'ast> JoinOp {
             }
             match self.result.prop_assignments.entry((*obj, *key)) {
                 std::collections::btree_map::Entry::Occupied(entry) => {
-                    let union = create_union(&mut store.unions, entry.get().rhs, prop.rhs);
+                    let union = create_union(
+                        &mut store.unions,
+                        entry.get().rhs,
+                        prop.rhs,
+                        &store.invalid_objects,
+                    );
                     self.result
                         .prop_assignments
                         .insert((*obj, *key), Assignment { rhs: union });
@@ -2760,7 +2771,12 @@ impl<'ast> JoinOp {
         for (&name, assignment) in input.var_assignments.iter() {
             match self.result.var_assignments.entry(name) {
                 Entry::Occupied(mut entry) => {
-                    let union = create_union(&mut store.unions, entry.get().rhs, assignment.rhs);
+                    let union = create_union(
+                        &mut store.unions,
+                        entry.get().rhs,
+                        assignment.rhs,
+                        &store.invalid_objects,
+                    );
                     entry.insert(Assignment { rhs: union });
                 }
                 Entry::Vacant(entry) => {
@@ -2855,7 +2871,7 @@ fn apply_call_side_effects<L>(
             prop.rhs
         } else {
             // union
-            create_union(unions, existing, prop.rhs)
+            create_union(unions, existing, prop.rhs, invalid_objects)
         };
         let new = Assignment { rhs };
         insert_prop_assignment(call_site_state, key, new, invalid_objects, unions);
@@ -2868,7 +2884,7 @@ fn apply_call_side_effects<L>(
             assignment.rhs
         } else {
             // union
-            create_union(unions, existing, assignment.rhs)
+            create_union(unions, existing, assignment.rhs, invalid_objects)
         };
         let new = Assignment { rhs };
         insert_var_assignment(call_site_state, name, new, invalid_objects, unions);
@@ -2984,7 +3000,8 @@ fn build_call(
 
                     match functions[func].entry_state.prop_assignments.entry(*key) {
                         std::collections::btree_map::Entry::Occupied(mut entry) => {
-                            let union = create_union(unions, entry.get().rhs, new.rhs);
+                            let union =
+                                create_union(unions, entry.get().rhs, new.rhs, invalid_objects);
                             entry.insert(Assignment { rhs: union });
                         }
                         std::collections::btree_map::Entry::Vacant(entry) => {

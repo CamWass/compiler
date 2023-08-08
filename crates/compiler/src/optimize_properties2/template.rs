@@ -200,7 +200,8 @@ impl Visitor<CallId> for Resolver<'_, '_> {
                 .entry((*obj, *key))
             {
                 std::collections::btree_map::Entry::Occupied(mut entry) => {
-                    let union = create_union(self.unions, entry.get().rhs, prop.rhs);
+                    let union =
+                        create_union(self.unions, entry.get().rhs, prop.rhs, self.invalid_objects);
                     entry.insert(Assignment { rhs: union });
                 }
                 std::collections::btree_map::Entry::Vacant(entry) => {
@@ -217,7 +218,12 @@ impl Visitor<CallId> for Resolver<'_, '_> {
                 .entry(*name)
             {
                 Entry::Occupied(mut entry) => {
-                    let union = create_union(self.unions, entry.get().rhs, assignment.rhs);
+                    let union = create_union(
+                        self.unions,
+                        entry.get().rhs,
+                        assignment.rhs,
+                        self.invalid_objects,
+                    );
                     entry.insert(Assignment { rhs: union });
                 }
                 Entry::Vacant(entry) => {
@@ -231,7 +237,7 @@ impl Visitor<CallId> for Resolver<'_, '_> {
         let mut builder = UnionBuilder::default();
 
         if return_state.returns_invalid {
-            builder.add_object(None);
+            builder.add_object(None, self.invalid_objects);
         }
         if return_state.returns_null_or_void {
             builder.add_null_or_void();
@@ -239,7 +245,7 @@ impl Visitor<CallId> for Resolver<'_, '_> {
 
         // TODO: can optimise - we only add ObjectIds and they are added in stored order.
         for &obj in return_state.return_ty.iter() {
-            builder.add_object(Some(obj))
+            builder.add_object(Some(obj), self.invalid_objects)
         }
 
         let return_type = self.unions.build_union(builder);
@@ -397,7 +403,7 @@ fn get_property(
                     .and_then(|a| a.rhs)
                     .or(Some(Pointer::NullOrVoid));
 
-                builder.add(constituent, unions);
+                builder.add(constituent, unions, invalid_objects);
             }
             unions.build_union(builder)
         }
@@ -1031,7 +1037,7 @@ fn compute_call(
                             machine.get_r_value()
                         } else {
                             // union
-                            create_union(unions, existing, machine.get_r_value())
+                            create_union(unions, existing, machine.get_r_value(), invalid_objects)
                         };
                         let new = Assignment { rhs };
                         match slot {
@@ -1215,7 +1221,12 @@ fn compute_call(
                                     match prop_assignments.entry(key) {
                                         std::collections::btree_map::Entry::Occupied(mut entry) => {
                                             let old = entry.get().rhs;
-                                            let union = create_union(unions, old, prop.rhs);
+                                            let union = create_union(
+                                                unions,
+                                                old,
+                                                prop.rhs,
+                                                invalid_objects,
+                                            );
                                             entry.insert(Assignment { rhs: union });
                                         }
                                         std::collections::btree_map::Entry::Vacant(entry) => {
@@ -1250,7 +1261,7 @@ fn compute_call(
 
                     let mut builder = UnionBuilder::default();
                     for &ty in parts {
-                        builder.add(ty, unions);
+                        builder.add(ty, unions, invalid_objects);
                     }
                     let result = unions.build_union(builder);
 
@@ -1274,8 +1285,8 @@ fn compute_call(
 
     for ty in return_types {
         match ty {
-            ReturnTypeConstituent::Object(obj) => builder.add_object(Some(obj)),
-            ReturnTypeConstituent::Invalid => builder.add_object(None),
+            ReturnTypeConstituent::Object(obj) => builder.add_object(Some(obj), invalid_objects),
+            ReturnTypeConstituent::Invalid => builder.add_object(None, invalid_objects),
             ReturnTypeConstituent::NullOrVoid => builder.add_null_or_void(),
         };
     }
@@ -1395,7 +1406,12 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                             machine.get_r_value()
                         } else {
                             // union
-                            create_union(self.unions, existing, machine.get_r_value())
+                            create_union(
+                                self.unions,
+                                existing,
+                                machine.get_r_value(),
+                                self.invalid_objects,
+                            )
                         };
                         let new = Assignment { rhs };
                         match slot {
@@ -1589,7 +1605,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                 prop.rhs
                             } else {
                                 // union
-                                create_union(self.unions, existing, prop.rhs)
+                                create_union(self.unions, existing, prop.rhs, self.invalid_objects)
                             };
                             let new = Assignment { rhs };
                             machine.lattice.insert_prop_assignment(
@@ -1659,7 +1675,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                             let mut builder = UnionBuilder::default();
 
                             if return_state.returns_invalid {
-                                builder.add_object(None);
+                                builder.add_object(None, &self.invalid_objects);
                             }
                             if return_state.returns_null_or_void {
                                 builder.add_null_or_void()
@@ -1667,7 +1683,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
 
                             // TODO: can optimise - we only add ObjectIds and they are added in stored order.
                             for &obj in return_state.return_ty.iter() {
-                                builder.add_object(Some(obj))
+                                builder.add_object(Some(obj), &self.invalid_objects)
                             }
 
                             let result = self.unions.build_union(builder);
@@ -1868,7 +1884,12 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                     match return_state.prop_assignments.entry(key) {
                                         std::collections::btree_map::Entry::Occupied(mut entry) => {
                                             let old = entry.get().rhs;
-                                            let union = create_union(self.unions, old, prop.rhs);
+                                            let union = create_union(
+                                                self.unions,
+                                                old,
+                                                prop.rhs,
+                                                self.invalid_objects,
+                                            );
                                             entry.insert(Assignment { rhs: union });
                                             changed |= old != union;
                                         }
@@ -1953,7 +1974,12 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                     match return_state.captured_vars.entry(*var) {
                                         Entry::Occupied(mut entry) => {
                                             let old = entry.get().rhs;
-                                            let union = create_union(self.unions, old, new.rhs);
+                                            let union = create_union(
+                                                self.unions,
+                                                old,
+                                                new.rhs,
+                                                self.invalid_objects,
+                                            );
                                             entry.insert(Assignment { rhs: union });
                                             changed |= old != union;
                                         }
@@ -1977,12 +2003,11 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                 }
                 Step::PushToUnion => {
                     let v = machine.get_r_value();
-                    machine
-                        .state
-                        .unions
-                        .last_mut()
-                        .unwrap()
-                        .add(v, &self.unions);
+                    machine.state.unions.last_mut().unwrap().add(
+                        v,
+                        &self.unions,
+                        &self.invalid_objects,
+                    );
                 }
                 Step::StoreUnion => {
                     let builder = machine.state.unions.pop().unwrap();
@@ -2065,7 +2090,7 @@ impl JoinOp {
             }
             match self.result.prop_assignments.entry((*obj, *key)) {
                 std::collections::btree_map::Entry::Occupied(mut entry) => {
-                    let union = create_union(unions, entry.get().rhs, prop.rhs);
+                    let union = create_union(unions, entry.get().rhs, prop.rhs, invalid_objects);
                     entry.insert(Assignment { rhs: union });
                 }
                 std::collections::btree_map::Entry::Vacant(entry) => {
@@ -2082,7 +2107,8 @@ impl JoinOp {
         for (name, assignment) in input.var_assignments.iter() {
             match self.result.var_assignments.entry(*name) {
                 Entry::Occupied(mut entry) => {
-                    let union = create_union(unions, entry.get().rhs, assignment.rhs);
+                    let union =
+                        create_union(unions, entry.get().rhs, assignment.rhs, invalid_objects);
                     entry.insert(Assignment { rhs: union });
                 }
                 Entry::Vacant(entry) => {
