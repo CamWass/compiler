@@ -29,11 +29,10 @@ use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use global_common::{SyntaxContext, DUMMY_SP};
 use index::bit_set::{BitMatrix, BitSet, GrowableBitSet};
 use index::vec::IndexVec;
-use petgraph::prelude::{DiGraphMap, UnGraph};
-use petgraph::{
-    graph::{DiGraph, Neighbors, NodeIndex},
-    EdgeDirection::*,
-};
+use petgraph::algo::TarjanScc;
+use petgraph::graph::{DiGraph, Neighbors, NodeIndex, UnGraph};
+use petgraph::graphmap::DiGraphMap;
+use petgraph::EdgeDirection::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::control_flow::node::{Node, NodeKind};
@@ -424,21 +423,33 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
         call_resolver_state: ResolverState::default(),
         names: IndexSet::default(),
         vars: IndexSet::default(),
+
+        accessed_props: FxHashMap::default(),
     };
+
+    let mut fn_vars = FxHashSet::default();
 
     {
         let mut v = DeclFinder {
             names: &mut store.names,
             vars: &mut store.vars,
             var_start: VarId::from_u32(0),
+            fn_vars: &mut fn_vars,
         };
         ast.visit_with(&mut v);
     }
+    let mut good_functions = FxHashSet::default();
+    let mut fn_dependencies = FxHashMap::default();
+
     {
         let mut visitor = FnVisitor {
             store: &mut store,
             cur_var_start: VarId::from_u32(0),
             function_stack: Vec::new(),
+            fn_vars: &mut fn_vars,
+
+            fn_dependencies: &mut fn_dependencies,
+            good_functions: &mut good_functions,
         };
         ast.visit_with(&mut visitor);
     }
@@ -504,6 +515,122 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
     let mut done_objects = GrowableBitSet::new_empty();
     let mut done_functions = BitSet::new_empty(store.functions.len());
     let mut done_vars = BitSet::new_empty(store.vars.len());
+
+    let mut fn_graph = DiGraphMap::with_capacity(good_functions.len(), 0);
+
+    for func in &good_functions {
+        fn_graph.add_node(*func);
+    }
+
+    for (func, deps) in fn_dependencies.iter() {
+        if !good_functions.contains(func) {
+            continue;
+        }
+        let bad = deps
+            .iter()
+            .any(|d| !good_functions.contains(store.fn_assignments.get(d).unwrap()));
+
+        if bad {
+            good_functions.remove(func);
+            fn_graph.remove_node(*func);
+            continue;
+        }
+
+        for dep in deps {
+            let dep = store.fn_assignments.get(dep).unwrap();
+            fn_graph.add_edge(*func, *dep, ());
+        }
+    }
+
+    let mut tarjan = TarjanScc::default();
+
+    tarjan.run(&fn_graph, |scc| {
+        debug_assert!(scc.iter().all(|func| good_functions.contains(func)));
+
+        let bad = scc.iter().any(|func| {
+            fn_dependencies
+                .get(func)
+                .iter()
+                .copied()
+                .flatten()
+                .any(|d| !good_functions.contains(store.fn_assignments.get(d).unwrap()))
+        });
+        if bad {
+            for func in scc {
+                good_functions.remove(func);
+            }
+        } else {
+            let mut func_props = FxHashSet::default();
+            for &func in scc {
+                if let CallTemplate::Steps(steps) = &store.call_templates[func] {
+                    for (start, end) in &steps.map {
+                        let steps = {
+                            let (start, end) = (*start as usize, *end as usize);
+                            if start > steps.steps.len() || end == start {
+                                continue;
+                            }
+                            &steps.steps[start..end]
+                        };
+                        let mut cur_l_value_prop = None;
+                        for step in steps {
+                            let prop = match step {
+                                function::Step::StoreRValue(Some(v)) => match v {
+                                    function::RValue::Prop(p) => Some(p),
+                                    _ => None,
+                                },
+                                function::Step::StoreLValue(Some(v)) => match v {
+                                    function::LValue::RValueProp(p) => {
+                                        cur_l_value_prop = Some(p);
+                                        None
+                                    }
+                                    _ => {
+                                        cur_l_value_prop = None;
+                                        None
+                                    }
+                                },
+                                function::Step::Assign(conditional) => {
+                                    if *conditional {
+                                        if let Some(prop) = cur_l_value_prop {
+                                            func_props.insert(*prop);
+                                        }
+                                        cur_l_value_prop = None;
+                                    } else {
+                                    }
+                                    None
+                                }
+                                function::Step::InvalidateLValue => {
+                                    cur_l_value_prop = None;
+                                    None
+                                }
+                                _ => None,
+                            };
+                            if let Some(prop) = prop {
+                                func_props.insert(*prop);
+                            }
+                        }
+                    }
+
+                    for dep in fn_graph.neighbors_directed(func, Outgoing) {
+                        if dep == func {
+                            continue;
+                        }
+
+                        if let Some(dep_props) = store.accessed_props.get(&dep) {
+                            debug_assert!(!scc.contains(&dep));
+                            func_props.extend(dep_props.iter().copied());
+                        }
+                    }
+                }
+            }
+
+            for &func in scc.iter().rev().skip(1) {
+                store.accessed_props.insert(func, func_props.clone());
+            }
+            if let Some(func) = scc.last() {
+                store.accessed_props.insert(*func, func_props);
+            }
+        }
+    });
 
     let root = match &ast {
         Program::Module(n) => ControlFlowRoot::Module(n),
@@ -692,6 +819,7 @@ pub fn process(
             call_resolver_state,
             names,
             vars,
+            accessed_props,
         } = &store;
 
         // dbg!(
@@ -708,6 +836,7 @@ pub fn process(
         //     // names,
         //     // vars,
         //     // call_templates
+        //     accessed_props
         // );
     }
 
@@ -727,17 +856,24 @@ struct DeclFinder<'a> {
     vars: &'a mut IndexSet<VarId, Id>,
 
     var_start: VarId,
+
+    fn_vars: &'a mut FxHashSet<VarId>,
 }
 
 impl DeclFinder<'_> {
-    fn record_var(&mut self, ident: &Ident) {
+    fn record_var(&mut self, ident: &Ident, fn_name: bool) {
         let id = Id::new(ident, self.names);
         // Var should not have been previously defined (unless it was within the
         // current function).
         debug_assert!(
             !self.vars.contains(&id) || self.vars.get_index(&id).unwrap() >= self.var_start
         );
-        self.vars.insert(id);
+        let var = self.vars.insert(id);
+        if fn_name {
+            self.fn_vars.insert(var);
+        } else {
+            self.fn_vars.remove(&var);
+        }
     }
 }
 
@@ -751,7 +887,7 @@ impl<'ast> Visit<'ast> for DeclFinder<'_> {
 
     // Function names are in scope.
     fn visit_fn_decl(&mut self, node: &FnDecl) {
-        self.record_var(&node.ident);
+        self.record_var(&node.ident, true);
     }
 
     // Expressions can't declare new vars.
@@ -759,13 +895,13 @@ impl<'ast> Visit<'ast> for DeclFinder<'_> {
     fn visit_prop_name(&mut self, _node: &PropName) {}
 
     fn visit_binding_ident(&mut self, node: &BindingIdent) {
-        self.record_var(&node.id);
+        self.record_var(&node.id, false);
     }
 
     // The key of AssignPatProp is LHS but is an Ident, so won't be caught by
     // the BindingIdent visitor above.
     fn visit_assign_pat_prop(&mut self, p: &AssignPatProp) {
-        self.record_var(&p.key);
+        self.record_var(&p.key, false);
     }
 }
 
@@ -773,6 +909,10 @@ struct FnVisitor<'ast, 's> {
     store: &'s mut Store<'ast>,
     cur_var_start: VarId,
     function_stack: Vec<FnId>,
+    fn_vars: &'s mut FxHashSet<VarId>,
+
+    fn_dependencies: &'s mut FxHashMap<FnId, Vec<VarId>>,
+    good_functions: &'s mut FxHashSet<FnId>,
 }
 
 impl<'ast> FnVisitor<'ast, '_> {
@@ -803,11 +943,12 @@ impl<'ast> FnVisitor<'ast, '_> {
             names: &mut self.store.names,
             vars: &mut self.store.vars,
             var_start: VarId::from_u32(var_start),
+            fn_vars: self.fn_vars,
         };
 
         for param in node.params() {
             if let Pat::Ident(param) = param {
-                v.record_var(&param.id);
+                v.record_var(&param.id, false);
             } else {
                 todo!("non-ident param");
             }
@@ -819,7 +960,7 @@ impl<'ast> FnVisitor<'ast, '_> {
         // params, we record it afterwards to simplify tracking of where
         // vars/params start/end.
         if let Some(fn_expr_name) = fn_expr_name {
-            v.record_var(fn_expr_name);
+            v.record_var(fn_expr_name, true);
         }
 
         node.visit_body_with(&mut v);
@@ -843,13 +984,14 @@ impl<'ast> FnVisitor<'ast, '_> {
         let static_id = self.store.static_fn_data.push(static_data);
         debug_assert_eq!(static_id, id);
 
+        self.good_functions.insert(id);
+
         let old_var_start = self.cur_var_start;
         self.function_stack.push(id);
         self.cur_var_start = VarId::from_u32(var_start);
         node.visit_body_with(self);
         self.function_stack.pop();
         self.cur_var_start = old_var_start;
-
         id
     }
 }
@@ -893,16 +1035,36 @@ impl<'ast> Visit<'ast> for FnVisitor<'ast, '_> {
         // }
     }
 
+    fn visit_call_expr(&mut self, node: &'ast CallExpr) {
+        if let ExprOrSuper::Expr(callee) = &node.callee {
+            if let Expr::Ident(callee) = callee.as_ref() {
+                if let Some(func) = self.function_stack.last() {
+                    if self.good_functions.contains(func) {
+                        if callee.span.ctxt != self.store.unresolved_ctxt {
+                            let id = Id::new(callee, &mut self.store.names);
+                            let name = self.store.vars.get_index(&id).unwrap();
+                            let is_fn_var = self.fn_vars.contains(&name);
+                            if is_fn_var {
+                                self.fn_dependencies.entry(*func).or_default().push(name);
+                            } else {
+                                self.good_functions.remove(func);
+                            }
+                        } else {
+                            self.good_functions.remove(func);
+                        }
+                    }
+                }
+            }
+        }
+
+        node.visit_children_with(self);
+    }
+
     fn visit_fn_decl(&mut self, node: &'ast FnDecl) {
         let id = self.handle_fn(&node.function, None);
         let name = Id::new(&node.ident, &mut self.store.names);
         let name = self.store.vars.get_index(&name).unwrap();
-        self.store.fn_assignments.insert(
-            name,
-            Assignment {
-                rhs: Some(Pointer::Fn(id)),
-            },
-        );
+        self.store.fn_assignments.insert(name, id);
     }
     fn visit_fn_expr(&mut self, node: &'ast FnExpr) {
         self.handle_fn(&node.function, node.ident.as_ref());
@@ -949,7 +1111,7 @@ pub struct Store<'ast> {
     resolved_calls: FxHashMap<CallId, ResolvedCall>,
     /// Read-only
     call_templates: IndexVec<FnId, CallTemplate>,
-    fn_assignments: HashableHashMap<VarId, Assignment>,
+    fn_assignments: HashableHashMap<VarId, FnId>,
 
     object_links: FxHashSet<(ObjectId, ObjectId)>,
     call_objects: FxHashMap<(CallId, NodeId), ObjectId>,
@@ -958,6 +1120,8 @@ pub struct Store<'ast> {
 
     names: IndexSet<NameId, JsWord>,
     vars: IndexSet<VarId, Id>,
+
+    accessed_props: FxHashMap<FnId, FxHashSet<NameId>>,
 }
 
 impl Store<'_> {
@@ -1541,13 +1705,16 @@ impl CowLattice<'_> {
         value: Assignment,
         invalid_objects: &GrowableBitSet<ObjectId>,
         unions: &UnionStore,
-        fn_assignments: &HashableHashMap<VarId, Assignment>,
+        fn_assignments: &HashableHashMap<VarId, FnId>,
     ) {
         debug_assert!(
             !matches!(
                 self.0.var_assignments.get(&name).and_then(|a| a.rhs),
                 Some(Pointer::Fn(_))
-            ) || self.0.var_assignments.get(&name) != fn_assignments.get(&name)
+            ) || self.0.var_assignments.get(&name).copied()
+                != fn_assignments.get(&name).map(|f| Assignment {
+                    rhs: Some(Pointer::Fn(*f)),
+                })
         );
         let new = if fully_invalidated(value.rhs, invalid_objects, unions) {
             Assignment { rhs: None }
@@ -1600,13 +1767,13 @@ impl CowLattice<'_> {
     fn get_var(
         &self,
         id: VarId,
-        fn_assignments: &HashableHashMap<VarId, Assignment>,
+        fn_assignments: &HashableHashMap<VarId, FnId>,
     ) -> Option<Assignment> {
-        self.0
-            .var_assignments
-            .get(&id)
-            .or_else(|| fn_assignments.get(&id))
-            .copied()
+        self.0.var_assignments.get(&id).copied().or_else(|| {
+            fn_assignments.get(&id).map(|f| Assignment {
+                rhs: Some(Pointer::Fn(*f)),
+            })
+        })
     }
 }
 
@@ -1908,6 +2075,7 @@ impl<'ast> Analyser<'ast, '_> {
             NodeKind::BindingIdent(node) => self.get_var_id_from_ident(&node.id).map(Slot::Var),
             NodeKind::MemberExpr(node) => {
                 let obj = self.visit_and_get_object(Node::from(&node.obj), conditional);
+
                 if let Some(prop) = PropKey::from_expr(
                     &node.prop,
                     self.store.unresolved_ctxt,
@@ -1940,7 +2108,7 @@ impl<'ast> Analyser<'ast, '_> {
             func,
             args,
             &self.store.static_fn_data,
-            &self.store.unions,
+            &mut self.store.unions,
             &self.store.invalid_objects,
             &self.store.fn_assignments,
             &self.store.vars,
@@ -1949,6 +2117,8 @@ impl<'ast> Analyser<'ast, '_> {
             &mut self.done_objects,
             &mut self.done_functions,
             &mut self.done_vars,
+            &self.store.accessed_props,
+            &mut self.store.functions,
         )
         .expect("resolving call object should not be present");
 
@@ -1961,6 +2131,16 @@ impl<'ast> Analyser<'ast, '_> {
             self.done_functions,
             self.done_vars,
         );
+        for ((obj, _), prop) in self.lattice.prop_assignments.iter() {
+            if self.store.invalid_objects.contains(*obj) {
+                invalidate(
+                    &mut self.store.invalid_objects,
+                    &self.store.unions,
+                    prop.rhs,
+                    &self.lattice.prop_assignments,
+                );
+            }
+        }
 
         let resolved = &self.store.resolved_calls[&call];
         let fn_assignments = &self.store.fn_assignments;
@@ -2703,26 +2883,28 @@ fn build_call(
     func: FnId,
     args: CallArgs,
     static_fn_data: &IndexVec<FnId, StaticFunctionData>,
-    unions: &UnionStore,
+    unions: &mut UnionStore,
     invalid_objects: &GrowableBitSet<ObjectId>,
-    fn_assignments: &HashableHashMap<VarId, Assignment>,
+    fn_assignments: &HashableHashMap<VarId, FnId>,
     vars: &IndexSet<VarId, Id>,
     names: &IndexSet<NameId, JsWord>,
     resolved_calls: &FxHashMap<CallId, ResolvedCall>,
     done_objects: &mut GrowableBitSet<ObjectId>,
     done_functions: &mut BitSet<FnId>,
     done_vars: &mut BitSet<VarId>,
+    accessed_props: &FxHashMap<FnId, FxHashSet<NameId>>,
+    functions: &mut IndexVec<FnId, Func>,
 ) -> Result<Call, ()> {
+    let mut var_assignments = HashableHashMap::default();
+    let mut prop_assignments: PropertyAssignments = PropertyAssignments::default();
+
     done_objects.clear();
     done_functions.clear();
-    done_vars.clear();
 
     let mut done_vars = FxHashSet::default();
 
     // println!("start build call for fn: {:?}", func);
     let mut queue = Vec::new();
-
-    let mut var_assignments = HashableHashMap::default();
 
     queue.push(Pointer::Fn(func));
 
@@ -2740,9 +2922,9 @@ fn build_call(
                         }
                         queue.push(p);
                     }
-                    Some(p @ Pointer::Fn(_)) => {
+                    Some(p @ Pointer::Fn(f)) => {
                         queue.push(p);
-                        if fn_assignments.get(&id).and_then(|a| a.rhs) == arg {
+                        if fn_assignments.get(&id) == Some(&f) {
                             continue;
                         }
                     }
@@ -2763,8 +2945,6 @@ fn build_call(
             }
         }
     }
-
-    let mut prop_assignments: PropertyAssignments = PropertyAssignments::default();
 
     // TODO: eagerly check for RESOLVING_CALL e.g. when pushing, not popping, from queue.
     // This we we bail sooner.
@@ -2794,7 +2974,24 @@ fn build_call(
                     } else {
                         *value
                     };
-                    prop_assignments.insert(*key, new);
+                    if let Some(accessed_props) = accessed_props.get(&func) {
+                        if accessed_props.contains(&key.1) {
+                            prop_assignments.insert(*key, new);
+                        }
+                    } else {
+                        prop_assignments.insert(*key, new);
+                    }
+
+                    match functions[func].entry_state.prop_assignments.entry(*key) {
+                        std::collections::btree_map::Entry::Occupied(mut entry) => {
+                            let union = create_union(unions, entry.get().rhs, new.rhs);
+                            entry.insert(Assignment { rhs: union });
+                        }
+                        std::collections::btree_map::Entry::Vacant(entry) => {
+                            entry.insert(new);
+                        }
+                    }
+
                     match new.rhs {
                         Some(Pointer::Fn(f)) => {
                             if !done_functions.contains(f) {
@@ -2834,18 +3031,20 @@ fn build_call(
                         continue;
                     }
                     let mut from_fn_assignments = false;
-                    let value = match call_site_state
-                        .var_assignments
-                        .get(var)
-                        .or_else(|| {
-                            from_fn_assignments = true;
-                            fn_assignments.get(var)
-                        })
-                        .copied()
-                    {
-                        Some(v) => v,
-                        None => continue,
-                    };
+                    let value =
+                        match call_site_state
+                            .var_assignments
+                            .get(var)
+                            .copied()
+                            .or_else(|| {
+                                from_fn_assignments = true;
+                                fn_assignments.get(var).map(|f| Assignment {
+                                    rhs: Some(Pointer::Fn(*f)),
+                                })
+                            }) {
+                            Some(v) => v,
+                            None => continue,
+                        };
                     let new = if fully_invalidated(value.rhs, invalid_objects, unions) {
                         Assignment { rhs: None }
                     } else {
@@ -2891,9 +3090,10 @@ fn build_call(
         }
     }
 
-    debug_assert!(var_assignments
-        .iter()
-        .all(|(k, v)| Some(v) != fn_assignments.get(k)));
+    debug_assert!(var_assignments.iter().all(|(k, v)| Some(*v)
+        != fn_assignments.get(k).map(|f| Assignment {
+            rhs: Some(Pointer::Fn(*f)),
+        })));
 
     let call = Call {
         func,

@@ -89,11 +89,13 @@ struct Resolver<'a, 'ast> {
     invalid_objects: &'a mut GrowableBitSet<ObjectId>,
     calls: &'a mut IndexSet<CallId, Call>,
 
-    fn_assignments: &'a HashableHashMap<VarId, Assignment>,
+    fn_assignments: &'a HashableHashMap<VarId, FnId>,
 
     root_call: CallId,
 
     state: &'a mut ResolverState,
+
+    accessed_props: &'a FxHashMap<FnId, FxHashSet<NameId>>,
 
     vars: &'a IndexSet<VarId, Id>,
     names: &'a IndexSet<NameId, JsWord>,
@@ -173,6 +175,9 @@ impl Visitor<CallId> for Resolver<'_, '_> {
             done_objects: self.done_objects,
             done_functions: self.done_functions,
             done_vars: self.done_vars,
+
+            accessed_props: self.accessed_props,
+            functions: self.functions,
         };
         analysis.analyze();
 
@@ -310,6 +315,8 @@ pub(super) fn resolve_call(
         done_objects,
         done_functions,
         done_vars,
+
+        accessed_props: &store.accessed_props,
     };
 
     process(call, &mut visitor);
@@ -545,7 +552,7 @@ impl MachineLattice {
         lattice_elements: &IndexSet<LatticeElementId, Lattice>,
         invalid_objects: &GrowableBitSet<ObjectId>,
         unions: &UnionStore,
-        fn_assignments: &HashableHashMap<VarId, Assignment>,
+        fn_assignments: &HashableHashMap<VarId, FnId>,
     ) {
         debug_assert!(
             !matches!(
@@ -554,7 +561,14 @@ impl MachineLattice {
                     .get(&name)
                     .and_then(|a| a.rhs),
                 Some(Pointer::Fn(_))
-            ) || self.get(lattice_elements).var_assignments.get(&name) != fn_assignments.get(&name)
+            ) || self
+                .get(lattice_elements)
+                .var_assignments
+                .get(&name)
+                .copied()
+                != fn_assignments.get(&name).map(|f| Assignment {
+                    rhs: Some(Pointer::Fn(*f)),
+                })
         );
         let new = if fully_invalidated(value.rhs, invalid_objects, unions) {
             Assignment { rhs: None }
@@ -663,7 +677,7 @@ struct Machine<'a> {
     state: &'a mut MachineState,
     lattice: MachineLattice,
     steps: &'a [Step],
-    fn_assignments: &'a HashableHashMap<VarId, Assignment>,
+    fn_assignments: &'a HashableHashMap<VarId, FnId>,
 }
 
 impl Machine<'_> {
@@ -683,8 +697,12 @@ impl Machine<'_> {
             .get(lattice_elements)
             .var_assignments
             .get(id)
-            .or_else(|| self.fn_assignments.get(id))
             .copied()
+            .or_else(|| {
+                self.fn_assignments.get(&id).map(|f| Assignment {
+                    rhs: Some(Pointer::Fn(*f)),
+                })
+            })
     }
 }
 
@@ -692,9 +710,9 @@ impl Machine<'_> {
 pub(super) struct CallSteps {
     /// [`Steps`][Step] that represent the effects of each control flow graph
     /// node required to evaluate the call's effects.
-    steps: Vec<Step>,
+    pub steps: Vec<Step>,
     /// Map from CFG [`NodeIndex`] to `(start, end)` indices in the step list.
-    map: Vec<(u32, u32)>,
+    pub map: Vec<(u32, u32)>,
 }
 
 #[derive(Debug)]
@@ -719,7 +737,7 @@ impl CallTemplate {
         objects_map: &mut FxHashMap<NodeId, ObjectId>,
         objects: &mut ObjectStore,
         invalid_objects: &mut GrowableBitSet<ObjectId>,
-        fn_assignments: &HashableHashMap<VarId, Assignment>,
+        fn_assignments: &HashableHashMap<VarId, FnId>,
         fn_graph: &mut DiGraphMap<FnId, ()>,
     ) -> CallTemplate {
         let (steps, map, references_env_vars) = create_step_map(
@@ -787,7 +805,7 @@ impl CallTemplate {
 struct SimpleMachine<'a> {
     state: &'a mut SimpleMachineState,
     steps: &'a [Step],
-    fn_assignments: &'a HashableHashMap<VarId, Assignment>,
+    fn_assignments: &'a HashableHashMap<VarId, FnId>,
 }
 
 impl SimpleMachine<'_> {
@@ -803,8 +821,12 @@ impl SimpleMachine<'_> {
             .lattice
             .var_assignments
             .get(id)
-            .or_else(|| self.fn_assignments.get(id))
             .copied()
+            .or_else(|| {
+                self.fn_assignments.get(&id).map(|f| Assignment {
+                    rhs: Some(Pointer::Fn(*f)),
+                })
+            })
     }
 
     fn insert_var_assignment(
@@ -813,7 +835,7 @@ impl SimpleMachine<'_> {
         value: Assignment,
         invalid_objects: &GrowableBitSet<ObjectId>,
         unions: &UnionStore,
-        fn_assignments: &HashableHashMap<VarId, Assignment>,
+        fn_assignments: &HashableHashMap<VarId, FnId>,
     ) {
         let new = if fully_invalidated(value.rhs, invalid_objects, unions) {
             Assignment { rhs: None }
@@ -917,7 +939,7 @@ fn compute_call(
     objects_map: &mut FxHashMap<NodeId, ObjectId>,
     objects: &mut ObjectStore,
     invalid_objects: &mut GrowableBitSet<ObjectId>,
-    fn_assignments: &HashableHashMap<VarId, Assignment>,
+    fn_assignments: &HashableHashMap<VarId, FnId>,
     static_fn_data: &IndexVec<FnId, StaticFunctionData>,
     fn_graph: &mut DiGraphMap<FnId, ()>,
     func: FnId,
@@ -1613,6 +1635,8 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                         &mut self.done_objects,
                         &mut self.done_functions,
                         &mut self.done_vars,
+                        self.accessed_props,
+                        self.functions,
                     )
                     .ok()?;
 
@@ -1894,12 +1918,13 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                         .get(&self.state.lattice_elements)
                                         .var_assignments
                                         .get(var)
+                                        .copied()
                                         .or_else(|| {
                                             from_fn_assignments = true;
-                                            fn_assignments.get(var)
-                                        })
-                                        .copied()
-                                    {
+                                            fn_assignments.get(var).map(|f| Assignment {
+                                                rhs: Some(Pointer::Fn(*f)),
+                                            })
+                                        }) {
                                         Some(v) => v,
                                         None => continue,
                                     };
@@ -2158,7 +2183,7 @@ struct DataFlowAnalysis<'ast, 'a> {
     calls: &'a mut IndexSet<CallId, Call>,
     changed: &'a mut bool,
 
-    fn_assignments: &'a HashableHashMap<VarId, Assignment>,
+    fn_assignments: &'a HashableHashMap<VarId, FnId>,
 
     root_call: CallId,
 
@@ -2172,6 +2197,9 @@ struct DataFlowAnalysis<'ast, 'a> {
     done_objects: &'a mut GrowableBitSet<ObjectId>,
     done_functions: &'a mut BitSet<FnId>,
     done_vars: &'a mut BitSet<VarId>,
+
+    accessed_props: &'a FxHashMap<FnId, FxHashSet<NameId>>,
+    functions: &'a mut IndexVec<FnId, Func>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
