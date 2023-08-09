@@ -131,8 +131,8 @@ pub(super) struct UnionStore {
 }
 
 impl UnionStore {
-    pub fn build_union(&mut self, builder: UnionBuilder) -> Option<Pointer> {
-        if let Union::Inline(inline) = &builder.union {
+    pub fn build_union(&mut self, mut builder: UnionBuilder) -> Option<Pointer> {
+        if let Union::Inline(inline) = &mut builder.union {
             if inline[0].is_none() {
                 if builder.has_null_or_void && !builder.invalid {
                     // NullOrVoid is ignored unless it is the only constituent.
@@ -158,10 +158,27 @@ impl UnionStore {
                     None => true,
                 })
             {
-                // Invalid, but the constituents are all primitive (whose properties
-                // are invalid by default), so no need to record their union with an
-                // invalid object.
-                return None;
+                if inline.contains(&Some(ObjectStore::RESOLVING_CALL)) {
+                    let mut new = [None; 4];
+                    let mut i = 0;
+                    for c in inline.iter() {
+                        if let Some(c) = c {
+                            if !c.is_built_in() || *c == ObjectStore::RESOLVING_CALL {
+                                new[i] = Some(*c);
+                                i += 1;
+                            }
+                        } else {
+                            new[i] = None;
+                            i += 1;
+                        }
+                    }
+                    *inline = new;
+                } else {
+                    // Invalid, but the constituents are all primitive (whose properties
+                    // are invalid by default), so no need to record their union with an
+                    // invalid object.
+                    return None;
+                }
             }
         }
 
@@ -203,6 +220,12 @@ impl UnionBuilder {
             Some(constituent) => {
                 if invalid_objects.contains(constituent) {
                     self.invalid = true;
+                    return;
+                }
+                if self.invalid
+                    && constituent.is_built_in()
+                    && constituent != ObjectStore::RESOLVING_CALL
+                {
                     return;
                 }
                 match &mut self.union {
