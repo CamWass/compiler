@@ -522,13 +522,20 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
         fn_graph.add_node(*func);
     }
 
+    fn get_dep<'a>(dep: &'a FnDep, fn_assignments: &'a FxHashMap<VarId, FnId>) -> &'a FnId {
+        match dep {
+            FnDep::Var(v) => fn_assignments.get(v).unwrap(),
+            FnDep::Fn(f) => f,
+        }
+    }
+
     for (func, deps) in fn_dependencies.iter() {
         if !good_functions.contains(func) {
             continue;
         }
         let bad = deps
             .iter()
-            .any(|d| !good_functions.contains(store.fn_assignments.get(d).unwrap()));
+            .any(|d| !good_functions.contains(get_dep(d, &store.fn_assignments)));
 
         if bad {
             good_functions.remove(func);
@@ -537,7 +544,7 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
         }
 
         for dep in deps {
-            let dep = store.fn_assignments.get(dep).unwrap();
+            let dep = get_dep(dep, &store.fn_assignments);
             fn_graph.add_edge(*func, *dep, ());
         }
     }
@@ -553,7 +560,7 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
                 .iter()
                 .copied()
                 .flatten()
-                .any(|d| !good_functions.contains(store.fn_assignments.get(d).unwrap()))
+                .any(|d| !good_functions.contains(get_dep(d, &store.fn_assignments)))
         });
         if bad {
             for func in scc {
@@ -594,7 +601,6 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
                                             func_props.insert(*prop);
                                         }
                                         cur_l_value_prop = None;
-                                    } else {
                                     }
                                     None
                                 }
@@ -851,6 +857,11 @@ pub fn process(
     ast.visit_mut_with(&mut renamer);
 }
 
+enum FnDep {
+    Var(VarId),
+    Fn(FnId),
+}
+
 struct DeclFinder<'a> {
     names: &'a mut IndexSet<NameId, JsWord>,
     vars: &'a mut IndexSet<VarId, Id>,
@@ -911,7 +922,7 @@ struct FnVisitor<'ast, 's> {
     function_stack: Vec<FnId>,
     fn_vars: &'s mut FxHashSet<VarId>,
 
-    fn_dependencies: &'s mut FxHashMap<FnId, Vec<VarId>>,
+    fn_dependencies: &'s mut FxHashMap<FnId, Vec<FnDep>>,
     good_functions: &'s mut FxHashSet<FnId>,
 }
 
@@ -1036,28 +1047,63 @@ impl<'ast> Visit<'ast> for FnVisitor<'ast, '_> {
     }
 
     fn visit_call_expr(&mut self, node: &'ast CallExpr) {
-        if let ExprOrSuper::Expr(callee) = &node.callee {
-            if let Expr::Ident(callee) = callee.as_ref() {
-                if let Some(func) = self.function_stack.last() {
+        node.visit_children_with(self);
+
+        if let Some(func) = self.function_stack.last() {
+            if let ExprOrSuper::Expr(callee) = &node.callee {
+                if let Expr::Ident(callee) = callee.as_ref() {
                     if self.good_functions.contains(func) {
                         if callee.span.ctxt != self.store.unresolved_ctxt {
                             let id = Id::new(callee, &mut self.store.names);
                             let name = self.store.vars.get_index(&id).unwrap();
                             let is_fn_var = self.fn_vars.contains(&name);
                             if is_fn_var {
-                                self.fn_dependencies.entry(*func).or_default().push(name);
-                            } else {
-                                self.good_functions.remove(func);
+                                self.fn_dependencies
+                                    .entry(*func)
+                                    .or_default()
+                                    .push(FnDep::Var(name));
+                                return;
                             }
-                        } else {
-                            self.good_functions.remove(func);
+                        }
+                    }
+                } else {
+                    let mut expr = callee.as_ref();
+                    let mut callee = None;
+                    loop {
+                        match expr {
+                            Expr::Fn(e) => {
+                                callee = self.store.function_map.get(&e.function.node_id);
+                            }
+                            Expr::Seq(e) => {
+                                if let Some(last) = e.exprs.last() {
+                                    expr = last;
+                                    continue;
+                                }
+                            }
+                            Expr::Arrow(e) => {
+                                callee = self.store.function_map.get(&e.node_id);
+                            }
+                            Expr::Paren(e) => {
+                                expr = &e.expr;
+                                continue;
+                            }
+                            _ => {}
+                        }
+                        break;
+                    }
+                    if let Some(callee) = callee {
+                        if self.good_functions.contains(func) {
+                            self.fn_dependencies
+                                .entry(*func)
+                                .or_default()
+                                .push(FnDep::Fn(*callee));
+                            return;
                         }
                     }
                 }
             }
+            self.good_functions.remove(func);
         }
-
-        node.visit_children_with(self);
     }
 
     fn visit_fn_decl(&mut self, node: &'ast FnDecl) {
