@@ -18,7 +18,12 @@ use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 use crate::control_flow::node::{Node, NodeKind};
 use crate::control_flow::ControlFlowGraph::Branch;
 use crate::find_vars::VarId;
-use crate::optimize_properties2::{apply_call_side_effects, build_call};
+use crate::optimize_properties2::{
+    apply_call_side_effects, build_call, create_union, depends_on_unresolved_call,
+    fully_invalidated, function::*, invalidate, invalidated, Assignment, Call, CallArgs, CallId,
+    FnId, Func, Id, Lattice, NameId, Pointer, PropertyAssignments, ResolvedCall, SimpleCFG,
+    StaticFunctionData, Store,
+};
 use crate::utils::unwrap_as;
 use crate::DataFlowAnalysis::{
     LatticeElementId, LinearFlowState, PrioritizedNode, UniqueQueue, MAX_STEPS_PER_NODE,
@@ -29,11 +34,6 @@ use super::hashable_map::HashableHashMap;
 use super::simple_set::IndexSet;
 use super::types::{ObjectId, ObjectStore, UnionBuilder, UnionStore};
 use super::utils::{ReusableState, ReusableStateStack};
-use super::{
-    create_union, fully_invalidated, function::*, Assignment, Call, CallArgs, CallId, FnId, Func,
-    Id, Lattice, NameId, Pointer, PropertyAssignments, ResolvedCall, SimpleCFG, StaticFunctionData,
-    Store,
-};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 enum ReturnTypeConstituent {
@@ -97,9 +97,6 @@ struct Resolver<'a, 'ast> {
     state: &'a mut ResolverState,
 
     accessed_props: &'a FxHashMap<FnId, FxHashSet<NameId>>,
-
-    vars: &'a IndexSet<VarId, Id>,
-    names: &'a IndexSet<NameId, JsWord>,
 
     done_objects: &'a mut GrowableBitSet<ObjectId>,
     done_functions: &'a mut BitSet<FnId>,
@@ -171,9 +168,6 @@ impl Visitor<CallId> for Resolver<'_, '_> {
             state: &mut self.state.data_flow_state,
 
             static_fn_data: &self.static_fn_data,
-
-            vars: &self.vars,
-            names: &self.names,
 
             done_objects: self.done_objects,
             done_functions: self.done_functions,
@@ -261,14 +255,6 @@ impl Visitor<CallId> for Resolver<'_, '_> {
         };
 
         if cfg!(debug_assertions) {
-            let depends_on_unresolved_call = |pointer| match pointer {
-                Some(Pointer::Object(o)) => o == ObjectStore::RESOLVING_CALL,
-                Some(Pointer::Union(union)) => {
-                    self.unions[union].contains(ObjectStore::RESOLVING_CALL)
-                }
-                Some(Pointer::Fn(_)) | Some(Pointer::NullOrVoid) | None => false,
-            };
-
             debug_assert!(!resolved
                 .prop_assignments
                 .keys()
@@ -276,11 +262,11 @@ impl Visitor<CallId> for Resolver<'_, '_> {
             debug_assert!(!resolved
                 .prop_assignments
                 .values()
-                .any(|p| depends_on_unresolved_call(p.rhs)));
+                .any(|p| depends_on_unresolved_call(p.rhs, self.unions)));
             debug_assert!(!resolved
                 .captured_vars
                 .values()
-                .any(|p| depends_on_unresolved_call(p.rhs)));
+                .any(|p| depends_on_unresolved_call(p.rhs, self.unions)));
         }
 
         self.resolved_calls.insert(node, resolved);
@@ -319,9 +305,6 @@ pub(super) fn resolve_call(
         root_call: call,
 
         state: &mut store.call_resolver_state,
-
-        vars: &store.vars,
-        names: &store.names,
 
         done_objects,
         done_functions,
@@ -415,87 +398,6 @@ fn get_property(
         }
         Some(Pointer::Fn(_)) | None => None,
         Some(Pointer::NullOrVoid) => unreachable!(),
-    }
-}
-
-trait GetPropAssignments: Copy {
-    fn prop_assignments(&self) -> &PropertyAssignments;
-}
-
-impl<'a> GetPropAssignments for &'a PropertyAssignments {
-    fn prop_assignments(&self) -> &PropertyAssignments {
-        self
-    }
-}
-
-impl<'a, 'b> GetPropAssignments for (&'a IndexSet<CallId, Call>, CallId) {
-    fn prop_assignments(&self) -> &PropertyAssignments {
-        &self.0[self.1].state.prop_assignments
-    }
-}
-
-/// Recursively invalidates the entity that `pointer` points to.
-fn invalidate(
-    invalid_objects: &mut GrowableBitSet<ObjectId>,
-    unions: &UnionStore,
-    pointer: Option<Pointer>,
-    prop_assignments: impl GetPropAssignments,
-) {
-    let mut queue = match pointer {
-        Some(Pointer::Object(o)) if o.is_built_in() => return,
-        None | Some(Pointer::Fn(_) | Pointer::NullOrVoid) => return,
-        Some(Pointer::Object(o)) => {
-            vec![o]
-        }
-        Some(Pointer::Union(u)) => unions[u].constituents().collect(),
-    };
-
-    while let Some(obj) = queue.pop() {
-        if obj.is_built_in() {
-            continue;
-        }
-
-        let new_invalidation = invalid_objects.insert(obj);
-
-        if new_invalidation {
-            for (_, prop) in prop_assignments
-                .prop_assignments()
-                .range((obj, NameId::from_u32(0))..(obj, NameId::MAX))
-            {
-                match prop.rhs {
-                    Some(Pointer::Object(o)) => {
-                        if !o.is_built_in() && !invalid_objects.contains(o) {
-                            queue.push(o);
-                        }
-                    }
-                    Some(Pointer::Union(u)) => queue.extend(
-                        unions[u]
-                            .constituents()
-                            .filter(|c| !c.is_built_in() && !invalid_objects.contains(*c)),
-                    ),
-                    None | Some(Pointer::Fn(_) | Pointer::NullOrVoid) => continue,
-                }
-            }
-        }
-    }
-}
-
-/// Returns true if `pointer` points to an invalid object.
-fn invalidated(
-    pointer: Pointer,
-    invalid_objects: &GrowableBitSet<ObjectId>,
-    unions: &UnionStore,
-) -> bool {
-    match pointer {
-        Pointer::Object(obj) => invalid_objects.contains(obj),
-        Pointer::Union(union) => {
-            union.invalid()
-                || unions[union]
-                    .constituents()
-                    .any(|obj| invalid_objects.contains(obj))
-        }
-        Pointer::Fn(_) => true,
-        Pointer::NullOrVoid => false,
     }
 }
 
@@ -852,7 +754,6 @@ impl SimpleMachine<'_> {
         value: Assignment,
         invalid_objects: &mut GrowableBitSet<ObjectId>,
         unions: &UnionStore,
-        fn_assignments: &HashableHashMap<VarId, FnId>,
     ) {
         if self.always_invalid_vars.contains(&name) {
             invalidate(
@@ -1081,13 +982,7 @@ fn compute_call(
                         let new = Assignment { rhs };
                         match slot {
                             AssignTarget::Var(id) => {
-                                machine.insert_var_assignment(
-                                    id,
-                                    new,
-                                    invalid_objects,
-                                    unions,
-                                    fn_assignments,
-                                );
+                                machine.insert_var_assignment(id, new, invalid_objects, unions);
                             }
                             AssignTarget::Prop(obj, prop) => {
                                 if invalidated(obj, invalid_objects, unions) {
@@ -1677,12 +1572,8 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                         self.unions,
                         self.invalid_objects,
                         &self.fn_assignments,
-                        &self.vars,
-                        &self.names,
-                        &self.resolved_calls,
                         &mut self.done_objects,
                         &mut self.done_functions,
-                        &mut self.done_vars,
                         self.accessed_props,
                         self.functions,
                         self.always_invalid_vars,
@@ -1755,7 +1646,6 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                         var_assignments,
                         self.unions,
                         self.invalid_objects,
-                        &self.calls[inner_call_id],
                         *conditional,
                         |machine, k, v, invalid_objects, unions| {
                             machine.lattice.insert_prop_assignment(
@@ -1867,19 +1757,6 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                         }
                     }
 
-                    fn depends_on_unresolved_call(
-                        unions: &UnionStore,
-                        pointer: Option<Pointer>,
-                    ) -> bool {
-                        match pointer {
-                            Some(Pointer::Object(o)) => o == ObjectStore::RESOLVING_CALL,
-                            Some(Pointer::Union(union)) => {
-                                unions[union].contains(ObjectStore::RESOLVING_CALL)
-                            }
-                            Some(Pointer::Fn(_)) | Some(Pointer::NullOrVoid) | None => false,
-                        }
-                    }
-
                     // TODO: eagerly check for RESOLVING_CALL e.g. when pushing, not popping, from queue.
                     // This way we bail sooner.
 
@@ -1908,7 +1785,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                     .prop_assignments
                                     .range((p, NameId::from_u32(0))..(p, NameId::MAX))
                                 {
-                                    if depends_on_unresolved_call(self.unions, prop.rhs) {
+                                    if depends_on_unresolved_call(prop.rhs, self.unions) {
                                         changed = true;
                                         continue;
                                     }
@@ -1988,7 +1865,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                         Some(v) => v,
                                         None => continue,
                                     };
-                                    if depends_on_unresolved_call(self.unions, value.rhs) {
+                                    if depends_on_unresolved_call(value.rhs, self.unions) {
                                         changed = true;
                                         continue;
                                     }
@@ -2255,9 +2132,6 @@ struct DataFlowAnalysis<'ast, 'a> {
     state: &'a mut DataFlowAnalysisState,
 
     static_fn_data: &'a IndexVec<FnId, StaticFunctionData<'ast>>,
-
-    vars: &'a IndexSet<VarId, Id>,
-    names: &'a IndexSet<NameId, JsWord>,
 
     done_objects: &'a mut GrowableBitSet<ObjectId>,
     done_functions: &'a mut BitSet<FnId>,

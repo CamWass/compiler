@@ -23,7 +23,6 @@ pub(super) struct DataFlowAnalysis<'ast, 'p> {
     pub(super) cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
     initial_lattice: LatticeElementId,
     in_fn: bool,
-    fn_id: Option<FnId>,
 
     pub(super) done_objects: &'p mut GrowableBitSet<ObjectId>,
     pub(super) done_functions: &'p mut BitSet<FnId>,
@@ -35,7 +34,6 @@ impl<'ast, 'p> DataFlowAnalysis<'ast, 'p> {
         cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
         nodePriorities: &'p [NodePriority],
         in_fn: bool,
-        fn_id: Option<FnId>,
         done_objects: &'p mut GrowableBitSet<ObjectId>,
         done_functions: &'p mut BitSet<FnId>,
         done_vars: &'p mut BitSet<VarId>,
@@ -48,7 +46,6 @@ impl<'ast, 'p> DataFlowAnalysis<'ast, 'p> {
             lattice_elements,
             initial_lattice,
             in_fn,
-            fn_id,
             done_objects,
             done_functions,
             done_vars,
@@ -65,15 +62,8 @@ impl<'ast, 'p> DataFlowAnalysis<'ast, 'p> {
     // error handling is implemented for the compiler).
     fn analyze_inner(&mut self, store: &mut Store<'ast>) -> Result<(), Node<'ast>> {
         self.initialize();
-        let mut i: usize = 1;
 
         while let Some(cur_node_idx) = self.workQueue.pop() {
-            if i % 500 == 0 {
-                if let Some(f) = self.fn_id {
-                    // println!("On iteration {} for fn {:?}", i, f);
-                }
-            }
-            i += 1;
             let curNode = self.cfg.graph[cur_node_idx];
             if self.cfg.node_annotations[&curNode].stepCount > MAX_STEPS_PER_NODE {
                 return Err(curNode);

@@ -660,7 +660,6 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
         cfa.cfg,
         &cfa.nodePriorities,
         false,
-        None,
         &mut done_objects,
         &mut done_functions,
         &mut done_vars,
@@ -759,7 +758,6 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
             cfa.cfg,
             &cfa.nodePriorities,
             true,
-            Some(i.into()),
             &mut done_objects,
             &mut done_functions,
             &mut done_vars,
@@ -816,48 +814,6 @@ pub fn process(
     unresolved_ctxt: SyntaxContext,
 ) {
     let mut store = analyse(ast, unresolved_ctxt);
-
-    {
-        let Store {
-            calls,
-            functions,
-            static_fn_data,
-            function_map,
-            objects_map,
-            invalid_objects,
-            unions,
-            references,
-            objects,
-            unresolved_ctxt,
-            resolved_calls,
-            call_templates,
-            fn_assignments,
-            object_links,
-            call_objects,
-            call_resolver_state,
-            names,
-            vars,
-            accessed_props,
-            always_invalid_vars,
-        } = &store;
-
-        // dbg!(
-        //     calls,
-        //     functions,
-        //     // static_fn_data,
-        //     function_map,
-        //     objects_map,
-        //     invalid_objects,
-        //     unions,
-        //     references,
-        //     resolved_calls,
-        //     // fn_assignments,
-        //     // names,
-        //     // vars,
-        //     // call_templates
-        //     accessed_props
-        // );
-    }
 
     let rename_map = create_renaming_map(&mut store);
 
@@ -1477,6 +1433,14 @@ impl Store<'_> {
     }
 }
 
+fn depends_on_unresolved_call(pointer: Option<Pointer>, unions: &UnionStore) -> bool {
+    match pointer {
+        Some(Pointer::Object(o)) => o == ObjectStore::RESOLVING_CALL,
+        Some(Pointer::Union(union)) => unions[union].contains(ObjectStore::RESOLVING_CALL),
+        Some(Pointer::Fn(_)) | Some(Pointer::NullOrVoid) | None => false,
+    }
+}
+
 /// Returns true if `pointer` points to an invalid object.
 fn invalidated(
     pointer: Pointer,
@@ -1538,56 +1502,38 @@ fn invalidate(
     pointer: Option<Pointer>,
     prop_assignments: &PropertyAssignments,
 ) {
-    if let Some(pointer) = pointer {
-        match pointer {
-            Pointer::Object(o) if o.is_built_in() => return,
-            Pointer::Object(obj) => {
-                if invalid_objects.contains(obj) {
-                    return;
-                }
-            }
-            Pointer::Union(_) => {}
-            Pointer::Fn(_) | Pointer::NullOrVoid => return,
+    let mut queue = match pointer {
+        Some(Pointer::Object(o)) if o.is_built_in() => return,
+        None | Some(Pointer::Fn(_) | Pointer::NullOrVoid) => return,
+        Some(Pointer::Object(o)) => {
+            vec![o]
+        }
+        Some(Pointer::Union(u)) => unions[u].constituents().collect(),
+    };
+
+    while let Some(obj) = queue.pop() {
+        if obj.is_built_in() {
+            continue;
         }
 
-        // TODO: here, and possibly elsewhere where the queue pattern is used, investigate if
-        // it's worthwhile avoiding pushing the initial element to the queue e.g. by refactoring
-        // the loop body into a fn and then calling it once for the initial value and then in the
-        // loop while draining the queue. This might be worth it if the queue frequently contains
-        // only one item.
+        let new_invalidation = invalid_objects.insert(obj);
 
-        let mut queue = vec![pointer];
-        let mut done = FxHashSet::default();
-
-        while let Some(pointer) = queue.pop() {
-            done.insert(pointer);
-
-            match pointer {
-                Pointer::Object(o) if o.is_built_in() => {}
-                Pointer::Object(obj) => {
-                    let new_invalidation = invalid_objects.insert(obj);
-
-                    if new_invalidation {
-                        for (_, prop) in
-                            prop_assignments.range((obj, NameId::from_u32(0))..(obj, NameId::MAX))
-                        {
-                            if let Some(value) = prop.rhs {
-                                if !done.contains(&value) {
-                                    queue.push(value);
-                                }
-                            }
+        if new_invalidation {
+            for (_, prop) in prop_assignments.range((obj, NameId::from_u32(0))..(obj, NameId::MAX))
+            {
+                match prop.rhs {
+                    Some(Pointer::Object(o)) => {
+                        if !o.is_built_in() && !invalid_objects.contains(o) {
+                            queue.push(o);
                         }
                     }
+                    Some(Pointer::Union(u)) => queue.extend(
+                        unions[u]
+                            .constituents()
+                            .filter(|c| !c.is_built_in() && !invalid_objects.contains(*c)),
+                    ),
+                    None | Some(Pointer::Fn(_) | Pointer::NullOrVoid) => continue,
                 }
-                Pointer::Union(union) => {
-                    for constituent in unions[union].constituents() {
-                        let pointer = Pointer::Object(constituent);
-                        if !done.contains(&pointer) {
-                            queue.push(pointer);
-                        }
-                    }
-                }
-                Pointer::Fn(_) | Pointer::NullOrVoid => {}
             }
         }
     }
@@ -2458,12 +2404,8 @@ impl<'ast> Analyser<'ast, '_> {
             &mut self.store.unions,
             &mut self.store.invalid_objects,
             &self.store.fn_assignments,
-            &self.store.vars,
-            &self.store.names,
-            &self.store.resolved_calls,
             &mut self.done_objects,
             &mut self.done_functions,
-            &mut self.done_vars,
             &self.store.accessed_props,
             &mut self.store.functions,
             &self.store.always_invalid_vars,
@@ -2500,7 +2442,6 @@ impl<'ast> Analyser<'ast, '_> {
             &resolved.captured_vars,
             &mut self.store.unions,
             &mut self.store.invalid_objects,
-            &self.store.calls[call],
             conditional,
             |lattice, k, v, invalid_objects, unions| {
                 lattice.insert_prop_assignment(k, v, invalid_objects, unions);
@@ -3183,7 +3124,6 @@ fn apply_call_side_effects<L>(
     var_assignments: &HashableHashMap<VarId, Assignment>,
     unions: &mut UnionStore,
     invalid_objects: &mut GrowableBitSet<ObjectId>,
-    call: &Call,
     conditional: bool,
     mut insert_prop_assignment: impl FnMut(
         &mut L,
@@ -3203,21 +3143,15 @@ fn apply_call_side_effects<L>(
     ),
 ) {
     if cfg!(debug_assertions) {
-        let depends_on_unresolved_call = |pointer| match pointer {
-            Some(Pointer::Object(o)) => o == ObjectStore::RESOLVING_CALL,
-            Some(Pointer::Union(union)) => unions[union].contains(ObjectStore::RESOLVING_CALL),
-            Some(Pointer::Fn(_)) | Some(Pointer::NullOrVoid) | None => false,
-        };
-
         debug_assert!(!prop_assignments
             .keys()
             .any(|(o, _)| *o == ObjectStore::RESOLVING_CALL));
         debug_assert!(!prop_assignments
             .values()
-            .any(|p| depends_on_unresolved_call(p.rhs)));
+            .any(|p| depends_on_unresolved_call(p.rhs, unions)));
         debug_assert!(!var_assignments
             .values()
-            .any(|p| depends_on_unresolved_call(p.rhs)));
+            .any(|p| depends_on_unresolved_call(p.rhs, unions)));
     }
 
     // todo!("also need to give the caller inner locals that were captured");
@@ -3263,12 +3197,8 @@ fn build_call(
     unions: &mut UnionStore,
     invalid_objects: &mut GrowableBitSet<ObjectId>,
     fn_assignments: &HashableHashMap<VarId, FnId>,
-    vars: &IndexSet<VarId, Id>,
-    names: &IndexSet<NameId, JsWord>,
-    resolved_calls: &FxHashMap<CallId, ResolvedCall>,
     done_objects: &mut GrowableBitSet<ObjectId>,
     done_functions: &mut BitSet<FnId>,
-    done_vars: &mut BitSet<VarId>,
     accessed_props: &FxHashMap<FnId, FxHashSet<NameId>>,
     functions: &mut IndexVec<FnId, Func>,
     always_invalid_vars: &FxHashSet<VarId>,
@@ -3359,15 +3289,7 @@ fn build_call(
                     .prop_assignments
                     .range((o, NameId::from_u32(0))..(o, NameId::MAX))
                 {
-                    let depends_on_unresolved_call = |pointer| match pointer {
-                        Some(Pointer::Object(o)) => o == ObjectStore::RESOLVING_CALL,
-                        Some(Pointer::Union(union)) => {
-                            unions[union].contains(ObjectStore::RESOLVING_CALL)
-                        }
-                        Some(Pointer::Fn(_)) | Some(Pointer::NullOrVoid) | None => false,
-                    };
-
-                    if depends_on_unresolved_call(value.rhs) {
+                    if depends_on_unresolved_call(value.rhs, unions) {
                         return Err(());
                     }
 
@@ -3449,15 +3371,8 @@ fn build_call(
                             Some(v) => v,
                             None => continue,
                         };
-                    let depends_on_unresolved_call = |pointer| match pointer {
-                        Some(Pointer::Object(o)) => o == ObjectStore::RESOLVING_CALL,
-                        Some(Pointer::Union(union)) => {
-                            unions[union].contains(ObjectStore::RESOLVING_CALL)
-                        }
-                        Some(Pointer::Fn(_)) | Some(Pointer::NullOrVoid) | None => false,
-                    };
 
-                    if depends_on_unresolved_call(value.rhs) {
+                    if depends_on_unresolved_call(value.rhs, unions) {
                         return Err(());
                     }
                     let new = if fully_invalidated(value.rhs, invalid_objects, unions) {
@@ -3518,12 +3433,6 @@ fn build_call(
         },
     };
 
-    let depends_on_unresolved_call = |pointer| match pointer {
-        Some(Pointer::Object(o)) => o == ObjectStore::RESOLVING_CALL,
-        Some(Pointer::Union(union)) => unions[union].contains(ObjectStore::RESOLVING_CALL),
-        Some(Pointer::Fn(_)) | Some(Pointer::NullOrVoid) | None => false,
-    };
-
     if cfg!(debug_assertions) {
         debug_assert!(!call
             .state
@@ -3534,12 +3443,12 @@ fn build_call(
             .state
             .prop_assignments
             .values()
-            .any(|p| depends_on_unresolved_call(p.rhs)));
+            .any(|p| depends_on_unresolved_call(p.rhs, unions)));
         debug_assert!(!call
             .state
             .var_assignments
             .values()
-            .any(|p| depends_on_unresolved_call(p.rhs)));
+            .any(|p| depends_on_unresolved_call(p.rhs, unions)));
     }
     // println!("stop build call");
 
