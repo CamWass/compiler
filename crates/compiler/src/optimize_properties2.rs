@@ -425,6 +425,8 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
         vars: IndexSet::default(),
 
         accessed_props: FxHashMap::default(),
+
+        always_invalid_vars: FxHashSet::default(),
     };
 
     let mut fn_vars = FxHashSet::default();
@@ -454,6 +456,15 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
         ast.visit_with(&mut visitor);
     }
 
+    find_always_invalid_vars(
+        &mut store.always_invalid_vars,
+        ast,
+        &mut store.names,
+        &mut store.vars,
+        &store.static_fn_data,
+        unresolved_ctxt,
+    );
+
     let mut step_builder = StepBuilder::new();
 
     let mut fn_graph = DiGraphMap::default();
@@ -476,6 +487,7 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
                 &mut store.invalid_objects,
                 &store.fn_assignments,
                 &mut fn_graph,
+                &store.always_invalid_vars,
             )
         })
         .collect();
@@ -826,6 +838,7 @@ pub fn process(
             names,
             vars,
             accessed_props,
+            always_invalid_vars,
         } = &store;
 
         // dbg!(
@@ -860,6 +873,272 @@ pub fn process(
 enum FnDep {
     Var(VarId),
     Fn(FnId),
+}
+
+fn find_always_invalid_vars(
+    always_invalid_vars: &mut FxHashSet<VarId>,
+    ast: &ast::Program,
+    names: &mut IndexSet<NameId, JsWord>,
+    vars: &mut IndexSet<VarId, Id>,
+    static_fn_data: &IndexVec<FnId, StaticFunctionData>,
+    unresolved_ctxt: SyntaxContext,
+) {
+    let mut candidates = find_const_vars(ast, names, vars);
+
+    for data in static_fn_data {
+        for v in &data.captured_vars {
+            candidates.remove(v);
+        }
+    }
+
+    let mut v = AlwaysInvalidVarFinder {
+        names,
+        vars,
+        unresolved_ctxt,
+
+        candidates: &candidates,
+
+        always_invalid_vars,
+    };
+    ast.visit_with(&mut v);
+}
+
+struct AlwaysInvalidVarFinder<'a> {
+    names: &'a mut IndexSet<NameId, JsWord>,
+    vars: &'a mut IndexSet<VarId, Id>,
+    unresolved_ctxt: SyntaxContext,
+
+    candidates: &'a FxHashSet<VarId>,
+
+    always_invalid_vars: &'a mut FxHashSet<VarId>,
+}
+
+impl<'ast> Visit<'ast> for AlwaysInvalidVarFinder<'_> {
+    fn visit_member_expr(&mut self, node: &'ast MemberExpr) {
+        if !is_simple_member_expr_prop(&node.prop, self.unresolved_ctxt, node.computed) {
+            if let ExprOrSuper::Expr(obj) = &node.obj {
+                if let Expr::Ident(obj) = obj.as_ref() {
+                    if obj.span.ctxt != self.unresolved_ctxt {
+                        let id = Id::new(obj, &mut self.names);
+                        let name = self.vars.get_index(&id).unwrap();
+
+                        if self.candidates.contains(&name) {
+                            self.always_invalid_vars.insert(name);
+                        }
+                    }
+                }
+            }
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_assign_expr(&mut self, node: &'ast AssignExpr) {
+        if let Expr::Ident(rhs) = &*node.right {
+            if rhs.span.ctxt != self.unresolved_ctxt {
+                let unresolved_lhs = match &node.left {
+                    PatOrExpr::Expr(lhs) => is_unresolvable_lhs(lhs, self.unresolved_ctxt),
+                    PatOrExpr::Pat(lhs) => match lhs.as_ref() {
+                        Pat::Ident(lhs) => lhs.id.span.ctxt == self.unresolved_ctxt,
+                        Pat::Expr(lhs) => is_unresolvable_lhs(lhs, self.unresolved_ctxt),
+                        _ => false,
+                    },
+                };
+
+                if unresolved_lhs {
+                    let id = Id::new(rhs, &mut self.names);
+                    let name = self.vars.get_index(&id).unwrap();
+
+                    if self.candidates.contains(&name) {
+                        self.always_invalid_vars.insert(name);
+                    }
+                }
+            }
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_call_expr(&mut self, node: &'ast CallExpr) {
+        if let ExprOrSuper::Expr(callee) = &node.callee {
+            if is_unresolvable_lhs(callee, self.unresolved_ctxt) {
+                for arg in &node.args {
+                    if let ExprOrSpread::Expr(arg) = arg {
+                        if let Expr::Ident(arg) = arg.as_ref() {
+                            if arg.span.ctxt != self.unresolved_ctxt {
+                                let id = Id::new(arg, &mut self.names);
+                                let name = self.vars.get_index(&id).unwrap();
+
+                                if self.candidates.contains(&name) {
+                                    self.always_invalid_vars.insert(name);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        node.visit_children_with(self);
+    }
+
+    fn visit_new_expr(&mut self, node: &'ast NewExpr) {
+        if let Expr::Ident(callee) = node.callee.as_ref() {
+            if callee.span.ctxt != self.unresolved_ctxt {
+                let id = Id::new(callee, &mut self.names);
+                let name = self.vars.get_index(&id).unwrap();
+
+                if self.candidates.contains(&name) {
+                    self.always_invalid_vars.insert(name);
+                }
+            }
+        }
+
+        if let Some(args) = &node.args {
+            for arg in args {
+                if let ExprOrSpread::Expr(arg) = arg {
+                    if let Expr::Ident(arg) = arg.as_ref() {
+                        if arg.span.ctxt != self.unresolved_ctxt {
+                            let id = Id::new(arg, &mut self.names);
+                            let name = self.vars.get_index(&id).unwrap();
+
+                            if self.candidates.contains(&name) {
+                                self.always_invalid_vars.insert(name);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        node.visit_children_with(self);
+    }
+
+    fn visit_yield_expr(&mut self, node: &'ast YieldExpr) {
+        if let Some(arg) = &node.arg {
+            if let Expr::Ident(arg) = arg.as_ref() {
+                if arg.span.ctxt != self.unresolved_ctxt {
+                    let id = Id::new(arg, &mut self.names);
+                    let name = self.vars.get_index(&id).unwrap();
+
+                    if self.candidates.contains(&name) {
+                        self.always_invalid_vars.insert(name);
+                    }
+                }
+            }
+        }
+
+        node.visit_children_with(self);
+    }
+}
+
+fn is_simple_member_expr_prop(prop: &Expr, unresolved_ctxt: SyntaxContext, computed: bool) -> bool {
+    match prop {
+        Expr::Lit(e) => match e {
+            Lit::Str(_) | Lit::Bool(_) | Lit::Null(_) | Lit::Num(_) | Lit::BigInt(_) => true,
+            Lit::Regex(_) | Lit::JSXText(_) => false,
+        },
+        Expr::Ident(e) => {
+            if computed {
+                e.span.ctxt == unresolved_ctxt
+                    && (e.sym == js_word!("undefined") || e.sym == js_word!("NaN"))
+            } else {
+                true
+            }
+        }
+        _ => false,
+    }
+}
+
+fn is_unresolvable_lhs(mut lhs: &Expr, unresolved_ctxt: SyntaxContext) -> bool {
+    loop {
+        match lhs {
+            Expr::Member(e) => {
+                if !is_simple_member_expr_prop(&e.prop, unresolved_ctxt, e.computed) {
+                    return true;
+                }
+                if let ExprOrSuper::Expr(e) = &e.obj {
+                    lhs = &e;
+                    continue;
+                }
+            }
+            Expr::Call(e) => {
+                if let ExprOrSuper::Expr(e) = &e.callee {
+                    lhs = &e;
+                    continue;
+                }
+            }
+            Expr::Ident(e) => {
+                if e.span.ctxt == unresolved_ctxt {
+                    return true;
+                }
+            }
+            Expr::Paren(e) => {
+                lhs = &e.expr;
+                continue;
+            }
+            // TODO:
+            // Expr::PrivateName(_) => todo!(),
+            // Expr::OptChain(_) => todo!(),
+            _ => {}
+        }
+        return false;
+    }
+}
+
+fn find_const_vars(
+    ast: &ast::Program,
+    names: &mut IndexSet<NameId, JsWord>,
+    vars: &mut IndexSet<VarId, Id>,
+) -> FxHashSet<VarId> {
+    let mut v = ConstVarFinder {
+        names,
+        vars,
+
+        assignment_counts: FxHashMap::default(),
+    };
+    ast.visit_with(&mut v);
+
+    let mut assigned_once = FxHashSet::default();
+
+    for (v, assignments) in v.assignment_counts {
+        if assignments < 2 {
+            assigned_once.insert(v);
+        }
+    }
+
+    assigned_once
+}
+
+struct ConstVarFinder<'a> {
+    names: &'a mut IndexSet<NameId, JsWord>,
+    vars: &'a mut IndexSet<VarId, Id>,
+
+    assignment_counts: FxHashMap<VarId, u32>,
+}
+
+impl ConstVarFinder<'_> {
+    fn record_var(&mut self, ident: &Ident) {
+        let id = Id::new(ident, self.names);
+        let var = self.vars.insert(id);
+
+        *self.assignment_counts.entry(var).or_default() += 1;
+    }
+}
+
+impl<'ast> Visit<'ast> for ConstVarFinder<'_> {
+    // Function names are in scope.
+    fn visit_fn_decl(&mut self, node: &FnDecl) {
+        self.record_var(&node.ident);
+    }
+
+    fn visit_binding_ident(&mut self, node: &BindingIdent) {
+        self.record_var(&node.id);
+    }
+
+    // The key of AssignPatProp is LHS but is an Ident, so won't be caught by
+    // the BindingIdent visitor above.
+    fn visit_assign_pat_prop(&mut self, p: &AssignPatProp) {
+        self.record_var(&p.key);
+    }
 }
 
 struct DeclFinder<'a> {
@@ -1168,6 +1447,8 @@ pub struct Store<'ast> {
     vars: IndexSet<VarId, Id>,
 
     accessed_props: FxHashMap<FnId, FxHashSet<NameId>>,
+
+    always_invalid_vars: FxHashSet<VarId>,
 }
 
 impl Store<'_> {
@@ -1750,10 +2031,16 @@ impl CowLattice<'_> {
         &mut self,
         name: VarId,
         value: Assignment,
-        invalid_objects: &GrowableBitSet<ObjectId>,
+        invalid_objects: &mut GrowableBitSet<ObjectId>,
         unions: &UnionStore,
         fn_assignments: &HashableHashMap<VarId, FnId>,
+        always_invalid_vars: &FxHashSet<VarId>,
     ) {
+        if always_invalid_vars.contains(&name) {
+            invalidate(invalid_objects, unions, value.rhs, &self.prop_assignments);
+            return;
+        }
+
         debug_assert!(
             !matches!(
                 self.0.var_assignments.get(&name).and_then(|a| a.rhs),
@@ -1815,7 +2102,11 @@ impl CowLattice<'_> {
         &self,
         id: VarId,
         fn_assignments: &HashableHashMap<VarId, FnId>,
+        always_invalid_vars: &FxHashSet<VarId>,
     ) -> Option<Assignment> {
+        if always_invalid_vars.contains(&id) {
+            return Some(Assignment { rhs: None });
+        }
         self.0.var_assignments.get(&id).copied().or_else(|| {
             fn_assignments.get(&id).map(|f| Assignment {
                 rhs: Some(Pointer::Fn(*f)),
@@ -1862,7 +2153,11 @@ impl<'ast> Analyser<'ast, '_> {
             let existing = match &slot {
                 Slot::Var(name) => self
                     .lattice
-                    .get_var(*name, &self.store.fn_assignments)
+                    .get_var(
+                        *name,
+                        &self.store.fn_assignments,
+                        &self.store.always_invalid_vars,
+                    )
                     .and_then(|a| a.rhs),
                 Slot::Prop(obj, key) => self.get_property(*obj, *key),
             };
@@ -1880,9 +2175,10 @@ impl<'ast> Analyser<'ast, '_> {
                     self.lattice.insert_var_assignment(
                         name,
                         new,
-                        &self.store.invalid_objects,
+                        &mut self.store.invalid_objects,
                         &self.store.unions,
                         &self.store.fn_assignments,
+                        &self.store.always_invalid_vars,
                     );
                 }
                 Slot::Prop(obj, key) => {
@@ -1984,7 +2280,11 @@ impl<'ast> Analyser<'ast, '_> {
             let value = match lhs {
                 Slot::Var(name) => self
                     .lattice
-                    .get_var(name, &self.store.fn_assignments)
+                    .get_var(
+                        name,
+                        &self.store.fn_assignments,
+                        &self.store.always_invalid_vars,
+                    )
                     .and_then(|a| a.rhs),
                 Slot::Prop(obj, key) => self.get_property(obj, key),
             };
@@ -2156,7 +2456,7 @@ impl<'ast> Analyser<'ast, '_> {
             args,
             &self.store.static_fn_data,
             &mut self.store.unions,
-            &self.store.invalid_objects,
+            &mut self.store.invalid_objects,
             &self.store.fn_assignments,
             &self.store.vars,
             &self.store.names,
@@ -2166,6 +2466,7 @@ impl<'ast> Analyser<'ast, '_> {
             &mut self.done_vars,
             &self.store.accessed_props,
             &mut self.store.functions,
+            &self.store.always_invalid_vars,
         )
         .expect("resolving call object should not be present");
 
@@ -2191,6 +2492,7 @@ impl<'ast> Analyser<'ast, '_> {
 
         let resolved = &self.store.resolved_calls[&call];
         let fn_assignments = &self.store.fn_assignments;
+        let always_invalid_vars = &self.store.always_invalid_vars;
 
         apply_call_side_effects(
             &mut self.lattice,
@@ -2204,9 +2506,16 @@ impl<'ast> Analyser<'ast, '_> {
                 lattice.insert_prop_assignment(k, v, invalid_objects, unions);
             },
             |lattice, k| lattice.prop_assignments.get(k).copied(),
-            |lattice, v| lattice.get_var(v, fn_assignments),
+            |lattice, v| lattice.get_var(v, fn_assignments, always_invalid_vars),
             |lattice, name, value, invalid_objects, unions| {
-                lattice.insert_var_assignment(name, value, invalid_objects, unions, fn_assignments);
+                lattice.insert_var_assignment(
+                    name,
+                    value,
+                    invalid_objects,
+                    unions,
+                    fn_assignments,
+                    always_invalid_vars,
+                );
             },
         );
 
@@ -2543,7 +2852,13 @@ impl<'ast> Analyser<'ast, '_> {
                     Some(Pointer::NullOrVoid)
                 } else {
                     self.get_var_id_from_ident(node)
-                        .and_then(|id| self.lattice.get_var(id, &self.store.fn_assignments))
+                        .and_then(|id| {
+                            self.lattice.get_var(
+                                id,
+                                &self.store.fn_assignments,
+                                &self.store.always_invalid_vars,
+                            )
+                        })
                         .and_then(|assign| assign.rhs)
                 }
             }
@@ -2883,7 +3198,7 @@ fn apply_call_side_effects<L>(
         &mut L,
         VarId,
         Assignment,
-        &GrowableBitSet<ObjectId>,
+        &mut GrowableBitSet<ObjectId>,
         &UnionStore,
     ),
 ) {
@@ -2946,7 +3261,7 @@ fn build_call(
     args: CallArgs,
     static_fn_data: &IndexVec<FnId, StaticFunctionData>,
     unions: &mut UnionStore,
-    invalid_objects: &GrowableBitSet<ObjectId>,
+    invalid_objects: &mut GrowableBitSet<ObjectId>,
     fn_assignments: &HashableHashMap<VarId, FnId>,
     vars: &IndexSet<VarId, Id>,
     names: &IndexSet<NameId, JsWord>,
@@ -2956,6 +3271,7 @@ fn build_call(
     done_vars: &mut BitSet<VarId>,
     accessed_props: &FxHashMap<FnId, FxHashSet<NameId>>,
     functions: &mut IndexVec<FnId, Func>,
+    always_invalid_vars: &FxHashSet<VarId>,
 ) -> Result<Call, ()> {
     let mut var_assignments = HashableHashMap::default();
     let mut prop_assignments: PropertyAssignments = PropertyAssignments::default();
@@ -2977,6 +3293,15 @@ fn build_call(
                 .copied()
                 .chain(std::iter::repeat(Some(Pointer::NullOrVoid)));
             for (id, arg) in static_fn_data[func].param_indices().zip(args) {
+                if always_invalid_vars.contains(&id) {
+                    invalidate(
+                        invalid_objects,
+                        unions,
+                        arg,
+                        &call_site_state.prop_assignments,
+                    );
+                    continue;
+                }
                 match arg {
                     Some(p @ Pointer::Object(_) | p @ Pointer::Union(_)) => {
                         if fully_invalidated(Some(p), invalid_objects, unions) {
@@ -2998,6 +3323,9 @@ fn build_call(
         }
         CallArgs::Invalid(none_count) => {
             for id in static_fn_data[func].param_indices().skip(*none_count) {
+                if always_invalid_vars.contains(&id) {
+                    continue;
+                }
                 var_assignments.insert(
                     id,
                     Assignment {
@@ -3093,6 +3421,7 @@ fn build_call(
                     if !done_vars.insert(*var) {
                         continue;
                     }
+                    debug_assert!(!always_invalid_vars.contains(var));
                     let mut from_fn_assignments = false;
                     let value =
                         match call_site_state

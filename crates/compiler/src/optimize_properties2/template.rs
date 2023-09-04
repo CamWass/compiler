@@ -104,6 +104,8 @@ struct Resolver<'a, 'ast> {
     done_objects: &'a mut GrowableBitSet<ObjectId>,
     done_functions: &'a mut BitSet<FnId>,
     done_vars: &'a mut BitSet<VarId>,
+
+    always_invalid_vars: &'a FxHashSet<VarId>,
 }
 
 impl Visitor<CallId> for Resolver<'_, '_> {
@@ -179,6 +181,8 @@ impl Visitor<CallId> for Resolver<'_, '_> {
 
             accessed_props: self.accessed_props,
             functions: self.functions,
+
+            always_invalid_vars: self.always_invalid_vars,
         };
         analysis.analyze();
 
@@ -324,6 +328,8 @@ pub(super) fn resolve_call(
         done_vars,
 
         accessed_props: &store.accessed_props,
+
+        always_invalid_vars: &store.always_invalid_vars,
     };
 
     process(call, &mut visitor);
@@ -540,10 +546,21 @@ impl MachineLattice {
         name: VarId,
         value: Assignment,
         lattice_elements: &IndexSet<LatticeElementId, Lattice>,
-        invalid_objects: &GrowableBitSet<ObjectId>,
+        invalid_objects: &mut GrowableBitSet<ObjectId>,
         unions: &UnionStore,
         fn_assignments: &HashableHashMap<VarId, FnId>,
+        always_invalid_vars: &FxHashSet<VarId>,
     ) {
+        if always_invalid_vars.contains(&name) {
+            invalidate(
+                invalid_objects,
+                unions,
+                value.rhs,
+                &self.get(lattice_elements).prop_assignments,
+            );
+            return;
+        }
+
         debug_assert!(
             !matches!(
                 self.get(lattice_elements)
@@ -682,7 +699,11 @@ impl Machine<'_> {
         &self,
         id: &VarId,
         lattice_elements: &IndexSet<LatticeElementId, Lattice>,
+        always_invalid_vars: &FxHashSet<VarId>,
     ) -> Option<Assignment> {
+        if always_invalid_vars.contains(&id) {
+            return Some(Assignment { rhs: None });
+        }
         self.lattice
             .get(lattice_elements)
             .var_assignments
@@ -729,6 +750,7 @@ impl CallTemplate {
         invalid_objects: &mut GrowableBitSet<ObjectId>,
         fn_assignments: &HashableHashMap<VarId, FnId>,
         fn_graph: &mut DiGraphMap<FnId, ()>,
+        always_invalid_vars: &FxHashSet<VarId>,
     ) -> CallTemplate {
         let (steps, map, references_env_vars) = create_step_map(
             static_fn_data,
@@ -773,6 +795,7 @@ impl CallTemplate {
                 static_fn_data,
                 fn_graph,
                 func,
+                always_invalid_vars,
             );
             let (return_ty, prop_assignments) = match result {
                 Ok(t) => t,
@@ -796,6 +819,7 @@ struct SimpleMachine<'a> {
     state: &'a mut SimpleMachineState,
     steps: &'a [Step],
     fn_assignments: &'a HashableHashMap<VarId, FnId>,
+    always_invalid_vars: &'a FxHashSet<VarId>,
 }
 
 impl SimpleMachine<'_> {
@@ -807,6 +831,9 @@ impl SimpleMachine<'_> {
     }
 
     fn get_var(&self, id: &VarId) -> Option<Assignment> {
+        if self.always_invalid_vars.contains(&id) {
+            return Some(Assignment { rhs: None });
+        }
         self.state
             .lattice
             .var_assignments
@@ -823,10 +850,20 @@ impl SimpleMachine<'_> {
         &mut self,
         name: VarId,
         value: Assignment,
-        invalid_objects: &GrowableBitSet<ObjectId>,
+        invalid_objects: &mut GrowableBitSet<ObjectId>,
         unions: &UnionStore,
         fn_assignments: &HashableHashMap<VarId, FnId>,
     ) {
+        if self.always_invalid_vars.contains(&name) {
+            invalidate(
+                invalid_objects,
+                unions,
+                value.rhs,
+                &self.state.lattice.prop_assignments,
+            );
+            return;
+        }
+
         let new = if fully_invalidated(value.rhs, invalid_objects, unions) {
             Assignment { rhs: None }
         } else {
@@ -933,6 +970,7 @@ fn compute_call(
     static_fn_data: &IndexVec<FnId, StaticFunctionData>,
     fn_graph: &mut DiGraphMap<FnId, ()>,
     func: FnId,
+    always_invalid_vars: &FxHashSet<VarId>,
 ) -> Result<(Option<Pointer>, PropertyAssignments), ()> {
     let mut state = SimpleMachineState::default();
 
@@ -956,6 +994,7 @@ fn compute_call(
             state: &mut state,
             steps,
             fn_assignments,
+            always_invalid_vars,
         };
 
         for step in machine.steps {
@@ -1331,7 +1370,11 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                         let value = match value {
                             RValue::NullOrVoid => Some(Pointer::NullOrVoid),
                             RValue::Var(rhs) => machine
-                                .get_var(rhs, &self.state.lattice_elements)
+                                .get_var(
+                                    rhs,
+                                    &self.state.lattice_elements,
+                                    &self.always_invalid_vars,
+                                )
                                 .and_then(|a| a.rhs),
                             RValue::Object(o) => get_call_obj(
                                 self.objects_map,
@@ -1387,7 +1430,11 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                     if let Some(slot) = &machine.state.l_value {
                         let existing = match &slot {
                             AssignTarget::Var(name) => machine
-                                .get_var(name, &self.state.lattice_elements)
+                                .get_var(
+                                    name,
+                                    &self.state.lattice_elements,
+                                    &self.always_invalid_vars,
+                                )
                                 .and_then(|a| a.rhs),
                             AssignTarget::Prop(obj, key) => get_property(
                                 &machine
@@ -1423,6 +1470,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                     self.invalid_objects,
                                     self.unions,
                                     self.fn_assignments,
+                                    self.always_invalid_vars,
                                 );
                             }
                             AssignTarget::Prop(obj, prop) => {
@@ -1491,7 +1539,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                 Step::InvalidateLValue => match &machine.state.l_value {
                     Some(AssignTarget::Var(id)) => {
                         if let Some(rhs) = machine
-                            .get_var(id, &self.state.lattice_elements)
+                            .get_var(id, &self.state.lattice_elements, &self.always_invalid_vars)
                             .map(|a| a.rhs)
                         {
                             invalidate(
@@ -1637,6 +1685,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                         &mut self.done_vars,
                         self.accessed_props,
                         self.functions,
+                        self.always_invalid_vars,
                     )
                     .ok()?;
 
@@ -1697,8 +1746,8 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                     };
 
                     let lattice_elements = &self.state.lattice_elements;
-
                     let fn_assignments = self.fn_assignments;
+                    let always_invalid_vars = self.always_invalid_vars;
 
                     apply_call_side_effects(
                         &mut machine,
@@ -1725,7 +1774,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                 .get(k)
                                 .copied()
                         },
-                        |machine, v| machine.get_var(&v, lattice_elements),
+                        |machine, v| machine.get_var(&v, lattice_elements, always_invalid_vars),
                         |machine, name, value, invalid_objects, unions| {
                             machine.lattice.insert_var_assignment(
                                 name,
@@ -1734,6 +1783,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                 invalid_objects,
                                 unions,
                                 fn_assignments,
+                                always_invalid_vars,
                             );
                         },
                     );
@@ -1803,7 +1853,11 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
 
                     for param in self.static_fn_data[self.calls[self.call].func].param_indices() {
                         match machine
-                            .get_var(&param, &self.state.lattice_elements)
+                            .get_var(
+                                &param,
+                                &self.state.lattice_elements,
+                                &self.always_invalid_vars,
+                            )
                             .and_then(|a| a.rhs)
                         {
                             Some(p @ Pointer::Object(_) | p @ Pointer::Union(_)) => {
@@ -1916,6 +1970,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                     if !self.done_vars.insert(*var) {
                                         continue;
                                     }
+                                    debug_assert!(!self.always_invalid_vars.contains(var));
                                     let mut from_fn_assignments = false;
                                     let fn_assignments = self.fn_assignments;
                                     let value = match machine
@@ -2210,6 +2265,8 @@ struct DataFlowAnalysis<'ast, 'a> {
 
     accessed_props: &'a FxHashMap<FnId, FxHashSet<NameId>>,
     functions: &'a mut IndexVec<FnId, Func>,
+
+    always_invalid_vars: &'a FxHashSet<VarId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
