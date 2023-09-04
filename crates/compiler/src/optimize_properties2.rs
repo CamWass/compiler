@@ -3359,6 +3359,18 @@ fn build_call(
                     .prop_assignments
                     .range((o, NameId::from_u32(0))..(o, NameId::MAX))
                 {
+                    let depends_on_unresolved_call = |pointer| match pointer {
+                        Some(Pointer::Object(o)) => o == ObjectStore::RESOLVING_CALL,
+                        Some(Pointer::Union(union)) => {
+                            unions[union].contains(ObjectStore::RESOLVING_CALL)
+                        }
+                        Some(Pointer::Fn(_)) | Some(Pointer::NullOrVoid) | None => false,
+                    };
+
+                    if depends_on_unresolved_call(value.rhs) {
+                        return Err(());
+                    }
+
                     let new = if fully_invalidated(value.rhs, invalid_objects, unions) {
                         Assignment { rhs: None }
                     } else {
@@ -3437,6 +3449,17 @@ fn build_call(
                             Some(v) => v,
                             None => continue,
                         };
+                    let depends_on_unresolved_call = |pointer| match pointer {
+                        Some(Pointer::Object(o)) => o == ObjectStore::RESOLVING_CALL,
+                        Some(Pointer::Union(union)) => {
+                            unions[union].contains(ObjectStore::RESOLVING_CALL)
+                        }
+                        Some(Pointer::Fn(_)) | Some(Pointer::NullOrVoid) | None => false,
+                    };
+
+                    if depends_on_unresolved_call(value.rhs) {
+                        return Err(());
+                    }
                     let new = if fully_invalidated(value.rhs, invalid_objects, unions) {
                         Assignment { rhs: None }
                     } else {
