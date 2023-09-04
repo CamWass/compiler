@@ -285,8 +285,6 @@ pub(super) fn resolve_call(
         return;
     }
 
-    // println!("resolving call: {:?}", call);
-
     store.call_resolver_state.reset();
 
     let mut visitor = Resolver {

@@ -3211,7 +3211,6 @@ fn build_call(
 
     let mut done_vars = FxHashSet::default();
 
-    // println!("start build call for fn: {:?}", func);
     let mut queue = Vec::new();
 
     queue.push(Pointer::Fn(func));
@@ -3273,7 +3272,6 @@ fn build_call(
         match o {
             Pointer::Object(o) => {
                 if o == ObjectStore::RESOLVING_CALL {
-                    // println!("stop build call");
                     return Err(());
                 }
 
@@ -3450,7 +3448,6 @@ fn build_call(
             .values()
             .any(|p| depends_on_unresolved_call(p.rhs, unions)));
     }
-    // println!("stop build call");
 
     Ok(call)
 }
