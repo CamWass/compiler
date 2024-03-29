@@ -197,3 +197,209 @@ after:
 
 Sub and super type relation graph. Built-ins are represented as invalid objects (so their props aren't changed).
 Instances of these built-ins (such as number literals) are their own objects that are a subtype of the built-in.
+
+
+Most vars/props in a Lattice are probably from parent scopes/CFG nodes. Therefore, large part of each
+lattice is likely static...????? Can we reduce the amount we clone/hash/eq-check this data, similar
+to how fn_assignments were pulled out of lattices because they are static.
+Currently, I think all previously encountered vars, even those in now-inaccessible scopes, are carried over
+to all future lattices.
+
+in one of the initial analysis (such as fn finding/template building), gather statistics and use them to preallocate
+various structures. e.g. each ObjectLit gets its own ObjectId and entry in objects_map, so their count can be used to
+pre-allocate object_map. Each fn gets an entry in function_map and FnId and static data
+
+allocate space for one lattice/node-annotation per CFG node?
+also pre-alloc workQueue?
+
+When constructing call templates, identify patterns in functions (e.g. side-effect free, invariant return type)
+and use these to simplify call resolution.
+
+Identify common step patterns and only create them once e.g. all implicit returns generate the steps:
+StoreRValue(Some(NullOrVoid))
+Return
+
+We appear to inconsistently rename TSC, potentially breaking it. Search typescript.js for:
+var failedLookupLocations = [];
+        var state = 
+
+RValues cannot be compared if they are not primitives. Previously i thought vars
+could be equalted are deduplicated, but if they occur at different parts in the
+program, they may read different values e.g.
+obj.prop = 1;
+obj.prop; (a)
+obj.prop = false;
+obj.prop; (b)
+
+(a) and (b) read different values
+
+if a static RValue (i.e. ObjectId, FnId) is invalidated multiple times, just keep the first invalidation.
+
+
+When returning a function that captures local variables, create a closure that stores those
+
+instead of Option<Pointer>, use a wrapper enum/struct that encodes data about the pointer's origin.
+e.g. that its from a function argument. Then when certain operations occur, their effects can be recorded
+e.g. that a function's argument was written to
+
+
+its not safe to substitute None for a union which reports invalid without first invalidating the union.
+this is because only one constituent need to be invalid for the union to report its invalid, but
+replacing it with None may loose the info that the other constituents were in, and possibly accessed from,
+a union with an invalid constituent.
+
+also check that when we invalidate a union, we don't bail early if it reports to be invalid, as, again,
+not all constituents might be invalid.
+
+https://hardekbc.github.io/files/dewey15parallel.pdf
+5.1 Configuration Focus
+the stack concept look interesting for 'call objects' concept i had
+
+No capture:
+Standard fn with params, return type, side effects etc.
+
+if a function local var is captured, create a slot for it for each fn call. 
+
+struct Closure {
+  func: FnId,
+  env: FxHashMap<VarId, Capture>
+}
+
+
+
+function f1() {
+  let variable = { prop1: 1 };
+  function get() {
+    return variable;
+  }
+
+  f2(get);
+  variable.prop2;
+  return variable;
+}
+function f2(func) {
+  let obj = get();
+  obj.prop2 = 2;
+}
+f1().prop2;
+
+TODO:
+Accessing a VarId that has nothing assigned to it should return NullOrVoid. To get
+a VarId, a declaration for the var must exist, and for a reference to be resolved
+to it, it must be in scope. Declared but un-initialized vars have value undefined.
+^^^^^^^^^think this is wrong
+
+
+when processing functions after the global dataflow, the value of captured variables should be the union
+of their values at any point in the program. re-initialize for each fn processed. A fn may override
+the value.
+Only process called/invalid functions. The effects of called functions are obviously used, while we
+can't know if the effects of an invalid fn are observed, so must consider them as well.
+
+
+if a node has no steps, we can skip it in the dataflow analysis.
+Rather than join its inputs into its output, only for its successors to potentially merge its output
+with their other inputs, we should try to move straight from its predecessors to its successors.
+
+deduplicate functions by their steps
+
+more eagerly swap from invalid pointer to None
+
+maybe remove None var assignments when crossing fn boundaries (such as when assembling call args).
+this assumes that undeclared vars have value None
+
+optimise nested union steps (by flattening)?
+
+
+similar to how fn assignments are handled, don't copy/propagate the functions input lattice throughout
+its dataflow analysis. instead, reference a static copy and only store modifications
+
+
+identify built in methods
+record parameter modifications by param position, then apply instead of calling 
+
+
+only copy over properties that a function references
+
+don't intern leaf lattices (as they will not be accessed again?)
+
+
+more eagerly replace fully invalid pointers with None e.g. when merging prop assignments, retrieving prop/var assignments
+
+
+from simple name resolution, we can determine what simple functions call, but not what calls them
+
+    function isNumber(x) {
+        return typeof x === "number";
+    }
+
+
+unassigned (but declared) vars should have value NullOrVoid
+
+prove which captured vars are written to by call. vars are assumed to be written to unless proven otherwise.
+if a call may write to a captured var/arg, assign RESOLVING_CALL to it
+
+
+fn vars should not be treated as captured vars?
+
+When calling a fn, if a param is not used in the template, record that the fn was called with the value but
+don't store it in the Call object for caching call resolutions
+
+Identify vars whose value is always invalidated before it is reassigned. e.g.
+foo[someExpr]
+obj[someExpr] = foo
+unresolved = foo
+unresolved.prop = foo
+unresolved(foo)
+unresolved.prop(foo)
+function f(foo) {
+  arguments[i]
+}
+new foo()
+new thing(foo)
+yield foo
+tag`{foo}`
+
+
+Clarify handling of invalid things.
+1. We don't know the type of an entity (i.e. None). It might have any property.
+2. We don't know which properties an object has or their values (i.e. invalid_objects.contains(obj) ) e.g. because it was passed to an unknown function 
+Are 1 and 2 the same?
+Eagerly replace invalid objects with None?
+Immediately invalidate object that is in union with invalid entity?
+
+Identify places where the result of an unresolved call is Immediately invalidated, in which case we might not need to resolve the call
+
+Need to invalidate function to fix react-dom. A var's only use is in a function that invalidates it, but we can't track
+any calls to that function, so it doesn't capture the var and invalidate it.
+
+invalidate function:
+return value is invalidated
+params are unioned with None
+
+identity fn?
+invalidating a fn after we have analysed it?
+
+analyse functions called from global scope
+analyze uncalled, but "public" functions. These might be called by external code
+skip all other functions, as presumably they are dead
+
+All trackable props come from a specific node in the AST
+Union find /conflate props while analysing
+
+
+just need to disambigute and determine which properties are escaped (can't be renamed)
+
+Start with all property accesses as referencing distinct properties. Then conflate
+those that access the same property.
+obj1.propA // prop1
+obj2.propA // prop2
+
+obj1.propB // prop3
+obj2.propB // prop4
+
+(obj1 || obj2).propB // prop3 = prop4
+
+good functions that only call other good functions and don't touch external vars can be computed ahead of time
+
+if we come to resolve a call, replace it wth a call with its invalid inputs replaced with None
