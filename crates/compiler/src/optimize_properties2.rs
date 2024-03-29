@@ -2956,6 +2956,7 @@ impl<'ast> Analyser<'ast, '_> {
             }
             NodeKind::ForInStmt(node) => {
                 let right = self.visit_and_get_object(Node::from(node.right.as_ref()), conditional);
+                // TODO: is this correct? ForIn does not use prop names?
                 self.store.invalidate(right, &self.lattice);
             }
             NodeKind::ForOfStmt(_) => todo!(),
