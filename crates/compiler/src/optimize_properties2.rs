@@ -1056,7 +1056,7 @@ fn find_const_vars(
     let mut assigned_once = FxHashSet::default();
 
     for (v, assignments) in v.assignment_counts {
-        if assignments < 2 {
+        if assignments == AssignmentInfo::Const {
             assigned_once.insert(v);
         }
     }
@@ -1064,11 +1064,18 @@ fn find_const_vars(
     assigned_once
 }
 
+#[derive(PartialEq, Eq)]
+enum AssignmentInfo {
+    Const,
+    Reassigned,
+    Function,
+}
+
 struct ConstVarFinder<'a> {
     names: &'a mut IndexSet<NameId, JsWord>,
     vars: &'a mut IndexSet<VarId, Id>,
 
-    assignment_counts: FxHashMap<VarId, u32>,
+    assignment_counts: FxHashMap<VarId, AssignmentInfo>,
 }
 
 impl ConstVarFinder<'_> {
@@ -1076,14 +1083,29 @@ impl ConstVarFinder<'_> {
         let id = Id::new(ident, self.names);
         let var = self.vars.insert(id);
 
-        *self.assignment_counts.entry(var).or_default() += 1;
+        match self.assignment_counts.entry(var) {
+            Entry::Occupied(mut entry) => {
+                match entry.get() {
+                    AssignmentInfo::Const => {
+                        entry.insert(AssignmentInfo::Reassigned);
+                    }
+                    // Terminal states remain unchanged.
+                    AssignmentInfo::Reassigned | AssignmentInfo::Function => {}
+                }
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(AssignmentInfo::Const);
+            }
+        }
     }
 }
 
 impl<'ast> Visit<'ast> for ConstVarFinder<'_> {
     // Function names are in scope.
     fn visit_fn_decl(&mut self, node: &FnDecl) {
-        self.record_var(&node.ident);
+        let id = Id::new(&node.ident, self.names);
+        let var = self.vars.insert(id);
+        self.assignment_counts.insert(var, AssignmentInfo::Function);
     }
 
     fn visit_binding_ident(&mut self, node: &BindingIdent) {
