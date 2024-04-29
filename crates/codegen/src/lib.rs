@@ -55,6 +55,8 @@ pub struct Emitter<'a> {
     pub cm: Lrc<SourceMap>,
     pub comments: Option<&'a dyn Comments>,
     pub wr: Box<(dyn 'a + WriteJs)>,
+
+    program_data: &'a ProgramData,
 }
 
 impl<'a> Emitter<'a> {
@@ -617,9 +619,7 @@ impl<'a> Emitter<'a> {
         match *expr {
             ExprOrSuper::Expr(ref expr) => {
                 match expr.as_ref() {
-                    Expr::Lit(Lit::Num(Number {
-                        span, value, raw, ..
-                    })) => {
+                    Expr::Lit(Lit::Num(Number { value, raw, .. })) => {
                         if value.is_nan() || value.is_infinite() {
                             return false;
                         }
@@ -1827,7 +1827,7 @@ impl<'a> Emitter<'a> {
             let span = if node.span.is_dummy() {
                 DUMMY_SP
             } else {
-                Span::new(node.span.lo, node.span.lo + BytePos(1), Default::default())
+                Span::new(node.span.lo, node.span.lo + BytePos(1))
             };
             punct!(span, "{");
         }
@@ -1843,7 +1843,7 @@ impl<'a> Emitter<'a> {
             let span = if node.span.is_dummy() {
                 DUMMY_SP
             } else {
-                Span::new(node.span.hi - BytePos(1), node.span.hi, Default::default())
+                Span::new(node.span.hi - BytePos(1), node.span.hi)
             };
             punct!(span, "}");
         }

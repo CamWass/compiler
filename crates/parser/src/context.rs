@@ -1,6 +1,5 @@
 use crate::token::{Keyword, Word};
 use atoms::{js_word, JsWord};
-use global_common::Span;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum YesNoMaybe {
@@ -47,7 +46,6 @@ pub struct Context {
     pub in_type: bool,
     /// Typescript extension.
     pub in_declare: bool,
-    pub span_of_fn_name: Option<Span>,
 
     /// If true, `:` should not be treated as a type annotation.
     pub in_cond_expr: bool,

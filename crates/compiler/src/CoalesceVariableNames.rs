@@ -46,18 +46,18 @@ pub struct CoalesceVariableNames<'a> {
     coloring: GreedyGraphColoring<Id>,
     map: FxHashMap<Id, NodeIndex>,
     unresolved_ctxt: SyntaxContext,
-    node_id_gen: &'a mut ast::NodeIdGen,
+    program_data: &'a mut ast::ProgramData,
     in_loop_body: bool,
 }
 
 pub fn coalesce_variable_names<'a>(
     ast: &mut Program,
     unresolved_ctxt: SyntaxContext,
-    node_id_gen: &'a mut ast::NodeIdGen,
+    program_data: &'a mut ast::ProgramData,
 ) {
     let mut v = GlobalVisitor {
         unresolved_ctxt,
-        node_id_gen,
+        program_data,
     };
     ast.visit_mut_with(&mut v);
 }
@@ -117,7 +117,7 @@ macro_rules! handle_fn {
 
             let mut v = CoalesceVariableNames {
                 unresolved_ctxt: $parent_visitor.unresolved_ctxt,
-                node_id_gen: $parent_visitor.node_id_gen,
+                program_data: $parent_visitor.program_data,
                 coloring,
                 map,
                 in_loop_body: false,
@@ -165,7 +165,7 @@ impl CoalesceVariableNames<'_> {
             if &id != coalescedVar {
                 // Rename.
                 name.sym = coalescedVar.0.clone();
-                name.span.ctxt = coalescedVar.1;
+                name.ctxt = coalescedVar.1;
 
                 // The name is replaced with another - it's a target.
                 CoalesceResult::NameIsCoalesceTarget
@@ -273,11 +273,9 @@ impl CoalesceVariableNames<'_> {
                                     let decl = var_decl.decls.pop().unwrap();
                                     let name = unwrap_as!(decl.name, Pat::Ident(n), n);
                                     Stmt::Expr(ExprStmt {
-                                        node_id: self.node_id_gen.next(),
-                                        span: DUMMY_SP,
+                                        node_id: self.program_data.new_id_from(decl.node_id),
                                         expr: Box::new(Expr::Assign(AssignExpr {
-                                            node_id: self.node_id_gen.next(),
-                                            span: DUMMY_SP,
+                                            node_id: self.program_data.new_id_from(decl.node_id),
                                             op: AssignOp::Assign,
                                             left: PatOrExpr::Expr(Box::new(Expr::Ident(name.id))),
                                             right: decl.init.unwrap(),
@@ -310,12 +308,10 @@ impl CoalesceVariableNames<'_> {
                                 // let {x, y} = obj; // destructuring requires an initializer
                                 // let [x, y] = iterable; // destructuring requires an initializer
                                 decl.init = Some(Box::new(Expr::Unary(UnaryExpr {
-                                    node_id: self.node_id_gen.next(),
-                                    span: DUMMY_SP,
+                                    node_id: self.program_data.new_id(DUMMY_SP),
                                     op: UnaryOp::Void,
                                     arg: Box::new(Expr::Lit(Lit::Num(Number {
-                                        node_id: self.node_id_gen.next(),
-                                        span: DUMMY_SP,
+                                        node_id: self.program_data.new_id(DUMMY_SP),
                                         value: 0.0,
                                         raw: None,
                                     }))),
@@ -340,14 +336,11 @@ impl CoalesceVariableNames<'_> {
                                 let decl = var_decl.decls.pop().unwrap();
 
                                 Stmt::Expr(ExprStmt {
-                                    node_id: self.node_id_gen.next(),
-                                    span: DUMMY_SP,
+                                    node_id: self.program_data.new_id_from(decl.node_id),
                                     expr: Box::new(Expr::Paren(ParenExpr {
-                                        node_id: self.node_id_gen.next(),
-                                        span: DUMMY_SP,
+                                        node_id: self.program_data.new_id_from(decl.node_id),
                                         expr: Box::new(Expr::Assign(AssignExpr {
-                                            node_id: self.node_id_gen.next(),
-                                            span: DUMMY_SP,
+                                            node_id: self.program_data.new_id_from(decl.node_id),
                                             op: AssignOp::Assign,
                                             left: PatOrExpr::Pat(Box::new(decl.name)),
                                             right: decl.init.unwrap(),
@@ -418,8 +411,7 @@ impl<'ast> VisitMut<'ast> for CoalesceVariableNames<'_> {
                                     // Replace decl with assignment e.g. `let x = 0;` to `x = 0;`.
                                     let name = unwrap_as!(decl.name, Pat::Ident(n), n);
                                     Some(VarDeclOrExpr::Expr(Box::new(Expr::Assign(AssignExpr {
-                                        node_id: self.node_id_gen.next(),
-                                        span: DUMMY_SP,
+                                        node_id: self.program_data.new_id_from(decl.node_id),
                                         op: AssignOp::Assign,
                                         left: PatOrExpr::Expr(Box::new(Expr::Ident(name.id))),
                                         right: decl.init.unwrap(),
@@ -451,8 +443,7 @@ impl<'ast> VisitMut<'ast> for CoalesceVariableNames<'_> {
                                 let decl = var_decl.decls.pop().unwrap();
 
                                 Some(VarDeclOrExpr::Expr(Box::new(Expr::Assign(AssignExpr {
-                                    node_id: self.node_id_gen.next(),
-                                    span: DUMMY_SP,
+                                    node_id: self.program_data.new_id_from(decl.node_id),
                                     op: AssignOp::Assign,
                                     left: PatOrExpr::Pat(Box::new(decl.name)),
                                     right: decl.init.unwrap(),
@@ -636,7 +627,7 @@ fn computeVariableNamesInterferenceGraph<'ast>(
 /// touching any global variables.
 struct GlobalVisitor<'a> {
     unresolved_ctxt: SyntaxContext,
-    node_id_gen: &'a mut ast::NodeIdGen,
+    program_data: &'a mut ast::ProgramData,
 }
 
 impl<'ast> VisitMut<'ast> for GlobalVisitor<'_> {

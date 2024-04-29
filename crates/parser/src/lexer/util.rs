@@ -3,7 +3,7 @@ use crate::{
     error::{Error, SyntaxError},
     Tokens,
 };
-use global_common::{chars::char_literals, BytePos, Pos, Span, SyntaxContext};
+use global_common::{chars::char_literals, BytePos, Pos, Span};
 
 /// See https://tc39.github.io/ecma262/#sec-line-terminators
 pub fn is_line_break(ch: char) -> bool {
@@ -235,11 +235,7 @@ impl Lexer<'_> {
             end.0
         );
 
-        Span {
-            lo: start,
-            hi: end,
-            ctxt: SyntaxContext::empty(),
-        }
+        Span { lo: start, hi: end }
     }
 
     /// Shorthand for `let span = self.span(start); self.error_span(span)`
@@ -247,7 +243,7 @@ impl Lexer<'_> {
     #[inline(never)]
     pub(super) fn error<T>(&mut self, start: BytePos, kind: SyntaxError) -> LexResult<T> {
         let span = self.span(start);
-        self.error_span(Span::new(span.lo, span.hi, span.ctxt), kind)
+        self.error_span(Span::new(span.lo, span.hi), kind)
     }
 
     #[cold]
@@ -262,7 +258,7 @@ impl Lexer<'_> {
     #[inline(never)]
     pub(super) fn emit_error(&mut self, start: BytePos, kind: SyntaxError) {
         let span = self.span(start);
-        self.emit_error_span(Span::new(span.lo, span.hi, span.ctxt), kind)
+        self.emit_error_span(Span::new(span.lo, span.hi), kind)
     }
 
     #[cold]
@@ -278,7 +274,7 @@ impl Lexer<'_> {
     #[inline(never)]
     pub(super) fn emit_strict_mode_error(&mut self, start: BytePos, kind: SyntaxError) {
         let span = self.span(start);
-        self.emit_strict_mode_error_span(Span::new(span.lo, span.hi, span.ctxt), kind)
+        self.emit_strict_mode_error_span(Span::new(span.lo, span.hi), kind)
     }
 
     #[cold]
@@ -300,7 +296,7 @@ impl Lexer<'_> {
     #[inline(never)]
     pub(super) fn emit_module_mode_error(&mut self, start: BytePos, kind: SyntaxError) {
         let span = self.span(start);
-        self.emit_module_mode_error_span(Span::new(span.lo, span.hi, span.ctxt), kind)
+        self.emit_module_mode_error_span(Span::new(span.lo, span.hi), kind)
     }
 
     /// Some code is valid in a strict mode script but invalid in a module.

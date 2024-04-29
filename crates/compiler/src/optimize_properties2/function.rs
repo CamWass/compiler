@@ -1018,11 +1018,11 @@ impl<'ast> Analyser<'_, 'ast> {
     }
 
     fn get_var_id_from_ident(&mut self, ident: &Ident) -> Option<VarId> {
-        if ident.span.ctxt == self.unresolved_ctxt {
+        if ident.ctxt == self.unresolved_ctxt {
             None
         } else {
             let name = self.names.get_index(&ident.sym).unwrap();
-            let id = Id(name, ident.span.ctxt);
+            let id = Id(name, ident.ctxt);
             let id = self.vars.get_index(&id).unwrap();
             if id.as_u32() < self.param_end {
                 *self.references_env_vars = true;
@@ -1453,7 +1453,7 @@ impl<'ast> Analyser<'_, 'ast> {
                 self.visit_and_get_r_value(Node::from(&node.id), conditional)
             }
             NodeKind::Ident(node) => {
-                if node.span.ctxt == self.unresolved_ctxt && node.sym == js_word!("undefined") {
+                if node.ctxt == self.unresolved_ctxt && node.sym == js_word!("undefined") {
                     self.push(Step::StoreRValue(Some(RValue::NullOrVoid)));
                 } else {
                     let value = self.get_var_id_from_ident(node).map(RValue::Var);

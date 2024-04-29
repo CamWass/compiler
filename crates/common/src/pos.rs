@@ -1,7 +1,7 @@
 pub use crate::syntax_pos::{
     hygiene, BytePos, CharPos, FileName, Globals, Loc, LocWithOpt, Mark, MultiSpan, SourceFile,
     SourceFileAndBytePos, SourceFileAndLine, Span, SpanLinesError, SyntaxContext, DUMMY_SP,
-    GLOBALS, NO_EXPANSION,
+    GLOBALS,
 };
 use std::{borrow::Cow, rc::Rc, sync::Arc};
 
@@ -34,7 +34,7 @@ impl Spanned for BytePos {
     /// Creates a new single-byte span.
     #[inline(always)]
     fn span(&self) -> Span {
-        Span::new(*self, *self, Default::default())
+        Span::new(*self, *self)
     }
 }
 

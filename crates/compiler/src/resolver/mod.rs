@@ -269,7 +269,7 @@ impl<'a> Resolver<'a> {
         //     );
         // }
 
-        if ident.span.ctxt() != SyntaxContext::empty() {
+        if ident.ctxt != SyntaxContext::empty() {
             return;
         }
 
@@ -277,15 +277,12 @@ impl<'a> Resolver<'a> {
 
         self.current.declared_symbols.insert(ident.sym.clone());
 
-        ident.span = if mark == Mark::root() {
-            ident.span
-        } else {
-            let span = ident.span.apply_mark(mark);
+        if mark != Mark::root() {
+            ident.ctxt = ident.ctxt.apply_mark(mark);
             // if cfg!(debug_assertions) && LOG {
             //     debug!("\t-> {:?}", span.ctxt());
             // }
-            span
-        };
+        }
     }
 }
 
@@ -622,15 +619,13 @@ impl<'a> VisitMut<'_> for Resolver<'a> {
     }
 
     fn visit_mut_ident(&mut self, i: &mut Ident) {
-        if i.span.ctxt != SyntaxContext::empty() {
+        if i.ctxt != SyntaxContext::empty() {
             return;
         }
 
         match self.ident_type {
             IdentType::Binding => self.modify(i, None),
             IdentType::Ref => {
-                let Ident { span, sym, .. } = i;
-
                 // if cfg!(debug_assertions) && LOG {
                 //     debug!(
                 //         "IdentRef (type = {}) {}{:?}",
@@ -640,29 +635,25 @@ impl<'a> VisitMut<'_> for Resolver<'a> {
                 //     );
                 // }
 
-                if span.ctxt() != SyntaxContext::empty() {
+                if i.ctxt != SyntaxContext::empty() {
                     return;
                 }
 
-                if let Some(mark) = self.mark_for_ref(sym) {
-                    let span = span.apply_mark(mark);
-
+                if let Some(mark) = self.mark_for_ref(&i.sym) {
                     // if cfg!(debug_assertions) && LOG {
                     //     debug!("\t -> {:?}", span.ctxt());
                     // }
-                    i.span = span;
+                    i.ctxt = i.ctxt.apply_mark(mark);
                 } else {
                     // if cfg!(debug_assertions) && LOG {
                     //     debug!("\t -> Unresolved");
                     // }
 
-                    let span = span.apply_mark(self.config.unresolved_mark);
-
                     // if cfg!(debug_assertions) && LOG {
                     //     debug!("\t -> {:?}", span.ctxt());
                     // }
 
-                    i.span = span;
+                    i.ctxt = i.ctxt.apply_mark(self.config.unresolved_mark);
                     // Support hoisting
                     self.modify(i, None)
                 }
@@ -1223,7 +1214,7 @@ impl<'a> Visit<'_> for DestructuringFinder<'a> {
     fn visit_expr(&mut self, _: &Expr) {}
 
     fn visit_ident(&mut self, i: &Ident) {
-        self.found.push((i.sym.clone(), i.span.ctxt));
+        self.found.push((i.sym.clone(), i.ctxt));
     }
 
     /// No-op (we don't care about expressions)

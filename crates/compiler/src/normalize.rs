@@ -1,26 +1,26 @@
 use ast::*;
 use ecma_visit::{VisitMut, VisitMutWith};
-use global_common::{util::take::Take, DUMMY_SP};
+use global_common::{util::take::Take, SyntaxContext};
 
 use crate::utils::unwrap_as;
 
 // TODO: colours:
 // TODO: preserve spans?
 
-pub fn normalize(ast: &mut Program, node_id_gen: &mut ast::NodeIdGen) {
+pub fn normalize(ast: &mut Program, program_data: &mut ast::ProgramData) {
     // Add blocks to single-statement contexts.
     {
-        let mut v = BlockCreator { node_id_gen };
+        let mut v = BlockCreator { program_data };
         ast.visit_mut_with(&mut v);
     }
     // Split var decls.
     {
-        let mut v = VarSplitter { node_id_gen };
+        let mut v = VarSplitter { program_data };
         ast.visit_mut_with(&mut v);
     }
     // Normalize shorthand assignments.
     {
-        let mut v = NormalizeAssignShorthand { node_id_gen };
+        let mut v = NormalizeAssignShorthand { program_data };
         ast.visit_mut_with(&mut v);
     }
 }
@@ -36,7 +36,7 @@ pub fn normalize(ast: &mut Program, node_id_gen: &mut ast::NodeIdGen) {
 /// b = b * 2;
 /// ```
 struct NormalizeAssignShorthand<'a> {
-    node_id_gen: &'a mut ast::NodeIdGen,
+    program_data: &'a mut ast::ProgramData,
 }
 
 impl VisitMut<'_> for NormalizeAssignShorthand<'_> {
@@ -76,15 +76,15 @@ impl VisitMut<'_> for NormalizeAssignShorthand<'_> {
             }
         };
 
+        let right_id = self.program_data.new_id_from(node.node_id);
         node.right.as_mut().map_with_mut(|right| {
             Expr::Bin(BinExpr {
-                node_id: self.node_id_gen.next(),
-                span: DUMMY_SP,
+                node_id: right_id,
                 op,
                 left: Box::new(Expr::Ident(Ident {
-                    node_id: self.node_id_gen.next(),
-                    span: lhs_ident.span,
+                    node_id: self.program_data.new_id_from(lhs_ident.node_id),
                     sym: lhs_ident.sym.clone(),
+                    ctxt: SyntaxContext::empty(),
                 })),
                 right: Box::new(right),
             })
@@ -107,7 +107,7 @@ impl VisitMut<'_> for NormalizeAssignShorthand<'_> {
 /// declarations are forbidden in single-statement contexts, so placing the
 /// statement in a block is always safe.
 struct BlockCreator<'a> {
-    node_id_gen: &'a mut ast::NodeIdGen,
+    program_data: &'a mut ast::ProgramData,
 }
 
 impl BlockCreator<'_> {
@@ -117,8 +117,7 @@ impl BlockCreator<'_> {
         if !matches!(stmt, Stmt::Block(_)) {
             stmt.map_with_mut(|stmt| {
                 Stmt::Block(BlockStmt {
-                    node_id: self.node_id_gen.next(),
-                    span: DUMMY_SP,
+                    node_id: self.program_data.new_id_from(stmt.node_id()),
                     stmts: vec![stmt],
                 })
             });
@@ -134,12 +133,11 @@ impl VisitMut<'_> for BlockCreator<'_> {
         if matches!(node.body, BlockStmtOrExpr::Expr(_)) {
             node.body.map_with_mut(|body| {
                 let expr = unwrap_as!(body, BlockStmtOrExpr::Expr(e), e);
+                let expr_id = expr.node_id();
                 BlockStmtOrExpr::BlockStmt(BlockStmt {
-                    node_id: self.node_id_gen.next(),
-                    span: DUMMY_SP,
+                    node_id: self.program_data.new_id_from(expr_id),
                     stmts: vec![Stmt::Return(ReturnStmt {
-                        node_id: self.node_id_gen.next(),
-                        span: DUMMY_SP,
+                        node_id: self.program_data.new_id_from(expr_id),
                         arg: Some(expr),
                     })],
                 })
@@ -179,8 +177,7 @@ impl VisitMut<'_> for BlockCreator<'_> {
         ) {
             node.body.as_mut().map_with_mut(|stmt| {
                 Stmt::Block(BlockStmt {
-                    node_id: self.node_id_gen.next(),
-                    span: DUMMY_SP,
+                    node_id: self.program_data.new_id_from(stmt.node_id()),
                     stmts: vec![stmt],
                 })
             });
@@ -220,7 +217,7 @@ impl VisitMut<'_> for BlockCreator<'_> {
 /// let b;
 /// ```
 struct VarSplitter<'a> {
-    node_id_gen: &'a mut ast::NodeIdGen,
+    program_data: &'a mut ast::ProgramData,
 }
 
 impl VisitMut<'_> for VarSplitter<'_> {
@@ -242,8 +239,7 @@ impl VisitMut<'_> for VarSplitter<'_> {
                     i..i,
                     var.decls.into_iter().map(|decl| {
                         Stmt::Decl(Decl::Var(VarDecl {
-                            node_id: self.node_id_gen.next(),
-                            span: DUMMY_SP,
+                            node_id: self.program_data.new_id_from(decl.node_id),
                             kind,
                             decls: vec![decl],
                         }))
@@ -271,8 +267,7 @@ impl VisitMut<'_> for VarSplitter<'_> {
                     i..i,
                     var.decls.into_iter().map(|decl| {
                         ModuleItem::Stmt(Stmt::Decl(Decl::Var(VarDecl {
-                            node_id: self.node_id_gen.next(),
-                            span: DUMMY_SP,
+                            node_id: self.program_data.new_id_from(decl.node_id),
                             kind,
                             decls: vec![decl],
                         })))

@@ -1,18 +1,15 @@
-use crate::{class::Decorator, pat::Pat, stmt::BlockStmt, GetNodeId, NodeId};
+use crate::{class::Decorator, pat::Pat, stmt::BlockStmt, GetNodeId, NodeId, ProgramData};
 use ast_node::ast_node;
-use global_common::{EqIgnoreSpan, Span};
 
 /// Common parts of function and method.
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct Function {
     pub node_id: NodeId,
 
     pub params: Vec<Param>,
 
     pub decorators: Vec<Decorator>,
-
-    pub span: Span,
 
     pub body: BlockStmt,
 
@@ -24,26 +21,25 @@ pub struct Function {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct Param {
     pub node_id: NodeId,
-
-    pub span: Span,
     pub decorators: Vec<Decorator>,
     pub pat: Pat,
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct ParamWithoutDecorators {
     pub node_id: NodeId,
-
-    #[span]
     pub pat: Pat,
 }
 
 impl ParamWithoutDecorators {
-    pub fn from_pat(pat: Pat, node_id: NodeId) -> Self {
-        Self { node_id, pat }
+    pub fn from_pat(pat: Pat, program_data: &mut ProgramData) -> Self {
+        Self {
+            node_id: program_data.new_id_from(pat.node_id()),
+            pat,
+        }
     }
 }

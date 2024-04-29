@@ -9,9 +9,7 @@ use ansi_term::Color;
 use ast::{Pat, *};
 use codegen::Emitter;
 use ecma_visit::{VisitMut, VisitMutWith};
-use global_common::{
-    errors::Handler, sync::Lrc, util::take::Take, FileName, SourceMap, Span, DUMMY_SP,
-};
+use global_common::{errors::Handler, sync::Lrc, util::take::Take, FileName, SourceMap};
 use parser::{Parser, Syntax};
 // use swc_ecma_testing::{exec_node_js, JsExecOptions};
 // use swc_ecma_transforms_base::{
@@ -142,19 +140,6 @@ impl<'a> Tester<'a> {
 //     }
 // }
 
-struct DropSpan {
-    preserve_ctxt: bool,
-}
-impl VisitMut<'_> for DropSpan {
-    fn visit_mut_span(&mut self, span: &mut Span) {
-        *span = if self.preserve_ctxt {
-            DUMMY_SP.with_ctxt(span.ctxt())
-        } else {
-            DUMMY_SP
-        };
-    }
-}
-
 #[track_caller]
 pub fn test_transform<F, P>(
     syntax: Syntax,
@@ -193,10 +178,6 @@ pub fn test_transform<F, P>(
         //     }
         //     _ => {}
         // }
-
-        actual.visit_mut_with(&mut DropSpan {
-            preserve_ctxt: true,
-        });
 
         // println!("{:?}", tester.comments);
         // println!("{:?}", expected_comments);

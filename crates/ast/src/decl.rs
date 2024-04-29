@@ -3,11 +3,10 @@ use crate::{
 };
 use ast_node::ast_node;
 use clone_node::CloneNode;
-use global_common::{EqIgnoreSpan, Span};
 use string_enum::StringEnum;
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub enum Decl {
     Class(ClassDecl),
     Fn(FnDecl),
@@ -15,42 +14,34 @@ pub enum Decl {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct FnDecl {
     pub node_id: NodeId,
 
     pub ident: Ident,
-
-    #[span]
     pub function: Function,
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct ClassDecl {
     pub node_id: NodeId,
 
     pub ident: Ident,
-
-    #[span]
     pub class: Class,
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct VarDecl {
     pub node_id: NodeId,
-
-    pub span: Span,
 
     pub kind: VarDeclKind,
 
     pub decls: Vec<VarDeclarator>,
 }
 
-#[derive(
-    StringEnum, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, EqIgnoreSpan, CloneNode,
-)]
+#[derive(StringEnum, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode)]
 pub enum VarDeclKind {
     /// `var`
     Var,
@@ -61,11 +52,9 @@ pub enum VarDeclKind {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct VarDeclarator {
     pub node_id: NodeId,
-
-    pub span: Span,
 
     pub name: Pat,
 

@@ -4,7 +4,7 @@ use crate::token::Token;
 use atoms::JsWord;
 use global_common::{
     errors::{DiagnosticBuilder, Handler},
-    Span, Spanned,
+    Span,
 };
 use std::{borrow::Cow, fmt::Debug};
 
@@ -12,12 +12,6 @@ use std::{borrow::Cow, fmt::Debug};
 #[derive(Debug, Clone, PartialEq)]
 pub struct Error {
     pub(crate) error: Box<(Span, SyntaxError)>,
-}
-
-impl Spanned for Error {
-    fn span(&self) -> Span {
-        (*self.error).0
-    }
 }
 
 impl Error {
@@ -587,7 +581,7 @@ impl Error {
     #[cold]
     #[inline(never)]
     pub fn into_diagnostic(self, handler: &Handler) -> DiagnosticBuilder {
-        let span = self.span();
+        let span = self.error.0;
 
         let kind = self.into_kind();
         let msg = kind.msg();

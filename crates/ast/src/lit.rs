@@ -1,7 +1,7 @@
 use crate::{jsx::JSXText, CloneNode, GetNodeId, NodeId};
 use ast_node::ast_node;
 use atoms::JsWord;
-use global_common::{integer_decode::integer_decode, EqIgnoreSpan, Span};
+use global_common::integer_decode::integer_decode;
 use num_bigint::BigInt as BigIntValue;
 use std::{
     fmt::{self, Display, Formatter},
@@ -9,7 +9,7 @@ use std::{
 };
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub enum Lit {
     Str(Str),
 
@@ -27,11 +27,9 @@ pub enum Lit {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct BigInt {
     pub node_id: NodeId,
-
-    pub span: Span,
     pub value: BigIntValue,
 }
 
@@ -46,11 +44,9 @@ impl arbitrary::Arbitrary for BigInt {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct Str {
     pub node_id: NodeId,
-
-    pub span: Span,
 
     pub value: JsWord,
 
@@ -81,15 +77,8 @@ pub enum StrKind {
 }
 
 impl CloneNode for StrKind {
-    fn clone_node(&self, _: &mut crate::NodeIdGen) -> Self {
+    fn clone_node(&self, _: &mut crate::ProgramData) -> Self {
         *self
-    }
-}
-
-/// Always returns true as this is not a data of a string literal.
-impl EqIgnoreSpan for StrKind {
-    fn eq_ignore_span(&self, _: &Self) -> bool {
-        true
     }
 }
 
@@ -122,28 +111,22 @@ impl Str {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct Bool {
     pub node_id: NodeId,
-
-    pub span: Span,
     pub value: bool,
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct Null {
     pub node_id: NodeId,
-
-    pub span: Span,
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct Regex {
     pub node_id: NodeId,
-
-    pub span: Span,
 
     pub exp: JsWord,
 
@@ -162,15 +145,11 @@ impl arbitrary::Arbitrary for Regex {
 }
 
 #[ast_node]
-#[derive(EqIgnoreSpan)]
 pub struct Number {
     pub node_id: NodeId,
-
-    pub span: Span,
     /// **Note**: This should not be `NaN`. Use [crate::Ident] to represent NaN.
     ///
     /// If you store `NaN` in this field, a hash map will behave strangely.
-    #[use_eq]
     pub value: f64,
 
     /// The exact, original representaion of this number, as it was in the input.
@@ -183,7 +162,6 @@ impl Eq for Number {}
 #[allow(clippy::derive_hash_xor_eq)]
 impl Hash for Number {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.span.hash(state);
         integer_decode(self.value).hash(state);
     }
 }

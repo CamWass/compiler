@@ -19,7 +19,7 @@ use crate::sync::Lrc;
 use crate::{
     rustc_data_structures::stable_hasher::StableHasher,
     sync::{Lock, LockCell},
-    syntax_pos::{BytePos, FileLinesResult, FileName, Loc, MultiSpan, Span, NO_EXPANSION},
+    syntax_pos::{BytePos, FileLinesResult, FileName, Loc, MultiSpan, Span},
 };
 use std::{
     borrow::Cow,
@@ -162,7 +162,7 @@ impl CodeSuggestion {
                     .map(|part| part.span.hi())
                     .min()
                     .unwrap();
-                let bounding_span = Span::new(lo, hi, NO_EXPANSION);
+                let bounding_span = Span::new(lo, hi);
                 let lines = cm.span_to_lines(bounding_span).unwrap();
                 assert!(!lines.lines.is_empty());
 

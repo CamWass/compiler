@@ -8,14 +8,11 @@ use crate::{
 };
 use ast_node::ast_node;
 use clone_node::CloneNode;
-use global_common::{EqIgnoreSpan, Span};
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct Class {
     pub node_id: NodeId,
-
-    pub span: Span,
 
     pub decorators: Vec<Decorator>,
 
@@ -25,16 +22,14 @@ pub struct Class {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct ExtendsClause {
     pub node_id: NodeId,
-
-    pub span: Span,
     pub super_class: Box<Expr>,
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub enum ClassMember {
     Constructor(Constructor),
     /// `es2015`
@@ -47,11 +42,9 @@ pub enum ClassMember {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct ClassProp {
     pub node_id: NodeId,
-
-    pub span: Span,
 
     pub key: PropName,
 
@@ -63,11 +56,9 @@ pub struct ClassProp {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct PrivateProp {
     pub node_id: NodeId,
-
-    pub span: Span,
 
     pub key: PrivateName,
 
@@ -81,12 +72,10 @@ pub struct PrivateProp {
 macro_rules! method {
     ($name:ident, $KEY:ty) => {
         #[ast_node]
-        #[derive(Eq, Hash, EqIgnoreSpan)]
+        #[derive(Eq, Hash)]
         #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
         pub struct $name {
             pub node_id: NodeId,
-
-            pub span: Span,
 
             pub key: $KEY,
 
@@ -103,11 +92,9 @@ method!(ClassMethod, PropName);
 method!(PrivateMethod, PrivateName);
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct Constructor {
     pub node_id: NodeId,
-
-    pub span: Span,
 
     pub params: Vec<Param>,
 
@@ -115,16 +102,14 @@ pub struct Constructor {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct Decorator {
     pub node_id: NodeId,
-
-    pub span: Span,
 
     pub expr: Box<Expr>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EqIgnoreSpan, CloneNode)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, CloneNode)]
 pub enum MethodKind {
     Method,
     Getter,

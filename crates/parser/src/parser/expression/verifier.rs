@@ -1,10 +1,13 @@
 use super::*;
 use ecma_visit::{Visit, VisitWith};
-use global_common::{Span, Spanned};
+use global_common::Span;
 
 impl<I: Tokens> Parser<I> {
     pub(in crate::parser) fn verify_expr(&mut self, expr: Box<Expr>) -> Box<Expr> {
-        let mut v = Verifier { errors: vec![] };
+        let mut v = Verifier {
+            errors: vec![],
+            parser: &self,
+        };
 
         v.visit_expr(&expr);
 
@@ -16,13 +19,17 @@ impl<I: Tokens> Parser<I> {
     }
 }
 
-pub(super) struct Verifier {
+pub(super) struct Verifier<'a, I: Tokens> {
     pub errors: Vec<(Span, SyntaxError)>,
+    parser: &'a Parser<I>,
 }
 
-impl Visit<'_> for Verifier {
+impl<I: Tokens> Visit<'_> for Verifier<'_, I> {
     fn visit_assign_prop(&mut self, p: &AssignProp) {
-        self.errors.push((p.span(), SyntaxError::AssignProperty));
+        self.errors.push((
+            get_span!(self.parser, p.node_id),
+            SyntaxError::AssignProperty,
+        ));
     }
 
     fn visit_expr(&mut self, e: &Expr) {

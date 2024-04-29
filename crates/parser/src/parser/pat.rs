@@ -2,7 +2,6 @@
 use super::{expression::PatOrExprOrSpread, util::ExprExt, *};
 use crate::token::AssignOpToken;
 use atoms::js_word;
-use global_common::Spanned;
 
 impl<I: Tokens> Parser<I> {
     pub(super) fn parse_opt_binding_ident(&mut self) -> PResult<Option<BindingIdent>> {
@@ -24,16 +23,19 @@ impl<I: Tokens> Parser<I> {
         // "yield" and "await" is **lexically** accepted.
         let ident = self.parse_ident(true, true)?;
         if ident.sym == js_word!("arguments") || ident.sym == js_word!("eval") {
-            self.emit_strict_mode_err(ident.span, SyntaxError::EvalAndArgumentsInStrict);
+            self.emit_strict_mode_err(
+                get_span!(self, ident.node_id),
+                SyntaxError::EvalAndArgumentsInStrict,
+            );
         }
         if self.ctx().in_async && ident.sym == js_word!("await") {
-            self.emit_err(ident.span, SyntaxError::ExpectedIdent);
+            self.emit_err(get_span!(self, ident.node_id), SyntaxError::ExpectedIdent);
         }
         if self.ctx().in_generator && ident.sym == js_word!("yield") {
-            self.emit_err(ident.span, SyntaxError::ExpectedIdent);
+            self.emit_err(get_span!(self, ident.node_id), SyntaxError::ExpectedIdent);
         }
 
-        Ok(BindingIdent::from_ident(ident, node_id!(self)))
+        Ok(BindingIdent::from_ident(ident, program_data!(self)))
     }
 
     pub(super) fn parse_binding_pat_or_ident(&mut self) -> PResult<Pat> {
@@ -68,8 +70,7 @@ impl<I: Tokens> Parser<I> {
             }
 
             return Ok(Pat::Assign(AssignPat {
-                node_id: node_id!(self),
-                span: span!(self, start),
+                node_id: node_id!(self, span!(self, start)),
                 left: Box::new(left),
                 right,
             }));
@@ -103,13 +104,9 @@ impl<I: Tokens> Parser<I> {
             let start = self.input.cur_pos();
 
             if self.input.eat(&tok!("...")) {
-                let dot3_token = span!(self, start);
-
                 let pat = self.parse_binding_pat_or_ident()?;
                 let pat = Pat::Rest(RestPat {
-                    node_id: node_id!(self),
-                    span: span!(self, start),
-                    dot3_token,
+                    node_id: node_id!(self, span!(self, start)),
                     arg: Box::new(pat),
                 });
                 elems.push(Some(pat));
@@ -124,8 +121,7 @@ impl<I: Tokens> Parser<I> {
         let optional = (self.input.syntax().dts() || self.ctx().in_declare) && eat!(self, '?');
 
         Ok(Pat::Array(ArrayPat {
-            node_id: node_id!(self),
-            span: span!(self, start),
+            node_id: node_id!(self, span!(self, start)),
             elems,
         }))
     }
@@ -178,23 +174,28 @@ impl<I: Tokens> Parser<I> {
                 }
             }
 
-            match pat {
-                Pat::Array(ArrayPat { ref mut span, .. })
+            match &pat {
+                Pat::Array(ArrayPat { node_id, .. })
                 | Pat::Ident(BindingIdent {
-                    id: Ident { ref mut span, .. },
+                    id: Ident { node_id, .. },
                     ..
                 })
-                | Pat::Object(ObjectPat { ref mut span, .. })
-                | Pat::Rest(RestPat { ref mut span, .. }) => {
+                | Pat::Object(ObjectPat { node_id, .. })
+                | Pat::Rest(RestPat { node_id, .. }) => {
                     let new_type_ann = self.try_parse_ts_type_ann()?;
                     if new_type_ann.is_some() {
-                        *span = Span::new(pat_start, self.input.prev_span().hi, Default::default());
+                        set_span!(
+                            self,
+                            *node_id,
+                            Span::new(pat_start, self.input.prev_span().hi,)
+                        );
                     }
                 }
-                Pat::Assign(AssignPat { ref mut span, .. }) => {
+                Pat::Assign(AssignPat { node_id, .. }) => {
                     if (self.try_parse_ts_type_ann()?).is_some() {
-                        *span = Span::new(pat_start, self.input.prev_span().hi, Default::default());
-                        self.emit_err(*span, SyntaxError::TSTypeAnnotationAfterAssign);
+                        let new = Span::new(pat_start, self.input.prev_span().hi);
+                        set_span!(self, *node_id, new);
+                        self.emit_err(new, SyntaxError::TSTypeAnnotationAfterAssign);
                     }
                 }
                 Pat::Invalid(..) => {}
@@ -205,7 +206,7 @@ impl<I: Tokens> Parser<I> {
         let pat = if self.input.eat(&tok!('=')) {
             // `=` cannot follow optional parameter.
             if opt {
-                self.emit_err(pat.span(), SyntaxError::TS1015);
+                self.emit_err(get_span!(self, pat.node_id()), SyntaxError::TS1015);
             }
 
             let right = self.parse_assignment_expr()?;
@@ -214,8 +215,7 @@ impl<I: Tokens> Parser<I> {
             }
 
             Pat::Assign(AssignPat {
-                node_id: node_id!(self),
-                span: span!(self, start),
+                node_id: node_id!(self, span!(self, start)),
                 left: Box::new(pat),
                 right,
             })
@@ -254,8 +254,6 @@ impl<I: Tokens> Parser<I> {
             let pat_start = self.input.cur_pos();
 
             if self.input.eat(&tok!("...")) {
-                let dot3_token = span!(self, pat_start);
-
                 let pat = self.parse_binding_pat_or_ident()?;
                 let type_ann = if self.input.syntax().typescript() && self.input.is(&tok!(':')) {
                     let cur_pos = self.input.cur_pos();
@@ -265,14 +263,11 @@ impl<I: Tokens> Parser<I> {
                 };
 
                 let pat = Pat::Rest(RestPat {
-                    node_id: node_id!(self),
-                    span: span!(self, pat_start),
-                    dot3_token,
+                    node_id: node_id!(self, span!(self, pat_start)),
                     arg: Box::new(pat),
                 });
                 params.push(Param {
-                    node_id: node_id!(self),
-                    span: span!(self, param_start),
+                    node_id: node_id!(self, span!(self, param_start)),
                     decorators,
                     pat,
                 });
@@ -280,7 +275,7 @@ impl<I: Tokens> Parser<I> {
             } else {
                 let (param, prop) = self.parse_constructor_param(param_start, decorators)?;
                 if let Some(prop) = prop {
-                    props.push((prop, param.span));
+                    props.push((prop, get_span!(self, param.node_id)));
                 }
                 params.push(param);
             }
@@ -312,16 +307,23 @@ impl<I: Tokens> Parser<I> {
                 Pat::Ident(i) => i.id.sym.clone(),
                 Pat::Assign(a) => match a.left.as_ref() {
                     Pat::Ident(i) => i.id.sym.clone(),
-                    _ => syntax_error!(self, pat.span(), SyntaxError::TsInvalidParamPropPat),
+                    _ => syntax_error!(
+                        self,
+                        get_span!(self, pat.node_id()),
+                        SyntaxError::TsInvalidParamPropPat
+                    ),
                 },
-                node => syntax_error!(self, node.span(), SyntaxError::TsInvalidParamPropPat),
+                _ => syntax_error!(
+                    self,
+                    get_span!(self, pat.node_id()),
+                    SyntaxError::TsInvalidParamPropPat
+                ),
             };
             Some(prop)
         };
         Ok((
             Param {
-                node_id: node_id!(self),
-                span: span!(self, param_start),
+                node_id: node_id!(self, span!(self, param_start)),
                 decorators,
                 pat,
             },
@@ -332,13 +334,13 @@ impl<I: Tokens> Parser<I> {
     pub(super) fn parse_formal_params(&mut self) -> PResult<Vec<Param>> {
         let mut first = true;
         let mut params = vec![];
-        let mut dot3_token = Span::default();
+        let mut seen_dot3 = false;
 
         while !eof!(self) && !self.input.is(&tok!(')')) {
             if first {
                 first = false;
             } else {
-                if dot3_token.is_dummy() {
+                if !seen_dot3 {
                     expect!(self, ',');
                 } else {
                     // We are handling error.
@@ -358,16 +360,15 @@ impl<I: Tokens> Parser<I> {
             let pat_start = self.input.cur_pos();
 
             let pat = if self.input.eat(&tok!("...")) {
-                dot3_token = span!(self, pat_start);
+                seen_dot3 = true;
 
                 let mut pat = self.parse_binding_pat_or_ident()?;
 
                 if self.input.eat(&tok!('=')) {
                     let right = self.parse_assignment_expr()?;
-                    self.emit_err(pat.span(), SyntaxError::TS1048);
+                    self.emit_err(get_span!(self, pat.node_id()), SyntaxError::TS1048);
                     pat = Pat::Assign(AssignPat {
-                        node_id: node_id!(self),
-                        span: span!(self, pat_start),
+                        node_id: node_id!(self, span!(self, pat_start)),
                         left: Box::new(pat),
                         right,
                     });
@@ -381,10 +382,9 @@ impl<I: Tokens> Parser<I> {
                     None
                 };
 
+                let pat_span = span!(self, pat_start);
                 let pat = Pat::Rest(RestPat {
-                    node_id: node_id!(self),
-                    span: span!(self, pat_start),
-                    dot3_token,
+                    node_id: node_id!(self, pat_span),
                     arg: Box::new(pat),
                 });
 
@@ -392,7 +392,7 @@ impl<I: Tokens> Parser<I> {
                     if self.input.peeked_is(&tok!(')')) {
                         syntax_error!(self, SyntaxError::CommaAfterRestElement);
                     } else {
-                        syntax_error!(self, pat.span(), SyntaxError::NonLastRestParam);
+                        syntax_error!(self, pat_span, SyntaxError::NonLastRestParam);
                     }
                 }
 
@@ -406,8 +406,7 @@ impl<I: Tokens> Parser<I> {
             };
 
             params.push(Param {
-                node_id: node_id!(self),
-                span: span!(self, param_start),
+                node_id: node_id!(self, span!(self, param_start)),
                 decorators,
                 pat,
             });
@@ -475,7 +474,7 @@ impl<I: Tokens> Parser<I> {
         // In dts, we do not reparse.
         debug_assert!(!self.input.syntax().dts());
 
-        let span = expr.span();
+        let span = get_span!(self, expr.node_id());
 
         if pat_ty == PatType::AssignPat {
             match *expr {
@@ -496,7 +495,7 @@ impl<I: Tokens> Parser<I> {
                         return Ok(Pat::Expr(expr));
                     }
                     Expr::Ident(i) => {
-                        return Ok(Pat::Ident(BindingIdent::from_ident(i, node_id!(self))))
+                        return Ok(Pat::Ident(BindingIdent::from_ident(i, program_data!(self))))
                     }
                     _ => {
                         return Ok(Pat::Expr(expr));
@@ -527,7 +526,7 @@ impl<I: Tokens> Parser<I> {
                     }
                     match *expr {
                         Expr::Ident(i) => {
-                            return Ok(Pat::Ident(BindingIdent::from_ident(i, node_id!(self))))
+                            return Ok(Pat::Ident(BindingIdent::from_ident(i, program_data!(self))))
                         }
                         _ => {
                             return Ok(Pat::Expr(expr));
@@ -546,93 +545,86 @@ impl<I: Tokens> Parser<I> {
             Expr::Paren(..) => {
                 self.emit_err(span, SyntaxError::InvalidPat);
                 Ok(Pat::Invalid(Invalid {
-                    node_id: node_id!(self),
-                    span,
+                    node_id: node_id!(self, span),
                 }))
             }
-            Expr::Assign(
-                assign_expr @ AssignExpr {
-                    op: AssignOpToken::Assign,
-                    ..
+            Expr::Assign(AssignExpr {
+                node_id,
+                op: AssignOpToken::Assign,
+                left,
+                right,
+            }) => Ok(Pat::Assign(AssignPat {
+                node_id: node_id_from!(self, node_id),
+                left: match left {
+                    PatOrExpr::Expr(left) => Box::new(self.reparse_expr_as_pat(pat_ty, left)?),
+                    PatOrExpr::Pat(left) => left,
                 },
-            ) => {
-                let AssignExpr {
-                    span, left, right, ..
-                } = assign_expr;
-                Ok(Pat::Assign(AssignPat {
-                    node_id: node_id!(self),
-                    span,
-                    left: match left {
-                        PatOrExpr::Expr(left) => Box::new(self.reparse_expr_as_pat(pat_ty, left)?),
-                        PatOrExpr::Pat(left) => left,
-                    },
-                    right,
-                }))
-            }
-            Expr::Object(ObjectLit { span, props, .. }) => {
+                right,
+            })),
+            Expr::Object(ObjectLit { node_id, props, .. }) => {
                 // {}
                 Ok(Pat::Object(ObjectPat {
-                    node_id: node_id!(self),
-                    span,
+                    node_id: node_id_from!(self, node_id),
                     props: props
                         .into_iter()
                         .map(|prop| {
-                            let span = prop.span();
                             match prop {
                                 Prop::Shorthand(id) => Ok(ObjectPatProp::Assign(AssignPatProp {
-                                    node_id: node_id!(self),
-                                    span: id.span(),
+                                    node_id: node_id_from!(self, id.node_id),
                                     key: id,
                                     value: None,
                                 })),
                                 Prop::KeyValue(kv_prop) => {
+                                    let value =
+                                        self.reparse_expr_as_pat(pat_ty.element(), kv_prop.value)?;
+                                    let lo = get_span!(self, kv_prop.key.node_id()).lo;
+                                    let hi = get_span!(self, value.node_id()).hi;
+                                    let span = Span::new(lo, hi);
                                     Ok(ObjectPatProp::KeyValue(KeyValuePatProp {
-                                        node_id: node_id!(self),
+                                        node_id: node_id!(self, span),
                                         key: kv_prop.key,
-                                        value: Box::new(self.reparse_expr_as_pat(
-                                            pat_ty.element(),
-                                            kv_prop.value,
-                                        )?),
+                                        value: Box::new(value),
                                     }))
                                 }
                                 Prop::Assign(assign_prop) => {
                                     Ok(ObjectPatProp::Assign(AssignPatProp {
-                                        node_id: node_id!(self),
-                                        span,
+                                        node_id: node_id_from!(self, assign_prop.node_id),
                                         key: assign_prop.key,
                                         value: Some(assign_prop.value),
                                     }))
                                 }
-                                Prop::Spread(SpreadAssignment {
-                                    dot3_token, expr, ..
-                                }) => {
+                                Prop::Spread(SpreadAssignment { expr, node_id, .. }) => {
                                     Ok(ObjectPatProp::Rest(RestPat {
-                                        node_id: node_id!(self),
-                                        span,
-                                        dot3_token,
+                                        node_id: node_id_from!(self, node_id),
                                         // FIXME: is BindingPat correct?
                                         arg: Box::new(
                                             self.reparse_expr_as_pat(PatType::BindingPat, expr)?,
                                         ),
                                     }))
                                 }
-                                _ => syntax_error!(self, prop.span(), SyntaxError::InvalidPat),
+                                _ => syntax_error!(
+                                    self,
+                                    get_span!(self, prop.node_id()),
+                                    SyntaxError::InvalidPat
+                                ),
                             }
                         })
                         .collect::<PResult<_>>()?,
                 }))
             }
-            Expr::Ident(ident) => Ok(Pat::Ident(BindingIdent::from_ident(ident, node_id!(self)))),
+            Expr::Ident(ident) => Ok(Pat::Ident(BindingIdent::from_ident(
+                ident,
+                program_data!(self),
+            ))),
             Expr::Member(..) => Ok(Pat::Expr(expr)),
             Expr::Array(ArrayLit {
                 elems: mut exprs,
-                span: array_span,
+                node_id: array_id,
                 ..
             }) => {
                 if exprs.is_empty() {
                     return Ok(Pat::Array(ArrayPat {
-                        node_id: node_id!(self),
-                        span,
+                        node_id: node_id!(self, span),
                         elems: vec![],
                     }));
                 }
@@ -656,7 +648,11 @@ impl<I: Tokens> Parser<I> {
                     match expr {
                         Some(ExprOrSpread::Spread(spread)) => {
                             if self.syntax().early_errors() {
-                                syntax_error!(self, spread.span(), SyntaxError::NonLastRestParam)
+                                syntax_error!(
+                                    self,
+                                    get_span!(self, spread.node_id),
+                                    SyntaxError::NonLastRestParam
+                                )
                             }
                         }
                         Some(ExprOrSpread::Expr(expr)) => {
@@ -669,8 +665,10 @@ impl<I: Tokens> Parser<I> {
                 // Now that we are reparsing this array as a pattern, any commas
                 // we found directly after a spread element are now errors. We
                 // only bother tracking/reporting the first violation.
-                if let Some(trailing_comma_span) =
-                    self.state.trailing_commas_after_rest.get(&array_span)
+                if let Some(trailing_comma_span) = self
+                    .state
+                    .trailing_commas_after_rest
+                    .get(&get_span!(self, array_id))
                 {
                     syntax_error!(
                         self,
@@ -683,17 +681,12 @@ impl<I: Tokens> Parser<I> {
                     let expr = exprs.into_iter().next().unwrap();
                     let last = match expr {
                         // Rest
-                        Some(ExprOrSpread::Spread(SpreadElement {
-                            dot3_token, expr, ..
-                        })) => {
+                        Some(ExprOrSpread::Spread(SpreadElement { expr, .. })) => {
                             // TODO(swc): is BindingPat correct?
-                            let expr_span = expr.span();
                             self.reparse_expr_as_pat(pat_ty.element(), expr)
                                 .map(|pat| {
                                     Pat::Rest(RestPat {
-                                        node_id: node_id!(self),
-                                        span: expr_span,
-                                        dot3_token,
+                                        node_id: node_id_from!(self, pat.node_id()),
                                         arg: Box::new(pat),
                                     })
                                 })
@@ -709,8 +702,7 @@ impl<I: Tokens> Parser<I> {
                     params.push(last);
                 }
                 Ok(Pat::Array(ArrayPat {
-                    node_id: node_id!(self),
-                    span,
+                    node_id: node_id!(self, span),
                     elems: params,
                 }))
             }
@@ -720,16 +712,14 @@ impl<I: Tokens> Parser<I> {
             Expr::Lit(..) | Expr::Assign(..) => {
                 self.emit_err(span, SyntaxError::InvalidPat);
                 Ok(Pat::Invalid(Invalid {
-                    node_id: node_id!(self),
-                    span,
+                    node_id: node_id!(self, span),
                 }))
             }
 
             Expr::Yield(..) if self.ctx().in_generator => {
                 self.emit_err(span, SyntaxError::InvalidPat);
                 Ok(Pat::Invalid(Invalid {
-                    node_id: node_id!(self),
-                    span,
+                    node_id: node_id!(self, span),
                 }))
             }
 
@@ -737,8 +727,7 @@ impl<I: Tokens> Parser<I> {
                 self.emit_err(span, SyntaxError::InvalidPat);
 
                 Ok(Pat::Invalid(Invalid {
-                    node_id: node_id!(self),
-                    span,
+                    node_id: node_id!(self, span),
                 }))
             }
         }
@@ -759,10 +748,14 @@ impl<I: Tokens> Parser<I> {
 
         for expr in exprs.drain(..len - 1) {
             match expr {
-                PatOrExprOrSpread::ExprOrSpread(ExprOrSpread::Spread(_))
-                | PatOrExprOrSpread::Pat(Pat::Rest(..)) => {
+                PatOrExprOrSpread::ExprOrSpread(ExprOrSpread::Spread(SpreadElement {
+                    node_id,
+                    ..
+                }))
+                | PatOrExprOrSpread::Pat(Pat::Rest(RestPat { node_id, .. })) => {
                     if self.syntax().early_errors() {
-                        syntax_error!(self, expr.span(), SyntaxError::NonLastRestParam)
+                        let span = get_span!(self, node_id);
+                        syntax_error!(self, span, SyntaxError::NonLastRestParam)
                     }
                 }
                 PatOrExprOrSpread::ExprOrSpread(ExprOrSpread::Expr(expr)) => {
@@ -777,20 +770,13 @@ impl<I: Tokens> Parser<I> {
         let last = match expr {
             // Rest
             PatOrExprOrSpread::ExprOrSpread(ExprOrSpread::Spread(SpreadElement {
-                dot3_token,
-                expr,
-                ..
-            })) => {
-                let expr_span = expr.span();
-                self.reparse_expr_as_pat(pat_ty, expr).map(|pat| {
-                    Pat::Rest(RestPat {
-                        node_id: node_id!(self),
-                        span: expr_span,
-                        dot3_token,
-                        arg: Box::new(pat),
-                    })
-                })?
-            }
+                expr, ..
+            })) => self.reparse_expr_as_pat(pat_ty, expr).map(|pat| {
+                Pat::Rest(RestPat {
+                    node_id: node_id_from!(self, pat.node_id()),
+                    arg: Box::new(pat),
+                })
+            })?,
             PatOrExprOrSpread::ExprOrSpread(ExprOrSpread::Expr(expr)) => {
                 self.reparse_expr_as_pat(pat_ty, expr)?
             }

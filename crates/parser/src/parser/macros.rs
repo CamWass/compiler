@@ -9,7 +9,7 @@ macro_rules! span {
             start.0,
             end.0
         );
-        ::global_common::Span::new(start, end, ::global_common::SyntaxContext::empty())
+        ::global_common::Span::new(start, end)
     }};
 }
 
@@ -17,7 +17,7 @@ macro_rules! span {
 macro_rules! cur {
     ($parser:expr, $required:expr) => {{
         let pos = $parser.input.last_pos();
-        let last = Span::new(pos, pos, Default::default());
+        let last = Span::new(pos, pos);
         let is_err_token = match $parser.input.cur() {
             Some(&$crate::token::Token::Error(..)) => true,
             _ => false,
@@ -199,7 +199,7 @@ Current token is {:?}",
         );
 
         let pos = $parser.input.cur_pos();
-        let last = Span::new(pos, pos, Default::default());
+        let last = Span::new(pos, pos);
         match $parser.input.peek() {
             Some(c) => Ok(c),
             None => {
@@ -271,9 +271,12 @@ macro_rules! expect_exact {
 }
 
 macro_rules! return_if_arrow {
-    ($potential_arrow_start:expr, $expr:expr) => {{
+    ($parser:expr, $potential_arrow_start:expr, $expr:expr) => {{
         match $potential_arrow_start {
-            Some(start) if $expr.span().lo == start && matches!(*$expr, Expr::Arrow { .. }) => {
+            Some(start)
+                if get_span!($parser, $expr.node_id()).lo == start
+                    && matches!(*$expr, Expr::Arrow { .. }) =>
+            {
                 return Ok($expr);
             }
             _ => {}
@@ -307,14 +310,33 @@ macro_rules! syntax_error {
 }
 
 macro_rules! node_id {
-    ($parser:expr) => {{
-        let id = $parser.node_id_gen.borrow_mut().next();
-        id
+    ($parser:expr, $span:expr) => {{
+        let n = $parser.program_data.borrow_mut().new_id($span);
+        n
     }};
 }
 
-macro_rules! node_id_gen {
+macro_rules! node_id_from {
+    ($parser:expr, $other:expr) => {{
+        let n = $parser.program_data.borrow_mut().new_id_from($other);
+        n
+    }};
+}
+
+macro_rules! program_data {
     ($parser:expr) => {
-        &mut $parser.node_id_gen.borrow_mut()
+        &mut $parser.program_data.borrow_mut()
+    };
+}
+
+macro_rules! get_span {
+    ($parser:expr, $node:expr) => {
+        $parser.program_data.borrow().get_span($node)
+    };
+}
+
+macro_rules! set_span {
+    ($parser:expr, $node:expr, $span:expr) => {
+        $parser.program_data.borrow_mut().set_span($node, $span);
     };
 }

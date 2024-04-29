@@ -1,7 +1,6 @@
 //! Parser for unary operations and binary operations.
 use super::*;
 use crate::token::Keyword;
-use global_common::Spanned;
 
 impl<I: Tokens> Parser<I> {
     /// Name from spec: 'LogicalORExpression'
@@ -22,16 +21,14 @@ impl<I: Tokens> Parser<I> {
                         self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
 
                         Box::new(Expr::Invalid(Invalid {
-                            node_id: node_id!(self),
-                            span: err.span(),
+                            node_id: node_id!(self, err.error.0),
                         }))
                     }
                     &Word(Word::Keyword(Keyword::InstanceOf)) | &Token::BinOp(..) => {
                         self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
 
                         Box::new(Expr::Invalid(Invalid {
-                            node_id: node_id!(self),
-                            span: err.span(),
+                            node_id: node_id!(self, err.error.0),
                         }))
                     }
                     _ => return Err(err),
@@ -39,7 +36,7 @@ impl<I: Tokens> Parser<I> {
             }
         };
 
-        return_if_arrow!(potential_arrow_start, left);
+        return_if_arrow!(self, potential_arrow_start, left);
         self.parse_bin_op_recursively(left, 0)
     }
 
@@ -60,19 +57,22 @@ impl<I: Tokens> Parser<I> {
 
             match &*next_left {
                 Expr::Bin(BinExpr {
-                    span,
+                    node_id,
                     left,
                     op: op!("&&"),
                     ..
                 })
                 | Expr::Bin(BinExpr {
-                    span,
+                    node_id,
                     left,
                     op: op!("||"),
                     ..
                 }) => {
                     if let Expr::Bin(BinExpr { op: op!("??"), .. }) = &**left {
-                        self.emit_err(*span, SyntaxError::NullishCoalescingWithLogicalOp);
+                        self.emit_err(
+                            get_span!(self, *node_id),
+                            SyntaxError::NullishCoalescingWithLogicalOp,
+                        );
                     }
                 }
                 _ => {}
@@ -100,7 +100,6 @@ impl<I: Tokens> Parser<I> {
             && !self.input.had_line_break_before_cur()
             && is!(self, "as")
         {
-            let start = left.span().lo();
             let expr = left;
             let node = if peeked_is!(self, "const") {
                 self.input.bump(); // as
@@ -136,7 +135,7 @@ impl<I: Tokens> Parser<I> {
 
         match *left {
             // This is invalid syntax.
-            Expr::Unary { .. } if op == op!("**") => {
+            Expr::Unary(UnaryExpr { node_id, .. }) if op == op!("**") => {
                 // Correct implementation would be returning Ok(left) and
                 // returning "unexpected token '**'" on next.
                 // But it's not useful error message.
@@ -146,7 +145,7 @@ impl<I: Tokens> Parser<I> {
                     SyntaxError::UnaryInExp {
                         // FIXME: Use display
                         left: format!("{:?}", left),
-                        left_span: left.span(),
+                        left_span: get_span!(self, node_id),
                     }
                 )
             }
@@ -179,23 +178,31 @@ impl<I: Tokens> Parser<I> {
          */
         if op == op!("??") {
             match *left {
-                Expr::Bin(BinExpr { span, op, .. }) if op == op!("&&") || op == op!("||") => {
-                    self.emit_err(span, SyntaxError::NullishCoalescingWithLogicalOp);
+                Expr::Bin(BinExpr { node_id, op, .. }) if op == op!("&&") || op == op!("||") => {
+                    self.emit_err(
+                        get_span!(self, node_id),
+                        SyntaxError::NullishCoalescingWithLogicalOp,
+                    );
                 }
                 _ => {}
             }
 
             match *right {
-                Expr::Bin(BinExpr { span, op, .. }) if op == op!("&&") || op == op!("||") => {
-                    self.emit_err(span, SyntaxError::NullishCoalescingWithLogicalOp);
+                Expr::Bin(BinExpr { node_id, op, .. }) if op == op!("&&") || op == op!("||") => {
+                    self.emit_err(
+                        get_span!(self, node_id),
+                        SyntaxError::NullishCoalescingWithLogicalOp,
+                    );
                 }
                 _ => {}
             }
         }
 
+        let lo = get_span!(self, left.node_id()).lo();
+        let hi = get_span!(self, right.node_id()).hi();
+        let span = Span::new(lo, hi);
         let node = Box::new(Expr::Bin(BinExpr {
-            node_id: node_id!(self),
-            span: Span::new(left.span().lo(), right.span().hi(), Default::default()),
+            node_id: node_id!(self, span),
             op,
             left,
             right,
@@ -231,12 +238,12 @@ impl<I: Tokens> Parser<I> {
             };
 
             let arg = self.parse_unary_expr()?;
-            let span = Span::new(start, arg.span().hi(), Default::default());
+            let hi = get_span!(self, arg.node_id()).hi();
+            let span = Span::new(start, hi);
             self.check_assign_target(&arg, false);
 
             return Ok(Box::new(Expr::Update(UpdateExpr {
-                node_id: node_id!(self),
-                span,
+                node_id: node_id!(self, span),
                 prefix: true,
                 op,
                 arg,
@@ -260,16 +267,16 @@ impl<I: Tokens> Parser<I> {
                 Ok(expr) => expr,
                 Err(err) => {
                     self.emit_error(err);
+                    let span = Span::new(arg_start, arg_start);
                     Box::new(Expr::Invalid(Invalid {
-                        node_id: node_id!(self),
-                        span: Span::new(arg_start, arg_start, Default::default()),
+                        node_id: node_id!(self, span),
                     }))
                 }
             };
 
             if op == op!("delete") {
                 if let Expr::Ident(ref i) = *arg {
-                    self.emit_strict_mode_err(i.span, SyntaxError::TS1102)
+                    self.emit_strict_mode_err(get_span!(self, i.node_id), SyntaxError::TS1102)
                 }
             }
 
@@ -283,13 +290,17 @@ impl<I: Tokens> Parser<I> {
                 match &*arg {
                     Expr::Member(..) => {}
                     Expr::OptChain(e) if matches!(&*e.expr, Expr::Member(..)) => {}
-                    _ => self.emit_err(unwrap_paren(&arg).span(), SyntaxError::TS2703),
+                    _ => self.emit_err(
+                        get_span!(self, unwrap_paren(&arg).node_id()),
+                        SyntaxError::TS2703,
+                    ),
                 }
             }
 
+            let hi = get_span!(self, arg.node_id()).hi();
+            let span = Span::new(start, hi);
             return Ok(Box::new(Expr::Unary(UnaryExpr {
-                node_id: node_id!(self),
-                span: Span::new(start, arg.span().hi(), Default::default()),
+                node_id: node_id!(self, span),
                 op,
                 arg,
             })));
@@ -303,7 +314,7 @@ impl<I: Tokens> Parser<I> {
 
         // UpdateExpression
         let expr = self.parse_lhs_expr()?;
-        return_if_arrow!(potential_arrow_start, expr);
+        return_if_arrow!(self, potential_arrow_start, expr);
 
         // Line terminator isn't allowed here.
         if self.input.had_line_break_before_cur() {
@@ -319,9 +330,9 @@ impl<I: Tokens> Parser<I> {
                 op!("--")
             };
 
+            let span = span!(self, get_span!(self, expr.node_id()).lo());
             return Ok(Box::new(Expr::Update(UpdateExpr {
-                node_id: node_id!(self),
-                span: span!(self, expr.span().lo()),
+                node_id: node_id!(self, span),
                 prefix: false,
                 op,
                 arg: expr,
@@ -347,8 +358,7 @@ impl<I: Tokens> Parser<I> {
 
         let arg = self.parse_unary_expr()?;
         Ok(Box::new(Expr::Await(AwaitExpr {
-            node_id: node_id!(self),
-            span: span!(self, start),
+            node_id: node_id!(self, span!(self, start)),
             arg,
         })))
     }

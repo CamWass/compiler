@@ -448,7 +448,7 @@ where
 
     fn visit_ident(&mut self, node: &'ast Ident) {
         if !(self.in_destructuring && self.in_lhs) {
-            if node.sym == js_word!("arguments") && node.span.ctxt == self.unresolved_ctxt {
+            if node.sym == js_word!("arguments") && node.ctxt == self.unresolved_ctxt {
                 self.analysis.markAllParametersEscaped();
             } else {
                 self.analysis.addToSetIfLocal(&node.to_id(), self.gen);

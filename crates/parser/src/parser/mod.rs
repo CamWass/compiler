@@ -51,26 +51,26 @@ pub struct Parser<I: Tokens> {
     emit_err: bool,
     state: State,
     input: Buffer<I>,
-    node_id_gen: Rc<RefCell<ast::NodeIdGen>>,
+    program_data: Rc<RefCell<ProgramData>>,
 }
 
 impl<'src> Parser<Lexer<'src>> {
     pub fn new(
         syntax: Syntax,
         input: &'src SourceFile,
-        node_id_gen: Rc<RefCell<ast::NodeIdGen>>,
+        program_data: Rc<RefCell<ProgramData>>,
     ) -> Self {
-        Self::new_from(Lexer::new(syntax, Default::default(), input), node_id_gen)
+        Self::new_from(Lexer::new(syntax, Default::default(), input), program_data)
     }
 }
 
 impl<I: Tokens> Parser<I> {
-    pub fn new_from(input: I, node_id_gen: Rc<RefCell<ast::NodeIdGen>>) -> Self {
+    pub fn new_from(input: I, program_data: Rc<RefCell<ProgramData>>) -> Self {
         Parser {
             emit_err: true,
             state: Default::default(),
             input: Buffer::new(input),
-            node_id_gen,
+            program_data,
         }
     }
 
@@ -96,8 +96,7 @@ impl<I: Tokens> Parser<I> {
         let shebang = self.parse_shebang()?;
 
         self.parse_block_body(true, true, None).map(|body| Script {
-            node_id: node_id!(self),
-            span: span!(self, start),
+            node_id: node_id!(self, span!(self, start)),
             body,
             shebang,
         })
@@ -120,15 +119,13 @@ impl<I: Tokens> Parser<I> {
                 })
                 .collect();
             Program::Script(Script {
-                node_id: node_id!(self),
-                span: span!(self, start),
+                node_id: node_id!(self, span!(self, start)),
                 body,
                 shebang,
             })
         } else {
             Program::Module(Module {
-                node_id: node_id!(self),
-                span: span!(self, start),
+                node_id: node_id!(self, span!(self, start)),
                 body,
                 shebang,
             })
@@ -148,8 +145,7 @@ impl<I: Tokens> Parser<I> {
         let shebang = self.parse_shebang()?;
 
         self.parse_block_body(true, true, None).map(|body| Module {
-            node_id: node_id!(self),
-            span: span!(self, start),
+            node_id: node_id!(self, span!(self, start)),
             body,
             shebang,
         })

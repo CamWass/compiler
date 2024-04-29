@@ -2,7 +2,6 @@
 
 use super::{class_and_fn::is_not_this, util::ParseObject, *};
 use atoms::js_word;
-use global_common::Spanned;
 
 impl<I: Tokens> Parser<I> {
     /// Parse a object literal or object pattern.
@@ -48,8 +47,7 @@ impl<I: Tokens> Parser<I> {
             let v = match *cur!(parser, true)? {
                 Token::Str { .. } => match parser.input.bump() {
                     Token::Str { value, has_escape } => PropName::Str(Str {
-                        node_id: node_id!(parser),
-                        span: span!(parser, start),
+                        node_id: node_id!(parser, span!(parser, start)),
                         value,
                         has_escape,
                         kind: StrKind::Normal {
@@ -60,8 +58,7 @@ impl<I: Tokens> Parser<I> {
                 },
                 Token::Num { .. } => match parser.input.bump() {
                     Token::Num { value, raw } => PropName::Num(Number {
-                        node_id: node_id!(parser),
-                        span: span!(parser, start),
+                        node_id: node_id!(parser, span!(parser, start)),
                         value,
                         raw: Some(raw),
                     }),
@@ -101,8 +98,7 @@ impl<I: Tokens> Parser<I> {
                         parser.emit_err(span!(parser, inner_start), SyntaxError::TS1171);
 
                         expr = Box::new(Expr::Seq(SeqExpr {
-                            node_id: node_id!(parser),
-                            span: span!(parser, inner_start),
+                            node_id: node_id!(parser, span!(parser, inner_start)),
                             exprs,
                         }));
                     }
@@ -110,8 +106,7 @@ impl<I: Tokens> Parser<I> {
                     expect!(parser, ']');
 
                     PropName::Computed(ComputedPropName {
-                        node_id: node_id!(parser),
-                        span: span!(parser, start),
+                        node_id: node_id!(parser, span!(parser, start)),
                         expr,
                     })
                 }
@@ -131,8 +126,7 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
 
     fn make_object(&mut self, span: Span, props: Vec<Self::Prop>) -> PResult<Box<Expr>> {
         Ok(Box::new(Expr::Object(ObjectLit {
-            node_id: node_id!(self),
-            span,
+            node_id: node_id!(self, span),
             props,
         })))
     }
@@ -146,13 +140,12 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
 
         if self.input.eat(&tok!("...")) {
             // spread element
-            let dot3_token = span!(self, start);
 
             let expr = self.include_in_expr(true).parse_assignment_expr()?;
 
+            let span = Span::new(start, self.input.last_pos());
             return Ok(Prop::Spread(SpreadAssignment {
-                node_id: node_id!(self),
-                dot3_token,
+                node_id: node_id!(self, span),
                 expr,
             }));
         }
@@ -170,7 +163,7 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                 )
                 .map(|function| {
                     Prop::Method(MethodProp {
-                        node_id: node_id!(self),
+                        node_id: node_id_from!(self, function.node_id),
                         key: name,
                         function,
                     })
@@ -180,6 +173,7 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
         let has_modifiers = self.eat_any_ts_modifier()?;
         let modifiers_span = self.input.prev_span();
 
+        let key_start = self.input.cur_pos();
         let key = self.parse_prop_name()?;
 
         if self.input.syntax().typescript()
@@ -190,12 +184,12 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
             trace_cur!(self, parse_object_prop_error);
 
             self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
+            let span = Span::new(key_start, self.input.cur_pos());
             return Ok(Prop::KeyValue(KeyValueProp {
-                node_id: node_id!(self),
+                node_id: node_id!(self, span),
                 key,
                 value: Box::new(Expr::Invalid(Invalid {
-                    node_id: node_id!(self),
-                    span: span!(self, start),
+                    node_id: node_id!(self, span!(self, start)),
                 })),
             }));
         }
@@ -206,8 +200,9 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
         // { a: expr, }
         if self.input.eat(&tok!(':')) {
             let value = self.include_in_expr(true).parse_assignment_expr()?;
+            let span = Span::new(key_start, self.input.last_pos());
             return Ok(Prop::KeyValue(KeyValueProp {
-                node_id: node_id!(self),
+                node_id: node_id!(self, span),
                 key,
                 value,
             }));
@@ -226,7 +221,7 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                 )
                 .map(|function| {
                     Prop::Method(MethodProp {
-                        node_id: node_id!(self),
+                        node_id: node_id_from!(self, function.node_id),
                         key,
                         function,
                     })
@@ -247,13 +242,17 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
         // It means we should check for invalid expressions like { for, }
         if is_one_of!(self, '=', ',', '}') {
             if self.ctx().is_reserved_word(&ident.sym) {
-                self.emit_err(ident.span, SyntaxError::ReservedWordInObjShorthandOrPat);
+                self.emit_err(
+                    get_span!(self, ident.node_id),
+                    SyntaxError::ReservedWordInObjShorthandOrPat,
+                );
             }
 
             if self.input.eat(&tok!('=')) {
                 let value = self.include_in_expr(true).parse_assignment_expr()?;
+                let span = Span::new(key_start, self.input.last_pos());
                 return Ok(Prop::Assign(AssignProp {
-                    node_id: node_id!(self),
+                    node_id: node_id!(self, span),
                     key: ident,
                     value,
                 }));
@@ -276,7 +275,7 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
 
                 let is_generator = ident.sym == js_word!("async") && self.input.eat(&tok!('*'));
                 let key = self.parse_prop_name()?;
-                let key_span = key.span();
+                let key_span = get_span!(self, key.node_id());
 
                 match ident.sym {
                     js_word!("get") => self
@@ -306,8 +305,7 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                             }
 
                             Prop::Getter(GetterProp {
-                                node_id: node_id!(self),
-                                span: span!(self, start),
+                                node_id: node_id!(self, span!(self, start)),
                                 key,
                                 body,
                             })
@@ -325,9 +323,9 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                                 }
 
                                 if !params.is_empty() {
-                                    if let Pat::Rest(..) = params[0].pat {
+                                    if let Pat::Rest(first) = &params[0].pat {
                                         parser.emit_err(
-                                            params[0].span(),
+                                            get_span!(parser, first.node_id),
                                             SyntaxError::RestPatInSetter,
                                         );
                                     }
@@ -347,23 +345,24 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                         .map(|Function { params, body, .. }| {
                             // debug_assert_eq!(params.len(), 1);
                             Prop::Setter(SetterProp {
-                                node_id: node_id!(self),
-                                span: span!(self, start),
+                                node_id: node_id!(self, span!(self, start)),
                                 key,
                                 body,
                                 param: params
                                     .into_iter()
                                     .map(|param| {
-                                        ParamWithoutDecorators::from_pat(param.pat, node_id!(self))
+                                        ParamWithoutDecorators::from_pat(
+                                            param.pat,
+                                            program_data!(self),
+                                        )
                                     })
                                     .next()
                                     .unwrap_or_else(|| {
                                         ParamWithoutDecorators::from_pat(
                                             Pat::Invalid(Invalid {
-                                                node_id: node_id!(self),
-                                                span: key_span,
+                                                node_id: node_id!(self, key_span),
                                             }),
-                                            node_id!(self),
+                                            program_data!(self),
                                         )
                                     }),
                             })
@@ -379,7 +378,7 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                         )
                         .map(|function| {
                             Prop::Method(MethodProp {
-                                node_id: node_id!(self),
+                                node_id: node_id_from!(self, function.node_id),
                                 key,
                                 function,
                             })
@@ -412,15 +411,23 @@ impl<I: Tokens> ParseObject<Pat> for Parser<I> {
                 if let ObjectPatProp::Rest(ref rest) = p {
                     match *rest.arg {
                         Pat::Ident(..) => {}
-                        _ => syntax_error!(self, p.span(), SyntaxError::DotsWithoutIdentifier),
+                        _ => syntax_error!(
+                            self,
+                            get_span!(self, rest.node_id),
+                            SyntaxError::DotsWithoutIdentifier
+                        ),
                     }
                 }
                 continue;
             }
 
-            if let ObjectPatProp::Rest(..) = p {
+            if let ObjectPatProp::Rest(p) = p {
                 if self.syntax().early_errors() {
-                    syntax_error!(self, p.span(), SyntaxError::NonLastRestParam)
+                    syntax_error!(
+                        self,
+                        get_span!(self, p.node_id),
+                        SyntaxError::NonLastRestParam
+                    )
                 }
             }
         }
@@ -429,8 +436,7 @@ impl<I: Tokens> ParseObject<Pat> for Parser<I> {
             (self.input.syntax().dts() || self.ctx().in_declare) && self.input.eat(&tok!('?'));
 
         Ok(Pat::Object(ObjectPat {
-            node_id: node_id!(self),
-            span,
+            node_id: node_id!(self, span),
             props,
         }))
     }
@@ -441,24 +447,23 @@ impl<I: Tokens> ParseObject<Pat> for Parser<I> {
 
         if self.input.eat(&tok!("...")) {
             // spread element
-            let dot3_token = span!(self, start);
 
             let arg = Box::new(self.parse_binding_pat_or_ident()?);
 
             return Ok(ObjectPatProp::Rest(RestPat {
-                node_id: node_id!(self),
-                span: span!(self, start),
-                dot3_token,
+                node_id: node_id!(self, span!(self, start)),
                 arg,
             }));
         }
 
+        let key_start = self.input.cur_pos();
         let key = self.parse_prop_name()?;
         if self.input.eat(&tok!(':')) {
             let value = Box::new(self.parse_binding_element()?);
 
+            let span = Span::new(key_start, self.input.last_pos());
             return Ok(ObjectPatProp::KeyValue(KeyValuePatProp {
-                node_id: node_id!(self),
+                node_id: node_id!(self, span),
                 key,
                 value,
             }));
@@ -474,15 +479,17 @@ impl<I: Tokens> ParseObject<Pat> for Parser<I> {
                 .map(Some)?
         } else {
             if self.ctx().is_reserved_word(&key.sym) {
-                self.emit_err(key.span, SyntaxError::ReservedWordInObjShorthandOrPat);
+                self.emit_err(
+                    get_span!(self, key.node_id),
+                    SyntaxError::ReservedWordInObjShorthandOrPat,
+                );
             }
 
             None
         };
 
         Ok(ObjectPatProp::Assign(AssignPatProp {
-            node_id: node_id!(self),
-            span: span!(self, start),
+            node_id: node_id!(self, span!(self, start)),
             key,
             value,
         }))

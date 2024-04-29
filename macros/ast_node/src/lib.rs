@@ -7,25 +7,10 @@ use pmutil::{smart_quote, Quote, ToTokensExt};
 use syn::{self, *};
 
 mod ast_node_macro;
-mod spanned;
-
-#[proc_macro_derive(Spanned, attributes(span))]
-pub fn derive_spanned(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let input = parse::<DeriveInput>(input).expect("failed to parse input as DeriveInput");
-    let name = input.ident.clone();
-
-    let item = self::spanned::derive(input);
-
-    print_item(
-        "derive(Spanned)",
-        &format!("IMPL_SPANNED_FOR_{}", name),
-        item.dump(),
-    )
-}
 
 /// Alias for
-/// `#[derive(Spanned, Fold, Clone, Debug, PartialEq)]` for a struct and
-/// `#[derive(Spanned, Fold, Clone, Debug, PartialEq)]` for an
+/// `#[derive(Fold, Clone, Debug, PartialEq)]` for a struct and
+/// `#[derive(Fold, Clone, Debug, PartialEq)]` for an
 /// enum.
 #[proc_macro_attribute]
 pub fn ast_node(
@@ -41,23 +26,11 @@ pub fn ast_node(
     let mut item = Quote::new(Span::call_site());
     item = match input.data {
         Data::Enum(..) => item.quote_with(smart_quote!(Vars { input }, {
-            #[derive(
-                ::ast_node::Spanned,
-                Debug,
-                PartialEq,
-                ::node_id::GetNodeIdMacro,
-                ::clone_node::CloneNode,
-            )]
+            #[derive(Debug, PartialEq, ::node_id::GetNodeIdMacro, ::clone_node::CloneNode)]
             input
         })),
         _ => item.quote_with(smart_quote!(Vars { input }, {
-            #[derive(
-                ::ast_node::Spanned,
-                Debug,
-                PartialEq,
-                ::node_id::GetNodeIdMacro,
-                ::clone_node::CloneNode,
-            )]
+            #[derive(Debug, PartialEq, ::node_id::GetNodeIdMacro, ::clone_node::CloneNode)]
             input
         })),
     };

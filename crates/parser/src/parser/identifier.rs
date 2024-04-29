@@ -3,13 +3,14 @@ use super::*;
 use crate::token::Keyword;
 use atoms::js_word;
 use either::Either;
+use global_common::SyntaxContext;
 
 impl<I: Tokens> Parser<I> {
     pub(super) fn new_ident(&mut self, sym: JsWord, span: Span) -> Ident {
         Ident {
-            node_id: node_id!(self),
-            span,
+            node_id: node_id!(self, span),
             sym,
+            ctxt: SyntaxContext::empty(),
         }
     }
 
@@ -38,8 +39,7 @@ impl<I: Tokens> Parser<I> {
 
         let id = self.parse_ident_name()?;
         Ok(PrivateName {
-            node_id: node_id!(self),
-            span: span!(self, start),
+            node_id: node_id!(self, span!(self, start)),
             id,
         })
     }

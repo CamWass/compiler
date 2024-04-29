@@ -1,64 +1,62 @@
-use crate::{GetNodeId, NodeId};
+use crate::{GetNodeId, NodeId, ProgramData};
 use ast_node::ast_node;
 use atoms::{js_word, JsWord};
-use global_common::{util::take::Take, EqIgnoreSpan, Span, DUMMY_SP};
+use global_common::{util::take::Take, SyntaxContext};
 
-/// Identifer used as a pattern.
+/// Identifier used as a pattern.
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct BindingIdent {
     pub node_id: NodeId,
-
-    #[span]
     pub id: Ident,
 }
 
 impl BindingIdent {
-    pub fn from_ident(id: Ident, node_id: NodeId) -> Self {
-        Self { id, node_id }
+    pub fn from_ident(id: Ident, program_data: &mut ProgramData) -> Self {
+        Self {
+            node_id: program_data.new_id_from(id.node_id),
+            id,
+        }
     }
 }
 
-/// Ident with span.
+/// Ident.
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct Ident {
     pub node_id: NodeId,
-
-    pub span: Span,
     pub sym: JsWord,
+    pub ctxt: SyntaxContext,
 }
 
 impl Take for Ident {
     fn dummy() -> Self {
         Ident {
             node_id: NodeId::DUMMY,
-            span: DUMMY_SP,
             sym: js_word!(""),
+            ctxt: SyntaxContext::empty(),
         }
     }
 }
 
+// TODO: remove this stuff
 #[cfg(feature = "arbitrary")]
 impl arbitrary::Arbitrary for Ident {
     fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        let span = u.arbitrary()?;
         let sym = u.arbitrary::<String>()?;
         if sym.is_empty() {
             return Err(arbitrary::Error::NotEnoughData);
         }
         let sym = sym.into();
 
-        Ok(Self { span, sym })
+        Ok(Self { sym })
     }
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct PrivateName {
     pub node_id: NodeId,
-
-    pub span: Span,
     pub id: Ident,
 }
 
@@ -67,15 +65,6 @@ impl AsRef<str> for Ident {
         &self.sym
     }
 }
-
-// impl Ident {
-//     pub const fn new(sym: JsWord, span: Span) -> Self {
-//         Ident {
-//             span,
-//             sym,
-//         }
-//     }
-// }
 
 pub trait IdentExt: AsRef<str> {
     fn is_reserved_for_es3(&self) -> bool {

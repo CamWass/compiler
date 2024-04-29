@@ -6,11 +6,10 @@ use crate::{
 };
 use ast_node::ast_node;
 use atoms::JsWord;
-use global_common::{EqIgnoreSpan, Span};
 
 /// Used for `obj` property of `JSXMemberExpr`.
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 #[allow(variant_size_differences)]
 pub enum JSXObject {
     JSXMemberExpr(Box<JSXMemberExpr>),
@@ -18,49 +17,41 @@ pub enum JSXObject {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct JSXMemberExpr {
     pub node_id: NodeId,
 
-    #[span(lo)]
     pub obj: JSXObject,
 
-    #[span(hi)]
     pub prop: Ident,
 }
 
 /// XML-based namespace syntax:
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct JSXNamespacedName {
     pub node_id: NodeId,
 
-    #[span(lo)]
     pub ns: Ident,
-    #[span(hi)]
     pub name: Ident,
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct JSXEmptyExpr {
     pub node_id: NodeId,
-
-    pub span: Span,
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct JSXExprContainer {
     pub node_id: NodeId,
-
-    pub span: Span,
 
     pub expr: JSXExpr,
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 #[allow(variant_size_differences)]
 pub enum JSXExpr {
     JSXEmptyExpr(JSXEmptyExpr),
@@ -68,17 +59,15 @@ pub enum JSXExpr {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct JSXSpreadChild {
     pub node_id: NodeId,
-
-    pub span: Span,
 
     pub expr: Box<Expr>,
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub enum JSXElementName {
     Ident(Ident),
     JSXMemberExpr(JSXMemberExpr),
@@ -86,13 +75,11 @@ pub enum JSXElementName {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct JSXOpeningElement {
     pub node_id: NodeId,
 
     pub name: JSXElementName,
-
-    pub span: Span,
 
     pub attrs: Vec<JSXAttrOrSpread>,
 
@@ -100,7 +87,7 @@ pub struct JSXOpeningElement {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 #[allow(variant_size_differences)]
 pub enum JSXAttrOrSpread {
     JSXAttr(JSXAttr),
@@ -108,34 +95,30 @@ pub enum JSXAttrOrSpread {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct JSXClosingElement {
     pub node_id: NodeId,
-
-    pub span: Span,
     pub name: JSXElementName,
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct JSXAttr {
     pub node_id: NodeId,
-
-    pub span: Span,
     pub name: JSXAttrName,
     /// Babel uses Expr instead of JSXAttrValue
     pub value: Option<JSXAttrValue>,
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub enum JSXAttrName {
     Ident(Ident),
     JSXNamespacedName(JSXNamespacedName),
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub enum JSXAttrValue {
     Lit(Lit),
 
@@ -147,11 +130,9 @@ pub enum JSXAttrValue {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct JSXText {
     pub node_id: NodeId,
-
-    pub span: Span,
     pub value: JsWord,
     pub raw: JsWord,
 }
@@ -168,18 +149,16 @@ impl arbitrary::Arbitrary for JSXText {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct JSXElement {
     pub node_id: NodeId,
-
-    pub span: Span,
     pub opening: JSXOpeningElement,
     pub children: Vec<JSXElementChild>,
     pub closing: Option<JSXClosingElement>,
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub enum JSXElementChild {
     JSXText(JSXText),
 
@@ -193,11 +172,9 @@ pub enum JSXElementChild {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct JSXFragment {
     pub node_id: NodeId,
-
-    pub span: Span,
 
     pub opening: JSXOpeningFragment,
 
@@ -207,17 +184,13 @@ pub struct JSXFragment {
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct JSXOpeningFragment {
     pub node_id: NodeId,
-
-    pub span: Span,
 }
 
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct JSXClosingFragment {
     pub node_id: NodeId,
-
-    pub span: Span,
 }

@@ -1086,5 +1086,5 @@ pub(self) static DISPATCHER: [Dispatch; 256] = [
 ];
 
 fn pos_span(p: BytePos) -> Span {
-    Span::new(p, p, Default::default())
+    Span::new(p, p)
 }

@@ -1,6 +1,4 @@
 use ast::{GetNodeId, NodeId};
-use global_common::{Spanned, DUMMY_SP};
-use std::fmt;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 
@@ -66,30 +64,18 @@ impl<'ast> Node<'ast> {
     }
 }
 
-impl Spanned for Node<'_> {
-    fn span(&self) -> global_common::Span {
-        self.kind.span()
-    }
-}
+// impl Spanned for Node<'_> {
+//     fn span(&self) -> global_common::Span {
+//         self.kind.span()
+//     }
+// }
 
 macro_rules! make {
     ($($field:ident,)*) => {
-        #[derive(Copy, Clone)]
+        #[derive(Copy, Clone, Debug)]
         pub enum NodeKind<'ast> {
             ImplicitReturn,
             $($field(&'ast ::ast::$field),)*
-        }
-
-        impl <'ast> fmt::Debug for NodeKind<'ast>  {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                 match self {
-                    NodeKind::ImplicitReturn => f.write_str("ImplicitReturn"),
-                    $(
-                        NodeKind::$field(_) => f.write_fmt(format_args!("({}, Span({}..{}))", stringify!($field), self.span().lo.0, self.span().hi.0)),
-                    )*
-                }
-
-            }
         }
 
         $(
@@ -109,15 +95,6 @@ macro_rules! make {
                 match self {
                     NodeKind::ImplicitReturn=>{},
                     $(NodeKind::$field(n) => n.visit_with(v),)*
-                }
-            }
-        }
-
-        impl Spanned for NodeKind<'_> {
-            fn span(&self) -> global_common::Span {
-                match self {
-                    NodeKind::ImplicitReturn=>DUMMY_SP,
-                    $(NodeKind::$field(n) => n.span(),)*
                 }
             }
         }

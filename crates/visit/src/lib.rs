@@ -4,7 +4,7 @@ pub extern crate ast;
 
 use ast::*;
 use atoms::JsWord;
-use global_common::{Span, DUMMY_SP};
+use global_common::SyntaxContext;
 use global_visit::{define, AndThen, Repeat, Repeated};
 use num_bigint::BigInt as BigIntValue;
 use std::{any::Any, fmt::Debug};
@@ -118,40 +118,6 @@ where
     }
 }
 
-/// Not a public api.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-struct SpanRemover;
-
-/// Returns a `Fold` which changes all span into `DUMMY_SP`.
-pub fn span_remover() -> impl Debug + Fold + Copy + Eq + Default + 'static {
-    SpanRemover
-}
-
-impl Fold for SpanRemover {
-    fn fold_span(&mut self, _: Span) -> Span {
-        DUMMY_SP
-    }
-}
-
-#[macro_export]
-macro_rules! assert_eq_ignore_span {
-    ($l:expr, $r:expr) => {{
-        use $crate::FoldWith;
-        let l = $l.fold_with(&mut $crate::span_remover());
-        let r = $r.fold_with(&mut $crate::span_remover());
-
-        assert_eq!(l, r);
-    }};
-
-    ($l:expr, $r:expr, $($tts:tt)*) => {{
-        use $crate::FoldWith;
-        let l = $l.fold_with(&mut $crate::span_remover());
-        let r = $r.fold_with(&mut $crate::span_remover());
-
-        assert_eq!(l, r, $($tts)*);
-    }};
-}
-
 // pub fn as_folder<V>(v: V) -> Folder<V>
 // where
 //     V: VisitMut,
@@ -202,7 +168,6 @@ macro_rules! assert_eq_ignore_span {
 //     V: VisitMut,
 // {
 //     method!(fold_ident, Ident);
-//     method!(fold_span, Span);
 
 //     method!(fold_expr, Expr);
 //     method!(fold_decl, Decl);
@@ -217,7 +182,6 @@ macro_rules! assert_eq_ignore_span {
 define!({
     pub struct Class {
         pub node_id: NodeId,
-        pub span: Span,
         pub decorators: Vec<Decorator>,
         pub extends: Option<ExtendsClause>,
         pub body: Vec<ClassMember>,
@@ -225,7 +189,6 @@ define!({
 
     pub struct ExtendsClause {
         pub node_id: NodeId,
-        pub span: Span,
         pub super_class: Box<Expr>,
     }
 
@@ -240,7 +203,6 @@ define!({
 
     pub struct ClassProp {
         pub node_id: NodeId,
-        pub span: Span,
         pub key: PropName,
         pub value: Option<Box<Expr>>,
         pub is_static: bool,
@@ -248,7 +210,6 @@ define!({
     }
     pub struct PrivateProp {
         pub node_id: NodeId,
-        pub span: Span,
         pub key: PrivateName,
         pub value: Option<Box<Expr>>,
         pub is_static: bool,
@@ -256,7 +217,6 @@ define!({
     }
     pub struct ClassMethod {
         pub node_id: NodeId,
-        pub span: Span,
         pub key: PropName,
         pub function: Function,
         pub kind: MethodKind,
@@ -264,7 +224,6 @@ define!({
     }
     pub struct PrivateMethod {
         pub node_id: NodeId,
-        pub span: Span,
         pub key: PrivateName,
         pub function: Function,
         pub kind: MethodKind,
@@ -272,13 +231,11 @@ define!({
     }
     pub struct Constructor {
         pub node_id: NodeId,
-        pub span: Span,
         pub params: Vec<Param>,
         pub body: BlockStmt,
     }
     pub struct Decorator {
         pub node_id: NodeId,
-        pub span: Span,
         pub expr: Box<Expr>,
     }
     pub enum MethodKind {
@@ -303,7 +260,6 @@ define!({
     }
     pub struct VarDecl {
         pub node_id: NodeId,
-        pub span: Span,
         pub kind: VarDeclKind,
         pub decls: Vec<VarDeclarator>,
     }
@@ -314,7 +270,6 @@ define!({
     }
     pub struct VarDeclarator {
         pub node_id: NodeId,
-        pub span: Span,
         pub name: Pat,
         pub init: Option<Box<Expr>>,
     }
@@ -353,39 +308,32 @@ define!({
     }
     pub struct ThisExpr {
         pub node_id: NodeId,
-        pub span: Span,
     }
     pub struct ArrayLit {
         pub node_id: NodeId,
-        pub span: Span,
         pub elems: Vec<Option<ExprOrSpread>>,
     }
     pub struct ObjectLit {
         pub node_id: NodeId,
-        pub span: Span,
         pub props: Vec<Prop>,
     }
     pub struct SpreadElement {
         pub node_id: NodeId,
-        pub dot3_token: Span,
         pub expr: Box<Expr>,
     }
     pub struct UnaryExpr {
         pub node_id: NodeId,
-        pub span: Span,
         pub op: UnaryOp,
         pub arg: Box<Expr>,
     }
     pub struct UpdateExpr {
         pub node_id: NodeId,
-        pub span: Span,
         pub op: UpdateOp,
         pub prefix: bool,
         pub arg: Box<Expr>,
     }
     pub struct BinExpr {
         pub node_id: NodeId,
-        pub span: Span,
         pub op: BinaryOp,
         pub left: Box<Expr>,
         pub right: Box<Expr>,
@@ -402,52 +350,44 @@ define!({
     }
     pub struct AssignExpr {
         pub node_id: NodeId,
-        pub span: Span,
         pub op: AssignOp,
         pub left: PatOrExpr,
         pub right: Box<Expr>,
     }
     pub struct MemberExpr {
         pub node_id: NodeId,
-        pub span: Span,
         pub obj: ExprOrSuper,
         pub prop: Box<Expr>,
         pub computed: bool,
     }
     pub struct CondExpr {
         pub node_id: NodeId,
-        pub span: Span,
         pub test: Box<Expr>,
         pub cons: Box<Expr>,
         pub alt: Box<Expr>,
     }
     pub struct CallExpr {
         pub node_id: NodeId,
-        pub span: Span,
         pub callee: ExprOrSuper,
         pub args: Vec<ExprOrSpread>,
     }
     pub struct NewExpr {
         pub node_id: NodeId,
-        pub span: Span,
         pub callee: Box<Expr>,
         pub args: Option<Vec<ExprOrSpread>>,
     }
     pub struct SeqExpr {
         pub node_id: NodeId,
-        pub span: Span,
         pub exprs: Vec<Box<Expr>>,
     }
     pub struct ArrowExpr {
         pub node_id: NodeId,
-        pub span: Span,
         pub params: Vec<ParamWithoutDecorators>,
         pub body: BlockStmtOrExpr,
         pub is_async: bool,
     }
     pub struct YieldExpr {
         pub node_id: NodeId,
-        pub span: Span,
         pub arg: Option<Box<Expr>>,
         pub delegate: bool,
     }
@@ -458,31 +398,26 @@ define!({
     }
     pub struct AwaitExpr {
         pub node_id: NodeId,
-        pub span: Span,
         pub arg: Box<Expr>,
     }
     pub struct Tpl {
         pub node_id: NodeId,
-        pub span: Span,
         pub exprs: Vec<Box<Expr>>,
         pub quasis: Vec<TplElement>,
     }
     pub struct TaggedTpl {
         pub node_id: NodeId,
-        pub span: Span,
         pub tag: Box<Expr>,
         pub tpl: Tpl,
     }
     pub struct TplElement {
         pub node_id: NodeId,
-        pub span: Span,
         pub tail: bool,
         pub cooked: Option<Str>,
         pub raw: Str,
     }
     pub struct ParenExpr {
         pub node_id: NodeId,
-        pub span: Span,
         pub expr: Box<Expr>,
     }
     pub enum ExprOrSuper {
@@ -491,7 +426,6 @@ define!({
     }
     pub struct Super {
         pub node_id: NodeId,
-        pub span: Span,
     }
     pub enum ExprOrSpread {
         Spread(SpreadElement),
@@ -507,22 +441,18 @@ define!({
     }
     pub struct OptChainExpr {
         pub node_id: NodeId,
-        pub span: Span,
-        pub question_dot_token: Span,
         pub expr: Box<Expr>,
     }
     pub struct Function {
         pub node_id: NodeId,
         pub params: Vec<Param>,
         pub decorators: Vec<Decorator>,
-        pub span: Span,
         pub body: BlockStmt,
         pub is_generator: bool,
         pub is_async: bool,
     }
     pub struct Param {
         pub node_id: NodeId,
-        pub span: Span,
         pub decorators: Vec<Decorator>,
         pub pat: Pat,
     }
@@ -538,13 +468,12 @@ define!({
 
     pub struct Ident {
         pub node_id: NodeId,
-        pub span: Span,
         pub sym: JsWord,
+        pub ctxt: SyntaxContext,
     }
 
     pub struct PrivateName {
         pub node_id: NodeId,
-        pub span: Span,
         pub id: Ident,
     }
 
@@ -564,11 +493,9 @@ define!({
     }
     pub struct JSXEmptyExpr {
         pub node_id: NodeId,
-        pub span: Span,
     }
     pub struct JSXExprContainer {
         pub node_id: NodeId,
-        pub span: Span,
         pub expr: JSXExpr,
     }
     pub enum JSXExpr {
@@ -577,7 +504,6 @@ define!({
     }
     pub struct JSXSpreadChild {
         pub node_id: NodeId,
-        pub span: Span,
         pub expr: Box<Expr>,
     }
     pub enum JSXElementName {
@@ -588,7 +514,6 @@ define!({
     pub struct JSXOpeningElement {
         pub node_id: NodeId,
         pub name: JSXElementName,
-        pub span: Span,
         pub attrs: Vec<JSXAttrOrSpread>,
         pub self_closing: bool,
     }
@@ -598,12 +523,10 @@ define!({
     }
     pub struct JSXClosingElement {
         pub node_id: NodeId,
-        pub span: Span,
         pub name: JSXElementName,
     }
     pub struct JSXAttr {
         pub node_id: NodeId,
-        pub span: Span,
         pub name: JSXAttrName,
         pub value: Option<JSXAttrValue>,
     }
@@ -619,13 +542,11 @@ define!({
     }
     pub struct JSXText {
         pub node_id: NodeId,
-        pub span: Span,
         pub value: JsWord,
         pub raw: JsWord,
     }
     pub struct JSXElement {
         pub node_id: NodeId,
-        pub span: Span,
         pub opening: JSXOpeningElement,
         pub children: Vec<JSXElementChild>,
         pub closing: Option<JSXClosingElement>,
@@ -639,22 +560,18 @@ define!({
     }
     pub struct JSXFragment {
         pub node_id: NodeId,
-        pub span: Span,
         pub opening: JSXOpeningFragment,
         pub children: Vec<JSXElementChild>,
         pub closing: JSXClosingFragment,
     }
     pub struct JSXOpeningFragment {
         pub node_id: NodeId,
-        pub span: Span,
     }
     pub struct JSXClosingFragment {
         pub node_id: NodeId,
-        pub span: Span,
     }
     pub struct Invalid {
         pub node_id: NodeId,
-        pub span: Span,
     }
     pub enum Lit {
         Str(Str),
@@ -667,34 +584,28 @@ define!({
     }
     pub struct BigInt {
         pub node_id: NodeId,
-        pub span: Span,
         pub value: BigIntValue,
     }
     pub struct Str {
         pub node_id: NodeId,
-        pub span: Span,
         pub value: JsWord,
         pub has_escape: bool,
         pub kind: StrKind,
     }
     pub struct Bool {
         pub node_id: NodeId,
-        pub span: Span,
         pub value: bool,
     }
     pub struct Null {
         pub node_id: NodeId,
-        pub span: Span,
     }
     pub struct Regex {
         pub node_id: NodeId,
-        pub span: Span,
         pub exp: JsWord,
         pub flags: JsWord,
     }
     pub struct Number {
         pub node_id: NodeId,
-        pub span: Span,
         pub value: f64,
         pub raw: Option<JsWord>,
     }
@@ -704,13 +615,11 @@ define!({
     }
     pub struct Module {
         pub node_id: NodeId,
-        pub span: Span,
         pub body: Vec<ModuleItem>,
         pub shebang: Option<JsWord>,
     }
     pub struct Script {
         pub node_id: NodeId,
-        pub span: Span,
         pub body: Vec<Stmt>,
         pub shebang: Option<JsWord>,
     }
@@ -728,37 +637,31 @@ define!({
     }
     pub struct ExportDefaultExpr {
         pub node_id: NodeId,
-        pub span: Span,
         pub expr: Box<Expr>,
     }
     pub struct ExportDecl {
         pub node_id: NodeId,
-        pub span: Span,
         pub decl: Decl,
     }
     pub struct ImportDecl {
         pub node_id: NodeId,
-        pub span: Span,
         pub specifiers: Vec<ImportSpecifier>,
         pub src: Str,
         pub asserts: Option<ObjectLit>,
     }
     pub struct ExportAll {
         pub node_id: NodeId,
-        pub span: Span,
         pub src: Str,
         pub asserts: Option<ObjectLit>,
     }
     pub struct NamedExport {
         pub node_id: NodeId,
-        pub span: Span,
         pub specifiers: Vec<ExportSpecifier>,
         pub src: Option<Str>,
         pub asserts: Option<ObjectLit>,
     }
     pub struct ExportDefaultDecl {
         pub node_id: NodeId,
-        pub span: Span,
         pub decl: DefaultDecl,
     }
     pub enum DefaultDecl {
@@ -772,17 +675,14 @@ define!({
     }
     pub struct ImportDefaultSpecifier {
         pub node_id: NodeId,
-        pub span: Span,
         pub local: Ident,
     }
     pub struct ImportStarAsSpecifier {
         pub node_id: NodeId,
-        pub span: Span,
         pub local: Ident,
     }
     pub struct ImportNamedSpecifier {
         pub node_id: NodeId,
-        pub span: Span,
         pub local: Ident,
         pub imported: Option<Ident>,
     }
@@ -793,7 +693,6 @@ define!({
     }
     pub struct ExportNamespaceSpecifier {
         pub node_id: NodeId,
-        pub span: Span,
         pub name: Ident,
     }
     pub struct ExportDefaultSpecifier {
@@ -802,7 +701,6 @@ define!({
     }
     pub struct ExportNamedSpecifier {
         pub node_id: NodeId,
-        pub span: Span,
         pub orig: Ident,
         pub exported: Option<Ident>,
     }
@@ -876,24 +774,19 @@ define!({
     }
     pub struct ArrayPat {
         pub node_id: NodeId,
-        pub span: Span,
         pub elems: Vec<Option<Pat>>,
     }
     pub struct ObjectPat {
         pub node_id: NodeId,
-        pub span: Span,
         pub props: Vec<ObjectPatProp>,
     }
     pub struct AssignPat {
         pub node_id: NodeId,
-        pub span: Span,
         pub left: Box<Pat>,
         pub right: Box<Expr>,
     }
     pub struct RestPat {
         pub node_id: NodeId,
-        pub span: Span,
-        pub dot3_token: Span,
         pub arg: Box<Pat>,
     }
     pub enum ObjectPatProp {
@@ -908,7 +801,6 @@ define!({
     }
     pub struct AssignPatProp {
         pub node_id: NodeId,
-        pub span: Span,
         pub key: Ident,
         pub value: Option<Box<Expr>>,
     }
@@ -933,13 +825,11 @@ define!({
     }
     pub struct GetterProp {
         pub node_id: NodeId,
-        pub span: Span,
         pub key: PropName,
         pub body: BlockStmt,
     }
     pub struct SetterProp {
         pub node_id: NodeId,
-        pub span: Span,
         pub key: PropName,
         pub param: ParamWithoutDecorators,
         pub body: BlockStmt,
@@ -951,7 +841,6 @@ define!({
     }
     pub struct SpreadAssignment {
         pub node_id: NodeId,
-        pub dot3_token: Span,
         pub expr: Box<Expr>,
     }
     pub enum PropName {
@@ -962,12 +851,10 @@ define!({
     }
     pub struct ComputedPropName {
         pub node_id: NodeId,
-        pub span: Span,
         pub expr: Box<Expr>,
     }
     pub struct BlockStmt {
         pub node_id: NodeId,
-        pub span: Span,
         pub stmts: Vec<Stmt>,
     }
     pub enum Stmt {
@@ -993,84 +880,69 @@ define!({
     }
     pub struct ExprStmt {
         pub node_id: NodeId,
-        pub span: Span,
         pub expr: Box<Expr>,
     }
     pub struct EmptyStmt {
         pub node_id: NodeId,
-        pub span: Span,
     }
     pub struct DebuggerStmt {
         pub node_id: NodeId,
-        pub span: Span,
     }
     pub struct WithStmt {
         pub node_id: NodeId,
-        pub span: Span,
         pub obj: Box<Expr>,
         pub body: Box<Stmt>,
     }
     pub struct ReturnStmt {
         pub node_id: NodeId,
-        pub span: Span,
         pub arg: Option<Box<Expr>>,
     }
     pub struct LabeledStmt {
         pub node_id: NodeId,
-        pub span: Span,
         pub label: Ident,
         pub body: Box<Stmt>,
     }
     pub struct BreakStmt {
         pub node_id: NodeId,
-        pub span: Span,
         pub label: Option<Ident>,
     }
     pub struct ContinueStmt {
         pub node_id: NodeId,
-        pub span: Span,
         pub label: Option<Ident>,
     }
     pub struct IfStmt {
         pub node_id: NodeId,
-        pub span: Span,
         pub test: Box<Expr>,
         pub cons: Box<Stmt>,
         pub alt: Option<Box<Stmt>>,
     }
     pub struct SwitchStmt {
         pub node_id: NodeId,
-        pub span: Span,
         pub discriminant: Box<Expr>,
         pub cases: Vec<SwitchCase>,
     }
     pub struct ThrowStmt {
         pub node_id: NodeId,
-        pub span: Span,
         pub arg: Box<Expr>,
     }
     pub struct TryStmt {
         pub node_id: NodeId,
-        pub span: Span,
         pub block: BlockStmt,
         pub handler: Option<CatchClause>,
         pub finalizer: Option<BlockStmt>,
     }
     pub struct WhileStmt {
         pub node_id: NodeId,
-        pub span: Span,
         pub test: Box<Expr>,
         pub body: Box<Stmt>,
     }
     pub struct DoWhileStmt {
         pub node_id: NodeId,
-        pub span: Span,
         pub test: Box<Expr>,
         pub body: Box<Stmt>,
     }
     pub struct ForStmt {
         pub node_id: NodeId,
-        pub span: Span,
         pub init: Option<VarDeclOrExpr>,
         pub test: Option<Box<Expr>>,
         pub update: Option<Box<Expr>>,
@@ -1078,28 +950,24 @@ define!({
     }
     pub struct ForInStmt {
         pub node_id: NodeId,
-        pub span: Span,
         pub left: VarDeclOrPat,
         pub right: Box<Expr>,
         pub body: Box<Stmt>,
     }
     pub struct ForOfStmt {
         pub node_id: NodeId,
-        pub span: Span,
-        pub await_token: Option<Span>,
+        pub is_await: bool,
         pub left: VarDeclOrPat,
         pub right: Box<Expr>,
         pub body: Box<Stmt>,
     }
     pub struct SwitchCase {
         pub node_id: NodeId,
-        pub span: Span,
         pub test: Option<Box<Expr>>,
         pub cons: Vec<Stmt>,
     }
     pub struct CatchClause {
         pub node_id: NodeId,
-        pub span: Span,
         pub param: Option<Pat>,
         pub body: BlockStmt,
     }

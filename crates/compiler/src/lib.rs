@@ -48,7 +48,7 @@ trait ToId {
 
 impl ToId for ::ast::Ident {
     fn to_id(&self) -> Id {
-        (self.sym.clone(), self.span.ctxt)
+        (self.sym.clone(), self.ctxt)
     }
 }
 
@@ -97,26 +97,27 @@ impl Compiler {
         &self,
         mut ast: ::ast::Program,
         passes: PassConfig,
-        node_id_gen: &'a mut ::ast::NodeIdGen,
+        program_data: &'a mut ::ast::ProgramData,
     ) -> ::ast::Program {
         self.run(|| {
             // TODO: maybe add an 'AST verifier' that checks basic invariants after
             // each pass (e.g. that no two nodes have the same node_id).
 
-            normalize_properties::normalize_properties(&mut ast, node_id_gen);
+            normalize_properties::normalize_properties(&mut ast, program_data);
 
             let unresolved_mark = Mark::new();
             let top_level_mark = Mark::new();
 
             ast.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark));
 
-            normalize::normalize(&mut ast, node_id_gen);
+            // TODO: move before resolver
+            normalize::normalize(&mut ast, program_data);
 
             let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 
-            optimise(&mut ast, passes, node_id_gen, unresolved_ctxt);
+            optimise(&mut ast, passes, program_data, unresolved_ctxt);
 
-            finalise(&mut ast, passes, node_id_gen, unresolved_ctxt);
+            finalise(&mut ast, passes, program_data, unresolved_ctxt);
 
             ast
         })
@@ -126,11 +127,11 @@ impl Compiler {
 fn optimise(
     ast: &mut ::ast::Program,
     passes: PassConfig,
-    node_id_gen: &mut ::ast::NodeIdGen,
+    program_data: &mut ::ast::ProgramData,
     unresolved_ctxt: SyntaxContext,
 ) {
     if passes.optimize_arguments_array {
-        OptimizeArgumentsArray::OptimizeArgumentsArray::process(ast, node_id_gen, unresolved_ctxt);
+        OptimizeArgumentsArray::OptimizeArgumentsArray::process(ast, program_data, unresolved_ctxt);
     }
 
     // TODO: inlineAndCollapseProperties
@@ -177,7 +178,7 @@ fn getMainOptimizationLoop(ast: &mut ::ast::Program) {
 fn finalise(
     ast: &mut ::ast::Program,
     passes: PassConfig,
-    node_id_gen: &mut ::ast::NodeIdGen,
+    program_data: &mut ::ast::ProgramData,
     unresolved_ctxt: SyntaxContext,
 ) {
     // TODO: flowSensitiveInlineVariables
@@ -188,7 +189,7 @@ fn finalise(
     // TODO: collapseAnonymousFunctions
 
     if passes.optimize_properties {
-        optimize_properties2::process(ast, node_id_gen, unresolved_ctxt);
+        optimize_properties2::process(ast, program_data, unresolved_ctxt);
     }
 
     // TODO: renameProperties
@@ -196,7 +197,7 @@ fn finalise(
     // TODO: rewriteFunctionExpressions
     // TODO: aliasStrings
     if passes.coalesce_variable_names {
-        CoalesceVariableNames::coalesce_variable_names(ast, unresolved_ctxt, node_id_gen);
+        CoalesceVariableNames::coalesce_variable_names(ast, unresolved_ctxt, program_data);
     }
     // TODO: coalesceVariableNames
     // TODO: peepholeOptimizationsOnce

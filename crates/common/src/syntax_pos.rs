@@ -24,9 +24,6 @@ pub mod hygiene;
 pub struct Span {
     pub lo: BytePos,
     pub hi: BytePos,
-    /// Information about where the macro came from, if this piece of
-    /// code was created by a macro expansion.
-    pub ctxt: SyntaxContext,
 }
 
 #[cfg(feature = "arbitrary")]
@@ -39,12 +36,10 @@ impl arbitrary::Arbitrary for Span {
     }
 }
 
-/// Dummy span, both position and length are zero, syntax context is zero as
-/// well.
+/// Dummy span, both position and length are zero.
 pub const DUMMY_SP: Span = Span {
     lo: BytePos(0),
     hi: BytePos(0),
-    ctxt: SyntaxContext::empty(),
 };
 
 #[derive(Default)]
@@ -149,17 +144,17 @@ impl Span {
         self.lo
     }
     #[inline]
-    pub fn new(mut lo: BytePos, mut hi: BytePos, ctxt: SyntaxContext) -> Self {
+    pub fn new(mut lo: BytePos, mut hi: BytePos) -> Self {
         if lo > hi {
             std::mem::swap(&mut lo, &mut hi);
         }
 
-        Span { lo, hi, ctxt }
+        Span { lo, hi }
     }
 
     #[inline]
     pub fn with_lo(&self, lo: BytePos) -> Span {
-        Span::new(lo, self.hi, self.ctxt)
+        Span::new(lo, self.hi)
     }
     #[inline]
     pub fn hi(self) -> BytePos {
@@ -168,15 +163,7 @@ impl Span {
 
     #[inline]
     pub fn with_hi(&self, hi: BytePos) -> Span {
-        Span::new(self.lo, hi, self.ctxt)
-    }
-    #[inline]
-    pub fn ctxt(self) -> SyntaxContext {
-        self.ctxt
-    }
-    #[inline]
-    pub fn with_ctxt(&self, ctxt: SyntaxContext) -> Span {
-        Span::new(self.lo, self.hi, ctxt)
+        Span::new(self.lo, hi)
     }
 
     /// Returns `true` if this is a dummy span with any hygienic context.
@@ -230,59 +217,20 @@ impl Span {
 
     /// Return a `Span` that would enclose both `self` and `end`.
     pub fn to(self, end: Span) -> Span {
-        let span_data = self;
-        let end_data = end;
-        // FIXME(jseyfried): self.ctxt should always equal end.ctxt here (c.f. issue
-        // #23480) Return the macro span on its own to avoid weird diagnostic
-        // output. It is preferable to have an incomplete span than a completely
-        // nonsensical one.
-        if span_data.ctxt != end_data.ctxt {
-            if span_data.ctxt == SyntaxContext::empty() {
-                return end;
-            } else if end_data.ctxt == SyntaxContext::empty() {
-                return self;
-            }
-            // both span fall within a macro
-            // FIXME(estebank) check if it is the *same* macro
-        }
-        Span::new(
-            cmp::min(span_data.lo, end_data.lo),
-            cmp::max(span_data.hi, end_data.hi),
-            if span_data.ctxt == SyntaxContext::empty() {
-                end_data.ctxt
-            } else {
-                span_data.ctxt
-            },
-        )
+        Span::new(cmp::min(self.lo, end.lo), cmp::max(self.hi, end.hi))
     }
 
     /// Return a `Span` between the end of `self` to the beginning of `end`.
     pub fn between(self, end: Span) -> Span {
         let span = self;
-        Span::new(
-            span.hi,
-            end.lo,
-            if end.ctxt == SyntaxContext::empty() {
-                end.ctxt
-            } else {
-                span.ctxt
-            },
-        )
+        Span::new(span.hi, end.lo)
     }
 
     /// Return a `Span` between the beginning of `self` to the beginning of
     /// `end`.
     pub fn until(self, end: Span) -> Span {
         let span = self;
-        Span::new(
-            span.lo,
-            end.lo,
-            if end.ctxt == SyntaxContext::empty() {
-                end.ctxt
-            } else {
-                span.ctxt
-            },
-        )
+        Span::new(span.lo, end.lo)
     }
 
     pub fn from_inner_byte_pos(self, start: usize, end: usize) -> Span {
@@ -290,54 +238,7 @@ impl Span {
         Span::new(
             span.lo + BytePos::from_usize(start),
             span.lo + BytePos::from_usize(end),
-            span.ctxt,
         )
-    }
-
-    #[inline]
-    pub fn apply_mark(self, mark: Mark) -> Span {
-        let span = self;
-        span.with_ctxt(span.ctxt.apply_mark(mark))
-    }
-
-    #[inline]
-    pub fn remove_mark(&mut self) -> Mark {
-        let mut span = *self;
-        let mark = span.ctxt.remove_mark();
-        *self = Span::new(span.lo, span.hi, span.ctxt);
-        mark
-    }
-
-    #[inline]
-    pub fn adjust(&mut self, expansion: Mark) -> Option<Mark> {
-        let mut span = *self;
-        let mark = span.ctxt.adjust(expansion);
-        *self = Span::new(span.lo, span.hi, span.ctxt);
-        mark
-    }
-
-    #[inline]
-    pub fn glob_adjust(
-        &mut self,
-        expansion: Mark,
-        glob_ctxt: SyntaxContext,
-    ) -> Option<Option<Mark>> {
-        let mut span = *self;
-        let mark = span.ctxt.glob_adjust(expansion, glob_ctxt);
-        *self = Span::new(span.lo, span.hi, span.ctxt);
-        mark
-    }
-
-    #[inline]
-    pub fn reverse_glob_adjust(
-        &mut self,
-        expansion: Mark,
-        glob_ctxt: SyntaxContext,
-    ) -> Option<Option<Mark>> {
-        let mut span = *self;
-        let mark = span.ctxt.reverse_glob_adjust(expansion, glob_ctxt);
-        *self = Span::new(span.lo, span.hi, span.ctxt);
-        mark
     }
 }
 
@@ -472,8 +373,6 @@ impl From<Vec<Span>> for MultiSpan {
         MultiSpan::from_spans(spans)
     }
 }
-
-pub const NO_EXPANSION: SyntaxContext = SyntaxContext::empty();
 
 /// Identifies an offset of a multi-byte character in a SourceFile
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]

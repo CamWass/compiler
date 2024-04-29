@@ -1,6 +1,6 @@
 use super::*;
 use either::Either;
-use global_common::{Span, Spanned, SyntaxContext};
+use global_common::Span;
 
 impl<I: Tokens> Parser<I> {
     /// Parse next token as JSX identifier
@@ -31,11 +31,12 @@ impl<I: Tokens> Parser<I> {
         }
 
         let name = self.parse_jsx_ident()?;
-        Ok(JSXAttrName::JSXNamespacedName(JSXNamespacedName {
-            node_id: node_id!(self),
-            ns,
-            name,
-        }))
+        todo!();
+        // Ok(JSXAttrName::JSXNamespacedName(JSXNamespacedName {
+        //     node_id: node_id!(self),
+        //     ns,
+        //     name,
+        // }))
     }
 
     /// Parses element name in any form - namespaced, member or single
@@ -47,20 +48,21 @@ impl<I: Tokens> Parser<I> {
             JSXAttrName::Ident(i) => JSXElementName::Ident(i),
             JSXAttrName::JSXNamespacedName(i) => JSXElementName::JSXNamespacedName(i),
         };
-        while eat!(self, '.') {
-            let prop = self.parse_jsx_ident()?;
-            let new_node = JSXElementName::JSXMemberExpr(JSXMemberExpr {
-                node_id: node_id!(self),
-                obj: match node {
-                    JSXElementName::Ident(i) => JSXObject::Ident(i),
-                    JSXElementName::JSXMemberExpr(i) => JSXObject::JSXMemberExpr(Box::new(i)),
-                    _ => unimplemented!("JSXNamespacedName -> JSXObject"),
-                },
-                prop,
-            });
-            node = new_node;
-        }
-        Ok(node)
+        todo!();
+        // while eat!(self, '.') {
+        //     let prop = self.parse_jsx_ident()?;
+        //     let new_node = JSXElementName::JSXMemberExpr(JSXMemberExpr {
+        //         node_id: node_id!(self),
+        //         obj: match node {
+        //             JSXElementName::Ident(i) => JSXObject::Ident(i),
+        //             JSXElementName::JSXMemberExpr(i) => JSXObject::JSXMemberExpr(Box::new(i)),
+        //             _ => unimplemented!("JSXNamespacedName -> JSXObject"),
+        //         },
+        //         prop,
+        //     });
+        //     node = new_node;
+        // }
+        // Ok(node)
     }
 
     /// Parses any type of JSX attribute value.
@@ -104,11 +106,11 @@ impl<I: Tokens> Parser<I> {
     pub(super) fn parse_jsx_empty_expr(&mut self) -> PResult<JSXEmptyExpr> {
         debug_assert!(self.input.syntax().jsx());
         let start = self.input.cur_pos();
-
-        Ok(JSXEmptyExpr {
-            node_id: node_id!(self),
-            span: Span::new(start, start, SyntaxContext::empty()),
-        })
+        todo!();
+        // Ok(JSXEmptyExpr {
+        //     node_id: node_id!(self),
+        //     span: Span::new(start, start, SyntaxContext::empty()),
+        // })
     }
 
     /// Parse JSX spread child
@@ -119,12 +121,12 @@ impl<I: Tokens> Parser<I> {
         expect!(self, "...");
         let expr = self.parse_expr()?;
         expect!(self, '}');
-
-        Ok(JSXSpreadChild {
-            node_id: node_id!(self),
-            span: span!(self, start),
-            expr,
-        })
+        todo!();
+        // Ok(JSXSpreadChild {
+        //     node_id: node_id!(self),
+        //     span: span!(self, start),
+        //     expr,
+        // })
     }
 
     /// Parses JSX expression enclosed into curly brackets.
@@ -139,44 +141,47 @@ impl<I: Tokens> Parser<I> {
             self.parse_expr().map(JSXExpr::Expr)?
         };
         expect!(self, '}');
-        Ok(JSXExprContainer {
-            node_id: node_id!(self),
-            span: span!(self, start),
-            expr,
-        })
+        todo!();
+        // Ok(JSXExprContainer {
+        //     node_id: node_id!(self),
+        //     span: span!(self, start),
+        //     expr,
+        // })
     }
 
     /// Parses following JSX attribute name-value pair.
     pub(super) fn parse_jsx_attr(&mut self) -> PResult<JSXAttrOrSpread> {
         debug_assert!(self.input.syntax().jsx());
         let start = self.input.cur_pos();
+        todo!();
+        // if eat!(self, '{') {
+        //     let dot3_start = self.input.cur_pos();
+        //     expect!(self, "...");
+        //     let dot3_token = span!(self, dot3_start);
+        //     let expr = self.parse_assignment_expr()?;
+        //     expect!(self, '}');
+        //     return Ok(SpreadElement {
+        //         node_id: node_id!(self),
+        //         dot3_token,
+        //         expr,
+        //     }
+        //     .into());
+        // }
 
-        if eat!(self, '{') {
-            let dot3_start = self.input.cur_pos();
-            expect!(self, "...");
-            let dot3_token = span!(self, dot3_start);
-            let expr = self.parse_assignment_expr()?;
-            expect!(self, '}');
-            return Ok(JSXAttrOrSpread::SpreadElement(SpreadElement {
-                node_id: node_id!(self),
-                dot3_token,
-                expr,
-            }));
-        }
+        // let name = self.parse_jsx_namespaced_name()?;
+        // let value = if eat!(self, '=') {
+        //     self.parse_jsx_attr_value().map(Some)?
+        // } else {
+        //     None
+        // };
 
-        let name = self.parse_jsx_namespaced_name()?;
-        let value = if eat!(self, '=') {
-            self.parse_jsx_attr_value().map(Some)?
-        } else {
-            None
-        };
-
-        Ok(JSXAttrOrSpread::JSXAttr(JSXAttr {
-            node_id: node_id!(self),
-            span: span!(self, start),
-            name,
-            value,
-        }))
+        // Ok(JSXAttr {
+        //     node_id: node_id!(self),
+        //     span: span!(self, start),
+        //     name,
+        //     value,
+        // }
+        // .into())
     }
 
     /// Parses JSX opening tag starting after "<".
@@ -185,17 +190,17 @@ impl<I: Tokens> Parser<I> {
         start: BytePos,
     ) -> PResult<Either<JSXOpeningFragment, JSXOpeningElement>> {
         debug_assert!(self.input.syntax().jsx());
+        todo!();
+        // if eat!(self, JSXTagEnd) {
+        //     return Ok(Either::Left(JSXOpeningFragment {
+        //         node_id: node_id!(self),
+        //         span: span!(self, start),
+        //     }));
+        // }
 
-        if eat!(self, JSXTagEnd) {
-            return Ok(Either::Left(JSXOpeningFragment {
-                node_id: node_id!(self),
-                span: span!(self, start),
-            }));
-        }
-
-        let name = self.parse_jsx_element_name()?;
-        self.parse_jsx_opening_element_after_name(start, name)
-            .map(Either::Right)
+        // let name = self.parse_jsx_element_name()?;
+        // self.parse_jsx_opening_element_after_name(start, name)
+        //     .map(Either::Right)
     }
 
     /// `jsxParseOpeningElementAfterName`
@@ -225,13 +230,14 @@ impl<I: Tokens> Parser<I> {
         if !eat!(self, JSXTagEnd) & !(self.ctx().in_forced_jsx_context && eat!(self, '>')) {
             unexpected!(self, "> (jsx closing tag)");
         }
-        Ok(JSXOpeningElement {
-            node_id: node_id!(self),
-            span: span!(self, start),
-            name,
-            attrs,
-            self_closing,
-        })
+        todo!();
+        // Ok(JSXOpeningElement {
+        //     node_id: node_id!(self),
+        //     span: span!(self, start),
+        //     name,
+        //     attrs,
+        //     self_closing,
+        // })
     }
 
     /// Parses JSX closing tag starting after "</".
@@ -240,21 +246,21 @@ impl<I: Tokens> Parser<I> {
         start: BytePos,
     ) -> PResult<Either<JSXClosingFragment, JSXClosingElement>> {
         debug_assert!(self.input.syntax().jsx());
+        todo!();
+        // if eat!(self, JSXTagEnd) {
+        //     return Ok(Either::Left(JSXClosingFragment {
+        //         node_id: node_id!(self),
+        //         span: span!(self, start),
+        //     }));
+        // }
 
-        if eat!(self, JSXTagEnd) {
-            return Ok(Either::Left(JSXClosingFragment {
-                node_id: node_id!(self),
-                span: span!(self, start),
-            }));
-        }
-
-        let name = self.parse_jsx_element_name()?;
-        expect!(self, JSXTagEnd);
-        Ok(Either::Right(JSXClosingElement {
-            node_id: node_id!(self),
-            span: span!(self, start),
-            name,
-        }))
+        // let name = self.parse_jsx_element_name()?;
+        // expect!(self, JSXTagEnd);
+        // Ok(Either::Right(JSXClosingElement {
+        //     node_id: node_id!(self),
+        //     span: span!(self, start),
+        //     name,
+        // }))
     }
 
     /// Parses entire JSX element, including it"s opening tag
@@ -331,56 +337,56 @@ impl<I: Tokens> Parser<I> {
                 }
             }
             let span = span!(p, start);
-
-            Ok(match (opening_element, closing_element) {
-                (Either::Left(..), Some(Either::Right(closing))) => {
-                    syntax_error!(p, closing.span(), SyntaxError::JSXExpectedClosingTagForLtGt);
-                }
-                (Either::Right(opening), Some(Either::Left(closing))) => {
-                    syntax_error!(
-                        p,
-                        closing.span(),
-                        SyntaxError::JSXExpectedClosingTag {
-                            tag: get_qualified_jsx_name(&opening.name)
-                        }
-                    );
-                }
-                (Either::Left(opening), Some(Either::Left(closing))) => Either::Left(JSXFragment {
-                    node_id: node_id!(p),
-                    span,
-                    opening,
-                    children,
-                    closing,
-                }),
-                (Either::Right(opening), None) => Either::Right(JSXElement {
-                    node_id: node_id!(p),
-                    span,
-                    opening,
-                    children,
-                    closing: None,
-                }),
-                (Either::Right(opening), Some(Either::Right(closing))) => {
-                    if get_qualified_jsx_name(&closing.name)
-                        != get_qualified_jsx_name(&opening.name)
-                    {
-                        syntax_error!(
-                            p,
-                            closing.span(),
-                            SyntaxError::JSXExpectedClosingTag {
-                                tag: get_qualified_jsx_name(&opening.name)
-                            }
-                        );
-                    }
-                    Either::Right(JSXElement {
-                        node_id: node_id!(p),
-                        span,
-                        opening,
-                        children,
-                        closing: Some(closing),
-                    })
-                }
-                _ => unreachable!(),
-            })
+            todo!();
+            //     Ok(match (opening_element, closing_element) {
+            //         (Either::Left(..), Some(Either::Right(closing))) => {
+            //             syntax_error!(p, closing.span(), SyntaxError::JSXExpectedClosingTagForLtGt);
+            //         }
+            //         (Either::Right(opening), Some(Either::Left(closing))) => {
+            //             syntax_error!(
+            //                 p,
+            //                 closing.span(),
+            //                 SyntaxError::JSXExpectedClosingTag {
+            //                     tag: get_qualified_jsx_name(&opening.name)
+            //                 }
+            //             );
+            //         }
+            //         (Either::Left(opening), Some(Either::Left(closing))) => Either::Left(JSXFragment {
+            //             node_id: node_id!(p),
+            //             span,
+            //             opening,
+            //             children,
+            //             closing,
+            //         }),
+            //         (Either::Right(opening), None) => Either::Right(JSXElement {
+            //             node_id: node_id!(p),
+            //             span,
+            //             opening,
+            //             children,
+            //             closing: None,
+            //         }),
+            //         (Either::Right(opening), Some(Either::Right(closing))) => {
+            //             if get_qualified_jsx_name(&closing.name)
+            //                 != get_qualified_jsx_name(&opening.name)
+            //             {
+            //                 syntax_error!(
+            //                     p,
+            //                     closing.span(),
+            //                     SyntaxError::JSXExpectedClosingTag {
+            //                         tag: get_qualified_jsx_name(&opening.name)
+            //                     }
+            //                 );
+            //             }
+            //             Either::Right(JSXElement {
+            //                 node_id: node_id!(p),
+            //                 span,
+            //                 opening,
+            //                 children,
+            //                 closing: Some(closing),
+            //             })
+            //         }
+            //         _ => unreachable!(),
+            //     })
         })
     }
 
@@ -401,16 +407,17 @@ impl<I: Tokens> Parser<I> {
         debug_assert!({ matches!(cur!(self, false), Ok(&Token::JSXText { .. })) });
         let token = self.input.bump();
         let span = self.input.prev_span();
-        match token {
-            Token::JSXText { raw } => Ok(JSXText {
-                node_id: node_id!(self),
-                span,
-                // TODO
-                value: raw.clone(),
-                raw,
-            }),
-            _ => unreachable!(),
-        }
+        todo!();
+        // match token {
+        //     Token::JSXText { raw } => Ok(JSXText {
+        //         node_id: node_id!(self),
+        //         span,
+        //         // TODO
+        //         value: raw.clone(),
+        //         raw,
+        //     }),
+        //     _ => unreachable!(),
+        // }
     }
 }
 

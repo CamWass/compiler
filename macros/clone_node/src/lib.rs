@@ -8,7 +8,7 @@ use syn::*;
 /// For structs this creates a new struct of the same type, with each field
 /// initialised with a call to `clone_node`. Enums defer to their variants.
 /// The `node_id` field of structs is treated differently. It is initialised
-/// with a call to `NodeIdGen::next` to create a unique `NodeId`.
+/// with a call to `ProgramData::new` to create a unique `NodeId`.
 /// Example:
 /// ```
 /// #[derive(CloneNode)]
@@ -28,19 +28,18 @@ use syn::*;
 /// the output would be:
 /// ```
 /// impl crate::CloneNode for AwaitExpr  {
-///     fn clone_node(&self, node_id_gen: &mut crate::NodeIdGen) -> Self {
+///     fn clone_node(&self, program_data: &mut crate::ProgramData) -> Self {
 ///         AwaitExpr {
-///             node_id: node_id_gen.next(),
-///             span: crate::CloneNode::clone_node(&self.span, node_id_gen),
-///             arg: crate::CloneNode::clone_node(&self.arg, node_id_gen),
+///             node_id: program_data.new_id_from(self.node_id),
+///             arg: crate::CloneNode::clone_node(&self.arg, program_data),
 ///         }
 ///     }
 /// }
 /// impl crate::CloneNode for SomeEnum  {
-///     fn clone_node(&self, node_id_gen: &mut crate::NodeIdGen) -> Self {
+///     fn clone_node(&self, program_data: &mut crate::ProgramData) -> Self {
 ///         match self {
-///             Self::Value(_0) => Self::Value(crate::CloneNode::clone_node(_0, node_id_gen)),
-///             Self::Pair(_0, _1) => Self::Pair(crate::CloneNode::clone_node(_0, node_id_gen), crate::CloneNode::clone_node(_1, node_id_gen)),
+///             Self::Value(_0) => Self::Value(crate::CloneNode::clone_node(_0, program_data)),
+///             Self::Pair(_0, _1) => Self::Pair(crate::CloneNode::clone_node(_0, program_data), crate::CloneNode::clone_node(_1, program_data)),
 ///             Self::None => Self::None,
 ///         }
 ///     }
@@ -81,7 +80,7 @@ impl Deriver {
             {
                 #[automatically_derived]
                 impl impl_generics crate::TraitName for Type ty_generics where_clause  {
-                    fn method_name(&self, node_id_gen: &mut crate::NodeIdGen) -> Self {
+                    fn method_name(&self, program_data: &mut crate::ProgramData) -> Self {
                         body
                     }
                 }
@@ -108,7 +107,7 @@ impl Deriver {
                 .expect("should only be called on structs with named fields");
             if field_name == "node_id" {
                 // Special case the node_id field.
-                fields.push(q!({ node_id: node_id_gen.next() }).parse());
+                fields.push(q!({ node_id: program_data.new_id_from(self.node_id) }).parse());
             } else {
                 // Call clone_node on the other fields.
                 fields.push(
@@ -118,7 +117,7 @@ impl Deriver {
                             field_name: &field_name,
                             method_name: &self.method_name
                         },
-                        { field_name: crate::TraitName::method_name(&self.field_name, node_id_gen) }
+                        { field_name: crate::TraitName::method_name(&self.field_name, program_data) }
                     )
                     .parse(),
                 );
@@ -141,7 +140,7 @@ impl Deriver {
             let arm = match &v.fields {
                 // Unnamed fields e.g. Variant(u32, bool).
                 // For this variant we would generate the arm:
-                // Self::Variant(_0, _1) => Self::Variant(CloneNode::clone_node(_0, node_id_gen), CloneNode::clone_node(_1, node_id_gen))
+                // Self::Variant(_0, _1) => Self::Variant(CloneNode::clone_node(_0, program_data), CloneNode::clone_node(_1, program_data))
                 Fields::Unnamed(fields) => {
                     // Create pairs of (binding_var, initialiser) and then unzip into punctuated lists.
                     let (names, args): (Punctuated<Pat, Token![,]>, Punctuated<Expr, Token![,]>) =
@@ -169,7 +168,7 @@ impl Deriver {
                                             field_name,
                                             method_name: &self.method_name
                                         },
-                                        { crate::TraitName::method_name(field_name, node_id_gen) }
+                                        { crate::TraitName::method_name(field_name, program_data) }
                                     )
                                     .parse::<Expr>(),
                                 )

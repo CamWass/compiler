@@ -18,8 +18,8 @@ macro_rules! ident {
     ($sym:expr, $syntax_ctxt:expr,  $id:expr) => {
         ast::Ident {
             node_id: $id,
-            span: ::global_common::DUMMY_SP.with_ctxt($syntax_ctxt),
             sym: $sym,
+            ctxt: $syntax_ctxt,
         }
     };
 }
@@ -36,18 +36,18 @@ macro_rules! ident {
 /// function(a, b) { alert(a, b) }
 /// ```
 pub struct OptimizeArgumentsArray<'a> {
-    node_id_gen: &'a mut ast::NodeIdGen,
+    program_data: &'a mut ast::ProgramData,
     unresolved_ctxt: SyntaxContext,
 }
 
 impl<'a> OptimizeArgumentsArray<'a> {
     pub fn process(
         ast: &mut ast::Program,
-        node_id_gen: &'a mut ast::NodeIdGen,
+        program_data: &'a mut ast::ProgramData,
         unresolved_ctxt: SyntaxContext,
     ) {
         let mut visitor = Self {
-            node_id_gen,
+            program_data,
             unresolved_ctxt,
         };
 
@@ -135,7 +135,7 @@ impl OptimizeArgumentsArray<'_> {
         FnBodyReWriter::change_body(
             func.get_body(),
             &arg_names,
-            self.node_id_gen,
+            self.program_data,
             self.unresolved_ctxt,
         );
     }
@@ -151,7 +151,7 @@ impl OptimizeArgumentsArray<'_> {
         FnBodyReWriter::change_body(
             setter_body,
             &arg_names,
-            self.node_id_gen,
+            self.program_data,
             self.unresolved_ctxt,
         );
     }
@@ -169,20 +169,19 @@ impl OptimizeArgumentsArray<'_> {
     ) {
         let new_params = arg_names
             .range(param_list.len()..)
-            .map(|(_, id)| from_id(id, self.node_id_gen));
+            .map(|(_, id)| from_id(id, self.program_data));
         param_list.extend(new_params);
     }
 }
 
 /// Creates a new param from the provided `Id`.
-fn from_id((sym, ctxt): &Id, node_id_gen: &mut ast::NodeIdGen) -> ast::Param {
+fn from_id(id: &Id, program_data: &mut ast::ProgramData) -> ast::Param {
     ast::Param {
-        node_id: node_id_gen.next(),
-        span: DUMMY_SP,
+        node_id: program_data.new_id(DUMMY_SP),
         decorators: Default::default(),
         pat: ast::Pat::Ident(ast::BindingIdent {
-            node_id: node_id_gen.next(),
-            id: ident!(sym.clone(), *ctxt, node_id_gen.next()),
+            node_id: program_data.new_id(DUMMY_SP),
+            id: ident!(id.0.clone(), id.1, program_data.new_id(DUMMY_SP)),
         }),
     }
 }
@@ -334,7 +333,7 @@ impl FnBodyVisitor {
 
         if let ast::ExprOrSuper::Expr(obj) = &node.obj {
             if let ast::Expr::Ident(obj) = obj.as_ref() {
-                if obj.sym == js_word!("arguments") && obj.span.ctxt == self.unresolved_ctxt {
+                if obj.sym == js_word!("arguments") && obj.ctxt == self.unresolved_ctxt {
                     if node.computed {
                         // TODO: numeric string literal keys e.g. arguments["1"]
                         if let ast::Expr::Lit(ast::Lit::Num(n)) = node.prop.as_ref() {
@@ -432,7 +431,7 @@ impl Visit<'_> for FnBodyVisitor {
         if self.invalidated {
             return;
         }
-        if node.sym == js_word!("arguments") && node.span.ctxt == self.unresolved_ctxt {
+        if node.sym == js_word!("arguments") && node.ctxt == self.unresolved_ctxt {
             self.invalidate("Usage of 'arguments' outside of valid member expr is invalid");
         }
     }
@@ -447,7 +446,7 @@ impl Visit<'_> for FnBodyVisitor {
 struct FnBodyReWriter<'a> {
     unresolved_ctxt: SyntaxContext,
     arg_names: &'a BTreeMap<usize, Id>,
-    node_id_gen: &'a mut ast::NodeIdGen,
+    program_data: &'a mut ast::ProgramData,
 }
 
 impl<'a> FnBodyReWriter<'a> {
@@ -457,13 +456,13 @@ impl<'a> FnBodyReWriter<'a> {
     fn change_body(
         func_body: &mut ast::BlockStmt,
         arg_names: &'a BTreeMap<usize, Id>,
-        node_id_gen: &'a mut ast::NodeIdGen,
+        program_data: &'a mut ast::ProgramData,
         unresolved_ctxt: SyntaxContext,
     ) {
         let mut visitor = Self {
             unresolved_ctxt,
             arg_names,
-            node_id_gen,
+            program_data,
         };
 
         func_body.visit_mut_with(&mut visitor);
@@ -481,7 +480,7 @@ impl VisitMut<'_> for FnBodyReWriter<'_> {
         if let ast::Expr::Member(expr) = node {
             if let ast::ExprOrSuper::Expr(obj) = &expr.obj {
                 if let ast::Expr::Ident(obj) = obj.as_ref() {
-                    if obj.sym == js_word!("arguments") && obj.span.ctxt == self.unresolved_ctxt {
+                    if obj.sym == js_word!("arguments") && obj.ctxt == self.unresolved_ctxt {
                         debug_assert!(expr.computed);
                         // TODO: numeric string literal keys e.g. arguments["1"]
                         if let ast::Expr::Lit(ast::Lit::Num(n)) = expr.prop.as_ref() {
@@ -490,7 +489,11 @@ impl VisitMut<'_> for FnBodyReWriter<'_> {
                             let idx = n.value.round() as i64 as usize;
 
                             if let Some((sym, ctxt)) = self.arg_names.get(&idx) {
-                                let id = ident!(sym.clone(), *ctxt, self.node_id_gen.next());
+                                let id = ident!(
+                                    sym.clone(),
+                                    *ctxt,
+                                    self.program_data.new_id_from(expr.node_id)
+                                );
                                 *node = ast::Expr::Ident(id);
                                 return;
                             }

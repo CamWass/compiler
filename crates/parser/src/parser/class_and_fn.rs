@@ -1,8 +1,7 @@
 use super::{identifier::MaybeOptionalIdentParser, *};
 use crate::{error::SyntaxError, lexer::TokenContext, Tokens};
 use atoms::js_word;
-use either::Either;
-use global_common::{Spanned, SyntaxContext};
+use global_common::Spanned;
 
 /// Parser for function expression and function declaration.
 impl<I: Tokens> Parser<I> {
@@ -95,7 +94,7 @@ impl<I: Tokens> Parser<I> {
             expect!(parser, "class");
 
             let ident = parser.parse_maybe_opt_binding_ident()?;
-            if let Some(span) = ident.invalid_class_name() {
+            if let Some(span) = ident.invalid_class_name(parser) {
                 parser.emit_err(span, SyntaxError::TS2414);
             }
 
@@ -125,8 +124,7 @@ impl<I: Tokens> Parser<I> {
                 }
 
                 Some(ExtendsClause {
-                    node_id: node_id!(parser),
-                    span,
+                    node_id: node_id!(parser, span),
                     super_class,
                 })
             } else {
@@ -171,8 +169,7 @@ impl<I: Tokens> Parser<I> {
 
                 if extends_clause.is_none() {
                     extends_clause = Some(ExtendsClause {
-                        node_id: node_id!(parser),
-                        span: span!(parser, start),
+                        node_id: node_id!(parser, span!(parser, start)),
                         super_class,
                     });
                 }
@@ -191,13 +188,12 @@ impl<I: Tokens> Parser<I> {
                 span!(parser, start),
                 ident,
                 Class {
-                    node_id: node_id!(parser),
-                    span: Span::new(class_start, end, Default::default()),
+                    node_id: node_id!(parser, Span::new(class_start, end)),
                     decorators,
                     extends: extends_clause,
                     body,
                 },
-                node_id!(parser),
+                parser,
             ))
         })
     }
@@ -251,11 +247,10 @@ impl<I: Tokens> Parser<I> {
             while eat!(self, '.') {
                 let ident = self.parse_ident(true, true)?;
 
-                let span = Span::new(start, expr.span().hi(), Default::default());
+                let span = Span::new(start, get_span!(self, expr.node_id()).hi());
 
                 expr = Box::new(Expr::Member(MemberExpr {
-                    node_id: node_id!(self),
-                    span,
+                    node_id: node_id!(self, span),
                     obj: ExprOrSuper::Expr(expr),
                     computed: false,
                     prop: Box::new(Expr::Ident(ident)),
@@ -268,8 +263,7 @@ impl<I: Tokens> Parser<I> {
         let expr = self.parse_maybe_decorator_args(expr)?;
 
         Ok(Decorator {
-            node_id: node_id!(self),
-            span: span!(self, start),
+            node_id: node_id!(self, span!(self, start)),
             expr,
         })
     }
@@ -287,8 +281,7 @@ impl<I: Tokens> Parser<I> {
 
         let args = self.parse_args(false)?;
         Ok(Box::new(Expr::Call(CallExpr {
-            node_id: node_id!(self),
-            span: span!(self, expr.span().lo()),
+            node_id: node_id!(self, span!(self, get_span!(self, expr.node_id()).lo())),
             callee: ExprOrSuper::Expr(expr),
             args,
         })))
@@ -299,9 +292,9 @@ impl<I: Tokens> Parser<I> {
         while !eof!(self) && !is!(self, '}') {
             if self.input.eat(&tok!(';')) {
                 let span = self.input.prev_span();
+                let span = Span::new(span.lo, span.hi);
                 elems.push(ClassMember::Empty(EmptyStmt {
-                    node_id: node_id!(self),
-                    span: Span::new(span.lo, span.hi, SyntaxContext::empty()),
+                    node_id: node_id!(self, span),
                 }));
                 continue;
             }
@@ -336,7 +329,7 @@ impl<I: Tokens> Parser<I> {
         let declare_token = if declare {
             // Handle declare(){}
             if self.is_class_method()? {
-                let key = Either::Right(PropName::Ident(
+                let key = Key::PropName(PropName::Ident(
                     self.new_ident(js_word!("declare"), span!(self, start)),
                 ));
                 let is_optional = self.syntax().typescript() && eat!(self, '?');
@@ -358,7 +351,7 @@ impl<I: Tokens> Parser<I> {
             } else if self.is_class_property()? {
                 // Property named `declare`
 
-                let key = Either::Right(PropName::Ident(
+                let key = Key::PropName(PropName::Ident(
                     self.new_ident(js_word!("declare"), span!(self, start)),
                 ));
                 let is_optional = self.syntax().typescript() && eat!(self, '?');
@@ -392,7 +385,7 @@ impl<I: Tokens> Parser<I> {
         if let Some(static_token) = static_token {
             // Handle static(){}
             if self.is_class_method()? {
-                let key = Either::Right(PropName::Ident(
+                let key = Key::PropName(PropName::Ident(
                     self.new_ident(js_word!("static"), static_token),
                 ));
                 let is_optional = self.syntax().typescript() && eat!(self, '?');
@@ -414,7 +407,7 @@ impl<I: Tokens> Parser<I> {
             } else if self.is_class_property()? {
                 // Property named `static`
 
-                let key = Either::Right(PropName::Ident(
+                let key = Key::PropName(PropName::Ident(
                     self.new_ident(js_word!("static"), static_token),
                 ));
                 let is_optional = self.syntax().typescript() && eat!(self, '?');
@@ -559,7 +552,7 @@ impl<I: Tokens> Parser<I> {
 
         trace_cur!(self, parse_class_member_with_is_static__normal_class_member);
         let key = if readonly.is_some() && is_one_of!(self, '!', ':') {
-            Either::Right(PropName::Ident(
+            Key::PropName(PropName::Ident(
                 self.new_ident("readonly".into(), readonly.unwrap()),
             ))
         } else {
@@ -622,11 +615,7 @@ impl<I: Tokens> Parser<I> {
                     self.emit_err(type_ann_span, SyntaxError::TS1093);
                 }
 
-                let ctx = Context {
-                    span_of_fn_name: Some(key.span()),
-                    ..self.ctx()
-                };
-                let body: Option<_> = self.with_ctx(ctx).parse_fn_body(false, false)?;
+                let body: Option<_> = self.parse_fn_body(false, false)?;
 
                 if body.is_none() {
                     if let Some(last) = param_props.last().map(|(_, p)| p) {
@@ -645,7 +634,7 @@ impl<I: Tokens> Parser<I> {
                         // TODO(swc): Search deeply for assignment pattern using a Visitor
 
                         let span = match p.pat {
-                            Pat::Assign(ref p) => Some(p.span()),
+                            Pat::Assign(ref p) => Some(get_span!(self, p.node_id())),
                             _ => None,
                         };
 
@@ -683,8 +672,7 @@ impl<I: Tokens> Parser<I> {
                 };
 
                 return Ok(Some(ClassMember::Constructor(Constructor {
-                    node_id: node_id!(self),
-                    span: span!(self, start),
+                    node_id: node_id!(self, span!(self, start)),
                     params,
                     body,
                 })));
@@ -722,7 +710,7 @@ impl<I: Tokens> Parser<I> {
         }
 
         if match key {
-            Either::Right(PropName::Ident(ref i)) => i.sym == js_word!("async"),
+            Key::PropName(PropName::Ident(ref i)) => i.sym == js_word!("async"),
             _ => false,
         } && !self.input.had_line_break_before_cur()
         {
@@ -739,7 +727,11 @@ impl<I: Tokens> Parser<I> {
             let is_generator = eat!(self, '*');
             let key = self.parse_class_prop_name()?;
             if is_constructor(&key) {
-                syntax_error!(self, key.span(), SyntaxError::AsyncConstructor)
+                syntax_error!(
+                    self,
+                    get_span!(self, key.node_id()),
+                    SyntaxError::AsyncConstructor
+                )
             }
             if readonly.is_some() {
                 syntax_error!(self, span!(self, start), SyntaxError::ReadOnlyMethod);
@@ -765,11 +757,11 @@ impl<I: Tokens> Parser<I> {
         }
 
         let is_next_line_generator = self.input.had_line_break_before_cur() && is!(self, '*');
-        let key_span = key.span();
+        let key_span = get_span!(self, key.node_id());
 
         match key {
             // `get\n*` is an uninitialized property named 'get' followed by a generator.
-            Either::Right(PropName::Ident(ref i))
+            Key::PropName(PropName::Ident(ref i))
                 if (i.sym == js_word!("get") || i.sym == js_word!("set"))
                     && !is_next_line_generator =>
             {
@@ -815,9 +807,9 @@ impl<I: Tokens> Parser<I> {
                             }
 
                             if !params.is_empty() {
-                                if let Pat::Rest(..) = params[0].pat {
+                                if let Pat::Rest(first) = &params[0].pat {
                                     parser.emit_err(
-                                        params[0].pat.span(),
+                                        get_span!(parser, first.node_id),
                                         SyntaxError::RestPatInSetter,
                                     );
                                 }
@@ -851,7 +843,7 @@ impl<I: Tokens> Parser<I> {
         &mut self,
         start: BytePos,
         decorators: Vec<Decorator>,
-        key: Either<PrivateName, PropName>,
+        key: Key,
         is_static: bool,
         is_optional: bool,
         readonly: bool,
@@ -860,10 +852,18 @@ impl<I: Tokens> Parser<I> {
         is_override: bool,
     ) -> PResult<Option<ClassMember>> {
         if is_constructor(&key) {
-            syntax_error!(self, key.span(), SyntaxError::PropertyNamedConstructor);
+            syntax_error!(
+                self,
+                get_span!(self, key.node_id()),
+                SyntaxError::PropertyNamedConstructor
+            );
         }
-        if declare && key.is_left() {
-            syntax_error!(self, key.span(), SyntaxError::DeclarePrivateIdentifier);
+        if declare && matches!(key, Key::PrivateName(_)) {
+            syntax_error!(
+                self,
+                get_span!(self, key.node_id()),
+                SyntaxError::DeclarePrivateIdentifier
+            );
         }
         let definite = self.syntax().typescript() && !is_optional && eat!(self, '!');
 
@@ -892,17 +892,15 @@ impl<I: Tokens> Parser<I> {
             }
 
             Ok(Some(match key {
-                Either::Left(key) => ClassMember::PrivateProp(PrivateProp {
-                    node_id: node_id!(parser),
-                    span: span!(parser, start),
+                Key::PrivateName(key) => ClassMember::PrivateProp(PrivateProp {
+                    node_id: node_id!(parser, span!(parser, start)),
                     key,
                     value,
                     is_static,
                     decorators,
                 }),
-                Either::Right(key) => ClassMember::ClassProp(ClassProp {
-                    node_id: node_id!(parser),
-                    span: span!(parser, start),
+                Key::PropName(key) => ClassMember::ClassProp(ClassProp {
+                    node_id: node_id!(parser, span!(parser, start)),
                     key,
                     value,
                     is_static,
@@ -932,7 +930,6 @@ impl<I: Tokens> Parser<I> {
     where
         T: OutputType,
         Self: MaybeOptionalIdentParser<T::Ident>,
-        T::Ident: Spanned,
     {
         Ok(self
             .parse_fn_or_ts_overload_sig(start_of_output_type, start_of_async, decorators)?
@@ -948,7 +945,6 @@ impl<I: Tokens> Parser<I> {
     where
         T: OutputType,
         Self: MaybeOptionalIdentParser<T::Ident>,
-        T::Ident: Spanned,
     {
         let start = start_of_async.unwrap_or_else(|| self.input.cur_pos());
         self.assert_and_bump(&tok!("function"));
@@ -982,10 +978,6 @@ impl<I: Tokens> Parser<I> {
             // function declaration does not change context for `BindingIdentifier`.
             self.parse_maybe_opt_binding_ident()?
         };
-        let ctx = Context {
-            span_of_fn_name: Some(ident.span()),
-            ..ctx
-        };
 
         self.with_ctx(ctx).parse_with(|parser| {
             let f = parser.parse_fn_args_body_or_ts_overload_sig(
@@ -1010,7 +1002,7 @@ impl<I: Tokens> Parser<I> {
                     span!(parser, start_of_output_type.unwrap_or(start)),
                     ident,
                     f,
-                    node_id!(parser),
+                    parser,
                 )
             }))
         })
@@ -1122,7 +1114,7 @@ impl<I: Tokens> Parser<I> {
                             // TODO(swc): Search deeply for assignment pattern using a Visitor
 
                             let span = match &param.pat {
-                                Pat::Assign(ref p) => Some(p.span()),
+                                Pat::Assign(ref p) => Some(get_span!(parser, p.node_id)),
                                 _ => None,
                             };
 
@@ -1138,8 +1130,7 @@ impl<I: Tokens> Parser<I> {
             };
 
             Ok(Some(Function {
-                node_id: node_id!(parser),
-                span: span!(parser, start),
+                node_id: node_id!(parser, span!(parser, start)),
                 decorators,
                 params,
                 body,
@@ -1149,11 +1140,11 @@ impl<I: Tokens> Parser<I> {
         })
     }
 
-    fn parse_class_prop_name(&mut self) -> PResult<Either<PrivateName, PropName>> {
+    fn parse_class_prop_name(&mut self) -> PResult<Key> {
         if is!(self, '#') {
-            self.parse_private_name().map(Either::Left)
+            self.parse_private_name().map(Key::PrivateName)
         } else {
-            self.parse_prop_name().map(Either::Right)
+            self.parse_prop_name().map(Key::PropName)
         }
     }
 
@@ -1208,25 +1199,20 @@ impl<I: Tokens> Parser<I> {
         trace_cur!(self, make_method);
 
         let is_static = static_token.is_some();
-        let ctx = Context {
-            span_of_fn_name: Some(key.span()),
-            ..self.ctx()
-        };
-        let function = self.with_ctx(ctx).parse_with(|parser| {
-            parser.parse_fn_args_body_or_ts_overload_sig(
-                decorators,
-                start,
-                parse_args,
-                is_async,
-                is_generator,
-            )
-        })?;
+
+        let function = self.parse_fn_args_body_or_ts_overload_sig(
+            decorators,
+            start,
+            parse_args,
+            is_async,
+            is_generator,
+        )?;
 
         match kind {
             MethodKind::Getter | MethodKind::Setter
                 if self.syntax().typescript() && self.input.target() == JscTarget::Es3 =>
             {
-                self.emit_err(key.span(), SyntaxError::TS1056);
+                self.emit_err(get_span!(self, key.node_id()), SyntaxError::TS1056);
             }
             _ => {}
         }
@@ -1241,18 +1227,16 @@ impl<I: Tokens> Parser<I> {
         };
 
         Ok(Some(match key {
-            Either::Left(key) => ClassMember::PrivateMethod(PrivateMethod {
-                node_id: node_id!(self),
-                span: span!(self, start),
+            Key::PrivateName(key) => ClassMember::PrivateMethod(PrivateMethod {
+                node_id: node_id!(self, span!(self, start)),
 
                 is_static,
                 key,
                 function,
                 kind,
             }),
-            Either::Right(key) => ClassMember::Method(ClassMethod {
-                node_id: node_id!(self),
-                span: span!(self, start),
+            Key::PropName(key) => ClassMember::Method(ClassMethod {
+                node_id: node_id!(self, span!(self, start)),
 
                 is_static,
                 key,
@@ -1264,28 +1248,28 @@ impl<I: Tokens> Parser<I> {
 }
 
 trait IsInvalidClassName {
-    fn invalid_class_name(&self) -> Option<Span>;
+    fn invalid_class_name(&self, parser: &Parser<impl Tokens>) -> Option<Span>;
 }
 
 impl IsInvalidClassName for Ident {
-    fn invalid_class_name(&self) -> Option<Span> {
+    fn invalid_class_name(&self, parser: &Parser<impl Tokens>) -> Option<Span> {
         match self.sym {
-            js_word!("any") => Some(self.span),
+            js_word!("any") => Some(get_span!(parser, self.node_id)),
             _ => None,
         }
     }
 }
 impl IsInvalidClassName for Option<Ident> {
-    fn invalid_class_name(&self) -> Option<Span> {
+    fn invalid_class_name(&self, parser: &Parser<impl Tokens>) -> Option<Span> {
         if let Some(i) = self.as_ref() {
-            return i.invalid_class_name();
+            return i.invalid_class_name(parser);
         }
 
         None
     }
 }
 
-trait OutputType {
+trait OutputType: GetNodeId {
     type Ident: IsInvalidClassName;
 
     fn is_constructor(ident: &Self::Ident) -> bool;
@@ -1304,8 +1288,18 @@ trait OutputType {
         false
     }
 
-    fn finish_fn(span: Span, ident: Self::Ident, f: Function, node_id: NodeId) -> Self;
-    fn finish_class(span: Span, ident: Self::Ident, class: Class, node_id: NodeId) -> Self;
+    fn finish_fn(
+        span: Span,
+        ident: Self::Ident,
+        f: Function,
+        parser: &mut Parser<impl Tokens>,
+    ) -> Self;
+    fn finish_class(
+        span: Span,
+        ident: Self::Ident,
+        class: Class,
+        parser: &mut Parser<impl Tokens>,
+    ) -> Self;
 }
 
 impl OutputType for Box<Expr> {
@@ -1322,18 +1316,28 @@ impl OutputType for Box<Expr> {
         true
     }
 
-    fn finish_fn(_: Span, ident: Option<Ident>, function: Function, node_id: NodeId) -> Self {
+    fn finish_fn(
+        span: Span,
+        ident: Option<Ident>,
+        function: Function,
+        parser: &mut Parser<impl Tokens>,
+    ) -> Self {
         Box::new(Expr::Fn(FnExpr {
             ident,
             function,
-            node_id,
+            node_id: node_id!(parser, span),
         }))
     }
-    fn finish_class(_: Span, ident: Option<Ident>, class: Class, node_id: NodeId) -> Self {
+    fn finish_class(
+        span: Span,
+        ident: Option<Ident>,
+        class: Class,
+        parser: &mut Parser<impl Tokens>,
+    ) -> Self {
         Box::new(Expr::Class(ClassExpr {
             ident,
             class,
-            node_id,
+            node_id: node_id!(parser, span),
         }))
     }
 }
@@ -1348,26 +1352,34 @@ impl OutputType for ExportDefaultDecl {
         }
     }
 
-    fn finish_fn(span: Span, ident: Option<Ident>, function: Function, node_id: NodeId) -> Self {
+    fn finish_fn(
+        span: Span,
+        ident: Option<Ident>,
+        function: Function,
+        parser: &mut Parser<impl Tokens>,
+    ) -> Self {
         ExportDefaultDecl {
-            span,
             decl: DefaultDecl::Fn(FnExpr {
                 ident,
                 function,
-                node_id,
+                node_id: node_id!(parser, span),
             }),
-            node_id,
+            node_id: node_id!(parser, span),
         }
     }
-    fn finish_class(span: Span, ident: Option<Ident>, class: Class, node_id: NodeId) -> Self {
+    fn finish_class(
+        span: Span,
+        ident: Option<Ident>,
+        class: Class,
+        parser: &mut Parser<impl Tokens>,
+    ) -> Self {
         ExportDefaultDecl {
-            span,
             decl: DefaultDecl::Class(ClassExpr {
                 ident,
                 class,
-                node_id,
+                node_id: node_id!(parser, span),
             }),
-            node_id,
+            node_id: node_id!(parser, span),
         }
     }
 }
@@ -1379,18 +1391,28 @@ impl OutputType for Decl {
         i.sym == js_word!("constructor")
     }
 
-    fn finish_fn(_: Span, ident: Ident, function: Function, node_id: NodeId) -> Self {
+    fn finish_fn(
+        span: Span,
+        ident: Ident,
+        function: Function,
+        parser: &mut Parser<impl Tokens>,
+    ) -> Self {
         Decl::Fn(FnDecl {
             ident,
             function,
-            node_id,
+            node_id: node_id!(parser, span),
         })
     }
-    fn finish_class(_: Span, ident: Ident, class: Class, node_id: NodeId) -> Self {
+    fn finish_class(
+        span: Span,
+        ident: Ident,
+        class: Class,
+        parser: &mut Parser<impl Tokens>,
+    ) -> Self {
         Decl::Class(ClassDecl {
             ident,
             class,
-            node_id,
+            node_id: node_id!(parser, span),
         })
     }
 }
@@ -1419,13 +1441,13 @@ impl<I: Tokens> FnBodyParser<Option<BlockStmt>> for Parser<I> {
     }
 }
 
-fn is_constructor(key: &Either<PrivateName, PropName>) -> bool {
+fn is_constructor(key: &Key) -> bool {
     matches!(
         *key,
-        Either::Right(PropName::Ident(Ident {
+        Key::PropName(PropName::Ident(Ident {
             sym: js_word!("constructor"),
             ..
-        })) | Either::Right(PropName::Str(Str {
+        })) | Key::PropName(PropName::Str(Str {
             value: js_word!("constructor"),
             ..
         }))
@@ -1452,8 +1474,22 @@ struct MakeMethodArgs {
     decorators: Vec<Decorator>,
     is_optional: bool,
     is_override: bool,
-    key: Either<PrivateName, PropName>,
+    key: Key,
     kind: MethodKind,
     is_async: bool,
     is_generator: bool,
+}
+
+enum Key {
+    PrivateName(PrivateName),
+    PropName(PropName),
+}
+
+impl GetNodeId for Key {
+    fn node_id(&self) -> NodeId {
+        match self {
+            Key::PrivateName(n) => n.node_id,
+            Key::PropName(n) => n.node_id(),
+        }
+    }
 }

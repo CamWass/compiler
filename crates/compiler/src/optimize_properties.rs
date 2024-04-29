@@ -3,7 +3,6 @@ use std::collections::hash_map::Entry;
 use ast::*;
 use atoms::JsWord;
 use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
-use global_common::Span;
 use index::{newtype_index, vec::IndexVec};
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -38,7 +37,7 @@ impl MainVisitor {
             for prop in ty.property_info {
                 let new_name = name_gen.generateNextName();
                 for reference in prop.references {
-                    self.rename_map.insert(reference.0, new_name.clone());
+                    self.rename_map.insert(reference, new_name.clone());
                 }
             }
         }
@@ -81,7 +80,7 @@ newtype_index!(struct PropertyId { .. });
 
 #[derive(Default, Debug)]
 struct Property {
-    references: FxHashSet<(NodeId, Span)>,
+    references: FxHashSet<NodeId>,
 }
 
 #[derive(Debug)]
@@ -89,7 +88,7 @@ struct Type {
     property_info: IndexVec<PropertyId, Property>,
     properties: FxHashMap<Id, PropertyId>,
     valid: bool,
-    invalidated_by: Option<(NodeId, Span)>,
+    invalidated_by: Option<NodeId>,
 }
 
 impl Type {
@@ -110,13 +109,11 @@ impl Type {
         match self.properties.entry(id) {
             Entry::Occupied(slot) => {
                 let prop = slot.get();
-                self.property_info[*prop]
-                    .references
-                    .insert((name.node_id, name.span));
+                self.property_info[*prop].references.insert(name.node_id);
             }
             Entry::Vacant(slot) => {
                 let mut prop_info = Property::default();
-                prop_info.references.insert((name.node_id, name.span));
+                prop_info.references.insert(name.node_id);
                 let prop = self.property_info.push(prop_info);
                 slot.insert(prop);
             }
@@ -129,9 +126,7 @@ impl Type {
         }
         let id = name.to_id();
         if let Some(prop) = self.properties.get(&id) {
-            self.property_info[*prop]
-                .references
-                .insert((name.node_id, name.span));
+            self.property_info[*prop].references.insert(name.node_id);
         }
     }
 }
@@ -155,7 +150,7 @@ impl InnerVisitor {
             let ty = &mut self.types[*ty];
             if ty.valid {
                 ty.valid = false;
-                ty.invalidated_by = Some((name.node_id, name.span));
+                ty.invalidated_by = Some(name.node_id);
             }
         }
     }

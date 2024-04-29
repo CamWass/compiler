@@ -67,6 +67,7 @@ dependencies = [
  "global_common",
  "node_id",
  "num-bigint",
+ "rustc-hash",
  "string_enum",
 ]
 
@@ -505,7 +506,6 @@ dependencies = [
  "rustc-hash",
  "scoped-tls",
  "sourcemap",
- "string_cache",
  "termcolor",
  "tracing",
  "unicode-width",

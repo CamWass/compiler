@@ -26,7 +26,7 @@ use std::ops::Deref;
 use ast::*;
 use atoms::{js_word, JsWord};
 use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
-use global_common::{SyntaxContext, DUMMY_SP};
+use global_common::SyntaxContext;
 use index::bit_set::{BitMatrix, BitSet, GrowableBitSet};
 use index::vec::IndexVec;
 use petgraph::algo::TarjanScc;
@@ -810,7 +810,7 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
 
 pub fn process(
     ast: &mut ast::Program,
-    node_id_gen: &mut NodeIdGen,
+    program_data: &mut ProgramData,
     unresolved_ctxt: SyntaxContext,
 ) {
     let mut store = analyse(ast, unresolved_ctxt);
@@ -819,7 +819,7 @@ pub fn process(
 
     // Actually assign the new names.
     let mut renamer = Renamer {
-        node_id_gen,
+        program_data,
         rename_map,
     };
 
@@ -874,7 +874,7 @@ impl<'ast> Visit<'ast> for AlwaysInvalidVarFinder<'_> {
         if !is_simple_member_expr_prop(&node.prop, self.unresolved_ctxt, node.computed) {
             if let ExprOrSuper::Expr(obj) = &node.obj {
                 if let Expr::Ident(obj) = obj.as_ref() {
-                    if obj.span.ctxt != self.unresolved_ctxt {
+                    if obj.ctxt != self.unresolved_ctxt {
                         let id = Id::new(obj, &mut self.names);
                         let name = self.vars.get_index(&id).unwrap();
 
@@ -890,11 +890,11 @@ impl<'ast> Visit<'ast> for AlwaysInvalidVarFinder<'_> {
 
     fn visit_assign_expr(&mut self, node: &'ast AssignExpr) {
         if let Expr::Ident(rhs) = &*node.right {
-            if rhs.span.ctxt != self.unresolved_ctxt {
+            if rhs.ctxt != self.unresolved_ctxt {
                 let unresolved_lhs = match &node.left {
                     PatOrExpr::Expr(lhs) => is_unresolvable_lhs(lhs, self.unresolved_ctxt),
                     PatOrExpr::Pat(lhs) => match lhs.as_ref() {
-                        Pat::Ident(lhs) => lhs.id.span.ctxt == self.unresolved_ctxt,
+                        Pat::Ident(lhs) => lhs.id.ctxt == self.unresolved_ctxt,
                         Pat::Expr(lhs) => is_unresolvable_lhs(lhs, self.unresolved_ctxt),
                         _ => false,
                     },
@@ -919,7 +919,7 @@ impl<'ast> Visit<'ast> for AlwaysInvalidVarFinder<'_> {
                 for arg in &node.args {
                     if let ExprOrSpread::Expr(arg) = arg {
                         if let Expr::Ident(arg) = arg.as_ref() {
-                            if arg.span.ctxt != self.unresolved_ctxt {
+                            if arg.ctxt != self.unresolved_ctxt {
                                 let id = Id::new(arg, &mut self.names);
                                 let name = self.vars.get_index(&id).unwrap();
 
@@ -938,7 +938,7 @@ impl<'ast> Visit<'ast> for AlwaysInvalidVarFinder<'_> {
 
     fn visit_new_expr(&mut self, node: &'ast NewExpr) {
         if let Expr::Ident(callee) = node.callee.as_ref() {
-            if callee.span.ctxt != self.unresolved_ctxt {
+            if callee.ctxt != self.unresolved_ctxt {
                 let id = Id::new(callee, &mut self.names);
                 let name = self.vars.get_index(&id).unwrap();
 
@@ -952,7 +952,7 @@ impl<'ast> Visit<'ast> for AlwaysInvalidVarFinder<'_> {
             for arg in args {
                 if let ExprOrSpread::Expr(arg) = arg {
                     if let Expr::Ident(arg) = arg.as_ref() {
-                        if arg.span.ctxt != self.unresolved_ctxt {
+                        if arg.ctxt != self.unresolved_ctxt {
                             let id = Id::new(arg, &mut self.names);
                             let name = self.vars.get_index(&id).unwrap();
 
@@ -971,7 +971,7 @@ impl<'ast> Visit<'ast> for AlwaysInvalidVarFinder<'_> {
     fn visit_yield_expr(&mut self, node: &'ast YieldExpr) {
         if let Some(arg) = &node.arg {
             if let Expr::Ident(arg) = arg.as_ref() {
-                if arg.span.ctxt != self.unresolved_ctxt {
+                if arg.ctxt != self.unresolved_ctxt {
                     let id = Id::new(arg, &mut self.names);
                     let name = self.vars.get_index(&id).unwrap();
 
@@ -994,7 +994,7 @@ fn is_simple_member_expr_prop(prop: &Expr, unresolved_ctxt: SyntaxContext, compu
         },
         Expr::Ident(e) => {
             if computed {
-                e.span.ctxt == unresolved_ctxt
+                e.ctxt == unresolved_ctxt
                     && (e.sym == js_word!("undefined") || e.sym == js_word!("NaN"))
             } else {
                 true
@@ -1023,7 +1023,7 @@ fn is_unresolvable_lhs(mut lhs: &Expr, unresolved_ctxt: SyntaxContext) -> bool {
                 }
             }
             Expr::Ident(e) => {
-                if e.span.ctxt == unresolved_ctxt {
+                if e.ctxt == unresolved_ctxt {
                     return true;
                 }
             }
@@ -1267,7 +1267,7 @@ impl<'ast> FnVisitor<'ast, '_> {
 impl<'ast> Visit<'ast> for FnVisitor<'ast, '_> {
     fn visit_ident(&mut self, node: &'ast Ident) {
         if let Some(func) = self.function_stack.last() {
-            if node.sym == js_word!("arguments") && node.span.ctxt == self.store.unresolved_ctxt {
+            if node.sym == js_word!("arguments") && node.ctxt == self.store.unresolved_ctxt {
                 self.store.static_fn_data[*func].accesses_arguments_array = true;
                 return;
             }
@@ -1310,7 +1310,7 @@ impl<'ast> Visit<'ast> for FnVisitor<'ast, '_> {
             if let ExprOrSuper::Expr(callee) = &node.callee {
                 if let Expr::Ident(callee) = callee.as_ref() {
                     if self.good_functions.contains(func) {
-                        if callee.span.ctxt != self.store.unresolved_ctxt {
+                        if callee.ctxt != self.store.unresolved_ctxt {
                             let id = Id::new(callee, &mut self.store.names);
                             let name = self.store.vars.get_index(&id).unwrap();
                             let is_fn_var = self.fn_vars.contains(&name);
@@ -1580,7 +1580,7 @@ pub(super) struct Id(NameId, SyntaxContext);
 
 impl Id {
     fn new(ident: &Ident, names: &mut IndexSet<NameId, JsWord>) -> Self {
-        Self(names.insert(ident.sym.clone()), ident.span.ctxt)
+        Self(names.insert(ident.sym.clone()), ident.ctxt)
     }
 }
 
@@ -1844,7 +1844,7 @@ impl PropKey {
         match expr {
             Expr::Ident(e) => {
                 if !computed
-                    || e.span.ctxt == unresolved_ctxt
+                    || e.ctxt == unresolved_ctxt
                         && (e.sym == js_word!("undefined") || e.sym == js_word!("NaN"))
                 {
                     Some(PropKey(names.insert(e.sym.clone()), e.node_id))
@@ -1887,7 +1887,7 @@ fn is_simple_prop_name(prop_name: &PropName, unresolved_ctxt: SyntaxContext) -> 
                 Lit::Regex(_) | Lit::JSXText(_) => false,
             },
             Expr::Ident(e) => {
-                e.span.ctxt == unresolved_ctxt
+                e.ctxt == unresolved_ctxt
                     && (e.sym == js_word!("undefined") || e.sym == js_word!("NaN"))
             }
             _ => false,
@@ -2371,11 +2371,11 @@ impl<'ast> Analyser<'ast, '_> {
     }
 
     fn get_var_id_from_ident(&mut self, ident: &Ident) -> Option<VarId> {
-        if ident.span.ctxt == self.store.unresolved_ctxt {
+        if ident.ctxt == self.store.unresolved_ctxt {
             None
         } else {
             let name = self.store.names.get_index(&ident.sym).unwrap();
-            let id = Id(name, ident.span.ctxt);
+            let id = Id(name, ident.ctxt);
             let id = self.store.vars.get_index(&id).unwrap();
 
             Some(id)
@@ -2810,8 +2810,7 @@ impl<'ast> Analyser<'ast, '_> {
                 self.visit_and_get_object(Node::from(&node.id), conditional)
             }
             NodeKind::Ident(node) => {
-                if node.span.ctxt == self.store.unresolved_ctxt && node.sym == js_word!("undefined")
-                {
+                if node.ctxt == self.store.unresolved_ctxt && node.sym == js_word!("undefined") {
                     Some(Pointer::NullOrVoid)
                 } else {
                     self.get_var_id_from_ident(node)
@@ -3478,7 +3477,7 @@ fn build_call(
 impl Annotation for Lattice {}
 
 struct Renamer<'a> {
-    node_id_gen: &'a mut NodeIdGen,
+    program_data: &'a mut ProgramData,
     rename_map: FxHashMap<NodeId, JsWord>,
 }
 
@@ -3501,9 +3500,9 @@ impl VisitMut<'_> for Renamer<'_> {
         if let Some(node_id_to_rename) = node_id_to_rename {
             if let Some(new_name) = self.rename_map.get(&node_id_to_rename) {
                 *node = PropName::Ident(Ident {
-                    node_id: self.node_id_gen.next(),
-                    span: DUMMY_SP,
+                    node_id: self.program_data.new_id_from(node.node_id()),
                     sym: new_name.clone(),
+                    ctxt: SyntaxContext::empty(),
                 });
                 return;
             }
@@ -3515,9 +3514,9 @@ impl VisitMut<'_> for Renamer<'_> {
         if node.computed {
             if let Some(new_name) = self.rename_map.get(&node.prop.node_id()) {
                 *node.prop.as_mut() = Expr::Ident(Ident {
-                    node_id: self.node_id_gen.next(),
-                    span: DUMMY_SP,
+                    node_id: self.program_data.new_id_from(node.prop.node_id()),
                     sym: new_name.clone(),
+                    ctxt: SyntaxContext::empty(),
                 });
                 node.computed = false;
                 return;

@@ -11,12 +11,11 @@
 #![deny(unused)]
 
 pub use self::{
-    eq::EqIgnoreSpan,
     errors::{SourceMapper, SourceMapperDyn},
     pos::{
         hygiene, BytePos, CharPos, FileName, Globals, Loc, LocWithOpt, Mark, MultiSpan, SourceFile,
         SourceFileAndBytePos, SourceFileAndLine, Span, SpanLinesError, Spanned, SyntaxContext,
-        DUMMY_SP, GLOBALS, NO_EXPANSION,
+        DUMMY_SP, GLOBALS,
     },
     source_map::{FileLines, FileLoader, FilePathMapping, SourceMap, SpanSnippetError},
     syntax_pos::{LineCol, Pos},
@@ -26,7 +25,6 @@ pub use global_visit::chain;
 
 pub mod chars;
 pub mod comments;
-mod eq;
 pub mod errors;
 pub mod integer_decode;
 pub mod iter;

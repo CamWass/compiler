@@ -171,7 +171,7 @@ impl VisitMut<'_> for RenameVars {
         if let Some(slot) = self.slot_map.get(&id) {
             if let Some(new_name) = self.rename_map.get(slot) {
                 node.sym = new_name.clone();
-                node.span.ctxt = self.new_ctxt;
+                node.ctxt = self.new_ctxt;
             }
         }
     }

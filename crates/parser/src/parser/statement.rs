@@ -4,7 +4,7 @@ use crate::{
     token::{Token, Word},
 };
 use atoms::js_word;
-use global_common::{BytePos, Span, Spanned};
+use global_common::{BytePos, Span};
 
 mod module_item;
 
@@ -77,8 +77,7 @@ impl<I: Tokens> StmtLikeParser<Stmt> for Parser<I> {
             eat!(self, ';');
 
             return Ok(Stmt::Expr(ExprStmt {
-                node_id: node_id!(self),
-                span: span!(self, start),
+                node_id: node_id!(self, span!(self, start)),
                 expr,
             }));
         }
@@ -92,8 +91,7 @@ impl<I: Tokens> StmtLikeParser<Stmt> for Parser<I> {
             eat!(self, ';');
 
             return Ok(Stmt::Expr(ExprStmt {
-                node_id: node_id!(self),
-                span: span!(self, start),
+                node_id: node_id!(self, span!(self, start)),
                 expr,
             }));
         }
@@ -223,8 +221,7 @@ impl<I: Tokens> Parser<I> {
 
             let span = span!(self, start);
             return Ok(Some(Stmt::Expr(ExprStmt {
-                node_id: node_id!(self),
-                span,
+                node_id: node_id!(self, span),
                 expr,
             })));
         }
@@ -234,8 +231,7 @@ impl<I: Tokens> Parser<I> {
             self.assert_and_bump(&tok!("enum"));
             self.parse_ts_enum_decl(start, true)?;
             return Ok(Some(Stmt::Empty(EmptyStmt {
-                node_id: node_id!(self),
-                span: span!(self, start),
+                node_id: node_id!(self, span!(self, start)),
             })));
         }
 
@@ -258,14 +254,12 @@ impl<I: Tokens> Parser<I> {
 
                 if is_break {
                     return Ok(Some(Stmt::Break(BreakStmt {
-                        node_id: node_id!(self),
-                        span,
+                        node_id: node_id!(self, span),
                         label,
                     })));
                 } else {
                     return Ok(Some(Stmt::Continue(ContinueStmt {
-                        node_id: node_id!(self),
-                        span,
+                        node_id: node_id!(self, span),
                         label,
                     })));
                 }
@@ -324,11 +318,9 @@ impl<I: Tokens> Parser<I> {
                 let _ = self.parse_finally_block();
 
                 return Ok(Some(Stmt::Expr(ExprStmt {
-                    node_id: node_id!(self),
-                    span,
+                    node_id: node_id!(self, span),
                     expr: Box::new(Expr::Invalid(Invalid {
-                        node_id: node_id!(self),
-                        span,
+                        node_id: node_id!(self, span),
                     })),
                 })));
             }
@@ -340,11 +332,9 @@ impl<I: Tokens> Parser<I> {
                 let _ = self.parse_finally_block();
 
                 return Ok(Some(Stmt::Expr(ExprStmt {
-                    node_id: node_id!(self),
-                    span,
+                    node_id: node_id!(self, span),
                     expr: Box::new(Expr::Invalid(Invalid {
-                        node_id: node_id!(self),
-                        span,
+                        node_id: node_id!(self, span),
                     })),
                 })));
             }
@@ -391,8 +381,7 @@ impl<I: Tokens> Parser<I> {
             tok!(';') => {
                 self.input.bump();
                 return Ok(Some(Stmt::Empty(EmptyStmt {
-                    node_id: node_id!(self),
-                    span: span!(self, start),
+                    node_id: node_id!(self, span!(self, start)),
                 })));
             }
 
@@ -440,30 +429,35 @@ impl<I: Tokens> Parser<I> {
             }
             _ => self.verify_expr(expr),
         };
-        if let Expr::Ident(ref ident) = *expr {
+        if let Expr::Ident(ident) = expr.as_ref() {
             if *ident.sym == js_word!("interface") && self.input.had_line_break_before_cur() {
-                self.emit_strict_mode_err(ident.span, SyntaxError::InvalidIdentInStrict);
+                self.emit_strict_mode_err(
+                    get_span!(self, ident.node_id),
+                    SyntaxError::InvalidIdentInStrict,
+                );
 
                 eat!(self, ';');
 
                 return Ok(Some(Stmt::Expr(ExprStmt {
-                    node_id: node_id!(self),
-                    span: span!(self, start),
+                    node_id: node_id!(self, span!(self, start)),
                     expr,
                 })));
             }
 
             if self.input.syntax().typescript() {
-                if let Some(decl) = self.parse_ts_expr_stmt(decorators, &ident)? {
+                if let Some(decl) = self.parse_ts_expr_stmt(decorators, ident)? {
                     return Ok(Some(Stmt::Decl(decl)));
                 }
             }
         }
 
-        if let Expr::Ident(Ident { ref sym, span, .. }) = *expr {
-            match *sym {
+        if let Expr::Ident(ident) = expr.as_ref() {
+            match ident.sym {
                 js_word!("enum") | js_word!("interface") => {
-                    self.emit_strict_mode_err(span, SyntaxError::InvalidIdentInStrict);
+                    self.emit_strict_mode_err(
+                        get_span!(self, ident.node_id),
+                        SyntaxError::InvalidIdentInStrict,
+                    );
                 }
                 _ => {}
             }
@@ -474,11 +468,10 @@ impl<I: Tokens> Parser<I> {
                 match i.sym {
                     js_word!("public") | js_word!("static") | js_word!("abstract") => {
                         if eat!(self, "interface") {
-                            self.emit_err(i.span, SyntaxError::TS2427);
+                            self.emit_err(get_span!(self, i.node_id), SyntaxError::TS2427);
                             self.parse_ts_interface_decl(start)?;
                             return Ok(Some(Stmt::Empty(EmptyStmt {
-                                node_id: node_id!(self),
-                                span: span!(self, start),
+                                node_id: node_id!(self, span!(self, start)),
                             })));
                         }
                     }
@@ -489,8 +482,7 @@ impl<I: Tokens> Parser<I> {
 
         if eat!(self, ';') {
             Ok(Some(Stmt::Expr(ExprStmt {
-                node_id: node_id!(self),
-                span: span!(self, start),
+                node_id: node_id!(self, span!(self, start)),
                 expr,
             })))
         } else {
@@ -498,15 +490,16 @@ impl<I: Tokens> Parser<I> {
                 self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
                 let expr = self.parse_bin_op_recursively(expr, 0)?;
                 return Ok(Some(Stmt::Expr(ExprStmt {
-                    node_id: node_id!(self),
-                    span: span!(self, start),
+                    node_id: node_id!(self, span!(self, start)),
                     expr,
                 })));
             }
 
             syntax_error!(
                 self,
-                SyntaxError::ExpectedSemiForExprStmt { expr: expr.span() }
+                SyntaxError::ExpectedSemiForExprStmt {
+                    expr: get_span!(self, expr.node_id())
+                }
             );
         }
     }
@@ -529,8 +522,7 @@ impl<I: Tokens> Parser<I> {
         self.input.bump();
         expect!(self, ';');
         Ok(Stmt::Debugger(DebuggerStmt {
-            node_id: node_id!(self),
-            span: span!(self, start),
+            node_id: node_id!(self, span!(self, start)),
         }))
     }
 
@@ -562,8 +554,7 @@ impl<I: Tokens> Parser<I> {
         self.input.eat(&tok!(';'));
 
         Ok(Stmt::DoWhile(DoWhileStmt {
-            node_id: node_id!(self),
-            span: span!(self, start),
+            node_id: node_id!(self, span!(self, start)),
             test,
             body,
         }))
@@ -609,8 +600,7 @@ impl<I: Tokens> Parser<I> {
                 }
 
                 Stmt::For(ForStmt {
-                    node_id: node_id!(self),
-                    span,
+                    node_id: node_id!(self, span),
                     init,
                     test,
                     update,
@@ -623,17 +613,15 @@ impl<I: Tokens> Parser<I> {
                 }
 
                 Stmt::ForIn(ForInStmt {
-                    node_id: node_id!(self),
-                    span,
+                    node_id: node_id!(self, span),
                     left,
                     right,
                     body,
                 })
             }
             ForHead::ForOf { left, right } => Stmt::ForOf(ForOfStmt {
-                node_id: node_id!(self),
-                span,
-                await_token,
+                node_id: node_id!(self, span),
+                is_await: await_token.is_some(),
                 left,
                 right,
                 body,
@@ -650,7 +638,10 @@ impl<I: Tokens> Parser<I> {
             if is_one_of!(self, "of", "in") {
                 if decl.decls.len() > 1 {
                     for excess_decl in decl.decls.iter().skip(1) {
-                        self.emit_err(excess_decl.name.span(), SyntaxError::TooManyVarInForInHead);
+                        self.emit_err(
+                            get_span!(self, excess_decl.name.node_id()),
+                            SyntaxError::TooManyVarInForInHead,
+                        );
                     }
                     // TODO: is the following error more accurate/descriptive than the above one?
 
@@ -663,7 +654,7 @@ impl<I: Tokens> Parser<I> {
                 } else {
                     if decl.decls[0].init.is_some() {
                         self.emit_err(
-                            decl.decls[0].name.span(),
+                            get_span!(self, decl.decls[0].name.node_id()),
                             SyntaxError::VarInitializerInForInHead,
                         );
                     }
@@ -691,9 +682,8 @@ impl<I: Tokens> Parser<I> {
             // for ({} in foo) is invalid
             if self.input.syntax().typescript() && is_in {
                 match pat {
-                    Pat::Ident(..) => {}
-                    Pat::Expr(..) => {}
-                    ref v => self.emit_err(v.span(), SyntaxError::TS2491),
+                    Pat::Ident(_) | Pat::Expr(_) => {}
+                    _ => self.emit_err(get_span!(self, pat.node_id()), SyntaxError::TS2491),
                 }
             }
 
@@ -749,15 +739,12 @@ impl<I: Tokens> Parser<I> {
 
             let span = span!(self, start);
             return Ok(Stmt::If(IfStmt {
-                node_id: node_id!(self),
-                span,
+                node_id: node_id!(self, span),
                 test,
                 cons: Box::new(Stmt::Expr(ExprStmt {
-                    node_id: node_id!(self),
-                    span,
+                    node_id: node_id!(self, span),
                     expr: Box::new(Expr::Invalid(Invalid {
-                        node_id: node_id!(self),
-                        span,
+                        node_id: node_id!(self, span),
                     })),
                 })),
                 alt: Default::default(),
@@ -777,8 +764,7 @@ impl<I: Tokens> Parser<I> {
         };
 
         Ok(Stmt::If(IfStmt {
-            node_id: node_id!(self),
-            span: span!(self, start),
+            node_id: node_id!(self, span!(self, start)),
             test,
             cons: consequent,
             alt: alternate,
@@ -806,8 +792,7 @@ impl<I: Tokens> Parser<I> {
             self.emit_err(span!(self, start), SyntaxError::ReturnNotAllowed);
         }
         Ok(Stmt::Return(ReturnStmt {
-            node_id: node_id!(self),
-            span: span!(self, start),
+            node_id: node_id!(self, span!(self, start)),
             arg,
         }))
     }
@@ -860,9 +845,9 @@ impl<I: Tokens> Parser<I> {
                     }
                 }
 
+                let span = Span::new(case_start, parser.input.prev_span().hi);
                 cases.push(SwitchCase {
-                    node_id: node_id!(parser),
-                    span: Span::new(case_start, parser.input.prev_span().hi, Default::default()),
+                    node_id: node_id!(parser, span),
                     test,
                     cons,
                 });
@@ -874,8 +859,7 @@ impl<I: Tokens> Parser<I> {
         expect!(self, '}');
 
         Ok(Stmt::Switch(SwitchStmt {
-            node_id: node_id!(self),
-            span: span!(self, switch_start),
+            node_id: node_id!(self, span!(self, switch_start)),
             discriminant,
             cases,
         }))
@@ -895,8 +879,7 @@ impl<I: Tokens> Parser<I> {
         expect!(self, ';');
 
         Ok(Stmt::Throw(ThrowStmt {
-            node_id: node_id!(self),
-            span: span!(self, start),
+            node_id: node_id!(self, span!(self, start)),
             arg,
         }))
     }
@@ -915,15 +898,11 @@ impl<I: Tokens> Parser<I> {
         if handler.is_none() && finalizer.is_none() {
             // self.raise(node.start, Errors.NoCatchOrFinally);
             // TODO: is the babel's error message more descriptive than this:
-            self.emit_err(
-                Span::new(catch_start, catch_start, Default::default()),
-                SyntaxError::TS1005,
-            );
+            self.emit_err(Span::new(catch_start, catch_start), SyntaxError::TS1005);
         }
 
         Ok(Stmt::Try(TryStmt {
-            node_id: node_id!(self),
-            span: span!(self, start),
+            node_id: node_id!(self, span!(self, start)),
             block,
             handler,
             finalizer,
@@ -938,8 +917,7 @@ impl<I: Tokens> Parser<I> {
 
             self.parse_block(false)
                 .map(|body| CatchClause {
-                    node_id: node_id!(self),
-                    span: span!(self, start),
+                    node_id: node_id!(self, span!(self, start)),
                     param,
                     body,
                 })
@@ -1012,12 +990,11 @@ impl<I: Tokens> Parser<I> {
             match res {
                 Ok(true) => {
                     let pos = var_span.hi();
-                    let span = Span::new(pos, pos, Default::default());
+                    let span = Span::new(pos, pos);
                     self.emit_err(span, SyntaxError::TS1123);
 
                     return Ok(VarDecl {
-                        node_id: node_id!(self),
-                        span: span!(self, start),
+                        node_id: node_id!(self, span!(self, start)),
                         kind,
                         decls: vec![],
                     });
@@ -1051,7 +1028,7 @@ impl<I: Tokens> Parser<I> {
             if self.input.is(&tok!(';')) || eof!(self) {
                 let prev_span = self.input.prev_span();
                 let span = if prev_span == var_span {
-                    Span::new(prev_span.hi, prev_span.hi, Default::default())
+                    Span::new(prev_span.hi, prev_span.hi)
                 } else {
                     prev_span
                 };
@@ -1084,8 +1061,7 @@ impl<I: Tokens> Parser<I> {
         }
 
         Ok(VarDecl {
-            node_id: node_id!(self),
-            span: span!(self, start),
+            node_id: node_id!(self, span!(self, start)),
             kind,
             decls,
         })
@@ -1140,8 +1116,7 @@ impl<I: Tokens> Parser<I> {
 
         Ok((
             VarDeclarator {
-                node_id: node_id!(self),
-                span: span!(self, start),
+                node_id: node_id!(self, span!(self, start)),
                 name,
                 init,
             },
@@ -1167,8 +1142,7 @@ impl<I: Tokens> Parser<I> {
             .map(Box::new)?;
 
         Ok(Stmt::While(WhileStmt {
-            node_id: node_id!(self),
-            span: span!(self, start),
+            node_id: node_id!(self, span!(self, start)),
             test,
             body,
         }))
@@ -1201,8 +1175,7 @@ impl<I: Tokens> Parser<I> {
             .map(Box::new)?;
 
         Ok(Stmt::With(WithStmt {
-            node_id: node_id!(self),
-            span: span!(self, start),
+            node_id: node_id!(self, span!(self, start)),
             obj,
             body,
         }))
@@ -1221,8 +1194,7 @@ impl<I: Tokens> Parser<I> {
 
         let span = span!(self, start);
         Ok(BlockStmt {
-            node_id: node_id!(self),
-            span,
+            node_id: node_id!(self, span),
             stmts,
         })
     }
@@ -1236,7 +1208,10 @@ impl<I: Tokens> Parser<I> {
         self.with_ctx(ctx).parse_with(|parser| {
             for existing_label in &parser.state.labels {
                 if label.sym == *existing_label {
-                    parser.emit_err(label.span, SyntaxError::DuplicateLabel(label.sym.clone()));
+                    parser.emit_err(
+                        get_span!(parser, label.node_id),
+                        SyntaxError::DuplicateLabel(label.sym.clone()),
+                    );
                 }
             }
             parser.state.labels.push(label.sym.clone());
@@ -1271,8 +1246,7 @@ impl<I: Tokens> Parser<I> {
             }
 
             Ok(Stmt::Labeled(LabeledStmt {
-                node_id: node_id!(parser),
-                span: span!(parser, label.span.lo()),
+                node_id: node_id!(parser, span!(parser, get_span!(parser, label.node_id).lo())),
                 label,
                 body,
             }))

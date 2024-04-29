@@ -48,7 +48,8 @@ pub use self::{
 };
 use ast_node::ast_node;
 use atoms::JsWord;
-use global_common::{EqIgnoreSpan, Span};
+use global_common::{Span, SyntaxContext, DUMMY_SP};
+use rustc_hash::FxHashMap;
 
 #[macro_use]
 mod macros;
@@ -66,7 +67,7 @@ mod pat;
 mod prop;
 mod stmt;
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, EqIgnoreSpan, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
 pub struct NodeId(u32);
 
 impl NodeId {
@@ -77,8 +78,52 @@ pub trait GetNodeId {
     fn node_id(&self) -> NodeId;
 }
 
+impl<T> GetNodeId for Box<T>
+where
+    T: GetNodeId,
+{
+    fn node_id(&self) -> NodeId {
+        self.as_ref().node_id()
+    }
+}
+
+#[derive(Debug)]
+pub struct ProgramData {
+    node_id_gen: NodeIdGen,
+    spans: FxHashMap<NodeId, Span>,
+}
+
+impl ProgramData {
+    pub fn new_id(&mut self, span: Span) -> NodeId {
+        let id = self.node_id_gen.next();
+        if span != DUMMY_SP {
+            self.spans.insert(id, span);
+        }
+        id
+    }
+
+    pub fn new_id_from(&mut self, other: NodeId) -> NodeId {
+        let id = self.node_id_gen.next();
+        let other_span = self.spans.get(&other).copied();
+        if let Some(other_span) = other_span {
+            self.spans.insert(id, other_span);
+        }
+        id
+    }
+
+    pub fn get_span(&self, node: NodeId) -> Span {
+        self.spans.get(&node).copied().unwrap_or(DUMMY_SP)
+    }
+
+    pub fn set_span(&mut self, node: NodeId, span: Span) {
+        if span != DUMMY_SP {
+            self.spans.insert(node, span);
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
-pub struct NodeIdGen {
+struct NodeIdGen {
     cur: NodeId,
 }
 
@@ -89,7 +134,7 @@ impl Default for NodeIdGen {
 }
 
 impl NodeIdGen {
-    pub fn next(&mut self) -> NodeId {
+    fn next(&mut self) -> NodeId {
         // Incrementing after we take the id ensures that NodeId(0) is used.
         let id = self.cur;
         self.cur.0 += 1;
@@ -99,11 +144,9 @@ impl NodeIdGen {
 
 /// Represents a invalid node.
 #[ast_node]
-#[derive(Eq, Hash, EqIgnoreSpan)]
+#[derive(Eq, Hash)]
 pub struct Invalid {
     pub node_id: NodeId,
-
-    pub span: Span,
 }
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
@@ -138,29 +181,29 @@ impl Default for EsVersion {
 /// [`NodeId`]s remain unique.
 pub trait CloneNode {
     /// Clone the node. All new nodes will have unique [`NodeId`]s.
-    fn clone_node(&self, node_id_gen: &mut NodeIdGen) -> Self;
+    fn clone_node(&self, program_data: &mut ProgramData) -> Self;
 }
 
 impl<T: CloneNode> CloneNode for Option<T> {
-    fn clone_node(&self, node_id_gen: &mut NodeIdGen) -> Self {
-        self.as_ref().map(|v| v.clone_node(node_id_gen))
+    fn clone_node(&self, program_data: &mut ProgramData) -> Self {
+        self.as_ref().map(|v| v.clone_node(program_data))
     }
 }
 impl<T: CloneNode> CloneNode for Box<T> {
-    fn clone_node(&self, node_id_gen: &mut NodeIdGen) -> Self {
-        Box::new(self.as_ref().clone_node(node_id_gen))
+    fn clone_node(&self, program_data: &mut ProgramData) -> Self {
+        Box::new(self.as_ref().clone_node(program_data))
     }
 }
 impl<T: CloneNode> CloneNode for Vec<T> {
-    fn clone_node(&self, node_id_gen: &mut NodeIdGen) -> Self {
-        self.iter().map(|v| v.clone_node(node_id_gen)).collect()
+    fn clone_node(&self, program_data: &mut ProgramData) -> Self {
+        self.iter().map(|v| v.clone_node(program_data)).collect()
     }
 }
 
 macro_rules! impl_clone_node {
     ($t:ty) => {
         impl CloneNode for $t {
-            fn clone_node(&self, _: &mut NodeIdGen) -> Self {
+            fn clone_node(&self, _: &mut ProgramData) -> Self {
                 self.clone()
             }
         }
@@ -169,6 +212,6 @@ macro_rules! impl_clone_node {
 
 impl_clone_node!(bool);
 impl_clone_node!(f64);
-impl_clone_node!(Span);
 impl_clone_node!(JsWord);
+impl_clone_node!(SyntaxContext);
 impl_clone_node!(num_bigint::BigInt);
