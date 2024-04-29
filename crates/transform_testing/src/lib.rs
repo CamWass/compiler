@@ -154,12 +154,6 @@ impl VisitMut<'_> for DropSpan {
         };
     }
 }
-struct DropNodeId;
-impl VisitMut<'_> for DropNodeId {
-    fn visit_mut_node_id(&mut self, span: &mut NodeId) {
-        *span = NodeId::DUMMY;
-    }
-}
 
 #[track_caller]
 pub fn test_transform<F, P>(

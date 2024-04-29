@@ -5,7 +5,6 @@ use crate::{
     token::*,
     JscTarget, Syntax, Tokens,
 };
-use enum_kind::Kind;
 use global_common::BytePos;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -178,31 +177,45 @@ impl Tokens for Lexer<'_> {
 /// The algorithm used to determine whether a regexp can appear at a
 /// given point in the program is loosely based on sweet.js' approach.
 /// See https://github.com/mozilla/sweet.js/wiki/design
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Kind)]
-#[kind(function(is_expr = "bool", preserve_space = "bool"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenContext {
     BraceStmt,
-    #[kind(is_expr)]
     BraceExpr,
-    #[kind(is_expr)]
     TplQuasi,
     ParenStmt {
         /// Is this `for` loop?
         is_for_loop: bool,
     },
-    #[kind(is_expr)]
     ParenExpr,
-    #[kind(is_expr, preserve_space)]
     Tpl {
         /// Start of a template literal.
         start: BytePos,
     },
-    #[kind(is_expr)]
     FnExpr,
     JSXOpeningTag,
     JSXClosingTag,
-    #[kind(is_expr, preserve_space)]
     JSXExpr,
+}
+
+impl TokenContext {
+    fn preserve_space(&self) -> bool {
+        match self {
+            Self::Tpl { .. } | Self::JSXExpr => true,
+            _ => false,
+        }
+    }
+
+    fn is_expr(&self) -> bool {
+        match self {
+            Self::BraceExpr
+            | Self::TplQuasi
+            | Self::ParenExpr
+            | Self::Tpl { .. }
+            | Self::FnExpr
+            | Self::JSXExpr => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, Default)]

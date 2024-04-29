@@ -60,16 +60,10 @@ impl Globals {
     }
 }
 
-// scoped_thread_local!(pub static GLOBALS: Globals);
-pub static GLOBALS: ::scoped_tls::ScopedKey<Globals> = ::scoped_tls::ScopedKey {
-    inner: {
-        thread_local!(static FOO: ::std::cell::Cell<usize> = {
-            ::std::cell::Cell::new(0)
-        });
-        &FOO
-    },
-    _marker: ::std::marker::PhantomData,
-};
+scoped_tls::scoped_thread_local!(
+    /// Storage for span hygiene data.
+    pub static GLOBALS: Globals
+);
 
 /// Differentiates between real files and common virtual files.
 #[derive(Debug, Eq, PartialEq, Clone, Ord, PartialOrd, Hash)]

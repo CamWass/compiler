@@ -1778,7 +1778,7 @@ impl<I: Tokens> Parser<I> {
                         },
                         ..decl
                     })
-                    .map(From::from)
+                    .map(Decl::Var)
                     .map(Some);
             }
 

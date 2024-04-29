@@ -245,7 +245,7 @@ impl<I: Tokens> Parser<I> {
         } else {
             let mut expr = self
                 .parse_ident(false, false)
-                .map(Expr::from)
+                .map(Expr::Ident)
                 .map(Box::new)?;
 
             while eat!(self, '.') {
@@ -892,24 +892,22 @@ impl<I: Tokens> Parser<I> {
             }
 
             Ok(Some(match key {
-                Either::Left(key) => PrivateProp {
+                Either::Left(key) => ClassMember::PrivateProp(PrivateProp {
                     node_id: node_id!(parser),
                     span: span!(parser, start),
                     key,
                     value,
                     is_static,
                     decorators,
-                }
-                .into(),
-                Either::Right(key) => ClassProp {
+                }),
+                Either::Right(key) => ClassMember::ClassProp(ClassProp {
                     node_id: node_id!(parser),
                     span: span!(parser, start),
                     key,
                     value,
                     is_static,
                     decorators,
-                }
-                .into(),
+                }),
             }))
         })
     }
@@ -1243,7 +1241,7 @@ impl<I: Tokens> Parser<I> {
         };
 
         Ok(Some(match key {
-            Either::Left(key) => PrivateMethod {
+            Either::Left(key) => ClassMember::PrivateMethod(PrivateMethod {
                 node_id: node_id!(self),
                 span: span!(self, start),
 
@@ -1251,9 +1249,8 @@ impl<I: Tokens> Parser<I> {
                 key,
                 function,
                 kind,
-            }
-            .into(),
-            Either::Right(key) => ClassMethod {
+            }),
+            Either::Right(key) => ClassMember::Method(ClassMethod {
                 node_id: node_id!(self),
                 span: span!(self, start),
 
@@ -1261,8 +1258,7 @@ impl<I: Tokens> Parser<I> {
                 key,
                 function,
                 kind,
-            }
-            .into(),
+            }),
         }))
     }
 }

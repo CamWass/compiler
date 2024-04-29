@@ -22,7 +22,6 @@ pub use self::{
     syntax_pos::{LineCol, Pos},
 };
 pub use eq_ignore_macros::EqIgnoreSpan;
-pub use from_variant::FromVariant;
 pub use global_visit::chain;
 
 pub mod chars;

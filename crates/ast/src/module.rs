@@ -66,3 +66,9 @@ pub enum ModuleItem {
     ModuleDecl(ModuleDecl),
     Stmt(Stmt),
 }
+
+impl From<Stmt> for ModuleItem {
+    fn from(s: Stmt) -> Self {
+        Self::Stmt(s)
+    }
+}

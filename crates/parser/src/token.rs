@@ -3,7 +3,6 @@ use crate::error::Error;
 pub(crate) use ast::AssignOp as AssignOpToken;
 use ast::BinaryOp;
 use atoms::{js_word, JsWord};
-use enum_kind::Kind;
 use global_common::{Span, Spanned};
 use num_bigint::BigInt as BigIntValue;
 use std::{
@@ -11,17 +10,14 @@ use std::{
     fmt::{self, Debug, Display, Formatter},
 };
 
-#[derive(Kind, Clone, PartialEq)]
-#[kind(functions(starts_expr = "bool", before_expr = "bool"))]
+#[derive(Clone, PartialEq)]
 pub enum Token {
     /// Identifier, "null", "true", "false".
     ///
     /// Contains `null` and ``
-    #[kind(delegate)]
     Word(Word),
 
     /// '=>'
-    #[kind(before_expr)]
     Arrow,
 
     /// '#'
@@ -33,37 +29,29 @@ pub enum Token {
     Dot,
 
     /// '...'
-    #[kind(before_expr)]
     DotDotDot,
     /// '!'
-    #[kind(before_expr, starts_expr)]
     Bang,
 
     /// '('
-    #[kind(before_expr, starts_expr)]
     LParen,
     /// ')'
     RParen,
     /// `[`
-    #[kind(before_expr, starts_expr)]
     LBracket,
     /// ']'
     RBracket,
     /// '{'
-    #[kind(before_expr, starts_expr)]
     LBrace,
     /// '}'
     RBrace,
 
     /// ';'
-    #[kind(before_expr)]
     Semi,
     /// ','
-    #[kind(before_expr)]
     Comma,
 
     /// '`'
-    #[kind(starts_expr)]
     BackQuote,
     Template {
         raw: JsWord,
@@ -71,39 +59,29 @@ pub enum Token {
         has_escape: bool,
     },
     /// ':'
-    #[kind(before_expr)]
     Colon,
     /// '::'
-    #[kind(before_expr)]
     ColonColon,
     ///
-    #[kind(delegate)]
     BinOp(BinOpToken),
     ///
-    #[kind(before_expr)]
     AssignOp(AssignOpToken),
 
     /// '${'
-    #[kind(before_expr, starts_expr)]
     DollarLBrace,
 
     /// '?'
-    #[kind(before_expr)]
     QuestionMark,
 
     /// `++`
-    #[kind(before_expr, starts_expr)]
     PlusPlus,
     /// `--`
-    #[kind(before_expr, starts_expr)]
     MinusMinus,
 
     /// `~`
-    #[kind(before_expr, starts_expr)]
     Tilde,
 
     /// String literal. Span of this token contains quote.
-    #[kind(starts_expr)]
     Str {
         value: JsWord,
         /// This field exists because 'use\x20strict' is **not** an use strict
@@ -112,27 +90,22 @@ pub enum Token {
     },
 
     /// Regexp literal.
-    #[kind(starts_expr)]
     Regex(JsWord, JsWord),
 
     /// TODO: Make Num as enum and separate decimal, binary, ..etc
-    #[kind(starts_expr)]
     Num {
         value: f64,
         raw: JsWord,
     },
 
-    #[kind(starts_expr)]
     BigInt(BigIntValue),
 
     JSXName {
         name: JsWord,
     },
-    #[kind(before_expr)]
     JSXText {
         raw: JsWord,
     },
-    #[kind(starts_expr)]
     JSXTagStart,
     JSXTagEnd,
 
@@ -140,8 +113,60 @@ pub enum Token {
     Error(Error),
 }
 
-#[derive(Kind, Debug, Clone, Copy, Eq, PartialEq, Hash)]
-#[kind(functions(starts_expr = "bool"))]
+impl Token {
+    pub fn starts_expr(&self) -> bool {
+        match self {
+            Token::Word(w) => w.starts_expr(),
+            BinOp(o) => o.starts_expr(),
+
+            Bang
+            | LParen
+            | LBracket
+            | LBrace
+            | BackQuote
+            | DollarLBrace
+            | PlusPlus
+            | MinusMinus
+            | Tilde
+            | Str { .. }
+            | Regex(_, _)
+            | Num { .. }
+            | BigInt(_)
+            | JSXTagStart => true,
+
+            _ => false,
+        }
+    }
+
+    pub fn before_expr(&self) -> bool {
+        match self {
+            Token::Word(w) => w.before_expr(),
+            BinOp(o) => o.before_expr(),
+
+            Arrow
+            | DotDotDot
+            | Bang
+            | LParen
+            | LBracket
+            | LBrace
+            | Semi
+            | Comma
+            | Colon
+            | ColonColon
+            | AssignOp(_)
+            | DollarLBrace
+            | QuestionMark
+            | PlusPlus
+            | MinusMinus
+            | Tilde
+            | JSXText { .. } => true,
+
+            _ => false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum BinOpToken {
     /// `==`
     EqEq,
@@ -167,10 +192,8 @@ pub enum BinOpToken {
     ZeroFillRShift,
 
     /// `+`
-    #[kind(starts_expr)]
     Add,
     /// `-`
-    #[kind(starts_expr)]
     Sub,
     /// `*`
     Mul,
@@ -208,6 +231,13 @@ impl BinOpToken {
     pub const fn before_expr(self) -> bool {
         true
     }
+
+    fn starts_expr(&self) -> bool {
+        match self {
+            Self::Add | Self::Sub => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -225,21 +255,31 @@ impl Spanned for TokenAndSpan {
     }
 }
 
-#[derive(Kind, Clone, PartialEq, Eq, Hash)]
-#[kind(functions(starts_expr = "bool", before_expr = "bool"))]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub enum Word {
-    #[kind(delegate)]
     Keyword(Keyword),
 
-    #[kind(starts_expr)]
     Null,
-    #[kind(starts_expr)]
     True,
-    #[kind(starts_expr)]
     False,
 
-    #[kind(starts_expr)]
     Ident(JsWord),
+}
+
+impl Word {
+    fn starts_expr(&self) -> bool {
+        match self {
+            Word::Keyword(k) => k.starts_expr(),
+            _ => true,
+        }
+    }
+
+    fn before_expr(&self) -> bool {
+        match self {
+            Word::Keyword(k) => k.before_expr(),
+            _ => false,
+        }
+    }
 }
 
 impl From<JsWord> for Word {
@@ -419,40 +459,31 @@ impl Debug for Word {
 }
 
 /// Keywords
-#[derive(Kind, Clone, Copy, PartialEq, Eq, Hash)]
-#[kind(function(before_expr = "bool", starts_expr = "bool"))]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Keyword {
     /// Spec says this might be identifier.
-    #[kind(before_expr, starts_expr)]
     Await,
 
     Break,
-    #[kind(before_expr)]
     Case,
     Catch,
     Continue,
     Debugger,
-    #[kind(before_expr)]
     Default_,
-    #[kind(before_expr)]
     Do,
-    #[kind(before_expr)]
     Else,
 
     Finally,
     For,
 
-    #[kind(starts_expr)]
     Function,
 
     If,
 
-    #[kind(before_expr)]
     Return,
 
     Switch,
 
-    #[kind(before_expr, starts_expr)]
     Throw,
 
     Try,
@@ -462,39 +493,27 @@ pub enum Keyword {
     While,
     With,
 
-    #[kind(before_expr, starts_expr)]
     New,
-    #[kind(starts_expr)]
     This,
-    #[kind(starts_expr)]
     Super,
 
-    #[kind(starts_expr)]
     Class,
 
-    #[kind(before_expr)]
     Extends,
 
     Export,
-    #[kind(starts_expr)]
     Import,
 
     /// Spec says this might be identifier.
-    #[kind(before_expr, starts_expr)]
     Yield,
 
-    #[kind(before_expr)]
     In,
-    #[kind(before_expr)]
     InstanceOf,
 
-    #[kind(before_expr, starts_expr)]
     TypeOf,
 
-    #[kind(before_expr, starts_expr)]
     Void,
 
-    #[kind(before_expr, starts_expr)]
     Delete,
 }
 
@@ -552,6 +571,22 @@ impl Keyword {
             Void => js_word!("void"),
 
             Delete => js_word!("delete"),
+        }
+    }
+
+    pub fn before_expr(&self) -> bool {
+        match self {
+            Await | Case | Default_ | Do | Else | Return | Throw | New | Extends | Yield | In
+            | InstanceOf | TypeOf | Void | Delete => true,
+            _ => false,
+        }
+    }
+
+    fn starts_expr(&self) -> bool {
+        match self {
+            Await | Function | Throw | New | This | Super | Class | Import | Yield | TypeOf
+            | Void | Delete => true,
+            _ => false,
         }
     }
 }

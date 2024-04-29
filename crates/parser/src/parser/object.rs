@@ -100,14 +100,11 @@ impl<I: Tokens> Parser<I> {
 
                         parser.emit_err(span!(parser, inner_start), SyntaxError::TS1171);
 
-                        expr = Box::new(
-                            SeqExpr {
-                                node_id: node_id!(parser),
-                                span: span!(parser, inner_start),
-                                exprs,
-                            }
-                            .into(),
-                        );
+                        expr = Box::new(Expr::Seq(SeqExpr {
+                            node_id: node_id!(parser),
+                            span: span!(parser, inner_start),
+                            exprs,
+                        }));
                     }
 
                     expect!(parser, ']');
@@ -262,7 +259,7 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                 }));
             }
 
-            return Ok(Prop::from(ident));
+            return Ok(Prop::Shorthand(ident));
         }
 
         // get a(){}

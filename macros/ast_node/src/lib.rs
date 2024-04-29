@@ -25,7 +25,7 @@ pub fn derive_spanned(input: proc_macro::TokenStream) -> proc_macro::TokenStream
 
 /// Alias for
 /// `#[derive(Spanned, Fold, Clone, Debug, PartialEq)]` for a struct and
-/// `#[derive(Spanned, Fold, Clone, Debug, PartialEq, FromVariant)]` for an
+/// `#[derive(Spanned, Fold, Clone, Debug, PartialEq)]` for an
 /// enum.
 #[proc_macro_attribute]
 pub fn ast_node(
@@ -42,7 +42,6 @@ pub fn ast_node(
     item = match input.data {
         Data::Enum(..) => item.quote_with(smart_quote!(Vars { input }, {
             #[derive(
-                ::global_common::FromVariant,
                 ::ast_node::Spanned,
                 Debug,
                 PartialEq,

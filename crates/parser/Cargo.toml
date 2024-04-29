@@ -11,7 +11,6 @@ default = []
 ast = {version = "0.1.0", path = "../ast"}
 ecma_visit = {version = "0.1.0", path = "../visit"}
 either = "1.6.1"
-enum_kind = "0.2.1"
 global_common = {version = "0.1.0", path = "../common"}
 num-bigint = "0.2"
 serde = {version = "1", features = ["derive"]}

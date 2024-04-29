@@ -11,12 +11,11 @@ impl<I: Tokens> Parser<I> {
 
             eat!(self, ';');
 
-            return Ok(Stmt::Expr(ExprStmt {
+            return Ok(ModuleItem::Stmt(Stmt::Expr(ExprStmt {
                 node_id: node_id!(self),
                 span: span!(self, start),
                 expr,
-            })
-            .into());
+            })));
         }
 
         if self.input.syntax().dynamic_import() && self.input.peeked_is(&tok!('(')) {
@@ -24,12 +23,11 @@ impl<I: Tokens> Parser<I> {
 
             eat!(self, ';');
 
-            return Ok(Stmt::Expr(ExprStmt {
+            return Ok(ModuleItem::Stmt(Stmt::Expr(ExprStmt {
                 node_id: node_id!(self),
                 span: span!(self, start),
                 expr,
-            })
-            .into());
+            })));
         }
 
         // It's now import statement
@@ -70,14 +68,13 @@ impl<I: Tokens> Parser<I> {
                 _ => unreachable!(),
             };
             expect!(self, ';');
-            return Ok(ModuleDecl::Import(ImportDecl {
+            return Ok(ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
                 node_id: node_id!(self),
                 span: span!(self, start),
                 src,
                 specifiers: vec![],
                 asserts: None,
-            }))
-            .map(ModuleItem::from);
+            })));
         }
 
         let type_only = self.input.syntax().typescript()
@@ -171,14 +168,13 @@ impl<I: Tokens> Parser<I> {
 
         expect!(self, ';');
 
-        Ok(ModuleDecl::Import(ImportDecl {
+        Ok(ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
             node_id: node_id!(self),
             span: span!(self, start),
             specifiers,
             src,
             asserts,
-        }))
-        .map(ModuleItem::from)
+        })))
     }
 
     /// Parse `foo`, `foo2 as bar` in `import { foo, foo2 as bar }`
@@ -356,7 +352,7 @@ impl<I: Tokens> Parser<I> {
                     let class_start = self.input.cur_pos();
                     self.assert_and_bump(&tok!("abstract"));
                     let mut class = self.parse_default_class(start, class_start, decorators)?;
-                    return Ok(class.into());
+                    return Ok(ModuleDecl::ExportDefaultDecl(class));
                 }
                 if is!(self, "abstract") && peeked_is!(self, "interface") {
                     self.emit_err(self.input.cur_span(), SyntaxError::TS1242);
@@ -650,7 +646,7 @@ impl<I: Tokens> StmtLikeParser<ModuleItem> for Parser<I> {
         let decl = if is!(self, "import") {
             self.parse_import()?
         } else if is!(self, "export") {
-            self.parse_export(decorators).map(ModuleItem::from)?
+            self.parse_export(decorators).map(ModuleItem::ModuleDecl)?
         } else {
             unreachable!(
                 "handle_import_export should not be called if current token isn't import nor \

@@ -79,7 +79,7 @@ impl<I: Tokens> Parser<I> {
                     JSXExpr::JSXEmptyExpr(..) => {
                         syntax_error!(self, span!(self, start), SyntaxError::EmptyJSXAttr)
                     }
-                    JSXExpr::Expr(..) => Ok(node.into()),
+                    JSXExpr::Expr(..) => Ok(JSXAttrValue::JSXExprContainer(node)),
                 }
             }
             Token::Str { .. } => {
@@ -157,12 +157,11 @@ impl<I: Tokens> Parser<I> {
             let dot3_token = span!(self, dot3_start);
             let expr = self.parse_assignment_expr()?;
             expect!(self, '}');
-            return Ok(SpreadElement {
+            return Ok(JSXAttrOrSpread::SpreadElement(SpreadElement {
                 node_id: node_id!(self),
                 dot3_token,
                 expr,
-            }
-            .into());
+            }));
         }
 
         let name = self.parse_jsx_namespaced_name()?;
@@ -172,13 +171,12 @@ impl<I: Tokens> Parser<I> {
             None
         };
 
-        Ok(JSXAttr {
+        Ok(JSXAttrOrSpread::JSXAttr(JSXAttr {
             node_id: node_id!(self),
             span: span!(self, start),
             name,
             value,
-        }
-        .into())
+        }))
     }
 
     /// Parses JSX opening tag starting after "<".
@@ -308,20 +306,24 @@ impl<I: Tokens> Parser<I> {
                             }
 
                             children.push(p.parse_jsx_element_at(start).map(|e| match e {
-                                Either::Left(e) => JSXElementChild::from(e),
-                                Either::Right(e) => JSXElementChild::from(Box::new(e)),
+                                Either::Left(e) => JSXElementChild::JSXFragment(e),
+                                Either::Right(e) => JSXElementChild::JSXElement(Box::new(e)),
                             })?);
                         }
                         Token::JSXText { .. } => {
-                            children.push(p.parse_jsx_text().map(JSXElementChild::from)?)
+                            children.push(p.parse_jsx_text().map(JSXElementChild::JSXText)?)
                         }
                         tok!('{') => {
                             if peeked_is!(p, "...") {
-                                children
-                                    .push(p.parse_jsx_spread_child().map(JSXElementChild::from)?);
+                                children.push(
+                                    p.parse_jsx_spread_child()
+                                        .map(JSXElementChild::JSXSpreadChild)?,
+                                );
                             } else {
-                                children
-                                    .push(p.parse_jsx_expr_container().map(JSXElementChild::from)?);
+                                children.push(
+                                    p.parse_jsx_expr_container()
+                                        .map(JSXElementChild::JSXExprContainer)?,
+                                );
                             }
                         }
                         _ => unexpected!(p, "< (jsx tag start), jsx text or {"),

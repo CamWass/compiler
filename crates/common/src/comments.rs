@@ -1,8 +1,9 @@
+use rustc_hash::FxHashMap;
+
 use crate::{
     pos::Spanned,
     syntax_pos::{BytePos, Span, DUMMY_SP},
 };
-use ahash::AHashMap;
 use std::{
     cell::{Ref, RefCell},
     rc::Rc,
@@ -138,7 +139,7 @@ where
     delegate!();
 }
 
-pub type SingleThreadedCommentsMapInner = AHashMap<BytePos, Vec<Comment>>;
+pub type SingleThreadedCommentsMapInner = FxHashMap<BytePos, Vec<Comment>>;
 pub type SingleThreadedCommentsMap = Rc<RefCell<SingleThreadedCommentsMapInner>>;
 
 /// Single-threaded storage for comments.

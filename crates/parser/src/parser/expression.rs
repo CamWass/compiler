@@ -376,7 +376,7 @@ impl<I: Tokens> Parser<I> {
 
             if can_be_arrow && id.sym == js_word!("async") && is!(self, BindingIdent) {
                 // async a => body
-                let arg = self.parse_binding_ident().map(Pat::from)?;
+                let arg = self.parse_binding_ident().map(Pat::Ident)?;
                 let params = vec![ParamWithoutDecorators::from_pat(arg, node_id!(self))];
                 expect!(self, "=>");
                 let body = self.parse_fn_body(true, false)?;
@@ -692,8 +692,8 @@ impl<I: Tokens> Parser<I> {
         if self.input.syntax().jsx() {
             fn into_expr(e: Either<JSXFragment, JSXElement>) -> Box<Expr> {
                 match e {
-                    Either::Left(l) => Box::new(l.into()),
-                    Either::Right(r) => Box::new(Box::new(r).into()),
+                    Either::Left(l) => Box::new(Expr::JSXFragment(l.into())),
+                    Either::Right(r) => Box::new(Expr::JSXElement(Box::new(r).into())),
                 }
             }
             match *cur!(self, true)? {
@@ -1044,16 +1044,13 @@ impl<I: Tokens> Parser<I> {
                 let span = span!(self, start);
 
                 return Ok(vec![PatOrExprOrSpread::ExprOrSpread(ExprOrSpread::Expr(
-                    Box::new(
-                        ArrowExpr {
-                            node_id: node_id!(self),
-                            span,
-                            body,
-                            is_async: false,
-                            params,
-                        }
-                        .into(),
-                    ),
+                    Box::new(Expr::Arrow(ArrowExpr {
+                        node_id: node_id!(self),
+                        span,
+                        body,
+                        is_async: false,
+                        params,
+                    })),
                 ))]);
             }
 
@@ -1315,7 +1312,7 @@ impl<I: Tokens> Parser<I> {
                     // ) is required
                     self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
                     let errored_expr =
-                        self.parse_bin_op_recursively(Box::new(arrow_expr.into()), 0)?;
+                        self.parse_bin_op_recursively(Box::new(Expr::Arrow(arrow_expr)), 0)?;
 
                     if !is!(self, ';') {
                         // ; is required

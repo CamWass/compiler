@@ -40,7 +40,7 @@ impl<I: Tokens> Parser<I> {
         trace_cur!(self, parse_binding_pat_or_ident);
 
         match *cur!(self, true)? {
-            tok!("yield") | Word(..) => self.parse_binding_ident().map(Pat::from),
+            tok!("yield") | Word(..) => self.parse_binding_ident().map(Pat::Ident),
             tok!('[') => self.parse_array_binding_pat(),
             tok!('{') => self.parse_object(),
             // tok!('(') => {
@@ -365,13 +365,12 @@ impl<I: Tokens> Parser<I> {
                 if self.input.eat(&tok!('=')) {
                     let right = self.parse_assignment_expr()?;
                     self.emit_err(pat.span(), SyntaxError::TS1048);
-                    pat = AssignPat {
+                    pat = Pat::Assign(AssignPat {
                         node_id: node_id!(self),
                         span: span!(self, pat_start),
                         left: Box::new(pat),
                         right,
-                    }
-                    .into();
+                    });
                 }
 
                 let type_ann = if self.input.syntax().typescript() && is!(self, ':') {

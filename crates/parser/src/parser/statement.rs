@@ -76,12 +76,11 @@ impl<I: Tokens> StmtLikeParser<Stmt> for Parser<I> {
 
             eat!(self, ';');
 
-            return Ok(ExprStmt {
+            return Ok(Stmt::Expr(ExprStmt {
                 node_id: node_id!(self),
                 span: span!(self, start),
                 expr,
-            }
-            .into());
+            }));
         }
 
         if self.input.syntax().import_meta()
@@ -92,12 +91,11 @@ impl<I: Tokens> StmtLikeParser<Stmt> for Parser<I> {
 
             eat!(self, ';');
 
-            return Ok(ExprStmt {
+            return Ok(Stmt::Expr(ExprStmt {
                 node_id: node_id!(self),
                 span: span!(self, start),
                 expr,
-            }
-            .into());
+            }));
         }
 
         syntax_error!(self, SyntaxError::ImportExportInScript);
@@ -289,11 +287,11 @@ impl<I: Tokens> Parser<I> {
                         syntax_error!(self, SyntaxError::SloppyFunction);
                     }
                     // TODO: disallow generator functions in single statement contexts.
-                    return self.parse_fn_decl(decorators).map(Stmt::from).map(Some);
+                    return self.parse_fn_decl(decorators).map(Stmt::Decl).map(Some);
                 } else {
                     return self
                         .parse_fn_decl_or_ts_overload_sig(decorators)
-                        .map(|s| s.map(Stmt::from));
+                        .map(|s| s.map(Stmt::Decl));
                 }
             }
             tok!("class") => {
@@ -302,7 +300,7 @@ impl<I: Tokens> Parser<I> {
                 }
                 return self
                     .parse_class_decl(start, start, decorators)
-                    .map(Stmt::from)
+                    .map(Stmt::Decl)
                     .map(Some);
             }
             tok!("if") => {
@@ -422,7 +420,7 @@ impl<I: Tokens> Parser<I> {
             } else {
                 return self
                     .parse_async_fn_decl(decorators)
-                    .map(|s| s.map(Stmt::from));
+                    .map(|s| s.map(Stmt::Decl));
             }
         }
 
