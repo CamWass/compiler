@@ -1,7 +1,6 @@
 use super::{identifier::MaybeOptionalIdentParser, *};
 use crate::{error::SyntaxError, lexer::TokenContext, Tokens};
 use atoms::js_word;
-use global_common::Spanned;
 
 /// Parser for function expression and function declaration.
 impl<I: Tokens> Parser<I> {
@@ -597,7 +596,7 @@ impl<I: Tokens> Parser<I> {
 
                         if let Some(type_params) = type_params {
                             for param in type_params {
-                                self.emit_err(param.span(), SyntaxError::TS1092);
+                                self.emit_err(param, SyntaxError::TS1092);
                             }
                         }
                     }

@@ -10,13 +10,13 @@
 //! Adds methods to generate web sourcemap.
 #![deny(unused)]
 
+pub use self::syntax_pos::{
+    hygiene, BytePos, CharPos, FileName, Globals, Loc, LocWithOpt, Mark, MultiSpan, SourceFile,
+    SourceFileAndBytePos, SourceFileAndLine, Span, SpanLinesError, SyntaxContext, DUMMY_SP,
+    GLOBALS,
+};
 pub use self::{
     errors::{SourceMapper, SourceMapperDyn},
-    pos::{
-        hygiene, BytePos, CharPos, FileName, Globals, Loc, LocWithOpt, Mark, MultiSpan, SourceFile,
-        SourceFileAndBytePos, SourceFileAndLine, Span, SpanLinesError, Spanned, SyntaxContext,
-        DUMMY_SP, GLOBALS,
-    },
     source_map::{FileLines, FileLoader, FilePathMapping, SourceMap, SpanSnippetError},
     syntax_pos::{LineCol, Pos},
 };
@@ -30,7 +30,6 @@ pub mod integer_decode;
 pub mod iter;
 pub mod macros;
 pub mod pass;
-mod pos;
 mod rustc_data_structures;
 mod source_map;
 pub mod sync;

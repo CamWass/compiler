@@ -12,7 +12,7 @@ use self::{
 use ast::*;
 use atoms::JsWord;
 use global_common::{
-    comments::Comments, sync::Lrc, BytePos, SourceMap, Span, Spanned, SyntaxContext, DUMMY_SP,
+    comments::Comments, sync::Lrc, BytePos, SourceMap, Span, SyntaxContext, DUMMY_SP,
 };
 use parser::JscTarget;
 use std::{borrow::Cow, fmt::Write, io, sync::Arc};
@@ -1461,9 +1461,9 @@ impl<'a> Emitter<'a> {
                     // -> this comment isn't considered to be trailing comment of parameter "a" due
                     // to newline ,
                     if format.contains(ListFormat::DelimitersMask)
-                        && previous_sibling.span().hi() != parent_node.hi()
+                        && previous_sibling.hi() != parent_node.hi()
                     {
-                        self.emit_leading_comments(previous_sibling.span().hi(), true)?;
+                        self.emit_leading_comments(previous_sibling.hi(), true)?;
                     }
 
                     self.write_delim(format)?;
@@ -1550,10 +1550,10 @@ impl<'a> Emitter<'a> {
 
                 if let Some(previous_sibling) = previous_sibling {
                     if format.contains(ListFormat::DelimitersMask)
-                        && previous_sibling.span().hi() != parent_node.hi()
+                        && previous_sibling.hi() != parent_node.hi()
                         && emit_trailing_comments
                     {
-                        self.emit_leading_comments(previous_sibling.span().hi(), true)?;
+                        self.emit_leading_comments(previous_sibling.hi(), true)?;
                     }
                 }
             }

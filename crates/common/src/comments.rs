@@ -1,9 +1,6 @@
 use rustc_hash::FxHashMap;
 
-use crate::{
-    pos::Spanned,
-    syntax_pos::{BytePos, Span, DUMMY_SP},
-};
+use crate::syntax_pos::{BytePos, Span, DUMMY_SP};
 use std::{
     cell::{Ref, RefCell},
     rc::Rc,
@@ -255,12 +252,6 @@ pub struct Comment {
     pub kind: CommentKind,
     pub span: Span,
     pub text: String,
-}
-
-impl Spanned for Comment {
-    fn span(&self) -> Span {
-        self.span
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

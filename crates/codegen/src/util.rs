@@ -1,7 +1,7 @@
 use super::list::ListFormat;
 use ast::*;
 use global_common::{
-    errors::SourceMapper, BytePos, SourceMap, SourceMapperDyn, Span, Spanned, SyntaxContext,
+    errors::SourceMapper, BytePos, SourceMap, SourceMapperDyn, Span, SyntaxContext,
 };
 use std::{rc::Rc, sync::Arc};
 

@@ -3,7 +3,7 @@ use crate::error::Error;
 pub(crate) use ast::AssignOp as AssignOpToken;
 use ast::BinaryOp;
 use atoms::{js_word, JsWord};
-use global_common::{Span, Spanned};
+use global_common::Span;
 use num_bigint::BigInt as BigIntValue;
 use std::{
     borrow::Cow,
@@ -246,13 +246,6 @@ pub struct TokenAndSpan {
     /// Had a line break before this token?
     pub had_line_break: bool,
     pub span: Span,
-}
-
-impl Spanned for TokenAndSpan {
-    #[inline(always)]
-    fn span(&self) -> Span {
-        self.span
-    }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
