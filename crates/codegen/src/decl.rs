@@ -1,87 +1,86 @@
 use super::{list::ListFormat, Emitter, Result};
 use ast::*;
 use codegen_macros::emitter;
-use global_common::Spanned;
 
 impl<'a> Emitter<'a> {
-    #[emitter]
-    fn emit_decl(&mut self, node: &Decl) -> Result {
+    pub fn emit_decl(&mut self, node: &Decl) -> Result {
         match *node {
-            Decl::Class(ref n) => emit!(n),
-            Decl::Fn(ref n) => emit!(n),
+            Decl::Class(ref n) => self.emit_class_decl(n)?,
+            Decl::Fn(ref n) => self.emit_fn_decl(n)?,
 
             Decl::Var(ref n) => {
-                emit!(n);
-                formatting_semi!(); // VarDecl is also used for for-loops
+                self.emit_var_decl(n)?;
+                formatting_semi!(self); // VarDecl is also used for for-loops
             }
         }
+        Ok(())
     }
 
-    #[emitter]
     fn emit_class_decl(&mut self, node: &ClassDecl) -> Result {
-        self.emit_leading_comments_of_span(node.span(), false)?;
+        self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
 
         for dec in &node.class.decorators {
-            emit!(dec);
+            self.emit_decorator(dec)?;
         }
-        keyword!("class");
-        space!();
-        emit!(node.ident);
+        keyword!(self, "class");
+        space!(self);
+        self.emit_ident(&node.ident)?;
 
-        self.emit_class_trailing(&node.class)?;
+        self.emit_class_trailing(&node.class)
     }
 
-    #[emitter]
     fn emit_fn_decl(&mut self, node: &FnDecl) -> Result {
-        self.emit_leading_comments_of_span(node.span(), false)?;
+        self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
 
         if node.function.is_async {
-            keyword!("async");
-            space!();
+            keyword!(self, "async");
+            space!(self);
         }
 
-        keyword!("function");
+        keyword!(self, "function");
         if node.function.is_generator {
-            punct!("*");
-            formatting_space!();
+            punct!(self, "*");
+            formatting_space!(self);
         } else {
-            space!();
+            space!(self);
         }
 
-        emit!(node.ident);
+        self.emit_ident(&node.ident)?;
 
-        self.emit_fn_trailing(&node.function)?;
+        self.emit_fn_trailing(&node.function)
     }
 
-    #[emitter]
-    fn emit_var_decl(&mut self, node: &VarDecl) -> Result {
-        self.emit_leading_comments_of_span(node.span, false)?;
+    pub fn emit_var_decl(&mut self, node: &VarDecl) -> Result {
+        let span = get_span!(self, node.node_id);
+
+        self.emit_leading_comments_of_span(span, false)?;
 
         {
-            let span = self.cm.span_until_char(node.span, ' ');
-            keyword!(span, node.kind.as_str());
+            let span = self.cm.span_until_char(span, ' ');
+            keyword!(self, span, node.kind.as_str());
         }
-        space!();
+        space!(self);
 
         self.emit_list(
-            node.span(),
-            Some(&node.decls),
+            span,
+            &node.decls,
+            |e, n| e.emit_var_declarator(n).map(|_| Some(n.node_id)),
             ListFormat::VariableDeclarationList,
-        )?;
+        )
     }
 
-    #[emitter]
     fn emit_var_declarator(&mut self, node: &VarDeclarator) -> Result {
-        self.emit_leading_comments_of_span(node.span(), false)?;
+        self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
 
-        emit!(node.name);
+        self.emit_pat(&node.name)?;
 
         if let Some(ref init) = node.init {
-            formatting_space!();
-            punct!("=");
-            formatting_space!();
-            emit!(init);
+            formatting_space!(self);
+            punct!(self, "=");
+            formatting_space!(self);
+            self.emit_expr(init)?
         }
+        Ok(())
     }
 }
 

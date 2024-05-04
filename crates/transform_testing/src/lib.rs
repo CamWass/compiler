@@ -44,15 +44,15 @@ impl<'a> Tester<'a> {
         name: &str,
         syntax: Syntax,
         src: &str,
-    ) -> Result<Module, ()> {
+    ) -> Result<(Module, ProgramData), ()> {
         let fm = self
             .cm
             .new_source_file(FileName::Real(name.into()), src.into());
 
-        let node_id_gen = Rc::new(RefCell::new(ast::NodeIdGen::default()));
+        let program_data = Rc::new(RefCell::new(ast::ProgramData::default()));
 
         let module = {
-            let mut p = Parser::new(syntax, &fm, node_id_gen.clone());
+            let mut p = Parser::new(syntax, &fm, program_data.clone());
             let res = p
                 .parse_module()
                 .map_err(|e| e.into_diagnostic(self.handler).emit());
@@ -64,17 +64,19 @@ impl<'a> Tester<'a> {
             res?
         };
 
+        let program_data = Rc::try_unwrap(program_data).unwrap().into_inner();
+
         let mut module = Program::Module(module);
         module.visit_mut_with(&mut tr);
         module.visit_mut_with(&mut Normalizer);
 
         match module {
-            Program::Module(m) => Ok(m),
+            Program::Module(m) => Ok((m, program_data)),
             Program::Script(_) => unreachable!(),
         }
     }
 
-    pub fn print(&mut self, module: &Module) -> String {
+    pub fn print(&mut self, module: &Module, program_data: &ProgramData) -> String {
         let mut buf = vec![];
         {
             let mut emitter = Emitter {
@@ -87,6 +89,7 @@ impl<'a> Tester<'a> {
                     None,
                 )),
                 comments: None,
+                program_data,
             };
 
             // println!("Emitting: {:?}", module);
@@ -151,22 +154,18 @@ pub fn test_transform<F, P>(
     F: FnOnce(&mut Tester) -> P,
     P: for<'a> VisitMut<'a>,
 {
+    struct Dummy;
+    impl VisitMut<'_> for Dummy {}
+
     Tester::run(|tester| {
-        let expected = tester.apply_transform(
-            DropSpan {
-                preserve_ctxt: true,
-            },
-            "output.js",
-            syntax,
-            expected,
-        )?;
+        let expected = tester.apply_transform(Dummy, "output.js", syntax, expected)?;
 
         // let expected_comments = take(&mut tester.comments);
 
         println!("----- Actual -----");
 
         let tr = tr(tester);
-        let mut actual = tester.apply_transform(tr, "input.js", syntax, input)?;
+        let actual = tester.apply_transform(tr, "input.js", syntax, input)?;
 
         // match ::std::env::var("PRINT_HYGIENE") {
         //     Ok(ref s) if s == "1" => {
@@ -186,7 +185,7 @@ pub fn test_transform<F, P>(
             // let (actual_leading, actual_trailing) = tester.comments.borrow_all();
             // let (expected_leading, expected_trailing) = expected_comments.borrow_all();
 
-            if actual == expected
+            if actual.0 == expected.0
             // && *actual_leading == *expected_leading
             // && *actual_trailing == *expected_trailing
             {
@@ -194,7 +193,10 @@ pub fn test_transform<F, P>(
             }
         }
 
-        let (actual_src, expected_src) = (tester.print(&actual), tester.print(&expected));
+        let (actual_src, expected_src) = (
+            tester.print(&actual.0, &actual.1),
+            tester.print(&expected.0, &actual.1),
+        );
 
         if actual_src == expected_src {
             return Ok(());

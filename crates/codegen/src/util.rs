@@ -5,23 +5,6 @@ use global_common::{
 };
 use std::{rc::Rc, sync::Arc};
 
-pub trait SpanExt: Spanned {
-    fn is_synthesized(&self) -> bool {
-        self.span().ctxt() != SyntaxContext::empty()
-    }
-
-    fn starts_on_new_line(&self, format: ListFormat) -> bool {
-        format.intersects(ListFormat::PreferNewLine)
-    }
-
-    /// Gets a custom text range to use when emitting comments.
-    fn comment_range(&self) -> Span {
-        //TODO
-        self.span()
-    }
-}
-impl<T: Spanned> SpanExt for T {}
-
 pub trait SourceMapperExt {
     fn get_code_map(&self) -> &dyn SourceMapper;
 
@@ -35,89 +18,57 @@ pub trait SourceMapperExt {
         false
     }
 
-    fn should_write_separating_line_terminator<P: Spanned, N: Spanned>(
-        &self,
-        prev: Option<P>,
-        next: Option<N>,
-        format: ListFormat,
-    ) -> bool {
-        let prev = prev.map(|s| s.span());
-        let next = next.map(|s| s.span());
-
+    fn should_write_separating_line_terminator(&self, format: ListFormat) -> bool {
         if format.contains(ListFormat::MultiLine) {
             return true;
         }
 
         if format.contains(ListFormat::PreserveLines) {
-            if let (Some(prev), Some(next)) = (prev, next) {
-                if prev.is_synthesized() || next.is_synthesized() {
-                    return prev.starts_on_new_line(format) || next.starts_on_new_line(format);
-                }
-
-                return !self.is_on_same_line(prev.hi(), next.lo());
-            } else {
-                return false;
-            }
+            return format.contains(ListFormat::PreferNewLine);
         }
 
         false
     }
 
-    fn should_write_leading_line_terminator<N: Spanned>(
+    fn should_write_leading_line_terminator<N>(
         &self,
         parent_node: Span,
         children: &[N],
         format: ListFormat,
+        program_data: &ProgramData,
     ) -> bool {
         if format.contains(ListFormat::MultiLine) {
             return true;
         }
 
         if format.contains(ListFormat::PreserveLines) {
-            if format.contains(ListFormat::PreferNewLine) {
-                return true;
-            }
-
             if children.is_empty() {
                 return !self.is_on_same_line(parent_node.lo(), parent_node.hi());
             }
 
-            let first_child = children[0].span();
-            if parent_node.is_synthesized() || first_child.is_synthesized() {
-                return first_child.starts_on_new_line(format);
-            }
-
-            !self.is_on_same_line(parent_node.lo(), first_child.lo())
+            format.contains(ListFormat::PreferNewLine)
         } else {
             false
         }
     }
 
-    fn should_write_closing_line_terminator<N: Spanned>(
+    fn should_write_closing_line_terminator<N>(
         &self,
         parent_node: Span,
         children: &[N],
         format: ListFormat,
+        program_data: &ProgramData,
     ) -> bool {
         if format.contains(ListFormat::MultiLine) {
             return (format & ListFormat::NoTrailingNewLine) == ListFormat::None;
         }
 
         if format.contains(ListFormat::PreserveLines) {
-            if format.contains(ListFormat::PreferNewLine) {
-                return true;
-            }
-
             if children.is_empty() {
                 return !self.is_on_same_line(parent_node.lo(), parent_node.hi());
             }
 
-            let last_child = children[children.len() - 1].span();
-            if parent_node.is_synthesized() || last_child.is_synthesized() {
-                last_child.starts_on_new_line(format)
-            } else {
-                !self.is_on_same_line(parent_node.hi(), last_child.hi())
-            }
+            format.contains(ListFormat::PreferNewLine)
         } else {
             false
         }
@@ -133,6 +84,7 @@ impl SourceMapperExt for Arc<SourceMapperDyn> {
         &**self
     }
 }
+
 impl SourceMapperExt for Rc<SourceMapperDyn> {
     fn get_code_map(&self) -> &dyn SourceMapper {
         &**self

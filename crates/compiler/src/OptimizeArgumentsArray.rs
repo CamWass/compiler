@@ -517,7 +517,7 @@ mod tests {
 
     fn test_transform(input: &str, expected: &str) {
         crate::testing::test_transform(
-            |mut program, mut node_id_gen| {
+            |mut program, mut program_data| {
                 let unresolved_mark = Mark::new();
                 let top_level_mark = Mark::new();
 
@@ -527,7 +527,7 @@ mod tests {
 
                 super::OptimizeArgumentsArray::process(
                     &mut program,
-                    &mut node_id_gen,
+                    &mut program_data,
                     unresolved_ctxt,
                 );
                 program

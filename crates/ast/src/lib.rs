@@ -78,6 +78,15 @@ pub trait GetNodeId {
     fn node_id(&self) -> NodeId;
 }
 
+impl<'a, T> GetNodeId for &'a T
+where
+    T: GetNodeId,
+{
+    fn node_id(&self) -> NodeId {
+        (*self).node_id()
+    }
+}
+
 impl<T> GetNodeId for Box<T>
 where
     T: GetNodeId,
@@ -87,7 +96,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ProgramData {
     node_id_gen: NodeIdGen,
     spans: FxHashMap<NodeId, Span>,

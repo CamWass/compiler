@@ -1,26 +1,17 @@
 macro_rules! opt_leading_space {
-    ($emitter:expr, $e:expr) => {
+    ($emitter:expr, $func:ident, $e:expr) => {
         if let Some(ref e) = $e {
             formatting_space!($emitter);
-            emit!($emitter, e);
+            $emitter.$func(e);
         }
     };
 }
 
 macro_rules! opt {
-    ($emitter:expr, $e:expr) => {{
+    ($emitter:expr, $func:ident, $e:expr) => {{
         if let Some(ref expr) = $e {
-            emit!($emitter, expr);
+            $emitter.$func(expr);
         }
-    }};
-    ($emitter:expr, $e:expr,) => {{
-        opt!($emitter, $e)
-    }};
-}
-
-macro_rules! emit {
-    ($emitter:expr, $e:expr) => {{
-        crate::Node::emit_with(&$e, $emitter)?;
     }};
 }
 
@@ -97,5 +88,11 @@ macro_rules! semi {
     };
     ($emitter:expr) => {
         $emitter.wr.write_punct(None, ";")?;
+    };
+}
+
+macro_rules! get_span {
+    ($emitter:expr, $node:expr) => {
+        $emitter.program_data.get_span($node)
     };
 }

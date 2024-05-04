@@ -5,8 +5,10 @@ use crate::text_writer::omit_trailing_semi;
 use global_common::{comments::SingleThreadedComments, FileName, SourceMap};
 use parser;
 use std::{
+    cell::RefCell,
     fmt::{self, Debug, Display, Formatter},
     io::Write,
+    rc::Rc,
     sync::{Arc, RwLock},
 };
 
@@ -15,6 +17,7 @@ struct Builder {
     cm: Lrc<SourceMap>,
     comments: SingleThreadedComments,
     target: EsVersion,
+    program_data: ProgramData,
 }
 
 impl Builder {
@@ -35,6 +38,7 @@ impl Builder {
             cm: self.cm.clone(),
             wr: writer,
             comments: Some(&self.comments),
+            program_data: &self.program_data,
         };
 
         let ret = op(&mut e);
@@ -63,8 +67,9 @@ fn parse_then_emit(from: &str, cfg: Config, target: EsVersion) -> String {
         );
 
         let comments = Default::default();
+        let program_data = Rc::new(RefCell::new(ast::ProgramData::default()));
         let res = {
-            let mut parser = Parser::new(Default::default(), &src, Default::default());
+            let mut parser = Parser::new(Default::default(), &src, program_data.clone());
             let res = parser
                 .parse_module()
                 .map_err(|e| e.into_diagnostic(handler).emit());
@@ -81,6 +86,7 @@ fn parse_then_emit(from: &str, cfg: Config, target: EsVersion) -> String {
             cm,
             comments,
             target,
+            program_data: Rc::try_unwrap(program_data).unwrap().into_inner(),
         }
         .text(from, |e| e.emit_module(&res).unwrap());
         Ok(out)

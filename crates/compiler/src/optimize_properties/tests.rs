@@ -6,15 +6,15 @@ use super::*;
 
 fn test_transform(input: &str, expected: &str) {
     crate::testing::test_transform(
-        |mut program, mut node_id_gen| {
+        |mut program, mut program_data| {
             GLOBALS.set(&Globals::new(), || {
                 let unresolved_mark = Mark::new();
                 let top_level_mark = Mark::new();
 
                 program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark));
 
-                crate::normalize_properties::normalize_properties(&mut program, &mut node_id_gen);
-                crate::normalize::normalize(&mut program, &mut node_id_gen);
+                crate::normalize_properties::normalize_properties(&mut program, &mut program_data);
+                crate::normalize::normalize(&mut program, &mut program_data);
 
                 let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 

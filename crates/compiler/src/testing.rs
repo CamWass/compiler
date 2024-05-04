@@ -1,7 +1,7 @@
 use ast::*;
 use codegen::{text_writer::JsWriter, Emitter};
 use ecma_visit::{VisitMut, VisitMutWith};
-use global_common::{errors::Handler, sync::Lrc, FileName, SourceMap, Span, DUMMY_SP};
+use global_common::{errors::Handler, sync::Lrc, FileName, SourceMap};
 use parser::{Parser, Syntax};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -24,21 +24,26 @@ impl<'a> Tester<'a> {
         }
     }
 
-    fn apply_transform<T>(&mut self, tr: T, name: &str, src: &str) -> Result<Program, ()>
+    fn apply_transform<T>(
+        &mut self,
+        tr: T,
+        name: &str,
+        src: &str,
+    ) -> Result<(Program, ProgramData), ()>
     where
-        T: FnOnce(Program, ast::NodeIdGen) -> Program,
+        T: FnOnce(Program, &mut ast::ProgramData) -> Program,
     {
         let fm = self
             .cm
             .new_source_file(FileName::Real(name.into()), src.into());
 
-        let node_id_gen = Rc::new(RefCell::new(ast::NodeIdGen::default()));
+        let program_data = Rc::new(RefCell::new(ast::ProgramData::default()));
 
         let program = {
             let mut p = Parser::new(
                 Syntax::Typescript(Default::default()),
                 &fm,
-                node_id_gen.clone(),
+                program_data.clone(),
             );
             let res = p
                 .parse_program()
@@ -51,19 +56,16 @@ impl<'a> Tester<'a> {
             res?
         };
 
-        let node_id_gen = Rc::try_unwrap(node_id_gen).unwrap().into_inner();
+        let mut program_data = Rc::try_unwrap(program_data).unwrap().into_inner();
 
-        let mut program = tr(program, node_id_gen);
+        let mut program = tr(program, &mut program_data);
 
-        program.visit_mut_with(&mut DropSpan {
-            preserve_ctxt: true,
-        });
         program.visit_mut_with(&mut DropNodeId);
 
-        Ok(program)
+        Ok((program, program_data))
     }
 
-    fn print(&mut self, program: &Program) -> String {
+    fn print(&mut self, program: &Program, program_data: &ProgramData) -> String {
         let mut buf = vec![];
         {
             let mut emitter = Emitter {
@@ -71,6 +73,7 @@ impl<'a> Tester<'a> {
                 cm: self.cm.clone(),
                 wr: Box::new(JsWriter::new(self.cm.clone(), "\n", &mut buf, None)),
                 comments: None,
+                program_data,
             };
 
             emitter.emit_program(program).unwrap();
@@ -83,23 +86,23 @@ impl<'a> Tester<'a> {
 
 pub fn test_transform<T>(transform: T, input: &str, expected: &str)
 where
-    T: FnOnce(Program, ast::NodeIdGen) -> Program,
+    T: FnOnce(Program, &mut ast::ProgramData) -> Program,
 {
     Tester::run(|tester| {
         let expected = tester.apply_transform(|m, _| m, "output.js", expected)?;
 
         let mut actual = tester.apply_transform(transform, "input.js", input)?;
 
-        actual.visit_mut_with(&mut DropSpan {
-            preserve_ctxt: false,
-        });
-        actual.visit_mut_with(&mut DropNodeId);
+        actual.0.visit_mut_with(&mut DropNodeId);
 
-        if actual == expected {
+        if actual.0 == expected.0 {
             return Ok(());
         }
 
-        let (actual_src, expected_src) = (tester.print(&actual), tester.print(&expected));
+        let (actual_src, expected_src) = (
+            tester.print(&actual.0, &actual.1),
+            tester.print(&expected.0, &actual.1),
+        );
 
         if actual_src == expected_src {
             return Ok(());
@@ -120,18 +123,6 @@ where
     });
 }
 
-struct DropSpan {
-    preserve_ctxt: bool,
-}
-impl VisitMut<'_> for DropSpan {
-    fn visit_mut_span(&mut self, span: &mut Span) {
-        *span = if self.preserve_ctxt {
-            DUMMY_SP.with_ctxt(span.ctxt())
-        } else {
-            DUMMY_SP
-        };
-    }
-}
 struct DropNodeId;
 impl VisitMut<'_> for DropNodeId {
     fn visit_mut_node_id(&mut self, span: &mut NodeId) {

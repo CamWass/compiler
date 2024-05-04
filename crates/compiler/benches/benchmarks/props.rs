@@ -48,7 +48,7 @@ fn bench(c: &mut Criterion) {
             let unresolved_mark = Mark::new();
             let top_level_mark = Mark::new();
 
-            let node_id_gen = Rc::new(RefCell::new(ast::NodeIdGen::default()));
+            let program_data = Rc::new(RefCell::new(ast::ProgramData::default()));
 
             let handler =
                 Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
@@ -57,7 +57,7 @@ fn bench(c: &mut Criterion) {
                 let mut p = Parser::new(
                     Syntax::Typescript(Default::default()),
                     &fm,
-                    node_id_gen.clone(),
+                    program_data.clone(),
                 );
                 let res = p
                     .parse_program()
@@ -70,11 +70,11 @@ fn bench(c: &mut Criterion) {
                 res.unwrap()
             };
 
-            let mut node_id_gen = Rc::try_unwrap(node_id_gen).unwrap().into_inner();
+            let mut program_data = Rc::try_unwrap(program_data).unwrap().into_inner();
 
             program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark));
 
-            compiler::normalize_properties::normalize_properties(&mut program, &mut node_id_gen);
+            compiler::normalize_properties::normalize_properties(&mut program, &mut program_data);
 
             let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 

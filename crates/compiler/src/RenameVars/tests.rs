@@ -6,12 +6,12 @@ use super::*;
 
 fn test_transform(input: &str, expected: &str) {
     crate::testing::test_transform(
-        |mut program, mut node_id_gen| {
+        |mut program, mut program_data| {
             GLOBALS.set(&Globals::new(), || {
                 let unresolved_mark = Mark::new();
                 let top_level_mark = Mark::new();
 
-                crate::normalize_properties::normalize_properties(&mut program, &mut node_id_gen);
+                crate::normalize_properties::normalize_properties(&mut program, &mut program_data);
 
                 program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark));
 
@@ -32,12 +32,12 @@ fn test_same(input: &str) {
 
 fn test_local_var_indices(input: &str, expected: &str) {
     crate::testing::test_transform(
-        |mut program, mut node_id_gen| {
+        |mut program, mut program_data| {
             GLOBALS.set(&Globals::new(), || {
                 let unresolved_mark = Mark::new();
                 let top_level_mark = Mark::new();
 
-                crate::normalize_properties::normalize_properties(&mut program, &mut node_id_gen);
+                crate::normalize_properties::normalize_properties(&mut program, &mut program_data);
 
                 program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark));
 
