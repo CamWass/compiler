@@ -11,7 +11,6 @@ use self::{
 };
 use ast::*;
 use atoms::JsWord;
-use codegen_macros::emitter;
 use global_common::{
     comments::Comments, sync::Lrc, BytePos, SourceMap, Span, Spanned, SyntaxContext, DUMMY_SP,
 };
@@ -354,9 +353,7 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_js_word(&mut self, span: Span, value: &JsWord) -> Result {
-        self.wr.write_str_lit(span, &value)?;
-
-        Ok(())
+        self.wr.write_str_lit(span, &value)
     }
 
     fn emit_str_lit(&mut self, node: &Str) -> Result {
@@ -405,18 +402,13 @@ impl<'a> Emitter<'a> {
             if num.value.is_sign_negative() {
                 self.wr.write_str_lit(span, "-")?;
             }
-            self.wr.write_str_lit(span, "Infinity")?;
+            self.wr.write_str_lit(span, "Infinity")
         } else {
             match &num.raw {
-                Some(raw) => {
-                    self.wr.write_str_lit(span, raw)?;
-                }
-                _ => {
-                    self.wr.write_str_lit(span, &num.value.to_string())?;
-                }
+                Some(raw) => self.wr.write_str_lit(span, raw),
+                _ => self.wr.write_str_lit(span, &num.value.to_string()),
             }
         }
-        Ok(())
     }
 
     fn emit_big_lit(&mut self, v: &BigInt) -> Result {
@@ -535,8 +527,7 @@ impl<'a> Emitter<'a> {
         let span = get_span!(self, n.node_id);
         self.emit_leading_comments_of_span(span, false)?;
 
-        self.wr.write_str_lit(span, "<invalid>")?;
-        Ok(())
+        self.wr.write_str_lit(span, "<invalid>")
     }
 
     fn emit_call_expr(&mut self, node: &CallExpr) -> Result {
@@ -930,8 +921,7 @@ impl<'a> Emitter<'a> {
         punct!(self, ")");
 
         formatting_space!(self);
-        self.emit_block_stmt(&n.function.body)?;
-        Ok(())
+        self.emit_block_stmt(&n.function.body)
     }
 
     fn emit_private_prop(&mut self, n: &PrivateProp) -> Result {
@@ -1362,13 +1352,7 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_binding_ident(&mut self, ident: &BindingIdent) -> Result {
-        self.emit_ident(&ident.id)?;
-
-        // Call emitList directly since it could be an array of
-        // TypeParameterDeclarations _or_ type arguments
-
-        // emitList(node, node.typeArguments, ListFormat::TypeParameters);
-        Ok(())
+        self.emit_ident(&ident.id)
     }
 
     fn emit_ident(&mut self, ident: &Ident) -> Result {
@@ -1378,13 +1362,7 @@ impl<'a> Emitter<'a> {
 
         // TODO: span
         self.wr
-            .write_symbol(span, &handle_invalid_unicodes(&ident.sym))?;
-
-        // Call emitList directly since it could be an array of
-        // TypeParameterDeclarations _or_ type arguments
-
-        // emitList(node, node.typeArguments, ListFormat::TypeParameters);
-        Ok(())
+            .write_symbol(span, &handle_invalid_unicodes(&ident.sym))
     }
 
     fn emit_list<N>(
@@ -1703,8 +1681,7 @@ impl<'a> Emitter<'a> {
         formatting_space!(self);
         punct!(self, "=");
         formatting_space!(self);
-        self.emit_expr(&node.right)?;
-        Ok(())
+        self.emit_expr(&node.right)
     }
 
     fn emit_object_pat(&mut self, node: &ObjectPat) -> Result {
@@ -1778,8 +1755,7 @@ impl<'a> Emitter<'a> {
         match *node {
             Stmt::Expr(ref e) => self.emit_expr_stmt(e),
             Stmt::Block(ref e) => {
-                self.emit_block_stmt(e)?;
-                return Ok(());
+                return self.emit_block_stmt(e);
             }
             Stmt::Empty(ref e) => self.emit_empty_stmt(e),
             Stmt::Debugger(ref e) => self.emit_debugger_stmt(e),
@@ -1868,8 +1844,7 @@ impl<'a> Emitter<'a> {
         self.emit_expr(&node.obj)?;
         punct!(self, ")");
 
-        self.emit_stmt(&node.body)?;
-        Ok(())
+        self.emit_stmt(&node.body)
     }
 
     fn emit_return_stmt(&mut self, node: &ReturnStmt) -> Result {
@@ -1909,8 +1884,7 @@ impl<'a> Emitter<'a> {
         punct!(self, ":");
         formatting_space!(self);
 
-        self.emit_stmt(&node.body)?;
-        Ok(())
+        self.emit_stmt(&node.body)
     }
 
     fn emit_break_stmt(&mut self, node: &BreakStmt) -> Result {

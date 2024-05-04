@@ -1,7 +1,6 @@
 use super::{Emitter, Result};
 use crate::list::ListFormat;
 use ast::*;
-use codegen_macros::emitter;
 
 impl<'a> Emitter<'a> {
     pub fn emit_jsx_element(&mut self, node: &JSXElement) -> Result {

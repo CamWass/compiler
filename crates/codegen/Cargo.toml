@@ -13,7 +13,6 @@ sourcemap = "6"
 atoms = {path = "../atoms"}
 global_common = {version = "0.1.0", path = "../common"}
 ast = {version = "0.1.0", path = "../ast"}
-codegen_macros = {version = "0.1.0", path = "./macros"}
 parser = {version = "0.1.0", path = "../parser"}
 
 [dev-dependencies]

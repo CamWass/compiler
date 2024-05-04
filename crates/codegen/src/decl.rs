@@ -1,6 +1,5 @@
 use super::{list::ListFormat, Emitter, Result};
 use ast::*;
-use codegen_macros::emitter;
 
 impl<'a> Emitter<'a> {
     pub fn emit_decl(&mut self, node: &Decl) -> Result {
