@@ -65,6 +65,7 @@ dependencies = [
  "atoms",
  "clone_node",
  "global_common",
+ "index",
  "node_id",
  "num-bigint",
  "rustc-hash",

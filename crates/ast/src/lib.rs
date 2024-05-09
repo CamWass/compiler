@@ -48,8 +48,8 @@ pub use self::{
 };
 use ast_node::ast_node;
 use atoms::JsWord;
-use global_common::{Span, SyntaxContext, DUMMY_SP};
-use rustc_hash::FxHashMap;
+use global_common::{Span, SyntaxContext};
+use index::vec::IndexVec;
 
 #[macro_use]
 mod macros;
@@ -67,11 +67,10 @@ mod pat;
 mod prop;
 mod stmt;
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
-pub struct NodeId(u32);
+index::newtype_index!(pub struct NodeId { .. });
 
 impl NodeId {
-    pub const DUMMY: NodeId = NodeId(u32::MAX);
+    pub const DUMMY: NodeId = NodeId::MAX;
 }
 
 pub trait GetNodeId {
@@ -98,56 +97,25 @@ where
 
 #[derive(Debug, Default)]
 pub struct ProgramData {
-    node_id_gen: NodeIdGen,
-    spans: FxHashMap<NodeId, Span>,
+    spans: IndexVec<NodeId, Span>,
 }
 
 impl ProgramData {
     pub fn new_id(&mut self, span: Span) -> NodeId {
-        let id = self.node_id_gen.next();
-        if span != DUMMY_SP {
-            self.spans.insert(id, span);
-        }
-        id
+        self.spans.push(span)
     }
 
     pub fn new_id_from(&mut self, other: NodeId) -> NodeId {
-        let id = self.node_id_gen.next();
-        let other_span = self.spans.get(&other).copied();
-        if let Some(other_span) = other_span {
-            self.spans.insert(id, other_span);
-        }
-        id
+        let other = self.spans[other];
+        self.spans.push(other)
     }
 
     pub fn get_span(&self, node: NodeId) -> Span {
-        self.spans.get(&node).copied().unwrap_or(DUMMY_SP)
+        self.spans[node]
     }
 
     pub fn set_span(&mut self, node: NodeId, span: Span) {
-        if span != DUMMY_SP {
-            self.spans.insert(node, span);
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-struct NodeIdGen {
-    cur: NodeId,
-}
-
-impl Default for NodeIdGen {
-    fn default() -> Self {
-        Self { cur: NodeId(0) }
-    }
-}
-
-impl NodeIdGen {
-    fn next(&mut self) -> NodeId {
-        // Incrementing after we take the id ensures that NodeId(0) is used.
-        let id = self.cur;
-        self.cur.0 += 1;
-        id
+        self.spans[node] = span;
     }
 }
 
