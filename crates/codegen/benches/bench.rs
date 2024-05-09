@@ -88,17 +88,20 @@ fn bench_emitter(b: &mut Bencher, s: &str) {
     let _ = ::testing::run_test(true, |cm, handler| {
         let fm = cm.new_source_file(FileName::Anon, s.into());
         let program_data = Rc::new(RefCell::new(ast::ProgramData::default()));
-        let mut parser = Parser::new(Default::default(), &fm, program_data.clone());
 
         let mut src_map_buf = vec![];
-        let module = parser
-            .parse_module()
-            .map_err(|e| e.into_diagnostic(handler).emit())
-            .unwrap();
+        let module = {
+            let mut parser = Parser::new(Default::default(), &fm, program_data.clone());
+            let m = parser
+                .parse_module()
+                .map_err(|e| e.into_diagnostic(handler).emit())
+                .unwrap();
 
-        for err in parser.take_errors() {
-            err.into_diagnostic(handler).emit();
-        }
+            for err in parser.take_errors() {
+                err.into_diagnostic(handler).emit();
+            }
+            m
+        };
 
         let program_data = Rc::try_unwrap(program_data).unwrap().into_inner();
 

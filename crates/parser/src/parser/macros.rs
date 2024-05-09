@@ -311,14 +311,16 @@ macro_rules! syntax_error {
 
 macro_rules! node_id {
     ($parser:expr, $span:expr) => {{
-        let n = $parser.program_data.borrow_mut().new_id($span);
+        let span = $span;
+        let n = $parser.program_data.borrow_mut().new_id(span);
         n
     }};
 }
 
 macro_rules! node_id_from {
     ($parser:expr, $other:expr) => {{
-        let n = $parser.program_data.borrow_mut().new_id_from($other);
+        let other = $other;
+        let n = $parser.program_data.borrow_mut().new_id_from(other);
         n
     }};
 }
@@ -330,13 +332,16 @@ macro_rules! program_data {
 }
 
 macro_rules! get_span {
-    ($parser:expr, $node:expr) => {
-        $parser.program_data.borrow().get_span($node)
-    };
+    ($parser:expr, $node:expr) => {{
+        let id = $node;
+        let s = $parser.program_data.borrow().get_span(id);
+        s
+    }};
 }
 
 macro_rules! set_span {
     ($parser:expr, $node:expr, $span:expr) => {
-        $parser.program_data.borrow_mut().set_span($node, $span);
+        let id = $node;
+        $parser.program_data.borrow_mut().set_span(id, $span);
     };
 }
