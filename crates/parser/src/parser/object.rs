@@ -432,8 +432,10 @@ impl<I: Tokens> ParseObject<Pat> for Parser<I> {
             }
         }
 
-        let optional =
-            (self.input.syntax().dts() || self.ctx().in_declare) && self.input.eat(&tok!('?'));
+        // TS optional.
+        if self.input.syntax().dts() || self.ctx().in_declare {
+            self.input.eat(&tok!('?'));
+        }
 
         Ok(Pat::Object(ObjectPat {
             node_id: node_id!(self, span),

@@ -1,6 +1,5 @@
 use ast::*;
 use ecma_visit::{Fold, FoldWith};
-use global_common::Span;
 
 /// Normalizes certain expressions, drops node IDs, and optionally drops spans.
 pub struct Normalizer {

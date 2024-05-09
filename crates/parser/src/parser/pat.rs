@@ -118,7 +118,10 @@ impl<I: Tokens> Parser<I> {
         }
 
         expect!(self, ']');
-        let optional = (self.input.syntax().dts() || self.ctx().in_declare) && eat!(self, '?');
+        // TS optional.
+        if self.input.syntax().dts() || self.ctx().in_declare {
+            eat!(self, '?');
+        }
 
         Ok(Pat::Array(ArrayPat {
             node_id: node_id!(self, span!(self, start)),
@@ -154,7 +157,7 @@ impl<I: Tokens> Parser<I> {
         let has_modifier = self.eat_any_ts_modifier()?;
 
         let pat_start = self.input.cur_pos();
-        let mut pat = self.parse_binding_element()?;
+        let pat = self.parse_binding_element()?;
         let mut opt = false;
 
         if self.input.syntax().typescript() {
@@ -255,12 +258,11 @@ impl<I: Tokens> Parser<I> {
 
             if self.input.eat(&tok!("...")) {
                 let pat = self.parse_binding_pat_or_ident()?;
-                let type_ann = if self.input.syntax().typescript() && self.input.is(&tok!(':')) {
+                // Type annotation.
+                if self.input.syntax().typescript() && self.input.is(&tok!(':')) {
                     let cur_pos = self.input.cur_pos();
-                    Some(self.parse_ts_type_ann(true, cur_pos)?)
-                } else {
-                    None
-                };
+                    self.parse_ts_type_ann(true, cur_pos)?;
+                }
 
                 let pat = Pat::Rest(RestPat {
                     node_id: node_id!(self, span!(self, pat_start)),
@@ -374,13 +376,11 @@ impl<I: Tokens> Parser<I> {
                     });
                 }
 
-                let type_ann = if self.input.syntax().typescript() && is!(self, ':') {
+                // Type annotation.
+                if self.input.syntax().typescript() && is!(self, ':') {
                     let cur_pos = self.input.cur_pos();
-                    let ty = self.parse_ts_type_ann(true, cur_pos)?;
-                    Some(ty)
-                } else {
-                    None
-                };
+                    self.parse_ts_type_ann(true, cur_pos)?;
+                }
 
                 let pat_span = span!(self, pat_start);
                 let pat = Pat::Rest(RestPat {

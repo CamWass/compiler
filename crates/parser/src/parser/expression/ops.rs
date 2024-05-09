@@ -106,7 +106,8 @@ impl<I: Tokens> Parser<I> {
                 self.input.bump(); // const
                 expr
             } else {
-                let type_ann = self.next_then_parse_ts_type()?;
+                // Type annotation.
+                self.next_then_parse_ts_type()?;
                 expr
             };
 

@@ -97,21 +97,19 @@ impl<I: Tokens> Parser<I> {
                 parser.emit_err(span, SyntaxError::TS2414);
             }
 
-            let type_params = if parser.syntax().typescript() {
-                parser.try_parse_ts_type_params()?
-            } else {
-                None
-            };
+            // Type params.
+            if parser.syntax().typescript() {
+                parser.try_parse_ts_type_params()?;
+            }
 
             let mut extends_clause = if is!(parser, "extends") {
                 let start = parser.input.cur_pos();
                 parser.input.bump();
                 let super_class = parser.parse_lhs_expr()?;
-                let super_type_params = if parser.syntax().typescript() && is!(parser, '<') {
-                    Some(parser.parse_ts_type_args()?)
-                } else {
-                    None
-                };
+                // Super type params.
+                if parser.syntax().typescript() && is!(parser, '<') {
+                    parser.parse_ts_type_args()?;
+                }
                 let span = span!(parser, start);
 
                 if parser.syntax().typescript() && eat!(parser, ',') {
@@ -160,11 +158,10 @@ impl<I: Tokens> Parser<I> {
                 parser.input.bump();
 
                 let super_class = parser.parse_lhs_expr()?;
-                let super_type_params = if parser.syntax().typescript() && is!(parser, '<') {
-                    parser.parse_ts_type_args().map(Some)?
-                } else {
-                    None
-                };
+                // Super type params.
+                if parser.syntax().typescript() && is!(parser, '<') {
+                    parser.parse_ts_type_args()?;
+                }
 
                 if extends_clause.is_none() {
                     extends_clause = Some(ExtendsClause {
@@ -331,15 +328,16 @@ impl<I: Tokens> Parser<I> {
                 let key = Key::PropName(PropName::Ident(
                     self.new_ident(js_word!("declare"), span!(self, start)),
                 ));
-                let is_optional = self.syntax().typescript() && eat!(self, '?');
+                // TS optional.
+                if self.syntax().typescript() {
+                    eat!(self, '?');
+                }
                 return self.make_method(
                     |parser| parser.parse_unique_formal_params(),
                     MakeMethodArgs {
                         start,
                         decorators,
                         is_abstract: false,
-                        is_optional,
-                        is_override: false,
                         is_async: false,
                         is_generator: false,
                         static_token: None,
@@ -360,8 +358,6 @@ impl<I: Tokens> Parser<I> {
                     key,
                     false,
                     is_optional,
-                    false,
-                    false,
                     false,
                     false,
                 );
@@ -387,15 +383,16 @@ impl<I: Tokens> Parser<I> {
                 let key = Key::PropName(PropName::Ident(
                     self.new_ident(js_word!("static"), static_token),
                 ));
-                let is_optional = self.syntax().typescript() && eat!(self, '?');
+                // TS optional.
+                if self.syntax().typescript() {
+                    eat!(self, '?');
+                }
                 return self.make_method(
                     |parser| parser.parse_unique_formal_params(),
                     MakeMethodArgs {
                         start,
                         decorators,
                         is_abstract: false,
-                        is_optional,
-                        is_override: false,
                         is_async: false,
                         is_generator: false,
                         static_token: None,
@@ -416,9 +413,7 @@ impl<I: Tokens> Parser<I> {
                     key,
                     false,
                     is_optional,
-                    false,
                     declare,
-                    false,
                     false,
                 );
             } else {
@@ -517,7 +512,7 @@ impl<I: Tokens> Parser<I> {
 
         if self.syntax().typescript() && !is_abstract && !is_override && !has_accessibility {
             let idx = self.try_parse_ts_index_signature(start, readonly.is_some(), is_static)?;
-            if let Some(idx) = idx {
+            if idx.is_some() {
                 return Ok(None);
             }
         }
@@ -540,8 +535,6 @@ impl<I: Tokens> Parser<I> {
                     is_async: false,
                     is_generator: true,
                     is_abstract,
-                    is_override,
-                    is_optional: false,
                     static_token,
                     key,
                     kind: MethodKind::Method,
@@ -680,10 +673,8 @@ impl<I: Tokens> Parser<I> {
                     |parser| parser.parse_formal_params(),
                     MakeMethodArgs {
                         start,
-                        is_optional,
                         decorators,
                         is_abstract,
-                        is_override,
                         static_token,
                         kind: MethodKind::Method,
                         key,
@@ -701,10 +692,8 @@ impl<I: Tokens> Parser<I> {
                 key,
                 is_static,
                 is_optional,
-                readonly.is_some(),
                 declare,
                 is_abstract,
-                is_override,
             );
         }
 
@@ -716,7 +705,6 @@ impl<I: Tokens> Parser<I> {
             // handle async foo(){}
 
             if self.parse_ts_modifier(&["override"])?.is_some() {
-                is_override = true;
                 self.emit_err(
                     self.input.prev_span(),
                     SyntaxError::TS1029(js_word!("override"), js_word!("async")),
@@ -737,7 +725,11 @@ impl<I: Tokens> Parser<I> {
             }
 
             // handle async foo(){}
-            let is_optional = is_optional || self.syntax().typescript() && eat!(self, '?');
+
+            // TS optional.
+            if !is_optional && self.syntax().typescript() {
+                eat!(self, '?');
+            }
             return self.make_method(
                 |parser| parser.parse_unique_formal_params(),
                 MakeMethodArgs {
@@ -745,8 +737,6 @@ impl<I: Tokens> Parser<I> {
                     static_token,
                     key,
                     is_abstract,
-                    is_optional,
-                    is_override,
                     decorators,
                     kind: MethodKind::Method,
                     is_async: true,
@@ -790,8 +780,6 @@ impl<I: Tokens> Parser<I> {
                             is_abstract,
                             is_async: false,
                             is_generator: false,
-                            is_optional,
-                            is_override,
                             static_token,
                             key,
                             kind: MethodKind::Getter,
@@ -819,9 +807,7 @@ impl<I: Tokens> Parser<I> {
                         MakeMethodArgs {
                             decorators,
                             start,
-                            is_optional,
                             is_abstract,
-                            is_override,
                             is_async: false,
                             is_generator: false,
                             static_token,
@@ -845,10 +831,8 @@ impl<I: Tokens> Parser<I> {
         key: Key,
         is_static: bool,
         is_optional: bool,
-        readonly: bool,
         declare: bool,
         is_abstract: bool,
-        is_override: bool,
     ) -> PResult<Option<ClassMember>> {
         if is_constructor(&key) {
             syntax_error!(
@@ -864,9 +848,13 @@ impl<I: Tokens> Parser<I> {
                 SyntaxError::DeclarePrivateIdentifier
             );
         }
-        let definite = self.syntax().typescript() && !is_optional && eat!(self, '!');
+        // TS definite.
+        if self.syntax().typescript() && !is_optional {
+            eat!(self, '!');
+        }
 
-        let type_ann = self.try_parse_ts_type_ann()?;
+        // Type annotation.
+        self.try_parse_ts_type_ann()?;
 
         let ctx = Context {
             in_class_prop: true,
@@ -1053,12 +1041,13 @@ impl<I: Tokens> Parser<I> {
         };
 
         self.with_ctx(ctx).parse_with(|parser| {
-            let type_params = if parser.syntax().typescript() {
+            // Type params.
+            if parser.syntax().typescript() {
                 parser.in_type().parse_with(|parser| {
                     trace_cur!(p, parse_fn_args_body__type_params);
 
-                    Ok(if is!(parser, '<') {
-                        Some(parser.parse_ts_type_params()?)
+                    if is!(parser, '<') {
+                        parser.parse_ts_type_params()?;
                     } else if is!(parser, JSXTagStart) {
                         debug_assert_eq!(
                             parser.input.token_context().current(),
@@ -1071,14 +1060,11 @@ impl<I: Tokens> Parser<I> {
                         );
                         parser.input.token_context_mut().pop();
 
-                        Some(parser.parse_ts_type_params()?)
-                    } else {
-                        None
-                    })
-                })?
-            } else {
-                None
-            };
+                        parser.parse_ts_type_params()?;
+                    }
+                    Ok(Some(()))
+                })?;
+            }
 
             expect!(parser, '(');
 
@@ -1093,14 +1079,12 @@ impl<I: Tokens> Parser<I> {
 
             expect!(parser, ')');
 
-            // typescript extension
-            let return_type = if parser.syntax().typescript() && is!(parser, ':') {
+            // Return type
+            if parser.syntax().typescript() && is!(parser, ':') {
                 parser
                     .parse_ts_type_or_type_predicate_ann(&tok!(':'))
-                    .map(Some)?
-            } else {
-                None
-            };
+                    .map(Some)?;
+            }
 
             let body: Option<_> = parser.parse_fn_body(is_async, is_generator)?;
 
@@ -1184,8 +1168,6 @@ impl<I: Tokens> Parser<I> {
             is_abstract,
             static_token,
             decorators,
-            is_optional,
-            is_override,
             key,
             kind,
             is_async,
@@ -1271,8 +1253,6 @@ impl IsInvalidClassName for Option<Ident> {
 trait OutputType: GetNodeId {
     type Ident: IsInvalidClassName;
 
-    fn is_constructor(ident: &Self::Ident) -> bool;
-
     /// From babel..
     ///
     /// When parsing function expression, the binding identifier is parsed
@@ -1303,13 +1283,6 @@ trait OutputType: GetNodeId {
 
 impl OutputType for Box<Expr> {
     type Ident = Option<Ident>;
-
-    fn is_constructor(ident: &Self::Ident) -> bool {
-        match *ident {
-            Some(ref i) => i.sym == js_word!("constructor"),
-            _ => false,
-        }
-    }
 
     fn is_fn_expr() -> bool {
         true
@@ -1343,13 +1316,6 @@ impl OutputType for Box<Expr> {
 
 impl OutputType for ExportDefaultDecl {
     type Ident = Option<Ident>;
-
-    fn is_constructor(ident: &Self::Ident) -> bool {
-        match *ident {
-            Some(ref i) => i.sym == js_word!("constructor"),
-            _ => false,
-        }
-    }
 
     fn finish_fn(
         span: Span,
@@ -1385,10 +1351,6 @@ impl OutputType for ExportDefaultDecl {
 
 impl OutputType for Decl {
     type Ident = Ident;
-
-    fn is_constructor(i: &Self::Ident) -> bool {
-        i.sym == js_word!("constructor")
-    }
 
     fn finish_fn(
         span: Span,
@@ -1471,8 +1433,6 @@ struct MakeMethodArgs {
     is_abstract: bool,
     static_token: Option<Span>,
     decorators: Vec<Decorator>,
-    is_optional: bool,
-    is_override: bool,
     key: Key,
     kind: MethodKind,
     is_async: bool,

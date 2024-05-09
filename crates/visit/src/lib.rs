@@ -7,7 +7,7 @@ use atoms::JsWord;
 use global_common::SyntaxContext;
 use global_visit::{define, AndThen, Repeat, Repeated};
 use num_bigint::BigInt as BigIntValue;
-use std::{any::Any, fmt::Debug};
+use std::any::Any;
 
 /// Visitable nodes.
 pub trait Node: Any {}

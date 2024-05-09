@@ -343,7 +343,7 @@ impl<I: Tokens> Parser<I> {
                 {
                     let class_start = self.input.cur_pos();
                     self.assert_and_bump(&tok!("abstract"));
-                    let mut class = self.parse_default_class(start, class_start, decorators)?;
+                    let class = self.parse_default_class(start, class_start, decorators)?;
                     return Ok(ModuleDecl::ExportDefaultDecl(class));
                 }
                 if is!(self, "abstract") && peeked_is!(self, "interface") {

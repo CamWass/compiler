@@ -37,7 +37,7 @@ macro_rules! create_constants {
 macro_rules! create_impl {
     [$($(#[$attr:meta])* $name:ident : [$($prop:expr$(,)?)*] $(,)?)*] => {
         impl ObjectStore {
-            pub const BUILT_INS: &[BuiltIn] = &[
+            pub const BUILT_INS: &'static [BuiltIn] = &[
                 $(
                     BuiltIn { id: ObjectStore::$name, properties: &[$($prop,)*] },
                 )*

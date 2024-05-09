@@ -90,8 +90,9 @@ impl<I: Tokens> Parser<I> {
         {
             let res = self.try_parse_ts(|p| {
                 let start = p.input.cur_pos();
-                let type_parameters = p.parse_ts_type_params()?;
-                let mut arrow = p.parse_assignment_expr_base()?;
+                // Type params.
+                p.parse_ts_type_params()?;
+                let arrow = p.parse_assignment_expr_base()?;
                 match arrow.as_ref() {
                     Expr::Arrow(ArrowExpr { node_id, .. }) => {
                         let s = get_span!(p, *node_id);
@@ -541,7 +542,8 @@ impl<I: Tokens> Parser<I> {
                         }
                     }
 
-                    let type_args = p.parse_ts_type_args()?;
+                    // Type args.
+                    p.parse_ts_type_args()?;
 
                     if !no_call && is!(p, '(') {
                         // possibleAsync always false here, because we would have handled it
@@ -1091,18 +1093,17 @@ impl<I: Tokens> Parser<I> {
             let callee = self.parse_member_expr_or_new_expr(is_new_expr)?;
             return_if_arrow!(self, potential_arrow_start, callee);
 
-            let type_args = if self.input.syntax().typescript() && is!(self, '<') {
+            // Type arguments.
+            if self.input.syntax().typescript() && is!(self, '<') {
                 self.try_parse_ts(|p| {
-                    let args = p.parse_ts_type_args()?;
+                    p.parse_ts_type_args()?;
                     if !is!(p, '(') {
                         // This will fail
                         expect!(p, '(');
                     }
-                    Ok(Some(args))
-                })
-            } else {
-                None
-            };
+                    Ok(Some(()))
+                });
+            }
 
             if !is_new_expr || is!(self, '(') {
                 // Parsed with 'MemberExpression' production.
@@ -1233,7 +1234,8 @@ impl<I: Tokens> Parser<I> {
             // TODO(swc): Remove clone
             let items_ref = &paren_items;
             if let Some(expr) = self.try_parse_ts(|p| {
-                let return_type = p.parse_ts_type_or_type_predicate_ann(&tok!(':'))?;
+                // Return type.
+                p.parse_ts_type_or_type_predicate_ann(&tok!(':'))?;
 
                 expect!(p, "=>");
 

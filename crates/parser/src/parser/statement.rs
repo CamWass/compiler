@@ -938,18 +938,17 @@ impl<I: Tokens> Parser<I> {
     /// Optional since es2019
     fn parse_catch_param(&mut self) -> PResult<Option<Pat>> {
         if eat!(self, '(') {
-            let mut pat = self.parse_binding_pat_or_ident()?;
+            let pat = self.parse_binding_pat_or_ident()?;
 
-            let type_ann_start = self.input.cur_pos();
-
+            // Type annotation.
             if self.syntax().typescript() && eat!(self, ':') {
                 let ctx = Context {
                     in_type: true,
                     ..self.ctx()
                 };
 
-                let ty = self
-                    .with_ctx(ctx)
+                // Type annotation.
+                self.with_ctx(ctx)
                     .parse_with(|parser| parser.parse_ts_type())?;
                 // self.emit_err(ty.span(), SyntaxError::TS1196);
             }
@@ -1070,16 +1069,12 @@ impl<I: Tokens> Parser<I> {
     fn parse_var_declarator(&mut self, for_loop: bool) -> PResult<(VarDeclarator, Option<Span>)> {
         let start = self.input.cur_pos();
 
-        let mut name = self.parse_binding_pat_or_ident()?;
+        let name = self.parse_binding_pat_or_ident()?;
 
-        let definite = if self.input.syntax().typescript() {
-            match name {
-                Pat::Ident(..) => eat!(self, '!'),
-                _ => false,
-            }
-        } else {
-            false
-        };
+        // TS definite.
+        if self.input.syntax().typescript() && matches!(name, Pat::Ident(_)) {
+            eat!(self, '!');
+        }
 
         // Typescript extension
         let type_annotation = if self.input.syntax().typescript() && is!(self, ':') {
