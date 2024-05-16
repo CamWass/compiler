@@ -104,14 +104,12 @@ impl Compiler {
             // each pass (e.g. that no two nodes have the same node_id).
 
             normalize_properties::normalize_properties(&mut ast, program_data);
+            normalize::normalize(&mut ast, program_data);
 
             let unresolved_mark = Mark::new();
             let top_level_mark = Mark::new();
 
             ast.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark));
-
-            // TODO: move before resolver
-            normalize::normalize(&mut ast, program_data);
 
             let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 
