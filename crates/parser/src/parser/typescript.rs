@@ -1,3 +1,5 @@
+use self::expression::BlockStmtOrExpr;
+
 use super::*;
 use crate::lexer::TokenContexts;
 use atoms::js_word;
@@ -1899,7 +1901,8 @@ impl<I: Tokens> Parser<I> {
         };
         self.with_ctx(ctx).parse_with(|p| {
             let is_async = true;
-            let body = p.parse_fn_body(true, false)?;
+            let body: BlockStmtOrExpr = p.parse_fn_body(true, false)?;
+            let body = p.make_arrow_fn_block(body);
             Ok(Some(ArrowExpr {
                 node_id: node_id!(p, span!(p, start)),
                 body,

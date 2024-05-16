@@ -370,15 +370,6 @@ impl<'ast> From<&'ast ::ast::ModuleDecl> for Node<'ast> {
     }
 }
 
-impl<'ast> From<&'ast ::ast::BlockStmtOrExpr> for Node<'ast> {
-    fn from(other: &'ast ::ast::BlockStmtOrExpr) -> Node<'ast> {
-        match other {
-            ::ast::BlockStmtOrExpr::BlockStmt(n) => Node::from(n),
-            ::ast::BlockStmtOrExpr::Expr(n) => Node::from(&**n),
-        }
-    }
-}
-
 impl<'ast> From<&'ast ::ast::Prop> for Node<'ast> {
     fn from(other: &'ast ::ast::Prop) -> Node<'ast> {
         match other {

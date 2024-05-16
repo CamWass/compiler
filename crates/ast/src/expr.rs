@@ -259,7 +259,7 @@ pub struct ArrowExpr {
     // TODO:
     pub params: Vec<ParamWithoutDecorators>,
 
-    pub body: BlockStmtOrExpr,
+    pub body: BlockStmt,
 
     pub is_async: bool,
 }
@@ -349,23 +349,6 @@ pub struct Super {
 pub enum ExprOrSpread {
     Spread(SpreadElement),
     Expr(Box<Expr>),
-}
-
-#[ast_node]
-#[derive(Eq, Hash)]
-#[allow(variant_size_differences)]
-pub enum BlockStmtOrExpr {
-    BlockStmt(BlockStmt),
-    Expr(Box<Expr>),
-}
-
-impl Take for BlockStmtOrExpr {
-    fn dummy() -> Self {
-        Self::BlockStmt(BlockStmt {
-            node_id: NodeId::DUMMY,
-            stmts: Vec::new(),
-        })
-    }
 }
 
 #[ast_node]

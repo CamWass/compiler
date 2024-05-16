@@ -384,6 +384,7 @@ impl<I: Tokens> Parser<I> {
                 let params = vec![ParamWithoutDecorators::from_pat(arg, program_data!(self))];
                 expect!(self, "=>");
                 let body = self.parse_fn_body(true, false)?;
+                let body = self.make_arrow_fn_block(body);
 
                 return Ok(Box::new(Expr::Arrow(ArrowExpr {
                     node_id: node_id!(self, span!(self, start)),
@@ -400,6 +401,7 @@ impl<I: Tokens> Parser<I> {
                     program_data!(self),
                 )];
                 let body = self.parse_fn_body(false, false)?;
+                let body = self.make_arrow_fn_block(body);
 
                 return Ok(Box::new(Expr::Arrow(ArrowExpr {
                     node_id: node_id!(self, span!(self, start)),
@@ -1039,6 +1041,7 @@ impl<I: Tokens> Parser<I> {
                     .collect();
 
                 let body: BlockStmtOrExpr = self.parse_fn_body(false, false)?;
+                let body = self.make_arrow_fn_block(body);
                 expect!(self, ')');
                 let span = span!(self, start);
 
@@ -1247,6 +1250,7 @@ impl<I: Tokens> Parser<I> {
                     .collect();
 
                 let body = p.parse_fn_body(async_span.is_some(), false)?;
+                let body = p.make_arrow_fn_block(body);
 
                 Ok(Some(Box::new(Expr::Arrow(ArrowExpr {
                     node_id: node_id!(p, span!(p, expr_start)),
@@ -1290,13 +1294,15 @@ impl<I: Tokens> Parser<I> {
                 .collect();
 
             let body: BlockStmtOrExpr = self.parse_fn_body(async_span.is_some(), false)?;
+            let is_block = matches!(body, BlockStmtOrExpr::BlockStmt(_));
+            let body = self.make_arrow_fn_block(body);
             let arrow_expr = ArrowExpr {
                 node_id: node_id!(self, span!(self, expr_start)),
                 is_async: async_span.is_some(),
                 params,
                 body,
             };
-            if let BlockStmtOrExpr::BlockStmt(..) = arrow_expr.body {
+            if is_block {
                 if let Some(&Token::BinOp(..)) = self.input.cur() {
                     // ) is required
                     self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
@@ -1389,6 +1395,25 @@ impl<I: Tokens> Parser<I> {
                 node_id: node_id!(self, span!(self, expr_start)),
                 expr: seq_expr,
             })))
+        }
+    }
+
+    // Rewrite blockless arrow functions to have a block with a single return statement.
+    // For example: `(x) => x` becomes `(x) => { return x; }`.
+    // This simplifies optimizations as they can now assume all functions have a BLOCK.
+    pub(super) fn make_arrow_fn_block(&mut self, block: BlockStmtOrExpr) -> BlockStmt {
+        match block {
+            BlockStmtOrExpr::BlockStmt(b) => b,
+            BlockStmtOrExpr::Expr(expr) => {
+                let expr_id = expr.node_id();
+                BlockStmt {
+                    node_id: node_id_from!(self, expr_id),
+                    stmts: vec![Stmt::Return(ReturnStmt {
+                        node_id: node_id_from!(self, expr_id),
+                        arg: Some(expr),
+                    })],
+                }
+            }
         }
     }
 
@@ -1699,4 +1724,9 @@ fn is_import(obj: &ExprOrSuper) -> bool {
         ),
         _ => false,
     }
+}
+
+pub(super) enum BlockStmtOrExpr {
+    BlockStmt(BlockStmt),
+    Expr(Box<Expr>),
 }

@@ -126,25 +126,6 @@ impl BlockCreator<'_> {
 }
 
 impl VisitMut<'_> for BlockCreator<'_> {
-    // Rewrite blockless arrow functions to have a block with a single return statement.
-    // For example: `(x) => x` becomes `(x) => { return x; }`.
-    // This simplifies optimizations as they can now assume all functions have a BLOCK.
-    fn visit_mut_arrow_expr(&mut self, node: &mut ArrowExpr) {
-        if matches!(node.body, BlockStmtOrExpr::Expr(_)) {
-            node.body.map_with_mut(|body| {
-                let expr = unwrap_as!(body, BlockStmtOrExpr::Expr(e), e);
-                let expr_id = expr.node_id();
-                BlockStmtOrExpr::BlockStmt(BlockStmt {
-                    node_id: self.program_data.new_id_from(expr_id),
-                    stmts: vec![Stmt::Return(ReturnStmt {
-                        node_id: self.program_data.new_id_from(expr_id),
-                        arg: Some(expr),
-                    })],
-                })
-            });
-        }
-    }
-
     fn visit_mut_with_stmt(&mut self, node: &mut WithStmt) {
         self.handle_single_stmt(node.body.as_mut());
     }

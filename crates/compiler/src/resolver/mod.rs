@@ -404,12 +404,7 @@ impl<'a> VisitMut<'_> for Resolver<'a> {
             e.params.visit_mut_with(child);
             child.ident_type = old;
 
-            {
-                match &mut e.body {
-                    BlockStmtOrExpr::BlockStmt(s) => s.stmts.visit_mut_with(child),
-                    BlockStmtOrExpr::Expr(e) => e.visit_mut_with(child),
-                }
-            }
+            e.body.stmts.visit_mut_with(child);
         });
     }
 
@@ -425,14 +420,6 @@ impl<'a> VisitMut<'_> for Resolver<'a> {
         self.with_child(ScopeKind::Block, |child| {
             block.visit_mut_children_with(child);
         })
-    }
-
-    /// Handle body of the arrow functions
-    fn visit_mut_block_stmt_or_expr(&mut self, node: &mut BlockStmtOrExpr) {
-        match node {
-            BlockStmtOrExpr::BlockStmt(block) => block.visit_mut_children_with(self),
-            BlockStmtOrExpr::Expr(e) => e.visit_mut_with(self),
-        }
     }
 
     fn visit_mut_catch_clause(&mut self, c: &mut CatchClause) {

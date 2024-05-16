@@ -383,7 +383,7 @@ define!({
     pub struct ArrowExpr {
         pub node_id: NodeId,
         pub params: Vec<ParamWithoutDecorators>,
-        pub body: BlockStmtOrExpr,
+        pub body: BlockStmt,
         pub is_async: bool,
     }
     pub struct YieldExpr {
@@ -429,10 +429,6 @@ define!({
     }
     pub enum ExprOrSpread {
         Spread(SpreadElement),
-        Expr(Box<Expr>),
-    }
-    pub enum BlockStmtOrExpr {
-        BlockStmt(BlockStmt),
         Expr(Box<Expr>),
     }
     pub enum PatOrExpr {

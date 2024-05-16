@@ -1,3 +1,5 @@
+use self::expression::BlockStmtOrExpr;
+
 use super::{identifier::MaybeOptionalIdentParser, *};
 use crate::{error::SyntaxError, lexer::TokenContext, Tokens};
 use atoms::js_word;

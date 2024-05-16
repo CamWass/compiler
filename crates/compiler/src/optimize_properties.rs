@@ -517,9 +517,6 @@ impl Visit<'_> for InnerVisitor {
             ExprOrSpread::Spread(n) => n.visit_with(self),
         }
     }
-    fn visit_block_stmt_or_expr(&mut self, node: &BlockStmtOrExpr) {
-        todo!();
-    }
     fn visit_opt_chain_expr(&mut self, node: &OptChainExpr) {
         todo!();
     }

@@ -673,7 +673,25 @@ impl<'a> Emitter<'a> {
         }
 
         punct!(self, "=>");
-        self.emit_block_stmt_or_expr(&node.body)
+        if node.body.stmts.len() == 1 {
+            if let Stmt::Return(ret) = &node.body.stmts[0] {
+                self.wr.increase_indent()?;
+                if let Some(expr) = &ret.arg {
+                    self.emit_expr(expr)?;
+                } else {
+                    keyword!(self, get_span!(self, ret.node_id), "undefined");
+                }
+                self.wr.decrease_indent()?;
+                if !self.cfg.minify {
+                    self.wr.write_line()?;
+                }
+                Ok(())
+            } else {
+                self.emit_block_stmt(&node.body)
+            }
+        } else {
+            self.emit_block_stmt(&node.body)
+        }
     }
 
     fn emit_meta_prop_expr(&mut self, node: &MetaPropExpr) -> Result {
@@ -1064,21 +1082,6 @@ impl<'a> Emitter<'a> {
 
         formatting_space!(self);
         self.emit_block_stmt(&node.body)
-    }
-
-    fn emit_block_stmt_or_expr(&mut self, node: &BlockStmtOrExpr) -> Result {
-        match *node {
-            BlockStmtOrExpr::BlockStmt(ref block_stmt) => self.emit_block_stmt(block_stmt),
-            BlockStmtOrExpr::Expr(ref expr) => {
-                self.wr.increase_indent()?;
-                self.emit_expr(expr)?;
-                self.wr.decrease_indent()?;
-                if !self.cfg.minify {
-                    self.wr.write_line()?;
-                }
-                Ok(())
-            }
-        }
     }
 
     fn emit_this_expr(&mut self, node: &ThisExpr) -> Result {
