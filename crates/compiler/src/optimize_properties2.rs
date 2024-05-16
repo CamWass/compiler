@@ -1847,6 +1847,7 @@ impl PropKey {
                     || e.ctxt == unresolved_ctxt
                         && (e.sym == js_word!("undefined") || e.sym == js_word!("NaN"))
                 {
+                    // TODO: is this wrong? For "const fooVar = 'a'; obj[foovar]" this will record the prop name as 'foovar' when it is reall 'a'
                     Some(PropKey(names.insert(e.sym.clone()), e.node_id))
                 } else {
                     None
@@ -1880,6 +1881,7 @@ impl PropKey {
 /// Returns true if the string value of the [`PropName`] is statically determinable.
 fn is_simple_prop_name(prop_name: &PropName, unresolved_ctxt: SyntaxContext) -> bool {
     match prop_name {
+        // TODO: is this wrong? For "const fooVar = 'a'; obj[foovar]" this will record the prop name as 'foovar' when it is reall 'a'
         PropName::Ident(_) | PropName::Str(_) | PropName::Num(_) => true,
         PropName::Computed(p) => match p.expr.as_ref() {
             Expr::Lit(e) => match e {
