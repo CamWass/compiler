@@ -10,10 +10,10 @@ mod DataFlowAnalysis2;
 mod function;
 mod graph;
 mod hashable_map;
-mod simple_set;
+pub mod simple_set;
 mod template;
 mod types;
-mod unionfind;
+pub mod unionfind;
 mod utils;
 
 use std::borrow::Cow;
@@ -1576,10 +1576,10 @@ index::newtype_index!(pub(super) struct CallId { .. });
 index::newtype_index!(pub(super) struct NameId { .. });
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(super) struct Id(NameId, SyntaxContext);
+pub(super) struct Id(pub NameId, pub SyntaxContext);
 
 impl Id {
-    fn new(ident: &Ident, names: &mut IndexSet<NameId, JsWord>) -> Self {
+    pub fn new(ident: &Ident, names: &mut IndexSet<NameId, JsWord>) -> Self {
         Self(names.insert(ident.sym.clone()), ident.ctxt)
     }
 }
@@ -1816,10 +1816,10 @@ enum Slot {
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
-pub(super) struct PropKey(NameId, NodeId);
+pub(super) struct PropKey(pub NameId, pub NodeId);
 
 impl PropKey {
-    fn from_prop_name(
+    pub fn from_prop_name(
         prop: &PropName,
         unresolved_ctxt: SyntaxContext,
         names: &mut IndexSet<NameId, JsWord>,
@@ -1835,7 +1835,7 @@ impl PropKey {
         }
     }
 
-    fn from_expr(
+    pub fn from_expr(
         expr: &Expr,
         unresolved_ctxt: SyntaxContext,
         computed: bool,
@@ -3478,9 +3478,9 @@ fn build_call(
 
 impl Annotation for Lattice {}
 
-struct Renamer<'a> {
-    program_data: &'a mut ProgramData,
-    rename_map: FxHashMap<NodeId, JsWord>,
+pub struct Renamer<'a> {
+    pub program_data: &'a mut ProgramData,
+    pub rename_map: FxHashMap<NodeId, JsWord>,
 }
 
 // TODO: node id's are unique. use rename_map.remove to get owned JsWord - no other node will access the entry anyway.

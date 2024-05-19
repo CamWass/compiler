@@ -388,7 +388,7 @@ All trackable props come from a specific node in the AST
 Union find /conflate props while analysing
 
 
-just need to disambigute and determine which properties are escaped (can't be renamed)
+just need to disambiguate and determine which properties are escaped (can't be renamed)
 
 Start with all property accesses as referencing distinct properties. Then conflate
 those that access the same property.
@@ -403,3 +403,19 @@ obj2.propB // prop4
 good functions that only call other good functions and don't touch external vars can be computed ahead of time
 
 if we come to resolve a call, replace it wth a call with its invalid inputs replaced with None
+
+
+Analysis goals:
+- Determine if two property accesses refer to the same underlying property (for property renaming)
+- Determine if a property refers to an (unmodified) built-in property (e.g. for simplifying known method calls e.g. Map.get())
+  This also included implicit methods e.g. ` "" + a ` calls a's toString() method. We would like to know if this has been
+  overwritten or is still the default (and thus optimisable).
+
+
+Analyse functions using placeholders for their parameters (including implicit ones such as 'this'/captured vars).
+Also use placeholders for return types.
+Then, when calling functions, merge the arguments with their formal parameters.
+
+
+each prop in code gets id
+merge ids when they can point to the same thing
