@@ -103,8 +103,6 @@ fn create_renaming_map(
     let mut objects: FxHashMap<ConcretePointer, Object> = FxHashMap::default();
     let mut properties: IndexVec<PropId, Property> = IndexVec::default();
 
-    // let mut union_accesses = FxHashMap::<_, FxHashMap<_, FxHashSet<_>>>::default();
-
     for (PropKey(name, node_id), pointer) in &store.references {
         let objs = points_to.get(pointer).unwrap();
         if objs.len() == 1 {
@@ -424,12 +422,69 @@ fn compute_points_to_map(
                         _ => unreachable!(),
                     };
 
-                    for concrete_object in points_to.get(&obj).unwrap().clone() {
+                    let concrete_objects = match points_to.get(&obj) {
+                        Some(o) => o.clone(),
+                        None => continue,
+                    };
+
+                    for concrete_object in concrete_objects {
                         let concrete_object = store.pointers.insert(concrete_object.into());
                         let prop = store.pointers.insert(Pointer::Prop(concrete_object, name));
 
-                        for return_ty in points_to.get(&prop).unwrap().clone() {
-                            changed |= points_to.entry(dest).or_default().insert(return_ty);
+                        let props = match points_to.get(&prop) {
+                            Some(p) => p.clone(),
+                            None => continue,
+                        };
+
+                        for prop in props {
+                            changed |= points_to.entry(dest).or_default().insert(prop);
+                        }
+                    }
+                }
+                GraphEdge::Arg => {
+                    let (callee, index) = match store.pointers[src] {
+                        Pointer::Arg(callee, index) => (callee, index),
+                        _ => unreachable!(),
+                    };
+
+                    let concrete_callees = match points_to.get(&callee) {
+                        Some(c) => c.clone(),
+                        None => continue,
+                    };
+
+                    let concrete_values = match points_to.get(&src) {
+                        Some(c) => c.clone(),
+                        None => continue,
+                    };
+
+                    for concrete_callee in concrete_callees {
+                        match concrete_callee {
+                            ConcretePointer::Fn(callee) => {
+                                match store
+                                    .functions
+                                    .get(&callee)
+                                    .unwrap()
+                                    .param_indices()
+                                    .nth(index)
+                                {
+                                    Some(param) => {
+                                        let param = store.pointers.insert(Pointer::Var(param));
+                                        for value in &concrete_values {
+                                            changed |=
+                                                points_to.entry(param).or_default().insert(*value);
+                                        }
+                                    }
+                                    None => todo!("e.g. rest params, args array"),
+                                }
+                            }
+                            ConcretePointer::Object(_)
+                            | ConcretePointer::Unknown
+                            | ConcretePointer::NullOrVoid
+                            | ConcretePointer::Bool
+                            | ConcretePointer::Num
+                            | ConcretePointer::String
+                            | ConcretePointer::BigInt
+                            | ConcretePointer::Regex => {}
                         }
                     }
                 }
@@ -764,6 +819,7 @@ impl GraphVisitor<'_> {
                                 let arg_pointer =
                                     self.store.pointers.insert(Pointer::Arg(*callee, i));
                                 self.make_subset_of(*value, arg_pointer);
+                                self.graph.add_edge(arg_pointer, *callee, GraphEdge::Arg);
                             }
                         }
                     }
@@ -971,6 +1027,7 @@ enum GraphEdge {
     Subset,
     Return,
     Prop,
+    Arg,
 }
 
 impl Display for GraphEdge {
