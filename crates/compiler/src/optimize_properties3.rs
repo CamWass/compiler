@@ -27,8 +27,8 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 /*
 TODO:
+implicit return
 invalidate:
-    params/args when arguments array is used
     params that can't be statically bound? e.g. rest params
     Unknown/invalid assignment target
     things stored in unknown/invalid vars
@@ -381,6 +381,16 @@ fn compute_points_to_map(
 ) -> FxHashMap<PointerId, FxHashSet<ConcretePointer>> {
     let mut points_to: FxHashMap<_, FxHashSet<_>> = FxHashMap::default();
 
+    // Invalidate parameters for functions that access the arguments array.
+    for func in store.functions.values() {
+        if func.accesses_arguments_array {
+            for param in func.param_indices() {
+                let pointer = store.pointers.insert(Pointer::Var(param));
+                store.invalid_pointers.insert(pointer);
+            }
+        }
+    }
+
     store
         .invalid_pointers
         .insert(store.pointers.insert(Pointer::Unknown));
@@ -407,6 +417,53 @@ fn compute_points_to_map(
         }
     }
 
+    loop {
+        flow_edges(graph, store, &mut points_to);
+        // After we've reached a fixedpoint above, if we couldn't infer the values
+        // of a pointer, set them to Unknown and run fixedpoint again to propagate
+        // the Unknowns.
+        let mut changed = false;
+        for pointer in 0..store.pointers.len() {
+            let pointer = PointerId::from_usize(pointer);
+            if !points_to.contains_key(&pointer) || points_to.get(&pointer).unwrap().is_empty() {
+                points_to
+                    .entry(pointer)
+                    .or_default()
+                    .insert(ConcretePointer::Unknown);
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    // Propagate 'invalid-ness'.
+    for pointer in 0..store.pointers.len() {
+        let pointer = PointerId::from_usize(pointer);
+        if store.invalid_pointers.contains(&pointer) {
+            let values = match points_to.get(&pointer) {
+                Some(v) => v,
+                None => continue,
+            };
+            for &value in values {
+                store
+                    .invalid_pointers
+                    .insert(store.pointers.insert(value.into()));
+            }
+        }
+    }
+
+    dbg!(&points_to);
+
+    points_to
+}
+
+fn flow_edges(
+    graph: &mut DiGraphMap<PointerId, GraphEdge>,
+    store: &mut Store,
+    points_to: &mut FxHashMap<PointerId, FxHashSet<ConcretePointer>>,
+) {
     loop {
         let mut changed = false;
         for (src, dest, kind) in graph.all_edges() {
@@ -501,7 +558,10 @@ fn compute_points_to_map(
                                                 points_to.entry(param).or_default().insert(*value);
                                         }
                                     }
-                                    None => todo!("e.g. rest params, args array"),
+                                    None => {
+                                        // Don't invalidate extra arguments. The function cannot access them
+                                        // unless it uses e.g. arguments array, which is detected else where.
+                                    }
                                 }
                             }
                             ConcretePointer::Object(_)
@@ -521,26 +581,6 @@ fn compute_points_to_map(
             break;
         }
     }
-
-    // Propagate 'invalid-ness'.
-    for pointer in 0..store.pointers.len() {
-        let pointer = PointerId::from_usize(pointer);
-        if store.invalid_pointers.contains(&pointer) {
-            let values = match points_to.get(&pointer) {
-                Some(v) => v,
-                None => continue,
-            };
-            for &value in values {
-                store
-                    .invalid_pointers
-                    .insert(store.pointers.insert(value.into()));
-            }
-        }
-    }
-
-    dbg!(&points_to);
-
-    points_to
 }
 
 fn analyse(
@@ -570,6 +610,7 @@ fn analyse(
         let mut visitor = FnVisitor {
             store: &mut store,
             cur_var_start: VarId::from_u32(0),
+            cur_fn: None,
         };
         ast.visit_with(&mut visitor);
     }
@@ -1137,15 +1178,12 @@ enum ConcretePointer {
 struct StaticFunctionData {
     var_start: u32,
     param_end: u32,
+    accesses_arguments_array: bool,
 }
 
 impl StaticFunctionData {
     fn param_indices(&self) -> impl Iterator<Item = VarId> {
         VarId::from_u32(self.var_start)..VarId::from_u32(self.param_end)
-    }
-
-    fn param_count(&self) -> usize {
-        (self.param_end - self.var_start) as usize
     }
 }
 
@@ -1211,6 +1249,7 @@ impl<'ast> Visit<'ast> for DeclFinder<'_> {
 struct FnVisitor<'s> {
     store: &'s mut Store,
     cur_var_start: VarId,
+    cur_fn: Option<NodeId>,
 }
 
 impl<'ast> FnVisitor<'_> {
@@ -1248,18 +1287,34 @@ impl<'ast> FnVisitor<'_> {
         let static_data = StaticFunctionData {
             var_start,
             param_end,
+            accesses_arguments_array: false,
         };
 
         self.store.functions.insert(node.node_id(), static_data);
 
         let old_var_start = self.cur_var_start;
         self.cur_var_start = VarId::from_u32(var_start);
+        let old_cur_fn = self.cur_fn;
+        self.cur_fn = Some(node.node_id());
         node.visit_body_with(self);
+        self.cur_fn = old_cur_fn;
         self.cur_var_start = old_var_start;
     }
 }
 
 impl<'ast> Visit<'ast> for FnVisitor<'_> {
+    fn visit_ident(&mut self, node: &'ast Ident) {
+        if let Some(func) = self.cur_fn {
+            if node.sym == js_word!("arguments") && node.ctxt == self.store.unresolved_ctxt {
+                self.store
+                    .functions
+                    .get_mut(&func)
+                    .unwrap()
+                    .accesses_arguments_array = true;
+            }
+        }
+    }
+
     fn visit_fn_decl(&mut self, node: &'ast FnDecl) {
         self.handle_fn(&node.function, None);
     }
