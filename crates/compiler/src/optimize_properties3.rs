@@ -25,6 +25,30 @@ use petgraph::graph::UnGraph;
 use petgraph::graphmap::DiGraphMap;
 use rustc_hash::{FxHashMap, FxHashSet};
 
+/*
+TODO:
+invalidate:
+    params/args when arguments array is used
+    params that can't be statically bound? e.g. rest params
+    Unknown/invalid assignment target
+    things stored in unknown/invalid vars
+    things stored in properties of unknown/invalid things
+    things that are index using computed props (either read/write)
+    complex destructuring targets or spread targets
+    things stored in arrays
+    arguments passed to unknown callees
+    X in `new X()`
+    X in `yield X`
+    X in `yield X`
+    X in `throw X`
+    X in `return X` when we aren't in a function
+    expressions in tagged templates
+    X in `for (... in X)`
+    X in `for (... of X)`
+    X in `try {} catch (X) {}`
+    X in `with (X) {}` ??? but we should probably bail early on with statements
+*/
+
 pub fn process(
     ast: &mut ast::Program,
     program_data: &mut ProgramData,
@@ -106,7 +130,8 @@ fn create_renaming_map(
     for (PropKey(name, node_id), pointer) in &store.references {
         let objs = points_to.get(pointer).unwrap();
         if objs.len() == 1 {
-            let object = objects.entry(*objs.iter().next().unwrap()).or_default();
+            let obj = *objs.iter().next().unwrap();
+            let object = objects.entry(obj).or_default();
             let id = match object.properties.entry(*name) {
                 Entry::Occupied(entry) => *entry.get(),
                 Entry::Vacant(entry) => {
@@ -114,9 +139,9 @@ fn create_renaming_map(
                         name: *name,
                         prop_id: properties.next_index(),
                         references: FxHashSet::default(),
-                        // todo
-                        invalid: false,
-                        // invalid: store.invalid_objects.contains(object_id),
+                        invalid: store
+                            .invalid_pointers
+                            .contains(&store.pointers.insert(obj.into())),
                     });
                     entry.insert(prop_id);
                     prop_id
@@ -139,15 +164,12 @@ fn create_renaming_map(
     for (PropKey(name, node_id), pointer) in &store.references {
         let objs = points_to.get(pointer).unwrap();
         if objs.len() > 1 {
-            // let invalid = store.invalidated(Pointer::Union(union));
-
             let mut props = objs
                 .iter()
                 .filter_map(|c| objects.get(c).and_then(|c| c.properties.get(name)));
 
             let representative = if let Some(&representative) = props.next() {
                 properties[representative].references.insert(*node_id);
-                // properties[representative].invalid |= invalid;
                 representative
             } else {
                 let mut references = FxHashSet::default();
@@ -156,17 +178,18 @@ fn create_renaming_map(
                     name: *name,
                     prop_id: properties.next_index(),
                     references,
-                    // todo
                     invalid: false,
-                    // invalid,
                 });
                 union_find.add(prop_id);
                 prop_id
             };
 
-            for constituent in objs {
+            for &constituent in objs {
+                properties[representative].invalid |= store
+                    .invalid_pointers
+                    .contains(&store.pointers.insert(constituent.into()));
                 match objects
-                    .get_mut(constituent)
+                    .get_mut(&constituent)
                     .unwrap()
                     .properties
                     .entry(*name)
@@ -495,6 +518,22 @@ fn compute_points_to_map(
         }
     }
 
+    // Propagate 'invalid-ness'.
+    for pointer in 0..store.pointers.len() {
+        let pointer = PointerId::from_usize(pointer);
+        if store.invalid_pointers.contains(&pointer) {
+            let values = match points_to.get(&pointer) {
+                Some(v) => v,
+                None => continue,
+            };
+            for &value in values {
+                store
+                    .invalid_pointers
+                    .insert(store.pointers.insert(value.into()));
+            }
+        }
+    }
+
     dbg!(&points_to);
 
     points_to
@@ -504,15 +543,14 @@ fn analyse(
     ast: &ast::Program,
     unresolved_ctxt: SyntaxContext,
 ) -> (Store, FxHashMap<PointerId, FxHashSet<ConcretePointer>>) {
-    let mut pointers = IndexSet::default();
     let mut store = Store {
         unresolved_ctxt,
         functions: FxHashMap::default(),
         names: IndexSet::default(),
         vars: IndexSet::default(),
-        unknown_pointer: pointers.insert(Pointer::Unknown),
-        pointers,
+        pointers: IndexSet::default(),
         references: FxHashMap::default(),
+        invalid_pointers: FxHashSet::default(),
     };
 
     {
@@ -787,7 +825,11 @@ impl GraphVisitor<'_> {
                         }
                         obj
                     } else {
-                        todo!();
+                        for obj in obj {
+                            self.invalidate(obj);
+                        }
+                        n.prop.visit_with(self);
+                        vec![self.store.pointers.insert(Pointer::Unknown)]
                     }
                 }
             },
@@ -923,6 +965,10 @@ impl GraphVisitor<'_> {
 
     fn make_subset_of(&mut self, sub: PointerId, sup: PointerId) {
         self.graph.add_edge(sub, sup, GraphEdge::Subset);
+    }
+
+    fn invalidate(&mut self, pointer: PointerId) {
+        self.store.invalid_pointers.insert(pointer);
     }
 }
 
@@ -1108,8 +1154,8 @@ struct Store {
     names: IndexSet<NameId, JsWord>,
     vars: IndexSet<VarId, Id>,
     pointers: IndexSet<PointerId, Pointer>,
-    unknown_pointer: PointerId,
     references: FxHashMap<PropKey, PointerId>,
+    invalid_pointers: FxHashSet<PointerId>,
 }
 struct DeclFinder<'a> {
     names: &'a mut IndexSet<NameId, JsWord>,
