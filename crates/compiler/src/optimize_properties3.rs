@@ -381,6 +381,10 @@ fn compute_points_to_map(
 ) -> FxHashMap<PointerId, FxHashSet<ConcretePointer>> {
     let mut points_to: FxHashMap<_, FxHashSet<_>> = FxHashMap::default();
 
+    store
+        .invalid_pointers
+        .insert(store.pointers.insert(Pointer::Unknown));
+
     for pointer in 0..store.pointers.len() {
         let pointer = PointerId::from_usize(pointer);
         let concrete = match store.pointers[pointer] {
