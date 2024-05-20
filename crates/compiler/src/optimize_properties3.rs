@@ -143,7 +143,7 @@ fn create_renaming_map(
 
             let mut props = objs
                 .iter()
-                .filter_map(|c| objects.get(&c).and_then(|c| c.properties.get(&name)));
+                .filter_map(|c| objects.get(c).and_then(|c| c.properties.get(name)));
 
             let representative = if let Some(&representative) = props.next() {
                 properties[representative].references.insert(*node_id);
@@ -538,14 +538,11 @@ fn analyse(
     (store, points_to)
 }
 
-fn compute_relations(
-    ast: &ast::Program,
-    mut store: &mut Store,
-) -> DiGraphMap<PointerId, GraphEdge> {
+fn compute_relations(ast: &ast::Program, store: &mut Store) -> DiGraphMap<PointerId, GraphEdge> {
     let mut graph = DiGraphMap::new();
 
     let mut visitor = GraphVisitor {
-        store: &mut store,
+        store,
         graph: &mut graph,
         cur_fn: None,
     };
@@ -652,7 +649,7 @@ impl GraphVisitor<'_> {
                 n.function.visit_with(self);
                 let func = self.store.pointers.insert(Pointer::Fn(n.function.node_id));
                 if let Some(name) = &n.ident {
-                    let name = Id::new(&name, &mut self.store.names);
+                    let name = Id::new(name, &mut self.store.names);
                     let var = self.store.vars.get_index(&name).unwrap();
                     let var = self.store.pointers.insert(Pointer::Var(var));
                     self.make_subset_of(func, var);
@@ -940,7 +937,7 @@ impl Visit<'_> for GraphVisitor<'_> {
                 let cur_fn = self.store.pointers.insert(Pointer::Fn(cur_fn));
                 let lhs = self.get_return_value(cur_fn);
                 if let Some(value) = &n.arg {
-                    let rhs = self.get_rhs(&value);
+                    let rhs = self.get_rhs(value);
                     for rhs in rhs {
                         self.make_subset_of(rhs, lhs);
                     }
