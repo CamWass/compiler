@@ -1014,6 +1014,10 @@ impl Visit<'_> for GraphVisitor<'_> {
         }
     }
 
+    fn visit_expr(&mut self, n: &Expr) {
+        self.get_rhs(n);
+    }
+
     fn visit_module_decl(&mut self, _: &ModuleDecl) {
         todo!();
     }
