@@ -6,6 +6,9 @@
 #![warn(dead_code)]
 #![deny(unused_imports)]
 
+#[cfg(test)]
+mod tests;
+
 use std::collections::hash_map::Entry;
 use std::convert::TryInto;
 use std::fmt::Display;
