@@ -58,9 +58,7 @@ impl<'a> Tester<'a> {
 
         let mut program_data = Rc::try_unwrap(program_data).unwrap().into_inner();
 
-        let mut program = tr(program, &mut program_data);
-
-        program.visit_mut_with(&mut DropNodeId);
+        let program = tr(program, &mut program_data);
 
         Ok((program, program_data))
     }
@@ -89,22 +87,23 @@ where
     T: FnOnce(Program, &mut ast::ProgramData) -> Program,
 {
     Tester::run(|tester| {
-        let expected = tester.apply_transform(|m, _| m, "output.js", expected)?;
+        let mut expected = tester.apply_transform(|m, _| m, "output.js", expected)?;
 
         let mut actual = tester.apply_transform(transform, "input.js", input)?;
 
-        actual.0.visit_mut_with(&mut DropNodeId);
-
-        if actual.0 == expected.0 {
-            return Ok(());
-        }
-
         let (actual_src, expected_src) = (
             tester.print(&actual.0, &actual.1),
-            tester.print(&expected.0, &actual.1),
+            tester.print(&expected.0, &expected.1),
         );
 
         if actual_src == expected_src {
+            return Ok(());
+        }
+
+        actual.0.visit_mut_with(&mut DropNodeId);
+        expected.0.visit_mut_with(&mut DropNodeId);
+
+        if actual.0 == expected.0 {
             return Ok(());
         }
 

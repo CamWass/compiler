@@ -195,7 +195,7 @@ pub fn test_transform<F, P>(
 
         let (actual_src, expected_src) = (
             tester.print(&actual.0, &actual.1),
-            tester.print(&expected.0, &actual.1),
+            tester.print(&expected.0, &expected.1),
         );
 
         if actual_src == expected_src {
