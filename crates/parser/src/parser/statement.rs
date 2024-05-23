@@ -5,6 +5,7 @@ use crate::{
 };
 use atoms::js_word;
 use global_common::{BytePos, Span};
+use statement::typescript::DeclOrEmpty;
 
 mod module_item;
 
@@ -58,7 +59,7 @@ pub(super) trait StmtLikeParser<Type: IsDirective> {
         &mut self,
         top_level: bool,
         decorators: Vec<Decorator>,
-    ) -> PResult<Type>;
+    ) -> PResult<Option<Type>>;
 }
 
 #[derive(PartialEq, Eq)]
@@ -69,17 +70,17 @@ pub enum StmtParseCtx {
 }
 
 impl<I: Tokens> StmtLikeParser<Stmt> for Parser<I> {
-    fn handle_import_export(&mut self, _: bool, _: Vec<Decorator>) -> PResult<Stmt> {
+    fn handle_import_export(&mut self, _: bool, _: Vec<Decorator>) -> PResult<Option<Stmt>> {
         let start = self.input.cur_pos();
         if self.input.syntax().dynamic_import() && is!(self, "import") {
             let expr = self.parse_expr()?;
 
             eat!(self, ';');
 
-            return Ok(Stmt::Expr(ExprStmt {
+            return Ok(Some(Stmt::Expr(ExprStmt {
                 node_id: node_id!(self, span!(self, start)),
                 expr,
-            }));
+            })));
         }
 
         if self.input.syntax().import_meta()
@@ -90,10 +91,10 @@ impl<I: Tokens> StmtLikeParser<Stmt> for Parser<I> {
 
             eat!(self, ';');
 
-            return Ok(Stmt::Expr(ExprStmt {
+            return Ok(Some(Stmt::Expr(ExprStmt {
                 node_id: node_id!(self, span!(self, start)),
                 expr,
-            }));
+            })));
         }
 
         syntax_error!(self, SyntaxError::ImportExportInScript);
@@ -190,7 +191,7 @@ impl<I: Tokens> Parser<I> {
         let decorators = self.parse_decorators(true)?;
 
         if is_one_of!(self, "import", "export") {
-            return self.handle_import_export(top_level, decorators).map(Some);
+            return self.handle_import_export(top_level, decorators);
         }
 
         self.parse_stmt_content(start, parse_ctx, top_level, decorators)
@@ -446,7 +447,10 @@ impl<I: Tokens> Parser<I> {
 
             if self.input.syntax().typescript() {
                 if let Some(decl) = self.parse_ts_expr_stmt(decorators, ident)? {
-                    return Ok(Some(Stmt::Decl(decl)));
+                    return match decl {
+                        DeclOrEmpty::Decl(d) => Ok(Some(Stmt::Decl(d))),
+                        DeclOrEmpty::Empty => Ok(None),
+                    };
                 }
             }
         }

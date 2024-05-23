@@ -224,7 +224,7 @@ impl<I: Tokens> Parser<I> {
     }
 
     #[allow(clippy::cognitive_complexity)]
-    fn parse_export(&mut self, decorators: Vec<Decorator>) -> PResult<ModuleDecl> {
+    fn parse_export(&mut self, decorators: Vec<Decorator>) -> PResult<Option<ModuleDecl>> {
         if !self.ctx().is_module() {
             // Switch to module mode
             let ctx = Context {
@@ -247,10 +247,13 @@ impl<I: Tokens> Parser<I> {
             // TODO(swc): Remove
             let decorators = decorators.clone_node(program_data!(self));
             if let Some(decl) = self.try_parse_ts_declare(after_export_start, decorators)? {
-                return Ok(ModuleDecl::ExportDecl(ExportDecl {
-                    node_id: node_id!(self, span!(self, start)),
-                    decl,
-                }));
+                return match decl {
+                    DeclOrEmpty::Decl(decl) => Ok(Some(ModuleDecl::ExportDecl(ExportDecl {
+                        node_id: node_id!(self, span!(self, start)),
+                        decl,
+                    }))),
+                    DeclOrEmpty::Empty => Ok(None),
+                };
             }
         }
 
@@ -262,10 +265,13 @@ impl<I: Tokens> Parser<I> {
             // TODO(swc): remove clone
             let decorators = decorators.clone_node(program_data!(self));
             if let Some(decl) = self.try_parse_ts_export_decl(decorators, sym) {
-                return Ok(ModuleDecl::ExportDecl(ExportDecl {
-                    node_id: node_id!(self, span!(self, start)),
-                    decl,
-                }));
+                return match decl {
+                    DeclOrEmpty::Decl(decl) => Ok(Some(ModuleDecl::ExportDecl(ExportDecl {
+                        node_id: node_id!(self, span!(self, start)),
+                        decl,
+                    }))),
+                    DeclOrEmpty::Empty => Ok(None),
+                };
             }
         }
 
@@ -317,11 +323,11 @@ impl<I: Tokens> Parser<I> {
             has_star = true;
             if is!(self, "from") {
                 let (src, asserts) = self.parse_from_clause_and_semi()?;
-                return Ok(ModuleDecl::ExportAll(ExportAll {
+                return Ok(Some(ModuleDecl::ExportAll(ExportAll {
                     node_id: node_id!(self, span!(self, start)),
                     src,
                     asserts,
-                }));
+                })));
             }
             if eat!(self, "as") {
                 let name = self.parse_ident_name()?;
@@ -344,7 +350,7 @@ impl<I: Tokens> Parser<I> {
                     let class_start = self.input.cur_pos();
                     self.assert_and_bump(&tok!("abstract"));
                     let class = self.parse_default_class(start, class_start, decorators)?;
-                    return Ok(ModuleDecl::ExportDefaultDecl(class));
+                    return Ok(Some(ModuleDecl::ExportDefaultDecl(class)));
                 }
                 if is!(self, "abstract") && peeked_is!(self, "interface") {
                     self.emit_err(self.input.cur_span(), SyntaxError::TS1242);
@@ -370,7 +376,7 @@ impl<I: Tokens> Parser<I> {
             if is!(self, "class") {
                 let class_start = self.input.cur_pos();
                 let decl = self.parse_default_class(start, class_start, decorators)?;
-                return Ok(ModuleDecl::ExportDefaultDecl(decl));
+                return Ok(Some(ModuleDecl::ExportDefaultDecl(decl)));
             } else if is!(self, "async")
                 && self.input.peeked_is(&tok!("function"))
                 && !self.input.has_linebreak_between_cur_and_peeked()
@@ -389,10 +395,10 @@ impl<I: Tokens> Parser<I> {
             } else {
                 let expr = self.include_in_expr(true).parse_assignment_expr()?;
                 expect!(self, ';');
-                return Ok(ModuleDecl::ExportDefaultExpr(ExportDefaultExpr {
+                return Ok(Some(ModuleDecl::ExportDefaultExpr(ExportDefaultExpr {
                     node_id: node_id!(self, span!(self, start)),
                     expr,
-                }));
+                })));
             }
         }
 
@@ -448,12 +454,12 @@ impl<I: Tokens> Parser<I> {
                     let (src, asserts) = self.parse_from_clause_and_semi()?;
                     let hi = get_span!(self, src.node_id).hi();
                     let span = Span::new(start, hi);
-                    return Ok(ModuleDecl::ExportNamed(NamedExport {
+                    return Ok(Some(ModuleDecl::ExportNamed(NamedExport {
                         node_id: node_id!(self, span),
                         specifiers: vec![s],
                         src: Some(src),
                         asserts,
-                    }));
+                    })));
                 }
             }
 
@@ -473,7 +479,7 @@ impl<I: Tokens> Parser<I> {
                     let (src, asserts) = self.parse_from_clause_and_semi()?;
                     let hi = get_span!(self, src.node_id).hi();
                     let span = Span::new(start, hi);
-                    return Ok(ModuleDecl::ExportNamed(NamedExport {
+                    return Ok(Some(ModuleDecl::ExportNamed(NamedExport {
                         node_id: node_id!(self, span),
                         specifiers: vec![ExportSpecifier::Default(ExportDefaultSpecifier {
                             node_id: node_id_from!(self, default.node_id),
@@ -481,7 +487,7 @@ impl<I: Tokens> Parser<I> {
                         })],
                         src: Some(src),
                         asserts,
-                    }));
+                    })));
                 }
             }
 
@@ -490,11 +496,11 @@ impl<I: Tokens> Parser<I> {
                 let (src, asserts) = self.parse_from_clause_and_semi()?;
                 let hi = get_span!(self, src.node_id).hi();
                 let span = Span::new(start, hi);
-                return Ok(ModuleDecl::ExportAll(ExportAll {
+                return Ok(Some(ModuleDecl::ExportAll(ExportAll {
                     node_id: node_id!(self, span),
                     src,
                     asserts,
-                }));
+                })));
             }
 
             let has_ns = export_ns.is_some();
@@ -546,18 +552,18 @@ impl<I: Tokens> Parser<I> {
                 Some(v) => (Some(v.0), v.1),
                 None => (None, None),
             };
-            return Ok(ModuleDecl::ExportNamed(NamedExport {
+            return Ok(Some(ModuleDecl::ExportNamed(NamedExport {
                 node_id: node_id!(self, span!(self, start)),
                 specifiers,
                 src,
                 asserts,
-            }));
+            })));
         };
 
-        Ok(ModuleDecl::ExportDecl(ExportDecl {
+        Ok(Some(ModuleDecl::ExportDecl(ExportDecl {
             node_id: node_id!(self, span!(self, start)),
             decl,
-        }))
+        })))
     }
 
     fn parse_named_export_specifier(&mut self) -> PResult<ExportNamedSpecifier> {
@@ -628,22 +634,21 @@ impl<I: Tokens> StmtLikeParser<ModuleItem> for Parser<I> {
         &mut self,
         top_level: bool,
         decorators: Vec<Decorator>,
-    ) -> PResult<ModuleItem> {
+    ) -> PResult<Option<ModuleItem>> {
         if !top_level {
             syntax_error!(self, SyntaxError::NonTopLevelImportExport);
         }
 
-        let decl = if is!(self, "import") {
-            self.parse_import()?
+        if is!(self, "import") {
+            self.parse_import().map(|i| Some(i))
         } else if is!(self, "export") {
-            self.parse_export(decorators).map(ModuleItem::ModuleDecl)?
+            self.parse_export(decorators)
+                .map(|d| d.map(ModuleItem::ModuleDecl))
         } else {
             unreachable!(
                 "handle_import_export should not be called if current token isn't import nor \
                  export"
             )
-        };
-
-        Ok(decl)
+        }
     }
 }

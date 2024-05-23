@@ -1672,14 +1672,11 @@ impl<I: Tokens> Parser<I> {
         &mut self,
         decorators: Vec<Decorator>,
         expr: &Ident,
-    ) -> PResult<Option<Decl>> {
+    ) -> PResult<Option<DeclOrEmpty>> {
         let start = get_span!(self, expr.node_id).lo();
 
         match &*expr.sym {
-            "declare" => {
-                let decl = self.try_parse_ts_declare(start, decorators)?;
-                Ok(decl)
-            }
+            "declare" => self.try_parse_ts_declare(start, decorators),
             "global" => {
                 // `global { }` (with no `declare`) may appear inside an ambient module
                 // declaration.
@@ -1702,7 +1699,7 @@ impl<I: Tokens> Parser<I> {
         &mut self,
         start: BytePos,
         decorators: Vec<Decorator>,
-    ) -> PResult<Option<Decl>> {
+    ) -> PResult<Option<DeclOrEmpty>> {
         assert!(
             !is!(self, "declare"),
             "try_parse_ts_declare should be called after eating `declare`"
@@ -1727,7 +1724,7 @@ impl<I: Tokens> Parser<I> {
                     s.lo = declare_start;
                     set_span!(p, f.node_id, s);
                 }
-                return Ok(decl);
+                return Ok(decl.map(|d| DeclOrEmpty::Decl(d)));
             }
 
             if is!(p, "class") {
@@ -1738,7 +1735,7 @@ impl<I: Tokens> Parser<I> {
                     s.lo = declare_start;
                     set_span!(p, c.node_id, s);
                 }
-                return Ok(Some(decl));
+                return Ok(Some(DeclOrEmpty::Decl(decl)));
             }
 
             if is!(p, "const") && peeked_is!(p, "enum") {
@@ -1747,14 +1744,14 @@ impl<I: Tokens> Parser<I> {
                 p.assert_and_bump(&tok!("enum"));
 
                 p.parse_ts_enum_decl(start, true)?;
-                return Ok(None);
+                return Ok(Some(DeclOrEmpty::Empty));
             }
             if is_one_of!(p, "const", "var", "let") {
                 let decl = p.parse_var_stmt(false)?;
                 let mut s = get_span!(p, decl.node_id);
                 s.lo = declare_start;
                 set_span!(p, decl.node_id, s);
-                return Ok(Some(Decl::Var(decl)));
+                return Ok(Some(DeclOrEmpty::Decl(Decl::Var(decl))));
             }
 
             if is!(p, "global") {
@@ -1779,7 +1776,7 @@ impl<I: Tokens> Parser<I> {
         &mut self,
         decorators: Vec<Decorator>,
         value: JsWord,
-    ) -> Option<Decl> {
+    ) -> Option<DeclOrEmpty> {
         self.try_parse_ts(|p| {
             let start = p.input.cur_pos();
             let opt = p.parse_ts_decl(start, decorators, value, true)?;
@@ -1798,7 +1795,7 @@ impl<I: Tokens> Parser<I> {
         decorators: Vec<Decorator>,
         value: JsWord,
         next: bool,
-    ) -> PResult<Option<Decl>> {
+    ) -> PResult<Option<DeclOrEmpty>> {
         match value {
             js_word!("abstract") => {
                 if next || (is!(self, "class") && !self.input.had_line_break_before_cur()) {
@@ -1806,7 +1803,7 @@ impl<I: Tokens> Parser<I> {
                         self.input.bump();
                     }
                     let mut decl = self.parse_class_decl(start, start, decorators)?;
-                    return Ok(Some(decl));
+                    return Ok(Some(DeclOrEmpty::Decl(decl)));
                 }
             }
 
@@ -1816,6 +1813,7 @@ impl<I: Tokens> Parser<I> {
                         self.input.bump();
                     }
                     self.parse_ts_enum_decl(start, false)?;
+                    return Ok(Some(DeclOrEmpty::Empty));
                 }
             }
 
@@ -1824,7 +1822,8 @@ impl<I: Tokens> Parser<I> {
                     if next {
                         self.input.bump();
                     }
-                    self.parse_ts_interface_decl(start).map(Some)?;
+                    self.parse_ts_interface_decl(start)?;
+                    return Ok(Some(DeclOrEmpty::Empty));
                 }
             }
 
@@ -1835,8 +1834,10 @@ impl<I: Tokens> Parser<I> {
 
                 if matches!(*cur!(self, true)?, Token::Str { .. }) {
                     self.parse_ts_ambient_external_module_decl(start)?;
+                    return Ok(Some(DeclOrEmpty::Empty));
                 } else if next || is!(self, IdentRef) {
                     self.parse_ts_module_or_ns_decl(start)?;
+                    return Ok(Some(DeclOrEmpty::Empty));
                 }
             }
 
@@ -1846,6 +1847,7 @@ impl<I: Tokens> Parser<I> {
                         self.input.bump();
                     }
                     self.parse_ts_module_or_ns_decl(start)?;
+                    return Ok(Some(DeclOrEmpty::Empty));
                 }
             }
 
@@ -1855,6 +1857,7 @@ impl<I: Tokens> Parser<I> {
                         self.input.bump();
                     }
                     self.parse_ts_type_alias_decl(start)?;
+                    return Ok(Some(DeclOrEmpty::Empty));
                 }
             }
 
@@ -2090,4 +2093,9 @@ enum TupleElementType {
     Rest,
     Optional,
     Other,
+}
+
+pub enum DeclOrEmpty {
+    Decl(Decl),
+    Empty,
 }
