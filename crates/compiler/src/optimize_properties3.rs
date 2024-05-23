@@ -38,16 +38,7 @@ invalidate:
     things stored in properties of unknown/invalid things
     things that are index using computed props (either read/write)
     complex destructuring targets or spread targets
-    things stored in arrays
-    arguments passed to unknown callees
-    X in `new X()`
-    X in `yield X`
-    X in `yield X`
-    X in `throw X`
-    X in `return X` when we aren't in a function
     expressions in tagged templates
-    X in `for (... in X)`
-    X in `for (... of X)`
     X in `try {} catch (X) {}`
     X in `with (X) {}` ??? but we should probably bail early on with statements
 */
@@ -58,8 +49,6 @@ pub fn process(
     unresolved_ctxt: SyntaxContext,
 ) {
     let (mut store, points_to) = analyse(ast, unresolved_ctxt);
-
-    dbg!(&store, &points_to);
 
     let rename_map = create_renaming_map(&mut store, points_to);
 
@@ -457,8 +446,6 @@ fn compute_points_to_map(
         }
     }
 
-    dbg!(&points_to);
-
     points_to
 }
 
@@ -567,8 +554,17 @@ fn flow_edges(
                                     }
                                 }
                             }
+
+                            ConcretePointer::Unknown => {
+                                // Invalidate arguments passed to unknown callers.
+                                for &value in &concrete_values {
+                                    changed |= store
+                                        .invalid_pointers
+                                        .insert(store.pointers.insert(value.into()));
+                                }
+                            }
+
                             ConcretePointer::Object(_)
-                            | ConcretePointer::Unknown
                             | ConcretePointer::NullOrVoid
                             | ConcretePointer::Bool
                             | ConcretePointer::Num
@@ -698,7 +694,16 @@ impl GraphVisitor<'_> {
         match expr {
             Expr::This(_) => vec![self.store.pointers.insert(Pointer::Unknown)],
             Expr::Array(n) => {
-                n.visit_children_with(self);
+                for element in &n.elems {
+                    match element {
+                        Some(ExprOrSpread::Spread(_)) => todo!(),
+                        Some(ExprOrSpread::Expr(element)) => {
+                            let value = self.get_rhs(element);
+                            self.invalidate(&value);
+                        }
+                        None => {}
+                    }
+                }
                 vec![self.store.pointers.insert(Pointer::Unknown)]
             }
             Expr::Object(n) => {
@@ -873,9 +878,7 @@ impl GraphVisitor<'_> {
                         }
                         obj
                     } else {
-                        for obj in obj {
-                            self.invalidate(obj);
-                        }
+                        self.invalidate(&obj);
                         n.prop.visit_with(self);
                         vec![self.store.pointers.insert(Pointer::Unknown)]
                     }
@@ -917,7 +920,19 @@ impl GraphVisitor<'_> {
                 }
             },
             Expr::New(n) => {
-                n.visit_children_with(self);
+                let callee = self.get_rhs(&n.callee);
+                self.invalidate(&callee);
+                if let Some(args) = &n.args {
+                    for arg in args {
+                        match arg {
+                            ExprOrSpread::Spread(_) => todo!(),
+                            ExprOrSpread::Expr(arg) => {
+                                let value = self.get_rhs(arg);
+                                self.invalidate(&value);
+                            }
+                        }
+                    }
+                }
                 vec![self.store.pointers.insert(Pointer::Unknown)]
             }
             Expr::Seq(n) => {
@@ -971,7 +986,10 @@ impl GraphVisitor<'_> {
             }
             Expr::Class(_) => todo!(),
             Expr::Yield(n) => {
-                n.visit_children_with(self);
+                if let Some(arg) = &n.arg {
+                    let value = self.get_rhs(arg);
+                    self.invalidate(&value);
+                }
                 vec![self.store.pointers.insert(Pointer::Unknown)]
             }
             Expr::MetaProp(n) => {
@@ -1015,8 +1033,10 @@ impl GraphVisitor<'_> {
         self.graph.add_edge(sub, sup, GraphEdge::Subset);
     }
 
-    fn invalidate(&mut self, pointer: PointerId) {
-        self.store.invalid_pointers.insert(pointer);
+    fn invalidate(&mut self, value: &[PointerId]) {
+        for value in value {
+            self.store.invalid_pointers.insert(*value);
+        }
     }
 }
 
@@ -1027,7 +1047,16 @@ impl Visit<'_> for GraphVisitor<'_> {
                 // todo!()
             }
             Stmt::Return(n) => {
-                let cur_fn = self.cur_fn.expect("no top level return");
+                let cur_fn = match self.cur_fn {
+                    Some(cur_fn) => cur_fn,
+                    None => {
+                        if let Some(value) = &n.arg {
+                            let rhs = self.get_rhs(value);
+                            self.invalidate(&rhs);
+                        }
+                        return;
+                    }
+                };
                 let cur_fn = self.store.pointers.insert(Pointer::Fn(cur_fn));
                 let lhs = self.get_return_value(cur_fn);
                 if let Some(value) = &n.arg {
@@ -1040,8 +1069,13 @@ impl Visit<'_> for GraphVisitor<'_> {
                     self.make_subset_of(rhs, lhs);
                 }
             }
-            Stmt::Throw(_) => {
-                // todo!()
+            Stmt::Throw(n) => {
+                let value = self.get_rhs(&n.arg);
+                self.invalidate(&value);
+            }
+            Stmt::ForIn(ForInStmt { right, .. }) | Stmt::ForOf(ForOfStmt { right, .. }) => {
+                let rhs = self.get_rhs(right);
+                self.invalidate(&rhs);
             }
             _ => {}
         }

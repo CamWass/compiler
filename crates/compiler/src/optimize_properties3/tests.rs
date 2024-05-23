@@ -1021,6 +1021,57 @@ f().a;
 }
 
 #[test]
+fn test_yield_invalidation() {
+    test_same(
+        "
+function* f() {
+    yield { prop: 1 };
+}
+",
+    );
+}
+
+#[test]
+fn test_throw_invalidation() {
+    test_same("throw { prop: 1 };");
+}
+
+#[test]
+fn test_for_in_invalidation() {
+    test_same("for (var x in { prop: 1 }) {}");
+}
+
+#[test]
+fn test_for_of_invalidation() {
+    test_same("for (var x of { prop: 1 }) {}");
+}
+
+#[test]
+fn test_array_element_invalidation() {
+    test_same("[ { prop: 1 } ];");
+}
+
+#[test]
+fn test_new_expr_invalidation() {
+    test_same(
+        "
+const a = { prop1: 1 };
+new a( { prop2: 2 } );
+",
+    );
+}
+
+#[test]
+fn test_top_level_return_invalidation() {
+    test_same("return { prop: 1 };");
+}
+
+#[test]
+fn test_unknown_caller_arg_invalidation() {
+    test_same("func({ prop: 1 });");
+}
+
+#[test]
 fn test_type_flows_through_assignment() {
     test_transform_in_fn(
         "
