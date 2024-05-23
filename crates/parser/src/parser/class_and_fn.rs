@@ -1046,7 +1046,7 @@ impl<I: Tokens> Parser<I> {
             // Type params.
             if parser.syntax().typescript() {
                 parser.in_type().parse_with(|parser| {
-                    trace_cur!(p, parse_fn_args_body__type_params);
+                    trace_cur!(parser, parse_fn_args_body__type_params);
 
                     if is!(parser, '<') {
                         parser.parse_ts_type_params()?;
