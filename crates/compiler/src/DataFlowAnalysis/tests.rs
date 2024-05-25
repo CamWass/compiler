@@ -1,5 +1,4 @@
 use ast::*;
-use atoms::JsWord;
 use ecma_visit::VisitMutWith;
 use global_common::{
     errors::{ColorConfig, Handler},
@@ -199,10 +198,10 @@ impl<I> ConstPropJoinOp<I> {
     fn apply(a: &ConstPropLatticeElement, b: &ConstPropLatticeElement) -> ConstPropLatticeElement {
         let mut result = ConstPropLatticeElement::default();
         // By the definition of TOP of the lattice.
-        if (a.isTop) {
+        if a.isTop {
             return a.clone();
         }
-        if (b.isTop) {
+        if b.isTop {
             return b.clone();
         }
         // Do the join for each variable's lattice.
@@ -606,16 +605,10 @@ fn computeEscapedLocals(src: &str) -> FxHashSet<Id> {
         // All variables declared in function
         let allVarsDeclaredInFunction = find_vars_declared_in_fn(function, false);
 
-        let vars = allVarsDeclaredInFunction
-            .ordered_vars
-            .iter()
-            .map(|id| (id.0.clone(), id.clone()))
-            .collect::<FxHashMap<JsWord, Id>>();
-
         let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 
         // Compute liveness of variables
-        let mut liveness = LiveVariablesAnalysis::new(
+        let liveness = LiveVariablesAnalysis::new(
             cfa.cfg,
             &cfa.nodePriorities,
             function,
@@ -707,7 +700,7 @@ impl Index<LatticeElementId> for DivergentAnalysisInner {
 struct DivergentFlowJoiner(Step);
 
 impl FlowJoiner<Step, DivergentAnalysisInner> for DivergentFlowJoiner {
-    fn joinFlow(&mut self, _: &mut DivergentAnalysisInner, input: LatticeElementId) {}
+    fn joinFlow(&mut self, _: &mut DivergentAnalysisInner, _: LatticeElementId) {}
 
     fn finish(self) -> Step {
         self.0

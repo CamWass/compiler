@@ -58,10 +58,6 @@ where
         self.partitions[color].count
     }
 
-    pub fn get_color_of_node(&self, node: &T) -> GraphColor {
-        self.color_map[node]
-    }
-
     /**
      * @param tieBreaker In case of a tie between two nodes of the same degree,
      *     this comparator will determine which node should be colored first.

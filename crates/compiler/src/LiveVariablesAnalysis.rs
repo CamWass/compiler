@@ -244,7 +244,7 @@ where
     T: FunctionLike<'a>,
 {
     // Don't enter any new control nodes. They will be handled by later.
-    fn visit_block_stmt(&mut self, node: &'ast BlockStmt) {}
+    fn visit_block_stmt(&mut self, _: &'ast BlockStmt) {}
     fn visit_for_stmt(&mut self, node: &'ast ForStmt) {
         node.test.visit_with(self);
     }

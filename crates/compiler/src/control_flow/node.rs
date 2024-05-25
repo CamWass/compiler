@@ -38,7 +38,7 @@ pub struct Node<'ast> {
 }
 
 impl Node<'_> {
-    pub const ImplicitReturn: Node<'_> = Node {
+    pub const ImplicitReturn: Node<'static> = Node {
         node_id: NodeId::DUMMY,
         kind: NodeKind::ImplicitReturn,
     };
@@ -373,7 +373,7 @@ impl<'ast> From<&'ast ::ast::ModuleDecl> for Node<'ast> {
 impl<'ast> From<&'ast ::ast::Prop> for Node<'ast> {
     fn from(other: &'ast ::ast::Prop) -> Node<'ast> {
         match other {
-            ast::Prop::Shorthand(n) => unreachable!("removed by normalization"),
+            ast::Prop::Shorthand(_) => unreachable!("removed by normalization"),
             ast::Prop::KeyValue(n) => Node::from(n),
             ast::Prop::Assign(n) => Node::from(n),
             ast::Prop::Getter(n) => Node::from(n),

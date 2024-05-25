@@ -45,7 +45,7 @@ impl VisitMut<'_> for NormalizeShortHand<'_> {
         // (1) `let { a = b } = obj` ---> `let { a: a = b } = obj`
         // (2) `let { a } = obj`     ---> `let { a: a } = obj`
 
-        if matches!(node, ObjectPatProp::Assign(p)) {
+        if matches!(node, ObjectPatProp::Assign(_)) {
             node.map_with_mut(|prop| {
                 let prop = unwrap_as!(prop, ObjectPatProp::Assign(p), p);
 

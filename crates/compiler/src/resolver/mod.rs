@@ -147,9 +147,6 @@ struct Scope<'a> {
 
     /// All declarations in the scope
     declared_symbols: FxHashSet<JsWord>,
-
-    /// All types declared in the scope
-    declared_types: FxHashSet<JsWord>,
 }
 
 impl<'a> Scope<'a> {
@@ -159,7 +156,6 @@ impl<'a> Scope<'a> {
             kind,
             mark,
             declared_symbols: Default::default(),
-            declared_types: Default::default(),
         }
     }
 
@@ -284,13 +280,6 @@ impl<'a> Resolver<'a> {
             // }
         }
     }
-}
-
-macro_rules! noop {
-    ($name:ident, $T:ty) => {
-        #[inline]
-        fn $name(&mut self, _: &mut $T) {}
-    };
 }
 
 macro_rules! track_ident_mut {
@@ -518,7 +507,6 @@ impl<'a> VisitMut<'_> for Resolver<'a> {
                 // Skip class expression visitor to treat as a declaration.
                 c.class.visit_mut_with(self)
             }
-            _ => e.visit_mut_children_with(self),
         }
     }
 
@@ -959,9 +947,6 @@ impl VisitMut<'_> for Hoister<'_, '_> {
                 }
 
                 c.visit_mut_with(self)
-            }
-            _ => {
-                node.visit_mut_children_with(self);
             }
         }
     }

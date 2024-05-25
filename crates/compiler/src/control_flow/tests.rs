@@ -2091,7 +2091,7 @@ fn testDeepNestedFinally() {
 #[test]
 fn testReturn() {
     let src = "function f() { return; }";
-    test_script(src, |cfg, ast_graph| {
+    test_script(src, |cfg, _| {
         assertReturnEdge(cfg, Token::ReturnStmt);
     });
 }
@@ -2099,7 +2099,7 @@ fn testReturn() {
 #[test]
 fn testReturnInFinally() {
     let src = "function f(x){ try{} finally {return x;} }";
-    test_script(src, |cfg, ast_graph| {
+    test_script(src, |cfg, _| {
         assertReturnEdge(cfg, Token::ReturnStmt);
     });
 }
@@ -2599,9 +2599,7 @@ alert(action)";
 fn assertNodeOrder(src: &str, expected: &[Token]) {
     let root = parse_script(src);
     let cfg = createCfg(&root);
-    let root_node = Node::from(&root);
     let root = ControlFlowRoot::Script(&root);
-    let ast_graph = AstGraph::new(&root_node);
 
     let cfa = ControlFlowAnalysis::<'_, DummyAnnotation, DummyAnnotation>::analyze(root, true);
 
@@ -2612,7 +2610,7 @@ fn assertNodeOrder(src: &str, expected: &[Token]) {
         .map(|(n, p)| (cfg.graph[NodeIndex::from(n as u32)], *p))
         .collect::<Vec<_>>();
     actual.sort_unstable_by_key(|(_, p)| *p);
-    let mut actual = actual.into_iter().map(|(n, p)| n).collect::<Vec<_>>();
+    let mut actual = actual.into_iter().map(|(n, _)| n).collect::<Vec<_>>();
 
     // Implicit return must always be last
     assert!(actual.pop().unwrap().is_implicit_return());
