@@ -38,7 +38,7 @@ impl VisitMut<'_> for Denormalize {
                     let new_assign_op = match assign_rhs.op {
                         BinaryOp::Add => AssignOp::AddAssign,
                         BinaryOp::Sub => AssignOp::SubAssign,
-                        BinaryOp::Mod => AssignOp::MulAssign,
+                        BinaryOp::Mul => AssignOp::MulAssign,
                         BinaryOp::Div => AssignOp::DivAssign,
                         BinaryOp::Mod => AssignOp::ModAssign,
                         BinaryOp::LShift => AssignOp::LShiftAssign,
