@@ -1037,6 +1037,17 @@ fn test_throw_invalidation() {
 }
 
 #[test]
+fn test_catch_invalidation() {
+    test_same(
+        "
+try {} catch (e) {
+    (e || { prop: 1 }).prop
+}
+",
+    );
+}
+
+#[test]
 fn test_for_in_invalidation() {
     test_same("for (var x in { prop: 1 }) {}");
 }
@@ -1069,6 +1080,20 @@ fn test_top_level_return_invalidation() {
 #[test]
 fn test_unknown_caller_arg_invalidation() {
     test_same("func({ prop: 1 });");
+}
+
+#[test]
+fn test_unknown_or_invalid_assign_target_invalidation() {
+    test_same(
+        "
+    unknown = { prop1: 1 };
+
+    unknown.thing1 = { prop2: 2 };
+    
+    const obj = { inner: { prop3: 3 } };
+    unknown.thing2 = obj;
+",
+    );
 }
 
 #[test]

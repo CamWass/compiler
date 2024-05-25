@@ -1879,7 +1879,7 @@ impl PropKey {
 }
 
 /// Returns true if the string value of the [`PropName`] is statically determinable.
-fn is_simple_prop_name(prop_name: &PropName, unresolved_ctxt: SyntaxContext) -> bool {
+pub fn is_simple_prop_name(prop_name: &PropName, unresolved_ctxt: SyntaxContext) -> bool {
     match prop_name {
         // TODO: is this wrong? For "const fooVar = 'a'; obj[foovar]" this will record the prop name as 'foovar' when it is reall 'a'
         PropName::Ident(_) | PropName::Str(_) | PropName::Num(_) => true,

@@ -16,7 +16,8 @@ use std::fmt::Display;
 use crate::find_vars::*;
 use crate::optimize_properties2::simple_set::IndexSet;
 use crate::optimize_properties2::unionfind::UnionFind;
-use crate::optimize_properties2::{Id, NameId, PropKey, Renamer};
+use crate::optimize_properties2::{is_simple_prop_name, Id, NameId, PropKey, Renamer};
+use crate::utils::unwrap_as;
 use crate::DefaultNameGenerator::DefaultNameGenerator;
 use ast::*;
 use atoms::{js_word, JsWord};
@@ -31,16 +32,9 @@ use rustc_hash::{FxHashMap, FxHashSet};
 /*
 TODO:
 implicit return
+visit all nested expressions, e.g. those in complex prop names.
 invalidate:
     params that can't be statically bound? e.g. rest params
-    Unknown/invalid assignment target
-    things stored in unknown/invalid vars
-    things stored in properties of unknown/invalid things
-    things that are index using computed props (either read/write)
-    complex destructuring targets or spread targets
-    expressions in tagged templates
-    X in `try {} catch (X) {}`
-    X in `with (X) {}` ??? but we should probably bail early on with statements
 */
 
 pub fn process(
@@ -70,13 +64,9 @@ fn create_renaming_map(
         Assign properties (from different objects but with the same name) to the same
         bucket (equivalence class) if the must share the same name.
 
-        Each property starts in its own bucket. Then, buckets are merged when:
-        - One of their properties is accessed on a union of object types (the buckets
-          for each object's version of the property are merged).
-        - Their property exists on a 'root' and 'child' object. These are created by
-          function calls, where each child object inherits the properties of its root.
-          These inherited properties must share the same name (they represent the same
-          slot), and so their buckets are merged.
+        Each property starts in its own bucket. Then, buckets are merged when one of their
+        properties is accessed on a union of object types (the buckets for each object's
+        version of the property are merged).
 
         Once we have created all buckets, a representative `Property` is created for each
         bucket.
@@ -113,22 +103,21 @@ fn create_renaming_map(
 
     index::newtype_index!(struct PropId { .. });
 
-    // TODO:
-    // These could be reserve space for built-ins using a loop to calculate the capacities, which
-    // the compiler may be able to optimise away, since it's an iteration over a static slice.
     let mut objects: FxHashMap<ConcretePointer, Object> = FxHashMap::default();
     let mut properties: IndexVec<PropId, Property> = IndexVec::default();
 
-    for (PropKey(name, node_id), pointer) in &store.references {
+    let mut prop_map: FxHashMap<PropKey, Vec<ConcretePointer>> = FxHashMap::default();
+
+    for (key, pointer) in &store.references {
         let objs = points_to.get(pointer).unwrap();
-        if objs.len() == 1 {
-            let obj = *objs.iter().next().unwrap();
+        prop_map.entry(*key).or_default().extend(objs);
+        for &obj in objs {
             let object = objects.entry(obj).or_default();
-            let id = match object.properties.entry(*name) {
+            let id = match object.properties.entry(key.0) {
                 Entry::Occupied(entry) => *entry.get(),
                 Entry::Vacant(entry) => {
                     let prop_id = properties.push(Property {
-                        name: *name,
+                        name: key.0,
                         prop_id: properties.next_index(),
                         references: FxHashSet::default(),
                         invalid: store
@@ -139,61 +128,28 @@ fn create_renaming_map(
                     prop_id
                 }
             };
-            properties[id].references.insert(*node_id);
-        } else if objs.len() > 1 {
-            // Defer union processing.
-            for obj in objs {
-                objects.entry(*obj).or_default();
-            }
-        } else {
-            todo!("unreachable?");
+            properties[id].references.insert(key.1);
         }
     }
 
     let mut union_find = UnionFind::new(properties.len());
 
     // Process unions.
-    for (PropKey(name, node_id), pointer) in &store.references {
-        let objs = points_to.get(pointer).unwrap();
-        if objs.len() > 1 {
-            let mut props = objs
-                .iter()
-                .filter_map(|c| objects.get(c).and_then(|c| c.properties.get(name)));
+    for (PropKey(name, _), objs) in prop_map {
+        if objs.is_empty() {
+            continue;
+        }
+        let representative = *objects
+            .get(&objs[0])
+            .and_then(|c| c.properties.get(&name))
+            .unwrap();
 
-            let representative = if let Some(&representative) = props.next() {
-                properties[representative].references.insert(*node_id);
-                representative
-            } else {
-                let mut references = FxHashSet::default();
-                references.insert(*node_id);
-                let prop_id = properties.push(Property {
-                    name: *name,
-                    prop_id: properties.next_index(),
-                    references,
-                    invalid: false,
-                });
-                union_find.add(prop_id);
-                prop_id
-            };
-
-            for &constituent in objs {
-                properties[representative].invalid |= store
-                    .invalid_pointers
-                    .contains(&store.pointers.insert(constituent.into()));
-                match objects
-                    .get_mut(&constituent)
-                    .unwrap()
-                    .properties
-                    .entry(*name)
-                {
-                    Entry::Occupied(entry) => {
-                        union_find.union(representative, *entry.get());
-                    }
-                    Entry::Vacant(entry) => {
-                        entry.insert(representative);
-                    }
-                }
-            }
+        for constituent in objs {
+            let prop = *objects
+                .get(&constituent)
+                .and_then(|c| c.properties.get(&name))
+                .unwrap();
+            union_find.union(representative, prop);
         }
     }
 
@@ -425,26 +381,29 @@ fn compute_points_to_map(
                 changed = true;
             }
         }
+        // Propagate 'invalid-ness'.
+        for pointer in 0..store.pointers.len() {
+            let pointer = PointerId::from_usize(pointer);
+            if store.invalid_pointers.contains(&pointer) {
+                let values = match points_to.get(&pointer) {
+                    Some(v) => v,
+                    None => continue,
+                };
+                for &value in values {
+                    changed |= store
+                        .invalid_pointers
+                        .insert(store.pointers.insert(value.into()));
+                }
+            }
+        }
         if !changed {
             break;
         }
     }
 
-    // Propagate 'invalid-ness'.
-    for pointer in 0..store.pointers.len() {
-        let pointer = PointerId::from_usize(pointer);
-        if store.invalid_pointers.contains(&pointer) {
-            let values = match points_to.get(&pointer) {
-                Some(v) => v,
-                None => continue,
-            };
-            for &value in values {
-                store
-                    .invalid_pointers
-                    .insert(store.pointers.insert(value.into()));
-            }
-        }
-    }
+    store
+        .invalid_pointers
+        .remove(&store.pointers.insert(Pointer::NullOrVoid));
 
     points_to
 }
@@ -459,6 +418,9 @@ fn flow_edges(
         for (src, dest, kind) in graph.all_edges() {
             match kind {
                 GraphEdge::Subset => {
+                    if src == dest {
+                        continue;
+                    }
                     points_to.entry(src).or_default();
                     points_to.entry(dest).or_default();
                     let [src, dest] = points_to.get_many_mut([&src, &dest]).unwrap();
@@ -487,10 +449,6 @@ fn flow_edges(
                     }
                 }
                 GraphEdge::Prop => {
-                    if matches!(store.pointers[src], Pointer::Object(_)) {
-                        continue;
-                    }
-
                     let (obj, name) = match store.pointers[dest] {
                         Pointer::Prop(obj, name) => (obj, name),
                         _ => unreachable!(),
@@ -504,6 +462,16 @@ fn flow_edges(
                     for concrete_object in concrete_objects {
                         let concrete_object = store.pointers.insert(concrete_object.into());
                         let prop = store.pointers.insert(Pointer::Prop(concrete_object, name));
+
+                        // Values stored in a property of an invalid pointer must be invalidated.
+                        if store.invalid_pointers.contains(&concrete_object) {
+                            changed |= points_to
+                                .entry(dest)
+                                .or_default()
+                                .insert(ConcretePointer::Unknown);
+                            changed |= store.invalid_pointers.insert(dest);
+                            changed |= store.invalid_pointers.insert(prop);
+                        }
 
                         let props = match points_to.get(&prop) {
                             Some(p) => p.clone(),
@@ -592,7 +560,7 @@ fn analyse(
         names: IndexSet::default(),
         vars: IndexSet::default(),
         pointers: IndexSet::default(),
-        references: FxHashMap::default(),
+        references: FxHashSet::default(),
         invalid_pointers: FxHashSet::default(),
     };
 
@@ -708,31 +676,42 @@ impl GraphVisitor<'_> {
             }
             Expr::Object(n) => {
                 let obj = self.store.pointers.insert(Pointer::Object(n.node_id));
-                for prop in &n.props {
-                    match prop {
-                        Prop::KeyValue(prop) => {
-                            if let Some(key) = PropKey::from_prop_name(
-                                &prop.key,
-                                self.store.unresolved_ctxt,
-                                &mut self.store.names,
-                            ) {
+
+                let is_simple_obj_lit = n.props.iter().all(|p| match p {
+                    Prop::KeyValue(p) => is_simple_prop_name(&p.key, self.store.unresolved_ctxt),
+                    _ => false,
+                });
+
+                if is_simple_obj_lit {
+                    for prop in &n.props {
+                        match prop {
+                            Prop::KeyValue(prop) => {
+                                let key = PropKey::from_prop_name(
+                                    &prop.key,
+                                    self.store.unresolved_ctxt,
+                                    &mut self.store.names,
+                                )
+                                .expect("checked above");
                                 let value = self.get_rhs(&prop.value);
                                 let prop = self.get_prop_value(obj, key.0);
                                 self.reference_prop(obj, key);
                                 for value in value {
                                     self.make_subset_of(value, prop);
                                 }
-                            } else {
-                                todo!();
                             }
-                        }
-                        Prop::Getter(_) | Prop::Setter(_) | Prop::Method(_) | Prop::Spread(_) => {
-                            todo!()
-                        }
+                            Prop::Getter(_)
+                            | Prop::Setter(_)
+                            | Prop::Method(_)
+                            | Prop::Spread(_) => {
+                                unreachable!("checked above")
+                            }
 
-                        Prop::Shorthand(_) => unreachable!("normalised away"),
-                        Prop::Assign(_) => unreachable!("invalid for obj lit"),
+                            Prop::Shorthand(_) => unreachable!("normalised away"),
+                            Prop::Assign(_) => unreachable!("invalid for obj lit"),
+                        }
                     }
+                } else {
+                    self.invalidate(&[obj]);
                 }
                 vec![obj]
             }
@@ -815,52 +794,13 @@ impl GraphVisitor<'_> {
                     }
                 }
             }
-            Expr::Assign(n) => match &n.left {
-                PatOrExpr::Expr(left) => {
-                    let lhs = match left.as_ref() {
-                        Expr::Ident(node) => {
-                            let name = Id::new(node, &mut self.store.names);
-                            let var = self.store.vars.get_index(&name).unwrap();
-                            vec![self.store.pointers.insert(Pointer::Var(var))]
-                        }
-                        Expr::Member(node) => match &node.obj {
-                            ExprOrSuper::Super(_) => todo!(),
-                            ExprOrSuper::Expr(obj) => {
-                                let mut obj = self.get_rhs(obj);
-
-                                if let Some(prop) = PropKey::from_expr(
-                                    &node.prop,
-                                    self.store.unresolved_ctxt,
-                                    node.computed,
-                                    &mut self.store.names,
-                                ) {
-                                    for obj in &mut obj {
-                                        self.reference_prop(*obj, prop);
-                                        *obj = self.get_prop_value(*obj, prop.0);
-                                    }
-                                    obj
-                                } else {
-                                    todo!();
-                                }
-                            }
-                        },
-
-                        _ => {
-                            left.visit_with(self);
-                            vec![self.store.pointers.insert(Pointer::Unknown)]
-                        }
-                    };
-
-                    let rhs = self.get_rhs(&n.right);
-                    for lhs in lhs {
-                        for rhs in &rhs {
-                            self.make_subset_of(*rhs, lhs);
-                        }
-                    }
-                    rhs
-                }
-                PatOrExpr::Pat(_) => todo!(),
-            },
+            Expr::Assign(n) => {
+                let lhs = match &n.left {
+                    ast::PatOrExpr::Expr(n) => PatOrExpr::Expr(n),
+                    ast::PatOrExpr::Pat(n) => PatOrExpr::Pat(n),
+                };
+                self.record_assignment(lhs, &n.right, n.op)
+            }
             Expr::Member(n) => match &n.obj {
                 ExprOrSuper::Super(_) => todo!(),
                 ExprOrSuper::Expr(obj) => {
@@ -973,7 +913,12 @@ impl GraphVisitor<'_> {
                 vec![self.store.pointers.insert(Pointer::Unknown)]
             }
             Expr::TaggedTpl(n) => {
-                n.visit_children_with(self);
+                n.tag.visit_with(self);
+                for expr in &n.tpl.exprs {
+                    let obj = self.get_rhs(expr);
+                    // Expressions in tagged templates can be accessed by the tag function.
+                    self.invalidate(&obj);
+                }
                 vec![self.store.pointers.insert(Pointer::Unknown)]
             }
             Expr::Arrow(n) => {
@@ -1013,8 +958,227 @@ impl GraphVisitor<'_> {
         }
     }
 
+    /// Assigns the given value to the [`Slot`].
+    fn assign_to_slot(&mut self, slot: Option<Vec<Slot>>, rhs: &[PointerId]) {
+        if let Some(slot) = slot {
+            for slot in slot {
+                let lhs = match slot {
+                    Slot::Var(name) => self.store.pointers.insert(Pointer::Var(name)),
+                    Slot::Prop(obj, key) => self.get_prop_value(obj, key),
+                };
+                for rhs in rhs {
+                    self.make_subset_of(*rhs, lhs);
+                }
+            }
+        } else {
+            // Unknown/invalid assignment target.
+            self.invalidate(rhs);
+        }
+    }
+
+    /// Records an assignment of the form `LHS OP RHS` e.g.
+    /// ```js
+    /// let a = 1
+    /// ```
+    /// ```js
+    /// a.b = c
+    /// ```
+    /// ```js
+    /// a ||= b
+    /// ```
+    /// ```js
+    /// a().b ||= c
+    /// ```
+    /// ```js
+    /// let { a: b } = c
+    /// ```
+    fn record_assignment(&mut self, lhs: PatOrExpr, rhs: &Expr, op: AssignOp) -> Vec<PointerId> {
+        let conditional_assign = matches!(
+            op,
+            AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
+        );
+        match lhs {
+            PatOrExpr::Pat(pat @ (Pat::Array(_) | Pat::Object(_))) => {
+                debug_assert!(!conditional_assign, "invalid assignment target");
+                self.handle_destructuring(pat, rhs)
+            }
+            _ => {
+                let lhs = self.visit_and_get_slot(lhs);
+                let rhs = self.get_rhs(rhs);
+
+                self.assign_to_slot(lhs, &rhs);
+                rhs
+            }
+        }
+    }
+
+    fn handle_destructuring(&mut self, lhs: &Pat, rhs: &Expr) -> Vec<PointerId> {
+        let rhs = self.get_rhs(rhs);
+        self.visit_destructuring(lhs, &rhs);
+        rhs
+    }
+
+    fn visit_destructuring(&mut self, lhs: &Pat, rhs: &[PointerId]) {
+        match lhs {
+            Pat::Object(lhs) => {
+                let has_complex_props = lhs.props.iter().any(|p| match p {
+                    ObjectPatProp::KeyValue(p) => {
+                        !is_simple_prop_name(&p.key, self.store.unresolved_ctxt)
+                    }
+                    ObjectPatProp::Assign(_) | ObjectPatProp::Rest(_) => false,
+                });
+                if has_complex_props {
+                    self.invalidate(rhs);
+                }
+
+                for prop in &lhs.props {
+                    match prop {
+                        ObjectPatProp::KeyValue(prop) => {
+                            let key = PropKey::from_prop_name(
+                                &prop.key,
+                                self.store.unresolved_ctxt,
+                                &mut self.store.names,
+                            )
+                            .unwrap();
+                            for rhs in rhs {
+                                self.reference_prop(*rhs, key);
+                            }
+
+                            let new_rhs = rhs
+                                .iter()
+                                .map(|v| self.get_prop_value(*v, key.0))
+                                .collect::<Vec<_>>();
+
+                            self.visit_destructuring(&prop.value, &new_rhs);
+                        }
+                        ObjectPatProp::Assign(_) => {
+                            unreachable!("removed by normalization");
+                        }
+                        ObjectPatProp::Rest(rest) => {
+                            debug_assert!(lhs.props.last().unwrap() == prop);
+
+                            // TODO: throw error, don't panic.
+                            // The argument of an object pattern's rest element must be an identifier.
+                            let arg = unwrap_as!(rest.arg.as_ref(), Pat::Ident(i), i);
+
+                            // TODO: this is imprecise - rest patterns create a new, distinct, object, which has the remaining non-destructured
+                            // properties copied over. These properties must have the same names as those in the original object after renaming.
+                            // But since they are distinct objects, we don't want to conflate them.
+                            let slot = self
+                                .get_var_id_from_ident(&arg.id)
+                                .map(|v| vec![Slot::Var(v)]);
+                            self.assign_to_slot(slot, rhs);
+                        }
+                    }
+                }
+            }
+
+            Pat::Ident(lhs) => {
+                let slot = self
+                    .get_var_id_from_ident(&lhs.id)
+                    .map(|v| vec![Slot::Var(v)]);
+                self.assign_to_slot(slot, rhs);
+            }
+            Pat::Array(lhs) => {
+                self.invalidate(rhs);
+                for element in lhs.elems.iter().filter_map(|e| e.as_ref()) {
+                    if let Pat::Expr(elem) = element {
+                        todo!();
+                        // self.invalidate_slot(Node::from(elem.as_ref()));
+                    } else {
+                        let rhs = vec![self.store.pointers.insert(Pointer::Unknown)];
+                        self.visit_destructuring(element, &rhs);
+                    }
+                }
+            }
+            Pat::Rest(lhs) => {
+                self.invalidate(rhs);
+                let rhs = vec![self.store.pointers.insert(Pointer::Unknown)];
+                self.visit_destructuring(&lhs.arg, &rhs);
+            }
+            Pat::Assign(lhs) => {
+                let mut default_value = self.get_rhs(&lhs.right);
+                default_value.extend_from_slice(rhs);
+
+                self.visit_destructuring(&lhs.left, &default_value);
+            }
+            Pat::Invalid(_) | Pat::Expr(_) => unreachable!(),
+        }
+    }
+
+    fn get_var_id_from_ident(&mut self, ident: &Ident) -> Option<VarId> {
+        if ident.ctxt == self.store.unresolved_ctxt {
+            None
+        } else {
+            let name = self.store.names.get_index(&ident.sym).unwrap();
+            let id = Id(name, ident.ctxt);
+            let id = self.store.vars.get_index(&id).unwrap();
+
+            Some(id)
+        }
+    }
+
+    /// Visits the given expression. If the expression resolves to a valid assignment target, a [`Slot`]
+    /// representing that target is returned.
+    fn visit_and_get_slot(&mut self, node: PatOrExpr) -> Option<Vec<Slot>> {
+        let lhs_expr = match node {
+            PatOrExpr::Expr(node) => node,
+            PatOrExpr::Pat(node) => match node {
+                Pat::Ident(node) => {
+                    return self
+                        .get_var_id_from_ident(&node.id)
+                        .map(|v| vec![Slot::Var(v)])
+                }
+                Pat::Expr(e) => e.as_ref(),
+                _ => {
+                    dbg!(node);
+                    unreachable!();
+                }
+            },
+        };
+        match lhs_expr {
+            Expr::Ident(node) => self.get_var_id_from_ident(node).map(|v| vec![Slot::Var(v)]),
+            Expr::Member(node) => {
+                let obj = match &node.obj {
+                    ExprOrSuper::Super(_) => todo!(),
+                    ExprOrSuper::Expr(obj) => self.get_rhs(obj),
+                };
+
+                if let Some(prop) = PropKey::from_expr(
+                    &node.prop,
+                    self.store.unresolved_ctxt,
+                    node.computed,
+                    &mut self.store.names,
+                ) {
+                    Some(
+                        obj.into_iter()
+                            .map(|obj| {
+                                self.reference_prop(obj, prop);
+                                Slot::Prop(obj, prop.0)
+                            })
+                            .collect(),
+                    )
+                } else {
+                    self.invalidate(&obj);
+                    node.prop.visit_with(self);
+                    None
+                }
+            }
+            // All other nodes cannot evaluate to a reference, and should return None (but we still
+            // need to visit their children).
+            _ => {
+                lhs_expr.visit_with(self);
+                None
+            }
+        }
+    }
+
     fn reference_prop(&mut self, object: PointerId, key: PropKey) {
-        self.store.references.insert(key, object);
+        debug_assert!(
+            !self.store.references.contains(&(key, object)),
+            "should not reference same prop twice"
+        );
+        self.store.references.insert((key, object));
     }
 
     fn get_prop_value(&mut self, obj: PointerId, prop: NameId) -> PointerId {
@@ -1043,8 +1207,10 @@ impl GraphVisitor<'_> {
 impl Visit<'_> for GraphVisitor<'_> {
     fn visit_stmt(&mut self, n: &Stmt) {
         match n {
-            Stmt::With(_) => {
-                // todo!()
+            Stmt::With(n) => {
+                let obj = self.get_rhs(&n.obj);
+                self.invalidate(&obj);
+                n.body.visit_with(self);
             }
             Stmt::Return(n) => {
                 let cur_fn = match self.cur_fn {
@@ -1073,14 +1239,21 @@ impl Visit<'_> for GraphVisitor<'_> {
                 let value = self.get_rhs(&n.arg);
                 self.invalidate(&value);
             }
-            Stmt::ForIn(ForInStmt { right, .. }) | Stmt::ForOf(ForOfStmt { right, .. }) => {
+            Stmt::ForIn(ForInStmt {
+                left, right, body, ..
+            })
+            | Stmt::ForOf(ForOfStmt {
+                left, right, body, ..
+            }) => {
+                left.visit_with(self);
                 let rhs = self.get_rhs(right);
                 self.invalidate(&rhs);
+                body.visit_with(self);
             }
-            _ => {}
+            _ => {
+                n.visit_children_with(self);
+            }
         }
-
-        n.visit_children_with(self);
     }
 
     fn visit_decl(&mut self, n: &Decl) {
@@ -1121,24 +1294,10 @@ impl Visit<'_> for GraphVisitor<'_> {
     }
 
     fn visit_var_declarator(&mut self, n: &VarDeclarator) {
-        match &n.name {
-            Pat::Ident(name) => {
-                if let Some(init) = &n.init {
-                    let rhs = self.get_rhs(init);
-                    let name = Id::new(&name.id, &mut self.store.names);
-                    let var = self.store.vars.get_index(&name).unwrap();
-                    let var = self.store.pointers.insert(Pointer::Var(var));
-                    for rhs in rhs {
-                        self.make_subset_of(rhs, var);
-                    }
-                }
-            }
-            Pat::Array(_) => todo!(),
-            Pat::Rest(_) => todo!(),
-            Pat::Object(_) => todo!(),
-            Pat::Assign(_) => todo!(),
-            Pat::Invalid(_) => todo!(),
-            Pat::Expr(_) => todo!(),
+        if let Some(rhs) = &n.init {
+            self.record_assignment(PatOrExpr::Pat(&n.name), rhs, AssignOp::Assign);
+        } else {
+            n.name.visit_with(self);
         }
     }
 
@@ -1211,6 +1370,14 @@ enum ConcretePointer {
     Regex,
 }
 
+/// A place where a variable can be stored.
+#[derive(Debug, Clone, Copy)]
+enum Slot {
+    Var(VarId),
+    /// (Object, Property name)
+    Prop(PointerId, NameId),
+}
+
 #[derive(Debug)]
 struct StaticFunctionData {
     var_start: u32,
@@ -1233,7 +1400,7 @@ struct Store {
     names: IndexSet<NameId, JsWord>,
     vars: IndexSet<VarId, Id>,
     pointers: IndexSet<PointerId, Pointer>,
-    references: FxHashMap<PropKey, PointerId>,
+    references: FxHashSet<(PropKey, PointerId)>,
     invalid_pointers: FxHashSet<PointerId>,
 }
 struct DeclFinder<'a> {
@@ -1373,4 +1540,9 @@ impl<'ast> Visit<'ast> for FnVisitor<'_> {
     fn visit_setter_prop(&mut self, node: &'ast SetterProp) {
         self.handle_fn(node, None);
     }
+}
+
+enum PatOrExpr<'a> {
+    Pat(&'a Pat),
+    Expr(&'a Expr),
 }
