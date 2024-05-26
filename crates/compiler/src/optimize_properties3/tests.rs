@@ -39,7 +39,39 @@ fn test_same(input: &str) {
     test_transform(input, input);
 }
 
-// TODO: more tests e.g. for branch joins, more invalidations, infinite loops etc
+#[test]
+fn test_complex_props_are_visited() {
+    // Had a bug where 'complex' properties were skipped entirely.
+
+    test_transform(
+        "
+const complex = {
+    [({ prop1: 1 }, 'prop2')]: 2
+};
+",
+        "
+const complex = {
+    [({ a: 1 }, 'prop2')]: 2
+};
+",
+    );
+    test_transform(
+        "
+const { [({ prop1: 1 }, 'prop2')]: thing1 } = thing2;
+",
+        "
+const { [({ a: 1 }, 'prop2')]: thing1 } = thing2;
+",
+    );
+    test_transform(
+        "
+thing1[({ prop1: 1 }, 'prop2')] = 2;
+",
+        "
+thing1[({ a: 1 }, 'prop2')] = 2;
+",
+    );
+}
 
 #[test]
 fn test_unary_operators() {

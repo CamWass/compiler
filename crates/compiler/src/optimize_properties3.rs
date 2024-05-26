@@ -718,6 +718,7 @@ impl GraphVisitor<'_> {
                         }
                     }
                 } else {
+                    n.props.visit_with(self);
                     self.invalidate(&[obj]);
                 }
                 vec![obj]
@@ -813,6 +814,10 @@ impl GraphVisitor<'_> {
                 ExprOrSuper::Expr(obj) => {
                     let mut obj = self.get_rhs(obj);
 
+                    if n.computed {
+                        n.prop.visit_with(self);
+                    }
+
                     if let Some(prop) = PropKey::from_expr(
                         &n.prop,
                         self.store.unresolved_ctxt,
@@ -826,7 +831,6 @@ impl GraphVisitor<'_> {
                         obj
                     } else {
                         self.invalidate(&obj);
-                        n.prop.visit_with(self);
                         vec![self.store.pointers.insert(Pointer::Unknown)]
                     }
                 }
@@ -1041,12 +1045,15 @@ impl GraphVisitor<'_> {
                 for prop in &lhs.props {
                     match prop {
                         ObjectPatProp::KeyValue(prop) => {
-                            let key = PropKey::from_prop_name(
+                            prop.key.visit_with(self);
+                            let key = match PropKey::from_prop_name(
                                 &prop.key,
                                 self.store.unresolved_ctxt,
                                 &mut self.store.names,
-                            )
-                            .unwrap();
+                            ) {
+                                Some(k) => k,
+                                None => continue,
+                            };
                             for rhs in rhs {
                                 self.reference_prop(*rhs, key);
                             }
@@ -1101,6 +1108,7 @@ impl GraphVisitor<'_> {
             Pat::Rest(lhs) => {
                 self.invalidate(rhs);
                 let rhs = vec![self.store.pointers.insert(Pointer::Unknown)];
+                // TODO: lhs.arg should only be an identifier?
                 self.visit_destructuring(&lhs.arg, &rhs);
             }
             Pat::Assign(lhs) => {
@@ -1151,6 +1159,10 @@ impl GraphVisitor<'_> {
                     ExprOrSuper::Expr(obj) => self.get_rhs(obj),
                 };
 
+                if node.computed {
+                    node.prop.visit_with(self);
+                }
+
                 if let Some(prop) = PropKey::from_expr(
                     &node.prop,
                     self.store.unresolved_ctxt,
@@ -1167,7 +1179,6 @@ impl GraphVisitor<'_> {
                     )
                 } else {
                     self.invalidate(&obj);
-                    node.prop.visit_with(self);
                     None
                 }
             }
