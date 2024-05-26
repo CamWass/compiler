@@ -31,7 +31,6 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 /*
 TODO:
-implicit return
 visit all nested expressions, e.g. those in complex prop names.
 invalidate:
     params that can't be statically bound? e.g. rest params
@@ -373,6 +372,10 @@ fn compute_points_to_map(
         let mut changed = false;
         for pointer in 0..store.pointers.len() {
             let pointer = PointerId::from_usize(pointer);
+            // Functions implicitly return undefined sometimes.
+            if matches!(store.pointers[pointer], Pointer::ReturnValue(_)) {
+                continue;
+            }
             if !points_to.contains_key(&pointer) || points_to.get(&pointer).unwrap().is_empty() {
                 points_to
                     .entry(pointer)

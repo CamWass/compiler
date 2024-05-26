@@ -904,6 +904,23 @@ bar();
 }
 
 #[test]
+fn test_implicit_return() {
+    // Functions always return something, even if they return undefined implicitly.
+    test_transform(
+        "
+function foo() {}
+const thing = foo() || { prop: 1 };
+thing.prop;
+",
+        "
+function foo() {}
+const thing = foo() || { a: 1 };
+thing.a;
+",
+    );
+}
+
+#[test]
 fn test_object_literal() {
     test_transform_in_fn(
         "
