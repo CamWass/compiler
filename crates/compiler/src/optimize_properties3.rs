@@ -29,6 +29,13 @@ use petgraph::graph::UnGraph;
 use petgraph::graphmap::DiGraphMap;
 use rustc_hash::{FxHashMap, FxHashSet};
 
+/// When true, the property interference relations are outputted as a graph in
+/// graphviz dot format (debug builds only).
+const OUTPUT_PROP_GRAPH: bool = false;
+/// When true, the data flow relations are outputted as a graph in graphviz dot
+/// format (debug builds only).
+const OUTPUT_RELO_GRAPH: bool = false;
+
 /*
 TODO:
 visit all nested expressions, e.g. those in complex prop names.
@@ -213,9 +220,7 @@ fn create_renaming_map(
         }
     }
 
-    const DEBUG_GRAPH: bool = true;
-
-    if cfg!(debug_assertions) && DEBUG_GRAPH {
+    if cfg!(debug_assertions) && OUTPUT_PROP_GRAPH {
         let mut debug_graph: UnGraph<(RepId, JsWord), ()> = UnGraph::default();
         let mut debug_graph_map = FxHashMap::default();
 
@@ -601,47 +606,46 @@ fn compute_relations(ast: &ast::Program, store: &mut Store) -> DiGraphMap<Pointe
     };
     ast.visit_with(&mut visitor);
 
-    // TODO temp
-    for id in 0..store.pointers.len() {
-        let id = PointerId::from_usize(id);
-        graph.add_node(id);
-    }
+    if cfg!(debug_assertions) && OUTPUT_RELO_GRAPH {
+        for id in 0..store.pointers.len() {
+            let id = PointerId::from_usize(id);
+            graph.add_node(id);
+        }
 
-    let map = |store: &Store, n: PointerId| {
-        let value: String = match &store.pointers[n] {
-            Pointer::Prop(obj, prop) => {
-                format!(
-                    "Prop(Object PointerId:{}, prop:(NameId:{}, '{}'))",
-                    obj.as_u32(),
-                    prop.as_u32(),
-                    store.names[*prop]
-                )
-            }
-            Pointer::Var(id) => format!(
-                "Var(VarId:{}, '{}')",
-                id.as_u32(),
-                store.names[store.vars[*id].0]
-            ),
-            Pointer::Object(id) => format!("Object(NodeId:{})", id.as_u32()),
-            Pointer::Fn(id) => format!("Fn(NodeId:{})", id.as_u32()),
-            Pointer::Unknown => "Unknown".into(),
-            Pointer::NullOrVoid => "NullOrVoid".into(),
-            Pointer::Bool => "Bool".into(),
-            Pointer::Num => "Num".into(),
-            Pointer::String => "String".into(),
-            Pointer::BigInt => "BigInt".into(),
-            Pointer::Regex => "Regex".into(),
-            Pointer::ReturnValue(id) => {
-                format!("ReturnValue(Callee PointerId:{})", id.as_u32())
-            }
-            Pointer::Arg(func, index) => {
-                format!("Arg(func PointerId:{}, index:{})", func.as_u32(), index)
-            }
+        let map = |store: &Store, n: PointerId| {
+            let value: String = match &store.pointers[n] {
+                Pointer::Prop(obj, prop) => {
+                    format!(
+                        "Prop(Object PointerId:{}, prop:(NameId:{}, '{}'))",
+                        obj.as_u32(),
+                        prop.as_u32(),
+                        store.names[*prop]
+                    )
+                }
+                Pointer::Var(id) => format!(
+                    "Var(VarId:{}, '{}')",
+                    id.as_u32(),
+                    store.names[store.vars[*id].0]
+                ),
+                Pointer::Object(id) => format!("Object(NodeId:{})", id.as_u32()),
+                Pointer::Fn(id) => format!("Fn(NodeId:{})", id.as_u32()),
+                Pointer::Unknown => "Unknown".into(),
+                Pointer::NullOrVoid => "NullOrVoid".into(),
+                Pointer::Bool => "Bool".into(),
+                Pointer::Num => "Num".into(),
+                Pointer::String => "String".into(),
+                Pointer::BigInt => "BigInt".into(),
+                Pointer::Regex => "Regex".into(),
+                Pointer::ReturnValue(id) => {
+                    format!("ReturnValue(Callee PointerId:{})", id.as_u32())
+                }
+                Pointer::Arg(func, index) => {
+                    format!("Arg(func PointerId:{}, index:{})", func.as_u32(), index)
+                }
+            };
+            format!("id:{}, {}", n.as_u32(), value)
         };
-        format!("id:{}, {}", n.as_u32(), value)
-    };
 
-    {
         let print_graph: petgraph::prelude::DiGraph<String, GraphEdge> = graph
             .clone()
             .into_graph()
