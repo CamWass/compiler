@@ -38,7 +38,6 @@ const OUTPUT_RELO_GRAPH: bool = false;
 
 /*
 TODO:
-visit all nested expressions, e.g. those in complex prop names.
 invalidate:
     params that can't be statically bound? e.g. rest params
 */
