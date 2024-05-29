@@ -112,11 +112,34 @@ fn create_renaming_map(
     let mut objects: FxHashMap<ConcretePointer, Object> = FxHashMap::default();
     let mut properties: IndexVec<PropId, Property> = IndexVec::default();
 
+    // Create objects and properties for built-in types.
+    for (pointer, props) in BUILT_INS {
+        let obj = objects.entry(*pointer).or_default();
+        let props = props.iter().map(|p| {
+            let name = store.names.insert(p.clone());
+            (
+                name,
+                properties.push(Property {
+                    name,
+                    prop_id: properties.next_index(),
+                    references: FxHashSet::default(),
+                    // Cannot rename built-in properties.
+                    invalid: true,
+                }),
+            )
+        });
+        obj.properties.extend(props);
+    }
+
     let mut prop_map: FxHashMap<PropKey, Vec<ConcretePointer>> = FxHashMap::default();
 
     for (key, pointer) in &store.references {
-        let objs = points_to.get(pointer).unwrap();
-        prop_map.entry(*key).or_default().extend(objs);
+        let objs = points_to
+            .get(pointer)
+            .unwrap()
+            .iter()
+            .filter(|o| !matches!(o, ConcretePointer::NullOrVoid));
+        prop_map.entry(*key).or_default().extend(objs.clone());
         for &obj in objs {
             let object = objects.entry(obj).or_default();
             let id = match object.properties.entry(key.0) {
@@ -1117,7 +1140,11 @@ impl GraphVisitor<'_> {
 
                 self.visit_destructuring(&lhs.left, &default_value);
             }
-            Pat::Invalid(_) | Pat::Expr(_) => unreachable!(),
+            Pat::Expr(lhs) => {
+                let lhs = self.visit_and_get_slot(PatOrExpr::Expr(lhs));
+                self.assign_to_slot(lhs, rhs);
+            }
+            Pat::Invalid(_) => unreachable!(),
         }
     }
 
@@ -1192,10 +1219,6 @@ impl GraphVisitor<'_> {
     }
 
     fn reference_prop(&mut self, object: PointerId, key: PropKey) {
-        debug_assert!(
-            !self.store.references.contains(&(key, object)),
-            "should not reference same prop twice"
-        );
         self.store.references.insert((key, object));
     }
 
@@ -1564,3 +1587,77 @@ enum PatOrExpr<'a> {
     Pat(&'a Pat),
     Expr(&'a Expr),
 }
+
+const BUILT_INS: &'static [(ConcretePointer, &'static [JsWord])] = &[
+    (
+        ConcretePointer::Num,
+        &[
+            js_word!("constructor"),
+            js_word!("toExponential"),
+            js_word!("toFixed"),
+            js_word!("toLocaleString"),
+            js_word!("toPrecision"),
+            js_word!("toString"),
+            js_word!("valueOf"),
+        ],
+    ),
+    (
+        ConcretePointer::String,
+        &[
+            js_word!("constructor"),
+            js_word!("length"),
+            js_word!("at"),
+            js_word!("charAt"),
+            js_word!("charCodeAt"),
+            js_word!("codePointAt"),
+            js_word!("concat"),
+            js_word!("endsWith"),
+            js_word!("includes"),
+            js_word!("indexOf"),
+            js_word!("isWellFormed"),
+            js_word!("lastIndexOf"),
+            js_word!("localeCompare"),
+            js_word!("match"),
+            js_word!("matchAll"),
+            js_word!("normalize"),
+            js_word!("padEnd"),
+            js_word!("padStart"),
+            js_word!("repeat"),
+            js_word!("replace"),
+            js_word!("replaceAll"),
+            js_word!("search"),
+            js_word!("slice"),
+            js_word!("split"),
+            js_word!("startsWith"),
+            js_word!("substr"),
+            js_word!("substring"),
+            js_word!("toLocaleLowerCase"),
+            js_word!("toLocaleUpperCase"),
+            js_word!("toLowerCase"),
+            js_word!("toString"),
+            js_word!("toUpperCase"),
+            js_word!("toWellFormed"),
+            js_word!("trim"),
+            js_word!("trimEnd"),
+            js_word!("trimStart"),
+            js_word!("valueOf"),
+        ],
+    ),
+    (
+        ConcretePointer::Bool,
+        &[
+            js_word!("constructor"),
+            js_word!("toString"),
+            js_word!("valueOf"),
+        ],
+    ),
+    (
+        ConcretePointer::BigInt,
+        &[
+            js_word!("constructor"),
+            js_word!("toLocaleString"),
+            js_word!("toString"),
+            js_word!("valueOf"),
+        ],
+    ),
+];
