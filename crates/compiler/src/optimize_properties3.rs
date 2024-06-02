@@ -406,7 +406,7 @@ fn compute_points_to_map(
             if !points_to.contains_key(&pointer) || points_to.get(&pointer).unwrap().is_empty() {
                 // Undefined properties on valid objects are undefined. We know the obj must be valid,
                 // otherwise flow edges would have flowed Unknown into this prop.
-                if matches!(store.pointers[pointer], Pointer::Prop(o, _)) {
+                if matches!(store.pointers[pointer], Pointer::Prop(_, _)) {
                     continue;
                 }
                 points_to
