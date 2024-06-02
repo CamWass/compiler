@@ -28,7 +28,7 @@ mod normalize;
 pub mod normalize_properties;
 mod optimize_properties;
 pub mod optimize_properties2;
-mod optimize_properties3;
+pub mod optimize_properties3;
 pub mod resolver;
 mod utils;
 

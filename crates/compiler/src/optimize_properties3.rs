@@ -600,7 +600,7 @@ fn flow_edges(
     }
 }
 
-fn analyse(
+pub fn analyse(
     ast: &ast::Program,
     unresolved_ctxt: SyntaxContext,
 ) -> (Store, FxHashMap<PointerId, FxHashSet<ConcretePointer>>) {
@@ -1418,7 +1418,7 @@ impl From<ConcretePointer> for Pointer {
 }
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-enum ConcretePointer {
+pub enum ConcretePointer {
     Object(NodeId),
     Fn(NodeId),
     Unknown,
@@ -1451,10 +1451,10 @@ impl StaticFunctionData {
     }
 }
 
-index::newtype_index!(struct PointerId { .. });
+index::newtype_index!(pub struct PointerId { .. });
 
 #[derive(Debug)]
-struct Store {
+pub struct Store {
     unresolved_ctxt: SyntaxContext,
     functions: FxHashMap<NodeId, StaticFunctionData>,
     names: IndexSet<NameId, JsWord>,
