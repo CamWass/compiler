@@ -856,9 +856,9 @@ function foo(a) {
 const obj1 = { a: 1, b: 2 };
 obj1.a;
 foo(obj1).b;
-const obj2 = { a: 3, b: 4 };
+const obj2 = { a: 3, c: 4 };
 obj2.a;
-foo(obj2).b;
+foo(obj2).c;
 ",
     );
     test_transform(

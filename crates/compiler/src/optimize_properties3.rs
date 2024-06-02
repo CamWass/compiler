@@ -404,6 +404,11 @@ fn compute_points_to_map(
                 continue;
             }
             if !points_to.contains_key(&pointer) || points_to.get(&pointer).unwrap().is_empty() {
+                // Undefined properties on valid objects are undefined. We know the obj must be valid,
+                // otherwise flow edges would have flowed Unknown into this prop.
+                if matches!(store.pointers[pointer], Pointer::Prop(o, _)) {
+                    continue;
+                }
                 points_to
                     .entry(pointer)
                     .or_default()
@@ -420,9 +425,8 @@ fn compute_points_to_map(
                     None => continue,
                 };
                 for &value in values {
-                    changed |= store
-                        .invalid_pointers
-                        .insert(store.pointers.insert(value.into()));
+                    let p = store.pointers.insert(value.into());
+                    changed |= store.invalidate(p);
                 }
             }
         }
@@ -430,10 +434,6 @@ fn compute_points_to_map(
             break;
         }
     }
-
-    store
-        .invalid_pointers
-        .remove(&store.pointers.insert(Pointer::NullOrVoid));
 
     points_to
 }
@@ -445,6 +445,7 @@ fn flow_edges(
 ) {
     loop {
         let mut changed = false;
+        let mut new_edges = Vec::new();
         for (src, dest, kind) in graph.all_edges() {
             match kind {
                 GraphEdge::Subset => {
@@ -491,7 +492,8 @@ fn flow_edges(
 
                     for concrete_object in concrete_objects {
                         let concrete_object = store.pointers.insert(concrete_object.into());
-                        let prop = store.pointers.insert(Pointer::Prop(concrete_object, name));
+                        let prop_pointer =
+                            store.pointers.insert(Pointer::Prop(concrete_object, name));
 
                         // Values stored in a property of an invalid pointer must be invalidated.
                         if store.invalid_pointers.contains(&concrete_object) {
@@ -499,17 +501,32 @@ fn flow_edges(
                                 .entry(dest)
                                 .or_default()
                                 .insert(ConcretePointer::Unknown);
-                            changed |= store.invalid_pointers.insert(dest);
-                            changed |= store.invalid_pointers.insert(prop);
+                            changed |= store.invalidate(dest);
+                            changed |= store.invalidate(prop_pointer);
                         }
 
-                        let props = match points_to.get(&prop) {
+                        if dest == prop_pointer {
+                            continue;
+                        }
+
+                        let new = (prop_pointer, dest, GraphEdge::Subset);
+                        if !graph.contains_edge(new.0, new.1) && !new_edges.contains(&new) {
+                            new_edges.push(new);
+                            changed = true;
+                        }
+                        let new = (dest, prop_pointer, GraphEdge::Subset);
+                        if !graph.contains_edge(new.0, new.1) && !new_edges.contains(&new) {
+                            new_edges.push(new);
+                            changed = true;
+                        }
+
+                        let prop_values = match points_to.get(&prop_pointer) {
                             Some(p) => p.clone(),
                             None => continue,
                         };
 
-                        for prop in props {
-                            changed |= points_to.entry(dest).or_default().insert(prop);
+                        for prop_value in prop_values {
+                            changed |= points_to.entry(dest).or_default().insert(prop_value);
                         }
                     }
                 }
@@ -556,9 +573,8 @@ fn flow_edges(
                             ConcretePointer::Unknown => {
                                 // Invalidate arguments passed to unknown callers.
                                 for &value in &concrete_values {
-                                    changed |= store
-                                        .invalid_pointers
-                                        .insert(store.pointers.insert(value.into()));
+                                    let p = store.pointers.insert(value.into());
+                                    changed |= store.invalidate(p);
                                 }
                             }
 
@@ -573,6 +589,9 @@ fn flow_edges(
                     }
                 }
             }
+        }
+        for edge in new_edges {
+            graph.add_edge(edge.0, edge.1, edge.2);
         }
         if !changed {
             break;
@@ -614,19 +633,6 @@ fn analyse(
 
     let mut graph = compute_relations(ast, &mut store);
     let points_to = compute_points_to_map(&mut graph, &mut store);
-
-    (store, points_to)
-}
-
-fn compute_relations(ast: &ast::Program, store: &mut Store) -> DiGraphMap<PointerId, GraphEdge> {
-    let mut graph = DiGraphMap::new();
-
-    let mut visitor = GraphVisitor {
-        store,
-        graph: &mut graph,
-        cur_fn: None,
-    };
-    ast.visit_with(&mut visitor);
 
     if cfg!(debug_assertions) && OUTPUT_RELO_GRAPH {
         for id in 0..store.pointers.len() {
@@ -671,11 +677,24 @@ fn compute_relations(ast: &ast::Program, store: &mut Store) -> DiGraphMap<Pointe
         let print_graph: petgraph::prelude::DiGraph<String, GraphEdge> = graph
             .clone()
             .into_graph()
-            .map(|_, n| map(store, *n), |_, e| *e);
+            .map(|_, n| map(&store, *n), |_, e| *e);
         let dot = format!("{}", petgraph::dot::Dot::with_config(&print_graph, &[]));
 
         std::fs::write("./relo.dot", dot).expect("Failed to output fn graph");
     }
+
+    (store, points_to)
+}
+
+fn compute_relations(ast: &ast::Program, store: &mut Store) -> DiGraphMap<PointerId, GraphEdge> {
+    let mut graph = DiGraphMap::new();
+
+    let mut visitor = GraphVisitor {
+        store,
+        graph: &mut graph,
+        cur_fn: None,
+    };
+    ast.visit_with(&mut visitor);
 
     graph
 }
@@ -1239,7 +1258,7 @@ impl GraphVisitor<'_> {
 
     fn invalidate(&mut self, value: &[PointerId]) {
         for value in value {
-            self.store.invalid_pointers.insert(*value);
+            self.store.invalidate(*value);
         }
     }
 }
@@ -1443,6 +1462,29 @@ struct Store {
     references: FxHashSet<(PropKey, PointerId)>,
     invalid_pointers: FxHashSet<PointerId>,
 }
+
+impl Store {
+    // Invalidated the given pointer. Returns true if it was not previously invalid.
+    fn invalidate(&mut self, pointer: PointerId) -> bool {
+        match self.pointers[pointer] {
+            Pointer::Prop(_, _)
+            | Pointer::Var(_)
+            | Pointer::Object(_)
+            | Pointer::Fn(_)
+            | Pointer::ReturnValue(_)
+            | Pointer::Arg(_, _) => self.invalid_pointers.insert(pointer),
+
+            Pointer::Unknown
+            | Pointer::NullOrVoid
+            | Pointer::Bool
+            | Pointer::Num
+            | Pointer::String
+            | Pointer::BigInt
+            | Pointer::Regex => false,
+        }
+    }
+}
+
 struct DeclFinder<'a> {
     names: &'a mut IndexSet<NameId, JsWord>,
     vars: &'a mut IndexSet<VarId, Id>,
