@@ -446,6 +446,7 @@ fn flow_edges(
     loop {
         let mut changed = false;
         let mut new_edges = Vec::new();
+        // TODO: we only use the graph to store edges, then loop over them all. Replace graph with set of edges.
         for (src, dest, kind) in graph.all_edges() {
             match kind {
                 GraphEdge::Subset => {
@@ -1459,6 +1460,7 @@ struct Store {
     names: IndexSet<NameId, JsWord>,
     vars: IndexSet<VarId, Id>,
     pointers: IndexSet<PointerId, Pointer>,
+    // TODO: references are only ever recorded once, so a Vec would suffice.
     references: FxHashSet<(PropKey, PointerId)>,
     invalid_pointers: FxHashSet<PointerId>,
 }
