@@ -392,8 +392,13 @@ fn compute_points_to_map(
         }
     }
 
+    let mut queue = Vec::new();
+    let mut edges = Vec::new();
+
     loop {
-        flow_edges(graph, store, &mut points_to);
+        queue.clear();
+        edges.clear();
+        flow_edges(graph, store, &mut points_to, &mut queue, &mut edges);
         // After we've reached a fixedpoint above, if we couldn't infer the values
         // of a pointer, set them to Unknown and run fixedpoint again to propagate
         // the Unknowns.
@@ -455,8 +460,10 @@ fn flow_edges(
     graph: &mut DiGraphMap<PointerId, GraphEdge>,
     store: &mut Store,
     points_to: &mut FxHashMap<PointerId, FxHashSet<ConcretePointer>>,
+    queue: &mut Vec<PointerId>,
+    edges: &mut Vec<(PointerId, PointerId, GraphEdge)>,
 ) {
-    let mut queue = graph.nodes().collect::<Vec<_>>();
+    queue.extend(graph.nodes());
     while let Some(node) = queue.pop() {
         if let Pointer::Arg(callee, _) = store.pointers[node] {
             let unknown_callee = points_to
@@ -475,12 +482,14 @@ fn flow_edges(
             }
         }
 
-        let edges = graph
+        edges.clear();
+        edges.extend(
+            graph
             .edges_directed(node, Outgoing)
-            .map(|e| (e.0, e.1, *e.2))
-            .collect::<Vec<_>>();
+                .map(|e| (e.0, e.1, *e.2)),
+        );
 
-        for (src, dest, kind) in edges {
+        for (src, dest, kind) in edges.iter().copied() {
             match kind {
                 GraphEdge::Subset => {
                     points_to.entry(src).or_default();
