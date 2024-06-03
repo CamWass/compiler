@@ -27,6 +27,7 @@ use index::bit_set::{BitMatrix, BitSet};
 use index::vec::IndexVec;
 use petgraph::graph::UnGraph;
 use petgraph::graphmap::DiGraphMap;
+use petgraph::Direction::Outgoing;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 /// When true, the property interference relations are outputted as a graph in
@@ -399,6 +400,31 @@ fn compute_points_to_map(
         let mut changed = false;
         for pointer in 0..store.pointers.len() {
             let pointer = PointerId::from_usize(pointer);
+
+            // TODO: we don't need to rerun flow_edges if invalidation changed
+            // Propagate 'invalid-ness'.
+            if store.invalid_pointers.contains(&pointer) {
+                if let Some(values) = points_to.get(&pointer) {
+                    for &value in values {
+                        let p = store.pointers.insert(value.into());
+                        changed |= store.invalidate(p);
+                    }
+                }
+            }
+            if matches!(store.pointers[pointer], Pointer::Prop(obj, _) if store.invalid_pointers.contains(&obj))
+            {
+                if let Some(values) = points_to.get(&pointer) {
+                    for &value in values {
+                        let p = store.pointers.insert(value.into());
+                        changed |= store.invalidate(p);
+                    }
+                }
+                changed |= points_to
+                    .entry(pointer)
+                    .or_default()
+                    .insert(ConcretePointer::Unknown);
+            }
+
             // Functions implicitly return undefined sometimes.
             if matches!(store.pointers[pointer], Pointer::ReturnValue(_)) {
                 continue;
@@ -416,20 +442,7 @@ fn compute_points_to_map(
                 changed = true;
             }
         }
-        // Propagate 'invalid-ness'.
-        for pointer in 0..store.pointers.len() {
-            let pointer = PointerId::from_usize(pointer);
-            if store.invalid_pointers.contains(&pointer) {
-                let values = match points_to.get(&pointer) {
-                    Some(v) => v,
-                    None => continue,
-                };
-                for &value in values {
-                    let p = store.pointers.insert(value.into());
-                    changed |= store.invalidate(p);
-                }
-            }
-        }
+
         if !changed {
             break;
         }
@@ -443,21 +456,41 @@ fn flow_edges(
     store: &mut Store,
     points_to: &mut FxHashMap<PointerId, FxHashSet<ConcretePointer>>,
 ) {
-    loop {
-        let mut changed = false;
-        let mut new_edges = Vec::new();
-        // TODO: we only use the graph to store edges, then loop over them all. Replace graph with set of edges.
-        for (src, dest, kind) in graph.all_edges() {
+    let mut queue = graph.nodes().collect::<Vec<_>>();
+    while let Some(node) = queue.pop() {
+        if let Pointer::Arg(callee, _) = store.pointers[node] {
+            let unknown_callee = points_to
+                .get(&callee)
+                .map(|concrete_callees| concrete_callees.contains(&ConcretePointer::Unknown))
+                .unwrap_or(false);
+
+            if unknown_callee {
+                if let Some(concrete_values) = points_to.get(&node) {
+                    // Invalidate arguments passed to unknown callers.
+                    for &value in concrete_values {
+                        let p = store.pointers.insert(value.into());
+                        store.invalidate(p);
+                    }
+                }
+            }
+        }
+
+        let edges = graph
+            .edges_directed(node, Outgoing)
+            .map(|e| (e.0, e.1, *e.2))
+            .collect::<Vec<_>>();
+
+        for (src, dest, kind) in edges {
             match kind {
                 GraphEdge::Subset => {
-                    if src == dest {
-                        continue;
-                    }
                     points_to.entry(src).or_default();
                     points_to.entry(dest).or_default();
-                    let [src, dest] = points_to.get_many_mut([&src, &dest]).unwrap();
-                    for v in src.iter() {
-                        changed |= dest.insert(*v);
+                    let [src_set, dest_set] = points_to.get_many_mut([&src, &dest]).unwrap();
+                    let before = dest_set.len();
+                    dest_set.extend(src_set.iter());
+                    let changed = dest_set.len() != before;
+                    if changed {
+                        queue.push(dest);
                     }
                 }
                 GraphEdge::Return => {
@@ -468,16 +501,27 @@ fn flow_edges(
                         Some(c) => c.clone(),
                         None => continue,
                     };
+                    let before = points_to.entry(dest).or_default().len();
+                    let mut changed = false;
                     for callee in callees {
                         let callee = store.pointers.insert(callee.into());
                         let return_node = store.pointers.insert(Pointer::ReturnValue(callee));
+                        if return_node == dest {
+                            continue;
+                        }
+                        if !graph.contains_edge(return_node, dest) {
+                            graph.add_edge(return_node, dest, GraphEdge::Subset);
+                            changed = true;
+                        }
                         let return_types = match points_to.get(&return_node) {
                             Some(r) => r.clone(),
                             None => continue,
                         };
-                        for return_ty in return_types {
-                            changed |= points_to.entry(dest).or_default().insert(return_ty);
-                        }
+                        points_to.entry(dest).or_default().extend(return_types);
+                    }
+                    changed |= points_to.entry(dest).or_default().len() != before;
+                    if changed {
+                        queue.push(dest);
                     }
                 }
                 GraphEdge::Prop => {
@@ -491,34 +535,27 @@ fn flow_edges(
                         None => continue,
                     };
 
+                    let before = points_to.entry(dest).or_default().len();
+                    let mut changed = false;
+
                     for concrete_object in concrete_objects {
                         let concrete_object = store.pointers.insert(concrete_object.into());
                         let prop_pointer =
                             store.pointers.insert(Pointer::Prop(concrete_object, name));
-
-                        // Values stored in a property of an invalid pointer must be invalidated.
-                        if store.invalid_pointers.contains(&concrete_object) {
-                            changed |= points_to
-                                .entry(dest)
-                                .or_default()
-                                .insert(ConcretePointer::Unknown);
-                            changed |= store.invalidate(dest);
-                            changed |= store.invalidate(prop_pointer);
-                        }
 
                         if dest == prop_pointer {
                             continue;
                         }
 
                         let new = (prop_pointer, dest, GraphEdge::Subset);
-                        if !graph.contains_edge(new.0, new.1) && !new_edges.contains(&new) {
-                            new_edges.push(new);
+                        if !graph.contains_edge(new.0, new.1) {
+                            graph.add_edge(new.0, new.1, new.2);
                             changed = true;
                         }
                         let new = (dest, prop_pointer, GraphEdge::Subset);
-                        if !graph.contains_edge(new.0, new.1) && !new_edges.contains(&new) {
-                            new_edges.push(new);
-                            changed = true;
+                        if !graph.contains_edge(new.0, new.1) {
+                            graph.add_edge(new.0, new.1, new.2);
+                            queue.push(new.1);
                         }
 
                         let prop_values = match points_to.get(&prop_pointer) {
@@ -526,13 +563,16 @@ fn flow_edges(
                             None => continue,
                         };
 
-                        for prop_value in prop_values {
-                            changed |= points_to.entry(dest).or_default().insert(prop_value);
-                        }
+                        points_to.entry(dest).or_default().extend(prop_values);
+                    }
+
+                    changed |= points_to.entry(dest).or_default().len() != before;
+                    if changed {
+                        queue.push(dest);
                     }
                 }
                 GraphEdge::Arg => {
-                    let (callee, index) = match store.pointers[src] {
+                    let (callee, index) = match store.pointers[dest] {
                         Pointer::Arg(callee, index) => (callee, index),
                         _ => unreachable!(),
                     };
@@ -542,26 +582,32 @@ fn flow_edges(
                         None => continue,
                     };
 
-                    let concrete_values = match points_to.get(&src) {
-                        Some(c) => c.clone(),
-                        None => continue,
-                    };
+                    let concrete_values = points_to.get(&dest).cloned();
 
                     for concrete_callee in concrete_callees {
                         match concrete_callee {
                             ConcretePointer::Fn(callee) => {
-                                match store
-                                    .functions
-                                    .get(&callee)
-                                    .unwrap()
-                                    .param_indices()
-                                    .nth(index)
-                                {
+                                let func = store.functions.get(&callee).unwrap();
+                                match func.param_indices().nth(index) {
                                     Some(param) => {
                                         let param = store.pointers.insert(Pointer::Var(param));
-                                        for value in &concrete_values {
-                                            changed |=
-                                                points_to.entry(param).or_default().insert(*value);
+                                        let mut changed = false;
+                                        if !graph.contains_edge(dest, param) {
+                                            graph.add_edge(dest, param, GraphEdge::Subset);
+                                            changed = true;
+                                        }
+                                        let before = points_to.entry(param).or_default().len();
+                                        if let Some(concrete_values) = &concrete_values {
+                                            points_to
+                                                .entry(param)
+                                                .or_default()
+                                                .extend(concrete_values);
+                                        }
+
+                                        changed |=
+                                            points_to.entry(param).or_default().len() != before;
+                                        if changed {
+                                            queue.push(param);
                                         }
                                     }
                                     None => {
@@ -571,15 +617,8 @@ fn flow_edges(
                                 }
                             }
 
-                            ConcretePointer::Unknown => {
-                                // Invalidate arguments passed to unknown callers.
-                                for &value in &concrete_values {
-                                    let p = store.pointers.insert(value.into());
-                                    changed |= store.invalidate(p);
-                                }
-                            }
-
-                            ConcretePointer::Object(_)
+                            ConcretePointer::Unknown
+                            | ConcretePointer::Object(_)
                             | ConcretePointer::NullOrVoid
                             | ConcretePointer::Bool
                             | ConcretePointer::Num
@@ -590,12 +629,6 @@ fn flow_edges(
                     }
                 }
             }
-        }
-        for edge in new_edges {
-            graph.add_edge(edge.0, edge.1, edge.2);
-        }
-        if !changed {
-            break;
         }
     }
 }
@@ -902,7 +935,7 @@ impl GraphVisitor<'_> {
                                 let arg_pointer =
                                     self.store.pointers.insert(Pointer::Arg(*callee, i));
                                 self.make_subset_of(*value, arg_pointer);
-                                self.graph.add_edge(arg_pointer, *callee, GraphEdge::Arg);
+                                self.graph.add_edge(*callee, arg_pointer, GraphEdge::Arg);
                             }
                         }
                     }
@@ -1254,6 +1287,9 @@ impl GraphVisitor<'_> {
     }
 
     fn make_subset_of(&mut self, sub: PointerId, sup: PointerId) {
+        if sub == sup {
+            return;
+        }
         self.graph.add_edge(sub, sup, GraphEdge::Subset);
     }
 
@@ -1460,7 +1496,6 @@ pub struct Store {
     names: IndexSet<NameId, JsWord>,
     vars: IndexSet<VarId, Id>,
     pointers: IndexSet<PointerId, Pointer>,
-    // TODO: references are only ever recorded once, so a Vec would suffice.
     references: FxHashSet<(PropKey, PointerId)>,
     invalid_pointers: FxHashSet<PointerId>,
 }
