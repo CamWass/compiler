@@ -556,15 +556,13 @@ fn flow_edges(
                             continue;
                         }
 
-                        let new = (prop_pointer, dest, GraphEdge::Subset);
-                        if !graph.contains_edge(new.0, new.1) {
-                            graph.add_edge(new.0, new.1, new.2);
+                        if !graph.contains_edge(prop_pointer, dest) {
+                            graph.add_edge(prop_pointer, dest, GraphEdge::Subset);
                             changed = true;
                         }
-                        let new = (dest, prop_pointer, GraphEdge::Subset);
-                        if !graph.contains_edge(new.0, new.1) {
-                            graph.add_edge(new.0, new.1, new.2);
-                            queue.push(new.1);
+                        if !graph.contains_edge(dest, prop_pointer) {
+                            graph.add_edge(dest, prop_pointer, GraphEdge::Subset);
+                            queue.push(prop_pointer);
                         }
 
                         let prop_values = match points_to.get(&prop_pointer) {
