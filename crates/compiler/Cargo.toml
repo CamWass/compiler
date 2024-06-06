@@ -18,6 +18,7 @@ lexical = {version = "6.1.0", features = ["power-of-two", "format"]}
 petgraph = "0.6.0"
 rustc-hash = "1.1.0"
 serde = {version = "1", features = ["derive"]}
+smallvec = {version = "1.13.2", features = ["union"]}
 static_assertions = "1.1.0"
 
 [dev-dependencies]

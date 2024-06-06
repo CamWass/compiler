@@ -29,6 +29,7 @@ use petgraph::graph::UnGraph;
 use petgraph::graphmap::DiGraphMap;
 use petgraph::Direction::Outgoing;
 use rustc_hash::{FxHashMap, FxHashSet};
+use smallvec::SmallVec;
 
 /// When true, the property interference relations are outputted as a graph in
 /// graphviz dot format (debug builds only).
@@ -63,7 +64,7 @@ pub fn process(
 
 fn create_renaming_map(
     store: &mut Store,
-    points_to: FxHashMap<PointerId, FxHashSet<ConcretePointer>>,
+    points_to: FxHashMap<PointerId, SmallSet<ConcretePointer>>,
 ) -> FxHashMap<NodeId, JsWord> {
     /*
         Idea:
@@ -353,8 +354,8 @@ fn create_renaming_map(
 fn compute_points_to_map(
     graph: &mut DiGraphMap<PointerId, GraphEdge>,
     store: &mut Store,
-) -> FxHashMap<PointerId, FxHashSet<ConcretePointer>> {
-    let mut points_to: FxHashMap<_, FxHashSet<_>> = FxHashMap::default();
+) -> FxHashMap<PointerId, SmallSet<ConcretePointer>> {
+    let mut points_to: FxHashMap<_, SmallSet<_>> = FxHashMap::default();
 
     // Invalidate parameters for functions that access the arguments array.
     for func in store.functions.values() {
@@ -459,7 +460,7 @@ fn compute_points_to_map(
 fn flow_edges(
     graph: &mut DiGraphMap<PointerId, GraphEdge>,
     store: &mut Store,
-    points_to: &mut FxHashMap<PointerId, FxHashSet<ConcretePointer>>,
+    points_to: &mut FxHashMap<PointerId, SmallSet<ConcretePointer>>,
     queue: &mut Vec<PointerId>,
     edges: &mut Vec<(PointerId, PointerId, GraphEdge)>,
 ) {
@@ -485,14 +486,16 @@ fn flow_edges(
         edges.clear();
         edges.extend(
             graph
-            .edges_directed(node, Outgoing)
+                .edges_directed(node, Outgoing)
                 .map(|e| (e.0, e.1, *e.2)),
         );
 
         for (src, dest, kind) in edges.iter().copied() {
             match kind {
                 GraphEdge::Subset => {
-                    points_to.entry(src).or_default();
+                    if !points_to.contains_key(&src) {
+                        continue;
+                    }
                     points_to.entry(dest).or_default();
                     let [src_set, dest_set] = points_to.get_many_mut([&src, &dest]).unwrap();
                     let before = dest_set.len();
@@ -510,7 +513,7 @@ fn flow_edges(
                         Some(c) => c.clone(),
                         None => continue,
                     };
-                    let before = points_to.entry(dest).or_default().len();
+                    let before = points_to.get(&dest).map(|s| s.len());
                     let mut changed = false;
                     for callee in callees {
                         let callee = store.pointers.insert(callee.into());
@@ -528,7 +531,7 @@ fn flow_edges(
                         };
                         points_to.entry(dest).or_default().extend(return_types);
                     }
-                    changed |= points_to.entry(dest).or_default().len() != before;
+                    changed |= points_to.get(&dest).map(|s| s.len()) != before;
                     if changed {
                         queue.push(dest);
                     }
@@ -544,7 +547,7 @@ fn flow_edges(
                         None => continue,
                     };
 
-                    let before = points_to.entry(dest).or_default().len();
+                    let before = points_to.get(&dest).map(|s| s.len());
                     let mut changed = false;
 
                     for concrete_object in concrete_objects {
@@ -556,7 +559,7 @@ fn flow_edges(
                             continue;
                         }
 
-                        if !graph.contains_edge(prop_pointer, dest) {
+                        if prop_pointer != node && !graph.contains_edge(prop_pointer, dest) {
                             graph.add_edge(prop_pointer, dest, GraphEdge::Subset);
                             changed = true;
                         }
@@ -573,7 +576,7 @@ fn flow_edges(
                         points_to.entry(dest).or_default().extend(prop_values);
                     }
 
-                    changed |= points_to.entry(dest).or_default().len() != before;
+                    changed |= points_to.get(&dest).map(|s| s.len()) != before;
                     if changed {
                         queue.push(dest);
                     }
@@ -603,7 +606,7 @@ fn flow_edges(
                                             graph.add_edge(dest, param, GraphEdge::Subset);
                                             changed = true;
                                         }
-                                        let before = points_to.entry(param).or_default().len();
+                                        let before = points_to.get(&param).map(|s| s.len());
                                         if let Some(concrete_values) = &concrete_values {
                                             points_to
                                                 .entry(param)
@@ -611,8 +614,7 @@ fn flow_edges(
                                                 .extend(concrete_values);
                                         }
 
-                                        changed |=
-                                            points_to.entry(param).or_default().len() != before;
+                                        changed |= points_to.get(&param).map(|s| s.len()) != before;
                                         if changed {
                                             queue.push(param);
                                         }
@@ -643,7 +645,7 @@ fn flow_edges(
 pub fn analyse(
     ast: &ast::Program,
     unresolved_ctxt: SyntaxContext,
-) -> (Store, FxHashMap<PointerId, FxHashSet<ConcretePointer>>) {
+) -> (Store, FxHashMap<PointerId, SmallSet<ConcretePointer>>) {
     let mut store = Store {
         unresolved_ctxt,
         functions: FxHashMap::default(),
@@ -1441,6 +1443,7 @@ enum Pointer {
     BigInt,
     Regex,
     ReturnValue(PointerId),
+    // TODO: u32 instead of usize
     Arg(PointerId, usize),
 }
 
@@ -1746,3 +1749,83 @@ const BUILT_INS: &'static [(ConcretePointer, &'static [JsWord])] = &[
         ],
     ),
 ];
+
+#[derive(Debug, Clone)]
+pub struct SmallSet<T> {
+    inner: SmallVec<[T; 4]>,
+}
+
+impl<T> Default for SmallSet<T> {
+    fn default() -> Self {
+        Self {
+            inner: Default::default(),
+        }
+    }
+}
+
+impl<T> SmallSet<T>
+where
+    T: Ord,
+{
+    fn insert(&mut self, value: T) -> bool {
+        match self.inner.binary_search(&value) {
+            Ok(_) => {
+                // Already present
+                false
+            }
+            Err(insert_idx) => {
+                self.inner.insert(insert_idx, value);
+                true
+            }
+        }
+    }
+
+    fn contains(&self, value: &T) -> bool {
+        self.inner.binary_search(&value).is_ok()
+    }
+
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    fn iter(&self) -> std::slice::Iter<'_, T> {
+        self.inner.iter()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+}
+
+impl<T> IntoIterator for SmallSet<T> {
+    type IntoIter = smallvec::IntoIter<[T; 4]>;
+    type Item = T;
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.into_iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a SmallSet<T> {
+    type IntoIter = std::slice::Iter<'a, T>;
+    type Item = &'a T;
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.iter()
+    }
+}
+
+impl<T: Ord> Extend<T> for SmallSet<T> {
+    fn extend<I: IntoIterator<Item = T>>(&mut self, iterable: I) {
+        for value in iterable {
+            self.insert(value);
+        }
+    }
+}
+
+impl<'a, T> Extend<&'a T> for SmallSet<T>
+where
+    T: 'a + Ord + Copy,
+{
+    fn extend<I: IntoIterator<Item = &'a T>>(&mut self, iter: I) {
+        self.extend(iter.into_iter().cloned());
+    }
+}
