@@ -394,62 +394,107 @@ fn compute_points_to_map(
     }
 
     let mut queue = Vec::new();
+    queue.extend(graph.nodes());
     let mut edges = Vec::new();
 
     loop {
-        queue.clear();
-        edges.clear();
         flow_edges(graph, store, &mut points_to, &mut queue, &mut edges);
         // After we've reached a fixedpoint above, if we couldn't infer the values
         // of a pointer, set them to Unknown and run fixedpoint again to propagate
         // the Unknowns.
-        let mut changed = false;
-        for pointer in 0..store.pointers.len() {
-            let pointer = PointerId::from_usize(pointer);
+        loop {
+            let mut invalidated = false;
 
-            // TODO: we don't need to rerun flow_edges if invalidation changed
-            // Propagate 'invalid-ness'.
-            if store.invalid_pointers.contains(&pointer) {
-                if let Some(values) = points_to.get(&pointer) {
-                    for &value in values {
-                        let p = store.pointers.insert(value.into());
-                        changed |= store.invalidate(p);
+            for pointer in 0..store.pointers.len() {
+                let pointer = PointerId::from_usize(pointer);
+
+                if let Pointer::Arg(callee, _) = store.pointers[pointer] {
+                    let unknown_callee = points_to
+                        .get(&callee)
+                        .map(|concrete_callees| {
+                            concrete_callees.contains(&ConcretePointer::Unknown)
+                        })
+                        .unwrap_or(false);
+
+                    if unknown_callee {
+                        if let Some(concrete_values) = points_to.get(&pointer) {
+                            // Invalidate arguments passed to unknown callers.
+                            for &value in concrete_values {
+                                let p = store.pointers.insert(value.into());
+                                invalidated |= store.invalidate(p);
+                            }
+                        }
                     }
                 }
-            }
-            if matches!(store.pointers[pointer], Pointer::Prop(obj, _) if store.invalid_pointers.contains(&obj))
-            {
-                if let Some(values) = points_to.get(&pointer) {
-                    for &value in values {
-                        let p = store.pointers.insert(value.into());
-                        changed |= store.invalidate(p);
+
+                if store.invalid_pointers.contains(&pointer) {
+                    if let Some(values) = points_to.get(&pointer) {
+                        for &value in values {
+                            let p = store.pointers.insert(value.into());
+                            invalidated |= store.invalidate(p);
+                        }
                     }
                 }
-                changed |= points_to
-                    .entry(pointer)
-                    .or_default()
-                    .insert(ConcretePointer::Unknown);
-            }
-
-            // Functions implicitly return undefined sometimes.
-            if matches!(store.pointers[pointer], Pointer::ReturnValue(_)) {
-                continue;
-            }
-            if !points_to.contains_key(&pointer) || points_to.get(&pointer).unwrap().is_empty() {
-                // Undefined properties on valid objects are undefined. We know the obj must be valid,
-                // otherwise flow edges would have flowed Unknown into this prop.
-                if matches!(store.pointers[pointer], Pointer::Prop(_, _)) {
+                if matches!(store.pointers[pointer], Pointer::Prop(obj, _) if store.invalid_pointers.contains(&obj))
+                {
+                    if let Some(values) = points_to.get(&pointer) {
+                        for &value in values {
+                            let p = store.pointers.insert(value.into());
+                            invalidated |= store.invalidate(p);
+                        }
+                    }
+                    invalidated |= store.invalidate(pointer);
+                    let changed = points_to
+                        .entry(pointer)
+                        .or_default()
+                        .insert(ConcretePointer::Unknown);
+                    if changed {
+                        queue.push(pointer);
+                    }
                     continue;
                 }
-                points_to
-                    .entry(pointer)
-                    .or_default()
-                    .insert(ConcretePointer::Unknown);
-                changed = true;
+
+                // Functions implicitly return undefined sometimes.
+                if matches!(store.pointers[pointer], Pointer::ReturnValue(_)) {
+                    let changed = points_to
+                        .entry(pointer)
+                        .or_default()
+                        .insert(ConcretePointer::NullOrVoid);
+                    if changed {
+                        queue.push(pointer);
+                    }
+                    continue;
+                }
+                if !points_to.contains_key(&pointer) || points_to.get(&pointer).unwrap().is_empty()
+                {
+                    // Undefined properties on valid objects are undefined. We know the obj must be valid,
+                    // otherwise flow edges would have flowed Unknown into this prop.
+                    if matches!(store.pointers[pointer], Pointer::Prop(_, _)) {
+                        let changed = points_to
+                            .entry(pointer)
+                            .or_default()
+                            .insert(ConcretePointer::NullOrVoid);
+                        if changed {
+                            queue.push(pointer);
+                        }
+                        continue;
+                    }
+                    invalidated |= store.invalidate(pointer);
+                    points_to
+                        .entry(pointer)
+                        .or_default()
+                        .insert(ConcretePointer::Unknown);
+                    queue.push(pointer);
+                }
             }
+
+            if !invalidated {
+                break;
+            }
+            break;
         }
 
-        if !changed {
+        if queue.is_empty() {
             break;
         }
     }
@@ -464,25 +509,7 @@ fn flow_edges(
     queue: &mut Vec<PointerId>,
     edges: &mut Vec<(PointerId, PointerId, GraphEdge)>,
 ) {
-    queue.extend(graph.nodes());
     while let Some(node) = queue.pop() {
-        if let Pointer::Arg(callee, _) = store.pointers[node] {
-            let unknown_callee = points_to
-                .get(&callee)
-                .map(|concrete_callees| concrete_callees.contains(&ConcretePointer::Unknown))
-                .unwrap_or(false);
-
-            if unknown_callee {
-                if let Some(concrete_values) = points_to.get(&node) {
-                    // Invalidate arguments passed to unknown callers.
-                    for &value in concrete_values {
-                        let p = store.pointers.insert(value.into());
-                        store.invalidate(p);
-                    }
-                }
-            }
-        }
-
         edges.clear();
         edges.extend(
             graph
