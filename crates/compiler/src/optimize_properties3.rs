@@ -1172,6 +1172,7 @@ pub struct Store {
     pointers: IndexSet<PointerId, Pointer>,
     references: FxHashSet<(PropKey, PointerId)>,
     invalid_pointers: FxHashSet<PointerId>,
+
     unknown_pointer: PointerId,
     null_or_void_pointer: PointerId,
     bool_pointer: PointerId,
@@ -1420,81 +1421,3 @@ const BUILT_INS: &'static [(Pointer, &'static [JsWord])] = &[
         ],
     ),
 ];
-
-#[derive(Debug, Clone)]
-struct SmallSet<T> {
-    inner: SmallVec<[T; 4]>,
-}
-
-impl<T> Default for SmallSet<T> {
-    fn default() -> Self {
-        Self {
-            inner: Default::default(),
-        }
-    }
-}
-
-impl<T> SmallSet<T>
-where
-    T: Ord + Copy,
-{
-    fn insert(&mut self, value: T) -> bool {
-        match self.inner.binary_search(&value) {
-            Ok(_) => {
-                // Already present
-                false
-            }
-            Err(insert_idx) => {
-                self.inner.insert(insert_idx, value);
-                true
-            }
-        }
-    }
-
-    fn contains(&self, value: &T) -> bool {
-        self.inner.binary_search(&value).is_ok()
-    }
-
-    fn len(&self) -> usize {
-        self.inner.len()
-    }
-
-    fn iter(&self) -> std::slice::Iter<'_, T> {
-        self.inner.iter()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.inner.is_empty()
-    }
-
-    fn extend(&mut self, mut other: SmallSet<T>) {
-        if other.len() > self.len() {
-            other = std::mem::replace(self, other);
-        }
-        for value in other {
-            self.insert(value);
-        }
-    }
-
-    fn extend_ref(&mut self, other: &SmallSet<T>) {
-        for value in other {
-            self.insert(*value);
-        }
-    }
-}
-
-impl<T> IntoIterator for SmallSet<T> {
-    type IntoIter = smallvec::IntoIter<[T; 4]>;
-    type Item = T;
-    fn into_iter(self) -> Self::IntoIter {
-        self.inner.into_iter()
-    }
-}
-
-impl<'a, T> IntoIterator for &'a SmallSet<T> {
-    type IntoIter = std::slice::Iter<'a, T>;
-    type Item = &'a T;
-    fn into_iter(self) -> Self::IntoIter {
-        self.inner.iter()
-    }
-}

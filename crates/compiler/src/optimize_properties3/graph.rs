@@ -12,7 +12,7 @@ pub struct Graph {
     graph: DiGraphMap<GraphNodeId, GraphEdge>,
     node_map: FxHashMap<PointerId, GraphNodeId>,
     nodes: UnionFind<GraphNodeId>,
-    points_to: FxHashMap<GraphNodeId, SmallSet<PointerId>>,
+    points_to: FxHashMap<GraphNodeId, SmallSet>,
     cur_node_id: GraphNodeId,
 }
 
@@ -416,12 +416,12 @@ impl Graph {
         changed
     }
 
-    fn get<T: GetRepId>(&mut self, pointer: T) -> Option<&SmallSet<PointerId>> {
+    fn get<T: GetRepId>(&mut self, pointer: T) -> Option<&SmallSet> {
         let representative = { pointer.get_rep_id(self).0 };
         self.points_to.get(&representative)
     }
 
-    pub(super) fn get_immutable(&self, pointer: PointerId) -> Option<&SmallSet<PointerId>> {
+    pub(super) fn get_immutable(&self, pointer: PointerId) -> Option<&SmallSet> {
         let representative = self.nodes.find(self.node_map[&pointer]);
         self.points_to.get(&representative)
     }
@@ -611,5 +611,80 @@ impl UniqueQueue {
         let priorities = &self.priorities;
         self.inner
             .extend(iter.map(|n| PrioritizedNode(priorities[&n], n)))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct SmallSet {
+    inner: SmallVec<[PointerId; 4]>,
+}
+
+impl Default for SmallSet {
+    fn default() -> Self {
+        Self {
+            inner: Default::default(),
+        }
+    }
+}
+
+impl SmallSet {
+    fn insert(&mut self, value: PointerId) -> bool {
+        match self.inner.binary_search(&value) {
+            Ok(_) => {
+                // Already present
+                false
+            }
+            Err(insert_idx) => {
+                self.inner.insert(insert_idx, value);
+                true
+            }
+        }
+    }
+
+    fn contains(&self, value: &PointerId) -> bool {
+        self.inner.binary_search(&value).is_ok()
+    }
+
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, PointerId> {
+        self.inner.iter()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    fn extend(&mut self, mut other: SmallSet) {
+        if other.len() > self.len() {
+            other = std::mem::replace(self, other);
+        }
+        for value in other {
+            self.insert(value);
+        }
+    }
+
+    fn extend_ref(&mut self, other: &SmallSet) {
+        for value in other {
+            self.insert(*value);
+        }
+    }
+}
+
+impl IntoIterator for SmallSet {
+    type IntoIter = smallvec::IntoIter<[PointerId; 4]>;
+    type Item = PointerId;
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a SmallSet {
+    type IntoIter = std::slice::Iter<'a, PointerId>;
+    type Item = &'a PointerId;
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.iter()
     }
 }
