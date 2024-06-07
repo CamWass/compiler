@@ -9,9 +9,10 @@
 #[cfg(test)]
 mod tests;
 
+mod graph;
+
 use std::collections::hash_map::Entry;
 use std::convert::TryInto;
-use std::fmt::Display;
 
 use crate::find_vars::*;
 use crate::optimize_properties2::simple_set::IndexSet;
@@ -23,11 +24,10 @@ use ast::*;
 use atoms::{js_word, JsWord};
 use ecma_visit::{Visit, VisitMutWith, VisitWith};
 use global_common::SyntaxContext;
+use graph::{Graph, GraphEdge};
 use index::bit_set::{BitMatrix, BitSet};
 use index::vec::IndexVec;
 use petgraph::graph::UnGraph;
-use petgraph::graphmap::DiGraphMap;
-use petgraph::Direction::Outgoing;
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 
@@ -62,10 +62,7 @@ pub fn process(
     ast.visit_mut_with(&mut renamer);
 }
 
-fn create_renaming_map(
-    store: &mut Store,
-    points_to: FxHashMap<PointerId, SmallSet<ConcretePointer>>,
-) -> FxHashMap<NodeId, JsWord> {
+fn create_renaming_map(store: &mut Store, points_to: Graph) -> FxHashMap<NodeId, JsWord> {
     /*
         Idea:
         Assign properties (from different objects but with the same name) to the same
@@ -136,7 +133,7 @@ fn create_renaming_map(
 
     for (key, pointer) in &store.references {
         let objs = points_to
-            .get(pointer)
+            .get_immutable(*pointer)
             .unwrap()
             .iter()
             .filter(|o| !matches!(o, ConcretePointer::NullOrVoid));
@@ -351,336 +348,32 @@ fn create_renaming_map(
     rename_map
 }
 
-fn compute_points_to_map(
-    graph: &mut DiGraphMap<PointerId, GraphEdge>,
-    store: &mut Store,
-) -> FxHashMap<PointerId, SmallSet<ConcretePointer>> {
-    let mut points_to: FxHashMap<_, SmallSet<_>> = FxHashMap::default();
+pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> (Store, Graph) {
+    let mut pointers = IndexSet::default();
 
-    // Invalidate parameters for functions that access the arguments array.
-    for func in store.functions.values() {
-        if func.accesses_arguments_array {
-            for param in func.param_indices() {
-                let pointer = store.pointers.insert(Pointer::Var(param));
-                store.invalid_pointers.insert(pointer);
-            }
-        }
-    }
+    let unknown_pointer = pointers.insert(Pointer::Unknown);
+    let null_or_void_pointer = pointers.insert(Pointer::NullOrVoid);
+    let bool_pointer = pointers.insert(Pointer::Bool);
+    let num_pointer = pointers.insert(Pointer::Num);
+    let string_pointer = pointers.insert(Pointer::String);
+    let big_int_pointer = pointers.insert(Pointer::BigInt);
+    let regex_pointer = pointers.insert(Pointer::Regex);
 
-    store
-        .invalid_pointers
-        .insert(store.pointers.insert(Pointer::Unknown));
-
-    for pointer in 0..store.pointers.len() {
-        let pointer = PointerId::from_usize(pointer);
-        let concrete = match store.pointers[pointer] {
-            Pointer::Object(id) => Some(ConcretePointer::Object(id)),
-            Pointer::Fn(id) => Some(ConcretePointer::Fn(id)),
-            Pointer::Unknown => Some(ConcretePointer::Unknown),
-            Pointer::NullOrVoid => Some(ConcretePointer::NullOrVoid),
-            Pointer::Bool => Some(ConcretePointer::Bool),
-            Pointer::Num => Some(ConcretePointer::Num),
-            Pointer::String => Some(ConcretePointer::String),
-            Pointer::BigInt => Some(ConcretePointer::BigInt),
-            Pointer::Regex => Some(ConcretePointer::Regex),
-            Pointer::ReturnValue(_)
-            | Pointer::Arg(_, _)
-            | Pointer::Prop(_, _)
-            | Pointer::Var(_) => None,
-        };
-        if let Some(concrete) = concrete {
-            points_to.entry(pointer).or_default().insert(concrete);
-        }
-    }
-
-    let mut queue = Vec::new();
-    queue.extend(graph.nodes());
-    let mut edges = Vec::new();
-
-    loop {
-        flow_edges(graph, store, &mut points_to, &mut queue, &mut edges);
-        // After we've reached a fixedpoint above, if we couldn't infer the values
-        // of a pointer, set them to Unknown and run fixedpoint again to propagate
-        // the Unknowns.
-        loop {
-            let mut invalidated = false;
-
-            for pointer in 0..store.pointers.len() {
-                let pointer = PointerId::from_usize(pointer);
-
-                if let Pointer::Arg(callee, _) = store.pointers[pointer] {
-                    let unknown_callee = points_to
-                        .get(&callee)
-                        .map(|concrete_callees| {
-                            concrete_callees.contains(&ConcretePointer::Unknown)
-                        })
-                        .unwrap_or(false);
-
-                    if unknown_callee {
-                        if let Some(concrete_values) = points_to.get(&pointer) {
-                            // Invalidate arguments passed to unknown callers.
-                            for &value in concrete_values {
-                                let p = store.pointers.insert(value.into());
-                                invalidated |= store.invalidate(p);
-                            }
-                        }
-                    }
-                }
-
-                if store.invalid_pointers.contains(&pointer) {
-                    if let Some(values) = points_to.get(&pointer) {
-                        for &value in values {
-                            let p = store.pointers.insert(value.into());
-                            invalidated |= store.invalidate(p);
-                        }
-                    }
-                }
-                if matches!(store.pointers[pointer], Pointer::Prop(obj, _) if store.invalid_pointers.contains(&obj))
-                {
-                    if let Some(values) = points_to.get(&pointer) {
-                        for &value in values {
-                            let p = store.pointers.insert(value.into());
-                            invalidated |= store.invalidate(p);
-                        }
-                    }
-                    invalidated |= store.invalidate(pointer);
-                    let changed = points_to
-                        .entry(pointer)
-                        .or_default()
-                        .insert(ConcretePointer::Unknown);
-                    if changed {
-                        queue.push(pointer);
-                    }
-                    continue;
-                }
-
-                // Functions implicitly return undefined sometimes.
-                if matches!(store.pointers[pointer], Pointer::ReturnValue(_)) {
-                    let changed = points_to
-                        .entry(pointer)
-                        .or_default()
-                        .insert(ConcretePointer::NullOrVoid);
-                    if changed {
-                        queue.push(pointer);
-                    }
-                    continue;
-                }
-                if !points_to.contains_key(&pointer) || points_to.get(&pointer).unwrap().is_empty()
-                {
-                    // Undefined properties on valid objects are undefined. We know the obj must be valid,
-                    // otherwise flow edges would have flowed Unknown into this prop.
-                    if matches!(store.pointers[pointer], Pointer::Prop(_, _)) {
-                        let changed = points_to
-                            .entry(pointer)
-                            .or_default()
-                            .insert(ConcretePointer::NullOrVoid);
-                        if changed {
-                            queue.push(pointer);
-                        }
-                        continue;
-                    }
-                    invalidated |= store.invalidate(pointer);
-                    points_to
-                        .entry(pointer)
-                        .or_default()
-                        .insert(ConcretePointer::Unknown);
-                    queue.push(pointer);
-                }
-            }
-
-            if !invalidated {
-                break;
-            }
-            break;
-        }
-
-        if queue.is_empty() {
-            break;
-        }
-    }
-
-    points_to
-}
-
-fn flow_edges(
-    graph: &mut DiGraphMap<PointerId, GraphEdge>,
-    store: &mut Store,
-    points_to: &mut FxHashMap<PointerId, SmallSet<ConcretePointer>>,
-    queue: &mut Vec<PointerId>,
-    edges: &mut Vec<(PointerId, PointerId, GraphEdge)>,
-) {
-    while let Some(node) = queue.pop() {
-        edges.clear();
-        edges.extend(
-            graph
-                .edges_directed(node, Outgoing)
-                .map(|e| (e.0, e.1, *e.2)),
-        );
-
-        for (src, dest, kind) in edges.iter().copied() {
-            match kind {
-                GraphEdge::Subset => {
-                    if !points_to.contains_key(&src) {
-                        continue;
-                    }
-                    points_to.entry(dest).or_default();
-                    let [src_set, dest_set] = points_to.get_many_mut([&src, &dest]).unwrap();
-                    let before = dest_set.len();
-                    dest_set.extend(src_set.iter());
-                    let changed = dest_set.len() != before;
-                    if changed {
-                        queue.push(dest);
-                    }
-                }
-                GraphEdge::Return => {
-                    if matches!(store.pointers[src], Pointer::Fn(_)) {
-                        continue;
-                    }
-                    let callees = match points_to.get(&src) {
-                        Some(c) => c.clone(),
-                        None => continue,
-                    };
-                    let before = points_to.get(&dest).map(|s| s.len());
-                    let mut changed = false;
-                    for callee in callees {
-                        let callee = store.pointers.insert(callee.into());
-                        let return_node = store.pointers.insert(Pointer::ReturnValue(callee));
-                        if return_node == dest {
-                            continue;
-                        }
-                        if !graph.contains_edge(return_node, dest) {
-                            graph.add_edge(return_node, dest, GraphEdge::Subset);
-                            changed = true;
-                        }
-                        let return_types = match points_to.get(&return_node) {
-                            Some(r) => r.clone(),
-                            None => continue,
-                        };
-                        points_to.entry(dest).or_default().extend(return_types);
-                    }
-                    changed |= points_to.get(&dest).map(|s| s.len()) != before;
-                    if changed {
-                        queue.push(dest);
-                    }
-                }
-                GraphEdge::Prop => {
-                    let (obj, name) = match store.pointers[dest] {
-                        Pointer::Prop(obj, name) => (obj, name),
-                        _ => unreachable!(),
-                    };
-
-                    let concrete_objects = match points_to.get(&obj) {
-                        Some(o) => o.clone(),
-                        None => continue,
-                    };
-
-                    let before = points_to.get(&dest).map(|s| s.len());
-                    let mut changed = false;
-
-                    for concrete_object in concrete_objects {
-                        let concrete_object = store.pointers.insert(concrete_object.into());
-                        let prop_pointer =
-                            store.pointers.insert(Pointer::Prop(concrete_object, name));
-
-                        if dest == prop_pointer {
-                            continue;
-                        }
-
-                        if prop_pointer != node && !graph.contains_edge(prop_pointer, dest) {
-                            graph.add_edge(prop_pointer, dest, GraphEdge::Subset);
-                            changed = true;
-                        }
-                        if !graph.contains_edge(dest, prop_pointer) {
-                            graph.add_edge(dest, prop_pointer, GraphEdge::Subset);
-                            queue.push(prop_pointer);
-                        }
-
-                        let prop_values = match points_to.get(&prop_pointer) {
-                            Some(p) => p.clone(),
-                            None => continue,
-                        };
-
-                        points_to.entry(dest).or_default().extend(prop_values);
-                    }
-
-                    changed |= points_to.get(&dest).map(|s| s.len()) != before;
-                    if changed {
-                        queue.push(dest);
-                    }
-                }
-                GraphEdge::Arg => {
-                    let (callee, index) = match store.pointers[dest] {
-                        Pointer::Arg(callee, index) => (callee, index),
-                        _ => unreachable!(),
-                    };
-
-                    let concrete_callees = match points_to.get(&callee) {
-                        Some(c) => c.clone(),
-                        None => continue,
-                    };
-
-                    let concrete_values = points_to.get(&dest).cloned();
-
-                    for concrete_callee in concrete_callees {
-                        match concrete_callee {
-                            ConcretePointer::Fn(callee) => {
-                                let func = store.functions.get(&callee).unwrap();
-                                match func.param_indices().nth(index) {
-                                    Some(param) => {
-                                        let param = store.pointers.insert(Pointer::Var(param));
-                                        let mut changed = false;
-                                        if !graph.contains_edge(dest, param) {
-                                            graph.add_edge(dest, param, GraphEdge::Subset);
-                                            changed = true;
-                                        }
-                                        let before = points_to.get(&param).map(|s| s.len());
-                                        if let Some(concrete_values) = &concrete_values {
-                                            points_to
-                                                .entry(param)
-                                                .or_default()
-                                                .extend(concrete_values);
-                                        }
-
-                                        changed |= points_to.get(&param).map(|s| s.len()) != before;
-                                        if changed {
-                                            queue.push(param);
-                                        }
-                                    }
-                                    None => {
-                                        // Don't invalidate extra arguments. The function cannot access them
-                                        // unless it uses e.g. arguments array, which is detected else where.
-                                    }
-                                }
-                            }
-
-                            ConcretePointer::Unknown
-                            | ConcretePointer::Object(_)
-                            | ConcretePointer::NullOrVoid
-                            | ConcretePointer::Bool
-                            | ConcretePointer::Num
-                            | ConcretePointer::String
-                            | ConcretePointer::BigInt
-                            | ConcretePointer::Regex => {}
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-pub fn analyse(
-    ast: &ast::Program,
-    unresolved_ctxt: SyntaxContext,
-) -> (Store, FxHashMap<PointerId, SmallSet<ConcretePointer>>) {
     let mut store = Store {
         unresolved_ctxt,
         functions: FxHashMap::default(),
         names: IndexSet::default(),
         vars: IndexSet::default(),
-        pointers: IndexSet::default(),
+        pointers,
         references: FxHashSet::default(),
         invalid_pointers: FxHashSet::default(),
+        unknown_pointer,
+        null_or_void_pointer,
+        bool_pointer,
+        num_pointer,
+        string_pointer,
+        big_int_pointer,
+        regex_pointer,
     };
 
     {
@@ -702,62 +395,19 @@ pub fn analyse(
     }
 
     let mut graph = compute_relations(ast, &mut store);
-    let points_to = compute_points_to_map(&mut graph, &mut store);
+    graph.compute_points_to_map(&mut store);
 
     if cfg!(debug_assertions) && OUTPUT_RELO_GRAPH {
-        for id in 0..store.pointers.len() {
-            let id = PointerId::from_usize(id);
-            graph.add_node(id);
-        }
-
-        let map = |store: &Store, n: PointerId| {
-            let value: String = match &store.pointers[n] {
-                Pointer::Prop(obj, prop) => {
-                    format!(
-                        "Prop(Object PointerId:{}, prop:(NameId:{}, '{}'))",
-                        obj.as_u32(),
-                        prop.as_u32(),
-                        store.names[*prop]
-                    )
-                }
-                Pointer::Var(id) => format!(
-                    "Var(VarId:{}, '{}')",
-                    id.as_u32(),
-                    store.names[store.vars[*id].0]
-                ),
-                Pointer::Object(id) => format!("Object(NodeId:{})", id.as_u32()),
-                Pointer::Fn(id) => format!("Fn(NodeId:{})", id.as_u32()),
-                Pointer::Unknown => "Unknown".into(),
-                Pointer::NullOrVoid => "NullOrVoid".into(),
-                Pointer::Bool => "Bool".into(),
-                Pointer::Num => "Num".into(),
-                Pointer::String => "String".into(),
-                Pointer::BigInt => "BigInt".into(),
-                Pointer::Regex => "Regex".into(),
-                Pointer::ReturnValue(id) => {
-                    format!("ReturnValue(Callee PointerId:{})", id.as_u32())
-                }
-                Pointer::Arg(func, index) => {
-                    format!("Arg(func PointerId:{}, index:{})", func.as_u32(), index)
-                }
-            };
-            format!("id:{}, {}", n.as_u32(), value)
-        };
-
-        let print_graph: petgraph::prelude::DiGraph<String, GraphEdge> = graph
-            .clone()
-            .into_graph()
-            .map(|_, n| map(&store, *n), |_, e| *e);
-        let dot = format!("{}", petgraph::dot::Dot::with_config(&print_graph, &[]));
+        let dot = graph.get_dot(&store);
 
         std::fs::write("./relo.dot", dot).expect("Failed to output fn graph");
     }
 
-    (store, points_to)
+    (store, graph)
 }
 
-fn compute_relations(ast: &ast::Program, store: &mut Store) -> DiGraphMap<PointerId, GraphEdge> {
-    let mut graph = DiGraphMap::new();
+fn compute_relations(ast: &ast::Program, store: &mut Store) -> Graph {
+    let mut graph = Graph::new();
 
     let mut visitor = GraphVisitor {
         store,
@@ -771,26 +421,35 @@ fn compute_relations(ast: &ast::Program, store: &mut Store) -> DiGraphMap<Pointe
 
 struct GraphVisitor<'a> {
     store: &'a mut Store,
-    graph: &'a mut DiGraphMap<PointerId, GraphEdge>,
+    graph: &'a mut Graph,
     cur_fn: Option<NodeId>,
 }
 
 impl GraphVisitor<'_> {
-    fn get_rhs(&mut self, expr: &Expr) -> Vec<PointerId> {
+    fn get_rhs(&mut self, expr: &Expr, used: bool) -> Vec<PointerId> {
+        macro_rules! ret {
+            ($val:expr) => {
+                if used {
+                    $val
+                } else {
+                    Vec::new()
+                }
+            };
+        }
         match expr {
-            Expr::This(_) => vec![self.store.pointers.insert(Pointer::Unknown)],
+            Expr::This(_) => ret!(vec![self.store.unknown_pointer]),
             Expr::Array(n) => {
                 for element in &n.elems {
                     match element {
                         Some(ExprOrSpread::Spread(_)) => todo!(),
                         Some(ExprOrSpread::Expr(element)) => {
-                            let value = self.get_rhs(element);
+                            let value = self.get_rhs(element, true);
                             self.invalidate(&value);
                         }
                         None => {}
                     }
                 }
-                vec![self.store.pointers.insert(Pointer::Unknown)]
+                ret!(vec![self.store.unknown_pointer])
             }
             Expr::Object(n) => {
                 let obj = self.store.pointers.insert(Pointer::Object(n.node_id));
@@ -810,7 +469,7 @@ impl GraphVisitor<'_> {
                                     &mut self.store.names,
                                 )
                                 .expect("checked above");
-                                let value = self.get_rhs(&prop.value);
+                                let value = self.get_rhs(&prop.value, true);
                                 let prop = self.get_prop_value(obj, key.0);
                                 self.reference_prop(obj, key);
                                 for value in value {
@@ -832,7 +491,7 @@ impl GraphVisitor<'_> {
                     n.props.visit_with(self);
                     self.invalidate(&[obj]);
                 }
-                vec![obj]
+                ret!(vec![obj])
             }
             Expr::Fn(n) => {
                 n.function.visit_with(self);
@@ -843,36 +502,36 @@ impl GraphVisitor<'_> {
                     let var = self.store.pointers.insert(Pointer::Var(var));
                     self.make_subset_of(func, var);
                 }
-                vec![func]
+                ret!(vec![func])
             }
             Expr::Unary(n) => {
                 n.visit_children_with(self);
                 // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-unary-operators
                 match n.op {
-                    UnaryOp::Plus => vec![self.store.pointers.insert(Pointer::Num)],
-                    UnaryOp::TypeOf => vec![self.store.pointers.insert(Pointer::String)],
-                    UnaryOp::Void => vec![self.store.pointers.insert(Pointer::NullOrVoid)],
+                    UnaryOp::Plus => ret!(vec![self.store.num_pointer]),
+                    UnaryOp::TypeOf => ret!(vec![self.store.string_pointer]),
+                    UnaryOp::Void => ret!(vec![self.store.null_or_void_pointer]),
                     UnaryOp::Bang | UnaryOp::Delete => {
-                        vec![self.store.pointers.insert(Pointer::Bool)]
+                        ret!(vec![self.store.bool_pointer])
                     }
                     // Output type depends in input type.
                     UnaryOp::Minus | UnaryOp::Tilde => {
-                        vec![self.store.pointers.insert(Pointer::Unknown)]
+                        ret!(vec![self.store.unknown_pointer])
                     }
                 }
             }
             Expr::Update(n) => {
                 n.visit_children_with(self);
-                vec![self.store.pointers.insert(Pointer::Unknown)]
+                ret!(vec![self.store.unknown_pointer])
             }
             Expr::Bin(n) => {
                 match n.op {
                     BinaryOp::LogicalOr | BinaryOp::LogicalAnd | BinaryOp::NullishCoalescing => {
                         // TODO: if LHS is object, then we know if RHS will execute.
-                        let mut left = self.get_rhs(&n.left);
-                        let mut right = self.get_rhs(&n.right);
+                        let mut left = self.get_rhs(&n.left, used);
+                        let mut right = self.get_rhs(&n.right, used);
                         left.append(&mut right);
-                        left
+                        ret!(left)
                     }
                     _ => {
                         n.visit_children_with(self);
@@ -881,7 +540,7 @@ impl GraphVisitor<'_> {
                             BinaryOp::EqEq
                             | BinaryOp::NotEq
                             | BinaryOp::EqEqEq
-                            | BinaryOp::NotEqEq => vec![self.store.pointers.insert(Pointer::Bool)],
+                            | BinaryOp::NotEqEq => ret!(vec![self.store.bool_pointer]),
                             // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-relational-operators
                             BinaryOp::Lt
                             | BinaryOp::LtEq
@@ -889,7 +548,7 @@ impl GraphVisitor<'_> {
                             | BinaryOp::GtEq
                             | BinaryOp::In
                             | BinaryOp::InstanceOf => {
-                                vec![self.store.pointers.insert(Pointer::Bool)]
+                                ret!(vec![self.store.bool_pointer])
                             }
                             // TODO: we can infer the output type based on the input types.
                             // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-applystringornumericbinaryoperator
@@ -904,7 +563,7 @@ impl GraphVisitor<'_> {
                             | BinaryOp::BitOr
                             | BinaryOp::BitXor
                             | BinaryOp::BitAnd
-                            | BinaryOp::Exp => vec![self.store.pointers.insert(Pointer::Unknown)],
+                            | BinaryOp::Exp => ret!(vec![self.store.unknown_pointer]),
 
                             BinaryOp::LogicalOr
                             | BinaryOp::LogicalAnd
@@ -923,7 +582,7 @@ impl GraphVisitor<'_> {
             Expr::Member(n) => match &n.obj {
                 ExprOrSuper::Super(_) => todo!(),
                 ExprOrSuper::Expr(obj) => {
-                    let mut obj = self.get_rhs(obj);
+                    let mut obj = self.get_rhs(obj, true);
 
                     if n.computed {
                         n.prop.visit_with(self);
@@ -939,30 +598,30 @@ impl GraphVisitor<'_> {
                             self.reference_prop(*obj, prop);
                             *obj = self.get_prop_value(*obj, prop.0);
                         }
-                        obj
+                        ret!(obj)
                     } else {
                         self.invalidate(&obj);
-                        vec![self.store.pointers.insert(Pointer::Unknown)]
+                        ret!(vec![self.store.unknown_pointer])
                     }
                 }
             },
             Expr::Cond(n) => {
                 n.test.visit_with(self);
-                let mut cons = self.get_rhs(&n.cons);
-                let mut alt = self.get_rhs(&n.alt);
+                let mut cons = self.get_rhs(&n.cons, used);
+                let mut alt = self.get_rhs(&n.alt, used);
                 cons.append(&mut alt);
-                cons
+                ret!(cons)
             }
             Expr::Call(n) => match &n.callee {
                 ExprOrSuper::Super(_) => todo!(),
                 ExprOrSuper::Expr(callee) => {
-                    let mut callee = self.get_rhs(callee);
+                    let mut callee = self.get_rhs(callee, true);
                     let args = n
                         .args
                         .iter()
                         .map(|arg| match arg {
                             ExprOrSpread::Spread(_) => todo!(),
-                            ExprOrSpread::Expr(arg) => self.get_rhs(arg),
+                            ExprOrSpread::Expr(arg) => self.get_rhs(arg, true),
                         })
                         .collect::<Vec<_>>();
                     for callee in &callee {
@@ -971,31 +630,31 @@ impl GraphVisitor<'_> {
                                 let arg_pointer =
                                     self.store.pointers.insert(Pointer::Arg(*callee, i));
                                 self.make_subset_of(*value, arg_pointer);
-                                self.graph.add_edge(*callee, arg_pointer, GraphEdge::Arg);
+                                self.graph.add_edge(*callee, arg_pointer, GraphEdge::Arg(i));
                             }
                         }
                     }
                     for callee in &mut callee {
                         *callee = self.get_return_value(*callee);
                     }
-                    callee
+                    ret!(callee)
                 }
             },
             Expr::New(n) => {
-                let callee = self.get_rhs(&n.callee);
+                let callee = self.get_rhs(&n.callee, true);
                 self.invalidate(&callee);
                 if let Some(args) = &n.args {
                     for arg in args {
                         match arg {
                             ExprOrSpread::Spread(_) => todo!(),
                             ExprOrSpread::Expr(arg) => {
-                                let value = self.get_rhs(arg);
+                                let value = self.get_rhs(arg, true);
                                 self.invalidate(&value);
                             }
                         }
                     }
                 }
-                vec![self.store.pointers.insert(Pointer::Unknown)]
+                ret!(vec![self.store.unknown_pointer])
             }
             Expr::Seq(n) => {
                 debug_assert!(!n.exprs.is_empty());
@@ -1006,42 +665,42 @@ impl GraphVisitor<'_> {
                     i += 1;
                 }
 
-                self.get_rhs(&n.exprs[i])
+                self.get_rhs(&n.exprs[i], used)
             }
             Expr::Ident(n) => {
                 if n.ctxt == self.store.unresolved_ctxt {
                     if n.sym == js_word!("undefined") {
-                        vec![self.store.pointers.insert(Pointer::NullOrVoid)]
+                        ret!(vec![self.store.null_or_void_pointer])
                     } else {
-                        vec![self.store.pointers.insert(Pointer::Unknown)]
+                        ret!(vec![self.store.unknown_pointer])
                     }
                 } else {
                     let name = Id::new(n, &mut self.store.names);
                     let var = self.store.vars.get_index(&name).unwrap();
-                    vec![self.store.pointers.insert(Pointer::Var(var))]
+                    ret!(vec![self.store.pointers.insert(Pointer::Var(var))])
                 }
             }
             Expr::Lit(n) => match n {
-                Lit::Str(_) => vec![self.store.pointers.insert(Pointer::String)],
-                Lit::Bool(_) => vec![self.store.pointers.insert(Pointer::Bool)],
-                Lit::Null(_) => vec![self.store.pointers.insert(Pointer::NullOrVoid)],
-                Lit::Num(_) => vec![self.store.pointers.insert(Pointer::Num)],
-                Lit::BigInt(_) => vec![self.store.pointers.insert(Pointer::BigInt)],
-                Lit::Regex(_) => vec![self.store.pointers.insert(Pointer::Regex)],
+                Lit::Str(_) => ret!(vec![self.store.string_pointer]),
+                Lit::Bool(_) => ret!(vec![self.store.bool_pointer]),
+                Lit::Null(_) => ret!(vec![self.store.null_or_void_pointer]),
+                Lit::Num(_) => ret!(vec![self.store.num_pointer]),
+                Lit::BigInt(_) => ret!(vec![self.store.big_int_pointer]),
+                Lit::Regex(_) => ret!(vec![self.store.regex_pointer]),
                 Lit::JSXText(_) => unreachable!(),
             },
             Expr::Tpl(n) => {
                 n.visit_children_with(self);
-                vec![self.store.pointers.insert(Pointer::Unknown)]
+                ret!(vec![self.store.unknown_pointer])
             }
             Expr::TaggedTpl(n) => {
                 n.tag.visit_with(self);
                 for expr in &n.tpl.exprs {
-                    let obj = self.get_rhs(expr);
+                    let obj = self.get_rhs(expr, true);
                     // Expressions in tagged templates can be accessed by the tag function.
                     self.invalidate(&obj);
                 }
-                vec![self.store.pointers.insert(Pointer::Unknown)]
+                ret!(vec![self.store.unknown_pointer])
             }
             Expr::Arrow(n) => {
                 n.params.visit_with(self);
@@ -1049,25 +708,25 @@ impl GraphVisitor<'_> {
                 self.cur_fn = Some(n.node_id);
                 n.body.visit_with(self);
                 self.cur_fn = old;
-                vec![self.store.pointers.insert(Pointer::Fn(n.node_id))]
+                ret!(vec![self.store.pointers.insert(Pointer::Fn(n.node_id))])
             }
             Expr::Class(_) => todo!(),
             Expr::Yield(n) => {
                 if let Some(arg) = &n.arg {
-                    let value = self.get_rhs(arg);
+                    let value = self.get_rhs(arg, true);
                     self.invalidate(&value);
                 }
-                vec![self.store.pointers.insert(Pointer::Unknown)]
+                ret!(vec![self.store.unknown_pointer])
             }
             Expr::MetaProp(n) => {
                 n.visit_children_with(self);
-                vec![self.store.pointers.insert(Pointer::Unknown)]
+                ret!(vec![self.store.unknown_pointer])
             }
             Expr::Await(n) => {
                 n.visit_children_with(self);
-                vec![self.store.pointers.insert(Pointer::Unknown)]
+                ret!(vec![self.store.unknown_pointer])
             }
-            Expr::Paren(n) => self.get_rhs(&n.expr),
+            Expr::Paren(n) => self.get_rhs(&n.expr, used),
             Expr::PrivateName(_) => todo!(),
             Expr::OptChain(_) => todo!(),
 
@@ -1126,7 +785,7 @@ impl GraphVisitor<'_> {
             }
             _ => {
                 let lhs = self.visit_and_get_slot(lhs);
-                let rhs = self.get_rhs(rhs);
+                let rhs = self.get_rhs(rhs, true);
 
                 self.assign_to_slot(lhs, &rhs);
                 rhs
@@ -1135,7 +794,7 @@ impl GraphVisitor<'_> {
     }
 
     fn handle_destructuring(&mut self, lhs: &Pat, rhs: &Expr) -> Vec<PointerId> {
-        let rhs = self.get_rhs(rhs);
+        let rhs = self.get_rhs(rhs, true);
         self.visit_destructuring(lhs, &rhs);
         rhs
     }
@@ -1211,19 +870,19 @@ impl GraphVisitor<'_> {
                         todo!();
                         // self.invalidate_slot(Node::from(elem.as_ref()));
                     } else {
-                        let rhs = vec![self.store.pointers.insert(Pointer::Unknown)];
+                        let rhs = vec![self.store.unknown_pointer];
                         self.visit_destructuring(element, &rhs);
                     }
                 }
             }
             Pat::Rest(lhs) => {
                 self.invalidate(rhs);
-                let rhs = vec![self.store.pointers.insert(Pointer::Unknown)];
+                let rhs = vec![self.store.unknown_pointer];
                 // TODO: lhs.arg should only be an identifier?
                 self.visit_destructuring(&lhs.arg, &rhs);
             }
             Pat::Assign(lhs) => {
-                let mut default_value = self.get_rhs(&lhs.right);
+                let mut default_value = self.get_rhs(&lhs.right, true);
                 default_value.extend_from_slice(rhs);
 
                 self.visit_destructuring(&lhs.left, &default_value);
@@ -1271,7 +930,7 @@ impl GraphVisitor<'_> {
             Expr::Member(node) => {
                 let obj = match &node.obj {
                     ExprOrSuper::Super(_) => todo!(),
-                    ExprOrSuper::Expr(obj) => self.get_rhs(obj),
+                    ExprOrSuper::Expr(obj) => self.get_rhs(obj, true),
                 };
 
                 if node.computed {
@@ -1312,7 +971,7 @@ impl GraphVisitor<'_> {
 
     fn get_prop_value(&mut self, obj: PointerId, prop: NameId) -> PointerId {
         let access = self.store.pointers.insert(Pointer::Prop(obj, prop));
-        self.graph.add_edge(obj, access, GraphEdge::Prop);
+        self.graph.add_edge(obj, access, GraphEdge::Prop(prop));
         access
     }
 
@@ -1340,7 +999,7 @@ impl Visit<'_> for GraphVisitor<'_> {
     fn visit_stmt(&mut self, n: &Stmt) {
         match n {
             Stmt::With(n) => {
-                let obj = self.get_rhs(&n.obj);
+                let obj = self.get_rhs(&n.obj, true);
                 self.invalidate(&obj);
                 n.body.visit_with(self);
             }
@@ -1349,7 +1008,7 @@ impl Visit<'_> for GraphVisitor<'_> {
                     Some(cur_fn) => cur_fn,
                     None => {
                         if let Some(value) = &n.arg {
-                            let rhs = self.get_rhs(value);
+                            let rhs = self.get_rhs(value, true);
                             self.invalidate(&rhs);
                         }
                         return;
@@ -1358,17 +1017,17 @@ impl Visit<'_> for GraphVisitor<'_> {
                 let cur_fn = self.store.pointers.insert(Pointer::Fn(cur_fn));
                 let lhs = self.get_return_value(cur_fn);
                 if let Some(value) = &n.arg {
-                    let rhs = self.get_rhs(value);
+                    let rhs = self.get_rhs(value, true);
                     for rhs in rhs {
                         self.make_subset_of(rhs, lhs);
                     }
                 } else {
-                    let rhs = self.store.pointers.insert(Pointer::NullOrVoid);
+                    let rhs = self.store.null_or_void_pointer;
                     self.make_subset_of(rhs, lhs);
                 }
             }
             Stmt::Throw(n) => {
-                let value = self.get_rhs(&n.arg);
+                let value = self.get_rhs(&n.arg, true);
                 self.invalidate(&value);
             }
             Stmt::ForIn(ForInStmt {
@@ -1378,7 +1037,7 @@ impl Visit<'_> for GraphVisitor<'_> {
                 left, right, body, ..
             }) => {
                 left.visit_with(self);
-                let rhs = self.get_rhs(right);
+                let rhs = self.get_rhs(right, true);
                 self.invalidate(&rhs);
                 body.visit_with(self);
             }
@@ -1434,25 +1093,11 @@ impl Visit<'_> for GraphVisitor<'_> {
     }
 
     fn visit_expr(&mut self, n: &Expr) {
-        self.get_rhs(n);
+        self.get_rhs(n, false);
     }
 
     fn visit_module_decl(&mut self, _: &ModuleDecl) {
         todo!();
-    }
-}
-
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-enum GraphEdge {
-    Subset,
-    Return,
-    Prop,
-    Arg,
-}
-
-impl Display for GraphEdge {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("{:?}", self))
     }
 }
 
@@ -1535,6 +1180,13 @@ pub struct Store {
     pointers: IndexSet<PointerId, Pointer>,
     references: FxHashSet<(PropKey, PointerId)>,
     invalid_pointers: FxHashSet<PointerId>,
+    unknown_pointer: PointerId,
+    null_or_void_pointer: PointerId,
+    bool_pointer: PointerId,
+    num_pointer: PointerId,
+    string_pointer: PointerId,
+    big_int_pointer: PointerId,
+    regex_pointer: PointerId,
 }
 
 impl Store {
@@ -1778,7 +1430,7 @@ const BUILT_INS: &'static [(ConcretePointer, &'static [JsWord])] = &[
 ];
 
 #[derive(Debug, Clone)]
-pub struct SmallSet<T> {
+struct SmallSet<T> {
     inner: SmallVec<[T; 4]>,
 }
 
@@ -1792,7 +1444,7 @@ impl<T> Default for SmallSet<T> {
 
 impl<T> SmallSet<T>
 where
-    T: Ord,
+    T: Ord + Copy,
 {
     fn insert(&mut self, value: T) -> bool {
         match self.inner.binary_search(&value) {
@@ -1822,6 +1474,21 @@ where
     fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
+
+    fn extend(&mut self, mut other: SmallSet<T>) {
+        if other.len() > self.len() {
+            other = std::mem::replace(self, other);
+        }
+        for value in other {
+            self.insert(value);
+        }
+    }
+
+    fn extend_ref(&mut self, other: &SmallSet<T>) {
+        for value in other {
+            self.insert(*value);
+        }
+    }
 }
 
 impl<T> IntoIterator for SmallSet<T> {
@@ -1837,22 +1504,5 @@ impl<'a, T> IntoIterator for &'a SmallSet<T> {
     type Item = &'a T;
     fn into_iter(self) -> Self::IntoIter {
         self.inner.iter()
-    }
-}
-
-impl<T: Ord> Extend<T> for SmallSet<T> {
-    fn extend<I: IntoIterator<Item = T>>(&mut self, iterable: I) {
-        for value in iterable {
-            self.insert(value);
-        }
-    }
-}
-
-impl<'a, T> Extend<&'a T> for SmallSet<T>
-where
-    T: 'a + Ord + Copy,
-{
-    fn extend<I: IntoIterator<Item = &'a T>>(&mut self, iter: I) {
-        self.extend(iter.into_iter().cloned());
     }
 }
