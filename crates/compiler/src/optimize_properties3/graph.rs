@@ -12,7 +12,7 @@ pub struct Graph {
     graph: DiGraphMap<GraphNodeId, GraphEdge>,
     node_map: FxHashMap<PointerId, GraphNodeId>,
     nodes: UnionFind<GraphNodeId>,
-    points_to: FxHashMap<GraphNodeId, SmallSet<ConcretePointer>>,
+    points_to: FxHashMap<GraphNodeId, SmallSet<PointerId>>,
     cur_node_id: GraphNodeId,
 }
 
@@ -66,22 +66,22 @@ impl Graph {
         for pointer in 0..store.pointers.len() {
             let pointer = PointerId::from_usize(pointer);
             let concrete = match store.pointers[pointer] {
-                Pointer::Object(id) => Some(ConcretePointer::Object(id)),
-                Pointer::Fn(id) => Some(ConcretePointer::Fn(id)),
-                Pointer::Unknown => Some(ConcretePointer::Unknown),
-                Pointer::NullOrVoid => Some(ConcretePointer::NullOrVoid),
-                Pointer::Bool => Some(ConcretePointer::Bool),
-                Pointer::Num => Some(ConcretePointer::Num),
-                Pointer::String => Some(ConcretePointer::String),
-                Pointer::BigInt => Some(ConcretePointer::BigInt),
-                Pointer::Regex => Some(ConcretePointer::Regex),
+                Pointer::Object(_)
+                | Pointer::Fn(_)
+                | Pointer::Unknown
+                | Pointer::NullOrVoid
+                | Pointer::Bool
+                | Pointer::Num
+                | Pointer::String
+                | Pointer::BigInt
+                | Pointer::Regex => Some(pointer),
                 Pointer::ReturnValue(_)
                 | Pointer::Arg(_, _)
                 | Pointer::Prop(_, _)
                 | Pointer::Var(_) => None,
             };
             if let Some(concrete) = concrete {
-                self.insert(pointer, concrete);
+                self.insert(pointer, concrete, store);
             }
         }
 
@@ -120,7 +120,7 @@ impl Graph {
                         let unknown_callee = self
                             .get(callee)
                             .map(|concrete_callees| {
-                                concrete_callees.contains(&ConcretePointer::Unknown)
+                                concrete_callees.contains(&store.unknown_pointer)
                             })
                             .unwrap_or(false);
 
@@ -128,8 +128,7 @@ impl Graph {
                             if let Some(concrete_values) = self.get(node) {
                                 // Invalidate arguments passed to unknown callers.
                                 for &value in concrete_values {
-                                    let p = store.pointers.insert(value.into());
-                                    invalidated |= store.invalidate(p);
+                                    invalidated |= store.invalidate(value);
                                 }
                             }
                         }
@@ -138,8 +137,7 @@ impl Graph {
                     if store.invalid_pointers.contains(&pointer) {
                         if let Some(values) = self.get(node) {
                             for &value in values {
-                                let p = store.pointers.insert(value.into());
-                                invalidated |= store.invalidate(p);
+                                invalidated |= store.invalidate(value);
                             }
                         }
                     }
@@ -147,12 +145,11 @@ impl Graph {
                     {
                         if let Some(values) = self.get(node) {
                             for &value in values {
-                                let p = store.pointers.insert(value.into());
-                                invalidated |= store.invalidate(p);
+                                invalidated |= store.invalidate(value);
                             }
                         }
                         invalidated |= store.invalidate(pointer);
-                        let changed = self.insert(node, ConcretePointer::Unknown);
+                        let changed = self.insert(node, store.unknown_pointer, store);
                         if changed {
                             prioritise(&self.graph, &mut queue, node.0);
                             queue.push(node.0);
@@ -162,7 +159,7 @@ impl Graph {
 
                     // Functions implicitly return undefined sometimes.
                     if matches!(store.pointers[pointer], Pointer::ReturnValue(_)) {
-                        let changed = self.insert(node, ConcretePointer::NullOrVoid);
+                        let changed = self.insert(node, store.null_or_void_pointer, store);
                         if changed {
                             prioritise(&self.graph, &mut queue, node.0);
                             queue.push(node.0);
@@ -173,7 +170,7 @@ impl Graph {
                         // Undefined properties on valid objects are undefined. We know the obj must be valid,
                         // otherwise flow edges would have flowed Unknown into this prop.
                         if matches!(store.pointers[pointer], Pointer::Prop(_, _)) {
-                            let changed = self.insert(node, ConcretePointer::NullOrVoid);
+                            let changed = self.insert(node, store.null_or_void_pointer, store);
                             if changed {
                                 prioritise(&self.graph, &mut queue, node.0);
                                 queue.push(node.0);
@@ -181,7 +178,7 @@ impl Graph {
                             continue;
                         }
                         invalidated |= store.invalidate(pointer);
-                        self.insert(node, ConcretePointer::Unknown);
+                        self.insert(node, store.unknown_pointer, store);
                         prioritise(&self.graph, &mut queue, node.0);
                         queue.push(node.0);
                     }
@@ -232,7 +229,6 @@ impl Graph {
                         let mut changed = false;
                         let mut dest = dest;
                         for callee in callees {
-                            let callee = store.pointers.insert(callee.into());
                             let return_node = store.pointers.insert(Pointer::ReturnValue(callee));
                             let return_node = self.get_graph_node_id(return_node);
                             if return_node.0 == dest.0 {
@@ -258,7 +254,6 @@ impl Graph {
                         let mut changed = false;
                         let mut dest = dest;
                         for concrete_object in concrete_objects {
-                            let concrete_object = store.pointers.insert(concrete_object.into());
                             let prop_pointer =
                                 store.pointers.insert(Pointer::Prop(concrete_object, name));
                             let prop_pointer = self.get_graph_node_id(prop_pointer);
@@ -329,8 +324,8 @@ impl Graph {
 
                         let mut dest = dest;
                         for concrete_callee in concrete_callees {
-                            match concrete_callee {
-                                ConcretePointer::Fn(callee) => {
+                            match store.pointers[concrete_callee] {
+                                Pointer::Fn(callee) => {
                                     let func = store.functions.get(&callee).unwrap();
                                     match func.param_indices().nth(index) {
                                         Some(param) => {
@@ -350,14 +345,19 @@ impl Graph {
                                     }
                                 }
 
-                                ConcretePointer::Unknown
-                                | ConcretePointer::Object(_)
-                                | ConcretePointer::NullOrVoid
-                                | ConcretePointer::Bool
-                                | ConcretePointer::Num
-                                | ConcretePointer::String
-                                | ConcretePointer::BigInt
-                                | ConcretePointer::Regex => {}
+                                Pointer::Unknown
+                                | Pointer::Object(_)
+                                | Pointer::NullOrVoid
+                                | Pointer::Bool
+                                | Pointer::Num
+                                | Pointer::String
+                                | Pointer::BigInt
+                                | Pointer::Regex => {}
+
+                                Pointer::Prop(_, _)
+                                | Pointer::Var(_)
+                                | Pointer::ReturnValue(_)
+                                | Pointer::Arg(_, _) => unreachable!("non-concrete"),
                             }
                         }
                     }
@@ -375,7 +375,9 @@ impl Graph {
         )
     }
 
-    fn insert<T: GetRepId>(&mut self, pointer: T, value: ConcretePointer) -> bool {
+    fn insert<T: GetRepId>(&mut self, pointer: T, value: PointerId, store: &Store) -> bool {
+        debug_assert!(store.pointers[value].is_concrete());
+
         let node = pointer.get_rep_id(self).0;
         self.points_to.entry(node).or_default().insert(value)
     }
@@ -414,12 +416,12 @@ impl Graph {
         changed
     }
 
-    fn get<T: GetRepId>(&mut self, pointer: T) -> Option<&SmallSet<ConcretePointer>> {
+    fn get<T: GetRepId>(&mut self, pointer: T) -> Option<&SmallSet<PointerId>> {
         let representative = { pointer.get_rep_id(self).0 };
         self.points_to.get(&representative)
     }
 
-    pub(super) fn get_immutable(&self, pointer: PointerId) -> Option<&SmallSet<ConcretePointer>> {
+    pub(super) fn get_immutable(&self, pointer: PointerId) -> Option<&SmallSet<PointerId>> {
         let representative = self.nodes.find(self.node_map[&pointer]);
         self.points_to.get(&representative)
     }

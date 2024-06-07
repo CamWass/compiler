@@ -107,12 +107,13 @@ fn create_renaming_map(store: &mut Store, points_to: Graph) -> FxHashMap<NodeId,
 
     index::newtype_index!(struct PropId { .. });
 
-    let mut objects: FxHashMap<ConcretePointer, Object> = FxHashMap::default();
+    let mut objects: FxHashMap<PointerId, Object> = FxHashMap::default();
     let mut properties: IndexVec<PropId, Property> = IndexVec::default();
 
     // Create objects and properties for built-in types.
     for (pointer, props) in BUILT_INS {
-        let obj = objects.entry(*pointer).or_default();
+        let pointer = store.pointers.insert(*pointer);
+        let obj = objects.entry(pointer).or_default();
         let props = props.iter().map(|p| {
             let name = store.names.insert(p.clone());
             (
@@ -129,16 +130,17 @@ fn create_renaming_map(store: &mut Store, points_to: Graph) -> FxHashMap<NodeId,
         obj.properties.extend(props);
     }
 
-    let mut prop_map: FxHashMap<PropKey, Vec<ConcretePointer>> = FxHashMap::default();
+    let mut prop_map: FxHashMap<PropKey, Vec<PointerId>> = FxHashMap::default();
 
     for (key, pointer) in &store.references {
         let objs = points_to
             .get_immutable(*pointer)
             .unwrap()
             .iter()
-            .filter(|o| !matches!(o, ConcretePointer::NullOrVoid));
+            .copied()
+            .filter(|o| *o != store.null_or_void_pointer);
         prop_map.entry(*key).or_default().extend(objs.clone());
-        for &obj in objs {
+        for obj in objs {
             let object = objects.entry(obj).or_default();
             let id = match object.properties.entry(key.0) {
                 Entry::Occupied(entry) => *entry.get(),
@@ -147,9 +149,7 @@ fn create_renaming_map(store: &mut Store, points_to: Graph) -> FxHashMap<NodeId,
                         name: key.0,
                         prop_id: properties.next_index(),
                         references: FxHashSet::default(),
-                        invalid: store
-                            .invalid_pointers
-                            .contains(&store.pointers.insert(obj.into())),
+                        invalid: store.invalid_pointers.contains(&obj),
                     });
                     entry.insert(prop_id);
                     prop_id
@@ -1119,33 +1119,25 @@ enum Pointer {
     Arg(PointerId, usize),
 }
 
-impl From<ConcretePointer> for Pointer {
-    fn from(value: ConcretePointer) -> Self {
-        match value {
-            ConcretePointer::Object(id) => Pointer::Object(id),
-            ConcretePointer::Fn(id) => Pointer::Fn(id),
-            ConcretePointer::Unknown => Pointer::Unknown,
-            ConcretePointer::NullOrVoid => Pointer::NullOrVoid,
-            ConcretePointer::Bool => Pointer::Bool,
-            ConcretePointer::Num => Pointer::Num,
-            ConcretePointer::String => Pointer::String,
-            ConcretePointer::BigInt => Pointer::BigInt,
-            ConcretePointer::Regex => Pointer::Regex,
+impl Pointer {
+    fn is_concrete(&self) -> bool {
+        match self {
+            Pointer::ReturnValue(_)
+            | Pointer::Arg(_, _)
+            | Pointer::Prop(_, _)
+            | Pointer::Var(_) => false,
+
+            Pointer::Object(_)
+            | Pointer::Fn(_)
+            | Pointer::Unknown
+            | Pointer::NullOrVoid
+            | Pointer::Bool
+            | Pointer::Num
+            | Pointer::String
+            | Pointer::BigInt
+            | Pointer::Regex => true,
         }
     }
-}
-
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub enum ConcretePointer {
-    Object(NodeId),
-    Fn(NodeId),
-    Unknown,
-    NullOrVoid,
-    Bool,
-    Num,
-    String,
-    BigInt,
-    Regex,
 }
 
 /// A place where a variable can be stored.
@@ -1355,9 +1347,9 @@ enum PatOrExpr<'a> {
     Expr(&'a Expr),
 }
 
-const BUILT_INS: &'static [(ConcretePointer, &'static [JsWord])] = &[
+const BUILT_INS: &'static [(Pointer, &'static [JsWord])] = &[
     (
-        ConcretePointer::Num,
+        Pointer::Num,
         &[
             js_word!("constructor"),
             js_word!("toExponential"),
@@ -1369,7 +1361,7 @@ const BUILT_INS: &'static [(ConcretePointer, &'static [JsWord])] = &[
         ],
     ),
     (
-        ConcretePointer::String,
+        Pointer::String,
         &[
             js_word!("constructor"),
             js_word!("length"),
@@ -1411,7 +1403,7 @@ const BUILT_INS: &'static [(ConcretePointer, &'static [JsWord])] = &[
         ],
     ),
     (
-        ConcretePointer::Bool,
+        Pointer::Bool,
         &[
             js_word!("constructor"),
             js_word!("toString"),
@@ -1419,7 +1411,7 @@ const BUILT_INS: &'static [(ConcretePointer, &'static [JsWord])] = &[
         ],
     ),
     (
-        ConcretePointer::BigInt,
+        Pointer::BigInt,
         &[
             js_word!("constructor"),
             js_word!("toLocaleString"),
