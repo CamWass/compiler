@@ -624,14 +624,15 @@ impl GraphVisitor<'_> {
                         .collect::<Vec<_>>();
                     for callee in &callee {
                         for (i, arg_values) in args.iter().enumerate() {
+                            let index = i.try_into().expect("< u32::MAX params");
                             for value in arg_values {
                                 let arg_pointer =
-                                    self.store.pointers.insert(Pointer::Arg(*callee, i));
+                                    self.store.pointers.insert(Pointer::Arg(*callee, index));
                                 self.make_subset_of(*value, arg_pointer);
                                 self.graph.add_initial_edge(
                                     *callee,
                                     arg_pointer,
-                                    GraphEdge::Arg(i),
+                                    GraphEdge::Arg(index),
                                 );
                             }
                         }
@@ -1118,8 +1119,7 @@ enum Pointer {
     BigInt,
     Regex,
     ReturnValue(PointerId),
-    // TODO: u32 instead of usize
-    Arg(PointerId, usize),
+    Arg(PointerId, u32),
 }
 
 impl Pointer {

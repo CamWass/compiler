@@ -337,7 +337,7 @@ impl Graph {
                             match store.pointers[concrete_callee] {
                                 Pointer::Fn(callee) => {
                                     let func = store.functions.get(&callee).unwrap();
-                                    match func.param_indices().nth(index) {
+                                    match func.param_indices().nth(index as usize) {
                                         Some(param) => {
                                             let param = store.pointers.insert(Pointer::Var(param));
                                             let param = self.get_graph_node_id(param);
@@ -559,7 +559,7 @@ pub(super) enum GraphEdge {
     Subset,
     Return,
     Prop(NameId),
-    Arg(usize),
+    Arg(u32),
 }
 
 impl Display for GraphEdge {
