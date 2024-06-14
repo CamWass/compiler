@@ -1,11 +1,11 @@
 use std::collections::BinaryHeap;
 use std::fmt::{Display, Write};
 
+use arrayvec::ArrayVec;
 use index::vec::Idx;
 use petgraph::algo::TarjanScc;
 use petgraph::graphmap::DiGraphMap;
 use petgraph::Direction::{Incoming, Outgoing};
-use smallvec::SmallVec;
 
 use super::*;
 
@@ -141,7 +141,7 @@ impl Graph {
                         if unknown_callee {
                             if let Some(concrete_values) = self.get(node) {
                                 // Invalidate arguments passed to unknown callers.
-                                for &value in concrete_values {
+                                for value in concrete_values {
                                     invalidated |= store.invalidate(value);
                                 }
                             }
@@ -150,7 +150,7 @@ impl Graph {
 
                     if store.invalid_pointers.contains(&pointer) {
                         if let Some(values) = self.get(node) {
-                            for &value in values {
+                            for value in values {
                                 invalidated |= store.invalidate(value);
                             }
                         }
@@ -158,7 +158,7 @@ impl Graph {
                     if matches!(store.pointers[pointer], Pointer::Prop(obj, _) if store.invalid_pointers.contains(&obj))
                     {
                         if let Some(values) = self.get(node) {
-                            for &value in values {
+                            for value in values {
                                 invalidated |= store.invalidate(value);
                             }
                         }
@@ -239,7 +239,7 @@ impl Graph {
                         };
                         let mut changed = false;
                         let mut dest = dest;
-                        for callee in callees {
+                        for callee in &callees {
                             let return_node = store.pointers.insert(Pointer::ReturnValue(callee));
                             let return_node = self.get_graph_node_id(return_node);
                             if return_node.0 == dest.0 {
@@ -262,7 +262,7 @@ impl Graph {
 
                         let mut changed = false;
                         let mut dest = dest;
-                        for concrete_object in concrete_objects {
+                        for concrete_object in &concrete_objects {
                             let prop_pointer =
                                 store.pointers.insert(Pointer::Prop(concrete_object, name));
                             let prop_pointer = self.get_graph_node_id(prop_pointer);
@@ -333,7 +333,7 @@ impl Graph {
                         };
 
                         let mut dest = dest;
-                        for concrete_callee in concrete_callees {
+                        for concrete_callee in &concrete_callees {
                             match store.pointers[concrete_callee] {
                                 Pointer::Fn(callee) => {
                                     let func = store.functions.get(&callee).unwrap();
@@ -622,76 +622,118 @@ impl UniqueQueue {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct SmallSet {
-    inner: SmallVec<[PointerId; 4]>,
+pub(super) enum SmallSet {
+    Inline(ArrayVec<PointerId, 11>),
+    Heap(FxHashSet<PointerId>),
 }
 
 impl Default for SmallSet {
     fn default() -> Self {
-        Self {
-            inner: Default::default(),
-        }
+        Self::Inline(ArrayVec::default())
     }
 }
 
 impl SmallSet {
     fn insert(&mut self, value: PointerId) -> bool {
-        match self.inner.binary_search(&value) {
-            Ok(_) => {
-                // Already present
+        match self {
+            SmallSet::Inline(set) => {
+                if !set.contains(&value) {
+                    if set.len() == set.capacity() {
+                        let mut heap = FxHashSet::default();
+                        heap.extend(set.iter());
+                        heap.insert(value);
+                        *self = Self::Heap(heap);
+                    } else {
+                        set.push(value);
+                    }
+                    true
+                } else {
                 false
             }
-            Err(insert_idx) => {
-                self.inner.insert(insert_idx, value);
-                true
             }
+            SmallSet::Heap(set) => set.insert(value),
         }
     }
 
     fn contains(&self, value: &PointerId) -> bool {
-        self.inner.binary_search(&value).is_ok()
+        match self {
+            SmallSet::Inline(set) => set.contains(value),
+            SmallSet::Heap(set) => set.contains(value),
+        }
     }
 
     fn len(&self) -> usize {
-        self.inner.len()
+        match self {
+            SmallSet::Inline(set) => set.len(),
+            SmallSet::Heap(set) => set.len(),
+        }
     }
 
-    pub fn iter(&self) -> std::slice::Iter<'_, PointerId> {
-        self.inner.iter()
+    pub fn iter(&self) -> SmallSetIter<'_> {
+        match self {
+            SmallSet::Inline(set) => SmallSetIter::Slice(set.iter()),
+            SmallSet::Heap(set) => SmallSetIter::Set(set.iter()),
+        }
     }
 
     fn is_empty(&self) -> bool {
-        self.inner.is_empty()
+        match self {
+            SmallSet::Inline(set) => set.is_empty(),
+            SmallSet::Heap(set) => set.is_empty(),
+        }
     }
 
     fn extend(&mut self, mut other: SmallSet) {
+        match (&self, &other) {
+            (SmallSet::Inline(_), SmallSet::Heap(_)) => {
+                other = std::mem::replace(self, other);
+            }
+            (SmallSet::Heap(_), SmallSet::Heap(_)) => {
         if other.len() > self.len() {
             other = std::mem::replace(self, other);
+                }
+            }
+            _ => {}
         }
-        for value in other {
+
+        for value in &other {
             self.insert(value);
         }
     }
 
     fn extend_ref(&mut self, other: &SmallSet) {
+        match self {
+            SmallSet::Inline(_) => {
         for value in other {
-            self.insert(*value);
+                    self.insert(value);
+                }
+            }
+            SmallSet::Heap(set) => set.extend(other),
         }
     }
 }
 
-impl IntoIterator for SmallSet {
-    type IntoIter = smallvec::IntoIter<[PointerId; 4]>;
+impl<'a> IntoIterator for &'a SmallSet {
+    type IntoIter = SmallSetIter<'a>;
     type Item = PointerId;
     fn into_iter(self) -> Self::IntoIter {
-        self.inner.into_iter()
+        self.iter()
     }
 }
 
-impl<'a> IntoIterator for &'a SmallSet {
-    type IntoIter = std::slice::Iter<'a, PointerId>;
-    type Item = &'a PointerId;
-    fn into_iter(self) -> Self::IntoIter {
-        self.inner.iter()
+#[derive(Clone)]
+pub(super) enum SmallSetIter<'a> {
+    Slice(std::slice::Iter<'a, PointerId>),
+    Set(std::collections::hash_set::Iter<'a, PointerId>),
+}
+
+impl<'a> Iterator for SmallSetIter<'a> {
+    type Item = PointerId;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            SmallSetIter::Slice(iter) => iter.next().copied(),
+            SmallSetIter::Set(iter) => iter.next().copied(),
+        }
     }
 }

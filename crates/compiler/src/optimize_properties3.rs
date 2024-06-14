@@ -136,7 +136,6 @@ fn create_renaming_map(store: &mut Store, points_to: Graph) -> FxHashMap<NodeId,
             .get_immutable(*pointer)
             .unwrap()
             .iter()
-            .copied()
             .filter(|o| *o != store.null_or_void_pointer);
         prop_map.entry(*key).or_default().extend(objs.clone());
         for obj in objs {
