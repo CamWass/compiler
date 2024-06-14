@@ -2,7 +2,6 @@ use std::collections::BinaryHeap;
 use std::fmt::{Display, Write};
 
 use arrayvec::ArrayVec;
-use index::vec::Idx;
 use petgraph::algo::TarjanScc;
 use petgraph::graphmap::DiGraphMap;
 use petgraph::Direction::{Incoming, Outgoing};
@@ -10,11 +9,9 @@ use petgraph::Direction::{Incoming, Outgoing};
 use super::*;
 
 pub struct Graph {
-    graph: DiGraphMap<GraphNodeId, GraphEdge>,
-    node_map: FxHashMap<PointerId, GraphNodeId>,
-    nodes: UnionFind<GraphNodeId>,
-    points_to: FxHashMap<GraphNodeId, SmallSet>,
-    cur_node_id: GraphNodeId,
+    graph: DiGraphMap<PointerId, GraphEdge>,
+    nodes: UnionFind<PointerId>,
+    points_to: FxHashMap<PointerId, SmallSet>,
     queue: UniqueQueue,
 }
 
@@ -22,10 +19,8 @@ impl Graph {
     pub fn new() -> Self {
         Self {
             graph: DiGraphMap::default(),
-            node_map: FxHashMap::default(),
             nodes: UnionFind::new(0),
             points_to: FxHashMap::default(),
-            cur_node_id: GraphNodeId::from_u32(0),
             queue: UniqueQueue::new(),
         }
     }
@@ -211,7 +206,7 @@ impl Graph {
     fn flow_edges(
         &mut self,
         store: &mut Store,
-        edges: &mut Vec<(GraphNodeId, GraphNodeId, GraphEdge)>,
+        edges: &mut Vec<(PointerId, PointerId, GraphEdge)>,
     ) {
         while let Some(node) = self.queue.pop() {
             edges.clear();
@@ -389,18 +384,8 @@ impl Graph {
     }
 
     fn get_graph_node_id(&mut self, pointer: PointerId) -> RepId {
-        let cur_node_id = &mut self.cur_node_id;
-
-        match self.node_map.entry(pointer) {
-            Entry::Occupied(entry) => RepId(self.nodes.find_mut(*entry.get())),
-            Entry::Vacant(entry) => {
-                let id = *cur_node_id;
-                cur_node_id.increment_by(1);
-                self.nodes.add(id);
-                entry.insert(id);
-                RepId(id)
-            }
-        }
+        self.nodes.add(pointer);
+        RepId(self.nodes.find_mut(pointer))
     }
 
     fn insert<T: GetRepId>(&mut self, pointer: T, value: PointerId, store: &Store) -> bool {
@@ -450,14 +435,14 @@ impl Graph {
     }
 
     pub(super) fn get_immutable(&self, pointer: PointerId) -> Option<&SmallSet> {
-        let representative = self.nodes.find(self.node_map[&pointer]);
+        let representative = self.nodes.find(pointer);
         self.points_to.get(&representative)
     }
 
     pub(super) fn get_dot(&mut self, store: &Store) -> String {
         let print_graph = self.graph.clone();
 
-        let mut map = |store: &Store, n: GraphNodeId| {
+        let mut map = |store: &Store, n: PointerId| {
             let n = self.nodes.find(n);
             let pointers = (0..store.pointers.len())
                 .filter_map(|p| {
@@ -516,9 +501,7 @@ impl Graph {
 }
 
 #[derive(Clone, Copy)]
-struct RepId(GraphNodeId);
-
-index::newtype_index!(struct GraphNodeId { .. });
+struct RepId(PointerId);
 
 trait GetRepId {
     fn get_rep_id(self, points_to: &mut Graph) -> RepId;
@@ -526,19 +509,13 @@ trait GetRepId {
 
 impl GetRepId for PointerId {
     fn get_rep_id(self, points_to: &mut Graph) -> RepId {
-        points_to.get_graph_node_id(self)
+        RepId(points_to.nodes.find_mut(self))
     }
 }
 
 impl GetRepId for RepId {
     fn get_rep_id(self, _: &mut Graph) -> RepId {
         self
-    }
-}
-
-impl GetRepId for GraphNodeId {
-    fn get_rep_id(self, points_to: &mut Graph) -> RepId {
-        RepId(points_to.nodes.find_mut(self))
     }
 }
 
@@ -557,7 +534,7 @@ impl Display for GraphEdge {
 }
 
 #[derive(Debug)]
-struct PrioritizedNode(u32, GraphNodeId);
+struct PrioritizedNode(u32, PointerId);
 
 impl PartialEq for PrioritizedNode {
     fn eq(&self, other: &Self) -> bool {
@@ -582,7 +559,7 @@ impl std::cmp::PartialOrd for PrioritizedNode {
 #[derive(Debug)]
 struct UniqueQueue {
     inner: BinaryHeap<PrioritizedNode>,
-    priorities: FxHashMap<GraphNodeId, u32>,
+    priorities: FxHashMap<PointerId, u32>,
 }
 
 impl UniqueQueue {
@@ -593,16 +570,16 @@ impl UniqueQueue {
         }
     }
 
-    fn pop(&mut self) -> Option<GraphNodeId> {
+    fn pop(&mut self) -> Option<PointerId> {
         self.inner.pop().map(|p| p.1)
     }
 
-    fn push(&mut self, node: GraphNodeId) {
+    fn push(&mut self, node: PointerId) {
         self.inner
             .push(PrioritizedNode(self.priorities[&node], node));
     }
 
-    fn extend(&mut self, iter: impl Iterator<Item = GraphNodeId>) {
+    fn extend(&mut self, iter: impl Iterator<Item = PointerId>) {
         let priorities = &self.priorities;
         self.inner
             .extend(iter.map(|n| PrioritizedNode(priorities[&n], n)))
