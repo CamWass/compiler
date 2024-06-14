@@ -70,7 +70,7 @@ impl Graph {
             }
         }
 
-        store.invalid_pointers.insert(store.unknown_pointer);
+        store.invalid_pointers.insert(PointerId::UNKNOWN);
 
         for pointer in 0..store.pointers.len() {
             let pointer = PointerId::from_usize(pointer);
@@ -128,9 +128,7 @@ impl Graph {
                     if let Pointer::Arg(callee, _) = store.pointers[pointer] {
                         let unknown_callee = self
                             .get(callee)
-                            .map(|concrete_callees| {
-                                concrete_callees.contains(&store.unknown_pointer)
-                            })
+                            .map(|concrete_callees| concrete_callees.contains(&PointerId::UNKNOWN))
                             .unwrap_or(false);
 
                         if unknown_callee {
@@ -158,7 +156,7 @@ impl Graph {
                             }
                         }
                         invalidated |= store.invalidate(pointer);
-                        let changed = self.insert(node, store.unknown_pointer, store);
+                        let changed = self.insert(node, PointerId::UNKNOWN, store);
                         if changed {
                             self.prioritise(node);
                             self.queue.push(node.0);
@@ -168,7 +166,7 @@ impl Graph {
 
                     // Functions implicitly return undefined sometimes.
                     if matches!(store.pointers[pointer], Pointer::ReturnValue(_)) {
-                        let changed = self.insert(node, store.null_or_void_pointer, store);
+                        let changed = self.insert(node, PointerId::NULL_OR_VOID, store);
                         if changed {
                             self.prioritise(node);
                             self.queue.push(node.0);
@@ -179,14 +177,14 @@ impl Graph {
                         // Undefined properties on valid objects are undefined. We know the obj must be valid,
                         // otherwise flow edges would have flowed Unknown into this prop.
                         if matches!(store.pointers[pointer], Pointer::Prop(_, _)) {
-                            let changed = self.insert(node, store.null_or_void_pointer, store);
+                            let changed = self.insert(node, PointerId::NULL_OR_VOID, store);
                             if changed {
                                 self.queue.push(node.0);
                             }
                             continue;
                         }
                         invalidated |= store.invalidate(pointer);
-                        self.insert(node, store.unknown_pointer, store);
+                        self.insert(node, PointerId::UNKNOWN, store);
                         self.prioritise(node);
                         self.queue.push(node.0);
                     }

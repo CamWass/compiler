@@ -136,7 +136,7 @@ fn create_renaming_map(store: &mut Store, points_to: Graph) -> FxHashMap<NodeId,
             .get_immutable(*pointer)
             .unwrap()
             .iter()
-            .filter(|o| *o != store.null_or_void_pointer);
+            .filter(|o| *o != PointerId::NULL_OR_VOID);
         prop_map.entry(*key).or_default().extend(objs.clone());
         for obj in objs {
             let object = objects.entry(obj).or_default();
@@ -349,13 +349,20 @@ fn create_renaming_map(store: &mut Store, points_to: Graph) -> FxHashMap<NodeId,
 pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> (Store, Graph) {
     let mut pointers = IndexSet::default();
 
-    let unknown_pointer = pointers.insert(Pointer::Unknown);
-    let null_or_void_pointer = pointers.insert(Pointer::NullOrVoid);
-    let bool_pointer = pointers.insert(Pointer::Bool);
-    let num_pointer = pointers.insert(Pointer::Num);
-    let string_pointer = pointers.insert(Pointer::String);
-    let big_int_pointer = pointers.insert(Pointer::BigInt);
-    let regex_pointer = pointers.insert(Pointer::Regex);
+    const STATIC_POINTERS: [(PointerId, Pointer); 7] = [
+        (PointerId::UNKNOWN, Pointer::Unknown),
+        (PointerId::NULL_OR_VOID, Pointer::NullOrVoid),
+        (PointerId::BOOL, Pointer::Bool),
+        (PointerId::NUM, Pointer::Num),
+        (PointerId::STRING, Pointer::String),
+        (PointerId::BIG_INT, Pointer::BigInt),
+        (PointerId::REGEX, Pointer::Regex),
+    ];
+
+    for (id, pointer) in STATIC_POINTERS {
+        let i = pointers.insert(pointer);
+        debug_assert_eq!(i, id, "static pointers have been inserted in wrong order");
+    }
 
     let mut store = Store {
         unresolved_ctxt,
@@ -365,13 +372,6 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> (Store, Gr
         pointers,
         references: FxHashSet::default(),
         invalid_pointers: FxHashSet::default(),
-        unknown_pointer,
-        null_or_void_pointer,
-        bool_pointer,
-        num_pointer,
-        string_pointer,
-        big_int_pointer,
-        regex_pointer,
     };
 
     {
@@ -435,7 +435,7 @@ impl GraphVisitor<'_> {
             };
         }
         match expr {
-            Expr::This(_) => ret!(vec![self.store.unknown_pointer]),
+            Expr::This(_) => ret!(vec![PointerId::UNKNOWN]),
             Expr::Array(n) => {
                 for element in &n.elems {
                     match element {
@@ -447,7 +447,7 @@ impl GraphVisitor<'_> {
                         None => {}
                     }
                 }
-                ret!(vec![self.store.unknown_pointer])
+                ret!(vec![PointerId::UNKNOWN])
             }
             Expr::Object(n) => {
                 let obj = self.store.pointers.insert(Pointer::Object(n.node_id));
@@ -506,21 +506,21 @@ impl GraphVisitor<'_> {
                 n.visit_children_with(self);
                 // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-unary-operators
                 match n.op {
-                    UnaryOp::Plus => ret!(vec![self.store.num_pointer]),
-                    UnaryOp::TypeOf => ret!(vec![self.store.string_pointer]),
-                    UnaryOp::Void => ret!(vec![self.store.null_or_void_pointer]),
+                    UnaryOp::Plus => ret!(vec![PointerId::NUM]),
+                    UnaryOp::TypeOf => ret!(vec![PointerId::STRING]),
+                    UnaryOp::Void => ret!(vec![PointerId::NULL_OR_VOID]),
                     UnaryOp::Bang | UnaryOp::Delete => {
-                        ret!(vec![self.store.bool_pointer])
+                        ret!(vec![PointerId::BOOL])
                     }
                     // Output type depends in input type.
                     UnaryOp::Minus | UnaryOp::Tilde => {
-                        ret!(vec![self.store.unknown_pointer])
+                        ret!(vec![PointerId::UNKNOWN])
                     }
                 }
             }
             Expr::Update(n) => {
                 n.visit_children_with(self);
-                ret!(vec![self.store.unknown_pointer])
+                ret!(vec![PointerId::UNKNOWN])
             }
             Expr::Bin(n) => {
                 match n.op {
@@ -538,7 +538,7 @@ impl GraphVisitor<'_> {
                             BinaryOp::EqEq
                             | BinaryOp::NotEq
                             | BinaryOp::EqEqEq
-                            | BinaryOp::NotEqEq => ret!(vec![self.store.bool_pointer]),
+                            | BinaryOp::NotEqEq => ret!(vec![PointerId::BOOL]),
                             // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-relational-operators
                             BinaryOp::Lt
                             | BinaryOp::LtEq
@@ -546,7 +546,7 @@ impl GraphVisitor<'_> {
                             | BinaryOp::GtEq
                             | BinaryOp::In
                             | BinaryOp::InstanceOf => {
-                                ret!(vec![self.store.bool_pointer])
+                                ret!(vec![PointerId::BOOL])
                             }
                             // TODO: we can infer the output type based on the input types.
                             // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-applystringornumericbinaryoperator
@@ -561,7 +561,7 @@ impl GraphVisitor<'_> {
                             | BinaryOp::BitOr
                             | BinaryOp::BitXor
                             | BinaryOp::BitAnd
-                            | BinaryOp::Exp => ret!(vec![self.store.unknown_pointer]),
+                            | BinaryOp::Exp => ret!(vec![PointerId::UNKNOWN]),
 
                             BinaryOp::LogicalOr
                             | BinaryOp::LogicalAnd
@@ -599,7 +599,7 @@ impl GraphVisitor<'_> {
                         ret!(obj)
                     } else {
                         self.invalidate(&obj);
-                        ret!(vec![self.store.unknown_pointer])
+                        ret!(vec![PointerId::UNKNOWN])
                     }
                 }
             },
@@ -657,7 +657,7 @@ impl GraphVisitor<'_> {
                         }
                     }
                 }
-                ret!(vec![self.store.unknown_pointer])
+                ret!(vec![PointerId::UNKNOWN])
             }
             Expr::Seq(n) => {
                 debug_assert!(!n.exprs.is_empty());
@@ -673,9 +673,9 @@ impl GraphVisitor<'_> {
             Expr::Ident(n) => {
                 if n.ctxt == self.store.unresolved_ctxt {
                     if n.sym == js_word!("undefined") {
-                        ret!(vec![self.store.null_or_void_pointer])
+                        ret!(vec![PointerId::NULL_OR_VOID])
                     } else {
-                        ret!(vec![self.store.unknown_pointer])
+                        ret!(vec![PointerId::UNKNOWN])
                     }
                 } else {
                     let name = Id::new(n, &mut self.store.names);
@@ -684,17 +684,17 @@ impl GraphVisitor<'_> {
                 }
             }
             Expr::Lit(n) => match n {
-                Lit::Str(_) => ret!(vec![self.store.string_pointer]),
-                Lit::Bool(_) => ret!(vec![self.store.bool_pointer]),
-                Lit::Null(_) => ret!(vec![self.store.null_or_void_pointer]),
-                Lit::Num(_) => ret!(vec![self.store.num_pointer]),
-                Lit::BigInt(_) => ret!(vec![self.store.big_int_pointer]),
-                Lit::Regex(_) => ret!(vec![self.store.regex_pointer]),
+                Lit::Str(_) => ret!(vec![PointerId::STRING]),
+                Lit::Bool(_) => ret!(vec![PointerId::BOOL]),
+                Lit::Null(_) => ret!(vec![PointerId::NULL_OR_VOID]),
+                Lit::Num(_) => ret!(vec![PointerId::NUM]),
+                Lit::BigInt(_) => ret!(vec![PointerId::BIG_INT]),
+                Lit::Regex(_) => ret!(vec![PointerId::REGEX]),
                 Lit::JSXText(_) => unreachable!(),
             },
             Expr::Tpl(n) => {
                 n.visit_children_with(self);
-                ret!(vec![self.store.unknown_pointer])
+                ret!(vec![PointerId::UNKNOWN])
             }
             Expr::TaggedTpl(n) => {
                 n.tag.visit_with(self);
@@ -703,7 +703,7 @@ impl GraphVisitor<'_> {
                     // Expressions in tagged templates can be accessed by the tag function.
                     self.invalidate(&obj);
                 }
-                ret!(vec![self.store.unknown_pointer])
+                ret!(vec![PointerId::UNKNOWN])
             }
             Expr::Arrow(n) => {
                 n.params.visit_with(self);
@@ -719,15 +719,15 @@ impl GraphVisitor<'_> {
                     let value = self.get_rhs(arg, true);
                     self.invalidate(&value);
                 }
-                ret!(vec![self.store.unknown_pointer])
+                ret!(vec![PointerId::UNKNOWN])
             }
             Expr::MetaProp(n) => {
                 n.visit_children_with(self);
-                ret!(vec![self.store.unknown_pointer])
+                ret!(vec![PointerId::UNKNOWN])
             }
             Expr::Await(n) => {
                 n.visit_children_with(self);
-                ret!(vec![self.store.unknown_pointer])
+                ret!(vec![PointerId::UNKNOWN])
             }
             Expr::Paren(n) => self.get_rhs(&n.expr, used),
             Expr::PrivateName(_) => todo!(),
@@ -873,14 +873,14 @@ impl GraphVisitor<'_> {
                         todo!();
                         // self.invalidate_slot(Node::from(elem.as_ref()));
                     } else {
-                        let rhs = vec![self.store.unknown_pointer];
+                        let rhs = vec![PointerId::UNKNOWN];
                         self.visit_destructuring(element, &rhs);
                     }
                 }
             }
             Pat::Rest(lhs) => {
                 self.invalidate(rhs);
-                let rhs = vec![self.store.unknown_pointer];
+                let rhs = vec![PointerId::UNKNOWN];
                 // TODO: lhs.arg should only be an identifier?
                 self.visit_destructuring(&lhs.arg, &rhs);
             }
@@ -1026,7 +1026,7 @@ impl Visit<'_> for GraphVisitor<'_> {
                         self.make_subset_of(rhs, lhs);
                     }
                 } else {
-                    let rhs = self.store.null_or_void_pointer;
+                    let rhs = PointerId::NULL_OR_VOID;
                     self.make_subset_of(rhs, lhs);
                 }
             }
@@ -1166,6 +1166,16 @@ impl StaticFunctionData {
 
 index::newtype_index!(pub struct PointerId { .. });
 
+impl PointerId {
+    const UNKNOWN: Self = Self::from_u32(0);
+    const NULL_OR_VOID: Self = Self::from_u32(1);
+    const BOOL: Self = Self::from_u32(2);
+    const NUM: Self = Self::from_u32(3);
+    const STRING: Self = Self::from_u32(4);
+    const BIG_INT: Self = Self::from_u32(5);
+    const REGEX: Self = Self::from_u32(6);
+}
+
 #[derive(Debug)]
 pub struct Store {
     unresolved_ctxt: SyntaxContext,
@@ -1175,14 +1185,6 @@ pub struct Store {
     pointers: IndexSet<PointerId, Pointer>,
     references: FxHashSet<(PropKey, PointerId)>,
     invalid_pointers: FxHashSet<PointerId>,
-
-    unknown_pointer: PointerId,
-    null_or_void_pointer: PointerId,
-    bool_pointer: PointerId,
-    num_pointer: PointerId,
-    string_pointer: PointerId,
-    big_int_pointer: PointerId,
-    regex_pointer: PointerId,
 }
 
 impl Store {
