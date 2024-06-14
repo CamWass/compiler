@@ -5,6 +5,7 @@ use index::vec::Idx;
 use petgraph::algo::TarjanScc;
 use petgraph::graphmap::DiGraphMap;
 use petgraph::Direction::{Incoming, Outgoing};
+use smallvec::SmallVec;
 
 use super::*;
 
@@ -14,6 +15,7 @@ pub struct Graph {
     nodes: UnionFind<GraphNodeId>,
     points_to: FxHashMap<GraphNodeId, SmallSet>,
     cur_node_id: GraphNodeId,
+    queue: UniqueQueue,
 }
 
 impl Graph {
@@ -24,10 +26,16 @@ impl Graph {
             nodes: UnionFind::new(0),
             points_to: FxHashMap::default(),
             cur_node_id: GraphNodeId::from_u32(0),
+            queue: UniqueQueue::new(),
         }
     }
 
-    pub(super) fn add_edge(&mut self, src: PointerId, dest: PointerId, kind: GraphEdge) -> bool {
+    pub(super) fn add_initial_edge(
+        &mut self,
+        src: PointerId,
+        dest: PointerId,
+        kind: GraphEdge,
+    ) -> bool {
         let src = self.get_graph_node_id(src).0;
         let dest = self.get_graph_node_id(dest).0;
 
@@ -39,13 +47,19 @@ impl Graph {
     }
 
     fn make_subset_of<T: GetRepId, U: GetRepId>(&mut self, src: T, dest: U) -> bool {
-        let src = src.get_rep_id(self).0;
-        let dest = dest.get_rep_id(self).0;
-        if src == dest {
+        let src = src.get_rep_id(self);
+        let dest = dest.get_rep_id(self);
+        if src.0 == dest.0 {
             return false;
         }
 
-        let mut changed = self.graph.add_edge(src, dest, GraphEdge::Subset).is_none();
+        self.prioritise(src);
+        self.prioritise(dest);
+
+        let mut changed = self
+            .graph
+            .add_edge(src.0, dest.0, GraphEdge::Subset)
+            .is_none();
         changed |= self.add_all(src, dest);
         changed
     }
@@ -87,8 +101,9 @@ impl Graph {
 
         let mut tarjan = TarjanScc::default();
 
-        let mut priorities =
-            FxHashMap::with_capacity_and_hasher(self.graph.node_count(), Default::default());
+        self.queue.priorities.reserve(self.graph.node_count());
+
+        let priorities = &mut self.queue.priorities;
 
         let mut priority = 0_u32;
         tarjan.run(&self.graph, |scc| {
@@ -98,14 +113,13 @@ impl Graph {
             priority += 1;
         });
 
-        debug_assert_eq!(priorities.len(), self.graph.node_count());
+        debug_assert_eq!(self.queue.priorities.len(), self.graph.node_count());
 
-        let mut queue = UniqueQueue::new(priorities);
-        queue.extend(self.graph.nodes());
+        self.queue.extend(self.graph.nodes());
         let mut edges = Vec::new();
 
         loop {
-            self.flow_edges(store, &mut queue, &mut edges);
+            self.flow_edges(store, &mut edges);
             // After we've reached a fixedpoint above, if we couldn't infer the values
             // of a pointer, set them to Unknown and run fixedpoint again to propagate
             // the Unknowns.
@@ -151,8 +165,8 @@ impl Graph {
                         invalidated |= store.invalidate(pointer);
                         let changed = self.insert(node, store.unknown_pointer, store);
                         if changed {
-                            prioritise(&self.graph, &mut queue, node.0);
-                            queue.push(node.0);
+                            self.prioritise(node);
+                            self.queue.push(node.0);
                         }
                         continue;
                     }
@@ -161,8 +175,8 @@ impl Graph {
                     if matches!(store.pointers[pointer], Pointer::ReturnValue(_)) {
                         let changed = self.insert(node, store.null_or_void_pointer, store);
                         if changed {
-                            prioritise(&self.graph, &mut queue, node.0);
-                            queue.push(node.0);
+                            self.prioritise(node);
+                            self.queue.push(node.0);
                         }
                         continue;
                     }
@@ -172,15 +186,14 @@ impl Graph {
                         if matches!(store.pointers[pointer], Pointer::Prop(_, _)) {
                             let changed = self.insert(node, store.null_or_void_pointer, store);
                             if changed {
-                                prioritise(&self.graph, &mut queue, node.0);
-                                queue.push(node.0);
+                                self.queue.push(node.0);
                             }
                             continue;
                         }
                         invalidated |= store.invalidate(pointer);
                         self.insert(node, store.unknown_pointer, store);
-                        prioritise(&self.graph, &mut queue, node.0);
-                        queue.push(node.0);
+                        self.prioritise(node);
+                        self.queue.push(node.0);
                     }
                 }
 
@@ -189,7 +202,7 @@ impl Graph {
                 }
             }
 
-            if queue.inner.is_empty() {
+            if self.queue.inner.is_empty() {
                 break;
             }
         }
@@ -198,10 +211,9 @@ impl Graph {
     fn flow_edges(
         &mut self,
         store: &mut Store,
-        queue: &mut UniqueQueue,
         edges: &mut Vec<(GraphNodeId, GraphNodeId, GraphEdge)>,
     ) {
-        while let Some(node) = queue.pop() {
+        while let Some(node) = self.queue.pop() {
             edges.clear();
             edges.extend(
                 self.graph
@@ -217,8 +229,7 @@ impl Graph {
                     GraphEdge::Subset => {
                         let changed = self.add_all(node, dest);
                         if changed {
-                            prioritise(&self.graph, queue, self.nodes.find_mut(dest.0));
-                            queue.push(dest.0);
+                            self.queue.push(dest.0);
                         }
                     }
                     GraphEdge::Return => {
@@ -235,14 +246,12 @@ impl Graph {
                                 continue;
                             }
                             if self.make_subset_of(return_node, dest) {
-                                prioritise(&self.graph, queue, self.nodes.find_mut(return_node.0));
                                 changed = true;
                                 dest = RepId(self.nodes.find_mut(dest.0));
                             }
                         }
                         if changed {
-                            prioritise(&self.graph, queue, self.nodes.find_mut(dest.0));
-                            queue.push(dest.0);
+                            self.queue.push(dest.0);
                         }
                     }
                     GraphEdge::Prop(name) => {
@@ -308,12 +317,13 @@ impl Graph {
                                 self.graph.add_edge(rep.0, out_edge.1, out_edge.2);
                             }
 
+                            self.prioritise(rep);
+
                             changed = true;
                         }
 
                         if changed {
-                            prioritise(&self.graph, queue, self.nodes.find_mut(dest.0));
-                            queue.push(dest.0);
+                            self.queue.push(dest.0);
                         }
                     }
                     GraphEdge::Arg(index) => {
@@ -334,8 +344,7 @@ impl Graph {
                                             if self.make_subset_of(dest, param) {
                                                 dest = RepId(self.nodes.find_mut(dest.0));
                                                 let param = RepId(self.nodes.find_mut(param.0));
-                                                prioritise(&self.graph, queue, param.0);
-                                                queue.push(param.0);
+                                                self.queue.push(param.0);
                                             }
                                         }
                                         None => {
@@ -363,6 +372,19 @@ impl Graph {
                     }
                 }
             }
+        }
+    }
+
+    fn prioritise<T: GetRepId>(&mut self, pointer: T) {
+        let node = pointer.get_rep_id(self).0;
+        if !self.queue.priorities.contains_key(&node) {
+            let priority = self
+                .graph
+                .neighbors_directed(node, Incoming)
+                .map(|n| self.queue.priorities[&n])
+                .min()
+                .unwrap_or(u32::MAX);
+            self.queue.priorities.insert(node, priority);
         }
     }
 
@@ -532,21 +554,6 @@ impl GetRepId for GraphNodeId {
     }
 }
 
-fn prioritise(
-    graph: &DiGraphMap<GraphNodeId, GraphEdge>,
-    queue: &mut UniqueQueue,
-    node: GraphNodeId,
-) {
-    if !queue.priorities.contains_key(&node) {
-        let priority = graph
-            .neighbors_directed(node, Incoming)
-            .map(|n| queue.priorities[&n])
-            .min()
-            .unwrap_or(u32::MAX);
-        queue.priorities.insert(node, priority);
-    }
-}
-
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum GraphEdge {
     Subset,
@@ -591,10 +598,10 @@ struct UniqueQueue {
 }
 
 impl UniqueQueue {
-    fn new(priorities: FxHashMap<GraphNodeId, u32>) -> Self {
+    fn new() -> Self {
         Self {
             inner: BinaryHeap::new(),
-            priorities,
+            priorities: FxHashMap::default(),
         }
     }
 

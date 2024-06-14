@@ -29,7 +29,6 @@ use index::bit_set::{BitMatrix, BitSet};
 use index::vec::IndexVec;
 use petgraph::graph::UnGraph;
 use rustc_hash::{FxHashMap, FxHashSet};
-use smallvec::SmallVec;
 
 /// When true, the property interference relations are outputted as a graph in
 /// graphviz dot format (debug builds only).
@@ -630,7 +629,11 @@ impl GraphVisitor<'_> {
                                 let arg_pointer =
                                     self.store.pointers.insert(Pointer::Arg(*callee, i));
                                 self.make_subset_of(*value, arg_pointer);
-                                self.graph.add_edge(*callee, arg_pointer, GraphEdge::Arg(i));
+                                self.graph.add_initial_edge(
+                                    *callee,
+                                    arg_pointer,
+                                    GraphEdge::Arg(i),
+                                );
                             }
                         }
                     }
@@ -971,13 +974,14 @@ impl GraphVisitor<'_> {
 
     fn get_prop_value(&mut self, obj: PointerId, prop: NameId) -> PointerId {
         let access = self.store.pointers.insert(Pointer::Prop(obj, prop));
-        self.graph.add_edge(obj, access, GraphEdge::Prop(prop));
+        self.graph
+            .add_initial_edge(obj, access, GraphEdge::Prop(prop));
         access
     }
 
     fn get_return_value(&mut self, callee: PointerId) -> PointerId {
         let ret = self.store.pointers.insert(Pointer::ReturnValue(callee));
-        self.graph.add_edge(callee, ret, GraphEdge::Return);
+        self.graph.add_initial_edge(callee, ret, GraphEdge::Return);
         ret
     }
 
@@ -985,7 +989,7 @@ impl GraphVisitor<'_> {
         if sub == sup {
             return;
         }
-        self.graph.add_edge(sub, sup, GraphEdge::Subset);
+        self.graph.add_initial_edge(sub, sup, GraphEdge::Subset);
     }
 
     fn invalidate(&mut self, value: &[PointerId]) {
