@@ -389,12 +389,18 @@ impl Graph {
     }
 
     fn get_graph_node_id(&mut self, pointer: PointerId) -> RepId {
-        get_graph_node_id(
-            pointer,
-            &mut self.cur_node_id,
-            &mut self.nodes,
-            &mut self.node_map,
-        )
+        let cur_node_id = &mut self.cur_node_id;
+
+        match self.node_map.entry(pointer) {
+            Entry::Occupied(entry) => RepId(self.nodes.find_mut(*entry.get())),
+            Entry::Vacant(entry) => {
+                let id = *cur_node_id;
+                cur_node_id.increment_by(1);
+                self.nodes.add(id);
+                entry.insert(id);
+                RepId(id)
+            }
+        }
     }
 
     fn insert<T: GetRepId>(&mut self, pointer: T, value: PointerId, store: &Store) -> bool {
@@ -506,24 +512,6 @@ impl Graph {
             .into_graph()
             .map(|_, n| map(&store, *n), |_, e| *e);
         format!("{}", petgraph::dot::Dot::with_config(&print_graph, &[]))
-    }
-}
-
-fn get_graph_node_id(
-    pointer: PointerId,
-    cur_node_id: &mut GraphNodeId,
-    nodes: &mut UnionFind<GraphNodeId>,
-    node_map: &mut FxHashMap<PointerId, GraphNodeId>,
-) -> RepId {
-    match node_map.entry(pointer) {
-        Entry::Occupied(entry) => RepId(nodes.find_mut(*entry.get())),
-        Entry::Vacant(entry) => {
-            let id = *cur_node_id;
-            cur_node_id.increment_by(1);
-            nodes.add(id);
-            entry.insert(id);
-            RepId(id)
-        }
     }
 }
 
