@@ -233,6 +233,9 @@ impl Graph {
                         let mut changed = false;
                         let mut dest = dest;
                         for callee in &callees {
+                            if !store.is_callable_pointer(callee) && callee != PointerId::UNKNOWN {
+                                continue;
+                            }
                             let return_node = store.pointers.insert(Pointer::ReturnValue(callee));
                             let return_node = self.get_graph_node_id(return_node);
                             if return_node.0 == dest.0 {

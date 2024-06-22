@@ -622,15 +622,18 @@ impl GraphVisitor<'_> {
                             ExprOrSpread::Expr(arg) => self.get_rhs(arg, true),
                         })
                         .collect::<Vec<_>>();
-                    for callee in &callee {
+                    for &callee in &callee {
+                        if !self.store.is_callable_pointer(callee) && callee != PointerId::UNKNOWN {
+                            continue;
+                        }
                         for (i, arg_values) in args.iter().enumerate() {
                             let index = i.try_into().expect("< u32::MAX params");
-                            for value in arg_values {
                                 let arg_pointer =
-                                    self.store.pointers.insert(Pointer::Arg(*callee, index));
+                                self.store.pointers.insert(Pointer::Arg(callee, index));
+                            for value in arg_values {
                                 self.make_subset_of(*value, arg_pointer);
                                 self.graph.add_initial_edge(
-                                    *callee,
+                                    callee,
                                     arg_pointer,
                                     GraphEdge::Arg(index),
                                 );
@@ -638,7 +641,14 @@ impl GraphVisitor<'_> {
                         }
                     }
                     for callee in &mut callee {
+                        if *callee == PointerId::UNKNOWN {
+                            continue;
+                        }
+                        if !self.store.is_callable_pointer(*callee) {
+                            *callee = PointerId::NULL_OR_VOID;
+                        } else {
                         *callee = self.get_return_value(*callee);
+                        }
                     }
                     ret!(callee)
                 }
@@ -1174,6 +1184,10 @@ impl PointerId {
     const STRING: Self = Self::from_u32(4);
     const BIG_INT: Self = Self::from_u32(5);
     const REGEX: Self = Self::from_u32(6);
+
+    fn is_primitive(&self) -> bool {
+        self.as_u32() <= Self::REGEX.as_u32()
+    }
 }
 
 #[derive(Debug)]
@@ -1190,13 +1204,25 @@ pub struct Store {
 impl Store {
     // Invalidated the given pointer. Returns true if it was not previously invalid.
     fn invalidate(&mut self, pointer: PointerId) -> bool {
+        if pointer.is_primitive() {
+            false
+        } else {
+            self.invalid_pointers.insert(pointer)
+        }
+    }
+
+    fn is_callable_pointer(&self, pointer: PointerId) -> bool {
+        if pointer.is_primitive() {
+            false
+        } else {
         match self.pointers[pointer] {
             Pointer::Prop(_, _)
             | Pointer::Var(_)
-            | Pointer::Object(_)
-            | Pointer::Fn(_)
             | Pointer::ReturnValue(_)
-            | Pointer::Arg(_, _) => self.invalid_pointers.insert(pointer),
+                | Pointer::Arg(_, _)
+                | Pointer::Fn(_) => true,
+
+                Pointer::Object(_) => false,
 
             Pointer::Unknown
             | Pointer::NullOrVoid
@@ -1204,7 +1230,8 @@ impl Store {
             | Pointer::Num
             | Pointer::String
             | Pointer::BigInt
-            | Pointer::Regex => false,
+                | Pointer::Regex => unreachable!("primitives checked above"),
+            }
         }
     }
 }
