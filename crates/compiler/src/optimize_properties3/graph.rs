@@ -141,14 +141,14 @@ impl Graph {
                         }
                     }
 
-                    if store.invalid_pointers.contains(&pointer) {
+                    if store.invalid_pointers.contains(pointer) {
                         if let Some(values) = self.get(node) {
                             for value in values {
                                 invalidated |= store.invalidate(value);
                             }
                         }
                     }
-                    if matches!(store.pointers[pointer], Pointer::Prop(obj, _) if store.invalid_pointers.contains(&obj))
+                    if matches!(store.pointers[pointer], Pointer::Prop(obj, _) if store.invalid_pointers.contains(obj))
                     {
                         if let Some(values) = self.get(node) {
                             for value in values {

@@ -25,7 +25,7 @@ use atoms::{js_word, JsWord};
 use ecma_visit::{Visit, VisitMutWith, VisitWith};
 use global_common::SyntaxContext;
 use graph::{Graph, GraphEdge};
-use index::bit_set::{BitMatrix, BitSet};
+use index::bit_set::{BitMatrix, BitSet, GrowableBitSet};
 use index::vec::IndexVec;
 use petgraph::graph::UnGraph;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -147,7 +147,7 @@ fn create_renaming_map(store: &mut Store, points_to: Graph) -> FxHashMap<NodeId,
                         name: key.0,
                         prop_id: properties.next_index(),
                         references: FxHashSet::default(),
-                        invalid: store.invalid_pointers.contains(&obj),
+                        invalid: store.invalid_pointers.contains(obj),
                     });
                     entry.insert(prop_id);
                     prop_id
@@ -371,7 +371,7 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> (Store, Gr
         vars: IndexSet::default(),
         pointers,
         references: FxHashSet::default(),
-        invalid_pointers: FxHashSet::default(),
+        invalid_pointers: GrowableBitSet::default(),
     };
 
     {
@@ -1184,7 +1184,7 @@ pub struct Store {
     vars: IndexSet<VarId, Id>,
     pointers: IndexSet<PointerId, Pointer>,
     references: FxHashSet<(PropKey, PointerId)>,
-    invalid_pointers: FxHashSet<PointerId>,
+    invalid_pointers: GrowableBitSet<PointerId>,
 }
 
 impl Store {
