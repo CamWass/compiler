@@ -111,8 +111,7 @@ fn create_renaming_map(store: &mut Store, points_to: Graph) -> FxHashMap<NodeId,
 
     // Create objects and properties for built-in types.
     for (pointer, props) in BUILT_INS {
-        let pointer = store.pointers.insert(*pointer);
-        let obj = objects.entry(pointer).or_default();
+        let obj = objects.entry(*pointer).or_default();
         let props = props.iter().map(|p| {
             let name = store.names.insert(p.clone());
             (
@@ -1380,9 +1379,9 @@ enum PatOrExpr<'a> {
     Expr(&'a Expr),
 }
 
-const BUILT_INS: &'static [(Pointer, &'static [JsWord])] = &[
+const BUILT_INS: &'static [(PointerId, &'static [JsWord])] = &[
     (
-        Pointer::Num,
+        PointerId::NUM,
         &[
             js_word!("constructor"),
             js_word!("toExponential"),
@@ -1394,7 +1393,7 @@ const BUILT_INS: &'static [(Pointer, &'static [JsWord])] = &[
         ],
     ),
     (
-        Pointer::String,
+        PointerId::STRING,
         &[
             js_word!("constructor"),
             js_word!("length"),
@@ -1436,7 +1435,7 @@ const BUILT_INS: &'static [(Pointer, &'static [JsWord])] = &[
         ],
     ),
     (
-        Pointer::Bool,
+        PointerId::BOOL,
         &[
             js_word!("constructor"),
             js_word!("toString"),
@@ -1444,7 +1443,7 @@ const BUILT_INS: &'static [(Pointer, &'static [JsWord])] = &[
         ],
     ),
     (
-        Pointer::BigInt,
+        PointerId::BIG_INT,
         &[
             js_word!("constructor"),
             js_word!("toLocaleString"),
