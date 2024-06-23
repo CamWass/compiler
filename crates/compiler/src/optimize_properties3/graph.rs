@@ -1,5 +1,6 @@
 use std::collections::BinaryHeap;
 use std::fmt::{Display, Write};
+use std::rc::Rc;
 
 use arrayvec::ArrayVec;
 use petgraph::algo::TarjanScc;
@@ -589,8 +590,8 @@ impl UniqueQueue {
 
 #[derive(Debug, Clone)]
 pub(super) enum SmallSet {
-    Inline(ArrayVec<PointerId, 11>),
-    Heap(FxHashSet<PointerId>),
+    Inline(ArrayVec<PointerId, 2>),
+    Heap(Rc<FxHashSet<PointerId>>),
 }
 
 impl Default for SmallSet {
@@ -608,7 +609,7 @@ impl SmallSet {
                         let mut heap = FxHashSet::default();
                         heap.extend(set.iter());
                         heap.insert(value);
-                        *self = Self::Heap(heap);
+                        *self = Self::Heap(Rc::new(heap));
                     } else {
                         set.push(value);
                     }
@@ -617,7 +618,7 @@ impl SmallSet {
                 false
             }
             }
-            SmallSet::Heap(set) => set.insert(value),
+            SmallSet::Heap(set) => Rc::make_mut(set).insert(value),
         }
     }
 
@@ -674,7 +675,7 @@ impl SmallSet {
                     self.insert(value);
                 }
             }
-            SmallSet::Heap(set) => set.extend(other),
+            SmallSet::Heap(set) => Rc::make_mut(set).extend(other),
         }
     }
 }
