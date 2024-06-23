@@ -200,6 +200,14 @@ impl Graph {
                 break;
             }
         }
+
+        if cfg!(debug_assertions) {
+            for set in self.points_to.values() {
+                if let SmallSet::Heap(set) = set {
+                    debug_assert!(!set.is_empty(), "Heap variant should not be empty");
+                }
+            }
+        }
     }
 
     fn flow_edges(
@@ -646,7 +654,10 @@ impl SmallSet {
     fn is_empty(&self) -> bool {
         match self {
             SmallSet::Inline(set) => set.is_empty(),
-            SmallSet::Heap(set) => set.is_empty(),
+            SmallSet::Heap(set) => {
+                debug_assert!(!set.is_empty());
+                false
+            }
         }
     }
 

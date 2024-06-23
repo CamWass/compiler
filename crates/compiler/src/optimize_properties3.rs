@@ -394,6 +394,34 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> (Store, Gr
     let mut graph = compute_relations(ast, &mut store);
     graph.compute_points_to_map(&mut store);
 
+    if cfg!(debug_assertions) {
+        for p in &store.pointers {
+            match p {
+                Pointer::ReturnValue(p) | Pointer::Arg(p, _) => {
+                    debug_assert_ne!(*p, PointerId::NULL_OR_VOID);
+                    debug_assert_ne!(*p, PointerId::BOOL);
+                    debug_assert_ne!(*p, PointerId::NUM);
+                    debug_assert_ne!(*p, PointerId::STRING);
+                    debug_assert_ne!(*p, PointerId::BIG_INT);
+                    debug_assert_ne!(*p, PointerId::REGEX);
+                }
+
+                Pointer::Prop(_, _) => {}
+
+                Pointer::Var(_)
+                | Pointer::Object(_)
+                | Pointer::Fn(_)
+                | Pointer::Unknown
+                | Pointer::NullOrVoid
+                | Pointer::Bool
+                | Pointer::Num
+                | Pointer::String
+                | Pointer::BigInt
+                | Pointer::Regex => {}
+            }
+        }
+    }
+
     if cfg!(debug_assertions) && OUTPUT_RELO_GRAPH {
         let dot = graph.get_dot(&store);
 
