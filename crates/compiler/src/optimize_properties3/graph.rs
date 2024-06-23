@@ -666,7 +666,11 @@ impl SmallSet {
             (SmallSet::Inline(_), SmallSet::Heap(_)) => {
                 other = std::mem::replace(self, other);
             }
-            (SmallSet::Heap(_), SmallSet::Heap(_)) => {
+            (SmallSet::Heap(a), SmallSet::Heap(b)) => {
+                if Rc::ptr_eq(a, b) {
+                    return;
+                }
+
         if other.len() > self.len() {
             other = std::mem::replace(self, other);
                 }
@@ -686,7 +690,14 @@ impl SmallSet {
                     self.insert(value);
                 }
             }
-            SmallSet::Heap(set) => Rc::make_mut(set).extend(other),
+            SmallSet::Heap(set) => {
+                if let SmallSet::Heap(other) = other {
+                    if Rc::ptr_eq(set, other) {
+                        return;
+                    }
+                }
+                Rc::make_mut(set).extend(other);
+            }
         }
     }
 }
