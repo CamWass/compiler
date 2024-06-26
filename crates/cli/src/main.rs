@@ -10,6 +10,7 @@ use global_common::{
 use parser::{Parser, Syntax};
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Instant;
 use std::{env, path::Path};
 
 mod config;
@@ -82,7 +83,12 @@ fn main() -> Result<()> {
 
     let compiler = Compiler::new();
 
+    let start = Instant::now();
+
     let result = compiler.compile(program, config.passes, &mut program_data);
+
+    let elapsed = start.elapsed();
+    println!("\nCompilation took: {:.2?}", elapsed);
 
     // dbg!(result);
 
