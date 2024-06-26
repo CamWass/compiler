@@ -465,25 +465,23 @@ impl Graph {
                     }
                 })
                 .collect::<Vec<_>>();
-            let mut res = format!("({:?})", n);
+            let mut res = format!("{:?}: ", n);
 
-            for p in pointers {
+            for &p in &pointers {
                 let value: String = match &store.pointers[p] {
                     Pointer::Prop(obj, prop) => {
                         format!(
-                            "Prop(Object PointerId:{}, prop:(NameId:{}, '{}'))",
+                            "Prop({}, ({}, '{}'))",
                             obj.as_u32(),
                             prop.as_u32(),
                             store.names[*prop]
                         )
                     }
-                    Pointer::Var(id) => format!(
-                        "Var(VarId:{}, '{}')",
-                        id.as_u32(),
-                        store.names[store.vars[*id].0]
-                    ),
-                    Pointer::Object(id) => format!("Object(NodeId:{})", id.as_u32()),
-                    Pointer::Fn(id) => format!("Fn(NodeId:{})", id.as_u32()),
+                    Pointer::Var(id) => {
+                        format!("Var({}, '{}')", id.as_u32(), store.names[store.vars[*id].0])
+                    }
+                    Pointer::Object(id) => format!("Object({})", id.as_u32()),
+                    Pointer::Fn(id) => format!("Fn({})", id.as_u32()),
                     Pointer::Unknown => "Unknown".into(),
                     Pointer::NullOrVoid => "NullOrVoid".into(),
                     Pointer::Bool => "Bool".into(),
@@ -492,14 +490,19 @@ impl Graph {
                     Pointer::BigInt => "BigInt".into(),
                     Pointer::Regex => "Regex".into(),
                     Pointer::ReturnValue(id) => {
-                        format!("ReturnValue(Callee PointerId:{})", id.as_u32())
+                        format!("ReturnValue({})", id.as_u32())
                     }
                     Pointer::Arg(func, index) => {
-                        format!("Arg(func PointerId:{}, index:{})", func.as_u32(), index)
+                        format!("Arg({}, {})", func.as_u32(), index)
                     }
                 };
-                write!(&mut res, "id:{}, {}", p.as_u32(), value).unwrap();
+                if pointers.len() > 1 {
+                    write!(&mut res, "{}|{} ", p.as_u32(), value).unwrap();
+                } else {
+                    write!(&mut res, "{} ", value).unwrap();
+                }
             }
+
             res
         };
 
