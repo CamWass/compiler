@@ -40,6 +40,69 @@ fn test_same(input: &str) {
 }
 
 #[test]
+fn test_primitive_access_does_not_conflate() {
+    // Had a bug where the same property name on different objects would be
+    // conflated they were accessed on a union with a primitive.
+    // e.g. the 'common' property of x and y was conflated, which meant the
+    // objects in them were renamed together, rather than independently. This
+    // meant that 'prop2' wasn't getting the shortest name, despite being the
+    // only property in its object.
+    let test = |primitive: &str| {
+        test_transform(
+            &format!(
+                "
+const x = {{ common: {{ prop1: 'i', prop3: 'o' }} }} || {primitive};
+const y = {{ common: {{ prop2: 'i' }} }} || {primitive};
+
+x.common.prop3; // reference 'prop3' more so it gets a shorter name
+
+x.common; // access 'common' on the union with the primitive
+y.common;
+    ",
+            ),
+            &format!(
+                "
+const x = {{ a: {{ b: 'i', a: 'o' }} }} || {primitive};
+const y = {{ a: {{ a: 'i' }} }} || {primitive};
+
+x.a.a;
+
+x.a;
+y.a;
+    ",
+            ),
+        );
+    };
+    test("null");
+    test("true");
+    test("1");
+    test("''");
+    test("1n");
+    test("/a/");
+
+    test_transform(
+        "
+const x = { common: { prop1: 'i', prop3: 'o' } } || unknown;
+const y = { common: { prop2: 'i' } } || unknown;
+
+x.common.prop3; // reference 'prop3' so it gets a shorter name
+
+x.common; // access 'common' on the union with the primitive
+y.common;
+",
+        "
+const x = { common: { a: 'i', prop3: 'o' } } || unknown;
+const y = { common: { a: 'i' } } || unknown;
+
+x.common.prop3;
+
+x.common;
+y.common;
+",
+    );
+}
+
+#[test]
 fn test_complex_props_are_visited() {
     // Had a bug where 'complex' properties were skipped entirely.
 
