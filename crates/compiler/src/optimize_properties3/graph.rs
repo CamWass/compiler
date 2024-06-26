@@ -148,14 +148,16 @@ impl Graph {
                                 invalidated |= store.invalidate(value);
                             }
                         }
-                    }
-                    if matches!(store.pointers[pointer], Pointer::Prop(obj, _) if store.invalid_pointers.contains(obj))
-                    {
-                        if let Some(values) = self.get(node) {
-                            for value in values {
-                                invalidated |= store.invalidate(value);
+                        for incoming in self.graph.edges_directed(node.0, Incoming) {
+                            if *incoming.2 == GraphEdge::Subset {
+                                invalidated |= store.invalidate(incoming.0);
                             }
                         }
+                    }
+
+                    if let Pointer::Prop(obj, _) = store.pointers[pointer] {
+                        let obj_invalid = store.invalid_pointers.contains(obj);
+                        if obj_invalid {
                         invalidated |= store.invalidate(pointer);
                         let changed = self.insert(node, PointerId::UNKNOWN, store);
                         if changed {
@@ -163,6 +165,7 @@ impl Graph {
                             self.queue.push(node.0);
                         }
                         continue;
+                        }
                     }
 
                     // Functions implicitly return undefined sometimes.
@@ -174,9 +177,10 @@ impl Graph {
                         }
                         continue;
                     }
+
                     if self.points_to_nothing(node) {
-                        // Undefined properties on valid objects are undefined. We know the obj must be valid,
-                        // otherwise flow edges would have flowed Unknown into this prop.
+                        // Undefined properties on valid objects are undefined. We know the
+                        // obj is valid as props on invalid objects are checked above.
                         if matches!(store.pointers[pointer], Pointer::Prop(_, _)) {
                             let changed = self.insert(node, PointerId::NULL_OR_VOID, store);
                             if changed {
@@ -268,6 +272,10 @@ impl Graph {
                         let mut changed = false;
                         let mut dest = dest;
                         for concrete_object in &concrete_objects {
+                            if concrete_object.is_built_in() {
+                                changed |= self.insert(dest.0, concrete_object, store);
+                                continue;
+                            }
                             let prop_pointer =
                                 store.pointers.insert(Pointer::Prop(concrete_object, name));
                             let prop_pointer = self.get_graph_node_id(prop_pointer);
@@ -640,7 +648,7 @@ impl SmallSet {
         }
     }
 
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         match self {
             SmallSet::Inline(set) => set.len(),
             SmallSet::Heap(set) => set.len(),
@@ -702,6 +710,12 @@ impl SmallSet {
                 Rc::make_mut(set).extend(other);
             }
         }
+    }
+
+    pub fn unknown_set() -> Self {
+        let mut s = ArrayVec::new();
+        s.push(PointerId::UNKNOWN);
+        Self::Inline(s)
     }
 }
 

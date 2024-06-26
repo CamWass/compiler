@@ -24,7 +24,7 @@ use ast::*;
 use atoms::{js_word, JsWord};
 use ecma_visit::{Visit, VisitMutWith, VisitWith};
 use global_common::SyntaxContext;
-use graph::{Graph, GraphEdge};
+use graph::{Graph, GraphEdge, SmallSet};
 use index::bit_set::{BitMatrix, BitSet, GrowableBitSet};
 use index::vec::IndexVec;
 use petgraph::graph::UnGraph;
@@ -130,14 +130,21 @@ fn create_renaming_map(store: &mut Store, points_to: Graph) -> FxHashMap<NodeId,
 
     let mut prop_map: FxHashMap<PropKey, Vec<PointerId>> = FxHashMap::default();
 
+    let unknown_set = SmallSet::unknown_set();
+
     for (key, pointer) in &store.references {
-        let objs = points_to
-            .get_immutable(*pointer)
-            .unwrap()
-            .iter()
-            .filter(|o| *o != PointerId::NULL_OR_VOID);
-        prop_map.entry(*key).or_default().extend(objs.clone());
+        let objs = points_to.get_immutable(*pointer).unwrap_or(&unknown_set);
+        let prop_map_entry = prop_map.entry(*key).or_default();
         for obj in objs {
+            if obj.is_primitive() && !BUILT_INS[obj.as_usize()].1.contains(&store.names[key.0]) {
+                // non-built in prop on primitive - ignore.
+                // Note: we don't skip Unknown as we need to track wen a prop is accessed
+                // on a union with Unknown.
+                continue;
+            }
+
+            prop_map_entry.push(obj);
+
             let object = objects.entry(obj).or_default();
             let id = match object.properties.entry(key.0) {
                 Entry::Occupied(entry) => *entry.get(),
@@ -157,6 +164,22 @@ fn create_renaming_map(store: &mut Store, points_to: Graph) -> FxHashMap<NodeId,
     }
 
     let mut union_find = UnionFind::new(properties.len());
+
+    if cfg!(debug_assertions) {
+        for (pointer, static_props) in BUILT_INS {
+            if *pointer == PointerId::UNKNOWN {
+                continue;
+            }
+            if let Some(obj) = &objects.get(pointer) {
+                for prop in &obj.properties {
+                    debug_assert!(
+                        static_props.contains(&store.names[*prop.0]),
+                        "primitives should only have static props"
+                    );
+                }
+            }
+        }
+    }
 
     // Process unions.
     for (PropKey(name, _), objs) in prop_map {
@@ -348,19 +371,9 @@ fn create_renaming_map(store: &mut Store, points_to: Graph) -> FxHashMap<NodeId,
 pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> (Store, Graph) {
     let mut pointers = IndexSet::default();
 
-    const STATIC_POINTERS: [(PointerId, Pointer); 7] = [
-        (PointerId::UNKNOWN, Pointer::Unknown),
-        (PointerId::NULL_OR_VOID, Pointer::NullOrVoid),
-        (PointerId::BOOL, Pointer::Bool),
-        (PointerId::NUM, Pointer::Num),
-        (PointerId::STRING, Pointer::String),
-        (PointerId::BIG_INT, Pointer::BigInt),
-        (PointerId::REGEX, Pointer::Regex),
-    ];
-
     for (id, pointer) in STATIC_POINTERS {
         let i = pointers.insert(pointer);
-        debug_assert_eq!(i, id, "static pointers have been inserted in wrong order");
+        assert_eq!(i, id, "static pointers have been inserted in wrong order");
     }
 
     let mut store = Store {
@@ -1203,20 +1216,6 @@ impl StaticFunctionData {
 
 index::newtype_index!(pub struct PointerId { .. });
 
-impl PointerId {
-    const UNKNOWN: Self = Self::from_u32(0);
-    const NULL_OR_VOID: Self = Self::from_u32(1);
-    const BOOL: Self = Self::from_u32(2);
-    const NUM: Self = Self::from_u32(3);
-    const STRING: Self = Self::from_u32(4);
-    const BIG_INT: Self = Self::from_u32(5);
-    const REGEX: Self = Self::from_u32(6);
-
-    fn is_primitive(&self) -> bool {
-        self.as_u32() <= Self::REGEX.as_u32()
-    }
-}
-
 #[derive(Debug)]
 pub struct Store {
     unresolved_ctxt: SyntaxContext,
@@ -1231,7 +1230,7 @@ pub struct Store {
 impl Store {
     // Invalidated the given pointer. Returns true if it was not previously invalid.
     fn invalidate(&mut self, pointer: PointerId) -> bool {
-        if pointer.is_primitive() {
+        if pointer.is_built_in() {
             false
         } else {
             self.invalid_pointers.insert(pointer)
@@ -1239,7 +1238,7 @@ impl Store {
     }
 
     fn is_callable_pointer(&self, pointer: PointerId) -> bool {
-        if pointer.is_primitive() {
+        if pointer.is_built_in() {
             false
         } else {
         match self.pointers[pointer] {
@@ -1407,7 +1406,45 @@ enum PatOrExpr<'a> {
     Expr(&'a Expr),
 }
 
-const BUILT_INS: &'static [(PointerId, &'static [JsWord])] = &[
+const STATIC_POINTERS: [(PointerId, Pointer); 7] = [
+    (PointerId::NULL_OR_VOID, Pointer::NullOrVoid),
+    (PointerId::BOOL, Pointer::Bool),
+    (PointerId::NUM, Pointer::Num),
+    (PointerId::STRING, Pointer::String),
+    (PointerId::BIG_INT, Pointer::BigInt),
+    (PointerId::REGEX, Pointer::Regex),
+    (PointerId::UNKNOWN, Pointer::Unknown),
+];
+
+impl PointerId {
+    const NULL_OR_VOID: Self = Self::from_u32(0);
+    const BOOL: Self = Self::from_u32(1);
+    const NUM: Self = Self::from_u32(2);
+    const STRING: Self = Self::from_u32(3);
+    const BIG_INT: Self = Self::from_u32(4);
+    const REGEX: Self = Self::from_u32(5);
+
+    const UNKNOWN: Self = Self::from_u32(6);
+
+    fn is_primitive(&self) -> bool {
+        self.as_u32() <= Self::REGEX.as_u32()
+    }
+
+    fn is_built_in(&self) -> bool {
+        self.as_u32() <= Self::UNKNOWN.as_u32()
+    }
+}
+
+static BUILT_INS: &'static [(PointerId, &'static [JsWord])] = &[
+    (PointerId::NULL_OR_VOID, &[]),
+    (
+        PointerId::BOOL,
+        &[
+            js_word!("constructor"),
+            js_word!("toString"),
+            js_word!("valueOf"),
+        ],
+    ),
     (
         PointerId::NUM,
         &[
@@ -1463,14 +1500,6 @@ const BUILT_INS: &'static [(PointerId, &'static [JsWord])] = &[
         ],
     ),
     (
-        PointerId::BOOL,
-        &[
-            js_word!("constructor"),
-            js_word!("toString"),
-            js_word!("valueOf"),
-        ],
-    ),
-    (
         PointerId::BIG_INT,
         &[
             js_word!("constructor"),
@@ -1479,4 +1508,15 @@ const BUILT_INS: &'static [(PointerId, &'static [JsWord])] = &[
             js_word!("valueOf"),
         ],
     ),
+    // TODO:
+    (PointerId::REGEX, &[]),
+    (PointerId::UNKNOWN, &[]),
 ];
+
+#[test]
+fn test_built_in_pointer_order() {
+    for (i, p) in STATIC_POINTERS.iter().enumerate() {
+        assert_eq!(i, p.0.as_usize());
+        assert_eq!(BUILT_INS[i].0, p.0);
+    }
+}
