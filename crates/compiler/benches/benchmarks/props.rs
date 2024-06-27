@@ -18,7 +18,7 @@ use std::rc::Rc;
 struct Bench(&'static str, &'static str);
 
 fn bench(c: &mut Criterion) {
-    let benches: [(Bench, u64, usize); 2] = [
+    let benches: &'static [(Bench, u64, usize)] = &[
         (
             Bench(
                 "small_typescript",
