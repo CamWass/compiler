@@ -272,8 +272,20 @@ impl Graph {
                         let mut changed = false;
                         let mut dest = dest;
                         for concrete_object in &concrete_objects {
-                            if concrete_object.is_built_in() {
-                                changed |= self.insert(dest.0, concrete_object, store);
+                            if concrete_object == PointerId::UNKNOWN {
+                                changed |= self.insert(dest.0, PointerId::UNKNOWN, store);
+                                continue;
+                            }
+                            if concrete_object == PointerId::NULL_OR_VOID {
+                                changed |= self.insert(dest.0, PointerId::NULL_OR_VOID, store);
+                                continue;
+                            }
+                            if concrete_object.is_primitive()
+                                && !BUILT_INS[concrete_object.as_usize()]
+                                    .1
+                                    .contains(&store.names[name])
+                            {
+                                // non-built in prop on primitive - ignore.
                                 continue;
                             }
                             let prop_pointer =
