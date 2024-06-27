@@ -281,9 +281,7 @@ impl Graph {
                                 continue;
                             }
                             if concrete_object.is_primitive()
-                                && !BUILT_INS[concrete_object.as_usize()]
-                                    .1
-                                    .contains(&store.names[name])
+                                && !is_built_in_property(concrete_object, &store.names[name])
                             {
                                 // non-built in prop on primitive - ignore.
                                 continue;

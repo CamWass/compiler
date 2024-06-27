@@ -136,7 +136,7 @@ fn create_renaming_map(store: &mut Store, points_to: Graph) -> FxHashMap<NodeId,
         let objs = points_to.get_immutable(*pointer).unwrap_or(&unknown_set);
         let prop_map_entry = prop_map.entry(*key).or_default();
         for obj in objs {
-            if obj.is_primitive() && !BUILT_INS[obj.as_usize()].1.contains(&store.names[key.0]) {
+            if obj.is_primitive() && !is_built_in_property(obj, &store.names[key.0]) {
                 // non-built in prop on primitive - ignore.
                 // Note: we don't skip Unknown as we need to track wen a prop is accessed
                 // on a union with Unknown.
@@ -419,7 +419,14 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> (Store, Gr
                     debug_assert_ne!(*p, PointerId::REGEX);
                 }
 
-                Pointer::Prop(_, _) => {}
+                Pointer::Prop(obj, name) => {
+                    debug_assert_ne!(*obj, PointerId::NULL_OR_VOID);
+                    // debug_assert_ne!(*obj, PointerId::UNKNOWN);
+
+                    debug_assert!(
+                        !obj.is_primitive() || is_built_in_property(*obj, &store.names[*name])
+                    );
+                }
 
                 Pointer::Var(_)
                 | Pointer::Object(_)
@@ -1023,6 +1030,17 @@ impl GraphVisitor<'_> {
     }
 
     fn get_prop_value(&mut self, obj: PointerId, prop: NameId) -> PointerId {
+        // if obj == PointerId::UNKNOWN {
+        //     return PointerId::UNKNOWN;
+        // }
+        if obj == PointerId::NULL_OR_VOID {
+            return PointerId::NULL_OR_VOID;
+        }
+        if obj.is_primitive() && !is_built_in_property(obj, &self.store.names[prop]) {
+            // non-built in prop on primitive - ignore.
+            return PointerId::NULL_OR_VOID;
+        }
+
         let access = self.store.pointers.insert(Pointer::Prop(obj, prop));
         self.graph
             .add_initial_edge(obj, access, GraphEdge::Prop(prop));
@@ -1512,6 +1530,10 @@ static BUILT_INS: &'static [(PointerId, &'static [JsWord])] = &[
     (PointerId::REGEX, &[]),
     (PointerId::UNKNOWN, &[]),
 ];
+
+fn is_built_in_property(obj: PointerId, name: &JsWord) -> bool {
+    BUILT_INS[obj.as_usize()].1.contains(name)
+}
 
 #[test]
 fn test_built_in_pointer_order() {
