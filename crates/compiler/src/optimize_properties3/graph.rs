@@ -75,23 +75,8 @@ impl Graph {
 
         for pointer in 0..store.pointers.len() {
             let pointer = PointerId::from_usize(pointer);
-            let concrete = match store.pointers[pointer] {
-                Pointer::Object(_)
-                | Pointer::Fn(_)
-                | Pointer::Unknown
-                | Pointer::NullOrVoid
-                | Pointer::Bool
-                | Pointer::Num
-                | Pointer::String
-                | Pointer::BigInt
-                | Pointer::Regex => Some(pointer),
-                Pointer::ReturnValue(_)
-                | Pointer::Arg(_, _)
-                | Pointer::Prop(_, _)
-                | Pointer::Var(_) => None,
-            };
-            if let Some(concrete) = concrete {
-                self.insert(pointer, concrete, store);
+            if store.pointers[pointer].is_concrete() {
+                self.insert(pointer, pointer, store);
             }
         }
 
