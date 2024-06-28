@@ -10,6 +10,7 @@
 mod tests;
 
 mod graph;
+mod unionfind;
 
 use std::collections::hash_map::Entry;
 use std::convert::TryInto;

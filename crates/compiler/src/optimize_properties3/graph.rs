@@ -6,12 +6,13 @@ use arrayvec::ArrayVec;
 use petgraph::algo::TarjanScc;
 use petgraph::graphmap::DiGraphMap;
 use petgraph::Direction::{Incoming, Outgoing};
+use unionfind::GrowableUnionFind;
 
 use super::*;
 
 pub struct Graph {
     graph: DiGraphMap<PointerId, GraphEdge>,
-    nodes: UnionFind<PointerId>,
+    nodes: GrowableUnionFind<PointerId>,
     points_to: FxHashMap<PointerId, SmallSet>,
     queue: UniqueQueue,
 }
@@ -20,7 +21,7 @@ impl Graph {
     pub fn new() -> Self {
         Self {
             graph: DiGraphMap::default(),
-            nodes: UnionFind::new(0),
+            nodes: GrowableUnionFind::new(),
             points_to: FxHashMap::default(),
             queue: UniqueQueue::new(),
         }
@@ -397,7 +398,6 @@ impl Graph {
     }
 
     fn get_graph_node_id(&mut self, pointer: PointerId) -> RepId {
-        self.nodes.add(pointer);
         RepId(self.nodes.find_mut(pointer))
     }
 
