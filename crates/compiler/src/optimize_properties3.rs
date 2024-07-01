@@ -931,16 +931,16 @@ impl GraphVisitor<'_> {
                         todo!();
                         // self.invalidate_slot(Node::from(elem.as_ref()));
                     } else {
-                        let rhs = vec![PointerId::UNKNOWN];
-                        self.visit_destructuring(element, &rhs);
+                        let rhs = &[PointerId::UNKNOWN];
+                        self.visit_destructuring(element, rhs);
                     }
                 }
             }
             Pat::Rest(lhs) => {
                 self.invalidate(rhs);
-                let rhs = vec![PointerId::UNKNOWN];
+                let rhs = &[PointerId::UNKNOWN];
                 // TODO: lhs.arg should only be an identifier?
-                self.visit_destructuring(&lhs.arg, &rhs);
+                self.visit_destructuring(&lhs.arg, rhs);
             }
             Pat::Assign(lhs) => {
                 let mut default_value = self.get_rhs(&lhs.right, true);
