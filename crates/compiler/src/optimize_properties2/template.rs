@@ -2,7 +2,7 @@
 
 use std::collections::hash_map::Entry;
 use std::collections::BTreeSet;
-use std::hash::{Hash, Hasher};
+use std::hash::{BuildHasherDefault, Hash, Hasher};
 
 use ast::NodeId;
 use atoms::JsWord;
@@ -10,8 +10,9 @@ use global_common::SyntaxContext;
 use index::bit_set::{BitSet, GrowableBitSet};
 use index::vec::IndexVec;
 use petgraph::graph::{EdgeReference, NodeIndex};
-use petgraph::prelude::DiGraphMap;
+use petgraph::graphmap::GraphMap;
 use petgraph::visit::{Dfs, EdgeRef};
+use petgraph::Directed;
 use petgraph::Direction::{Incoming, Outgoing};
 use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 
@@ -649,7 +650,7 @@ impl CallTemplate {
         objects: &mut ObjectStore,
         invalid_objects: &mut GrowableBitSet<ObjectId>,
         fn_assignments: &HashableHashMap<VarId, FnId>,
-        fn_graph: &mut DiGraphMap<FnId, ()>,
+        fn_graph: &mut GraphMap<FnId, (), Directed, BuildHasherDefault<FxHasher>>,
         always_invalid_vars: &FxHashSet<VarId>,
     ) -> CallTemplate {
         let (steps, map, references_env_vars) = create_step_map(
@@ -867,7 +868,7 @@ fn compute_call(
     invalid_objects: &mut GrowableBitSet<ObjectId>,
     fn_assignments: &HashableHashMap<VarId, FnId>,
     static_fn_data: &IndexVec<FnId, StaticFunctionData>,
-    fn_graph: &mut DiGraphMap<FnId, ()>,
+    fn_graph: &mut GraphMap<FnId, (), Directed, BuildHasherDefault<FxHasher>>,
     func: FnId,
     always_invalid_vars: &FxHashSet<VarId>,
 ) -> Result<(Option<Pointer>, PropertyAssignments), ()> {

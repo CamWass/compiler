@@ -20,7 +20,7 @@ use std::borrow::Cow;
 use std::collections::hash_map::Entry;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
-use std::hash::Hash;
+use std::hash::{BuildHasherDefault, Hash};
 use std::ops::Deref;
 
 use ast::*;
@@ -31,9 +31,9 @@ use index::bit_set::{BitMatrix, BitSet, GrowableBitSet};
 use index::vec::IndexVec;
 use petgraph::algo::TarjanScc;
 use petgraph::graph::{DiGraph, Neighbors, NodeIndex, UnGraph};
-use petgraph::graphmap::DiGraphMap;
-use petgraph::EdgeDirection::*;
-use rustc_hash::{FxHashMap, FxHashSet};
+use petgraph::graphmap::GraphMap;
+use petgraph::{Directed, EdgeDirection::*};
+use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 
 use crate::control_flow::node::{Node, NodeKind};
 use crate::control_flow::ControlFlowAnalysis::*;
@@ -467,7 +467,7 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
 
     let mut step_builder = StepBuilder::new();
 
-    let mut fn_graph = DiGraphMap::default();
+    let mut fn_graph = GraphMap::default();
 
     let call_templates = store
         .functions
@@ -528,7 +528,8 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
     let mut done_functions = BitSet::new_empty(store.functions.len());
     let mut done_vars = BitSet::new_empty(store.vars.len());
 
-    let mut fn_graph = DiGraphMap::with_capacity(good_functions.len(), 0);
+    let mut fn_graph: GraphMap<FnId, (), Directed, BuildHasherDefault<FxHasher>> =
+        GraphMap::with_capacity_and_hasher(good_functions.len(), 0, Default::default());
 
     for func in &good_functions {
         fn_graph.add_node(*func);

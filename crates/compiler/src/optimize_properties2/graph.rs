@@ -1,7 +1,13 @@
-use std::{collections::VecDeque, fmt::Debug, hash::Hash, num::NonZeroUsize};
+use std::collections::VecDeque;
+use std::fmt::Debug;
+use std::hash::{BuildHasherDefault, Hash};
+use std::num::NonZeroUsize;
 
-use petgraph::{graphmap::NodeTrait, prelude::DiGraphMap, visit::NodeIndexable, Direction::*};
-use rustc_hash::FxHashSet;
+use petgraph::graphmap::{GraphMap, NodeTrait};
+use petgraph::visit::NodeIndexable;
+use petgraph::Directed;
+use petgraph::Direction::*;
+use rustc_hash::{FxHashSet, FxHasher};
 
 pub trait Visitor<N>
 where
@@ -19,7 +25,7 @@ where
     N: Copy + Ord + Hash + Debug + Eq,
     V: Visitor<N>,
 {
-    let mut graph: DiGraphMap<N, ()> = DiGraphMap::default();
+    let mut graph: GraphMap<N, (), Directed, BuildHasherDefault<FxHasher>> = GraphMap::default();
     graph.add_node(root);
 
     let mut fringe = vec![root];
@@ -308,7 +314,7 @@ where
         self.starts.clear();
     }
 
-    fn run(&mut self, g: &DiGraphMap<N, ()>, start: N) {
+    fn run(&mut self, g: &GraphMap<N, (), Directed, BuildHasherDefault<FxHasher>>, start: N) {
         self.nodes.clear();
         self.nodes
             .resize(g.node_bound(), NodeData { rootindex: None });
@@ -316,7 +322,7 @@ where
         self.visit(start, g);
     }
 
-    fn visit(&mut self, v: N, g: &DiGraphMap<N, ()>) -> bool {
+    fn visit(&mut self, v: N, g: &GraphMap<N, (), Directed, BuildHasherDefault<FxHasher>>) -> bool {
         macro_rules! node {
             ($node:expr) => {
                 self.nodes[g.to_index($node)]
@@ -401,8 +407,11 @@ where
     }
 }
 
-fn tarjan_scc<N>(g: &DiGraphMap<N, ()>, state: &mut TarjanScc<N>, start: N)
-where
+fn tarjan_scc<N>(
+    g: &GraphMap<N, (), Directed, BuildHasherDefault<FxHasher>>,
+    state: &mut TarjanScc<N>,
+    start: N,
+) where
     N: NodeTrait,
 {
     debug_assert!(g.contains_node(start));

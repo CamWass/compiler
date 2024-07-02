@@ -1,17 +1,20 @@
 use std::collections::BinaryHeap;
 use std::fmt::{Display, Write};
+use std::hash::BuildHasherDefault;
 use std::rc::Rc;
 
 use arrayvec::ArrayVec;
 use petgraph::algo::TarjanScc;
-use petgraph::graphmap::DiGraphMap;
+use petgraph::graphmap::GraphMap;
+use petgraph::Directed;
 use petgraph::Direction::{Incoming, Outgoing};
+use rustc_hash::FxHasher;
 use unionfind::GrowableUnionFind;
 
 use super::*;
 
 pub struct Graph {
-    graph: DiGraphMap<PointerId, GraphEdge>,
+    graph: GraphMap<PointerId, GraphEdge, Directed, BuildHasherDefault<FxHasher>>,
     nodes: GrowableUnionFind<PointerId>,
     points_to: FxHashMap<PointerId, SmallSet>,
     queue: UniqueQueue,
@@ -20,7 +23,7 @@ pub struct Graph {
 impl Graph {
     pub fn new() -> Self {
         Self {
-            graph: DiGraphMap::default(),
+            graph: GraphMap::default(),
             nodes: GrowableUnionFind::new(),
             points_to: FxHashMap::default(),
             queue: UniqueQueue::new(),
