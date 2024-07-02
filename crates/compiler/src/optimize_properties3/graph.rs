@@ -103,6 +103,8 @@ impl Graph {
         self.queue.extend(self.graph.nodes());
         let mut edges = Vec::new();
 
+        let mut first = true;
+
         loop {
             self.flow_edges(store, &mut edges);
             // After we've reached a fixedpoint above, if we couldn't infer the values
@@ -157,6 +159,7 @@ impl Graph {
                         }
                     }
 
+                    if first {
                     // Functions implicitly return undefined sometimes.
                     if matches!(store.pointers[pointer], Pointer::ReturnValue(_)) {
                         let changed = self.insert(node, PointerId::NULL_OR_VOID, store);
@@ -183,6 +186,9 @@ impl Graph {
                         self.queue.push(node.0);
                     }
                 }
+                }
+
+                first = false;
 
                 if !invalidated {
                     break;
