@@ -596,12 +596,13 @@ impl GraphVisitor<'_> {
                             | BinaryOp::InstanceOf => {
                                 ret!(vec![PointerId::BOOL])
                             }
-                            // TODO: we can infer the output type based on the input types.
                             // https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-applystringornumericbinaryoperator
+                            BinaryOp::Add => {
+                                ret!(vec![PointerId::NUM, PointerId::BIG_INT, PointerId::STRING])
+                            }
                             BinaryOp::LShift
                             | BinaryOp::RShift
                             | BinaryOp::ZeroFillRShift
-                            | BinaryOp::Add
                             | BinaryOp::Sub
                             | BinaryOp::Mul
                             | BinaryOp::Div
@@ -609,7 +610,7 @@ impl GraphVisitor<'_> {
                             | BinaryOp::BitOr
                             | BinaryOp::BitXor
                             | BinaryOp::BitAnd
-                            | BinaryOp::Exp => ret!(vec![PointerId::UNKNOWN]),
+                            | BinaryOp::Exp => ret!(vec![PointerId::NUM, PointerId::BIG_INT]),
 
                             BinaryOp::LogicalOr
                             | BinaryOp::LogicalAnd
