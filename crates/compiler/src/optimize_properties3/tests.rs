@@ -197,19 +197,18 @@ function f() {
 f().a;
 ",
     );
-    // We don't currently track the input types, so can't know the output type
-    // for numeric ops.
+    // We don't currently track the input types, so output type is union of Number/BigInt/String.
     test_same(
         "
 function f() {
     const shift = v1 << v2 || v1 >> v2 || v1 >>> v2;
     const numeric = v1 + v2 || v1 - v2 || v1 * v2 || v1 / v2 || v1 % v2 || v1 ** v2;
     const bitwise = v1 | v2 || v1 ^ v2 || v1 & v2;
-    const obj = shift || numeric || bitwise || { prop1: 1 };
-    obj.prop1;
+    const obj = shift || numeric || bitwise || { a: 1 };
+    obj.a;
     return obj;
 }
-f().prop1;
+f().a;
 ",
     );
 }
