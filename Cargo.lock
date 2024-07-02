@@ -232,7 +232,6 @@ dependencies = [
  "petgraph",
  "rustc-hash",
  "serde",
- "static_assertions",
  "testing",
 ]
 

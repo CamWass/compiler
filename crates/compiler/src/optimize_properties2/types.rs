@@ -332,10 +332,6 @@ impl Default for Union {
     }
 }
 
-// TODO: this is true in rust playground, may require newer nightly compiler.
-// See https://play.rust-lang.org/?version=nightly&mode=debug&edition=2021&gist=f869b77427f67327c5ea6ebf82b20e0a
-// assert_eq_size!(Union, Vec<ObjectId>);
-
 impl Union {
     pub fn len(&self) -> usize {
         match self {

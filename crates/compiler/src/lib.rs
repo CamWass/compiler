@@ -8,9 +8,6 @@
 #![allow(warnings)]
 #![deny(unused_imports)]
 
-// #[macro_use]
-// extern crate static_assertions;
-
 mod CoalesceVariableNames;
 mod DataFlowAnalysis;
 mod DefaultNameGenerator;
