@@ -1209,6 +1209,30 @@ fn test_unknown_or_invalid_assign_target_invalidation() {
 }
 
 #[test]
+fn test_function_invalidation() {
+    // We can't track how return value is used, so it must be invalidated.
+    test_same(
+        "
+function func() {
+    return { prop: 1 };
+}
+window.func = func;
+func().prop;
+",
+    );
+    // func may be called with unknown params.
+    test_same(
+        "
+function func(param) {
+    param.prop;
+}
+window.func = func;
+func({ prop: 1 });
+",
+    );
+}
+
+#[test]
 fn test_type_flows_through_assignment() {
     test_transform_in_fn(
         "

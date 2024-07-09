@@ -131,6 +131,22 @@ impl Graph {
                                 }
                             }
                         }
+
+                        // If the callee is invalid, then it could be called with unknown arguments.
+                        if store.invalid_pointers.contains(callee) {
+                            let changed = self.insert(node, PointerId::UNKNOWN, store);
+                            if changed {
+                                self.prioritise(node);
+                                self.queue.push(node.0);
+                            }
+                        }
+                    }
+
+                    if let Pointer::ReturnValue(callee) = store.pointers[pointer] {
+                        // If the callee is invalid, then we can't know how the return type is used.
+                        if store.invalid_pointers.contains(callee) {
+                            invalidated |= store.invalidate(pointer);
+                        }
                     }
 
                     if store.invalid_pointers.contains(pointer) {
