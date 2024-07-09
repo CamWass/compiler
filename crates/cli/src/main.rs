@@ -118,5 +118,5 @@ fn main() -> Result<()> {
         String::from_utf8(buf).expect("Invalid utf8 character detected")
     };
 
-    std::fs::write("out.ts", src).context("Failed to write file")
+    std::fs::write("out.js", src).context("Failed to write file")
 }
