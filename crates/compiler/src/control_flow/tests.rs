@@ -600,21 +600,21 @@ fn testSimpleStatementsInScript() {
             ast_graph,
             Token::Script,
             Token::VarDecl,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_cross_edge(
             cfg,
             ast_graph,
             Token::VarDecl,
             Token::ExprStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_cross_edge(
             cfg,
             ast_graph,
             Token::ExprStmt,
             Token::ExprStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
     });
 }
@@ -673,28 +673,28 @@ fn testSimpleIf() {
             ast_graph,
             Token::Script,
             Token::VarDecl,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_cross_edge(
             cfg,
             ast_graph,
             Token::VarDecl,
             Token::IfStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_down_edge(
             cfg,
             ast_graph,
             Token::IfStmt,
             Token::BlockStmt,
-            Branch::ON_TRUE,
+            Branch::True,
         );
         assert_down_edge(
             cfg,
             ast_graph,
             Token::BlockStmt,
             Token::ExprStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_no_edge(cfg, Token::ExprStmt, Token::CallExpr);
         assert_down_edge(
@@ -702,7 +702,7 @@ fn testSimpleIf() {
             ast_graph,
             Token::IfStmt,
             Token::BlockStmt,
-            Branch::ON_FALSE,
+            Branch::False,
         );
         assert_return_edge(cfg, Token::EmptyStmt);
     });
@@ -717,7 +717,7 @@ fn testBreakingBlock() {
             ast_graph,
             Token::BreakStmt,
             Token::BlockStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
     });
 }
@@ -731,21 +731,21 @@ fn testBreakingWhile() {
             ast_graph,
             Token::WhileStmt,
             Token::BlockStmt,
-            Branch::ON_TRUE,
+            Branch::True,
         );
         assert_down_edge(
             cfg,
             ast_graph,
             Token::BlockStmt,
             Token::BreakStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_cross_edge(
             cfg,
             ast_graph,
             Token::BreakStmt,
             Token::ExprStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
     });
 }
@@ -759,7 +759,7 @@ fn testInifiteLoopWhile() {
             ast_graph,
             Token::WhileStmt,
             Token::BlockStmt,
-            Branch::ON_TRUE,
+            Branch::True,
         );
         assert_no_edge(cfg, Token::WhileStmt, Token::ExprStmt);
     });
@@ -774,7 +774,7 @@ fn testInifiteLoopFor_emptyCond() {
             ast_graph,
             Token::ForStmt,
             Token::BlockStmt,
-            Branch::ON_TRUE,
+            Branch::True,
         );
         assert_no_edge(cfg, Token::ForStmt, Token::ExprStmt);
     });
@@ -789,21 +789,21 @@ fn testBreakingFor_emptyCond() {
             ast_graph,
             Token::ForStmt,
             Token::BlockStmt,
-            Branch::ON_TRUE,
+            Branch::True,
         );
         assert_down_edge(
             cfg,
             ast_graph,
             Token::BlockStmt,
             Token::BreakStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_cross_edge(
             cfg,
             ast_graph,
             Token::BreakStmt,
             Token::ExprStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
     });
 }
@@ -817,7 +817,7 @@ fn testInifiteLoopFor_trueCond() {
             ast_graph,
             Token::ForStmt,
             Token::BlockStmt,
-            Branch::ON_TRUE,
+            Branch::True,
         );
         assert_no_edge(cfg, Token::ForStmt, Token::ExprStmt);
     });
@@ -832,21 +832,21 @@ fn testBreakingFor_trueCond() {
             ast_graph,
             Token::ForStmt,
             Token::BlockStmt,
-            Branch::ON_TRUE,
+            Branch::True,
         );
         assert_down_edge(
             cfg,
             ast_graph,
             Token::BlockStmt,
             Token::BreakStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_cross_edge(
             cfg,
             ast_graph,
             Token::BreakStmt,
             Token::ExprStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
     });
 }
@@ -912,7 +912,7 @@ fn testBreakingTryBlock() {
             ast_graph,
             Token::BreakStmt,
             Token::IfStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
     });
 
@@ -923,7 +923,7 @@ fn testBreakingTryBlock() {
             ast_graph,
             Token::BreakStmt,
             Token::IfStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
     });
 
@@ -934,7 +934,7 @@ fn testBreakingTryBlock() {
             ast_graph,
             Token::BreakStmt,
             Token::IfStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
     });
 }
@@ -948,7 +948,7 @@ fn testWithStatement() {
             ast_graph,
             Token::WithStmt,
             Token::BlockStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_no_edge(cfg, Token::WithStmt, Token::Ident);
         assert_no_edge(cfg, Token::Ident, Token::BlockStmt);
@@ -957,7 +957,7 @@ fn testWithStatement() {
             ast_graph,
             Token::BlockStmt,
             Token::ExprStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_return_edge(cfg, Token::ExprStmt);
     });
@@ -973,21 +973,21 @@ fn testSimpleWhile() {
             ast_graph,
             Token::WhileStmt,
             Token::BlockStmt,
-            Branch::ON_TRUE,
+            Branch::True,
         );
         assert_down_edge(
             cfg,
             ast_graph,
             Token::BlockStmt,
             Token::ExprStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_down_edge(
             cfg,
             ast_graph,
             Token::IfStmt,
             Token::BlockStmt,
-            Branch::ON_TRUE,
+            Branch::True,
         );
         assert_return_edge(cfg, Token::BreakStmt);
     });
@@ -1002,7 +1002,7 @@ fn testSimpleSwitch() {
             ast_graph,
             Token::VarDecl,
             Token::SwitchStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_no_edge(cfg, Token::SwitchStmt, Token::Ident);
         // Transfer between cases and default.
@@ -1011,21 +1011,21 @@ fn testSimpleSwitch() {
             ast_graph,
             Token::SwitchStmt,
             Token::SwitchCase,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_cross_edge(
             cfg,
             ast_graph,
             Token::SwitchCase,
             Token::SwitchCase,
-            Branch::ON_FALSE,
+            Branch::False,
         );
         assert_cross_edge_predicate(
             cfg,
             ast_graph,
             |n| n.token == Token::SwitchCase,
             |n| n.is_default_switch_case,
-            Branch::ON_FALSE,
+            Branch::False,
         );
         // Within each case.
         assert_down_edge(
@@ -1033,7 +1033,7 @@ fn testSimpleSwitch() {
             ast_graph,
             Token::SwitchCase,
             Token::ExprStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_no_edge(cfg, Token::ExprStmt, Token::CallExpr);
         assert_no_edge(cfg, Token::CallExpr, Token::Ident);
@@ -1049,7 +1049,7 @@ fn testSimpleNoDefault() {
             ast_graph,
             Token::SwitchCase,
             Token::ExprStmt,
-            Branch::ON_FALSE,
+            Branch::False,
         );
     });
 }
@@ -1064,14 +1064,14 @@ fn testSwitchDefaultFirst() {
             ast_graph,
             Token::SwitchStmt,
             Token::SwitchCase,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_cross_edge_predicate(
             cfg,
             ast_graph,
             |n| n.token == Token::SwitchCase,
             |n| n.is_default_switch_case,
-            Branch::ON_FALSE,
+            Branch::False,
         );
     });
 }
@@ -1086,21 +1086,21 @@ fn testSwitchDefaultInMiddle() {
             ast_graph,
             Token::SwitchStmt,
             Token::SwitchCase,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_cross_edge(
             cfg,
             ast_graph,
             Token::SwitchCase,
             Token::SwitchCase,
-            Branch::ON_FALSE,
+            Branch::False,
         );
         assert_cross_edge_predicate(
             cfg,
             ast_graph,
             |n| n.token == Token::SwitchCase,
             |n| n.is_default_switch_case,
-            Branch::ON_FALSE,
+            Branch::False,
         );
     });
 }
@@ -1116,14 +1116,14 @@ fn testSwitchEmpty() {
             ast_graph,
             Token::SwitchStmt,
             Token::EmptyStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_cross_edge(
             cfg,
             ast_graph,
             Token::EmptyStmt,
             Token::ExprStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
     });
 }
@@ -1137,7 +1137,7 @@ fn testReturnThrowingException() {
             ast_graph,
             Token::ReturnStmt,
             Token::CatchClause,
-            Branch::ON_EX,
+            Branch::Exception,
         );
     });
 }
@@ -1882,14 +1882,14 @@ fn testSimpleFinally() {
             ast_graph,
             Token::TryStmt,
             Token::BlockStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_down_edge(
             cfg,
             ast_graph,
             Token::BlockStmt,
             Token::VarDecl,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         // VAR to FINALLY.
         assert_cross_edge(
@@ -1897,7 +1897,7 @@ fn testSimpleFinally() {
             ast_graph,
             Token::ExprStmt,
             Token::BlockStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         // No CATCH to FINALLY.
         assert_no_edge(cfg, Token::BlockStmt, Token::BlockStmt);
@@ -1996,21 +1996,21 @@ fn testComplicatedFinally2() {
             ast_graph,
             Token::ContinueStmt,
             Token::BlockStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_cross_edge(
             cfg,
             ast_graph,
             Token::BreakStmt,
             Token::BlockStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_cross_edge(
             cfg,
             ast_graph,
             Token::ThrowStmt,
             Token::CatchClause,
-            Branch::ON_EX,
+            Branch::Exception,
         );
     });
 }
@@ -2024,21 +2024,21 @@ fn testDeepNestedBreakwithFinally() {
             ast_graph,
             Token::WhileStmt,
             Token::BlockStmt,
-            Branch::ON_TRUE,
+            Branch::True,
         );
         assert_down_edge(
             cfg,
             ast_graph,
             Token::BlockStmt,
             Token::TryStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_down_edge(
             cfg,
             ast_graph,
             Token::BlockStmt,
             Token::VarDecl,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         // BREAK to FINALLY.
         assert_cross_edge(
@@ -2046,7 +2046,7 @@ fn testDeepNestedBreakwithFinally() {
             ast_graph,
             Token::BreakStmt,
             Token::BlockStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         // FINALLY to FINALLY.
         assert_cross_edge(
@@ -2054,14 +2054,14 @@ fn testDeepNestedBreakwithFinally() {
             ast_graph,
             Token::BlockStmt,
             Token::BlockStmt,
-            Branch::ON_EX,
+            Branch::Exception,
         );
         assert_cross_edge(
             cfg,
             ast_graph,
             Token::WhileStmt,
             Token::BlockStmt,
-            Branch::ON_FALSE,
+            Branch::False,
         );
         assert_return_edge(cfg, Token::BlockStmt);
     });
@@ -2076,21 +2076,21 @@ fn testDeepNestedFinally() {
             ast_graph,
             Token::ThrowStmt,
             Token::BlockStmt,
-            Branch::ON_EX,
+            Branch::Exception,
         );
         assert_cross_edge(
             cfg,
             ast_graph,
             Token::VarDecl,
             Token::BlockStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_cross_edge(
             cfg,
             ast_graph,
             Token::IfStmt,
             Token::BlockStmt,
-            Branch::ON_EX,
+            Branch::Exception,
         );
     });
 }
@@ -2120,14 +2120,14 @@ fn testReturnInFinally2() {
             ast_graph,
             Token::VarDecl,
             Token::ReturnStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_cross_edge(
             cfg,
             ast_graph,
             Token::ReturnStmt,
             Token::BlockStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_return_edge(cfg, Token::BlockStmt);
         assert_no_return_edge(cfg, Token::ReturnStmt);
@@ -2143,21 +2143,21 @@ fn testReturnInTry() {
             ast_graph,
             Token::ExprStmt,
             Token::ReturnStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_cross_edge(
             cfg,
             ast_graph,
             Token::ReturnStmt,
             Token::BlockStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_cross_edge(
             cfg,
             ast_graph,
             Token::BlockStmt,
             Token::VarDecl,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_return_edge(cfg, Token::VarDecl);
         assert_return_edge(cfg, Token::BlockStmt);
@@ -2250,7 +2250,7 @@ fn testInstanceOf() {
             ast_graph,
             Token::ExprStmt,
             Token::CatchClause,
-            Branch::ON_EX,
+            Branch::Exception,
         );
     });
 }
@@ -2587,7 +2587,7 @@ alert(action)";
             ast_graph,
             Token::BreakStmt,
             Token::ExprStmt,
-            Branch::UNCOND,
+            Branch::Unconditional,
         );
         assert_no_edge(cfg, Token::BreakStmt, Token::BlockStmt);
     });

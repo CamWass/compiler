@@ -563,7 +563,7 @@ where
             .cfg
             .graph
             .edges(self.cfg.map[&node])
-            .any(|e| *e.weight() == Branch::ON_EX);
+            .any(|e| *e.weight() == Branch::Exception);
         self.compute_gen_kill(node, &mut gen, &mut kill, conditional);
 
         if gen.is_empty() && kill.is_empty() {

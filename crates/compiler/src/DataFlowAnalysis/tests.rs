@@ -412,10 +412,10 @@ fn testSimpleIf() {
     let n4 = Instruction::new_assign_variable_to_variable_instruction(c, b);
     let mut cfg = ControlFlowGraph::new(n1);
 
-    cfg.create_edge(n1, Branch::ON_FALSE, n2);
-    cfg.create_edge(n1, Branch::ON_TRUE, n3);
-    cfg.create_edge(n2, Branch::UNCOND, n4);
-    cfg.create_edge(n3, Branch::UNCOND, n4);
+    cfg.create_edge(n1, Branch::False, n2);
+    cfg.create_edge(n1, Branch::True, n3);
+    cfg.create_edge(n2, Branch::Unconditional, n4);
+    cfg.create_edge(n3, Branch::Unconditional, n4);
 
     let cfa = ControlFlowAnalysisResult {
         node_priorities: cfg.graph.node_indices().map(|i| i.index() as u32).collect(),
@@ -475,10 +475,10 @@ fn testSimpleLoop() {
     let n3 = Instruction::BranchInstruction(BranchInstruction::new(Value::Variable(b)));
     let n4 = Instruction::new_assign_variable_to_variable_instruction(c, a);
     let mut cfg = ControlFlowGraph::new(n1);
-    cfg.create_edge(n1, Branch::UNCOND, n2);
-    cfg.create_edge(n2, Branch::UNCOND, n3);
-    cfg.create_edge(n3, Branch::ON_TRUE, n2);
-    cfg.create_edge(n3, Branch::ON_FALSE, n4);
+    cfg.create_edge(n1, Branch::Unconditional, n2);
+    cfg.create_edge(n2, Branch::Unconditional, n3);
+    cfg.create_edge(n3, Branch::True, n2);
+    cfg.create_edge(n3, Branch::False, n4);
 
     let cfa = ControlFlowAnalysisResult {
         node_priorities: cfg.graph.node_indices().map(|i| i.index() as u32).collect(),
@@ -764,7 +764,7 @@ impl<'p> DivergentAnalysis<'p> {
 fn testMaxIterationsExceededException() {
     let entrypoint = Counter(0);
     let mut cfg = ControlFlowGraph::new(entrypoint);
-    cfg.create_edge(entrypoint, Branch::UNCOND, entrypoint);
+    cfg.create_edge(entrypoint, Branch::Unconditional, entrypoint);
 
     let cfa = ControlFlowAnalysisResult {
         node_priorities: vec![0, 1],

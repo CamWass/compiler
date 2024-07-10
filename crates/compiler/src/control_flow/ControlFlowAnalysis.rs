@@ -275,7 +275,8 @@ where
         self.prioritize_node(node);
         // Simply transfer to the next line.
         let follow_node = self.compute_follow_node(node);
-        self.cfg.create_edge(node, Branch::UNCOND, follow_node);
+        self.cfg
+            .create_edge(node, Branch::Unconditional, follow_node);
 
         self.connect_to_possible_exception_handler(
             ExceptionHandler::new(&self.parent_stack, node),
@@ -312,15 +313,14 @@ where
         let body_node = Node::from(&**body);
         // The collection behaves like init.
         self.cfg
-            .create_edge(collection_node, Branch::UNCOND, for_node);
+            .create_edge(collection_node, Branch::Unconditional, for_node);
         // The edge that transfer control to the beginning of the loop body.
         self.cfg
-            .create_edge(for_node, Branch::ON_TRUE, compute_fall_through(body_node));
+            .create_edge(for_node, Branch::True, compute_fall_through(body_node));
 
         let follow_node = self.compute_follow_node(for_node);
         // The edge to end of the loop.
-        self.cfg
-            .create_edge(for_node, Branch::ON_FALSE, follow_node);
+        self.cfg.create_edge(for_node, Branch::False, follow_node);
         self.connect_to_possible_exception_handler(
             ExceptionHandler::new(&self.parent_stack, for_node),
             collection_node,
@@ -350,7 +350,7 @@ where
 
                 // A function transfers control to its body.
                 self.cfg
-                    .create_edge(node, Branch::UNCOND, compute_fall_through(body));
+                    .create_edge(node, Branch::Unconditional, compute_fall_through(body));
 
                 debug_assert!(
                     self.exception_handler.last().map(|handler| handler.node) == Some(node)
@@ -395,7 +395,7 @@ where
                         Some(stmt) => {
                             // ...the first stmt of the body. Or...
                             self.cfg
-                                .create_edge(case_node, Branch::ON_TRUE, Node::from(stmt));
+                                .create_edge(case_node, Branch::True, Node::from(stmt));
                         }
                         None => {
                             // ...if the body is empty...
@@ -414,7 +414,7 @@ where
                                 Some(follow) => {
                                     // ...it falls through into the body of the
                                     // next case. Or...
-                                    self.cfg.create_edge(case_node, Branch::ON_TRUE, follow)
+                                    self.cfg.create_edge(case_node, Branch::True, follow)
                                 }
                                 None => {
                                     // ...if there are no more cases, or they
@@ -425,8 +425,7 @@ where
                                         self.parent_stack.len() - 1,
                                     );
 
-                                    self.cfg
-                                        .create_edge(case_node, Branch::ON_TRUE, follow_node);
+                                    self.cfg.create_edge(case_node, Branch::True, follow_node);
                                 }
                             }
                         }
@@ -448,7 +447,7 @@ where
                         Some(next) => {
                             // Found next case.
                             self.cfg
-                                .create_edge(case_node, Branch::ON_FALSE, Node::from(next));
+                                .create_edge(case_node, Branch::False, Node::from(next));
                         }
                         None => {
                             // No more cases.
@@ -458,21 +457,18 @@ where
                                         // Go to default case.
                                         self.cfg.create_edge(
                                             case_node,
-                                            Branch::ON_FALSE,
+                                            Branch::False,
                                             Node::from(default),
                                         );
                                     }
                                     None => {
                                         // Default case has no stmts, go to the follow of the switch.
-                                        self.create_edge_to_case_follow(
-                                            case_node,
-                                            Branch::ON_FALSE,
-                                        );
+                                        self.create_edge_to_case_follow(case_node, Branch::False);
                                     }
                                 },
                                 None => {
                                     // No default case, go to the follow of the switch.
-                                    self.create_edge_to_case_follow(case_node, Branch::ON_FALSE);
+                                    self.create_edge_to_case_follow(case_node, Branch::False);
                                 }
                             }
                         }
@@ -491,11 +487,14 @@ where
                     default_case = Some(current_case);
                     match current_case.cons.first() {
                         Some(stmt) => {
-                            self.cfg
-                                .create_edge(case_node, Branch::UNCOND, Node::from(stmt));
+                            self.cfg.create_edge(
+                                case_node,
+                                Branch::Unconditional,
+                                Node::from(stmt),
+                            );
                         }
                         None => {
-                            self.create_edge_to_case_follow(case_node, Branch::UNCOND);
+                            self.create_edge_to_case_follow(case_node, Branch::Unconditional);
                         }
                     }
                 }
@@ -544,7 +543,8 @@ where
                     let finally = Node::from(handler_node.finalizer.as_ref().unwrap());
 
                     if last_jump == &cfg_node {
-                        self.cfg.create_edge(cfg_node.node, Branch::ON_EX, finally);
+                        self.cfg
+                            .create_edge(cfg_node.node, Branch::Exception, finally);
                     } else {
                         self.finally_map.put(last_jump.node, finally);
                     }
@@ -553,7 +553,7 @@ where
                     if last_jump == &cfg_node {
                         self.cfg.create_edge(
                             cfg_node.node,
-                            Branch::ON_EX,
+                            Branch::Exception,
                             Node::from(catch.unwrap()),
                         );
                         return;
@@ -669,7 +669,7 @@ where
                         if let Some(nodes) = self.finally_map.get(parent.node) {
                             for finally_node in nodes {
                                 self.cfg
-                                    .create_edge(from_node, Branch::ON_EX, *finally_node);
+                                    .create_edge(from_node, Branch::Exception, *finally_node);
                             }
                         }
 
@@ -806,13 +806,14 @@ where
         // checking the condition (for the first time).
         if let Some(init_node) = init_node {
             self.prioritize_node(init_node);
-            self.cfg.create_edge(init_node, Branch::UNCOND, for_node);
+            self.cfg
+                .create_edge(init_node, Branch::Unconditional, for_node);
         }
 
         // The edge that transfer control to the beginning of the loop body.
         self.cfg.create_edge(
             for_node,
-            Branch::ON_TRUE,
+            Branch::True,
             compute_fall_through(Node::from(&*node.body)),
         );
         // The edge to end of the loop.
@@ -821,8 +822,7 @@ where
         if let Some(test) = &node.test {
             if !is_true_literal(&*test) {
                 let follow_node = self.compute_follow_node(for_node);
-                self.cfg
-                    .create_edge(for_node, Branch::ON_FALSE, follow_node);
+                self.cfg.create_edge(for_node, Branch::False, follow_node);
             }
         }
 
@@ -832,7 +832,8 @@ where
         // check.
         if let Some(update_node) = update_node {
             self.prioritize_node(update_node);
-            self.cfg.create_edge(update_node, Branch::UNCOND, for_node);
+            self.cfg
+                .create_edge(update_node, Branch::Unconditional, for_node);
         }
 
         if let Some(init_node) = init_node {
@@ -872,7 +873,7 @@ where
         // The first edge can be the initial iteration as well as the iterations
         // after.
         self.cfg
-            .create_edge(do_while_node, Branch::ON_TRUE, compute_fall_through(body));
+            .create_edge(do_while_node, Branch::True, compute_fall_through(body));
 
         let test = Node::from(node.test.as_ref());
         self.prioritize_node(test);
@@ -884,7 +885,7 @@ where
         // The edge that leaves the do loop if the condition fails.
         let follow_node = self.compute_follow_node(do_while_node);
         self.cfg
-            .create_edge(do_while_node, Branch::ON_FALSE, follow_node);
+            .create_edge(do_while_node, Branch::False, follow_node);
         // }
 
         self.connect_to_possible_exception_handler(
@@ -911,18 +912,18 @@ where
         self.parent_stack.pop();
 
         self.cfg
-            .create_edge(if_node, Branch::ON_TRUE, compute_fall_through(then_node));
+            .create_edge(if_node, Branch::True, compute_fall_through(then_node));
 
         match &node.alt {
             Some(alt) => {
                 let else_node = Node::from(&**alt);
                 self.cfg
-                    .create_edge(if_node, Branch::ON_FALSE, compute_fall_through(else_node));
+                    .create_edge(if_node, Branch::False, compute_fall_through(else_node));
             }
             None => {
                 // not taken branch
                 let to_node = self.compute_follow_node(if_node);
-                self.cfg.create_edge(if_node, Branch::ON_FALSE, to_node);
+                self.cfg.create_edge(if_node, Branch::False, to_node);
             }
         }
 
@@ -945,7 +946,7 @@ where
         // Control goes to the first statement if the condition evaluates to true.
         self.cfg.create_edge(
             while_node,
-            Branch::ON_TRUE,
+            Branch::True,
             compute_fall_through(Node::from(&*node.body)),
         );
 
@@ -958,8 +959,7 @@ where
         if !is_true_literal(&*node.test) {
             // Control goes to the follow() if the condition evaluates to false.
             let follow_node = self.compute_follow_node(while_node);
-            self.cfg
-                .create_edge(while_node, Branch::ON_FALSE, follow_node);
+            self.cfg.create_edge(while_node, Branch::False, follow_node);
         }
 
         self.connect_to_possible_exception_handler(
@@ -980,7 +980,7 @@ where
         // TODO: comment should not mention cases
         // Directly goes to the body. It should not transfer to the next case.
         self.cfg
-            .create_edge(with_node, Branch::UNCOND, Node::from(&*node.body));
+            .create_edge(with_node, Branch::Unconditional, Node::from(&*node.body));
 
         self.connect_to_possible_exception_handler(
             ExceptionHandler::new(&self.parent_stack, with_node),
@@ -1009,19 +1009,19 @@ where
             Some(next) => {
                 // Has at least one CASE or EMPTY
                 self.cfg
-                    .create_edge(switch_node, Branch::UNCOND, Node::from(next));
+                    .create_edge(switch_node, Branch::Unconditional, Node::from(next));
             }
             None => {
                 // Has no CASE but possibly a DEFAULT
                 if node.cases.len() > 0 {
                     let default_node = Node::from(&node.cases[0]);
                     self.cfg
-                        .create_edge(switch_node, Branch::UNCOND, default_node);
+                        .create_edge(switch_node, Branch::Unconditional, default_node);
                 } else {
                     // No CASE, no DEFAULT
                     let follow_node = self.compute_follow_node(switch_node);
                     self.cfg
-                        .create_edge(switch_node, Branch::UNCOND, follow_node);
+                        .create_edge(switch_node, Branch::Unconditional, follow_node);
                 }
             }
         }
@@ -1177,7 +1177,7 @@ where
         self.parent_stack.pop();
 
         self.cfg
-            .create_edge(catch_node, Branch::UNCOND, Node::from(&node.body));
+            .create_edge(catch_node, Branch::Unconditional, Node::from(&node.body));
     }
 
     fn visit_labeled_stmt(&mut self, node: &'ast LabeledStmt) {
@@ -1255,7 +1255,7 @@ where
         self.parent_stack.pop();
 
         self.cfg
-            .create_edge(try_node, Branch::UNCOND, Node::from(&node.block))
+            .create_edge(try_node, Branch::Unconditional, Node::from(&node.block))
     }
 
     fn visit_script(&mut self, node: &'ast Script) {
@@ -1280,13 +1280,13 @@ where
             Some(child) => {
                 self.cfg.create_edge(
                     script_node,
-                    Branch::UNCOND,
+                    Branch::Unconditional,
                     compute_fall_through(Node::from(child)),
                 );
             }
             None => {
                 self.cfg
-                    .create_edge(script_node, Branch::UNCOND, Node::IMPLICIT_RETURN);
+                    .create_edge(script_node, Branch::Unconditional, Node::IMPLICIT_RETURN);
             }
         }
 
@@ -1325,12 +1325,15 @@ where
 
         match child {
             Some(child) => {
-                self.cfg
-                    .create_edge(module_node, Branch::UNCOND, compute_fall_through(child));
+                self.cfg.create_edge(
+                    module_node,
+                    Branch::Unconditional,
+                    compute_fall_through(child),
+                );
             }
             None => {
                 self.cfg
-                    .create_edge(module_node, Branch::UNCOND, Node::IMPLICIT_RETURN);
+                    .create_edge(module_node, Branch::Unconditional, Node::IMPLICIT_RETURN);
             }
         }
 
@@ -1356,7 +1359,7 @@ where
             Some(child) => {
                 self.cfg.create_edge(
                     block_node,
-                    Branch::UNCOND,
+                    Branch::Unconditional,
                     compute_fall_through(Node::from(child)),
                 );
 
@@ -1371,7 +1374,7 @@ where
             None => {
                 let follow_node = self.compute_follow_node(block_node);
                 self.cfg
-                    .create_edge(block_node, Branch::UNCOND, follow_node);
+                    .create_edge(block_node, Branch::Unconditional, follow_node);
             }
         }
     }
@@ -1430,7 +1433,7 @@ where
                     if Some(finally_node) != previous {
                         if last_jump == continue_node {
                             self.cfg
-                                .create_edge(last_jump, Branch::UNCOND, finally_node);
+                                .create_edge(last_jump, Branch::Unconditional, finally_node);
                         } else {
                             self.finally_map
                                 .put(last_jump, compute_fall_through(finally_node));
@@ -1460,7 +1463,8 @@ where
         }
 
         if last_jump == continue_node {
-            self.cfg.create_edge(continue_node, Branch::UNCOND, iter);
+            self.cfg
+                .create_edge(continue_node, Branch::Unconditional, iter);
         } else {
             self.finally_map.put(last_jump, iter);
         }
@@ -1498,7 +1502,7 @@ where
                     if Some(finally_node) != previous {
                         let to = compute_fall_through(finally_node);
                         if last_jump == break_node {
-                            self.cfg.create_edge(last_jump, Branch::UNCOND, to);
+                            self.cfg.create_edge(last_jump, Branch::Unconditional, to);
                         } else {
                             self.finally_map.put(last_jump, to);
                         }
@@ -1521,7 +1525,8 @@ where
 
         let follow_node = self.compute_follow_node_with_parent(cur, break_target_parent_index);
         if last_jump == break_node {
-            self.cfg.create_edge(last_jump, Branch::UNCOND, follow_node);
+            self.cfg
+                .create_edge(last_jump, Branch::Unconditional, follow_node);
         } else {
             self.finally_map.put(last_jump, follow_node);
         }
@@ -1548,8 +1553,11 @@ where
                                     .put(last_jump, compute_fall_through(finally_node));
                             }
                             None => {
-                                self.cfg
-                                    .create_edge(return_node, Branch::UNCOND, finally_node);
+                                self.cfg.create_edge(
+                                    return_node,
+                                    Branch::Unconditional,
+                                    finally_node,
+                                );
                             }
                         }
                         last_jump = Some(cur_handler.node);
@@ -1573,7 +1581,7 @@ where
             }
             None => {
                 self.cfg
-                    .create_edge(return_node, Branch::UNCOND, self.cfg.implicit_return);
+                    .create_edge(return_node, Branch::Unconditional, self.cfg.implicit_return);
             }
         }
     }

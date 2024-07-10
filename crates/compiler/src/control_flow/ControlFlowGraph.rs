@@ -167,11 +167,11 @@ where
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum Branch {
     /** Edge is taken if the condition is true. */
-    ON_TRUE,
+    True,
     /** Edge is taken if the condition is false. */
-    ON_FALSE,
+    False,
     /** Unconditional branch. */
-    UNCOND,
+    Unconditional,
     /**
      * Exception-handling code paths.
      * Conflates two kind of control flow passing:
@@ -181,7 +181,7 @@ pub enum Branch {
      * In theory, we need 2 different edge types. In practice, we
      * can just treat them as "the edges we can't really optimize".
      */
-    ON_EX,
+    Exception,
 }
 
 /**

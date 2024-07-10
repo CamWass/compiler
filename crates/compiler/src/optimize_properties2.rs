@@ -1798,11 +1798,6 @@ pub(super) struct ResolvedCall {
     captured_vars: HashableHashMap<VarId, Assignment>,
 }
 
-#[derive(Debug, PartialEq, Hash, Eq)]
-pub(super) struct Union {
-    constituents: Vec<ObjectId>,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) struct Assignment {
     rhs: Option<Pointer>,
@@ -3030,7 +3025,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
             .cfg
             .graph
             .edges(self.cfg.map[&node])
-            .any(|e| *e.weight() == Branch::ON_EX);
+            .any(|e| *e.weight() == Branch::Exception);
 
         let mut v = Analyser {
             lattice: CowLattice(Cow::Borrowed(&self.lattice_elements[input])),

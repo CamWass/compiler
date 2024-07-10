@@ -928,7 +928,7 @@ impl GraphVisitor<'_> {
             Pat::Array(lhs) => {
                 self.invalidate(rhs);
                 for element in lhs.elems.iter().filter_map(|e| e.as_ref()) {
-                    if let Pat::Expr(elem) = element {
+                    if let Pat::Expr(_elem) = element {
                         todo!();
                         // self.invalidate_slot(Node::from(elem.as_ref()));
                     } else {

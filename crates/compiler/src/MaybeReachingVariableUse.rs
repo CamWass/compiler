@@ -131,7 +131,7 @@ where
         self.cfg
             .graph
             .edges_directed(self.cfg.map[&cfg_node], Outgoing)
-            .any(|e| *e.weight() == Branch::ON_EX)
+            .any(|e| *e.weight() == Branch::Exception)
     }
 
     /**

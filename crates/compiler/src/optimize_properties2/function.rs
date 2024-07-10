@@ -45,7 +45,7 @@ pub(super) fn create_step_map(
         }
 
         // Make assignments conditional if the node can end abruptly by an exception.
-        let conditional = graph.edges(node).any(|e| *e.weight() == Branch::ON_EX);
+        let conditional = graph.edges(node).any(|e| *e.weight() == Branch::Exception);
 
         builder.reset();
 
