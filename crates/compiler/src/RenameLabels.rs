@@ -109,7 +109,7 @@ impl VisitMut<'_> for RenameLabels {
 
                     // Create a new name, if needed, for this depth.
                     if self.names.len() < current_depth {
-                        self.names.push(self.name_supplier.generateNextName());
+                        self.names.push(self.name_supplier.generate_next_name());
                     }
 
                     labeled_stmt.visit_mut_children_with(self);

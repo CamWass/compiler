@@ -36,81 +36,81 @@ fn test_same(input: &str) {
 
 #[test]
 fn testSimple() {
-    inFunction(
+    in_function(
         "
     var x; var y; x=1; x; y=1; y; return y",
         "
     var x;        x=1; x; x=1; x; return x",
     );
 
-    inFunction(
+    in_function(
         "
     var x,y; x=1; x; y=1; y",
         "
     var x  ; x=1; x; x=1; x",
     );
 
-    inFunctionSame("var x; var y; x=1; y=2; y; x");
+    in_function_same("var x; var y; x=1; y=2; y; x");
 
-    inFunction(
+    in_function(
         "
     y=0; var x, y; y; x=0; x",
         "
     y=0; var y   ; y; y=0;y",
     );
 
-    inFunction(
+    in_function(
         "
     var x,y; x=1; y=x; y",
         "
     var x  ; x=1; x=x; x",
     );
 
-    inFunction(
+    in_function(
         "
     var x,y; x=1; y=x+1; y",
         "
     var x  ; x=1; x=x+1; x",
     );
 
-    inFunction(
+    in_function(
         "
     x=1; x; y=2; y; var x; var y",
         "
     x=1; x; x=2; x; var x",
     );
 
-    inFunction(
+    in_function(
         "
     var x=1; var y=x+1; return y",
         "
     var x=1;     x=x+1; return x",
     );
 
-    inFunctionSame("var x=1; var y=0; x = x + 1; y");
+    in_function_same("var x=1; var y=0; x = x + 1; y");
 
-    inFunction(
+    in_function(
         "
     var x=1; x+=1;     var y=0; y",
         "
     var x=1; x = x + 1;     x=0; x",
     );
 
-    inFunction(
+    in_function(
         "
     var x=1; foo(bar(x+=1));     var y=0; y",
         "
     var x=1; foo(bar(x = x + 1));    x=0; x",
     );
 
-    inFunctionSame("var y; var x=1; f(x = x + 1, y)");
+    in_function_same("var y; var x=1; f(x = x + 1, y)");
 
-    inFunctionSame("var x; var y; y = y + 1, y, x = 1; x");
+    in_function_same("var x; var y; y = y + 1, y, x = 1; x");
 }
 
 #[test]
 fn testCoaleseLetAndConst() {
-    inFunction(
+    in_function(
         "let x; const y = 1; x = y + 1; return x",
         // `let` must become `var`, because we might be coalescing
         // variables declared in different blocks.
@@ -121,7 +121,7 @@ fn testCoaleseLetAndConst() {
 
 #[test]
 fn testLetAndConstDifferentBlock() {
-    inFunction(
+    in_function(
         "if(1) { const x = 0; x } else { let y = 0; y }",
         "if(1) {   var x = 0; x } else {     x = 0; x }",
     );
@@ -129,7 +129,7 @@ fn testLetAndConstDifferentBlock() {
 
 #[test]
 fn testCoalesceLetRequiresInitWithinALoop() {
-    inFunction(
+    in_function(
         "
 for (let i = 0; i < 3; ++i) {
     let something;
@@ -156,7 +156,7 @@ for (let i = 0; i < 3; ++i) {
 
 #[test]
 fn testMergeThreeVarNames() {
-    inFunction(
+    in_function(
         "var x,y,z; x=1; x; y=1; y; z=1; z",
         "var x    ; x=1; x; x=1; x; x=1; x",
     );
@@ -164,7 +164,7 @@ fn testMergeThreeVarNames() {
 
 #[test]
 fn testDifferentBlock() {
-    inFunction(
+    in_function(
         "if(1) { var x = 0; x } else { var y = 0; y }",
         "if(1) { var x = 0; x } else {     x = 0; x }",
     );
@@ -172,9 +172,9 @@ fn testDifferentBlock() {
 
 #[test]
 fn testLoops() {
-    inFunctionSame("var x; for ( ; 1; ) { x; x = 1; var y = 1; y }");
+    in_function_same("var x; for ( ; 1; ) { x; x = 1; var y = 1; y }");
 
-    inFunction(
+    in_function(
         "var y = 1; y; for ( ; 1; ) { var x = 1; x }",
         "var y = 1; y; for ( ; 1; ) {     y = 1; y }",
     );
@@ -182,12 +182,12 @@ fn testLoops() {
 
 #[test]
 fn testEscaped() {
-    inFunctionSame("function f() { x } var x = 1; x; var y = 0; y; f()");
+    in_function_same("function f() { x } var x = 1; x; var y = 0; y; f()");
 }
 
 #[test]
 fn testFor() {
-    inFunction(
+    in_function(
         "
         var x = 1; x; for (;;) { var y } y = 1; y",
         "
@@ -198,39 +198,39 @@ fn testFor() {
 #[test]
 fn testForIn() {
     // We lose some precision here, unless we have "branched-backward-dataflow".
-    inFunctionSame("var x = 1; var k; x; var y; for ( y in k ) { y }");
+    in_function_same("var x = 1; var k; x; var y; for ( y in k ) { y }");
 
-    inFunction(
+    in_function(
         "var x = 1,     k; x; y = 1; for (var y in k) { y }",
         "var x = 1; var k; x; x = 1; for (    x in k) { x }",
     );
 
-    inFunctionSame("function f(param){ var foo; for([foo] in arr) {} param }");
+    in_function_same("function f(param){ var foo; for([foo] in arr) {} param }");
 }
 
 #[test]
 fn testForLoopCoalesceWithFollowingCode() {
-    inFunction(
+    in_function(
         "for (;;) { const a = 3; } const y = 1; y;",
         "for (;;) { var   a = 3; }       a = 1; a;",
     );
-    inFunction(
+    in_function(
         "for (let a = 3;;) { a; } const y = 1; y;",
         "for (var a = 3;;) { a; }       a = 1; a;",
     );
-    inFunction(
+    in_function(
         "for (const x in k) { x; } const y = 1; y;",
         "for (var   x in k) { x; }       x = 1; x;",
     );
-    inFunction(
+    in_function(
         "for (let x in k) { x; } const y = 1; y;",
         "for (var x in k) { x; }       x = 1; x;",
     );
-    inFunction(
+    in_function(
         "for (const x of k) { x; } const y = 1; y;",
         "for (var   x of k) { x; }       x = 1; x;",
     );
-    inFunction(
+    in_function(
         "for (let x of k) { x; } const y = 1; y;",
         "for (var x of k) { x; }       x = 1; x;",
     );
@@ -239,14 +239,14 @@ fn testForLoopCoalesceWithFollowingCode() {
 #[test]
 fn testForOf() {
     // We lose some precision here, unless we have "branched-backward-dataflow".
-    inFunctionSame("var x = 1; var k; x; var y; for ( y of k ) { y }");
+    in_function_same("var x = 1; var k; x; var y; for ( y of k ) { y }");
 
-    inFunction(
+    in_function(
         "var x = 1,     k; x; y = 1; for (var y of k) { y }",
         "var x = 1; var k; x; x = 1; for (    x of k) { x }",
     );
 
-    inFunctionSame("function f(param){ var foo; for([foo] of arr) {} param }");
+    in_function_same("function f(param){ var foo; for([foo] of arr) {} param }");
 }
 
 // TODO:
@@ -272,7 +272,7 @@ fn testForOf() {
 
 #[test]
 fn testSwitchCase() {
-    inFunction(
+    in_function(
         "var x = 1; switch(x) { case 1: var y; case 2: } y = 1; y",
         "var x = 1; switch(x) { case 1:        case 2: } x = 1; x",
     );
@@ -281,7 +281,7 @@ fn testSwitchCase() {
 #[test]
 fn testDuplicatedVar() {
     // Is there a shorter version without multiple declarations?
-    inFunction(
+    in_function(
         "z = 1; var x = 0; x; z; var y = 2,     z = 1; y; z;",
         "z = 1; var x = 0; x; z;     x = 2; var z = 1; x; z;",
     );
@@ -289,16 +289,16 @@ fn testDuplicatedVar() {
 
 #[test]
 fn testTryCatch() {
-    inFunctionSame("try {} catch (e) { } var x = 4; x;");
-    inFunctionSame("var x = 4; x; try {} catch (e) { }");
+    in_function_same("try {} catch (e) { } var x = 4; x;");
+    in_function_same("var x = 4; x; try {} catch (e) { }");
 }
 
 #[test]
 fn testDeadAssignment() {
-    inFunctionSame("var x = 6; var y; y = 4 ; x");
-    inFunctionSame("var y = 3; y = y + 4; x");
-    inFunctionSame("var y = 3; y = y + 1; x");
-    inFunctionSame("y = 3; var x; var y = 1 ; x");
+    in_function_same("var x = 6; var y; y = 4 ; x");
+    in_function_same("var y = 3; y = y + 4; x");
+    in_function_same("var y = 3; y = y + 1; x");
+    in_function_same("y = 3; var x; var y = 1 ; x");
 }
 
 #[test]
@@ -355,34 +355,34 @@ fn testParameter5() {
 
 #[test]
 fn testLiveRangeChangeWithinCfgNode() {
-    inFunctionSame("var x; var y; x = 1, y = 2, y, x");
-    inFunctionSame("var x; var y; x = 1,x; y");
+    in_function_same("var x; var y; x = 1, y = 2, y, x");
+    in_function_same("var x; var y; x = 1,x; y");
 
     // We lose some precisions within the node itself.
-    inFunctionSame("var x; var y; y = 1, y, x = 1; x");
+    in_function_same("var x; var y; y = 1, y, x = 1; x");
 
-    inFunction(
+    in_function(
         "var x; var y; y = 1; y, x = 1; x",
         "var x; x = 1; x, x = 1; x",
     );
 
-    inFunctionSame("var x; var y; y = 1, x = 1, x, y = y + 1, y");
+    in_function_same("var x; var y; y = 1, x = 1, x, y = y + 1, y");
 
-    inFunctionSame("var x; var y; y = 1, x = 1, x, y = y + 1, y");
+    in_function_same("var x; var y; y = 1, x = 1, x, y = y + 1, y");
 }
 
 #[test]
 fn testLiveRangeChangeWithinCfgNode2() {
-    inFunctionSame("var x; var y; var a; var b; y = 1, a = 1, y, a, x = 1, b = 1; x; b");
+    in_function_same("var x; var y; var a; var b; y = 1, a = 1, y, a, x = 1, b = 1; x; b");
 
-    inFunction(
+    in_function(
         "
 var x; var y; var a; var b; y = 1, a = 1, y, a, x = 1; x; b = 1; b",
         "
 var x; var y; var a;        y = 1, a = 1, y, a, x = 1; x; x = 1; x",
     );
 
-    inFunction(
+    in_function(
         "var x; var y; var a; var b; y = 1, a = 1, y, x = 1; a; x; b = 1; b",
         "var x; var y; var a;        y = 1, a = 1, y, x = 1; a; x; x = 1; x",
     );
@@ -390,22 +390,22 @@ var x; var y; var a;        y = 1, a = 1, y, a, x = 1; x; x = 1; x",
 
 #[test]
 fn testFunctionNameReuse() {
-    inFunctionSame("function x() {}; x(); var y = 1; y");
+    in_function_same("function x() {}; x(); var y = 1; y");
 
-    inFunctionSame("function x() { } x(); var y = 1; y");
+    in_function_same("function x() { } x(); var y = 1; y");
 
-    inFunctionSame("function x() { } x(); var y = 1; y");
+    in_function_same("function x() { } x(); var y = 1; y");
 
     // Can't merge because of possible escape.
-    inFunctionSame("function x() {return x}; x(); var y = 1; y");
+    in_function_same("function x() {return x}; x(); var y = 1; y");
 
-    inFunctionSame("function x() {} var y = 1; y; x");
+    in_function_same("function x() {} var y = 1; y; x");
 
-    inFunctionSame("function x() { } var y = 1; y; x");
+    in_function_same("function x() { } var y = 1; y; x");
 
-    inFunctionSame("function x() { } var y = 1; y; x = 1; x");
+    in_function_same("function x() { } var y = 1; y; x = 1; x");
 
-    inFunctionSame("function x() {} var y = 1; y; x = 1; x");
+    in_function_same("function x() {} var y = 1; y; x = 1; x");
 }
 
 #[test]
@@ -632,12 +632,12 @@ fn testConstDestructuringDeclInForOf_dropsConst() {
 #[test]
 fn testConstDestructuringInForOfCoalescedWithUseInBlock() {
     // TODO(b/121276933): coalesce `x` and `y`
-    inFunctionSame("var x = 1; for (let [y] of iter) { y }");
+    in_function_same("var x = 1; for (let [y] of iter) { y }");
 }
 
 #[test]
 fn testReplaceRhsOfDestructuringDeclaration() {
-    inFunction(
+    in_function(
         "let unused = 0; let arr = [1, 2, 3]; const [a, b, c] = arr; alert(a + b + c);",
         "var unused = 0; unused = [1, 2, 3]; const [a, b, c] = unused; alert(a + b + c);",
     );
@@ -858,7 +858,7 @@ fn testDeterministic() {
     //  a = { a, c }
     //  b = { b, d }
     //  e = { e }
-    inFunction(
+    in_function(
         "
 var a;
 var b;
@@ -886,7 +886,7 @@ e=1; a=1; e; a;",
     //  b = { b, e }
     //  d = { d, a }
     //  c = { c }
-    inFunction(
+    in_function(
         "
 var d,a,b,c,e;
 a=1; b=1; a; b;
@@ -907,30 +907,30 @@ b=1;d=1;b;d",
 // Sometimes live range can be cross even within a VAR declaration.
 #[test]
 fn testVarLiveRangeCross() {
-    inFunction("var a={}; var b=a.S(); b", "var a={};     a=a.S(); a");
+    in_function("var a={}; var b=a.S(); b", "var a={};     a=a.S(); a");
 
-    inFunction(
+    in_function(
         "var a = {}; var b = a.S(),     c = b.SS(); b; c",
         "var a = {};     a = a.S(); var c = a.SS(); a; c",
     );
 
-    inFunction(
+    in_function(
         "var a={}; var b=a.S(); var c=a.SS(); var d=a.SSS(); b; c; d",
         "var a={}; var b=a.S(); var c=a.SS();     a=a.SSS(); b; c; a",
     );
 
-    inFunction(
+    in_function(
         "var a={}; var b=a.S(); var c=a.SS(); var d=a.SSS(); b; c; d",
         "var a={}; var b=a.S(); var c=a.SS();     a=a.SSS(); b; c; a",
     );
 
-    inFunctionSame("var a={}; d=1; d; var b=a.S(); var c=a.SS(); var d=a.SSS(); b; c; d");
+    in_function_same("var a={}; d=1; d; var b=a.S(); var c=a.SS(); var d=a.SSS(); b; c; d");
 }
 
 #[test]
 fn testBug1445366() {
     // An assignment might not be complete if the RHS throws an exception.
-    inFunctionSame(
+    in_function_same(
         "var iframe = getFrame();
           try {
             var win = iframe.contentWindow;
@@ -945,7 +945,7 @@ fn testBug1445366() {
     );
 
     // Verify that we can still coalesce it if there are no handlers.
-    inFunction(
+    in_function(
         "var iframe = getFrame();
           var win = iframe.contentWindow;
           if (win) {
@@ -1031,7 +1031,7 @@ fn testCannotReuseAnyParamsBugWithDestructuring() {
 
 #[test]
 fn testForInWithAssignment() {
-    inFunction(
+    in_function(
         "function f(commands) {
             var k, v, ref;
             for (k in ref = commands) {
@@ -1132,29 +1132,29 @@ fn testMaxVars() {
     for i in 0..(crate::LiveVariablesAnalysis::MAX_VARIABLES_TO_ANALYZE + 1) {
         write!(&mut code, "var x{} = 0; print(x{});", i, i);
     }
-    inFunctionSame(&code);
+    in_function_same(&code);
 }
 
 // Testing Es6 features
 #[test]
 fn testCoalesceInInnerBlock() {
-    inFunction("{ var x = 1; var y = 2; y }", "{ var x = 1;     x = 2; x }");
+    in_function("{ var x = 1; var y = 2; y }", "{ var x = 1;     x = 2; x }");
 
-    inFunction("var x = 1; var y = 2; y;", "var x = 1;     x = 2; x;");
+    in_function("var x = 1; var y = 2; y;", "var x = 1;     x = 2; x;");
 }
 
 #[test]
 fn testLetSimple() {
-    inFunction("let x = 0; x; let y = 5; y", "var x = 0; x;     x = 5; x");
+    in_function("let x = 0; x; let y = 5; y", "var x = 0; x;     x = 5; x");
 
-    inFunction(
+    in_function(
         "var x = 1; var y = 2; { let z = 3; y; }",
         "var x = 1;     x = 2; { let z = 3; x; }",
     );
 
     // First let in a block - It is unsafe for { let x = 0; x; } let y = 1; to be coalesced as
     // { let x = 0; x; } x = 1; because x will be out of scope outside of the inner scope!
-    inFunction(
+    in_function(
         "{ let x = 0; x; } let y = 5; y;",
         "{ var x = 0; x; }     x = 5; x;",
     );
@@ -1166,32 +1166,32 @@ fn testLetSimple() {
 
 #[test]
 fn testLetDifferentBlocks() {
-    inFunction(
+    in_function(
         "var x = 0; if (1) { let y = 1; x } else { let z = 1; x }",
         "var x = 0; if (1) { var y = 1; x } else {     y = 1; x }",
     );
 
-    inFunction(
+    in_function(
         "var x = 0; if (1) { let y = 1; y } else { let z = 1 + x; z }",
         "var x = 0; if (1) {     x = 1; x } else {     x = 1 + x; x }",
     );
 
-    inFunction(
+    in_function(
         "var x = 0; if (1) { let y = 1; y } else { let z = 1; z }; x",
         "var x = 0; if (1) { var y = 1; y } else {     y = 1; y }; x",
     );
 
-    inFunction(
+    in_function(
         "if (1) { var x = 0; let y = 1; y + x} else { let z = 1; z } y;",
         "if (1) { var x = 0; let y = 1; y + x} else {     x = 1; x } y;",
     );
 
-    inFunction(
+    in_function(
         "if(1) { var x = 0; x } else { var y = 0; y }",
         "if(1) { var x = 0; x } else {     x = 0; x }",
     );
 
-    inFunction(
+    in_function(
         "if (a) {
              return a;
            } else {
@@ -1216,9 +1216,9 @@ fn testLetWhileLoops() {
     // Simple
     // It violates the temporal deadzone for let x = 1; while (1) { x = 2; x; let x = 0; x } to
     // be output.
-    inFunctionSame("let x = 1; for(;1;) { x; x = 2; let y = 0; y }");
+    in_function_same("let x = 1; for(;1;) { x; x = 2; let y = 0; y }");
 
-    inFunctionSame("let x = 1; for(;1;) { x = 2; x; let y = 0; y } x;");
+    in_function_same("let x = 1; for(;1;) { x = 2; x; let y = 0; y } x;");
 }
 
 #[test]
@@ -1226,12 +1226,12 @@ fn testLetForLoops() {
     // TODO (simranarora) We should get rid of declaration hoisting from the normalize pass.
     // Right now, because of declaration hoisting, this following test reads the expected code as:
     // var x = 1; for ( ; x < 10; x++) { let y = 2; x + y } x = 3
-    inFunction(
+    in_function(
         "for (let x = 1; x < 10; x ++) { let y = 2; x + y; } let z = 3;",
         "for(var x=1;x<10;x++){let y=2;x+y}x=3",
     );
 
-    inFunction(
+    in_function(
         "var w = 0; for (let x = 1; x < 10; x ++) { let y = 2; x + y; } var z = 3;",
         "var w = 0; for (    w = 1; w < 10; w ++) { let y = 2; w + y; }     w = 3;",
     );
@@ -1239,41 +1239,41 @@ fn testLetForLoops() {
     // Closure capture of the let variable
     // Here z should not be coalesced because variables used in functions are considered escaped
     // and this pass does not touch any escaped variables
-    inFunctionSame("let x = 3; for (let z = 1; z < 10; z++) { use(() => {z}); }");
+    in_function_same("let x = 3; for (let z = 1; z < 10; z++) { use(() => {z}); }");
 
-    inFunctionSame("for (let x = 1; x < 10; x++) { use(() => {x}); } let z = 3;");
+    in_function_same("for (let x = 1; x < 10; x++) { use(() => {x}); } let z = 3;");
 
     // Multiple lets declared in loop head
-    inFunctionSame("for (let x = 1, y = 2, z = 3; (x + z) < 10; x ++) { x + z; }");
+    in_function_same("for (let x = 1, y = 2, z = 3; (x + z) < 10; x ++) { x + z; }");
 
     // Here the variable y is redeclared because the variable z in the header of the for-loop has
     // not been declared before
-    inFunctionSame("let y = 2; for (let x = 1, z = 3; (x + z) < 10; x ++) { x + z; }");
+    in_function_same("let y = 2; for (let x = 1, z = 3; (x + z) < 10; x ++) { x + z; }");
 }
 
 #[test]
 fn testArrowFunctions() {
-    inFunction(
+    in_function(
         "var x = 1; var y = () => { let z = 0; z }",
         "var x = 1;     x = () => { let z = 0; z }",
     );
 
-    inFunction(
+    in_function(
         "var x = 1; var y = () => { let z = 0; z }; y();",
         "var x = 1;     x = () => { let z = 0; z }; x();",
     );
 
-    inFunction(
+    in_function(
         "var x = 1; var y = () => { let z = 0; z }; x;",
         "var x = 1; var y = () => { let z = 0; z }; x;",
     );
 
-    inFunction(
+    in_function(
         "var x = () => { let z = 0; let y = 1; y }",
         "var x = () => { var z = 0;     z = 1; z }",
     );
 
-    inFunction(
+    in_function(
         "
         var x = 1; var y = 2; var f = () => x + 1",
         "
@@ -1281,14 +1281,14 @@ fn testArrowFunctions() {
     );
 
     // Coalesce with arrow function parameters
-    inFunction(
+    in_function(
         "
     (x) => { var y = 1; y; }",
         "
     (x) => {     x = 1; x; }",
     );
 
-    inFunction(
+    in_function(
         "
     (x) => { let y = 1; y; }",
         "
@@ -1362,11 +1362,11 @@ fn testCodeWithTwoFunctions() {
 //     );
 // }
 
-fn inFunctionSame(src: &str) {
+fn in_function_same(src: &str) {
     test_same(&format!("function FUNC(){{{src}}}"));
 }
 
-fn inFunction(src: &str, expected: &str) {
+fn in_function(src: &str, expected: &str) {
     test_transform(
         &format!("function FUNC(){{{src}}}"),
         &format!("function FUNC(){{{expected}}}"),

@@ -353,7 +353,7 @@ fn create_renaming_map(store: &mut Store, points_to: Graph) -> FxHashMap<NodeId,
     let mut name_gen = DefaultNameGenerator::new(FxHashSet::default());
     let mut colour_map = Vec::with_capacity(cur_colour as usize);
     for _ in 0..cur_colour {
-        colour_map.push(name_gen.generateNextName());
+        colour_map.push(name_gen.generate_next_name());
     }
 
     let mut rename_map = FxHashMap::default();

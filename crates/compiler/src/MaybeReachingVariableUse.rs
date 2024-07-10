@@ -18,8 +18,8 @@ mod tests;
 // TODO: temp pub fields:
 #[derive(Debug)]
 pub struct MaybeReachingResult<'ast> {
-    pub scopeVariables: FxHashMap<Id, VarId>,
-    pub orderedVars: IndexVec<VarId, Id>,
+    pub scope_variables: FxHashMap<Id, VarId>,
+    pub ordered_vars: IndexVec<VarId, Id>,
     pub lattice_elements: IndexVec<LatticeElementId, ReachingUses>,
     pub cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
 }
@@ -34,17 +34,17 @@ impl<'ast> MaybeReachingResult<'ast> {
      * @param defNode the control flow graph node that may assign a value to {@code name}
      * @return the list of upward exposed uses of the variable {@code name} at defNode.
      */
-    pub fn getUses(&self, name: &Id, defNode: Node) -> Option<&Vec<NodeId>> {
-        if let Some(var) = self.scopeVariables.get(name) {
-            let ann = self.cfg.node_annotations.get(&defNode).unwrap();
+    pub fn get_uses(&self, name: &Id, def_node: Node) -> Option<&Vec<NodeId>> {
+        if let Some(var) = self.scope_variables.get(name) {
+            let ann = self.cfg.node_annotations.get(&def_node).unwrap();
             dbg!(
                 name,
                 var,
-                defNode,
+                def_node,
                 ann,
-                self.lattice_elements[ann.out].mayUseMap.get(*var)
+                self.lattice_elements[ann.out].may_use_map.get(*var)
             );
-            self.lattice_elements[ann.out].mayUseMap.get(*var)
+            self.lattice_elements[ann.out].may_use_map.get(*var)
         } else {
             None
         }
@@ -65,27 +65,27 @@ where
 {
     pub fn new(
         cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
-        nodePriorities: &'a [NodePriority],
+        node_priorities: &'a [NodePriority],
         fn_scope: &'a T,
-        allVarsDeclaredInFunction: AllVarsDeclaredInFunction,
+        all_vars_declared_in_function: AllVarsDeclaredInFunction,
     ) -> Self {
         let inner = Inner {
-            num_vars: allVarsDeclaredInFunction.ordered_vars.len(),
+            num_vars: all_vars_declared_in_function.ordered_vars.len(),
             fn_scope,
 
-            escaped: computeEscaped(
+            escaped: compute_escaped(
                 fn_scope,
-                &allVarsDeclaredInFunction.scopeVariables,
-                allVarsDeclaredInFunction.catch_vars,
+                &all_vars_declared_in_function.scope_variables,
+                all_vars_declared_in_function.catch_vars,
             ),
-            scopeVariables: allVarsDeclaredInFunction.scopeVariables,
-            orderedVars: allVarsDeclaredInFunction.ordered_vars,
-            params: allVarsDeclaredInFunction.params,
-            fn_and_class_names: allVarsDeclaredInFunction.fn_and_class_names,
+            scope_variables: all_vars_declared_in_function.scope_variables,
+            ordered_vars: all_vars_declared_in_function.ordered_vars,
+            params: all_vars_declared_in_function.params,
+            fn_and_class_names: all_vars_declared_in_function.fn_and_class_names,
             lattice_elements: IndexVec::default(),
             cfg,
         };
-        let data_flow_analysis = DataFlowAnalysis::new(inner, nodePriorities);
+        let data_flow_analysis = DataFlowAnalysis::new(inner, node_priorities);
 
         Self { data_flow_analysis }
     }
@@ -94,8 +94,8 @@ where
         self.data_flow_analysis.analyze();
 
         MaybeReachingResult {
-            scopeVariables: self.data_flow_analysis.inner.scopeVariables,
-            orderedVars: self.data_flow_analysis.inner.orderedVars,
+            scope_variables: self.data_flow_analysis.inner.scope_variables,
+            ordered_vars: self.data_flow_analysis.inner.ordered_vars,
             lattice_elements: self.data_flow_analysis.inner.lattice_elements,
             cfg: self.data_flow_analysis.inner.cfg,
         }
@@ -113,9 +113,9 @@ where
     // Maps the variable name to it's position
     // in this jsScope were we to combine the function and function body scopes. The Integer
     // represents the equivalent of the variable index property within a scope
-    scopeVariables: FxHashMap<Id, VarId>,
+    scope_variables: FxHashMap<Id, VarId>,
     // obtain variables in the order in which they appear in the code
-    orderedVars: IndexVec<VarId, Id>,
+    ordered_vars: IndexVec<VarId, Id>,
     params: FxHashSet<VarId>,
     fn_and_class_names: FxHashSet<VarId>,
 
@@ -127,10 +127,10 @@ impl<'ast, 'a, T> Inner<'ast, 'a, T>
 where
     T: FunctionLike<'a>,
 {
-    fn hasExceptionHandler(&self, cfgNode: Node<'ast>) -> bool {
+    fn has_exception_handler(&self, cfg_node: Node<'ast>) -> bool {
         self.cfg
             .graph
-            .edges_directed(self.cfg.map[&cfgNode], Outgoing)
+            .edges_directed(self.cfg.map[&cfg_node], Outgoing)
             .any(|e| *e.weight() == Branch::ON_EX)
     }
 
@@ -143,10 +143,10 @@ where
      * @param conditional Whether {@code n} is only conditionally evaluated given that {@code cfgNode}
      *     is evaluated. Do not remove conditionally redefined variables from the reaching uses set.
      */
-    fn computeMayUse(
+    fn compute_may_use(
         &mut self,
         n: Node<'ast>,
-        cfgNode: Node<'ast>,
+        cfg_node: Node<'ast>,
         output: &mut ReachingUses,
         conditional: bool,
     ) {
@@ -154,7 +154,7 @@ where
             output,
             conditional,
             analysis: self,
-            cfgNode,
+            cfg_node,
             in_lhs: false,
             in_destructuring: false,
         };
@@ -165,12 +165,12 @@ where
      * Sets the variable for the given name to the node value in the upward exposed lattice. Do
      * nothing if the variable name is one of the escaped variable.
      */
-    fn addToUseIfLocal(&mut self, name: &Ident, node: Node<'ast>, usage: &mut ReachingUses) {
+    fn add_to_use_if_local(&mut self, name: &Ident, node: Node<'ast>, usage: &mut ReachingUses) {
         let id = name.to_id();
-        dbg!(name, self.scopeVariables.get(&id));
-        if let Some(var) = self.scopeVariables.get(&id) {
+        dbg!(name, self.scope_variables.get(&id));
+        if let Some(var) = self.scope_variables.get(&id) {
             if !self.escaped.contains(&id) {
-                usage.mayUseMap.put(*var, node.node_id);
+                usage.may_use_map.put(*var, node.node_id);
             }
         }
     }
@@ -179,11 +179,11 @@ where
      * Removes the variable for the given name from the node value in the upward exposed lattice. Do
      * nothing if the variable name is one of the escaped variable.
      */
-    fn removeFromUseIfLocal(&mut self, name: &Ident, usage: &mut ReachingUses) {
+    fn remove_from_use_if_local(&mut self, name: &Ident, usage: &mut ReachingUses) {
         let id = name.to_id();
-        if let Some(var) = self.scopeVariables.get(&id) {
+        if let Some(var) = self.scope_variables.get(&id) {
             if !self.escaped.contains(&id) {
-                usage.mayUseMap.remove(var);
+                usage.may_use_map.remove(var);
             }
         }
     }
@@ -196,7 +196,7 @@ where
     output: &'b mut ReachingUses,
     conditional: bool,
     analysis: &'b mut Inner<'ast, 'a, T>,
-    cfgNode: Node<'ast>,
+    cfg_node: Node<'ast>,
     in_lhs: bool,
     in_destructuring: bool,
 }
@@ -234,11 +234,12 @@ where
         if self.in_lhs && self.in_destructuring {
             if !self.conditional {
                 println!("c");
-                self.analysis.removeFromUseIfLocal(node, &mut self.output);
+                self.analysis
+                    .remove_from_use_if_local(node, &mut self.output);
             }
         } else {
             self.analysis
-                .addToUseIfLocal(node, self.cfgNode, &mut self.output);
+                .add_to_use_if_local(node, self.cfg_node, &mut self.output);
         }
     }
     // The key of AssignPatProp is LHS but is an Ident, so won't be caught by
@@ -274,7 +275,7 @@ where
         if let Pat::Ident(lhs) = lhs {
             if !self.conditional {
                 self.analysis
-                    .removeFromUseIfLocal(&lhs.id, &mut self.output);
+                    .remove_from_use_if_local(&lhs.id, &mut self.output);
             }
         } else {
             debug_assert!(matches!(lhs, Pat::Object(_) | Pat::Array(_)));
@@ -295,7 +296,7 @@ where
         if let Pat::Ident(lhs) = lhs {
             if !self.conditional {
                 self.analysis
-                    .removeFromUseIfLocal(&lhs.id, &mut self.output);
+                    .remove_from_use_if_local(&lhs.id, &mut self.output);
             }
         } else {
             debug_assert!(matches!(lhs, Pat::Object(_) | Pat::Array(_)));
@@ -363,7 +364,7 @@ where
                 node.init.visit_with(self);
                 if !self.conditional {
                     self.analysis
-                        .removeFromUseIfLocal(&name.id, &mut self.output);
+                        .remove_from_use_if_local(&name.id, &mut self.output);
                 }
             }
             _ => {
@@ -383,7 +384,7 @@ where
                 // assigning to the name occurs after evaluating the default value
                 if !self.conditional {
                     self.analysis
-                        .removeFromUseIfLocal(&left.id, &mut self.output);
+                        .remove_from_use_if_local(&left.id, &mut self.output);
                 }
                 let old = self.conditional;
                 self.conditional = true;
@@ -447,14 +448,14 @@ where
             if !is_logical_assign && !self.conditional {
                 println!("a");
                 self.analysis
-                    .removeFromUseIfLocal(lhs_ident, &mut self.output);
+                    .remove_from_use_if_local(lhs_ident, &mut self.output);
             }
 
             // In case of a += "Hello". There is a read of a.
             if !is_assign {
                 println!("b");
                 self.analysis
-                    .addToUseIfLocal(lhs_ident, self.cfgNode, &mut self.output);
+                    .add_to_use_if_local(lhs_ident, self.cfg_node, &mut self.output);
             }
 
             self.in_lhs = false;
@@ -941,19 +942,19 @@ where
         self.lattice_elements.push(element)
     }
 
-    fn isForward(&self) -> bool {
+    fn is_forward(&self) -> bool {
         false
     }
 
-    fn createEntryLattice(&mut self) -> LatticeElementId {
+    fn create_entry_lattice(&mut self) -> LatticeElementId {
         self.add_lattice_element(ReachingUses::default())
     }
 
-    fn createInitialEstimateLattice(&mut self) -> LatticeElementId {
-        self.createEntryLattice()
+    fn create_initial_estimate_lattice(&mut self) -> LatticeElementId {
+        self.create_entry_lattice()
     }
 
-    fn createFlowJoiner(&self) -> ReachingUsesJoinOp {
+    fn create_flow_joiner(&self) -> ReachingUsesJoinOp {
         ReachingUsesJoinOp::default()
     }
 
@@ -968,14 +969,14 @@ where
      *     `LinearFlowState.in` in the previous iteration, or the initial lattice element if this is
      *     the first iteration.
      */
-    fn flowThrough(&mut self, node: Node<'ast>, input: LatticeElementId) -> LatticeElementId {
+    fn flow_through(&mut self, node: Node<'ast>, input: LatticeElementId) -> LatticeElementId {
         let mut output = self.lattice_elements[input].clone();
 
         // If there's an ON_EX edge, this cfgNode may or may not get executed.
         // We can express this concisely by just pretending this happens in
         // a conditional.
-        let conditional = self.hasExceptionHandler(node);
-        self.computeMayUse(node, node, &mut output, conditional);
+        let conditional = self.has_exception_handler(node);
+        self.compute_may_use(node, node, &mut output, conditional);
 
         if output != self.lattice_elements[input] {
             // dbg!(&self.lattice_elements[input], &output);
@@ -1033,7 +1034,7 @@ where
 #[derive(Default, Clone, PartialEq, Debug)]
 pub struct ReachingUses {
     // Maps variables to all their uses that are upward exposed at the current cfgNode.
-    mayUseMap: MultiMap<VarId, NodeId>,
+    may_use_map: MultiMap<VarId, NodeId>,
     // public ReachingUses() {}
 
     // /**
@@ -1076,10 +1077,10 @@ impl<'ast, 'a, T> FlowJoiner<ReachingUses, Inner<'ast, 'a, T>> for ReachingUsesJ
 where
     T: FunctionLike<'a>,
 {
-    fn joinFlow(&mut self, inner: &mut Inner<'ast, 'a, T>, input: LatticeElementId) {
-        for (k, v) in inner.lattice_elements[input].mayUseMap.iter() {
+    fn join_flow(&mut self, inner: &mut Inner<'ast, 'a, T>, input: LatticeElementId) {
+        for (k, v) in inner.lattice_elements[input].may_use_map.iter() {
             for v in v {
-                self.result.mayUseMap.put(*k, *v);
+                self.result.may_use_map.put(*k, *v);
             }
         }
         // TODO:

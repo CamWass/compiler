@@ -45,7 +45,7 @@ where
     /// Using the coloring as partitions, finds the node that represents that
     /// partition as the super node. The first to retrieve its partition will
     /// become the super node.
-    pub fn getPartitionSuperNode(&mut self, node: &T) -> &T {
+    pub fn get_partition_super_node(&mut self, node: &T) -> &T {
         let color = self.color_map[node];
         self.partitions[color]
             .super_node
@@ -67,7 +67,7 @@ where
     pub fn color<C, W, S, F>(
         &mut self,
         mut nodes: Vec<T>,
-        mut tieBreaker: C,
+        mut tie_breaker: C,
         mut weight: W,
         mut make_subgraph: F,
     ) -> usize
@@ -87,7 +87,7 @@ where
         nodes.sort_unstable_by(|a, b| {
             let result = weight(b).cmp(&weight(a));
             if result.is_eq() {
-                tieBreaker(a, b)
+                tie_breaker(a, b)
             } else {
                 result
             }
@@ -99,8 +99,8 @@ where
         loop {
             let mut subgraph = make_subgraph();
             nodes.retain(|node| {
-                if subgraph.isIndependentOf(node) {
-                    subgraph.addNode(node.clone());
+                if subgraph.is_independent_of(node) {
+                    subgraph.add_node(node.clone());
                     let color = GraphColor::from_usize(count);
                     self.color_map.insert(node.clone(), color);
                     match self.partitions.get_mut(color) {
@@ -131,10 +131,10 @@ where
 
 pub trait SubGraph<N> {
     /// Returns true if the node is a neighbor of any node in this SubGraph.
-    fn isIndependentOf(&self, node: &N) -> bool;
+    fn is_independent_of(&self, node: &N) -> bool;
 
     /// Adds the node into this subgraph.
-    fn addNode(&mut self, value: N);
+    fn add_node(&mut self, value: N);
 }
 
 struct Partition<T> {

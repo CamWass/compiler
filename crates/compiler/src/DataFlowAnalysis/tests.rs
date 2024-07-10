@@ -85,7 +85,7 @@ enum Instruction {
 }
 
 impl Instruction {
-    fn newAssignNumberToVariableInstruction(res: Variable, num: usize) -> Instruction {
+    fn new_assign_number_to_variable_instruction(res: Variable, num: usize) -> Instruction {
         Instruction::ArithmeticInstruction(ArithmeticInstruction {
             result: res,
             operand1: Value::NumberValue(NumberValue::new(num)),
@@ -94,7 +94,7 @@ impl Instruction {
         })
     }
 
-    fn newAssignVariableToVariableInstruction(lhs: Variable, rhs: Variable) -> Instruction {
+    fn new_assign_variable_to_variable_instruction(lhs: Variable, rhs: Variable) -> Instruction {
         Instruction::ArithmeticInstruction(ArithmeticInstruction {
             result: lhs,
             operand1: Value::Variable(rhs),
@@ -160,15 +160,15 @@ impl BranchInstruction {
  */
 #[derive(Default, Clone, PartialEq, Debug)]
 struct ConstPropLatticeElement {
-    constMap: FxHashMap<Value, usize>,
-    isTop: bool,
+    const_map: FxHashMap<Value, usize>,
+    is_top: bool,
 }
 
 impl ConstPropLatticeElement {
-    fn new(isTop: bool) -> Self {
+    fn new(is_top: bool) -> Self {
         Self {
-            constMap: Default::default(),
-            isTop,
+            const_map: Default::default(),
+            is_top,
         }
     }
 }
@@ -198,19 +198,19 @@ impl<I> ConstPropJoinOp<I> {
     fn apply(a: &ConstPropLatticeElement, b: &ConstPropLatticeElement) -> ConstPropLatticeElement {
         let mut result = ConstPropLatticeElement::default();
         // By the definition of TOP of the lattice.
-        if a.isTop {
+        if a.is_top {
             return a.clone();
         }
-        if b.isTop {
+        if b.is_top {
             return b.clone();
         }
         // Do the join for each variable's lattice.
-        for var in a.constMap.keys() {
-            if let Some(number) = b.constMap.get(var) {
+        for var in a.const_map.keys() {
+            if let Some(number) = b.const_map.get(var) {
                 // The result will contain that variable as a known constant
                 // if both lattice has that variable the same constant.
-                if a.constMap[var] == *number {
-                    result.constMap.insert(*var, *number);
+                if a.const_map[var] == *number {
+                    result.const_map.insert(*var, *number);
                 }
             }
         }
@@ -222,7 +222,7 @@ impl<I> FlowJoiner<ConstPropLatticeElement, I> for ConstPropJoinOp<I>
 where
     I: HasLatticeElements<ConstPropLatticeElement>,
 {
-    fn joinFlow(&mut self, inner: &mut I, input: LatticeElementId) {
+    fn join_flow(&mut self, inner: &mut I, input: LatticeElementId) {
         self.result = Some(if let Some(result) = &self.result {
             ConstPropJoinOp::<I>::apply(result, inner.get_lattice_element(input))
         } else {
@@ -258,27 +258,27 @@ impl
         self.lattice_elements.push(element)
     }
 
-    fn isForward(&self) -> bool {
+    fn is_forward(&self) -> bool {
         true
     }
 
-    fn createEntryLattice(&mut self) -> LatticeElementId {
+    fn create_entry_lattice(&mut self) -> LatticeElementId {
         self.add_lattice_element(ConstPropLatticeElement::default())
     }
 
-    fn createInitialEstimateLattice(&mut self) -> LatticeElementId {
+    fn create_initial_estimate_lattice(&mut self) -> LatticeElementId {
         self.add_lattice_element(ConstPropLatticeElement::new(true))
     }
 
-    fn createFlowJoiner(&self) -> ConstPropJoinOp<DummyConstPropagationInner> {
+    fn create_flow_joiner(&self) -> ConstPropJoinOp<DummyConstPropagationInner> {
         ConstPropJoinOp::default()
     }
 
-    fn flowThrough(&mut self, node: Instruction, input: LatticeElementId) -> LatticeElementId {
+    fn flow_through(&mut self, node: Instruction, input: LatticeElementId) -> LatticeElementId {
         let elem = match node {
             Instruction::BranchInstruction(_) => self.lattice_elements[input].clone(),
             Instruction::ArithmeticInstruction(n) => {
-                flowThroughArithmeticInstruction(n, &self.lattice_elements[input])
+                flow_through_arithmetic_instruction(n, &self.lattice_elements[input])
             }
             _ => unreachable!(),
         };
@@ -300,46 +300,46 @@ impl Index<LatticeElementId> for DummyConstPropagationInner {
     }
 }
 
-fn flowThroughArithmeticInstruction(
-    aInst: ArithmeticInstruction,
+fn flow_through_arithmetic_instruction(
+    a_inst: ArithmeticInstruction,
     input: &ConstPropLatticeElement,
 ) -> ConstPropLatticeElement {
     let mut out = input.clone();
     // Try to see if left is a number. If it is a variable, it might already
     // be a constant coming in.
-    let mut leftConst = None;
-    if let Value::NumberValue(n) = aInst.operand1 {
-        leftConst = Some(n.value);
+    let mut left_const = None;
+    if let Value::NumberValue(n) = a_inst.operand1 {
+        left_const = Some(n.value);
     } else {
-        if let Some(n) = input.constMap.get(&aInst.operand1) {
-            leftConst = Some(*n);
+        if let Some(n) = input.const_map.get(&a_inst.operand1) {
+            left_const = Some(*n);
         }
     }
 
     // Do the same thing to the right.
-    let mut rightConst = None;
-    if let Value::NumberValue(n) = aInst.operand2 {
-        rightConst = Some(n.value);
+    let mut right_const = None;
+    if let Value::NumberValue(n) = a_inst.operand2 {
+        right_const = Some(n.value);
     } else {
-        if let Some(n) = input.constMap.get(&aInst.operand2) {
-            rightConst = Some(*n);
+        if let Some(n) = input.const_map.get(&a_inst.operand2) {
+            right_const = Some(*n);
         }
     }
 
     // If both are known constant we can perform the operation.
-    if let (Some(leftConst), Some(rightConst)) = (leftConst, rightConst) {
-        let constResult = match aInst.operation {
-            Operation::ADD => leftConst + rightConst,
-            Operation::SUB => leftConst - rightConst,
-            Operation::DIV => leftConst * rightConst,
-            Operation::MUL => leftConst / rightConst,
+    if let (Some(left_const), Some(right_const)) = (left_const, right_const) {
+        let const_result = match a_inst.operation {
+            Operation::ADD => left_const + right_const,
+            Operation::SUB => left_const - right_const,
+            Operation::DIV => left_const * right_const,
+            Operation::MUL => left_const / right_const,
         };
         // Put it in the map. (Possibly replacing the existing constant value)
-        out.constMap
-            .insert(Value::Variable(aInst.result), constResult);
+        out.const_map
+            .insert(Value::Variable(a_inst.result), const_result);
     } else {
         // If we cannot find a constant for it
-        out.constMap.remove(&Value::Variable(aInst.result));
+        out.const_map.remove(&Value::Variable(a_inst.result));
     }
     out
 }
@@ -360,7 +360,7 @@ struct DummyConstPropagation<'p> {
 impl<'p> DummyConstPropagation<'p> {
     fn new(
         cfg: ControlFlowGraph<Instruction, LinearFlowState, LatticeElementId>,
-        nodePriorities: &'p [NodePriority],
+        node_priorities: &'p [NodePriority],
     ) -> Self {
         Self {
             data_flow_analysis: DataFlowAnalysis::new(
@@ -368,7 +368,7 @@ impl<'p> DummyConstPropagation<'p> {
                     lattice_elements: IndexVec::default(),
                     cfg,
                 },
-                nodePriorities,
+                node_priorities,
             ),
         }
     }
@@ -377,22 +377,26 @@ impl<'p> DummyConstPropagation<'p> {
         self.data_flow_analysis.analyze();
     }
 
-    fn verifyInHas(&self, node: Instruction, var: Variable, constant: Option<usize>) {
-        let fState = &self.data_flow_analysis.inner.cfg.node_annotations[&node];
-        veritfyLatticeElementHas(&self.data_flow_analysis.inner[fState.in_], var, constant);
+    fn verify_in_has(&self, node: Instruction, var: Variable, constant: Option<usize>) {
+        let f_state = &self.data_flow_analysis.inner.cfg.node_annotations[&node];
+        veritfy_lattice_element_has(&self.data_flow_analysis.inner[f_state.in_], var, constant);
     }
 
-    fn verifyOutHas(&self, node: Instruction, var: Variable, constant: Option<usize>) {
-        let fState = &self.data_flow_analysis.inner.cfg.node_annotations[&node];
-        veritfyLatticeElementHas(&self.data_flow_analysis.inner[fState.out], var, constant);
+    fn verify_out_has(&self, node: Instruction, var: Variable, constant: Option<usize>) {
+        let f_state = &self.data_flow_analysis.inner.cfg.node_annotations[&node];
+        veritfy_lattice_element_has(&self.data_flow_analysis.inner[f_state.out], var, constant);
     }
 }
 
-fn veritfyLatticeElementHas(el: &ConstPropLatticeElement, var: Variable, constant: Option<usize>) {
+fn veritfy_lattice_element_has(
+    el: &ConstPropLatticeElement,
+    var: Variable,
+    constant: Option<usize>,
+) {
     if let Some(constant) = constant {
-        assert_eq!(el.constMap.get(&Value::Variable(var)), Some(&constant));
+        assert_eq!(el.const_map.get(&Value::Variable(var)), Some(&constant));
     } else {
-        assert!(!el.constMap.contains_key(&Value::Variable(var)));
+        assert!(!el.const_map.contains_key(&Value::Variable(var)));
     }
 }
 
@@ -403,9 +407,9 @@ fn testSimpleIf() {
     let b = Variable::new("b");
     let c = Variable::new("c");
     let n1 = Instruction::BranchInstruction(BranchInstruction::new(Value::Variable(a)));
-    let n2 = Instruction::newAssignNumberToVariableInstruction(b, 1);
-    let n3 = Instruction::newAssignNumberToVariableInstruction(b, 1);
-    let n4 = Instruction::newAssignVariableToVariableInstruction(c, b);
+    let n2 = Instruction::new_assign_number_to_variable_instruction(b, 1);
+    let n3 = Instruction::new_assign_number_to_variable_instruction(b, 1);
+    let n4 = Instruction::new_assign_variable_to_variable_instruction(c, b);
     let mut cfg = ControlFlowGraph::new(n1);
 
     cfg.create_edge(n1, Branch::ON_FALSE, n2);
@@ -414,45 +418,45 @@ fn testSimpleIf() {
     cfg.create_edge(n3, Branch::UNCOND, n4);
 
     let cfa = ControlFlowAnalysisResult {
-        nodePriorities: cfg.graph.node_indices().map(|i| i.index() as u32).collect(),
+        node_priorities: cfg.graph.node_indices().map(|i| i.index() as u32).collect(),
         cfg,
     };
 
-    let mut constProp = DummyConstPropagation::new(cfa.cfg, &cfa.nodePriorities);
-    constProp.analyze();
+    let mut const_prop = DummyConstPropagation::new(cfa.cfg, &cfa.node_priorities);
+    const_prop.analyze();
 
     // We cannot conclude anything from if (a).
-    constProp.verifyInHas(n1, a, None);
-    constProp.verifyInHas(n1, b, None);
-    constProp.verifyInHas(n1, c, None);
-    constProp.verifyOutHas(n1, a, None);
-    constProp.verifyOutHas(n1, b, None);
-    constProp.verifyOutHas(n1, c, None);
+    const_prop.verify_in_has(n1, a, None);
+    const_prop.verify_in_has(n1, b, None);
+    const_prop.verify_in_has(n1, c, None);
+    const_prop.verify_out_has(n1, a, None);
+    const_prop.verify_out_has(n1, b, None);
+    const_prop.verify_out_has(n1, c, None);
 
     // We can conclude b = 1 after the instruction.
-    constProp.verifyInHas(n2, a, None);
-    constProp.verifyInHas(n2, b, None);
-    constProp.verifyInHas(n2, c, None);
-    constProp.verifyOutHas(n2, a, None);
-    constProp.verifyOutHas(n2, b, Some(1));
-    constProp.verifyOutHas(n2, c, None);
+    const_prop.verify_in_has(n2, a, None);
+    const_prop.verify_in_has(n2, b, None);
+    const_prop.verify_in_has(n2, c, None);
+    const_prop.verify_out_has(n2, a, None);
+    const_prop.verify_out_has(n2, b, Some(1));
+    const_prop.verify_out_has(n2, c, None);
 
     // Same as above.
-    constProp.verifyInHas(n3, a, None);
-    constProp.verifyInHas(n3, b, None);
-    constProp.verifyInHas(n3, c, None);
-    constProp.verifyOutHas(n3, a, None);
-    constProp.verifyOutHas(n3, b, Some(1));
-    constProp.verifyOutHas(n3, c, None);
+    const_prop.verify_in_has(n3, a, None);
+    const_prop.verify_in_has(n3, b, None);
+    const_prop.verify_in_has(n3, c, None);
+    const_prop.verify_out_has(n3, a, None);
+    const_prop.verify_out_has(n3, b, Some(1));
+    const_prop.verify_out_has(n3, c, None);
 
     // After the merge we should still have b = 1.
-    constProp.verifyInHas(n4, a, None);
-    constProp.verifyInHas(n4, b, Some(1));
-    constProp.verifyInHas(n4, c, None);
-    constProp.verifyOutHas(n4, a, None);
+    const_prop.verify_in_has(n4, a, None);
+    const_prop.verify_in_has(n4, b, Some(1));
+    const_prop.verify_in_has(n4, c, None);
+    const_prop.verify_out_has(n4, a, None);
     // After the instruction both b and c are 1.
-    constProp.verifyOutHas(n4, b, Some(1));
-    constProp.verifyOutHas(n4, c, Some(1));
+    const_prop.verify_out_has(n4, b, Some(1));
+    const_prop.verify_out_has(n4, c, Some(1));
 }
 
 #[test]
@@ -461,7 +465,7 @@ fn testSimpleLoop() {
     let a = Variable::new("a");
     let b = Variable::new("b");
     let c = Variable::new("c");
-    let n1 = Instruction::newAssignNumberToVariableInstruction(a, 0);
+    let n1 = Instruction::new_assign_number_to_variable_instruction(a, 0);
     let n2 = Instruction::ArithmeticInstruction(ArithmeticInstruction {
         result: a,
         operand1: Value::Variable(a),
@@ -469,7 +473,7 @@ fn testSimpleLoop() {
         operand2: Value::NumberValue(NumberValue::new(1)),
     });
     let n3 = Instruction::BranchInstruction(BranchInstruction::new(Value::Variable(b)));
-    let n4 = Instruction::newAssignVariableToVariableInstruction(c, a);
+    let n4 = Instruction::new_assign_variable_to_variable_instruction(c, a);
     let mut cfg = ControlFlowGraph::new(n1);
     cfg.create_edge(n1, Branch::UNCOND, n2);
     cfg.create_edge(n2, Branch::UNCOND, n3);
@@ -477,44 +481,44 @@ fn testSimpleLoop() {
     cfg.create_edge(n3, Branch::ON_FALSE, n4);
 
     let cfa = ControlFlowAnalysisResult {
-        nodePriorities: cfg.graph.node_indices().map(|i| i.index() as u32).collect(),
+        node_priorities: cfg.graph.node_indices().map(|i| i.index() as u32).collect(),
         cfg,
     };
 
-    let mut constProp = DummyConstPropagation::new(cfa.cfg, &cfa.nodePriorities);
+    let mut const_prop = DummyConstPropagation::new(cfa.cfg, &cfa.node_priorities);
     // This will also show that the framework terminates properly.
-    constProp.data_flow_analysis.analyze();
+    const_prop.data_flow_analysis.analyze();
 
     // a = 0 is the only thing we know.
-    constProp.verifyInHas(n1, a, None);
-    constProp.verifyInHas(n1, b, None);
-    constProp.verifyInHas(n1, c, None);
-    constProp.verifyOutHas(n1, a, Some(0));
-    constProp.verifyOutHas(n1, b, None);
-    constProp.verifyOutHas(n1, c, None);
+    const_prop.verify_in_has(n1, a, None);
+    const_prop.verify_in_has(n1, b, None);
+    const_prop.verify_in_has(n1, c, None);
+    const_prop.verify_out_has(n1, a, Some(0));
+    const_prop.verify_out_has(n1, b, None);
+    const_prop.verify_out_has(n1, c, None);
 
     // Nothing is provable in this program, so confirm that we haven't
     // erroneously "proven" something.
-    constProp.verifyInHas(n2, a, None);
-    constProp.verifyInHas(n2, b, None);
-    constProp.verifyInHas(n2, c, None);
-    constProp.verifyOutHas(n2, a, None);
-    constProp.verifyOutHas(n2, b, None);
-    constProp.verifyOutHas(n2, c, None);
+    const_prop.verify_in_has(n2, a, None);
+    const_prop.verify_in_has(n2, b, None);
+    const_prop.verify_in_has(n2, c, None);
+    const_prop.verify_out_has(n2, a, None);
+    const_prop.verify_out_has(n2, b, None);
+    const_prop.verify_out_has(n2, c, None);
 
-    constProp.verifyInHas(n3, a, None);
-    constProp.verifyInHas(n3, b, None);
-    constProp.verifyInHas(n3, c, None);
-    constProp.verifyOutHas(n3, a, None);
-    constProp.verifyOutHas(n3, b, None);
-    constProp.verifyOutHas(n3, c, None);
+    const_prop.verify_in_has(n3, a, None);
+    const_prop.verify_in_has(n3, b, None);
+    const_prop.verify_in_has(n3, c, None);
+    const_prop.verify_out_has(n3, a, None);
+    const_prop.verify_out_has(n3, b, None);
+    const_prop.verify_out_has(n3, c, None);
 
-    constProp.verifyInHas(n4, a, None);
-    constProp.verifyInHas(n4, b, None);
-    constProp.verifyInHas(n4, c, None);
-    constProp.verifyOutHas(n4, a, None);
-    constProp.verifyOutHas(n4, b, None);
-    constProp.verifyOutHas(n4, c, None);
+    const_prop.verify_in_has(n4, a, None);
+    const_prop.verify_in_has(n4, b, None);
+    const_prop.verify_in_has(n4, c, None);
+    const_prop.verify_out_has(n4, a, None);
+    const_prop.verify_out_has(n4, b, None);
+    const_prop.verify_out_has(n4, c, None);
 }
 
 // tests for computeEscaped method
@@ -603,16 +607,16 @@ fn computeEscapedLocals(src: &str) -> FxHashSet<Id> {
         let cfa = ControlFlowAnalysis::analyze(ControlFlowRoot::Function(function), false);
 
         // All variables declared in function
-        let allVarsDeclaredInFunction = find_vars_declared_in_fn(function, false);
+        let all_vars_declared_in_function = find_vars_declared_in_fn(function, false);
 
         let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 
         // Compute liveness of variables
         let liveness = LiveVariablesAnalysis::new(
             cfa.cfg,
-            &cfa.nodePriorities,
+            &cfa.node_priorities,
             function,
-            allVarsDeclaredInFunction,
+            all_vars_declared_in_function,
             unresolved_ctxt,
         );
         liveness.analyze().0.escaped_locals
@@ -660,23 +664,23 @@ impl DataFlowAnalysisInner<Counter, Step, DivergentFlowJoiner> for DivergentAnal
         self.lattice_elements.push(element)
     }
 
-    fn isForward(&self) -> bool {
+    fn is_forward(&self) -> bool {
         true
     }
 
-    fn createEntryLattice(&mut self) -> LatticeElementId {
+    fn create_entry_lattice(&mut self) -> LatticeElementId {
         self.add_lattice_element(Step::new())
     }
 
-    fn createInitialEstimateLattice(&mut self) -> LatticeElementId {
+    fn create_initial_estimate_lattice(&mut self) -> LatticeElementId {
         self.add_lattice_element(Step::new())
     }
 
-    fn createFlowJoiner(&self) -> DivergentFlowJoiner {
+    fn create_flow_joiner(&self) -> DivergentFlowJoiner {
         DivergentFlowJoiner(Step::new())
     }
 
-    fn flowThrough(&mut self, node: Counter, input: LatticeElementId) -> LatticeElementId {
+    fn flow_through(&mut self, node: Counter, input: LatticeElementId) -> LatticeElementId {
         *self.counts.entry(node).or_default() += 1;
         input
     }
@@ -700,7 +704,7 @@ impl Index<LatticeElementId> for DivergentAnalysisInner {
 struct DivergentFlowJoiner(Step);
 
 impl FlowJoiner<Step, DivergentAnalysisInner> for DivergentFlowJoiner {
-    fn joinFlow(&mut self, _: &mut DivergentAnalysisInner, _: LatticeElementId) {}
+    fn join_flow(&mut self, _: &mut DivergentAnalysisInner, _: LatticeElementId) {}
 
     fn finish(self) -> Step {
         self.0
@@ -741,7 +745,7 @@ struct DivergentAnalysis<'p> {
 impl<'p> DivergentAnalysis<'p> {
     fn new(
         cfg: ControlFlowGraph<Counter, LinearFlowState, LatticeElementId>,
-        nodePriorities: &'p [NodePriority],
+        node_priorities: &'p [NodePriority],
     ) -> Self {
         Self {
             data_flow_analysis: DataFlowAnalysis::new(
@@ -750,7 +754,7 @@ impl<'p> DivergentAnalysis<'p> {
                     counts: FxHashMap::default(),
                     cfg,
                 },
-                nodePriorities,
+                node_priorities,
             ),
         }
     }
@@ -763,16 +767,16 @@ fn testMaxIterationsExceededException() {
     cfg.create_edge(entrypoint, Branch::UNCOND, entrypoint);
 
     let cfa = ControlFlowAnalysisResult {
-        nodePriorities: vec![0, 1],
+        node_priorities: vec![0, 1],
         cfg,
     };
 
-    let mut constProp = DivergentAnalysis::new(cfa.cfg, &cfa.nodePriorities);
+    let mut const_prop = DivergentAnalysis::new(cfa.cfg, &cfa.node_priorities);
 
-    assert!(constProp.data_flow_analysis.analyze_inner().is_err());
+    assert!(const_prop.data_flow_analysis.analyze_inner().is_err());
 
     assert_eq!(
-        constProp.data_flow_analysis.inner.counts[&entrypoint],
+        const_prop.data_flow_analysis.inner.counts[&entrypoint],
         MAX_STEPS_PER_NODE + 1
     );
 }

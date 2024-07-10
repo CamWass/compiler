@@ -148,14 +148,14 @@ where
 
     /// Note: neighbor are listed in reverse order of their addition to the graph,
     /// so the most recently added edge's neighbor is listed first.
-    pub fn getDirectedPredNodes(&self, node: N) -> Neighbors<'_, Branch> {
+    pub fn get_directed_pred_nodes(&self, node: N) -> Neighbors<'_, Branch> {
         self.graph
             .neighbors_directed(*self.map.get(&node).unwrap(), Incoming)
     }
 
     /// Note: neighbor are listed in reverse order of their addition to the graph,
     /// so the most recently added edge's neighbor is listed first.
-    pub fn getDirectedSuccNodes(&self, node: N) -> Neighbors<'_, Branch> {
+    pub fn get_directed_succ_nodes(&self, node: N) -> Neighbors<'_, Branch> {
         self.graph
             .neighbors_directed(*self.map.get(&node).unwrap(), Outgoing)
     }

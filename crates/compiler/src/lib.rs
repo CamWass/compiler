@@ -2,7 +2,6 @@
 #![feature(map_many_mut)]
 // TODO:
 #![allow(non_snake_case)]
-#![allow(non_upper_case_globals)]
 #![allow(unused_variables)]
 #![deny(non_shorthand_field_patterns)]
 #![allow(warnings)]

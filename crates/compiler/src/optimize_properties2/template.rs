@@ -136,7 +136,7 @@ impl Visitor<CallId> for Resolver<'_, '_> {
         };
 
         let mut analysis = DataFlowAnalysis {
-            workQueue: UniqueQueue::reuse_inner(
+            work_queue: UniqueQueue::reuse_inner(
                 std::mem::take(&mut self.state.data_flow_state.work_queue_inner),
                 &self.static_fn_data[func].node_priorities,
                 true,
@@ -1228,7 +1228,7 @@ fn compute_call(
 }
 
 impl<'ast> DataFlowAnalysis<'ast, '_> {
-    fn flowThrough(
+    fn flow_through(
         &mut self,
         node: NodeIndex,
         input: LatticeElementId,
@@ -2008,7 +2008,7 @@ struct JoinOp {
 }
 
 impl JoinOp {
-    fn joinFlow(
+    fn join_flow(
         &mut self,
         input: &Lattice,
         unions: &mut UnionStore,
@@ -2098,7 +2098,7 @@ impl ReusableState for DataFlowAnalysisState {
 struct DataFlowAnalysis<'ast, 'a> {
     /// The set of nodes that need to be considered, ordered by their priority
     /// as determined by control flow analysis and data flow direction.
-    workQueue: UniqueQueue<'a>,
+    work_queue: UniqueQueue<'a>,
 
     cfg: &'a SimpleCFG<'ast>,
     entry_lattice: LatticeElementId,
@@ -2172,26 +2172,26 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
 
         let mut dfs = Dfs::empty(&self.cfg.graph);
 
-        self.workQueue.push(self.cfg.entry_index);
-        while let Some(cur_node_idx) = self.workQueue.pop() {
+        self.work_queue.push(self.cfg.entry_index);
+        while let Some(cur_node_idx) = self.work_queue.pop() {
             if dfs.discovered.contains(cur_node_idx.index()) {
                 continue;
             }
-            let curNode = self.cfg.graph[cur_node_idx];
+            let cur_node = self.cfg.graph[cur_node_idx];
 
             // We only add nodes to the work queue once we have processed their
             // predecessors, but we still want to visit the successors at least
             // once, even if their predecessors don't change the state.
             let first_visit = self.state.visited_nodes.insert(cur_node_idx.index());
 
-            let step_count = &mut self.state.node_annotations[cur_node_idx.index()].stepCount;
+            let step_count = &mut self.state.node_annotations[cur_node_idx.index()].step_count;
 
             if *step_count > MAX_STEPS_PER_NODE {
-                return Err(curNode);
+                return Err(cur_node);
             }
             *step_count += 1;
 
-            self.joinInputs(cur_node_idx);
+            self.join_inputs(cur_node_idx);
             let r = self.flow(cur_node_idx);
 
             if r == FlowResult::Abort {
@@ -2205,18 +2205,18 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
                 // so we skip processing it when coming from a ReturnStmt as
                 // processing the implicit return would incorrectly add `undefined`
                 // to the call's return type.
-                if !matches!(curNode.kind, NodeKind::ReturnStmt(_)) {
-                    let nextNodes = self.cfg.graph.neighbors_directed(cur_node_idx, Outgoing);
+                if !matches!(cur_node.kind, NodeKind::ReturnStmt(_)) {
+                    let next_nodes = self.cfg.graph.neighbors_directed(cur_node_idx, Outgoing);
 
-                    for nextNode in nextNodes {
-                        debug_assert!(!dfs.discovered.contains(nextNode.index()));
-                        self.workQueue.push(nextNode);
+                    for next_node in next_nodes {
+                        debug_assert!(!dfs.discovered.contains(next_node.index()));
+                        self.work_queue.push(next_node);
                     }
                 }
             }
         }
 
-        self.joinInputs(self.cfg.implicit_return_index);
+        self.join_inputs(self.cfg.implicit_return_index);
 
         Ok(())
     }
@@ -2224,9 +2224,9 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
     /// Performs a single flow through a node.
     fn flow(&mut self, node_index: NodeIndex) -> FlowResult {
         let state = &self.state.node_annotations[node_index.index()];
-        let outBefore = state.out;
-        if let Some(new_out) = self.flowThrough(node_index, state.in_) {
-            if outBefore != new_out {
+        let out_before = state.out;
+        if let Some(new_out) = self.flow_through(node_index, state.in_) {
+            if out_before != new_out {
                 self.state.node_annotations[node_index.index()].out = new_out;
                 FlowResult::Change
             } else {
@@ -2243,7 +2243,7 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
      *
      * @param node Node to compute new join.
      */
-    fn joinInputs(&mut self, node_index: NodeIndex) {
+    fn join_inputs(&mut self, node_index: NodeIndex) {
         if self.cfg.entry_index == node_index {
             self.state.node_annotations[node_index.index()].in_ = self.entry_lattice;
             return;
@@ -2260,7 +2260,7 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
             .graph
             .edges_directed(node_index, Incoming)
             .filter(|e| !matches!(graph[e.source()].kind, NodeKind::ReturnStmt(_)))
-            .map(|e| getInputFromEdge(node_annotations, e))
+            .map(|e| get_input_from_edge(node_annotations, e))
             .filter(|i| *i != initial_lattice);
 
         self.state.join_input_buffer.clear();
@@ -2305,7 +2305,7 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
 
         let mut joiner = JoinOp::default();
         for &id in &self.state.join_input_buffer {
-            joiner.joinFlow(
+            joiner.join_flow(
                 &self.state.lattice_elements[id],
                 self.unions,
                 self.invalid_objects,
@@ -2318,7 +2318,7 @@ impl<'ast, 'a> DataFlowAnalysis<'ast, 'a> {
     }
 }
 
-fn getInputFromEdge(
+fn get_input_from_edge(
     node_annotations: &[LinearFlowState],
     edge: EdgeReference<Branch>,
 ) -> LatticeElementId {

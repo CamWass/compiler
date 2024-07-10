@@ -69,14 +69,14 @@ macro_rules! handle_fn {
         // incorrect semantics. See test case "testCapture".
         // Skipping vars technically isn't needed for correct semantics, but works around a Safari
         // bug for var redeclarations (https://github.com/google/closure-compiler/issues/3164)
-        let allVarsDeclaredInFunction = find_vars_declared_in_fn($function, true);
+        let all_vars_declared_in_func = find_vars_declared_in_fn($function, true);
 
-        if MAX_VARIABLES_TO_ANALYZE > allVarsDeclaredInFunction.ordered_vars.len() {
+        if MAX_VARIABLES_TO_ANALYZE > all_vars_declared_in_func.ordered_vars.len() {
             // This fn is analyzable, create new visitor to do so.
 
             let cfa = ControlFlowAnalysis::analyze(ControlFlowRoot::from(&*$function), false);
             let (liveness, cfg) =
-                LiveVariablesAnalysis::new(cfa.cfg, &cfa.nodePriorities, $function, allVarsDeclaredInFunction, $parent_visitor.unresolved_ctxt).analyze();
+                LiveVariablesAnalysis::new(cfa.cfg, &cfa.node_priorities, $function, all_vars_declared_in_func, $parent_visitor.unresolved_ctxt).analyze();
 
             // TODO:
             // if (FeatureSet.ES3.contains(compiler.getOptions().getOutputFeatureSet())) {
@@ -93,23 +93,23 @@ macro_rules! handle_fn {
             // The interference graph has the function's variables as its nodes and any interference
             // between the variables as the edges. Interference between two variables means that they are
             // alive at overlapping times, which means that their variable names cannot be coalesced.
-            let (interferenceGraph, map) = computeVariableNamesInterferenceGraph(&cfg, &liveness);
+            let (interference_graph, map) = compute_variable_names_interference_graph(&cfg, &liveness);
 
             // Color any interfering variables with different colors and any variables that can be safely
             // coalesced wih the same color.
             let mut coloring = GreedyGraphColoring::new();
             coloring.color(
-                interferenceGraph.node_weights().cloned().collect(),
+                interference_graph.node_weights().cloned().collect(),
                 |a, b| {
-                    liveness.scopeVariables[a].cmp(&liveness.scopeVariables[b])
+                    liveness.scope_variables[a].cmp(&liveness.scope_variables[b])
                 },
                 |node| {
                     let node_index = map[node];
-                    let degree = interferenceGraph.neighbors(node_index).count();
+                    let degree = interference_graph.neighbors(node_index).count();
                     degree
                 },
                 || SimpleSubGraph {
-                    graph: &interferenceGraph,
+                    graph: &interference_graph,
                     map: &map,
                     nodes: Vec::new(),
                 },
@@ -160,12 +160,12 @@ impl CoalesceVariableNames<'_> {
     fn maybe_coalesce_name(&mut self, name: &mut Ident) -> CoalesceResult {
         let id = name.to_id();
         if self.map.contains_key(&id) {
-            let coalescedVar = self.coloring.getPartitionSuperNode(&id);
+            let coalesced_var = self.coloring.get_partition_super_node(&id);
 
-            if &id != coalescedVar {
+            if &id != coalesced_var {
                 // Rename.
-                name.sym = coalescedVar.0.clone();
-                name.ctxt = coalescedVar.1;
+                name.sym = coalesced_var.0.clone();
+                name.ctxt = coalesced_var.1;
 
                 // The name is replaced with another - it's a target.
                 CoalesceResult::NameIsCoalesceTarget
@@ -220,7 +220,7 @@ impl CoalesceVariableNames<'_> {
             } else if find_pat_ids(&decl.name).len() == 1 {
                 // Destructuring with one LHS.
 
-                let lhs = find_first_LHS_ident(&mut decl.name).unwrap();
+                let lhs = find_first_lhs_ident(&mut decl.name).unwrap();
 
                 match self.maybe_coalesce_name(lhs) {
                     CoalesceResult::NameIsCoalesceTarget => {
@@ -326,7 +326,7 @@ impl CoalesceVariableNames<'_> {
                 } else if find_pat_ids(&decl.name).len() == 1 {
                     // Destructuring with one LHS.
 
-                    let lhs = find_first_LHS_ident(&mut decl.name).unwrap();
+                    let lhs = find_first_lhs_ident(&mut decl.name).unwrap();
 
                     match self.maybe_coalesce_name(lhs) {
                         CoalesceResult::NameIsCoalesceTarget => {
@@ -432,7 +432,7 @@ impl<'ast> VisitMut<'ast> for CoalesceVariableNames<'_> {
                 } else if find_pat_ids(&decl.name).len() == 1 {
                     // Destructuring with one LHS.
 
-                    let lhs = find_first_LHS_ident(&mut decl.name).unwrap();
+                    let lhs = find_first_lhs_ident(&mut decl.name).unwrap();
 
                     match self.maybe_coalesce_name(lhs) {
                         CoalesceResult::NameIsCoalesceTarget => {
@@ -501,7 +501,7 @@ struct SimpleSubGraph<'a> {
 }
 
 impl SubGraph<Id> for SimpleSubGraph<'_> {
-    fn isIndependentOf(&self, value: &Id) -> bool {
+    fn is_independent_of(&self, value: &Id) -> bool {
         for &n in &self.nodes {
             if self.graph.neighbors(n).any(|n| &self.graph[n] == value) {
                 return false;
@@ -510,7 +510,7 @@ impl SubGraph<Id> for SimpleSubGraph<'_> {
         true
     }
 
-    fn addNode(&mut self, value: Id) {
+    fn add_node(&mut self, value: Id) {
         self.nodes.push(self.map[&value]);
     }
 }
@@ -529,46 +529,46 @@ impl SubGraph<Id> for SimpleSubGraph<'_> {
  * @param escaped we don't want to coalesce any escaped variables
  * @return graph with variable nodes and edges representing variable interference
  */
-fn computeVariableNamesInterferenceGraph<'ast>(
+fn compute_variable_names_interference_graph<'ast>(
     cfg: &ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
     liveness: &LiveVariablesAnalysisResult,
 ) -> (UnGraph<Id, ()>, FxHashMap<Id, NodeIndex>) {
     let mut map = FxHashMap::default();
-    let mut interferenceGraph = UnGraph::default();
+    let mut interference_graph = UnGraph::default();
 
     // First create a node for each non-escaped variable. We add these nodes in the order in which
     // they appear in the code because we want the names that appear earlier in the code to be used
     // when coalescing to variables that appear later in the code.
-    let orderedVariables = &liveness.orderedVars;
+    let ordered_variables = &liveness.ordered_vars;
 
     // The VarIds that have a corresponding node in the interference graph.
-    let mut interferenceGraphNodes = BitSet::new_empty(orderedVariables.len());
+    let mut interference_graph_nodes = BitSet::new_empty(ordered_variables.len());
 
     // The paris of variables that interfere and should have an edge in the interference graph.
-    let mut interfering_vars = BitMatrix::new(orderedVariables.len(), orderedVariables.len());
+    let mut interfering_vars = BitMatrix::new(ordered_variables.len(), ordered_variables.len());
 
-    for (vIndex, v) in orderedVariables.iter_enumerated() {
+    for (v_index, v) in ordered_variables.iter_enumerated() {
         if liveness.escaped_locals.contains(v) {
             continue;
         }
 
-        if liveness.fn_and_class_names.contains(&vIndex) {
+        if liveness.fn_and_class_names.contains(&v_index) {
             continue;
         }
 
-        let node_index = interferenceGraph.add_node(v.clone());
+        let node_index = interference_graph.add_node(v.clone());
         map.insert(v.clone(), node_index);
-        interferenceGraphNodes.insert(vIndex);
+        interference_graph_nodes.insert(v_index);
     }
 
     // Go through every CFG node in the program and look at variables that are live.
     // Set the pair of live variables in interferenceBitSet so we can add an edge between them.
-    for cfgNode in cfg.graph.node_weights() {
-        if *cfgNode == cfg.implicit_return {
+    for cfg_node in cfg.graph.node_weights() {
+        if *cfg_node == cfg.implicit_return {
             continue;
         }
 
-        let state = &cfg.node_annotations[cfgNode];
+        let state = &cfg.node_annotations[cfg_node];
 
         // Check the live states and add edge when possible. An edge between two variables
         // means that they are alive at overlapping times, which means that their
@@ -586,39 +586,39 @@ fn computeVariableNamesInterferenceGraph<'ast>(
             }
         }
 
-        let liveRangeChecker = LiveRangeChecker::check(*cfgNode, &state, &liveness);
-        liveRangeChecker.setCrossingVariables(&mut interfering_vars);
+        let live_range_checker = LiveRangeChecker::check(*cfg_node, &state, &liveness);
+        live_range_checker.set_crossing_variables(&mut interfering_vars);
     }
 
     // Go through each variable and try to connect them.
-    for (v1Index, v1) in orderedVariables.iter_enumerated() {
-        for (v2Index, v2) in orderedVariables.iter_enumerated() {
+    for (v1_idx, v1) in ordered_variables.iter_enumerated() {
+        for (v2_idx, v2) in ordered_variables.iter_enumerated() {
             // Skip duplicate pairs. Also avoid merging a variable with itself.
-            if v1Index >= v2Index {
+            if v1_idx >= v2_idx {
                 continue;
             }
 
-            if !interferenceGraphNodes.contains(v1Index)
-                || !interferenceGraphNodes.contains(v2Index)
+            if !interference_graph_nodes.contains(v1_idx)
+                || !interference_graph_nodes.contains(v2_idx)
             {
                 // Skip nodes that were not added. They are globals and escaped locals.
                 continue;
             }
 
-            if interfering_vars.contains(v1Index, v2Index)
-                || liveness.params.contains(&v1Index) && liveness.params.contains(&v2Index)
+            if interfering_vars.contains(v1_idx, v2_idx)
+                || liveness.params.contains(&v1_idx) && liveness.params.contains(&v2_idx)
             {
                 // Add an edge between variable pairs that are both parameters
                 // because we don't want parameters to share a name.
                 let v1 = map[v1];
                 let v2 = map[v2];
-                if !interferenceGraph.contains_edge(v1, v2) {
-                    interferenceGraph.add_edge(v1, v2, ());
+                if !interference_graph.contains_edge(v1, v2) {
+                    interference_graph.add_edge(v1, v2, ());
                 }
             }
         }
     }
-    (interferenceGraph, map)
+    (interference_graph, map)
 }
 
 /// This separate visitor is necessary because [`CoalesceVariableNames`] can't
@@ -655,9 +655,9 @@ impl<'ast> VisitMut<'ast> for GlobalVisitor<'_> {
 struct LiveRangeChecker<'a> {
     state: &'a LinearFlowState,
     /// Indices of written variables.
-    isAssignToList: Vec<VarId>,
+    is_assign_to_list: Vec<VarId>,
     /// Indices of read variables.
-    isReadFromList: Vec<VarId>,
+    is_read_from_list: Vec<VarId>,
 
     liveness: &'a LiveVariablesAnalysisResult,
 }
@@ -670,35 +670,35 @@ impl<'a> LiveRangeChecker<'a> {
     ) -> Self {
         let mut checker = Self {
             state,
-            isAssignToList: Vec::default(),
-            isReadFromList: Vec::default(),
+            is_assign_to_list: Vec::default(),
+            is_read_from_list: Vec::default(),
             liveness,
         };
         root.visit_with(&mut checker);
         checker
     }
 
-    fn setCrossingVariables(&self, interfering_vars: &mut BitMatrix<VarId, VarId>) {
-        for &iWrittenVar in &self.isAssignToList {
-            for &iReadVar in &self.isReadFromList {
-                interfering_vars.insert(iWrittenVar, iReadVar);
-                interfering_vars.insert(iReadVar, iWrittenVar);
+    fn set_crossing_variables(&self, interfering_vars: &mut BitMatrix<VarId, VarId>) {
+        for &written_var in &self.is_assign_to_list {
+            for &read_var in &self.is_read_from_list {
+                interfering_vars.insert(written_var, read_var);
+                interfering_vars.insert(read_var, written_var);
             }
         }
     }
 
     fn visit(&mut self, name: Id, is_read_from: bool, is_assigned_to: bool) {
         if is_assigned_to {
-            if let Some(var_id) = self.liveness.scopeVariables.get(&name) {
-                self.isAssignToList.push(*var_id);
+            if let Some(var_id) = self.liveness.scope_variables.get(&name) {
+                self.is_assign_to_list.push(*var_id);
             }
         }
-        if !self.isAssignToList.is_empty() {
-            for (var_id, var) in self.liveness.orderedVars.iter_enumerated() {
+        if !self.is_assign_to_list.is_empty() {
+            for (var_id, var) in self.liveness.ordered_vars.iter_enumerated() {
                 let out = &self.liveness.lattice_elements[self.state.out];
-                let varOutLive = out.isLive(var_id);
-                if varOutLive || is_read_from && var == &name {
-                    self.isReadFromList.push(var_id);
+                let var_out_live = out.is_live(var_id);
+                if var_out_live || is_read_from && var == &name {
+                    self.is_read_from_list.push(var_id);
                 }
             }
         }

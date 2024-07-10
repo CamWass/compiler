@@ -8,7 +8,7 @@ pub trait CfgNode: Copy + Eq + Hash + Debug {
 
 impl CfgNode for Node<'_> {
     fn implicit_return() -> Self {
-        Self::ImplicitReturn
+        Self::IMPLICIT_RETURN
     }
 }
 
@@ -38,7 +38,7 @@ pub struct Node<'ast> {
 }
 
 impl Node<'_> {
-    pub const ImplicitReturn: Node<'static> = Node {
+    pub const IMPLICIT_RETURN: Node<'static> = Node {
         node_id: NodeId::DUMMY,
         kind: NodeKind::ImplicitReturn,
     };

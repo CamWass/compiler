@@ -10,7 +10,7 @@ use crate::{Id, ToId};
 
 #[derive(Default, Debug)]
 pub struct AllVarsDeclaredInFunction {
-    pub scopeVariables: FxHashMap<Id, VarId>,
+    pub scope_variables: FxHashMap<Id, VarId>,
     pub ordered_vars: IndexVec<VarId, Id>,
     /// All variables bound in catch params e.g. `x` in `try {} catch(x) {}`
     pub catch_vars: FxHashSet<Id>,
@@ -54,7 +54,7 @@ pub struct DeclFinder {
 
 impl DeclFinder {
     fn record_var(&mut self, id: Id) {
-        let var_id = match self.vars.scopeVariables.entry(id.clone()) {
+        let var_id = match self.vars.scope_variables.entry(id.clone()) {
             Entry::Occupied(entry) => *entry.get(),
             Entry::Vacant(entry) => {
                 let var_id = self.vars.ordered_vars.push(id.clone());
@@ -71,7 +71,7 @@ impl DeclFinder {
     }
 
     fn record_decl_name(&mut self, name: Id) {
-        if let Entry::Vacant(entry) = self.vars.scopeVariables.entry(name.clone()) {
+        if let Entry::Vacant(entry) = self.vars.scope_variables.entry(name.clone()) {
             let var_id = self.vars.ordered_vars.push(name.clone());
             entry.insert(var_id);
             self.vars.fn_and_class_names.insert(var_id);
@@ -208,7 +208,7 @@ struct FindFirstLHSIdent<'ast> {
 }
 
 /// Finds the first LHS ident in a pattern.
-pub fn find_first_LHS_ident(node: &mut Pat) -> Option<&mut Ident> {
+pub fn find_first_lhs_ident(node: &mut Pat) -> Option<&mut Ident> {
     let mut v = FindFirstLHSIdent { found: None };
     node.visit_mut_with(&mut v);
 

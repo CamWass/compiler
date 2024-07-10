@@ -109,12 +109,12 @@ impl RenameVars {
 
             if self.slots[s].local {
                 // Slots for local variables are immediately assigned a name.
-                let new_name = name_gen.generateAndReserveNextName();
+                let new_name = name_gen.generate_and_reserve_next_name();
                 self.rename_map.insert(s, new_name);
             } else {
                 // We delay finalizing the new names for global slots until we
                 // know how many names we have of each length.
-                let new_name = name_gen.generateAndReserveNextName();
+                let new_name = name_gen.generate_and_reserve_next_name();
                 global_slots.push(s);
                 names_for_globals.push(new_name);
             }

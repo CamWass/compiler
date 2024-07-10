@@ -385,7 +385,7 @@ fn create_renaming_map(store: &mut Store) -> FxHashMap<NodeId, JsWord> {
     let mut name_gen = DefaultNameGenerator::new(FxHashSet::default());
     let mut colour_map = Vec::with_capacity(cur_colour as usize);
     for _ in 0..cur_colour {
-        colour_map.push(name_gen.generateNextName());
+        colour_map.push(name_gen.generate_next_name());
     }
 
     let mut rename_map = FxHashMap::default();
@@ -659,7 +659,7 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
 
     let data_flow_analysis = DataFlowAnalysis::new(
         cfa.cfg,
-        &cfa.nodePriorities,
+        &cfa.node_priorities,
         false,
         &mut done_objects,
         &mut done_functions,
@@ -752,12 +752,12 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
                 node_annotations: FxHashMap::default(),
                 edge_annotations: FxHashMap::default(),
             },
-            nodePriorities: static_data.node_priorities.clone(),
+            node_priorities: static_data.node_priorities.clone(),
         };
 
         let data_flow_analysis = DataFlowAnalysis::new(
             cfa.cfg,
-            &cfa.nodePriorities,
+            &cfa.node_priorities,
             true,
             &mut done_objects,
             &mut done_functions,
@@ -1236,7 +1236,7 @@ impl<'ast> FnVisitor<'ast, '_> {
 
         let static_data = StaticFunctionData {
             cfg,
-            node_priorities: cfa.nodePriorities,
+            node_priorities: cfa.node_priorities,
             var_start,
             param_end,
             captured_vars: Vec::new(),
@@ -3018,7 +3018,7 @@ impl<'ast> Analyser<'ast, '_> {
 }
 
 impl<'ast> DataFlowAnalysis<'ast, '_> {
-    fn flowThrough(
+    fn flow_through(
         &mut self,
         node: Node<'ast>,
         store: &mut Store<'ast>,
@@ -3059,7 +3059,7 @@ struct JoinOp {
 }
 
 impl<'ast> JoinOp {
-    fn joinFlow(
+    fn join_flow(
         &mut self,
         analysis: &mut DataFlowAnalysis<'ast, '_>,
         store: &mut Store,

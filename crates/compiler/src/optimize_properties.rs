@@ -8,7 +8,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::find_vars::*;
 use crate::utils::unwrap_as;
-use crate::DataFlowAnalysis::computeEscaped;
+use crate::DataFlowAnalysis::compute_escaped;
 use crate::DefaultNameGenerator::DefaultNameGenerator;
 use crate::{Id, ToId};
 
@@ -35,7 +35,7 @@ impl MainVisitor {
         for ty in types.into_iter().filter(|t| t.valid) {
             let mut name_gen = DefaultNameGenerator::default();
             for prop in ty.property_info {
-                let new_name = name_gen.generateNextName();
+                let new_name = name_gen.generate_next_name();
                 for reference in prop.references {
                     self.rename_map.insert(reference, new_name.clone());
                 }
@@ -48,10 +48,10 @@ macro_rules! visit_fn {
     ($f:ident, $t:ident) => {
         fn $f(&mut self, node: &ast::$t) {
             let all_vars = find_vars_declared_in_fn(node, false);
-            let escaped = computeEscaped(node, &all_vars.scopeVariables, all_vars.catch_vars);
+            let escaped = compute_escaped(node, &all_vars.scope_variables, all_vars.catch_vars);
             let params = all_vars.params;
             let valid_vars = all_vars
-                .scopeVariables
+                .scope_variables
                 .into_iter()
                 .filter(|entry| !params.contains(&entry.1) && !escaped.contains(&entry.0))
                 .map(|entry| entry.0)

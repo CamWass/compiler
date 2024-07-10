@@ -192,7 +192,7 @@ where
     F: FnMut(&ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>, &AstGraph),
 {
     let root = parse_script(src);
-    let cfg = createCfg(&root);
+    let cfg = create_cfg(&root);
     let root_node = Node::from(&root);
     let ast_graph = AstGraph::new(&root_node);
 
@@ -270,9 +270,9 @@ impl AstGraph {
         Self { map, graph }
     }
 
-    fn isAncestor(&self, node: NodeId, maybeDescendant: NodeId) -> bool {
+    fn is_ancestor(&self, node: NodeId, maybe_descendant: NodeId) -> bool {
         let from = *self.map.get(&node).unwrap();
-        let to = *self.map.get(&maybeDescendant).unwrap();
+        let to = *self.map.get(&maybe_descendant).unwrap();
         has_path_connecting(&self.graph, from, to, None)
     }
 }
@@ -312,7 +312,7 @@ impl AstGraph {
 /**
 * Gets all the edges of the graph.
 */
-fn getAllEdgesOfCFG(
+fn get_all_edges_of_CFG(
     cfg: &ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
 ) -> Vec<SimpleEdge> {
     cfg.graph
@@ -330,14 +330,14 @@ fn getAllEdgesOfCFG(
 * Gets all the control flow edges from some node with the first token to
 * some node with the second token.
 */
-fn getAllEdges<'a>(
+fn get_all_edges<'a>(
     cfg: &'a ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
-    startToken: Token,
-    endToken: Token,
+    start_token: Token,
+    end_token: Token,
 ) -> Vec<SimpleEdge> {
-    getAllEdgesOfCFG(cfg)
+    get_all_edges_of_CFG(cfg)
         .into_iter()
-        .filter(|e| e.source.token == startToken && e.target.token == endToken)
+        .filter(|e| e.source.token == start_token && e.target.token == end_token)
         .collect()
 }
 
@@ -345,7 +345,7 @@ fn getAllEdges<'a>(
 * Gets all the control flow edges from some node with the first token to
 * some node with the second token.
 */
-fn getAllEdgesPredicate<'a, S, E>(
+fn get_all_edges_predicate<'a, S, E>(
     cfg: &'a ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
     start: S,
     end: E,
@@ -354,7 +354,7 @@ where
     S: Fn(SimpleNode) -> bool,
     E: Fn(SimpleNode) -> bool,
 {
-    getAllEdgesOfCFG(cfg)
+    get_all_edges_of_CFG(cfg)
         .into_iter()
         .filter(|e| start(e.source) && end(e.target))
         .collect()
@@ -364,13 +364,13 @@ where
 * Gets all the control flow edges of the given type from some node with the
 * first token to some node with the second token.
 */
-fn getAllEdgesOfType<'a>(
+fn get_all_edges_of_type<'a>(
     cfg: &'a ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
-    startToken: Token,
-    endToken: Token,
+    start_token: Token,
+    end_token: Token,
     edge_type: Branch,
 ) -> Vec<SimpleEdge> {
-    getAllEdges(cfg, startToken, endToken)
+    get_all_edges(cfg, start_token, end_token)
         .into_iter()
         .filter(|e| e.weight == edge_type)
         .collect()
@@ -380,7 +380,7 @@ fn getAllEdgesOfType<'a>(
 * Gets all the control flow edges of the given type from some node with the
 * first token to some node with the second token.
 */
-fn getAllEdgesOfTypePredicate<'a, S, E>(
+fn get_all_edges_of_type_predicate<'a, S, E>(
     cfg: &'a ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
     start: S,
     end: E,
@@ -390,7 +390,7 @@ where
     S: Fn(SimpleNode) -> bool,
     E: Fn(SimpleNode) -> bool,
 {
-    getAllEdgesPredicate(cfg, start, end)
+    get_all_edges_predicate(cfg, start, end)
         .into_iter()
         .filter(|e| e.weight == edge_type)
         .collect()
@@ -401,16 +401,16 @@ where
 * the first token to some node with the second token.
 * This edge must flow from a parent to one of its descendants.
 */
-fn getAllDownEdges<'a>(
+fn get_all_down_edges<'a>(
     cfg: &'a ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
     ast_graph: &'a AstGraph,
-    startToken: Token,
-    endToken: Token,
+    start_token: Token,
+    end_token: Token,
     edge_type: Branch,
 ) -> Vec<SimpleEdge> {
-    getAllEdgesOfType(cfg, startToken, endToken, edge_type)
+    get_all_edges_of_type(cfg, start_token, end_token, edge_type)
         .into_iter()
-        .filter(|e| ast_graph.isAncestor(e.source.node_id, e.target.node_id))
+        .filter(|e| ast_graph.is_ancestor(e.source.node_id, e.target.node_id))
         .collect()
 }
 
@@ -419,7 +419,7 @@ fn getAllDownEdges<'a>(
 * the first token to some node with the second token.
 * This edge must flow from a parent to one of its descendants.
 */
-fn getAllDownEdgesPredicate<'a, S, E>(
+fn get_all_down_edges_predicate<'a, S, E>(
     cfg: &'a ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
     ast_graph: &'a AstGraph,
     start: S,
@@ -430,9 +430,9 @@ where
     S: Fn(SimpleNode) -> bool,
     E: Fn(SimpleNode) -> bool,
 {
-    getAllEdgesOfTypePredicate(cfg, start, end, edge_type)
+    get_all_edges_of_type_predicate(cfg, start, end, edge_type)
         .into_iter()
-        .filter(|e| ast_graph.isAncestor(e.source.node_id, e.target.node_id))
+        .filter(|e| ast_graph.is_ancestor(e.source.node_id, e.target.node_id))
         .collect()
 }
 
@@ -440,12 +440,12 @@ where
 * Assert that there exists no control flow edge of the given type from some node with the first
 * token to some node with the second token.
 */
-fn assertNoEdge(
+fn assert_no_edge(
     cfg: &ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
-    startToken: Token,
-    endToken: Token,
+    start_token: Token,
+    end_token: Token,
 ) {
-    assert!(getAllEdges(cfg, startToken, endToken).is_empty());
+    assert!(get_all_edges(cfg, start_token, end_token).is_empty());
 }
 
 /**
@@ -453,18 +453,19 @@ fn assertNoEdge(
 * from some node with the first token to some node with the second token.
 * This edge must flow from a parent to one of its descendants.
 */
-fn assertDownEdge(
+fn assert_down_edge(
     cfg: &ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
     ast_graph: &AstGraph,
-    startToken: Token,
-    endToken: Token,
+    start_token: Token,
+    end_token: Token,
     edge_type: Branch,
 ) {
-    let edge_exists = !getAllDownEdges(cfg, ast_graph, startToken, endToken, edge_type).is_empty();
+    let edge_exists =
+        !get_all_down_edges(cfg, ast_graph, start_token, end_token, edge_type).is_empty();
     assert!(
         edge_exists,
         "No down edge found between {:?} and {:?}",
-        startToken, endToken
+        start_token, end_token
     );
 }
 
@@ -473,18 +474,19 @@ fn assertDownEdge(
 * from some node with the first token to some node with the second token.
 * This edge must flow from a node to one of its ancestors.
 */
-fn assertUpEdge(
+fn assert_up_edge(
     cfg: &ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
     ast_graph: &AstGraph,
-    startToken: Token,
-    endToken: Token,
+    start_token: Token,
+    end_token: Token,
     edge_type: Branch,
 ) {
-    let edge_exists = !getAllDownEdges(cfg, ast_graph, endToken, startToken, edge_type).is_empty();
+    let edge_exists =
+        !get_all_down_edges(cfg, ast_graph, end_token, start_token, edge_type).is_empty();
     assert!(
         edge_exists,
         "No up edge found between {:?} and {:?}",
-        startToken, endToken
+        start_token, end_token
     );
 }
 
@@ -493,21 +495,22 @@ fn assertUpEdge(
 * from some node with the first token to some node with the second token.
 * This edge must flow between two nodes that are not in the same subtree.
 */
-fn assertCrossEdge(
+fn assert_cross_edge(
     cfg: &ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
     ast_graph: &AstGraph,
-    startToken: Token,
-    endToken: Token,
+    start_token: Token,
+    end_token: Token,
     edge_type: Branch,
 ) {
-    let numDownEdges = getAllDownEdges(cfg, ast_graph, startToken, endToken, edge_type).len();
-    let numUpEdges = getAllDownEdges(cfg, ast_graph, endToken, startToken, edge_type).len();
-    let numEdges = getAllEdgesOfType(cfg, startToken, endToken, edge_type).len();
+    let num_down_edges =
+        get_all_down_edges(cfg, ast_graph, start_token, end_token, edge_type).len();
+    let num_up_edges = get_all_down_edges(cfg, ast_graph, end_token, start_token, edge_type).len();
+    let num_edges = get_all_edges_of_type(cfg, start_token, end_token, edge_type).len();
     assert!(
-        numDownEdges + numUpEdges < numEdges,
+        num_down_edges + num_up_edges < num_edges,
         "No cross edges found between {:?} and {:?}",
-        startToken,
-        endToken
+        start_token,
+        end_token
     );
 }
 
@@ -516,7 +519,7 @@ fn assertCrossEdge(
 * from some node with the first token to some node with the second token.
 * This edge must flow between two nodes that are not in the same subtree.
 */
-fn assertCrossEdgePredicate<S, E>(
+fn assert_cross_edge_predicate<S, E>(
     cfg: &ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
     ast_graph: &AstGraph,
     start: S,
@@ -526,45 +529,49 @@ fn assertCrossEdgePredicate<S, E>(
     S: Fn(SimpleNode) -> bool,
     E: Fn(SimpleNode) -> bool,
 {
-    let numDownEdges = getAllDownEdgesPredicate(cfg, ast_graph, &start, &end, edge_type).len();
-    let numUpEdges = getAllDownEdgesPredicate(cfg, ast_graph, &end, &start, edge_type).len();
-    let numEdges = getAllEdgesOfTypePredicate(cfg, &start, &end, edge_type).len();
-    assert!(numDownEdges + numUpEdges < numEdges, "No cross edges found");
+    let num_down_edges =
+        get_all_down_edges_predicate(cfg, ast_graph, &start, &end, edge_type).len();
+    let num_up_edges = get_all_down_edges_predicate(cfg, ast_graph, &end, &start, edge_type).len();
+    let num_edges = get_all_edges_of_type_predicate(cfg, &start, &end, edge_type).len();
+    assert!(
+        num_down_edges + num_up_edges < num_edges,
+        "No cross edges found"
+    );
 }
 
 /**
 * Assert that there exists a control flow edge of the given type
 * from some node with the first token to the return node.
 */
-fn assertReturnEdge(
+fn assert_return_edge(
     cfg: &ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
-    startToken: Token,
+    start_token: Token,
 ) {
-    let edges = getAllEdgesOfCFG(cfg);
+    let edges = get_all_edges_of_CFG(cfg);
     for edge in edges {
-        if edge.source.token == startToken && edge.target.token == Token::ImplicitReturn {
+        if edge.source.token == start_token && edge.target.token == Token::ImplicitReturn {
             return;
         }
     }
 
-    panic!("No return edge found from {:?}", startToken);
+    panic!("No return edge found from {:?}", start_token);
 }
 
 /**
 * Assert that there exists no control flow edge of the given type
 * from some node with the first token to the return node.
 */
-fn assertNoReturnEdge(
+fn assert_no_return_edge(
     cfg: &ControlFlowGraph<Node<'_>, DummyAnnotation, DummyAnnotation>,
-    startToken: Token,
+    start_token: Token,
 ) {
-    let edges = getAllEdgesOfCFG(cfg);
+    let edges = get_all_edges_of_CFG(cfg);
     for edge in edges {
-        if edge.source.token == startToken {
+        if edge.source.token == start_token {
             assert!(
                 edge.target.token != Token::ImplicitReturn,
                 "Token {:?} should not have an out going edge to the implicit return",
-                startToken
+                start_token
             );
             return;
         }
@@ -576,7 +583,7 @@ fn assertNoReturnEdge(
 *
 * @param input Input JavaScript.
 */
-fn createCfg<'ast, T>(root: T) -> ControlFlowGraph<Node<'ast>, DummyAnnotation, DummyAnnotation>
+fn create_cfg<'ast, T>(root: T) -> ControlFlowGraph<Node<'ast>, DummyAnnotation, DummyAnnotation>
 where
     T: Into<ControlFlowRoot<'ast>>,
 {
@@ -588,21 +595,21 @@ where
 fn testSimpleStatementsInScript() {
     let src = "var a; a = a; a = a";
     test_script(src, |cfg, ast_graph| {
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::Script,
             Token::VarDecl,
             Branch::UNCOND,
         );
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::VarDecl,
             Token::ExprStmt,
             Branch::UNCOND,
         );
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::ExprStmt,
@@ -661,43 +668,43 @@ fn testSimpleStatementsInScript() {
 fn testSimpleIf() {
     let src = "var x; if (x) { x() } else { x() };";
     test_script(src, |cfg, ast_graph| {
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::Script,
             Token::VarDecl,
             Branch::UNCOND,
         );
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::VarDecl,
             Token::IfStmt,
             Branch::UNCOND,
         );
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::IfStmt,
             Token::BlockStmt,
             Branch::ON_TRUE,
         );
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::BlockStmt,
             Token::ExprStmt,
             Branch::UNCOND,
         );
-        assertNoEdge(cfg, Token::ExprStmt, Token::CallExpr);
-        assertDownEdge(
+        assert_no_edge(cfg, Token::ExprStmt, Token::CallExpr);
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::IfStmt,
             Token::BlockStmt,
             Branch::ON_FALSE,
         );
-        assertReturnEdge(cfg, Token::EmptyStmt);
+        assert_return_edge(cfg, Token::EmptyStmt);
     });
 }
 
@@ -705,7 +712,7 @@ fn testSimpleIf() {
 fn testBreakingBlock() {
     let src = "X: { while(1) { break } }";
     test_script(src, |cfg, ast_graph| {
-        assertUpEdge(
+        assert_up_edge(
             cfg,
             ast_graph,
             Token::BreakStmt,
@@ -719,21 +726,21 @@ fn testBreakingBlock() {
 fn testBreakingWhile() {
     let src = "var x; while(true) { break; } x();";
     test_script(src, |cfg, ast_graph| {
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::WhileStmt,
             Token::BlockStmt,
             Branch::ON_TRUE,
         );
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::BlockStmt,
             Token::BreakStmt,
             Branch::UNCOND,
         );
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::BreakStmt,
@@ -747,14 +754,14 @@ fn testBreakingWhile() {
 fn testInifiteLoopWhile() {
     let src = "var x; while(true) { } x();";
     test_script(src, |cfg, ast_graph| {
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::WhileStmt,
             Token::BlockStmt,
             Branch::ON_TRUE,
         );
-        assertNoEdge(cfg, Token::WhileStmt, Token::ExprStmt);
+        assert_no_edge(cfg, Token::WhileStmt, Token::ExprStmt);
     });
 }
 
@@ -762,14 +769,14 @@ fn testInifiteLoopWhile() {
 fn testInifiteLoopFor_emptyCond() {
     let src = "var x; for(;;) { } x();";
     test_script(src, |cfg, ast_graph| {
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::ForStmt,
             Token::BlockStmt,
             Branch::ON_TRUE,
         );
-        assertNoEdge(cfg, Token::ForStmt, Token::ExprStmt);
+        assert_no_edge(cfg, Token::ForStmt, Token::ExprStmt);
     });
 }
 
@@ -777,21 +784,21 @@ fn testInifiteLoopFor_emptyCond() {
 fn testBreakingFor_emptyCond() {
     let src = "var x; for(;;) { break; } x();";
     test_script(src, |cfg, ast_graph| {
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::ForStmt,
             Token::BlockStmt,
             Branch::ON_TRUE,
         );
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::BlockStmt,
             Token::BreakStmt,
             Branch::UNCOND,
         );
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::BreakStmt,
@@ -805,14 +812,14 @@ fn testBreakingFor_emptyCond() {
 fn testInifiteLoopFor_trueCond() {
     let src = "var x; for(;true;) { } x();";
     test_script(src, |cfg, ast_graph| {
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::ForStmt,
             Token::BlockStmt,
             Branch::ON_TRUE,
         );
-        assertNoEdge(cfg, Token::ForStmt, Token::ExprStmt);
+        assert_no_edge(cfg, Token::ForStmt, Token::ExprStmt);
     });
 }
 
@@ -820,21 +827,21 @@ fn testInifiteLoopFor_trueCond() {
 fn testBreakingFor_trueCond() {
     let src = "var x; for(;true;) { break; } x();";
     test_script(src, |cfg, ast_graph| {
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::ForStmt,
             Token::BlockStmt,
             Branch::ON_TRUE,
         );
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::BlockStmt,
             Token::BreakStmt,
             Branch::UNCOND,
         );
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::BreakStmt,
@@ -900,7 +907,7 @@ fn testBreakingFor_trueCond() {
 fn testBreakingTryBlock() {
     let src = "a: try { break a; } finally {} if(x) {}";
     test_script(src, |cfg, ast_graph| {
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::BreakStmt,
@@ -911,7 +918,7 @@ fn testBreakingTryBlock() {
 
     let src = "a: try {} finally {break a;} if(x) {}";
     test_script(src, |cfg, ast_graph| {
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::BreakStmt,
@@ -922,7 +929,7 @@ fn testBreakingTryBlock() {
 
     let src = "a: try {} catch(e) {break a;} if(x) {}";
     test_script(src, |cfg, ast_graph| {
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::BreakStmt,
@@ -936,23 +943,23 @@ fn testBreakingTryBlock() {
 fn testWithStatement() {
     let src = "var x, y; with(x) { y() }";
     test_script(src, |cfg, ast_graph| {
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::WithStmt,
             Token::BlockStmt,
             Branch::UNCOND,
         );
-        assertNoEdge(cfg, Token::WithStmt, Token::Ident);
-        assertNoEdge(cfg, Token::Ident, Token::BlockStmt);
-        assertDownEdge(
+        assert_no_edge(cfg, Token::WithStmt, Token::Ident);
+        assert_no_edge(cfg, Token::Ident, Token::BlockStmt);
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::BlockStmt,
             Token::ExprStmt,
             Branch::UNCOND,
         );
-        assertReturnEdge(cfg, Token::ExprStmt);
+        assert_return_edge(cfg, Token::ExprStmt);
     });
 }
 
@@ -961,28 +968,28 @@ fn testWithStatement() {
 fn testSimpleWhile() {
     let src = "var x; while (x) { x(); if (x) { break; } x() }";
     test_script(src, |cfg, ast_graph| {
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::WhileStmt,
             Token::BlockStmt,
             Branch::ON_TRUE,
         );
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::BlockStmt,
             Token::ExprStmt,
             Branch::UNCOND,
         );
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::IfStmt,
             Token::BlockStmt,
             Branch::ON_TRUE,
         );
-        assertReturnEdge(cfg, Token::BreakStmt);
+        assert_return_edge(cfg, Token::BreakStmt);
     });
 }
 
@@ -990,30 +997,30 @@ fn testSimpleWhile() {
 fn testSimpleSwitch() {
     let src = "var x; switch(x){ case(1): x(); case('x'): x(); break; default: x();}";
     test_script(src, |cfg, ast_graph| {
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::VarDecl,
             Token::SwitchStmt,
             Branch::UNCOND,
         );
-        assertNoEdge(cfg, Token::SwitchStmt, Token::Ident);
+        assert_no_edge(cfg, Token::SwitchStmt, Token::Ident);
         // Transfer between cases and default.
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::SwitchStmt,
             Token::SwitchCase,
             Branch::UNCOND,
         );
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::SwitchCase,
             Token::SwitchCase,
             Branch::ON_FALSE,
         );
-        assertCrossEdgePredicate(
+        assert_cross_edge_predicate(
             cfg,
             ast_graph,
             |n| n.token == Token::SwitchCase,
@@ -1021,15 +1028,15 @@ fn testSimpleSwitch() {
             Branch::ON_FALSE,
         );
         // Within each case.
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::SwitchCase,
             Token::ExprStmt,
             Branch::UNCOND,
         );
-        assertNoEdge(cfg, Token::ExprStmt, Token::CallExpr);
-        assertNoEdge(cfg, Token::CallExpr, Token::Ident);
+        assert_no_edge(cfg, Token::ExprStmt, Token::CallExpr);
+        assert_no_edge(cfg, Token::CallExpr, Token::Ident);
     });
 }
 
@@ -1037,7 +1044,7 @@ fn testSimpleSwitch() {
 fn testSimpleNoDefault() {
     let src = "var x; switch(x){ case(1): break; } x();";
     test_script(src, |cfg, ast_graph| {
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::SwitchCase,
@@ -1052,14 +1059,14 @@ fn testSwitchDefaultFirst() {
     // DEFAULT appears first. But it is should evaluated last.
     let src = "var x; switch(x){ default: break; case 1: break; }";
     test_script(src, |cfg, ast_graph| {
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::SwitchStmt,
             Token::SwitchCase,
             Branch::UNCOND,
         );
-        assertCrossEdgePredicate(
+        assert_cross_edge_predicate(
             cfg,
             ast_graph,
             |n| n.token == Token::SwitchCase,
@@ -1074,21 +1081,21 @@ fn testSwitchDefaultInMiddle() {
     // DEFAULT appears in the middle. But it is should evaluated last.
     let src = "var x; switch(x){ case 1: break; default: break; case 2: break; }";
     test_script(src, |cfg, ast_graph| {
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::SwitchStmt,
             Token::SwitchCase,
             Branch::UNCOND,
         );
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::SwitchCase,
             Token::SwitchCase,
             Branch::ON_FALSE,
         );
-        assertCrossEdgePredicate(
+        assert_cross_edge_predicate(
             cfg,
             ast_graph,
             |n| n.token == Token::SwitchCase,
@@ -1104,14 +1111,14 @@ fn testSwitchEmpty() {
     // DEFAULT appears first. But it is should evaluated last.
     let src = "var x; switch(x){}; x()";
     test_script(src, |cfg, ast_graph| {
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::SwitchStmt,
             Token::EmptyStmt,
             Branch::UNCOND,
         );
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::EmptyStmt,
@@ -1125,7 +1132,7 @@ fn testSwitchEmpty() {
 fn testReturnThrowingException() {
     let src = "function f() {try { return a(); } catch (e) {e()}}";
     test_script(src, |cfg, ast_graph| {
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::ReturnStmt,
@@ -1870,14 +1877,14 @@ fn testReturnThrowingException() {
 fn testSimpleFinally() {
     let src = "try{var x; foo()}finally{}";
     test_script(src, |cfg, ast_graph| {
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::TryStmt,
             Token::BlockStmt,
             Branch::UNCOND,
         );
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::BlockStmt,
@@ -1885,7 +1892,7 @@ fn testSimpleFinally() {
             Branch::UNCOND,
         );
         // VAR to FINALLY.
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::ExprStmt,
@@ -1893,7 +1900,7 @@ fn testSimpleFinally() {
             Branch::UNCOND,
         );
         // No CATCH to FINALLY.
-        assertNoEdge(cfg, Token::BlockStmt, Token::BlockStmt);
+        assert_no_edge(cfg, Token::BlockStmt, Token::BlockStmt);
     });
 }
 
@@ -1984,21 +1991,21 @@ fn testComplicatedFinally2() {
     let src = "while(1){try{if(a){a;continue;}else if(b){b;break;} else if(c) throw 1; else a}catch(e){}finally{c()}bar}foo";
     test_script(src, |cfg, ast_graph| {
         // Focus only on the ON_EX edges.
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::ContinueStmt,
             Token::BlockStmt,
             Branch::UNCOND,
         );
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::BreakStmt,
             Token::BlockStmt,
             Branch::UNCOND,
         );
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::ThrowStmt,
@@ -2012,21 +2019,21 @@ fn testComplicatedFinally2() {
 fn testDeepNestedBreakwithFinally() {
     let src = "X:while(1){try{while(2){try{var a;break X;}finally{}}}finally{}}";
     test_script(src, |cfg, ast_graph| {
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::WhileStmt,
             Token::BlockStmt,
             Branch::ON_TRUE,
         );
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::BlockStmt,
             Token::TryStmt,
             Branch::UNCOND,
         );
-        assertDownEdge(
+        assert_down_edge(
             cfg,
             ast_graph,
             Token::BlockStmt,
@@ -2034,7 +2041,7 @@ fn testDeepNestedBreakwithFinally() {
             Branch::UNCOND,
         );
         // BREAK to FINALLY.
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::BreakStmt,
@@ -2042,21 +2049,21 @@ fn testDeepNestedBreakwithFinally() {
             Branch::UNCOND,
         );
         // FINALLY to FINALLY.
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::BlockStmt,
             Token::BlockStmt,
             Branch::ON_EX,
         );
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::WhileStmt,
             Token::BlockStmt,
             Branch::ON_FALSE,
         );
-        assertReturnEdge(cfg, Token::BlockStmt);
+        assert_return_edge(cfg, Token::BlockStmt);
     });
 }
 
@@ -2064,21 +2071,21 @@ fn testDeepNestedBreakwithFinally() {
 fn testDeepNestedFinally() {
     let src = "try{try{try{throw 1}finally{1;var a}}finally{2;if(a);}}finally{3;a()}";
     test_script(src, |cfg, ast_graph| {
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::ThrowStmt,
             Token::BlockStmt,
             Branch::ON_EX,
         );
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::VarDecl,
             Token::BlockStmt,
             Branch::UNCOND,
         );
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::IfStmt,
@@ -2092,7 +2099,7 @@ fn testDeepNestedFinally() {
 fn testReturn() {
     let src = "function f() { return; }";
     test_script(src, |cfg, _| {
-        assertReturnEdge(cfg, Token::ReturnStmt);
+        assert_return_edge(cfg, Token::ReturnStmt);
     });
 }
 
@@ -2100,7 +2107,7 @@ fn testReturn() {
 fn testReturnInFinally() {
     let src = "function f(x){ try{} finally {return x;} }";
     test_script(src, |cfg, _| {
-        assertReturnEdge(cfg, Token::ReturnStmt);
+        assert_return_edge(cfg, Token::ReturnStmt);
     });
 }
 
@@ -2108,22 +2115,22 @@ fn testReturnInFinally() {
 fn testReturnInFinally2() {
     let src = "function f(x){ try{ try{}finally{var dummy; return x;} } finally {} }";
     test_script(src, |cfg, ast_graph| {
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::VarDecl,
             Token::ReturnStmt,
             Branch::UNCOND,
         );
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::ReturnStmt,
             Token::BlockStmt,
             Branch::UNCOND,
         );
-        assertReturnEdge(cfg, Token::BlockStmt);
-        assertNoReturnEdge(cfg, Token::ReturnStmt);
+        assert_return_edge(cfg, Token::BlockStmt);
+        assert_no_return_edge(cfg, Token::ReturnStmt);
     });
 }
 
@@ -2131,30 +2138,30 @@ fn testReturnInFinally2() {
 fn testReturnInTry() {
     let src = "function f(x){ try{x; return x()} finally {} var y;}";
     test_script(src, |cfg, ast_graph| {
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::ExprStmt,
             Token::ReturnStmt,
             Branch::UNCOND,
         );
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::ReturnStmt,
             Token::BlockStmt,
             Branch::UNCOND,
         );
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::BlockStmt,
             Token::VarDecl,
             Branch::UNCOND,
         );
-        assertReturnEdge(cfg, Token::VarDecl);
-        assertReturnEdge(cfg, Token::BlockStmt);
-        assertNoReturnEdge(cfg, Token::ReturnStmt);
+        assert_return_edge(cfg, Token::VarDecl);
+        assert_return_edge(cfg, Token::BlockStmt);
+        assert_no_return_edge(cfg, Token::ReturnStmt);
     });
 }
 
@@ -2238,7 +2245,7 @@ fn testReturnInTry() {
 fn testInstanceOf() {
     let src = "try { x instanceof 'x' } catch (e) { }";
     test_script(src, |cfg, ast_graph| {
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::ExprStmt,
@@ -2276,7 +2283,7 @@ fn testInstanceOf() {
 
 #[test]
 fn testForLoopOrder() {
-    assertNodeOrder(
+    assert_node_order(
         "for (var i = 0; i < 5; i++) { var x = 3; } if (true) {}",
         &[
             Token::Script,
@@ -2293,7 +2300,7 @@ fn testForLoopOrder() {
 
 #[test]
 fn testLabelledForInLoopOrder() {
-    assertNodeOrder(
+    assert_node_order(
         "
 var i = 0; var y = {};
 label: for (var x in y) {
@@ -2337,7 +2344,7 @@ label: for (var x in y) {
 
 #[test]
 fn testLocalFunctionOrder() {
-    assertNodeOrder(
+    assert_node_order(
         "function f() { while (x) { x++; } } var x = 3;",
         &[
             Token::Script,
@@ -2353,7 +2360,7 @@ fn testLocalFunctionOrder() {
 
 #[test]
 fn testDoWhileOrder() {
-    assertNodeOrder(
+    assert_node_order(
         "do { var x = 3; } while (true); void x;",
         &[
             Token::Script,
@@ -2367,7 +2374,7 @@ fn testDoWhileOrder() {
 
 #[test]
 fn testForOfOrder() {
-    assertNodeOrder(
+    assert_node_order(
         "async function f() { for (x of y) { z; } return 0; }",
         &[
             Token::Script,
@@ -2384,7 +2391,7 @@ fn testForOfOrder() {
 
 #[test]
 fn testForAwaitOfOrder() {
-    assertNodeOrder(
+    assert_node_order(
         "async function f() { for await (x of y) { z; } return 0; }",
         &[
             Token::Script,
@@ -2401,7 +2408,7 @@ fn testForAwaitOfOrder() {
 
 #[test]
 fn testForAwaitOfOrderBreakAndContinue() {
-    assertNodeOrder(
+    assert_node_order(
         "
 async function f() {
     outer: for await (let x of y) {
@@ -2432,7 +2439,7 @@ async function f() {
 
 #[test]
 fn testForAwaitOfOrderBreakAndContinueAndYield() {
-    assertNodeOrder(
+    assert_node_order(
         "
 async function* f() {
   outer: for await (let x of y) {
@@ -2575,14 +2582,14 @@ a: {
 alert(action)";
 
     test_script(src, |cfg, ast_graph| {
-        assertCrossEdge(
+        assert_cross_edge(
             cfg,
             ast_graph,
             Token::BreakStmt,
             Token::ExprStmt,
             Branch::UNCOND,
         );
-        assertNoEdge(cfg, Token::BreakStmt, Token::BlockStmt);
+        assert_no_edge(cfg, Token::BreakStmt, Token::BlockStmt);
     });
 }
 
@@ -2596,15 +2603,15 @@ alert(action)";
 * @param cfg The control flow graph.
 * @param nodeTypes The expected node types, in order.
 */
-fn assertNodeOrder(src: &str, expected: &[Token]) {
+fn assert_node_order(src: &str, expected: &[Token]) {
     let root = parse_script(src);
-    let cfg = createCfg(&root);
+    let cfg = create_cfg(&root);
     let root = ControlFlowRoot::Script(&root);
 
     let cfa = ControlFlowAnalysis::<'_, DummyAnnotation, DummyAnnotation>::analyze(root, true);
 
     let mut actual = cfa
-        .nodePriorities
+        .node_priorities
         .iter()
         .enumerate()
         .map(|(n, p)| (cfg.graph[NodeIndex::from(n as u32)], *p))

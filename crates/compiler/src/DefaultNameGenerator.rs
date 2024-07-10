@@ -15,11 +15,11 @@ static FIRST_CHAR: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ$
 static NONFIRST_CHAR: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789$";
 
 pub struct DefaultNameGenerator {
-    priorityLookupMap: FxHashMap<u8, CharPriority>,
-    reservedNames: FxHashSet<JsWord>,
-    nameCount: usize,
-    firstChars: Vec<CharPriority>,
-    nonFirstChars: Vec<CharPriority>,
+    priority_lookup_map: FxHashMap<u8, CharPriority>,
+    reserved_names: FxHashSet<JsWord>,
+    name_count: usize,
+    first_chars: Vec<CharPriority>,
+    non_first_chars: Vec<CharPriority>,
 }
 
 impl std::default::Default for DefaultNameGenerator {
@@ -29,27 +29,27 @@ impl std::default::Default for DefaultNameGenerator {
 }
 
 impl DefaultNameGenerator {
-    pub fn new(reservedNames: FxHashSet<JsWord>) -> Self {
-        let mut priorityLookupMap =
+    pub fn new(reserved_names: FxHashSet<JsWord>) -> Self {
+        let mut priority_lookup_map =
             FxHashMap::with_capacity_and_hasher(NONFIRST_CHAR.len(), Default::default());
         let mut order = 0;
         for c in NONFIRST_CHAR.bytes() {
-            priorityLookupMap.insert(c, CharPriority::new(c, order));
+            priority_lookup_map.insert(c, CharPriority::new(c, order));
             order += 1;
         }
         let mut gen = Self {
-            priorityLookupMap,
-            reservedNames,
-            nameCount: 0,
-            firstChars: Vec::new(),
-            nonFirstChars: Vec::new(),
+            priority_lookup_map,
+            reserved_names,
+            name_count: 0,
+            first_chars: Vec::new(),
+            non_first_chars: Vec::new(),
         };
 
         // build the character arrays to use
-        gen.firstChars = gen.reserveCharacters(FIRST_CHAR);
-        gen.nonFirstChars = gen.reserveCharacters(NONFIRST_CHAR);
-        gen.firstChars.sort_unstable();
-        gen.nonFirstChars.sort_unstable();
+        gen.first_chars = gen.reserve_characters(FIRST_CHAR);
+        gen.non_first_chars = gen.reserve_characters(NONFIRST_CHAR);
+        gen.first_chars.sort_unstable();
+        gen.non_first_chars.sort_unstable();
 
         gen
     }
@@ -61,41 +61,41 @@ impl DefaultNameGenerator {
      * @return An array of characters to use. Will return the chars array if
      *    reservedCharacters is null or empty, otherwise creates a new array.
      */
-    fn reserveCharacters(&self, chars: &str) -> Vec<CharPriority> {
+    fn reserve_characters(&self, chars: &str) -> Vec<CharPriority> {
         chars
             .bytes()
-            .map(|c| *self.priorityLookupMap.get(&c).unwrap())
+            .map(|c| *self.priority_lookup_map.get(&c).unwrap())
             .collect()
     }
 
     /**
      * Generates the next short name.
      */
-    pub fn generateNextName(&mut self) -> JsWord {
+    pub fn generate_next_name(&mut self) -> JsWord {
         loop {
             let mut name = String::new();
-            let mut i = self.nameCount;
+            let mut i = self.name_count;
 
             {
-                let pos = i % self.firstChars.len();
-                name.push(self.firstChars[pos].name as char);
-                i /= self.firstChars.len();
+                let pos = i % self.first_chars.len();
+                name.push(self.first_chars[pos].name as char);
+                i /= self.first_chars.len();
             }
 
             while i > 0 {
                 i -= 1;
-                let pos = i % self.nonFirstChars.len();
-                name.push(self.nonFirstChars[pos].name as char);
-                i /= self.nonFirstChars.len();
+                let pos = i % self.non_first_chars.len();
+                name.push(self.non_first_chars[pos].name as char);
+                i /= self.non_first_chars.len();
             }
 
-            self.nameCount += 1;
+            self.name_count += 1;
 
             let name = JsWord::from(name);
 
             // Make sure it's not a JS keyword or reserved name.
             // if !(TokenStream.isKeyword(name) || self.reservedNames.contains(name) || isBadName(name)) {
-            if !self.reservedNames.contains(&name) {
+            if !self.reserved_names.contains(&name) {
                 return name;
             }
         }
@@ -104,9 +104,9 @@ impl DefaultNameGenerator {
     /**
      * Generates the next short name and reserves it so it can't be used for future names.
      */
-    pub fn generateAndReserveNextName(&mut self) -> JsWord {
-        let new_name = self.generateNextName();
-        self.reservedNames.insert(new_name.clone());
+    pub fn generate_and_reserve_next_name(&mut self) -> JsWord {
+        let new_name = self.generate_next_name();
+        self.reserved_names.insert(new_name.clone());
         new_name
     }
 }

@@ -22,8 +22,8 @@ pub const MAX_VARIABLES_TO_ANALYZE: usize = 100;
 
 pub struct LiveVariablesAnalysisResult {
     pub escaped_locals: FxHashSet<Id>,
-    pub scopeVariables: FxHashMap<Id, VarId>,
-    pub orderedVars: IndexVec<VarId, Id>,
+    pub scope_variables: FxHashMap<Id, VarId>,
+    pub ordered_vars: IndexVec<VarId, Id>,
     pub params: FxHashSet<VarId>,
     pub fn_and_class_names: FxHashSet<VarId>,
     pub lattice_elements: IndexVec<LatticeElementId, LiveVariableLattice>,
@@ -78,29 +78,29 @@ where
      */
     pub fn new(
         cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
-        nodePriorities: &'a [NodePriority],
+        node_priorities: &'a [NodePriority],
         fn_scope: &'a T,
-        allVarsDeclaredInFunction: AllVarsDeclaredInFunction,
+        all_vars_declared_in_function: AllVarsDeclaredInFunction,
         unresolved_ctxt: SyntaxContext,
     ) -> Self {
         let inner = Inner {
             unresolved_ctxt,
-            num_vars: allVarsDeclaredInFunction.ordered_vars.len(),
+            num_vars: all_vars_declared_in_function.ordered_vars.len(),
             fn_scope,
 
-            escaped: computeEscaped(
+            escaped: compute_escaped(
                 fn_scope,
-                &allVarsDeclaredInFunction.scopeVariables,
-                allVarsDeclaredInFunction.catch_vars,
+                &all_vars_declared_in_function.scope_variables,
+                all_vars_declared_in_function.catch_vars,
             ),
-            scopeVariables: allVarsDeclaredInFunction.scopeVariables,
-            orderedVars: allVarsDeclaredInFunction.ordered_vars,
-            params: allVarsDeclaredInFunction.params,
-            fn_and_class_names: allVarsDeclaredInFunction.fn_and_class_names,
+            scope_variables: all_vars_declared_in_function.scope_variables,
+            ordered_vars: all_vars_declared_in_function.ordered_vars,
+            params: all_vars_declared_in_function.params,
+            fn_and_class_names: all_vars_declared_in_function.fn_and_class_names,
             lattice_elements: IndexVec::default(),
             cfg,
         };
-        let data_flow_analysis = DataFlowAnalysis::new(inner, nodePriorities);
+        let data_flow_analysis = DataFlowAnalysis::new(inner, node_priorities);
 
         Self { data_flow_analysis }
     }
@@ -115,8 +115,8 @@ where
 
         let liveness_result = LiveVariablesAnalysisResult {
             escaped_locals: self.data_flow_analysis.inner.escaped,
-            scopeVariables: self.data_flow_analysis.inner.scopeVariables,
-            orderedVars: self.data_flow_analysis.inner.orderedVars,
+            scope_variables: self.data_flow_analysis.inner.scope_variables,
+            ordered_vars: self.data_flow_analysis.inner.ordered_vars,
             params: self.data_flow_analysis.inner.params,
             fn_and_class_names: self.data_flow_analysis.inner.fn_and_class_names,
             lattice_elements: self.data_flow_analysis.inner.lattice_elements,
@@ -124,8 +124,8 @@ where
         (liveness_result, self.data_flow_analysis.inner.cfg)
     }
 
-    fn getVarIndex(&self, var: &Id) -> Option<VarId> {
-        self.data_flow_analysis.inner.getVarIndex(var)
+    fn get_var_index(&self, var: &Id) -> Option<VarId> {
+        self.data_flow_analysis.inner.get_var_index(var)
     }
 }
 
@@ -142,9 +142,9 @@ where
     // Maps the variable name to it's position
     // in this jsScope were we to combine the function and function body scopes. The Integer
     // represents the equivalent of the variable index property within a scope
-    scopeVariables: FxHashMap<Id, VarId>,
+    scope_variables: FxHashMap<Id, VarId>,
     // obtain variables in the order in which they appear in the code
-    orderedVars: IndexVec<VarId, Id>,
+    ordered_vars: IndexVec<VarId, Id>,
     params: FxHashSet<VarId>,
     fn_and_class_names: FxHashSet<VarId>,
 
@@ -157,8 +157,8 @@ impl<'ast, 'a, T> Inner<'ast, 'a, T>
 where
     T: FunctionLike<'a>,
 {
-    fn getVarIndex(&self, var: &Id) -> Option<VarId> {
-        self.scopeVariables.get(var).copied()
+    fn get_var_index(&self, var: &Id) -> Option<VarId> {
+        self.scope_variables.get(var).copied()
     }
 
     /**
@@ -172,7 +172,7 @@ where
      * @param conditional {@code true} if any assignments encountered are conditionally executed.
      *     These assignments might not kill a variable.
      */
-    fn computeGenKill<'b>(
+    fn compute_gen_kill<'b>(
         &mut self,
         n: Node<'ast>,
         gen: &'b mut BitSet<VarId>,
@@ -192,13 +192,13 @@ where
         n.visit_with(&mut v);
     }
 
-    fn addToSetIfLocal(&mut self, name: &Id, set: &mut BitSet<VarId>) {
-        if !self.scopeVariables.contains_key(name) {
+    fn add_to_set_if_local(&mut self, name: &Id, set: &mut BitSet<VarId>) {
+        if !self.scope_variables.contains_key(name) {
             return;
         }
 
         if !self.escaped.contains(name) {
-            set.insert(self.getVarIndex(name).unwrap());
+            set.insert(self.get_var_index(name).unwrap());
         }
     }
 
@@ -217,7 +217,7 @@ where
      *
      * @see https://tc39.github.io/ecma262/#sec-functiondeclarationinstantiation
      */
-    fn markAllParametersEscaped(&mut self) {
+    fn mark_all_parameters_escaped(&mut self) {
         for param in self.fn_scope.params() {
             if let Pat::Ident(name) = param {
                 self.escaped.insert(name.to_id());
@@ -304,7 +304,7 @@ where
             if let Some(init) = &node.init {
                 init.visit_with(self);
                 if !self.conditional {
-                    self.analysis.addToSetIfLocal(&name.to_id(), self.kill);
+                    self.analysis.add_to_set_if_local(&name.to_id(), self.kill);
                 }
             }
             return;
@@ -312,8 +312,8 @@ where
         // Destructuring pattern.
 
         if !self.conditional {
-            for lhsNode in &find_pat_ids(&node.name) {
-                self.analysis.addToSetIfLocal(lhsNode, self.kill);
+            for lhs_node in &find_pat_ids(&node.name) {
+                self.analysis.add_to_set_if_local(lhs_node, self.kill);
             }
         }
         self.in_lhs = true;
@@ -449,9 +449,9 @@ where
     fn visit_ident(&mut self, node: &'ast Ident) {
         if !(self.in_destructuring && self.in_lhs) {
             if node.sym == js_word!("arguments") && node.ctxt == self.unresolved_ctxt {
-                self.analysis.markAllParametersEscaped();
+                self.analysis.mark_all_parameters_escaped();
             } else {
-                self.analysis.addToSetIfLocal(&node.to_id(), self.gen);
+                self.analysis.add_to_set_if_local(&node.to_id(), self.gen);
             }
         }
     }
@@ -460,11 +460,11 @@ where
         debug_assert!(!self.in_lhs);
         let mut handle_ident_lhs = |lhs: &Ident| {
             if !self.conditional {
-                self.analysis.addToSetIfLocal(&lhs.to_id(), self.kill);
+                self.analysis.add_to_set_if_local(&lhs.to_id(), self.kill);
             }
             if node.op != AssignOp::Assign {
                 // assignments such as a += 1 reads a.
-                self.analysis.addToSetIfLocal(&lhs.to_id(), self.gen);
+                self.analysis.add_to_set_if_local(&lhs.to_id(), self.gen);
             }
             node.right.visit_with(self);
         };
@@ -479,8 +479,8 @@ where
                 if node.op == AssignOp::Assign && matches!(&**left, Pat::Array(_) | Pat::Object(_))
                 {
                     if !self.conditional {
-                        for lhsNode in &find_pat_ids(&left) {
-                            self.analysis.addToSetIfLocal(lhsNode, self.kill);
+                        for lhs_node in &find_pat_ids(&left) {
+                            self.analysis.add_to_set_if_local(lhs_node, self.kill);
                         }
                     }
                 }
@@ -538,23 +538,23 @@ where
         self.lattice_elements.push(element)
     }
 
-    fn isForward(&self) -> bool {
+    fn is_forward(&self) -> bool {
         false
     }
 
-    fn createEntryLattice(&mut self) -> LatticeElementId {
+    fn create_entry_lattice(&mut self) -> LatticeElementId {
         self.add_lattice_element(LiveVariableLattice::new(self.num_vars))
     }
 
-    fn createInitialEstimateLattice(&mut self) -> LatticeElementId {
-        self.createEntryLattice()
+    fn create_initial_estimate_lattice(&mut self) -> LatticeElementId {
+        self.create_entry_lattice()
     }
 
-    fn createFlowJoiner(&self) -> LiveVariableJoinOp {
+    fn create_flow_joiner(&self) -> LiveVariableJoinOp {
         LiveVariableJoinOp::new(self.num_vars)
     }
 
-    fn flowThrough(&mut self, node: Node<'ast>, input: LatticeElementId) -> LatticeElementId {
+    fn flow_through(&mut self, node: Node<'ast>, input: LatticeElementId) -> LatticeElementId {
         let mut gen = BitSet::new_empty(self.num_vars);
         let mut kill = BitSet::new_empty(self.num_vars);
 
@@ -564,19 +564,19 @@ where
             .graph
             .edges(self.cfg.map[&node])
             .any(|e| *e.weight() == Branch::ON_EX);
-        self.computeGenKill(node, &mut gen, &mut kill, conditional);
+        self.compute_gen_kill(node, &mut gen, &mut kill, conditional);
 
         if gen.is_empty() && kill.is_empty() {
             // No changes compared to input.
             input
         } else {
-            let mut new_live_set = self[input].liveSet.clone();
+            let mut new_live_set = self[input].live_set.clone();
             // L_in = L_out - Kill + Gen
             new_live_set.subtract(&kill);
             new_live_set.union(&gen);
-            if new_live_set != self[input].liveSet {
+            if new_live_set != self[input].live_set {
                 self.add_lattice_element(LiveVariableLattice {
-                    liveSet: new_live_set,
+                    live_set: new_live_set,
                 })
             } else {
                 // No changes compared to input.
@@ -620,10 +620,10 @@ impl<'ast, 'a, T> FlowJoiner<LiveVariableLattice, Inner<'ast, 'a, T>> for LiveVa
 where
     T: FunctionLike<'a>,
 {
-    fn joinFlow(&mut self, inner: &mut Inner<'ast, 'a, T>, input: LatticeElementId) {
+    fn join_flow(&mut self, inner: &mut Inner<'ast, 'a, T>, input: LatticeElementId) {
         self.result
-            .liveSet
-            .union(&inner.lattice_elements[input].liveSet);
+            .live_set
+            .union(&inner.lattice_elements[input].live_set);
     }
 
     fn finish(self) -> LiveVariableLattice {
@@ -638,30 +638,30 @@ where
  */
 #[derive(Clone, Debug, PartialEq)]
 pub struct LiveVariableLattice {
-    liveSet: BitSet<VarId>,
+    live_set: BitSet<VarId>,
 }
 
 impl LiveVariableLattice {
     fn new(num_vars: usize) -> Self {
         Self {
-            liveSet: BitSet::new_empty(num_vars),
+            live_set: BitSet::new_empty(num_vars),
         }
     }
 
-    pub fn isLive(&self, index: VarId) -> bool {
-        self.liveSet.contains(index)
+    pub fn is_live(&self, index: VarId) -> bool {
+        self.live_set.contains(index)
     }
 
     /// Returns the index of the first bit that is set to true that occurs
     /// on or after the specified starting index.
-    pub fn next_set_bits(&self, fromIndex: VarId) -> impl Iterator<Item = VarId> + '_ {
+    pub fn next_set_bits(&self, from_index: VarId) -> impl Iterator<Item = VarId> + '_ {
         // TODO: maybe add a method to BitSet that allows us to get the iter from
         // a specific index without having to skip.
-        self.liveSet.iter().skip(fromIndex.as_usize() + 1)
+        self.live_set.iter().skip(from_index.as_usize() + 1)
     }
 
     pub fn set_bits(&self) -> impl Iterator<Item = VarId> + '_ {
-        self.liveSet.iter()
+        self.live_set.iter()
     }
 }
 
