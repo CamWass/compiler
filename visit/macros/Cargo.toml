@@ -10,7 +10,6 @@ version = "0.1.0"
 proc-macro = true
 
 [dependencies]
-Inflector = "0.11.4"
 macro_common = {version = "0.1.0", path = "../../macros/common"}
 pmutil = "0.5.1"
 proc-macro2 = "1"

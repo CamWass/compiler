@@ -1,6 +1,5 @@
 extern crate proc_macro;
 
-use inflector::Inflector;
 use macro_common::{call_site, def_site};
 use pmutil::{q, Quote};
 use proc_macro2::Ident;
@@ -1566,17 +1565,77 @@ fn method_name_as_str(mode: Mode, ty: &Type) -> String {
         }
         if let Some(ty) = extract_generic("Vec", ty) {
             if let Some(ty) = extract_generic("Option", ty) {
-                return format!("opt_vec_{}", suffix(ty).to_plural());
+                return format!("opt_vec_{}", to_plural(suffix(ty)));
             }
-            if suffix(ty).to_plural() == suffix(ty) {
-                return format!("{}_vec", suffix(ty).to_plural());
+            if to_plural(suffix(ty)) == suffix(ty) {
+                return format!("{}_vec", to_plural(suffix(ty)));
             }
-            return suffix(ty).to_plural();
+            return to_plural(suffix(ty));
         }
-        type_to_name(ty).to_snake_case()
+        to_case_snake_like(&type_to_name(ty))
     }
 
     format!("{}_{}", mode.prefix(), suffix(ty))
+}
+
+fn to_plural(mut s: String) -> String {
+    if s.ends_with("child") {
+        s.push_str("ren");
+        return s;
+    }
+    if !s.ends_with('s') {
+        s.push('s');
+    }
+    s
+}
+
+// Adapted from https://github.com/whatisinternet/Inflector/blob/a4a95eac75043f4bffb127c7c8ec886b5b106053/src/cases/case/mod.rs#L15
+fn to_case_snake_like(convertable_string: &str) -> String {
+    let mut first_character: bool = true;
+    let mut result: String = String::with_capacity(convertable_string.len() * 2);
+    for char_with_index in convertable_string.char_indices() {
+        if !char_with_index.1.is_alphanumeric() {
+            if !first_character {
+                first_character = true;
+                result.push('_');
+            }
+        } else if requires_seperator(char_with_index, first_character, &convertable_string) {
+            first_character = false;
+            result.push('_');
+            result.push(char_with_index.1.to_ascii_lowercase());
+        } else {
+            first_character = false;
+            result.push(char_with_index.1.to_ascii_lowercase());
+        }
+    }
+    result
+}
+
+fn requires_seperator(
+    char_with_index: (usize, char),
+    first_character: bool,
+    convertable_string: &str,
+) -> bool {
+    !first_character
+        && char_is_uppercase(char_with_index.1)
+        && next_or_previous_char_is_lowercase(convertable_string, char_with_index.0)
+}
+
+fn next_or_previous_char_is_lowercase(convertable_string: &str, char_with_index: usize) -> bool {
+    convertable_string
+        .chars()
+        .nth(char_with_index + 1)
+        .unwrap_or('A')
+        .is_lowercase()
+        || convertable_string
+            .chars()
+            .nth(char_with_index - 1)
+            .unwrap_or('A')
+            .is_lowercase()
+}
+
+fn char_is_uppercase(test_char: char) -> bool {
+    test_char == test_char.to_ascii_uppercase()
 }
 
 fn method_name(mode: Mode, ty: &Type) -> Ident {
