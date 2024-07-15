@@ -14,11 +14,11 @@ pmutil = "0.5.1"
 proc-macro2 = "1"
 quote = "1"
 
-macro_common = {version = "0.1.0", path = "../common"}
+macro_common = {path = "../common"}
 
 [dependencies.syn]
 features = ["derive", "fold", "parsing", "printing"]
 version = "1"
 
 [dev-dependencies]
-global_common = {version = "0.1.0", path = "../../crates/common"}
+global_common = {path = "../../crates/common"}

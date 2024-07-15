@@ -8,10 +8,10 @@ edition = "2018"
 num-bigint = {version = "0.4.6"}
 rustc-hash = "1.1.0"
 
-ast_node = {version = "0.1.0", path = "../../macros/ast_node"}
+ast_node = {path = "../../macros/ast_node"}
 atoms = {path = "../atoms"}
-clone_node = {version = "0.1.0", path = "../../macros/clone_node"}
-global_common = {version = "0.1.0", path = "../common"}
+clone_node = {path = "../../macros/clone_node"}
+global_common = {path = "../common"}
 index = {path = "../index"}
-node_id = {version = "0.1.0", path = "../../macros/node_id"}
-string_enum = {version = "0.1.0", path = "../../macros/string_enum"}
+node_id = {path = "../../macros/node_id"}
+string_enum = {path = "../../macros/string_enum"}

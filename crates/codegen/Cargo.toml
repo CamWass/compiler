@@ -11,12 +11,12 @@ bitflags = "1"
 num-bigint = {version = "0.4.6", features = ["serde"]}
 sourcemap = "6"
 
-ast = {version = "0.1.0", path = "../ast"}
+ast = {path = "../ast"}
 atoms = {path = "../atoms"}
-global_common = {version = "0.1.0", path = "../common"}
-parser = {version = "0.1.0", path = "../parser"}
+global_common = {path = "../common"}
+parser = {path = "../parser"}
 
 [dev-dependencies]
-testing = {version = "0.1.0", path = "../../testing"}
+testing = {path = "../../testing"}
 
-global_common = {version = "0.1.0", path = "../common", features = ["sourcemap"]}
+global_common = {path = "../common", features = ["sourcemap"]}

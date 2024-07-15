@@ -20,8 +20,8 @@ termcolor = {version = "1.0", optional = true}
 tracing = "0.1.28"
 unicode-width = "0.1.4"
 
-eq_ignore_macros = {version = "0.1", path = "../../macros/eq_ignore"}
-global_visit = {version = "0.1.0", path = "../../visit"}
+eq_ignore_macros = {path = "../../macros/eq_ignore"}
+global_visit = {path = "../../visit"}
 
 [dev-dependencies]
 rayon = "1"
