@@ -13,7 +13,7 @@ global_common = {path = "../common"}
 global_visit = {path = "../../visit"}
 atoms = {path = "../atoms"}
 index = {path = "../index"}
-indexmap = "1.9.1"
+indexmap = "2.2.6"
 ecma_visit = {path = "../visit"}
 lexical = {version = "6.1.0", features = ["power-of-two", "format"]}
 petgraph = "0.6.5"

@@ -9,5 +9,5 @@ version = "0.1.0"
 ast = {path = "../ast"}
 global_common = {path = "../common"}
 global_visit = {path = "../../visit"}
-num-bigint = {version = "0.2"}
+num-bigint = {version = "0.4.6"}
 atoms = {path = "../atoms"}
