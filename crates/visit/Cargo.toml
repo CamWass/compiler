@@ -6,8 +6,9 @@ name = "ecma_visit"
 version = "0.1.0"
 
 [dependencies]
+num-bigint = {version = "0.4.6"}
+
 ast = {path = "../ast"}
+atoms = {path = "../atoms"}
 global_common = {path = "../common"}
 global_visit = {path = "../../visit"}
-num-bigint = {version = "0.4.6"}
-atoms = {path = "../atoms"}

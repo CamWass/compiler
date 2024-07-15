@@ -7,21 +7,23 @@ edition = "2018"
 
 [dependencies]
 arrayvec = { version = "0.7" }
-ast = {path = "../ast"}
 bitflags = "1.3"
-global_common = {path = "../common"}
-global_visit = {path = "../../visit"}
-atoms = {path = "../atoms"}
-index = {path = "../index"}
 indexmap = "2.2.6"
-ecma_visit = {path = "../visit"}
 lexical = {version = "6.1.0", features = ["power-of-two", "format"]}
 petgraph = "0.6.5"
 rustc-hash = "1.1.0"
 serde = {version = "1", features = ["derive"]}
 
+ast = {path = "../ast"}
+atoms = {path = "../atoms"}
+ecma_visit = {path = "../visit"}
+global_common = {path = "../common"}
+global_visit = {path = "../../visit"}
+index = {path = "../index"}
+
 [dev-dependencies]
 criterion = "0.3"
+
 testing = {path = "../../testing"}
 parser = {path = "../parser"}
 codegen = {path = "../codegen"}

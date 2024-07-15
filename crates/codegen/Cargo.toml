@@ -10,11 +10,13 @@ version = "0.1.0"
 bitflags = "1"
 num-bigint = {version = "0.4.6", features = ["serde"]}
 sourcemap = "6"
+
+ast = {version = "0.1.0", path = "../ast"}
 atoms = {path = "../atoms"}
 global_common = {version = "0.1.0", path = "../common"}
-ast = {version = "0.1.0", path = "../ast"}
 parser = {version = "0.1.0", path = "../parser"}
 
 [dev-dependencies]
-global_common = {version = "0.1.0", path = "../common", features = ["sourcemap"]}
 testing = {version = "0.1.0", path = "../../testing"}
+
+global_common = {version = "0.1.0", path = "../common", features = ["sourcemap"]}

@@ -10,8 +10,9 @@ version = "0.1.0"
 proc-macro = true
 
 [dependencies]
-macro_common = {version = "0.1.0", path = "../../macros/common"}
 pmutil = "0.5.1"
 proc-macro2 = "1"
 quote = "1"
 syn = {version = "1", features = ["parsing", "full"]}
+
+macro_common = {version = "0.1.0", path = "../../macros/common"}
