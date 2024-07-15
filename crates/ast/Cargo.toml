@@ -5,8 +5,8 @@ authors = ["Campbell <campbell.wass@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-num-bigint = {version = "0.4.6"}
-rustc-hash = "1.1.0"
+num-bigint = { workspace = true }
+rustc-hash = { workspace = true }
 
 ast_node = {path = "../../macros/ast_node"}
 atoms = {path = "../atoms"}

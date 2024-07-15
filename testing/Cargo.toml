@@ -5,14 +5,14 @@ name = "testing"
 version = "0.1.0"
 
 [dependencies]
-ansi_term = "0.12.1"
-difference = "2"
-env_logger = "0.7.1"
-once_cell = "1"
-pretty_assertions = "0.7.2"
-regex = "1"
-tracing = "0.1.28"
-tracing-subscriber = {version = "0.3.18", features = ["env-filter"]}
+ansi_term = { workspace = true }
+difference = { workspace = true }
+env_logger = { workspace = true }
+once_cell = { workspace = true }
+pretty_assertions = { workspace = true }
+regex = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = {workspace = true, features = ["env-filter"]}
 
 global_common = {path = "../crates/common", features = ["tty-emitter"]}
 testing_macros = {path = "./macros"}

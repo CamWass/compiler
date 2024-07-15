@@ -8,10 +8,10 @@ edition = "2018"
 default = []
 
 [dependencies]
-either = "1.6.1"
-num-bigint = "0.4.6"
-serde = {version = "1", features = ["derive"]}
-unicode-xid = "0.2.1"
+either = { workspace = true }
+num-bigint = { workspace = true }
+serde = {workspace = true, features = ["derive"]}
+unicode-xid = { workspace = true }
 
 ast = {path = "../ast"}
 ast_node = {path = "../../macros/ast_node"}
@@ -21,8 +21,8 @@ global_common = {path = "../common"}
 string_enum = {path = "../../macros/string_enum"}
 
 [dev-dependencies]
-criterion = "0.3"
-serde_json = "1"
+criterion = { workspace = true }
+serde_json = { workspace = true }
 
 testing = {path = "../../testing"}
 transform_testing = { path = "../transform_testing" }

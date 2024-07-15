@@ -5,7 +5,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-string_cache = "0.8.4"
+string_cache = { workspace = true }
 
 [build-dependencies]
-string_cache_codegen = "0.5.2"
+string_cache_codegen = { workspace = true }

@@ -9,16 +9,13 @@ version = "0.1.0"
 proc-macro = true
 
 [dependencies]
-darling = "0.10"
-pmutil = "0.5.1"
-proc-macro2 = "1"
-quote = "1"
+darling = { workspace = true }
+pmutil = { workspace = true }
+proc-macro2 = { workspace = true }
+quote = { workspace = true }
+syn = { workspace = true, features = ["derive", "fold", "parsing", "printing"] }
 
 macro_common = {path = "../common"}
-
-[dependencies.syn]
-features = ["derive", "fold", "parsing", "printing"]
-version = "1"
 
 [dev-dependencies]
 global_common = {path = "../../crates/common"}
