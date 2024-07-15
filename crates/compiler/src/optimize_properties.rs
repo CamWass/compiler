@@ -352,7 +352,9 @@ impl Visit<'_> for InnerVisitor {
                             let prop = unwrap_as!(&prop, Prop::KeyValue(p), p);
                             match &prop.key {
                                 PropName::Ident(i) => self.types[*lhs_ty].declare_property(i),
-                                PropName::Str(_) | PropName::Num(_) => todo!(),
+                                PropName::Str(_) | PropName::Num(_) | PropName::BigInt(_) => {
+                                    todo!()
+                                }
                                 PropName::Computed(_) => unreachable!(),
                             }
                         }
@@ -439,7 +441,9 @@ impl Visit<'_> for InnerVisitor {
                             let prop = unwrap_as!(&prop, Prop::KeyValue(p), p);
                             match &prop.key {
                                 PropName::Ident(i) => ty.declare_property(i),
-                                PropName::Str(_) | PropName::Num(_) => todo!(),
+                                PropName::Str(_) | PropName::Num(_) | PropName::BigInt(_) => {
+                                    todo!()
+                                }
                                 PropName::Computed(_) => unreachable!(),
                             }
                         }

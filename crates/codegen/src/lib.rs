@@ -1024,6 +1024,7 @@ impl<'a> Emitter<'a> {
             PropName::Str(ref n) => self.emit_str_lit(n),
             PropName::Num(ref n) => self.emit_num_lit(n),
             PropName::Computed(ref n) => self.emit_computed_prop_name(n),
+            PropName::BigInt(ref n) => self.emit_big_lit(n),
         }
     }
 

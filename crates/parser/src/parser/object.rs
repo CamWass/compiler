@@ -65,17 +65,10 @@ impl<I: Tokens> Parser<I> {
                     _ => unreachable!(),
                 },
                 Token::BigInt(_) => match parser.input.bump() {
-                    // Token::BigInt(value) => PropName::BigInt(BigInt {
-                    //     span: span!(parser, start),
-                    //     value,
-                    // }),
-                    Token::BigInt(_) => {
-                        // TODO: add error messag/handling.
-                        // See:
-                        // https://github.com/microsoft/TypeScript/issues/35982
-                        // https://github.com/swc-project/swc/pull/1192
-                        todo!();
-                    }
+                    Token::BigInt(value) => PropName::BigInt(BigInt {
+                        node_id: node_id!(parser, span!(parser, start)),
+                        value,
+                    }),
                     _ => unreachable!(),
                 },
                 Word(..) => match parser.input.bump() {

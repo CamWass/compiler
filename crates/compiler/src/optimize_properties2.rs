@@ -1828,6 +1828,9 @@ impl PropKey {
                 p.node_id,
             )),
             PropName::Computed(p) => PropKey::from_expr(&p.expr, unresolved_ctxt, true, names),
+            PropName::BigInt(p) => {
+                Some(PropKey(names.insert(p.value.to_string().into()), p.node_id))
+            }
         }
     }
 
@@ -1878,7 +1881,7 @@ impl PropKey {
 pub fn is_simple_prop_name(prop_name: &PropName, unresolved_ctxt: SyntaxContext) -> bool {
     match prop_name {
         // TODO: is this wrong? For "const fooVar = 'a'; obj[foovar]" this will record the prop name as 'foovar' when it is reall 'a'
-        PropName::Ident(_) | PropName::Str(_) | PropName::Num(_) => true,
+        PropName::Ident(_) | PropName::Str(_) | PropName::Num(_) | PropName::BigInt(_) => true,
         PropName::Computed(p) => match p.expr.as_ref() {
             Expr::Lit(e) => match e {
                 Lit::Str(_) | Lit::Bool(_) | Lit::Null(_) | Lit::Num(_) | Lit::BigInt(_) => true,
@@ -3493,6 +3496,7 @@ impl VisitMut<'_> for Renamer<'_> {
             PropName::Ident(_) => None,
             PropName::Str(p) => Some(p.node_id),
             PropName::Num(p) => Some(p.node_id),
+            PropName::BigInt(p) => Some(p.node_id),
             PropName::Computed(p) => Some(p.expr.node_id()),
         };
         if let Some(node_id_to_rename) = node_id_to_rename {

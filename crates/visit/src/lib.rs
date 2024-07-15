@@ -844,6 +844,7 @@ define!({
         Str(Str),
         Num(Number),
         Computed(ComputedPropName),
+        BigInt(BigInt),
     }
     pub struct ComputedPropName {
         pub node_id: NodeId,

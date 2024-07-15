@@ -4,7 +4,7 @@ use crate::{
     ident::Ident,
     lit::{Number, Str},
     stmt::BlockStmt,
-    GetNodeId, NodeId, ParamWithoutDecorators,
+    BigInt, GetNodeId, NodeId, ParamWithoutDecorators,
 };
 use ast_node::ast_node;
 use atoms::js_word;
@@ -92,6 +92,7 @@ pub enum PropName {
     /// Numeric literal.
     Num(Number),
     Computed(ComputedPropName),
+    BigInt(BigInt),
 }
 
 #[ast_node]
