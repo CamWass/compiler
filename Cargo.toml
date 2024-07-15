@@ -3,7 +3,7 @@ members = [
     "crates/*",
     "macros/*"
 ]
-resolver = "2"
+resolver = "1"
 
 [profile.release]
 # codegen-units = 2
