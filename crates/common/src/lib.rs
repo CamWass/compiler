@@ -20,7 +20,6 @@ pub use self::{
     source_map::{FileLines, FileLoader, FilePathMapping, SourceMap, SpanSnippetError},
     syntax_pos::{LineCol, Pos},
 };
-pub use eq_ignore_macros::EqIgnoreSpan;
 pub use global_visit::chain;
 
 pub mod chars;

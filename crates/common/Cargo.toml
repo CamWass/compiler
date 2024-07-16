@@ -20,7 +20,6 @@ termcolor = { workspace = true, optional = true}
 tracing = { workspace = true }
 unicode-width = { workspace = true }
 
-eq_ignore_macros = {path = "../../macros/eq_ignore"}
 global_visit = {path = "../../visit"}
 
 [dev-dependencies]
