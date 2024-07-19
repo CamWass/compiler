@@ -836,6 +836,6 @@ mod tests {
 
     #[test]
     fn size_of_span() {
-        assert_eq!(std::mem::size_of::<Span>(), 12);
+        assert_eq!(std::mem::size_of::<Span>(), 8);
     }
 }

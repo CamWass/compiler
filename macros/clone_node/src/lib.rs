@@ -10,7 +10,7 @@ use syn::*;
 /// The `node_id` field of structs is treated differently. It is initialised
 /// with a call to `ProgramData::new` to create a unique `NodeId`.
 /// Example:
-/// ```
+/// ```ignore
 /// #[derive(CloneNode)]
 /// struct AwaitExpr {
 ///     node_id: NodeId,
@@ -26,7 +26,7 @@ use syn::*;
 /// }
 /// ```
 /// the output would be:
-/// ```
+/// ```ignore
 /// impl crate::CloneNode for AwaitExpr  {
 ///     fn clone_node(&self, program_data: &mut crate::ProgramData) -> Self {
 ///         AwaitExpr {
