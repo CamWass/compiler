@@ -1,7 +1,6 @@
 extern crate proc_macro;
 
-use macro_common::call_site;
-use proc_macro2::{Ident, TokenStream};
+use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, ToTokens};
 use std::{collections::HashSet, mem::replace};
 use syn::{
@@ -254,7 +253,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
             })
             .unwrap();
 
-        let trait_name = Ident::new(mode.trait_name(), call_site());
+        let trait_name = Ident::new(mode.trait_name(), Span::call_site());
 
         match mode {
             Mode::Fold => tokens.extend(quote! {
@@ -288,7 +287,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
             .params
             .push(GenericParam::Lifetime(LifetimeDef::new(Lifetime::new(
                 "'ast",
-                proc_macro2::Span::call_site(),
+                Span::call_site(),
             ))));
     }
 
@@ -301,7 +300,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
             unsafety: None,
             auto_token: None,
             trait_token: Default::default(),
-            ident: Ident::new(mode.trait_name(), call_site()),
+            ident: Ident::new(mode.trait_name(), Span::call_site()),
             generics,
             colon_token: None,
             supertraits: Default::default(),
@@ -313,7 +312,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
 
     {
         // impl Visit for &'_ mut V
-        let trait_name = Ident::new(mode.trait_name(), call_site());
+        let trait_name = Ident::new(mode.trait_name(), Span::call_site());
         let mut item: ItemImpl = if mode == Mode::Visit
             || mode == Mode::VisitAll
             || mode == Mode::VisitMut
@@ -333,7 +332,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
     }
     {
         // impl Visit for Box<V>
-        let trait_name = Ident::new(mode.trait_name(), call_site());
+        let trait_name = Ident::new(mode.trait_name(), Span::call_site());
         let mut item: ItemImpl = if mode == Mode::Visit
             || mode == Mode::VisitAll
             || mode == Mode::VisitMut
@@ -354,7 +353,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
 
     {
         // impl Trait for Optional
-        let trait_name = Ident::new(mode.trait_name(), call_site());
+        let trait_name = Ident::new(mode.trait_name(), Span::call_site());
         let mut item: ItemImpl = if mode == Mode::Visit
             || mode == Mode::VisitAll
             || mode == Mode::VisitMut
@@ -375,7 +374,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
 
     {
         // impl Trait for Either
-        let trait_name = Ident::new(mode.trait_name(), call_site());
+        let trait_name = Ident::new(mode.trait_name(), Span::call_site());
         let mut item: ItemImpl =
             if mode == Mode::Visit || mode == Mode::VisitAll || mode == Mode::VisitMut {
                 parse_quote! {
@@ -695,7 +694,7 @@ fn make_arm_from_struct(mode: Mode, path: &Path, variant: &Fields) -> Arm {
         let binding_ident = field
             .ident
             .clone()
-            .unwrap_or_else(|| Ident::new(&format!("_{}", i), call_site()));
+            .unwrap_or_else(|| Ident::new(&format!("_{}", i), Span::call_site()));
 
         if !skip(ty) {
             let expr = parse_quote!(#binding_ident);
@@ -703,7 +702,7 @@ fn make_arm_from_struct(mode: Mode, path: &Path, variant: &Fields) -> Arm {
             let expr = visit_expr(mode, ty, &parse_quote!(_visitor), expr);
             stmts.push(match mode {
                 Mode::VisitAll | Mode::Visit | Mode::VisitMut => {
-                    Stmt::Semi(expr, Token![;](call_site()))
+                    Stmt::Semi(expr, Token![;](Span::call_site()))
                 }
                 Mode::Fold => parse_quote!(let #binding_ident = #expr;),
             });
@@ -930,7 +929,7 @@ fn create_method_sig(mode: Mode, ty: &Type) -> Signature {
 
     fn mk_ref(mode: Mode, ident: Ident, ty: &Type, mutable: bool) -> Signature {
         let lifetime = if mode == Mode::Visit || mode == Mode::VisitAll || mode == Mode::VisitMut {
-            Some(Lifetime::new("'ast", proc_macro2::Span::call_site()))
+            Some(Lifetime::new("'ast", Span::call_site()))
         } else {
             None
         };
