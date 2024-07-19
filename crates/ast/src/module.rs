@@ -18,18 +18,7 @@ pub struct Module {
     pub shebang: Option<JsWord>,
 }
 
-#[cfg(feature = "arbitrary")]
-impl arbitrary::Arbitrary for Module {
-    fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        let span = u.arbitrary()?;
-        let body = u.arbitrary()?;
-        Ok(Self {
-            span,
-            body,
-            shebang: None,
-        })
-    }
-}
+
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct Script {
@@ -40,18 +29,7 @@ pub struct Script {
     pub shebang: Option<JsWord>,
 }
 
-#[cfg(feature = "arbitrary")]
-impl arbitrary::Arbitrary for Script {
-    fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        let span = u.arbitrary()?;
-        let body = u.arbitrary()?;
-        Ok(Self {
-            span,
-            body,
-            shebang: None,
-        })
-    }
-}
+
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub enum ModuleItem {

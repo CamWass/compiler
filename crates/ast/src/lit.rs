@@ -32,15 +32,7 @@ pub struct BigInt {
     pub value: BigIntValue,
 }
 
-#[cfg(feature = "arbitrary")]
-impl arbitrary::Arbitrary for BigInt {
-    fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        let span = u.arbitrary()?;
-        let value = u.arbitrary::<usize>()?.into();
 
-        Ok(Self { span, value })
-    }
-}
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct Str {
@@ -86,20 +78,7 @@ impl Default for StrKind {
     }
 }
 
-#[cfg(feature = "arbitrary")]
-impl arbitrary::Arbitrary for Str {
-    fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        let span = u.arbitrary()?;
-        let value = u.arbitrary::<String>()?.into();
 
-        Ok(Self {
-            span,
-            value,
-            has_escape: false,
-            kind: Default::default(),
-        })
-    }
-}
 
 impl Str {
     #[inline]
@@ -128,16 +107,7 @@ pub struct Regex {
     pub flags: JsWord,
 }
 
-#[cfg(feature = "arbitrary")]
-impl arbitrary::Arbitrary for Regex {
-    fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        let span = u.arbitrary()?;
-        let exp = u.arbitrary::<String>()?.into();
-        let flags = "".into(); // TODO
 
-        Ok(Self { span, exp, flags })
-    }
-}
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode)]
 pub struct Number {

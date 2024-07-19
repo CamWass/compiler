@@ -26,16 +26,6 @@ pub struct Span {
     pub hi: BytePos,
 }
 
-#[cfg(feature = "arbitrary")]
-impl arbitrary::Arbitrary for Span {
-    fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        let lo = u.arbitrary::<BytePos>()?;
-        let hi = u.arbitrary::<BytePos>()?;
-
-        Ok(Self::new(lo, hi, Default::default()))
-    }
-}
-
 /// Dummy span, both position and length are zero.
 pub const DUMMY_SP: Span = Span {
     lo: BytePos(0),
@@ -624,7 +614,6 @@ pub trait Pos {
 /// A byte offset. Keep this small (currently 32-bits), as AST contains
 /// a lot of them.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct BytePos(pub u32);
 
 /// A character offset. Because of multibyte utf8 characters, a byte offset

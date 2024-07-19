@@ -67,7 +67,6 @@ pub struct PrivateProp {
 macro_rules! method {
     ($name:ident, $KEY:ty) => {
         #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
-        #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
         pub struct $name {
             pub node_id: NodeId,
 

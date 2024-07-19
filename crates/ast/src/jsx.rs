@@ -123,16 +123,7 @@ pub struct JSXText {
     pub raw: JsWord,
 }
 
-#[cfg(feature = "arbitrary")]
-impl arbitrary::Arbitrary for JSXText {
-    fn arbitrary(u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        let span = u.arbitrary()?;
-        let value = u.arbitrary::<String>()?.into();
-        let raw = u.arbitrary::<String>()?.into();
 
-        Ok(Self { span, value, raw })
-    }
-}
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct JSXElement {

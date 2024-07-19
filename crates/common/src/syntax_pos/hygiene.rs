@@ -26,13 +26,6 @@ use std::{
 #[derive(Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord, Hash)]
 pub struct SyntaxContext(u32);
 
-#[cfg(feature = "arbitrary")]
-impl arbitrary::Arbitrary for SyntaxContext {
-    fn arbitrary(_: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        Ok(SyntaxContext::empty())
-    }
-}
-
 #[derive(Copy, Clone, Debug)]
 struct SyntaxContextData {
     outer_mark: Mark,
