@@ -1,5 +1,4 @@
 use crate::def_site;
-use pmutil::ToTokensExt;
 use quote::quote;
 use syn::{punctuated::Pair, *};
 
@@ -44,7 +43,7 @@ impl ItemImplExt for ItemImpl {
 
         let need_new_punct = !generics.params.empty_or_trailing();
         if need_new_punct {
-            generics.params.push_punct(def_site());
+            generics.params.push_punct(Token![,](def_site()));
         }
 
         // Respan
@@ -70,8 +69,8 @@ impl ItemImplExt for ItemImpl {
 
                 }
             };
-            parse(item.dump().into())
-                .unwrap_or_else(|err| panic!("with_generics failed: {}\n{}", err, item.dump()))
+            parse2(item.clone())
+                .unwrap_or_else(|err| panic!("with_generics failed: {}\n{}", err, item))
         };
 
         // Handle generics added by proc-macro.

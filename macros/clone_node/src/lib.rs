@@ -1,5 +1,5 @@
-use pmutil::q;
 use proc_macro2::Span;
+use quote::ToTokens;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::*;
@@ -67,26 +67,20 @@ impl Deriver {
 
         let body = self.make_body(&input.data);
 
-        q!(
-            Vars {
-                TraitName: &self.trait_name,
-                Type: &input.ident,
-                impl_generics,
-                ty_generics,
-                where_clause,
-                method_name: &self.method_name,
-                body,
-            },
-            {
-                #[automatically_derived]
-                impl impl_generics crate::TraitName for Type ty_generics where_clause  {
-                    fn method_name(&self, program_data: &mut crate::ProgramData) -> Self {
-                        body
-                    }
+        let trait_name = &self.trait_name;
+        let ty = &input.ident;
+        let method_name = &self.method_name;
+
+        let item_impl: ItemImpl = parse_quote! {
+            #[automatically_derived]
+            impl #impl_generics crate::#trait_name for #ty #ty_generics #where_clause {
+                fn #method_name(&self, program_data: &mut crate::ProgramData) -> Self {
+                    #body
                 }
             }
-        )
-        .into()
+        };
+
+        item_impl.to_token_stream().into()
     }
 
     fn make_body(&self, data: &Data) -> Expr {
@@ -107,26 +101,20 @@ impl Deriver {
                 .expect("should only be called on structs with named fields");
             if field_name == "node_id" {
                 // Special case the node_id field.
-                fields.push(q!({ node_id: program_data.new_id_from(self.node_id) }).parse());
+                fields.push(parse_quote!(node_id: program_data.new_id_from(self.node_id)));
             } else {
                 // Call clone_node on the other fields.
+                let trait_name = &self.trait_name;
+                let method_name = &self.method_name;
                 fields.push(
-                    q!(
-                        Vars {
-                            TraitName: &self.trait_name,
-                            field_name: &field_name,
-                            method_name: &self.method_name
-                        },
-                        { field_name: crate::TraitName::method_name(&self.field_name, program_data) }
-                    )
-                    .parse(),
+                    parse_quote!(#field_name: crate::#trait_name::#method_name(&self.#field_name, program_data)),
                 );
             }
         }
         // Assemble fields into new struct.
         Expr::Struct(ExprStruct {
             attrs: vec![],
-            path: q!({ Self }).parse(),
+            path: parse_quote!(Self),
             brace_token: Default::default(),
             fields,
             dot2_token: None,
@@ -152,53 +140,40 @@ impl Deriver {
                                 // Since the field is unnamed, we need to generate
                                 // a variable name to bind it to. e.g. _0, _1, _2
                                 let field_name = Ident::new(&format!("_{}", i), f.ty.span());
-                                (
-                                    // The bound variable.
-                                    Pat::Ident(PatIdent {
-                                        attrs: vec![],
-                                        by_ref: None,
-                                        mutability: None,
-                                        ident: field_name.clone(),
-                                        subpat: None,
-                                    }),
-                                    // The initializer
-                                    q!(
-                                        Vars {
-                                            TraitName: &self.trait_name,
-                                            field_name,
-                                            method_name: &self.method_name
-                                        },
-                                        { crate::TraitName::method_name(field_name, program_data) }
-                                    )
-                                    .parse::<Expr>(),
-                                )
+                                // The bound variable.
+                                let var = Pat::Ident(PatIdent {
+                                    attrs: vec![],
+                                    by_ref: None,
+                                    mutability: None,
+                                    ident: field_name.clone(),
+                                    subpat: None,
+                                });
+                                let trait_name = &self.trait_name;
+                                let method_name = &self.method_name;
+                                // The initializer
+                                let init: Expr = parse_quote! {
+                                    crate::#trait_name::#method_name(#field_name, program_data)
+                                };
+                                (var, init)
                             })
                             .unzip();
 
-                    q!(
-                        Vars {
-                            Variant: &v.ident,
-                            names,
-                            args
-                        },
-                        { Self::Variant(names) => Self::Variant(args) }
-                    )
-                    .parse()
+                    let variant = &v.ident;
+                    parse_quote!(Self::#variant(#names) => Self::#variant(#args))
                 }
                 // Unit variant e.g. `Variant`.
                 // For this variant we would generate the arm:
                 // Self::Variant => Self::Variant
-                Fields::Unit => q!(
-                    Vars { Variant: &v.ident },
-                    { Self::Variant => Self::Variant }
-                )
-                .parse(),
+                Fields::Unit => {
+                    let variant = &v.ident;
+                    parse_quote!(Self::#variant => Self::#variant)
+                }
                 Fields::Named(_) => unimplemented!("named enum field"),
             };
             arms.push(arm);
         }
 
         // The final match expression.
-        q!(Vars { arms }, (match self { arms })).parse()
+        parse_quote!(match self { #arms })
     }
 }

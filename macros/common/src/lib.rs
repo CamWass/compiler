@@ -1,8 +1,5 @@
 extern crate proc_macro;
 
-use pmutil::synom_ext::FromSpan;
-#[cfg(procmacro2_semver_exempt)]
-use pmutil::SpanExt;
 use proc_macro2::Span;
 use syn::*;
 
@@ -11,23 +8,23 @@ pub mod derive;
 pub mod prelude;
 mod syn_ext;
 
-pub fn call_site<T: FromSpan>() -> T {
-    T::from_span(Span::call_site())
+pub fn call_site() -> Span {
+    Span::call_site()
 }
 
-/// `Span::def_site().located_at(Span::call_site()).as_token()`
+/// `Span::def_site().located_at(Span::call_site())`
 #[cfg(not(procmacro2_semver_exempt))]
-pub fn def_site<T: FromSpan>() -> T {
+pub fn def_site() -> Span {
     call_site()
 }
 
-/// `Span::def_site().located_at(Span::call_site()).as_token()`
+/// `Span::def_site().located_at(Span::call_site())`
 #[cfg(procmacro2_semver_exempt)]
-pub fn def_site<T: FromSpan>() -> T {
-    Span::def_site().located_at(Span::call_site()).as_token()
+pub fn def_site() -> Span {
+    Span::def_site().located_at(Span::call_site())
 }
 
-/// `attr` - tokens inside `#[]`. e.g. `derive(EqIgnoreSpan)`, ast_node
+/// `attr` - tokens inside `#[]`. e.g. `derive(EqIgnoreSpan)`
 pub fn print<T: Into<proc_macro2::TokenStream>>(
     attr: &'static str,
     t: T,

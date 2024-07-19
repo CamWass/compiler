@@ -1,7 +1,6 @@
 extern crate proc_macro;
 
 use macro_common::prelude::*;
-use pmutil::{smart_quote, Quote};
 use syn::{self, *};
 
 #[proc_macro_derive(GetNodeIdMacro)]
@@ -12,24 +11,20 @@ pub fn derive_string_enum(input: proc_macro::TokenStream) -> proc_macro::TokenSt
     let mut tts = TokenStream::new();
 
     let trait_impl = match &input.data {
-        Data::Struct(_) => Quote::new(def_site::<Span>())
-            .quote_with(smart_quote!(
-                Vars {
-                    Type: &input.ident,
-                    Trait: Ident::new("GetNodeId", call_site()),
-                    method: Ident::new("node_id", call_site()),
-                    return_ty: Ident::new("NodeId", call_site())
-                },
-                {
-                    impl Trait for Type {
-                        fn method(&self) -> return_ty {
-                            self.node_id
-                        }
+        Data::Struct(_) => {
+            let type_name: &Ident = &input.ident;
+            let trait_name = Ident::new("GetNodeId", call_site());
+            let method = Ident::new("node_id", call_site());
+            let return_ty = Ident::new("NodeId", call_site());
+            let item_impl: ItemImpl = parse_quote!(
+                impl #trait_name for #type_name {
+                    fn #method(&self) -> #return_ty {
+                        self.node_id
                     }
                 }
-            ))
-            .parse::<ItemImpl>()
-            .with_generics(input.generics.clone()),
+            );
+            item_impl.with_generics(input.generics.clone())
+        }
         Data::Enum(n) => {
             let arms = n
                 .variants
@@ -38,70 +33,52 @@ pub fn derive_string_enum(input: proc_macro::TokenStream) -> proc_macro::TokenSt
                     let pat = match &v.fields {
                         Fields::Unnamed(f) => {
                             assert!(f.unnamed.len() == 1);
-                            Box::new(
-                                Quote::new(def_site::<Span>())
-                                    .quote_with(smart_quote!(Vars { path: &v.ident }, {
-                                        Self::path(field)
-                                    }))
-                                    .parse(),
-                            )
+                            let path = &v.ident;
+                            Box::new(parse_quote!(Self::#path(field)))
                         }
                         _ => unimplemented!(),
                     };
 
-                    let body = Box::new(
-                        Quote::new(def_site::<Span>())
-                            .quote_with(smart_quote!(Vars {}, { return field.node_id() }))
-                            .parse(),
-                    );
+                    let body = Box::new(parse_quote!(return field.node_id()));
 
                     Arm {
                         body,
                         attrs: Default::default(),
                         pat: Pat::Reference(PatReference {
-                            and_token: def_site(),
+                            and_token: Default::default(),
                             mutability: None,
                             pat,
                             attrs: Default::default(),
                         }),
                         guard: None,
-                        fat_arrow_token: def_site(),
-                        comma: Some(def_site()),
+                        fat_arrow_token: Default::default(),
+                        comma: Some(Default::default()),
                     }
                 })
                 .collect();
 
             let body = Expr::Match(ExprMatch {
                 attrs: Default::default(),
-                match_token: def_site(),
-                brace_token: def_site(),
-                expr: Box::new(
-                    Quote::new(def_site::<Span>())
-                        .quote_with(smart_quote!(Vars {}, { &self }))
-                        .parse(),
-                ),
+                match_token: Default::default(),
+                brace_token: Default::default(),
+                expr: Box::new(parse_quote!(&self)),
                 arms,
             });
 
-            Quote::new(def_site::<Span>())
-                .quote_with(smart_quote!(
-                    Vars {
-                        Type: &input.ident,
-                        body,
-                        Trait: Ident::new("GetNodeId", call_site()),
-                        method: Ident::new("node_id", call_site()),
-                        return_ty: Ident::new("NodeId", call_site())
-                    },
-                    {
-                        impl Trait for Type {
-                            fn method(&self) -> return_ty {
-                                body
-                            }
-                        }
+            let type_name = &input.ident;
+            let trait_name = Ident::new("GetNodeId", call_site());
+            let method = Ident::new("node_id", call_site());
+            let return_ty = Ident::new("NodeId", call_site());
+
+            let item_impl: ItemImpl = parse_quote! {
+                impl #trait_name for #type_name {
+                    fn #method(&self) -> #return_ty {
+                        #body
                     }
-                ))
-                .parse::<ItemImpl>()
-                .with_generics(input.generics.clone())
+                }
+            };
+
+            item_impl.with_generics(input.generics.clone())
         }
         Data::Union(_) => unimplemented!(),
     };

@@ -1,15 +1,15 @@
 extern crate proc_macro;
 
-use macro_common::{call_site, def_site};
-use pmutil::{q, Quote};
-use proc_macro2::Ident;
+use macro_common::call_site;
+use proc_macro2::{Ident, TokenStream};
+use quote::{quote, ToTokens};
 use std::{collections::HashSet, mem::replace};
 use syn::{
-    parse_quote::parse, punctuated::Punctuated, spanned::Spanned, Arm, AttrStyle, Attribute, Block,
-    Expr, ExprBlock, ExprMatch, FieldValue, Fields, FnArg, GenericArgument, GenericParam, Generics,
-    ImplItem, ImplItemMethod, Index, Item, ItemImpl, ItemTrait, Lifetime, LifetimeDef, Member,
-    Path, PathArguments, ReturnType, Signature, Stmt, Token, TraitItem, TraitItemMethod, Type,
-    TypePath, TypeReference, VisPublic, Visibility,
+    parse_macro_input, parse_quote, punctuated::Punctuated, spanned::Spanned, Arm, AttrStyle,
+    Attribute, Block, Expr, ExprBlock, ExprMatch, FieldValue, Fields, FnArg, GenericArgument,
+    GenericParam, Generics, ImplItem, ImplItemMethod, Index, Item, ItemImpl, ItemTrait, Lifetime,
+    LifetimeDef, Member, Path, PathArguments, ReturnType, Signature, Stmt, Token, TraitItem,
+    TraitItemMethod, Type, TypePath, TypeReference, VisPublic, Visibility,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,18 +48,18 @@ impl Mode {
 ///  - create `Visit`, `VisitAll`, `VisitMut`, `Fold`
 #[proc_macro]
 pub fn define(tts: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let block: Block = parse(tts.into());
+    let block = parse_macro_input!(tts as Block);
 
-    let mut q = Quote::new_call_site();
-    q.push_tokens(&make(Mode::Fold, &block.stmts));
-    q.push_tokens(&make(Mode::Visit, &block.stmts));
-    q.push_tokens(&make(Mode::VisitAll, &block.stmts));
-    q.push_tokens(&make(Mode::VisitMut, &block.stmts));
+    let mut q = TokenStream::new();
+    q.extend(make(Mode::Fold, &block.stmts));
+    q.extend(make(Mode::Visit, &block.stmts));
+    q.extend(make(Mode::VisitAll, &block.stmts));
+    q.extend(make(Mode::VisitMut, &block.stmts));
 
-    proc_macro2::TokenStream::from(q).into()
+    q.into()
 }
 
-fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
+fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
     let mut types = vec![];
     let mut methods = vec![];
 
@@ -74,7 +74,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
         methods.push(mtd);
     }
 
-    let mut tokens = q!({});
+    let mut tokens = TokenStream::new();
     let mut ref_methods = vec![];
     let mut optional_methods = vec![];
     let mut either_methods = vec![];
@@ -120,13 +120,14 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
         let name = sig.ident.clone();
 
         {
+            let visit = &name;
             // &'_ mut V, Box<V>
             let block = match mode {
                 Mode::Visit | Mode::VisitAll => {
-                    q!(Vars { visit: &name }, ({ (**self).visit(n) })).parse()
+                    parse_quote!({ (**self).#visit(n) })
                 }
                 Mode::Fold | Mode::VisitMut => {
-                    q!(Vars { visit: &name }, ({ (**self).visit(n) })).parse()
+                    parse_quote!({ (**self).#visit(n) })
                 }
             };
 
@@ -141,126 +142,102 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
 
         {
             // Either
-
+            let method_name = &name;
             either_methods.push(ImplItemMethod {
                 attrs: vec![],
                 vis: Visibility::Inherited,
                 defaultness: None,
                 sig: sig.clone(),
                 block: match mode {
-                    Mode::Visit | Mode::VisitAll => q!(
-                        Vars { visit: &name },
-                        ({
+                    Mode::Visit | Mode::VisitAll => parse_quote!(
+                        {
                             match self {
-                                global_visit::Either::Left(v) => v.visit(n),
-                                global_visit::Either::Right(v) => v.visit(n),
+                                global_visit::Either::Left(v) => v.#method_name(n),
+                                global_visit::Either::Right(v) => v.#method_name(n),
                             }
-                        })
-                    )
-                    .parse(),
-                    Mode::Fold | Mode::VisitMut => q!(
-                        Vars { fold: &name },
-                        ({
+                        }
+                    ),
+                    Mode::Fold | Mode::VisitMut => parse_quote!(
+                        {
                             match self {
-                                global_visit::Either::Left(v) => v.fold(n),
-                                global_visit::Either::Right(v) => v.fold(n),
+                                global_visit::Either::Left(v) => v.#method_name(n),
+                                global_visit::Either::Right(v) => v.#method_name(n),
                             }
-                        })
-                    )
-                    .parse(),
+                        }
+                    ),
                 },
             });
         }
 
         {
             // Optional
-
+            let method_name = &name;
             optional_methods.push(ImplItemMethod {
                 attrs: vec![],
                 vis: Visibility::Inherited,
                 defaultness: None,
                 sig: sig.clone(),
                 block: match mode {
-                    Mode::VisitAll | Mode::Visit => q!(
-                        Vars { visit: &name },
-                        ({
+                    Mode::VisitAll | Mode::Visit => parse_quote!(
+                        {
                             if self.enabled {
-                                self.visitor.visit(n)
+                                self.visitor.#method_name(n)
                             }
-                        })
-                    )
-                    .parse(),
-                    Mode::VisitMut => q!(
-                        Vars { visit: &name },
-                        ({
+                        }
+                    ),
+                    Mode::VisitMut => parse_quote!(
+                        {
                             if self.enabled {
-                                self.visitor.visit(n)
+                                self.visitor.#method_name(n)
                             }
-                        })
-                    )
-                    .parse(),
-                    Mode::Fold => q!(
-                        Vars { fold: &name },
-                        ({
+                        }
+                    ),
+                    Mode::Fold => parse_quote!(
+                        {
                             if self.enabled {
-                                self.visitor.fold(n)
+                                self.visitor.#method_name(n)
                             } else {
                                 n
                             }
-                        })
-                    )
-                    .parse(),
+                        }
+                    ),
                 },
             });
         }
 
         {
             // Visit <-> VisitAll using global_visit::All
-
+            let method_name = &name;
             visit_all_methods.push(ImplItemMethod {
                 attrs: vec![],
                 vis: Visibility::Inherited,
                 defaultness: None,
                 sig: sig.clone(),
-                block: q!(
-                    Vars { visit: &name },
-                    ({
-                        self.visitor.visit(n);
-                        visit(self, n);
-                    })
-                )
-                .parse(),
+                block: parse_quote!({
+                    self.visitor.#method_name(n);
+                    #method_name(self, n);
+                }),
             });
         }
     }
 
     methods.iter_mut().for_each(|v| {
         v.attrs.push(Attribute {
-            pound_token: def_site(),
+            pound_token: Default::default(),
             style: AttrStyle::Outer,
-            bracket_token: def_site(),
-            path: q!({ allow }).parse(),
-            tokens: q!({ (unused_variables) }).parse(),
+            bracket_token: Default::default(),
+            path: parse_quote!(allow),
+            tokens: parse_quote!((unused_variables)),
         });
 
         let fn_name = v.sig.ident.clone();
         let default_body = replace(
             &mut v.default,
             Some(match mode {
-                Mode::Fold | Mode::VisitMut => q!(Vars { fn_name: &fn_name }, {
-                    {
-                        fn_name(self, n)
-                    }
-                })
-                .parse(),
-                Mode::Visit => q!(Vars { fn_name: &fn_name }, {
-                    {
-                        fn_name(self, n)
-                    }
-                })
-                .parse(),
+                Mode::Fold | Mode::VisitMut => parse_quote!({#fn_name(self, n)}),
+                Mode::Visit => parse_quote!({#fn_name(self, n)}),
                 Mode::VisitAll => Block {
-                    brace_token: def_site(),
+                    brace_token: Default::default(),
                     stmts: Default::default(),
                 },
             }),
@@ -277,51 +254,29 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
             })
             .unwrap();
 
+        let trait_name = Ident::new(mode.trait_name(), call_site());
+
         match mode {
-            Mode::Fold => tokens.push_tokens(&q!(
-                Vars {
-                    fn_name,
-                    default_body,
-                    Type: arg_ty,
-                    Trait: Ident::new(mode.trait_name(), call_site()),
-                },
-                {
-                    #[allow(unused_variables)]
-                    pub fn fn_name<V: ?Sized + Trait>(_visitor: &mut V, n: Type) -> Type {
-                        default_body
-                    }
+            Mode::Fold => tokens.extend(quote! {
+                #[allow(unused_variables)]
+                pub fn #fn_name<V: ?Sized + #trait_name>(_visitor: &mut V, n: #arg_ty) -> #arg_ty {
+                    #default_body
                 }
-            )),
+            }),
 
-            Mode::VisitMut => tokens.push_tokens(&q!(
-                Vars {
-                    fn_name,
-                    default_body,
-                    Type: arg_ty,
-                    Trait: Ident::new(mode.trait_name(), call_site()),
-                },
-                {
-                    #[allow(unused_variables)]
-                    pub fn fn_name<'ast, V: ?Sized + Trait<'ast>>(_visitor: &mut V, n: Type) {
-                        default_body
-                    }
+            Mode::VisitMut => tokens.extend(quote! {
+                #[allow(unused_variables)]
+                pub fn #fn_name<'ast, V: ?Sized + #trait_name<'ast>>(_visitor: &mut V, n: #arg_ty) {
+                    #default_body
                 }
-            )),
+            }),
 
-            Mode::Visit => tokens.push_tokens(&q!(
-                Vars {
-                    fn_name,
-                    default_body,
-                    Type: arg_ty,
-                    Trait: Ident::new(mode.trait_name(), call_site()),
-                },
-                {
-                    #[allow(unused_variables)]
-                    pub fn fn_name<'ast, V: ?Sized + Trait<'ast>>(_visitor: &mut V, n: Type) {
-                        default_body
-                    }
+            Mode::Visit => tokens.extend(quote! {
+                #[allow(unused_variables)]
+                pub fn #fn_name<'ast, V: ?Sized + #trait_name<'ast>>(_visitor: &mut V, n: #arg_ty) {
+                    #default_body
                 }
-            )),
+            }),
 
             Mode::VisitAll => {}
         }
@@ -337,172 +292,136 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
             ))));
     }
 
-    tokens.push_tokens(&ItemTrait {
-        attrs: vec![],
-        vis: Visibility::Public(VisPublic {
-            pub_token: def_site(),
-        }),
-        unsafety: None,
-        auto_token: None,
-        trait_token: def_site(),
-        ident: Ident::new(mode.trait_name(), call_site()),
-        generics,
-        colon_token: None,
-        supertraits: Default::default(),
-        brace_token: def_site(),
-        items: methods.into_iter().map(TraitItem::Method).collect(),
-    });
+    tokens.extend(
+        ItemTrait {
+            attrs: vec![],
+            vis: Visibility::Public(VisPublic {
+                pub_token: Default::default(),
+            }),
+            unsafety: None,
+            auto_token: None,
+            trait_token: Default::default(),
+            ident: Ident::new(mode.trait_name(), call_site()),
+            generics,
+            colon_token: None,
+            supertraits: Default::default(),
+            brace_token: Default::default(),
+            items: methods.into_iter().map(TraitItem::Method).collect(),
+        }
+        .to_token_stream(),
+    );
 
     {
         // impl Visit for &'_ mut V
-
-        let mut item = if mode == Mode::Visit || mode == Mode::VisitAll || mode == Mode::VisitMut {
-            q!(
-                Vars {
-                    Trait: Ident::new(mode.trait_name(), call_site()),
-                },
-                {
-                    impl<'a, 'ast, V> Trait<'ast> for &'a mut V where V: ?Sized + Trait<'ast> {}
-                }
-            )
-            .parse::<ItemImpl>()
+        let trait_name = Ident::new(mode.trait_name(), call_site());
+        let mut item: ItemImpl = if mode == Mode::Visit
+            || mode == Mode::VisitAll
+            || mode == Mode::VisitMut
+        {
+            parse_quote! {
+                impl<'a, 'ast, V> #trait_name<'ast> for &'a mut V where V: ?Sized + #trait_name<'ast> {}
+            }
         } else {
-            q!(
-                Vars {
-                    Trait: Ident::new(mode.trait_name(), call_site()),
-                },
-                {
-                    impl<'a, V> Trait for &'a mut V where V: ?Sized + Trait {}
-                }
-            )
-            .parse::<ItemImpl>()
+            parse_quote! {
+                impl<'a, V> #trait_name for &'a mut V where V: ?Sized + #trait_name {}
+            }
         };
 
         item.items
             .extend(ref_methods.clone().into_iter().map(ImplItem::Method));
-        tokens.push_tokens(&item);
+        tokens.extend(item.to_token_stream());
     }
     {
         // impl Visit for Box<V>
-
-        let mut item = if mode == Mode::Visit || mode == Mode::VisitAll || mode == Mode::VisitMut {
-            q!(
-                Vars {
-                    Trait: Ident::new(mode.trait_name(), call_site()),
-                },
-                {
-                    impl<'ast, V> Trait<'ast> for Box<V> where V: ?Sized + Trait<'ast> {}
-                }
-            )
-            .parse::<ItemImpl>()
+        let trait_name = Ident::new(mode.trait_name(), call_site());
+        let mut item: ItemImpl = if mode == Mode::Visit
+            || mode == Mode::VisitAll
+            || mode == Mode::VisitMut
+        {
+            parse_quote! {
+                impl<'ast, V> #trait_name<'ast> for Box<V> where V: ?Sized + #trait_name<'ast> {}
+            }
         } else {
-            q!(
-                Vars {
-                    Trait: Ident::new(mode.trait_name(), call_site()),
-                },
-                {
-                    impl<V> Trait for Box<V> where V: ?Sized + Trait {}
-                }
-            )
-            .parse::<ItemImpl>()
+            parse_quote! {
+                impl<V> #trait_name for Box<V> where V: ?Sized + #trait_name {}
+            }
         };
 
         item.items
             .extend(ref_methods.into_iter().map(ImplItem::Method));
-        tokens.push_tokens(&item);
+        tokens.extend(item.to_token_stream());
     }
 
     {
         // impl Trait for Optional
-        let mut item = if mode == Mode::Visit || mode == Mode::VisitAll || mode == Mode::VisitMut {
-            q!(
-                Vars {
-                    Trait: Ident::new(mode.trait_name(), call_site()),
-                },
-                {
-                    impl<'ast, V> Trait<'ast> for ::global_visit::Optional<V> where V: Trait<'ast> {}
-                }
-            )
-            .parse::<ItemImpl>()
+        let trait_name = Ident::new(mode.trait_name(), call_site());
+        let mut item: ItemImpl = if mode == Mode::Visit
+            || mode == Mode::VisitAll
+            || mode == Mode::VisitMut
+        {
+            parse_quote! {
+                impl<'ast, V> #trait_name<'ast> for ::global_visit::Optional<V> where V: #trait_name<'ast> {}
+            }
         } else {
-            q!(
-                Vars {
-                    Trait: Ident::new(mode.trait_name(), call_site()),
-                },
-                {
-                    impl<V> Trait for ::global_visit::Optional<V> where V: Trait {}
-                }
-            )
-            .parse::<ItemImpl>()
+            parse_quote! {
+                impl<V> #trait_name for ::global_visit::Optional<V> where V: #trait_name {}
+            }
         };
 
         item.items
             .extend(optional_methods.into_iter().map(ImplItem::Method));
-
-        tokens.push_tokens(&item);
+        tokens.extend(item.to_token_stream());
     }
 
     {
         // impl Trait for Either
-        let mut item = if mode == Mode::Visit || mode == Mode::VisitAll || mode == Mode::VisitMut {
-            q!(
-                Vars {
-                    Trait: Ident::new(mode.trait_name(), call_site()),
-                },
-                {
-                    impl<'ast, A, B> Trait<'ast> for ::global_visit::Either<A, B>
+        let trait_name = Ident::new(mode.trait_name(), call_site());
+        let mut item: ItemImpl =
+            if mode == Mode::Visit || mode == Mode::VisitAll || mode == Mode::VisitMut {
+                parse_quote! {
+                    impl<'ast, A, B> #trait_name<'ast> for ::global_visit::Either<A, B>
                     where
-                        A: Trait<'ast>,
-                        B: Trait<'ast>,
+                        A: #trait_name<'ast>,
+                        B: #trait_name<'ast>,
                     {
                     }
                 }
-            )
-            .parse::<ItemImpl>()
-        } else {
-            q!(
-                Vars {
-                    Trait: Ident::new(mode.trait_name(), call_site()),
-                },
-                {
-                    impl<A, B> Trait for ::global_visit::Either<A, B>
+            } else {
+                parse_quote! {
+                    impl<A, B> #trait_name for ::global_visit::Either<A, B>
                     where
-                        A: Trait,
-                        B: Trait,
+                        A: #trait_name,
+                        B: #trait_name,
                     {
                     }
                 }
-            )
-            .parse::<ItemImpl>()
-        };
+            };
 
         item.items
             .extend(either_methods.into_iter().map(ImplItem::Method));
-
-        tokens.push_tokens(&item);
+        tokens.extend(item.to_token_stream());
     }
 
     // impl Visit for global_visit::All<V> where V: VisitAll
     if mode == Mode::VisitAll {
-        let mut item = q!({
+        let mut item: ItemImpl = parse_quote! {
             impl<'ast, V> Visit<'ast> for ::global_visit::All<V> where V: VisitAll<'ast> {}
-        })
-        .parse::<ItemImpl>();
+        };
 
         item.items
             .extend(visit_all_methods.into_iter().map(ImplItem::Method));
 
-        tokens.push_tokens(&item);
-        tokens.push_tokens(&q!({
+        tokens.extend(item.to_token_stream());
+        tokens.extend(quote!(
             pub use global_visit::All;
-        }));
+        ));
     }
 
     {
         // Add FoldWith, VisitWith
 
         let trait_decl = match mode {
-            Mode::Visit => q!({
+            Mode::Visit => quote! {
                 pub trait VisitWith<'ast, V: Visit<'ast>> {
                     fn visit_with(&'ast self, v: &mut V);
 
@@ -524,8 +443,8 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
                         (**self).visit_children_with(v)
                     }
                 }
-            }),
-            Mode::VisitAll => q!({
+            },
+            Mode::VisitAll => quote! {
                 pub trait VisitAllWith<'ast, V: VisitAll<'ast>> {
                     fn visit_all_with(&'ast self, v: &mut V);
 
@@ -547,8 +466,8 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
                         (**self).visit_all_children_with(v)
                     }
                 }
-            }),
-            Mode::Fold => q!({
+            },
+            Mode::Fold => quote! {
                 pub trait FoldWith<V: Fold> {
                     fn fold_with(self, v: &mut V) -> Self;
 
@@ -570,8 +489,8 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
                         global_visit::util::map::Map::map(self, |value| value.fold_children_with(v))
                     }
                 }
-            }),
-            Mode::VisitMut => q!({
+            },
+            Mode::VisitMut => quote! {
                 pub trait VisitMutWith<'ast, V: VisitMut<'ast>> {
                     fn visit_mut_with(&'ast mut self, v: &mut V);
 
@@ -591,9 +510,9 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
                         (**self).visit_mut_children_with(v);
                     }
                 }
-            }),
+            },
         };
-        tokens.push_tokens(&trait_decl);
+        tokens.extend(trait_decl.to_token_stream());
 
         let mut names = HashSet::new();
 
@@ -613,128 +532,88 @@ fn make(mode: Mode, stmts: &[Stmt]) -> Quote {
             }
             names.insert(s);
 
-            let expr = visit_expr(mode, ty, &q!({ v }).parse(), q!({ self }).parse());
+            let expr = visit_expr(mode, ty, &parse_quote!(v), parse_quote!(self));
 
             match mode {
                 Mode::Visit => {
-                    let default_body = adjust_expr(mode, ty, q!({ self }).parse(), |expr| {
-                        q!(
-                            Vars {
-                                expr,
-                                method_name: &method_name
-                            },
-                            { method_name(_visitor, expr) }
-                        )
-                        .parse()
-                    });
+                    let default_body = adjust_expr(
+                        mode,
+                        ty,
+                        parse_quote!(self),
+                        |expr| parse_quote!(#method_name(_visitor, #expr)),
+                    );
 
-                    tokens.push_tokens(&q!(
-                        Vars {
-                            Type: ty,
-                            expr,
-                            default_body,
-                        },
-                        {
-                            impl<'ast, V: Visit<'ast>> VisitWith<'ast, V> for Type {
-                                fn visit_with(&'ast self, v: &mut V) {
-                                    expr
-                                }
+                    tokens.extend(quote! {
+                        impl<'ast, V: Visit<'ast>> VisitWith<'ast, V> for #ty {
+                            fn visit_with(&'ast self, v: &mut V) {
+                                #expr
+                            }
 
-                                fn visit_children_with(&'ast self, _visitor: &mut V) {
-                                    default_body
-                                }
+                            fn visit_children_with(&'ast self, _visitor: &mut V) {
+                                #default_body
                             }
                         }
-                    ));
+                    });
                 }
 
                 Mode::VisitAll => {
-                    let default_body = adjust_expr(mode, ty, q!({ self }).parse(), |expr| {
-                        q!(
-                            Vars {
-                                expr,
-                                method_name: &method_name
-                            },
-                            { method_name(_visitor, expr) }
-                        )
-                        .parse()
-                    });
+                    let default_body = adjust_expr(
+                        mode,
+                        ty,
+                        parse_quote!(self),
+                        |expr| parse_quote!(#method_name(_visitor, #expr)),
+                    );
 
-                    tokens.push_tokens(&q!(
-                        Vars {
-                            Type: ty,
-                            expr,
-                            default_body,
-                        },
-                        {
-                            impl<'ast, V: VisitAll<'ast>> VisitAllWith<'ast, V> for Type {
-                                fn visit_all_with(&'ast self, v: &mut V) {
-                                    let mut all = ::global_visit::All { visitor: v };
-                                    let mut v = &mut all;
-                                    expr
-                                }
+                    tokens.extend(quote! {
+                        impl<'ast, V: VisitAll<'ast>> VisitAllWith<'ast, V> for #ty {
+                            fn visit_all_with(&'ast self, v: &mut V) {
+                                let mut all = ::global_visit::All { visitor: v };
+                                let mut v = &mut all;
+                                #expr
+                            }
 
-                                fn visit_all_children_with(&'ast self, _visitor: &mut V) {
-                                    let mut all = ::global_visit::All { visitor: _visitor };
-                                    let mut _visitor = &mut all;
-                                    default_body
-                                }
+                            fn visit_all_children_with(&'ast self, _visitor: &mut V) {
+                                let mut all = ::global_visit::All { visitor: _visitor };
+                                let mut _visitor = &mut all;
+                                #default_body
                             }
                         }
-                    ));
+                    });
                 }
 
                 Mode::VisitMut => {
-                    let default_body = adjust_expr(mode, ty, q!({ self }).parse(), |expr| {
-                        q!(
-                            Vars {
-                                expr,
-                                method_name: &method_name
-                            },
-                            { method_name(_visitor, expr) }
-                        )
-                        .parse()
-                    });
+                    let default_body = adjust_expr(
+                        mode,
+                        ty,
+                        parse_quote!(self),
+                        |expr| parse_quote!(#method_name(_visitor, #expr)),
+                    );
 
-                    tokens.push_tokens(&q!(
-                        Vars {
-                            default_body,
-                            Type: ty,
-                            expr,
-                        },
-                        {
-                            impl<'ast, V: VisitMut<'ast>> VisitMutWith<'ast, V> for Type {
-                                fn visit_mut_with(&'ast mut self, v: &mut V) {
-                                    expr
-                                }
+                    tokens.extend(quote! {
+                        impl<'ast, V: VisitMut<'ast>> VisitMutWith<'ast, V> for #ty {
+                            fn visit_mut_with(&'ast mut self, v: &mut V) {
+                                #expr
+                            }
 
-                                fn visit_mut_children_with(&'ast mut self, _visitor: &mut V) {
-                                    default_body
-                                }
+                            fn visit_mut_children_with(&'ast mut self, _visitor: &mut V) {
+                                #default_body
                             }
                         }
-                    ));
+                    });
                 }
 
                 Mode::Fold => {
-                    tokens.push_tokens(&q!(
-                        Vars {
-                            method_name,
-                            Type: ty,
-                            expr,
-                        },
-                        {
-                            impl<V: Fold> FoldWith<V> for Type {
-                                fn fold_with(self, v: &mut V) -> Self {
-                                    expr
-                                }
+                    tokens.extend(quote! {
+                        impl<V: Fold> FoldWith<V> for #ty {
+                            fn fold_with(self, v: &mut V) -> Self {
+                                #expr
+                            }
 
-                                fn fold_children_with(self, v: &mut V) -> Self {
-                                    method_name(v, self)
-                                }
+                            fn fold_children_with(self, v: &mut V) -> Self {
+                                #method_name(v, self)
                             }
                         }
-                    ));
+                    });
                 }
             }
         }
@@ -753,14 +632,14 @@ where
                 Mode::Fold => expr,
                 Mode::VisitMut => expr,
                 Mode::Visit | Mode::VisitAll => {
-                    q!(Vars { expr }, { expr.as_ref().map(|v| &**v) }).parse()
+                    parse_quote!( #expr.as_ref().map(|v| &**v) )
                 }
             }
         } else {
             match mode {
                 Mode::Fold => expr,
                 Mode::VisitMut => expr,
-                Mode::Visit | Mode::VisitAll => q!(Vars { expr }, { expr.as_ref() }).parse(),
+                Mode::Visit | Mode::VisitAll => parse_quote!( #expr.as_ref() ),
             }
         };
     }
@@ -772,7 +651,7 @@ where
                 // TODO
                 expr
             }
-            Mode::Fold => q!(Vars { expr }, { *expr }).parse(),
+            Mode::Fold => parse_quote!( *#expr ),
         };
     }
 
@@ -785,7 +664,7 @@ where
                 // TODO
                 expr
             }
-            Mode::Fold => q!(Vars { expr }, { Box::new(expr) }).parse(),
+            Mode::Fold => parse_quote!( Box::new(#expr) ),
         };
     }
 
@@ -800,25 +679,9 @@ fn visit_expr(mode: Mode, ty: &Type, visitor: &Expr, expr: Expr) -> Expr {
     let visit_name = method_name(mode, ty);
 
     adjust_expr(mode, ty, expr, |expr| match mode {
-        Mode::Fold | Mode::VisitMut => q!(
-            Vars {
-                visitor,
-                expr,
-                visit_name
-            },
-            { visitor.visit_name(expr) }
-        )
-        .parse(),
+        Mode::Fold | Mode::VisitMut => parse_quote!( #visitor.#visit_name(#expr) ),
 
-        Mode::Visit | Mode::VisitAll => q!(
-            Vars {
-                visitor,
-                expr,
-                visit_name
-            },
-            { visitor.visit_name(expr) }
-        )
-        .parse(),
+        Mode::Visit | Mode::VisitAll => parse_quote!( #visitor.#visit_name(#expr) ),
     })
 }
 
@@ -835,40 +698,20 @@ fn make_arm_from_struct(mode: Mode, path: &Path, variant: &Fields) -> Arm {
             .unwrap_or_else(|| Ident::new(&format!("_{}", i), call_site()));
 
         if !skip(ty) {
-            let expr = q!(
-                Vars {
-                    binding_ident: &binding_ident
-                },
-                { binding_ident }
-            )
-            .parse();
+            let expr = parse_quote!(#binding_ident);
 
-            let expr = visit_expr(mode, ty, &q!({ _visitor }).parse(), expr);
+            let expr = visit_expr(mode, ty, &parse_quote!(_visitor), expr);
             stmts.push(match mode {
-                Mode::VisitAll | Mode::Visit | Mode::VisitMut => Stmt::Semi(expr, call_site()),
-                Mode::Fold => q!(
-                    Vars {
-                        name: &binding_ident,
-                        expr
-                    },
-                    {
-                        let name = expr;
-                    }
-                )
-                .parse(),
+                Mode::VisitAll | Mode::Visit | Mode::VisitMut => {
+                    Stmt::Semi(expr, Token![;](call_site()))
+                }
+                Mode::Fold => parse_quote!(let #binding_ident = #expr;),
             });
         }
 
         if field.ident.is_some() {
-            fields.push(
-                q!(
-                    Vars {
-                        field: &binding_ident
-                    },
-                    { field }
-                )
-                .parse(),
-            );
+            let field = &binding_ident;
+            fields.push(parse_quote!(#field));
         } else {
             fields.push(FieldValue {
                 attrs: vec![],
@@ -876,8 +719,8 @@ fn make_arm_from_struct(mode: Mode, path: &Path, variant: &Fields) -> Arm {
                     index: i as _,
                     span: path.span(),
                 }),
-                colon_token: Some(def_site()),
-                expr: q!(Vars { binding_ident }, { binding_ident }).parse(),
+                colon_token: Some(Default::default()),
+                expr: parse_quote!( #binding_ident ),
             });
         }
     }
@@ -885,33 +728,21 @@ fn make_arm_from_struct(mode: Mode, path: &Path, variant: &Fields) -> Arm {
     match mode {
         Mode::Fold => {
             // Append return statement
-            stmts.push(
-                q!(
-                    Vars {
-                        Path: &path,
-                        fields: &fields
-                    },
-                    {
-                        //
-                        return Path { fields };
-                    }
-                )
-                .parse(),
-            )
+            stmts.push(parse_quote!(return #path { #fields };))
         }
         Mode::VisitAll | Mode::Visit | Mode::VisitMut => {}
     }
 
     let block = Block {
-        brace_token: def_site(),
+        brace_token: Default::default(),
         stmts,
     };
 
     Arm {
         attrs: vec![],
-        pat: q!(Vars { Path: path, fields }, { Path { fields } }).parse(),
+        pat: parse_quote!( #path { #fields } ),
         guard: None,
-        fat_arrow_token: def_site(),
+        fat_arrow_token: Default::default(),
         body: Box::new(Expr::Block(ExprBlock {
             attrs: vec![],
             label: None,
@@ -927,25 +758,25 @@ fn method_sig(mode: Mode, ty: &Type) -> Signature {
         asyncness: None,
         unsafety: None,
         abi: None,
-        fn_token: def_site(),
+        fn_token: Default::default(),
         ident: method_name(mode, ty),
         generics: Default::default(),
-        paren_token: def_site(),
+        paren_token: Default::default(),
         inputs: {
             let mut p = Punctuated::default();
-            p.push_value(q!(Vars {}, { &mut self }).parse());
-            p.push_punct(def_site());
+            p.push_value(parse_quote!(&mut self));
+            p.push_punct(Default::default());
             match mode {
                 Mode::Fold => {
-                    p.push_value(q!(Vars { Type: ty }, { n: Type }).parse());
+                    p.push_value(parse_quote!( n: #ty ));
                 }
 
                 Mode::VisitMut => {
-                    p.push_value(q!(Vars { Type: ty }, { n: &'ast mut Type }).parse());
+                    p.push_value(parse_quote!( n: &'ast mut #ty ));
                 }
 
                 Mode::Visit | Mode::VisitAll => {
-                    p.push_value(q!(Vars { Type: ty }, { n: &'ast Type }).parse());
+                    p.push_value(parse_quote!( n: &'ast #ty ));
                 }
             }
 
@@ -953,7 +784,7 @@ fn method_sig(mode: Mode, ty: &Type) -> Signature {
         },
         variadic: None,
         output: match mode {
-            Mode::Fold => q!(Vars { ty }, { -> ty }).parse(),
+            Mode::Fold => parse_quote!( -> #ty ),
             _ => ReturnType::Default,
         },
     }
@@ -989,12 +820,12 @@ fn make_method(mode: Mode, e: &Item, types: &mut Vec<Type>) -> TraitItemMethod {
             let block = {
                 let arm = make_arm_from_struct(mode, &s.ident.clone().into(), &s.fields);
 
-                let mut match_expr: ExprMatch = q!((match n {})).parse();
+                let mut match_expr: ExprMatch = parse_quote!(match n {});
                 match_expr.arms.push(arm);
 
                 Block {
-                    brace_token: def_site(),
-                    stmts: vec![q!(Vars { match_expr }, { match_expr }).parse()],
+                    brace_token: Default::default(),
+                    stmts: vec![parse_quote!( #match_expr )],
                 }
             };
 
@@ -1032,28 +863,24 @@ fn make_method(mode: Mode, e: &Item, types: &mut Vec<Type>) -> TraitItemMethod {
                         types.push(f.ty.clone());
                     }
 
+                    let enum_name = &e.ident;
+                    let variant_name = &variant.ident;
+
                     let arm = make_arm_from_struct(
                         mode,
-                        &q!(
-                            Vars {
-                                Enum: &e.ident,
-                                Variant: &variant.ident
-                            },
-                            { Enum::Variant }
-                        )
-                        .parse(),
+                        &parse_quote!(#enum_name::#variant_name),
                         &variant.fields,
                     );
                     arms.push(arm);
                 }
 
                 Block {
-                    brace_token: def_site(),
+                    brace_token: Default::default(),
                     stmts: vec![Stmt::Expr(Expr::Match(ExprMatch {
                         attrs: vec![],
-                        match_token: def_site(),
-                        expr: q!((n)).parse(),
-                        brace_token: def_site(),
+                        match_token: Default::default(),
+                        expr: parse_quote!(n),
+                        brace_token: Default::default(),
                         arms,
                     }))],
                 }
@@ -1081,21 +908,21 @@ fn create_method_sig(mode: Mode, ty: &Type) -> Signature {
             asyncness: None,
             unsafety: None,
             abi: None,
-            fn_token: def_site(),
+            fn_token: Default::default(),
             ident,
             generics: Default::default(),
-            paren_token: def_site(),
+            paren_token: Default::default(),
             inputs: {
                 let mut p = Punctuated::default();
-                p.push_value(q!(Vars {}, { &mut self }).parse());
-                p.push_punct(def_site());
-                p.push_value(q!(Vars { Type: ty }, { n: Type }).parse());
+                p.push_value(parse_quote!(&mut self));
+                p.push_punct(Default::default());
+                p.push_value(parse_quote!( n: #ty ));
 
                 p
             },
             variadic: None,
             output: match mode {
-                Mode::Fold => q!(Vars { ty }, { -> ty }).parse(),
+                Mode::Fold => parse_quote!( -> #ty ),
                 _ => ReturnType::Default,
             },
         }
@@ -1111,9 +938,13 @@ fn create_method_sig(mode: Mode, ty: &Type) -> Signature {
             mode,
             ident,
             &Type::Reference(TypeReference {
-                and_token: def_site(),
+                and_token: Default::default(),
                 lifetime,
-                mutability: if mutable { Some(def_site()) } else { None },
+                mutability: if mutable {
+                    Some(Default::default())
+                } else {
+                    None
+                },
                 elem: Box::new(ty.clone()),
             }),
         )
@@ -1156,24 +987,20 @@ fn create_method_sig(mode: Mode, ty: &Type) -> Signature {
                     if let Some(item) = extract_vec(arg) {
                         match mode {
                             Mode::Fold => {
-                                return mk_exact(
-                                    mode,
-                                    ident,
-                                    &q!(Vars { item }, { Option<Vec<item>> }).parse(),
-                                );
+                                return mk_exact(mode, ident, &parse_quote!( Option<Vec<#item>> ));
                             }
                             Mode::VisitMut => {
                                 return mk_exact(
                                     mode,
                                     ident,
-                                    &q!(Vars { item }, { &'ast mut Option<Vec<item>> }).parse(),
+                                    &parse_quote!( &'ast mut Option<Vec<#item>> ),
                                 );
                             }
                             Mode::Visit | Mode::VisitAll => {
                                 return mk_exact(
                                     mode,
                                     ident,
-                                    &q!(Vars { item }, { Option<&'ast [item]> }).parse(),
+                                    &parse_quote!( Option<&'ast [#item]> ),
                                 );
                             }
                         }
@@ -1181,25 +1008,13 @@ fn create_method_sig(mode: Mode, ty: &Type) -> Signature {
 
                     match mode {
                         Mode::Fold => {
-                            return mk_exact(
-                                mode,
-                                ident,
-                                &q!(Vars { arg }, { Option<arg> }).parse(),
-                            );
+                            return mk_exact(mode, ident, &parse_quote!( Option<#arg> ));
                         }
                         Mode::VisitMut => {
-                            return mk_exact(
-                                mode,
-                                ident,
-                                &q!(Vars { arg }, { &'ast mut Option<arg> }).parse(),
-                            );
+                            return mk_exact(mode, ident, &parse_quote!( &'ast mut Option<#arg> ));
                         }
                         Mode::Visit | Mode::VisitAll => {
-                            return mk_exact(
-                                mode,
-                                ident,
-                                &q!(Vars { arg }, { Option<&'ast arg> }).parse(),
-                            );
+                            return mk_exact(mode, ident, &parse_quote!( Option<&'ast #arg> ));
                         }
                     }
                 }
@@ -1218,14 +1033,14 @@ fn create_method_sig(mode: Mode, ty: &Type) -> Signature {
                                             return mk_exact(
                                                 mode,
                                                 ident,
-                                                &q!(Vars { arg }, { Vec<arg> }).parse(),
+                                                &parse_quote!( Vec<#arg> ),
                                             );
                                         }
                                         Mode::VisitMut => {
                                             return mk_ref(
                                                 mode,
                                                 ident,
-                                                &q!(Vars { arg }, { Vec<arg> }).parse(),
+                                                &parse_quote!( Vec<#arg> ),
                                                 true,
                                             );
                                         }
@@ -1233,7 +1048,7 @@ fn create_method_sig(mode: Mode, ty: &Type) -> Signature {
                                             return mk_ref(
                                                 mode,
                                                 ident,
-                                                &q!(Vars { arg }, { [arg] }).parse(),
+                                                &parse_quote!( [#arg] ),
                                                 false,
                                             );
                                         }
@@ -1269,15 +1084,15 @@ fn create_method_body(mode: Mode, ty: &Type) -> Block {
             Mode::Visit | Mode::VisitAll => {
                 let visit = method_name(mode, ty);
 
-                return q!(Vars { visit }, ({ _visitor.visit(n) })).parse();
+                return parse_quote!({ _visitor.#visit(n) });
             }
             Mode::VisitMut => {
                 return Block {
-                    brace_token: def_site(),
+                    brace_token: Default::default(),
                     stmts: vec![],
                 }
             }
-            Mode::Fold => return q!(({ n })).parse(),
+            Mode::Fold => return parse_quote!({ n }),
         }
     }
 
@@ -1299,11 +1114,7 @@ fn create_method_body(mode: Mode, ty: &Type) -> Block {
                         Mode::Fold => {
                             let ident = method_name(mode, arg);
 
-                            return q!(
-                                Vars { ident },
-                                ({ global_visit::util::map::Map::map(n, |n| _visitor.ident(*n)) })
-                            )
-                            .parse();
+                            return parse_quote!({ global_visit::util::map::Map::map(n, |n| _visitor.#ident(*n)) });
                         }
                         Mode::VisitAll | Mode::Visit | Mode::VisitMut => {
                             return create_method_body(mode, arg);
@@ -1321,55 +1132,39 @@ fn create_method_body(mode: Mode, ty: &Type) -> Block {
                                     let ident = method_name(mode, arg);
 
                                     if mode == Mode::Fold && as_box(arg).is_some() {
-                                        return q!(
-                                            Vars { ident },
-                                            ({
-                                                match n {
-                                                    Some(n) => Some(
-                                                        global_visit::util::map::Map::map(n, |n| {
-                                                            _visitor.ident(n)
-                                                        }),
-                                                    ),
-                                                    None => None,
-                                                }
-                                            })
-                                        )
-                                        .parse();
+                                        return parse_quote!({
+                                            match n {
+                                                Some(n) => Some(
+                                                    global_visit::util::map::Map::map(n, |n| {
+                                                        _visitor.#ident(n)
+                                                    }),
+                                                ),
+                                                None => None,
+                                            }
+                                        });
                                     }
 
                                     return match mode {
-                                        Mode::Fold => q!(
-                                            Vars { ident },
-                                            ({
-                                                match n {
-                                                    Some(n) => Some(_visitor.ident(n)),
-                                                    None => None,
-                                                }
-                                            })
-                                        )
-                                        .parse(),
+                                        Mode::Fold => parse_quote!({
+                                            match n {
+                                                Some(n) => Some(_visitor.#ident(n)),
+                                                None => None,
+                                            }
+                                        }),
 
-                                        Mode::VisitMut => q!(
-                                            Vars { ident },
-                                            ({
-                                                match n {
-                                                    Some(n) => _visitor.ident(n),
-                                                    None => {}
-                                                }
-                                            })
-                                        )
-                                        .parse(),
+                                        Mode::VisitMut => parse_quote!({
+                                            match n {
+                                                Some(n) => _visitor.#ident(n),
+                                                None => {}
+                                            }
+                                        }),
 
-                                        Mode::Visit | Mode::VisitAll => q!(
-                                            Vars { ident },
-                                            ({
-                                                match n {
-                                                    Some(n) => _visitor.ident(n),
-                                                    None => {}
-                                                }
-                                            })
-                                        )
-                                        .parse(),
+                                        Mode::Visit | Mode::VisitAll => parse_quote!({
+                                            match n {
+                                                Some(n) => _visitor.#ident(n),
+                                                None => {}
+                                            }
+                                        }),
                                     };
                                 }
                                 _ => unimplemented!("generic parameter other than type"),
@@ -1391,16 +1186,12 @@ fn create_method_body(mode: Mode, ty: &Type) -> Block {
                                     match mode {
                                         Mode::Fold => {
                                             if let Some(..) = as_box(arg) {
-                                                return q!(
-                                                    Vars { ident },
-                                                    ({
-                                                        global_visit::util::move_map::MoveMap::move_map(
-                                                            n,
-                                                            |v| global_visit::util::map::Map::map(v, |v|_visitor.ident(v)),
-                                                        )
-                                                    })
-                                                )
-                                                .parse();
+                                                return parse_quote!({
+                                                    global_visit::util::move_map::MoveMap::move_map(
+                                                        n,
+                                                        |v| global_visit::util::map::Map::map(v, |v|_visitor.#ident(v)),
+                                                    )
+                                                });
                                             }
                                         }
                                         Mode::Visit | Mode::VisitAll => {}
@@ -1409,54 +1200,36 @@ fn create_method_body(mode: Mode, ty: &Type) -> Block {
 
                                     return if is_option(arg) {
                                         match mode {
-                                            Mode::Fold => q!(
-                                                Vars { ident },
-                                                ({
-                                                    global_visit::util::move_map::MoveMap::move_map(
-                                                        n,
-                                                        |v| _visitor.ident(v),
-                                                    )
-                                                })
-                                            )
-                                            .parse(),
-                                            Mode::VisitMut => q!(
-                                                Vars { ident },
-                                                ({ n.iter_mut().for_each(|v| _visitor.ident(v)) })
-                                            )
-                                            .parse(),
-                                            Mode::Visit | Mode::VisitAll => q!(
-                                                Vars { ident },
-                                                ({
-                                                    n.iter()
-                                                        .for_each(|v| _visitor.ident(v.as_ref()))
-                                                })
-                                            )
-                                            .parse(),
+                                            Mode::Fold => parse_quote!({
+                                                global_visit::util::move_map::MoveMap::move_map(
+                                                    n,
+                                                    |v| _visitor.#ident(v),
+                                                )
+                                            }),
+                                            Mode::VisitMut => {
+                                                parse_quote!({ n.iter_mut().for_each(|v| _visitor.#ident(v)) })
+                                            }
+                                            Mode::Visit | Mode::VisitAll => parse_quote!({
+                                                n.iter()
+                                                    .for_each(|v| _visitor.#ident(v.as_ref()))
+                                            }),
                                         }
                                     } else {
                                         match mode {
-                                            Mode::Fold => q!(
-                                                Vars { ident },
-                                                ({
-                                                    global_visit::util::move_map::MoveMap::move_map(
-                                                        n,
-                                                        |v| _visitor.ident(v),
-                                                    )
-                                                })
-                                            )
-                                            .parse(),
+                                            Mode::Fold => parse_quote!({
+                                                global_visit::util::move_map::MoveMap::move_map(
+                                                    n,
+                                                    |v| _visitor.#ident(v),
+                                                )
+                                            }),
 
-                                            Mode::VisitMut => q!(
-                                                Vars { ident },
-                                                ({ n.iter_mut().for_each(|v| _visitor.ident(v)) })
-                                            )
-                                            .parse(),
+                                            Mode::VisitMut => {
+                                                parse_quote!({ n.iter_mut().for_each(|v| _visitor.#ident(v)) })
+                                            }
 
-                                            Mode::Visit | Mode::VisitAll => q!(
-                                                Vars { ident },
-                                                ({ n.iter().for_each(|v| _visitor.ident(v)) })
-                                            )
-                                            .parse(),
+                                            Mode::Visit | Mode::VisitAll => {
+                                                parse_quote!({ n.iter().for_each(|v| _visitor.#ident(v)) })
+                                            }
                                         }
                                     };
                                 }
@@ -1469,8 +1242,8 @@ fn create_method_body(mode: Mode, ty: &Type) -> Block {
             }
 
             match mode {
-                Mode::Fold => q!(({ return n })).parse(),
-                Mode::VisitAll | Mode::Visit | Mode::VisitMut => q!(({})).parse(),
+                Mode::Fold => parse_quote!({ return n }),
+                Mode::VisitAll | Mode::Visit | Mode::VisitMut => parse_quote!({}),
             }
         }
         Type::Ptr(_) => unimplemented!("type: pointer"),

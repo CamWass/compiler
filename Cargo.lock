@@ -129,8 +129,8 @@ dependencies = [
 name = "clone_node"
 version = "0.1.0"
 dependencies = [
- "pmutil",
  "proc-macro2",
+ "quote",
  "syn 1.0.109",
 ]
 
@@ -556,7 +556,6 @@ checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
 name = "macro_common"
 version = "0.1.0"
 dependencies = [
- "pmutil",
  "proc-macro2",
  "quote",
  "syn 1.0.109",
@@ -588,7 +587,6 @@ name = "node_id"
 version = "0.1.0"
 dependencies = [
  "macro_common",
- "pmutil",
  "proc-macro2",
  "quote",
  "syn 1.0.109",
@@ -768,17 +766,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81b30686a7d9c3e010b84284bdd26a29f2138574f52f5eb6f794fc0ad924e705"
 dependencies = [
  "plotters-backend",
-]
-
-[[package]]
-name = "pmutil"
-version = "0.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3894e5d549cccbe44afecf72922f277f603cd4bb0219c8342631ef18fffbe004"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
 ]
 
 [[package]]
@@ -1151,7 +1138,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "glob",
- "pmutil",
  "proc-macro2",
  "quote",
  "regex",
@@ -1347,7 +1333,6 @@ name = "visit_macros"
 version = "0.1.0"
 dependencies = [
  "macro_common",
- "pmutil",
  "proc-macro2",
  "quote",
  "syn 1.0.109",
