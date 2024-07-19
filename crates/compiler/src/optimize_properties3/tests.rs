@@ -40,6 +40,38 @@ fn test_same(input: &str) {
 }
 
 #[test]
+fn test_spread() {
+    // Check the spread target is invalidated.
+    test_same(
+        "
+const obj = { prop: 1 };
+func(...obj)
+",
+    );
+    test_same(
+        "
+const obj = { prop: 1 };
+new Foo(...obj);
+",
+    );
+    test_same(
+        "
+const obj = { prop: 1 };
+[...obj];
+",
+    );
+
+    // Check all other arguments are invalidated too.
+    test_same(
+        "
+function foo() {}
+const obj = { prop: 1 };
+foo(...unknown, obj);
+",
+    );
+}
+
+#[test]
 fn test_primitive_access_does_not_conflate() {
     // Had a bug where the same property name on different objects would be
     // conflated they were accessed on a union with a primitive.

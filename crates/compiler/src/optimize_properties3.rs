@@ -487,8 +487,8 @@ impl GraphVisitor<'_> {
             Expr::Array(n) => {
                 for element in &n.elems {
                     match element {
-                        Some(ExprOrSpread::Spread(_)) => todo!(),
-                        Some(ExprOrSpread::Expr(element)) => {
+                        Some(ExprOrSpread::Spread(SpreadElement { expr: element, .. }))
+                        | Some(ExprOrSpread::Expr(element)) => {
                             let value = self.get_rhs(element, true);
                             self.invalidate(&value);
                         }
@@ -667,10 +667,23 @@ impl GraphVisitor<'_> {
                         .args
                         .iter()
                         .map(|arg| match arg {
-                            ExprOrSpread::Spread(_) => todo!(),
+                            ExprOrSpread::Spread(arg) => self.get_rhs(&arg.expr, true),
                             ExprOrSpread::Expr(arg) => self.get_rhs(arg, true),
                         })
                         .collect::<Vec<_>>();
+
+                    if n.args.iter().any(|a| matches!(a, ExprOrSpread::Spread(_))) {
+                        for arg in args {
+                            self.invalidate(&arg);
+                        }
+                        // TODO: this is too conservative; ideally we'd just record that each
+                        // callee is called with unknown parameters and let that info propagate.
+                        // However, we don't yet know what we're calling, so we just invalidate
+                        // the callees, which will cause their params to be invalidated too.
+                        self.invalidate(&callee);
+                        return ret!(vec![PointerId::UNKNOWN]);
+                    }
+
                     for &callee in &callee {
                         if !self.store.is_callable_pointer(callee) && callee != PointerId::UNKNOWN {
                             continue;
@@ -707,13 +720,12 @@ impl GraphVisitor<'_> {
                 self.invalidate(&callee);
                 if let Some(args) = &n.args {
                     for arg in args {
-                        match arg {
-                            ExprOrSpread::Spread(_) => todo!(),
-                            ExprOrSpread::Expr(arg) => {
+                        let arg = match arg {
+                            ExprOrSpread::Spread(arg) => &arg.expr,
+                            ExprOrSpread::Expr(arg) => arg,
+                        };
                                 let value = self.get_rhs(arg, true);
                                 self.invalidate(&value);
-                            }
-                        }
                     }
                 }
                 ret!(vec![PointerId::UNKNOWN])
