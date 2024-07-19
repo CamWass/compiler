@@ -11,11 +11,11 @@ use crate::{
     stmt::BlockStmt,
     GetNodeId, Invalid, NodeId, ParamWithoutDecorators,
 };
-use ast_node::ast_node;
+use clone_node::CloneNode;
 use global_common::util::take::Take;
+use node_id::GetNodeIdMacro;
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub enum Expr {
     This(ThisExpr),
 
@@ -102,15 +102,13 @@ impl Take for Expr {
     }
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct ThisExpr {
     pub node_id: NodeId,
 }
 
 /// Array literal.
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct ArrayLit {
     pub node_id: NodeId,
 
@@ -118,23 +116,20 @@ pub struct ArrayLit {
 }
 
 /// Object literal.
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct ObjectLit {
     pub node_id: NodeId,
 
     pub props: Vec<Prop>,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct SpreadElement {
     pub node_id: NodeId,
     pub expr: Box<Expr>,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct UnaryExpr {
     pub node_id: NodeId,
 
@@ -143,8 +138,7 @@ pub struct UnaryExpr {
     pub arg: Box<Expr>,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct UpdateExpr {
     pub node_id: NodeId,
 
@@ -155,8 +149,7 @@ pub struct UpdateExpr {
     pub arg: Box<Expr>,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct BinExpr {
     pub node_id: NodeId,
 
@@ -168,8 +161,7 @@ pub struct BinExpr {
 }
 
 /// Function expression.
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct FnExpr {
     pub node_id: NodeId,
 
@@ -178,8 +170,7 @@ pub struct FnExpr {
 }
 
 /// Class expression.
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct ClassExpr {
     pub node_id: NodeId,
 
@@ -187,8 +178,7 @@ pub struct ClassExpr {
     pub class: Class,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct AssignExpr {
     pub node_id: NodeId,
 
@@ -199,8 +189,7 @@ pub struct AssignExpr {
     pub right: Box<Expr>,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct MemberExpr {
     pub node_id: NodeId,
 
@@ -211,8 +200,7 @@ pub struct MemberExpr {
     pub computed: bool,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct CondExpr {
     pub node_id: NodeId,
 
@@ -223,8 +211,7 @@ pub struct CondExpr {
     pub alt: Box<Expr>,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct CallExpr {
     pub node_id: NodeId,
 
@@ -233,8 +220,7 @@ pub struct CallExpr {
     pub args: Vec<ExprOrSpread>,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct NewExpr {
     pub node_id: NodeId,
 
@@ -243,16 +229,14 @@ pub struct NewExpr {
     pub args: Option<Vec<ExprOrSpread>>,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct SeqExpr {
     pub node_id: NodeId,
 
     pub exprs: Vec<Box<Expr>>,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct ArrowExpr {
     pub node_id: NodeId,
 
@@ -264,8 +248,7 @@ pub struct ArrowExpr {
     pub is_async: bool,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct YieldExpr {
     pub node_id: NodeId,
 
@@ -274,8 +257,7 @@ pub struct YieldExpr {
     pub delegate: bool,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct MetaPropExpr {
     pub node_id: NodeId,
 
@@ -284,16 +266,14 @@ pub struct MetaPropExpr {
     pub prop: Ident,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct AwaitExpr {
     pub node_id: NodeId,
 
     pub arg: Box<Expr>,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct Tpl {
     pub node_id: NodeId,
 
@@ -302,8 +282,7 @@ pub struct Tpl {
     pub quasis: Vec<TplElement>,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct TaggedTpl {
     pub node_id: NodeId,
 
@@ -312,8 +291,7 @@ pub struct TaggedTpl {
     pub tpl: Tpl,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct TplElement {
     pub node_id: NodeId,
     pub tail: bool,
@@ -321,38 +299,33 @@ pub struct TplElement {
     pub raw: Str,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct ParenExpr {
     pub node_id: NodeId,
 
     pub expr: Box<Expr>,
 }
 
-#[ast_node]
 #[allow(variant_size_differences)]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub enum ExprOrSuper {
     Super(Super),
 
     Expr(Box<Expr>),
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct Super {
     pub node_id: NodeId,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub enum ExprOrSpread {
     Spread(SpreadElement),
     Expr(Box<Expr>),
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub enum PatOrExpr {
     Expr(Box<Expr>),
     Pat(Box<Pat>),
@@ -376,8 +349,7 @@ impl From<Str> for Expr {
     }
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct OptChainExpr {
     pub node_id: NodeId,
     pub expr: Box<Expr>,

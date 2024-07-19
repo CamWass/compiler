@@ -1,15 +1,15 @@
-use crate::{jsx::JSXText, CloneNode, GetNodeId, NodeId};
-use ast_node::ast_node;
+use crate::{jsx::JSXText, GetNodeId, NodeId};
 use atoms::JsWord;
+use clone_node::CloneNode;
 use global_common::integer_decode::integer_decode;
+use node_id::GetNodeIdMacro;
 use num_bigint::BigInt as BigIntValue;
 use std::{
     fmt::{self, Display, Formatter},
     hash::{Hash, Hasher},
 };
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub enum Lit {
     Str(Str),
 
@@ -26,8 +26,7 @@ pub enum Lit {
     JSXText(JSXText),
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct BigInt {
     pub node_id: NodeId,
     pub value: BigIntValue,
@@ -43,8 +42,7 @@ impl arbitrary::Arbitrary for BigInt {
     }
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct Str {
     pub node_id: NodeId,
 
@@ -76,7 +74,7 @@ pub enum StrKind {
     Synthesized,
 }
 
-impl CloneNode for StrKind {
+impl crate::CloneNode for StrKind {
     fn clone_node(&self, _: &mut crate::ProgramData) -> Self {
         *self
     }
@@ -110,21 +108,18 @@ impl Str {
     }
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct Bool {
     pub node_id: NodeId,
     pub value: bool,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct Null {
     pub node_id: NodeId,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct Regex {
     pub node_id: NodeId,
 
@@ -144,7 +139,7 @@ impl arbitrary::Arbitrary for Regex {
     }
 }
 
-#[ast_node]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode)]
 pub struct Number {
     pub node_id: NodeId,
     /// **Note**: This should not be `NaN`. Use [crate::Ident] to represent NaN.

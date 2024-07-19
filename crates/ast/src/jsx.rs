@@ -4,20 +4,19 @@ use crate::{
     lit::Lit,
     GetNodeId, NodeId,
 };
-use ast_node::ast_node;
 use atoms::JsWord;
+use node_id::GetNodeIdMacro;
+use clone_node::CloneNode;
 
 /// Used for `obj` property of `JSXMemberExpr`.
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 #[allow(variant_size_differences)]
 pub enum JSXObject {
     JSXMemberExpr(Box<JSXMemberExpr>),
     Ident(Ident),
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct JSXMemberExpr {
     pub node_id: NodeId,
 
@@ -27,8 +26,7 @@ pub struct JSXMemberExpr {
 }
 
 /// XML-based namespace syntax:
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct JSXNamespacedName {
     pub node_id: NodeId,
 
@@ -36,46 +34,40 @@ pub struct JSXNamespacedName {
     pub name: Ident,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct JSXEmptyExpr {
     pub node_id: NodeId,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct JSXExprContainer {
     pub node_id: NodeId,
 
     pub expr: JSXExpr,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 #[allow(variant_size_differences)]
 pub enum JSXExpr {
     JSXEmptyExpr(JSXEmptyExpr),
     Expr(Box<Expr>),
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct JSXSpreadChild {
     pub node_id: NodeId,
 
     pub expr: Box<Expr>,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub enum JSXElementName {
     Ident(Ident),
     JSXMemberExpr(JSXMemberExpr),
     JSXNamespacedName(JSXNamespacedName),
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct JSXOpeningElement {
     pub node_id: NodeId,
 
@@ -86,23 +78,20 @@ pub struct JSXOpeningElement {
     pub self_closing: bool,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 #[allow(variant_size_differences)]
 pub enum JSXAttrOrSpread {
     JSXAttr(JSXAttr),
     SpreadElement(SpreadElement),
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct JSXClosingElement {
     pub node_id: NodeId,
     pub name: JSXElementName,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct JSXAttr {
     pub node_id: NodeId,
     pub name: JSXAttrName,
@@ -110,15 +99,13 @@ pub struct JSXAttr {
     pub value: Option<JSXAttrValue>,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub enum JSXAttrName {
     Ident(Ident),
     JSXNamespacedName(JSXNamespacedName),
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub enum JSXAttrValue {
     Lit(Lit),
 
@@ -129,8 +116,7 @@ pub enum JSXAttrValue {
     JSXFragment(JSXFragment),
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct JSXText {
     pub node_id: NodeId,
     pub value: JsWord,
@@ -148,8 +134,7 @@ impl arbitrary::Arbitrary for JSXText {
     }
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct JSXElement {
     pub node_id: NodeId,
     pub opening: JSXOpeningElement,
@@ -157,8 +142,7 @@ pub struct JSXElement {
     pub closing: Option<JSXClosingElement>,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub enum JSXElementChild {
     JSXText(JSXText),
 
@@ -171,8 +155,7 @@ pub enum JSXElementChild {
     JSXFragment(JSXFragment),
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct JSXFragment {
     pub node_id: NodeId,
 
@@ -183,14 +166,12 @@ pub struct JSXFragment {
     pub closing: JSXClosingFragment,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct JSXOpeningFragment {
     pub node_id: NodeId,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct JSXClosingFragment {
     pub node_id: NodeId,
 }

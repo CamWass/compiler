@@ -1,11 +1,11 @@
 use crate::{GetNodeId, NodeId, ProgramData};
-use ast_node::ast_node;
 use atoms::{js_word, JsWord};
+use clone_node::CloneNode;
 use global_common::{util::take::Take, SyntaxContext};
+use node_id::GetNodeIdMacro;
 
 /// Identifier used as a pattern.
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct BindingIdent {
     pub node_id: NodeId,
     pub id: Ident,
@@ -21,8 +21,7 @@ impl BindingIdent {
 }
 
 /// Ident.
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct Ident {
     pub node_id: NodeId,
     pub sym: JsWord,
@@ -53,8 +52,7 @@ impl arbitrary::Arbitrary for Ident {
     }
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct PrivateName {
     pub node_id: NodeId,
     pub id: Ident,

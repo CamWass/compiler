@@ -36,7 +36,6 @@ checksum = "96d30a06541fbafbc7f82ed10c06164cfbd2c401138f6addd8404629c4b16711"
 name = "ast"
 version = "0.1.0"
 dependencies = [
- "ast_node",
  "atoms",
  "clone_node",
  "global_common",
@@ -45,17 +44,6 @@ dependencies = [
  "num-bigint",
  "rustc-hash",
  "string_enum",
-]
-
-[[package]]
-name = "ast_node"
-version = "0.1.0"
-dependencies = [
- "global_common",
- "macro_common",
- "pmutil",
- "proc-macro2",
- "syn 1.0.109",
 ]
 
 [[package]]
@@ -701,7 +689,6 @@ name = "parser"
 version = "0.1.0"
 dependencies = [
  "ast",
- "ast_node",
  "atoms",
  "criterion",
  "ecma_visit",

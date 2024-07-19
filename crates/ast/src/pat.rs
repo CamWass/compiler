@@ -4,11 +4,11 @@ use crate::{
     prop::PropName,
     GetNodeId, Invalid, NodeId,
 };
-use ast_node::ast_node;
+use clone_node::CloneNode;
 use global_common::util::take::Take;
+use node_id::GetNodeIdMacro;
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub enum Pat {
     Ident(BindingIdent),
 
@@ -34,24 +34,21 @@ impl Take for Pat {
     }
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct ArrayPat {
     pub node_id: NodeId,
 
     pub elems: Vec<Option<Pat>>,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct ObjectPat {
     pub node_id: NodeId,
 
     pub props: Vec<ObjectPatProp>,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct AssignPat {
     pub node_id: NodeId,
 
@@ -61,16 +58,14 @@ pub struct AssignPat {
 }
 
 /// EsTree `RestElement`
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct RestPat {
     pub node_id: NodeId,
 
     pub arg: Box<Pat>,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub enum ObjectPatProp {
     KeyValue(KeyValuePatProp),
 
@@ -90,16 +85,14 @@ impl Take for ObjectPatProp {
 }
 
 /// `{key: value}`
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct KeyValuePatProp {
     pub node_id: NodeId,
     pub key: PropName,
     pub value: Box<Pat>,
 }
 /// `{key}` or `{key = value}`
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct AssignPatProp {
     pub node_id: NodeId,
     pub key: Ident,

@@ -6,11 +6,10 @@ use crate::{
     stmt::BlockStmt,
     EmptyStmt, GetNodeId, NodeId,
 };
-use ast_node::ast_node;
 use clone_node::CloneNode;
+use node_id::GetNodeIdMacro;
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct Class {
     pub node_id: NodeId,
 
@@ -21,15 +20,13 @@ pub struct Class {
     pub body: Vec<ClassMember>,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct ExtendsClause {
     pub node_id: NodeId,
     pub super_class: Box<Expr>,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub enum ClassMember {
     Constructor(Constructor),
     /// `es2015`
@@ -41,8 +38,7 @@ pub enum ClassMember {
     Empty(EmptyStmt),
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct ClassProp {
     pub node_id: NodeId,
 
@@ -55,8 +51,7 @@ pub struct ClassProp {
     pub decorators: Vec<Decorator>,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct PrivateProp {
     pub node_id: NodeId,
 
@@ -71,8 +66,7 @@ pub struct PrivateProp {
 
 macro_rules! method {
     ($name:ident, $KEY:ty) => {
-        #[ast_node]
-        #[derive(Eq, Hash)]
+        #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
         #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
         pub struct $name {
             pub node_id: NodeId,
@@ -91,8 +85,7 @@ macro_rules! method {
 method!(ClassMethod, PropName);
 method!(PrivateMethod, PrivateName);
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct Constructor {
     pub node_id: NodeId,
 
@@ -101,8 +94,7 @@ pub struct Constructor {
     pub body: BlockStmt,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct Decorator {
     pub node_id: NodeId,
 

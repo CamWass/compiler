@@ -1,9 +1,9 @@
 use crate::{class::Decorator, pat::Pat, stmt::BlockStmt, GetNodeId, NodeId, ProgramData};
-use ast_node::ast_node;
+use node_id::GetNodeIdMacro;
+use clone_node::CloneNode;
 
 /// Common parts of function and method.
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct Function {
     pub node_id: NodeId,
 
@@ -20,16 +20,14 @@ pub struct Function {
     pub is_async: bool,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct Param {
     pub node_id: NodeId,
     pub decorators: Vec<Decorator>,
     pub pat: Pat,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct ParamWithoutDecorators {
     pub node_id: NodeId,
     pub pat: Pat,

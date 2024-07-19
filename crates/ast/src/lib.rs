@@ -46,10 +46,11 @@ pub use self::{
         SwitchStmt, ThrowStmt, TryStmt, VarDeclOrExpr, VarDeclOrPat, WhileStmt, WithStmt,
     },
 };
-use ast_node::ast_node;
 use atoms::JsWord;
+use clone_node::CloneNode;
 use global_common::{Span, SyntaxContext};
 use index::vec::IndexVec;
+use node_id::GetNodeIdMacro;
 
 #[macro_use]
 mod macros;
@@ -120,8 +121,7 @@ impl ProgramData {
 }
 
 /// Represents a invalid node.
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct Invalid {
     pub node_id: NodeId,
 }

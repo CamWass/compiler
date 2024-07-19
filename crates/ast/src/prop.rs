@@ -6,12 +6,12 @@ use crate::{
     stmt::BlockStmt,
     BigInt, GetNodeId, NodeId, ParamWithoutDecorators,
 };
-use ast_node::ast_node;
 use atoms::js_word;
+use clone_node::CloneNode;
 use global_common::{util::take::Take, SyntaxContext};
+use node_id::GetNodeIdMacro;
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub enum Prop {
     /// `a` in `{ a, }`
     Shorthand(Ident),
@@ -42,31 +42,27 @@ impl Take for Prop {
     }
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct KeyValueProp {
     pub node_id: NodeId,
     pub key: PropName,
     pub value: Box<Expr>,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct AssignProp {
     pub node_id: NodeId,
     pub key: Ident,
     pub value: Box<Expr>,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct GetterProp {
     pub node_id: NodeId,
     pub key: PropName,
     pub body: BlockStmt,
 }
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct SetterProp {
     pub node_id: NodeId,
     pub key: PropName,
@@ -74,8 +70,7 @@ pub struct SetterProp {
     pub param: ParamWithoutDecorators,
     pub body: BlockStmt,
 }
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct MethodProp {
     pub node_id: NodeId,
 
@@ -83,8 +78,7 @@ pub struct MethodProp {
     pub function: Function,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub enum PropName {
     Ident(Ident),
     /// String literal.
@@ -95,16 +89,14 @@ pub enum PropName {
     BigInt(BigInt),
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct ComputedPropName {
     pub node_id: NodeId,
 
     pub expr: Box<Expr>,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct SpreadAssignment {
     pub node_id: NodeId,
     pub expr: Box<Expr>,

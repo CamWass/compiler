@@ -1,20 +1,18 @@
 use crate::{
     class::Class, expr::Expr, function::Function, ident::Ident, pat::Pat, GetNodeId, NodeId,
 };
-use ast_node::ast_node;
 use clone_node::CloneNode;
 use string_enum::StringEnum;
+use node_id::GetNodeIdMacro;
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub enum Decl {
     Class(ClassDecl),
     Fn(FnDecl),
     Var(VarDecl),
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct FnDecl {
     pub node_id: NodeId,
 
@@ -22,8 +20,7 @@ pub struct FnDecl {
     pub function: Function,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct ClassDecl {
     pub node_id: NodeId,
 
@@ -31,8 +28,7 @@ pub struct ClassDecl {
     pub class: Class,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct VarDecl {
     pub node_id: NodeId,
 
@@ -51,8 +47,7 @@ pub enum VarDeclKind {
     Const,
 }
 
-#[ast_node]
-#[derive(Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct VarDeclarator {
     pub node_id: NodeId,
 
