@@ -1,6 +1,7 @@
 extern crate proc_macro;
 
-use macro_common::prelude::*;
+use proc_macro2::{Span, TokenStream};
+use quote::ToTokens;
 use syn::{self, *};
 
 #[proc_macro_derive(GetNodeIdMacro)]
@@ -10,20 +11,20 @@ pub fn derive_string_enum(input: proc_macro::TokenStream) -> proc_macro::TokenSt
         .expect("failed to parse derive input");
     let mut tts = TokenStream::new();
 
-    let trait_impl = match &input.data {
+    let trait_impl: ItemImpl = match &input.data {
         Data::Struct(_) => {
+            let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
             let type_name: &Ident = &input.ident;
-            let trait_name = Ident::new("GetNodeId", call_site());
-            let method = Ident::new("node_id", call_site());
-            let return_ty = Ident::new("NodeId", call_site());
-            let item_impl: ItemImpl = parse_quote!(
-                impl #trait_name for #type_name {
+            let trait_name = Ident::new("GetNodeId", Span::call_site());
+            let method = Ident::new("node_id", Span::call_site());
+            let return_ty = Ident::new("NodeId", Span::call_site());
+            parse_quote!(
+                impl #impl_generics #trait_name for #type_name #ty_generics #where_clause {
                     fn #method(&self) -> #return_ty {
                         self.node_id
                     }
                 }
-            );
-            item_impl.with_generics(input.generics.clone())
+            )
         }
         Data::Enum(n) => {
             let arms = n
@@ -65,20 +66,20 @@ pub fn derive_string_enum(input: proc_macro::TokenStream) -> proc_macro::TokenSt
                 arms,
             });
 
-            let type_name = &input.ident;
-            let trait_name = Ident::new("GetNodeId", call_site());
-            let method = Ident::new("node_id", call_site());
-            let return_ty = Ident::new("NodeId", call_site());
+            let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
-            let item_impl: ItemImpl = parse_quote! {
-                impl #trait_name for #type_name {
+            let type_name = &input.ident;
+            let trait_name = Ident::new("GetNodeId", Span::call_site());
+            let method = Ident::new("node_id", Span::call_site());
+            let return_ty = Ident::new("NodeId", Span::call_site());
+
+            parse_quote! {
+                impl #impl_generics #trait_name for #type_name #ty_generics #where_clause {
                     fn #method(&self) -> #return_ty {
                         #body
                     }
                 }
-            };
-
-            item_impl.with_generics(input.generics.clone())
+            }
         }
         Data::Union(_) => unimplemented!(),
     };
