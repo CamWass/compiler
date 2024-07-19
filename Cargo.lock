@@ -43,7 +43,6 @@ dependencies = [
  "node_id",
  "num-bigint",
  "rustc-hash",
- "string_enum",
 ]
 
 [[package]]
@@ -697,7 +696,6 @@ dependencies = [
  "num-bigint",
  "serde",
  "serde_json",
- "string_enum",
  "testing",
  "transform_testing",
  "unicode-xid",
@@ -1099,17 +1097,6 @@ dependencies = [
  "phf_shared",
  "proc-macro2",
  "quote",
-]
-
-[[package]]
-name = "string_enum"
-version = "0.1.0"
-dependencies = [
- "macro_common",
- "pmutil",
- "proc-macro2",
- "quote",
- "syn 1.0.109",
 ]
 
 [[package]]

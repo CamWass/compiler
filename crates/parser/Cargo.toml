@@ -17,7 +17,6 @@ ast = {path = "../ast"}
 atoms = {path = "../atoms"}
 ecma_visit = {path = "../visit"}
 global_common = {path = "../common"}
-string_enum = {path = "../../macros/string_enum"}
 
 [dev-dependencies]
 criterion = { workspace = true }

@@ -1,7 +1,6 @@
 use clone_node::CloneNode;
-use string_enum::StringEnum;
 
-#[derive(StringEnum, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode)]
 pub enum BinaryOp {
     /// `==`
     EqEq,
@@ -101,7 +100,46 @@ impl BinaryOp {
     }
 }
 
-#[derive(StringEnum, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode)]
+impl BinaryOp {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            BinaryOp::EqEq => "==",
+            BinaryOp::NotEq => "!=",
+            BinaryOp::EqEqEq => "===",
+            BinaryOp::NotEqEq => "!==",
+            BinaryOp::Lt => "<",
+            BinaryOp::LtEq => "<=",
+            BinaryOp::Gt => ">",
+            BinaryOp::GtEq => ">=",
+            BinaryOp::LShift => "<<",
+            BinaryOp::RShift => ">>",
+            BinaryOp::ZeroFillRShift => ">>>",
+            BinaryOp::Add => "+",
+            BinaryOp::Sub => "-",
+            BinaryOp::Mul => "*",
+            BinaryOp::Div => "/",
+            BinaryOp::Mod => "%",
+            BinaryOp::BitOr => "|",
+            BinaryOp::BitXor => "^",
+            BinaryOp::BitAnd => "&",
+            BinaryOp::LogicalOr => "||",
+            BinaryOp::LogicalAnd => "&&",
+            BinaryOp::In => "in",
+            BinaryOp::InstanceOf => "instanceof",
+            BinaryOp::Exp => "**",
+            BinaryOp::NullishCoalescing => "??",
+        }
+    }
+}
+
+impl std::fmt::Debug for BinaryOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let s = self.as_str();
+        std::fmt::Debug::fmt(s, f)
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode)]
 pub enum AssignOp {
     /// `=`
     Assign,
@@ -141,7 +179,37 @@ pub enum AssignOp {
     NullishAssign,
 }
 
-#[derive(StringEnum, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode)]
+impl AssignOp {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AssignOp::Assign => "=",
+            AssignOp::AddAssign => "+=",
+            AssignOp::SubAssign => "-=",
+            AssignOp::MulAssign => "*=",
+            AssignOp::DivAssign => "/=",
+            AssignOp::ModAssign => "%=",
+            AssignOp::LShiftAssign => "<<=",
+            AssignOp::RShiftAssign => ">>=",
+            AssignOp::ZeroFillRShiftAssign => ">>>=",
+            AssignOp::BitOrAssign => "|=",
+            AssignOp::BitXorAssign => "^=",
+            AssignOp::BitAndAssign => "&=",
+            AssignOp::ExpAssign => "**=",
+            AssignOp::AndAssign => "&&=",
+            AssignOp::OrAssign => "||=",
+            AssignOp::NullishAssign => "??=",
+        }
+    }
+}
+
+impl std::fmt::Debug for AssignOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let s = self.as_str();
+        std::fmt::Debug::fmt(s, f)
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode)]
 pub enum UpdateOp {
     /// `++`
     PlusPlus,
@@ -149,7 +217,23 @@ pub enum UpdateOp {
     MinusMinus,
 }
 
-#[derive(StringEnum, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode)]
+impl UpdateOp {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            UpdateOp::PlusPlus => "++",
+            UpdateOp::MinusMinus => "--",
+        }
+    }
+}
+
+impl std::fmt::Debug for UpdateOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let s = self.as_str();
+        std::fmt::Debug::fmt(s, f)
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode)]
 pub enum UnaryOp {
     /// `-`
     Minus,
@@ -165,4 +249,25 @@ pub enum UnaryOp {
     Void,
     /// `delete`
     Delete,
+}
+
+impl UnaryOp {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            UnaryOp::Minus => "-",
+            UnaryOp::Plus => "+",
+            UnaryOp::Bang => "!",
+            UnaryOp::Tilde => "~",
+            UnaryOp::TypeOf => "typeof",
+            UnaryOp::Void => "void",
+            UnaryOp::Delete => "delete",
+        }
+    }
+}
+
+impl std::fmt::Debug for UnaryOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let s = self.as_str();
+        std::fmt::Debug::fmt(s, f)
+    }
 }

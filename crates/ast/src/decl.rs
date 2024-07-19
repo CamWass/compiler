@@ -2,7 +2,6 @@ use crate::{
     class::Class, expr::Expr, function::Function, ident::Ident, pat::Pat, GetNodeId, NodeId,
 };
 use clone_node::CloneNode;
-use string_enum::StringEnum;
 use node_id::GetNodeIdMacro;
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
@@ -37,7 +36,7 @@ pub struct VarDecl {
     pub decls: Vec<VarDeclarator>,
 }
 
-#[derive(StringEnum, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode)]
 pub enum VarDeclKind {
     /// `var`
     Var,
@@ -45,6 +44,23 @@ pub enum VarDeclKind {
     Let,
     /// `const`
     Const,
+}
+
+impl VarDeclKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            VarDeclKind::Var => "var",
+            VarDeclKind::Let => "let",
+            VarDeclKind::Const => "const",
+        }
+    }
+}
+
+impl std::fmt::Debug for VarDeclKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let s = self.as_str();
+        std::fmt::Debug::fmt(s, f)
+    }
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]

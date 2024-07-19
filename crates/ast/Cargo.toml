@@ -13,4 +13,3 @@ clone_node = {path = "../../macros/clone_node"}
 global_common = {path = "../common"}
 index = {path = "../index"}
 node_id = {path = "../../macros/node_id"}
-string_enum = {path = "../../macros/string_enum"}
