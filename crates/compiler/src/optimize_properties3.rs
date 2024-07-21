@@ -1243,13 +1243,13 @@ enum Slot {
 #[derive(Debug)]
 struct StaticFunctionData {
     var_start: u32,
-    param_end: u32,
+    param_count: u16,
     accesses_arguments_array: bool,
 }
 
 impl StaticFunctionData {
     fn param_indices(&self) -> impl Iterator<Item = VarId> {
-        VarId::from_u32(self.var_start)..VarId::from_u32(self.param_end)
+        VarId::from_u32(self.var_start)..VarId::from_u32(self.var_start + self.param_count as u32)
     }
 }
 
@@ -1375,7 +1375,8 @@ impl<'ast> FnVisitor<'_> {
             }
         }
 
-        let param_end = v.vars.len().try_into().unwrap();
+        let param_count = v.vars.len() - var_start as usize;
+        let param_count: u16 = param_count.try_into().expect("> u16::MAX params");
 
         // FnExpr's name is local to it. Although the name comes before the
         // params, we record it afterwards to simplify tracking of where
@@ -1388,7 +1389,7 @@ impl<'ast> FnVisitor<'_> {
 
         let static_data = StaticFunctionData {
             var_start,
-            param_end,
+            param_count,
             accesses_arguments_array: false,
         };
 
