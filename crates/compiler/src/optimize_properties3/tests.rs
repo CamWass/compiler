@@ -40,6 +40,52 @@ fn test_same(input: &str) {
 }
 
 #[test]
+fn test_optional_chain() {
+    test_transform(
+        "
+const obj = { prop: 1 };
+obj?.prop;
+",
+        "
+const obj = { a: 1 };
+obj?.a;
+",
+    );
+
+    test_transform(
+        "
+const obj = { prop: 1 };
+obj?.['prop'];
+",
+        "
+const obj = { a: 1 };
+obj?.a;
+",
+    );
+
+    test_transform(
+        "
+function func(arg) {
+    arg.prop2; arg.prop2;
+    return arg;
+}
+
+const obj = { funcProp: func };
+obj?.funcProp?.({ prop1: 1, prop2: 2 }).prop1;
+",
+        "
+function func(arg) {
+    arg.a; arg.a;
+    return arg;
+}
+
+const obj = { a: func };
+obj?.a?.({ b: 1, a: 2 }).b;
+",
+    );
+}
+
+#[test]
 fn test_spread() {
     // Check the spread target is invalidated.
     test_same(

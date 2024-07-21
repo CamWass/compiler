@@ -802,7 +802,14 @@ impl GraphVisitor<'_> {
             }
             Expr::Paren(n) => self.get_rhs(&n.expr, used),
             Expr::PrivateName(_) => todo!(),
-            Expr::OptChain(_) => todo!(),
+            Expr::OptChain(opt_chain) => match opt_chain.expr.as_ref() {
+                Expr::Member(_) | Expr::Call(_) => {
+                    // Note: optional chaining can short circuit and also return undefined,
+                    // but that does not impact our analysis, so we ignore it.
+                    self.get_rhs(&opt_chain.expr, used)
+                }
+                _ => unreachable!("invalid optional chain expr"),
+            },
 
             Expr::JSXMember(_)
             | Expr::JSXNamespacedName(_)
