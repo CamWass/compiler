@@ -5,10 +5,10 @@ use quote::{quote, ToTokens};
 use std::{collections::HashSet, mem::replace};
 use syn::{
     parse_macro_input, parse_quote, punctuated::Punctuated, spanned::Spanned, Arm, AttrStyle,
-    Attribute, Block, Expr, ExprBlock, ExprMatch, FieldValue, Fields, FnArg, GenericArgument,
-    GenericParam, Generics, ImplItem, ImplItemMethod, Index, Item, ItemImpl, ItemTrait, Lifetime,
-    LifetimeDef, Member, Path, PathArguments, ReturnType, Signature, Stmt, Token, TraitItem,
-    TraitItemMethod, Type, TypePath, TypeReference, VisPublic, Visibility,
+    Attribute, Block, Expr, ExprBlock, ExprMatch, FieldPat, Fields, FnArg, GenericArgument,
+    GenericParam, Generics, ImplItem, ImplItemFn, Index, Item, ItemImpl, ItemTrait, Lifetime,
+    LifetimeParam, Member, Pat, PatIdent, Path, PathArguments, ReturnType, Signature, Stmt, Token,
+    TraitItem, TraitItemFn, Type, TypePath, TypeReference, Visibility,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,7 +104,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
             continue;
         }
 
-        methods.push(TraitItemMethod {
+        methods.push(TraitItemFn {
             attrs: vec![],
             sig,
             default: Some(create_method_body(mode, ty)),
@@ -130,7 +130,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
                 }
             };
 
-            ref_methods.push(ImplItemMethod {
+            ref_methods.push(ImplItemFn {
                 attrs: vec![],
                 vis: Visibility::Inherited,
                 defaultness: None,
@@ -142,7 +142,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
         {
             // Either
             let method_name = &name;
-            either_methods.push(ImplItemMethod {
+            either_methods.push(ImplItemFn {
                 attrs: vec![],
                 vis: Visibility::Inherited,
                 defaultness: None,
@@ -171,7 +171,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
         {
             // Optional
             let method_name = &name;
-            optional_methods.push(ImplItemMethod {
+            optional_methods.push(ImplItemFn {
                 attrs: vec![],
                 vis: Visibility::Inherited,
                 defaultness: None,
@@ -207,7 +207,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
         {
             // Visit <-> VisitAll using global_visit::All
             let method_name = &name;
-            visit_all_methods.push(ImplItemMethod {
+            visit_all_methods.push(ImplItemFn {
                 attrs: vec![],
                 vis: Visibility::Inherited,
                 defaultness: None,
@@ -225,8 +225,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
             pound_token: Default::default(),
             style: AttrStyle::Outer,
             bracket_token: Default::default(),
-            path: parse_quote!(allow),
-            tokens: parse_quote!((unused_variables)),
+            meta: parse_quote!(allow(non_shorthand_field_patterns, unused_variables)),
         });
 
         let fn_name = v.sig.ident.clone();
@@ -257,21 +256,21 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
 
         match mode {
             Mode::Fold => tokens.extend(quote! {
-                #[allow(unused_variables)]
+                #[allow(non_shorthand_field_patterns, unused_variables)]
                 pub fn #fn_name<V: ?Sized + #trait_name>(_visitor: &mut V, n: #arg_ty) -> #arg_ty {
                     #default_body
                 }
             }),
 
             Mode::VisitMut => tokens.extend(quote! {
-                #[allow(unused_variables)]
+                #[allow(non_shorthand_field_patterns, unused_variables)]
                 pub fn #fn_name<'ast, V: ?Sized + #trait_name<'ast>>(_visitor: &mut V, n: #arg_ty) {
                     #default_body
                 }
             }),
 
             Mode::Visit => tokens.extend(quote! {
-                #[allow(unused_variables)]
+                #[allow(non_shorthand_field_patterns, unused_variables)]
                 pub fn #fn_name<'ast, V: ?Sized + #trait_name<'ast>>(_visitor: &mut V, n: #arg_ty) {
                     #default_body
                 }
@@ -285,7 +284,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
     if mode == Mode::Visit || mode == Mode::VisitAll || mode == Mode::VisitMut {
         generics
             .params
-            .push(GenericParam::Lifetime(LifetimeDef::new(Lifetime::new(
+            .push(GenericParam::Lifetime(LifetimeParam::new(Lifetime::new(
                 "'ast",
                 Span::call_site(),
             ))));
@@ -294,9 +293,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
     tokens.extend(
         ItemTrait {
             attrs: vec![],
-            vis: Visibility::Public(VisPublic {
-                pub_token: Default::default(),
-            }),
+            vis: Visibility::Public(Default::default()),
             unsafety: None,
             auto_token: None,
             trait_token: Default::default(),
@@ -305,7 +302,8 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
             colon_token: None,
             supertraits: Default::default(),
             brace_token: Default::default(),
-            items: methods.into_iter().map(TraitItem::Method).collect(),
+            items: methods.into_iter().map(TraitItem::Fn).collect(),
+            restriction: None,
         }
         .to_token_stream(),
     );
@@ -327,7 +325,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
         };
 
         item.items
-            .extend(ref_methods.clone().into_iter().map(ImplItem::Method));
+            .extend(ref_methods.clone().into_iter().map(ImplItem::Fn));
         tokens.extend(item.to_token_stream());
     }
     {
@@ -346,8 +344,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
             }
         };
 
-        item.items
-            .extend(ref_methods.into_iter().map(ImplItem::Method));
+        item.items.extend(ref_methods.into_iter().map(ImplItem::Fn));
         tokens.extend(item.to_token_stream());
     }
 
@@ -368,7 +365,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
         };
 
         item.items
-            .extend(optional_methods.into_iter().map(ImplItem::Method));
+            .extend(optional_methods.into_iter().map(ImplItem::Fn));
         tokens.extend(item.to_token_stream());
     }
 
@@ -397,7 +394,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
             };
 
         item.items
-            .extend(either_methods.into_iter().map(ImplItem::Method));
+            .extend(either_methods.into_iter().map(ImplItem::Fn));
         tokens.extend(item.to_token_stream());
     }
 
@@ -408,7 +405,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
         };
 
         item.items
-            .extend(visit_all_methods.into_iter().map(ImplItem::Method));
+            .extend(visit_all_methods.into_iter().map(ImplItem::Fn));
 
         tokens.extend(item.to_token_stream());
         tokens.extend(quote!(
@@ -686,7 +683,7 @@ fn visit_expr(mode: Mode, ty: &Type, visitor: &Expr, expr: Expr) -> Expr {
 
 fn make_arm_from_struct(mode: Mode, path: &Path, variant: &Fields) -> Arm {
     let mut stmts = vec![];
-    let mut fields: Punctuated<FieldValue, Token![,]> = Default::default();
+    let mut fields: Punctuated<FieldPat, Token![,]> = Default::default();
 
     for (i, field) in variant.iter().enumerate() {
         let ty = &field.ty;
@@ -702,26 +699,31 @@ fn make_arm_from_struct(mode: Mode, path: &Path, variant: &Fields) -> Arm {
             let expr = visit_expr(mode, ty, &parse_quote!(_visitor), expr);
             stmts.push(match mode {
                 Mode::VisitAll | Mode::Visit | Mode::VisitMut => {
-                    Stmt::Semi(expr, Token![;](Span::call_site()))
+                    Stmt::Expr(expr, Some(Token![;](Span::call_site())))
                 }
                 Mode::Fold => parse_quote!(let #binding_ident = #expr;),
             });
         }
 
-        if field.ident.is_some() {
-            let field = &binding_ident;
-            fields.push(parse_quote!(#field));
-        } else {
-            fields.push(FieldValue {
-                attrs: vec![],
-                member: Member::Unnamed(Index {
+        fields.push(FieldPat {
+            attrs: vec![],
+            member: if field.ident.is_none() {
+                Member::Unnamed(Index {
                     index: i as _,
                     span: path.span(),
-                }),
-                colon_token: Some(Default::default()),
-                expr: parse_quote!( #binding_ident ),
-            });
-        }
+                })
+            } else {
+                Member::Named(field.ident.clone().unwrap())
+            },
+            colon_token: Some(Default::default()),
+            pat: Box::new(Pat::Ident(PatIdent {
+                attrs: Default::default(),
+                by_ref: None,
+                mutability: None,
+                ident: binding_ident,
+                subpat: None,
+            })),
+        });
     }
 
     match mode {
@@ -800,7 +802,7 @@ fn method_sig_from_ident(mode: Mode, v: &Ident) -> Signature {
 }
 
 /// Returns None if it's skipped.
-fn make_method(mode: Mode, e: &Item, types: &mut Vec<Type>) -> TraitItemMethod {
+fn make_method(mode: Mode, e: &Item, types: &mut Vec<Type>) -> TraitItemFn {
     match e {
         Item::Struct(s) => {
             let type_name = &s.ident;
@@ -830,7 +832,7 @@ fn make_method(mode: Mode, e: &Item, types: &mut Vec<Type>) -> TraitItemMethod {
 
             let sig = method_sig_from_ident(mode, type_name);
 
-            TraitItemMethod {
+            TraitItemFn {
                 attrs: vec![],
                 sig,
                 default: Some(block),
@@ -875,17 +877,20 @@ fn make_method(mode: Mode, e: &Item, types: &mut Vec<Type>) -> TraitItemMethod {
 
                 Block {
                     brace_token: Default::default(),
-                    stmts: vec![Stmt::Expr(Expr::Match(ExprMatch {
-                        attrs: vec![],
-                        match_token: Default::default(),
-                        expr: parse_quote!(n),
-                        brace_token: Default::default(),
-                        arms,
-                    }))],
+                    stmts: vec![Stmt::Expr(
+                        Expr::Match(ExprMatch {
+                            attrs: vec![],
+                            match_token: Default::default(),
+                            expr: parse_quote!(n),
+                            brace_token: Default::default(),
+                            arms,
+                        }),
+                        None,
+                    )],
                 }
             };
 
-            TraitItemMethod {
+            TraitItemFn {
                 attrs: vec![],
                 sig: method_sig_from_ident(mode, type_name),
                 default: Some(block),

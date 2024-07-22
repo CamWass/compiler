@@ -119,6 +119,7 @@ impl Deriver {
             fields,
             dot2_token: None,
             rest: None,
+            qself: None,
         })
     }
 

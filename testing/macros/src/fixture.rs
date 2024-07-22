@@ -1,6 +1,7 @@
 use anyhow::{Context, Error};
 use glob::glob;
 use proc_macro2::Span;
+use quote::quote;
 use regex::Regex;
 use relative_path::RelativePath;
 use std::{
@@ -9,7 +10,9 @@ use std::{
 };
 use syn::{
     parse::{Parse, ParseStream},
-    parse_quote, Ident, ItemFn, Lit, LitStr, Meta, NestedMeta, Token,
+    parse2, parse_quote,
+    punctuated::Punctuated,
+    Ident, ItemFn, LitStr, Meta, Token,
 };
 
 pub struct Config {
@@ -42,24 +45,18 @@ impl Parse for Config {
                         }};
                     }
 
-                    if list.nested.is_empty() {
+                    if list.tokens.is_empty() {
                         fail!("empty exclude()")
                     }
 
-                    for token in list.nested.iter() {
-                        match token {
-                            NestedMeta::Meta(_) => fail!(),
-                            NestedMeta::Lit(lit) => {
-                                let lit = match lit {
-                                    Lit::Str(v) => v.value(),
-                                    _ => fail!(),
-                                };
-                                c.exclude_patterns
-                                    .push(Regex::new(&lit).unwrap_or_else(|err| {
-                                        fail!(format!("failed to parse regex: {}\n{}", lit, err))
-                                    }));
-                            }
-                        }
+                    let input = parse2::<InputParen>(list.tokens.clone())
+                        .expect("failed to parse token as `InputParen`");
+
+                    for lit in input.input {
+                        c.exclude_patterns
+                            .push(Regex::new(&lit.value()).unwrap_or_else(|err| {
+                                fail!(format!("failed to parse regex: {}\n{}", lit.value(), err))
+                            }));
                     }
 
                     return;
@@ -147,36 +144,33 @@ pub fn expand(callee: &Ident, attr: Config) -> Result<Vec<ItemFn>, Error> {
         .replace("___", "__");
         let test_ident = Ident::new(&test_name, Span::call_site());
 
-        let path_str = &abs_path.to_string_lossy();
+        let ignored_attr = if ignored { quote!(#[ignore]) } else { quote!() };
 
-        let mut f: ItemFn = parse_quote!(
+        let path_str = &abs_path.to_string_lossy();
+        let f: ItemFn = parse_quote!(
             #[test]
             #[inline(never)]
-            #[ignore]
             #[doc(hidden)]
+            #ignored_attr
             fn #test_ident() {
                 #callee(::std::path::PathBuf::from(#path_str));
             }
         );
 
-        if !ignored {
-            f.attrs.retain(|attr| {
-                match attr.path.get_ident() {
-                    Some(name) => {
-                        if name == "ignore" {
-                            return false;
-                        }
-                    }
-                    None => {}
-                }
-
-                true
-            });
-            //
-        }
-
         test_fns.push(f);
     }
 
     Ok(test_fns)
+}
+
+struct InputParen {
+    input: Punctuated<LitStr, Token![,]>,
+}
+
+impl Parse for InputParen {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        Ok(Self {
+            input: input.call(Punctuated::parse_terminated)?,
+        })
+    }
 }
