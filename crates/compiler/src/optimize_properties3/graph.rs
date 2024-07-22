@@ -65,16 +65,6 @@ impl Graph {
     }
 
     pub fn compute_points_to_map(&mut self, store: &mut Store) {
-        // Invalidate parameters for functions that access the arguments array.
-        for func in store.functions.values() {
-            if func.accesses_arguments_array {
-                for param in func.param_indices() {
-                    let pointer = store.pointers.insert(Pointer::Var(param));
-                    store.invalid_pointers.insert(pointer);
-                }
-            }
-        }
-
         store.invalid_pointers.insert(PointerId::UNKNOWN);
 
         for pointer in 0..store.pointers.len() {

@@ -399,7 +399,7 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> (Store, Gr
     {
         let mut visitor = FnVisitor {
             store: &mut store,
-            cur_fn: None,
+            accesses_arguments_array: false,
         };
         ast.visit_with(&mut visitor);
     }
@@ -1239,11 +1239,10 @@ enum Slot {
     Prop(PointerId, NameId),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct StaticFunctionData {
     var_start: u32,
     param_count: u16,
-    accesses_arguments_array: bool,
 }
 
 impl StaticFunctionData {
@@ -1349,7 +1348,8 @@ impl<'ast> Visit<'ast> for DeclFinder<'_> {
 
 struct FnVisitor<'s> {
     store: &'s mut Store,
-    cur_fn: Option<NodeId>,
+    /// Whether the current function accesses the `arguments` array.
+    accesses_arguments_array: bool,
 }
 
 impl<'ast> FnVisitor<'_> {
@@ -1388,27 +1388,32 @@ impl<'ast> FnVisitor<'_> {
         let static_data = StaticFunctionData {
             var_start,
             param_count,
-            accesses_arguments_array: false,
         };
 
         self.store.functions.insert(node.node_id(), static_data);
 
-        let old_cur_fn = self.cur_fn;
-        self.cur_fn = Some(node.node_id());
+        let old_accesses_arguments_array = self.accesses_arguments_array;
+        self.accesses_arguments_array = false;
+
         node.visit_body_with(self);
-        self.cur_fn = old_cur_fn;
+
+        if self.accesses_arguments_array {
+            // Invalidate parameters for functions that access the arguments array.
+            for param in static_data.param_indices() {
+                let pointer = self.store.pointers.insert(Pointer::Var(param));
+                self.store.invalid_pointers.insert(pointer);
+            }
+        }
+
+        self.accesses_arguments_array = old_accesses_arguments_array;
     }
 }
 
 impl<'ast> Visit<'ast> for FnVisitor<'_> {
     fn visit_ident(&mut self, node: &'ast Ident) {
-        if let Some(func) = self.cur_fn {
+        if !self.accesses_arguments_array {
             if node.sym == js_word!("arguments") && node.ctxt == self.store.unresolved_ctxt {
-                self.store
-                    .functions
-                    .get_mut(&func)
-                    .unwrap()
-                    .accesses_arguments_array = true;
+                self.accesses_arguments_array = true;
             }
         }
     }
