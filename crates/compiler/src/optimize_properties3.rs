@@ -399,7 +399,6 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> (Store, Gr
     {
         let mut visitor = FnVisitor {
             store: &mut store,
-            cur_var_start: VarId::from_u32(0),
             cur_fn: None,
         };
         ast.visit_with(&mut visitor);
@@ -1350,7 +1349,6 @@ impl<'ast> Visit<'ast> for DeclFinder<'_> {
 
 struct FnVisitor<'s> {
     store: &'s mut Store,
-    cur_var_start: VarId,
     cur_fn: Option<NodeId>,
 }
 
@@ -1395,13 +1393,10 @@ impl<'ast> FnVisitor<'_> {
 
         self.store.functions.insert(node.node_id(), static_data);
 
-        let old_var_start = self.cur_var_start;
-        self.cur_var_start = VarId::from_u32(var_start);
         let old_cur_fn = self.cur_fn;
         self.cur_fn = Some(node.node_id());
         node.visit_body_with(self);
         self.cur_fn = old_cur_fn;
-        self.cur_var_start = old_var_start;
     }
 }
 
