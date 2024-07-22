@@ -139,7 +139,7 @@ fn create_renaming_map(store: &mut Store, points_to: Graph) -> FxHashMap<NodeId,
         for obj in objs {
             if obj.is_primitive() && !is_built_in_property(obj, &store.names[key.0]) {
                 // non-built in prop on primitive - ignore.
-                // Note: we don't skip Unknown as we need to track wen a prop is accessed
+                // Note: we don't skip Unknown as we need to track when a prop is accessed
                 // on a union with Unknown.
                 continue;
             }
