@@ -1970,10 +1970,10 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
 /// See test `test_calls_do_not_interfere`
 fn get_call_obj(
     objects_map: &mut FxHashMap<NodeId, ObjectId>,
-    call_objects: &mut FxHashMap<(CallId, NodeId), ObjectId>,
-    object_links: &mut FxHashSet<(ObjectId, ObjectId)>,
+    _call_objects: &mut FxHashMap<(CallId, NodeId), ObjectId>,
+    _object_links: &mut FxHashSet<(ObjectId, ObjectId)>,
     objects: &mut ObjectStore,
-    root_call: CallId,
+    _root_call: CallId,
     node_id: NodeId,
 ) -> Option<Pointer> {
     let root = match objects_map.entry(node_id) {
