@@ -318,7 +318,7 @@ impl FnBodyVisitor {
     fn invalidate(&mut self, _reason: &'static str) {
         self.invalidated = true;
 
-        const PRINT: bool = true && cfg!(debug_assertions);
+        const PRINT: bool = false && cfg!(debug_assertions);
 
         if PRINT {
             println!("FnBodyVisitor: invalidating because: {}", _reason);
