@@ -40,13 +40,6 @@ impl<K> GrowableUnionFind<K>
 where
     K: Idx,
 {
-    pub fn new() -> Self {
-        GrowableUnionFind {
-            parent: Vec::new(),
-            rank: Vec::new(),
-        }
-    }
-
     /// Return the representative for `x`.
     ///
     /// **Panics** if `x` is out of bounds.
@@ -133,5 +126,14 @@ where
             }
         }
         true
+    }
+}
+
+impl<K> Default for GrowableUnionFind<K> {
+    fn default() -> Self {
+        Self {
+            parent: Default::default(),
+            rank: Default::default(),
+        }
     }
 }

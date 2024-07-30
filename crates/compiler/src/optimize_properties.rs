@@ -6,7 +6,7 @@ use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use index::{newtype_index, vec::IndexVec};
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::find_vars::*;
+use crate::find_vars::find_vars_declared_in_fn;
 use crate::utils::unwrap_as;
 use crate::DataFlowAnalysis::compute_escaped;
 use crate::DefaultNameGenerator::DefaultNameGenerator;

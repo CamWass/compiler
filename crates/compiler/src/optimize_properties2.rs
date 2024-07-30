@@ -32,23 +32,23 @@ use index::vec::IndexVec;
 use petgraph::algo::TarjanScc;
 use petgraph::graph::{DiGraph, Neighbors, NodeIndex, UnGraph};
 use petgraph::graphmap::GraphMap;
-use petgraph::{Directed, EdgeDirection::*};
+use petgraph::{Directed, EdgeDirection::Outgoing};
 use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 
 use crate::control_flow::node::{Node, NodeKind};
 use crate::control_flow::ControlFlowAnalysis::*;
 use crate::control_flow::ControlFlowGraph::*;
 use crate::convert::ecma_number_to_string;
-use crate::find_vars::*;
+use crate::find_vars::{FunctionLike, VarId};
 use crate::optimize_properties2::function::StepBuilder;
 use crate::utils::unwrap_as;
 use crate::DataFlowAnalysis::LatticeElementId;
 use crate::DefaultNameGenerator::DefaultNameGenerator;
 
 use simple_set::IndexSet;
-use template::*;
+use template::{resolve_call, CallTemplate, ResolverState};
 use unionfind::UnionFind;
-use DataFlowAnalysis2::*;
+use DataFlowAnalysis2::DataFlowAnalysis;
 
 use self::hashable_map::HashableHashMap;
 use self::types::{ObjectId, ObjectStore, UnionBuilder, UnionId, UnionStore};
@@ -542,7 +542,7 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> Store<'_> 
         }
     }
 
-    for (func, deps) in fn_dependencies.iter() {
+    for (func, deps) in &fn_dependencies {
         if !good_functions.contains(func) {
             continue;
         }
@@ -876,7 +876,7 @@ impl<'ast> Visit<'ast> for AlwaysInvalidVarFinder<'_> {
             if let ExprOrSuper::Expr(obj) = &node.obj {
                 if let Expr::Ident(obj) = obj.as_ref() {
                     if obj.ctxt != self.unresolved_ctxt {
-                        let id = Id::new(obj, &mut self.names);
+                        let id = Id::new(obj, self.names);
                         let name = self.vars.get_index(&id).unwrap();
 
                         if self.candidates.contains(&name) {
@@ -902,7 +902,7 @@ impl<'ast> Visit<'ast> for AlwaysInvalidVarFinder<'_> {
                 };
 
                 if unresolved_lhs {
-                    let id = Id::new(rhs, &mut self.names);
+                    let id = Id::new(rhs, self.names);
                     let name = self.vars.get_index(&id).unwrap();
 
                     if self.candidates.contains(&name) {
@@ -921,7 +921,7 @@ impl<'ast> Visit<'ast> for AlwaysInvalidVarFinder<'_> {
                     if let ExprOrSpread::Expr(arg) = arg {
                         if let Expr::Ident(arg) = arg.as_ref() {
                             if arg.ctxt != self.unresolved_ctxt {
-                                let id = Id::new(arg, &mut self.names);
+                                let id = Id::new(arg, self.names);
                                 let name = self.vars.get_index(&id).unwrap();
 
                                 if self.candidates.contains(&name) {
@@ -940,7 +940,7 @@ impl<'ast> Visit<'ast> for AlwaysInvalidVarFinder<'_> {
     fn visit_new_expr(&mut self, node: &'ast NewExpr) {
         if let Expr::Ident(callee) = node.callee.as_ref() {
             if callee.ctxt != self.unresolved_ctxt {
-                let id = Id::new(callee, &mut self.names);
+                let id = Id::new(callee, self.names);
                 let name = self.vars.get_index(&id).unwrap();
 
                 if self.candidates.contains(&name) {
@@ -954,7 +954,7 @@ impl<'ast> Visit<'ast> for AlwaysInvalidVarFinder<'_> {
                 if let ExprOrSpread::Expr(arg) = arg {
                     if let Expr::Ident(arg) = arg.as_ref() {
                         if arg.ctxt != self.unresolved_ctxt {
-                            let id = Id::new(arg, &mut self.names);
+                            let id = Id::new(arg, self.names);
                             let name = self.vars.get_index(&id).unwrap();
 
                             if self.candidates.contains(&name) {
@@ -973,7 +973,7 @@ impl<'ast> Visit<'ast> for AlwaysInvalidVarFinder<'_> {
         if let Some(arg) = &node.arg {
             if let Expr::Ident(arg) = arg.as_ref() {
                 if arg.ctxt != self.unresolved_ctxt {
-                    let id = Id::new(arg, &mut self.names);
+                    let id = Id::new(arg, self.names);
                     let name = self.vars.get_index(&id).unwrap();
 
                     if self.candidates.contains(&name) {
@@ -1013,13 +1013,13 @@ fn is_unresolvable_lhs(mut lhs: &Expr, unresolved_ctxt: SyntaxContext) -> bool {
                     return true;
                 }
                 if let ExprOrSuper::Expr(e) = &e.obj {
-                    lhs = &e;
+                    lhs = e;
                     continue;
                 }
             }
             Expr::Call(e) => {
                 if let ExprOrSuper::Expr(e) = &e.callee {
-                    lhs = &e;
+                    lhs = e;
                     continue;
                 }
             }
@@ -1564,7 +1564,7 @@ fn invalidate(
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Copy)]
 /// Points to an abstraction of a javascript object.
-pub(self) enum Pointer {
+enum Pointer {
     Object(ObjectId),
     Union(UnionId),
     Fn(FnId),
@@ -2427,8 +2427,8 @@ impl<'ast> Analyser<'ast, '_> {
             &mut self.store.unions,
             &mut self.store.invalid_objects,
             &self.store.fn_assignments,
-            &mut self.done_objects,
-            &mut self.done_functions,
+            self.done_objects,
+            self.done_functions,
             &self.store.accessed_props,
             &mut self.store.functions,
             &self.store.always_invalid_vars,
@@ -2444,7 +2444,7 @@ impl<'ast> Analyser<'ast, '_> {
             self.done_functions,
             self.done_vars,
         );
-        for ((obj, _), prop) in self.lattice.prop_assignments.iter() {
+        for ((obj, _), prop) in &self.lattice.prop_assignments {
             if self.store.invalid_objects.contains(*obj) {
                 invalidate(
                     &mut self.store.invalid_objects,
@@ -2683,7 +2683,7 @@ impl<'ast> Analyser<'ast, '_> {
                             &self.store.call_templates[func]
                         {
                             // todo!("also need to give the caller inner locals that were captured");
-                            for ((obj, key), prop) in prop_assignments.iter() {
+                            for ((obj, key), prop) in prop_assignments {
                                 if self.store.invalid_objects.contains(*obj) {
                                     continue;
                                 }
@@ -2710,8 +2710,8 @@ impl<'ast> Analyser<'ast, '_> {
                                 self.lattice.insert_prop_assignment(
                                     key,
                                     new,
-                                    &mut self.store.invalid_objects,
-                                    &mut self.store.unions,
+                                    &self.store.invalid_objects,
+                                    &self.store.unions,
                                 );
                             }
 
@@ -3059,14 +3059,14 @@ struct JoinOp {
 impl<'ast> JoinOp {
     fn join_flow(
         &mut self,
-        analysis: &mut DataFlowAnalysis<'ast, '_>,
+        analysis: &DataFlowAnalysis<'ast, '_>,
         store: &mut Store,
         input: LatticeElementId,
     ) {
         let input = &analysis[input];
 
         // Merge property assignments.
-        for ((obj, key), prop) in input.prop_assignments.iter() {
+        for ((obj, key), prop) in &input.prop_assignments {
             if store.invalid_objects.contains(*obj) {
                 continue;
             }
@@ -3178,7 +3178,7 @@ fn apply_call_side_effects<L>(
     }
 
     // todo!("also need to give the caller inner locals that were captured");
-    for ((obj, key), prop) in prop_assignments.iter() {
+    for ((obj, key), prop) in prop_assignments {
         if invalid_objects.contains(*obj) {
             continue;
         }
@@ -3196,7 +3196,7 @@ fn apply_call_side_effects<L>(
     }
 
     for (&name, assignment) in var_assignments.iter() {
-        let existing = get_var_assignment(&call_site_state, name).and_then(|a| a.rhs);
+        let existing = get_var_assignment(call_site_state, name).and_then(|a| a.rhs);
         let rhs = if !conditional {
             // supersede
             assignment.rhs

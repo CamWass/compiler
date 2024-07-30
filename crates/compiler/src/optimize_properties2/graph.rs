@@ -6,7 +6,7 @@ use std::num::NonZeroUsize;
 use petgraph::graphmap::{GraphMap, NodeTrait};
 use petgraph::visit::NodeIndexable;
 use petgraph::Directed;
-use petgraph::Direction::*;
+use petgraph::Direction::{Outgoing, Incoming};
 use rustc_hash::{FxHashSet, FxHasher};
 
 pub trait Visitor<N>
@@ -291,8 +291,8 @@ where
 {
     fn new() -> Self {
         TarjanScc {
-            index: 1,                        // Invariant: index < componentcount at all times.
-            componentcount: std::usize::MAX, // Will hold if componentcount is initialized to number of nodes - 1 or higher.
+            index: 1,                   // Invariant: index < componentcount at all times.
+            componentcount: usize::MAX, // Will hold if componentcount is initialized to number of nodes - 1 or higher.
             nodes: Vec::new(),
             stack: Vec::new(),
 
@@ -305,7 +305,7 @@ where
     /// Resets the state, allowing it to used for a fresh traversal.
     fn clear(&mut self) {
         self.index = 1;
-        self.componentcount = std::usize::MAX;
+        self.componentcount = usize::MAX;
         self.nodes.clear();
         self.stack.clear();
 
@@ -344,7 +344,7 @@ where
             }
             if node![w].rootindex < node![v].rootindex {
                 node![v].rootindex = node![w].rootindex;
-                v_is_local_root = false
+                v_is_local_root = false;
             }
         }
 

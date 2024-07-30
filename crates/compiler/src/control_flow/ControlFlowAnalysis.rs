@@ -1,6 +1,6 @@
 use crate::find_vars::FunctionLike;
 
-use super::node::*;
+use super::node::{CfgNode, Node, NodeKind};
 use super::util::*;
 use super::ControlFlowGraph::{Annotation, Branch, ControlFlowGraph};
 use ast::*;

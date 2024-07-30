@@ -9,7 +9,7 @@ use petgraph::{
 
 use crate::control_flow::{node::Node, ControlFlowAnalysis::NodePriority};
 use crate::DataFlowAnalysis::{LatticeElementId, LinearFlowState, UniqueQueue, MAX_STEPS_PER_NODE};
-use crate::{control_flow::ControlFlowGraph::*, find_vars::VarId};
+use crate::{control_flow::ControlFlowGraph::ControlFlowGraph, find_vars::VarId};
 
 use super::{simple_set::IndexSet, types::ObjectId, FnId, JoinOp, Lattice, Store};
 

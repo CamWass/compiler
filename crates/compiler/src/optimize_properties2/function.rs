@@ -8,7 +8,7 @@ use index::vec::IndexVec;
 use rustc_hash::FxHashMap;
 
 use crate::control_flow::node::{Node, NodeKind};
-use crate::control_flow::ControlFlowGraph::*;
+use crate::control_flow::ControlFlowGraph::Branch;
 use crate::find_vars::VarId;
 use crate::utils::unwrap_as;
 
@@ -77,7 +77,7 @@ pub(super) struct StepBuilder {
     step_buffer: Vec<Step>,
 
     /// Used by `push` method.
-    /// The vec is empty when the current RValue is unknown.
+    /// The vec is empty when the current `RValue` is unknown.
     cur_builder_r_value: Vec<Option<RValue>>,
     /// Used by `push` method.
     cur_builder_l_value: Option<LValue>,
@@ -478,7 +478,7 @@ impl StepBuilder {
                                     }
                                 }
                                 debug_assert!(open_unions == 0);
-                                debug_assert!(record_union_pushes == true);
+                                debug_assert!(record_union_pushes);
 
                                 // Remove original StoreUnion step.
                                 changed = true;
@@ -775,7 +775,7 @@ impl StepBuilder {
         debug_assert!(self
             .step_buffer
             .windows(2)
-            .all(|w| !steps_are_duplicates(&w[0], &w[1])))
+            .all(|w| !steps_are_duplicates(&w[0], &w[1])));
     }
 
     /// Returns the position in `step_buffer` of the [`SaveRValue`][Step::SaveRValue]
@@ -816,7 +816,7 @@ fn remove_step(
     end: &mut usize,
     removed_count: &mut usize,
     indices_to_remove: &mut GrowableBitSet<usize>,
-    step_buffer: &Vec<Step>,
+    step_buffer: &[Step],
     msg: &'static str,
     step_pattern: &'static str,
 ) {
@@ -884,15 +884,15 @@ pub(super) static IMPLICIT_RETURN_STEPS: [Step; 2] =
 pub(super) enum LValue {
     /// Named variable.
     Var(VarId),
-    /// Property of the current RValue.
+    /// Property of the current `RValue`.
     RValueProp(NameId),
     /// Property of the object type that represents the given object literal.
     ObjectProp(NodeId, NameId),
 }
 
 impl LValue {
-    /// Returns true if this LValue depends on the current RValue.
-    fn depends_on_r_value(&self) -> bool {
+    /// Returns true if this `LValue` depends on the current `RValue`.
+    fn depends_on_r_value(self) -> bool {
         match self {
             LValue::RValueProp(_) => true,
             LValue::Var(_) | LValue::ObjectProp(_, _) => false,
@@ -908,7 +908,7 @@ pub(super) enum RValue {
     Var(VarId),
     /// Object type that represents the given object literal.
     Object(NodeId),
-    /// Property of the current RValue.
+    /// Property of the current `RValue`.
     Prop(NameId),
     String,
     Boolean,
@@ -918,8 +918,8 @@ pub(super) enum RValue {
 }
 
 impl RValue {
-    /// Returns true if this RValue depends on previous steps.
-    fn is_relative(&self) -> bool {
+    /// Returns true if this `RValue` depends on previous steps.
+    fn is_relative(self) -> bool {
         match self {
             RValue::Prop(_) => true,
             RValue::NullOrVoid
@@ -932,9 +932,9 @@ impl RValue {
             | RValue::Fn(_) => false,
         }
     }
-    /// Returns true if the RValue is static while evaluating a node (i.e. its
+    /// Returns true if the `RValue` is static while evaluating a node (i.e. its
     /// value does not change).
-    fn is_static(&self) -> bool {
+    fn is_static(self) -> bool {
         match self {
             RValue::NullOrVoid
             | RValue::Object(_)
@@ -1045,7 +1045,7 @@ impl<'ast> Analyser<'_, 'ast> {
         match lhs.kind {
             NodeKind::ArrayPat(_) | NodeKind::ObjectPat(_) => {
                 debug_assert!(!conditional_assign, "invalid assignment target");
-                self.handle_destructuring(lhs, rhs, conditional)
+                self.handle_destructuring(lhs, rhs, conditional);
             }
             _ => {
                 self.visit_and_get_r_value(Node::from(rhs), conditional);
@@ -1087,7 +1087,7 @@ impl<'ast> Analyser<'_, 'ast> {
                                 let key = PropKey::from_prop_name(
                                     &prop.key,
                                     self.unresolved_ctxt,
-                                    &mut self.names,
+                                    self.names,
                                 )
                                 .unwrap();
 
@@ -1192,12 +1192,9 @@ impl<'ast> Analyser<'_, 'ast> {
             }
             NodeKind::MemberExpr(node) => {
                 self.visit_and_get_r_value(Node::from(&node.obj), conditional);
-                if let Some(prop) = PropKey::from_expr(
-                    &node.prop,
-                    self.unresolved_ctxt,
-                    node.computed,
-                    &mut self.names,
-                ) {
+                if let Some(prop) =
+                    PropKey::from_expr(&node.prop, self.unresolved_ctxt, node.computed, self.names)
+                {
                     self.push(Step::StoreLValue(Some(LValue::RValueProp(prop.0))));
                 } else {
                     self.invalidate_r_value();
@@ -1263,12 +1260,9 @@ impl<'ast> Analyser<'_, 'ast> {
                 if is_simple_obj_lit {
                     for prop in &node.props {
                         let prop = unwrap_as!(prop, Prop::KeyValue(p), p);
-                        let key = PropKey::from_prop_name(
-                            &prop.key,
-                            self.unresolved_ctxt,
-                            &mut self.names,
-                        )
-                        .unwrap();
+                        let key =
+                            PropKey::from_prop_name(&prop.key, self.unresolved_ctxt, self.names)
+                                .unwrap();
 
                         self.visit_and_get_r_value(Node::from(prop.value.as_ref()), conditional);
 
@@ -1362,12 +1356,9 @@ impl<'ast> Analyser<'_, 'ast> {
             NodeKind::ClassExpr(_) => todo!(),
             NodeKind::MemberExpr(node) => {
                 self.visit_and_get_r_value(Node::from(&node.obj), conditional);
-                if let Some(prop) = PropKey::from_expr(
-                    &node.prop,
-                    self.unresolved_ctxt,
-                    node.computed,
-                    &mut self.names,
-                ) {
+                if let Some(prop) =
+                    PropKey::from_expr(&node.prop, self.unresolved_ctxt, node.computed, self.names)
+                {
                     self.push(Step::StoreRValue(Some(RValue::Prop(prop.0))));
                 } else {
                     self.invalidate_r_value();
@@ -1424,7 +1415,7 @@ impl<'ast> Analyser<'_, 'ast> {
                 self.push(Step::StoreRValue(None));
             }
             NodeKind::AwaitExpr(node) => {
-                self.visit_and_get_r_value(Node::from(node.arg.as_ref()), conditional)
+                self.visit_and_get_r_value(Node::from(node.arg.as_ref()), conditional);
             }
             NodeKind::Tpl(node) => {
                 for expr in &node.exprs {
@@ -1442,7 +1433,7 @@ impl<'ast> Analyser<'_, 'ast> {
                 self.push(Step::StoreRValue(None));
             }
             NodeKind::ParenExpr(node) => {
-                self.visit_and_get_r_value(Node::from(node.expr.as_ref()), conditional)
+                self.visit_and_get_r_value(Node::from(node.expr.as_ref()), conditional);
             }
             NodeKind::Super(_) => todo!(),
             NodeKind::OptChainExpr(_) => todo!(),
@@ -1450,7 +1441,7 @@ impl<'ast> Analyser<'_, 'ast> {
             NodeKind::Param(_) => todo!(),
             NodeKind::ParamWithoutDecorators(_) => todo!(),
             NodeKind::BindingIdent(node) => {
-                self.visit_and_get_r_value(Node::from(&node.id), conditional)
+                self.visit_and_get_r_value(Node::from(&node.id), conditional);
             }
             NodeKind::Ident(node) => {
                 if node.ctxt == self.unresolved_ctxt && node.sym == js_word!("undefined") {
@@ -1639,7 +1630,7 @@ impl<'ast> Analyser<'_, 'ast> {
                     match param {
                         Pat::Array(_) | Pat::Object(_) => {
                             self.push(Step::StoreRValue(None));
-                            self.visit_destructuring(Node::from(param), conditional)
+                            self.visit_destructuring(Node::from(param), conditional);
                         }
                         _ => {
                             self.visit_and_get_slot(Node::from(param), conditional);

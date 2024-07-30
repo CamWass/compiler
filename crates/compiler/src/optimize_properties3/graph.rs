@@ -1,3 +1,4 @@
+use std::collections::hash_map::Entry;
 use std::collections::BinaryHeap;
 use std::fmt::{Display, Write};
 use std::hash::BuildHasherDefault;
@@ -8,11 +9,12 @@ use petgraph::algo::TarjanScc;
 use petgraph::graphmap::GraphMap;
 use petgraph::Directed;
 use petgraph::Direction::{Incoming, Outgoing};
-use rustc_hash::FxHasher;
-use unionfind::GrowableUnionFind;
+use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 
-use super::*;
+use super::unionfind::GrowableUnionFind;
+use super::{is_built_in_property, NameId, Pointer, PointerId, Store};
 
+#[derive(Default)]
 pub struct Graph {
     graph: GraphMap<PointerId, GraphEdge, Directed, BuildHasherDefault<FxHasher>>,
     nodes: GrowableUnionFind<PointerId>,
@@ -21,15 +23,6 @@ pub struct Graph {
 }
 
 impl Graph {
-    pub fn new() -> Self {
-        Self {
-            graph: GraphMap::default(),
-            nodes: GrowableUnionFind::new(),
-            points_to: FxHashMap::default(),
-            queue: UniqueQueue::new(),
-        }
-    }
-
     pub(super) fn add_initial_edge(
         &mut self,
         src: PointerId,
@@ -425,7 +418,7 @@ impl Graph {
 
     fn points_to_nothing<T: GetRepId>(&mut self, pointer: T) -> bool {
         let node = pointer.get_rep_id(self).0;
-        self.points_to.get(&node).is_none()
+        !self.points_to.contains_key(&node)
     }
 
     fn add_all<T: GetRepId, U: GetRepId>(&mut self, src: T, dest: U) -> bool {
@@ -436,7 +429,7 @@ impl Graph {
             return false;
         }
 
-        if self.points_to.get(&src).is_none() {
+        if !self.points_to.contains_key(&src) {
             return false;
         }
 
@@ -526,7 +519,7 @@ impl Graph {
 
         let print_graph: petgraph::prelude::DiGraph<String, GraphEdge> = print_graph
             .into_graph()
-            .map(|_, n| map(&store, *n), |_, e| *e);
+            .map(|_, n| map(store, *n), |_, e| *e);
         format!("{}", petgraph::dot::Dot::with_config(&print_graph, &[]))
     }
 }
@@ -587,20 +580,13 @@ impl std::cmp::PartialOrd for PrioritizedNode {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct UniqueQueue {
     inner: BinaryHeap<PrioritizedNode>,
     priorities: FxHashMap<PointerId, u32>,
 }
 
 impl UniqueQueue {
-    fn new() -> Self {
-        Self {
-            inner: BinaryHeap::new(),
-            priorities: FxHashMap::default(),
-        }
-    }
-
     fn pop(&mut self) -> Option<PointerId> {
         self.inner.pop().map(|p| p.1)
     }
@@ -613,7 +599,7 @@ impl UniqueQueue {
     fn extend(&mut self, iter: impl Iterator<Item = PointerId>) {
         let priorities = &self.priorities;
         self.inner
-            .extend(iter.map(|n| PrioritizedNode(priorities[&n], n)))
+            .extend(iter.map(|n| PrioritizedNode(priorities[&n], n)));
     }
 }
 

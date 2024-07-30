@@ -148,7 +148,7 @@ impl Visitor<CallId> for Resolver<'_, '_> {
             call: node,
             step_map,
             steps,
-            call_templates: &self.call_templates,
+            call_templates: self.call_templates,
             resolved_calls: self.resolved_calls,
             return_states: &mut self.state.return_states,
             objects_map: self.objects_map,
@@ -168,7 +168,7 @@ impl Visitor<CallId> for Resolver<'_, '_> {
 
             state: &mut self.state.data_flow_state,
 
-            static_fn_data: &self.static_fn_data,
+            static_fn_data: self.static_fn_data,
 
             done_objects: self.done_objects,
             done_functions: self.done_functions,
@@ -189,7 +189,7 @@ impl Visitor<CallId> for Resolver<'_, '_> {
         let call = &self.calls[node];
 
         // Merge property assignments.
-        for ((obj, key), prop) in call.state.prop_assignments.iter() {
+        for ((obj, key), prop) in &call.state.prop_assignments {
             if self.invalid_objects.contains(*obj) {
                 continue;
             }
@@ -243,8 +243,8 @@ impl Visitor<CallId> for Resolver<'_, '_> {
         }
 
         // TODO: can optimise - we only add ObjectIds and they are added in stored order.
-        for &obj in return_state.return_ty.iter() {
-            builder.add_object(Some(obj), self.invalid_objects)
+        for &obj in &return_state.return_ty {
+            builder.add_object(Some(obj), self.invalid_objects);
         }
 
         let return_type = self.unions.build_union(builder);
@@ -602,7 +602,7 @@ impl Machine<'_> {
         lattice_elements: &IndexSet<LatticeElementId, Lattice>,
         always_invalid_vars: &FxHashSet<VarId>,
     ) -> Option<Assignment> {
-        if always_invalid_vars.contains(&id) {
+        if always_invalid_vars.contains(id) {
             return Some(Assignment { rhs: None });
         }
         self.lattice
@@ -611,7 +611,7 @@ impl Machine<'_> {
             .get(id)
             .copied()
             .or_else(|| {
-                self.fn_assignments.get(&id).map(|f| Assignment {
+                self.fn_assignments.get(id).map(|f| Assignment {
                     rhs: Some(Pointer::Fn(*f)),
                 })
             })
@@ -732,7 +732,7 @@ impl SimpleMachine<'_> {
     }
 
     fn get_var(&self, id: &VarId) -> Option<Assignment> {
-        if self.always_invalid_vars.contains(&id) {
+        if self.always_invalid_vars.contains(id) {
             return Some(Assignment { rhs: None });
         }
         self.state
@@ -741,7 +741,7 @@ impl SimpleMachine<'_> {
             .get(id)
             .copied()
             .or_else(|| {
-                self.fn_assignments.get(&id).map(|f| Assignment {
+                self.fn_assignments.get(id).map(|f| Assignment {
                     rhs: Some(Pointer::Fn(*f)),
                 })
             })
@@ -1267,7 +1267,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                 .get_var(
                                     rhs,
                                     &self.state.lattice_elements,
-                                    &self.always_invalid_vars,
+                                    self.always_invalid_vars,
                                 )
                                 .and_then(|a| a.rhs),
                             RValue::Object(o) => get_call_obj(
@@ -1327,7 +1327,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                 .get_var(
                                     name,
                                     &self.state.lattice_elements,
-                                    &self.always_invalid_vars,
+                                    self.always_invalid_vars,
                                 )
                                 .and_then(|a| a.rhs),
                             AssignTarget::Prop(obj, key) => get_property(
@@ -1433,7 +1433,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                 Step::InvalidateLValue => match &machine.state.l_value {
                     Some(AssignTarget::Var(id)) => {
                         if let Some(rhs) = machine
-                            .get_var(id, &self.state.lattice_elements, &self.always_invalid_vars)
+                            .get_var(id, &self.state.lattice_elements, self.always_invalid_vars)
                             .map(|a| a.rhs)
                         {
                             invalidate(
@@ -1503,8 +1503,8 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                             args.push(
                                 arg,
                                 &self.static_fn_data[*func],
-                                &mut self.invalid_objects,
-                                &self.unions,
+                                self.invalid_objects,
+                                self.unions,
                                 &machine
                                     .lattice
                                     .get(&self.state.lattice_elements)
@@ -1530,7 +1530,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                     if let CallTemplate::SimpleWithProps(return_value, prop_assignments) =
                         &self.call_templates[func]
                     {
-                        for ((obj, key), prop) in prop_assignments.iter() {
+                        for ((obj, key), prop) in prop_assignments {
                             if self.invalid_objects.contains(*obj) {
                                 continue;
                             }
@@ -1556,7 +1556,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                                 &self.state.lattice_elements,
                                 self.invalid_objects,
                                 self.unions,
-                            )
+                            );
                         }
 
                         machine.set_r_value(*return_value);
@@ -1567,12 +1567,12 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                         machine.lattice.get(&self.state.lattice_elements),
                         func,
                         args,
-                        &self.static_fn_data,
+                        self.static_fn_data,
                         self.unions,
                         self.invalid_objects,
-                        &self.fn_assignments,
-                        &mut self.done_objects,
-                        &mut self.done_functions,
+                        self.fn_assignments,
+                        self.done_objects,
+                        self.done_functions,
                         self.accessed_props,
                         self.functions,
                         self.always_invalid_vars,
@@ -1614,15 +1614,15 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                             let mut builder = UnionBuilder::default();
 
                             if return_state.returns_invalid {
-                                builder.add_object(None, &self.invalid_objects);
+                                builder.add_object(None, self.invalid_objects);
                             }
                             if return_state.returns_null_or_void {
-                                builder.add_null_or_void()
+                                builder.add_null_or_void();
                             }
 
                             // TODO: can optimise - we only add ObjectIds and they are added in stored order.
-                            for &obj in return_state.return_ty.iter() {
-                                builder.add_object(Some(obj), &self.invalid_objects)
+                            for &obj in &return_state.return_ty {
+                                builder.add_object(Some(obj), self.invalid_objects);
                             }
 
                             let result = self.unions.build_union(builder);
@@ -1745,7 +1745,7 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                             .get_var(
                                 &param,
                                 &self.state.lattice_elements,
-                                &self.always_invalid_vars,
+                                self.always_invalid_vars,
                             )
                             .and_then(|a| a.rhs)
                         {
@@ -1936,8 +1936,8 @@ impl<'ast> DataFlowAnalysis<'ast, '_> {
                     let v = machine.get_r_value();
                     machine.state.unions.last_mut().unwrap().add(
                         v,
-                        &self.unions,
-                        &self.invalid_objects,
+                        self.unions,
+                        self.invalid_objects,
                     );
                 }
                 Step::StoreUnion => {
@@ -2012,10 +2012,10 @@ impl JoinOp {
         &mut self,
         input: &Lattice,
         unions: &mut UnionStore,
-        invalid_objects: &mut GrowableBitSet<ObjectId>,
+        invalid_objects: &GrowableBitSet<ObjectId>,
     ) {
         // Merge property assignments.
-        for ((obj, key), prop) in input.prop_assignments.iter() {
+        for ((obj, key), prop) in &input.prop_assignments {
             if invalid_objects.contains(*obj) {
                 continue;
             }

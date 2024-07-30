@@ -10,7 +10,7 @@ use super::Pointer;
 index::newtype_index!(pub(super) struct ObjectId { .. });
 
 impl ObjectId {
-    pub fn is_built_in(&self) -> bool {
+    pub fn is_built_in(self) -> bool {
         self.private < ObjectStore::BUILT_INS.len() as u32
     }
 }
@@ -422,7 +422,7 @@ impl UnionId {
         (self.as_u32() & Self::VALID_BITS_MASK) as usize
     }
     #[inline]
-    pub const fn invalid(&self) -> bool {
+    pub const fn invalid(self) -> bool {
         self.as_u32() & Self::INVALID_FLAG != 0
     }
 }

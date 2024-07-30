@@ -102,17 +102,10 @@ macro_rules! newtype_index {
      @vis          [$v:vis]
      @debug_format [$debug_format:tt]) => (
         $(#[$attrs])*
-        #[derive(Copy, PartialEq, Eq, Hash, PartialOrd, Ord, $($derives),*)]
+        #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, $($derives),*)]
         #[rustc_layout_scalar_valid_range_end($max)]
         $v struct $type {
             private: u32
-        }
-
-        impl Clone for $type {
-            #[inline]
-            fn clone(&self) -> Self {
-                *self
-            }
         }
 
         impl $type {

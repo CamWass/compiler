@@ -15,7 +15,7 @@ mod unionfind;
 use std::collections::hash_map::Entry;
 use std::convert::TryInto;
 
-use crate::find_vars::*;
+use crate::find_vars::{FunctionLike, VarId};
 use crate::optimize_properties2::simple_set::IndexSet;
 use crate::optimize_properties2::unionfind::UnionFind;
 use crate::optimize_properties2::{is_simple_prop_name, Id, NameId, PropKey, Renamer};
@@ -452,7 +452,7 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> (Store, Gr
 }
 
 fn compute_relations(ast: &ast::Program, store: &mut Store) -> Graph {
-    let mut graph = Graph::new();
+    let mut graph = Graph::default();
 
     let mut visitor = GraphVisitor {
         store,
@@ -1246,7 +1246,7 @@ struct StaticFunctionData {
 }
 
 impl StaticFunctionData {
-    fn param_indices(&self) -> impl Iterator<Item = VarId> {
+    fn param_indices(self) -> impl Iterator<Item = VarId> {
         VarId::from_u32(self.var_start)..VarId::from_u32(self.var_start + self.param_count as u32)
     }
 }
@@ -1466,16 +1466,16 @@ impl PointerId {
 
     const UNKNOWN: Self = Self::from_u32(6);
 
-    fn is_primitive(&self) -> bool {
+    fn is_primitive(self) -> bool {
         self.as_u32() <= Self::REGEX.as_u32()
     }
 
-    fn is_built_in(&self) -> bool {
+    fn is_built_in(self) -> bool {
         self.as_u32() <= Self::UNKNOWN.as_u32()
     }
 }
 
-static BUILT_INS: &'static [(PointerId, &'static [JsWord])] = &[
+static BUILT_INS: &[(PointerId, &[JsWord])] = &[
     (PointerId::NULL_OR_VOID, &[]),
     (
         PointerId::BOOL,

@@ -12,8 +12,8 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::control_flow::ControlFlowAnalysis::NodePriority;
 use crate::control_flow::{node::CfgNode, ControlFlowGraph::*};
-use crate::Id;
-use crate::{find_vars::*, ToId};
+use crate::find_vars::{FunctionLike, VarId};
+use crate::{Id, ToId};
 
 #[cfg(test)]
 mod tests;

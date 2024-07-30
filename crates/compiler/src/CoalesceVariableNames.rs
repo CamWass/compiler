@@ -11,12 +11,14 @@ use crate::control_flow::{
     ControlFlowAnalysis::{ControlFlowAnalysis, ControlFlowRoot},
     ControlFlowGraph::ControlFlowGraph,
 };
+use crate::find_vars::{find_first_lhs_ident, find_pat_ids, find_vars_declared_in_fn, VarId};
 use crate::graph::GraphColoring::{GreedyGraphColoring, SubGraph};
 use crate::utils::unwrap_as;
 use crate::DataFlowAnalysis::{LatticeElementId, LinearFlowState};
-use crate::Id;
-use crate::LiveVariablesAnalysis::*;
-use crate::{find_vars::*, ToId};
+use crate::LiveVariablesAnalysis::{
+    LiveVariablesAnalysis, LiveVariablesAnalysisResult, MAX_VARIABLES_TO_ANALYZE,
+};
+use crate::{Id, ToId};
 
 #[cfg(test)]
 mod tests;
