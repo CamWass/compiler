@@ -40,6 +40,37 @@ fn test_same(input: &str) {
 }
 
 #[test]
+fn test_built_in_object_properties() {
+    let test = |obj: &str| {
+        test_same(&format!(
+            "
+const a = {obj};
+a.constructor
+a.hasOwnProperty
+a.isPrototypeOf
+a.propertyIsEnumerable
+a.toLocaleString
+a.toString
+a.valueOf
+a.__proto__
+a.__defineGetter__
+a.__defineSetter__
+a.__lookupGetter__
+a.__lookupSetter__
+    ",
+        ));
+    };
+    test("null");
+    test("true");
+    test("1");
+    test("''");
+    test("1n");
+    test("/a/");
+    test("{}");
+    test("() => {}");
+}
+
+#[test]
 fn test_optional_chain() {
     test_transform(
         "

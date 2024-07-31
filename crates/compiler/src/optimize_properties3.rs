@@ -112,6 +112,9 @@ fn create_renaming_map(store: &mut Store, points_to: Graph) -> FxHashMap<NodeId,
 
     // Create objects and properties for built-in types.
     for (pointer, props) in BUILT_INS {
+        if props.is_empty() {
+            continue;
+        }
         let obj = objects.entry(*pointer).or_default();
         let props = props.iter().map(|p| {
             let name = store.names.insert(p.clone());
@@ -144,6 +147,10 @@ fn create_renaming_map(store: &mut Store, points_to: Graph) -> FxHashMap<NodeId,
                 continue;
             }
 
+            let built_in_obj_prop =
+                matches!(store.pointers[obj], Pointer::Fn(_) | Pointer::Object(_))
+                    && OBJECT_PROPERTIES.contains(&store.names[key.0]);
+
             prop_map_entry.push(obj);
 
             let object = objects.entry(obj).or_default();
@@ -154,7 +161,7 @@ fn create_renaming_map(store: &mut Store, points_to: Graph) -> FxHashMap<NodeId,
                         name: key.0,
                         prop_id: properties.next_index(),
                         references: FxHashSet::default(),
-                        invalid: store.invalid_pointers.contains(obj),
+                        invalid: built_in_obj_prop || store.invalid_pointers.contains(obj),
                     });
                     entry.insert(prop_id);
                     prop_id
@@ -1475,32 +1482,66 @@ impl PointerId {
     }
 }
 
+/// Properties from Object.prototype that are accessible on all objects.
+static OBJECT_PROPERTIES: &[JsWord] = &[
+    js_word!("constructor"),
+    js_word!("hasOwnProperty"),
+    js_word!("isPrototypeOf"),
+    js_word!("propertyIsEnumerable"),
+    js_word!("toLocaleString"),
+    js_word!("toString"),
+    js_word!("valueOf"),
+    js_word!("__proto__"),
+    js_word!("__defineGetter__"),
+    js_word!("__defineSetter__"),
+    js_word!("__lookupGetter__"),
+    js_word!("__lookupSetter__"),
+];
+
 static BUILT_INS: &[(PointerId, &[JsWord])] = &[
     (PointerId::NULL_OR_VOID, &[]),
     (
         PointerId::BOOL,
         &[
+            // Common to all objects
             js_word!("constructor"),
+            js_word!("hasOwnProperty"),
+            js_word!("isPrototypeOf"),
+            js_word!("propertyIsEnumerable"),
+            js_word!("toLocaleString"),
             js_word!("toString"),
             js_word!("valueOf"),
+            js_word!("__proto__"),
+            js_word!("__defineGetter__"),
+            js_word!("__defineSetter__"),
+            js_word!("__lookupGetter__"),
+            js_word!("__lookupSetter__"),
         ],
     ),
     (
         PointerId::NUM,
         &[
-            js_word!("constructor"),
             js_word!("toExponential"),
             js_word!("toFixed"),
-            js_word!("toLocaleString"),
             js_word!("toPrecision"),
+            // Common to all objects
+            js_word!("constructor"),
+            js_word!("hasOwnProperty"),
+            js_word!("isPrototypeOf"),
+            js_word!("propertyIsEnumerable"),
+            js_word!("toLocaleString"),
             js_word!("toString"),
             js_word!("valueOf"),
+            js_word!("__proto__"),
+            js_word!("__defineGetter__"),
+            js_word!("__defineSetter__"),
+            js_word!("__lookupGetter__"),
+            js_word!("__lookupSetter__"),
         ],
     ),
     (
         PointerId::STRING,
         &[
-            js_word!("constructor"),
             js_word!("length"),
             js_word!("at"),
             js_word!("charAt"),
@@ -1530,26 +1571,62 @@ static BUILT_INS: &[(PointerId, &[JsWord])] = &[
             js_word!("toLocaleLowerCase"),
             js_word!("toLocaleUpperCase"),
             js_word!("toLowerCase"),
-            js_word!("toString"),
             js_word!("toUpperCase"),
             js_word!("toWellFormed"),
             js_word!("trim"),
             js_word!("trimEnd"),
             js_word!("trimStart"),
+            // Common to all objects
+            js_word!("constructor"),
+            js_word!("hasOwnProperty"),
+            js_word!("isPrototypeOf"),
+            js_word!("propertyIsEnumerable"),
+            js_word!("toLocaleString"),
+            js_word!("toString"),
             js_word!("valueOf"),
+            js_word!("__proto__"),
+            js_word!("__defineGetter__"),
+            js_word!("__defineSetter__"),
+            js_word!("__lookupGetter__"),
+            js_word!("__lookupSetter__"),
         ],
     ),
     (
         PointerId::BIG_INT,
         &[
+            // Common to all objects
             js_word!("constructor"),
+            js_word!("hasOwnProperty"),
+            js_word!("isPrototypeOf"),
+            js_word!("propertyIsEnumerable"),
             js_word!("toLocaleString"),
             js_word!("toString"),
             js_word!("valueOf"),
+            js_word!("__proto__"),
+            js_word!("__defineGetter__"),
+            js_word!("__defineSetter__"),
+            js_word!("__lookupGetter__"),
+            js_word!("__lookupSetter__"),
         ],
     ),
-    // TODO:
-    (PointerId::REGEX, &[]),
+    (
+        PointerId::REGEX,
+        &[
+            // Common to all objects
+            js_word!("constructor"),
+            js_word!("hasOwnProperty"),
+            js_word!("isPrototypeOf"),
+            js_word!("propertyIsEnumerable"),
+            js_word!("toLocaleString"),
+            js_word!("toString"),
+            js_word!("valueOf"),
+            js_word!("__proto__"),
+            js_word!("__defineGetter__"),
+            js_word!("__defineSetter__"),
+            js_word!("__lookupGetter__"),
+            js_word!("__lookupSetter__"),
+        ],
+    ),
     (PointerId::UNKNOWN, &[]),
 ];
 

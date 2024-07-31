@@ -569,6 +569,11 @@ XPathEvaluator
 XPathExpression
 XPathResult
 XSLTProcessor
+__defineGetter__
+__defineSetter__
+__lookupGetter__
+__lookupSetter__
+__proto__
 _defineProperty
 _extends
 _toConsumableArray
@@ -619,6 +624,7 @@ from
 function
 get
 global
+hasOwnProperty
 if
 implements
 import
@@ -631,6 +637,7 @@ instanceof
 interface
 intrinsic
 is
+isPrototypeOf
 isWellFormed
 iterator
 key
@@ -662,6 +669,7 @@ padEnd
 padStart
 private
 process
+propertyIsEnumerable
 protected
 public
 readonly
