@@ -15,27 +15,19 @@ use parser::{Parser, Syntax};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-struct Bench(&'static str, &'static str);
-
 fn bench(c: &mut Criterion) {
-    let benches: &'static [(Bench, u64, usize)] = &[
+    let benches: &'static [(&'static str, &'static str, u64, usize)] = &[
         (
-            Bench(
-                "small_typescript",
-                include_str!("../files/small_typescript.js"),
-            ),
+            "small_typescript",
+            include_str!("../files/small_typescript.js"),
             20,
             100,
         ),
-        (
-            Bench("typescript", include_str!("../files/typescript.js")),
-            20,
-            10,
-        ),
+        ("typescript", include_str!("../files/typescript.js"), 20, 10),
     ];
 
     let mut group = c.benchmark_group("props");
-    for (Bench(id, src), time, samples) in benches.iter() {
+    for (id, src, time, samples) in benches.iter() {
         group
             .measurement_time(Duration::from_secs(*time))
             .sample_size(*samples);
