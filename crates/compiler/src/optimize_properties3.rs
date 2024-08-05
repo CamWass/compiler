@@ -1484,6 +1484,7 @@ impl PointerId {
 
 /// Properties from Object.prototype that are accessible on all objects.
 static OBJECT_PROPERTIES: &[JsWord] = &[
+    // https://tc39.es/ecma262/#sec-properties-of-the-object-prototype-object
     js_word!("constructor"),
     js_word!("hasOwnProperty"),
     js_word!("isPrototypeOf"),
@@ -1612,6 +1613,21 @@ static BUILT_INS: &[(PointerId, &[JsWord])] = &[
     (
         PointerId::REGEX,
         &[
+            // https://tc39.es/ecma262/#sec-properties-of-the-regexp-prototype-object
+            js_word!("exec"),
+            js_word!("dotAll"),
+            js_word!("flags"),
+            js_word!("global"),
+            js_word!("hasIndices"),
+            js_word!("ignoreCase"),
+            js_word!("multiline"),
+            js_word!("source"),
+            js_word!("sticky"),
+            js_word!("test"),
+            js_word!("unicode"),
+            js_word!("unicodeSets"),
+            // https://tc39.es/ecma262/#sec-properties-of-regexp-instances
+            js_word!("lastIndex"),
             // Common to all objects
             js_word!("constructor"),
             js_word!("hasOwnProperty"),

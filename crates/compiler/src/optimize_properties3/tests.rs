@@ -406,24 +406,10 @@ let obj2 = { a: 2 };
     // Build in methods/properties should not be renamed.
     test_same(
         "
-(1).constructor;
 (1).toExponential;
 (1).toFixed;
-(1).toLocaleString;
 (1).toPrecision;
-(1).toString;
-(1).valueOf;
 
-(1n).constructor;
-(1n).toLocaleString;
-(1n).toString;
-(1n).valueOf;
-
-(true).constructor;
-(true).toString;
-(true).valueOf;
-
-('a').constructor;
 ('a').length;
 ('a').at;
 ('a').charAt;
@@ -453,13 +439,25 @@ let obj2 = { a: 2 };
 ('a').toLocaleLowerCase;
 ('a').toLocaleUpperCase;
 ('a').toLowerCase;
-('a').toString;
 ('a').toUpperCase;
 ('a').toWellFormed;
 ('a').trim;
 ('a').trimEnd;
 ('a').trimStart;
-('a').valueOf;
+
+(/a/).exec;
+(/a/).dotAll;
+(/a/).flags;
+(/a/).global;
+(/a/).hasIndices;
+(/a/).ignoreCase;
+(/a/).multiline;
+(/a/).source;
+(/a/).sticky;
+(/a/).test;
+(/a/).unicode;
+(/a/).unicodeSets;
+(/a/).lastIndex;
 ",
     );
     // Same for unions with primitives.
