@@ -1,5 +1,6 @@
 use ast::*;
-use ecma_visit::{Fold, FoldWith};
+use ecma_visit::{VisitMut, VisitMutWith};
+use global_common::util::take::Take;
 
 /// Normalizes certain expressions, drops node IDs, and optionally drops spans.
 pub struct Normalizer {
@@ -7,28 +8,26 @@ pub struct Normalizer {
     pub is_test262: bool,
 }
 
-impl Fold for Normalizer {
-    fn fold_class_members(&mut self, mut node: Vec<ClassMember>) -> Vec<ClassMember> {
-        node = node.fold_children_with(self);
+impl VisitMut<'_> for Normalizer {
+    fn visit_mut_class_members(&mut self, node: &mut Vec<ClassMember>) {
+        node.visit_mut_children_with(self);
 
-        if !self.is_test262 {
-            return node;
+        if self.is_test262 {
+            node.retain(|v| !matches!(v, ClassMember::Empty(..)));
         }
-
-        node.retain(|v| !matches!(v, ClassMember::Empty(..)));
-
-        node
     }
 
-    fn fold_expr(&mut self, e: Expr) -> Expr {
-        let e = e.fold_children_with(self);
+    fn visit_mut_expr(&mut self, e: &mut Expr) {
+        e.visit_mut_children_with(self);
 
-        match e {
-            Expr::Paren(ParenExpr { expr, .. }) if self.is_test262 => *expr,
-            Expr::New(n @ NewExpr { args: None, .. }) if self.is_test262 => Expr::New(NewExpr {
-                args: Some(vec![]),
-                ..n
-            }),
+        match e.take() {
+            Expr::Paren(ParenExpr { expr, .. }) if self.is_test262 => *e = *expr,
+            Expr::New(n @ NewExpr { args: None, .. }) if self.is_test262 => {
+                *e = Expr::New(NewExpr {
+                    args: Some(vec![]),
+                    ..n
+                });
+            }
             // Flatten comma expressions.
             Expr::Seq(SeqExpr { mut exprs, .. }) => {
                 let need_work = exprs.iter().any(|n| matches!(**n, Expr::Seq(..)));
@@ -42,17 +41,17 @@ impl Fold for Normalizer {
                         v
                     });
                 }
-                Expr::Seq(SeqExpr {
+                *e = Expr::Seq(SeqExpr {
                     node_id: NodeId::DUMMY,
                     exprs,
-                })
+                });
             }
-            _ => e,
+            expr => *e = expr,
         }
     }
 
-    fn fold_number(&mut self, n: Number) -> Number {
-        let mut n = n.fold_children_with(self);
+    fn visit_mut_number(&mut self, n: &mut Number) {
+        n.visit_mut_children_with(self);
 
         let val = serde_json::Number::from_f64(n.value);
         let val = match val {
@@ -62,101 +61,95 @@ impl Fold for Normalizer {
                     n.raw = None;
                 }
 
-                return n;
+                return;
             }
         };
 
         match val.as_f64() {
             Some(value) => {
+                n.value = value;
                 if self.is_test262 {
-                    Number {
-                        value,
-                        raw: None,
-                        ..n
-                    }
-                } else {
-                    Number { value, ..n }
+                    n.raw = None;
                 }
             }
-            None => n,
+            None => {}
         }
     }
 
-    fn fold_pat(&mut self, mut node: Pat) -> Pat {
-        node = node.fold_children_with(self);
+    fn visit_mut_pat(&mut self, node: &mut Pat) {
+        node.visit_mut_children_with(self);
 
         if let Pat::Expr(expr) = node {
-            match *expr {
+            match *expr.take() {
                 Expr::Ident(id) => {
-                    return Pat::Ident(BindingIdent {
+                    *node = Pat::Ident(BindingIdent {
                         node_id: NodeId::DUMMY,
                         id,
-                    })
+                    });
                 }
-                _ => {
-                    node = Pat::Expr(expr);
+                expr => {
+                    *node = Pat::Expr(Box::new(expr));
                 }
             }
         }
-
-        node
     }
 
-    fn fold_pat_or_expr(&mut self, node: PatOrExpr) -> PatOrExpr {
-        let node = node.fold_children_with(self);
+    fn visit_mut_pat_or_expr(&mut self, node: &mut PatOrExpr) {
+        node.visit_mut_children_with(self);
 
         match node {
-            PatOrExpr::Expr(expr) => match *expr {
-                Expr::Ident(id) => PatOrExpr::Pat(Box::new(Pat::Ident(BindingIdent {
-                    node_id: NodeId::DUMMY,
-                    id,
-                }))),
-                _ => PatOrExpr::Expr(expr),
+            PatOrExpr::Expr(expr) => match *expr.take() {
+                Expr::Ident(id) => {
+                    *node = PatOrExpr::Pat(Box::new(Pat::Ident(BindingIdent {
+                        node_id: NodeId::DUMMY,
+                        id,
+                    })))
+                }
+                expr => *node = PatOrExpr::Expr(Box::new(expr)),
             },
-            PatOrExpr::Pat(pat) => match *pat {
-                Pat::Expr(expr) => PatOrExpr::Expr(expr),
-                _ => PatOrExpr::Pat(pat),
+            PatOrExpr::Pat(pat) => match *pat.take() {
+                Pat::Expr(expr) => *node = PatOrExpr::Expr(expr),
+                pat => *node = PatOrExpr::Pat(Box::new(pat)),
             },
         }
     }
 
-    fn fold_prop_name(&mut self, n: PropName) -> PropName {
-        let n = n.fold_children_with(self);
+    fn visit_mut_prop_name(&mut self, n: &mut PropName) {
+        n.visit_mut_children_with(self);
 
         if !self.is_test262 {
-            return n;
+            return;
         }
 
         match n {
-            PropName::Ident(Ident { sym, .. }) => PropName::Str(Str {
-                node_id: NodeId::DUMMY,
-                value: sym,
-                has_escape: false,
-                kind: Default::default(),
-            }),
-            PropName::Num(num) => PropName::Str(Str {
-                node_id: NodeId::DUMMY,
-                value: num.to_string().into(),
-                has_escape: false,
-                kind: Default::default(),
-            }),
-            _ => n,
+            PropName::Ident(Ident { sym, .. }) => {
+                *n = PropName::Str(Str {
+                    node_id: NodeId::DUMMY,
+                    value: sym.clone(),
+                    has_escape: false,
+                    kind: Default::default(),
+                })
+            }
+            PropName::Num(num) => {
+                *n = PropName::Str(Str {
+                    node_id: NodeId::DUMMY,
+                    value: num.to_string().into(),
+                    has_escape: false,
+                    kind: Default::default(),
+                })
+            }
+            _ => {}
         }
     }
 
-    fn fold_node_id(&mut self, _node_id: NodeId) -> NodeId {
-        NodeId::DUMMY
+    fn visit_mut_node_id(&mut self, node_id: &mut NodeId) {
+        *node_id = NodeId::DUMMY;
     }
 
-    fn fold_str(&mut self, s: Str) -> Str {
+    fn visit_mut_str(&mut self, s: &mut Str) {
         if self.is_test262 {
-            Str {
-                has_escape: false,
-                kind: Default::default(),
-                ..s
-            }
-        } else {
-            s
+            s.has_escape = false;
+            s.kind = Default::default();
         }
     }
 }

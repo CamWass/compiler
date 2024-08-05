@@ -14,24 +14,24 @@ pub trait Node: Any {}
 
 impl<T: ?Sized> Node for T where T: Any {}
 
-impl<A, B> Fold for AndThen<A, B>
-where
-    A: Fold,
+// impl<A, B> Fold for AndThen<A, B>
+// where
+//     A: Fold,
 
-    B: Fold,
-{
-    #[inline(always)]
-    fn fold_module(&mut self, n: Module) -> Module {
-        let n = self.first.fold_module(n);
-        self.second.fold_module(n)
-    }
+//     B: Fold,
+// {
+//     #[inline(always)]
+//     fn fold_module(&mut self, n: Module) -> Module {
+//         let n = self.first.fold_module(n);
+//         self.second.fold_module(n)
+//     }
 
-    #[inline(always)]
-    fn fold_script(&mut self, n: Script) -> Script {
-        let n = self.first.fold_script(n);
-        self.second.fold_script(n)
-    }
-}
+//     #[inline(always)]
+//     fn fold_script(&mut self, n: Script) -> Script {
+//         let n = self.first.fold_script(n);
+//         self.second.fold_script(n)
+//     }
+// }
 
 impl<'ast, A, B> Visit<'ast> for AndThen<A, B>
 where
@@ -49,36 +49,36 @@ where
     }
 }
 
-impl<V> Fold for Repeat<V>
-where
-    V: Fold + Repeated,
-{
-    fn fold_module(&mut self, mut node: Module) -> Module {
-        loop {
-            self.pass.reset();
-            node = node.fold_with(&mut self.pass);
+// impl<V> Fold for Repeat<V>
+// where
+//     V: Fold + Repeated,
+// {
+//     fn fold_module(&mut self, mut node: Module) -> Module {
+//         loop {
+//             self.pass.reset();
+//             node = node.fold_with(&mut self.pass);
 
-            if !self.pass.changed() {
-                break;
-            }
-        }
+//             if !self.pass.changed() {
+//                 break;
+//             }
+//         }
 
-        node
-    }
+//         node
+//     }
 
-    fn fold_script(&mut self, mut node: Script) -> Script {
-        loop {
-            self.pass.reset();
-            node = node.fold_with(&mut self.pass);
+//     fn fold_script(&mut self, mut node: Script) -> Script {
+//         loop {
+//             self.pass.reset();
+//             node = node.fold_with(&mut self.pass);
 
-            if !self.pass.changed() {
-                break;
-            }
-        }
+//             if !self.pass.changed() {
+//                 break;
+//             }
+//         }
 
-        node
-    }
-}
+//         node
+//     }
+// }
 
 impl<V> VisitMut<'_> for Repeat<V>
 where

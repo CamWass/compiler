@@ -4,7 +4,7 @@ extern crate test;
 
 use ast::*;
 use common::Normalizer;
-use ecma_visit::FoldWith;
+use ecma_visit::VisitMutWith;
 use parser::{lexer::Lexer, PResult, Parser};
 use std::{
     env,
@@ -312,26 +312,28 @@ fn identity_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
 
             if module {
                 let p = |explicit| {
-                    parse_module(
+                    let mut res = parse_module(
                         &root
                             .join(if explicit { "pass-explicit" } else { "pass" })
                             .join(&file_name),
                     )
-                    .map(normalize)
-                    .unwrap()
+                    .unwrap();
+                    normalize(&mut res);
+                    res
                 };
                 let src = p(false);
                 let expected = p(true);
                 assert_eq!(src, expected);
             } else {
                 let p = |explicit| {
-                    parse_script(
+                    let mut res = parse_script(
                         &root
                             .join(if explicit { "pass-explicit" } else { "pass" })
                             .join(&file_name),
                     )
-                    .map(normalize)
-                    .unwrap()
+                    .unwrap();
+                    normalize(&mut res);
+                    res
                 };
                 let src = p(false);
                 let expected = p(true);
@@ -392,13 +394,13 @@ fn error() {
     test_main(&args, tests, Some(Options::new()));
 }
 
-pub fn normalize<T>(t: T) -> T
+pub fn normalize<'ast, T>(t: &'ast mut T)
 where
-    T: FoldWith<Normalizer>,
+    T: VisitMutWith<'ast, Normalizer>,
 {
     let mut n = Normalizer {
         drop_span: true,
         is_test262: true,
     };
-    t.fold_with(&mut n)
+    t.visit_mut_with(&mut n);
 }

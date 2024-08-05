@@ -50,9 +50,9 @@ pub fn define(tts: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let block = parse_macro_input!(tts as Block);
 
     let mut q = TokenStream::new();
-    q.extend(make(Mode::Fold, &block.stmts));
+    // q.extend(make(Mode::Fold, &block.stmts));
     q.extend(make(Mode::Visit, &block.stmts));
-    q.extend(make(Mode::VisitAll, &block.stmts));
+    // q.extend(make(Mode::VisitAll, &block.stmts));
     q.extend(make(Mode::VisitMut, &block.stmts));
 
     q.into()
