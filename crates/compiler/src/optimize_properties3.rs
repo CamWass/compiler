@@ -51,7 +51,7 @@ pub fn process(
 ) {
     let (mut store, points_to) = analyse(ast, unresolved_ctxt);
 
-    let rename_map = create_renaming_map(&mut store, points_to);
+    let rename_map = create_renaming_map(&mut store, &points_to);
 
     // Actually assign the new names.
     let mut renamer = Renamer {
@@ -62,7 +62,7 @@ pub fn process(
     ast.visit_mut_with(&mut renamer);
 }
 
-fn create_renaming_map(store: &mut Store, points_to: Graph) -> FxHashMap<NodeId, JsWord> {
+fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId, JsWord> {
     /*
         Idea:
         Assign properties (from different objects but with the same name) to the same
@@ -167,7 +167,9 @@ fn create_renaming_map(store: &mut Store, points_to: Graph) -> FxHashMap<NodeId,
                     prop_id
                 }
             };
+            if !properties[id].invalid {
             properties[id].references.insert(key.1);
+            }
         }
     }
 
@@ -226,10 +228,12 @@ fn create_renaming_map(store: &mut Store, points_to: Graph) -> FxHashMap<NodeId,
                 });
                 let representative = &mut representatives[representative];
                 let prop = &properties[prop];
+                representative.invalid |= prop.invalid;
+                if !representative.invalid {
                 representative
                     .references
                     .extend(prop.references.iter().copied());
-                representative.invalid |= prop.invalid;
+                }
             }
         }
     }
@@ -323,7 +327,7 @@ fn create_renaming_map(store: &mut Store, points_to: Graph) -> FxHashMap<NodeId,
     let mut colours = vec![0u16; representatives.len()];
     let mut cur_colour = 0u16;
     let mut subgraph = BitSet::new_empty(representatives.len());
-    loop {
+    while !remaining_nodes.is_empty() {
         subgraph.clear();
         // This is essentially just `BitSet::iter` inlined, allowing us to modify
         // the set as we go (see `BitIter` for details).
@@ -350,10 +354,6 @@ fn create_renaming_map(store: &mut Store, points_to: Graph) -> FxHashMap<NodeId,
             offset += index::bit_set::WORD_BITS;
         }
         cur_colour += 1;
-
-        if remaining_nodes.is_empty() {
-            break;
-        }
     }
 
     // Generate new names for the properties that will be renamed.
