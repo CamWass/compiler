@@ -39,7 +39,7 @@ impl Graph {
         self.graph.add_edge(src, dest, kind).is_none()
     }
 
-    fn make_subset_of<T: GetRepId, U: GetRepId>(&mut self, src: T, dest: U) -> bool {
+    fn make_subset_of<T: GetRepId, U: GetRepId>(&mut self, src: T, dest: U, store: &Store) -> bool {
         let src = src.get_rep_id(self);
         let dest = dest.get_rep_id(self);
         if src.0 == dest.0 {
@@ -53,7 +53,7 @@ impl Graph {
             .graph
             .add_edge(src.0, dest.0, GraphEdge::Subset)
             .is_none();
-        changed |= self.add_all(src, dest);
+        changed |= self.add_all(src, dest, store);
         changed
     }
 
@@ -63,7 +63,7 @@ impl Graph {
         for pointer in 0..store.pointers.len() {
             let pointer = PointerId::from_usize(pointer);
             if store.pointers[pointer].is_concrete() {
-                self.insert(pointer, pointer, store);
+                self.points_to.insert(pointer, SmallSet::single(pointer));
             }
         }
 
@@ -98,6 +98,10 @@ impl Graph {
 
                 for pointer in 0..store.pointers.len() {
                     let pointer = PointerId::from_usize(pointer);
+                    if store.pointers[pointer].is_concrete() {
+                        continue;
+                    }
+
                     let node = self.get_graph_node_id(pointer);
 
                     if let Pointer::Arg(callee, _) = store.pointers[pointer] {
@@ -148,43 +152,43 @@ impl Graph {
                     if let Pointer::Prop(obj, _) = store.pointers[pointer] {
                         let obj_invalid = store.invalid_pointers.contains(obj);
                         if obj_invalid {
-                        invalidated |= store.invalidate(pointer);
-                        let changed = self.insert(node, PointerId::UNKNOWN, store);
-                        if changed {
-                            self.prioritise(node);
-                            self.queue.push(node.0);
-                        }
-                        continue;
-                        }
-                    }
-
-                    if first {
-                    // Functions implicitly return undefined sometimes.
-                    if matches!(store.pointers[pointer], Pointer::ReturnValue(_)) {
-                        let changed = self.insert(node, PointerId::NULL_OR_VOID, store);
-                        if changed {
-                            self.prioritise(node);
-                            self.queue.push(node.0);
-                        }
-                        continue;
-                    }
-
-                    if self.points_to_nothing(node) {
-                        // Undefined properties on valid objects are undefined. We know the
-                        // obj is valid as props on invalid objects are checked above.
-                        if matches!(store.pointers[pointer], Pointer::Prop(_, _)) {
-                            let changed = self.insert(node, PointerId::NULL_OR_VOID, store);
+                            invalidated |= store.invalidate(pointer);
+                            let changed = self.insert(node, PointerId::UNKNOWN, store);
                             if changed {
+                                self.prioritise(node);
                                 self.queue.push(node.0);
                             }
                             continue;
                         }
-                        invalidated |= store.invalidate(pointer);
-                        self.insert(node, PointerId::UNKNOWN, store);
-                        self.prioritise(node);
-                        self.queue.push(node.0);
                     }
-                }
+
+                    if first {
+                        // Functions implicitly return undefined sometimes.
+                        if matches!(store.pointers[pointer], Pointer::ReturnValue(_)) {
+                            let changed = self.insert(node, PointerId::NULL_OR_VOID, store);
+                            if changed {
+                                self.prioritise(node);
+                                self.queue.push(node.0);
+                            }
+                            continue;
+                        }
+
+                        if self.points_to_nothing(node) {
+                            // Undefined properties on valid objects are undefined. We know the
+                            // obj is valid as props on invalid objects are checked above.
+                            if matches!(store.pointers[pointer], Pointer::Prop(_, _)) {
+                                let changed = self.insert(node, PointerId::NULL_OR_VOID, store);
+                                if changed {
+                                    self.queue.push(node.0);
+                                }
+                                continue;
+                            }
+                            invalidated |= store.invalidate(pointer);
+                            self.insert(node, PointerId::UNKNOWN, store);
+                            self.prioritise(node);
+                            self.queue.push(node.0);
+                        }
+                    }
                 }
 
                 first = false;
@@ -227,7 +231,7 @@ impl Graph {
 
                 match kind {
                     GraphEdge::Subset => {
-                        let changed = self.add_all(node, dest);
+                        let changed = self.add_all(node, dest, store);
                         if changed {
                             self.queue.push(dest.0);
                         }
@@ -248,7 +252,7 @@ impl Graph {
                             if return_node.0 == dest.0 {
                                 continue;
                             }
-                            if self.make_subset_of(return_node, dest) {
+                            if self.make_subset_of(return_node, dest, store) {
                                 changed = true;
                                 dest = RepId(self.nodes.find_mut(dest.0));
                             }
@@ -358,7 +362,7 @@ impl Graph {
                                         Some(param) => {
                                             let param = store.pointers.insert(Pointer::Var(param));
                                             let param = self.get_graph_node_id(param);
-                                            if self.make_subset_of(dest, param) {
+                                            if self.make_subset_of(dest, param, store) {
                                                 dest = RepId(self.nodes.find_mut(dest.0));
                                                 let param = RepId(self.nodes.find_mut(param.0));
                                                 self.queue.push(param.0);
@@ -413,6 +417,8 @@ impl Graph {
         debug_assert!(store.pointers[value].is_concrete());
 
         let node = pointer.get_rep_id(self).0;
+        debug_assert!(!store.pointers[node].is_concrete());
+
         self.points_to.entry(node).or_default().insert(value)
     }
 
@@ -421,9 +427,11 @@ impl Graph {
         !self.points_to.contains_key(&node)
     }
 
-    fn add_all<T: GetRepId, U: GetRepId>(&mut self, src: T, dest: U) -> bool {
+    fn add_all<T: GetRepId, U: GetRepId>(&mut self, src: T, dest: U, store: &Store) -> bool {
         let src = src.get_rep_id(self).0;
         let dest = dest.get_rep_id(self).0;
+
+        debug_assert!(!store.pointers[dest].is_concrete());
 
         if src == dest {
             return false;
@@ -616,6 +624,12 @@ impl Default for SmallSet {
 }
 
 impl SmallSet {
+    pub(super) fn single(pointer: PointerId) -> Self {
+        let mut s = ArrayVec::new();
+        s.push(pointer);
+        Self::Inline(s)
+    }
+
     fn insert(&mut self, value: PointerId) -> bool {
         match self {
             SmallSet::Inline(set) => {
@@ -630,8 +644,8 @@ impl SmallSet {
                     }
                     true
                 } else {
-                false
-            }
+                    false
+                }
             }
             SmallSet::Heap(set) => Rc::make_mut(set).insert(value),
         }
@@ -644,14 +658,14 @@ impl SmallSet {
         }
     }
 
-    pub fn len(&self) -> usize {
+    fn len(&self) -> usize {
         match self {
             SmallSet::Inline(set) => set.len(),
             SmallSet::Heap(set) => set.len(),
         }
     }
 
-    pub fn iter(&self) -> SmallSetIter<'_> {
+    pub(super) fn iter(&self) -> SmallSetIter<'_> {
         match self {
             SmallSet::Inline(set) => SmallSetIter::Slice(set.iter()),
             SmallSet::Heap(set) => SmallSetIter::Set(set.iter()),
@@ -678,8 +692,8 @@ impl SmallSet {
                     return;
                 }
 
-        if other.len() > self.len() {
-            other = std::mem::replace(self, other);
+                if other.len() > self.len() {
+                    other = std::mem::replace(self, other);
                 }
             }
             _ => {}
@@ -693,7 +707,7 @@ impl SmallSet {
     fn extend_ref(&mut self, other: &SmallSet) {
         match self {
             SmallSet::Inline(_) => {
-        for value in other {
+                for value in other {
                     self.insert(value);
                 }
             }
@@ -706,12 +720,6 @@ impl SmallSet {
                 Rc::make_mut(set).extend(other);
             }
         }
-    }
-
-    pub fn unknown_set() -> Self {
-        let mut s = ArrayVec::new();
-        s.push(PointerId::UNKNOWN);
-        Self::Inline(s)
     }
 }
 

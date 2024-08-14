@@ -134,7 +134,7 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
 
     let mut prop_map: FxHashMap<PropKey, Vec<PointerId>> = FxHashMap::default();
 
-    let unknown_set = SmallSet::unknown_set();
+    let unknown_set = SmallSet::single(PointerId::UNKNOWN);
 
     for (key, pointer) in &store.references {
         let objs = points_to.get_immutable(*pointer).unwrap_or(&unknown_set);
@@ -168,7 +168,7 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
                 }
             };
             if !properties[id].invalid {
-            properties[id].references.insert(key.1);
+                properties[id].references.insert(key.1);
             }
         }
     }
@@ -230,9 +230,9 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
                 let prop = &properties[prop];
                 representative.invalid |= prop.invalid;
                 if !representative.invalid {
-                representative
-                    .references
-                    .extend(prop.references.iter().copied());
+                    representative
+                        .references
+                        .extend(prop.references.iter().copied());
                 }
             }
         }
@@ -696,7 +696,7 @@ impl GraphVisitor<'_> {
                         }
                         for (i, arg_values) in args.iter().enumerate() {
                             let index = i.try_into().expect("< u32::MAX params");
-                                let arg_pointer =
+                            let arg_pointer =
                                 self.store.pointers.insert(Pointer::Arg(callee, index));
                             for value in arg_values {
                                 self.make_subset_of(*value, arg_pointer);
@@ -715,7 +715,7 @@ impl GraphVisitor<'_> {
                         if !self.store.is_callable_pointer(*callee) {
                             *callee = PointerId::NULL_OR_VOID;
                         } else {
-                        *callee = self.get_return_value(*callee);
+                            *callee = self.get_return_value(*callee);
                         }
                     }
                     ret!(callee)
@@ -730,8 +730,8 @@ impl GraphVisitor<'_> {
                             ExprOrSpread::Spread(arg) => &arg.expr,
                             ExprOrSpread::Expr(arg) => arg,
                         };
-                                let value = self.get_rhs(arg, true);
-                                self.invalidate(&value);
+                        let value = self.get_rhs(arg, true);
+                        self.invalidate(&value);
                     }
                 }
                 ret!(vec![PointerId::UNKNOWN])
@@ -1285,21 +1285,21 @@ impl Store {
         if pointer.is_built_in() {
             false
         } else {
-        match self.pointers[pointer] {
-            Pointer::Prop(_, _)
-            | Pointer::Var(_)
-            | Pointer::ReturnValue(_)
+            match self.pointers[pointer] {
+                Pointer::Prop(_, _)
+                | Pointer::Var(_)
+                | Pointer::ReturnValue(_)
                 | Pointer::Arg(_, _)
                 | Pointer::Fn(_) => true,
 
                 Pointer::Object(_) => false,
 
-            Pointer::Unknown
-            | Pointer::NullOrVoid
-            | Pointer::Bool
-            | Pointer::Num
-            | Pointer::String
-            | Pointer::BigInt
+                Pointer::Unknown
+                | Pointer::NullOrVoid
+                | Pointer::Bool
+                | Pointer::Num
+                | Pointer::String
+                | Pointer::BigInt
                 | Pointer::Regex => unreachable!("primitives checked above"),
             }
         }
