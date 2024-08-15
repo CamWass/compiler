@@ -1,34 +1,61 @@
 use std::collections::hash_map::Entry;
 use std::collections::BinaryHeap;
 use std::fmt::{Display, Write};
-use std::hash::BuildHasherDefault;
 use std::rc::Rc;
 
 use arrayvec::ArrayVec;
 use petgraph::algo::TarjanScc;
-use petgraph::graphmap::GraphMap;
+use petgraph::graph::NodeIndex;
+use petgraph::visit::EdgeRef;
 use petgraph::Directed;
 use petgraph::Direction::{Incoming, Outgoing};
-use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::unionfind::GrowableUnionFind;
-use super::{is_built_in_property, NameId, Pointer, PointerId, Store};
+use super::{is_built_in_property, Pointer, PointerId, Store};
 
 #[derive(Default)]
 pub struct Graph {
-    graph: GraphMap<PointerId, GraphEdge, Directed, BuildHasherDefault<FxHasher>>,
     nodes: GrowableUnionFind<PointerId>,
     points_to: FxHashMap<PointerId, SmallSet>,
     queue: UniqueQueue,
+
+    graph: petgraph::Graph<PointerId, GraphEdge, Directed>,
+    graph_map: FxHashMap<PointerId, NodeIndex>,
 }
 
 impl Graph {
-    pub(super) fn add_initial_edge(
-        &mut self,
-        src: PointerId,
-        dest: PointerId,
-        kind: GraphEdge,
-    ) -> bool {
+    fn get_node(&mut self, pointer: PointerId) -> NodeIndex {
+        match self.graph_map.entry(pointer) {
+            Entry::Occupied(entry) => *entry.get(),
+            Entry::Vacant(entry) => {
+                let idx = self.graph.add_node(pointer);
+                entry.insert(idx);
+                idx
+            }
+        }
+    }
+
+    fn add_edge(&mut self, src: PointerId, dest: PointerId, kind: GraphEdge) -> bool {
+        let src = self.get_node(src);
+        let dest = self.get_node(dest);
+
+        if kind == GraphEdge::Subset {
+            debug_assert_ne!(src, dest);
+        }
+
+        let mut existing = self.graph.edges_connecting(src, dest);
+
+        if !existing.any(|e| *e.weight() == kind) {
+            self.graph.add_edge(src, dest, kind);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub(super) fn add_initial_edge(&mut self, src: PointerId, dest: PointerId, kind: GraphEdge) {
+        // TODO: is this needed?
         let src = self.get_graph_node_id(src).0;
         let dest = self.get_graph_node_id(dest).0;
 
@@ -36,7 +63,7 @@ impl Graph {
             debug_assert_ne!(src, dest);
         }
 
-        self.graph.add_edge(src, dest, kind).is_none()
+        self.add_edge(src, dest, kind);
     }
 
     fn make_subset_of<T: GetRepId, U: GetRepId>(&mut self, src: T, dest: U, store: &Store) -> bool {
@@ -49,10 +76,7 @@ impl Graph {
         self.prioritise(src);
         self.prioritise(dest);
 
-        let mut changed = self
-            .graph
-            .add_edge(src.0, dest.0, GraphEdge::Subset)
-            .is_none();
+        let mut changed = self.add_edge(src.0, dest.0, GraphEdge::Subset);
         changed |= self.add_all(src, dest, store);
         changed
     }
@@ -72,18 +96,19 @@ impl Graph {
         self.queue.priorities.reserve(self.graph.node_count());
 
         let priorities = &mut self.queue.priorities;
+        let graph = &self.graph;
 
         let mut priority = 0_u32;
         tarjan.run(&self.graph, |scc| {
             for n in scc {
-                priorities.insert(*n, priority);
+                priorities.insert(graph[*n], priority);
             }
             priority += 1;
         });
 
         debug_assert_eq!(self.queue.priorities.len(), self.graph.node_count());
 
-        self.queue.extend(self.graph.nodes());
+        self.queue.extend(self.graph.node_weights().copied());
         let mut edges = Vec::new();
 
         let mut first = true;
@@ -142,9 +167,10 @@ impl Graph {
                                 invalidated |= store.invalidate(value);
                             }
                         }
-                        for incoming in self.graph.edges_directed(node.0, Incoming) {
-                            if *incoming.2 == GraphEdge::Subset {
-                                invalidated |= store.invalidate(incoming.0);
+                        let node = self.get_node(node.0);
+                        for incoming in self.graph.edges_directed(node, Incoming) {
+                            if *incoming.weight() == GraphEdge::Subset {
+                                invalidated |= store.invalidate(self.graph[incoming.source()]);
                             }
                         }
                     }
@@ -219,10 +245,11 @@ impl Graph {
     ) {
         while let Some(node) = self.queue.pop() {
             edges.clear();
+            let n = self.get_node(node);
             edges.extend(
                 self.graph
-                    .edges_directed(node, Outgoing)
-                    .map(|e| (e.0, e.1, *e.2)),
+                    .edges_directed(n, Outgoing)
+                    .map(|e| (self.graph[e.source()], self.graph[e.target()], *e.weight())),
             );
 
             for (_, dest, kind) in edges.iter().copied() {
@@ -319,23 +346,37 @@ impl Graph {
                                 }
                             }
 
+                            let rep_node = self.get_node(rep.0);
+                            let src_node = self.get_node(src.0);
+
                             let in_edges = self
                                 .graph
-                                .edges_directed(src.0, Incoming)
-                                .map(|e| (e.0, e.1, *e.2))
+                                .edges_directed(src_node, Incoming)
+                                .map(|e| (e.source(), e.target(), *e.weight()))
                                 .collect::<Vec<_>>();
                             let out_edges = self
                                 .graph
-                                .edges_directed(src.0, Outgoing)
-                                .map(|e| (e.0, e.1, *e.2))
+                                .edges_directed(src_node, Outgoing)
+                                .map(|e| (e.source(), e.target(), *e.weight()))
                                 .collect::<Vec<_>>();
 
-                            self.graph.remove_node(src.0);
+                            // Remove all edges connected to the source node.
+                            while let Some(edge) =
+                                self.graph.edges_directed(src_node, Incoming).next()
+                            {
+                                self.graph.remove_edge(edge.id());
+                            }
+                            while let Some(edge) =
+                                self.graph.edges_directed(src_node, Outgoing).next()
+                            {
+                                self.graph.remove_edge(edge.id());
+                            }
+
                             for in_edge in in_edges {
-                                self.graph.add_edge(in_edge.0, rep.0, in_edge.2);
+                                self.graph.add_edge(in_edge.0, rep_node, in_edge.2);
                             }
                             for out_edge in out_edges {
-                                self.graph.add_edge(rep.0, out_edge.1, out_edge.2);
+                                self.graph.add_edge(rep_node, out_edge.1, out_edge.2);
                             }
 
                             self.prioritise(rep);
@@ -397,15 +438,16 @@ impl Graph {
     }
 
     fn prioritise<T: GetRepId>(&mut self, pointer: T) {
-        let node = pointer.get_rep_id(self).0;
-        if !self.queue.priorities.contains_key(&node) {
+        let pointer = pointer.get_rep_id(self).0;
+        if !self.queue.priorities.contains_key(&pointer) {
+            let node = self.get_node(pointer);
             let priority = self
                 .graph
                 .neighbors_directed(node, Incoming)
-                .map(|n| self.queue.priorities[&n])
+                .map(|n| self.queue.priorities[&self.graph[n]])
                 .min()
                 .unwrap_or(u32::MAX);
-            self.queue.priorities.insert(node, priority);
+            self.queue.priorities.insert(pointer, priority);
         }
     }
 
@@ -469,7 +511,7 @@ impl Graph {
     }
 
     pub(super) fn get_dot(&mut self, store: &Store) -> String {
-        let print_graph = self.graph.clone();
+        let mut print_graph = self.graph.clone();
 
         let mut map = |store: &Store, n: PointerId| {
             let n = self.nodes.find(n);
@@ -525,9 +567,12 @@ impl Graph {
             res
         };
 
-        let print_graph: petgraph::prelude::DiGraph<String, GraphEdge> = print_graph
-            .into_graph()
-            .map(|_, n| map(store, *n), |_, e| *e);
+        print_graph.retain_nodes(|g, n| {
+            g.edges_directed(n, Outgoing).next().is_some()
+                || g.edges_directed(n, Incoming).next().is_some()
+        });
+        let print_graph: petgraph::prelude::DiGraph<String, GraphEdge> =
+            print_graph.map(|_, n| map(store, *n), |_, e| *e);
         format!("{}", petgraph::dot::Dot::with_config(&print_graph, &[]))
     }
 }
