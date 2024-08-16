@@ -240,21 +240,17 @@ impl Graph {
         }
     }
 
-    fn flow_edges(
-        &mut self,
-        store: &mut Store,
-        edges: &mut Vec<(PointerId, PointerId, GraphEdge)>,
-    ) {
+    fn flow_edges(&mut self, store: &mut Store, edges: &mut Vec<(PointerId, GraphEdge)>) {
         while let Some(node) = self.queue.pop() {
             edges.clear();
             let n = self.get_node(node);
             edges.extend(
                 self.graph
                     .edges_directed(n, Outgoing)
-                    .map(|e| (self.graph[e.source()], self.graph[e.target()], *e.weight())),
+                    .map(|e| (self.graph[e.target()], *e.weight())),
             );
 
-            for (_, dest, kind) in edges.iter().copied() {
+            for (dest, kind) in edges.iter().copied() {
                 let node = RepId(self.nodes.find_mut(node));
                 let dest = RepId(self.nodes.find_mut(dest));
 
