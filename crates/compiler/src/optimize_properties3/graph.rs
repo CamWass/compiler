@@ -347,34 +347,21 @@ impl Graph {
                             let rep_node = self.get_node(rep.0);
                             let src_node = self.get_node(src.0);
 
-                            let in_edges = self
-                                .graph
-                                .edges_directed(src_node, Incoming)
-                                .map(|e| (e.source(), e.target(), *e.weight()))
-                                .collect::<Vec<_>>();
-                            let out_edges = self
-                                .graph
-                                .edges_directed(src_node, Outgoing)
-                                .map(|e| (e.source(), e.target(), *e.weight()))
-                                .collect::<Vec<_>>();
-
-                            // Remove all edges connected to the source node.
+                            // Move all of src_node's in edges so they point to rep_node instead.
                             while let Some(edge) =
                                 self.graph.edges_directed(src_node, Incoming).next()
                             {
-                                self.graph.remove_edge(edge.id());
+                                let id = edge.id();
+                                self.graph.add_edge(edge.source(), rep_node, *edge.weight());
+                                self.graph.remove_edge(id);
                             }
+                            // Move all of src_node's out edges so they come from rep_node instead.
                             while let Some(edge) =
                                 self.graph.edges_directed(src_node, Outgoing).next()
                             {
-                                self.graph.remove_edge(edge.id());
-                            }
-
-                            for in_edge in in_edges {
-                                self.graph.add_edge(in_edge.0, rep_node, in_edge.2);
-                            }
-                            for out_edge in out_edges {
-                                self.graph.add_edge(rep_node, out_edge.1, out_edge.2);
+                                let id = edge.id();
+                                self.graph.add_edge(rep_node, edge.target(), *edge.weight());
+                                self.graph.remove_edge(id);
                             }
 
                             self.prioritise(rep);
