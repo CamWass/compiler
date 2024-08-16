@@ -11,6 +11,8 @@ use petgraph::Directed;
 use petgraph::Direction::{Incoming, Outgoing};
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::optimize_properties2::NameId;
+
 use super::unionfind::GrowableUnionFind;
 use super::{is_built_in_property, Pointer, PointerId, Store};
 
