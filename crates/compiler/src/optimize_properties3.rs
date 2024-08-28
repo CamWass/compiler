@@ -392,6 +392,7 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> (Store, Gr
         pointers,
         references: FxHashSet::default(),
         invalid_pointers: GrowableBitSet::default(),
+        concrete_pointer_bound: PointerId::MAX,
     };
 
     {
@@ -404,11 +405,21 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> (Store, Gr
     }
 
     {
+        let mut params_to_invalidate = Vec::new();
+
         let mut visitor = FnVisitor {
             store: &mut store,
             accesses_arguments_array: false,
+            params_to_invalidate: &mut params_to_invalidate,
         };
         ast.visit_with(&mut visitor);
+
+        store.concrete_pointer_bound = PointerId::from_usize(store.pointers.len());
+
+        for param in params_to_invalidate {
+            let pointer = store.pointers.insert(Pointer::Var(param));
+            store.invalid_pointers.insert(pointer);
+        }
     }
 
     let mut graph = compute_relations(ast, &mut store);
@@ -446,6 +457,13 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> (Store, Gr
                 | Pointer::BigInt
                 | Pointer::Regex => {}
             }
+        }
+
+        for p in store.concrete_pointers() {
+            debug_assert!(store.pointers[p].is_concrete());
+        }
+        for p in store.non_concrete_pointers() {
+            debug_assert!(!store.pointers[p].is_concrete());
         }
     }
 
@@ -504,7 +522,11 @@ impl GraphVisitor<'_> {
                 ret!(vec![PointerId::UNKNOWN])
             }
             Expr::Object(n) => {
-                let obj = self.store.pointers.insert(Pointer::Object(n.node_id));
+                let obj = self
+                    .store
+                    .pointers
+                    .get_index(&Pointer::Object(n.node_id))
+                    .unwrap();
 
                 let is_simple_obj_lit = n.props.iter().all(|p| match p {
                     Prop::KeyValue(p) => is_simple_prop_name(&p.key, self.store.unresolved_ctxt),
@@ -547,7 +569,11 @@ impl GraphVisitor<'_> {
             }
             Expr::Fn(n) => {
                 n.function.visit_with(self);
-                let func = self.store.pointers.insert(Pointer::Fn(n.function.node_id));
+                let func = self
+                    .store
+                    .pointers
+                    .get_index(&Pointer::Fn(n.function.node_id))
+                    .unwrap();
                 if let Some(name) = &n.ident {
                     let name = Id::new(name, &mut self.store.names);
                     let var = self.store.vars.get_index(&name).unwrap();
@@ -788,7 +814,11 @@ impl GraphVisitor<'_> {
                 self.cur_fn = Some(n.node_id);
                 n.body.visit_with(self);
                 self.cur_fn = old;
-                ret!(vec![self.store.pointers.insert(Pointer::Fn(n.node_id))])
+                ret!(vec![self
+                    .store
+                    .pointers
+                    .get_index(&Pointer::Fn(n.node_id))
+                    .unwrap()])
             }
             Expr::Class(_) => todo!(),
             Expr::Yield(n) => {
@@ -1113,7 +1143,7 @@ impl Visit<'_> for GraphVisitor<'_> {
                         return;
                     }
                 };
-                let cur_fn = self.store.pointers.insert(Pointer::Fn(cur_fn));
+                let cur_fn = self.store.pointers.get_index(&Pointer::Fn(cur_fn)).unwrap();
                 let lhs = self.get_return_value(cur_fn);
                 if let Some(value) = &n.arg {
                     let rhs = self.get_rhs(value, true);
@@ -1155,7 +1185,8 @@ impl Visit<'_> for GraphVisitor<'_> {
                 let f = self
                     .store
                     .pointers
-                    .insert(Pointer::Fn(func.function.node_id));
+                    .get_index(&Pointer::Fn(func.function.node_id))
+                    .unwrap();
                 let var = self.store.pointers.insert(Pointer::Var(var));
                 self.make_subset_of(f, var);
                 func.visit_children_with(self);
@@ -1269,6 +1300,7 @@ pub struct Store {
     pointers: IndexSet<PointerId, Pointer>,
     references: FxHashSet<(PropKey, PointerId)>,
     invalid_pointers: GrowableBitSet<PointerId>,
+    concrete_pointer_bound: PointerId,
 }
 
 impl Store {
@@ -1303,6 +1335,18 @@ impl Store {
                 | Pointer::Regex => unreachable!("primitives checked above"),
             }
         }
+    }
+
+    fn is_concrete(&self, pointer: PointerId) -> bool {
+        pointer < self.concrete_pointer_bound
+    }
+
+    fn concrete_pointers(&self) -> impl Iterator<Item = PointerId> {
+        PointerId::from_u32(0)..self.concrete_pointer_bound
+    }
+
+    fn non_concrete_pointers(&self) -> impl Iterator<Item = PointerId> {
+        self.concrete_pointer_bound..PointerId::from_usize(self.pointers.len())
     }
 }
 
@@ -1357,6 +1401,7 @@ struct FnVisitor<'s> {
     store: &'s mut Store,
     /// Whether the current function accesses the `arguments` array.
     accesses_arguments_array: bool,
+    params_to_invalidate: &'s mut Vec<VarId>,
 }
 
 impl<'ast> FnVisitor<'_> {
@@ -1397,7 +1442,11 @@ impl<'ast> FnVisitor<'_> {
             param_count,
         };
 
-        self.store.functions.insert(node.node_id(), static_data);
+        let node_id = node.node_id();
+
+        self.store.pointers.insert(Pointer::Fn(node_id));
+
+        self.store.functions.insert(node_id, static_data);
 
         let old_accesses_arguments_array = self.accesses_arguments_array;
         self.accesses_arguments_array = false;
@@ -1406,10 +1455,8 @@ impl<'ast> FnVisitor<'_> {
 
         if self.accesses_arguments_array {
             // Invalidate parameters for functions that access the arguments array.
-            for param in static_data.param_indices() {
-                let pointer = self.store.pointers.insert(Pointer::Var(param));
-                self.store.invalid_pointers.insert(pointer);
-            }
+            self.params_to_invalidate
+                .extend(static_data.param_indices());
         }
 
         self.accesses_arguments_array = old_accesses_arguments_array;
@@ -1417,6 +1464,11 @@ impl<'ast> FnVisitor<'_> {
 }
 
 impl<'ast> Visit<'ast> for FnVisitor<'_> {
+    fn visit_object_lit(&mut self, n: &'ast ObjectLit) {
+        self.store.pointers.insert(Pointer::Object(n.node_id));
+        n.visit_children_with(self);
+    }
+
     fn visit_ident(&mut self, node: &'ast Ident) {
         if !self.accesses_arguments_array {
             if node.sym == js_word!("arguments") && node.ctxt == self.store.unresolved_ctxt {

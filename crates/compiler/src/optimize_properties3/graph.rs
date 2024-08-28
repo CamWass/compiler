@@ -86,11 +86,8 @@ impl Graph {
     pub fn compute_points_to_map(&mut self, store: &mut Store) {
         store.invalid_pointers.insert(PointerId::UNKNOWN);
 
-        for pointer in 0..store.pointers.len() {
-            let pointer = PointerId::from_usize(pointer);
-            if store.pointers[pointer].is_concrete() {
-                self.points_to.insert(pointer, SmallSet::single(pointer));
-            }
+        for pointer in store.concrete_pointers() {
+            self.points_to.insert(pointer, SmallSet::single(pointer));
         }
 
         let mut tarjan = TarjanScc::default();
@@ -123,12 +120,7 @@ impl Graph {
             loop {
                 let mut invalidated = false;
 
-                for pointer in 0..store.pointers.len() {
-                    let pointer = PointerId::from_usize(pointer);
-                    if store.pointers[pointer].is_concrete() {
-                        continue;
-                    }
-
+                for pointer in store.non_concrete_pointers() {
                     let node = self.get_graph_node_id(pointer);
 
                     if let Pointer::Arg(callee, _) = store.pointers[pointer] {
@@ -441,10 +433,10 @@ impl Graph {
     }
 
     fn insert<T: GetRepId>(&mut self, pointer: T, value: PointerId, store: &Store) -> bool {
-        debug_assert!(store.pointers[value].is_concrete());
+        debug_assert!(store.is_concrete(value));
 
         let node = pointer.get_rep_id(self).0;
-        debug_assert!(!store.pointers[node].is_concrete());
+        debug_assert!(!store.is_concrete(node));
 
         self.points_to.entry(node).or_default().insert(value)
     }
@@ -458,7 +450,7 @@ impl Graph {
         let src = src.get_rep_id(self).0;
         let dest = dest.get_rep_id(self).0;
 
-        debug_assert!(!store.pointers[dest].is_concrete());
+        debug_assert!(!store.is_concrete(dest));
 
         if src == dest {
             return false;
