@@ -770,14 +770,21 @@ impl<T: Idx> GrowableBitSet<T> {
 
     /// Sets `self = self | other` and returns `true` if `self` changed
     /// (i.e., if new bits were added).
-    pub fn union(&mut self, other: &GrowableBitSet<T>) {
+    pub fn union(&mut self, other: &GrowableBitSet<T>) -> bool {
         self.ensure(other.bit_set.domain_size);
 
+        let mut changed = 0;
         for (out_elem, in_elem) in iter::zip(&mut self.bit_set.words, &other.bit_set.words) {
             let old_val = *out_elem;
             let new_val = old_val | *in_elem;
             *out_elem = new_val;
+            // This is essentially equivalent to a != with changed being a bool, but
+            // in practice this code gets auto-vectorized by the compiler for most
+            // operators. Using != here causes us to generate quite poor code as the
+            // compiler tries to go back to a boolean on each loop iteration.
+            changed |= old_val ^ new_val;
         }
+        changed != 0
     }
 
     /// Returns true if the specified BitSet has any bits set to true that are also set to true in this BitSet

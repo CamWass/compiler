@@ -4,14 +4,16 @@ use std::fmt::{Display, Write};
 use std::rc::Rc;
 
 use arrayvec::ArrayVec;
+use index::bit_set::{BitIter, GrowableBitSet};
 use petgraph::algo::TarjanScc;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::Directed;
 use petgraph::Direction::{Incoming, Outgoing};
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 
 use crate::optimize_properties2::NameId;
+use crate::utils::unwrap_as;
 
 use super::unionfind::GrowableUnionFind;
 use super::{is_built_in_property, Pointer, PointerId, Store};
@@ -464,17 +466,12 @@ impl Graph {
 
         let [src_set, dest_set] = self.points_to.get_many_mut([&src, &dest]).unwrap();
 
-        let before = dest_set.len();
-
         if dest_set.is_empty() {
             *dest_set = src_set.clone();
+            !src_set.is_empty()
         } else {
-            dest_set.extend_ref(src_set);
+            dest_set.extend_ref(src_set)
         }
-
-        let changed = dest_set.len() != before;
-
-        changed
     }
 
     fn get<T: GetRepId>(&mut self, pointer: T) -> Option<&SmallSet> {
@@ -636,7 +633,7 @@ impl UniqueQueue {
 #[derive(Debug, Clone)]
 pub(super) enum SmallSet {
     Inline(ArrayVec<PointerId, 2>),
-    Heap(Rc<FxHashSet<PointerId>>),
+    Heap(Rc<GrowableBitSet<PointerId>>),
 }
 
 impl Default for SmallSet {
@@ -657,8 +654,10 @@ impl SmallSet {
             SmallSet::Inline(set) => {
                 if !set.contains(&value) {
                     if set.len() == set.capacity() {
-                        let mut heap = FxHashSet::default();
-                        heap.extend(set.iter());
+                        let mut heap = GrowableBitSet::default();
+                        for v in set {
+                            heap.insert(*v);
+                        }
                         heap.insert(value);
                         *self = Self::Heap(Rc::new(heap));
                     } else {
@@ -676,14 +675,7 @@ impl SmallSet {
     fn contains(&self, value: &PointerId) -> bool {
         match self {
             SmallSet::Inline(set) => set.contains(value),
-            SmallSet::Heap(set) => set.contains(value),
-        }
-    }
-
-    fn len(&self) -> usize {
-        match self {
-            SmallSet::Inline(set) => set.len(),
-            SmallSet::Heap(set) => set.len(),
+            SmallSet::Heap(set) => set.contains(*value),
         }
     }
 
@@ -708,39 +700,58 @@ impl SmallSet {
         match (&self, &other) {
             (SmallSet::Inline(_), SmallSet::Heap(_)) => {
                 other = std::mem::replace(self, other);
+                for value in &other {
+                    self.insert(value);
+                }
             }
             (SmallSet::Heap(a), SmallSet::Heap(b)) => {
                 if Rc::ptr_eq(a, b) {
                     return;
                 }
 
-                if other.len() > self.len() {
-                    other = std::mem::replace(self, other);
+                let (this, mut other) = unwrap_as!(
+                    (self, other),
+                    (SmallSet::Heap(a), SmallSet::Heap(b)),
+                    (a, b)
+                );
+
+                if other.capacity() > this.capacity() {
+                    other = std::mem::replace(this, other);
                 }
+                Rc::make_mut(this).union(&other);
             }
-            _ => {}
-        }
-
-        for value in &other {
-            self.insert(value);
-        }
-    }
-
-    fn extend_ref(&mut self, other: &SmallSet) {
-        match self {
-            SmallSet::Inline(_) => {
-                for value in other {
+            _ => {
+                for value in &other {
                     self.insert(value);
                 }
             }
-            SmallSet::Heap(set) => {
-                if let SmallSet::Heap(other) = other {
-                    if Rc::ptr_eq(set, other) {
-                        return;
-                    }
+        }
+    }
+
+    fn extend_ref(&mut self, other: &SmallSet) -> bool {
+        match self {
+            SmallSet::Inline(_) => {
+                let mut changed = false;
+                for value in other {
+                    changed |= self.insert(value);
                 }
-                Rc::make_mut(set).extend(other);
+                changed
             }
+            SmallSet::Heap(set) => match other {
+                SmallSet::Inline(other) => {
+                    let mut changed = false;
+                    for value in other {
+                        changed |= self.insert(*value);
+                    }
+                    changed
+                }
+                SmallSet::Heap(other) => {
+                    if Rc::ptr_eq(set, other) {
+                        return false;
+                    }
+                    Rc::make_mut(set).union(other)
+                }
+            },
         }
     }
 }
@@ -753,10 +764,9 @@ impl<'a> IntoIterator for &'a SmallSet {
     }
 }
 
-#[derive(Clone)]
 pub(super) enum SmallSetIter<'a> {
     Slice(std::slice::Iter<'a, PointerId>),
-    Set(std::collections::hash_set::Iter<'a, PointerId>),
+    Set(BitIter<'a, PointerId>),
 }
 
 impl<'a> Iterator for SmallSetIter<'a> {
@@ -765,7 +775,7 @@ impl<'a> Iterator for SmallSetIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             SmallSetIter::Slice(iter) => iter.next().copied(),
-            SmallSetIter::Set(iter) => iter.next().copied(),
+            SmallSetIter::Set(iter) => iter.next(),
         }
     }
 }
