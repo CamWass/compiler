@@ -25,7 +25,7 @@ pub struct Graph {
     queue: UniqueQueue,
 
     graph: petgraph::Graph<PointerId, GraphEdge, Directed>,
-    graph_map: FxHashMap<PointerId, NodeIndex>,
+    graph_map: Vec<NodeIndex>,
 }
 
 /// Returns true if the given node has no out edges.
@@ -34,14 +34,34 @@ fn is_sink_node(graph: &petgraph::Graph<PointerId, GraphEdge, Directed>, node: N
     node.next_edge(Outgoing) == EdgeIndex::end()
 }
 
+/// Returns the graph node that represents the given pointer.
+fn pointer_to_node(graph_map: &[NodeIndex], pointer: PointerId) -> Option<NodeIndex> {
+    match graph_map.get(pointer.index()) {
+        Some(slot) => {
+            if *slot == NodeIndex::end() {
+                None
+            } else {
+                Some(*slot)
+            }
+        }
+        None => None,
+    }
+}
+
 impl Graph {
     fn get_node(&mut self, pointer: PointerId) -> NodeIndex {
-        match self.graph_map.entry(pointer) {
-            Entry::Occupied(entry) => *entry.get(),
-            Entry::Vacant(entry) => {
-                let idx = self.graph.add_node(pointer);
-                entry.insert(idx);
-                idx
+        let idx = pointer.as_usize();
+        match self.graph_map.get_mut(idx) {
+            Some(slot) => {
+                if *slot == NodeIndex::end() {
+                    *slot = self.graph.add_node(pointer);
+                }
+                *slot
+            }
+            None => {
+                self.graph_map.resize_with(idx + 1, || NodeIndex::end());
+                self.graph_map[idx] = self.graph.add_node(pointer);
+                self.graph_map[idx]
             }
         }
     }
@@ -156,8 +176,8 @@ impl Graph {
                         if store.invalid_pointers.contains(callee) {
                             let changed = self.insert(node, PointerId::UNKNOWN, store);
                             if changed {
-                                if let Some(n) = self.graph_map.get(&node.0) {
-                                    if !is_sink_node(&self.graph, *n) {
+                                if let Some(n) = pointer_to_node(&self.graph_map, node.0) {
+                                    if !is_sink_node(&self.graph, n) {
                                         // TODO: unnecessary? Is the node guaranteed to be prioritised?
                                         self.prioritise(node);
                                         self.queue.push(node.0);
@@ -194,8 +214,8 @@ impl Graph {
                             invalidated |= store.invalidate(pointer);
                             let changed = self.insert(node, PointerId::UNKNOWN, store);
                             if changed {
-                                if let Some(n) = self.graph_map.get(&node.0) {
-                                    if !is_sink_node(&self.graph, *n) {
+                                if let Some(n) = pointer_to_node(&self.graph_map, node.0) {
+                                    if !is_sink_node(&self.graph, n) {
                                         // TODO: unnecessary? Is the node guaranteed to be prioritised?
                                         self.prioritise(node);
                                         self.queue.push(node.0);
@@ -211,8 +231,8 @@ impl Graph {
                         if matches!(store.pointers[pointer], Pointer::ReturnValue(_)) {
                             let changed = self.insert(node, PointerId::NULL_OR_VOID, store);
                             if changed {
-                                if let Some(n) = self.graph_map.get(&node.0) {
-                                    if !is_sink_node(&self.graph, *n) {
+                                if let Some(n) = pointer_to_node(&self.graph_map, node.0) {
+                                    if !is_sink_node(&self.graph, n) {
                                         // TODO: unnecessary? Is the node guaranteed to be prioritised?
                                         self.prioritise(node);
                                         self.queue.push(node.0);
@@ -228,8 +248,8 @@ impl Graph {
                             if matches!(store.pointers[pointer], Pointer::Prop(_, _)) {
                                 let changed = self.insert(node, PointerId::NULL_OR_VOID, store);
                                 if changed {
-                                    if let Some(n) = self.graph_map.get(&node.0) {
-                                        if !is_sink_node(&self.graph, *n) {
+                                    if let Some(n) = pointer_to_node(&self.graph_map, node.0) {
+                                        if !is_sink_node(&self.graph, n) {
                                             self.queue.push(node.0);
                                         }
                                     }
@@ -238,8 +258,8 @@ impl Graph {
                             }
                             invalidated |= store.invalidate(pointer);
                             self.insert(node, PointerId::UNKNOWN, store);
-                            if let Some(n) = self.graph_map.get(&node.0) {
-                                if !is_sink_node(&self.graph, *n) {
+                            if let Some(n) = pointer_to_node(&self.graph_map, node.0) {
+                                if !is_sink_node(&self.graph, n) {
                                     // TODO: unnecessary? Is the node guaranteed to be prioritised?
                                     self.prioritise(node);
                                     self.queue.push(node.0);
@@ -296,7 +316,7 @@ impl Graph {
                     GraphEdge::Subset => {
                         let changed = self.add_all(node, dest, store);
                         if changed {
-                            if !is_sink_node(&self.graph, self.graph_map[&dest.0]) {
+                            if !is_sink_node(&self.graph, self.graph_map[dest.0.index()]) {
                                 self.queue.push(dest.0);
                             }
                         }
@@ -323,7 +343,7 @@ impl Graph {
                             }
                         }
                         if changed {
-                            if !is_sink_node(&self.graph, self.graph_map[&dest.0]) {
+                            if !is_sink_node(&self.graph, self.graph_map[dest.0.index()]) {
                                 self.queue.push(dest.0);
                             }
                         }
@@ -412,7 +432,7 @@ impl Graph {
                         }
 
                         if changed {
-                            if !is_sink_node(&self.graph, self.graph_map[&dest.0]) {
+                            if !is_sink_node(&self.graph, self.graph_map[dest.0.index()]) {
                                 self.queue.push(dest.0);
                             }
                         }
@@ -437,7 +457,7 @@ impl Graph {
                                                 let param = RepId(self.nodes.find_mut(param.0));
                                                 if !is_sink_node(
                                                     &self.graph,
-                                                    self.graph_map[&param.0],
+                                                    self.graph_map[param.0.index()],
                                                 ) {
                                                     self.queue.push(param.0);
                                                 }
