@@ -272,6 +272,15 @@ impl Graph {
 
     fn flow_edges(&mut self, store: &mut Store, edges: &mut Vec<(PointerId, GraphEdge)>) {
         while let Some(node) = self.queue.pop() {
+            // Skip nodes that aren't their representative. The representative should
+            // always be in the queue if the node was, since we add the rep to the queue
+            // when we merge it with node.
+            let rep = RepId(self.nodes.find_mut(node));
+            if node != rep.0 {
+                continue;
+            }
+            let node = rep.0;
+
             edges.clear();
             let n = self.get_node(node);
             edges.extend(
@@ -281,7 +290,6 @@ impl Graph {
             );
 
             for (dest, kind) in edges.iter().copied() {
-                let node = RepId(self.nodes.find_mut(node));
                 let dest = RepId(self.nodes.find_mut(dest));
 
                 match kind {
