@@ -10,7 +10,7 @@ use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use petgraph::Directed;
 use petgraph::Direction::{Incoming, Outgoing};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::optimize_properties2::NameId;
 use crate::utils::unwrap_as;
@@ -287,6 +287,19 @@ impl Graph {
                     debug_assert!(!set.is_empty(), "Heap variant should not be empty");
                 }
             }
+
+            let edges = self
+                .graph
+                .raw_edges()
+                .iter()
+                .map(|e| (e.source(), e.weight, e.target()))
+                .collect::<FxHashSet<_>>();
+
+            debug_assert_eq!(
+                edges.len(),
+                self.graph.edge_count(),
+                "Graph should not contain duplicate edges"
+            );
         }
     }
 
@@ -414,7 +427,13 @@ impl Graph {
                                 self.graph.edges_directed(src_node, Incoming).next()
                             {
                                 let id = edge.id();
+
+                                let mut existing =
+                                    self.graph.edges_connecting(edge.source(), rep_node);
+                                if !existing.any(|e| *e.weight() == *edge.weight()) {
                                 self.graph.add_edge(edge.source(), rep_node, *edge.weight());
+                                }
+
                                 self.graph.remove_edge(id);
                             }
                             // Move all of src_node's out edges so they come from rep_node instead.
@@ -422,7 +441,13 @@ impl Graph {
                                 self.graph.edges_directed(src_node, Outgoing).next()
                             {
                                 let id = edge.id();
+
+                                let mut existing =
+                                    self.graph.edges_connecting(rep_node, edge.target());
+                                if !existing.any(|e| *e.weight() == *edge.weight()) {
                                 self.graph.add_edge(rep_node, edge.target(), *edge.weight());
+                                }
+
                                 self.graph.remove_edge(id);
                             }
 
