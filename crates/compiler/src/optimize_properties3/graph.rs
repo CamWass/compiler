@@ -303,7 +303,7 @@ impl Graph {
         }
     }
 
-    fn flow_edges(&mut self, store: &mut Store, edges: &mut Vec<(PointerId, GraphEdge)>) {
+    fn flow_edges(&mut self, store: &mut Store, edges: &mut Vec<(NodeIndex, GraphEdge)>) {
         while let Some(node) = self.queue.pop() {
             // Skip nodes that aren't their representative. The representative should
             // always be in the queue if the node was, since we add the rep to the queue
@@ -319,11 +319,12 @@ impl Graph {
             edges.extend(
                 self.graph
                     .edges_directed(n, Outgoing)
-                    .map(|e| (self.graph[e.target()], *e.weight())),
+                    .map(|e| (e.target(), *e.weight())),
             );
 
             for (dest, kind) in edges.iter().copied() {
-                let dest = RepId(self.nodes.find_mut(dest));
+                debug_assert_ne!(dest, n, "Graph should not have loops");
+                let dest = RepId(self.nodes.find_mut(self.graph[dest]));
 
                 match kind {
                     GraphEdge::Subset => {
@@ -427,11 +428,15 @@ impl Graph {
                                 self.graph.edges_directed(src_node, Incoming).next()
                             {
                                 let id = edge.id();
+                                let source = edge.source();
+                                let weight = *edge.weight();
 
-                                let mut existing =
-                                    self.graph.edges_connecting(edge.source(), rep_node);
-                                if !existing.any(|e| *e.weight() == *edge.weight()) {
-                                self.graph.add_edge(edge.source(), rep_node, *edge.weight());
+                                if edge.source() != rep_node {
+                                    let mut existing =
+                                        self.graph.edges_connecting(source, rep_node);
+                                    if !existing.any(|e| *e.weight() == weight) {
+                                        self.graph.add_edge(source, rep_node, weight);
+                                    }
                                 }
 
                                 self.graph.remove_edge(id);
@@ -441,11 +446,15 @@ impl Graph {
                                 self.graph.edges_directed(src_node, Outgoing).next()
                             {
                                 let id = edge.id();
+                                let target = edge.target();
+                                let weight = *edge.weight();
 
-                                let mut existing =
-                                    self.graph.edges_connecting(rep_node, edge.target());
-                                if !existing.any(|e| *e.weight() == *edge.weight()) {
-                                self.graph.add_edge(rep_node, edge.target(), *edge.weight());
+                                if rep_node != target {
+                                    let mut existing =
+                                        self.graph.edges_connecting(rep_node, target);
+                                    if !existing.any(|e| *e.weight() == weight) {
+                                        self.graph.add_edge(rep_node, target, weight);
+                                    }
                                 }
 
                                 self.graph.remove_edge(id);
