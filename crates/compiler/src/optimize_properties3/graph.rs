@@ -280,22 +280,22 @@ impl Graph {
                     }
 
                     if first {
-                        // Functions implicitly return undefined sometimes.
-                        if matches!(store.pointers[pointer], Pointer::ReturnValue(_)) {
-                            let changed = self.insert(node, PointerId::NULL_OR_VOID, store);
-                            if changed {
-                                if let Some(n) = pointer_to_node(&self.graph_map, node.0) {
-                                    if !is_sink_node(&self.graph, n) {
-                                        // TODO: unnecessary? Is the node guaranteed to be prioritised?
-                                        self.prioritise(node);
-                                        self.queue.push(node.0);
+                        if self.points_to_nothing(node) {
+                            // Functions implicitly return undefined sometimes.
+                            if matches!(store.pointers[pointer], Pointer::ReturnValue(_)) {
+                                let changed = self.insert(node, PointerId::NULL_OR_VOID, store);
+                                if changed {
+                                    if let Some(n) = pointer_to_node(&self.graph_map, node.0) {
+                                        if !is_sink_node(&self.graph, n) {
+                                            // TODO: unnecessary? Is the node guaranteed to be prioritised?
+                                            self.prioritise(node);
+                                            self.queue.push(node.0);
+                                        }
                                     }
                                 }
+                                continue;
                             }
-                            continue;
-                        }
 
-                        if self.points_to_nothing(node) {
                             // Undefined properties on valid objects are undefined. We know the
                             // obj is valid as props on invalid objects are checked above.
                             if matches!(store.pointers[pointer], Pointer::Prop(_, _)) {
