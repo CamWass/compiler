@@ -85,10 +85,6 @@ impl Graph {
     }
 
     pub(super) fn add_initial_edge(&mut self, src: PointerId, dest: PointerId, kind: GraphEdge) {
-        // TODO: is this needed?
-        let src = self.get_graph_node_id(src).0;
-        let dest = self.get_graph_node_id(dest).0;
-
         if kind == GraphEdge::Subset {
             debug_assert_ne!(src, dest);
         }
@@ -308,7 +304,7 @@ impl Graph {
             // Skip nodes that aren't their representative. The representative should
             // always be in the queue if the node was, since we add the rep to the queue
             // when we merge it with node.
-            let rep = RepId(self.nodes.find_mut(node));
+            let rep = self.get_graph_node_id(node);
             if node != rep.0 {
                 continue;
             }
@@ -324,13 +320,14 @@ impl Graph {
 
             for (dest, kind) in edges.iter().copied() {
                 debug_assert_ne!(dest, n, "Graph should not have loops");
-                let dest = RepId(self.nodes.find_mut(self.graph[dest]));
+                let dest = self.get_graph_node_id(self.graph[dest]);
+                let dest_node = self.graph_map[dest.0.index()];
 
                 match kind {
                     GraphEdge::Subset => {
                         let changed = self.add_all(node, dest, store);
                         if changed {
-                            if !is_sink_node(&self.graph, self.graph_map[dest.0.index()]) {
+                            if !is_sink_node(&self.graph, dest_node) {
                                 self.queue.push(dest.0);
                             }
                         }
@@ -341,7 +338,6 @@ impl Graph {
                             None => continue,
                         };
                         let mut changed = false;
-                        let mut dest = dest;
                         for callee in &callees {
                             if !store.is_callable_pointer(callee) && callee != PointerId::UNKNOWN {
                                 continue;
@@ -353,11 +349,10 @@ impl Graph {
                             }
                             if self.make_subset_of(return_node, dest, store) {
                                 changed = true;
-                                dest = RepId(self.nodes.find_mut(dest.0));
                             }
                         }
                         if changed {
-                            if !is_sink_node(&self.graph, self.graph_map[dest.0.index()]) {
+                            if !is_sink_node(&self.graph, dest_node) {
                                 self.queue.push(dest.0);
                             }
                         }
@@ -395,7 +390,7 @@ impl Graph {
 
                             self.nodes.union(prop_pointer.0, dest.0);
 
-                            let rep = RepId(self.nodes.find_mut(dest.0));
+                            let rep = self.get_graph_node_id(dest.0);
 
                             let src;
                             if rep.0 != dest.0 {
@@ -477,7 +472,6 @@ impl Graph {
                             None => continue,
                         };
 
-                        let mut dest = dest;
                         for concrete_callee in &concrete_callees {
                             match store.pointers[concrete_callee] {
                                 Pointer::Fn(callee) => {
@@ -487,8 +481,6 @@ impl Graph {
                                             let param = store.pointers.insert(Pointer::Var(param));
                                             let param = self.get_graph_node_id(param);
                                             if self.make_subset_of(dest, param, store) {
-                                                dest = RepId(self.nodes.find_mut(dest.0));
-                                                let param = RepId(self.nodes.find_mut(param.0));
                                                 if !is_sink_node(
                                                     &self.graph,
                                                     self.graph_map[param.0.index()],
