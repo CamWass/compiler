@@ -606,7 +606,7 @@ impl Graph {
         !self.points_to.contains_key(&node)
     }
 
-    fn add_all<T: GetRepId, U: GetRepId>(&mut self, src: T, dest: U, store: &Store) -> bool {
+    fn add_all<T: GetRepId, U: GetRepId>(&mut self, src: T, dest: U, store: &mut Store) -> bool {
         let src = src.get_rep_id(self).0;
         let dest = dest.get_rep_id(self).0;
 
@@ -616,19 +616,25 @@ impl Graph {
             return false;
         }
 
-        if !self.points_to.contains_key(&src) {
+        let src_set = self.points_to.get(&src).cloned();
+
+        let Some(src_set) = src_set else {
             return false;
+        };
+
+        if store.invalid_pointers.contains(dest) & !store.invalid_pointers.contains(src) {
+            for p in src_set.iter() {
+                self.invalidate(p, store);
+            }
         }
 
-        self.points_to.entry(dest).or_default();
-
-        let [src_set, dest_set] = self.points_to.get_many_mut([&src, &dest]).unwrap();
+        let dest_set = self.points_to.entry(dest).or_default();
 
         if dest_set.is_empty() {
             *dest_set = src_set.clone();
             !src_set.is_empty()
         } else {
-            dest_set.extend_ref(src_set)
+            dest_set.extend_ref(&src_set)
         }
     }
 
