@@ -472,8 +472,11 @@ impl Graph {
                                 }
                             }
 
+                            let Some(src_node) = pointer_to_node(&self.graph_map, src.0) else {
+                                continue;
+                            };
+
                             let rep_node = self.get_node(rep.0);
-                            let src_node = self.get_node(src.0);
 
                             // Move all of src_node's in edges so they point to rep_node instead.
                             while let Some(edge) =
