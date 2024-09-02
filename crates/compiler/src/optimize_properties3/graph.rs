@@ -26,6 +26,8 @@ pub struct Graph {
 
     graph: petgraph::Graph<PointerId, GraphEdge, Directed>,
     graph_map: Vec<NodeIndex>,
+
+    invalidation_queue: Vec<NodeIndex>,
 }
 
 /// Returns true if the given node has no out edges.
@@ -84,15 +86,30 @@ impl Graph {
         }
     }
 
-    pub(super) fn add_initial_edge(&mut self, src: PointerId, dest: PointerId, kind: GraphEdge) {
-        if kind == GraphEdge::Subset {
-            debug_assert_ne!(src, dest);
-        }
-
+    pub(super) fn add_initial_edge(
+        &mut self,
+        src: PointerId,
+        dest: PointerId,
+        kind: GraphEdge,
+        store: &mut Store,
+    ) {
         self.add_edge(src, dest, kind);
+
+        if matches!(kind, GraphEdge::Subset) {
+            debug_assert_ne!(src, dest);
+
+            if store.invalid_pointers.contains(dest) {
+                self.invalidate(src, store);
+            }
+        }
     }
 
-    fn make_subset_of<T: GetRepId, U: GetRepId>(&mut self, src: T, dest: U, store: &Store) -> bool {
+    fn make_subset_of<T: GetRepId, U: GetRepId>(
+        &mut self,
+        src: T,
+        dest: U,
+        store: &mut Store,
+    ) -> bool {
         let src = src.get_rep_id(self);
         let dest = dest.get_rep_id(self);
         if src.0 == dest.0 {
@@ -103,7 +120,61 @@ impl Graph {
         self.prioritise(dest);
 
         let mut changed = self.add_edge(src.0, dest.0, GraphEdge::Subset);
+
+        if store.invalid_pointers.contains(dest.0) {
+            self.invalidate(src.0, store);
+        }
+
         changed |= self.add_all(src, dest, store);
+        changed
+    }
+
+    pub fn invalidate(&mut self, pointer: PointerId, store: &mut Store) -> bool {
+        let pointer = RepId(self.nodes.find_mut(pointer));
+        let Some(node) = pointer_to_node(&self.graph_map, pointer.0) else {
+            return store.invalidate(pointer.0);
+        };
+
+        if pointer.0.is_built_in() || store.invalid_pointers.contains(pointer.0) {
+            return false;
+        }
+
+        debug_assert!(self.invalidation_queue.is_empty());
+        self.invalidation_queue.clear();
+        self.invalidation_queue.push(node);
+
+        let mut changed = false;
+
+        while let Some(node) = self.invalidation_queue.pop() {
+            let pointer = self.graph[node];
+            if pointer.is_built_in() || store.invalid_pointers.contains(pointer) {
+                continue;
+            }
+
+            changed = true;
+            store.invalidate(pointer);
+
+            for incoming in self.graph.edges_directed(node, Incoming) {
+                if matches!(incoming.weight(), GraphEdge::Subset) {
+                    let source = incoming.source();
+                    if !self.graph[source].is_built_in()
+                        && !store.invalid_pointers.contains(self.graph[source])
+                    {
+                        self.invalidation_queue.push(source);
+                    }
+                }
+            }
+
+            if let Some(values) = self.points_to.get(&pointer).cloned() {
+                let graph_map = &self.graph_map;
+                let valid_values = values
+                    .iter()
+                    .filter(|v| !v.is_built_in() && !store.invalid_pointers.contains(*v))
+                    .map(|v| graph_map[v.index()]);
+                self.invalidation_queue.extend(valid_values);
+            }
+        }
+
         changed
     }
 
@@ -160,10 +231,10 @@ impl Graph {
                             .unwrap_or(false);
 
                         if unknown_callee {
-                            if let Some(concrete_values) = self.get(node) {
+                            if let Some(concrete_values) = self.get(node).cloned() {
                                 // Invalidate arguments passed to unknown callers.
-                                for value in concrete_values {
-                                    invalidated |= store.invalidate(value);
+                                for value in &concrete_values {
+                                    invalidated |= self.invalidate(value, store);
                                 }
                             }
                         }
@@ -186,28 +257,14 @@ impl Graph {
                     if let Pointer::ReturnValue(callee) = store.pointers[pointer] {
                         // If the callee is invalid, then we can't know how the return type is used.
                         if store.invalid_pointers.contains(callee) {
-                            invalidated |= store.invalidate(pointer);
-                        }
-                    }
-
-                    if store.invalid_pointers.contains(pointer) {
-                        if let Some(values) = self.get(node) {
-                            for value in values {
-                                invalidated |= store.invalidate(value);
-                            }
-                        }
-                        let node = self.get_node(node.0);
-                        for incoming in self.graph.edges_directed(node, Incoming) {
-                            if *incoming.weight() == GraphEdge::Subset {
-                                invalidated |= store.invalidate(self.graph[incoming.source()]);
-                            }
+                            invalidated |= self.invalidate(pointer, store);
                         }
                     }
 
                     if let Pointer::Prop(obj, _) = store.pointers[pointer] {
                         let obj_invalid = store.invalid_pointers.contains(obj);
                         if obj_invalid {
-                            invalidated |= store.invalidate(pointer);
+                            invalidated |= self.invalidate(pointer, store);
                             let changed = self.insert(node, PointerId::UNKNOWN, store);
                             if changed {
                                 if let Some(n) = pointer_to_node(&self.graph_map, node.0) {
@@ -252,7 +309,7 @@ impl Graph {
                                 }
                                 continue;
                             }
-                            invalidated |= store.invalidate(pointer);
+                            invalidated |= self.invalidate(pointer, store);
                             self.insert(node, PointerId::UNKNOWN, store);
                             if let Some(n) = pointer_to_node(&self.graph_map, node.0) {
                                 if !is_sink_node(&self.graph, n) {

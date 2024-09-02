@@ -730,6 +730,7 @@ impl GraphVisitor<'_> {
                                     callee,
                                     arg_pointer,
                                     GraphEdge::Arg(index),
+                                    self.store,
                                 );
                             }
                         }
@@ -1100,13 +1101,14 @@ impl GraphVisitor<'_> {
 
         let access = self.store.pointers.insert(Pointer::Prop(obj, prop));
         self.graph
-            .add_initial_edge(obj, access, GraphEdge::Prop(prop));
+            .add_initial_edge(obj, access, GraphEdge::Prop(prop), self.store);
         access
     }
 
     fn get_return_value(&mut self, callee: PointerId) -> PointerId {
         let ret = self.store.pointers.insert(Pointer::ReturnValue(callee));
-        self.graph.add_initial_edge(callee, ret, GraphEdge::Return);
+        self.graph
+            .add_initial_edge(callee, ret, GraphEdge::Return, self.store);
         ret
     }
 
@@ -1114,12 +1116,13 @@ impl GraphVisitor<'_> {
         if sub == sup {
             return;
         }
-        self.graph.add_initial_edge(sub, sup, GraphEdge::Subset);
+        self.graph
+            .add_initial_edge(sub, sup, GraphEdge::Subset, self.store);
     }
 
     fn invalidate(&mut self, value: &[PointerId]) {
         for value in value {
-            self.store.invalidate(*value);
+            self.graph.invalidate(*value, self.store);
         }
     }
 }
