@@ -262,9 +262,10 @@ impl Graph {
                         }
                     }
 
-                    if let Pointer::Prop(obj, _) = store.pointers[pointer] {
+                    if let Pointer::Prop(obj, name) = store.pointers[pointer] {
                         let obj_invalid = store.invalid_pointers.contains(obj);
-                        if obj_invalid {
+                        let is_built_in = is_built_in_property(obj, &store.names[name]);
+                        if obj_invalid || is_built_in {
                             invalidated |= self.invalidate(pointer, store);
                             let changed = self.insert(node, PointerId::UNKNOWN, store);
                             if changed {
