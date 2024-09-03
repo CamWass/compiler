@@ -1539,6 +1539,7 @@ impl PointerId {
 
 /// Properties from Object.prototype that are accessible on all objects.
 static OBJECT_PROPERTIES: &[JsWord] = &[
+    js_word!("prototype"),
     // https://tc39.es/ecma262/#sec-properties-of-the-object-prototype-object
     js_word!("constructor"),
     js_word!("hasOwnProperty"),
