@@ -110,28 +110,6 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
     let mut objects: FxHashMap<PointerId, Object> = FxHashMap::default();
     let mut properties: IndexVec<PropId, Property> = IndexVec::default();
 
-    // Create objects and properties for built-in types.
-    for (pointer, props) in BUILT_INS {
-        if props.is_empty() {
-            continue;
-        }
-        let obj = objects.entry(*pointer).or_default();
-        let props = props.iter().map(|p| {
-            let name = store.names.insert(p.clone());
-            (
-                name,
-                properties.push(Property {
-                    name,
-                    prop_id: properties.next_index(),
-                    references: FxHashSet::default(),
-                    // Cannot rename built-in properties.
-                    invalid: true,
-                }),
-            )
-        });
-        obj.properties.extend(props);
-    }
-
     let mut prop_map: FxHashMap<PropKey, Vec<PointerId>> = FxHashMap::default();
 
     let unknown_set = SmallSet::single(PointerId::UNKNOWN);
@@ -147,21 +125,18 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
                 continue;
             }
 
-            let built_in_obj_prop =
-                matches!(store.pointers[obj], Pointer::Fn(_) | Pointer::Object(_))
-                    && OBJECT_PROPERTIES.contains(&store.names[key.0]);
-
             prop_map_entry.push(obj);
 
             let object = objects.entry(obj).or_default();
             let id = match object.properties.entry(key.0) {
                 Entry::Occupied(entry) => *entry.get(),
                 Entry::Vacant(entry) => {
+                    let built_in = is_built_in_property(obj, &store.names[key.0]);
                     let prop_id = properties.push(Property {
                         name: key.0,
                         prop_id: properties.next_index(),
                         references: FxHashSet::default(),
-                        invalid: built_in_obj_prop || store.invalid_pointers.contains(obj),
+                        invalid: built_in || store.invalid_pointers.contains(obj),
                     });
                     entry.insert(prop_id);
                     prop_id
@@ -176,14 +151,14 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
     let mut union_find = UnionFind::new(properties.len());
 
     if cfg!(debug_assertions) {
-        for (pointer, static_props) in BUILT_INS {
-            if *pointer == PointerId::UNKNOWN {
+        for (pointer, _) in STATIC_POINTERS {
+            if pointer == PointerId::UNKNOWN {
                 continue;
             }
-            if let Some(obj) = &objects.get(pointer) {
+            if let Some(obj) = &objects.get(&pointer) {
                 for prop in &obj.properties {
                     debug_assert!(
-                        static_props.contains(&store.names[*prop.0]),
+                        is_built_in_property(pointer, &store.names[*prop.0]),
                         "primitives should only have static props"
                     );
                 }
@@ -1509,27 +1484,27 @@ enum PatOrExpr<'a> {
 }
 
 const STATIC_POINTERS: [(PointerId, Pointer); 7] = [
-    (PointerId::NULL_OR_VOID, Pointer::NullOrVoid),
     (PointerId::BOOL, Pointer::Bool),
     (PointerId::NUM, Pointer::Num),
     (PointerId::STRING, Pointer::String),
     (PointerId::BIG_INT, Pointer::BigInt),
     (PointerId::REGEX, Pointer::Regex),
+    (PointerId::NULL_OR_VOID, Pointer::NullOrVoid),
     (PointerId::UNKNOWN, Pointer::Unknown),
 ];
 
 impl PointerId {
-    const NULL_OR_VOID: Self = Self::from_u32(0);
-    const BOOL: Self = Self::from_u32(1);
-    const NUM: Self = Self::from_u32(2);
-    const STRING: Self = Self::from_u32(3);
-    const BIG_INT: Self = Self::from_u32(4);
-    const REGEX: Self = Self::from_u32(5);
+    const BOOL: Self = Self::from_u32(0);
+    const NUM: Self = Self::from_u32(1);
+    const STRING: Self = Self::from_u32(2);
+    const BIG_INT: Self = Self::from_u32(3);
+    const REGEX: Self = Self::from_u32(4);
+    const NULL_OR_VOID: Self = Self::from_u32(5);
 
     const UNKNOWN: Self = Self::from_u32(6);
 
     fn is_primitive(self) -> bool {
-        self.as_u32() <= Self::REGEX.as_u32()
+        self.as_u32() <= Self::NULL_OR_VOID.as_u32()
     }
 
     fn is_built_in(self) -> bool {
@@ -1556,44 +1531,13 @@ static OBJECT_PROPERTIES: &[JsWord] = &[
 ];
 
 static BUILT_INS: &[(PointerId, &[JsWord])] = &[
-    (PointerId::NULL_OR_VOID, &[]),
-    (
-        PointerId::BOOL,
-        &[
-            // Common to all objects
-            js_word!("constructor"),
-            js_word!("hasOwnProperty"),
-            js_word!("isPrototypeOf"),
-            js_word!("propertyIsEnumerable"),
-            js_word!("toLocaleString"),
-            js_word!("toString"),
-            js_word!("valueOf"),
-            js_word!("__proto__"),
-            js_word!("__defineGetter__"),
-            js_word!("__defineSetter__"),
-            js_word!("__lookupGetter__"),
-            js_word!("__lookupSetter__"),
-        ],
-    ),
+    (PointerId::BOOL, &[]),
     (
         PointerId::NUM,
         &[
             js_word!("toExponential"),
             js_word!("toFixed"),
             js_word!("toPrecision"),
-            // Common to all objects
-            js_word!("constructor"),
-            js_word!("hasOwnProperty"),
-            js_word!("isPrototypeOf"),
-            js_word!("propertyIsEnumerable"),
-            js_word!("toLocaleString"),
-            js_word!("toString"),
-            js_word!("valueOf"),
-            js_word!("__proto__"),
-            js_word!("__defineGetter__"),
-            js_word!("__defineSetter__"),
-            js_word!("__lookupGetter__"),
-            js_word!("__lookupSetter__"),
         ],
     ),
     (
@@ -1633,39 +1577,9 @@ static BUILT_INS: &[(PointerId, &[JsWord])] = &[
             js_word!("trim"),
             js_word!("trimEnd"),
             js_word!("trimStart"),
-            // Common to all objects
-            js_word!("constructor"),
-            js_word!("hasOwnProperty"),
-            js_word!("isPrototypeOf"),
-            js_word!("propertyIsEnumerable"),
-            js_word!("toLocaleString"),
-            js_word!("toString"),
-            js_word!("valueOf"),
-            js_word!("__proto__"),
-            js_word!("__defineGetter__"),
-            js_word!("__defineSetter__"),
-            js_word!("__lookupGetter__"),
-            js_word!("__lookupSetter__"),
         ],
     ),
-    (
-        PointerId::BIG_INT,
-        &[
-            // Common to all objects
-            js_word!("constructor"),
-            js_word!("hasOwnProperty"),
-            js_word!("isPrototypeOf"),
-            js_word!("propertyIsEnumerable"),
-            js_word!("toLocaleString"),
-            js_word!("toString"),
-            js_word!("valueOf"),
-            js_word!("__proto__"),
-            js_word!("__defineGetter__"),
-            js_word!("__defineSetter__"),
-            js_word!("__lookupGetter__"),
-            js_word!("__lookupSetter__"),
-        ],
-    ),
+    (PointerId::BIG_INT, &[]),
     (
         PointerId::REGEX,
         &[
@@ -1684,26 +1598,19 @@ static BUILT_INS: &[(PointerId, &[JsWord])] = &[
             js_word!("unicodeSets"),
             // https://tc39.es/ecma262/#sec-properties-of-regexp-instances
             js_word!("lastIndex"),
-            // Common to all objects
-            js_word!("constructor"),
-            js_word!("hasOwnProperty"),
-            js_word!("isPrototypeOf"),
-            js_word!("propertyIsEnumerable"),
-            js_word!("toLocaleString"),
-            js_word!("toString"),
-            js_word!("valueOf"),
-            js_word!("__proto__"),
-            js_word!("__defineGetter__"),
-            js_word!("__defineSetter__"),
-            js_word!("__lookupGetter__"),
-            js_word!("__lookupSetter__"),
         ],
     ),
+    (PointerId::NULL_OR_VOID, &[]),
     (PointerId::UNKNOWN, &[]),
 ];
 
 fn is_built_in_property(obj: PointerId, name: &JsWord) -> bool {
-    BUILT_INS[obj.as_usize()].1.contains(name)
+    if obj == PointerId::UNKNOWN || obj == PointerId::NULL_OR_VOID {
+        false
+    } else {
+        OBJECT_PROPERTIES.contains(name)
+            || obj.is_built_in() && BUILT_INS[obj.as_usize()].1.contains(name)
+    }
 }
 
 #[test]
