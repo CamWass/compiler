@@ -210,11 +210,12 @@ impl Graph {
 
         self.queue.extend(internal_nodes);
         let mut edges = Vec::new();
+        let mut prop_merge_queue = Vec::new();
 
         let mut first = true;
 
         loop {
-            self.flow_edges(store, &mut edges);
+            self.flow_edges(store, &mut edges, &mut prop_merge_queue);
             // After we've reached a fixedpoint above, if we couldn't infer the values
             // of a pointer, set them to Unknown and run fixedpoint again to propagate
             // the Unknowns.
@@ -356,7 +357,12 @@ impl Graph {
         }
     }
 
-    fn flow_edges(&mut self, store: &mut Store, edges: &mut Vec<(NodeIndex, GraphEdge)>) {
+    fn flow_edges(
+        &mut self,
+        store: &mut Store,
+        edges: &mut Vec<(NodeIndex, GraphEdge)>,
+        prop_merge_queue: &mut Vec<RepId>,
+    ) {
         while let Some(node) = self.queue.pop() {
             // Skip nodes that aren't their representative. The representative should
             // always be in the queue if the node was, since we add the rep to the queue
@@ -420,15 +426,18 @@ impl Graph {
                             None => continue,
                         };
 
+                        prop_merge_queue.clear();
+
                         let mut changed = false;
-                        let mut dest = dest;
+                        let mut rep = dest;
+                        let mut invalid = store.invalid_pointers.contains(dest.0);
                         for concrete_object in &concrete_objects {
                             if concrete_object == PointerId::UNKNOWN {
-                                changed |= self.insert(dest.0, PointerId::UNKNOWN, store);
+                                changed |= self.insert(rep.0, PointerId::UNKNOWN, store);
                                 continue;
                             }
                             if concrete_object == PointerId::NULL_OR_VOID {
-                                changed |= self.insert(dest.0, PointerId::NULL_OR_VOID, store);
+                                changed |= self.insert(rep.0, PointerId::NULL_OR_VOID, store);
                                 continue;
                             }
                             if concrete_object.is_primitive()
@@ -441,32 +450,55 @@ impl Graph {
                                 store.pointers.insert(Pointer::Prop(concrete_object, name));
                             let prop_pointer = self.get_graph_node_id(prop_pointer);
 
-                            if dest.0 == prop_pointer.0 {
+                            if rep.0 == prop_pointer.0 {
                                 continue;
                             }
 
-                            self.nodes.union(prop_pointer.0, dest.0);
+                            invalid |= store.invalid_pointers.contains(prop_pointer.0);
 
-                            let rep = self.get_graph_node_id(dest.0);
+                            self.nodes.union(prop_pointer.0, rep.0);
+
+                            let new_rep = self.get_graph_node_id(rep.0);
 
                             let src;
-                            if rep.0 != dest.0 {
+                            if new_rep.0 != rep.0 {
                                 // prop_pointer became representative
-                                src = dest;
-                                dest = rep;
+                                src = rep;
+                                rep = new_rep;
                             } else {
-                                // dest became representative
+                                // rep is still the representative
                                 src = prop_pointer;
                             }
+                            prop_merge_queue.push(src);
+                        }
 
-                            debug_assert_ne!(src.0, dest.0);
+                        if prop_merge_queue.is_empty() {
+                            debug_assert_eq!(rep.0, dest.0);
+                            if changed {
+                                if !is_sink_node(&self.graph, dest_node) {
+                                    self.queue.push(dest.0);
+                                }
+                            }
+
+                            continue;
+                        }
+
+                        let rep_node = self.get_node(rep.0);
+
+                        for &src in prop_merge_queue.iter() {
+                            debug_assert_ne!(src.0, rep.0);
+
+                            if invalid {
+                                store.invalid_pointers.insert(src.0);
+                            }
 
                             if let Some(src_values) = self.points_to.remove(&src.0) {
                                 match self.points_to.entry(rep.0) {
                                     Entry::Occupied(mut entry) => {
-                                        entry.get_mut().extend(src_values);
+                                        changed |= entry.get_mut().extend(src_values);
                                     }
                                     Entry::Vacant(entry) => {
+                                        changed = true;
                                         entry.insert(src_values);
                                     }
                                 }
@@ -475,8 +507,6 @@ impl Graph {
                             let Some(src_node) = pointer_to_node(&self.graph_map, src.0) else {
                                 continue;
                             };
-
-                            let rep_node = self.get_node(rep.0);
 
                             // Move all of src_node's in edges so they point to rep_node instead.
                             while let Some(edge) =
@@ -493,6 +523,8 @@ impl Graph {
                                         self.graph.add_edge(source, rep_node, weight);
                                     }
                                 }
+
+                                changed = true;
 
                                 self.graph.remove_edge(id);
                             }
@@ -512,17 +544,20 @@ impl Graph {
                                     }
                                 }
 
+                                changed = true;
+
                                 self.graph.remove_edge(id);
                             }
+                        }
 
-                            self.prioritise(rep);
-
-                            changed = true;
+                        if invalid {
+                            self.invalidate(rep.0, store);
                         }
 
                         if changed {
-                            if !is_sink_node(&self.graph, self.graph_map[dest.0.index()]) {
-                                self.queue.push(dest.0);
+                            if !is_sink_node(&self.graph, rep_node) {
+                                self.prioritise(rep);
+                                self.queue.push(rep.0);
                             }
                         }
                     }
@@ -863,17 +898,19 @@ impl SmallSet {
         }
     }
 
-    fn extend(&mut self, mut other: SmallSet) {
+    fn extend(&mut self, mut other: SmallSet) -> bool {
         match (&self, &other) {
             (SmallSet::Inline(_), SmallSet::Heap(_)) => {
                 other = std::mem::replace(self, other);
+                let mut changed = false;
                 for value in &other {
-                    self.insert(value);
+                    changed |= self.insert(value);
                 }
+                changed
             }
             (SmallSet::Heap(a), SmallSet::Heap(b)) => {
                 if Rc::ptr_eq(a, b) {
-                    return;
+                    return false;
                 }
 
                 let (this, mut other) = unwrap_as!(
@@ -885,12 +922,14 @@ impl SmallSet {
                 if other.capacity() > this.capacity() {
                     other = std::mem::replace(this, other);
                 }
-                Rc::make_mut(this).union(&other);
+                Rc::make_mut(this).union(&other)
             }
             _ => {
+                let mut changed = false;
                 for value in &other {
-                    self.insert(value);
+                    changed |= self.insert(value);
                 }
+                changed
             }
         }
     }
