@@ -1512,9 +1512,10 @@ impl PointerId {
     }
 }
 
-/// Properties from Object.prototype that are accessible on all objects.
-static OBJECT_PROPERTIES: &[JsWord] = &[
+/// Properties that are accessible on all objects.
+pub static OBJECT_PROPERTIES: &[JsWord] = &[
     js_word!("prototype"),
+    // From Object.prototype
     // https://tc39.es/ecma262/#sec-properties-of-the-object-prototype-object
     js_word!("constructor"),
     js_word!("hasOwnProperty"),
@@ -1530,76 +1531,73 @@ static OBJECT_PROPERTIES: &[JsWord] = &[
     js_word!("__lookupSetter__"),
 ];
 
+pub static NUM_PROPERTIES: &[JsWord] = &[
+    js_word!("toExponential"),
+    js_word!("toFixed"),
+    js_word!("toPrecision"),
+];
+
+pub static STRING_PROPERTIES: &[JsWord] = &[
+    js_word!("length"),
+    js_word!("at"),
+    js_word!("charAt"),
+    js_word!("charCodeAt"),
+    js_word!("codePointAt"),
+    js_word!("concat"),
+    js_word!("endsWith"),
+    js_word!("includes"),
+    js_word!("indexOf"),
+    js_word!("isWellFormed"),
+    js_word!("lastIndexOf"),
+    js_word!("localeCompare"),
+    js_word!("match"),
+    js_word!("matchAll"),
+    js_word!("normalize"),
+    js_word!("padEnd"),
+    js_word!("padStart"),
+    js_word!("repeat"),
+    js_word!("replace"),
+    js_word!("replaceAll"),
+    js_word!("search"),
+    js_word!("slice"),
+    js_word!("split"),
+    js_word!("startsWith"),
+    js_word!("substr"),
+    js_word!("substring"),
+    js_word!("toLocaleLowerCase"),
+    js_word!("toLocaleUpperCase"),
+    js_word!("toLowerCase"),
+    js_word!("toUpperCase"),
+    js_word!("toWellFormed"),
+    js_word!("trim"),
+    js_word!("trimEnd"),
+    js_word!("trimStart"),
+];
+
+pub static REGEX_PROPERTIES: &[JsWord] = &[
+    // https://tc39.es/ecma262/#sec-properties-of-the-regexp-prototype-object
+    js_word!("exec"),
+    js_word!("dotAll"),
+    js_word!("flags"),
+    js_word!("global"),
+    js_word!("hasIndices"),
+    js_word!("ignoreCase"),
+    js_word!("multiline"),
+    js_word!("source"),
+    js_word!("sticky"),
+    js_word!("test"),
+    js_word!("unicode"),
+    js_word!("unicodeSets"),
+    // https://tc39.es/ecma262/#sec-properties-of-regexp-instances
+    js_word!("lastIndex"),
+];
+
 static BUILT_INS: &[(PointerId, &[JsWord])] = &[
     (PointerId::BOOL, &[]),
-    (
-        PointerId::NUM,
-        &[
-            js_word!("toExponential"),
-            js_word!("toFixed"),
-            js_word!("toPrecision"),
-        ],
-    ),
-    (
-        PointerId::STRING,
-        &[
-            js_word!("length"),
-            js_word!("at"),
-            js_word!("charAt"),
-            js_word!("charCodeAt"),
-            js_word!("codePointAt"),
-            js_word!("concat"),
-            js_word!("endsWith"),
-            js_word!("includes"),
-            js_word!("indexOf"),
-            js_word!("isWellFormed"),
-            js_word!("lastIndexOf"),
-            js_word!("localeCompare"),
-            js_word!("match"),
-            js_word!("matchAll"),
-            js_word!("normalize"),
-            js_word!("padEnd"),
-            js_word!("padStart"),
-            js_word!("repeat"),
-            js_word!("replace"),
-            js_word!("replaceAll"),
-            js_word!("search"),
-            js_word!("slice"),
-            js_word!("split"),
-            js_word!("startsWith"),
-            js_word!("substr"),
-            js_word!("substring"),
-            js_word!("toLocaleLowerCase"),
-            js_word!("toLocaleUpperCase"),
-            js_word!("toLowerCase"),
-            js_word!("toUpperCase"),
-            js_word!("toWellFormed"),
-            js_word!("trim"),
-            js_word!("trimEnd"),
-            js_word!("trimStart"),
-        ],
-    ),
+    (PointerId::NUM, &NUM_PROPERTIES),
+    (PointerId::STRING, &STRING_PROPERTIES),
     (PointerId::BIG_INT, &[]),
-    (
-        PointerId::REGEX,
-        &[
-            // https://tc39.es/ecma262/#sec-properties-of-the-regexp-prototype-object
-            js_word!("exec"),
-            js_word!("dotAll"),
-            js_word!("flags"),
-            js_word!("global"),
-            js_word!("hasIndices"),
-            js_word!("ignoreCase"),
-            js_word!("multiline"),
-            js_word!("source"),
-            js_word!("sticky"),
-            js_word!("test"),
-            js_word!("unicode"),
-            js_word!("unicodeSets"),
-            // https://tc39.es/ecma262/#sec-properties-of-regexp-instances
-            js_word!("lastIndex"),
-        ],
-    ),
+    (PointerId::REGEX, &REGEX_PROPERTIES),
     (PointerId::NULL_OR_VOID, &[]),
     (PointerId::UNKNOWN, &[]),
 ];

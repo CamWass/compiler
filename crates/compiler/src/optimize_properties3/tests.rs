@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use global_common::{Globals, Mark, GLOBALS};
 
 use crate::resolver::resolver;
@@ -39,35 +41,39 @@ fn test_same(input: &str) {
     test_transform(input, input);
 }
 
+fn test_props_are_unchanged(obj: &str, props: &[JsWord]) {
+    let mut accesses = String::new();
+    for prop in props {
+        accesses.write_fmt(format_args!("a.{prop}\n")).unwrap();
+    }
+    let input = format!("const a = {obj};\n{accesses}");
+    test_same(&input);
+}
+
+#[test]
+fn test_built_in_regex_properties() {
+    test_props_are_unchanged("/x/", REGEX_PROPERTIES);
+}
+
+#[test]
+fn test_built_in_string_properties() {
+    test_props_are_unchanged("''", STRING_PROPERTIES);
+}
+
+#[test]
+fn test_built_in_num_properties() {
+    test_props_are_unchanged("1", NUM_PROPERTIES);
+}
+
 #[test]
 fn test_built_in_object_properties() {
-    let test = |obj: &str| {
-        test_same(&format!(
-            "
-const a = {obj};
-a.constructor
-a.hasOwnProperty
-a.isPrototypeOf
-a.propertyIsEnumerable
-a.toLocaleString
-a.toString
-a.valueOf
-a.__proto__
-a.__defineGetter__
-a.__defineSetter__
-a.__lookupGetter__
-a.__lookupSetter__
-    ",
-        ));
-    };
-    test("null");
-    test("true");
-    test("1");
-    test("''");
-    test("1n");
-    test("/a/");
-    test("{}");
-    test("() => {}");
+    test_props_are_unchanged("true", OBJECT_PROPERTIES);
+    test_props_are_unchanged("1", OBJECT_PROPERTIES);
+    test_props_are_unchanged("''", OBJECT_PROPERTIES);
+    test_props_are_unchanged("1n", OBJECT_PROPERTIES);
+    test_props_are_unchanged("/a/", OBJECT_PROPERTIES);
+    test_props_are_unchanged("{}", OBJECT_PROPERTIES);
+    test_props_are_unchanged("() => {}", OBJECT_PROPERTIES);
 }
 
 #[test]
