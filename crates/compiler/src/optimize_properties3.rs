@@ -1418,7 +1418,7 @@ impl Visit<'_> for GraphVisitor<'_> {
                 self.visit_destructuring(lhs, &[PointerId::STRING]);
 
                 let rhs = self.get_rhs(right, true);
-                self.invalidate(&rhs);
+                self.record_computed_access(&rhs);
                 body.visit_with(self);
             }
             _ => {

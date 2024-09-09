@@ -1301,6 +1301,10 @@ for (var x in unknown) {
 }
 ",
     );
+    test_transform(
+        "for (var x in { prop: { inner: 1 } });",
+        "for (var x in { prop: { a: 1 } });",
+    );
 }
 
 #[test]
