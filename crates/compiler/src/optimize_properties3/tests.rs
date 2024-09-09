@@ -334,7 +334,10 @@ f().a;
     );
 
     test_same("unknown in { prop: 1 }");
-
+    test_transform(
+        "unknown in { prop: { inner: 1 } }",
+        "unknown in { prop: { a: 1 } }",
+    );
     test_transform("'prop' in { prop: 1 };", r#" "a" in { a: 1 };"#);
 }
 

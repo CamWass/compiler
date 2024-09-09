@@ -804,7 +804,7 @@ impl GraphVisitor<'_> {
                                 self.reference_prop(*obj, prop);
                             }
                         } else {
-                            self.invalidate(&obj);
+                            self.record_computed_access(&obj);
                         }
                         ret!(vec![PointerId::BOOL])
                     }
