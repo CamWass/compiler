@@ -3482,7 +3482,6 @@ pub struct Renamer<'a> {
     pub rename_map: FxHashMap<NodeId, JsWord>,
 }
 
-// TODO: node id's are unique. use rename_map.remove to get owned JsWord - no other node will access the entry anyway.
 impl VisitMut<'_> for Renamer<'_> {
     fn visit_mut_ident(&mut self, node: &mut Ident) {
         if let Some(new_name) = self.rename_map.get(&node.node_id) {
