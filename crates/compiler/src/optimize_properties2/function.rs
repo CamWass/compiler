@@ -1486,8 +1486,8 @@ impl<'ast> Analyser<'_, 'ast> {
             NodeKind::CatchClause(_) => todo!(),
 
             // This function is only called on expressions (and their children),
-            // so it can't reach e.g. statements. TypeScript and JSX should have
-            // been removed by now as well.
+            // so it can't reach e.g. statements. TypeScript should have been
+            // removed by now as well.
             _ => unreachable!(),
         }
     }

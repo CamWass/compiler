@@ -3,7 +3,6 @@ use crate::{
     class::Class,
     function::Function,
     ident::{Ident, PrivateName},
-    jsx::{JSXElement, JSXEmptyExpr, JSXFragment, JSXMemberExpr, JSXNamespacedName},
     lit::{Bool, Lit, Number, Str},
     operators::{AssignOp, BinaryOp, UnaryOp, UpdateOp},
     pat::Pat,
@@ -76,16 +75,6 @@ pub enum Expr {
     Await(AwaitExpr),
 
     Paren(ParenExpr),
-
-    JSXMember(JSXMemberExpr),
-
-    JSXNamespacedName(JSXNamespacedName),
-
-    JSXEmpty(JSXEmptyExpr),
-
-    JSXElement(Box<JSXElement>),
-
-    JSXFragment(JSXFragment),
 
     PrivateName(PrivateName),
 

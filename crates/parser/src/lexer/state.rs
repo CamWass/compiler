@@ -17,10 +17,6 @@ pub enum TokenType {
     Semi,
     BinOp(BinOpToken),
     Keyword(Keyword),
-    JSXName,
-    JSXText,
-    JSXTagStart,
-    JSXTagEnd,
     Other {
         before_expr: bool,
         can_have_trailing_comment: bool,
@@ -29,14 +25,9 @@ pub enum TokenType {
 impl TokenType {
     pub fn before_expr(self) -> bool {
         match self {
-            TokenType::JSXName
-            | TokenType::JSXTagStart
-            | TokenType::JSXTagEnd
-            | TokenType::Template
-            | TokenType::Dot
-            | TokenType::RParen => false,
+            TokenType::Template | TokenType::Dot | TokenType::RParen => false,
 
-            TokenType::JSXText | TokenType::Colon | TokenType::LBrace | TokenType::Semi => true,
+            TokenType::Colon | TokenType::LBrace | TokenType::Semi => true,
             TokenType::BinOp(b) => b.before_expr(),
             TokenType::Keyword(k) => k.before_expr(),
             TokenType::Other { before_expr, .. } => before_expr,
@@ -53,10 +44,6 @@ impl From<&Token> for TokenType {
             Token::LBrace => TokenType::LBrace,
             Token::RParen => TokenType::RParen,
             Token::Semi => TokenType::Semi,
-            Token::JSXTagEnd => TokenType::JSXTagEnd,
-            Token::JSXTagStart => TokenType::JSXTagStart,
-            Token::JSXText { .. } => TokenType::JSXText,
-            Token::JSXName { .. } => TokenType::JSXName,
             Token::BinOp(op) => TokenType::BinOp(op),
 
             Token::Word(Word::Keyword(k)) => TokenType::Keyword(k),
@@ -70,7 +57,6 @@ impl From<&Token> for TokenType {
                         | Token::DollarLBrace
                         | Token::Regex(..)
                         | Token::BigInt(..)
-                        | Token::JSXText { .. }
                         | Token::RBrace
                 ),
             },
@@ -110,9 +96,6 @@ impl Tokens for Lexer<'_> {
 
     fn token_context(&self) -> &TokenContexts {
         &self.state.context
-    }
-    fn token_context_mut(&mut self) -> &mut TokenContexts {
-        &mut self.state.context
     }
 
     fn set_token_context(&mut self, c: TokenContexts) {
@@ -192,15 +175,12 @@ pub enum TokenContext {
         start: BytePos,
     },
     FnExpr,
-    JSXOpeningTag,
-    JSXClosingTag,
-    JSXExpr,
 }
 
 impl TokenContext {
     fn preserve_space(&self) -> bool {
         match self {
-            Self::Tpl { .. } | Self::JSXExpr => true,
+            Self::Tpl { .. } => true,
             _ => false,
         }
     }
@@ -211,8 +191,7 @@ impl TokenContext {
             | Self::TplQuasi
             | Self::ParenExpr
             | Self::Tpl { .. }
-            | Self::FnExpr
-            | Self::JSXExpr => true,
+            | Self::FnExpr => true,
             _ => false,
         }
     }
@@ -436,12 +415,6 @@ impl State {
                     true
                 }
 
-                // tok!('/') if syntax.jsx() && prev == Some(TokenType::JSXTagStart) => {
-                //     context.pop();
-                //     context.pop(); // do not consider JSX expr -> JSX open tag -> ... anymore
-                //     context.push(TokenContext::JSXClosingTag); // reconsider as closing tag context
-                //     false
-                // }
                 tok!("${") => {
                     context.push(TokenContext::TplQuasi);
                     true

@@ -143,13 +143,6 @@ pub enum SyntaxError {
 
     AwaitForStmt,
 
-    UnterminatedJSXContents,
-    EmptyJSXAttr,
-    InvalidJSXValue,
-    JSXExpectedClosingTagForLtGt,
-    JSXExpectedClosingTag {
-        tag: JsWord,
-    },
     InvalidLeadingDecorator,
     DecoratorOnExport,
 
@@ -377,19 +370,6 @@ impl SyntaxError {
                 "for await syntax is valid only for for-of statement".into()
             }
 
-            SyntaxError::UnterminatedJSXContents => "Unterminated JSX contents".into(),
-            SyntaxError::EmptyJSXAttr => {
-                "JSX attributes must only be assigned a non-empty expression".into()
-            }
-            SyntaxError::InvalidJSXValue => {
-                "JSX value should be either an expression or a quoted JSX text".into()
-            }
-            SyntaxError::JSXExpectedClosingTagForLtGt => {
-                "Expected corresponding JSX closing tag for <>".into()
-            }
-            SyntaxError::JSXExpectedClosingTag { tag } => {
-                format!("Expected corresponding JSX closing tag for <{}>", tag).into()
-            }
             SyntaxError::InvalidLeadingDecorator => {
                 "Leading decorators must be attached to a class declaration".into()
             }

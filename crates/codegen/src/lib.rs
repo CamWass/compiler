@@ -20,7 +20,6 @@ mod comments;
 mod config;
 mod decl;
 mod expr;
-mod jsx;
 pub mod list;
 mod stmt;
 #[cfg(test)]
@@ -359,7 +358,6 @@ impl<'a> Emitter<'a> {
                 punct!(self, "/");
                 self.wr.write_str(&n.flags)?;
             }
-            Lit::JSXText(n) => self.emit_jsx_text(n)?,
         }
         Ok(())
     }
@@ -490,11 +488,6 @@ impl<'a> Emitter<'a> {
             Expr::Yield(n) => self.emit_yield_expr(n),
             Expr::PrivateName(n) => self.emit_private_name(n),
 
-            Expr::JSXMember(n) => self.emit_jsx_member_expr(n),
-            Expr::JSXNamespacedName(n) => self.emit_jsx_namespaced_name(n),
-            Expr::JSXEmpty(n) => self.emit_jsx_empty_expr(n),
-            Expr::JSXElement(n) => self.emit_jsx_element(n),
-            Expr::JSXFragment(n) => self.emit_jsx_fragment(n),
 
             Expr::OptChain(n) => self.emit_opt_chain(n),
             Expr::Invalid(n) => self.emit_invalid(n),

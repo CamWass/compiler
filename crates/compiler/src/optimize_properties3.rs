@@ -787,7 +787,6 @@ impl GraphVisitor<'_> {
                 Lit::Num(_) => ret!(vec![PointerId::NUM]),
                 Lit::BigInt(_) => ret!(vec![PointerId::BIG_INT]),
                 Lit::Regex(_) => ret!(vec![PointerId::REGEX]),
-                Lit::JSXText(_) => unreachable!(),
             },
             Expr::Tpl(n) => {
                 n.visit_children_with(self);
@@ -841,12 +840,8 @@ impl GraphVisitor<'_> {
                 _ => unreachable!("invalid optional chain expr"),
             },
 
-            Expr::JSXMember(_)
-            | Expr::JSXNamespacedName(_)
-            | Expr::JSXEmpty(_)
-            | Expr::JSXElement(_)
-            | Expr::JSXFragment(_)
-            | Expr::Invalid(_) => unreachable!(),
+
+            Expr::Invalid(_) => unreachable!(),
         }
     }
 

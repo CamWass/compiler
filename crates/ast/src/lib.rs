@@ -18,12 +18,6 @@ pub use self::{
     },
     function::{Function, Param, ParamWithoutDecorators},
     ident::{BindingIdent, Ident, IdentExt, PrivateName},
-    jsx::{
-        JSXAttr, JSXAttrName, JSXAttrOrSpread, JSXAttrValue, JSXClosingElement, JSXClosingFragment,
-        JSXElement, JSXElementChild, JSXElementName, JSXEmptyExpr, JSXExpr, JSXExprContainer,
-        JSXFragment, JSXMemberExpr, JSXNamespacedName, JSXObject, JSXOpeningElement,
-        JSXOpeningFragment, JSXSpreadChild, JSXText,
-    },
     lit::{BigInt, Bool, Lit, Null, Number, Regex, Str, StrKind},
     module::{Module, ModuleItem, Program, Script},
     module_decl::{
@@ -59,7 +53,6 @@ mod decl;
 mod expr;
 mod function;
 mod ident;
-mod jsx;
 mod lit;
 mod module;
 mod module_decl;

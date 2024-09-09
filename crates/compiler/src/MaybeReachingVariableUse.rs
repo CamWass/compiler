@@ -658,58 +658,6 @@ where
     //     todo!(stringify!(PrivateName));
     // }
 
-    fn visit_jsx_member_expr(&mut self, node: &JSXMemberExpr) {
-        todo!(stringify!(JSXMemberExpr));
-    }
-
-    fn visit_jsx_namespaced_name(&mut self, node: &JSXNamespacedName) {
-        todo!(stringify!(JSXNamespacedName));
-    }
-
-    fn visit_jsx_empty_expr(&mut self, node: &JSXEmptyExpr) {
-        todo!(stringify!(JSXEmptyExpr));
-    }
-
-    fn visit_jsx_expr_container(&mut self, node: &JSXExprContainer) {
-        todo!(stringify!(JSXExprContainer));
-    }
-
-    fn visit_jsx_spread_child(&mut self, node: &JSXSpreadChild) {
-        todo!(stringify!(JSXSpreadChild));
-    }
-
-    fn visit_jsx_opening_element(&mut self, node: &JSXOpeningElement) {
-        todo!(stringify!(JSXOpeningElement));
-    }
-
-    fn visit_jsx_closing_element(&mut self, node: &JSXClosingElement) {
-        todo!(stringify!(JSXClosingElement));
-    }
-
-    fn visit_jsx_attr(&mut self, node: &JSXAttr) {
-        todo!(stringify!(JSXAttr));
-    }
-
-    fn visit_jsx_text(&mut self, node: &JSXText) {
-        todo!(stringify!(JSXText));
-    }
-
-    fn visit_jsx_element(&mut self, node: &JSXElement) {
-        todo!(stringify!(JSXElement));
-    }
-
-    fn visit_jsx_fragment(&mut self, node: &JSXFragment) {
-        todo!(stringify!(JSXFragment));
-    }
-
-    fn visit_jsx_opening_fragment(&mut self, node: &JSXOpeningFragment) {
-        todo!(stringify!(JSXOpeningFragment));
-    }
-
-    fn visit_jsx_closing_fragment(&mut self, node: &JSXClosingFragment) {
-        todo!(stringify!(JSXClosingFragment));
-    }
-
     // fn visit_invalid(&mut self, node: &Invalid) {
     //     todo!(stringify!(Invalid));
     // }

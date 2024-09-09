@@ -110,20 +110,6 @@ make!(
     BindingIdent,
     Ident,
     PrivateName,
-    //jsx
-    JSXMemberExpr,
-    JSXNamespacedName,
-    JSXEmptyExpr,
-    JSXExprContainer,
-    JSXSpreadChild,
-    JSXOpeningElement,
-    JSXClosingElement,
-    JSXAttr,
-    JSXText,
-    JSXElement,
-    JSXFragment,
-    JSXOpeningFragment,
-    JSXClosingFragment,
     //lib
     Invalid,
     // Lit

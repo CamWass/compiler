@@ -652,11 +652,6 @@ impl<'a> VisitMut<'_> for Resolver<'a> {
         self.ident_type = old;
     }
 
-    /// Ignore.
-    ///
-    /// See https://github.com/swc-project/swc/issues/2854
-    fn visit_mut_jsx_attr_name(&mut self, _: &mut JSXAttrName) {}
-
     fn visit_mut_method_prop(&mut self, m: &mut MethodProp) {
         m.key.visit_mut_with(self);
 

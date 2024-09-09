@@ -268,12 +268,6 @@ impl StartsWithAlphaNum for Expr {
 
             Expr::TaggedTpl(TaggedTpl { tag, .. }) => tag.starts_with_alpha_num(),
 
-            // it's empty
-            Expr::JSXEmpty(..) => false,
-            // start with `<`
-            Expr::JSXFragment(..) | Expr::JSXElement(..) => false,
-            Expr::JSXNamespacedName(..) => true,
-            Expr::JSXMember(..) => true,
 
             Expr::OptChain(e) => e.expr.starts_with_alpha_num(),
 

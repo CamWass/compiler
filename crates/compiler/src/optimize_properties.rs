@@ -186,11 +186,6 @@ impl InnerVisitor {
             Expr::MetaProp(_) => todo!(),
             Expr::Await(_) => todo!(),
             Expr::Paren(_) => todo!(),
-            Expr::JSXMember(_) => todo!(),
-            Expr::JSXNamespacedName(_) => todo!(),
-            Expr::JSXEmpty(_) => todo!(),
-            Expr::JSXElement(_) => todo!(),
-            Expr::JSXFragment(_) => todo!(),
             Expr::PrivateName(_) => todo!(),
             Expr::OptChain(_) => todo!(),
 
@@ -277,11 +272,6 @@ impl InnerVisitor {
             Expr::New(_) => todo!(),
             Expr::Yield(_) => todo!(),
             Expr::Await(_) => todo!(),
-            Expr::JSXMember(_) => todo!(),
-            Expr::JSXNamespacedName(_) => todo!(),
-            Expr::JSXEmpty(_) => todo!(),
-            Expr::JSXElement(_) => todo!(),
-            Expr::JSXFragment(_) => todo!(),
             Expr::PrivateName(_) => todo!(),
             Expr::OptChain(_) => todo!(),
 
@@ -524,12 +514,6 @@ impl Visit<'_> for InnerVisitor {
     fn visit_opt_chain_expr(&mut self, node: &OptChainExpr) {
         todo!();
     }
-    fn visit_jsx_expr(&mut self, node: &JSXExpr) {
-        todo!();
-    }
-    fn visit_jsx_spread_child(&mut self, node: &JSXSpreadChild) {
-        todo!();
-    }
     fn visit_export_default_expr(&mut self, node: &ExportDefaultExpr) {
         todo!();
     }
@@ -579,18 +563,6 @@ impl Visit<'_> for InnerVisitor {
     fn visit_var_decl_or_expr(&mut self, node: &VarDeclOrExpr) {
         todo!();
     }
-    fn visit_jsx_object(&mut self, node: &JSXObject) {
-        todo!();
-    }
-    fn visit_jsx_namespaced_name(&mut self, node: &JSXNamespacedName) {
-        todo!();
-    }
-    fn visit_jsx_element_name(&mut self, node: &JSXElementName) {
-        todo!();
-    }
-    fn visit_jsx_attr_name(&mut self, node: &JSXAttrName) {
-        todo!();
-    }
     fn visit_import_default_specifier(&mut self, node: &ImportDefaultSpecifier) {
         todo!();
     }
@@ -620,7 +592,6 @@ fn is_simple_rhs(expr: &Expr) -> bool {
             | Lit::Num(_)
             | Lit::BigInt(_)
             | Lit::Regex(_) => true,
-            Lit::JSXText(_) => todo!(),
         },
 
         // TODO:
@@ -648,11 +619,6 @@ fn is_simple_rhs(expr: &Expr) -> bool {
         | Expr::Yield(_)
         | Expr::MetaProp(_)
         | Expr::Await(_)
-        | Expr::JSXMember(_)
-        | Expr::JSXNamespacedName(_)
-        | Expr::JSXEmpty(_)
-        | Expr::JSXElement(_)
-        | Expr::JSXFragment(_)
         | Expr::OptChain(_)
         | Expr::Invalid(_) => false,
     }

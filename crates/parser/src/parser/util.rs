@@ -101,12 +101,6 @@ pub(super) trait ExprExt {
             // MemberExpression is valid assignment target
             Expr::PrivateName(..) => false,
 
-            // jsx
-            Expr::JSXMember(..)
-            | Expr::JSXNamespacedName(..)
-            | Expr::JSXEmpty(..)
-            | Expr::JSXElement(..)
-            | Expr::JSXFragment(..) => false,
 
             Expr::OptChain(OptChainExpr { expr, .. }) => {
                 expr.is_valid_simple_assignment_target(strict)

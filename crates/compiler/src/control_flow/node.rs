@@ -151,20 +151,6 @@ make!(
     BindingIdent,
     Ident,
     PrivateName,
-    //jsx
-    JSXMemberExpr,
-    JSXNamespacedName,
-    JSXEmptyExpr,
-    JSXExprContainer,
-    JSXSpreadChild,
-    JSXOpeningElement,
-    JSXClosingElement,
-    JSXAttr,
-    JSXText,
-    JSXElement,
-    JSXFragment,
-    JSXOpeningFragment,
-    JSXClosingFragment,
     //lib
     Invalid,
     // Lit
@@ -254,11 +240,6 @@ impl<'ast> From<&'ast ::ast::Expr> for Node<'ast> {
             ::ast::Expr::MetaProp(e) => Node::from(e),
             ::ast::Expr::Await(e) => Node::from(e),
             ::ast::Expr::Paren(e) => Node::from(e),
-            ::ast::Expr::JSXMember(e) => Node::from(e),
-            ::ast::Expr::JSXNamespacedName(e) => Node::from(e),
-            ::ast::Expr::JSXEmpty(e) => Node::from(e),
-            ::ast::Expr::JSXElement(e) => Node::from(e.as_ref()),
-            ::ast::Expr::JSXFragment(e) => Node::from(e),
             ::ast::Expr::PrivateName(e) => Node::from(e),
             ::ast::Expr::OptChain(e) => Node::from(e),
             ::ast::Expr::Invalid(e) => Node::from(e),
@@ -275,7 +256,6 @@ impl<'ast> From<&'ast ::ast::Lit> for Node<'ast> {
             ::ast::Lit::Num(l) => Node::from(l),
             ::ast::Lit::BigInt(l) => Node::from(l),
             ::ast::Lit::Regex(l) => Node::from(l),
-            ::ast::Lit::JSXText(l) => Node::from(l),
         }
     }
 }

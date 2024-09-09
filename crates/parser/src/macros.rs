@@ -261,17 +261,6 @@ macro_rules! tok {
     };
 
     // ----------
-    // JSX
-    // ----------
-    (JSXTagStart) => {
-        crate::token::Token::JSXTagStart
-    };
-
-    (JSXTagEnd) => {
-        crate::token::Token::JSXTagEnd
-    };
-
-    // ----------
     // Typescript
     // ----------
     ("asserts") => {

@@ -338,10 +338,7 @@ impl<I: Tokens> Parser<I> {
     pub(super) fn parse_ts_type_params(&mut self) -> PResult<Vec<Span>> {
         self.in_type().parse_with(|p| {
             p.ts_in_no_context(|p| {
-                if !is!(p, '<') && !is!(p, JSXTagStart) {
-                    unexpected!(p, "< (jsx tag start)")
-                }
-                p.input.bump(); // '<'
+                expect!(p, '<');
 
                 let params = p.parse_ts_bracketed_list(
                     ParsingContext::TypeParametersOrArguments,
@@ -1872,7 +1869,7 @@ impl<I: Tokens> Parser<I> {
         &mut self,
         start: BytePos,
     ) -> PResult<Option<ArrowExpr>> {
-        let res = if is_one_of!(self, '<', JSXTagStart) {
+        let res = if is!(self, '<') {
             self.try_parse_ts(|p| {
                 let type_params = p.parse_ts_type_params()?;
                 // Don't use overloaded parseFunctionParams which would look for "<" again.

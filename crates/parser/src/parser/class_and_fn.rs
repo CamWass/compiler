@@ -1,7 +1,7 @@
 use self::expression::BlockStmtOrExpr;
 
 use super::{identifier::MaybeOptionalIdentParser, *};
-use crate::{error::SyntaxError, lexer::TokenContext, Tokens};
+use crate::{error::SyntaxError, Tokens};
 use atoms::js_word;
 
 /// Parser for function expression and function declaration.
@@ -900,9 +900,7 @@ impl<I: Tokens> Parser<I> {
     }
 
     fn is_class_method(&mut self) -> PResult<bool> {
-        Ok(is!(self, '(')
-            || (self.syntax().typescript() && is!(self, '<'))
-            || (self.syntax().typescript() && is!(self, JSXTagStart)))
+        Ok(is!(self, '(') || (self.syntax().typescript() && is!(self, '<')))
     }
 
     fn is_class_property(&mut self) -> PResult<bool> {
@@ -1049,19 +1047,6 @@ impl<I: Tokens> Parser<I> {
                     trace_cur!(parser, parse_fn_args_body__type_params);
 
                     if is!(parser, '<') {
-                        parser.parse_ts_type_params()?;
-                    } else if is!(parser, JSXTagStart) {
-                        debug_assert_eq!(
-                            parser.input.token_context().current(),
-                            Some(TokenContext::JSXOpeningTag)
-                        );
-                        parser.input.token_context_mut().pop();
-                        debug_assert_eq!(
-                            parser.input.token_context().current(),
-                            Some(TokenContext::JSXExpr)
-                        );
-                        parser.input.token_context_mut().pop();
-
                         parser.parse_ts_type_params()?;
                     }
                     Ok(Some(()))

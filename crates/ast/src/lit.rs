@@ -1,4 +1,4 @@
-use crate::{jsx::JSXText, GetNodeId, NodeId};
+use crate::{GetNodeId, NodeId};
 use atoms::JsWord;
 use clone_node::CloneNode;
 use global_common::integer_decode::integer_decode;
@@ -22,8 +22,6 @@ pub enum Lit {
     BigInt(BigInt),
 
     Regex(Regex),
-
-    JSXText(JSXText),
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
@@ -31,8 +29,6 @@ pub struct BigInt {
     pub node_id: NodeId,
     pub value: BigIntValue,
 }
-
-
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct Str {
@@ -78,8 +74,6 @@ impl Default for StrKind {
     }
 }
 
-
-
 impl Str {
     #[inline]
     pub fn is_empty(&self) -> bool {
@@ -106,8 +100,6 @@ pub struct Regex {
 
     pub flags: JsWord,
 }
-
-
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode)]
 pub struct Number {

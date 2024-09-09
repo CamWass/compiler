@@ -1,5 +1,5 @@
 use super::{pat::PatType, util::ExprExt, *};
-use crate::{lexer::TokenContext, token::AssignOpToken};
+use crate::token::AssignOpToken;
 use atoms::js_word;
 use either::Either;
 use global_common::Pos;
@@ -53,41 +53,7 @@ impl<I: Tokens> Parser<I> {
     pub(super) fn parse_assignment_expr(&mut self) -> PResult<Box<Expr>> {
         trace_cur!(self, parse_assignment_expr);
 
-        if self.input.syntax().typescript() {
-            // Note: When the JSX plugin is on, type assertions (`<T> x`) aren't valid
-            // syntax.
-
-            if is!(self, JSXTagStart) {
-                let cur_context = self.input.token_context().current();
-                debug_assert_eq!(cur_context, Some(TokenContext::JSXOpeningTag));
-                // Only time j_oTag is pushed is right after j_expr.
-                debug_assert_eq!(
-                    self.input.token_context().0[self.input.token_context().len() - 2],
-                    TokenContext::JSXExpr
-                );
-
-                let res = self.try_parse_ts(|p| p.parse_assignment_expr_base().map(Some));
-                if let Some(res) = res {
-                    return Ok(res);
-                } else {
-                    debug_assert_eq!(
-                        self.input.token_context().current(),
-                        Some(TokenContext::JSXOpeningTag)
-                    );
-                    self.input.token_context_mut().pop();
-                    debug_assert_eq!(
-                        self.input.token_context().current(),
-                        Some(TokenContext::JSXExpr)
-                    );
-                    self.input.token_context_mut().pop();
-                }
-            }
-        }
-
-        if self.input.syntax().typescript()
-            && (is_one_of!(self, '<', JSXTagStart))
-            && peeked_is!(self, IdentName)
-        {
+        if self.input.syntax().typescript() && is!(self, '<') && peeked_is!(self, IdentName) {
             let res = self.try_parse_ts(|p| {
                 let start = p.input.cur_pos();
                 // Type params.
@@ -685,39 +651,6 @@ impl<I: Tokens> Parser<I> {
     /// Parse call, dot, and `[]`-subscript expressions.
     pub(super) fn parse_lhs_expr(&mut self) -> PResult<Box<Expr>> {
         let start = self.input.cur_pos();
-
-        // parse jsx
-        if self.input.syntax().jsx() {
-            fn into_expr(e: Either<JSXFragment, JSXElement>) -> Box<Expr> {
-                match e {
-                    Either::Left(l) => Box::new(Expr::JSXFragment(l.into())),
-                    Either::Right(r) => Box::new(Expr::JSXElement(Box::new(r).into())),
-                }
-            }
-            match *cur!(self, true)? {
-                Token::JSXText { .. } => {
-                    return self
-                        .parse_jsx_text()
-                        .map(Lit::JSXText)
-                        .map(Expr::Lit)
-                        .map(Box::new);
-                }
-                Token::JSXTagStart => {
-                    return self.parse_jsx_element().map(into_expr);
-                }
-                _ => {}
-            }
-
-            if is!(self, '<') && !peeked_is!(self, '!') {
-                // In case we encounter an lt token here it will always be the start of
-                // jsx as the lt sign is not allowed in places that expect an expression
-
-                // FIXME(swc):
-                // self.finishToken(tt.jsxTagStart);
-
-                return self.parse_jsx_element().map(into_expr);
-            }
-        }
 
         // `super()` can't be handled from parse_new_expr()
         if self.input.eat(&tok!("super")) {

@@ -220,7 +220,7 @@ impl<I: Tokens> Parser<I> {
 
         let start = self.input.cur_pos();
 
-        if !self.input.syntax().jsx() && self.input.syntax().typescript() && eat!(self, '<') {
+        if self.input.syntax().typescript() && eat!(self, '<') {
             if eat!(self, "const") {
                 expect!(self, '>');
                 let expr = self.parse_unary_expr()?;

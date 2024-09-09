@@ -60,7 +60,6 @@ pub struct Context {
 
     pub in_property_name: bool,
 
-    pub in_forced_jsx_context: bool,
 
     /// If true, `:` should not be treated as a type annotation.
     pub in_case_cond: bool,

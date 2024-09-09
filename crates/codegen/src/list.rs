@@ -149,8 +149,6 @@ add_bitflags!(
             | AllowTrailingComma
             | SingleLine
             | SpaceBetweenBraces,
-        JsxElementOrFragmentChildren: SingleLine | NoInterveningComments,
-        JsxElementAttributes: SingleLine | SpaceBetweenSiblings | NoInterveningComments,
         CaseOrDefaultClauseStatements: Indented | MultiLine | NoTrailingNewLine | OptionalIfEmpty,
         HeritageClauseTypes: CommaDelimited | SpaceBetweenSiblings | SingleLine,
         SourceFileStatements: MultiLine | NoTrailingNewLine,

@@ -100,15 +100,6 @@ pub enum Token {
 
     BigInt(BigIntValue),
 
-    JSXName {
-        name: JsWord,
-    },
-    JSXText {
-        raw: JsWord,
-    },
-    JSXTagStart,
-    JSXTagEnd,
-
     Shebang(JsWord),
     Error(Error),
 }
@@ -131,8 +122,7 @@ impl Token {
             | Str { .. }
             | Regex(_, _)
             | Num { .. }
-            | BigInt(_)
-            | JSXTagStart => true,
+            | BigInt(_) => true,
 
             _ => false,
         }
@@ -143,23 +133,9 @@ impl Token {
             Token::Word(w) => w.before_expr(),
             BinOp(o) => o.before_expr(),
 
-            Arrow
-            | DotDotDot
-            | Bang
-            | LParen
-            | LBracket
-            | LBrace
-            | Semi
-            | Comma
-            | Colon
-            | ColonColon
-            | AssignOp(_)
-            | DollarLBrace
-            | QuestionMark
-            | PlusPlus
-            | MinusMinus
-            | Tilde
-            | JSXText { .. } => true,
+            Arrow | DotDotDot | Bang | LParen | LBracket | LBrace | Semi | Comma | Colon
+            | ColonColon | AssignOp(_) | DollarLBrace | QuestionMark | PlusPlus | MinusMinus
+            | Tilde => true,
 
             _ => false,
         }
@@ -687,10 +663,6 @@ impl Debug for Token {
             Regex(exp, flags) => write!(f, "regexp literal ({}, {})", exp, flags)?,
             Num { value, raw } => write!(f, "numeric literal ({}, {})", value, raw)?,
             BigInt(..) => write!(f, "bigint literal")?,
-            JSXName { name } => write!(f, "jsx name ({})", name)?,
-            JSXText { raw } => write!(f, "jsx text ({})", raw)?,
-            JSXTagStart => write!(f, "< (jsx tag start)")?,
-            JSXTagEnd => write!(f, "> (jsx tag end)")?,
             Shebang(_) => write!(f, "#!")?,
             Token::Error(_) => write!(f, "<lexing error>")?,
         }
