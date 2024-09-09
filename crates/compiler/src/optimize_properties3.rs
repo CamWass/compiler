@@ -1155,13 +1155,28 @@ impl Visit<'_> for GraphVisitor<'_> {
                 let value = self.get_rhs(&n.arg, true);
                 self.invalidate(&value);
             }
-            Stmt::ForIn(ForInStmt {
-                left, right, body, ..
-            })
-            | Stmt::ForOf(ForOfStmt {
+            Stmt::ForOf(ForOfStmt {
                 left, right, body, ..
             }) => {
                 left.visit_with(self);
+                let rhs = self.get_rhs(right, true);
+                self.invalidate(&rhs);
+                body.visit_with(self);
+            }
+            Stmt::ForIn(ForInStmt {
+                left, right, body, ..
+            }) => {
+                left.visit_with(self);
+
+                let lhs = match left {
+                    VarDeclOrPat::VarDecl(lhs) => {
+                        assert!(lhs.decls.len() == 1);
+                        &lhs.decls[0].name
+                    }
+                    VarDeclOrPat::Pat(lhs) => lhs,
+                };
+                self.visit_destructuring(lhs, &[PointerId::STRING]);
+
                 let rhs = self.get_rhs(right, true);
                 self.invalidate(&rhs);
                 body.visit_with(self);

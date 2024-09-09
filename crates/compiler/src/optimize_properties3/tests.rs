@@ -1284,12 +1284,25 @@ try {} catch (e) {
 
 #[test]
 fn test_for_in_invalidation() {
-    test_same("for (var x in { prop: 1 }) {}");
+    test_same("for (var x in { prop: 1 });");
+    // x is a string regardless of the RHS:
+    test_transform(
+        "
+for (var x in unknown) {
+    (x || { prop: 1 }).prop
+}
+",
+        "
+for (var x in unknown) {
+    (x || { a: 1 }).a
+}
+",
+    );
 }
 
 #[test]
 fn test_for_of_invalidation() {
-    test_same("for (var x of { prop: 1 }) {}");
+    test_same("for (var x of { prop: 1 });");
 }
 
 #[test]
