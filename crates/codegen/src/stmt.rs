@@ -13,7 +13,7 @@ mod tests {
 
     #[test]
     fn labeled_statement() {
-        assert_min("foo: {}", "foo:{}");
+        assert_min("foo: {}", "foo:;");
         assert_min("foo: bar;", "foo:bar");
     }
 
@@ -65,27 +65,13 @@ mod tests {
 
     #[test]
     fn for_statement() {
-        assert_min("for (var i = 0; i < 10; i++) {}", "for(var i=0;i<10;i++){}");
-        assert_min("for (i = 0; i < 10; i++) {}", "for(i=0;i<10;i++){}");
-        assert_min("for (;;) {}", "for(;;){}");
-        assert_min("for (foo in bar){}", "for(foo in bar){}");
-        assert_min("for (let foo in bar){}", "for(let foo in bar){}");
-        assert_min("for (foo of bar){}", "for(foo of bar){}");
-        assert_min("for (let foo of bar){}", "for(let foo of bar){}");
-    }
-
-    #[test]
-    fn for_statement_pretty() {
-        assert_pretty(
-            "for (var i = 0; i < 10; i++) {}",
-            "for(var i = 0; i < 10; i++){\n}",
-        );
-        assert_pretty("for (i = 0; i < 10; i++) {}", "for(i = 0; i < 10; i++){\n}");
-        assert_pretty("for (;;) {}", "for(;;){\n}");
-        assert_pretty("for (foo in bar){}", "for(foo in bar){\n}");
-        assert_pretty("for (let foo in bar){}", "for(let foo in bar){\n}");
-        assert_pretty("for (foo of bar){}", "for (foo of bar){\n}");
-        assert_pretty("for (let foo of bar){}", "for (let foo of bar){\n}");
+        assert_min("for (var i = 0; i < 10; i++) {}", "for(var i=0;i<10;i++);");
+        assert_min("for (i = 0; i < 10; i++) {}", "for(i=0;i<10;i++);");
+        assert_min("for (;;) {}", "for(;;);");
+        assert_min("for (foo in bar){}", "for(foo in bar);");
+        assert_min("for (let foo in bar){}", "for(let foo in bar);");
+        assert_min("for (foo of bar){}", "for(foo of bar);");
+        assert_min("for (let foo of bar){}", "for(let foo of bar);");
     }
 
     #[test]

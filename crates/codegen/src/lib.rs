@@ -1731,6 +1731,7 @@ impl<'a> Emitter<'a> {
 /// Statements
 impl<'a> Emitter<'a> {
     fn emit_stmt(&mut self, node: &Stmt) -> Result {
+        // TODO: remove all of these 'ref's
         match *node {
             Stmt::Expr(ref e) => self.emit_expr_stmt(e),
             Stmt::Block(ref e) => {
@@ -1760,6 +1761,17 @@ impl<'a> Emitter<'a> {
             self.wr.write_line()?;
         }
         Ok(())
+    }
+
+    /// Emits a statement in a single-statement context
+    fn emit_single_stmt(&mut self, stmt: &Stmt) -> Result {
+        if let Stmt::Block(block) = stmt {
+            if block.stmts.is_empty() {
+                semi!(self);
+                return Ok(());
+            }
+        }
+        self.emit_stmt(stmt)
     }
 
     fn emit_expr_stmt(&mut self, e: &ExprStmt) -> Result {
@@ -1823,7 +1835,7 @@ impl<'a> Emitter<'a> {
         self.emit_expr(&node.obj)?;
         punct!(self, ")");
 
-        self.emit_stmt(&node.body)
+        self.emit_single_stmt(&node.body)
     }
 
     fn emit_return_stmt(&mut self, node: &ReturnStmt) -> Result {
@@ -1863,7 +1875,7 @@ impl<'a> Emitter<'a> {
         punct!(self, ":");
         formatting_space!(self);
 
-        self.emit_stmt(&node.body)
+        self.emit_single_stmt(&node.body)
     }
 
     fn emit_break_stmt(&mut self, node: &BreakStmt) -> Result {
@@ -1906,7 +1918,7 @@ impl<'a> Emitter<'a> {
             _ => false,
         };
 
-        self.emit_stmt(&node.cons)?;
+        self.emit_single_stmt(&node.cons)?;
 
         if let Some(ref alt) = node.alt {
             if is_cons_block {
@@ -1918,7 +1930,7 @@ impl<'a> Emitter<'a> {
             } else {
                 formatting_space!(self);
             }
-            self.emit_stmt(alt)?;
+            self.emit_single_stmt(alt)?;
         }
         Ok(())
     }
@@ -2034,7 +2046,7 @@ impl<'a> Emitter<'a> {
         self.emit_expr(&node.test)?;
         punct!(self, ")");
 
-        self.emit_stmt(&node.body)
+        self.emit_single_stmt(&node.body)
     }
 
     fn emit_do_while_stmt(&mut self, node: &DoWhileStmt) -> Result {
@@ -2046,7 +2058,7 @@ impl<'a> Emitter<'a> {
         } else {
             formatting_space!(self);
         }
-        self.emit_stmt(&node.body)?;
+        self.emit_single_stmt(&node.body)?;
 
         keyword!(self, "while");
 
@@ -2070,7 +2082,7 @@ impl<'a> Emitter<'a> {
         opt_leading_space!(self, emit_expr, node.update);
         punct!(self, ")");
 
-        self.emit_stmt(&node.body)
+        self.emit_single_stmt(&node.body)
     }
 
     fn emit_for_in_stmt(&mut self, node: &ForInStmt) -> Result {
@@ -2085,7 +2097,7 @@ impl<'a> Emitter<'a> {
         self.emit_expr(&node.right)?;
         punct!(self, ")");
 
-        self.emit_stmt(&node.body)
+        self.emit_single_stmt(&node.body)
     }
 
     fn emit_for_of_stmt(&mut self, node: &ForOfStmt) -> Result {
@@ -2104,7 +2116,7 @@ impl<'a> Emitter<'a> {
         space!(self);
         self.emit_expr(&node.right)?;
         punct!(self, ")");
-        self.emit_stmt(&node.body)
+        self.emit_single_stmt(&node.body)
     }
 }
 
