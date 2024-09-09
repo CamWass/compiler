@@ -230,7 +230,7 @@ impl<I: Tokens> Parser<I> {
         if self.input.syntax().typescript() && is!(self, "const") && peeked_is!(self, "enum") {
             self.assert_and_bump(&tok!("const"));
             self.assert_and_bump(&tok!("enum"));
-            self.parse_ts_enum_decl(start, true)?;
+            self.parse_ts_enum_decl()?;
             return Ok(Some(Stmt::Empty(EmptyStmt {
                 node_id: node_id!(self, span!(self, start)),
             })));
@@ -473,7 +473,7 @@ impl<I: Tokens> Parser<I> {
                     js_word!("public") | js_word!("static") | js_word!("abstract") => {
                         if eat!(self, "interface") {
                             self.emit_err(get_span!(self, i.node_id), SyntaxError::TS2427);
-                            self.parse_ts_interface_decl(start)?;
+                            self.parse_ts_interface_decl()?;
                             return Ok(Some(Stmt::Empty(EmptyStmt {
                                 node_id: node_id!(self, span!(self, start)),
                             })));

@@ -227,7 +227,7 @@ impl<I: Tokens> Parser<I> {
                 return Ok(expr);
             }
 
-            return self.parse_ts_type_assertion(start);
+            return self.parse_ts_type_assertion();
         }
 
         // Parse update expression

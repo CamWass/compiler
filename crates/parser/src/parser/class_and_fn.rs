@@ -513,7 +513,7 @@ impl<I: Tokens> Parser<I> {
         }
 
         if self.syntax().typescript() && !is_abstract && !is_override && !has_accessibility {
-            let idx = self.try_parse_ts_index_signature(start, readonly.is_some(), is_static)?;
+            let idx = self.try_parse_ts_index_signature()?;
             if idx.is_some() {
                 return Ok(None);
             }
@@ -603,8 +603,7 @@ impl<I: Tokens> Parser<I> {
                 expect!(self, ')');
 
                 if self.syntax().typescript() && is!(self, ':') {
-                    let start = self.input.cur_pos();
-                    let type_ann_span = self.parse_ts_type_ann(true, start)?;
+                    let type_ann_span = self.parse_ts_type_ann(true)?;
 
                     self.emit_err(type_ann_span, SyntaxError::TS1093);
                 }
