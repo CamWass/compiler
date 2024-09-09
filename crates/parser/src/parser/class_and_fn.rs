@@ -627,8 +627,8 @@ impl<I: Tokens> Parser<I> {
                     for p in &params {
                         // TODO(swc): Search deeply for assignment pattern using a Visitor
 
-                        let span = match p.pat {
-                            Pat::Assign(ref p) => Some(get_span!(self, p.node_id())),
+                        let span = match &p.pat {
+                            Pat::Assign(p) => Some(get_span!(self, p.node_id())),
                             _ => None,
                         };
 
@@ -699,8 +699,8 @@ impl<I: Tokens> Parser<I> {
             );
         }
 
-        if match key {
-            Key::PropName(PropName::Ident(ref i)) => i.sym == js_word!("async"),
+        if match &key {
+            Key::PropName(PropName::Ident(i)) => i.sym == js_word!("async"),
             _ => false,
         } && !self.input.had_line_break_before_cur()
         {
@@ -750,9 +750,9 @@ impl<I: Tokens> Parser<I> {
         let is_next_line_generator = self.input.had_line_break_before_cur() && is!(self, '*');
         let key_span = get_span!(self, key.node_id());
 
-        match key {
+        match &key {
             // `get\n*` is an uninitialized property named 'get' followed by a generator.
-            Key::PropName(PropName::Ident(ref i))
+            Key::PropName(PropName::Ident(i))
                 if (i.sym == js_word!("get") || i.sym == js_word!("set"))
                     && !is_next_line_generator =>
             {
@@ -1099,7 +1099,7 @@ impl<I: Tokens> Parser<I> {
                             // TODO(swc): Search deeply for assignment pattern using a Visitor
 
                             let span = match &param.pat {
-                                Pat::Assign(ref p) => Some(get_span!(parser, p.node_id)),
+                                Pat::Assign(p) => Some(get_span!(parser, p.node_id)),
                                 _ => None,
                             };
 

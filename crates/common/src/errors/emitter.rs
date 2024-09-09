@@ -234,7 +234,7 @@ impl EmitterWriter {
         let mut output = vec![];
         let mut multiline_annotations = vec![];
 
-        if let Some(ref sm) = self.sm {
+        if let Some(sm) = &self.sm {
             for span_label in msp.span_labels() {
                 if span_label.span.is_dummy() {
                     continue;
@@ -282,7 +282,7 @@ impl EmitterWriter {
         }
 
         // Find overlapping multiline annotations, put them at different depths
-        multiline_annotations.sort_by_key(|&(_, ref ml)| (ml.line_start, ml.line_end));
+        multiline_annotations.sort_by_key(|(_, ml)| (ml.line_start, ml.line_end));
         for item in multiline_annotations.clone() {
             let ann = item.1;
             for item in multiline_annotations.iter_mut() {
@@ -370,7 +370,7 @@ impl EmitterWriter {
         // 4 | | }
         //   | |_^ test
         if line.annotations.len() == 1 {
-            if let Some(ref ann) = line.annotations.get(0) {
+            if let Some(ann) = line.annotations.get(0) {
                 if let AnnotationType::MultilineStart(depth) = ann.annotation_type {
                     if source_string
                         .chars()
@@ -505,7 +505,7 @@ impl EmitterWriter {
             annotations_position.push((p, annotation));
             for (j, next) in annotations.iter().enumerate() {
                 if j > i {
-                    let l = if let Some(ref label) = next.label {
+                    let l = if let Some(label) = &next.label {
                         label.len() + 2
                     } else {
                         0
@@ -681,7 +681,7 @@ impl EmitterWriter {
             } else {
                 (pos + 2, annotation.start_col)
             };
-            if let Some(ref label) = annotation.label {
+            if let Some(label) = &annotation.label {
                 buffer.puts(line_offset + pos, code_offset + col, &label, style);
             }
         }
@@ -738,7 +738,7 @@ impl EmitterWriter {
 
     fn get_multispan_max_line_num(&mut self, msp: &MultiSpan) -> usize {
         let mut max = 0;
-        if let Some(ref sm) = self.sm {
+        if let Some(sm) = &self.sm {
             for primary_span in msp.primary_spans() {
                 if !primary_span.is_dummy() {
                     let hi = sm.lookup_char_pos(primary_span.hi());
@@ -784,7 +784,7 @@ impl EmitterWriter {
     ) -> bool {
         let mut spans_updated = false;
 
-        if let Some(ref sm) = self.sm {
+        if let Some(sm) = &self.sm {
             let mut before_after: Vec<(Span, Span)> = vec![];
             let new_labels: Vec<(Span, String)> = vec![];
 
@@ -905,7 +905,7 @@ impl EmitterWriter {
         //                see how it *looks* with
         //                very *weird* formats
         //                see?
-        for &(ref text, ref style) in msg.iter() {
+        for (text, style) in msg.iter() {
             let lines = text.split('\n').collect::<Vec<_>>();
             if lines.len() > 1 {
                 for (i, line) in lines.iter().enumerate() {
@@ -960,7 +960,7 @@ impl EmitterWriter {
                 buffer.append(0, &level_str, Style::Level(level));
             }
             // only render error codes, not lint codes
-            if let Some(DiagnosticId::Error(ref code)) = *code {
+            if let Some(DiagnosticId::Error(code)) = code {
                 buffer.append(0, "[", Style::Level(level));
                 buffer.append(0, &code, Style::Level(level));
                 buffer.append(0, "]", Style::Level(level));
@@ -968,7 +968,7 @@ impl EmitterWriter {
             if !level_str.is_empty() {
                 buffer.append(0, ": ", header_style);
             }
-            for &(ref text, _) in msg.iter() {
+            for (text, _) in msg.iter() {
                 buffer.append(0, text, header_style);
             }
         }
@@ -979,7 +979,7 @@ impl EmitterWriter {
         let mut annotated_files = self.preprocess_annotations(msp);
 
         // Make sure our primary file comes first
-        let (primary_lo, sm) = if let (Some(sm), Some(ref primary_span)) =
+        let (primary_lo, sm) = if let (Some(sm), Some(primary_span)) =
             (self.sm.as_ref(), msp.primary_span().as_ref())
         {
             if !primary_span.is_dummy() {
@@ -1190,7 +1190,7 @@ impl EmitterWriter {
         level: Level,
         max_line_num_len: usize,
     ) -> io::Result<()> {
-        if let Some(ref sm) = self.sm {
+        if let Some(sm) = &self.sm {
             let mut buffer = StyledBuffer::new();
 
             // Render the suggestion message
@@ -1211,7 +1211,7 @@ impl EmitterWriter {
             let suggestions = suggestion.splice_lines(&**sm);
 
             let mut row_num = 2;
-            for &(ref complete, ref parts) in suggestions.iter().take(MAX_SUGGESTIONS) {
+            for (complete, parts) in suggestions.iter().take(MAX_SUGGESTIONS) {
                 // Only show underline if the suggestion spans a single line and doesn't cover
                 // the entirety of the code output. If you have multiple
                 // replacements in the same line of code, show the underline.
@@ -1525,15 +1525,15 @@ impl Destination {
     }
 
     fn writable(&mut self) -> WritableDst<'_> {
-        match *self {
+        match self {
             #[cfg(feature = "tty-emitter")]
-            Destination::Terminal(ref mut t) => WritableDst::Terminal(t),
+            Destination::Terminal(t) => WritableDst::Terminal(t),
             #[cfg(feature = "tty-emitter")]
-            Destination::Buffered(ref mut t) => {
+            Destination::Buffered(t) => {
                 let buf = t.buffer();
                 WritableDst::Buffered(t, buf)
             }
-            Destination::Raw(ref mut t) => WritableDst::Raw(t),
+            Destination::Raw(t) => WritableDst::Raw(t),
         }
     }
 }
@@ -1586,21 +1586,21 @@ impl<'a> WritableDst<'a> {
 
     #[cfg(feature = "tty-emitter")]
     fn set_color(&mut self, color: &ColorSpec) -> io::Result<()> {
-        match *self {
+        match self {
             #[cfg(feature = "tty-emitter")]
-            WritableDst::Terminal(ref mut t) => t.set_color(color),
+            WritableDst::Terminal(t) => t.set_color(color),
             #[cfg(feature = "tty-emitter")]
-            WritableDst::Buffered(_, ref mut t) => t.set_color(color),
+            WritableDst::Buffered(_, t) => t.set_color(color),
             WritableDst::Raw(_) => Ok(()),
         }
     }
 
     fn reset(&mut self) -> io::Result<()> {
-        match *self {
+        match self {
             #[cfg(feature = "tty-emitter")]
-            WritableDst::Terminal(ref mut t) => t.reset(),
+            WritableDst::Terminal(t) => t.reset(),
             #[cfg(feature = "tty-emitter")]
-            WritableDst::Buffered(_, ref mut t) => t.reset(),
+            WritableDst::Buffered(_, t) => t.reset(),
             WritableDst::Raw(_) => Ok(()),
         }
     }
@@ -1608,22 +1608,22 @@ impl<'a> WritableDst<'a> {
 
 impl<'a> Write for WritableDst<'a> {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        match *self {
+        match self {
             #[cfg(feature = "tty-emitter")]
-            WritableDst::Terminal(ref mut t) => t.write(bytes),
+            WritableDst::Terminal(t) => t.write(bytes),
             #[cfg(feature = "tty-emitter")]
-            WritableDst::Buffered(_, ref mut buf) => buf.write(bytes),
-            WritableDst::Raw(ref mut w) => w.write(bytes),
+            WritableDst::Buffered(_, buf) => buf.write(bytes),
+            WritableDst::Raw(w) => w.write(bytes),
         }
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        match *self {
+        match self {
             #[cfg(feature = "tty-emitter")]
-            WritableDst::Terminal(ref mut t) => t.flush(),
+            WritableDst::Terminal(t) => t.flush(),
             #[cfg(feature = "tty-emitter")]
-            WritableDst::Buffered(_, ref mut buf) => buf.flush(),
-            WritableDst::Raw(ref mut w) => w.flush(),
+            WritableDst::Buffered(_, buf) => buf.flush(),
+            WritableDst::Raw(w) => w.flush(),
         }
     }
 }
@@ -1631,7 +1631,7 @@ impl<'a> Write for WritableDst<'a> {
 impl<'a> Drop for WritableDst<'a> {
     fn drop(&mut self) {
         #[cfg(feature = "tty-emitter")]
-        if let WritableDst::Buffered(ref mut dst, ref mut buf) = self {
+        if let WritableDst::Buffered(dst, buf) = self {
             drop(dst.print(buf));
         }
     }

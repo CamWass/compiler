@@ -46,7 +46,7 @@ impl<'a> Emitter<'a> {
         }
 
         let comments = match self.comments {
-            Some(ref comments) => comments,
+            Some(comments) => comments,
             None => return Ok(()),
         };
 
@@ -61,7 +61,7 @@ impl<'a> Emitter<'a> {
         }
 
         let comments = match self.comments {
-            Some(ref comments) => comments,
+            Some(comments) => comments,
             None => return Ok(()),
         };
 

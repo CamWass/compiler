@@ -3,11 +3,11 @@ use ast::*;
 
 impl<'a> Emitter<'a> {
     pub fn emit_decl(&mut self, node: &Decl) -> Result {
-        match *node {
-            Decl::Class(ref n) => self.emit_class_decl(n)?,
-            Decl::Fn(ref n) => self.emit_fn_decl(n)?,
+        match node {
+            Decl::Class(n) => self.emit_class_decl(n)?,
+            Decl::Fn(n) => self.emit_fn_decl(n)?,
 
-            Decl::Var(ref n) => {
+            Decl::Var(n) => {
                 self.emit_var_decl(n)?;
                 formatting_semi!(self); // VarDecl is also used for for-loops
             }
@@ -73,7 +73,7 @@ impl<'a> Emitter<'a> {
 
         self.emit_pat(&node.name)?;
 
-        if let Some(ref init) = node.init {
+        if let Some(init) = &node.init {
             formatting_space!(self);
             punct!(self, "=");
             formatting_space!(self);

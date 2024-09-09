@@ -29,9 +29,9 @@ pub(super) trait IsDirective {
     fn as_ref(&self) -> Option<&Stmt>;
     fn is_use_strict(&self) -> bool {
         match self.as_ref() {
-            Some(&Stmt::Expr(ref expr)) => match *expr.expr {
+            Some(Stmt::Expr(expr)) => match expr.expr.as_ref() {
                 Expr::Lit(Lit::Str(Str {
-                    ref value,
+                    value,
                     has_escape: false,
                     ..
                 })) => value == "use strict",
@@ -42,7 +42,7 @@ pub(super) trait IsDirective {
     }
     fn is_valid_directive(&self) -> bool {
         match self.as_ref() {
-            Some(&Stmt::Expr(ref expr)) => matches!(*expr.expr, Expr::Lit(Lit::Str(Str { .. }))),
+            Some(Stmt::Expr(expr)) => matches!(*expr.expr, Expr::Lit(Lit::Str(Str { .. }))),
             _ => false,
         }
     }
@@ -468,7 +468,7 @@ impl<I: Tokens> Parser<I> {
         }
 
         if self.syntax().typescript() {
-            if let Expr::Ident(ref i) = *expr {
+            if let Expr::Ident(i) = expr.as_ref() {
                 match i.sym {
                     js_word!("public") | js_word!("static") | js_word!("abstract") => {
                         if eat!(self, "interface") {

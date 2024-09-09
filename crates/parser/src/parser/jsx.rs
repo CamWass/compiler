@@ -291,7 +291,7 @@ impl<I: Tokens> Parser<I> {
             let mut closing_element = None;
 
             let self_closing = match opening_element {
-                Either::Right(ref el) => el.self_closing,
+                Either::Right(el) => el.self_closing,
                 _ => false,
             };
 
@@ -444,9 +444,9 @@ impl<T: IsFragment> IsFragment for Option<T> {
 
 fn get_qualified_jsx_name(name: &JSXElementName) -> JsWord {
     fn get_qualified_obj_name(obj: &JSXObject) -> JsWord {
-        match *obj {
-            JSXObject::Ident(ref i) => i.sym.clone(),
-            JSXObject::JSXMemberExpr(ref member) => format!(
+        match obj {
+            JSXObject::Ident(i) => i.sym.clone(),
+            JSXObject::JSXMemberExpr(member) => format!(
                 "{}.{}",
                 get_qualified_obj_name(&member.obj),
                 member.prop.sym
@@ -454,13 +454,13 @@ fn get_qualified_jsx_name(name: &JSXElementName) -> JsWord {
             .into(),
         }
     }
-    match *name {
-        JSXElementName::Ident(ref i) => i.sym.clone(),
-        JSXElementName::JSXNamespacedName(JSXNamespacedName {
-            ref ns, ref name, ..
-        }) => format!("{}:{}", ns.sym, name.sym).into(),
-        JSXElementName::JSXMemberExpr(JSXMemberExpr {
-            ref obj, ref prop, ..
-        }) => format!("{}.{}", get_qualified_obj_name(obj), prop.sym).into(),
+    match name {
+        JSXElementName::Ident(i) => i.sym.clone(),
+        JSXElementName::JSXNamespacedName(JSXNamespacedName { ns, name, .. }) => {
+            format!("{}:{}", ns.sym, name.sym).into()
+        }
+        JSXElementName::JSXMemberExpr(JSXMemberExpr { obj, prop, .. }) => {
+            format!("{}.{}", get_qualified_obj_name(obj), prop.sym).into()
+        }
     }
 }

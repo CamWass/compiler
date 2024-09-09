@@ -258,8 +258,8 @@ impl<I: Tokens> Parser<I> {
         }
 
         if self.input.syntax().typescript() && is!(self, IdentName) {
-            let sym = match *cur!(self, true)? {
-                Token::Word(ref w) => w.clone().into(),
+            let sym = match cur!(self, true)? {
+                Token::Word(w) => w.clone().into(),
                 _ => unreachable!(),
             };
             // TODO(swc): remove clone
@@ -622,8 +622,8 @@ impl<I: Tokens> Parser<I> {
 
 impl IsDirective for ModuleItem {
     fn as_ref(&self) -> Option<&Stmt> {
-        match *self {
-            ModuleItem::Stmt(ref s) => Some(s),
+        match self {
+            ModuleItem::Stmt(s) => Some(s),
             _ => None,
         }
     }

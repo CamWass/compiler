@@ -62,8 +62,8 @@ pub(super) trait ExprExt {
 
     /// "IsValidSimpleAssignmentTarget" from spec.
     fn is_valid_simple_assignment_target(&self, strict: YesMaybe) -> bool {
-        match *self.as_expr() {
-            Expr::Ident(Ident { ref sym, .. }) => {
+        match self.as_expr() {
+            Expr::Ident(Ident { sym, .. }) => {
                 if strict == YesMaybe::Yes && (&*sym == "arguments" || &*sym == "eval") {
                     return false;
                 }
@@ -78,9 +78,7 @@ pub(super) trait ExprExt {
             | Expr::Class(..)
             | Expr::Tpl(..)
             | Expr::TaggedTpl(..) => false,
-            Expr::Paren(ParenExpr { ref expr, .. }) => {
-                expr.is_valid_simple_assignment_target(strict)
-            }
+            Expr::Paren(ParenExpr { expr, .. }) => expr.is_valid_simple_assignment_target(strict),
 
             Expr::Member(..) => true,
 
@@ -110,7 +108,7 @@ pub(super) trait ExprExt {
             | Expr::JSXElement(..)
             | Expr::JSXFragment(..) => false,
 
-            Expr::OptChain(OptChainExpr { ref expr, .. }) => {
+            Expr::OptChain(OptChainExpr { expr, .. }) => {
                 expr.is_valid_simple_assignment_target(strict)
             }
 

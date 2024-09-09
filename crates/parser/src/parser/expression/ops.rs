@@ -276,15 +276,15 @@ impl<I: Tokens> Parser<I> {
             };
 
             if op == op!("delete") {
-                if let Expr::Ident(ref i) = *arg {
+                if let Expr::Ident(i) = arg.as_ref() {
                     self.emit_strict_mode_err(get_span!(self, i.node_id), SyntaxError::TS1102)
                 }
             }
 
             if self.input.syntax().typescript() && op == op!("delete") {
                 fn unwrap_paren(e: &Expr) -> &Expr {
-                    match *e {
-                        Expr::Paren(ref p) => unwrap_paren(&p.expr),
+                    match e {
+                        Expr::Paren(p) => unwrap_paren(&p.expr),
                         _ => e,
                     }
                 }

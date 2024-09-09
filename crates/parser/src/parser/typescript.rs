@@ -35,8 +35,8 @@ impl<I: Tokens> Parser<I> {
         }
 
         let pos = {
-            let modifier = match *cur!(self, true)? {
-                Token::Word(Word::Ident(ref w)) => w,
+            let modifier = match cur!(self, true)? {
+                Token::Word(Word::Ident(w)) => w,
                 _ => return Ok(None),
             };
 
@@ -1757,8 +1757,8 @@ impl<I: Tokens> Parser<I> {
             if is!(p, "global") {
                 p.parse_ts_ambient_external_module_decl(start)?;
             } else if is!(p, IdentName) {
-                let value = match *cur!(p, true)? {
-                    Token::Word(ref w) => w.clone().into(),
+                let value = match cur!(p, true)? {
+                    Token::Word(w) => w.clone().into(),
                     _ => unreachable!(),
                 };
                 return p.parse_ts_decl(start, decorators, value, true);

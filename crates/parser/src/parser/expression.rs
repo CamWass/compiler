@@ -530,7 +530,7 @@ impl<I: Tokens> Parser<I> {
                 let result = self.try_parse_ts(|p| {
                     if !no_call
                         && p.at_possible_async(match obj_ref {
-                            ExprOrSuper::Expr(ref expr) => &*expr,
+                            ExprOrSuper::Expr(expr) => &*expr,
                             _ => unreachable!(),
                         })?
                     {
@@ -559,8 +559,8 @@ impl<I: Tokens> Parser<I> {
                             true,
                         )))
                     } else if is!(p, '`') {
-                        p.parse_tagged_tpl(match *obj_ref {
-                            ExprOrSuper::Expr(ref obj) => obj.clone_node(program_data!(p)),
+                        p.parse_tagged_tpl(match obj_ref {
+                            ExprOrSuper::Expr(obj) => obj.clone_node(program_data!(p)),
                             _ => unreachable!(),
                         })
                         .map(|expr| (Box::new(Expr::TaggedTpl(expr)), true))
@@ -987,7 +987,7 @@ impl<I: Tokens> Parser<I> {
                             );
                         }
                     }
-                    Pat::Expr(ref expr) => unreachable!("invalid pattern: Expr({:?})", expr),
+                    Pat::Expr(expr) => unreachable!("invalid pattern: Expr({:?})", expr),
                     Pat::Invalid(..) => {
                         // We don't have to panic here.
                         // See: https://github.com/swc-project/swc/issues/1170
@@ -1676,8 +1676,8 @@ impl<I: Tokens> Parser<I> {
     pub(super) fn check_assign_target(&mut self, expr: &Expr, deny_call: bool) {
         // We follow behaviour of tsc
         if self.input.syntax().typescript() && self.syntax().early_errors() {
-            let is_eval_or_arguments = match *expr {
-                Expr::Ident(ref i) => i.sym == js_word!("eval") || i.sym == js_word!("arguments"),
+            let is_eval_or_arguments = match expr {
+                Expr::Ident(i) => i.sym == js_word!("eval") || i.sym == js_word!("arguments"),
                 _ => false,
             };
 
@@ -1690,7 +1690,7 @@ impl<I: Tokens> Parser<I> {
                     Expr::Lit(..) => false,
                     Expr::Call(..) => deny_call,
                     Expr::Bin(..) => false,
-                    Expr::Paren(ref p) => should_deny(&p.expr, deny_call),
+                    Expr::Paren(p) => should_deny(&p.expr, deny_call),
 
                     _ => true,
                 }
@@ -1712,8 +1712,8 @@ impl<I: Tokens> Parser<I> {
 }
 
 fn is_import(obj: &ExprOrSuper) -> bool {
-    match *obj {
-        ExprOrSuper::Expr(ref expr) => matches!(
+    match obj {
+        ExprOrSuper::Expr(expr) => matches!(
             **expr,
             Expr::Ident(Ident {
                 sym: js_word!("import"),

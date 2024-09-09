@@ -73,7 +73,7 @@ pub enum StringPart {
 impl StringPart {
     pub fn content(&self) -> &str {
         match self {
-            &StringPart::Normal(ref s) | &StringPart::Highlighted(ref s) => s,
+            StringPart::Normal(s) | StringPart::Highlighted(s) => s,
         }
     }
 }
@@ -154,15 +154,15 @@ impl Diagnostic {
         found_extra: &dyn fmt::Display,
     ) -> &mut Self {
         let mut msg: Vec<_> = vec![(format!("expected {} `", label), Style::NoStyle)];
-        msg.extend(expected.0.iter().map(|x| match *x {
-            StringPart::Normal(ref s) => (s.to_owned(), Style::NoStyle),
-            StringPart::Highlighted(ref s) => (s.to_owned(), Style::Highlight),
+        msg.extend(expected.0.iter().map(|x| match x {
+            StringPart::Normal(s) => (s.to_owned(), Style::NoStyle),
+            StringPart::Highlighted(s) => (s.to_owned(), Style::Highlight),
         }));
         msg.push((format!("`{}\n", expected_extra), Style::NoStyle));
         msg.push((format!("   found {} `", label), Style::NoStyle));
-        msg.extend(found.0.iter().map(|x| match *x {
-            StringPart::Normal(ref s) => (s.to_owned(), Style::NoStyle),
-            StringPart::Highlighted(ref s) => (s.to_owned(), Style::Highlight),
+        msg.extend(found.0.iter().map(|x| match x {
+            StringPart::Normal(s) => (s.to_owned(), Style::NoStyle),
+            StringPart::Highlighted(s) => (s.to_owned(), Style::Highlight),
         }));
         msg.push((format!("`{}", found_extra), Style::NoStyle));
 

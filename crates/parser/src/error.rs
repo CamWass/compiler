@@ -281,7 +281,7 @@ impl SyntaxError {
             SyntaxError::UnterminatedBlockComment => "Unterminated block comment".into(),
             SyntaxError::UnterminatedStrLit => "Unterminated string constant".into(),
             SyntaxError::ExpectedUnicodeEscape => "Expected unicode escape".into(),
-            SyntaxError::EscapeInReservedWord { ref word } => {
+            SyntaxError::EscapeInReservedWord { word } => {
                 format!("Unexpected escape sequence in reserved word: {}", word).into()
             }
             SyntaxError::UnterminatedRegxp => "Unterminated regexp literal".into(),
@@ -317,14 +317,11 @@ impl SyntaxError {
             SyntaxError::LineBreakBeforeArrow => {
                 "Unexpected line break between arrow head and arrow".into()
             }
-            SyntaxError::Unexpected {
-                ref got,
-                ref expected,
-            } => format!("Unexpected token `{}`. Expected {}", got, expected).into(),
+            SyntaxError::Unexpected { got, expected } => format!("Unexpected token `{}`. Expected {}", got, expected).into(),
 
             SyntaxError::ReservedWordInImport => "cannot import as reserved word".into(),
             SyntaxError::AssignProperty => "assignment property is invalid syntax".into(),
-            SyntaxError::Expected(token, ref got) => {
+            SyntaxError::Expected(token, got) => {
                 format!("Expected `{:?}`, got `{}`", token, got).into()
             }
             SyntaxError::ExpectedSemiForExprStmt { .. } => "Expected ';', '}' or <eof>".into(),
@@ -354,7 +351,7 @@ impl SyntaxError {
             SyntaxError::NotSimpleAssign => "Cannot assign to this".into(),
             SyntaxError::ExpectedIdent => "Expected ident".into(),
             SyntaxError::ExpctedSemi => "Expected ';' or line break".into(),
-            SyntaxError::DuplicateLabel(ref label) => {
+            SyntaxError::DuplicateLabel(label) => {
                 format!("Label {} is already declared", label).into()
             }
             SyntaxError::AsyncGenerator => "An async function cannot be generator".into(),
@@ -390,7 +387,7 @@ impl SyntaxError {
             SyntaxError::JSXExpectedClosingTagForLtGt => {
                 "Expected corresponding JSX closing tag for <>".into()
             }
-            SyntaxError::JSXExpectedClosingTag { ref tag } => {
+            SyntaxError::JSXExpectedClosingTag { tag } => {
                 format!("Expected corresponding JSX closing tag for <{}>", tag).into()
             }
             SyntaxError::InvalidLeadingDecorator => {

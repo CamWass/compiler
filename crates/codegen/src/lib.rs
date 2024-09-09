@@ -40,14 +40,14 @@ pub struct Emitter<'a> {
 
 impl<'a> Emitter<'a> {
     pub fn emit_program(&mut self, node: &Program) -> Result {
-        match *node {
-            Program::Module(ref m) => self.emit_module(m),
-            Program::Script(ref s) => self.emit_script(s),
+        match node {
+            Program::Module(m) => self.emit_module(m),
+            Program::Script(s) => self.emit_script(s),
         }
     }
 
     pub fn emit_module(&mut self, node: &Module) -> Result {
-        if let Some(ref shebang) = node.shebang {
+        if let Some(shebang) = &node.shebang {
             punct!(self, "#!");
             self.wr.write_str_lit(DUMMY_SP, &*shebang)?;
             self.wr.write_line()?;
@@ -59,7 +59,7 @@ impl<'a> Emitter<'a> {
     }
 
     pub fn emit_script(&mut self, node: &Script) -> Result {
-        if let Some(ref shebang) = node.shebang {
+        if let Some(shebang) = &node.shebang {
             punct!(self, "#!");
             self.wr.write_str_lit(DUMMY_SP, &*shebang)?;
             self.wr.write_line()?;
@@ -71,22 +71,22 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_module_item(&mut self, node: &ModuleItem) -> Result {
-        match *node {
-            ModuleItem::Stmt(ref stmt) => self.emit_stmt(stmt),
-            ModuleItem::ModuleDecl(ref decl) => self.emit_module_decl(decl),
+        match node {
+            ModuleItem::Stmt(stmt) => self.emit_stmt(stmt),
+            ModuleItem::ModuleDecl(decl) => self.emit_module_decl(decl),
         }
     }
 
     fn emit_module_decl(&mut self, node: &ModuleDecl) -> Result {
         self.emit_leading_comments_of_span(get_span!(self, node.node_id()), false)?;
 
-        match *node {
-            ModuleDecl::Import(ref d) => self.emit_import(d),
-            ModuleDecl::ExportDecl(ref d) => self.emit_export_decl(d),
-            ModuleDecl::ExportNamed(ref d) => self.emit_named_export(d),
-            ModuleDecl::ExportDefaultDecl(ref d) => self.emit_export_default_decl(d),
-            ModuleDecl::ExportDefaultExpr(ref n) => self.emit_export_default_expr(n),
-            ModuleDecl::ExportAll(ref d) => self.emit_export_all(d),
+        match node {
+            ModuleDecl::Import(d) => self.emit_import(d),
+            ModuleDecl::ExportDecl(d) => self.emit_export_decl(d),
+            ModuleDecl::ExportNamed(d) => self.emit_named_export(d),
+            ModuleDecl::ExportDefaultDecl(d) => self.emit_export_default_decl(d),
+            ModuleDecl::ExportDefaultExpr(n) => self.emit_export_default_expr(n),
+            ModuleDecl::ExportAll(d) => self.emit_export_all(d),
         }?;
         self.wr.write_line()
     }
@@ -114,9 +114,9 @@ impl<'a> Emitter<'a> {
         space!(self);
         keyword!(self, "default");
         space!(self);
-        match node.decl {
-            DefaultDecl::Class(ref n) => self.emit_class_expr(n),
-            DefaultDecl::Fn(ref n) => self.emit_fn_expr(n),
+        match &node.decl {
+            DefaultDecl::Class(n) => self.emit_class_expr(n),
+            DefaultDecl::Fn(n) => self.emit_fn_expr(n),
         }?;
         formatting_semi!(self);
         Ok(())
@@ -134,14 +134,14 @@ impl<'a> Emitter<'a> {
         let mut emitted_ns = false;
         for specifier in &node.specifiers {
             match specifier {
-                ImportSpecifier::Named(ref s) => {
+                ImportSpecifier::Named(s) => {
                     specifiers.push(s);
                 }
-                ImportSpecifier::Default(ref s) => {
+                ImportSpecifier::Default(s) => {
                     self.emit_ident(&s.local)?;
                     emitted_default = true;
                 }
-                ImportSpecifier::Namespace(ref ns) => {
+                ImportSpecifier::Namespace(ns) => {
                     if emitted_default {
                         punct!(self, ",");
                         formatting_space!(self);
@@ -190,7 +190,7 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_import_specifier(&mut self, node: &ImportNamedSpecifier) -> Result {
-        if let Some(ref imported) = node.imported {
+        if let Some(imported) = &node.imported {
             self.emit_ident(imported)?;
             space!(self);
             keyword!(self, "as");
@@ -205,8 +205,8 @@ impl<'a> Emitter<'a> {
             ExportSpecifier::Default(_) => {
                 unimplemented!("codegen of `export default from 'foo';`")
             }
-            ExportSpecifier::Namespace(ref node) => self.emit_namespace_export_specifier(node),
-            ExportSpecifier::Named(ref node) => self.emit_named_export_specifier(node),
+            ExportSpecifier::Namespace(node) => self.emit_namespace_export_specifier(node),
+            ExportSpecifier::Named(node) => self.emit_named_export_specifier(node),
         }
     }
 
@@ -223,7 +223,7 @@ impl<'a> Emitter<'a> {
     fn emit_named_export_specifier(&mut self, node: &ExportNamedSpecifier) -> Result {
         self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
 
-        if let Some(ref exported) = node.exported {
+        if let Some(exported) = &node.exported {
             self.emit_ident(&node.orig)?;
             space!(self);
             keyword!(self, "as");
@@ -293,7 +293,7 @@ impl<'a> Emitter<'a> {
             punct!(self, "}");
         }
 
-        if let Some(ref src) = node.src {
+        if let Some(src) = &node.src {
             if has_named_specs || (!has_namespace_spec && !has_named_specs) {
                 formatting_space!(self);
             } else if has_namespace_spec {
@@ -325,25 +325,25 @@ impl<'a> Emitter<'a> {
         let span = get_span!(self, node.node_id());
         self.emit_leading_comments_of_span(span, false)?;
 
-        match *node {
+        match node {
             Lit::Bool(Bool { value, .. }) => {
-                if value {
+                if *value {
                     keyword!(self, span, "true")
                 } else {
                     keyword!(self, span, "false")
                 }
             }
             Lit::Null(_) => keyword!(self, span, "null"),
-            Lit::Str(ref s) => self.emit_str_lit(s)?,
-            Lit::BigInt(ref s) => self.emit_big_lit(s)?,
-            Lit::Num(ref n) => self.emit_num_lit(n)?,
-            Lit::Regex(ref n) => {
+            Lit::Str(s) => self.emit_str_lit(s)?,
+            Lit::BigInt(s) => self.emit_big_lit(s)?,
+            Lit::Num(n) => self.emit_num_lit(n)?,
+            Lit::Regex(n) => {
                 punct!(self, "/");
                 self.wr.write_str(&n.exp)?;
                 punct!(self, "/");
                 self.wr.write_str(&n.flags)?;
             }
-            Lit::JSXText(ref n) => self.emit_jsx_text(n)?,
+            Lit::JSXText(n) => self.emit_jsx_text(n)?,
         }
         Ok(())
     }
@@ -436,9 +436,9 @@ impl<'a> Emitter<'a> {
     // }
 
     fn emit_expr_or_super(&mut self, node: &ExprOrSuper) -> Result {
-        match *node {
-            ExprOrSuper::Expr(ref e) => self.emit_expr(e),
-            ExprOrSuper::Super(ref n) => self.emit_super(n),
+        match node {
+            ExprOrSuper::Expr(e) => self.emit_expr(e),
+            ExprOrSuper::Super(n) => self.emit_super(n),
         }
     }
 
@@ -448,40 +448,40 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_expr(&mut self, node: &Expr) -> Result {
-        match *node {
-            Expr::Array(ref n) => self.emit_array_lit(n),
-            Expr::Arrow(ref n) => self.emit_arrow_expr(n),
-            Expr::Assign(ref n) => self.emit_assign_expr(n),
-            Expr::Await(ref n) => self.emit_await_expr(n),
-            Expr::Bin(ref n) => self.emit_bin_expr(n),
-            Expr::Call(ref n) => self.emit_call_expr(n),
-            Expr::Class(ref n) => self.emit_class_expr(n),
-            Expr::Cond(ref n) => self.emit_cond_expr(n),
-            Expr::Fn(ref n) => self.emit_fn_expr(n),
-            Expr::Ident(ref n) => self.emit_ident(n),
-            Expr::Lit(ref n) => self.emit_lit(n),
-            Expr::Member(ref n) => self.emit_member_expr(n),
-            Expr::MetaProp(ref n) => self.emit_meta_prop_expr(n),
-            Expr::New(ref n) => self.emit_new_expr(n),
-            Expr::Object(ref n) => self.emit_object_lit(n),
-            Expr::Paren(ref n) => self.emit_paren_expr(n),
-            Expr::Seq(ref n) => self.emit_seq_expr(n),
-            Expr::TaggedTpl(ref n) => self.emit_tagged_tpl_lit(n),
-            Expr::This(ref n) => self.emit_this_expr(n),
-            Expr::Tpl(ref n) => self.emit_tpl_lit(n),
-            Expr::Unary(ref n) => self.emit_unary_expr(n),
-            Expr::Update(ref n) => self.emit_update_expr(n),
-            Expr::Yield(ref n) => self.emit_yield_expr(n),
-            Expr::PrivateName(ref n) => self.emit_private_name(n),
+        match node {
+            Expr::Array(n) => self.emit_array_lit(n),
+            Expr::Arrow(n) => self.emit_arrow_expr(n),
+            Expr::Assign(n) => self.emit_assign_expr(n),
+            Expr::Await(n) => self.emit_await_expr(n),
+            Expr::Bin(n) => self.emit_bin_expr(n),
+            Expr::Call(n) => self.emit_call_expr(n),
+            Expr::Class(n) => self.emit_class_expr(n),
+            Expr::Cond(n) => self.emit_cond_expr(n),
+            Expr::Fn(n) => self.emit_fn_expr(n),
+            Expr::Ident(n) => self.emit_ident(n),
+            Expr::Lit(n) => self.emit_lit(n),
+            Expr::Member(n) => self.emit_member_expr(n),
+            Expr::MetaProp(n) => self.emit_meta_prop_expr(n),
+            Expr::New(n) => self.emit_new_expr(n),
+            Expr::Object(n) => self.emit_object_lit(n),
+            Expr::Paren(n) => self.emit_paren_expr(n),
+            Expr::Seq(n) => self.emit_seq_expr(n),
+            Expr::TaggedTpl(n) => self.emit_tagged_tpl_lit(n),
+            Expr::This(n) => self.emit_this_expr(n),
+            Expr::Tpl(n) => self.emit_tpl_lit(n),
+            Expr::Unary(n) => self.emit_unary_expr(n),
+            Expr::Update(n) => self.emit_update_expr(n),
+            Expr::Yield(n) => self.emit_yield_expr(n),
+            Expr::PrivateName(n) => self.emit_private_name(n),
 
-            Expr::JSXMember(ref n) => self.emit_jsx_member_expr(n),
-            Expr::JSXNamespacedName(ref n) => self.emit_jsx_namespaced_name(n),
-            Expr::JSXEmpty(ref n) => self.emit_jsx_empty_expr(n),
-            Expr::JSXElement(ref n) => self.emit_jsx_element(n),
-            Expr::JSXFragment(ref n) => self.emit_jsx_fragment(n),
+            Expr::JSXMember(n) => self.emit_jsx_member_expr(n),
+            Expr::JSXNamespacedName(n) => self.emit_jsx_namespaced_name(n),
+            Expr::JSXEmpty(n) => self.emit_jsx_empty_expr(n),
+            Expr::JSXElement(n) => self.emit_jsx_element(n),
+            Expr::JSXFragment(n) => self.emit_jsx_fragment(n),
 
-            Expr::OptChain(ref n) => self.emit_opt_chain(n),
-            Expr::Invalid(ref n) => self.emit_invalid(n),
+            Expr::OptChain(n) => self.emit_opt_chain(n),
+            Expr::Invalid(n) => self.emit_invalid(n),
         }
     }
 
@@ -489,8 +489,8 @@ impl<'a> Emitter<'a> {
         let span = get_span!(self, n.node_id);
         self.emit_leading_comments_of_span(span, false)?;
 
-        match *n.expr {
-            Expr::Member(ref e) => {
+        match n.expr.as_ref() {
+            Expr::Member(e) => {
                 self.emit_expr_or_super(&e.obj)?;
                 punct!(self, "?.");
 
@@ -502,7 +502,7 @@ impl<'a> Emitter<'a> {
                     self.emit_expr(&e.prop)?;
                 }
             }
-            Expr::Call(ref e) => {
+            Expr::Call(e) => {
                 self.emit_expr_or_super(&e.callee)?;
                 punct!(self, "?.");
 
@@ -545,7 +545,7 @@ impl<'a> Emitter<'a> {
         space!(self);
         self.emit_expr(&node.callee)?;
 
-        if let Some(ref args) = node.args {
+        if let Some(args) = &node.args {
             punct!(self, "(");
             self.emit_expr_or_spreads(span, args, ListFormat::NewExpressionArguments)?;
             punct!(self, ")");
@@ -581,8 +581,8 @@ impl<'a> Emitter<'a> {
 
     /// `1..toString` is a valid property access, emit a dot after the literal
     pub fn needs_2dots_for_property_access(&self, expr: &ExprOrSuper) -> bool {
-        match *expr {
-            ExprOrSuper::Expr(ref expr) => {
+        match expr {
+            ExprOrSuper::Expr(expr) => {
                 match expr.as_ref() {
                     Expr::Lit(Lit::Num(Number { value, raw, .. })) => {
                         if value.is_nan() || value.is_infinite() {
@@ -807,7 +807,7 @@ impl<'a> Emitter<'a> {
 
         keyword!(self, "class");
 
-        if let Some(ref i) = node.ident {
+        if let Some(i) = &node.ident {
             space!(self);
             self.emit_ident(i)?;
         }
@@ -840,13 +840,13 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_class_member(&mut self, node: &ClassMember) -> Result {
-        match *node {
-            ClassMember::Constructor(ref n) => self.emit_class_constructor(n),
-            ClassMember::ClassProp(ref n) => self.emit_class_prop(n),
-            ClassMember::Method(ref n) => self.emit_class_method(n),
-            ClassMember::PrivateMethod(ref n) => self.emit_private_method(n),
-            ClassMember::PrivateProp(ref n) => self.emit_private_prop(n),
-            ClassMember::Empty(ref n) => self.emit_empty_stmt(n),
+        match node {
+            ClassMember::Constructor(n) => self.emit_class_constructor(n),
+            ClassMember::ClassProp(n) => self.emit_class_prop(n),
+            ClassMember::Method(n) => self.emit_class_method(n),
+            ClassMember::PrivateMethod(n) => self.emit_private_method(n),
+            ClassMember::PrivateProp(n) => self.emit_private_prop(n),
+            ClassMember::Empty(n) => self.emit_empty_stmt(n),
         }
     }
 
@@ -999,12 +999,12 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_prop_name(&mut self, node: &PropName) -> Result {
-        match *node {
-            PropName::Ident(ref n) => self.emit_ident(n),
-            PropName::Str(ref n) => self.emit_str_lit(n),
-            PropName::Num(ref n) => self.emit_num_lit(n),
-            PropName::Computed(ref n) => self.emit_computed_prop_name(n),
-            PropName::BigInt(ref n) => self.emit_big_lit(n),
+        match node {
+            PropName::Ident(n) => self.emit_ident(n),
+            PropName::Str(n) => self.emit_str_lit(n),
+            PropName::Num(n) => self.emit_num_lit(n),
+            PropName::Computed(n) => self.emit_computed_prop_name(n),
+            PropName::BigInt(n) => self.emit_big_lit(n),
         }
     }
 
@@ -1041,7 +1041,7 @@ impl<'a> Emitter<'a> {
         if node.function.is_generator {
             punct!(self, "*");
         }
-        if let Some(ref i) = node.ident {
+        if let Some(i) = &node.ident {
             space!(self);
             self.emit_ident(i)?;
         }
@@ -1152,7 +1152,7 @@ impl<'a> Emitter<'a> {
             operator!(self, "*");
         }
 
-        if let Some(ref arg) = node.arg {
+        if let Some(arg) = &node.arg {
             if arg.starts_with_alpha_num() {
                 space!(self);
             } else {
@@ -1237,14 +1237,14 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_prop(&mut self, node: &Prop) -> Result {
-        match *node {
-            Prop::Shorthand(ref n) => self.emit_ident(n),
-            Prop::KeyValue(ref n) => self.emit_kv_prop(n),
-            Prop::Assign(ref n) => self.emit_assign_prop(n),
-            Prop::Getter(ref n) => self.emit_getter_prop(n),
-            Prop::Setter(ref n) => self.emit_setter_prop(n),
-            Prop::Method(ref n) => self.emit_method_prop(n),
-            Prop::Spread(ref n) => self.emit_spread_assignment(n),
+        match node {
+            Prop::Shorthand(n) => self.emit_ident(n),
+            Prop::KeyValue(n) => self.emit_kv_prop(n),
+            Prop::Assign(n) => self.emit_assign_prop(n),
+            Prop::Getter(n) => self.emit_getter_prop(n),
+            Prop::Setter(n) => self.emit_setter_prop(n),
+            Prop::Method(n) => self.emit_method_prop(n),
+            Prop::Spread(n) => self.emit_spread_assignment(n),
         }
     }
 
@@ -1600,13 +1600,13 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_pat(&mut self, node: &Pat) -> Result {
-        match *node {
-            Pat::Array(ref n) => self.emit_array_pat(n),
-            Pat::Assign(ref n) => self.emit_assign_pat(n),
-            Pat::Expr(ref n) => self.emit_expr(n),
-            Pat::Ident(ref n) => self.emit_binding_ident(n),
-            Pat::Object(ref n) => self.emit_object_pat(n),
-            Pat::Rest(ref n) => self.emit_rest_pat(n),
+        match node {
+            Pat::Array(n) => self.emit_array_pat(n),
+            Pat::Assign(n) => self.emit_assign_pat(n),
+            Pat::Expr(n) => self.emit_expr(n),
+            Pat::Ident(n) => self.emit_binding_ident(n),
+            Pat::Object(n) => self.emit_object_pat(n),
+            Pat::Rest(n) => self.emit_rest_pat(n),
             Pat::Invalid(..) => invalid_pat(),
         }
     }
@@ -1626,9 +1626,9 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_pat_or_expr(&mut self, node: &PatOrExpr) -> Result {
-        match *node {
-            PatOrExpr::Expr(ref n) => self.emit_expr(n),
-            PatOrExpr::Pat(ref n) => self.emit_pat(n),
+        match node {
+            PatOrExpr::Expr(n) => self.emit_expr(n),
+            PatOrExpr::Pat(n) => self.emit_pat(n),
         }
     }
 
@@ -1689,10 +1689,10 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_object_pat_prop(&mut self, node: &ObjectPatProp) -> Result {
-        match *node {
-            ObjectPatProp::KeyValue(ref node) => self.emit_object_kv_pat(node),
-            ObjectPatProp::Assign(ref node) => self.emit_object_assign_pat(node),
-            ObjectPatProp::Rest(ref node) => self.emit_rest_pat(node),
+        match node {
+            ObjectPatProp::KeyValue(node) => self.emit_object_kv_pat(node),
+            ObjectPatProp::Assign(node) => self.emit_object_assign_pat(node),
+            ObjectPatProp::Rest(node) => self.emit_rest_pat(node),
         }
     }
 
@@ -1712,7 +1712,7 @@ impl<'a> Emitter<'a> {
 
         self.emit_ident(&node.key)?;
         formatting_space!(self);
-        if let Some(ref value) = node.value {
+        if let Some(value) = &node.value {
             punct!(self, "=");
             self.emit_expr(&value)?;
             space!(self);
@@ -1721,9 +1721,9 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_var_decl_or_pat(&mut self, node: &VarDeclOrPat) -> Result {
-        match *node {
-            VarDeclOrPat::Pat(ref n) => self.emit_pat(n),
-            VarDeclOrPat::VarDecl(ref n) => self.emit_var_decl(n),
+        match node {
+            VarDeclOrPat::Pat(n) => self.emit_pat(n),
+            VarDeclOrPat::VarDecl(n) => self.emit_var_decl(n),
         }
     }
 }
@@ -1731,29 +1731,28 @@ impl<'a> Emitter<'a> {
 /// Statements
 impl<'a> Emitter<'a> {
     fn emit_stmt(&mut self, node: &Stmt) -> Result {
-        // TODO: remove all of these 'ref's
-        match *node {
-            Stmt::Expr(ref e) => self.emit_expr_stmt(e),
-            Stmt::Block(ref e) => {
+        match node {
+            Stmt::Expr(e) => self.emit_expr_stmt(e),
+            Stmt::Block(e) => {
                 return self.emit_block_stmt(e);
             }
-            Stmt::Empty(ref e) => self.emit_empty_stmt(e),
-            Stmt::Debugger(ref e) => self.emit_debugger_stmt(e),
-            Stmt::With(ref e) => self.emit_with_stmt(e),
-            Stmt::Return(ref e) => self.emit_return_stmt(e),
-            Stmt::Labeled(ref e) => self.emit_labeled_stmt(e),
-            Stmt::Break(ref e) => self.emit_break_stmt(e),
-            Stmt::Continue(ref e) => self.emit_continue_stmt(e),
-            Stmt::If(ref e) => self.emit_if_stmt(e),
-            Stmt::Switch(ref e) => self.emit_switch_stmt(e),
-            Stmt::Throw(ref e) => self.emit_throw_stmt(e),
-            Stmt::Try(ref e) => self.emit_try_stmt(e),
-            Stmt::While(ref e) => self.emit_while_stmt(e),
-            Stmt::DoWhile(ref e) => self.emit_do_while_stmt(e),
-            Stmt::For(ref e) => self.emit_for_stmt(e),
-            Stmt::ForIn(ref e) => self.emit_for_in_stmt(e),
-            Stmt::ForOf(ref e) => self.emit_for_of_stmt(e),
-            Stmt::Decl(ref e) => self.emit_decl(e),
+            Stmt::Empty(e) => self.emit_empty_stmt(e),
+            Stmt::Debugger(e) => self.emit_debugger_stmt(e),
+            Stmt::With(e) => self.emit_with_stmt(e),
+            Stmt::Return(e) => self.emit_return_stmt(e),
+            Stmt::Labeled(e) => self.emit_labeled_stmt(e),
+            Stmt::Break(e) => self.emit_break_stmt(e),
+            Stmt::Continue(e) => self.emit_continue_stmt(e),
+            Stmt::If(e) => self.emit_if_stmt(e),
+            Stmt::Switch(e) => self.emit_switch_stmt(e),
+            Stmt::Throw(e) => self.emit_throw_stmt(e),
+            Stmt::Try(e) => self.emit_try_stmt(e),
+            Stmt::While(e) => self.emit_while_stmt(e),
+            Stmt::DoWhile(e) => self.emit_do_while_stmt(e),
+            Stmt::For(e) => self.emit_for_stmt(e),
+            Stmt::ForIn(e) => self.emit_for_in_stmt(e),
+            Stmt::ForOf(e) => self.emit_for_of_stmt(e),
+            Stmt::Decl(e) => self.emit_decl(e),
         }?;
         self.emit_trailing_comments_of_pos(get_span!(self, node.node_id()).hi(), true, true)?;
 
@@ -1844,7 +1843,7 @@ impl<'a> Emitter<'a> {
         self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
 
         keyword!(self, "return");
-        if let Some(ref arg) = node.arg {
+        if let Some(arg) = &node.arg {
             let arg_span = get_span!(self, arg.node_id());
             let need_paren = !arg_span.is_dummy()
                 && if let Some(cmt) = self.comments {
@@ -1881,7 +1880,7 @@ impl<'a> Emitter<'a> {
 
     fn emit_break_stmt(&mut self, node: &BreakStmt) -> Result {
         keyword!(self, "break");
-        if let Some(ref label) = node.label {
+        if let Some(label) = &node.label {
             space!(self);
             self.emit_ident(label)?;
         }
@@ -1891,7 +1890,7 @@ impl<'a> Emitter<'a> {
 
     fn emit_continue_stmt(&mut self, node: &ContinueStmt) -> Result {
         keyword!(self, "continue");
-        if let Some(ref label) = node.label {
+        if let Some(label) = &node.label {
             space!(self);
             self.emit_ident(label)?;
         }
@@ -1920,7 +1919,7 @@ impl<'a> Emitter<'a> {
 
         self.emit_single_stmt(&node.cons, true)?;
 
-        if let Some(ref alt) = node.alt {
+        if let Some(alt) = &node.alt {
             if is_cons_block {
                 formatting_space!(self);
             }
@@ -1977,7 +1976,7 @@ impl<'a> Emitter<'a> {
         let span = get_span!(self, node.node_id);
         self.emit_leading_comments_of_span(span, false)?;
 
-        if let Some(ref test) = node.test {
+        if let Some(test) = &node.test {
             keyword!(self, "case");
             space!(self);
             self.emit_expr(test)?;
@@ -2023,12 +2022,12 @@ impl<'a> Emitter<'a> {
         formatting_space!(self);
         self.emit_block_stmt(&node.block)?;
 
-        if let Some(ref catch) = node.handler {
+        if let Some(catch) = &node.handler {
             formatting_space!(self);
             self.emit_catch_clause(catch)?;
         }
 
-        if let Some(ref finally) = node.finalizer {
+        if let Some(finally) = &node.finalizer {
             formatting_space!(self);
             keyword!(self, "finally");
             // space!();
@@ -2146,9 +2145,9 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_var_decl_or_expr(&mut self, node: &VarDeclOrExpr) -> Result {
-        match *node {
-            VarDeclOrExpr::Expr(ref node) => self.emit_expr(node),
-            VarDeclOrExpr::VarDecl(ref node) => self.emit_var_decl(node),
+        match node {
+            VarDeclOrExpr::Expr(node) => self.emit_expr(node),
+            VarDeclOrExpr::VarDecl(node) => self.emit_var_decl(node),
         }
     }
 }
@@ -2168,7 +2167,7 @@ impl<'a> Emitter<'a> {
 /// whose operand is a plus expression - (++(+x)) The same is true of minus of
 /// course.
 fn should_emit_whitespace_before_operand(node: &UnaryExpr) -> bool {
-    match *node {
+    match node {
         UnaryExpr {
             op: op!("void"), ..
         }

@@ -43,7 +43,7 @@ pub fn compute_fall_through(n: Node) -> Node {
             match &f.init {
                 Some(init) => match init {
                     VarDeclOrExpr::Expr(expr) => Node::from(expr.as_ref()),
-                    VarDeclOrExpr::VarDecl(ref decl) => Node::from(decl),
+                    VarDeclOrExpr::VarDecl(decl) => Node::from(decl),
                 },
                 // If there is no init, transfer control immediately to the
                 // for-loop.

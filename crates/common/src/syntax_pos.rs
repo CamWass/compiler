@@ -71,14 +71,14 @@ pub enum FileName {
 
 impl std::fmt::Display for FileName {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match *self {
-            FileName::Real(ref path) => write!(fmt, "{}", path.display()),
-            FileName::Macros(ref name) => write!(fmt, "<{} macros>", name),
+        match self {
+            FileName::Real(path) => write!(fmt, "{}", path.display()),
+            FileName::Macros(name) => write!(fmt, "<{} macros>", name),
             FileName::QuoteExpansion => write!(fmt, "<quote expansion>"),
             FileName::MacroExpansion => write!(fmt, "<macro expansion>"),
             FileName::Anon => write!(fmt, "<anon>"),
             FileName::ProcMacroSourceCode => write!(fmt, "<proc-macro source code>"),
-            FileName::Custom(ref s) => write!(fmt, "<{}>", s),
+            FileName::Custom(s) => write!(fmt, "<{}>", s),
         }
     }
 }

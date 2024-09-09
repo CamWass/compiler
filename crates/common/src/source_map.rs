@@ -1055,8 +1055,8 @@ impl SourceMap {
             }
 
             let f;
-            let f = match cur_file {
-                Some(ref f) if f.start_pos <= pos && pos < f.end_pos => f,
+            let f = match &cur_file {
+                Some(f) if f.start_pos <= pos && pos < f.end_pos => f,
                 _ => {
                     f = self.lookup_source_file(pos);
                     src_id = builder.add_source(&config.file_name_to_source(&f.name));
@@ -1150,7 +1150,7 @@ impl FilePathMapping {
         // NOTE: We are iterating over the mapping entries from last to first
         //       because entries specified later on the command line should
         //       take precedence.
-        for &(ref from, ref to) in self.mapping.iter().rev() {
+        for (from, to) in self.mapping.iter().rev() {
             if let Ok(rest) = path.strip_prefix(from) {
                 return (to.join(rest), true);
             }

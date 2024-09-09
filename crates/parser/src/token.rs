@@ -441,8 +441,8 @@ impl From<Word> for JsWord {
 
 impl Debug for Word {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match *self {
-            Word::Ident(ref s) => Display::fmt(s, f),
+        match self {
+            Word::Ident(s) => Display::fmt(s, f),
             _ => {
                 let s: JsWord = self.clone().into();
                 Display::fmt(&s, f)
@@ -641,9 +641,9 @@ impl Token {
 
 impl Word {
     pub(crate) fn cow(&self) -> Cow<JsWord> {
-        match *self {
+        match self {
             Word::Keyword(k) => Cow::Owned(k.into_js_word()),
-            Word::Ident(ref w) => Cow::Borrowed(w),
+            Word::Ident(w) => Cow::Borrowed(w),
             Word::False => Cow::Owned(js_word!("false")),
             Word::True => Cow::Owned(js_word!("true")),
             Word::Null => Cow::Owned(js_word!("null")),

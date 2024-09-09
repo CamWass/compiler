@@ -142,7 +142,7 @@ impl Annotation {
     }
 
     pub fn has_label(&self) -> bool {
-        if let Some(ref label) = self.label {
+        if let Some(label) = &self.label {
             // Consider labels with no text as effectively not being there
             // to avoid weird output with unnecessary vertical lines, like:
             //
