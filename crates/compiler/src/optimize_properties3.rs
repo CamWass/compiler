@@ -18,12 +18,12 @@ use std::convert::TryInto;
 use crate::find_vars::{FunctionLike, VarId};
 use crate::optimize_properties2::simple_set::IndexSet;
 use crate::optimize_properties2::unionfind::UnionFind;
-use crate::optimize_properties2::{is_simple_prop_name, Id, NameId, PropKey, Renamer};
+use crate::optimize_properties2::{is_simple_prop_name, Id, NameId, PropKey};
 use crate::utils::unwrap_as;
 use crate::DefaultNameGenerator::DefaultNameGenerator;
 use ast::*;
 use atoms::{js_word, JsWord};
-use ecma_visit::{Visit, VisitMutWith, VisitWith};
+use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use global_common::SyntaxContext;
 use graph::{Graph, GraphEdge, SmallSet};
 use index::bit_set::{BitMatrix, BitSet, GrowableBitSet};
@@ -790,6 +790,24 @@ impl GraphVisitor<'_> {
                         left.append(&mut right);
                         ret!(left)
                     }
+                    BinaryOp::In => {
+                        self.get_rhs(&n.left, false);
+                        let obj = self.get_rhs(&n.right, true);
+
+                        if let Some(prop) = PropKey::from_expr(
+                            &n.left,
+                            self.store.unresolved_ctxt,
+                            true,
+                            &mut self.store.names,
+                        ) {
+                            for obj in &obj {
+                                self.reference_prop(*obj, prop);
+                            }
+                        } else {
+                            self.invalidate(&obj);
+                        }
+                        ret!(vec![PointerId::BOOL])
+                    }
                     _ => {
                         n.visit_children_with(self);
                         match n.op {
@@ -803,7 +821,6 @@ impl GraphVisitor<'_> {
                             | BinaryOp::LtEq
                             | BinaryOp::Gt
                             | BinaryOp::GtEq
-                            | BinaryOp::In
                             | BinaryOp::InstanceOf => {
                                 ret!(vec![PointerId::BOOL])
                             }
@@ -825,7 +842,8 @@ impl GraphVisitor<'_> {
 
                             BinaryOp::LogicalOr
                             | BinaryOp::LogicalAnd
-                            | BinaryOp::NullishCoalescing => unreachable!("handled above"),
+                            | BinaryOp::NullishCoalescing
+                            | BinaryOp::In => unreachable!("handled above"),
                         }
                     }
                 }
@@ -1865,5 +1883,63 @@ fn test_built_in_pointer_order() {
     for (i, p) in STATIC_POINTERS.iter().enumerate() {
         assert_eq!(i, p.0.as_usize());
         assert_eq!(BUILT_INS[i].0, p.0);
+    }
+}
+
+struct Renamer<'a> {
+    program_data: &'a mut ProgramData,
+    rename_map: FxHashMap<NodeId, JsWord>,
+}
+
+impl VisitMut<'_> for Renamer<'_> {
+    fn visit_mut_ident(&mut self, node: &mut Ident) {
+        if let Some(new_name) = self.rename_map.get(&node.node_id) {
+            node.sym = new_name.clone();
+        }
+    }
+
+    fn visit_mut_prop_name(&mut self, node: &mut PropName) {
+        let node_id_to_rename = match node {
+            // Handled by visit_mut_ident
+            PropName::Ident(_) => None,
+            PropName::Str(p) => Some(p.node_id),
+            PropName::Num(p) => Some(p.node_id),
+            PropName::BigInt(p) => Some(p.node_id),
+            PropName::Computed(p) => Some(p.expr.node_id()),
+        };
+        if let Some(node_id_to_rename) = node_id_to_rename {
+            if let Some(new_name) = self.rename_map.get(&node_id_to_rename) {
+                *node = PropName::Ident(Ident {
+                    node_id: self.program_data.new_id_from(node.node_id()),
+                    sym: new_name.clone(),
+                    ctxt: SyntaxContext::empty(),
+                });
+                return;
+            }
+        }
+        node.visit_mut_children_with(self);
+    }
+
+    fn visit_mut_member_expr(&mut self, node: &mut MemberExpr) {
+        if node.computed {
+            if let Some(new_name) = self.rename_map.get(&node.prop.node_id()) {
+                *node.prop.as_mut() = Expr::Ident(Ident {
+                    node_id: self.program_data.new_id_from(node.prop.node_id()),
+                    sym: new_name.clone(),
+                    ctxt: SyntaxContext::empty(),
+                });
+                node.computed = false;
+                return;
+            }
+        }
+        node.visit_mut_children_with(self);
+    }
+
+    fn visit_mut_str(&mut self, node: &mut Str) {
+        if let Some(new_name) = self.rename_map.get(&node.node_id) {
+            node.value = new_name.clone();
+            node.has_escape = false;
+            node.kind = StrKind::Synthesized;
+        }
     }
 }

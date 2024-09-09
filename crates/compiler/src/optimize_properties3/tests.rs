@@ -332,6 +332,10 @@ function f() {
 f().a;
 ",
     );
+
+    test_same("unknown in { prop: 1 }");
+
+    test_transform("'prop' in { prop: 1 };", r#" "a" in { a: 1 };"#);
 }
 
 #[test]
