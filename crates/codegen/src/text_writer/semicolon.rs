@@ -1,4 +1,5 @@
 use super::{Result, WriteJs};
+use ast::EsVersion;
 use global_common::Span;
 
 pub fn omit_trailing_semi<W: WriteJs>(w: W) -> impl WriteJs {
@@ -55,8 +56,24 @@ impl<W: WriteJs> WriteJs for OmitTrailingSemi<W> {
     with_semi!(write_symbol(span: Span, s: &str));
 
     fn write_punct(&mut self, span: Option<Span>, s: &'static str) -> Result {
-        self.pending_semi = false;
+        match s {
+            "\"" | "'" => {
+                self.commit_pending_semi()?;
+            }
+
+            "{" | "(" => {
+                self.commit_pending_semi()?;
+            }
+
+            _ => {
+                self.pending_semi = false;
+            }
+        }
         Ok(self.inner.write_punct(span, s)?)
+    }
+
+    fn target(&self) -> EsVersion {
+        self.inner.target()
     }
 }
 

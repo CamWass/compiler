@@ -544,7 +544,7 @@ fn issue_1619_1() {
     assert_min_target(
         "\"\\x00\" + \"\\x31\"",
         "\"\\x00\"+\"\\x31\"",
-        EsVersion::Es3,
+        EsVersion::latest(),
     );
 }
 

@@ -12,6 +12,7 @@ use ast::*;
 use global_common::{comments::Comments, sync::Lrc, BytePos, SourceMap, Span, DUMMY_SP};
 use parser::JscTarget;
 use std::{borrow::Cow, fmt::Write, io};
+use util::EndsWithAlphaNum;
 
 #[macro_use]
 pub mod macros;
@@ -101,8 +102,14 @@ impl<'a> Emitter<'a> {
         keyword!(self, "export");
         space!(self);
         keyword!(self, "default");
-        space!(self);
+
+        if node.expr.starts_with_alpha_num() {
+            space!(self);
+        } else {
+            formatting_space!(self);
+        }
         self.emit_expr(&node.expr)?;
+
         formatting_semi!(self);
         Ok(())
     }
@@ -127,7 +134,16 @@ impl<'a> Emitter<'a> {
         self.emit_leading_comments_of_span(span, false)?;
 
         keyword!(self, "import");
-        space!(self);
+        let starts_with_ident = !node.specifiers.is_empty()
+            && match &node.specifiers[0] {
+                ImportSpecifier::Default(_) => true,
+                _ => false,
+            };
+        if starts_with_ident {
+            space!(self);
+        } else {
+            formatting_space!(self);
+        }
 
         let mut specifiers = vec![];
         let mut emitted_default = false;
@@ -151,7 +167,7 @@ impl<'a> Emitter<'a> {
 
                     assert!(node.specifiers.len() <= 2);
                     punct!(self, "*");
-                    space!(self);
+                    formatting_space!(self);
                     keyword!(self, "as");
                     space!(self);
                     self.emit_ident(&ns.local)?;
@@ -311,11 +327,11 @@ impl<'a> Emitter<'a> {
         self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
 
         keyword!(self, "export");
-        space!(self);
+        formatting_space!(self);
         punct!(self, "*");
         formatting_space!(self);
         keyword!(self, "from");
-        space!(self);
+        formatting_space!(self);
         self.emit_str_lit(&node.src)?;
         formatting_semi!(self);
         Ok(())
@@ -542,7 +558,13 @@ impl<'a> Emitter<'a> {
             let span = self.cm.span_until_char(span, ' ');
             keyword!(self, span, "new");
         }
-        space!(self);
+
+        if node.callee.starts_with_alpha_num() {
+            space!(self);
+        } else {
+            formatting_space!(self);
+        }
+
         self.emit_expr(&node.callee)?;
 
         if let Some(args) = &node.args {
@@ -727,16 +749,33 @@ impl<'a> Emitter<'a> {
     fn emit_bin_expr_trailing(&mut self, node: &BinExpr) -> Result {
         // let indent_before_op = needs_indention(node, &node.left, node.op);
         // let indent_after_op = needs_indention(node, node.op, &node.right);
-        let need_space = match node.op {
+        let is_kwd_op = match node.op {
             op!("in") | op!("instanceof") => true,
             _ => false,
         };
 
-        let need_pre_space = need_space
-            || match *node.left {
-                Expr::Update(UpdateExpr { prefix: false, .. }) => true,
-                _ => false,
-            };
+        let need_pre_space = if self.cfg.minify {
+            if is_kwd_op {
+                node.left.ends_with_alpha_num()
+            } else {
+                // space is mandatory to avoid outputting -->
+                match *node.left {
+                    Expr::Update(UpdateExpr {
+                        prefix: false, op, ..
+                    }) => matches!(
+                        (op, node.op),
+                        (op!("--"), op!(">") | op!(">>") | op!(">>>") | op!(">="))
+                    ),
+                    _ => false,
+                }
+            }
+        } else {
+            is_kwd_op
+                || match *node.left {
+                    Expr::Update(UpdateExpr { prefix: false, .. }) => true,
+                    _ => false,
+                }
+        };
         if need_pre_space {
             space!(self);
         } else {
@@ -744,11 +783,19 @@ impl<'a> Emitter<'a> {
         }
         operator!(self, node.op.as_str());
 
-        let need_post_space = need_space
-            || match *node.right {
-                Expr::Unary(..) | Expr::Update(UpdateExpr { prefix: true, .. }) => true,
-                _ => false,
-            };
+        let need_post_space = if self.cfg.minify {
+            if is_kwd_op {
+                node.right.starts_with_alpha_num()
+            } else {
+                require_space_before_rhs(&node.right, &node.op)
+            }
+        } else {
+            is_kwd_op
+                || match *node.right {
+                    Expr::Unary(..) | Expr::Update(UpdateExpr { prefix: true, .. }) => true,
+                    _ => false,
+                }
+        };
         if need_post_space {
             space!(self);
         } else {
@@ -886,7 +933,25 @@ impl<'a> Emitter<'a> {
 
         if n.is_static {
             keyword!(self, "static");
-            space!(self);
+
+            let starts_with_alpha_num = match n.kind {
+                MethodKind::Method => {
+                    if n.function.is_async {
+                        true
+                    } else if n.function.is_generator {
+                        false
+                    } else {
+                        n.key.starts_with_alpha_num()
+                    }
+                }
+                MethodKind::Getter | MethodKind::Setter => true,
+            };
+
+            if starts_with_alpha_num {
+                space!(self);
+            } else {
+                formatting_space!(self);
+            }
         }
         match n.kind {
             MethodKind::Method => {
@@ -900,11 +965,21 @@ impl<'a> Emitter<'a> {
             }
             MethodKind::Getter => {
                 keyword!(self, "get");
-                space!(self);
+
+                if n.key.starts_with_alpha_num() {
+                    space!(self);
+                } else {
+                    formatting_space!(self)
+                }
             }
             MethodKind::Setter => {
                 keyword!(self, "set");
-                space!(self);
+
+                if n.key.starts_with_alpha_num() {
+                    space!(self);
+                } else {
+                    formatting_space!(self)
+                }
             }
         }
         self.emit_prop_name(&n.key)?;
@@ -1153,7 +1228,7 @@ impl<'a> Emitter<'a> {
         }
 
         if let Some(arg) = &node.arg {
-            if arg.starts_with_alpha_num() {
+            if !node.delegate && arg.starts_with_alpha_num() {
                 space!(self);
             } else {
                 formatting_space!(self);
@@ -1227,7 +1302,7 @@ impl<'a> Emitter<'a> {
             span,
             &node.props,
             |e, n| e.emit_prop(n).map(|_| Some(n.node_id())),
-            ListFormat::ObjectLiteralExpressionProperties,
+            ListFormat::ObjectLiteralExpressionProperties | ListFormat::CanSkipTrailingComma,
         )?;
         if !self.cfg.minify {
             self.wr.write_line()?;
@@ -1269,9 +1344,19 @@ impl<'a> Emitter<'a> {
         self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
 
         keyword!(self, "get");
-        space!(self);
+
+        let starts_with_alpha_num = match node.key {
+            PropName::Str(_) | PropName::Computed(_) => false,
+            _ => true,
+        };
+        if starts_with_alpha_num {
+            space!(self);
+        } else {
+            formatting_space!(self);
+        }
+
         self.emit_prop_name(&node.key)?;
-        space!(self);
+        formatting_space!(self);
         punct!(self, "(");
         punct!(self, ")");
         formatting_space!(self);
@@ -1282,9 +1367,20 @@ impl<'a> Emitter<'a> {
         self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
 
         keyword!(self, "set");
-        space!(self);
+
+        let starts_with_alpha_num = match node.key {
+            PropName::Str(_) | PropName::Computed(_) => false,
+            _ => true,
+        };
+
+        if starts_with_alpha_num {
+            space!(self);
+        } else {
+            formatting_space!(self);
+        }
+
         self.emit_prop_name(&node.key)?;
-        space!(self);
+        formatting_space!(self);
 
         punct!(self, "(");
         self.emit_param_without_decorators(&node.param)?;
@@ -1509,8 +1605,10 @@ impl<'a> Emitter<'a> {
             };
 
             if has_trailing_comma && format.contains(ListFormat::CommaDelimited) {
-                punct!(self, ",");
-                formatting_space!(self);
+                if !self.cfg.minify || !format.contains(ListFormat::CanSkipTrailingComma) {
+                    punct!(self, ",");
+                    formatting_space!(self);
+                }
             }
 
             {
@@ -1682,7 +1780,7 @@ impl<'a> Emitter<'a> {
             span,
             &node.props,
             |e, n| e.emit_object_pat_prop(n).map(|_| Some(n.node_id())),
-            format,
+            format | ListFormat::CanSkipTrailingComma,
         )?;
         punct!(self, "}");
         Ok(())
@@ -1703,7 +1801,7 @@ impl<'a> Emitter<'a> {
         punct!(self, ":");
         formatting_space!(self);
         self.emit_pat(&node.value)?;
-        space!(self);
+        formatting_space!(self);
         Ok(())
     }
 
@@ -1715,7 +1813,7 @@ impl<'a> Emitter<'a> {
         if let Some(value) = &node.value {
             punct!(self, "=");
             self.emit_expr(&value)?;
-            space!(self);
+            formatting_space!(self);
         }
         Ok(())
     }
@@ -1857,7 +1955,11 @@ impl<'a> Emitter<'a> {
             if need_paren {
                 punct!(self, "(");
             } else {
-                space!(self);
+                if arg.starts_with_alpha_num() {
+                    space!(self);
+                } else {
+                    formatting_space!(self);
+                }
             }
 
             self.emit_expr(arg)?;
@@ -1967,7 +2069,7 @@ impl<'a> Emitter<'a> {
             punct!(self, ")");
         }
 
-        space!(self);
+        formatting_space!(self);
 
         self.emit_block_stmt(&node.body)
     }
@@ -1978,7 +2080,13 @@ impl<'a> Emitter<'a> {
 
         if let Some(test) = &node.test {
             keyword!(self, "case");
-            space!(self);
+
+            if test.starts_with_alpha_num() {
+                space!(self);
+            } else {
+                formatting_space!(self);
+            }
+
             self.emit_expr(test)?;
         } else {
             keyword!(self, "default");
@@ -2009,8 +2117,14 @@ impl<'a> Emitter<'a> {
         let throw_span = self.cm.span_until_char(span, ' ');
 
         keyword!(self, throw_span, "throw");
-        space!(self);
+
+        if node.arg.starts_with_alpha_num() {
+            space!(self);
+        } else {
+            formatting_space!(self);
+        }
         self.emit_expr(&node.arg)?;
+
         formatting_semi!(self);
         Ok(())
     }
@@ -2030,7 +2144,7 @@ impl<'a> Emitter<'a> {
         if let Some(finally) = &node.finalizer {
             formatting_space!(self);
             keyword!(self, "finally");
-            // space!();
+            formatting_space!(self);
             self.emit_block_stmt(finally)?;
         }
         Ok(())
@@ -2092,10 +2206,22 @@ impl<'a> Emitter<'a> {
         formatting_space!(self);
         punct!(self, "(");
         self.emit_var_decl_or_pat(&node.left)?;
-        space!(self);
+
+        if node.left.ends_with_alpha_num() {
+            space!(self);
+        } else {
+            formatting_space!(self);
+        }
+
         keyword!(self, "in");
-        space!(self);
+
+        if node.right.starts_with_alpha_num() {
+            space!(self);
+        } else {
+            formatting_space!(self);
+        }
         self.emit_expr(&node.right)?;
+
         punct!(self, ")");
 
         self.emit_single_stmt(&node.body, true)
@@ -2112,9 +2238,21 @@ impl<'a> Emitter<'a> {
         formatting_space!(self);
         punct!(self, "(");
         self.emit_var_decl_or_pat(&node.left)?;
-        space!(self);
+
+        if node.left.ends_with_alpha_num() {
+            space!(self);
+        } else {
+            formatting_space!(self);
+        }
+
         keyword!(self, "of");
-        space!(self);
+
+        if node.right.starts_with_alpha_num() {
+            space!(self);
+        } else {
+            formatting_space!(self);
+        }
+
         self.emit_expr(&node.right)?;
         punct!(self, ")");
         self.emit_single_stmt(&node.body, true)
@@ -2350,7 +2488,6 @@ fn escape_without_source(v: &str, target: JscTarget, single_quote: bool) -> Stri
             }
 
             '\x20'..='\x7e' => {
-                //
                 buf.push(c);
             }
             '\u{7f}'..='\u{ff}' => {
@@ -2381,7 +2518,6 @@ fn escape_with_source<'s>(
         return escape_without_source(s, target, single_quote.unwrap_or(false));
     }
 
-    //
     let orig = cm.span_to_snippet(span);
     let orig = match orig {
         Ok(orig) => orig,
@@ -2554,6 +2690,41 @@ fn handle_invalid_unicodes(s: &str) -> Cow<str> {
     }
 
     Cow::Owned(s.replace("\\\0", "\\"))
+}
+
+fn require_space_before_rhs(rhs: &Expr, op: &BinaryOp) -> bool {
+    match rhs {
+        Expr::Lit(Lit::Num(v)) if v.value.is_sign_negative() && *op == op!(bin, "-") => true,
+
+        Expr::Update(UpdateExpr {
+            prefix: true,
+            op: update,
+            ..
+        }) => matches!(
+            (op, update),
+            (op!(bin, "-"), op!("--")) | (op!(bin, "+"), op!("++"))
+        ),
+
+        // space is mandatory to avoid outputting <!--
+        Expr::Unary(UnaryExpr {
+            op: op!("!"), arg, ..
+        }) if *op == op!("<") || *op == op!("<<") => {
+            if let Expr::Update(UpdateExpr { op: op!("--"), .. }) = &**arg {
+                true
+            } else {
+                false
+            }
+        }
+
+        Expr::Unary(UnaryExpr { op: unary, .. }) => matches!(
+            (op, unary),
+            (op!(bin, "-"), op!(unary, "-")) | (op!(bin, "+"), op!(unary, "+"))
+        ),
+
+        Expr::Bin(BinExpr { left, .. }) => require_space_before_rhs(left, op),
+
+        _ => false,
+    }
 }
 
 #[cold]
