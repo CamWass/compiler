@@ -1,8 +1,8 @@
+#![allow(unused_variables)]
+
 use super::list::ListFormat;
 use ast::*;
-use global_common::{
-    errors::SourceMapper, BytePos, SourceMap, SourceMapperDyn, Span, SyntaxContext,
-};
+use global_common::{errors::SourceMapper, BytePos, SourceMap, SourceMapperDyn, Span};
 use std::{rc::Rc, sync::Arc};
 
 pub trait SourceMapperExt {
@@ -35,7 +35,6 @@ pub trait SourceMapperExt {
         parent_node: Span,
         children: &[N],
         format: ListFormat,
-        program_data: &ProgramData,
     ) -> bool {
         if format.contains(ListFormat::MultiLine) {
             return true;
@@ -57,7 +56,6 @@ pub trait SourceMapperExt {
         parent_node: Span,
         children: &[N],
         format: ListFormat,
-        program_data: &ProgramData,
     ) -> bool {
         if format.contains(ListFormat::MultiLine) {
             return (format & ListFormat::NoTrailingNewLine) == ListFormat::None;

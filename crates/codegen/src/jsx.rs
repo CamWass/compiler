@@ -1,5 +1,4 @@
 use super::{Emitter, Result};
-use crate::list::ListFormat;
 use ast::*;
 
 impl<'a> Emitter<'a> {

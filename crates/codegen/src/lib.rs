@@ -1,7 +1,6 @@
 #![recursion_limit = "1024"]
 #![allow(unused_variables)]
-// TODO: temp
-#![allow(warnings)]
+#![allow(dead_code)]
 
 pub use self::config::Config;
 use self::{
@@ -10,12 +9,9 @@ use self::{
     util::{SourceMapperExt, StartsWithAlphaNum},
 };
 use ast::*;
-use atoms::JsWord;
-use global_common::{
-    comments::Comments, sync::Lrc, BytePos, SourceMap, Span, SyntaxContext, DUMMY_SP,
-};
+use global_common::{comments::Comments, sync::Lrc, BytePos, SourceMap, Span, DUMMY_SP};
 use parser::JscTarget;
-use std::{borrow::Cow, fmt::Write, io, sync::Arc};
+use std::{borrow::Cow, fmt::Write, io};
 
 #[macro_use]
 pub mod macros;
@@ -206,7 +202,7 @@ impl<'a> Emitter<'a> {
 
     fn emit_export_specifier(&mut self, node: &ExportSpecifier) -> Result {
         match node {
-            ExportSpecifier::Default(ref node) => {
+            ExportSpecifier::Default(_) => {
                 unimplemented!("codegen of `export default from 'foo';`")
             }
             ExportSpecifier::Namespace(ref node) => self.emit_namespace_export_specifier(node),
@@ -350,10 +346,6 @@ impl<'a> Emitter<'a> {
             Lit::JSXText(ref n) => self.emit_jsx_text(n)?,
         }
         Ok(())
-    }
-
-    fn emit_js_word(&mut self, span: Span, value: &JsWord) -> Result {
-        self.wr.write_str_lit(span, &value)
     }
 
     fn emit_str_lit(&mut self, node: &Str) -> Result {
@@ -889,18 +881,6 @@ impl<'a> Emitter<'a> {
         self.emit_fn_trailing(&n.function)
     }
 
-    fn emit_bool(&mut self, n: &Bool) -> Result {
-        let span = get_span!(self, n.node_id);
-        self.emit_leading_comments_of_span(span, false)?;
-
-        if n.value {
-            keyword!(self, span, "true")
-        } else {
-            keyword!(self, span, "false")
-        }
-        Ok(())
-    }
-
     fn emit_class_method(&mut self, n: &ClassMethod) -> Result {
         self.emit_leading_comments_of_span(get_span!(self, n.node_id), false)?;
 
@@ -1098,14 +1078,13 @@ impl<'a> Emitter<'a> {
         self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
 
         punct!(self, "`");
-        let i = 0;
 
         for i in 0..(node.quasis.len() + node.exprs.len()) {
             if i % 2 == 0 {
-                self.emit_quasi(&node.quasis[i / 2]);
+                self.emit_quasi(&node.quasis[i / 2])?;
             } else {
                 punct!(self, "${");
-                self.emit_expr(&node.exprs[i / 2]);
+                self.emit_expr(&node.exprs[i / 2])?;
                 punct!(self, "}");
             }
         }
@@ -1430,12 +1409,10 @@ impl<'a> Emitter<'a> {
             let may_emit_intervening_comments =
                 !format.intersects(ListFormat::NoInterveningComments);
             let mut should_emit_intervening_comments = may_emit_intervening_comments;
-            if self.cm.should_write_leading_line_terminator(
-                parent_node,
-                children,
-                format,
-                self.program_data,
-            ) {
+            if self
+                .cm
+                .should_write_leading_line_terminator(parent_node, children, format)
+            {
                 if !self.cfg.minify {
                     self.wr.write_line()?;
                 }
@@ -1568,12 +1545,10 @@ impl<'a> Emitter<'a> {
             }
 
             // Write the closing line terminator or closing whitespace.
-            if self.cm.should_write_closing_line_terminator(
-                parent_node,
-                children,
-                format,
-                self.program_data,
-            ) {
+            if self
+                .cm
+                .should_write_closing_line_terminator(parent_node, children, format)
+            {
                 if !self.cfg.minify {
                     self.wr.write_line()?;
                 }

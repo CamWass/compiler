@@ -2,7 +2,7 @@ macro_rules! opt_leading_space {
     ($emitter:expr, $func:ident, $e:expr) => {
         if let Some(ref e) = $e {
             formatting_space!($emitter);
-            $emitter.$func(e);
+            $emitter.$func(e)?;
         }
     };
 }
@@ -10,7 +10,7 @@ macro_rules! opt_leading_space {
 macro_rules! opt {
     ($emitter:expr, $func:ident, $e:expr) => {{
         if let Some(ref expr) = $e {
-            $emitter.$func(expr);
+            $emitter.$func(expr)?;
         }
     }};
 }
