@@ -103,7 +103,7 @@ impl VisitMut<'_> for NormalizeAssignShorthand<'_> {
 /// ```js
 /// for (;;) {foo();}
 /// ```
-/// We don't have to wory abount block scoping because lexical (block-scoped)
+/// We don't have to worry about block scoping because lexical (block-scoped)
 /// declarations are forbidden in single-statement contexts, so placing the
 /// statement in a block is always safe.
 struct BlockCreator<'a> {
@@ -115,13 +115,18 @@ impl BlockCreator<'_> {
         stmt.visit_mut_with(self);
 
         if !matches!(stmt, Stmt::Block(_)) {
-            stmt.map_with_mut(|stmt| {
-                Stmt::Block(BlockStmt {
-                    node_id: self.program_data.new_id_from(stmt.node_id()),
-                    stmts: vec![stmt],
-                })
-            });
+            stmt.map_with_mut(|stmt| self.create_block_from_stmt(stmt));
         }
+    }
+
+    fn create_block_from_stmt(&mut self, stmt: Stmt) -> Stmt {
+        let node_id = self.program_data.new_id_from(stmt.node_id());
+        let stmts = if !matches!(stmt, Stmt::Empty(_)) {
+            vec![stmt]
+        } else {
+            vec![]
+        };
+        Stmt::Block(BlockStmt { node_id, stmts })
     }
 }
 
@@ -133,7 +138,7 @@ impl VisitMut<'_> for BlockCreator<'_> {
         node.body.visit_mut_with(self);
 
         // Loop labels must remain in place as named continues are not allowed
-        // for labeled blocks. E.g. is is invalid to change:
+        // for labelled blocks. E.g. is is invalid to change:
         //
         // foo: for (a in b) {
         //   continue foo;
@@ -156,12 +161,9 @@ impl VisitMut<'_> for BlockCreator<'_> {
                 | Stmt::While(_)
                 | Stmt::DoWhile(_)
         ) {
-            node.body.as_mut().map_with_mut(|stmt| {
-                Stmt::Block(BlockStmt {
-                    node_id: self.program_data.new_id_from(stmt.node_id()),
-                    stmts: vec![stmt],
-                })
-            });
+            node.body
+                .as_mut()
+                .map_with_mut(|stmt| self.create_block_from_stmt(stmt));
         }
     }
     fn visit_mut_if_stmt(&mut self, node: &mut IfStmt) {
