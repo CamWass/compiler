@@ -51,6 +51,50 @@ pub fn process(
 ) {
     let (mut store, points_to) = analyse(ast, unresolved_ctxt);
 
+    // if true {
+    //     let mut points_to_unknown = Vec::new();
+    //     let Graph {
+    //         nodes,
+    //         points_to,
+    //         graph: _,
+    //         ..
+    //     } = &points_to;
+    //     let points_to = points_to
+    //         .iter()
+    //         .filter_map(|(&p, c)| {
+    //             if c.TODO_TEMP_LEN() == 1 && matches!(c.iter().next().unwrap(), PointerId::UNKNOWN)
+    //             {
+    //                 points_to_unknown.push(p);
+    //                 None
+    //             } else {
+    //                 Some((p, c.iter().collect::<Vec<_>>()))
+    //             }
+    //         })
+    //         .collect::<std::collections::BTreeMap<_, _>>();
+    //     let pointers = (0..store.pointers.len())
+    //         .map(|p| {
+    //             (
+    //                 PointerId::from_usize(p),
+    //                 store.pointers[PointerId::from_usize(p)],
+    //             )
+    //         })
+    //         .collect::<Vec<_>>();
+    //     let names = (0..store.names.len())
+    //         .map(|p| {
+    //             (
+    //                 PointerId::from_usize(p),
+    //                 store.names[NameId::from_usize(p)].clone(),
+    //             )
+    //         })
+    //         .collect::<Vec<_>>();
+    //     let mut invalid_pointers = store.invalid_pointers.iter().collect::<Vec<_>>();
+    //     invalid_pointers.sort_unstable();
+    //     dbg!(pointers, &store.references, invalid_pointers, &names);
+    //     dbg!(points_to, points_to_unknown,);
+    // }
+
+    // dbg!(&store.accessed_dynamically);
+
     let rename_map = create_renaming_map(&mut store, &points_to);
 
     // Actually assign the new names.
@@ -136,7 +180,9 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
                         name: key.0,
                         prop_id: properties.next_index(),
                         references: FxHashSet::default(),
-                        invalid: built_in || store.invalid_pointers.contains(obj),
+                        invalid: built_in
+                            || store.invalid_pointers.contains(obj)
+                            || store.accessed_dynamically.contains(obj),
                     });
                     entry.insert(prop_id);
                     prop_id
@@ -367,8 +413,11 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> (Store, Gr
         pointers,
         references: FxHashSet::default(),
         invalid_pointers: GrowableBitSet::default(),
+        accessed_dynamically: GrowableBitSet::default(),
         concrete_pointer_bound: PointerId::MAX,
     };
+
+    store.invalid_pointers.insert(PointerId::UNKNOWN);
 
     {
         let mut v = DeclFinder {
@@ -400,6 +449,151 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> (Store, Gr
     let mut graph = compute_relations(ast, &mut store);
     graph.compute_points_to_map(&mut store);
 
+    // {
+    //     let mut used = FxHashSet::default();
+
+    //     // let g = Reversed(&graph.graph);
+
+    //     let mut queue = Vec::new();
+
+    //     for (_, obj) in &store.references {
+    //         // println!("p");
+
+    //         let node = graph.nodes.find_mut(*obj);
+
+    //         queue.push(node);
+
+    //         // let mut dfs = petgraph::visit::Dfs::new(g, node);
+    //         // while let Some(nx) = dfs.next(&g) {
+    //         //     used.insert(nx);
+    //         // }
+    //     }
+
+    //     let root_pointers_count = store
+    //         .references
+    //         .iter()
+    //         .map(|r| r.1)
+    //         .collect::<FxHashSet<_>>()
+    //         .len();
+    //     let root_nodes_count = queue.iter().copied().collect::<FxHashSet<_>>().len();
+
+    //     while let Some(node) = queue.pop() {
+    //         if used.contains(&node) {
+    //             continue;
+    //         }
+    //         used.insert(node);
+
+    //         for n in graph
+    //             .graph
+    //             .neighbors_directed(node, petgraph::Direction::Incoming)
+    //         {
+    //             if used.contains(&n) {
+    //                 continue;
+    //             }
+    //             queue.push(n);
+    //         }
+    //     }
+
+    //     dbg!(root_pointers_count);
+    //     dbg!(root_nodes_count);
+    //     dbg!(graph.points_to.len());
+    //     dbg!(used.len());
+    // }
+
+    // // {
+    // //     let mut reachable_nodes_counts: std::collections::BTreeMap<usize, usize> =
+    // //         std::collections::BTreeMap::default();
+
+    // //     let mut visited = FxHashSet::default();
+    // //     let mut queue = Vec::new();
+
+    // //     for node in graph.graph.nodes() {
+    // //         visited.clear();
+    // //         queue.clear();
+
+    // //         queue.push(node);
+
+    // //         while let Some(node) = queue.pop() {
+    // //             if visited.contains(&node) {
+    // //                 continue;
+    // //             }
+    // //             visited.insert(node);
+
+    // //             for n in graph
+    // //                 .graph
+    // //                 .neighbors_directed(node, petgraph::Direction::Outgoing)
+    // //             {
+    // //                 if !visited.contains(&n) {
+    // //                     queue.push(n);
+    // //                 }
+    // //             }
+    // //         }
+
+    // //         *reachable_nodes_counts.entry(visited.len()).or_default() += 1;
+    // //     }
+    // //     dbg!(reachable_nodes_counts);
+    // // }
+
+    // {
+    //     let mut tarjan = petgraph::algo::TarjanScc::default();
+
+    //     let mut condensation_node_count = 0;
+    //     tarjan.run(&graph.graph, |_| {
+    //         condensation_node_count += 1;
+    //     });
+
+    //     dbg!(
+    //         graph.graph.node_count(),
+    //         condensation_node_count,
+    //         graph.graph.node_count() - condensation_node_count
+    //     );
+    // }
+    // {
+    //     let mut tarjan = petgraph::algo::TarjanScc::default();
+
+    //     let mut condensation_node_count = 0;
+    //     tarjan.run(&graph.graph, |_| {
+    //         condensation_node_count += 1;
+    //     });
+
+    //     dbg!(
+    //         graph.graph.node_count(),
+    //         condensation_node_count,
+    //         graph.graph.node_count() - condensation_node_count
+    //     );
+    // }
+    // {
+    //     dbg!(
+    //         graph.graph.node_count(),
+    //         graph.graph.edge_count(),
+    //         store.pointers.len(),
+    //         graph.points_to.len(),
+    //     );
+    // }
+
+    // {
+    //     let mut prop_on_unknown_count = 0;
+    //     let mut prop_on_null_or_void_count = 0;
+    //     let mut prop_on_other_count = 0;
+    //     for p in &store.pointers {
+    //         match p {
+    //             Pointer::Prop(obj, _) => {
+    //                 if *obj == PointerId::UNKNOWN {
+    //                     prop_on_unknown_count += 1;
+    //                 } else if *obj == PointerId::NULL_OR_VOID {
+    //                     prop_on_null_or_void_count += 1;
+    //                 } else {
+    //                     prop_on_other_count += 1;
+    //                 }
+    //             }
+    //             _ => {}
+    //         }
+    //     }
+    //     dbg!(prop_on_unknown_count);
+    //     dbg!(prop_on_null_or_void_count);
+    //     dbg!(prop_on_other_count);
+    // }
+
     if cfg!(debug_assertions) {
         for p in &store.pointers {
             match p {
@@ -413,6 +607,9 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> (Store, Gr
                 }
 
                 Pointer::Prop(obj, name) => {
+                    if *name == NameId::MAX {
+                        continue;
+                    }
                     debug_assert_ne!(*obj, PointerId::NULL_OR_VOID);
                     // debug_assert_ne!(*obj, PointerId::UNKNOWN);
 
@@ -503,26 +700,33 @@ impl GraphVisitor<'_> {
                     .get_index(&Pointer::Object(n.node_id))
                     .unwrap();
 
-                let is_simple_obj_lit = n.props.iter().all(|p| match p {
-                    Prop::KeyValue(p) => is_simple_prop_name(&p.key, self.store.unresolved_ctxt),
-                    _ => false,
-                });
+                let is_simple_obj_lit = n.props.iter().all(|p| matches!(p, Prop::KeyValue(_)));
 
                 if is_simple_obj_lit {
                     for prop in &n.props {
                         match prop {
                             Prop::KeyValue(prop) => {
-                                let key = PropKey::from_prop_name(
-                                    &prop.key,
-                                    self.store.unresolved_ctxt,
-                                    &mut self.store.names,
-                                )
-                                .expect("checked above");
-                                let value = self.get_rhs(&prop.value, true);
-                                let prop = self.get_prop_value(obj, key.0);
-                                self.reference_prop(obj, key);
-                                for value in value {
-                                    self.make_subset_of(value, prop);
+                                if is_simple_prop_name(&prop.key, self.store.unresolved_ctxt) {
+                                    let key = PropKey::from_prop_name(
+                                        &prop.key,
+                                        self.store.unresolved_ctxt,
+                                        &mut self.store.names,
+                                    )
+                                    .expect("checked above");
+                                    let value = self.get_rhs(&prop.value, true);
+                                    let prop = self.get_prop_value(obj, key.0);
+                                    self.reference_prop(obj, key);
+                                    for value in value {
+                                        self.make_subset_of(value, prop);
+                                    }
+                                } else {
+                                    prop.key.visit_with(self);
+                                    self.record_computed_access(&[obj]);
+                                    let value = self.get_rhs(&prop.value, true);
+                                    let prop = self.get_prop_value(obj, NameId::MAX);
+                                    for value in value {
+                                        self.make_subset_of(value, prop);
+                                    }
                                 }
                             }
                             Prop::Getter(_)
@@ -654,8 +858,11 @@ impl GraphVisitor<'_> {
                         }
                         ret!(obj)
                     } else {
-                        self.invalidate(&obj);
-                        ret!(vec![PointerId::UNKNOWN])
+                        for obj in &mut obj {
+                            self.record_computed_access(&[*obj]);
+                            *obj = self.get_prop_value(*obj, NameId::MAX);
+                        }
+                        ret!(obj)
                     }
                 }
             },
@@ -909,24 +1116,35 @@ impl GraphVisitor<'_> {
                     match prop {
                         ObjectPatProp::KeyValue(prop) => {
                             prop.key.visit_with(self);
-                            let key = match PropKey::from_prop_name(
+                            match PropKey::from_prop_name(
                                 &prop.key,
                                 self.store.unresolved_ctxt,
                                 &mut self.store.names,
                             ) {
-                                Some(k) => k,
-                                None => continue,
-                            };
-                            for rhs in rhs {
-                                self.reference_prop(*rhs, key);
+                                Some(key) => {
+                                    for rhs in rhs {
+                                        self.reference_prop(*rhs, key);
+                                    }
+
+                                    let new_rhs = rhs
+                                        .iter()
+                                        .map(|v| self.get_prop_value(*v, key.0))
+                                        .collect::<Vec<_>>();
+
+                                    self.visit_destructuring(&prop.value, &new_rhs);
+                                }
+                                None => {
+                                    for rhs in rhs {
+                                        self.record_computed_access(&[*rhs]);
+                                    }
+                                    let new_rhs = rhs
+                                        .iter()
+                                        .map(|v| self.get_prop_value(*v, NameId::MAX))
+                                        .collect::<Vec<_>>();
+
+                                    self.visit_destructuring(&prop.value, &new_rhs);
+                                }
                             }
-
-                            let new_rhs = rhs
-                                .iter()
-                                .map(|v| self.get_prop_value(*v, key.0))
-                                .collect::<Vec<_>>();
-
-                            self.visit_destructuring(&prop.value, &new_rhs);
                         }
                         ObjectPatProp::Assign(_) => {
                             unreachable!("removed by normalization");
@@ -1045,8 +1263,14 @@ impl GraphVisitor<'_> {
                             .collect(),
                     )
                 } else {
-                    self.invalidate(&obj);
-                    None
+                    Some(
+                        obj.into_iter()
+                            .map(|obj| {
+                                self.record_computed_access(&[obj]);
+                                Slot::Prop(obj, NameId::MAX)
+                            })
+                            .collect(),
+                    )
                 }
             }
             // All other nodes cannot evaluate to a reference, and should return None (but we still
@@ -1069,12 +1293,20 @@ impl GraphVisitor<'_> {
         if obj == PointerId::NULL_OR_VOID {
             return PointerId::NULL_OR_VOID;
         }
-        if obj.is_primitive() && !is_built_in_property(obj, &self.store.names[prop]) {
-            // non-built in prop on primitive - ignore.
-            return PointerId::NULL_OR_VOID;
+        if prop != NameId::MAX {
+            if obj.is_primitive() && !is_built_in_property(obj, &self.store.names[prop]) {
+                // non-built in prop on primitive - ignore.
+                return PointerId::NULL_OR_VOID;
+            }
         }
 
-        let access = self.store.pointers.insert(Pointer::Prop(obj, prop));
+        let prop_pointer = if self.store.accessed_dynamically.contains(obj) {
+            Pointer::Prop(obj, NameId::MAX)
+        } else {
+            Pointer::Prop(obj, prop)
+        };
+
+        let access = self.store.pointers.insert(prop_pointer);
         self.graph
             .add_initial_edge(obj, access, GraphEdge::Prop(prop), self.store);
         access
@@ -1083,7 +1315,7 @@ impl GraphVisitor<'_> {
     fn get_return_value(&mut self, callee: PointerId) -> PointerId {
         let ret = self.store.pointers.insert(Pointer::ReturnValue(callee));
         self.graph
-            .add_initial_edge(callee, ret, GraphEdge::Return, self.store);
+            .add_initial_edge(callee, ret, GraphEdge::Return(0), self.store);
         ret
     }
 
@@ -1092,12 +1324,20 @@ impl GraphVisitor<'_> {
             return;
         }
         self.graph
-            .add_initial_edge(sub, sup, GraphEdge::Subset, self.store);
+            .add_initial_edge(sub, sup, GraphEdge::Subset(0), self.store);
     }
 
+    // TODO: clean up call sites
     fn invalidate(&mut self, value: &[PointerId]) {
         for value in value {
-            self.graph.invalidate(*value, self.store);
+            self.graph.invalidate(*value, self.store, false);
+        }
+    }
+
+    // TODO: clean up call sites
+    fn record_computed_access(&mut self, value: &[PointerId]) {
+        for value in value {
+            self.graph.record_computed_access(*value, self.store, false);
         }
     }
 }
@@ -1279,6 +1519,7 @@ pub struct Store {
     references: FxHashSet<(PropKey, PointerId)>,
     invalid_pointers: GrowableBitSet<PointerId>,
     concrete_pointer_bound: PointerId,
+    accessed_dynamically: GrowableBitSet<PointerId>,
 }
 
 impl Store {
@@ -1288,6 +1529,14 @@ impl Store {
             false
         } else {
             self.invalid_pointers.insert(pointer)
+        }
+    }
+
+    fn record_computed_access(&mut self, pointer: PointerId) -> bool {
+        if pointer.is_built_in() {
+            false
+        } else {
+            self.accessed_dynamically.insert(pointer)
         }
     }
 
@@ -1362,7 +1611,7 @@ impl<'ast> Visit<'ast> for DeclFinder<'_> {
 
     // Expressions can't declare new vars.
     fn visit_expr(&mut self, _node: &Expr) {}
-    fn visit_prop_name(&mut self, _node: &PropName) {}
+    fn visit_prop_name(&mut self, _node: &ast::PropName) {}
 
     fn visit_binding_ident(&mut self, node: &BindingIdent) {
         self.record_var(&node.id);

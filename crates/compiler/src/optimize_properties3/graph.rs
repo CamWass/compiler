@@ -1,8 +1,3 @@
-use std::collections::hash_map::Entry;
-use std::collections::BinaryHeap;
-use std::fmt::{Display, Write};
-use std::rc::Rc;
-
 use arrayvec::ArrayVec;
 use index::bit_set::{BitIter, GrowableBitSet};
 use petgraph::algo::TarjanScc;
@@ -10,7 +5,11 @@ use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use petgraph::Directed;
 use petgraph::Direction::{Incoming, Outgoing};
+use priority_queue::PriorityQueue;
 use rustc_hash::{FxHashMap, FxHashSet};
+use std::collections::hash_map::Entry;
+use std::fmt::{Display, Write};
+use std::rc::Rc;
 
 use crate::optimize_properties2::NameId;
 use crate::utils::unwrap_as;
@@ -18,20 +17,24 @@ use crate::utils::unwrap_as;
 use super::unionfind::GrowableUnionFind;
 use super::{is_built_in_property, Pointer, PointerId, Store};
 
+type GraphType = petgraph::Graph<PointerId, GraphEdge, Directed>;
+
 #[derive(Default)]
 pub struct Graph {
-    nodes: GrowableUnionFind<PointerId>,
-    points_to: FxHashMap<PointerId, SmallSet>,
-    queue: UniqueQueue,
+    pub nodes: GrowableUnionFind<PointerId>,
+    pub points_to: FxHashMap<PointerId, SmallSet>,
+    pub queue: UniqueQueue,
+    edges: FxHashSet<Edge>,
+    subset_edges: FxHashSet<(NodeIndex, NodeIndex)>,
 
-    graph: petgraph::Graph<PointerId, GraphEdge, Directed>,
+    pub graph: GraphType,
     graph_map: Vec<NodeIndex>,
 
     invalidation_queue: Vec<NodeIndex>,
 }
 
 /// Returns true if the given node has no out edges.
-fn is_sink_node(graph: &petgraph::Graph<PointerId, GraphEdge, Directed>, node: NodeIndex) -> bool {
+fn is_sink_node(graph: &GraphType, node: NodeIndex) -> bool {
     let node = &graph.raw_nodes()[node.index()];
     node.next_edge(Outgoing) == EdgeIndex::end()
 }
@@ -50,39 +53,467 @@ fn pointer_to_node(graph_map: &[NodeIndex], pointer: PointerId) -> Option<NodeIn
     }
 }
 
-impl Graph {
-    fn get_node(&mut self, pointer: PointerId) -> NodeIndex {
-        let idx = pointer.as_usize();
-        match self.graph_map.get_mut(idx) {
-            Some(slot) => {
-                if *slot == NodeIndex::end() {
-                    *slot = self.graph.add_node(pointer);
+fn get_node(
+    graph: &mut GraphType,
+    graph_map: &mut Vec<NodeIndex>,
+
+    pointer: PointerId,
+) -> NodeIndex {
+    let idx = pointer.as_usize();
+    match graph_map.get_mut(idx) {
+        Some(slot) => {
+            if *slot == NodeIndex::end() {
+                *slot = graph.add_node(pointer);
+            }
+            *slot
+        }
+        None => {
+            graph_map.resize_with(idx + 1, || NodeIndex::end());
+            graph_map[idx] = graph.add_node(pointer);
+            graph_map[idx]
+        }
+    }
+}
+
+// force_visit_neighbours should be true when invalidating after merging nodes.
+fn invalidate(
+    points_to: &FxHashMap<PointerId, SmallSet>,
+    nodes: &mut GrowableUnionFind<PointerId>,
+
+    graph: &GraphType,
+    graph_map: &[NodeIndex],
+
+    pointer: PointerId,
+    store: &mut Store,
+    queue: &mut Vec<NodeIndex>,
+
+    force_visit_neighbours: bool,
+) -> bool {
+    let initial = RepId(nodes.find_mut(pointer));
+    let Some(node) = pointer_to_node(graph_map, initial.0) else {
+        return store.invalidate(initial.0);
+    };
+
+    if initial.0.is_built_in() {
+        return false;
+    }
+    if !force_visit_neighbours && store.invalid_pointers.contains(initial.0) {
+        return false;
+    }
+
+    debug_assert!(queue.is_empty());
+    queue.clear();
+    queue.push(node);
+
+    let mut changed = false;
+
+    while let Some(node) = queue.pop() {
+        let pointer = graph[node];
+        if pointer.is_built_in() {
+            continue;
+        }
+        if !force_visit_neighbours
+            && pointer == initial.0
+            && store.invalid_pointers.contains(pointer)
+        {
+            continue;
+        }
+
+        changed = true;
+        store.invalidate(pointer);
+
+        for incoming in graph.edges_directed(node, Incoming) {
+            if matches!(incoming.weight(), GraphEdge::Subset(_)) {
+                let source = incoming.source();
+                if !graph[source].is_built_in() && !store.invalid_pointers.contains(graph[source]) {
+                    queue.push(source);
                 }
-                *slot
             }
-            None => {
-                self.graph_map.resize_with(idx + 1, || NodeIndex::end());
-                self.graph_map[idx] = self.graph.add_node(pointer);
-                self.graph_map[idx]
-            }
+        }
+
+        if let Some(values) = points_to.get(&pointer).cloned() {
+            let valid_values = values
+                .iter()
+                .filter(|v| !v.is_built_in() && !store.invalid_pointers.contains(*v))
+                .map(|v| graph_map[v.index()]);
+            queue.extend(valid_values);
         }
     }
 
-    fn add_edge(&mut self, src: PointerId, dest: PointerId, kind: GraphEdge) -> bool {
-        let src = self.get_node(src);
-        let dest = self.get_node(dest);
+    changed
+}
 
-        if kind == GraphEdge::Subset {
-            debug_assert_ne!(src, dest);
+// force_visit_neighbours should be true when invalidating after merging nodes.
+fn record_computed_access(
+    points_to: &mut FxHashMap<PointerId, SmallSet>,
+    nodes: &mut GrowableUnionFind<PointerId>,
+
+    graph: &mut GraphType,
+    graph_map: &mut Vec<NodeIndex>,
+
+    edges: &mut FxHashSet<Edge>,
+    subset_edges: &mut FxHashSet<(NodeIndex, NodeIndex)>,
+
+    pointer: PointerId,
+    store: &mut Store,
+
+    force_visit_neighbours: bool,
+) -> bool {
+    let initial = RepId(nodes.find_mut(pointer));
+    let Some(node) = pointer_to_node(graph_map, initial.0) else {
+        return store.record_computed_access(initial.0);
+    };
+
+    if initial.0.is_built_in() {
+        return false;
+    }
+    if !force_visit_neighbours && store.accessed_dynamically.contains(initial.0) {
+        return false;
+    }
+
+    let mut queue = Vec::new();
+
+    queue.push(node);
+
+    let mut changed = false;
+
+    while let Some(node) = queue.pop() {
+        let pointer = graph[node];
+        if pointer.is_built_in() {
+            continue;
+        }
+        if !force_visit_neighbours
+            && pointer == initial.0
+            && store.accessed_dynamically.contains(pointer)
+        {
+            continue;
         }
 
-        let mut existing = self.graph.edges_connecting(src, dest);
+        changed = true;
+        store.record_computed_access(pointer);
 
-        if !existing.any(|e| *e.weight() == kind) {
-            self.graph.add_edge(src, dest, kind);
-            true
+        for incoming in graph.edges_directed(node, Incoming) {
+            if matches!(incoming.weight(), GraphEdge::Subset(_)) {
+                let source = incoming.source();
+                if !graph[source].is_built_in()
+                    && !store.accessed_dynamically.contains(graph[source])
+                {
+                    queue.push(source);
+                }
+            }
+        }
+
+        if let Some(values) = points_to.get(&pointer).cloned() {
+            let valid_values = values
+                .iter()
+                .filter(|v| !v.is_built_in() && !store.accessed_dynamically.contains(*v))
+                .map(|v| graph_map[v.index()]);
+            queue.extend(valid_values);
+        }
+
+        if let Some((rep, rep_node)) = merge_prop_accesses(
+            points_to,
+            nodes,
+            graph,
+            graph_map,
+            edges,
+            subset_edges,
+            &mut Vec::new(),
+            &mut Vec::new(),
+            pointer,
+            node,
+            store,
+            &mut Vec::new(),
+        ) {
+            // todo
+        }
+    }
+
+    changed
+}
+
+fn merge_prop_accesses(
+    points_to: &mut FxHashMap<PointerId, SmallSet>,
+    nodes: &mut GrowableUnionFind<PointerId>,
+
+    graph: &mut GraphType,
+    graph_map: &mut Vec<NodeIndex>,
+
+    edges: &mut FxHashSet<Edge>,
+    subset_edges: &mut FxHashSet<(NodeIndex, NodeIndex)>,
+
+    invalidation_queue: &mut Vec<NodeIndex>,
+
+    prop_merge_queue: &mut Vec<RepId>,
+
+    pointer: PointerId,
+    node: NodeIndex,
+    store: &mut Store,
+    props: &mut Vec<NodeIndex>,
+) -> Option<(RepId, NodeIndex)> {
+    props.clear();
+    props.extend(
+        graph
+            .edges_directed(node, Outgoing)
+            .filter(|e| matches!(e.weight(), GraphEdge::Prop(_)))
+            .map(|e| e.target()),
+    );
+
+    if !props.is_empty() {
+        return None;
+    }
+
+    prop_merge_queue.clear();
+
+    let dest = store.pointers.insert(Pointer::Prop(pointer, NameId::MAX));
+    let mut rep = RepId(nodes.find_mut(dest));
+    let mut invalid = store.invalid_pointers.contains(rep.0);
+    let mut accessed_dynamically = store.accessed_dynamically.contains(rep.0);
+    for prop_node in props {
+        let prop_pointer = graph[*prop_node];
+        let prop_pointer = RepId(nodes.find_mut(prop_pointer));
+
+        if prop_pointer.0 == rep.0 {
+            continue;
+        }
+
+        invalid |= store.invalid_pointers.contains(prop_pointer.0);
+        accessed_dynamically |= store.accessed_dynamically.contains(prop_pointer.0);
+
+        nodes.union(prop_pointer.0, rep.0);
+
+        let new_rep = RepId(nodes.find_mut(rep.0));
+
+        let src;
+        if new_rep.0 != rep.0 {
+            // prop_pointer became representative
+            src = rep;
+            rep = new_rep;
         } else {
-            false
+            // rep is still the representative
+            src = prop_pointer;
+        }
+        prop_merge_queue.push(src);
+    }
+
+    if prop_merge_queue.is_empty() {
+        return None;
+    }
+
+    let (changed, rep, rep_node) = merge_nodes(
+        points_to,
+        nodes,
+        graph,
+        graph_map,
+        edges,
+        subset_edges,
+        invalidation_queue,
+        rep,
+        invalid,
+        accessed_dynamically,
+        prop_merge_queue,
+        store,
+    );
+
+    if changed {
+        Some((rep, rep_node))
+    } else {
+        None
+    }
+}
+
+fn merge_nodes(
+    points_to: &mut FxHashMap<PointerId, SmallSet>,
+    nodes: &mut GrowableUnionFind<PointerId>,
+
+    graph: &mut GraphType,
+    graph_map: &mut Vec<NodeIndex>,
+
+    edges: &mut FxHashSet<Edge>,
+    subset_edges: &mut FxHashSet<(NodeIndex, NodeIndex)>,
+
+    invalidation_queue: &mut Vec<NodeIndex>,
+
+    rep: RepId,
+    invalid: bool,
+    accessed_dynamically: bool,
+    queue: &[RepId],
+    store: &mut Store,
+) -> (bool, RepId, NodeIndex) {
+    let rep_node = get_node(graph, graph_map, rep.0);
+
+    let mut changed = false;
+    for &src in queue {
+        debug_assert_ne!(src.0, rep.0);
+
+        if invalid {
+            store.invalid_pointers.insert(src.0);
+        }
+
+        if accessed_dynamically {
+            store.accessed_dynamically.insert(src.0);
+        }
+
+        if let Some(src_values) = points_to.remove(&src.0) {
+            match points_to.entry(rep.0) {
+                Entry::Occupied(mut entry) => {
+                    changed |= entry.get_mut().extend(src_values);
+                }
+                Entry::Vacant(entry) => {
+                    changed = true;
+                    entry.insert(src_values);
+                }
+            }
+        }
+
+        let Some(src_node) = pointer_to_node(graph_map, src.0) else {
+            continue;
+        };
+
+        // Move all of src_node's in edges so they point to rep_node instead.
+        while let Some(edge) = graph.edges_directed(src_node, Incoming).next() {
+            let id = edge.id();
+            let source = edge.source();
+            let target = edge.target();
+            let weight = *edge.weight();
+
+            if matches!(weight, GraphEdge::Subset(_)) {
+                subset_edges.remove(&(source, target));
+
+                if nodes.find_mut(graph[source]) != rep.0 {
+                    if subset_edges.insert((source, rep_node)) {
+                        changed = true;
+                        graph.add_edge(source, rep_node, weight);
+                    }
+                }
+            } else {
+                edges.remove(&Edge::new(source, target, weight));
+
+                if nodes.find_mut(graph[source]) != rep.0 {
+                    if edges.insert(Edge::new(source, rep_node, weight)) {
+                        changed = true;
+                        graph.add_edge(source, rep_node, weight);
+                    }
+                }
+            }
+
+            graph.remove_edge(id);
+        }
+        // Move all of src_node's out edges so they come from rep_node instead.
+        while let Some(edge) = graph.edges_directed(src_node, Outgoing).next() {
+            let id = edge.id();
+            let source = edge.source();
+            let target = edge.target();
+            let weight = *edge.weight();
+
+            if matches!(weight, GraphEdge::Subset(_)) {
+                subset_edges.remove(&(source, target));
+
+                if nodes.find_mut(graph[target]) != rep.0 {
+                    if subset_edges.insert((rep_node, target)) {
+                        changed = true;
+                        graph.add_edge(rep_node, target, weight);
+                    }
+                }
+            } else {
+                edges.remove(&Edge::new(source, target, weight));
+
+                if nodes.find_mut(graph[target]) != rep.0 {
+                    if edges.insert(Edge::new(rep_node, target, weight)) {
+                        changed = true;
+                        graph.add_edge(rep_node, target, weight);
+                    }
+                }
+            }
+
+            graph.remove_edge(id);
+        }
+    }
+
+    if invalid {
+        invalidate(
+            points_to,
+            nodes,
+            graph,
+            graph_map,
+            rep.0,
+            store,
+            invalidation_queue,
+            true,
+        );
+    }
+
+    if accessed_dynamically {
+        record_computed_access(
+            points_to,
+            nodes,
+            graph,
+            graph_map,
+            edges,
+            subset_edges,
+            rep.0,
+            store,
+            true,
+        );
+    }
+
+    (changed, rep, rep_node)
+}
+
+impl Graph {
+    fn get_node(&mut self, pointer: PointerId) -> NodeIndex {
+        get_node(&mut self.graph, &mut self.graph_map, pointer)
+    }
+
+    fn add_edge(
+        &mut self,
+        src: NodeIndex,
+        dest: NodeIndex,
+        kind: GraphEdge,
+        initial: bool,
+    ) -> bool {
+        debug_assert_ne!(src, dest);
+
+        if matches!(kind, GraphEdge::Subset(_)) {
+            if !self.subset_edges.contains(&(src, dest)) {
+                if initial {
+                    self.graph.add_edge(src, dest, kind);
+                    self.subset_edges.insert((src, dest));
+                } else {
+                    let first_edge = !self.graph.contains_edge(src, dest);
+                    self.graph.add_edge(src, dest, kind);
+                    self.subset_edges.insert((src, dest));
+                    if first_edge {
+                        self.prioritise(dest);
+                        self.prioritise(src);
+                    }
+                }
+
+                true
+            } else {
+                false
+            }
+        } else {
+            let edge = Edge::new(src, dest, kind);
+
+            if !self.edges.contains(&edge) {
+                if initial {
+                    self.graph.add_edge(src, dest, kind);
+                    self.edges.insert(edge);
+                } else {
+                    let first_edge = !self.graph.contains_edge(src, dest);
+                    self.graph.add_edge(src, dest, kind);
+                    self.edges.insert(edge);
+                    if first_edge {
+                        self.prioritise(dest);
+                        self.prioritise(src);
+                    }
+                }
+
+                true
+            } else {
+                false
+            }
         }
     }
 
@@ -93,15 +524,21 @@ impl Graph {
         kind: GraphEdge,
         store: &mut Store,
     ) {
-        self.add_edge(src, dest, kind);
+        let src_node = self.get_node(src);
+        let dest_node = self.get_node(dest);
 
-        if matches!(kind, GraphEdge::Subset) {
+        if matches!(kind, GraphEdge::Subset(_)) {
             debug_assert_ne!(src, dest);
 
             if store.invalid_pointers.contains(dest) {
-                self.invalidate(src, store);
+                self.invalidate(src, store, false);
+            }
+            if store.accessed_dynamically.contains(dest) {
+                self.record_computed_access(src, store, false);
             }
         }
+
+        self.add_edge(src_node, dest_node, kind, true);
     }
 
     fn make_subset_of<T: GetRepId, U: GetRepId>(
@@ -116,73 +553,270 @@ impl Graph {
             return false;
         }
 
-        self.prioritise(src);
-        self.prioritise(dest);
-
-        let mut changed = self.add_edge(src.0, dest.0, GraphEdge::Subset);
+        let src_node = self.get_node(src.0);
+        let dest_node = self.get_node(dest.0);
 
         if store.invalid_pointers.contains(dest.0) {
-            self.invalidate(src.0, store);
+            self.invalidate(src.0, store, false);
+        }
+        if store.accessed_dynamically.contains(dest.0) {
+            self.record_computed_access(src.0, store, false);
         }
 
+        let mut changed = self.add_edge(src_node, dest_node, GraphEdge::Subset(0), false);
+        if changed {
+            self.prioritise(dest_node);
+            self.prioritise(src_node);
+        }
         changed |= self.add_all(src, dest, store);
         changed
     }
 
-    pub fn invalidate(&mut self, pointer: PointerId, store: &mut Store) -> bool {
-        let pointer = RepId(self.nodes.find_mut(pointer));
-        let Some(node) = pointer_to_node(&self.graph_map, pointer.0) else {
-            return store.invalidate(pointer.0);
-        };
+    // TODO: accept slice of pointers
+    // force_visit_neighbours should be true when invalidating after merging nodes.
+    pub fn invalidate(
+        &mut self,
+        pointer: PointerId,
+        store: &mut Store,
+        force_visit_neighbours: bool,
+    ) -> bool {
+        invalidate(
+            &self.points_to,
+            &mut self.nodes,
+            &self.graph,
+            &mut self.graph_map,
+            pointer,
+            store,
+            &mut self.invalidation_queue,
+            force_visit_neighbours,
+        )
+    }
 
-        if pointer.0.is_built_in() || store.invalid_pointers.contains(pointer.0) {
-            return false;
+    // TODO: accept slice of pointers
+    // force_visit_neighbours should be true when invalidating after merging nodes.
+    pub fn record_computed_access(
+        &mut self,
+        pointer: PointerId,
+        store: &mut Store,
+        force_visit_neighbours: bool,
+    ) -> bool {
+        record_computed_access(
+            &mut self.points_to,
+            &mut self.nodes,
+            &mut self.graph,
+            &mut self.graph_map,
+            &mut self.edges,
+            &mut self.subset_edges,
+            pointer,
+            store,
+            force_visit_neighbours,
+        )
+    }
+
+    fn merge_prop_accesses(
+        &mut self,
+        pointer: PointerId,
+        node: NodeIndex,
+        store: &mut Store,
+        props: &mut Vec<NodeIndex>,
+        prop_merge_queue: &mut Vec<RepId>,
+    ) -> Option<(RepId, NodeIndex)> {
+        props.clear();
+        props.extend(
+            self.graph
+                .edges_directed(node, Outgoing)
+                .filter(|e| matches!(e.weight(), GraphEdge::Prop(_)))
+                .map(|e| e.target()),
+        );
+
+        if !props.is_empty() {
+            return None;
         }
 
-        debug_assert!(self.invalidation_queue.is_empty());
-        self.invalidation_queue.clear();
-        self.invalidation_queue.push(node);
+        prop_merge_queue.clear();
 
-        let mut changed = false;
+        let dest = store.pointers.insert(Pointer::Prop(pointer, NameId::MAX));
+        let mut rep = self.get_graph_node_id(dest);
+        let mut invalid = store.invalid_pointers.contains(rep.0);
+        let mut accessed_dynamically = store.accessed_dynamically.contains(rep.0);
+        for prop_node in props {
+            let prop_pointer = self.graph[*prop_node];
+            let prop_pointer = self.get_graph_node_id(prop_pointer);
 
-        while let Some(node) = self.invalidation_queue.pop() {
-            let pointer = self.graph[node];
-            if pointer.is_built_in() || store.invalid_pointers.contains(pointer) {
+            if prop_pointer.0 == rep.0 {
                 continue;
             }
 
-            changed = true;
-            store.invalidate(pointer);
+            invalid |= store.invalid_pointers.contains(prop_pointer.0);
+            accessed_dynamically |= store.accessed_dynamically.contains(prop_pointer.0);
 
-            for incoming in self.graph.edges_directed(node, Incoming) {
-                if matches!(incoming.weight(), GraphEdge::Subset) {
-                    let source = incoming.source();
-                    if !self.graph[source].is_built_in()
-                        && !store.invalid_pointers.contains(self.graph[source])
-                    {
-                        self.invalidation_queue.push(source);
-                    }
-                }
-            }
+            self.nodes.union(prop_pointer.0, rep.0);
 
-            if let Some(values) = self.points_to.get(&pointer).cloned() {
-                let graph_map = &self.graph_map;
-                let valid_values = values
-                    .iter()
-                    .filter(|v| !v.is_built_in() && !store.invalid_pointers.contains(*v))
-                    .map(|v| graph_map[v.index()]);
-                self.invalidation_queue.extend(valid_values);
+            let new_rep = RepId(self.nodes.find_mut(rep.0));
+
+            let src;
+            if new_rep.0 != rep.0 {
+                // prop_pointer became representative
+                src = rep;
+                rep = new_rep;
+            } else {
+                // rep is still the representative
+                src = prop_pointer;
             }
+            prop_merge_queue.push(src);
         }
 
-        changed
+        if prop_merge_queue.is_empty() {
+            return None;
+        }
+
+        let (changed, rep, rep_node) =
+            self.merge_nodes(rep, invalid, accessed_dynamically, &prop_merge_queue, store);
+
+        if changed {
+            Some((rep, rep_node))
+        } else {
+            None
+        }
+    }
+
+    fn merge_nodes(
+        &mut self,
+        rep: RepId,
+        invalid: bool,
+        accessed_dynamically: bool,
+        queue: &[RepId],
+        store: &mut Store,
+    ) -> (bool, RepId, NodeIndex) {
+        merge_nodes(
+            &mut self.points_to,
+            &mut self.nodes,
+            &mut self.graph,
+            &mut self.graph_map,
+            &mut self.edges,
+            &mut self.subset_edges,
+            &mut self.invalidation_queue,
+            rep,
+            invalid,
+            accessed_dynamically,
+            queue,
+            store,
+        )
     }
 
     pub fn compute_points_to_map(&mut self, store: &mut Store) {
-        store.invalid_pointers.insert(PointerId::UNKNOWN);
-
         for pointer in store.concrete_pointers() {
             self.points_to.insert(pointer, SmallSet::single(pointer));
+        }
+
+        // let mut count = 0;
+
+        // for node in self.graph.node_indices() {
+        //     if self
+        //         .graph
+        //         .edges_directed(node, Outgoing)
+        //         .any(|e| *e.weight() == GraphEdge::Prop(NameId::MAX))
+        //         || store.accessed_dynamically.contains(self.graph[node])
+        //     {
+        //         let prop_count = self
+        //             .graph
+        //             .edges_directed(node, Outgoing)
+        //             .filter(|e| matches!(e.weight(),GraphEdge::Prop(n) if *n != NameId::MAX))
+        //             .count();
+
+        //         count += prop_count;
+        //     }
+        // }
+        // dbg!(count);
+
+        // todo!();
+
+        let mut prop_merge_queue = Vec::new();
+
+        {
+            let mut tarjan = TarjanSubsetScc::new();
+
+            let self_points_to = &mut self.points_to;
+            let self_graph_map = &mut self.graph_map;
+            let self_nodes = &mut self.nodes;
+            let self_edges = &mut self.edges;
+            let self_subset_edges = &mut self.subset_edges;
+            let self_invalidation_queue = &mut self.invalidation_queue;
+
+            tarjan.run(&mut self.graph, |scc, g| {
+                if scc.len() > 1 {
+                    debug_assert!(scc.iter().all(|n| !store.is_concrete(g[*n])));
+
+                    prop_merge_queue.clear();
+
+                    let mut rep = RepId(self_nodes.find_mut(g[scc[0]]));
+                    let mut invalid = store.invalid_pointers.contains(rep.0);
+                    let mut accessed_dynamically = store.accessed_dynamically.contains(rep.0);
+
+                    for &node in scc.iter().skip(1) {
+                        let pointer = RepId(self_nodes.find_mut(g[node]));
+
+                        invalid |= store.invalid_pointers.contains(pointer.0);
+                        accessed_dynamically |= store.accessed_dynamically.contains(pointer.0);
+
+                        self_nodes.union(pointer.0, rep.0);
+
+                        let new_rep = RepId(self_nodes.find_mut(rep.0));
+
+                        let src;
+                        if new_rep.0 != rep.0 {
+                            // prop_pointer became representative
+                            src = rep;
+                            rep = new_rep;
+                        } else {
+                            // rep is still the representative
+                            src = pointer;
+                        }
+                        prop_merge_queue.push(src);
+                    }
+
+                    let (_, rep, _) = merge_nodes(
+                        self_points_to,
+                        self_nodes,
+                        g,
+                        self_graph_map,
+                        self_edges,
+                        self_subset_edges,
+                        self_invalidation_queue,
+                        rep,
+                        invalid,
+                        accessed_dynamically,
+                        &prop_merge_queue,
+                        store,
+                    );
+
+                    if invalid {
+                        invalidate(
+                            self_points_to,
+                            self_nodes,
+                            g,
+                            self_graph_map,
+                            rep.0,
+                            store,
+                            self_invalidation_queue,
+                            true,
+                        );
+                    }
+                    if accessed_dynamically {
+                        record_computed_access(
+                            self_points_to,
+                            self_nodes,
+                            g,
+                            self_graph_map,
+                            self_edges,
+                            self_subset_edges,
+                            rep.0,
+                            store,
+                            true,
+                        );
+                    }
+                }
+            });
         }
 
         let mut tarjan = TarjanScc::default();
@@ -197,7 +831,7 @@ impl Graph {
             for n in scc {
                 priorities.insert(graph[*n], priority);
             }
-            priority += 1;
+            priority += 50;
         });
 
         debug_assert_eq!(self.queue.priorities.len(), self.graph.node_count());
@@ -210,22 +844,49 @@ impl Graph {
 
         self.queue.extend(internal_nodes);
         let mut edges = Vec::new();
-        let mut prop_merge_queue = Vec::new();
+
+        let mut prop_merge_buffer = Vec::new();
 
         let mut first = true;
 
         loop {
-            self.flow_edges(store, &mut edges, &mut prop_merge_queue);
+            self.flow_edges(
+                store,
+                &mut edges,
+                &mut prop_merge_queue,
+                &mut prop_merge_buffer,
+            );
             // After we've reached a fixedpoint above, if we couldn't infer the values
             // of a pointer, set them to Unknown and run fixedpoint again to propagate
             // the Unknowns.
             loop {
-                let mut invalidated = false;
+                let mut changed = false;
+
+                for pointer in store.concrete_pointers() {
+                    if store.accessed_dynamically.contains(pointer) {
+                        let node = self.get_graph_node_id(pointer);
+                        if let Some(node) = pointer_to_node(&self.graph_map, node.0) {
+                            if let Some((rep, rep_node)) = self.merge_prop_accesses(
+                                pointer,
+                                node,
+                                store,
+                                &mut prop_merge_buffer,
+                                &mut prop_merge_queue,
+                            ) {
+                                if !is_sink_node(&self.graph, rep_node) {
+                                    self.prioritise(rep_node);
+                                    self.queue.push(rep.0);
+                                }
+                            }
+                        }
+                    }
+                }
 
                 for pointer in store.non_concrete_pointers() {
                     let node = self.get_graph_node_id(pointer);
 
                     if let Pointer::Arg(callee, _) = store.pointers[pointer] {
+                        let callee = self.get_graph_node_id(callee);
                         let unknown_callee = self
                             .get(callee)
                             .map(|concrete_callees| concrete_callees.contains(&PointerId::UNKNOWN))
@@ -235,19 +896,19 @@ impl Graph {
                             if let Some(concrete_values) = self.get(node).cloned() {
                                 // Invalidate arguments passed to unknown callers.
                                 for value in &concrete_values {
-                                    invalidated |= self.invalidate(value, store);
+                                    changed |= self.invalidate(value, store, false);
                                 }
                             }
                         }
 
                         // If the callee is invalid, then it could be called with unknown arguments.
-                        if store.invalid_pointers.contains(callee) {
+                        if store.invalid_pointers.contains(callee.0) {
                             let changed = self.insert(node, PointerId::UNKNOWN, store);
                             if changed {
                                 if let Some(n) = pointer_to_node(&self.graph_map, node.0) {
                                     if !is_sink_node(&self.graph, n) {
                                         // TODO: unnecessary? Is the node guaranteed to be prioritised?
-                                        self.prioritise(node);
+                                        self.prioritise(n);
                                         self.queue.push(node.0);
                                     }
                                 }
@@ -256,23 +917,25 @@ impl Graph {
                     }
 
                     if let Pointer::ReturnValue(callee) = store.pointers[pointer] {
+                        let callee = self.get_graph_node_id(callee);
                         // If the callee is invalid, then we can't know how the return type is used.
-                        if store.invalid_pointers.contains(callee) {
-                            invalidated |= self.invalidate(pointer, store);
+                        if store.invalid_pointers.contains(callee.0) {
+                            changed |= self.invalidate(pointer, store, false);
                         }
                     }
 
                     if let Pointer::Prop(obj, name) = store.pointers[pointer] {
                         let obj_invalid = store.invalid_pointers.contains(obj);
-                        let is_built_in = is_built_in_property(obj, &store.names[name]);
+                        let is_built_in =
+                            name != NameId::MAX && is_built_in_property(obj, &store.names[name]);
                         if obj_invalid || is_built_in {
-                            invalidated |= self.invalidate(pointer, store);
+                            changed |= self.invalidate(pointer, store, false);
                             let changed = self.insert(node, PointerId::UNKNOWN, store);
                             if changed {
                                 if let Some(n) = pointer_to_node(&self.graph_map, node.0) {
                                     if !is_sink_node(&self.graph, n) {
                                         // TODO: unnecessary? Is the node guaranteed to be prioritised?
-                                        self.prioritise(node);
+                                        self.prioritise(n);
                                         self.queue.push(node.0);
                                     }
                                 }
@@ -290,7 +953,7 @@ impl Graph {
                                     if let Some(n) = pointer_to_node(&self.graph_map, node.0) {
                                         if !is_sink_node(&self.graph, n) {
                                             // TODO: unnecessary? Is the node guaranteed to be prioritised?
-                                            self.prioritise(node);
+                                            self.prioritise(n);
                                             self.queue.push(node.0);
                                         }
                                     }
@@ -305,18 +968,20 @@ impl Graph {
                                 if changed {
                                     if let Some(n) = pointer_to_node(&self.graph_map, node.0) {
                                         if !is_sink_node(&self.graph, n) {
+                                            // TODO: unnecessary? Is the node guaranteed to be prioritised?
+                                            self.prioritise(n);
                                             self.queue.push(node.0);
                                         }
                                     }
                                 }
                                 continue;
                             }
-                            invalidated |= self.invalidate(pointer, store);
+                            changed |= self.invalidate(pointer, store, false);
                             self.insert(node, PointerId::UNKNOWN, store);
                             if let Some(n) = pointer_to_node(&self.graph_map, node.0) {
                                 if !is_sink_node(&self.graph, n) {
                                     // TODO: unnecessary? Is the node guaranteed to be prioritised?
-                                    self.prioritise(node);
+                                    self.prioritise(n);
                                     self.queue.push(node.0);
                                 }
                             }
@@ -326,7 +991,7 @@ impl Graph {
 
                 first = false;
 
-                if !invalidated {
+                if !changed {
                     break;
                 }
             }
@@ -335,6 +1000,51 @@ impl Graph {
                 break;
             }
         }
+
+        // {
+        //     let mut counts: std::collections::BTreeMap<usize, usize> =
+        //         std::collections::BTreeMap::default();
+        //     for (_, set) in self.points_to.iter() {
+        //         *counts.entry(set.len()).or_default() += 1;
+        //     }
+        //     dbg!(counts);
+
+        //     let mut unknown_only = 0;
+        //     let mut primitive_only = 0;
+
+        //     let mut primitive_counts: std::collections::BTreeMap<usize, usize> =
+        //         std::collections::BTreeMap::default();
+
+        //     let is_primitive = |p: PointerId| {
+        //         matches!(
+        //             store.pointers[p],
+        //             Pointer::Unknown
+        //                 | Pointer::NullOrVoid
+        //                 | Pointer::Bool
+        //                 | Pointer::Num
+        //                 | Pointer::String
+        //                 | Pointer::BigInt
+        //                 | Pointer::Regex
+        //         )
+        //     };
+        //     for (_, set) in self.points_to.iter() {
+        //         if set.len() == 1 && set.iter().next().unwrap() == PointerId::UNKNOWN {
+        //             unknown_only += 1;
+        //         }
+
+        //         if set.iter().all(is_primitive) {
+        //             primitive_only += 1;
+        //         }
+
+        //         let primitive_count = set.iter().filter(|p| is_primitive(*p)).count();
+        //         *primitive_counts.entry(primitive_count).or_default() += 1;
+        //     }
+        //     dbg!(primitive_counts);
+        //     dbg!(unknown_only);
+        //     dbg!(primitive_only);
+
+        //     dbg!(self.points_to.len());
+        // }
 
         if cfg!(debug_assertions) {
             for set in self.points_to.values() {
@@ -358,12 +1068,99 @@ impl Graph {
         }
     }
 
+    fn merge_scc(
+        nodes: &mut GrowableUnionFind<PointerId>,
+        points_to: &mut FxHashMap<PointerId, SmallSet>,
+        edges: &mut FxHashSet<Edge>,
+        subset_edges: &mut FxHashSet<(NodeIndex, NodeIndex)>,
+
+        graph: &mut GraphType,
+        graph_map: &mut Vec<NodeIndex>,
+
+        scc: &[NodeIndex],
+        store: &mut Store,
+
+        invalidation_queue: &mut Vec<NodeIndex>,
+        prop_merge_queue: &mut Vec<RepId>,
+    ) {
+        prop_merge_queue.clear();
+
+        let mut rep = RepId(nodes.find_mut(graph[scc[0]]));
+        let mut invalid = store.invalid_pointers.contains(rep.0);
+        let mut accessed_dynamically = store.accessed_dynamically.contains(rep.0);
+        for &node in scc.iter().skip(1) {
+            let pointer = RepId(nodes.find_mut(graph[node]));
+
+            invalid |= store.invalid_pointers.contains(pointer.0);
+            accessed_dynamically |= store.accessed_dynamically.contains(pointer.0);
+
+            nodes.union(pointer.0, rep.0);
+
+            let new_rep = RepId(nodes.find_mut(rep.0));
+
+            let src;
+            if new_rep.0 != rep.0 {
+                // prop_pointer became representative
+                src = rep;
+                rep = new_rep;
+            } else {
+                // rep is still the representative
+                src = pointer;
+            }
+            prop_merge_queue.push(src);
+        }
+
+        let (_, rep, _) = merge_nodes(
+            points_to,
+            nodes,
+            graph,
+            graph_map,
+            edges,
+            subset_edges,
+            invalidation_queue,
+            rep,
+            invalid,
+            accessed_dynamically,
+            prop_merge_queue,
+            store,
+        );
+
+        if invalid {
+            invalidate(
+                points_to,
+                nodes,
+                graph,
+                graph_map,
+                rep.0,
+                store,
+                invalidation_queue,
+                true,
+            );
+        }
+
+        if accessed_dynamically {
+            record_computed_access(
+                points_to,
+                nodes,
+                graph,
+                graph_map,
+                edges,
+                subset_edges,
+                rep.0,
+                store,
+                true,
+            );
+        }
+    }
+
     fn flow_edges(
         &mut self,
         store: &mut Store,
         edges: &mut Vec<(NodeIndex, GraphEdge)>,
         prop_merge_queue: &mut Vec<RepId>,
+        prop_merge_buffer: &mut Vec<NodeIndex>,
     ) {
+        let mut iter = 0;
         while let Some(node) = self.queue.pop() {
             // Skip nodes that aren't their representative. The representative should
             // always be in the queue if the node was, since we add the rep to the queue
@@ -374,13 +1171,136 @@ impl Graph {
             }
             let node = rep.0;
 
+            if iter % 100_000 == 0 {
+                println!("Iter: {}, queue size: {}", iter, self.queue.inner.len());
+
+                // {
+                //     let mut redundant_prop_nodes = 0;
+                //     let mut redundant_arg_nodes = 0;
+                //     let mut redundant_return_nodes = 0;
+                //     for node in self.graph.node_indices() {
+                //         let mut set = FxHashSet::default();
+                //         for edge in self.graph.edges_directed(node, Outgoing) {
+                //             match edge.weight() {
+                //                 GraphEdge::Subset(_) => {}
+                //                 GraphEdge::Return(_) => {
+                //                     if set.contains(edge.weight()) {
+                //                         redundant_return_nodes += 1;
+                //                     } else {
+                //                         set.insert(*edge.weight());
+                //                     }
+                //                 }
+                //                 GraphEdge::Prop(_) => {
+                //                     if set.contains(edge.weight()) {
+                //                         redundant_prop_nodes += 1;
+                //                     } else {
+                //                         set.insert(*edge.weight());
+                //                     }
+                //                 }
+                //                 GraphEdge::Arg(_) => {
+                //                     if set.contains(edge.weight()) {
+                //                         redundant_arg_nodes += 1;
+                //                     } else {
+                //                         set.insert(*edge.weight());
+                //                     }
+                //                 }
+                //             }
+                //         }
+                //     }
+
+                //     dbg!(
+                //         redundant_prop_nodes,
+                //         redundant_arg_nodes,
+                //         redundant_return_nodes,
+                //         self.graph.node_count(),
+                //         store.pointers.len()
+                //     );
+                // }
+
+                // {
+                //     let mut tarjan = TarjanScc::default();
+
+                //     let mut size_counts: std::collections::BTreeMap<usize, usize> =
+                //         std::collections::BTreeMap::new();
+
+                //     tarjan.run(&self.graph, |scc| {
+                //         *size_counts.entry(scc.len()).or_default() += 1;
+                //     });
+
+                //     dbg!(size_counts);
+                // }
+                {
+                    let mut tarjan = TarjanSubsetScc::new();
+
+                    let self_nodes = &mut self.nodes;
+                    let self_points_to = &mut self.points_to;
+                    let self_queue = &mut self.queue;
+                    let self_edges = &mut self.edges;
+                    let self_subset_edges = &mut self.subset_edges;
+                    let self_graph_map = &mut self.graph_map;
+                    let self_invalidation_queue = &mut self.invalidation_queue;
+
+                    tarjan.run(&mut self.graph, |scc, g| {
+                        if scc.len() > 1 {
+                            Self::merge_scc(
+                                self_nodes,
+                                self_points_to,
+                                self_edges,
+                                self_subset_edges,
+                                g,
+                                self_graph_map,
+                                scc,
+                                store,
+                                self_invalidation_queue,
+                                prop_merge_queue,
+                            );
+                        }
+                    });
+
+                    let mut tarjan = TarjanScc::new();
+
+                    let graph = &self.graph;
+
+                    let mut priority = 0_u32;
+                    tarjan.run(&self.graph, |scc| {
+                        let node = graph[scc[0]];
+                        self_queue.priorities.insert(node, priority);
+                        self_queue.inner.change_priority(&node, priority);
+                        priority += 1;
+                    });
+
+                    // let mut tarjan = TarjanScc::new();
+
+                    // let mut subset_scc_size_counts: std::collections::BTreeMap<usize, usize> =
+                    //     std::collections::BTreeMap::new();
+
+                    // // let mut nodes_in_sccs = FxHashSet::default();
+
+                    // tarjan.run(&mut self.graph, |scc, _, _, _, _| {
+                    //     if scc.len() > 1 {
+                    //         *subset_scc_size_counts.entry(scc.len()).or_default() += 1;
+                    //         // nodes_in_sccs += scc.len();
+                    //     }
+                    // });
+
+                    // // dbg!(nodes_in_sccs);
+                    // // dbg!(nodes_in_sccs as f64 / self.graph.node_count() as f64 * 100.0);
+
+                    // dbg!(subset_scc_size_counts);
+                }
+            }
+
             edges.clear();
+
             let n = self.get_node(node);
+
             edges.extend(
                 self.graph
                     .edges_directed(n, Outgoing)
                     .map(|e| (e.target(), *e.weight())),
             );
+
+            iter += 1;
 
             for (dest, kind) in edges.iter().copied() {
                 debug_assert_ne!(dest, n, "Graph should not have loops");
@@ -388,7 +1308,7 @@ impl Graph {
                 let dest_node = self.graph_map[dest.0.index()];
 
                 match kind {
-                    GraphEdge::Subset => {
+                    GraphEdge::Subset(_) => {
                         let changed = self.add_all(node, dest, store);
                         if changed {
                             if !is_sink_node(&self.graph, dest_node) {
@@ -396,7 +1316,7 @@ impl Graph {
                             }
                         }
                     }
-                    GraphEdge::Return => {
+                    GraphEdge::Return(_) => {
                         let callees = match self.get(node) {
                             Some(c) => c.clone(),
                             None => continue,
@@ -429,23 +1349,67 @@ impl Graph {
 
                         prop_merge_queue.clear();
 
-                        let mut changed = false;
+                        // if name == NameId::MAX {
+                        //     debug_assert!(concrete_objects.iter().all(|c| !self
+                        //         .graph
+                        //         .edges_directed(self.graph_map[c.index()], Outgoing)
+                        //         .any(
+                        //             |e| matches!(e.weight(), GraphEdge::Prop(n) if *n != NameId::MAX)
+                        //         )), "{:#?}", concrete_objects.iter().map(|c| self
+                        //             .graph
+                        //             .edges_directed(self.graph_map[c.index()], Outgoing)
+                        //             .filter_map(
+                        //                 |e| match e.weight() {
+                        //                     GraphEdge::Prop(n) if *n == NameId::MAX => Some("MAX".to_string()),
+                        //                     GraphEdge::Prop(n) => Some(store.names[*n].to_string()),
+                        //                     _ => None
+                        //                 }
+                        //             ).collect::<Vec<_>>()).collect::<Vec<_>>());
+                        // }
+
                         let mut rep = dest;
                         let mut invalid = store.invalid_pointers.contains(dest.0);
+                        let mut accessed_dynamically = store.accessed_dynamically.contains(dest.0);
+                        let mut has_unknown = false;
+                        let mut has_null_or_void = false;
                         for concrete_object in &concrete_objects {
                             if concrete_object == PointerId::UNKNOWN {
-                                changed |= self.insert(rep.0, PointerId::UNKNOWN, store);
+                                has_unknown = true;
                                 continue;
                             }
                             if concrete_object == PointerId::NULL_OR_VOID {
-                                changed |= self.insert(rep.0, PointerId::NULL_OR_VOID, store);
+                                has_null_or_void = true;
                                 continue;
                             }
-                            if concrete_object.is_primitive()
-                                && !is_built_in_property(concrete_object, &store.names[name])
-                            {
-                                // non-built in prop on primitive - ignore.
-                                continue;
+                            if name == NameId::MAX {
+                                // todo!();
+                                // // Dynamic
+                                // if let Some(node) =
+                                //     pointer_to_node(&self.graph_map, concrete_object)
+                                // {
+                                //     if let Some(changed) = self.merge_prop_accesses(
+                                //         concrete_object,
+                                //         node,
+                                //         store,
+                                //         prop_merge_buffer,
+                                //         prop_merge_queue
+                                //     ) {
+                                //         if !is_sink_node(
+                                //             &self.graph,
+                                //             self.graph_map[changed.0.index()],
+                                //         ) {
+                                //             // self.prioritise(changed);
+                                //             self.queue.push(changed.0);
+                                //         }
+                                //     }
+                                // }
+                            } else {
+                                if concrete_object.is_primitive()
+                                    && !is_built_in_property(concrete_object, &store.names[name])
+                                {
+                                    // non-built in prop on primitive - ignore.
+                                    continue;
+                                }
                             }
                             let prop_pointer =
                                 store.pointers.insert(Pointer::Prop(concrete_object, name));
@@ -456,6 +1420,8 @@ impl Graph {
                             }
 
                             invalid |= store.invalid_pointers.contains(prop_pointer.0);
+                            accessed_dynamically |=
+                                store.accessed_dynamically.contains(prop_pointer.0);
 
                             self.nodes.union(prop_pointer.0, rep.0);
 
@@ -473,6 +1439,15 @@ impl Graph {
                             prop_merge_queue.push(src);
                         }
 
+                        let mut changed = false;
+
+                        if has_unknown {
+                            changed |= self.insert(rep.0, PointerId::UNKNOWN, store);
+                        }
+                        if has_null_or_void {
+                            changed |= self.insert(rep.0, PointerId::NULL_OR_VOID, store);
+                        }
+
                         if prop_merge_queue.is_empty() {
                             debug_assert_eq!(rep.0, dest.0);
                             if changed {
@@ -484,80 +1459,17 @@ impl Graph {
                             continue;
                         }
 
-                        let rep_node = self.get_node(rep.0);
+                        let (ch, rep, rep_node) = self.merge_nodes(
+                            rep,
+                            invalid,
+                            accessed_dynamically,
+                            prop_merge_queue,
+                            store,
+                        );
 
-                        for &src in prop_merge_queue.iter() {
-                            debug_assert_ne!(src.0, rep.0);
-
-                            if invalid {
-                                store.invalid_pointers.insert(src.0);
-                            }
-
-                            if let Some(src_values) = self.points_to.remove(&src.0) {
-                                match self.points_to.entry(rep.0) {
-                                    Entry::Occupied(mut entry) => {
-                                        changed |= entry.get_mut().extend(src_values);
-                                    }
-                                    Entry::Vacant(entry) => {
-                                        changed = true;
-                                        entry.insert(src_values);
-                                    }
-                                }
-                            }
-
-                            let Some(src_node) = pointer_to_node(&self.graph_map, src.0) else {
-                                continue;
-                            };
-
-                            // Move all of src_node's in edges so they point to rep_node instead.
-                            while let Some(edge) =
-                                self.graph.edges_directed(src_node, Incoming).next()
-                            {
-                                let id = edge.id();
-                                let source = edge.source();
-                                let weight = *edge.weight();
-
-                                if edge.source() != rep_node {
-                                    let mut existing =
-                                        self.graph.edges_connecting(source, rep_node);
-                                    if !existing.any(|e| *e.weight() == weight) {
-                                        self.graph.add_edge(source, rep_node, weight);
-                                    }
-                                }
-
-                                changed = true;
-
-                                self.graph.remove_edge(id);
-                            }
-                            // Move all of src_node's out edges so they come from rep_node instead.
-                            while let Some(edge) =
-                                self.graph.edges_directed(src_node, Outgoing).next()
-                            {
-                                let id = edge.id();
-                                let target = edge.target();
-                                let weight = *edge.weight();
-
-                                if rep_node != target {
-                                    let mut existing =
-                                        self.graph.edges_connecting(rep_node, target);
-                                    if !existing.any(|e| *e.weight() == weight) {
-                                        self.graph.add_edge(rep_node, target, weight);
-                                    }
-                                }
-
-                                changed = true;
-
-                                self.graph.remove_edge(id);
-                            }
-                        }
-
-                        if invalid {
-                            self.invalidate(rep.0, store);
-                        }
-
-                        if changed {
+                        if ch || changed {
                             if !is_sink_node(&self.graph, rep_node) {
-                                self.prioritise(rep);
+                                self.prioritise(rep_node);
                                 self.queue.push(rep.0);
                             }
                         }
@@ -613,19 +1525,113 @@ impl Graph {
         }
     }
 
-    fn prioritise<T: GetRepId>(&mut self, pointer: T) {
-        let pointer = pointer.get_rep_id(self).0;
-        if !self.queue.priorities.contains_key(&pointer) {
-            let node = self.get_node(pointer);
-            let priority = self
-                .graph
-                .neighbors_directed(node, Incoming)
-                .map(|n| self.queue.priorities[&self.graph[n]])
-                .min()
-                .unwrap_or(u32::MAX);
-            self.queue.priorities.insert(pointer, priority);
-        }
+    fn prioritise(&mut self, node: NodeIndex) {
+        prioritise(&mut self.queue, &mut self.graph, &mut self.graph_map, node);
     }
+
+    // fn prioritise2(&mut self, node: NodeIndex, store: &Store) {
+    //     // We choose the smallest x such that: out < x < in
+    //     let in_priority = self
+    //         .graph
+    //         .neighbors_directed(node, Incoming)
+    //         .filter_map(|n| self.queue.priorities.get(&self.graph[n]).copied())
+    //         .min()
+    //         .unwrap_or(u32::MAX);
+    //     let out_priority = self
+    //         .graph
+    //         .neighbors_directed(node, Outgoing)
+    //         .filter_map(|n| self.queue.priorities.get(&self.graph[n]).copied())
+    //         .max()
+    //         .unwrap_or(0);
+
+    //     if let Some(existing) = self.queue.priorities.get(&self.graph[node]) {
+    //         if out_priority < *existing && *existing < in_priority {
+    //             // Priority is already suitable.
+    //             return;
+    //         }
+    //     }
+
+    //     if in_priority == out_priority || in_priority < out_priority {
+    //         let mut tarjan = TarjanScc::default();
+
+    //         let priorities = &mut self.queue.priorities;
+    //         let inner = &mut self.queue.inner;
+    //         let graph = &self.graph;
+
+    //         let mut priority = 0_u32;
+    //         tarjan.run(&self.graph, |scc| {
+    //             for n in scc {
+    //                 priorities.insert(graph[*n], priority);
+    //                 inner.change_priority(&graph[*n], priority);
+    //             }
+    //             priority += 1;
+    //         });
+    //     } else {
+    //         self.queue
+    //             .priorities
+    //             .insert(self.graph[node], out_priority + 1);
+    //         self.queue
+    //             .inner
+    //             .change_priority(&self.graph[node], out_priority + 1);
+    //     }
+    //     // if in_priority == out_priority {
+    //     //     println!("Full re-prioritisation 1");
+    //     //     let mut tarjan = TarjanScc::default();
+
+    //     //     let priorities = &mut self.queue.priorities;
+    //     //     let inner = &mut self.queue.inner;
+    //     //     let graph = &self.graph;
+
+    //     //     let mut priority = 0_u32;
+    //     //     tarjan.run(&self.graph, |scc| {
+    //     //         for n in scc {
+    //     //             priorities.insert(graph[*n], priority);
+    //     //             inner.change_priority(&graph[*n], priority);
+    //     //         }
+    //     //         priority += 1;
+    //     //     });
+    //     // } else if in_priority < out_priority {
+    //     //     println!("Full re-prioritisation 2");
+    //     //     // let dot = self.get_dot(&store);
+
+    //     //     // std::fs::write("./relo.dot", dot).expect("Failed to output fn graph");
+    //     //     // dbg!(in_priority, out_priority);
+    //     //     // let in_priorities = self
+    //     //     //     .graph
+    //     //     //     .neighbors_directed(node, Incoming)
+    //     //     //     .map(|n| self.queue.priorities.get(&self.graph[n]).copied())
+    //     //     //     .collect::<Vec<_>>();
+    //     //     // let out_priorities = self
+    //     //     //     .graph
+    //     //     //     .neighbors_directed(node, Outgoing)
+    //     //     //     .map(|n| self.queue.priorities.get(&self.graph[n]).copied())
+    //     //     //     .collect::<Vec<_>>();
+    //     //     // dbg!(in_priorities, out_priorities);
+    //     //     // dbg!(node, self.graph[node]);
+    //     //     // unreachable!("order has been violated");
+    //     //     let mut tarjan = TarjanScc::default();
+
+    //     //     let priorities = &mut self.queue.priorities;
+    //     //     let inner = &mut self.queue.inner;
+    //     //     let graph = &self.graph;
+
+    //     //     let mut priority = 0_u32;
+    //     //     tarjan.run(&self.graph, |scc| {
+    //     //         for n in scc {
+    //     //             priorities.insert(graph[*n], priority);
+    //     //             inner.change_priority(&graph[*n], priority);
+    //     //         }
+    //     //         priority += 1;
+    //     //     });
+    //     // } else {
+    //     //     self.queue
+    //     //         .priorities
+    //     //         .insert(self.graph[node], out_priority + 1);
+    //     //     self.queue
+    //     //         .inner
+    //     //         .change_priority(&self.graph[node], out_priority + 1);
+    //     // }
+    // }
 
     fn get_graph_node_id(&mut self, pointer: PointerId) -> RepId {
         RepId(self.nodes.find_mut(pointer))
@@ -663,7 +1669,12 @@ impl Graph {
 
         if store.invalid_pointers.contains(dest) & !store.invalid_pointers.contains(src) {
             for p in src_set.iter() {
-                self.invalidate(p, store);
+                self.invalidate(p, store, false);
+            }
+        }
+        if store.accessed_dynamically.contains(dest) & !store.accessed_dynamically.contains(src) {
+            for p in src_set.iter() {
+                self.record_computed_access(p, store, false);
             }
         }
 
@@ -708,12 +1719,16 @@ impl Graph {
             for &p in &pointers {
                 let value: String = match &store.pointers[p] {
                     Pointer::Prop(obj, prop) => {
-                        format!(
-                            "Prop({}, ({}, '{}'))",
-                            obj.as_u32(),
-                            prop.as_u32(),
-                            store.names[*prop]
-                        )
+                        if *prop == NameId::MAX {
+                            format!("Prop({}, Dynamic)", obj.as_u32())
+                        } else {
+                            format!(
+                                "Prop({}, ({}, '{}'))",
+                                obj.as_u32(),
+                                prop.as_u32(),
+                                store.names[*prop]
+                            )
+                        }
                     }
                     Pointer::Var(id) => {
                         format!("Var({}, '{}')", id.as_u32(), store.names[store.vars[*id].0])
@@ -754,6 +1769,26 @@ impl Graph {
     }
 }
 
+fn prioritise(
+    queue: &mut UniqueQueue,
+
+    graph: &GraphType,
+    graph_map: &[NodeIndex],
+
+    node: NodeIndex,
+) {
+    let pointer = graph[node];
+    if !queue.priorities.contains_key(&pointer) {
+        let node = graph_map[pointer.index()];
+        let priority = graph
+            .neighbors_directed(node, Incoming)
+            .map(|n| queue.priorities[&graph[n]])
+            .min()
+            .unwrap_or(u32::MAX);
+        queue.priorities.insert(pointer, priority.saturating_sub(1));
+    }
+}
+
 #[derive(Clone, Copy)]
 struct RepId(PointerId);
 
@@ -773,13 +1808,48 @@ impl GetRepId for RepId {
     }
 }
 
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Copy, Clone, Hash, Eq)]
+struct Edge(NodeIndex, NodeIndex, GraphEdge);
+
+impl Edge {
+    pub fn new(src: NodeIndex, dest: NodeIndex, kind: GraphEdge) -> Self {
+        Self(src, dest, kind)
+    }
+}
+
+impl PartialEq for Edge {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.eq(&other.0) & self.1.eq(&other.1) & self.2.eq(&other.2)
+    }
+}
+
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub(super) enum GraphEdge {
-    Subset,
-    Return,
+    // u32 is dummy/unused
+    Subset(u32),
+    // u32 is dummy/unused
+    Return(u32),
     Prop(NameId),
     Arg(u32),
 }
+
+// impl PartialEq for GraphEdge {
+//     fn eq(&self, other: &Self) -> bool {
+//         let a = match *self {
+//             Self::Arg(a) => a,
+//             Self::Prop(a) => a.as_u32(),
+//             Self::Subset(a) => a,
+//             Self::Return(a) => a,
+//         };
+//         let b = match *other {
+//             Self::Arg(a) => a,
+//             Self::Prop(a) => a.as_u32(),
+//             Self::Subset(a) => a,
+//             Self::Return(a) => a,
+//         };
+//         std::mem::discriminant(self) == std::mem::discriminant(other) && a == b
+//     }
+// }
 
 impl Display for GraphEdge {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -812,24 +1882,22 @@ impl std::cmp::PartialOrd for PrioritizedNode {
 
 #[derive(Debug, Default)]
 struct UniqueQueue {
-    inner: BinaryHeap<PrioritizedNode>,
+    inner: PriorityQueue<PointerId, u32>,
     priorities: FxHashMap<PointerId, u32>,
 }
 
 impl UniqueQueue {
     fn pop(&mut self) -> Option<PointerId> {
-        self.inner.pop().map(|p| p.1)
+        self.inner.pop().map(|p| p.0)
     }
 
     fn push(&mut self, node: PointerId) {
-        self.inner
-            .push(PrioritizedNode(self.priorities[&node], node));
+        self.inner.push(node, self.priorities[&node]);
     }
 
     fn extend(&mut self, iter: impl Iterator<Item = PointerId>) {
         let priorities = &self.priorities;
-        self.inner
-            .extend(iter.map(|n| PrioritizedNode(priorities[&n], n)));
+        self.inner.extend(iter.map(|n| (n, priorities[&n])));
     }
 }
 
@@ -879,6 +1947,13 @@ impl SmallSet {
         match self {
             SmallSet::Inline(set) => set.contains(value),
             SmallSet::Heap(set) => set.contains(*value),
+        }
+    }
+
+    pub fn TODO_TEMP_LEN(&self) -> usize {
+        match self {
+            SmallSet::Inline(set) => set.len(),
+            SmallSet::Heap(set) => set.count(),
         }
     }
 
@@ -983,6 +2058,131 @@ impl<'a> Iterator for SmallSetIter<'a> {
         match self {
             SmallSetIter::Slice(iter) => iter.next().copied(),
             SmallSetIter::Set(iter) => iter.next(),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+struct NodeData {
+    rootindex: Option<std::num::NonZeroUsize>,
+}
+
+/// A reusable state for computing the *strongly connected components* using [Tarjan's algorithm][1].
+///
+/// [1]: https://en.wikipedia.org/wiki/Tarjan%27s_strongly_connected_components_algorithm
+#[derive(Debug)]
+struct TarjanSubsetScc {
+    index: usize,
+    componentcount: usize,
+    nodes: Vec<NodeData>,
+    stack: Vec<NodeIndex>,
+}
+
+impl TarjanSubsetScc {
+    /// Creates a new `TarjanScc`
+    pub fn new() -> Self {
+        TarjanSubsetScc {
+            index: 1,                        // Invariant: index < componentcount at all times.
+            componentcount: std::usize::MAX, // Will hold if componentcount is initialized to number of nodes - 1 or higher.
+            nodes: Vec::new(),
+            stack: Vec::new(),
+        }
+    }
+
+    /// \[Generic\] Compute the *strongly connected components* using Algorithm 3 in
+    /// [A Space-Efficient Algorithm for Finding Strongly Connected Components][1] by David J. Pierce,
+    /// which is a memory-efficient variation of [Tarjan's algorithm][2].
+    ///
+    ///
+    /// [1]: https://homepages.ecs.vuw.ac.nz/~djp/files/P05.pdf
+    /// [2]: https://en.wikipedia.org/wiki/Tarjan%27s_strongly_connected_components_algorithm
+    ///
+    /// Calls `f` for each strongly strongly connected component (scc).
+    /// The order of node ids within each scc is arbitrary, but the order of
+    /// the sccs is their postorder (reverse topological sort).
+    ///
+    /// For an undirected graph, the sccs are simply the connected components.
+    ///
+    /// This implementation is recursive and does one pass over the nodes.
+    fn run<F>(&mut self, g: &mut GraphType, mut f: F)
+    where
+        F: FnMut(&[NodeIndex], &mut GraphType),
+    {
+        self.nodes.clear();
+        self.nodes
+            .resize(g.raw_nodes().len(), NodeData { rootindex: None });
+
+        for n in g.node_indices() {
+            let visited = self.nodes[n.index()].rootindex.is_some();
+            if !visited {
+                self.visit(n, g, &mut f);
+            }
+        }
+
+        debug_assert!(self.stack.is_empty());
+    }
+
+    fn visit<F>(&mut self, v: NodeIndex, g: &mut GraphType, f: &mut F)
+    where
+        F: FnMut(&[NodeIndex], &mut GraphType),
+    {
+        macro_rules! node {
+            ($node:expr) => {
+                self.nodes[$node.index()]
+            };
+        }
+
+        let node_v = &mut node![v];
+        debug_assert!(node_v.rootindex.is_none());
+
+        let mut v_is_local_root = true;
+        let v_index = self.index;
+        node_v.rootindex = std::num::NonZeroUsize::new(v_index);
+        self.index += 1;
+
+        let mut neighbours = g.neighbors_directed(v, Outgoing).detach();
+        while let Some(w) = neighbours.next(g) {
+            let weight = g[w.0];
+            let target = w.1;
+            if !matches!(weight, GraphEdge::Subset(_)) {
+                continue;
+            }
+            if node![target].rootindex.is_none() {
+                self.visit(target, g, f);
+            }
+            if node![target].rootindex < node![v].rootindex {
+                node![v].rootindex = node![target].rootindex;
+                v_is_local_root = false
+            }
+        }
+
+        if v_is_local_root {
+            // Pop the stack and generate an SCC.
+            let mut indexadjustment = 1;
+            let c = std::num::NonZeroUsize::new(self.componentcount);
+            let nodes = &mut self.nodes;
+            let start = self
+                .stack
+                .iter()
+                .rposition(|&w| {
+                    if nodes[v.index()].rootindex > nodes[w.index()].rootindex {
+                        true
+                    } else {
+                        nodes[w.index()].rootindex = c;
+                        indexadjustment += 1;
+                        false
+                    }
+                })
+                .map(|x| x + 1)
+                .unwrap_or_default();
+            nodes[v.index()].rootindex = c;
+            self.stack.push(v); // Pushing the component root to the back right before getting rid of it is somewhat ugly, but it lets it be included in f.
+            f(&self.stack[start..], g);
+            self.stack.truncate(start);
+            self.index -= indexadjustment; // Backtrack index back to where it was before we ever encountered the component.
+            self.componentcount -= 1;
+        } else {
+            self.stack.push(v); // Stack is filled up when backtracking, unlike in Tarjans original algorithm.
         }
     }
 }

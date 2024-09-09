@@ -11,6 +11,7 @@ bitflags = { workspace = true }
 indexmap = { workspace = true }
 lexical = { workspace = true, features = ["power-of-two", "format"]}
 petgraph = { workspace = true }
+priority-queue = { workspace = true }
 rustc-hash = { workspace = true }
 serde = { workspace = true, features = ["derive"]}
 
