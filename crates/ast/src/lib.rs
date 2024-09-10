@@ -119,8 +119,9 @@ pub struct Invalid {
     pub node_id: NodeId,
 }
 
-#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, Default)]
 pub enum EsVersion {
+    #[default]
     Es3,
     Es5,
     Es2015,
@@ -136,12 +137,6 @@ impl EsVersion {
     /// if a new version of specification is released.
     pub const fn latest() -> Self {
         EsVersion::Es2020
-    }
-}
-
-impl Default for EsVersion {
-    fn default() -> Self {
-        EsVersion::Es5
     }
 }
 

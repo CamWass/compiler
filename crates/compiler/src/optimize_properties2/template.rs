@@ -1065,11 +1065,8 @@ fn compute_call(
                     None => {}
                 },
                 Step::StartCall => {
-                    match machine.get_r_value() {
-                        Some(Pointer::Fn(f)) => {
-                            fn_graph.add_edge(func, f, ());
-                        }
-                        _ => {}
+                    if let Some(Pointer::Fn(f)) = machine.get_r_value() {
+                        fn_graph.add_edge(func, f, ());
                     }
                     return Err(());
                 }

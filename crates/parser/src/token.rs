@@ -62,9 +62,7 @@ pub enum Token {
     Colon,
     /// '::'
     ColonColon,
-    ///
     BinOp(BinOpToken),
-    ///
     AssignOp(AssignOpToken),
 
     /// '${'
@@ -209,10 +207,7 @@ impl BinOpToken {
     }
 
     fn starts_expr(&self) -> bool {
-        match self {
-            Self::Add | Self::Sub => true,
-            _ => false,
-        }
+        matches!(self, Self::Add | Self::Sub)
     }
 }
 

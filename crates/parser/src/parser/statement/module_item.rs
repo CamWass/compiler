@@ -130,7 +130,7 @@ impl<I: Tokens> Parser<I> {
         let src = {
             expect!(self, "from");
             let str_start = self.input.cur_pos();
-            let src = match *cur!(self, true)? {
+            match *cur!(self, true)? {
                 Token::Str { .. } => match self.input.bump() {
                     Token::Str { value, has_escape } => Str {
                         node_id: node_id!(self, span!(self, str_start)),
@@ -143,8 +143,7 @@ impl<I: Tokens> Parser<I> {
                     _ => unreachable!(),
                 },
                 _ => unexpected!(self, "a string literal"),
-            };
-            src
+            }
         };
 
         let asserts = if self.input.syntax().import_assertions()
@@ -640,7 +639,7 @@ impl<I: Tokens> StmtLikeParser<ModuleItem> for Parser<I> {
         }
 
         if is!(self, "import") {
-            self.parse_import().map(|i| Some(i))
+            self.parse_import().map(Some)
         } else if is!(self, "export") {
             self.parse_export(decorators)
                 .map(|d| d.map(ModuleItem::ModuleDecl))

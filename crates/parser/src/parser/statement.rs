@@ -655,13 +655,11 @@ impl<I: Tokens> Parser<I> {
                     //     Default::default(),
                     // );
                     // panic!("Too many variable declarations in for in/of head. Expected 1 declaration, found {}. {:?}", decl.decls.len(), span_of_excess_decls);
-                } else {
-                    if decl.decls[0].init.is_some() {
-                        self.emit_err(
-                            get_span!(self, decl.decls[0].name.node_id()),
-                            SyntaxError::VarInitializerInForInHead,
-                        );
-                    }
+                } else if decl.decls[0].init.is_some() {
+                    self.emit_err(
+                        get_span!(self, decl.decls[0].name.node_id()),
+                        SyntaxError::VarInitializerInForInHead,
+                    );
                 }
 
                 return self.parse_for_each_head(VarDeclOrPat::VarDecl(decl));

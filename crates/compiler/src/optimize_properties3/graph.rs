@@ -61,7 +61,7 @@ impl Graph {
                 *slot
             }
             None => {
-                self.graph_map.resize_with(idx + 1, || NodeIndex::end());
+                self.graph_map.resize_with(idx + 1, NodeIndex::end);
                 self.graph_map[idx] = self.graph.add_node(pointer);
                 self.graph_map[idx]
             }

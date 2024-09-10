@@ -1028,8 +1028,8 @@ impl<I: Tokens> Parser<I> {
         let readonly = self.parse_ts_modifier(&["readonly"])?.is_some();
 
         let idx = self.try_parse_ts_index_signature()?;
-        if let Some(idx) = idx {
-            return Ok(idx.into());
+        if idx.is_some() {
+            return Ok(());
         }
 
         if let Some(v) = self.try_parse_ts(|p| {
@@ -1422,46 +1422,30 @@ impl<I: Tokens> Parser<I> {
                     return self.parse_ts_this_type_predicate();
                 }
 
-                let kind = if is!(self, "void") {
-                    Some(TsKeywordTypeKind::TsVoidKeyword)
-                } else if is!(self, "null") {
-                    Some(TsKeywordTypeKind::TsNullKeyword)
-                } else if is!(self, "any") {
-                    Some(TsKeywordTypeKind::TsAnyKeyword)
-                } else if is!(self, "boolean") {
-                    Some(TsKeywordTypeKind::TsBooleanKeyword)
-                } else if is!(self, "bigint") {
-                    Some(TsKeywordTypeKind::TsBigIntKeyword)
-                } else if is!(self, "never") {
-                    Some(TsKeywordTypeKind::TsNeverKeyword)
-                } else if is!(self, "number") {
-                    Some(TsKeywordTypeKind::TsNumberKeyword)
-                } else if is!(self, "object") {
-                    Some(TsKeywordTypeKind::TsObjectKeyword)
-                } else if is!(self, "string") {
-                    Some(TsKeywordTypeKind::TsStringKeyword)
-                } else if is!(self, "symbol") {
-                    Some(TsKeywordTypeKind::TsSymbolKeyword)
-                } else if is!(self, "unknown") {
-                    Some(TsKeywordTypeKind::TsUnknownKeyword)
-                } else if is!(self, "undefined") {
-                    Some(TsKeywordTypeKind::TsUndefinedKeyword)
-                } else if is!(self, "intrinsic") {
-                    Some(TsKeywordTypeKind::TsIntrinsicKeyword)
-                } else {
-                    None
-                };
+                let valid_kind = is_one_of!(
+                    self,
+                    "void",
+                    "null",
+                    "any",
+                    "boolean",
+                    "bigint",
+                    "never",
+                    "number",
+                    "object",
+                    "string",
+                    "symbol",
+                    "unknown",
+                    "undefined",
+                    "intrinsic"
+                );
 
                 let peeked_is_dot = peeked_is!(self, '.');
 
-                match kind {
-                    Some(_) if !peeked_is_dot => {
-                        self.input.bump();
-                        return Ok(());
-                    }
-                    _ => {
-                        return self.parse_ts_type_ref();
-                    }
+                if valid_kind && !peeked_is_dot {
+                    self.input.bump();
+                    return Ok(());
+                } else {
+                    return self.parse_ts_type_ref();
                 }
             }
             Token::BigInt { .. }
@@ -1655,7 +1639,7 @@ impl<I: Tokens> Parser<I> {
                     s.lo = declare_start;
                     set_span!(p, f.node_id, s);
                 }
-                return Ok(decl.map(|d| DeclOrEmpty::Decl(d)));
+                return Ok(decl.map(DeclOrEmpty::Decl));
             }
 
             if is!(p, "class") {
@@ -1913,22 +1897,20 @@ impl<I: Tokens> Parser<I> {
         self.input.eat(operator);
         trace_cur!(self, parse_ts_union_or_intersection_type__first_type);
 
-        let ty = parse_constituent_type(self)?;
+        parse_constituent_type(self)?;
         trace_cur!(self, parse_ts_union_or_intersection_type__after_first);
 
         if self.input.is(operator) {
-            let mut types = vec![ty];
-
             while self.input.eat(operator) {
                 trace_cur!(self, parse_ts_union_or_intersection_type__constituent);
 
-                types.push(parse_constituent_type(self)?);
+                parse_constituent_type(self)?;
             }
 
             return Ok(());
         }
 
-        Ok(ty)
+        Ok(())
     }
 }
 
@@ -1973,35 +1955,6 @@ enum TsTypeOperatorOp {
     Unique,
     /// `readonly`
     ReadOnly,
-}
-
-#[derive(Copy, Clone, PartialEq, Eq)]
-enum TsKeywordTypeKind {
-    TsAnyKeyword,
-
-    TsUnknownKeyword,
-
-    TsNumberKeyword,
-
-    TsObjectKeyword,
-
-    TsBooleanKeyword,
-
-    TsBigIntKeyword,
-
-    TsStringKeyword,
-
-    TsSymbolKeyword,
-
-    TsVoidKeyword,
-
-    TsUndefinedKeyword,
-
-    TsNullKeyword,
-
-    TsNeverKeyword,
-
-    TsIntrinsicKeyword,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

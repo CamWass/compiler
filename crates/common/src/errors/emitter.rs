@@ -87,11 +87,11 @@ impl Emitter for EmitterWriter {
 
         self.emit_messages_default(
             db.level,
-            &db.styled_message(),
+            db.styled_message(),
             &db.code,
             &primary_span,
             &children,
-            &suggestions,
+            suggestions,
         );
     }
 
@@ -682,7 +682,7 @@ impl EmitterWriter {
                 (pos + 2, annotation.start_col)
             };
             if let Some(label) = &annotation.label {
-                buffer.puts(line_offset + pos, code_offset + col, &label, style);
+                buffer.puts(line_offset + pos, code_offset + col, label, style);
             }
         }
 
@@ -962,7 +962,7 @@ impl EmitterWriter {
             // only render error codes, not lint codes
             if let Some(DiagnosticId::Error(code)) = code {
                 buffer.append(0, "[", Style::Level(level));
-                buffer.append(0, &code, Style::Level(level));
+                buffer.append(0, code, Style::Level(level));
                 buffer.append(0, "]", Style::Level(level));
             }
             if !level_str.is_empty() {
@@ -1354,8 +1354,8 @@ impl EmitterWriter {
                     for child in children {
                         let span = child.render_span.as_ref().unwrap_or(&child.span);
                         if let Err(e) = self.emit_message_default(
-                            &span,
-                            &child.styled_message(),
+                            span,
+                            child.styled_message(),
                             &None,
                             child.level,
                             max_line_num_len,

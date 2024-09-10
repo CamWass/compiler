@@ -44,7 +44,7 @@ pub fn init() -> tracing::subscriber::DefaultGuard {
 }
 
 pub fn find_executable(name: &str) -> Option<PathBuf> {
-    static CACHE: Lazy<RwLock<HashMap<String, PathBuf>>> = Lazy::new(|| Default::default());
+    static CACHE: Lazy<RwLock<HashMap<String, PathBuf>>> = Lazy::new(Default::default);
 
     {
         let locked = CACHE.read().unwrap();
@@ -56,7 +56,7 @@ pub fn find_executable(name: &str) -> Option<PathBuf> {
     let path = env::var_os("PATH").and_then(|paths| {
         env::split_paths(&paths)
             .filter_map(|dir| {
-                let full_path = dir.join(&name);
+                let full_path = dir.join(name);
                 if full_path.is_file() {
                     Some(full_path)
                 } else {

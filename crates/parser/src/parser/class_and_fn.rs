@@ -559,9 +559,8 @@ impl<I: Tokens> Parser<I> {
 
             trace_cur!(self, parse_class_member_with_is_static__normal_class_method);
 
-            match declare_token {
-                Some(token) => self.emit_err(token, SyntaxError::TS1031),
-                None => {}
+            if let Some(token) = declare_token {
+                self.emit_err(token, SyntaxError::TS1031)
             }
 
             if readonly.is_some() {

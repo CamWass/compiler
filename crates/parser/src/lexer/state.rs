@@ -179,21 +179,14 @@ pub enum TokenContext {
 
 impl TokenContext {
     fn preserve_space(&self) -> bool {
-        match self {
-            Self::Tpl { .. } => true,
-            _ => false,
-        }
+        matches!(self, Self::Tpl { .. })
     }
 
     fn is_expr(&self) -> bool {
-        match self {
-            Self::BraceExpr
-            | Self::TplQuasi
-            | Self::ParenExpr
-            | Self::Tpl { .. }
-            | Self::FnExpr => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            Self::BraceExpr | Self::TplQuasi | Self::ParenExpr | Self::Tpl { .. } | Self::FnExpr
+        )
     }
 }
 

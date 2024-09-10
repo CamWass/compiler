@@ -840,7 +840,6 @@ impl GraphVisitor<'_> {
                 _ => unreachable!("invalid optional chain expr"),
             },
 
-
             Expr::Invalid(_) => unreachable!(),
         }
     }
@@ -1622,10 +1621,10 @@ pub static REGEX_PROPERTIES: &[JsWord] = &[
 
 static BUILT_INS: &[(PointerId, &[JsWord])] = &[
     (PointerId::BOOL, &[]),
-    (PointerId::NUM, &NUM_PROPERTIES),
-    (PointerId::STRING, &STRING_PROPERTIES),
+    (PointerId::NUM, NUM_PROPERTIES),
+    (PointerId::STRING, STRING_PROPERTIES),
     (PointerId::BIG_INT, &[]),
-    (PointerId::REGEX, &REGEX_PROPERTIES),
+    (PointerId::REGEX, REGEX_PROPERTIES),
     (PointerId::NULL_OR_VOID, &[]),
     (PointerId::UNKNOWN, &[]),
 ];

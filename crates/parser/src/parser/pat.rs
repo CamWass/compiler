@@ -419,7 +419,6 @@ impl<I: Tokens> Parser<I> {
     }
 }
 
-///
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PatType {
     BindingPat,

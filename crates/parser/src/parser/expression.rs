@@ -488,15 +488,14 @@ impl<I: Tokens> Parser<I> {
 
             // super() cannot be generic
             if !matches!(obj, ExprOrSuper::Super(_)) && is!(self, '<') {
-                let obj_ref = &obj;
                 // tsTryParseAndCatch is expensive, so avoid if not necessary.
                 // There are number of things we are going to "maybe" parse, like type arguments
                 // on tagged template expressions. If any of them fail, walk it back and
                 // continue.
                 let result = self.try_parse_ts(|p| {
                     if !no_call
-                        && p.at_possible_async(match obj_ref {
-                            ExprOrSuper::Expr(expr) => &*expr,
+                        && p.at_possible_async(match &obj {
+                            ExprOrSuper::Expr(expr) => expr,
                             _ => unreachable!(),
                         })?
                     {
@@ -519,13 +518,13 @@ impl<I: Tokens> Parser<I> {
                         Ok(Some((
                             Box::new(Expr::Call(CallExpr {
                                 node_id: node_id!(p, span!(p, start)),
-                                callee: obj_ref.clone_node(program_data!(p)),
+                                callee: obj.clone_node(program_data!(p)),
                                 args,
                             })),
                             true,
                         )))
                     } else if is!(p, '`') {
-                        p.parse_tagged_tpl(match obj_ref {
+                        p.parse_tagged_tpl(match &obj {
                             ExprOrSuper::Expr(obj) => obj.clone_node(program_data!(p)),
                             _ => unreachable!(),
                         })
@@ -667,9 +666,9 @@ impl<I: Tokens> Parser<I> {
 
         let type_args = if self.input.syntax().typescript() && is!(self, '<') {
             self.try_parse_ts(|p| {
-                let type_args = p.parse_ts_type_args()?;
+                p.parse_ts_type_args()?;
                 if is!(p, '(') {
-                    Ok(Some(type_args))
+                    Ok(Some(()))
                 } else {
                     Ok(None)
                 }

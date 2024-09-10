@@ -1025,7 +1025,7 @@ impl<'src> Lexer<'src> {
 #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[repr(u8)]
-pub(self) enum Dispatch {
+enum Dispatch {
     ERR,
     WHS,
     EXL,
@@ -1065,7 +1065,7 @@ pub(self) enum Dispatch {
 use Dispatch::*;
 
 // A lookup table mapping any incoming byte to a handler function.
-pub(self) static DISPATCHER: [Dispatch; 256] = [
+static DISPATCHER: [Dispatch; 256] = [
     //0    1    2    3    4    5    6    7    8    9    A    B    C    D    E    F
     ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, WHS, WHS, WHS, WHS, WHS, ERR, ERR, // 0
     ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, // 1
