@@ -422,7 +422,6 @@ fn issue_915_4() {
     test_identical(r#"`\\r\\n--${this.boundary}`;"#);
 }
 
-
 #[test]
 fn deno_8162() {
     test_from_to(

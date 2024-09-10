@@ -6,7 +6,7 @@ use std::num::NonZeroUsize;
 use petgraph::graphmap::{GraphMap, NodeTrait};
 use petgraph::visit::NodeIndexable;
 use petgraph::Directed;
-use petgraph::Direction::{Outgoing, Incoming};
+use petgraph::Direction::{Incoming, Outgoing};
 use rustc_hash::{FxHashSet, FxHasher};
 
 pub trait Visitor<N>

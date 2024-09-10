@@ -991,7 +991,7 @@ fn is_simple_member_expr_prop(prop: &Expr, unresolved_ctxt: SyntaxContext, compu
     match prop {
         Expr::Lit(e) => match e {
             Lit::Str(_) | Lit::Bool(_) | Lit::Null(_) | Lit::Num(_) | Lit::BigInt(_) => true,
-            Lit::Regex(_)  => false,
+            Lit::Regex(_) => false,
         },
         Expr::Ident(e) => {
             if computed {
@@ -1870,7 +1870,7 @@ impl PropKey {
                     names.insert(e.value.to_str_radix(10).into()),
                     e.node_id,
                 )),
-                Lit::Regex(_)  => None,
+                Lit::Regex(_) => None,
             },
             _ => None,
         }
@@ -1885,7 +1885,7 @@ pub fn is_simple_prop_name(prop_name: &PropName, unresolved_ctxt: SyntaxContext)
         PropName::Computed(p) => match p.expr.as_ref() {
             Expr::Lit(e) => match e {
                 Lit::Str(_) | Lit::Bool(_) | Lit::Null(_) | Lit::Num(_) | Lit::BigInt(_) => true,
-                Lit::Regex(_)  => false,
+                Lit::Regex(_) => false,
             },
             Expr::Ident(e) => {
                 e.ctxt == unresolved_ctxt

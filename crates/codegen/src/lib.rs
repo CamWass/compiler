@@ -488,7 +488,6 @@ impl<'a> Emitter<'a> {
             Expr::Yield(n) => self.emit_yield_expr(n),
             Expr::PrivateName(n) => self.emit_private_name(n),
 
-
             Expr::OptChain(n) => self.emit_opt_chain(n),
             Expr::Invalid(n) => self.emit_invalid(n),
         }

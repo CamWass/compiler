@@ -268,7 +268,6 @@ impl StartsWithAlphaNum for Expr {
 
             Expr::TaggedTpl(TaggedTpl { tag, .. }) => tag.starts_with_alpha_num(),
 
-
             Expr::OptChain(e) => e.expr.starts_with_alpha_num(),
 
             Expr::Invalid(..) => true,

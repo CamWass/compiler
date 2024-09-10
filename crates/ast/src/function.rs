@@ -1,6 +1,6 @@
 use crate::{class::Decorator, pat::Pat, stmt::BlockStmt, GetNodeId, NodeId, ProgramData};
-use node_id::GetNodeIdMacro;
 use clone_node::CloneNode;
+use node_id::GetNodeIdMacro;
 
 /// Common parts of function and method.
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]

@@ -38,8 +38,6 @@ impl Take for Ident {
     }
 }
 
-
-
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct PrivateName {
     pub node_id: NodeId,
