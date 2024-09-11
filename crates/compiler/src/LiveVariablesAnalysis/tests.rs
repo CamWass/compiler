@@ -755,6 +755,7 @@ struct FlowStateFinder<'a, 'ast, P>
 where
     P: Fn(&'ast Stmt) -> Option<&'a LinearFlowState>,
 {
+    #[allow(dead_code)]
     liveness: &'a LiveVariablesAnalysis<'ast, 'a, Function>,
     flow_state: Option<&'a LinearFlowState>,
     predicate: P,

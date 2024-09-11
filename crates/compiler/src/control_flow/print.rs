@@ -135,12 +135,12 @@ impl<'ast, E: Debug + PartialEq + Clone + Copy> Deref for WithParent<'_, 'ast, E
     type Target = NodeVisitor<'ast, E>;
 
     fn deref(&self) -> &NodeVisitor<'ast, E> {
-        &self.inner
+        self.inner
     }
 }
 impl<'ast, E: Debug + PartialEq + Clone + Copy> DerefMut for WithParent<'_, 'ast, E> {
     fn deref_mut(&mut self) -> &mut NodeVisitor<'ast, E> {
-        &mut self.inner
+        self.inner
     }
 }
 impl<'w, 'ast, E> Drop for WithParent<'w, 'ast, E>

@@ -1,10 +1,6 @@
-#![allow(non_snake_case)]
-#![warn(non_upper_case_globals)]
-#![warn(unused_variables)]
 #![deny(non_shorthand_field_patterns)]
-#![warn(warnings)]
-#![warn(dead_code)]
 #![deny(unused_imports)]
+#![allow(warnings)]
 
 mod DataFlowAnalysis2;
 mod function;

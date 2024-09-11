@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 use std::ops::Index;
 
 use ast::*;
@@ -202,23 +205,12 @@ where
     in_destructuring: bool,
 }
 
-macro_rules! generate_visitors {
-    ([$([$name:ident, $N:ident]$(,)?)*]) => {
-        $(
-
-            fn $name(&mut self, node: &$N) {
-                todo!(stringify!($N));
-            }
-        )*
-    };
-}
-
 impl<'a, 'b, 'ast, T> Visit<'_> for ReachingUseFinder<'ast, 'a, 'b, T>
 where
     T: FunctionLike<'a>,
 {
     // Don't enter any new control nodes. They will be handled by later.
-    fn visit_block_stmt(&mut self, node: &BlockStmt) {}
+    fn visit_block_stmt(&mut self, _: &BlockStmt) {}
     fn visit_switch_case(&mut self, node: &SwitchCase) {
         node.test.visit_with(self);
     }
@@ -235,12 +227,11 @@ where
         if self.in_lhs && self.in_destructuring {
             if !self.conditional {
                 println!("c");
-                self.analysis
-                    .remove_from_use_if_local(node, &mut self.output);
+                self.analysis.remove_from_use_if_local(node, self.output);
             }
         } else {
             self.analysis
-                .add_to_use_if_local(node, self.cfg_node, &mut self.output);
+                .add_to_use_if_local(node, self.cfg_node, self.output);
         }
     }
     // The key of AssignPatProp is LHS but is an Ident, so won't be caught by
@@ -275,8 +266,7 @@ where
         };
         if let Pat::Ident(lhs) = lhs {
             if !self.conditional {
-                self.analysis
-                    .remove_from_use_if_local(&lhs.id, &mut self.output);
+                self.analysis.remove_from_use_if_local(&lhs.id, self.output);
             }
         } else {
             debug_assert!(matches!(lhs, Pat::Object(_) | Pat::Array(_)));
@@ -296,8 +286,7 @@ where
         };
         if let Pat::Ident(lhs) = lhs {
             if !self.conditional {
-                self.analysis
-                    .remove_from_use_if_local(&lhs.id, &mut self.output);
+                self.analysis.remove_from_use_if_local(&lhs.id, self.output);
             }
         } else {
             debug_assert!(matches!(lhs, Pat::Object(_) | Pat::Array(_)));
@@ -365,7 +354,7 @@ where
                 node.init.visit_with(self);
                 if !self.conditional {
                     self.analysis
-                        .remove_from_use_if_local(&name.id, &mut self.output);
+                        .remove_from_use_if_local(&name.id, self.output);
                 }
             }
             _ => {
@@ -385,7 +374,7 @@ where
                 // assigning to the name occurs after evaluating the default value
                 if !self.conditional {
                     self.analysis
-                        .remove_from_use_if_local(&left.id, &mut self.output);
+                        .remove_from_use_if_local(&left.id, self.output);
                 }
                 let old = self.conditional;
                 self.conditional = true;
@@ -449,14 +438,14 @@ where
             if !is_logical_assign && !self.conditional {
                 println!("a");
                 self.analysis
-                    .remove_from_use_if_local(lhs_ident, &mut self.output);
+                    .remove_from_use_if_local(lhs_ident, self.output);
             }
 
             // In case of a += "Hello". There is a read of a.
             if !is_assign {
                 println!("b");
                 self.analysis
-                    .add_to_use_if_local(lhs_ident, self.cfg_node, &mut self.output);
+                    .add_to_use_if_local(lhs_ident, self.cfg_node, self.output);
             }
 
             self.in_lhs = false;

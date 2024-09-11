@@ -10,7 +10,7 @@ use std::hash::Hash;
 /// `n` - a node with an outgoing conditional CFG edge.
 ///
 /// Returns the condition node or `None` if the condition is not obviously a node.
-pub fn get_condition_expression<'ast>(n: Node<'ast>) -> Option<Node<'ast>> {
+pub fn get_condition_expression(n: Node) -> Option<Node> {
     match n.kind {
         NodeKind::IfStmt(n) => Some(Node::from(&*n.test)),
         NodeKind::WhileStmt(n) => Some(Node::from(&*n.test)),
@@ -152,7 +152,7 @@ impl<'ast> Visit<'ast> for FindPossibleExceptions {
 }
 
 /// Determines if the subtree might throw an exception.
-pub fn may_throw_exception<'ast>(n: Node<'ast>) -> bool {
+pub fn may_throw_exception(n: Node) -> bool {
     let mut v = FindPossibleExceptions::default();
 
     n.visit_with(&mut v);
@@ -211,14 +211,10 @@ pub struct ParentNode<'ast> {
     pub children: Vec<Node<'ast>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ParentStack<'ast>(pub Vec<ParentNode<'ast>>);
 
 impl<'ast> ParentStack<'ast> {
-    pub fn new() -> Self {
-        Self(Vec::new())
-    }
-
     pub fn pop(&mut self) {
         self.0.pop();
     }
@@ -268,7 +264,7 @@ impl<'a, 'ast> IntoIterator for &'a ParentStack<'ast> {
     type IntoIter = std::slice::Iter<'a, ParentNode<'ast>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.as_slice().into_iter()
+        self.0.as_slice().iter()
     }
 }
 
@@ -394,7 +390,7 @@ pub trait AdvanceWhile: Iterator {
         Self: Sized,
         P: FnMut(&Self::Item) -> bool,
     {
-        while let Some(i) = self.next() {
+        for i in self.by_ref() {
             if !predicate(&i) {
                 break;
             }

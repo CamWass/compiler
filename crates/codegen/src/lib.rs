@@ -49,7 +49,7 @@ impl<'a> Emitter<'a> {
     pub fn emit_module(&mut self, node: &Module) -> Result {
         if let Some(shebang) = &node.shebang {
             punct!(self, "#!");
-            self.wr.write_str_lit(DUMMY_SP, &*shebang)?;
+            self.wr.write_str_lit(DUMMY_SP, shebang)?;
             self.wr.write_line()?;
         }
         for stmt in &node.body {
@@ -61,7 +61,7 @@ impl<'a> Emitter<'a> {
     pub fn emit_script(&mut self, node: &Script) -> Result {
         if let Some(shebang) = &node.shebang {
             punct!(self, "#!");
-            self.wr.write_str_lit(DUMMY_SP, &*shebang)?;
+            self.wr.write_str_lit(DUMMY_SP, shebang)?;
             self.wr.write_line()?;
         }
         for stmt in &node.body {
@@ -134,10 +134,7 @@ impl<'a> Emitter<'a> {
 
         keyword!(self, "import");
         let starts_with_ident = !node.specifiers.is_empty()
-            && match &node.specifiers[0] {
-                ImportSpecifier::Default(_) => true,
-                _ => false,
-            };
+            && matches!(node.specifiers[0], ImportSpecifier::Default(_));
         if starts_with_ident {
             space!(self);
         } else {
@@ -275,7 +272,7 @@ impl<'a> Emitter<'a> {
                 ExportSpecifier::Namespace(spec) => {
                     result.has_namespace_spec = true;
                     // There can only be one namespace export specifier.
-                    if let None = result.namespace_spec {
+                    if result.namespace_spec.is_none() {
                         result.namespace_spec = Some(spec)
                     }
                     result
@@ -640,12 +637,13 @@ impl<'a> Emitter<'a> {
         self.emit_leading_comments_of_span(span, false)?;
 
         let space = !self.cfg.minify
-            || match node.params.as_slice() {
+            || matches!(
+                node.params.as_slice(),
                 [ParamWithoutDecorators {
-                    pat: Pat::Ident(_), ..
-                }] => true,
-                _ => false,
-            };
+                    pat: Pat::Ident(_),
+                    ..
+                }]
+            );
 
         if node.is_async {
             keyword!(self, "async");
@@ -657,12 +655,13 @@ impl<'a> Emitter<'a> {
         }
 
         let parens = !self.cfg.minify
-            || match node.params.as_slice() {
+            || !matches!(
+                node.params.as_slice(),
                 [ParamWithoutDecorators {
-                    pat: Pat::Ident(_), ..
-                }] => false,
-                _ => true,
-            };
+                    pat: Pat::Ident(_),
+                    ..
+                }]
+            );
 
         if parens {
             punct!(self, "(");
@@ -741,10 +740,7 @@ impl<'a> Emitter<'a> {
     fn emit_bin_expr_trailing(&mut self, node: &BinExpr) -> Result {
         // let indent_before_op = needs_indention(node, &node.left, node.op);
         // let indent_after_op = needs_indention(node, node.op, &node.right);
-        let is_kwd_op = match node.op {
-            op!("in") | op!("instanceof") => true,
-            _ => false,
-        };
+        let is_kwd_op = matches!(node.op, op!("in") | op!("instanceof"));
 
         let need_pre_space = if self.cfg.minify {
             if is_kwd_op {
@@ -762,11 +758,7 @@ impl<'a> Emitter<'a> {
                 }
             }
         } else {
-            is_kwd_op
-                || match *node.left {
-                    Expr::Update(UpdateExpr { prefix: false, .. }) => true,
-                    _ => false,
-                }
+            is_kwd_op || matches!(*node.left, Expr::Update(UpdateExpr { prefix: false, .. }))
         };
         if need_pre_space {
             space!(self);
@@ -783,10 +775,10 @@ impl<'a> Emitter<'a> {
             }
         } else {
             is_kwd_op
-                || match *node.right {
-                    Expr::Unary(..) | Expr::Update(UpdateExpr { prefix: true, .. }) => true,
-                    _ => false,
-                }
+                || matches!(
+                    *node.right,
+                    Expr::Unary(..) | Expr::Update(UpdateExpr { prefix: true, .. })
+                )
         };
         if need_post_space {
             space!(self);
@@ -1337,10 +1329,7 @@ impl<'a> Emitter<'a> {
 
         keyword!(self, "get");
 
-        let starts_with_alpha_num = match node.key {
-            PropName::Str(_) | PropName::Computed(_) => false,
-            _ => true,
-        };
+        let starts_with_alpha_num = !matches!(node.key, PropName::Str(_) | PropName::Computed(_));
         if starts_with_alpha_num {
             space!(self);
         } else {
@@ -1360,10 +1349,7 @@ impl<'a> Emitter<'a> {
 
         keyword!(self, "set");
 
-        let starts_with_alpha_num = match node.key {
-            PropName::Str(_) | PropName::Computed(_) => false,
-            _ => true,
-        };
+        let starts_with_alpha_num = !matches!(node.key, PropName::Str(_) | PropName::Computed(_));
 
         if starts_with_alpha_num {
             space!(self);
@@ -1757,10 +1743,7 @@ impl<'a> Emitter<'a> {
         let span = get_span!(self, node.node_id);
         self.emit_leading_comments_of_span(span, false)?;
 
-        let is_last_rest = match node.props.last() {
-            Some(ObjectPatProp::Rest(..)) => true,
-            _ => false,
-        };
+        let is_last_rest = matches!(node.props.last(), Some(ObjectPatProp::Rest(..)));
         let format = if is_last_rest {
             ListFormat::ObjectBindingPatternElements ^ ListFormat::AllowTrailingComma
         } else {
@@ -1804,7 +1787,7 @@ impl<'a> Emitter<'a> {
         formatting_space!(self);
         if let Some(value) = &node.value {
             punct!(self, "=");
-            self.emit_expr(&value)?;
+            self.emit_expr(value)?;
             formatting_space!(self);
         }
         Ok(())
@@ -2006,10 +1989,7 @@ impl<'a> Emitter<'a> {
         self.emit_expr(&node.test)?;
         punct!(self, ")");
 
-        let is_cons_block = match *node.cons {
-            Stmt::Block(..) => true,
-            _ => false,
-        };
+        let is_cons_block = matches!(*node.cons, Stmt::Block(..));
 
         self.emit_single_stmt(&node.cons, true)?;
 
@@ -2390,7 +2370,7 @@ fn unescape_tpl_lit(s: &str) -> String {
         if c != '\\' {
             match c {
                 '\r' => {
-                    if chars.peek().map(|&v| v) == Some('\n') {
+                    if chars.peek().copied() == Some('\n') {
                         continue;
                     }
 
@@ -2462,7 +2442,7 @@ fn escape_without_source(v: &str, target: JscTarget, single_quote: bool) -> Stri
 
             '\\' => {
                 if iter.peek() == Some(&'\0') {
-                    buf.push_str("\\");
+                    buf.push('\\');
                     iter.next();
                 } else {
                     buf.push_str("\\\\")
@@ -2495,11 +2475,11 @@ fn escape_without_source(v: &str, target: JscTarget, single_quote: bool) -> Stri
     buf
 }
 
-fn escape_with_source<'s>(
+fn escape_with_source(
     cm: &SourceMap,
     target: JscTarget,
     span: Span,
-    s: &'s str,
+    s: &str,
     single_quote: Option<bool>,
 ) -> String {
     if target <= JscTarget::Es5 {
@@ -2701,11 +2681,7 @@ fn require_space_before_rhs(rhs: &Expr, op: &BinaryOp) -> bool {
         Expr::Unary(UnaryExpr {
             op: op!("!"), arg, ..
         }) if *op == op!("<") || *op == op!("<<") => {
-            if let Expr::Update(UpdateExpr { op: op!("--"), .. }) = &**arg {
-                true
-            } else {
-                false
-            }
+            matches!(**arg, Expr::Update(UpdateExpr { op: op!("--"), .. }))
         }
 
         Expr::Unary(UnaryExpr { op: unary, .. }) => matches!(

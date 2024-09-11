@@ -1,4 +1,3 @@
-// #![allow(non_snake_case)]
 #![warn(non_upper_case_globals)]
 #![warn(unused_variables)]
 #![deny(non_shorthand_field_patterns)]
@@ -1475,10 +1474,11 @@ impl<'ast> Visit<'ast> for FnVisitor<'_> {
     }
 
     fn visit_ident(&mut self, node: &'ast Ident) {
-        if !self.accesses_arguments_array {
-            if node.sym == js_word!("arguments") && node.ctxt == self.store.unresolved_ctxt {
-                self.accesses_arguments_array = true;
-            }
+        if !self.accesses_arguments_array
+            && node.sym == js_word!("arguments")
+            && node.ctxt == self.store.unresolved_ctxt
+        {
+            self.accesses_arguments_array = true;
         }
     }
 

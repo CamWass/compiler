@@ -1,5 +1,4 @@
 use crate::{Id, ToId};
-use ast;
 use atoms::{js_word, JsWord};
 use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use global_common::{SyntaxContext, DUMMY_SP};
@@ -115,7 +114,7 @@ impl OptimizeArgumentsArray<'_> {
         T: AsFn,
     {
         // The number of parameters that can be accessed without using `arguments`.
-        let highest_index = if func.get_params().len() == 0 {
+        let highest_index = if func.get_params().is_empty() {
             None
         } else {
             Some(func.get_params().len() - 1)
@@ -326,6 +325,7 @@ impl FnBodyVisitor {
     }
 
     /// Returns true if the member expr was a valid arguments access.
+    #[allow(clippy::needless_return)]
     fn handle_member_expr(&mut self, node: &ast::MemberExpr) -> bool {
         // Bail on anything but argument[c] access where c is a constant.
         // TODO(closure): We might not need to bail out all the time, there might

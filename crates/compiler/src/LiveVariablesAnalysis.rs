@@ -124,6 +124,7 @@ where
         (liveness_result, self.data_flow_analysis.inner.cfg)
     }
 
+    #[allow(dead_code)]
     fn get_var_index(&self, var: &Id) -> Option<VarId> {
         self.data_flow_analysis.inner.get_var_index(var)
     }
@@ -476,12 +477,12 @@ where
                     return;
                 }
 
-                if node.op == AssignOp::Assign && matches!(&**left, Pat::Array(_) | Pat::Object(_))
+                if node.op == AssignOp::Assign
+                    && matches!(&**left, Pat::Array(_) | Pat::Object(_))
+                    && !self.conditional
                 {
-                    if !self.conditional {
-                        for lhs_node in &find_pat_ids(&left) {
-                            self.analysis.add_to_set_if_local(lhs_node, self.kill);
-                        }
+                    for lhs_node in &find_pat_ids(left) {
+                        self.analysis.add_to_set_if_local(lhs_node, self.kill);
                     }
                 }
                 self.in_lhs = true;
@@ -491,7 +492,7 @@ where
             }
             PatOrExpr::Expr(left) => {
                 if let Expr::Ident(lhs) = left.as_ref() {
-                    handle_ident_lhs(&lhs);
+                    handle_ident_lhs(lhs);
                     return;
                 }
                 self.in_lhs = true;

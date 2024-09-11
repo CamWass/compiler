@@ -41,7 +41,7 @@ pub struct ControlFlowGraph<N: CfgNode, NA: Annotation, EA: Annotation> {
     pub edge_annotations: FxHashMap<EdgeIndex, EA>,
 }
 
-impl<'ast, N, NA, EA> ControlFlowGraph<N, NA, EA>
+impl<N, NA, EA> ControlFlowGraph<N, NA, EA>
 where
     N: CfgNode,
     NA: Annotation,
@@ -234,7 +234,7 @@ pub fn is_entering_new_cfg_node<'ast>(n: Node<'ast>, parent: Node<'ast>) -> bool
             // var x = 0; while(x<10) {  x++; }
             test.as_ref().map(|test| test.node_id()) != Some(n.node_id)
         }
-        NodeKind::ForInStmt(f) => {
+        NodeKind::ForInStmt(_) => {
             // TODO(user): Investigate how we should handle the case where
             // we have a very complex expression inside the FOR-IN header.
             // n != NodeKind::from(&f.left)
@@ -246,7 +246,7 @@ pub fn is_entering_new_cfg_node<'ast>(n: Node<'ast>, parent: Node<'ast>) -> bool
             None => false,
         },
         NodeKind::CatchClause(c) => match &c.param {
-            Some(param) => {
+            Some(_) => {
                 // n != NodeKind::from(&param)
                 todo!()
             }

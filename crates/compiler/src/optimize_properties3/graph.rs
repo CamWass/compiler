@@ -1,3 +1,5 @@
+#![allow(clippy::collapsible_if)]
+
 use std::collections::hash_map::Entry;
 use std::collections::BinaryHeap;
 use std::fmt::{Display, Write};

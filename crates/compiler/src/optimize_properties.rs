@@ -1,3 +1,5 @@
+#![allow(warnings)]
+
 use std::collections::hash_map::Entry;
 
 use ast::*;

@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::token::Token;
 use atoms::JsWord;
 use global_common::{
