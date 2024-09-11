@@ -11,11 +11,10 @@ use std::collections::hash_map::Entry;
 use std::fmt::{Display, Write};
 use std::rc::Rc;
 
-use crate::optimize_properties2::NameId;
 use crate::utils::unwrap_as;
 
-use super::unionfind::GrowableUnionFind;
-use super::{is_built_in_property, Pointer, PointerId, Store};
+use super::growable_unionfind::GrowableUnionFind;
+use super::{is_built_in_property, NameId, Pointer, PointerId, Store};
 
 type GraphType = petgraph::Graph<PointerId, GraphEdge, Directed>;
 
