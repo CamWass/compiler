@@ -1,7 +1,7 @@
 use self::expression::BlockStmtOrExpr;
 
 use super::{identifier::MaybeOptionalIdentParser, *};
-use crate::{error::SyntaxError, lexer::TokenContext, Tokens};
+use crate::{error::SyntaxError, Tokens};
 use atoms::js_word;
 
 /// Parser for function expression and function declaration.
@@ -513,7 +513,7 @@ impl<I: Tokens> Parser<I> {
         }
 
         if self.syntax().typescript() && !is_abstract && !is_override && !has_accessibility {
-            let idx = self.try_parse_ts_index_signature(start, readonly.is_some(), is_static)?;
+            let idx = self.try_parse_ts_index_signature()?;
             if idx.is_some() {
                 return Ok(None);
             }
@@ -559,9 +559,8 @@ impl<I: Tokens> Parser<I> {
 
             trace_cur!(self, parse_class_member_with_is_static__normal_class_method);
 
-            match declare_token {
-                Some(token) => self.emit_err(token, SyntaxError::TS1031),
-                None => {}
+            if let Some(token) = declare_token {
+                self.emit_err(token, SyntaxError::TS1031)
             }
 
             if readonly.is_some() {
@@ -603,8 +602,7 @@ impl<I: Tokens> Parser<I> {
                 expect!(self, ')');
 
                 if self.syntax().typescript() && is!(self, ':') {
-                    let start = self.input.cur_pos();
-                    let type_ann_span = self.parse_ts_type_ann(true, start)?;
+                    let type_ann_span = self.parse_ts_type_ann(true)?;
 
                     self.emit_err(type_ann_span, SyntaxError::TS1093);
                 }
@@ -627,8 +625,8 @@ impl<I: Tokens> Parser<I> {
                     for p in &params {
                         // TODO(swc): Search deeply for assignment pattern using a Visitor
 
-                        let span = match p.pat {
-                            Pat::Assign(ref p) => Some(get_span!(self, p.node_id())),
+                        let span = match &p.pat {
+                            Pat::Assign(p) => Some(get_span!(self, p.node_id())),
                             _ => None,
                         };
 
@@ -699,8 +697,8 @@ impl<I: Tokens> Parser<I> {
             );
         }
 
-        if match key {
-            Key::PropName(PropName::Ident(ref i)) => i.sym == js_word!("async"),
+        if match &key {
+            Key::PropName(PropName::Ident(i)) => i.sym == js_word!("async"),
             _ => false,
         } && !self.input.had_line_break_before_cur()
         {
@@ -750,9 +748,9 @@ impl<I: Tokens> Parser<I> {
         let is_next_line_generator = self.input.had_line_break_before_cur() && is!(self, '*');
         let key_span = get_span!(self, key.node_id());
 
-        match key {
+        match &key {
             // `get\n*` is an uninitialized property named 'get' followed by a generator.
-            Key::PropName(PropName::Ident(ref i))
+            Key::PropName(PropName::Ident(i))
                 if (i.sym == js_word!("get") || i.sym == js_word!("set"))
                     && !is_next_line_generator =>
             {
@@ -900,9 +898,7 @@ impl<I: Tokens> Parser<I> {
     }
 
     fn is_class_method(&mut self) -> PResult<bool> {
-        Ok(is!(self, '(')
-            || (self.syntax().typescript() && is!(self, '<'))
-            || (self.syntax().typescript() && is!(self, JSXTagStart)))
+        Ok(is!(self, '(') || (self.syntax().typescript() && is!(self, '<')))
     }
 
     fn is_class_property(&mut self) -> PResult<bool> {
@@ -1050,19 +1046,6 @@ impl<I: Tokens> Parser<I> {
 
                     if is!(parser, '<') {
                         parser.parse_ts_type_params()?;
-                    } else if is!(parser, JSXTagStart) {
-                        debug_assert_eq!(
-                            parser.input.token_context().current(),
-                            Some(TokenContext::JSXOpeningTag)
-                        );
-                        parser.input.token_context_mut().pop();
-                        debug_assert_eq!(
-                            parser.input.token_context().current(),
-                            Some(TokenContext::JSXExpr)
-                        );
-                        parser.input.token_context_mut().pop();
-
-                        parser.parse_ts_type_params()?;
                     }
                     Ok(Some(()))
                 })?;
@@ -1099,7 +1082,7 @@ impl<I: Tokens> Parser<I> {
                             // TODO(swc): Search deeply for assignment pattern using a Visitor
 
                             let span = match &param.pat {
-                                Pat::Assign(ref p) => Some(get_span!(parser, p.node_id)),
+                                Pat::Assign(p) => Some(get_span!(parser, p.node_id)),
                                 _ => None,
                             };
 

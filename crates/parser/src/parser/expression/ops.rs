@@ -220,14 +220,14 @@ impl<I: Tokens> Parser<I> {
 
         let start = self.input.cur_pos();
 
-        if !self.input.syntax().jsx() && self.input.syntax().typescript() && eat!(self, '<') {
+        if self.input.syntax().typescript() && eat!(self, '<') {
             if eat!(self, "const") {
                 expect!(self, '>');
                 let expr = self.parse_unary_expr()?;
                 return Ok(expr);
             }
 
-            return self.parse_ts_type_assertion(start);
+            return self.parse_ts_type_assertion();
         }
 
         // Parse update expression
@@ -276,15 +276,15 @@ impl<I: Tokens> Parser<I> {
             };
 
             if op == op!("delete") {
-                if let Expr::Ident(ref i) = *arg {
+                if let Expr::Ident(i) = arg.as_ref() {
                     self.emit_strict_mode_err(get_span!(self, i.node_id), SyntaxError::TS1102)
                 }
             }
 
             if self.input.syntax().typescript() && op == op!("delete") {
                 fn unwrap_paren(e: &Expr) -> &Expr {
-                    match *e {
-                        Expr::Paren(ref p) => unwrap_paren(&p.expr),
+                    match e {
+                        Expr::Paren(p) => unwrap_paren(&p.expr),
                         _ => e,
                     }
                 }

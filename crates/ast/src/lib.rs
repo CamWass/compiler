@@ -2,7 +2,7 @@
 #![deny(trivial_casts)]
 #![deny(trivial_numeric_casts)]
 #![deny(unreachable_pub)]
-// #![deny(variant_size_differences)]
+#![deny(variant_size_differences)]
 
 pub use self::{
     class::{
@@ -18,12 +18,6 @@ pub use self::{
     },
     function::{Function, Param, ParamWithoutDecorators},
     ident::{BindingIdent, Ident, IdentExt, PrivateName},
-    jsx::{
-        JSXAttr, JSXAttrName, JSXAttrOrSpread, JSXAttrValue, JSXClosingElement, JSXClosingFragment,
-        JSXElement, JSXElementChild, JSXElementName, JSXEmptyExpr, JSXExpr, JSXExprContainer,
-        JSXFragment, JSXMemberExpr, JSXNamespacedName, JSXObject, JSXOpeningElement,
-        JSXOpeningFragment, JSXSpreadChild, JSXText,
-    },
     lit::{BigInt, Bool, Lit, Null, Number, Regex, Str, StrKind},
     module::{Module, ModuleItem, Program, Script},
     module_decl::{
@@ -59,7 +53,6 @@ mod decl;
 mod expr;
 mod function;
 mod ident;
-mod jsx;
 mod lit;
 mod module;
 mod module_decl;
@@ -126,8 +119,9 @@ pub struct Invalid {
     pub node_id: NodeId,
 }
 
-#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, Default)]
 pub enum EsVersion {
+    #[default]
     Es3,
     Es5,
     Es2015,
@@ -143,12 +137,6 @@ impl EsVersion {
     /// if a new version of specification is released.
     pub const fn latest() -> Self {
         EsVersion::Es2020
-    }
-}
-
-impl Default for EsVersion {
-    fn default() -> Self {
-        EsVersion::Es5
     }
 }
 

@@ -308,7 +308,7 @@ where
         // Set up test case
         let async_str = if is_async { "async" } else { "" };
         let source = format!("{async_str} function _FUNCTION(param1, param2){{{src}}}",);
-        let mut program = Program::Script(parse_script(&source));
+        let program = Program::Script(parse_script(&source));
 
         // let unresolved_mark = Mark::new();
         // let top_level_mark = Mark::new();

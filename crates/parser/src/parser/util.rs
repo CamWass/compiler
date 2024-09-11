@@ -25,7 +25,7 @@ impl<I: Tokens> Deref for WithState<'_, I> {
 }
 impl<I: Tokens> DerefMut for WithState<'_, I> {
     fn deref_mut(&mut self) -> &mut Parser<I> {
-        &mut self.inner
+        self.inner
     }
 }
 impl<I: Tokens> Drop for WithState<'_, I> {
@@ -47,7 +47,7 @@ impl<I: Tokens> Deref for WithCtx<'_, I> {
 }
 impl<I: Tokens> DerefMut for WithCtx<'_, I> {
     fn deref_mut(&mut self) -> &mut Parser<I> {
-        &mut self.inner
+        self.inner
     }
 }
 
@@ -62,9 +62,9 @@ pub(super) trait ExprExt {
 
     /// "IsValidSimpleAssignmentTarget" from spec.
     fn is_valid_simple_assignment_target(&self, strict: YesMaybe) -> bool {
-        match *self.as_expr() {
-            Expr::Ident(Ident { ref sym, .. }) => {
-                if strict == YesMaybe::Yes && (&*sym == "arguments" || &*sym == "eval") {
+        match self.as_expr() {
+            Expr::Ident(Ident { sym, .. }) => {
+                if strict == YesMaybe::Yes && (sym == "arguments" || sym == "eval") {
                     return false;
                 }
                 true
@@ -78,9 +78,7 @@ pub(super) trait ExprExt {
             | Expr::Class(..)
             | Expr::Tpl(..)
             | Expr::TaggedTpl(..) => false,
-            Expr::Paren(ParenExpr { ref expr, .. }) => {
-                expr.is_valid_simple_assignment_target(strict)
-            }
+            Expr::Paren(ParenExpr { expr, .. }) => expr.is_valid_simple_assignment_target(strict),
 
             Expr::Member(..) => true,
 
@@ -103,14 +101,7 @@ pub(super) trait ExprExt {
             // MemberExpression is valid assignment target
             Expr::PrivateName(..) => false,
 
-            // jsx
-            Expr::JSXMember(..)
-            | Expr::JSXNamespacedName(..)
-            | Expr::JSXEmpty(..)
-            | Expr::JSXElement(..)
-            | Expr::JSXFragment(..) => false,
-
-            Expr::OptChain(OptChainExpr { ref expr, .. }) => {
+            Expr::OptChain(OptChainExpr { expr, .. }) => {
                 expr.is_valid_simple_assignment_target(strict)
             }
 
@@ -121,7 +112,7 @@ pub(super) trait ExprExt {
 
 impl ExprExt for Box<Expr> {
     fn as_expr(&self) -> &Expr {
-        &*self
+        self
     }
 }
 impl ExprExt for Expr {

@@ -100,7 +100,7 @@ impl<'a, W: Write> JsWriter<'a, W> {
     }
 
     fn srcmap(&mut self, byte_pos: BytePos) {
-        if let Some(ref mut srcmap) = self.srcmap {
+        if let Some(srcmap) = &mut self.srcmap {
             srcmap.push((
                 byte_pos,
                 LineCol {

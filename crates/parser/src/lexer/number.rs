@@ -334,7 +334,7 @@ impl Lexer<'_> {
             radix,
             |opt: Option<u32>, radix, val| {
                 count += 1;
-                let total = opt.unwrap_or_default() * radix as u32 + val as u32;
+                let total = opt.unwrap_or_default() * radix as u32 + val;
                 (Some(total), count != len)
             },
             &mut String::new(),
@@ -465,7 +465,7 @@ impl Lexer<'_> {
 
                 write!(buffer, "{}.", val).unwrap();
 
-                if let Some(..) = dec_val {
+                if dec_val.is_some() {
                     buffer.push_str(&raw);
                 }
 

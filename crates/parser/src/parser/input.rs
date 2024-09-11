@@ -18,7 +18,6 @@ pub trait Tokens: Clone + Iterator<Item = TokenAndSpan> {
 
     fn set_expr_allowed(&mut self, allow: bool);
     fn token_context(&self) -> &TokenContexts;
-    fn token_context_mut(&mut self) -> &mut TokenContexts;
     fn set_token_context(&mut self, _c: TokenContexts);
 
     /// Implementers should use Rc<RefCell<Vec<Error>>>.
@@ -280,10 +279,6 @@ impl<I: Tokens> Buffer<I> {
     #[inline]
     pub(crate) fn token_context(&self) -> &TokenContexts {
         self.iter.token_context()
-    }
-    #[inline]
-    pub(crate) fn token_context_mut(&mut self) -> &mut TokenContexts {
-        self.iter.token_context_mut()
     }
     #[inline]
     pub(crate) fn set_token_context(&mut self, c: TokenContexts) {

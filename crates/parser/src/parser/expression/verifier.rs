@@ -6,7 +6,7 @@ impl<I: Tokens> Parser<I> {
     pub(in crate::parser) fn verify_expr(&mut self, expr: Box<Expr>) -> Box<Expr> {
         let mut v = Verifier {
             errors: vec![],
-            parser: &self,
+            parser: self,
         };
 
         v.visit_expr(&expr);

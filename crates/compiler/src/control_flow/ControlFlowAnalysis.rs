@@ -127,7 +127,7 @@ where
             root,
             should_traverse_functions,
             exception_handler: Vec::new(),
-            parent_stack: ParentStack::new(),
+            parent_stack: ParentStack::default(),
             finally_map: MultiMap::default(),
         };
 
@@ -259,14 +259,12 @@ where
         self.ast_position_counter += 1;
     }
 
-    pub fn cfg(self) -> ControlFlowGraph<Node<'ast>, N, E> {
-        self.cfg
-    }
-
+    #[allow(dead_code)]
     pub fn print_simple_graph(&self) {
         self.cfg.print_simple();
     }
 
+    #[allow(dead_code)]
     pub fn print_full_graph(&self) {
         self.cfg.print_full();
     }
@@ -280,7 +278,7 @@ where
 
         self.connect_to_possible_exception_handler(
             ExceptionHandler::new(&self.parent_stack, node),
-            node.into(),
+            node,
         );
     }
 
@@ -379,7 +377,7 @@ where
 
             self.parent_stack.push_with_child_nodes(
                 case_node,
-                current_case.cons.iter().map(|s| Node::from(s)).collect(),
+                current_case.cons.iter().map(Node::from).collect(),
             );
             // Skip test expression, only traverse the body.
             current_case.cons.visit_with(self);
@@ -583,14 +581,14 @@ where
     }
 
     /// parent_index is the index of `node`'s direct parent in the parent stack.
-    fn compute_follow_node_with_parent<'a>(
+    fn compute_follow_node_with_parent(
         &mut self,
         mut node: Node<'ast>,
         parent_index: usize,
     ) -> Node<'ast> {
         let from_node = node;
-        let mut parents = self.parent_stack.0[..parent_index].into_iter().rev();
-        while let Some(parent) = parents.next() {
+        let parents = self.parent_stack.0[..parent_index].iter().rev();
+        for parent in parents {
             /*
              * This is the case where:
              *
@@ -650,7 +648,7 @@ where
                         }
 
                     // CATCH block.
-                    } else if try_stmt.handler.as_ref().map(|s| Node::from(s)) == Some(node) {
+                    } else if try_stmt.handler.as_ref().map(Node::from) == Some(node) {
                         match &try_stmt.finalizer {
                             Some(finally) => {
                                 // and have FINALLY block.
@@ -665,7 +663,7 @@ where
                         }
 
                     // If we are coming out of the FINALLY block...
-                    } else if try_stmt.finalizer.as_ref().map(|s| Node::from(s)) == Some(node) {
+                    } else if try_stmt.finalizer.as_ref().map(Node::from) == Some(node) {
                         if let Some(nodes) = self.finally_map.get(parent.node) {
                             for finally_node in nodes {
                                 self.cfg
@@ -686,11 +684,7 @@ where
             // immediate sibling, unless its sibling is a function.
 
             debug_assert!(
-                parent
-                    .children
-                    .iter()
-                    .position(|child| *child == node)
-                    .is_some(),
+                parent.children.iter().any(|child| *child == node),
                 "Needle should be present in haystack"
             );
 
@@ -788,7 +782,7 @@ where
         p!(self, ForStmt);
         let for_node = Node::from(node);
         self.prioritize_node(for_node);
-        self.parent_stack.push_with_child(for_node, &*node.body);
+        self.parent_stack.push_with_child(for_node, &node.body);
         // Skip for-loop-head, only traverse the body.
         node.body.visit_with(self);
         self.parent_stack.pop();
@@ -820,7 +814,7 @@ where
         // If the loop test is empty or the `true` keyword then the loop is
         // infinite and we don't add the on-false branch.
         if let Some(test) = &node.test {
-            if !is_true_literal(&*test) {
+            if !is_true_literal(test) {
                 let follow_node = self.compute_follow_node(for_node);
                 self.cfg.create_edge(for_node, Branch::False, follow_node);
             }
@@ -863,8 +857,7 @@ where
         let do_while_node = Node::from(node);
         self.prioritize_node(do_while_node);
 
-        self.parent_stack
-            .push_with_child(do_while_node, &*node.body);
+        self.parent_stack.push_with_child(do_while_node, &node.body);
         // Skip test expression, only traverse the body.
         node.body.visit_with(self);
         self.parent_stack.pop();
@@ -902,12 +895,12 @@ where
         self.prioritize_node(test_node);
         let then_node = Node::from(&*node.cons);
 
-        self.parent_stack.push_with_child(if_node, &*node.cons);
+        self.parent_stack.push_with_child(if_node, &node.cons);
         // Skip test expression, only traverse the bodies.
         node.cons.visit_with(self);
         self.parent_stack.pop();
         self.parent_stack
-            .push_with_optional_child(if_node, node.alt.as_ref().map(|s| &**s));
+            .push_with_optional_child(if_node, node.alt.as_deref());
         node.alt.visit_with(self);
         self.parent_stack.pop();
 
@@ -938,7 +931,7 @@ where
         let while_node = Node::from(node);
         self.prioritize_node(while_node);
 
-        self.parent_stack.push_with_child(while_node, &*node.body);
+        self.parent_stack.push_with_child(while_node, &node.body);
         // Skip test expression, only traverse the body.
         node.body.visit_with(self);
         self.parent_stack.pop();
@@ -956,7 +949,7 @@ where
         // We add the on-false branch unless the loop test is the `true` keyword
         // (i.e. `while (true) {}`), in which case the loop is infinite and
         // there is no on-false branch.
-        if !is_true_literal(&*node.test) {
+        if !is_true_literal(&node.test) {
             // Control goes to the follow() if the condition evaluates to false.
             let follow_node = self.compute_follow_node(while_node);
             self.cfg.create_edge(while_node, Branch::False, follow_node);
@@ -972,7 +965,7 @@ where
         p!(self, WithStmt);
         let with_node = Node::from(node);
         self.prioritize_node(with_node);
-        self.parent_stack.push_with_child(with_node, &*node.body);
+        self.parent_stack.push_with_child(with_node, &node.body);
         // Only traverse the body.
         node.body.visit_with(self);
         self.parent_stack.pop();
@@ -994,10 +987,8 @@ where
         let switch_node = Node::from(node);
         self.prioritize_node(switch_node);
 
-        self.parent_stack.push_with_child_nodes(
-            switch_node,
-            node.cases.iter().map(|s| Node::from(s)).collect(),
-        );
+        self.parent_stack
+            .push_with_child_nodes(switch_node, node.cases.iter().map(Node::from).collect());
         // Skip discriminant expression, only traverse the cases.
         self.handle_switch_cases(node);
         self.parent_stack.pop();
@@ -1013,7 +1004,7 @@ where
             }
             None => {
                 // Has no CASE but possibly a DEFAULT
-                if node.cases.len() > 0 {
+                if !node.cases.is_empty() {
                     let default_node = Node::from(&node.cases[0]);
                     self.cfg
                         .create_edge(switch_node, Branch::Unconditional, default_node);
@@ -1184,7 +1175,7 @@ where
         p!(self, LabeledStmt);
         let label_node = Node::from(node);
         self.prioritize_node(label_node);
-        self.parent_stack.push_with_child(label_node, &*node.body);
+        self.parent_stack.push_with_child(label_node, &node.body);
         // Skip label, only traverse the body.
         node.body.visit_with(self);
         self.parent_stack.pop();
@@ -1263,10 +1254,8 @@ where
 
         let script_node = Node::from(node);
         self.prioritize_node(script_node);
-        self.parent_stack.push_with_child_nodes(
-            script_node,
-            node.body.iter().map(|s| Node::from(s)).collect(),
-        );
+        self.parent_stack
+            .push_with_child_nodes(script_node, node.body.iter().map(Node::from).collect());
 
         // A block transfer control to its first child if it is not empty.
         // Function declarations are skipped since control doesn't go into that
@@ -1363,10 +1352,8 @@ where
                     compute_fall_through(Node::from(child)),
                 );
 
-                self.parent_stack.push_with_child_nodes(
-                    block_node,
-                    node.stmts.iter().map(|s| Node::from(s)).collect(),
-                );
+                self.parent_stack
+                    .push_with_child_nodes(block_node, node.stmts.iter().map(Node::from).collect());
 
                 node.stmts.visit_with(self);
                 self.parent_stack.pop();
@@ -1516,7 +1503,7 @@ where
                 None => unreachable!("Cannot find break target."),
             };
 
-            break_target_parent_index = break_target_parent_index - 1;
+            break_target_parent_index -= 1;
 
             previous = Some(cur);
 
@@ -1638,19 +1625,6 @@ where
         [visit_binding_ident, BindingIdent],
         [visit_ident, Ident],
         [visit_private_name, PrivateName],
-        [visit_jsx_member_expr, JSXMemberExpr],
-        [visit_jsx_namespaced_name, JSXNamespacedName],
-        [visit_jsx_empty_expr, JSXEmptyExpr],
-        [visit_jsx_expr_container, JSXExprContainer],
-        [visit_jsx_spread_child, JSXSpreadChild],
-        [visit_jsx_opening_element, JSXOpeningElement],
-        [visit_jsx_closing_element, JSXClosingElement],
-        [visit_jsx_attr, JSXAttr],
-        [visit_jsx_text, JSXText],
-        [visit_jsx_element, JSXElement],
-        [visit_jsx_fragment, JSXFragment],
-        [visit_jsx_opening_fragment, JSXOpeningFragment],
-        [visit_jsx_closing_fragment, JSXClosingFragment],
         [visit_invalid, Invalid],
         [visit_big_int, BigInt],
         [visit_str, Str],

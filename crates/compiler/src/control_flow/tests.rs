@@ -110,20 +110,6 @@ make!(
     BindingIdent,
     Ident,
     PrivateName,
-    //jsx
-    JSXMemberExpr,
-    JSXNamespacedName,
-    JSXEmptyExpr,
-    JSXExprContainer,
-    JSXSpreadChild,
-    JSXOpeningElement,
-    JSXClosingElement,
-    JSXAttr,
-    JSXText,
-    JSXElement,
-    JSXFragment,
-    JSXOpeningFragment,
-    JSXClosingFragment,
     //lib
     Invalid,
     // Lit
@@ -228,34 +214,34 @@ fn parse_script(input: &str) -> ast::Script {
     res
 }
 
-fn parse_module(input: &str) -> ast::Module {
-    let cm = Lrc::<SourceMap>::default();
-    let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
+// fn parse_module(input: &str) -> ast::Module {
+//     let cm = Lrc::<SourceMap>::default();
+//     let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
 
-    let fm = cm.new_source_file(FileName::Real("input".into()), input.into());
+//     let fm = cm.new_source_file(FileName::Real("input".into()), input.into());
 
-    let mut p = Parser::new(Syntax::Es(Default::default()), &fm, Default::default());
-    let res = match p.parse_module() {
-        Ok(p) => p,
-        Err(e) => {
-            e.into_diagnostic(&handler).emit();
-            panic!("Failed to parse");
-        }
-    };
+//     let mut p = Parser::new(Syntax::Es(Default::default()), &fm, Default::default());
+//     let res = match p.parse_module() {
+//         Ok(p) => p,
+//         Err(e) => {
+//             e.into_diagnostic(&handler).emit();
+//             panic!("Failed to parse");
+//         }
+//     };
 
-    let mut error = false;
+//     let mut error = false;
 
-    for e in p.take_errors() {
-        e.into_diagnostic(&handler).emit();
-        error = true;
-    }
+//     for e in p.take_errors() {
+//         e.into_diagnostic(&handler).emit();
+//         error = true;
+//     }
 
-    if error {
-        panic!("Failed to parse");
-    }
+//     if error {
+//         panic!("Failed to parse");
+//     }
 
-    res
-}
+//     res
+// }
 
 struct AstGraph {
     map: FxHashMap<NodeId, NodeIndex>,

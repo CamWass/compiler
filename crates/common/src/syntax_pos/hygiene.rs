@@ -169,7 +169,7 @@ impl HygieneData {
     }
 
     fn with<T, F: FnOnce(&mut HygieneData) -> T>(f: F) -> T {
-        GLOBALS.with(|globals| f(&mut *globals.hygiene_data.lock().unwrap()))
+        GLOBALS.with(|globals| f(&mut globals.hygiene_data.lock().unwrap()))
     }
 }
 

@@ -929,9 +929,9 @@ impl<'src> Lexer<'src> {
 
                 let raw = self.slice_to_cur(start);
 
-                let cooked = match cooked {
+                let cooked = match &mut cooked {
                     CookedType::SameAsRaw => Some(raw.into()),
-                    CookedType::DifferentFromRaw(ref mut existing_cooked) => {
+                    CookedType::DifferentFromRaw(existing_cooked) => {
                         let chunk = self.slice_to_cur(cooked_chunk_start);
                         existing_cooked.push_str(chunk);
                         Some(JsWord::from(existing_cooked.as_str()))
@@ -950,13 +950,13 @@ impl<'src> Lexer<'src> {
             if c == b'\\' {
                 has_escape = true;
 
-                match cooked {
+                match &mut cooked {
                     CookedType::SameAsRaw => {
                         let new_cooked = String::from(self.slice_to_cur(start));
 
                         cooked = CookedType::DifferentFromRaw(new_cooked);
                     }
-                    CookedType::DifferentFromRaw(ref mut existing_cooked) => {
+                    CookedType::DifferentFromRaw(existing_cooked) => {
                         let new_chunk = self.slice_to_cur(cooked_chunk_start);
                         existing_cooked.push_str(new_chunk);
                     }
@@ -965,7 +965,7 @@ impl<'src> Lexer<'src> {
 
                 match self.read_escaped_char(true) {
                     Ok(Some(s)) => {
-                        if let CookedType::DifferentFromRaw(ref mut existing_cooked) = cooked {
+                        if let CookedType::DifferentFromRaw(existing_cooked) = &mut cooked {
                             existing_cooked.push(s);
 
                             cooked_chunk_start = self.cur_pos();
@@ -979,14 +979,14 @@ impl<'src> Lexer<'src> {
             } else if is_line_break(self.cur_unchecked()) {
                 self.state.had_line_break = true;
                 if c == b'\r' && self.peek_nth(1) == Some(b'\n') {
-                    match cooked {
+                    match &mut cooked {
                         CookedType::SameAsRaw => {
                             let mut new_cooked = String::from(self.slice_to_cur(start));
                             new_cooked.push('\n');
 
                             cooked = CookedType::DifferentFromRaw(new_cooked);
                         }
-                        CookedType::DifferentFromRaw(ref mut existing_cooked) => {
+                        CookedType::DifferentFromRaw(existing_cooked) => {
                             let new_chunk = self.slice_to_cur(cooked_chunk_start);
                             existing_cooked.push_str(new_chunk);
                             existing_cooked.push('\n');
@@ -1025,7 +1025,7 @@ impl<'src> Lexer<'src> {
 #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 #[repr(u8)]
-pub(self) enum Dispatch {
+enum Dispatch {
     ERR,
     WHS,
     EXL,
@@ -1065,7 +1065,7 @@ pub(self) enum Dispatch {
 use Dispatch::*;
 
 // A lookup table mapping any incoming byte to a handler function.
-pub(self) static DISPATCHER: [Dispatch; 256] = [
+static DISPATCHER: [Dispatch; 256] = [
     //0    1    2    3    4    5    6    7    8    9    A    B    C    D    E    F
     ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, WHS, WHS, WHS, WHS, WHS, ERR, ERR, // 0
     ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, // 1

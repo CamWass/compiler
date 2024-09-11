@@ -29,9 +29,9 @@ pub(super) trait IsDirective {
     fn as_ref(&self) -> Option<&Stmt>;
     fn is_use_strict(&self) -> bool {
         match self.as_ref() {
-            Some(&Stmt::Expr(ref expr)) => match *expr.expr {
+            Some(Stmt::Expr(expr)) => match expr.expr.as_ref() {
                 Expr::Lit(Lit::Str(Str {
-                    ref value,
+                    value,
                     has_escape: false,
                     ..
                 })) => value == "use strict",
@@ -42,7 +42,7 @@ pub(super) trait IsDirective {
     }
     fn is_valid_directive(&self) -> bool {
         match self.as_ref() {
-            Some(&Stmt::Expr(ref expr)) => matches!(*expr.expr, Expr::Lit(Lit::Str(Str { .. }))),
+            Some(Stmt::Expr(expr)) => matches!(*expr.expr, Expr::Lit(Lit::Str(Str { .. }))),
             _ => false,
         }
     }
@@ -230,7 +230,7 @@ impl<I: Tokens> Parser<I> {
         if self.input.syntax().typescript() && is!(self, "const") && peeked_is!(self, "enum") {
             self.assert_and_bump(&tok!("const"));
             self.assert_and_bump(&tok!("enum"));
-            self.parse_ts_enum_decl(start, true)?;
+            self.parse_ts_enum_decl()?;
             return Ok(Some(Stmt::Empty(EmptyStmt {
                 node_id: node_id!(self, span!(self, start)),
             })));
@@ -468,12 +468,12 @@ impl<I: Tokens> Parser<I> {
         }
 
         if self.syntax().typescript() {
-            if let Expr::Ident(ref i) = *expr {
+            if let Expr::Ident(i) = expr.as_ref() {
                 match i.sym {
                     js_word!("public") | js_word!("static") | js_word!("abstract") => {
                         if eat!(self, "interface") {
                             self.emit_err(get_span!(self, i.node_id), SyntaxError::TS2427);
-                            self.parse_ts_interface_decl(start)?;
+                            self.parse_ts_interface_decl()?;
                             return Ok(Some(Stmt::Empty(EmptyStmt {
                                 node_id: node_id!(self, span!(self, start)),
                             })));
@@ -655,13 +655,11 @@ impl<I: Tokens> Parser<I> {
                     //     Default::default(),
                     // );
                     // panic!("Too many variable declarations in for in/of head. Expected 1 declaration, found {}. {:?}", decl.decls.len(), span_of_excess_decls);
-                } else {
-                    if decl.decls[0].init.is_some() {
-                        self.emit_err(
-                            get_span!(self, decl.decls[0].name.node_id()),
-                            SyntaxError::VarInitializerInForInHead,
-                        );
-                    }
+                } else if decl.decls[0].init.is_some() {
+                    self.emit_err(
+                        get_span!(self, decl.decls[0].name.node_id()),
+                        SyntaxError::VarInitializerInForInHead,
+                    );
                 }
 
                 return self.parse_for_each_head(VarDeclOrPat::VarDecl(decl));

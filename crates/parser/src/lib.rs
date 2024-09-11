@@ -38,14 +38,6 @@ impl Syntax {
         }
     }
 
-    /// Should we parse jsx?
-    pub fn jsx(self) -> bool {
-        matches!(
-            self,
-            Syntax::Es(EsConfig { jsx: true, .. }) | Syntax::Typescript(TsConfig { tsx: true, .. })
-        )
-    }
-
     pub fn dynamic_import(self) -> bool {
         matches!(
             self,
@@ -169,9 +161,6 @@ pub struct TsConfig {
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct EsConfig {
-    #[serde(default)]
-    pub jsx: bool,
-
     #[serde(rename = "classPrivateProperty")]
     #[serde(default)]
     pub class_private_props: bool,

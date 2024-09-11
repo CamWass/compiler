@@ -159,7 +159,7 @@ impl StyledBuffer {
     }
 
     pub fn set_style(&mut self, line: usize, col: usize, style: Style, overwrite: bool) {
-        if let Some(ref mut line) = self.styles.get_mut(line) {
+        if let Some(line) = self.styles.get_mut(line) {
             if let Some(s) = line.get_mut(col) {
                 if *s == Style::NoStyle || *s == Style::Quotation || overwrite {
                     *s = style;

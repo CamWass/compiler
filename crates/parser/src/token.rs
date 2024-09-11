@@ -62,9 +62,7 @@ pub enum Token {
     Colon,
     /// '::'
     ColonColon,
-    ///
     BinOp(BinOpToken),
-    ///
     AssignOp(AssignOpToken),
 
     /// '${'
@@ -100,15 +98,6 @@ pub enum Token {
 
     BigInt(BigIntValue),
 
-    JSXName {
-        name: JsWord,
-    },
-    JSXText {
-        raw: JsWord,
-    },
-    JSXTagStart,
-    JSXTagEnd,
-
     Shebang(JsWord),
     Error(Error),
 }
@@ -131,8 +120,7 @@ impl Token {
             | Str { .. }
             | Regex(_, _)
             | Num { .. }
-            | BigInt(_)
-            | JSXTagStart => true,
+            | BigInt(_) => true,
 
             _ => false,
         }
@@ -143,23 +131,9 @@ impl Token {
             Token::Word(w) => w.before_expr(),
             BinOp(o) => o.before_expr(),
 
-            Arrow
-            | DotDotDot
-            | Bang
-            | LParen
-            | LBracket
-            | LBrace
-            | Semi
-            | Comma
-            | Colon
-            | ColonColon
-            | AssignOp(_)
-            | DollarLBrace
-            | QuestionMark
-            | PlusPlus
-            | MinusMinus
-            | Tilde
-            | JSXText { .. } => true,
+            Arrow | DotDotDot | Bang | LParen | LBracket | LBrace | Semi | Comma | Colon
+            | ColonColon | AssignOp(_) | DollarLBrace | QuestionMark | PlusPlus | MinusMinus
+            | Tilde => true,
 
             _ => false,
         }
@@ -233,10 +207,7 @@ impl BinOpToken {
     }
 
     fn starts_expr(&self) -> bool {
-        match self {
-            Self::Add | Self::Sub => true,
-            _ => false,
-        }
+        matches!(self, Self::Add | Self::Sub)
     }
 }
 
@@ -441,8 +412,8 @@ impl From<Word> for JsWord {
 
 impl Debug for Word {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match *self {
-            Word::Ident(ref s) => Display::fmt(s, f),
+        match self {
+            Word::Ident(s) => Display::fmt(s, f),
             _ => {
                 let s: JsWord = self.clone().into();
                 Display::fmt(&s, f)
@@ -641,9 +612,9 @@ impl Token {
 
 impl Word {
     pub(crate) fn cow(&self) -> Cow<JsWord> {
-        match *self {
+        match self {
             Word::Keyword(k) => Cow::Owned(k.into_js_word()),
-            Word::Ident(ref w) => Cow::Borrowed(w),
+            Word::Ident(w) => Cow::Borrowed(w),
             Word::False => Cow::Owned(js_word!("false")),
             Word::True => Cow::Owned(js_word!("true")),
             Word::Null => Cow::Owned(js_word!("null")),
@@ -687,10 +658,6 @@ impl Debug for Token {
             Regex(exp, flags) => write!(f, "regexp literal ({}, {})", exp, flags)?,
             Num { value, raw } => write!(f, "numeric literal ({}, {})", value, raw)?,
             BigInt(..) => write!(f, "bigint literal")?,
-            JSXName { name } => write!(f, "jsx name ({})", name)?,
-            JSXText { raw } => write!(f, "jsx text ({})", raw)?,
-            JSXTagStart => write!(f, "< (jsx tag start)")?,
-            JSXTagEnd => write!(f, "> (jsx tag end)")?,
             Shebang(_) => write!(f, "#!")?,
             Token::Error(_) => write!(f, "<lexing error>")?,
         }

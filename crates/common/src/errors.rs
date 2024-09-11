@@ -639,8 +639,8 @@ impl Handler {
                 .emitted_diagnostic_codes
                 .borrow()
                 .iter()
-                .filter_map(|x| match *x {
-                    DiagnosticId::Error(ref s) => Some(s.clone()),
+                .filter_map(|x| match x {
+                    DiagnosticId::Error(s) => Some(s.clone()),
                     _ => None,
                 })
                 .collect::<Vec<_>>();
@@ -721,7 +721,7 @@ impl Handler {
             track_diagnostics.borrow()(diagnostic);
         });
 
-        if let Some(ref code) = diagnostic.code {
+        if let Some(code) = &diagnostic.code {
             self.emitted_diagnostic_codes
                 .borrow_mut()
                 .insert(code.clone());

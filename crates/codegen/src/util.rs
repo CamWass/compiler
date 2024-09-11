@@ -1,8 +1,6 @@
 use super::list::ListFormat;
 use ast::*;
-use global_common::{
-    errors::SourceMapper, BytePos, SourceMap, SourceMapperDyn, Span, SyntaxContext,
-};
+use global_common::{errors::SourceMapper, BytePos, SourceMap, SourceMapperDyn, Span};
 use std::{rc::Rc, sync::Arc};
 
 pub trait SourceMapperExt {
@@ -35,7 +33,6 @@ pub trait SourceMapperExt {
         parent_node: Span,
         children: &[N],
         format: ListFormat,
-        program_data: &ProgramData,
     ) -> bool {
         if format.contains(ListFormat::MultiLine) {
             return true;
@@ -57,7 +54,6 @@ pub trait SourceMapperExt {
         parent_node: Span,
         children: &[N],
         format: ListFormat,
-        program_data: &ProgramData,
     ) -> bool {
         if format.contains(ListFormat::MultiLine) {
             return (format & ListFormat::NoTrailingNewLine) == ListFormat::None;
@@ -103,18 +99,121 @@ impl SourceMapperExt for Rc<SourceMap> {
     }
 }
 
+pub trait EndsWithAlphaNum {
+    fn ends_with_alpha_num(&self) -> bool;
+}
+
+// impl EndsWithAlphaNum for ForHead {
+//     fn ends_with_alpha_num(&self) -> bool {
+//         match self {
+//             ForHead::VarDecl(n) => n.ends_with_alpha_num(),
+//             ForHead::Pat(n) => n.ends_with_alpha_num(),
+//             ForHead::UsingDecl(n) => n.ends_with_alpha_num(),
+//         }
+//     }
+// }
+
+// impl EndsWithAlphaNum for ExprOrSpread {
+//     fn ends_with_alpha_num(&self) -> bool {
+//         match self {
+//             ExprOrSpread::Spread(e) => e.expr.ends_with_alpha_num(),
+//             ExprOrSpread::Expr(e) => e.ends_with_alpha_num(),
+//         }
+//     }
+// }
+
+impl EndsWithAlphaNum for VarDeclOrPat {
+    fn ends_with_alpha_num(&self) -> bool {
+        match self {
+            VarDeclOrPat::VarDecl(n) => n.ends_with_alpha_num(),
+            VarDeclOrPat::Pat(n) => n.ends_with_alpha_num(),
+        }
+    }
+}
+
+impl EndsWithAlphaNum for Pat {
+    fn ends_with_alpha_num(&self) -> bool {
+        match self {
+            Pat::Object(_) | Pat::Array(_) => false,
+            Pat::Rest(p) => p.arg.ends_with_alpha_num(),
+            Pat::Assign(p) => p.right.ends_with_alpha_num(),
+            Pat::Expr(p) => p.ends_with_alpha_num(),
+            _ => true,
+        }
+    }
+}
+
+impl EndsWithAlphaNum for VarDecl {
+    fn ends_with_alpha_num(&self) -> bool {
+        match self.decls.last() {
+            None => true,
+            Some(d) => match d.init.as_deref() {
+                Some(e) => e.ends_with_alpha_num(),
+                None => d.name.ends_with_alpha_num(),
+            },
+        }
+    }
+}
+
+impl EndsWithAlphaNum for Expr {
+    fn ends_with_alpha_num(&self) -> bool {
+        !matches!(
+            self,
+            Expr::Array(..)
+                | Expr::Object(..)
+                | Expr::Lit(Lit::Str(..))
+                | Expr::Paren(..)
+                | Expr::Member(MemberExpr { computed: true, .. })
+        )
+    }
+}
+
 /// Leftmost recursion
 pub trait StartsWithAlphaNum {
     fn starts_with_alpha_num(&self) -> bool;
 }
 
+macro_rules! alpha_num_const {
+    ($value:tt, $($ty:ident),*) => {
+        $(
+            impl StartsWithAlphaNum for $ty {
+                #[inline]
+                fn starts_with_alpha_num(&self) -> bool {
+                    $value
+                }
+            }
+        )*
+    };
+}
+
+alpha_num_const!(true, BindingIdent, Ident);
+alpha_num_const!(false, ArrayPat, ObjectPat, Invalid, ParenExpr);
+
+impl StartsWithAlphaNum for MemberExpr {
+    #[inline]
+    fn starts_with_alpha_num(&self) -> bool {
+        self.obj.starts_with_alpha_num()
+    }
+}
+
+impl StartsWithAlphaNum for PropName {
+    #[inline]
+    fn starts_with_alpha_num(&self) -> bool {
+        match self {
+            PropName::Str(_) | PropName::Computed(_) => false,
+            PropName::Ident(_) | PropName::Num(_) | PropName::BigInt(_) => true,
+        }
+    }
+}
+
 impl StartsWithAlphaNum for Expr {
     fn starts_with_alpha_num(&self) -> bool {
-        match *self {
+        match self {
             Expr::Ident(_)
             | Expr::Lit(Lit::Bool(_))
             | Expr::Lit(Lit::Num(_))
             | Expr::Lit(Lit::Null(_))
+            | Expr::Lit(Lit::BigInt(_))
             | Expr::Await(_)
             | Expr::Fn(_)
             | Expr::Class(_)
@@ -128,33 +227,36 @@ impl StartsWithAlphaNum for Expr {
             // Handle other literals.
             Expr::Lit(_) => false,
 
-            Expr::Seq(SeqExpr { ref exprs, .. }) => exprs
+            Expr::Seq(SeqExpr { exprs, .. }) => exprs
                 .first()
                 .map(|e| e.starts_with_alpha_num())
                 .unwrap_or(false),
 
             //
-            Expr::Assign(AssignExpr { ref left, .. }) => left.starts_with_alpha_num(),
+            Expr::Assign(AssignExpr { left, .. }) => left.starts_with_alpha_num(),
 
-            Expr::Bin(BinExpr { ref left, .. }) | Expr::Cond(CondExpr { test: ref left, .. }) => {
+            Expr::Bin(BinExpr { left, .. }) | Expr::Cond(CondExpr { test: left, .. }) => {
                 left.starts_with_alpha_num()
             }
-            Expr::Call(CallExpr {
-                callee: ref left, ..
-            })
-            | Expr::Member(MemberExpr { obj: ref left, .. }) => left.starts_with_alpha_num(),
+            Expr::Call(CallExpr { callee: left, .. }) => left.starts_with_alpha_num(),
+            Expr::Member(MemberExpr { obj: left, .. }) => left.starts_with_alpha_num(),
 
-            Expr::Unary(UnaryExpr { op, .. }) => match op {
-                op!("void") | op!("delete") | op!("typeof") => true,
-                _ => false,
-            },
+            Expr::Unary(UnaryExpr { op, .. }) => {
+                matches!(op, op!("void") | op!("delete") | op!("typeof"))
+            }
 
-            Expr::Arrow(ref expr) => match expr.params.as_slice() {
-                [p] => p.pat.starts_with_alpha_num(),
-                _ => false,
-            },
+            Expr::Arrow(expr) => {
+                if expr.is_async {
+                    true
+                } else {
+                    match expr.params.as_slice() {
+                        [p] => p.pat.starts_with_alpha_num(),
+                        _ => false,
+                    }
+                }
+            }
 
-            Expr::Update(ref expr) => {
+            Expr::Update(expr) => {
                 if expr.prefix {
                     false
                 } else {
@@ -164,16 +266,9 @@ impl StartsWithAlphaNum for Expr {
 
             Expr::Tpl(_) | Expr::Array(_) | Expr::Object(_) | Expr::Paren(_) => false,
 
-            Expr::TaggedTpl(TaggedTpl { ref tag, .. }) => tag.starts_with_alpha_num(),
+            Expr::TaggedTpl(TaggedTpl { tag, .. }) => tag.starts_with_alpha_num(),
 
-            // it's empty
-            Expr::JSXEmpty(..) => false,
-            // start with `<`
-            Expr::JSXFragment(..) | Expr::JSXElement(..) => false,
-            Expr::JSXNamespacedName(..) => true,
-            Expr::JSXMember(..) => true,
-
-            Expr::OptChain(ref e) => e.expr.starts_with_alpha_num(),
+            Expr::OptChain(e) => e.expr.starts_with_alpha_num(),
 
             Expr::Invalid(..) => true,
         }
@@ -192,15 +287,6 @@ impl StartsWithAlphaNum for Pat {
     }
 }
 
-impl StartsWithAlphaNum for PatOrExpr {
-    fn starts_with_alpha_num(&self) -> bool {
-        match *self {
-            PatOrExpr::Pat(ref p) => p.starts_with_alpha_num(),
-            PatOrExpr::Expr(ref e) => e.starts_with_alpha_num(),
-        }
-    }
-}
-
 impl StartsWithAlphaNum for ExprOrSpread {
     fn starts_with_alpha_num(&self) -> bool {
         match self {
@@ -209,19 +295,12 @@ impl StartsWithAlphaNum for ExprOrSpread {
         }
     }
 }
-impl StartsWithAlphaNum for ExprOrSuper {
-    fn starts_with_alpha_num(&self) -> bool {
-        match *self {
-            ExprOrSuper::Super(_) => true,
-            ExprOrSuper::Expr(ref e) => e.starts_with_alpha_num(),
-        }
-    }
-}
+
 impl StartsWithAlphaNum for Stmt {
     fn starts_with_alpha_num(&self) -> bool {
-        match *self {
-            Stmt::Expr(ref expr) => expr.expr.starts_with_alpha_num(),
-            Stmt::Decl(ref decl) => decl.starts_with_alpha_num(),
+        match self {
+            Stmt::Expr(expr) => expr.expr.starts_with_alpha_num(),
+            Stmt::Decl(decl) => decl.starts_with_alpha_num(),
             Stmt::Debugger(..)
             | Stmt::With(..)
             | Stmt::While(..)
@@ -244,8 +323,26 @@ impl StartsWithAlphaNum for Stmt {
 
 impl StartsWithAlphaNum for Decl {
     fn starts_with_alpha_num(&self) -> bool {
-        match *self {
+        match self {
             Decl::Class(..) | Decl::Fn(..) | Decl::Var(..) => true,
+        }
+    }
+}
+
+impl StartsWithAlphaNum for ExprOrSuper {
+    fn starts_with_alpha_num(&self) -> bool {
+        match self {
+            ExprOrSuper::Super(_) => true,
+            ExprOrSuper::Expr(e) => e.starts_with_alpha_num(),
+        }
+    }
+}
+
+impl StartsWithAlphaNum for PatOrExpr {
+    fn starts_with_alpha_num(&self) -> bool {
+        match self {
+            PatOrExpr::Expr(n) => n.starts_with_alpha_num(),
+            PatOrExpr::Pat(n) => n.starts_with_alpha_num(),
         }
     }
 }

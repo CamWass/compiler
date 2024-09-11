@@ -23,9 +23,6 @@ use crate::{Id, ToId};
 #[cfg(test)]
 mod tests;
 
-/// For debug purposes, when merging variable `foo` and `bar` to `foo`, rename both variable to `foo_bar`.
-const USE_PSEUDO_NAMES: bool = false;
-
 /**
  * Reuse variable names if possible.
  *
@@ -38,13 +35,13 @@ const USE_PSEUDO_NAMES: bool = false;
  * <p>The pass operates similar to a typical register allocator found in an
  * optimizing compiler by first computing live ranges with
  * {@link LiveVariablesAnalysis} and a variable interference graph. Then it uses
- * graph coloring in {@link GraphColoring} to determine which two variables can
+ * graph colouring in {@link GraphColouring} to determine which two variables can
  * be merge together safely.
  */
 pub struct CoalesceVariableNames<'a> {
-    // Maps a color (represented by an integer) to a variable. If, for example,
-    // the color 5 is mapped to "foo". Then any other variables colored with the
-    // color 5 will now use the name "foo".
+    // Maps a colour (represented by an integer) to a variable. If, for example,
+    // the colour 5 is mapped to "foo". Then any other variables coloured with the
+    // colour 5 will now use the name "foo".
     coloring: GreedyGraphColoring<Id>,
     map: FxHashMap<Id, NodeIndex>,
     unresolved_ctxt: SyntaxContext,
@@ -52,10 +49,10 @@ pub struct CoalesceVariableNames<'a> {
     in_loop_body: bool,
 }
 
-pub fn coalesce_variable_names<'a>(
+pub fn coalesce_variable_names(
     ast: &mut Program,
     unresolved_ctxt: SyntaxContext,
-    program_data: &'a mut ast::ProgramData,
+    program_data: &mut ast::ProgramData,
 ) {
     let mut v = GlobalVisitor {
         unresolved_ctxt,
@@ -74,7 +71,7 @@ macro_rules! handle_fn {
         let all_vars_declared_in_func = find_vars_declared_in_fn($function, true);
 
         if MAX_VARIABLES_TO_ANALYZE > all_vars_declared_in_func.ordered_vars.len() {
-            // This fn is analyzable, create new visitor to do so.
+            // This fn is analysable, create new visitor to do so.
 
             let cfa = ControlFlowAnalysis::analyze(ControlFlowRoot::from(&*$function), false);
             let (liveness, cfg) =
@@ -97,7 +94,7 @@ macro_rules! handle_fn {
             // alive at overlapping times, which means that their variable names cannot be coalesced.
             let (interference_graph, map) = compute_variable_names_interference_graph(&cfg, &liveness);
 
-            // Color any interfering variables with different colors and any variables that can be safely
+            // Colour any interfering variables with different colours and any variables that can be safely
             // coalesced wih the same color.
             let mut coloring = GreedyGraphColoring::new();
             coloring.color(
@@ -126,7 +123,7 @@ macro_rules! handle_fn {
             };
             $function.visit_mut_children_with(&mut v);
         } else {
-            // This fn is not analyzable, continue traversal with parent visitor.
+            // This fn is not analysable, continue traversal with parent visitor.
             $function.visit_mut_children_with($parent_visitor);
         }
     };
@@ -172,10 +169,10 @@ impl CoalesceVariableNames<'_> {
                 // The name is replaced with another - it's a target.
                 CoalesceResult::NameIsCoalesceTarget
             } else if self.coloring.color_count(&id) > 1 {
-                // The coalesced name is itself and will be propogated to other nodes - it's a source.
+                // The coalesced name is itself and will be propagated to other nodes - it's a source.
                 CoalesceResult::NameIsCoalesceSource
             } else {
-                // The coalesced name is itself, and it will not be propogated to other nodes. Nothing to do.
+                // The coalesced name is itself, and it will not be propagated to other nodes. Nothing to do.
                 CoalesceResult::None
             }
         } else {
@@ -531,8 +528,8 @@ impl SubGraph<Id> for SimpleSubGraph<'_> {
  * @param escaped we don't want to coalesce any escaped variables
  * @return graph with variable nodes and edges representing variable interference
  */
-fn compute_variable_names_interference_graph<'ast>(
-    cfg: &ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
+fn compute_variable_names_interference_graph(
+    cfg: &ControlFlowGraph<Node, LinearFlowState, LatticeElementId>,
     liveness: &LiveVariablesAnalysisResult,
 ) -> (UnGraph<Id, ()>, FxHashMap<Id, NodeIndex>) {
     let mut map = FxHashMap::default();
@@ -575,20 +572,20 @@ fn compute_variable_names_interference_graph<'ast>(
         // Check the live states and add edge when possible. An edge between two variables
         // means that they are alive at overlapping times, which means that their
         // variable names cannot be coalesced.
-        let livein = &liveness.lattice_elements[state.in_];
-        for i in livein.set_bits() {
-            for j in livein.next_set_bits(i) {
+        let live_in = &liveness.lattice_elements[state.in_];
+        for i in live_in.set_bits() {
+            for j in live_in.next_set_bits(i) {
                 interfering_vars.insert(i, j);
             }
         }
-        let liveout = &liveness.lattice_elements[state.out];
-        for i in liveout.set_bits() {
-            for j in liveout.next_set_bits(i) {
+        let live_out = &liveness.lattice_elements[state.out];
+        for i in live_out.set_bits() {
+            for j in live_out.next_set_bits(i) {
                 interfering_vars.insert(i, j);
             }
         }
 
-        let live_range_checker = LiveRangeChecker::check(*cfg_node, &state, &liveness);
+        let live_range_checker = LiveRangeChecker::check(*cfg_node, state, liveness);
         live_range_checker.set_crossing_variables(&mut interfering_vars);
     }
 

@@ -130,7 +130,7 @@ impl<I: Tokens> Parser<I> {
         let src = {
             expect!(self, "from");
             let str_start = self.input.cur_pos();
-            let src = match *cur!(self, true)? {
+            match *cur!(self, true)? {
                 Token::Str { .. } => match self.input.bump() {
                     Token::Str { value, has_escape } => Str {
                         node_id: node_id!(self, span!(self, str_start)),
@@ -143,8 +143,7 @@ impl<I: Tokens> Parser<I> {
                     _ => unreachable!(),
                 },
                 _ => unexpected!(self, "a string literal"),
-            };
-            src
+            }
         };
 
         let asserts = if self.input.syntax().import_assertions()
@@ -258,8 +257,8 @@ impl<I: Tokens> Parser<I> {
         }
 
         if self.input.syntax().typescript() && is!(self, IdentName) {
-            let sym = match *cur!(self, true)? {
-                Token::Word(ref w) => w.clone().into(),
+            let sym = match cur!(self, true)? {
+                Token::Word(w) => w.clone().into(),
                 _ => unreachable!(),
             };
             // TODO(swc): remove clone
@@ -622,8 +621,8 @@ impl<I: Tokens> Parser<I> {
 
 impl IsDirective for ModuleItem {
     fn as_ref(&self) -> Option<&Stmt> {
-        match *self {
-            ModuleItem::Stmt(ref s) => Some(s),
+        match self {
+            ModuleItem::Stmt(s) => Some(s),
             _ => None,
         }
     }
@@ -640,7 +639,7 @@ impl<I: Tokens> StmtLikeParser<ModuleItem> for Parser<I> {
         }
 
         if is!(self, "import") {
-            self.parse_import().map(|i| Some(i))
+            self.parse_import().map(Some)
         } else if is!(self, "export") {
             self.parse_export(decorators)
                 .map(|d| d.map(ModuleItem::ModuleDecl))

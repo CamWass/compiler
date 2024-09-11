@@ -1,5 +1,5 @@
 use super::{pat::PatType, util::ExprExt, *};
-use crate::{lexer::TokenContext, token::AssignOpToken};
+use crate::token::AssignOpToken;
 use atoms::js_word;
 use either::Either;
 use global_common::Pos;
@@ -53,41 +53,7 @@ impl<I: Tokens> Parser<I> {
     pub(super) fn parse_assignment_expr(&mut self) -> PResult<Box<Expr>> {
         trace_cur!(self, parse_assignment_expr);
 
-        if self.input.syntax().typescript() {
-            // Note: When the JSX plugin is on, type assertions (`<T> x`) aren't valid
-            // syntax.
-
-            if is!(self, JSXTagStart) {
-                let cur_context = self.input.token_context().current();
-                debug_assert_eq!(cur_context, Some(TokenContext::JSXOpeningTag));
-                // Only time j_oTag is pushed is right after j_expr.
-                debug_assert_eq!(
-                    self.input.token_context().0[self.input.token_context().len() - 2],
-                    TokenContext::JSXExpr
-                );
-
-                let res = self.try_parse_ts(|p| p.parse_assignment_expr_base().map(Some));
-                if let Some(res) = res {
-                    return Ok(res);
-                } else {
-                    debug_assert_eq!(
-                        self.input.token_context().current(),
-                        Some(TokenContext::JSXOpeningTag)
-                    );
-                    self.input.token_context_mut().pop();
-                    debug_assert_eq!(
-                        self.input.token_context().current(),
-                        Some(TokenContext::JSXExpr)
-                    );
-                    self.input.token_context_mut().pop();
-                }
-            }
-        }
-
-        if self.input.syntax().typescript()
-            && (is_one_of!(self, '<', JSXTagStart))
-            && peeked_is!(self, IdentName)
-        {
+        if self.input.syntax().typescript() && is!(self, '<') && peeked_is!(self, IdentName) {
             let res = self.try_parse_ts(|p| {
                 let start = p.input.cur_pos();
                 // Type params.
@@ -522,15 +488,14 @@ impl<I: Tokens> Parser<I> {
 
             // super() cannot be generic
             if !matches!(obj, ExprOrSuper::Super(_)) && is!(self, '<') {
-                let obj_ref = &obj;
                 // tsTryParseAndCatch is expensive, so avoid if not necessary.
                 // There are number of things we are going to "maybe" parse, like type arguments
                 // on tagged template expressions. If any of them fail, walk it back and
                 // continue.
                 let result = self.try_parse_ts(|p| {
                     if !no_call
-                        && p.at_possible_async(match obj_ref {
-                            ExprOrSuper::Expr(ref expr) => &*expr,
+                        && p.at_possible_async(match &obj {
+                            ExprOrSuper::Expr(expr) => expr,
                             _ => unreachable!(),
                         })?
                     {
@@ -553,14 +518,14 @@ impl<I: Tokens> Parser<I> {
                         Ok(Some((
                             Box::new(Expr::Call(CallExpr {
                                 node_id: node_id!(p, span!(p, start)),
-                                callee: obj_ref.clone_node(program_data!(p)),
+                                callee: obj.clone_node(program_data!(p)),
                                 args,
                             })),
                             true,
                         )))
                     } else if is!(p, '`') {
-                        p.parse_tagged_tpl(match *obj_ref {
-                            ExprOrSuper::Expr(ref obj) => obj.clone_node(program_data!(p)),
+                        p.parse_tagged_tpl(match &obj {
+                            ExprOrSuper::Expr(obj) => obj.clone_node(program_data!(p)),
                             _ => unreachable!(),
                         })
                         .map(|expr| (Box::new(Expr::TaggedTpl(expr)), true))
@@ -686,39 +651,6 @@ impl<I: Tokens> Parser<I> {
     pub(super) fn parse_lhs_expr(&mut self) -> PResult<Box<Expr>> {
         let start = self.input.cur_pos();
 
-        // parse jsx
-        if self.input.syntax().jsx() {
-            fn into_expr(e: Either<JSXFragment, JSXElement>) -> Box<Expr> {
-                match e {
-                    Either::Left(l) => Box::new(Expr::JSXFragment(l.into())),
-                    Either::Right(r) => Box::new(Expr::JSXElement(Box::new(r).into())),
-                }
-            }
-            match *cur!(self, true)? {
-                Token::JSXText { .. } => {
-                    return self
-                        .parse_jsx_text()
-                        .map(Lit::JSXText)
-                        .map(Expr::Lit)
-                        .map(Box::new);
-                }
-                Token::JSXTagStart => {
-                    return self.parse_jsx_element().map(into_expr);
-                }
-                _ => {}
-            }
-
-            if is!(self, '<') && !peeked_is!(self, '!') {
-                // In case we encounter an lt token here it will always be the start of
-                // jsx as the lt sign is not allowed in places that expect an expression
-
-                // FIXME(swc):
-                // self.finishToken(tt.jsxTagStart);
-
-                return self.parse_jsx_element().map(into_expr);
-            }
-        }
-
         // `super()` can't be handled from parse_new_expr()
         if self.input.eat(&tok!("super")) {
             let obj = ExprOrSuper::Super(Super {
@@ -734,9 +666,9 @@ impl<I: Tokens> Parser<I> {
 
         let type_args = if self.input.syntax().typescript() && is!(self, '<') {
             self.try_parse_ts(|p| {
-                let type_args = p.parse_ts_type_args()?;
+                p.parse_ts_type_args()?;
                 if is!(p, '(') {
-                    Ok(Some(type_args))
+                    Ok(Some(()))
                 } else {
                     Ok(None)
                 }
@@ -987,7 +919,7 @@ impl<I: Tokens> Parser<I> {
                             );
                         }
                     }
-                    Pat::Expr(ref expr) => unreachable!("invalid pattern: Expr({:?})", expr),
+                    Pat::Expr(expr) => unreachable!("invalid pattern: Expr({:?})", expr),
                     Pat::Invalid(..) => {
                         // We don't have to panic here.
                         // See: https://github.com/swc-project/swc/issues/1170
@@ -1676,8 +1608,8 @@ impl<I: Tokens> Parser<I> {
     pub(super) fn check_assign_target(&mut self, expr: &Expr, deny_call: bool) {
         // We follow behaviour of tsc
         if self.input.syntax().typescript() && self.syntax().early_errors() {
-            let is_eval_or_arguments = match *expr {
-                Expr::Ident(ref i) => i.sym == js_word!("eval") || i.sym == js_word!("arguments"),
+            let is_eval_or_arguments = match expr {
+                Expr::Ident(i) => i.sym == js_word!("eval") || i.sym == js_word!("arguments"),
                 _ => false,
             };
 
@@ -1690,7 +1622,7 @@ impl<I: Tokens> Parser<I> {
                     Expr::Lit(..) => false,
                     Expr::Call(..) => deny_call,
                     Expr::Bin(..) => false,
-                    Expr::Paren(ref p) => should_deny(&p.expr, deny_call),
+                    Expr::Paren(p) => should_deny(&p.expr, deny_call),
 
                     _ => true,
                 }
@@ -1712,8 +1644,8 @@ impl<I: Tokens> Parser<I> {
 }
 
 fn is_import(obj: &ExprOrSuper) -> bool {
-    match *obj {
-        ExprOrSuper::Expr(ref expr) => matches!(
+    match obj {
+        ExprOrSuper::Expr(expr) => matches!(
             **expr,
             Expr::Ident(Ident {
                 sym: js_word!("import"),

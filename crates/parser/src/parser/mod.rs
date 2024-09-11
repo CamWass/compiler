@@ -4,7 +4,6 @@ mod class_and_fn;
 mod expression;
 mod identifier;
 mod input;
-mod jsx;
 mod object;
 mod pat;
 mod statement;

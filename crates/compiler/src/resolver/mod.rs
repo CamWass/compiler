@@ -4,16 +4,10 @@ use atoms::JsWord;
 use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use global_common::{Mark, SyntaxContext};
 use rustc_hash::FxHashSet;
-// use tracing::{debug, span, Level};
 
 use scope::{IdentType, ScopeKind};
 
-#[cfg(test)]
-mod tests;
-
 mod scope;
-
-const LOG: bool = false && cfg!(debug_assertions);
 
 // TODO: ParamWithoutDecorators and other differences from SWC's AST.
 
@@ -55,7 +49,7 @@ const LOG: bool = false && cfg!(debug_assertions);
 /// 2.  Found a block, so visit block with a new syntax context.
 ///
 /// 3. Defined `a` with syntax context of the block statement.
-////
+///
 /// 4. Found usage of `a`, and determines that it's reference to `a` in the
 /// block. So the reference to `a` will have same syntax context as `a` in the
 /// block.
@@ -186,15 +180,6 @@ struct InnerConfig {
 }
 
 impl<'a> Resolver<'a> {
-    #[cfg(test)]
-    fn new(current: Scope<'a>, config: InnerConfig) -> Self {
-        Resolver {
-            current,
-            ident_type: IdentType::Ref,
-            config,
-        }
-    }
-
     fn with_child<F>(&self, kind: ScopeKind, op: F)
     where
         F: for<'aa> FnOnce(&mut Resolver<'aa>),
@@ -254,17 +239,7 @@ impl<'a> Resolver<'a> {
     }
 
     /// Modifies a binding identifier.
-    fn modify(&mut self, ident: &mut Ident, kind: Option<VarDeclKind>) {
-        // if cfg!(debug_assertions) && LOG {
-        //     debug!(
-        //         "Binding (type = {}) {}{:?} {:?}",
-        //         self.in_type,
-        //         ident.sym,
-        //         ident.span.ctxt(),
-        //         kind
-        //     );
-        // }
-
+    fn modify(&mut self, ident: &mut Ident) {
         if ident.ctxt != SyntaxContext::empty() {
             return;
         }
@@ -275,9 +250,6 @@ impl<'a> Resolver<'a> {
 
         if mark != Mark::root() {
             ident.ctxt = ident.ctxt.apply_mark(mark);
-            // if cfg!(debug_assertions) && LOG {
-            //     debug!("\t-> {:?}", span.ctxt());
-            // }
         }
     }
 }
@@ -313,14 +285,6 @@ macro_rules! track_ident_mut {
 
             f.body.visit_mut_with(self);
         }
-
-        // impl<'a> Fold for $T<'a> {
-        //     fn fold(&mut self, f: GetterProp) -> GetterProp {
-        //         let body = f.body.visit_mut_with(self);
-
-        //         GetterProp { body, ..c }
-        //     }
-        // }
 
         fn visit_mut_labeled_stmt(&mut self, s: &mut LabeledStmt) {
             let old = self.ident_type;
@@ -424,7 +388,7 @@ impl<'a> VisitMut<'_> for Resolver<'a> {
     }
 
     fn visit_mut_class_decl(&mut self, n: &mut ClassDecl) {
-        self.modify(&mut n.ident, None);
+        self.modify(&mut n.ident);
 
         n.class.decorators.visit_mut_with(self);
 
@@ -519,12 +483,6 @@ impl<'a> VisitMut<'_> for Resolver<'a> {
     }
 
     fn visit_mut_expr(&mut self, expr: &mut Expr) {
-        // let _span = if LOG {
-        //     Some(span!(Level::ERROR, "visit_mut_expr").entered())
-        // } else {
-        //     None
-        // };
-
         let old = self.ident_type;
         self.ident_type = IdentType::Ref;
         expr.visit_mut_children_with(self);
@@ -544,7 +502,7 @@ impl<'a> VisitMut<'_> for Resolver<'a> {
 
         self.with_child(ScopeKind::Fn, |child| {
             if let Some(ident) = &mut e.ident {
-                child.modify(ident, None)
+                child.modify(ident)
             }
             e.function.visit_mut_with(child);
         });
@@ -555,7 +513,7 @@ impl<'a> VisitMut<'_> for Resolver<'a> {
             n.left.visit_mut_with(child);
             n.right.visit_mut_with(child);
 
-            child.visit_mut_stmt_within_child_scope(&mut *n.body);
+            child.visit_mut_stmt_within_child_scope(&mut n.body);
         });
     }
 
@@ -564,7 +522,7 @@ impl<'a> VisitMut<'_> for Resolver<'a> {
             n.left.visit_mut_with(child);
             n.right.visit_mut_with(child);
 
-            child.visit_mut_stmt_within_child_scope(&mut *n.body);
+            child.visit_mut_stmt_within_child_scope(&mut n.body);
         });
     }
 
@@ -577,7 +535,7 @@ impl<'a> VisitMut<'_> for Resolver<'a> {
             child.ident_type = IdentType::Ref;
             n.update.visit_mut_with(child);
 
-            child.visit_mut_stmt_within_child_scope(&mut *n.body);
+            child.visit_mut_stmt_within_child_scope(&mut n.body);
         });
     }
 
@@ -599,38 +557,18 @@ impl<'a> VisitMut<'_> for Resolver<'a> {
         }
 
         match self.ident_type {
-            IdentType::Binding => self.modify(i, None),
+            IdentType::Binding => self.modify(i),
             IdentType::Ref => {
-                // if cfg!(debug_assertions) && LOG {
-                //     debug!(
-                //         "IdentRef (type = {}) {}{:?}",
-                //         self.in_type,
-                //         sym,
-                //         span.ctxt()
-                //     );
-                // }
-
                 if i.ctxt != SyntaxContext::empty() {
                     return;
                 }
 
                 if let Some(mark) = self.mark_for_ref(&i.sym) {
-                    // if cfg!(debug_assertions) && LOG {
-                    //     debug!("\t -> {:?}", span.ctxt());
-                    // }
                     i.ctxt = i.ctxt.apply_mark(mark);
                 } else {
-                    // if cfg!(debug_assertions) && LOG {
-                    //     debug!("\t -> Unresolved");
-                    // }
-
-                    // if cfg!(debug_assertions) && LOG {
-                    //     debug!("\t -> {:?}", span.ctxt());
-                    // }
-
                     i.ctxt = i.ctxt.apply_mark(self.config.unresolved_mark);
                     // Support hoisting
-                    self.modify(i, None)
+                    self.modify(i)
                 }
             }
             // We currently does not touch labels
@@ -651,11 +589,6 @@ impl<'a> VisitMut<'_> for Resolver<'a> {
         s.local.visit_mut_with(self);
         self.ident_type = old;
     }
-
-    /// Ignore.
-    ///
-    /// See https://github.com/swc-project/swc/issues/2854
-    fn visit_mut_jsx_attr_name(&mut self, _: &mut JSXAttrName) {}
 
     fn visit_mut_method_prop(&mut self, m: &mut MethodProp) {
         m.key.visit_mut_with(self);
@@ -739,20 +672,8 @@ impl<'a> VisitMut<'_> for Resolver<'a> {
     }
 
     fn visit_mut_stmts(&mut self, stmts: &mut Vec<Stmt>) {
-        // let _span = if LOG {
-        //     Some(span!(Level::ERROR, "visit_mut_stmts").entered())
-        // } else {
-        //     None
-        // };
-
         // Phase 1: Handle hoisting
         {
-            // let _span = if LOG {
-            //     Some(span!(Level::ERROR, "hoist").entered())
-            // } else {
-            //     None
-            // };
-
             let mut hoister = Hoister {
                 resolver: self,
                 kind: None,
@@ -825,7 +746,7 @@ impl Hoister<'_, '_> {
             }
         }
 
-        self.resolver.modify(id, self.kind)
+        self.resolver.modify(id)
     }
 }
 
@@ -896,15 +817,6 @@ impl VisitMut<'_> for Hoister<'_, '_> {
 
         let orig = self.catch_param_decls.clone();
 
-        // let mut excluded = find_ids::<_, Id>(&c.body);
-
-        // excluded.retain(|id| {
-        //     // If we already have a declartion named a, `var a` in the catch body is
-        //     // different var.
-
-        //     self.resolver.mark_for_ref(&id.0).is_none()
-        // });
-
         self.in_catch_body = false;
         c.param.visit_mut_with(self);
 
@@ -918,8 +830,7 @@ impl VisitMut<'_> for Hoister<'_, '_> {
         if self.in_block {
             return;
         }
-        self.resolver
-            .modify(&mut node.ident, Some(VarDeclKind::Let));
+        self.resolver.modify(&mut node.ident);
     }
 
     #[inline]
@@ -936,14 +847,14 @@ impl VisitMut<'_> for Hoister<'_, '_> {
         match &mut node.decl {
             DefaultDecl::Fn(f) => {
                 if let Some(id) = &mut f.ident {
-                    self.resolver.modify(id, Some(VarDeclKind::Var));
+                    self.resolver.modify(id);
                 }
 
                 f.visit_mut_with(self)
             }
             DefaultDecl::Class(c) => {
                 if let Some(id) = &mut c.ident {
-                    self.resolver.modify(id, Some(VarDeclKind::Let));
+                    self.resolver.modify(id);
                 }
 
                 c.visit_mut_with(self)
@@ -967,8 +878,7 @@ impl VisitMut<'_> for Hoister<'_, '_> {
             }
         }
 
-        self.resolver
-            .modify(&mut node.ident, Some(VarDeclKind::Var));
+        self.resolver.modify(&mut node.ident);
     }
 
     #[inline]
@@ -977,19 +887,19 @@ impl VisitMut<'_> for Hoister<'_, '_> {
     fn visit_mut_import_default_specifier(&mut self, n: &mut ImportDefaultSpecifier) {
         n.visit_mut_children_with(self);
 
-        self.resolver.modify(&mut n.local, None);
+        self.resolver.modify(&mut n.local);
     }
 
     fn visit_mut_import_named_specifier(&mut self, n: &mut ImportNamedSpecifier) {
         n.visit_mut_children_with(self);
 
-        self.resolver.modify(&mut n.local, None);
+        self.resolver.modify(&mut n.local);
     }
 
     fn visit_mut_import_star_as_specifier(&mut self, n: &mut ImportStarAsSpecifier) {
         n.visit_mut_children_with(self);
 
-        self.resolver.modify(&mut n.local, None);
+        self.resolver.modify(&mut n.local);
     }
 
     #[inline]

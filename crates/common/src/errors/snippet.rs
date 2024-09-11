@@ -123,13 +123,13 @@ impl Annotation {
     }
 
     pub fn is_multiline(&self) -> bool {
-        match self.annotation_type {
+        matches!(
+            self.annotation_type,
             AnnotationType::Multiline(_)
-            | AnnotationType::MultilineStart(_)
-            | AnnotationType::MultilineLine(_)
-            | AnnotationType::MultilineEnd(_) => true,
-            _ => false,
-        }
+                | AnnotationType::MultilineStart(_)
+                | AnnotationType::MultilineLine(_)
+                | AnnotationType::MultilineEnd(_)
+        )
     }
 
     pub fn len(&self) -> usize {
@@ -142,7 +142,7 @@ impl Annotation {
     }
 
     pub fn has_label(&self) -> bool {
-        if let Some(ref label) = self.label {
+        if let Some(label) = &self.label {
             // Consider labels with no text as effectively not being there
             // to avoid weird output with unnecessary vertical lines, like:
             //

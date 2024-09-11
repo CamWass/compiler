@@ -297,11 +297,6 @@ define!({
         MetaProp(MetaPropExpr),
         Await(AwaitExpr),
         Paren(ParenExpr),
-        JSXMember(JSXMemberExpr),
-        JSXNamespacedName(JSXNamespacedName),
-        JSXEmpty(JSXEmptyExpr),
-        JSXElement(Box<JSXElement>),
-        JSXFragment(JSXFragment),
         PrivateName(PrivateName),
         OptChain(OptChainExpr),
         Invalid(Invalid),
@@ -473,99 +468,6 @@ define!({
         pub id: Ident,
     }
 
-    pub enum JSXObject {
-        JSXMemberExpr(Box<JSXMemberExpr>),
-        Ident(Ident),
-    }
-    pub struct JSXMemberExpr {
-        pub node_id: NodeId,
-        pub obj: JSXObject,
-        pub prop: Ident,
-    }
-    pub struct JSXNamespacedName {
-        pub node_id: NodeId,
-        pub ns: Ident,
-        pub name: Ident,
-    }
-    pub struct JSXEmptyExpr {
-        pub node_id: NodeId,
-    }
-    pub struct JSXExprContainer {
-        pub node_id: NodeId,
-        pub expr: JSXExpr,
-    }
-    pub enum JSXExpr {
-        JSXEmptyExpr(JSXEmptyExpr),
-        Expr(Box<Expr>),
-    }
-    pub struct JSXSpreadChild {
-        pub node_id: NodeId,
-        pub expr: Box<Expr>,
-    }
-    pub enum JSXElementName {
-        Ident(Ident),
-        JSXMemberExpr(JSXMemberExpr),
-        JSXNamespacedName(JSXNamespacedName),
-    }
-    pub struct JSXOpeningElement {
-        pub node_id: NodeId,
-        pub name: JSXElementName,
-        pub attrs: Vec<JSXAttrOrSpread>,
-        pub self_closing: bool,
-    }
-    pub enum JSXAttrOrSpread {
-        JSXAttr(JSXAttr),
-        SpreadElement(SpreadElement),
-    }
-    pub struct JSXClosingElement {
-        pub node_id: NodeId,
-        pub name: JSXElementName,
-    }
-    pub struct JSXAttr {
-        pub node_id: NodeId,
-        pub name: JSXAttrName,
-        pub value: Option<JSXAttrValue>,
-    }
-    pub enum JSXAttrName {
-        Ident(Ident),
-        JSXNamespacedName(JSXNamespacedName),
-    }
-    pub enum JSXAttrValue {
-        Lit(Lit),
-        JSXExprContainer(JSXExprContainer),
-        JSXElement(Box<JSXElement>),
-        JSXFragment(JSXFragment),
-    }
-    pub struct JSXText {
-        pub node_id: NodeId,
-        pub value: JsWord,
-        pub raw: JsWord,
-    }
-    pub struct JSXElement {
-        pub node_id: NodeId,
-        pub opening: JSXOpeningElement,
-        pub children: Vec<JSXElementChild>,
-        pub closing: Option<JSXClosingElement>,
-    }
-    pub enum JSXElementChild {
-        JSXText(JSXText),
-        JSXExprContainer(JSXExprContainer),
-        JSXSpreadChild(JSXSpreadChild),
-        JSXElement(Box<JSXElement>),
-        JSXFragment(JSXFragment),
-    }
-    pub struct JSXFragment {
-        pub node_id: NodeId,
-        pub opening: JSXOpeningFragment,
-        pub children: Vec<JSXElementChild>,
-        pub closing: JSXClosingFragment,
-    }
-    pub struct JSXOpeningFragment {
-        pub node_id: NodeId,
-    }
-    pub struct JSXClosingFragment {
-        pub node_id: NodeId,
-    }
     pub struct Invalid {
         pub node_id: NodeId,
     }
@@ -576,7 +478,6 @@ define!({
         Num(Number),
         BigInt(BigInt),
         Regex(Regex),
-        JSXText(JSXText),
     }
     pub struct BigInt {
         pub node_id: NodeId,

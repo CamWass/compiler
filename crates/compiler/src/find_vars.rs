@@ -248,10 +248,6 @@ pub trait FunctionLike<'a> {
     where
         V: Visit<'ast>;
 
-    fn visit_mut_body_with<'ast, V>(&'ast mut self, visitor: &mut V)
-    where
-        V: VisitMut<'ast>;
-
     fn params(&'a self) -> Self::ParamIter;
 
     fn body(&'a self) -> Node<'a>;
@@ -265,16 +261,10 @@ macro_rules! visit_body {
         {
             self.body.visit_with(visitor);
         }
-        fn visit_mut_body_with<'ast, V>(&'ast mut self, visitor: &mut V)
-        where
-            V: VisitMut<'ast>,
-        {
-            self.body.visit_mut_with(visitor);
-        }
     };
 }
 
-fn get_pat_of_param<'a>(param: &'a Param) -> &'a Pat {
+fn get_pat_of_param(param: &Param) -> &Pat {
     &param.pat
 }
 impl<'a> FunctionLike<'a> for Function {
@@ -303,7 +293,7 @@ impl<'a> FunctionLike<'a> for Constructor {
         Node::from(&self.body)
     }
 }
-fn get_pat_of_param_without_decorators<'a>(param: &'a ParamWithoutDecorators) -> &'a Pat {
+fn get_pat_of_param_without_decorators(param: &ParamWithoutDecorators) -> &Pat {
     &param.pat
 }
 impl<'a> FunctionLike<'a> for ArrowExpr {

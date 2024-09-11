@@ -135,12 +135,12 @@ impl<'ast, E: Debug + PartialEq + Clone + Copy> Deref for WithParent<'_, 'ast, E
     type Target = NodeVisitor<'ast, E>;
 
     fn deref(&self) -> &NodeVisitor<'ast, E> {
-        &self.inner
+        self.inner
     }
 }
 impl<'ast, E: Debug + PartialEq + Clone + Copy> DerefMut for WithParent<'_, 'ast, E> {
     fn deref_mut(&mut self) -> &mut NodeVisitor<'ast, E> {
-        &mut self.inner
+        self.inner
     }
 }
 impl<'w, 'ast, E> Drop for WithParent<'w, 'ast, E>
@@ -215,19 +215,6 @@ where
         [visit_binding_ident, BindingIdent],
         [visit_ident, Ident],
         [visit_private_name, PrivateName],
-        [visit_jsx_member_expr, JSXMemberExpr],
-        [visit_jsx_namespaced_name, JSXNamespacedName],
-        [visit_jsx_empty_expr, JSXEmptyExpr],
-        [visit_jsx_expr_container, JSXExprContainer],
-        [visit_jsx_spread_child, JSXSpreadChild],
-        [visit_jsx_opening_element, JSXOpeningElement],
-        [visit_jsx_closing_element, JSXClosingElement],
-        [visit_jsx_attr, JSXAttr],
-        [visit_jsx_text, JSXText],
-        [visit_jsx_element, JSXElement],
-        [visit_jsx_fragment, JSXFragment],
-        [visit_jsx_opening_fragment, JSXOpeningFragment],
-        [visit_jsx_closing_fragment, JSXClosingFragment],
         [visit_invalid, Invalid],
         [visit_big_int, BigInt],
         [visit_str, Str],

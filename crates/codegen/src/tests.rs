@@ -41,9 +41,7 @@ impl Builder {
             program_data: &self.program_data,
         };
 
-        let ret = op(&mut e);
-
-        ret
+        op(&mut e)
     }
 
     pub fn text<F>(self, src: &str, op: F) -> String
@@ -111,7 +109,7 @@ pub(crate) fn assert_pretty(from: &str, to: &str) {
 
     println!("Expected: {:?}", to);
     println!("Actaul:   {:?}", out);
-    assert_eq!(DebugUsingDisplay(&out.trim()), DebugUsingDisplay(to),);
+    assert_eq!(DebugUsingDisplay(out.trim()), DebugUsingDisplay(to),);
 }
 
 #[track_caller]
@@ -422,15 +420,6 @@ fn issue_915_4() {
     test_identical(r#"`\\r\\n--${this.boundary}`;"#);
 }
 
-// #[test]
-// fn jsx_1() {
-//     test_from_to_custom_config(
-//         "<Foo title=\"name\" desc=\"<empty>\" bool it>foo</Foo>;",
-//         "<Foo title=\"name\" desc=\"<empty>\" bool it>foo</Foo>;",
-//         Default::default(),
-//     );
-// }
-
 #[test]
 fn deno_8162() {
     test_from_to(
@@ -544,7 +533,7 @@ fn issue_1619_1() {
     assert_min_target(
         "\"\\x00\" + \"\\x31\"",
         "\"\\x00\"+\"\\x31\"",
-        EsVersion::Es3,
+        EsVersion::latest(),
     );
 }
 
@@ -566,7 +555,7 @@ fn issue_1619_3() {
 }
 
 fn check_latest(src: &str, expected: &str) {
-    let actual = parse_then_emit(&src, Config { minify: false }, EsVersion::latest());
+    let actual = parse_then_emit(src, Config { minify: false }, EsVersion::latest());
     assert_eq!(expected, actual.trim());
 }
 

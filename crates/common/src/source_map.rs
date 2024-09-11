@@ -740,9 +740,7 @@ impl SourceMap {
 
         // Disregard indexes that are at the start or end of their spans, they can't fit
         // bigger characters.
-        if (!forwards && end_index == usize::min_value())
-            || (forwards && start_index == usize::max_value())
-        {
+        if (!forwards && end_index == usize::MIN) || (forwards && start_index == usize::MAX) {
             debug!("find_width_of_character_at_span: start or end of span, cannot be multibyte");
             return 1;
         }
@@ -899,7 +897,7 @@ impl SourceMap {
     pub fn lookup_source_file(&self, pos: BytePos) -> Lrc<SourceFile> {
         let files = self.files.borrow();
         let files = &files.source_files;
-        let fm = Self::lookup_source_file_in(&files, pos);
+        let fm = Self::lookup_source_file_in(files, pos);
         match fm {
             Some(fm) => fm,
             None => {
@@ -1000,7 +998,6 @@ impl SourceMap {
         None
     }
 
-    ///
     #[cfg(feature = "sourcemap")]
     pub fn build_source_map(&self, mappings: &mut Vec<(BytePos, LineCol)>) -> sourcemap::SourceMap {
         self.build_source_map_from(mappings, None)
@@ -1055,8 +1052,8 @@ impl SourceMap {
             }
 
             let f;
-            let f = match cur_file {
-                Some(ref f) if f.start_pos <= pos && pos < f.end_pos => f,
+            let f = match &cur_file {
+                Some(f) if f.start_pos <= pos && pos < f.end_pos => f,
                 _ => {
                     f = self.lookup_source_file(pos);
                     src_id = builder.add_source(&config.file_name_to_source(&f.name));
@@ -1082,9 +1079,9 @@ impl SourceMap {
                 pos,
                 linebpos,
             );
-            let chpos = pos.to_u32() - self.calc_extra_bytes(&f, &mut ch_start, pos);
+            let chpos = pos.to_u32() - self.calc_extra_bytes(f, &mut ch_start, pos);
             let linechpos =
-                linebpos.to_u32() - self.calc_extra_bytes(&f, &mut line_ch_start, linebpos);
+                linebpos.to_u32() - self.calc_extra_bytes(f, &mut line_ch_start, linebpos);
 
             let mut col = max(chpos, linechpos) - min(chpos, linechpos);
 
@@ -1150,7 +1147,7 @@ impl FilePathMapping {
         // NOTE: We are iterating over the mapping entries from last to first
         //       because entries specified later on the command line should
         //       take precedence.
-        for &(ref from, ref to) in self.mapping.iter().rev() {
+        for (from, to) in self.mapping.iter().rev() {
             if let Ok(rest) = path.strip_prefix(from) {
                 return (to.join(rest), true);
             }

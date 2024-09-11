@@ -5,22 +5,6 @@ use ecma_visit::{Visit, VisitWith};
 use rustc_hash::FxHashMap;
 use std::hash::Hash;
 
-/// Gets the condition of an `ON_TRUE` / `ON_FALSE` CFG edge.
-///
-/// `n` - a node with an outgoing conditional CFG edge.
-///
-/// Returns the condition node or `None` if the condition is not obviously a node.
-pub fn get_condition_expression<'ast>(n: Node<'ast>) -> Option<Node<'ast>> {
-    match n.kind {
-        NodeKind::IfStmt(n) => Some(Node::from(&*n.test)),
-        NodeKind::WhileStmt(n) => Some(Node::from(&*n.test)),
-        NodeKind::DoWhileStmt(n) => Some(Node::from(&*n.test)),
-        NodeKind::ForStmt(n) => n.test.as_ref().map(|test| Node::from(test.as_ref())),
-        NodeKind::ForInStmt(..) | NodeKind::ForOfStmt(..) | NodeKind::SwitchCase(..) => None,
-        _ => unreachable!("Node does not have a condition."),
-    }
-}
-
 /// Determines whether the given node is a FOR, DO, or WHILE node.
 pub fn is_loop_structure(n: Node) -> bool {
     matches!(
@@ -43,7 +27,7 @@ pub fn compute_fall_through(n: Node) -> Node {
             match &f.init {
                 Some(init) => match init {
                     VarDeclOrExpr::Expr(expr) => Node::from(expr.as_ref()),
-                    VarDeclOrExpr::VarDecl(ref decl) => Node::from(decl),
+                    VarDeclOrExpr::VarDecl(decl) => Node::from(decl),
                 },
                 // If there is no init, transfer control immediately to the
                 // for-loop.
@@ -152,7 +136,7 @@ impl<'ast> Visit<'ast> for FindPossibleExceptions {
 }
 
 /// Determines if the subtree might throw an exception.
-pub fn may_throw_exception<'ast>(n: Node<'ast>) -> bool {
+pub fn may_throw_exception(n: Node) -> bool {
     let mut v = FindPossibleExceptions::default();
 
     n.visit_with(&mut v);
@@ -211,14 +195,10 @@ pub struct ParentNode<'ast> {
     pub children: Vec<Node<'ast>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ParentStack<'ast>(pub Vec<ParentNode<'ast>>);
 
 impl<'ast> ParentStack<'ast> {
-    pub fn new() -> Self {
-        Self(Vec::new())
-    }
-
     pub fn pop(&mut self) {
         self.0.pop();
     }
@@ -268,7 +248,7 @@ impl<'a, 'ast> IntoIterator for &'a ParentStack<'ast> {
     type IntoIter = std::slice::Iter<'a, ParentNode<'ast>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.as_slice().into_iter()
+        self.0.as_slice().iter()
     }
 }
 
@@ -394,7 +374,7 @@ pub trait AdvanceWhile: Iterator {
         Self: Sized,
         P: FnMut(&Self::Item) -> bool,
     {
-        while let Some(i) = self.next() {
+        for i in self.by_ref() {
             if !predicate(&i) {
                 break;
             }

@@ -19,7 +19,7 @@ macro_rules! cur {
         let pos = $parser.input.last_pos();
         let last = Span::new(pos, pos);
         let is_err_token = match $parser.input.cur() {
-            Some(&$crate::token::Token::Error(..)) => true,
+            Some($crate::token::Token::Error(..)) => true,
             _ => false,
         };
         if is_err_token {
@@ -55,7 +55,7 @@ macro_rules! is {
     ($parser:expr, BindingIdent) => {{
         let ctx = $parser.ctx();
         match $parser.input.cur() {
-            Some(&Word(ref w)) => !ctx.is_reserved_word(&w.cow()),
+            Some(Word(w)) => !ctx.is_reserved_word(&w.cow()),
             _ => false,
         }
     }};
@@ -63,35 +63,35 @@ macro_rules! is {
     ($parser:expr, IdentRef) => {{
         let ctx = $parser.ctx();
         match $parser.input.cur() {
-            Some(&Word(ref w)) => !ctx.is_reserved_word(&w.cow()),
+            Some(Word(w)) => !ctx.is_reserved_word(&w.cow()),
             _ => false,
         }
     }};
 
     ($parser:expr, IdentName) => {{
         match $parser.input.cur() {
-            Some(&Word(..)) => true,
+            Some(Word(..)) => true,
             _ => false,
         }
     }};
 
     ($parser:expr, Str) => {{
         match $parser.input.cur() {
-            Some(&Token::Str { .. }) => true,
+            Some(Token::Str { .. }) => true,
             _ => false,
         }
     }};
 
     ($parser:expr, Num) => {{
         match $parser.input.cur() {
-            Some(&Token::Num { .. }) => true,
+            Some(Token::Num { .. }) => true,
             _ => false,
         }
     }};
 
     ($parser:expr,';') => {{
         match $parser.input.cur() {
-            Some(&Token::Semi) | None | Some(&tok!('}')) => true,
+            Some(Token::Semi) | None | Some(tok!('}')) => true,
             _ => $parser.input.had_line_break_before_cur(),
         }
     }};
@@ -120,7 +120,7 @@ macro_rules! peeked_is {
     ($parser:expr, BindingIdent) => {{
         let ctx = $parser.ctx();
         match peek!($parser) {
-            Ok(&Word(ref w)) => !ctx.is_reserved_word(&w.cow()),
+            Ok(Word(w)) => !ctx.is_reserved_word(&w.cow()),
             _ => false,
         }
     }};
@@ -128,14 +128,14 @@ macro_rules! peeked_is {
     ($parser:expr, IdentRef) => {{
         let ctx = $parser.ctx();
         match peek!($parser) {
-            Ok(&Word(ref w)) => !ctx.is_reserved_word(&w.cow()),
+            Ok(Word(w)) => !ctx.is_reserved_word(&w.cow()),
             _ => false,
         }
     }};
 
     ($parser:expr, IdentName) => {{
         match peek!($parser) {
-            Ok(&Word(..)) => true,
+            Ok(Word(..)) => true,
             _ => false,
         }
     }};
@@ -146,7 +146,7 @@ macro_rules! peeked_is {
 
     ($parser:expr, $t:tt) => {
         match peek!($parser).ok() {
-            Some(&tok!($t)) => true,
+            Some(tok!($t)) => true,
             _ => false,
         }
     };
@@ -159,11 +159,11 @@ macro_rules! peeked_is {
 macro_rules! eat {
     ($parser:expr, ';') => {{
         match $parser.input.cur() {
-            Some(&Token::Semi) => {
+            Some(Token::Semi) => {
                 $parser.input.bump();
                 true
             }
-            None | Some(&tok!('}')) => true,
+            None | Some(tok!('}')) => true,
             _ => $parser.input.had_line_break_before_cur(),
         }
     }};

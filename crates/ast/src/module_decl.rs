@@ -5,8 +5,8 @@ use crate::{
     lit::Str,
     GetNodeId, NodeId, ObjectLit,
 };
-use node_id::GetNodeIdMacro;
 use clone_node::CloneNode;
+use node_id::GetNodeIdMacro;
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub enum ModuleDecl {

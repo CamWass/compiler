@@ -79,6 +79,10 @@ add_bitflags!(
         NoSpaceIfEmpty: 1 << 18,
         SingleElement: 1 << 19,
     },
+    // Optimisation.
+    Values {
+        CanSkipTrailingComma: 1 << 20
+    },
     /// Precomputed Formats
     Values {
         Modifiers: SingleLine | SpaceBetweenSiblings | NoInterveningComments,
@@ -145,8 +149,6 @@ add_bitflags!(
             | AllowTrailingComma
             | SingleLine
             | SpaceBetweenBraces,
-        JsxElementOrFragmentChildren: SingleLine | NoInterveningComments,
-        JsxElementAttributes: SingleLine | SpaceBetweenSiblings | NoInterveningComments,
         CaseOrDefaultClauseStatements: Indented | MultiLine | NoTrailingNewLine | OptionalIfEmpty,
         HeritageClauseTypes: CommaDelimited | SpaceBetweenSiblings | SingleLine,
         SourceFileStatements: MultiLine | NoTrailingNewLine,

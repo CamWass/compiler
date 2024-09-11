@@ -401,7 +401,7 @@ impl<I: Tokens> ParseObject<Pat> for Parser<I> {
         let len = props.len();
         for (i, p) in props.iter().enumerate() {
             if i == len - 1 {
-                if let ObjectPatProp::Rest(ref rest) = p {
+                if let ObjectPatProp::Rest(rest) = p {
                     match *rest.arg {
                         Pat::Ident(..) => {}
                         _ => syntax_error!(

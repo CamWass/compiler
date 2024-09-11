@@ -215,11 +215,11 @@ impl SingleThreadedComments {
     }
 
     /// Borrows all the comments as (leading, trailing).
-    pub fn borrow_all<'a>(
-        &'a self,
+    pub fn borrow_all(
+        &self,
     ) -> (
-        Ref<'a, SingleThreadedCommentsMapInner>,
-        Ref<'a, SingleThreadedCommentsMapInner>,
+        Ref<'_, SingleThreadedCommentsMapInner>,
+        Ref<'_, SingleThreadedCommentsMapInner>,
     ) {
         (self.leading.borrow(), self.trailing.borrow())
     }
@@ -229,7 +229,7 @@ impl SingleThreadedComments {
         F: FnOnce(&[Comment]) -> Ret,
     {
         if let Some(comments) = self.leading.borrow().get(&pos) {
-            op(&*comments)
+            op(comments)
         } else {
             op(&[])
         }
@@ -240,7 +240,7 @@ impl SingleThreadedComments {
         F: FnOnce(&[Comment]) -> Ret,
     {
         if let Some(comments) = self.trailing.borrow().get(&pos) {
-            op(&*comments)
+            op(comments)
         } else {
             op(&[])
         }

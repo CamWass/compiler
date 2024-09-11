@@ -1,7 +1,7 @@
 use crate::{module_decl::ModuleDecl, stmt::Stmt, GetNodeId, NodeId};
 use atoms::JsWord;
-use node_id::GetNodeIdMacro;
 use clone_node::CloneNode;
+use node_id::GetNodeIdMacro;
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub enum Program {
@@ -18,8 +18,6 @@ pub struct Module {
     pub shebang: Option<JsWord>,
 }
 
-
-
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct Script {
     pub node_id: NodeId,
@@ -28,8 +26,6 @@ pub struct Script {
 
     pub shebang: Option<JsWord>,
 }
-
-
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub enum ModuleItem {

@@ -44,13 +44,6 @@ impl<I: Tokens> Parser<I> {
         })
     }
 
-    /// IdentifierReference
-    pub(super) fn parse_ident_ref(&mut self) -> PResult<Ident> {
-        let ctx = self.ctx();
-
-        self.parse_ident(!ctx.in_generator, !ctx.in_async)
-    }
-
     /// LabelIdentifier
     pub(super) fn parse_label_ident(&mut self) -> PResult<Ident> {
         let ctx = self.ctx();

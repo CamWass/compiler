@@ -260,8 +260,7 @@ impl<I: Tokens> Parser<I> {
                 let pat = self.parse_binding_pat_or_ident()?;
                 // Type annotation.
                 if self.input.syntax().typescript() && self.input.is(&tok!(':')) {
-                    let cur_pos = self.input.cur_pos();
-                    self.parse_ts_type_ann(true, cur_pos)?;
+                    self.parse_ts_type_ann(true)?;
                 }
 
                 let pat = Pat::Rest(RestPat {
@@ -378,8 +377,7 @@ impl<I: Tokens> Parser<I> {
 
                 // Type annotation.
                 if self.input.syntax().typescript() && is!(self, ':') {
-                    let cur_pos = self.input.cur_pos();
-                    self.parse_ts_type_ann(true, cur_pos)?;
+                    self.parse_ts_type_ann(true)?;
                 }
 
                 let pat_span = span!(self, pat_start);
@@ -421,7 +419,6 @@ impl<I: Tokens> Parser<I> {
     }
 }
 
-///
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PatType {
     BindingPat,

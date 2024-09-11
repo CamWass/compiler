@@ -29,6 +29,7 @@ use super::*;
 /**
  * Operations supported by ArithmeticInstruction.
  */
+#[allow(dead_code)]
 #[derive(Copy, Clone, Eq, Hash, PartialEq, Debug)]
 enum Operation {
     ADD,

@@ -1,7 +1,6 @@
 #![recursion_limit = "1024"]
 #![allow(unused_variables)]
-// TODO: temp
-#![allow(warnings)]
+#![allow(dead_code)]
 
 pub use self::config::Config;
 use self::{
@@ -10,12 +9,10 @@ use self::{
     util::{SourceMapperExt, StartsWithAlphaNum},
 };
 use ast::*;
-use atoms::JsWord;
-use global_common::{
-    comments::Comments, sync::Lrc, BytePos, SourceMap, Span, SyntaxContext, DUMMY_SP,
-};
+use global_common::{comments::Comments, sync::Lrc, BytePos, SourceMap, Span, DUMMY_SP};
 use parser::JscTarget;
-use std::{borrow::Cow, fmt::Write, io, sync::Arc};
+use std::{borrow::Cow, fmt::Write, io};
+use util::EndsWithAlphaNum;
 
 #[macro_use]
 pub mod macros;
@@ -23,7 +20,6 @@ mod comments;
 mod config;
 mod decl;
 mod expr;
-mod jsx;
 pub mod list;
 mod stmt;
 #[cfg(test)]
@@ -44,16 +40,16 @@ pub struct Emitter<'a> {
 
 impl<'a> Emitter<'a> {
     pub fn emit_program(&mut self, node: &Program) -> Result {
-        match *node {
-            Program::Module(ref m) => self.emit_module(m),
-            Program::Script(ref s) => self.emit_script(s),
+        match node {
+            Program::Module(m) => self.emit_module(m),
+            Program::Script(s) => self.emit_script(s),
         }
     }
 
     pub fn emit_module(&mut self, node: &Module) -> Result {
-        if let Some(ref shebang) = node.shebang {
+        if let Some(shebang) = &node.shebang {
             punct!(self, "#!");
-            self.wr.write_str_lit(DUMMY_SP, &*shebang)?;
+            self.wr.write_str_lit(DUMMY_SP, shebang)?;
             self.wr.write_line()?;
         }
         for stmt in &node.body {
@@ -63,9 +59,9 @@ impl<'a> Emitter<'a> {
     }
 
     pub fn emit_script(&mut self, node: &Script) -> Result {
-        if let Some(ref shebang) = node.shebang {
+        if let Some(shebang) = &node.shebang {
             punct!(self, "#!");
-            self.wr.write_str_lit(DUMMY_SP, &*shebang)?;
+            self.wr.write_str_lit(DUMMY_SP, shebang)?;
             self.wr.write_line()?;
         }
         for stmt in &node.body {
@@ -75,22 +71,22 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_module_item(&mut self, node: &ModuleItem) -> Result {
-        match *node {
-            ModuleItem::Stmt(ref stmt) => self.emit_stmt(stmt),
-            ModuleItem::ModuleDecl(ref decl) => self.emit_module_decl(decl),
+        match node {
+            ModuleItem::Stmt(stmt) => self.emit_stmt(stmt),
+            ModuleItem::ModuleDecl(decl) => self.emit_module_decl(decl),
         }
     }
 
     fn emit_module_decl(&mut self, node: &ModuleDecl) -> Result {
         self.emit_leading_comments_of_span(get_span!(self, node.node_id()), false)?;
 
-        match *node {
-            ModuleDecl::Import(ref d) => self.emit_import(d),
-            ModuleDecl::ExportDecl(ref d) => self.emit_export_decl(d),
-            ModuleDecl::ExportNamed(ref d) => self.emit_named_export(d),
-            ModuleDecl::ExportDefaultDecl(ref d) => self.emit_export_default_decl(d),
-            ModuleDecl::ExportDefaultExpr(ref n) => self.emit_export_default_expr(n),
-            ModuleDecl::ExportAll(ref d) => self.emit_export_all(d),
+        match node {
+            ModuleDecl::Import(d) => self.emit_import(d),
+            ModuleDecl::ExportDecl(d) => self.emit_export_decl(d),
+            ModuleDecl::ExportNamed(d) => self.emit_named_export(d),
+            ModuleDecl::ExportDefaultDecl(d) => self.emit_export_default_decl(d),
+            ModuleDecl::ExportDefaultExpr(n) => self.emit_export_default_expr(n),
+            ModuleDecl::ExportAll(d) => self.emit_export_all(d),
         }?;
         self.wr.write_line()
     }
@@ -105,8 +101,14 @@ impl<'a> Emitter<'a> {
         keyword!(self, "export");
         space!(self);
         keyword!(self, "default");
-        space!(self);
+
+        if node.expr.starts_with_alpha_num() {
+            space!(self);
+        } else {
+            formatting_space!(self);
+        }
         self.emit_expr(&node.expr)?;
+
         formatting_semi!(self);
         Ok(())
     }
@@ -118,9 +120,9 @@ impl<'a> Emitter<'a> {
         space!(self);
         keyword!(self, "default");
         space!(self);
-        match node.decl {
-            DefaultDecl::Class(ref n) => self.emit_class_expr(n),
-            DefaultDecl::Fn(ref n) => self.emit_fn_expr(n),
+        match &node.decl {
+            DefaultDecl::Class(n) => self.emit_class_expr(n),
+            DefaultDecl::Fn(n) => self.emit_fn_expr(n),
         }?;
         formatting_semi!(self);
         Ok(())
@@ -131,21 +133,27 @@ impl<'a> Emitter<'a> {
         self.emit_leading_comments_of_span(span, false)?;
 
         keyword!(self, "import");
-        space!(self);
+        let starts_with_ident = !node.specifiers.is_empty()
+            && matches!(node.specifiers[0], ImportSpecifier::Default(_));
+        if starts_with_ident {
+            space!(self);
+        } else {
+            formatting_space!(self);
+        }
 
         let mut specifiers = vec![];
         let mut emitted_default = false;
         let mut emitted_ns = false;
         for specifier in &node.specifiers {
             match specifier {
-                ImportSpecifier::Named(ref s) => {
+                ImportSpecifier::Named(s) => {
                     specifiers.push(s);
                 }
-                ImportSpecifier::Default(ref s) => {
+                ImportSpecifier::Default(s) => {
                     self.emit_ident(&s.local)?;
                     emitted_default = true;
                 }
-                ImportSpecifier::Namespace(ref ns) => {
+                ImportSpecifier::Namespace(ns) => {
                     if emitted_default {
                         punct!(self, ",");
                         formatting_space!(self);
@@ -155,7 +163,7 @@ impl<'a> Emitter<'a> {
 
                     assert!(node.specifiers.len() <= 2);
                     punct!(self, "*");
-                    space!(self);
+                    formatting_space!(self);
                     keyword!(self, "as");
                     space!(self);
                     self.emit_ident(&ns.local)?;
@@ -194,7 +202,7 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_import_specifier(&mut self, node: &ImportNamedSpecifier) -> Result {
-        if let Some(ref imported) = node.imported {
+        if let Some(imported) = &node.imported {
             self.emit_ident(imported)?;
             space!(self);
             keyword!(self, "as");
@@ -206,11 +214,11 @@ impl<'a> Emitter<'a> {
 
     fn emit_export_specifier(&mut self, node: &ExportSpecifier) -> Result {
         match node {
-            ExportSpecifier::Default(ref node) => {
+            ExportSpecifier::Default(_) => {
                 unimplemented!("codegen of `export default from 'foo';`")
             }
-            ExportSpecifier::Namespace(ref node) => self.emit_namespace_export_specifier(node),
-            ExportSpecifier::Named(ref node) => self.emit_named_export_specifier(node),
+            ExportSpecifier::Namespace(node) => self.emit_namespace_export_specifier(node),
+            ExportSpecifier::Named(node) => self.emit_named_export_specifier(node),
         }
     }
 
@@ -227,7 +235,7 @@ impl<'a> Emitter<'a> {
     fn emit_named_export_specifier(&mut self, node: &ExportNamedSpecifier) -> Result {
         self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
 
-        if let Some(ref exported) = node.exported {
+        if let Some(exported) = &node.exported {
             self.emit_ident(&node.orig)?;
             space!(self);
             keyword!(self, "as");
@@ -264,7 +272,7 @@ impl<'a> Emitter<'a> {
                 ExportSpecifier::Namespace(spec) => {
                     result.has_namespace_spec = true;
                     // There can only be one namespace export specifier.
-                    if let None = result.namespace_spec {
+                    if result.namespace_spec.is_none() {
                         result.namespace_spec = Some(spec)
                     }
                     result
@@ -297,7 +305,7 @@ impl<'a> Emitter<'a> {
             punct!(self, "}");
         }
 
-        if let Some(ref src) = node.src {
+        if let Some(src) = &node.src {
             if has_named_specs || (!has_namespace_spec && !has_named_specs) {
                 formatting_space!(self);
             } else if has_namespace_spec {
@@ -315,11 +323,11 @@ impl<'a> Emitter<'a> {
         self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
 
         keyword!(self, "export");
-        space!(self);
+        formatting_space!(self);
         punct!(self, "*");
         formatting_space!(self);
         keyword!(self, "from");
-        space!(self);
+        formatting_space!(self);
         self.emit_str_lit(&node.src)?;
         formatting_semi!(self);
         Ok(())
@@ -329,31 +337,26 @@ impl<'a> Emitter<'a> {
         let span = get_span!(self, node.node_id());
         self.emit_leading_comments_of_span(span, false)?;
 
-        match *node {
+        match node {
             Lit::Bool(Bool { value, .. }) => {
-                if value {
+                if *value {
                     keyword!(self, span, "true")
                 } else {
                     keyword!(self, span, "false")
                 }
             }
             Lit::Null(_) => keyword!(self, span, "null"),
-            Lit::Str(ref s) => self.emit_str_lit(s)?,
-            Lit::BigInt(ref s) => self.emit_big_lit(s)?,
-            Lit::Num(ref n) => self.emit_num_lit(n)?,
-            Lit::Regex(ref n) => {
+            Lit::Str(s) => self.emit_str_lit(s)?,
+            Lit::BigInt(s) => self.emit_big_lit(s)?,
+            Lit::Num(n) => self.emit_num_lit(n)?,
+            Lit::Regex(n) => {
                 punct!(self, "/");
                 self.wr.write_str(&n.exp)?;
                 punct!(self, "/");
                 self.wr.write_str(&n.flags)?;
             }
-            Lit::JSXText(ref n) => self.emit_jsx_text(n)?,
         }
         Ok(())
-    }
-
-    fn emit_js_word(&mut self, span: Span, value: &JsWord) -> Result {
-        self.wr.write_str_lit(span, &value)
     }
 
     fn emit_str_lit(&mut self, node: &Str) -> Result {
@@ -444,9 +447,9 @@ impl<'a> Emitter<'a> {
     // }
 
     fn emit_expr_or_super(&mut self, node: &ExprOrSuper) -> Result {
-        match *node {
-            ExprOrSuper::Expr(ref e) => self.emit_expr(e),
-            ExprOrSuper::Super(ref n) => self.emit_super(n),
+        match node {
+            ExprOrSuper::Expr(e) => self.emit_expr(e),
+            ExprOrSuper::Super(n) => self.emit_super(n),
         }
     }
 
@@ -456,40 +459,34 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_expr(&mut self, node: &Expr) -> Result {
-        match *node {
-            Expr::Array(ref n) => self.emit_array_lit(n),
-            Expr::Arrow(ref n) => self.emit_arrow_expr(n),
-            Expr::Assign(ref n) => self.emit_assign_expr(n),
-            Expr::Await(ref n) => self.emit_await_expr(n),
-            Expr::Bin(ref n) => self.emit_bin_expr(n),
-            Expr::Call(ref n) => self.emit_call_expr(n),
-            Expr::Class(ref n) => self.emit_class_expr(n),
-            Expr::Cond(ref n) => self.emit_cond_expr(n),
-            Expr::Fn(ref n) => self.emit_fn_expr(n),
-            Expr::Ident(ref n) => self.emit_ident(n),
-            Expr::Lit(ref n) => self.emit_lit(n),
-            Expr::Member(ref n) => self.emit_member_expr(n),
-            Expr::MetaProp(ref n) => self.emit_meta_prop_expr(n),
-            Expr::New(ref n) => self.emit_new_expr(n),
-            Expr::Object(ref n) => self.emit_object_lit(n),
-            Expr::Paren(ref n) => self.emit_paren_expr(n),
-            Expr::Seq(ref n) => self.emit_seq_expr(n),
-            Expr::TaggedTpl(ref n) => self.emit_tagged_tpl_lit(n),
-            Expr::This(ref n) => self.emit_this_expr(n),
-            Expr::Tpl(ref n) => self.emit_tpl_lit(n),
-            Expr::Unary(ref n) => self.emit_unary_expr(n),
-            Expr::Update(ref n) => self.emit_update_expr(n),
-            Expr::Yield(ref n) => self.emit_yield_expr(n),
-            Expr::PrivateName(ref n) => self.emit_private_name(n),
+        match node {
+            Expr::Array(n) => self.emit_array_lit(n),
+            Expr::Arrow(n) => self.emit_arrow_expr(n),
+            Expr::Assign(n) => self.emit_assign_expr(n),
+            Expr::Await(n) => self.emit_await_expr(n),
+            Expr::Bin(n) => self.emit_bin_expr(n),
+            Expr::Call(n) => self.emit_call_expr(n),
+            Expr::Class(n) => self.emit_class_expr(n),
+            Expr::Cond(n) => self.emit_cond_expr(n),
+            Expr::Fn(n) => self.emit_fn_expr(n),
+            Expr::Ident(n) => self.emit_ident(n),
+            Expr::Lit(n) => self.emit_lit(n),
+            Expr::Member(n) => self.emit_member_expr(n),
+            Expr::MetaProp(n) => self.emit_meta_prop_expr(n),
+            Expr::New(n) => self.emit_new_expr(n),
+            Expr::Object(n) => self.emit_object_lit(n),
+            Expr::Paren(n) => self.emit_paren_expr(n),
+            Expr::Seq(n) => self.emit_seq_expr(n),
+            Expr::TaggedTpl(n) => self.emit_tagged_tpl_lit(n),
+            Expr::This(n) => self.emit_this_expr(n),
+            Expr::Tpl(n) => self.emit_tpl_lit(n),
+            Expr::Unary(n) => self.emit_unary_expr(n),
+            Expr::Update(n) => self.emit_update_expr(n),
+            Expr::Yield(n) => self.emit_yield_expr(n),
+            Expr::PrivateName(n) => self.emit_private_name(n),
 
-            Expr::JSXMember(ref n) => self.emit_jsx_member_expr(n),
-            Expr::JSXNamespacedName(ref n) => self.emit_jsx_namespaced_name(n),
-            Expr::JSXEmpty(ref n) => self.emit_jsx_empty_expr(n),
-            Expr::JSXElement(ref n) => self.emit_jsx_element(n),
-            Expr::JSXFragment(ref n) => self.emit_jsx_fragment(n),
-
-            Expr::OptChain(ref n) => self.emit_opt_chain(n),
-            Expr::Invalid(ref n) => self.emit_invalid(n),
+            Expr::OptChain(n) => self.emit_opt_chain(n),
+            Expr::Invalid(n) => self.emit_invalid(n),
         }
     }
 
@@ -497,8 +494,8 @@ impl<'a> Emitter<'a> {
         let span = get_span!(self, n.node_id);
         self.emit_leading_comments_of_span(span, false)?;
 
-        match *n.expr {
-            Expr::Member(ref e) => {
+        match n.expr.as_ref() {
+            Expr::Member(e) => {
                 self.emit_expr_or_super(&e.obj)?;
                 punct!(self, "?.");
 
@@ -510,7 +507,7 @@ impl<'a> Emitter<'a> {
                     self.emit_expr(&e.prop)?;
                 }
             }
-            Expr::Call(ref e) => {
+            Expr::Call(e) => {
                 self.emit_expr_or_super(&e.callee)?;
                 punct!(self, "?.");
 
@@ -550,10 +547,16 @@ impl<'a> Emitter<'a> {
             let span = self.cm.span_until_char(span, ' ');
             keyword!(self, span, "new");
         }
-        space!(self);
+
+        if node.callee.starts_with_alpha_num() {
+            space!(self);
+        } else {
+            formatting_space!(self);
+        }
+
         self.emit_expr(&node.callee)?;
 
-        if let Some(ref args) = node.args {
+        if let Some(args) = &node.args {
             punct!(self, "(");
             self.emit_expr_or_spreads(span, args, ListFormat::NewExpressionArguments)?;
             punct!(self, ")");
@@ -589,8 +592,8 @@ impl<'a> Emitter<'a> {
 
     /// `1..toString` is a valid property access, emit a dot after the literal
     pub fn needs_2dots_for_property_access(&self, expr: &ExprOrSuper) -> bool {
-        match *expr {
-            ExprOrSuper::Expr(ref expr) => {
+        match expr {
+            ExprOrSuper::Expr(expr) => {
                 match expr.as_ref() {
                     Expr::Lit(Lit::Num(Number { value, raw, .. })) => {
                         if value.is_nan() || value.is_infinite() {
@@ -634,12 +637,13 @@ impl<'a> Emitter<'a> {
         self.emit_leading_comments_of_span(span, false)?;
 
         let space = !self.cfg.minify
-            || match node.params.as_slice() {
+            || matches!(
+                node.params.as_slice(),
                 [ParamWithoutDecorators {
-                    pat: Pat::Ident(_), ..
-                }] => true,
-                _ => false,
-            };
+                    pat: Pat::Ident(_),
+                    ..
+                }]
+            );
 
         if node.is_async {
             keyword!(self, "async");
@@ -651,12 +655,13 @@ impl<'a> Emitter<'a> {
         }
 
         let parens = !self.cfg.minify
-            || match node.params.as_slice() {
+            || !matches!(
+                node.params.as_slice(),
                 [ParamWithoutDecorators {
-                    pat: Pat::Ident(_), ..
-                }] => false,
-                _ => true,
-            };
+                    pat: Pat::Ident(_),
+                    ..
+                }]
+            );
 
         if parens {
             punct!(self, "(");
@@ -735,16 +740,26 @@ impl<'a> Emitter<'a> {
     fn emit_bin_expr_trailing(&mut self, node: &BinExpr) -> Result {
         // let indent_before_op = needs_indention(node, &node.left, node.op);
         // let indent_after_op = needs_indention(node, node.op, &node.right);
-        let need_space = match node.op {
-            op!("in") | op!("instanceof") => true,
-            _ => false,
-        };
+        let is_kwd_op = matches!(node.op, op!("in") | op!("instanceof"));
 
-        let need_pre_space = need_space
-            || match *node.left {
-                Expr::Update(UpdateExpr { prefix: false, .. }) => true,
-                _ => false,
-            };
+        let need_pre_space = if self.cfg.minify {
+            if is_kwd_op {
+                node.left.ends_with_alpha_num()
+            } else {
+                // space is mandatory to avoid outputting -->
+                match *node.left {
+                    Expr::Update(UpdateExpr {
+                        prefix: false, op, ..
+                    }) => matches!(
+                        (op, node.op),
+                        (op!("--"), op!(">") | op!(">>") | op!(">>>") | op!(">="))
+                    ),
+                    _ => false,
+                }
+            }
+        } else {
+            is_kwd_op || matches!(*node.left, Expr::Update(UpdateExpr { prefix: false, .. }))
+        };
         if need_pre_space {
             space!(self);
         } else {
@@ -752,11 +767,19 @@ impl<'a> Emitter<'a> {
         }
         operator!(self, node.op.as_str());
 
-        let need_post_space = need_space
-            || match *node.right {
-                Expr::Unary(..) | Expr::Update(UpdateExpr { prefix: true, .. }) => true,
-                _ => false,
-            };
+        let need_post_space = if self.cfg.minify {
+            if is_kwd_op {
+                node.right.starts_with_alpha_num()
+            } else {
+                require_space_before_rhs(&node.right, &node.op)
+            }
+        } else {
+            is_kwd_op
+                || matches!(
+                    *node.right,
+                    Expr::Unary(..) | Expr::Update(UpdateExpr { prefix: true, .. })
+                )
+        };
         if need_post_space {
             space!(self);
         } else {
@@ -815,7 +838,7 @@ impl<'a> Emitter<'a> {
 
         keyword!(self, "class");
 
-        if let Some(ref i) = node.ident {
+        if let Some(i) = &node.ident {
             space!(self);
             self.emit_ident(i)?;
         }
@@ -848,13 +871,13 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_class_member(&mut self, node: &ClassMember) -> Result {
-        match *node {
-            ClassMember::Constructor(ref n) => self.emit_class_constructor(n),
-            ClassMember::ClassProp(ref n) => self.emit_class_prop(n),
-            ClassMember::Method(ref n) => self.emit_class_method(n),
-            ClassMember::PrivateMethod(ref n) => self.emit_private_method(n),
-            ClassMember::PrivateProp(ref n) => self.emit_private_prop(n),
-            ClassMember::Empty(ref n) => self.emit_empty_stmt(n),
+        match node {
+            ClassMember::Constructor(n) => self.emit_class_constructor(n),
+            ClassMember::ClassProp(n) => self.emit_class_prop(n),
+            ClassMember::Method(n) => self.emit_class_method(n),
+            ClassMember::PrivateMethod(n) => self.emit_private_method(n),
+            ClassMember::PrivateProp(n) => self.emit_private_prop(n),
+            ClassMember::Empty(n) => self.emit_empty_stmt(n),
         }
     }
 
@@ -889,24 +912,30 @@ impl<'a> Emitter<'a> {
         self.emit_fn_trailing(&n.function)
     }
 
-    fn emit_bool(&mut self, n: &Bool) -> Result {
-        let span = get_span!(self, n.node_id);
-        self.emit_leading_comments_of_span(span, false)?;
-
-        if n.value {
-            keyword!(self, span, "true")
-        } else {
-            keyword!(self, span, "false")
-        }
-        Ok(())
-    }
-
     fn emit_class_method(&mut self, n: &ClassMethod) -> Result {
         self.emit_leading_comments_of_span(get_span!(self, n.node_id), false)?;
 
         if n.is_static {
             keyword!(self, "static");
-            space!(self);
+
+            let starts_with_alpha_num = match n.kind {
+                MethodKind::Method => {
+                    if n.function.is_async {
+                        true
+                    } else if n.function.is_generator {
+                        false
+                    } else {
+                        n.key.starts_with_alpha_num()
+                    }
+                }
+                MethodKind::Getter | MethodKind::Setter => true,
+            };
+
+            if starts_with_alpha_num {
+                space!(self);
+            } else {
+                formatting_space!(self);
+            }
         }
         match n.kind {
             MethodKind::Method => {
@@ -920,11 +949,21 @@ impl<'a> Emitter<'a> {
             }
             MethodKind::Getter => {
                 keyword!(self, "get");
-                space!(self);
+
+                if n.key.starts_with_alpha_num() {
+                    space!(self);
+                } else {
+                    formatting_space!(self)
+                }
             }
             MethodKind::Setter => {
                 keyword!(self, "set");
-                space!(self);
+
+                if n.key.starts_with_alpha_num() {
+                    space!(self);
+                } else {
+                    formatting_space!(self)
+                }
             }
         }
         self.emit_prop_name(&n.key)?;
@@ -1019,12 +1058,12 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_prop_name(&mut self, node: &PropName) -> Result {
-        match *node {
-            PropName::Ident(ref n) => self.emit_ident(n),
-            PropName::Str(ref n) => self.emit_str_lit(n),
-            PropName::Num(ref n) => self.emit_num_lit(n),
-            PropName::Computed(ref n) => self.emit_computed_prop_name(n),
-            PropName::BigInt(ref n) => self.emit_big_lit(n),
+        match node {
+            PropName::Ident(n) => self.emit_ident(n),
+            PropName::Str(n) => self.emit_str_lit(n),
+            PropName::Num(n) => self.emit_num_lit(n),
+            PropName::Computed(n) => self.emit_computed_prop_name(n),
+            PropName::BigInt(n) => self.emit_big_lit(n),
         }
     }
 
@@ -1061,7 +1100,7 @@ impl<'a> Emitter<'a> {
         if node.function.is_generator {
             punct!(self, "*");
         }
-        if let Some(ref i) = node.ident {
+        if let Some(i) = &node.ident {
             space!(self);
             self.emit_ident(i)?;
         }
@@ -1098,14 +1137,13 @@ impl<'a> Emitter<'a> {
         self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
 
         punct!(self, "`");
-        let i = 0;
 
         for i in 0..(node.quasis.len() + node.exprs.len()) {
             if i % 2 == 0 {
-                self.emit_quasi(&node.quasis[i / 2]);
+                self.emit_quasi(&node.quasis[i / 2])?;
             } else {
                 punct!(self, "${");
-                self.emit_expr(&node.exprs[i / 2]);
+                self.emit_expr(&node.exprs[i / 2])?;
                 punct!(self, "}");
             }
         }
@@ -1173,8 +1211,8 @@ impl<'a> Emitter<'a> {
             operator!(self, "*");
         }
 
-        if let Some(ref arg) = node.arg {
-            if arg.starts_with_alpha_num() {
+        if let Some(arg) = &node.arg {
+            if !node.delegate && arg.starts_with_alpha_num() {
                 space!(self);
             } else {
                 formatting_space!(self);
@@ -1248,7 +1286,7 @@ impl<'a> Emitter<'a> {
             span,
             &node.props,
             |e, n| e.emit_prop(n).map(|_| Some(n.node_id())),
-            ListFormat::ObjectLiteralExpressionProperties,
+            ListFormat::ObjectLiteralExpressionProperties | ListFormat::CanSkipTrailingComma,
         )?;
         if !self.cfg.minify {
             self.wr.write_line()?;
@@ -1258,14 +1296,14 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_prop(&mut self, node: &Prop) -> Result {
-        match *node {
-            Prop::Shorthand(ref n) => self.emit_ident(n),
-            Prop::KeyValue(ref n) => self.emit_kv_prop(n),
-            Prop::Assign(ref n) => self.emit_assign_prop(n),
-            Prop::Getter(ref n) => self.emit_getter_prop(n),
-            Prop::Setter(ref n) => self.emit_setter_prop(n),
-            Prop::Method(ref n) => self.emit_method_prop(n),
-            Prop::Spread(ref n) => self.emit_spread_assignment(n),
+        match node {
+            Prop::Shorthand(n) => self.emit_ident(n),
+            Prop::KeyValue(n) => self.emit_kv_prop(n),
+            Prop::Assign(n) => self.emit_assign_prop(n),
+            Prop::Getter(n) => self.emit_getter_prop(n),
+            Prop::Setter(n) => self.emit_setter_prop(n),
+            Prop::Method(n) => self.emit_method_prop(n),
+            Prop::Spread(n) => self.emit_spread_assignment(n),
         }
     }
 
@@ -1290,9 +1328,16 @@ impl<'a> Emitter<'a> {
         self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
 
         keyword!(self, "get");
-        space!(self);
+
+        let starts_with_alpha_num = !matches!(node.key, PropName::Str(_) | PropName::Computed(_));
+        if starts_with_alpha_num {
+            space!(self);
+        } else {
+            formatting_space!(self);
+        }
+
         self.emit_prop_name(&node.key)?;
-        space!(self);
+        formatting_space!(self);
         punct!(self, "(");
         punct!(self, ")");
         formatting_space!(self);
@@ -1303,9 +1348,17 @@ impl<'a> Emitter<'a> {
         self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
 
         keyword!(self, "set");
-        space!(self);
+
+        let starts_with_alpha_num = !matches!(node.key, PropName::Str(_) | PropName::Computed(_));
+
+        if starts_with_alpha_num {
+            space!(self);
+        } else {
+            formatting_space!(self);
+        }
+
         self.emit_prop_name(&node.key)?;
-        space!(self);
+        formatting_space!(self);
 
         punct!(self, "(");
         self.emit_param_without_decorators(&node.param)?;
@@ -1430,12 +1483,10 @@ impl<'a> Emitter<'a> {
             let may_emit_intervening_comments =
                 !format.intersects(ListFormat::NoInterveningComments);
             let mut should_emit_intervening_comments = may_emit_intervening_comments;
-            if self.cm.should_write_leading_line_terminator(
-                parent_node,
-                children,
-                format,
-                self.program_data,
-            ) {
+            if self
+                .cm
+                .should_write_leading_line_terminator(parent_node, children, format)
+            {
                 if !self.cfg.minify {
                     self.wr.write_line()?;
                 }
@@ -1532,8 +1583,10 @@ impl<'a> Emitter<'a> {
             };
 
             if has_trailing_comma && format.contains(ListFormat::CommaDelimited) {
-                punct!(self, ",");
-                formatting_space!(self);
+                if !self.cfg.minify || !format.contains(ListFormat::CanSkipTrailingComma) {
+                    punct!(self, ",");
+                    formatting_space!(self);
+                }
             }
 
             {
@@ -1568,12 +1621,10 @@ impl<'a> Emitter<'a> {
             }
 
             // Write the closing line terminator or closing whitespace.
-            if self.cm.should_write_closing_line_terminator(
-                parent_node,
-                children,
-                format,
-                self.program_data,
-            ) {
+            if self
+                .cm
+                .should_write_closing_line_terminator(parent_node, children, format)
+            {
                 if !self.cfg.minify {
                     self.wr.write_line()?;
                 }
@@ -1625,13 +1676,13 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_pat(&mut self, node: &Pat) -> Result {
-        match *node {
-            Pat::Array(ref n) => self.emit_array_pat(n),
-            Pat::Assign(ref n) => self.emit_assign_pat(n),
-            Pat::Expr(ref n) => self.emit_expr(n),
-            Pat::Ident(ref n) => self.emit_binding_ident(n),
-            Pat::Object(ref n) => self.emit_object_pat(n),
-            Pat::Rest(ref n) => self.emit_rest_pat(n),
+        match node {
+            Pat::Array(n) => self.emit_array_pat(n),
+            Pat::Assign(n) => self.emit_assign_pat(n),
+            Pat::Expr(n) => self.emit_expr(n),
+            Pat::Ident(n) => self.emit_binding_ident(n),
+            Pat::Object(n) => self.emit_object_pat(n),
+            Pat::Rest(n) => self.emit_rest_pat(n),
             Pat::Invalid(..) => invalid_pat(),
         }
     }
@@ -1651,9 +1702,9 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_pat_or_expr(&mut self, node: &PatOrExpr) -> Result {
-        match *node {
-            PatOrExpr::Expr(ref n) => self.emit_expr(n),
-            PatOrExpr::Pat(ref n) => self.emit_pat(n),
+        match node {
+            PatOrExpr::Expr(n) => self.emit_expr(n),
+            PatOrExpr::Pat(n) => self.emit_pat(n),
         }
     }
 
@@ -1692,10 +1743,7 @@ impl<'a> Emitter<'a> {
         let span = get_span!(self, node.node_id);
         self.emit_leading_comments_of_span(span, false)?;
 
-        let is_last_rest = match node.props.last() {
-            Some(ObjectPatProp::Rest(..)) => true,
-            _ => false,
-        };
+        let is_last_rest = matches!(node.props.last(), Some(ObjectPatProp::Rest(..)));
         let format = if is_last_rest {
             ListFormat::ObjectBindingPatternElements ^ ListFormat::AllowTrailingComma
         } else {
@@ -1707,17 +1755,17 @@ impl<'a> Emitter<'a> {
             span,
             &node.props,
             |e, n| e.emit_object_pat_prop(n).map(|_| Some(n.node_id())),
-            format,
+            format | ListFormat::CanSkipTrailingComma,
         )?;
         punct!(self, "}");
         Ok(())
     }
 
     fn emit_object_pat_prop(&mut self, node: &ObjectPatProp) -> Result {
-        match *node {
-            ObjectPatProp::KeyValue(ref node) => self.emit_object_kv_pat(node),
-            ObjectPatProp::Assign(ref node) => self.emit_object_assign_pat(node),
-            ObjectPatProp::Rest(ref node) => self.emit_rest_pat(node),
+        match node {
+            ObjectPatProp::KeyValue(node) => self.emit_object_kv_pat(node),
+            ObjectPatProp::Assign(node) => self.emit_object_assign_pat(node),
+            ObjectPatProp::Rest(node) => self.emit_rest_pat(node),
         }
     }
 
@@ -1728,7 +1776,7 @@ impl<'a> Emitter<'a> {
         punct!(self, ":");
         formatting_space!(self);
         self.emit_pat(&node.value)?;
-        space!(self);
+        formatting_space!(self);
         Ok(())
     }
 
@@ -1737,18 +1785,18 @@ impl<'a> Emitter<'a> {
 
         self.emit_ident(&node.key)?;
         formatting_space!(self);
-        if let Some(ref value) = node.value {
+        if let Some(value) = &node.value {
             punct!(self, "=");
-            self.emit_expr(&value)?;
-            space!(self);
+            self.emit_expr(value)?;
+            formatting_space!(self);
         }
         Ok(())
     }
 
     fn emit_var_decl_or_pat(&mut self, node: &VarDeclOrPat) -> Result {
-        match *node {
-            VarDeclOrPat::Pat(ref n) => self.emit_pat(n),
-            VarDeclOrPat::VarDecl(ref n) => self.emit_var_decl(n),
+        match node {
+            VarDeclOrPat::Pat(n) => self.emit_pat(n),
+            VarDeclOrPat::VarDecl(n) => self.emit_var_decl(n),
         }
     }
 }
@@ -1756,28 +1804,28 @@ impl<'a> Emitter<'a> {
 /// Statements
 impl<'a> Emitter<'a> {
     fn emit_stmt(&mut self, node: &Stmt) -> Result {
-        match *node {
-            Stmt::Expr(ref e) => self.emit_expr_stmt(e),
-            Stmt::Block(ref e) => {
+        match node {
+            Stmt::Expr(e) => self.emit_expr_stmt(e),
+            Stmt::Block(e) => {
                 return self.emit_block_stmt(e);
             }
-            Stmt::Empty(ref e) => self.emit_empty_stmt(e),
-            Stmt::Debugger(ref e) => self.emit_debugger_stmt(e),
-            Stmt::With(ref e) => self.emit_with_stmt(e),
-            Stmt::Return(ref e) => self.emit_return_stmt(e),
-            Stmt::Labeled(ref e) => self.emit_labeled_stmt(e),
-            Stmt::Break(ref e) => self.emit_break_stmt(e),
-            Stmt::Continue(ref e) => self.emit_continue_stmt(e),
-            Stmt::If(ref e) => self.emit_if_stmt(e),
-            Stmt::Switch(ref e) => self.emit_switch_stmt(e),
-            Stmt::Throw(ref e) => self.emit_throw_stmt(e),
-            Stmt::Try(ref e) => self.emit_try_stmt(e),
-            Stmt::While(ref e) => self.emit_while_stmt(e),
-            Stmt::DoWhile(ref e) => self.emit_do_while_stmt(e),
-            Stmt::For(ref e) => self.emit_for_stmt(e),
-            Stmt::ForIn(ref e) => self.emit_for_in_stmt(e),
-            Stmt::ForOf(ref e) => self.emit_for_of_stmt(e),
-            Stmt::Decl(ref e) => self.emit_decl(e),
+            Stmt::Empty(e) => self.emit_empty_stmt(e),
+            Stmt::Debugger(e) => self.emit_debugger_stmt(e),
+            Stmt::With(e) => self.emit_with_stmt(e),
+            Stmt::Return(e) => self.emit_return_stmt(e),
+            Stmt::Labeled(e) => self.emit_labeled_stmt(e),
+            Stmt::Break(e) => self.emit_break_stmt(e),
+            Stmt::Continue(e) => self.emit_continue_stmt(e),
+            Stmt::If(e) => self.emit_if_stmt(e),
+            Stmt::Switch(e) => self.emit_switch_stmt(e),
+            Stmt::Throw(e) => self.emit_throw_stmt(e),
+            Stmt::Try(e) => self.emit_try_stmt(e),
+            Stmt::While(e) => self.emit_while_stmt(e),
+            Stmt::DoWhile(e) => self.emit_do_while_stmt(e),
+            Stmt::For(e) => self.emit_for_stmt(e),
+            Stmt::ForIn(e) => self.emit_for_in_stmt(e),
+            Stmt::ForOf(e) => self.emit_for_of_stmt(e),
+            Stmt::Decl(e) => self.emit_decl(e),
         }?;
         self.emit_trailing_comments_of_pos(get_span!(self, node.node_id()).hi(), true, true)?;
 
@@ -1785,6 +1833,20 @@ impl<'a> Emitter<'a> {
             self.wr.write_line()?;
         }
         Ok(())
+    }
+
+    /// Emits a statement in a single-statement context
+    fn emit_single_stmt(&mut self, stmt: &Stmt, formatting_space: bool) -> Result {
+        if let Stmt::Block(block) = stmt {
+            if block.stmts.is_empty() {
+                semi!(self);
+                return Ok(());
+            }
+        }
+        if formatting_space {
+            formatting_space!(self);
+        }
+        self.emit_stmt(stmt)
     }
 
     fn emit_expr_stmt(&mut self, e: &ExprStmt) -> Result {
@@ -1843,19 +1905,18 @@ impl<'a> Emitter<'a> {
     fn emit_with_stmt(&mut self, node: &WithStmt) -> Result {
         keyword!(self, "with");
         formatting_space!(self);
-
         punct!(self, "(");
         self.emit_expr(&node.obj)?;
         punct!(self, ")");
 
-        self.emit_stmt(&node.body)
+        self.emit_single_stmt(&node.body, true)
     }
 
     fn emit_return_stmt(&mut self, node: &ReturnStmt) -> Result {
         self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
 
         keyword!(self, "return");
-        if let Some(ref arg) = node.arg {
+        if let Some(arg) = &node.arg {
             let arg_span = get_span!(self, arg.node_id());
             let need_paren = !arg_span.is_dummy()
                 && if let Some(cmt) = self.comments {
@@ -1869,7 +1930,11 @@ impl<'a> Emitter<'a> {
             if need_paren {
                 punct!(self, "(");
             } else {
-                space!(self);
+                if arg.starts_with_alpha_num() {
+                    space!(self);
+                } else {
+                    formatting_space!(self);
+                }
             }
 
             self.emit_expr(arg)?;
@@ -1886,14 +1951,13 @@ impl<'a> Emitter<'a> {
 
         // TODO: Comment
         punct!(self, ":");
-        formatting_space!(self);
 
-        self.emit_stmt(&node.body)
+        self.emit_single_stmt(&node.body, true)
     }
 
     fn emit_break_stmt(&mut self, node: &BreakStmt) -> Result {
         keyword!(self, "break");
-        if let Some(ref label) = node.label {
+        if let Some(label) = &node.label {
             space!(self);
             self.emit_ident(label)?;
         }
@@ -1903,7 +1967,7 @@ impl<'a> Emitter<'a> {
 
     fn emit_continue_stmt(&mut self, node: &ContinueStmt) -> Result {
         keyword!(self, "continue");
-        if let Some(ref label) = node.label {
+        if let Some(label) = &node.label {
             space!(self);
             self.emit_ident(label)?;
         }
@@ -1924,26 +1988,22 @@ impl<'a> Emitter<'a> {
         punct!(self, "(");
         self.emit_expr(&node.test)?;
         punct!(self, ")");
-        formatting_space!(self);
 
-        let is_cons_block = match *node.cons {
-            Stmt::Block(..) => true,
-            _ => false,
-        };
+        let is_cons_block = matches!(*node.cons, Stmt::Block(..));
 
-        self.emit_stmt(&node.cons)?;
+        self.emit_single_stmt(&node.cons, true)?;
 
-        if let Some(ref alt) = node.alt {
+        if let Some(alt) = &node.alt {
             if is_cons_block {
                 formatting_space!(self);
             }
             keyword!(self, "else");
             if alt.starts_with_alpha_num() {
                 space!(self);
+                self.emit_single_stmt(alt, false)?;
             } else {
-                formatting_space!(self);
+                self.emit_single_stmt(alt, true)?;
             }
-            self.emit_stmt(alt)?;
         }
         Ok(())
     }
@@ -1981,7 +2041,7 @@ impl<'a> Emitter<'a> {
             punct!(self, ")");
         }
 
-        space!(self);
+        formatting_space!(self);
 
         self.emit_block_stmt(&node.body)
     }
@@ -1990,9 +2050,15 @@ impl<'a> Emitter<'a> {
         let span = get_span!(self, node.node_id);
         self.emit_leading_comments_of_span(span, false)?;
 
-        if let Some(ref test) = node.test {
+        if let Some(test) = &node.test {
             keyword!(self, "case");
-            space!(self);
+
+            if test.starts_with_alpha_num() {
+                space!(self);
+            } else {
+                formatting_space!(self);
+            }
+
             self.emit_expr(test)?;
         } else {
             keyword!(self, "default");
@@ -2023,8 +2089,14 @@ impl<'a> Emitter<'a> {
         let throw_span = self.cm.span_until_char(span, ' ');
 
         keyword!(self, throw_span, "throw");
-        space!(self);
+
+        if node.arg.starts_with_alpha_num() {
+            space!(self);
+        } else {
+            formatting_space!(self);
+        }
         self.emit_expr(&node.arg)?;
+
         formatting_semi!(self);
         Ok(())
     }
@@ -2036,15 +2108,15 @@ impl<'a> Emitter<'a> {
         formatting_space!(self);
         self.emit_block_stmt(&node.block)?;
 
-        if let Some(ref catch) = node.handler {
+        if let Some(catch) = &node.handler {
             formatting_space!(self);
             self.emit_catch_clause(catch)?;
         }
 
-        if let Some(ref finally) = node.finalizer {
+        if let Some(finally) = &node.finalizer {
             formatting_space!(self);
             keyword!(self, "finally");
-            // space!();
+            formatting_space!(self);
             self.emit_block_stmt(finally)?;
         }
         Ok(())
@@ -2054,12 +2126,12 @@ impl<'a> Emitter<'a> {
         self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
 
         keyword!(self, "while");
-
+        formatting_space!(self);
         punct!(self, "(");
         self.emit_expr(&node.test)?;
         punct!(self, ")");
 
-        self.emit_stmt(&node.body)
+        self.emit_single_stmt(&node.body, true)
     }
 
     fn emit_do_while_stmt(&mut self, node: &DoWhileStmt) -> Result {
@@ -2068,10 +2140,10 @@ impl<'a> Emitter<'a> {
         keyword!(self, "do");
         if node.body.starts_with_alpha_num() {
             space!(self);
+            self.emit_single_stmt(&node.body, false)?;
         } else {
-            formatting_space!(self);
+            self.emit_single_stmt(&node.body, true)?;
         }
-        self.emit_stmt(&node.body)?;
 
         keyword!(self, "while");
 
@@ -2087,6 +2159,7 @@ impl<'a> Emitter<'a> {
         self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
 
         keyword!(self, "for");
+        formatting_space!(self);
         punct!(self, "(");
         opt!(self, emit_var_decl_or_expr, node.init);
         semi!(self);
@@ -2095,22 +2168,35 @@ impl<'a> Emitter<'a> {
         opt_leading_space!(self, emit_expr, node.update);
         punct!(self, ")");
 
-        self.emit_stmt(&node.body)
+        self.emit_single_stmt(&node.body, true)
     }
 
     fn emit_for_in_stmt(&mut self, node: &ForInStmt) -> Result {
         self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
 
         keyword!(self, "for");
+        formatting_space!(self);
         punct!(self, "(");
         self.emit_var_decl_or_pat(&node.left)?;
-        space!(self);
+
+        if node.left.ends_with_alpha_num() {
+            space!(self);
+        } else {
+            formatting_space!(self);
+        }
+
         keyword!(self, "in");
-        space!(self);
+
+        if node.right.starts_with_alpha_num() {
+            space!(self);
+        } else {
+            formatting_space!(self);
+        }
         self.emit_expr(&node.right)?;
+
         punct!(self, ")");
 
-        self.emit_stmt(&node.body)
+        self.emit_single_stmt(&node.body, true)
     }
 
     fn emit_for_of_stmt(&mut self, node: &ForOfStmt) -> Result {
@@ -2124,12 +2210,24 @@ impl<'a> Emitter<'a> {
         formatting_space!(self);
         punct!(self, "(");
         self.emit_var_decl_or_pat(&node.left)?;
-        space!(self);
+
+        if node.left.ends_with_alpha_num() {
+            space!(self);
+        } else {
+            formatting_space!(self);
+        }
+
         keyword!(self, "of");
-        space!(self);
+
+        if node.right.starts_with_alpha_num() {
+            space!(self);
+        } else {
+            formatting_space!(self);
+        }
+
         self.emit_expr(&node.right)?;
         punct!(self, ")");
-        self.emit_stmt(&node.body)
+        self.emit_single_stmt(&node.body, true)
     }
 }
 
@@ -2157,9 +2255,9 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_var_decl_or_expr(&mut self, node: &VarDeclOrExpr) -> Result {
-        match *node {
-            VarDeclOrExpr::Expr(ref node) => self.emit_expr(node),
-            VarDeclOrExpr::VarDecl(ref node) => self.emit_var_decl(node),
+        match node {
+            VarDeclOrExpr::Expr(node) => self.emit_expr(node),
+            VarDeclOrExpr::VarDecl(node) => self.emit_var_decl(node),
         }
     }
 }
@@ -2179,7 +2277,7 @@ impl<'a> Emitter<'a> {
 /// whose operand is a plus expression - (++(+x)) The same is true of minus of
 /// course.
 fn should_emit_whitespace_before_operand(node: &UnaryExpr) -> bool {
-    match *node {
+    match node {
         UnaryExpr {
             op: op!("void"), ..
         }
@@ -2272,7 +2370,7 @@ fn unescape_tpl_lit(s: &str) -> String {
         if c != '\\' {
             match c {
                 '\r' => {
-                    if chars.peek().map(|&v| v) == Some('\n') {
+                    if chars.peek().copied() == Some('\n') {
                         continue;
                     }
 
@@ -2344,7 +2442,7 @@ fn escape_without_source(v: &str, target: JscTarget, single_quote: bool) -> Stri
 
             '\\' => {
                 if iter.peek() == Some(&'\0') {
-                    buf.push_str("\\");
+                    buf.push('\\');
                     iter.next();
                 } else {
                     buf.push_str("\\\\")
@@ -2362,7 +2460,6 @@ fn escape_without_source(v: &str, target: JscTarget, single_quote: bool) -> Stri
             }
 
             '\x20'..='\x7e' => {
-                //
                 buf.push(c);
             }
             '\u{7f}'..='\u{ff}' => {
@@ -2378,11 +2475,11 @@ fn escape_without_source(v: &str, target: JscTarget, single_quote: bool) -> Stri
     buf
 }
 
-fn escape_with_source<'s>(
+fn escape_with_source(
     cm: &SourceMap,
     target: JscTarget,
     span: Span,
-    s: &'s str,
+    s: &str,
     single_quote: Option<bool>,
 ) -> String {
     if target <= JscTarget::Es5 {
@@ -2393,7 +2490,6 @@ fn escape_with_source<'s>(
         return escape_without_source(s, target, single_quote.unwrap_or(false));
     }
 
-    //
     let orig = cm.span_to_snippet(span);
     let orig = match orig {
         Ok(orig) => orig,
@@ -2566,6 +2662,37 @@ fn handle_invalid_unicodes(s: &str) -> Cow<str> {
     }
 
     Cow::Owned(s.replace("\\\0", "\\"))
+}
+
+fn require_space_before_rhs(rhs: &Expr, op: &BinaryOp) -> bool {
+    match rhs {
+        Expr::Lit(Lit::Num(v)) if v.value.is_sign_negative() && *op == op!(bin, "-") => true,
+
+        Expr::Update(UpdateExpr {
+            prefix: true,
+            op: update,
+            ..
+        }) => matches!(
+            (op, update),
+            (op!(bin, "-"), op!("--")) | (op!(bin, "+"), op!("++"))
+        ),
+
+        // space is mandatory to avoid outputting <!--
+        Expr::Unary(UnaryExpr {
+            op: op!("!"), arg, ..
+        }) if *op == op!("<") || *op == op!("<<") => {
+            matches!(**arg, Expr::Update(UpdateExpr { op: op!("--"), .. }))
+        }
+
+        Expr::Unary(UnaryExpr { op: unary, .. }) => matches!(
+            (op, unary),
+            (op!(bin, "-"), op!(unary, "-")) | (op!(bin, "+"), op!(unary, "+"))
+        ),
+
+        Expr::Bin(BinExpr { left, .. }) => require_space_before_rhs(left, op),
+
+        _ => false,
+    }
 }
 
 #[cold]

@@ -2,9 +2,6 @@
 #![feature(map_many_mut)]
 // TODO:
 #![allow(non_snake_case)]
-#![allow(unused_variables)]
-#![deny(non_shorthand_field_patterns)]
-#![allow(warnings)]
 #![deny(unused_imports)]
 
 mod CoalesceVariableNames;
@@ -88,11 +85,11 @@ impl Compiler {
         GLOBALS.set(&self.globals, op)
     }
 
-    pub fn compile<'a>(
+    pub fn compile(
         &self,
         mut ast: ::ast::Program,
         passes: PassConfig,
-        program_data: &'a mut ::ast::ProgramData,
+        program_data: &mut ::ast::ProgramData,
     ) -> ::ast::Program {
         self.run(|| {
             // TODO: maybe add an 'AST verifier' that checks basic invariants after
@@ -146,7 +143,7 @@ fn optimise(
     getMainOptimizationLoop(ast);
 }
 
-fn getEarlyOptimizationLoopPasses(ast: &mut ::ast::Program) {
+fn getEarlyOptimizationLoopPasses(_ast: &mut ::ast::Program) {
     // TODO: inlineVariables
     // TODO: collapseObjectLiterals
     // TODO: removeUnusedCode
@@ -154,7 +151,7 @@ fn getEarlyOptimizationLoopPasses(ast: &mut ::ast::Program) {
     // TODO: removeUnreachableCode
 }
 
-fn getMainOptimizationLoop(ast: &mut ::ast::Program) {
+fn getMainOptimizationLoop(_ast: &mut ::ast::Program) {
     // TODO: inlineSimpleMethods
     // TODO: inlineProperties
     // TODO: deadPropertyAssignmentElimination
@@ -181,9 +178,6 @@ fn finalise(
     // TODO: optimizeConstructors
     // TODO: collapseAnonymousFunctions
 
-    // if passes.optimize_properties {
-    //     optimize_properties2::process(ast, node_id_gen, unresolved_ctxt);
-    // }
     if passes.optimize_properties {
         optimize_properties::process(ast, program_data, unresolved_ctxt);
     }

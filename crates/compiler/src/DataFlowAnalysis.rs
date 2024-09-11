@@ -438,18 +438,6 @@ impl<'p> UniqueQueue<'p> {
         }
     }
 
-    pub fn reuse_inner(
-        inner: BTreeSet<PrioritizedNode>,
-        priorities: &'p [NodePriority],
-        forwards: bool,
-    ) -> Self {
-        Self {
-            inner,
-            priorities,
-            forwards,
-        }
-    }
-
     pub fn pop(&mut self) -> Option<NodeIndex> {
         if self.forwards {
             // Forwards analyses visit nodes with lower priorities first.

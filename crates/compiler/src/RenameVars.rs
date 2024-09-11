@@ -311,7 +311,7 @@ impl VarAnalyzer {
             return;
         }
 
-        match self.var_info.get_mut(&name) {
+        match self.var_info.get_mut(name) {
             Some(info) => {
                 info.count += 1;
             }
@@ -379,14 +379,13 @@ impl VarAnalyzer {
                 // Slots for globals are identified by their name.
 
                 self.analysis.global_count += 1;
-                let slot_id_for_global = self.analysis.slots.push(Slot {
+                self.analysis.slots.push(Slot {
                     local,
                     // These will be finalized at the end of the traversal.
                     count: 0,
                     order_of_occurrence: u32::MAX,
                     debug_info: SlotDebugInfo::Global,
-                });
-                slot_id_for_global
+                })
             };
             entry_for_name.insert(slot_id);
             self.scopes[scope_pos].cur_index += 1;

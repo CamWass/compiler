@@ -996,7 +996,6 @@ impl GraphVisitor<'_> {
                 Lit::Num(_) => ret!(vec![PointerId::NUM]),
                 Lit::BigInt(_) => ret!(vec![PointerId::BIG_INT]),
                 Lit::Regex(_) => ret!(vec![PointerId::REGEX]),
-                Lit::JSXText(_) => unreachable!(),
             },
             Expr::Tpl(n) => {
                 n.visit_children_with(self);
@@ -1050,12 +1049,7 @@ impl GraphVisitor<'_> {
                 _ => unreachable!("invalid optional chain expr"),
             },
 
-            Expr::JSXMember(_)
-            | Expr::JSXNamespacedName(_)
-            | Expr::JSXEmpty(_)
-            | Expr::JSXElement(_)
-            | Expr::JSXFragment(_)
-            | Expr::Invalid(_) => unreachable!(),
+            Expr::Invalid(_) => unreachable!(),
         }
     }
 
@@ -1732,10 +1726,11 @@ impl<'ast> Visit<'ast> for FnVisitor<'_> {
     }
 
     fn visit_ident(&mut self, node: &'ast Ident) {
-        if !self.accesses_arguments_array {
-            if node.sym == js_word!("arguments") && node.ctxt == self.store.unresolved_ctxt {
-                self.accesses_arguments_array = true;
-            }
+        if !self.accesses_arguments_array
+            && node.sym == js_word!("arguments")
+            && node.ctxt == self.store.unresolved_ctxt
+        {
+            self.accesses_arguments_array = true;
         }
     }
 
@@ -1878,10 +1873,10 @@ pub static REGEX_PROPERTIES: &[JsWord] = &[
 
 static BUILT_INS: &[(PointerId, &[JsWord])] = &[
     (PointerId::BOOL, &[]),
-    (PointerId::NUM, &NUM_PROPERTIES),
-    (PointerId::STRING, &STRING_PROPERTIES),
+    (PointerId::NUM, NUM_PROPERTIES),
+    (PointerId::STRING, STRING_PROPERTIES),
     (PointerId::BIG_INT, &[]),
-    (PointerId::REGEX, &REGEX_PROPERTIES),
+    (PointerId::REGEX, REGEX_PROPERTIES),
     (PointerId::NULL_OR_VOID, &[]),
     (PointerId::UNKNOWN, &[]),
 ];
@@ -1996,7 +1991,6 @@ impl PropKey {
                     || e.ctxt == unresolved_ctxt
                         && (e.sym == js_word!("undefined") || e.sym == js_word!("NaN"))
                 {
-                    // TODO: is this wrong? For "const fooVar = 'a'; obj[foovar]" this will record the prop name as 'foovar' when it is reall 'a'
                     Some(PropKey(names.insert(e.sym.clone()), e.node_id))
                 } else {
                     None
@@ -2020,7 +2014,7 @@ impl PropKey {
                     names.insert(e.value.to_str_radix(10).into()),
                     e.node_id,
                 )),
-                Lit::Regex(_) | Lit::JSXText(_) => None,
+                Lit::Regex(_) => None,
             },
             _ => None,
         }
@@ -2030,12 +2024,11 @@ impl PropKey {
 /// Returns true if the string value of the [`PropName`] is statically determinable.
 fn is_simple_prop_name(prop_name: &PropName, unresolved_ctxt: SyntaxContext) -> bool {
     match prop_name {
-        // TODO: is this wrong? For "const fooVar = 'a'; obj[foovar]" this will record the prop name as 'foovar' when it is reall 'a'
         PropName::Ident(_) | PropName::Str(_) | PropName::Num(_) | PropName::BigInt(_) => true,
         PropName::Computed(p) => match p.expr.as_ref() {
             Expr::Lit(e) => match e {
                 Lit::Str(_) | Lit::Bool(_) | Lit::Null(_) | Lit::Num(_) | Lit::BigInt(_) => true,
-                Lit::Regex(_) | Lit::JSXText(_) => false,
+                Lit::Regex(_) => false,
             },
             Expr::Ident(e) => {
                 e.ctxt == unresolved_ctxt

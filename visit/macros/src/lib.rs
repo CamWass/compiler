@@ -1189,7 +1189,7 @@ fn create_method_body(mode: Mode, ty: &Type) -> Block {
 
                                     match mode {
                                         Mode::Fold => {
-                                            if let Some(..) = as_box(arg) {
+                                            if as_box(arg).is_some() {
                                                 return parse_quote!({
                                                     global_visit::util::move_map::MoveMap::move_map(
                                                         n,
@@ -1376,7 +1376,7 @@ fn to_case_snake_like(convertable_string: &str) -> String {
                 first_character = true;
                 result.push('_');
             }
-        } else if requires_seperator(char_with_index, first_character, &convertable_string) {
+        } else if requires_seperator(char_with_index, first_character, convertable_string) {
             first_character = false;
             result.push('_');
             result.push(char_with_index.1.to_ascii_lowercase());
