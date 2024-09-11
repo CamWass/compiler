@@ -72,7 +72,7 @@ fn bench(c: &mut Criterion) {
 
             group.bench_with_input(*id, &program, |b, program| {
                 b.iter(|| {
-                    let r = compiler::optimize_properties3::analyse(program, unresolved_ctxt);
+                    let r = compiler::optimize_properties::analyse(program, unresolved_ctxt);
                     black_box(r);
                 })
             });

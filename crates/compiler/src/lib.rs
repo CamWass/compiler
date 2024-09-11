@@ -19,7 +19,7 @@ mod find_vars;
 mod graph;
 mod normalize;
 pub mod normalize_properties;
-pub mod optimize_properties3;
+pub mod optimize_properties;
 pub mod resolver;
 mod utils;
 
@@ -179,7 +179,7 @@ fn finalise(
     // TODO: collapseAnonymousFunctions
 
     if passes.optimize_properties {
-        optimize_properties3::process(ast, program_data, unresolved_ctxt);
+        optimize_properties::process(ast, program_data, unresolved_ctxt);
     }
 
     // TODO: renameProperties
