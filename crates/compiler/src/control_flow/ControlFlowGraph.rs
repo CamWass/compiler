@@ -1,5 +1,4 @@
 use super::node::{CfgNode, Node, NodeKind};
-use ast::*;
 use petgraph::{
     dot::Dot,
     graph::{DiGraph, EdgeIndex, Neighbors, NodeIndex},
@@ -182,79 +181,6 @@ pub enum Branch {
      * can just treat them as "the edges we can't really optimize".
      */
     Exception,
-}
-
-/**
- * @return True if n should be represented by a new CFG node in the control
- * flow graph.
- */
-pub fn is_entering_new_cfg_node<'ast>(n: Node<'ast>, parent: Node<'ast>) -> bool {
-    match parent.kind {
-        // TODO: what about NodeKind::Module?
-        NodeKind::BlockStmt(_) | NodeKind::Script(_) | NodeKind::TryStmt(_) => true,
-        NodeKind::Function(f) => {
-            // A function node represents the start of a function where the name
-            // bleeds into the local scope and parameters are assigned
-            // to the formal argument names. The node includes the name of the
-            // function and the PARAM_LIST since we assume the whole set up process
-            // is atomic without change in control flow. The next change of
-            // control is going into the function's body, represented by the second
-            // child.
-            n.node_id != f.body.node_id
-        }
-        // NodeKind::WhileStmt(_) | NodeKind::DoWhileStmt(_) | NodeKind::IfStmt(_) => {
-        //     // These control structures are represented by a node that holds the
-        //     // condition. Each of them is a branch node based on its condition.
-        //     getConditionExpression(parent) != Some(n)
-        // }
-        NodeKind::WhileStmt(WhileStmt { test, .. })
-        | NodeKind::DoWhileStmt(DoWhileStmt { test, .. })
-        | NodeKind::IfStmt(IfStmt { test, .. }) => {
-            // These control structures are represented by a node that holds the
-            // condition. Each of them is a branch node based on its condition.
-            test.node_id() != n.node_id
-        }
-        // NodeKind::ForStmt(_) => {
-        //     // The FOR(;;) node differs from other control structures in that
-        //     // it has an initialization and an increment statement. Those
-        //     // two statements have corresponding CFG nodes to represent them.
-        //     // The FOR node only represents the condition check for each iteration.
-        //     // That way the following:
-        //     // for(var x = 0; x < 10; x++) { } has a graph that is isomorphic to
-        //     // var x = 0; while(x<10) {  x++; }
-        //     getConditionExpression(parent) != Some(n)
-        // }
-        NodeKind::ForStmt(ForStmt { test, .. }) => {
-            // The FOR(;;) node differs from other control structures in that
-            // it has an initialization and an increment statement. Those
-            // two statements have corresponding CFG nodes to represent them.
-            // The FOR node only represents the condition check for each iteration.
-            // That way the following:
-            // for(var x = 0; x < 10; x++) { } has a graph that is isomorphic to
-            // var x = 0; while(x<10) {  x++; }
-            test.as_ref().map(|test| test.node_id()) != Some(n.node_id)
-        }
-        NodeKind::ForInStmt(_) => {
-            // TODO(user): Investigate how we should handle the case where
-            // we have a very complex expression inside the FOR-IN header.
-            // n != NodeKind::from(&f.left)
-            todo!()
-        }
-        NodeKind::SwitchStmt(s) => n.node_id != s.discriminant.node_id(),
-        NodeKind::SwitchCase(c) => match &c.test {
-            Some(test) => n.node_id != test.node_id(),
-            None => false,
-        },
-        NodeKind::CatchClause(c) => match &c.param {
-            Some(_) => {
-                // n != NodeKind::from(&param)
-                todo!()
-            }
-            None => false,
-        },
-        NodeKind::WithStmt(w) => n.node_id != w.obj.node_id(),
-        _ => false,
-    }
 }
 
 /// A custom version of [`Debug`][std::fmt::Debug] that allows control flow

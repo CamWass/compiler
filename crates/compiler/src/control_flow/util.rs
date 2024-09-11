@@ -5,22 +5,6 @@ use ecma_visit::{Visit, VisitWith};
 use rustc_hash::FxHashMap;
 use std::hash::Hash;
 
-/// Gets the condition of an `ON_TRUE` / `ON_FALSE` CFG edge.
-///
-/// `n` - a node with an outgoing conditional CFG edge.
-///
-/// Returns the condition node or `None` if the condition is not obviously a node.
-pub fn get_condition_expression(n: Node) -> Option<Node> {
-    match n.kind {
-        NodeKind::IfStmt(n) => Some(Node::from(&*n.test)),
-        NodeKind::WhileStmt(n) => Some(Node::from(&*n.test)),
-        NodeKind::DoWhileStmt(n) => Some(Node::from(&*n.test)),
-        NodeKind::ForStmt(n) => n.test.as_ref().map(|test| Node::from(test.as_ref())),
-        NodeKind::ForInStmt(..) | NodeKind::ForOfStmt(..) | NodeKind::SwitchCase(..) => None,
-        _ => unreachable!("Node does not have a condition."),
-    }
-}
-
 /// Determines whether the given node is a FOR, DO, or WHILE node.
 pub fn is_loop_structure(n: Node) -> bool {
     matches!(
