@@ -1130,7 +1130,7 @@ fn testForInWithAssignment() {
 fn testMaxVars() {
     let mut code = String::new();
     for i in 0..(crate::LiveVariablesAnalysis::MAX_VARIABLES_TO_ANALYZE + 1) {
-        write!(&mut code, "var x{} = 0; print(x{});", i, i);
+        write!(&mut code, "var x{} = 0; print(x{});", i, i).unwrap();
     }
     in_function_same(&code);
 }
