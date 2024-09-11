@@ -8,8 +8,6 @@ use indexmap::set::Iter;
 use indexmap::IndexSet as ISet;
 use rustc_hash::FxHasher;
 
-use super::utils::ReusableState;
-
 #[derive(Debug)]
 pub struct IndexSet<I: Idx, T> {
     inner: ISet<T, BuildHasherDefault<FxHasher>>,
@@ -62,15 +60,5 @@ impl<I: Idx, T> Index<I> for IndexSet<I, T> {
 
     fn index(&self, index: I) -> &Self::Output {
         &self.inner[index.index()]
-    }
-}
-
-impl<I, T> ReusableState for IndexSet<I, T>
-where
-    I: Idx,
-    T: Eq + Hash,
-{
-    fn reset(&mut self) {
-        self.inner.clear();
     }
 }

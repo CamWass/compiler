@@ -7,7 +7,6 @@ edition = "2018"
 
 [dependencies]
 arrayvec = { workspace = true }
-bitflags = { workspace = true }
 indexmap = { workspace = true }
 lexical = { workspace = true, features = ["power-of-two", "format"]}
 petgraph = { workspace = true }
@@ -18,7 +17,6 @@ ast = {path = "../ast"}
 atoms = {path = "../atoms"}
 ecma_visit = {path = "../visit"}
 global_common = {path = "../common"}
-global_visit = {path = "../../visit"}
 index = {path = "../index"}
 
 [dev-dependencies]

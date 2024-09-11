@@ -19,8 +19,6 @@ mod find_vars;
 mod graph;
 mod normalize;
 pub mod normalize_properties;
-mod optimize_properties;
-pub mod optimize_properties2;
 pub mod optimize_properties3;
 pub mod resolver;
 mod utils;
@@ -180,9 +178,6 @@ fn finalise(
     // TODO: optimizeConstructors
     // TODO: collapseAnonymousFunctions
 
-    // if passes.optimize_properties {
-    //     optimize_properties2::process(ast, node_id_gen, unresolved_ctxt);
-    // }
     if passes.optimize_properties {
         optimize_properties3::process(ast, program_data, unresolved_ctxt);
     }

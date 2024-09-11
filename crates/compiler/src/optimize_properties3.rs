@@ -9,15 +9,15 @@
 mod tests;
 
 mod graph;
+mod growable_unionfind;
+mod simple_set;
 mod unionfind;
 
 use std::collections::hash_map::Entry;
 use std::convert::TryInto;
 
+use crate::convert::ecma_number_to_string;
 use crate::find_vars::{FunctionLike, VarId};
-use crate::optimize_properties2::simple_set::IndexSet;
-use crate::optimize_properties2::unionfind::UnionFind;
-use crate::optimize_properties2::{is_simple_prop_name, Id, NameId, PropKey};
 use crate::utils::unwrap_as;
 use crate::DefaultNameGenerator::DefaultNameGenerator;
 use ast::*;
@@ -29,6 +29,8 @@ use index::bit_set::{BitMatrix, BitSet, GrowableBitSet};
 use index::vec::IndexVec;
 use petgraph::graph::UnGraph;
 use rustc_hash::{FxHashMap, FxHashSet};
+use simple_set::IndexSet;
+use unionfind::UnionFind;
 
 /// When true, the property interference relations are outputted as a graph in
 /// graphviz dot format (debug builds only).
@@ -1701,5 +1703,101 @@ impl VisitMut<'_> for Renamer<'_> {
             node.has_escape = false;
             node.kind = StrKind::Synthesized;
         }
+    }
+}
+
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
+struct PropKey(NameId, NodeId);
+
+impl PropKey {
+    fn from_prop_name(
+        prop: &PropName,
+        unresolved_ctxt: SyntaxContext,
+        names: &mut IndexSet<NameId, JsWord>,
+    ) -> Option<PropKey> {
+        match prop {
+            PropName::Ident(p) => Some(PropKey(names.insert(p.sym.clone()), p.node_id)),
+            PropName::Str(p) => Some(PropKey(names.insert(p.value.clone()), p.node_id)),
+            PropName::Num(p) => Some(PropKey(
+                names.insert(ecma_number_to_string(p.value).into()),
+                p.node_id,
+            )),
+            PropName::Computed(p) => PropKey::from_expr(&p.expr, unresolved_ctxt, true, names),
+            PropName::BigInt(p) => {
+                Some(PropKey(names.insert(p.value.to_string().into()), p.node_id))
+            }
+        }
+    }
+
+    fn from_expr(
+        expr: &Expr,
+        unresolved_ctxt: SyntaxContext,
+        computed: bool,
+        names: &mut IndexSet<NameId, JsWord>,
+    ) -> Option<PropKey> {
+        match expr {
+            Expr::Ident(e) => {
+                if !computed
+                    || e.ctxt == unresolved_ctxt
+                        && (e.sym == js_word!("undefined") || e.sym == js_word!("NaN"))
+                {
+                    // TODO: is this wrong? For "const fooVar = 'a'; obj[foovar]" this will record the prop name as 'foovar' when it is reall 'a'
+                    Some(PropKey(names.insert(e.sym.clone()), e.node_id))
+                } else {
+                    None
+                }
+            }
+            Expr::Lit(e) => match e {
+                Lit::Str(e) => Some(PropKey(names.insert(e.value.clone()), e.node_id)),
+                Lit::Bool(e) => {
+                    if e.value {
+                        Some(PropKey(names.insert(js_word!("true")), e.node_id))
+                    } else {
+                        Some(PropKey(names.insert(js_word!("false")), e.node_id))
+                    }
+                }
+                Lit::Null(e) => Some(PropKey(names.insert(js_word!("null")), e.node_id)),
+                Lit::Num(e) => Some(PropKey(
+                    names.insert(ecma_number_to_string(e.value).into()),
+                    e.node_id,
+                )),
+                Lit::BigInt(e) => Some(PropKey(
+                    names.insert(e.value.to_str_radix(10).into()),
+                    e.node_id,
+                )),
+                Lit::Regex(_) => None,
+            },
+            _ => None,
+        }
+    }
+}
+
+/// Returns true if the string value of the [`PropName`] is statically determinable.
+fn is_simple_prop_name(prop_name: &PropName, unresolved_ctxt: SyntaxContext) -> bool {
+    match prop_name {
+        // TODO: is this wrong? For "const fooVar = 'a'; obj[foovar]" this will record the prop name as 'foovar' when it is reall 'a'
+        PropName::Ident(_) | PropName::Str(_) | PropName::Num(_) | PropName::BigInt(_) => true,
+        PropName::Computed(p) => match p.expr.as_ref() {
+            Expr::Lit(e) => match e {
+                Lit::Str(_) | Lit::Bool(_) | Lit::Null(_) | Lit::Num(_) | Lit::BigInt(_) => true,
+                Lit::Regex(_) => false,
+            },
+            Expr::Ident(e) => {
+                e.ctxt == unresolved_ctxt
+                    && (e.sym == js_word!("undefined") || e.sym == js_word!("NaN"))
+            }
+            _ => false,
+        },
+    }
+}
+
+index::newtype_index!(struct NameId { .. });
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct Id(NameId, SyntaxContext);
+
+impl Id {
+    fn new(ident: &Ident, names: &mut IndexSet<NameId, JsWord>) -> Self {
+        Self(names.insert(ident.sym.clone()), ident.ctxt)
     }
 }
