@@ -508,7 +508,18 @@ impl<'a> Emitter<'a> {
                 }
             }
             Expr::Call(e) => {
-                self.emit_expr_or_super(&e.callee)?;
+                match &e.callee {
+                    ExprOrSuper::Expr(callee) => {
+                        if let Expr::New(new) = callee.as_ref() {
+                            self.emit_new(new, false)?;
+                        } else {
+                            self.emit_expr(callee)?;
+                        }
+                    }
+                    ExprOrSuper::Super(callee) => {
+                        self.emit_super(callee)?;
+                    }
+                }
                 punct!(self, "?.");
 
                 punct!(self, "(");
@@ -531,7 +542,18 @@ impl<'a> Emitter<'a> {
         let span = get_span!(self, node.node_id);
         self.emit_leading_comments_of_span(span, false)?;
 
-        self.emit_expr_or_super(&node.callee)?;
+        match &node.callee {
+            ExprOrSuper::Expr(callee) => {
+                if let Expr::New(new) = callee.as_ref() {
+                    self.emit_new(new, false)?;
+                } else {
+                    self.emit_expr(callee)?;
+                }
+            }
+            ExprOrSuper::Super(callee) => {
+                self.emit_super(callee)?;
+            }
+        }
 
         punct!(self, "(");
         self.emit_expr_or_spreads(span, &node.args, ListFormat::CallExpressionArguments)?;
@@ -539,7 +561,7 @@ impl<'a> Emitter<'a> {
         Ok(())
     }
 
-    fn emit_new_expr(&mut self, node: &NewExpr) -> Result {
+    fn emit_new(&mut self, node: &NewExpr, should_ignore_empty_args: bool) -> Result {
         let span = get_span!(self, node.node_id);
         self.emit_leading_comments_of_span(span, false)?;
 
@@ -557,17 +579,41 @@ impl<'a> Emitter<'a> {
         self.emit_expr(&node.callee)?;
 
         if let Some(args) = &node.args {
+            if !(self.cfg.minify && args.is_empty() && should_ignore_empty_args) {
             punct!(self, "(");
             self.emit_expr_or_spreads(span, args, ListFormat::NewExpressionArguments)?;
             punct!(self, ")");
         }
+        }
+
+        // if it's false, it means it doesn't come from emit_expr,
+        // we need to compensate that
+        if !should_ignore_empty_args && self.comments.is_some() {
+            self.emit_trailing_comments_of_pos(span.hi, true, true)?;
+        }
+
         Ok(())
+    }
+
+    fn emit_new_expr(&mut self, node: &NewExpr) -> Result {
+        self.emit_new(node, true)
     }
 
     fn emit_member_expr(&mut self, node: &MemberExpr) -> Result {
         self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
 
-        self.emit_expr_or_super(&node.obj)?;
+        match &node.obj {
+            ExprOrSuper::Expr(obj) => {
+                if let Expr::New(new) = obj.as_ref() {
+                    self.emit_new(new, false)?;
+                } else {
+                    self.emit_expr(obj)?;
+                }
+            }
+            ExprOrSuper::Super(obj) => {
+                self.emit_super(obj)?;
+            }
+        }
 
         if node.computed {
             punct!(self, "[");
@@ -1155,7 +1201,11 @@ impl<'a> Emitter<'a> {
     fn emit_tagged_tpl_lit(&mut self, node: &TaggedTpl) -> Result {
         self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
 
+        if let Expr::New(new) = node.tag.as_ref() {
+            self.emit_new(new, false)?;
+        } else {
         self.emit_expr(&node.tag)?;
+        }
         self.emit_tpl_lit(&node.tpl)
     }
 
