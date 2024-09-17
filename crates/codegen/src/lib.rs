@@ -371,19 +371,30 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_num_lit(&mut self, num: &Number) -> Result {
-        let span = get_span!(self, num.node_id);
-        self.emit_leading_comments_of_span(span, false)?;
+        self.wr.commit_pending_semi()?;
 
         // Handle infinity
         if num.value.is_infinite() {
+            let span = get_span!(self, num.node_id);
             if num.value.is_sign_negative() {
                 self.wr.write_str_lit(span, "-")?;
             }
-            self.wr.write_str_lit(span, "Infinity")
+            if self.cfg.minify {
+                return self.wr.write_str_lit(span, "Infinity");
         } else {
+                // 1/0 == Infinity: https://en.wikipedia.org/wiki/IEEE_754#Exception_handling
+                return self.wr.write_str_lit(span, "1/0");
+            }
+        }
+
+        if self.cfg.minify {
+            let value = minify_number(num.value);
+            self.wr.write_str_lit(DUMMY_SP, &value)
+        } else {
+            let span = get_span!(self, num.node_id);
             match &num.raw {
                 Some(raw) => self.wr.write_str_lit(span, raw),
-                _ => self.wr.write_str_lit(span, &num.value.to_string()),
+                None => self.wr.write_str_lit(span, &num.value.to_string()),
             }
         }
     }
@@ -2721,6 +2732,71 @@ fn require_space_before_rhs(rhs: &Expr, op: &BinaryOp) -> bool {
 
         _ => false,
     }
+}
+
+fn minify_number(num: f64) -> String {
+    // ddddd -> 0xhhhh
+    // len(0xhhhh) == len(ddddd)
+    // 10000000 <= num <= 0xffffff
+    'hex: {
+        if num.fract() == 0.0 && num.abs() <= u64::MAX as f64 {
+            let int = num.abs() as u64;
+
+            if int < 10000000 {
+                break 'hex;
+            }
+
+            // use scientific notation
+            if int % 1000 == 0 {
+                break 'hex;
+            }
+
+            return format!(
+                "{}{:#x}",
+                if num.is_sign_negative() { "-" } else { "" },
+                int
+            );
+        }
+    }
+
+    let mut num = num.to_string();
+
+    if let Some(num) = num.strip_prefix("0.") {
+        let cnt = clz(num);
+        if cnt > 2 {
+            return format!("{}e-{}", &num[cnt..], num.len());
+        }
+        return format!(".{}", num);
+    }
+
+    if let Some(num) = num.strip_prefix("-0.") {
+        let cnt = clz(num);
+        if cnt > 2 {
+            return format!("-{}e-{}", &num[cnt..], num.len());
+        }
+        return format!("-.{}", num);
+    }
+
+    if num.ends_with("000") {
+        let cnt = num
+            .as_bytes()
+            .iter()
+            .rev()
+            .skip(3)
+            .take_while(|&&c| c == b'0')
+            .count()
+            + 3;
+
+        num.truncate(num.len() - cnt);
+        num.push('e');
+        num.push_str(&cnt.to_string());
+    }
+
+    num
+}
+
+fn clz(s: &str) -> usize {
+    s.as_bytes().iter().take_while(|&&c| c == b'0').count()
 }
 
 #[cold]
