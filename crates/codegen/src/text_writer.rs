@@ -45,6 +45,8 @@ pub trait WriteJs {
     fn write_symbol(&mut self, span: Span, s: &str) -> Result;
 
     fn write_punct(&mut self, span: Option<Span>, s: &'static str) -> Result;
+
+    fn commit_pending_semi(&mut self) -> Result;
 }
 
 impl<W> WriteJs for Box<W>
@@ -102,6 +104,10 @@ where
 
     fn write_punct(&mut self, span: Option<Span>, s: &'static str) -> Result {
         (**self).write_punct(span, s)
+    }
+
+    fn commit_pending_semi(&mut self) -> Result {
+        (**self).commit_pending_semi()
     }
 
     fn target(&self) -> JscTarget {

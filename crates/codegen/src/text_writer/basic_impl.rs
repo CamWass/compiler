@@ -212,6 +212,10 @@ impl<'a, W: Write> WriteJs for JsWriter<'a, W> {
     fn target(&self) -> JscTarget {
         self.target
     }
+
+    fn commit_pending_semi(&mut self) -> Result {
+        Ok(())
+    }
 }
 
 fn compute_line_starts(s: &str) -> Vec<usize> {

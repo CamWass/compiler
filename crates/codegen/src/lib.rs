@@ -360,40 +360,14 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_str_lit(&mut self, node: &Str) -> Result {
+        self.wr.commit_pending_semi()?;
+
         let span = get_span!(self, node.node_id);
         self.emit_leading_comments_of_span(span, false)?;
 
-        let (single_quote, value) = match node.kind {
-            StrKind::Normal { contains_quote } => {
-                let single_quote = if contains_quote {
-                    is_single_quote(&self.cm, span)
-                } else {
-                    None
-                };
+        let value = get_quoted_utf16(&node.value, self.wr.target());
 
-                let value =
-                    escape_with_source(&self.cm, self.wr.target(), span, &node.value, single_quote);
-
-                (single_quote.unwrap_or(false), value)
-            }
-            StrKind::Synthesized => {
-                let single_quote = false;
-                let value = escape_without_source(&node.value, self.wr.target(), single_quote);
-
-                (single_quote, value)
-            }
-        };
-
-        if single_quote {
-            punct!(self, "'");
-            self.wr.write_str_lit(span, &value)?;
-            punct!(self, "'");
-        } else {
-            punct!(self, "\"");
-            self.wr.write_str_lit(span, &value)?;
-            punct!(self, "\"");
-        }
-        Ok(())
+        self.wr.write_str_lit(span, &value)
     }
 
     fn emit_num_lit(&mut self, num: &Number) -> Result {
@@ -2476,187 +2450,191 @@ fn unescape_tpl_lit(s: &str) -> String {
     result
 }
 
-fn escape_without_source(v: &str, target: JscTarget, single_quote: bool) -> String {
-    let mut buf = String::with_capacity(v.len());
+fn get_quoted_utf16(v: &str, target: EsVersion) -> String {
+    let mut buf = String::with_capacity(v.len() + 2);
     let mut iter = v.chars().peekable();
+
+    let mut single_quote_count = 0;
+    let mut double_quote_count = 0;
 
     while let Some(c) = iter.next() {
         match c {
+            '\x00' => {
+                if target < EsVersion::Es5 || matches!(iter.peek(), Some('0'..='9')) {
+                    buf.push_str("\\x00");
+                } else {
+                    buf.push_str("\\0");
+                }
+            }
             '\u{0008}' => buf.push_str("\\b"),
             '\u{000c}' => buf.push_str("\\f"),
             '\n' => buf.push_str("\\n"),
             '\r' => buf.push_str("\\r"),
-            '\t' => buf.push_str("\\t"),
             '\u{000b}' => buf.push_str("\\v"),
-            '\0' => buf.push_str("\\x00"),
-
+            '\t' => buf.push('\t'),
             '\\' => {
-                if iter.peek() == Some(&'\0') {
+                let next = iter.peek();
+
+                match next {
+                    // TODO fix me - workaround for surrogate pairs
+                    Some('u') => {
+                        let mut inner_iter = iter.clone();
+
+                        inner_iter.next();
+
+                        let mut is_curly = false;
+                        let mut next = inner_iter.peek();
+
+                        if next == Some(&'{') {
+                            is_curly = true;
+
+                            inner_iter.next();
+                            next = inner_iter.peek();
+                        } else if next != Some(&'D') && next != Some(&'d') {
                     buf.push('\\');
-                    iter.next();
-                } else {
-                    buf.push_str("\\\\")
+                        }
+
+                        if let Some(c @ 'D' | c @ 'd') = next {
+                            let mut inner_buf = String::new();
+
+                            inner_buf.push('\\');
+                            inner_buf.push('u');
+
+                            if is_curly {
+                                inner_buf.push('{');
+                            }
+
+                            inner_buf.push(*c);
+
+                            inner_iter.next();
+
+                            let mut is_valid = true;
+
+                            for _ in 0..3 {
+                                let c = inner_iter.next();
+
+                                match c {
+                                    Some('0'..='9') | Some('a'..='f') | Some('A'..='F') => {
+                                        inner_buf.push(c.unwrap());
+            }
+                                    _ => {
+                                        is_valid = false;
+
+                                        break;
+            }
+                                }
+                            }
+
+                            if is_curly {
+                                inner_buf.push('}');
+            }
+
+                            let range = if is_curly {
+                                3..(inner_buf.len() - 1)
+                            } else {
+                                2..6
+                            };
+
+                            if is_valid {
+                                let val_str = &inner_buf[range];
+
+                                let v = u32::from_str_radix(val_str, 16).unwrap_or_else(|err| {
+                                    unreachable!(
+                                        "failed to parse {} as a hex value: {:?}",
+                                        val_str, err
+                                    )
+                                });
+
+                                if v > 0xffff {
+                                    buf.push_str(&inner_buf);
+
+                                    let end = if is_curly { 7 } else { 5 };
+
+                                    for _ in 0..end {
+                                        iter.next();
+                                    }
+                                } else if (0xd800..=0xdfff).contains(&v) {
+                                    buf.push('\\');
+    } else {
+                                    buf.push_str("\\\\");
+        }
+                            } else {
+                                buf.push_str("\\\\")
+                            }
+                        } else if is_curly {
+                            buf.push_str("\\\\");
+                        } else {
+                            buf.push('\\');
+                        }
+                    }
+                    _ => {
+                        buf.push_str("\\\\");
+                    }
                 }
             }
-
-            '\'' if single_quote => buf.push_str("\\'"),
-            '"' if !single_quote => buf.push_str("\\\""),
-
+            '\'' => {
+                single_quote_count += 1;
+                buf.push('\'');
+            }
+            '"' => {
+                double_quote_count += 1;
+                buf.push('"');
+            }
             '\x01'..='\x0f' => {
                 let _ = write!(buf, "\\x0{:x}", c as u8);
-            }
+                }
             '\x10'..='\x1f' => {
                 let _ = write!(buf, "\\x{:x}", c as u8);
             }
-
             '\x20'..='\x7e' => {
                 buf.push(c);
             }
             '\u{7f}'..='\u{ff}' => {
-                let _ = write!(buf, "\\x{:x}", c as u8);
+                if target <= EsVersion::Es5 {
+                    let _ = write!(buf, "\\x{:x}", c as u8);
+                } else {
+                    buf.push(c);
+                }
             }
-
+            '\u{2028}' => {
+                buf.push_str("\\u2028");
+                        }
+            '\u{2029}' => {
+                buf.push_str("\\u2029");
+            }
+            '\u{FEFF}' => {
+                buf.push_str("\\uFEFF");
+            }
             _ => {
-                buf.push(c);
-            }
-        }
-    }
+                if c.is_ascii() {
+                    buf.push(c);
+                } else if c > '\u{FFFF}' {
+                    // if we've got this far the char isn't reserved and if the callee has specified
+                    // we should output unicode for non-ascii chars then we have
+                    // to make sure we output unicode that is safe for the target
+                    // Es5 does not support code point escapes and so surrograte formula must be
+                    // used
+                    if target <= EsVersion::Es5 {
+                        // https://mathiasbynens.be/notes/javascript-encoding#surrogate-formulae
+                        let h = ((c as u32 - 0x10000) / 0x400) + 0xd800;
+                        let l = (c as u32 - 0x10000) % 0x400 + 0xdc00;
 
-    buf
-}
-
-fn escape_with_source(
-    cm: &SourceMap,
-    target: JscTarget,
-    span: Span,
-    s: &str,
-    single_quote: Option<bool>,
-) -> String {
-    if target <= JscTarget::Es5 {
-        return escape_without_source(s, target, single_quote.unwrap_or(false));
-    }
-
-    if span.is_dummy() {
-        return escape_without_source(s, target, single_quote.unwrap_or(false));
-    }
-
-    let orig = cm.span_to_snippet(span);
-    let orig = match orig {
-        Ok(orig) => orig,
-        Err(v) => {
-            return escape_without_source(s, target, single_quote.unwrap_or(false));
-        }
-    };
-
-    if single_quote.is_some() && orig.len() <= 2 {
-        return escape_without_source(s, target, single_quote.unwrap_or(false));
-    }
-
-    let mut orig = &*orig;
-
-    if (single_quote == Some(true) && orig.starts_with('\''))
-        || (single_quote == Some(false) && orig.starts_with('"'))
-    {
-        orig = &orig[1..orig.len() - 1];
-    } else {
-        if single_quote.is_some() {
-            return escape_without_source(s, target, single_quote.unwrap_or(false));
-        }
-    }
-
-    let mut buf = String::with_capacity(s.len());
-    let mut orig_iter = orig.chars().peekable();
-    let mut s_iter = s.chars();
-
-    while let Some(orig_c) = orig_iter.next() {
-        // Javascript literal should not contain newlines
-        if orig_c == '\n' {
-            s_iter.next();
-            s_iter.next();
-            buf.push_str("\\n");
-            continue;
-        }
-
-        if single_quote.is_none() && orig_c == '"' {
-            s_iter.next();
-            s_iter.next();
-            buf.push_str("\\\"");
-            continue;
-        }
-
-        if orig_c == '\\' {
-            if s_iter.as_str().starts_with("\\\0") {
-                for _ in 0..6 {
-                    s_iter.next();
-                }
-            }
-
-            buf.push('\\');
-            match orig_iter.next() {
-                Some('\\') => {
-                    buf.push('\\');
-                    s_iter.next();
-                    continue;
-                }
-                Some(escaper) => {
-                    buf.push(escaper);
-                    match escaper {
-                        'x' => {
-                            buf.extend(orig_iter.next());
-                            buf.extend(orig_iter.next());
-                            s_iter.next();
+                        let _ = write!(buf, "\\u{:04X}\\u{:04X}", h, l);
+                    } else {
+                        buf.push(c);
                         }
-                        'u' => match orig_iter.next() {
-                            Some('{') => {
-                                buf.push('{');
-                                loop {
-                                    let ch = orig_iter.next();
-                                    buf.extend(ch);
-                                    if ch == Some('}') {
-                                        break;
-                                    }
-                                }
-                                s_iter.next();
-                            }
-                            Some(ch) => {
-                                buf.push(ch);
-                                buf.extend(orig_iter.next());
-                                buf.extend(orig_iter.next());
-                                buf.extend(orig_iter.next());
-                                s_iter.next();
-                            }
-                            None => break,
-                        },
-                        'b' | 'f' | 'n' | 'r' | 't' | 'v' | '0' => {
-                            s_iter.next();
-                        }
-
-                        '\'' if single_quote == Some(true) => {
-                            s_iter.next();
-                        }
-
-                        '"' if single_quote == Some(false) => {
-                            s_iter.next();
-                        }
-
-                        _ => {
-                            s_iter.next();
+                } else {
+                    buf.push(c);
                         }
                     }
-
-                    continue;
-                }
-                _ => {}
-            }
         }
-
-        s_iter.next();
-        buf.push(orig_c);
     }
 
-    buf.extend(s_iter);
-
-    buf
+    if double_quote_count > single_quote_count {
+        format!("'{}'", buf.replace('\'', "\\'"))
+    } else {
+        format!("\"{}\"", buf.replace('"', "\\\""))
+    }
 }
 
 /// Returns [Some] if the span points to a string literal written by user.

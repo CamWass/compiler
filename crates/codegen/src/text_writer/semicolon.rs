@@ -72,17 +72,15 @@ impl<W: WriteJs> WriteJs for OmitTrailingSemi<W> {
         self.inner.write_punct(span, s)
     }
 
-    fn target(&self) -> EsVersion {
-        self.inner.target()
-    }
-}
-
-impl<W: WriteJs> OmitTrailingSemi<W> {
     fn commit_pending_semi(&mut self) -> Result {
         if self.pending_semi {
             self.inner.write_punct(None, ";")?;
             self.pending_semi = false;
         }
         Ok(())
+    }
+
+    fn target(&self) -> EsVersion {
+        self.inner.target()
     }
 }
