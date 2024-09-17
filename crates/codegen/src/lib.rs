@@ -2104,7 +2104,7 @@ impl<'a> Emitter<'a> {
         let mut format = ListFormat::CaseOrDefaultClauseStatements;
         if emit_as_single_stmt {
             punct!(self, ":");
-            space!(self);
+            formatting_space!(self);
             format &= !(ListFormat::MultiLine | ListFormat::Indented);
         } else {
             punct!(self, ":");
