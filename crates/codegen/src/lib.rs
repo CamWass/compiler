@@ -10,7 +10,6 @@ use self::{
 };
 use ast::*;
 use global_common::{comments::Comments, sync::Lrc, BytePos, SourceMap, Span, DUMMY_SP};
-use parser::JscTarget;
 use std::{borrow::Cow, fmt::Write, io};
 use util::EndsWithAlphaNum;
 
