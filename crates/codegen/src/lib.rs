@@ -381,7 +381,7 @@ impl<'a> Emitter<'a> {
             }
             if self.cfg.minify {
                 return self.wr.write_str_lit(span, "Infinity");
-        } else {
+            } else {
                 // 1/0 == Infinity: https://en.wikipedia.org/wiki/IEEE_754#Exception_handling
                 return self.wr.write_str_lit(span, "1/0");
             }
@@ -565,10 +565,10 @@ impl<'a> Emitter<'a> {
 
         if let Some(args) = &node.args {
             if !(self.cfg.minify && args.is_empty() && should_ignore_empty_args) {
-            punct!(self, "(");
-            self.emit_expr_or_spreads(span, args, ListFormat::NewExpressionArguments)?;
-            punct!(self, ")");
-        }
+                punct!(self, "(");
+                self.emit_expr_or_spreads(span, args, ListFormat::NewExpressionArguments)?;
+                punct!(self, ")");
+            }
         }
 
         // if it's false, it means it doesn't come from emit_expr,
@@ -1189,7 +1189,7 @@ impl<'a> Emitter<'a> {
         if let Expr::New(new) = node.tag.as_ref() {
             self.emit_new(new, false)?;
         } else {
-        self.emit_expr(&node.tag)?;
+            self.emit_expr(&node.tag)?;
         }
         self.emit_tpl_lit(&node.tpl)
     }
@@ -1607,24 +1607,24 @@ impl<'a> Emitter<'a> {
             // Write a trailing comma, if requested.
             let has_trailing_comma = format.contains(ListFormat::ForceTrailingComma)
                 || format.contains(ListFormat::AllowTrailingComma) && {
-                if parent_node.is_dummy() {
-                    false
-                } else {
-                    match self.cm.span_to_snippet(parent_node) {
-                        Ok(snippet) => {
-                            if snippet.len() < 3 {
-                                false
-                            } else {
+                    if parent_node.is_dummy() {
+                        false
+                    } else {
+                        match self.cm.span_to_snippet(parent_node) {
+                            Ok(snippet) => {
+                                if snippet.len() < 3 {
+                                    false
+                                } else {
                                     let last_char = snippet.chars().last().unwrap();
                                     snippet[..snippet.len() - last_char.len_utf8()]
                                         .trim()
                                         .ends_with(',')
+                                }
                             }
+                            _ => false,
                         }
-                        _ => false,
                     }
-                }
-            };
+                };
 
             if has_trailing_comma && format.contains(ListFormat::CommaDelimited) {
                 if !self.cfg.minify || !format.contains(ListFormat::CanSkipTrailingComma) {
@@ -1880,14 +1880,29 @@ impl<'a> Emitter<'a> {
     }
 
     /// Emits a statement in a single-statement context
-    fn emit_single_stmt(&mut self, stmt: &Stmt, formatting_space: bool) -> Result {
+    fn emit_single_stmt(&mut self, mut stmt: &Stmt, needs_space_if_alpha_num: bool) -> Result {
         if let Stmt::Block(block) = stmt {
             if block.stmts.is_empty() {
                 semi!(self);
                 return Ok(());
+            } else if block.stmts.len() == 1 {
+                let first_stmt = &block.stmts[0];
+                let is_class = matches!(first_stmt, Stmt::Decl(Decl::Class(_)));
+                let is_lexical_var = matches!(
+                    first_stmt,
+                    Stmt::Decl(Decl::Var(VarDecl {
+                        kind: VarDeclKind::Const | VarDeclKind::Let,
+                        ..
+                    }))
+                );
+                if !is_class && !is_lexical_var {
+                    stmt = first_stmt;
+                }
             }
         }
-        if formatting_space {
+        if needs_space_if_alpha_num && stmt.starts_with_alpha_num() {
+            space!(self);
+        } else {
             formatting_space!(self);
         }
         self.emit_stmt(stmt)
@@ -1953,7 +1968,7 @@ impl<'a> Emitter<'a> {
         self.emit_expr(&node.obj)?;
         punct!(self, ")");
 
-        self.emit_single_stmt(&node.body, true)
+        self.emit_single_stmt(&node.body, false)
     }
 
     fn emit_return_stmt(&mut self, node: &ReturnStmt) -> Result {
@@ -1996,7 +2011,7 @@ impl<'a> Emitter<'a> {
         // TODO: Comment
         punct!(self, ":");
 
-        self.emit_single_stmt(&node.body, true)
+        self.emit_single_stmt(&node.body, false)
     }
 
     fn emit_break_stmt(&mut self, node: &BreakStmt) -> Result {
@@ -2035,19 +2050,14 @@ impl<'a> Emitter<'a> {
 
         let is_cons_block = matches!(*node.cons, Stmt::Block(..));
 
-        self.emit_single_stmt(&node.cons, true)?;
+        self.emit_single_stmt(&node.cons, false)?;
 
         if let Some(alt) = &node.alt {
             if is_cons_block {
                 formatting_space!(self);
             }
             keyword!(self, "else");
-            if alt.starts_with_alpha_num() {
-                space!(self);
-                self.emit_single_stmt(alt, false)?;
-            } else {
-                self.emit_single_stmt(alt, true)?;
-            }
+            self.emit_single_stmt(alt, true)?;
         }
         Ok(())
     }
@@ -2175,19 +2185,14 @@ impl<'a> Emitter<'a> {
         self.emit_expr(&node.test)?;
         punct!(self, ")");
 
-        self.emit_single_stmt(&node.body, true)
+        self.emit_single_stmt(&node.body, false)
     }
 
     fn emit_do_while_stmt(&mut self, node: &DoWhileStmt) -> Result {
         self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
 
         keyword!(self, "do");
-        if node.body.starts_with_alpha_num() {
-            space!(self);
-            self.emit_single_stmt(&node.body, false)?;
-        } else {
-            self.emit_single_stmt(&node.body, true)?;
-        }
+        self.emit_single_stmt(&node.body, true)?;
 
         keyword!(self, "while");
 
@@ -2212,7 +2217,7 @@ impl<'a> Emitter<'a> {
         opt_leading_space!(self, emit_expr, node.update);
         punct!(self, ")");
 
-        self.emit_single_stmt(&node.body, true)
+        self.emit_single_stmt(&node.body, false)
     }
 
     fn emit_for_in_stmt(&mut self, node: &ForInStmt) -> Result {
@@ -2240,7 +2245,7 @@ impl<'a> Emitter<'a> {
 
         punct!(self, ")");
 
-        self.emit_single_stmt(&node.body, true)
+        self.emit_single_stmt(&node.body, false)
     }
 
     fn emit_for_of_stmt(&mut self, node: &ForOfStmt) -> Result {
@@ -2271,7 +2276,7 @@ impl<'a> Emitter<'a> {
 
         self.emit_expr(&node.right)?;
         punct!(self, ")");
-        self.emit_single_stmt(&node.body, true)
+        self.emit_single_stmt(&node.body, false)
     }
 }
 
@@ -2511,7 +2516,7 @@ fn get_quoted_utf16(v: &str, target: EsVersion) -> String {
                             inner_iter.next();
                             next = inner_iter.peek();
                         } else if next != Some(&'D') && next != Some(&'d') {
-                    buf.push('\\');
+                            buf.push('\\');
                         }
 
                         if let Some(c @ 'D' | c @ 'd') = next {
@@ -2536,18 +2541,18 @@ fn get_quoted_utf16(v: &str, target: EsVersion) -> String {
                                 match c {
                                     Some('0'..='9') | Some('a'..='f') | Some('A'..='F') => {
                                         inner_buf.push(c.unwrap());
-            }
+                                    }
                                     _ => {
                                         is_valid = false;
 
                                         break;
-            }
+                                    }
                                 }
                             }
 
                             if is_curly {
                                 inner_buf.push('}');
-            }
+                            }
 
                             let range = if is_curly {
                                 3..(inner_buf.len() - 1)
@@ -2575,9 +2580,9 @@ fn get_quoted_utf16(v: &str, target: EsVersion) -> String {
                                     }
                                 } else if (0xd800..=0xdfff).contains(&v) {
                                     buf.push('\\');
-    } else {
+                                } else {
                                     buf.push_str("\\\\");
-        }
+                                }
                             } else {
                                 buf.push_str("\\\\")
                             }
@@ -2602,7 +2607,7 @@ fn get_quoted_utf16(v: &str, target: EsVersion) -> String {
             }
             '\x01'..='\x0f' => {
                 let _ = write!(buf, "\\x0{:x}", c as u8);
-                }
+            }
             '\x10'..='\x1f' => {
                 let _ = write!(buf, "\\x{:x}", c as u8);
             }
@@ -2618,7 +2623,7 @@ fn get_quoted_utf16(v: &str, target: EsVersion) -> String {
             }
             '\u{2028}' => {
                 buf.push_str("\\u2028");
-                        }
+            }
             '\u{2029}' => {
                 buf.push_str("\\u2029");
             }
@@ -2642,11 +2647,11 @@ fn get_quoted_utf16(v: &str, target: EsVersion) -> String {
                         let _ = write!(buf, "\\u{:04X}\\u{:04X}", h, l);
                     } else {
                         buf.push(c);
-                        }
+                    }
                 } else {
                     buf.push(c);
-                        }
-                    }
+                }
+            }
         }
     }
 
