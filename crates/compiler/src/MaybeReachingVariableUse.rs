@@ -25,7 +25,7 @@ pub struct MaybeReachingResult<'ast> {
     pub scope_variables: FxHashMap<Id, VarId>,
     pub ordered_vars: IndexVec<VarId, Id>,
     pub lattice_elements: IndexVec<LatticeElementId, ReachingUses>,
-    pub cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
+    pub cfg: ControlFlowGraph<Node<'ast>, LinearFlowState>,
 }
 
 impl<'ast> MaybeReachingResult<'ast> {
@@ -68,7 +68,7 @@ where
     T: FunctionLike<'a>,
 {
     pub fn new(
-        cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
+        cfg: ControlFlowGraph<Node<'ast>, LinearFlowState>,
         node_priorities: &'a [NodePriority],
         fn_scope: &'a T,
         all_vars_declared_in_function: AllVarsDeclaredInFunction,
@@ -124,7 +124,7 @@ where
     fn_and_class_names: FxHashSet<VarId>,
 
     lattice_elements: IndexVec<LatticeElementId, ReachingUses>,
-    cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
+    cfg: ControlFlowGraph<Node<'ast>, LinearFlowState>,
 }
 
 impl<'ast, 'a, T> Inner<'ast, 'a, T>
@@ -925,10 +925,10 @@ where
         }
     }
 
-    fn cfg(&self) -> &ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId> {
+    fn cfg(&self) -> &ControlFlowGraph<Node<'ast>, LinearFlowState> {
         &self.cfg
     }
-    fn cfg_mut(&mut self) -> &mut ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId> {
+    fn cfg_mut(&mut self) -> &mut ControlFlowGraph<Node<'ast>, LinearFlowState> {
         &mut self.cfg
     }
 }

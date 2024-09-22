@@ -55,13 +55,13 @@ impl_from!(&'ast SetterProp, SetterProp);
 
 pub type NodePriority = u32;
 
-pub struct ControlFlowAnalysisResult<N: CfgNode, NA: Annotation, EA: Annotation> {
-    pub cfg: ControlFlowGraph<N, NA, EA>,
+pub struct ControlFlowAnalysisResult<N: CfgNode, NA: Annotation> {
+    pub cfg: ControlFlowGraph<N, NA>,
     pub node_priorities: Vec<NodePriority>,
 }
 
-pub struct ControlFlowAnalysis<'ast, N: Annotation, E: Annotation> {
-    pub(super) cfg: ControlFlowGraph<Node<'ast>, N, E>,
+pub struct ControlFlowAnalysis<'ast, N: Annotation> {
+    pub(super) cfg: ControlFlowGraph<Node<'ast>, N>,
     ast_position: FxHashMap<NodeId, NodePriority>,
     pub(super) node_priorities: Vec<NodePriority>,
     ast_position_counter: NodePriority,
@@ -108,15 +108,14 @@ pub struct ControlFlowAnalysis<'ast, N: Annotation, E: Annotation> {
     finally_map: MultiMap<Node<'ast>, Node<'ast>>,
 }
 
-impl<'ast, N, E> ControlFlowAnalysis<'ast, N, E>
+impl<'ast, N> ControlFlowAnalysis<'ast, N>
 where
     N: Annotation,
-    E: Annotation,
 {
     pub fn analyze(
         root: ControlFlowRoot<'ast>,
         should_traverse_functions: bool,
-    ) -> ControlFlowAnalysisResult<Node<'ast>, N, E> {
+    ) -> ControlFlowAnalysisResult<Node<'ast>, N> {
         let root = root.into();
         let mut cfa = Self {
             cfg: ControlFlowGraph::new(compute_fall_through(root)),
@@ -223,7 +222,7 @@ where
             }
         }
 
-        let mk = |s: &ControlFlowAnalysis<'ast, N, E>, node: NodeIndex| {
+        let mk = |s: &ControlFlowAnalysis<'ast, N>, node: NodeIndex| {
             let position = *s.ast_position.get(&s.cfg.graph[node].node_id).unwrap();
             PrioritizedNode(position, node)
         };
@@ -763,10 +762,9 @@ macro_rules! generate_visitors {
  * For example: within a Token.SWITCH, the expression in question does not
  * change the control flow and need not to be considered.
  */
-impl<'ast, N, E> Visit<'ast> for ControlFlowAnalysis<'ast, N, E>
+impl<'ast, N> Visit<'ast> for ControlFlowAnalysis<'ast, N>
 where
     N: Annotation,
-    E: Annotation,
 {
     fn visit_for_in_stmt(&mut self, node: &'ast ForInStmt) {
         p!(self, ForInStmt);

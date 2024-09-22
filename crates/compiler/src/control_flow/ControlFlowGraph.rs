@@ -1,7 +1,7 @@
 use super::node::{CfgNode, Node, NodeKind};
 use petgraph::{
     dot::Dot,
-    graph::{DiGraph, EdgeIndex, Neighbors, NodeIndex},
+    graph::{DiGraph, Neighbors, NodeIndex},
     visit::EdgeRef,
     EdgeDirection::{Incoming, Outgoing},
 };
@@ -24,7 +24,7 @@ pub trait Annotation: fmt::Debug {}
  * @param <N> The instruction type of the control flow graph.
  */
 #[derive(Debug)]
-pub struct ControlFlowGraph<N: CfgNode, NA: Annotation, EA: Annotation> {
+pub struct ControlFlowGraph<N: CfgNode, NA: Annotation> {
     pub map: FxHashMap<N, NodeIndex>,
     /**
      * A special node marked by the node value key null to a singleton
@@ -37,14 +37,12 @@ pub struct ControlFlowGraph<N: CfgNode, NA: Annotation, EA: Annotation> {
     pub entry_index: NodeIndex,
     pub graph: DiGraph<N, Branch>,
     pub node_annotations: FxHashMap<N, NA>,
-    pub edge_annotations: FxHashMap<EdgeIndex, EA>,
 }
 
-impl<N, NA, EA> ControlFlowGraph<N, NA, EA>
+impl<N, NA> ControlFlowGraph<N, NA>
 where
     N: CfgNode,
     NA: Annotation,
-    EA: Annotation,
 {
     pub fn new(entry: N) -> Self {
         let mut graph = DiGraph::<N, Branch>::new();
@@ -64,7 +62,6 @@ where
             graph,
             map,
             node_annotations: Default::default(),
-            edge_annotations: Default::default(),
         }
     }
 
@@ -204,10 +201,9 @@ where
 
 const CFG_DOT_FILE_NAME: &str = "cfg.dot";
 
-impl<'ast, NA, EA> ControlFlowGraph<Node<'ast>, NA, EA>
+impl<'ast, NA> ControlFlowGraph<Node<'ast>, NA>
 where
     NA: Annotation,
-    EA: Annotation,
 {
     /// Prints a simple representation of the control flow graph to dot format.
     /// The resulting graph contains only the nodes and edges from the control
@@ -417,11 +413,10 @@ fn recolour_graph(mut dot: String, node_count: usize) -> String {
     dot
 }
 
-impl<N, NA, EA> Index<NodeIndex> for ControlFlowGraph<N, NA, EA>
+impl<N, NA> Index<NodeIndex> for ControlFlowGraph<N, NA>
 where
     N: CfgNode,
     NA: Annotation,
-    EA: Annotation,
 {
     type Output = N;
 

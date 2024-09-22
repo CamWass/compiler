@@ -77,7 +77,7 @@ where
      * @param allVarsDeclaredInFunction mapping of names to vars of everything reachable in a function
      */
     pub fn new(
-        cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
+        cfg: ControlFlowGraph<Node<'ast>, LinearFlowState>,
         node_priorities: &'a [NodePriority],
         fn_scope: &'a T,
         all_vars_declared_in_function: AllVarsDeclaredInFunction,
@@ -109,7 +109,7 @@ where
         mut self,
     ) -> (
         LiveVariablesAnalysisResult,
-        ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
+        ControlFlowGraph<Node<'ast>, LinearFlowState>,
     ) {
         self.data_flow_analysis.analyze();
 
@@ -151,7 +151,7 @@ where
 
     lattice_elements: IndexVec<LatticeElementId, LiveVariableLattice>,
 
-    cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
+    cfg: ControlFlowGraph<Node<'ast>, LinearFlowState>,
 }
 
 impl<'ast, 'a, T> Inner<'ast, 'a, T>
@@ -586,10 +586,10 @@ where
         }
     }
 
-    fn cfg(&self) -> &ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId> {
+    fn cfg(&self) -> &ControlFlowGraph<Node<'ast>, LinearFlowState> {
         &self.cfg
     }
-    fn cfg_mut(&mut self) -> &mut ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId> {
+    fn cfg_mut(&mut self) -> &mut ControlFlowGraph<Node<'ast>, LinearFlowState> {
         &mut self.cfg
     }
 }

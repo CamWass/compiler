@@ -14,7 +14,7 @@ use crate::control_flow::{
 use crate::find_vars::{find_first_lhs_ident, find_pat_ids, find_vars_declared_in_fn, VarId};
 use crate::graph::GraphColoring::{GreedyGraphColoring, SubGraph};
 use crate::utils::unwrap_as;
-use crate::DataFlowAnalysis::{LatticeElementId, LinearFlowState};
+use crate::DataFlowAnalysis::LinearFlowState;
 use crate::LiveVariablesAnalysis::{
     LiveVariablesAnalysis, LiveVariablesAnalysisResult, MAX_VARIABLES_TO_ANALYZE,
 };
@@ -529,7 +529,7 @@ impl SubGraph<Id> for SimpleSubGraph<'_> {
  * @return graph with variable nodes and edges representing variable interference
  */
 fn compute_variable_names_interference_graph(
-    cfg: &ControlFlowGraph<Node, LinearFlowState, LatticeElementId>,
+    cfg: &ControlFlowGraph<Node, LinearFlowState>,
     liveness: &LiveVariablesAnalysisResult,
 ) -> (UnGraph<Id, ()>, FxHashMap<Id, NodeIndex>) {
     let mut map = FxHashMap::default();

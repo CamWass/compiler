@@ -361,8 +361,8 @@ where
      */
     fn flow_through(&mut self, node: N, input: LatticeElementId) -> LatticeElementId;
 
-    fn cfg(&self) -> &ControlFlowGraph<N, LinearFlowState, LatticeElementId>;
-    fn cfg_mut(&mut self) -> &mut ControlFlowGraph<N, LinearFlowState, LatticeElementId>;
+    fn cfg(&self) -> &ControlFlowGraph<N, LinearFlowState>;
+    fn cfg_mut(&mut self) -> &mut ControlFlowGraph<N, LinearFlowState>;
 }
 
 /** A reducer that joins flow states from distinct input states into a single input state. */

@@ -239,7 +239,7 @@ where
 
 struct DummyConstPropagationInner {
     lattice_elements: IndexVec<LatticeElementId, ConstPropLatticeElement>,
-    cfg: ControlFlowGraph<Instruction, LinearFlowState, LatticeElementId>,
+    cfg: ControlFlowGraph<Instruction, LinearFlowState>,
 }
 
 impl HasLatticeElements<ConstPropLatticeElement> for DummyConstPropagationInner {
@@ -285,10 +285,10 @@ impl
         };
         self.add_lattice_element(elem)
     }
-    fn cfg(&self) -> &ControlFlowGraph<Instruction, LinearFlowState, LatticeElementId> {
+    fn cfg(&self) -> &ControlFlowGraph<Instruction, LinearFlowState> {
         &self.cfg
     }
-    fn cfg_mut(&mut self) -> &mut ControlFlowGraph<Instruction, LinearFlowState, LatticeElementId> {
+    fn cfg_mut(&mut self) -> &mut ControlFlowGraph<Instruction, LinearFlowState> {
         &mut self.cfg
     }
 }
@@ -360,7 +360,7 @@ struct DummyConstPropagation<'p> {
 
 impl<'p> DummyConstPropagation<'p> {
     fn new(
-        cfg: ControlFlowGraph<Instruction, LinearFlowState, LatticeElementId>,
+        cfg: ControlFlowGraph<Instruction, LinearFlowState>,
         node_priorities: &'p [NodePriority],
     ) -> Self {
         Self {
@@ -657,7 +657,7 @@ fn parse_script(input: &str) -> Script {
 struct DivergentAnalysisInner {
     lattice_elements: IndexVec<LatticeElementId, Step>,
     counts: FxHashMap<Counter, usize>,
-    cfg: ControlFlowGraph<Counter, LinearFlowState, LatticeElementId>,
+    cfg: ControlFlowGraph<Counter, LinearFlowState>,
 }
 
 impl DataFlowAnalysisInner<Counter, Step, DivergentFlowJoiner> for DivergentAnalysisInner {
@@ -686,10 +686,10 @@ impl DataFlowAnalysisInner<Counter, Step, DivergentFlowJoiner> for DivergentAnal
         input
     }
 
-    fn cfg(&self) -> &ControlFlowGraph<Counter, LinearFlowState, LatticeElementId> {
+    fn cfg(&self) -> &ControlFlowGraph<Counter, LinearFlowState> {
         &self.cfg
     }
-    fn cfg_mut(&mut self) -> &mut ControlFlowGraph<Counter, LinearFlowState, LatticeElementId> {
+    fn cfg_mut(&mut self) -> &mut ControlFlowGraph<Counter, LinearFlowState> {
         &mut self.cfg
     }
 }
@@ -745,7 +745,7 @@ struct DivergentAnalysis<'p> {
 
 impl<'p> DivergentAnalysis<'p> {
     fn new(
-        cfg: ControlFlowGraph<Counter, LinearFlowState, LatticeElementId>,
+        cfg: ControlFlowGraph<Counter, LinearFlowState>,
         node_priorities: &'p [NodePriority],
     ) -> Self {
         Self {
