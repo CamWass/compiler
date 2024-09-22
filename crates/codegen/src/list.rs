@@ -78,10 +78,11 @@ add_bitflags!(
         /// If the literal is empty, do not add spaces between braces.
         NoSpaceIfEmpty: 1 << 18,
         SingleElement: 1 << 19,
+        ForceTrailingComma: 1 << 20,
     },
     // Optimisation.
     Values {
-        CanSkipTrailingComma: 1 << 20
+        CanSkipTrailingComma: 1 << 21
     },
     /// Precomputed Formats
     Values {
@@ -96,13 +97,11 @@ add_bitflags!(
         UnionTypeConstituents: BarDelimited | SpaceBetweenSiblings | SingleLine,
         IntersectionTypeConstituents: AmpersandDelimited | SpaceBetweenSiblings | SingleLine,
         ObjectBindingPatternElements: SingleLine
-            | AllowTrailingComma
             | SpaceBetweenBraces
             | CommaDelimited
             | SpaceBetweenSiblings
             | NoSpaceIfEmpty,
         ArrayBindingPatternElements: SingleLine
-            | AllowTrailingComma
             | CommaDelimited
             | SpaceBetweenSiblings
             | NoSpaceIfEmpty,
@@ -123,7 +122,6 @@ add_bitflags!(
         ArrayLiteralExpressionElements: PreserveLines
             | CommaDelimited
             | SpaceBetweenSiblings
-            | AllowTrailingComma
             | Indented
             | SquareBrackets,
         CommaListElements: CommaDelimited | SpaceBetweenSiblings | SingleLine,

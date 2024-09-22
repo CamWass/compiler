@@ -1293,6 +1293,11 @@ impl<'a> Emitter<'a> {
         self.emit_leading_comments_of_span(span, false)?;
 
         punct!(self, "[");
+        let mut format = ListFormat::ArrayLiteralExpressionElements;
+        if let Some(None) = node.elems.last() {
+            format |= ListFormat::ForceTrailingComma;
+        }
+
         self.emit_list(
             span,
             &node.elems,
@@ -1303,7 +1308,7 @@ impl<'a> Emitter<'a> {
                     Ok(None)
                 }
             },
-            ListFormat::ArrayLiteralExpressionElements,
+            format,
         )?;
         punct!(self, "]");
         Ok(())
@@ -1600,7 +1605,8 @@ impl<'a> Emitter<'a> {
             }
 
             // Write a trailing comma, if requested.
-            let has_trailing_comma = format.contains(ListFormat::AllowTrailingComma) && {
+            let has_trailing_comma = format.contains(ListFormat::ForceTrailingComma)
+                || format.contains(ListFormat::AllowTrailingComma) && {
                 if parent_node.is_dummy() {
                     false
                 } else {
@@ -1609,7 +1615,10 @@ impl<'a> Emitter<'a> {
                             if snippet.len() < 3 {
                                 false
                             } else {
-                                snippet[..snippet.len() - 1].trim().ends_with(',')
+                                    let last_char = snippet.chars().last().unwrap();
+                                    snippet[..snippet.len() - last_char.len_utf8()]
+                                        .trim()
+                                        .ends_with(',')
                             }
                         }
                         _ => false,
