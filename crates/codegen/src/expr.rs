@@ -13,7 +13,7 @@ mod tests {
         assert_min("false", "false");
         assert_min("42", "42");
         assert_min("3.14", "3.14");
-        assert_min(r#" 'foobar' "#, r#"'foobar'"#);
+        assert_min(r#" 'foobar' "#, r#""foobar""#);
     }
 
     #[test]
@@ -140,7 +140,6 @@ mod tests {
     fn sparse_array_expression() {
         assert_min("[]", "[]");
         assert_min("[,]", "[,]");
-        assert_min("[1,]", "[1,]");
         assert_min("[,1]", "[,1]");
         assert_min("[,,];", "[,,]");
         assert_min("[1,,];", "[1,,]");

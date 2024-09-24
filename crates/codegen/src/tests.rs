@@ -214,28 +214,31 @@ fn empty_named_export_min() {
 
 #[test]
 fn empty_named_export_from() {
-    test_from_to("export { } from 'foo';", "export { } from 'foo';");
+    test_from_to("export { } from 'foo';", r#"export { } from "foo";"#);
 }
 
 #[test]
 fn empty_named_export_from_min() {
     test_from_to_custom_config(
         "export { } from 'foo';",
-        "export{}from'foo';",
+        r#"export{}from"foo";"#,
         Config { minify: true },
     );
 }
 
 #[test]
 fn named_export_from() {
-    test_from_to("export { bar } from 'foo';", "export { bar } from 'foo';");
+    test_from_to(
+        "export { bar } from 'foo';",
+        r#"export { bar } from "foo";"#,
+    );
 }
 
 #[test]
 fn named_export_from_min() {
     test_from_to_custom_config(
         "export { bar } from 'foo';",
-        "export{bar}from'foo';",
+        r#"export{bar}from"foo";"#,
         Config { minify: true },
     );
 }
@@ -244,7 +247,7 @@ fn named_export_from_min() {
 fn export_namespace_from() {
     test_from_to_custom_config(
         "export * as Foo from 'foo';",
-        "export * as Foo from 'foo';",
+        r#"export * as Foo from "foo";"#,
         Default::default(),
     );
 }
@@ -253,7 +256,7 @@ fn export_namespace_from() {
 fn export_namespace_from_min() {
     test_from_to_custom_config(
         "export * as Foo from 'foo';",
-        "export*as Foo from'foo';",
+        r#"export*as Foo from"foo";"#,
         Config { minify: true },
     );
 }
@@ -262,7 +265,7 @@ fn export_namespace_from_min() {
 fn named_and_namespace_export_from() {
     test_from_to_custom_config(
         "export * as Foo, { bar } from 'foo';",
-        "export * as Foo, { bar } from 'foo';",
+        r#"export * as Foo, { bar } from "foo";"#,
         Default::default(),
     );
 }
@@ -271,7 +274,7 @@ fn named_and_namespace_export_from() {
 fn named_and_namespace_export_from_min() {
     test_from_to_custom_config(
         "export * as Foo, { bar } from 'foo';",
-        "export*as Foo,{bar}from'foo';",
+        r#"export*as Foo,{bar}from"foo";"#,
         Config { minify: true },
     );
 }
@@ -292,7 +295,7 @@ fn issue_450() {
 fn issue_546() {
     test_from_to(
         "import availabilities, * as availabilityFunctions from 'reducers/availabilities';",
-        "import availabilities, * as availabilityFunctions from 'reducers/availabilities';",
+        r#"import availabilities, * as availabilityFunctions from "reducers/availabilities";"#,
     );
 }
 
@@ -317,16 +320,19 @@ fn issue_910() {
         "console.log(\"Hello World\");",
     );
 
-    test_from_to("console.log('Hello World');", "console.log('Hello World');");
+    test_from_to(
+        "console.log('Hello World');",
+        "console.log(\"Hello World\");",
+    );
 
     test_from_to(
         "console.log(\"Hello\\\" World\");",
-        "console.log(\"Hello\\\" World\");",
+        "console.log('Hello\" World');",
     );
 
     test_from_to(
         "console.log('Hello\\' World');",
-        "console.log('Hello\\' World');",
+        r#"console.log("Hello' World");"#,
     );
 }
 
@@ -462,7 +468,7 @@ fn integration_01_reduced_01() {
 fn dneo_8541_1() {
     test_from_to(
         "React.createElement('span', null, '\\u{b7}');",
-        "React.createElement('span', null, '\\u{b7}');",
+        r#"React.createElement("span", null, "\\u{b7}");"#,
     );
 }
 

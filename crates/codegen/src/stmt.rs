@@ -42,24 +42,25 @@ mod tests {
     #[test]
     fn if_statement() {
         assert_min("if (true) foo;", "if(true)foo");
-        assert_min("if (true) { foo; }", "if(true){foo}");
+        assert_min("if (true) { foo; }", "if(true)foo");
         assert_min("if (true) foo; else bar;", "if(true)foo;else bar");
-        assert_min("if (true) { foo; } else { bar; }", "if(true){foo}else{bar}");
-        assert_min("if (true) foo; else { bar; }", "if(true)foo;else{bar}");
-        assert_min("if (true) { foo; } else bar;", "if(true){foo}else bar");
+        assert_min("if (true) { foo; } else { bar; }", "if(true)foo;else bar");
+        assert_min("if (true) foo; else { bar; }", "if(true)foo;else bar");
+        assert_min("if (true) { foo; } else bar;", "if(true)foo;else bar");
         assert_min("if (true) y(); else x++;", "if(true)y();else x++");
         assert_min("if (true) y(); else x--;", "if(true)y();else x--");
+        assert_min("if (true) { let foo = 1; }", "if(true){let foo=1}");
     }
 
     #[test]
     fn while_statement() {
         assert_min("while (true) foo;", "while(true)foo");
-        assert_min("while (true) { foo; }", "while(true){foo}");
+        assert_min("while (true) { foo; }", "while(true)foo");
     }
 
     #[test]
     fn do_statement() {
-        assert_min("do { foo; } while (true)", "do{foo}while(true)");
+        assert_min("do { foo; } while (true)", "do foo;while(true)");
         assert_min("do foo; while (true)", "do foo;while(true)");
     }
 
@@ -78,22 +79,22 @@ mod tests {
     fn import() {
         assert_min(
             "import colors, { color } from 'patterns/colors';",
-            "import colors,{color}from'patterns/colors';",
+            "import colors,{color}from\"patterns/colors\";",
         );
         assert_pretty(
             "import colors, { color } from 'patterns/colors';",
-            "import colors, { color } from 'patterns/colors';",
+            "import colors, { color } from \"patterns/colors\";",
         );
     }
 
     #[test]
     fn issue_204_01() {
-        assert_min(r#"'\r\n';"#, r#"'\r\n'"#);
+        assert_min(r#"'\r\n';"#, r#""\r\n""#);
     }
 
     #[test]
     fn issue_204_02() {
-        assert_min(r#"const a = fn() + '\r\n';"#, r#"const a=fn()+'\r\n'"#);
+        assert_min(r#"const a = fn() + '\r\n';"#, r#"const a=fn()+"\r\n""#);
     }
 
     //     #[test]
@@ -120,7 +121,7 @@ mod tests {
     fn issue_266() {
         assert_min(
             "'Q' + +x1 + ',' + +y1 + ',' + (this._x1 = +x) + ',' + (this._y1 = +y);",
-            "'Q'+ +x1+','+ +y1+','+(this._x1=+x)+','+(this._y1=+y)",
+            r#""Q"+ +x1+","+ +y1+","+(this._x1=+x)+","+(this._y1=+y)"#,
         );
     }
 }
