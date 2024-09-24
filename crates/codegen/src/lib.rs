@@ -714,7 +714,8 @@ impl<'a> Emitter<'a> {
                 if let Some(expr) = &ret.arg {
                     self.emit_expr(expr)?;
                 } else {
-                    keyword!(self, get_span!(self, ret.node_id), "undefined");
+                    punct!(self, "{");
+                    punct!(self, "}");
                 }
                 self.wr.decrease_indent()?;
                 if !self.cfg.minify {
