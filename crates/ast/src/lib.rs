@@ -121,8 +121,8 @@ pub struct Invalid {
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, Default)]
 pub enum EsVersion {
-    #[default]
     Es3,
+    #[default]
     Es5,
     Es2015,
     Es2016,
@@ -130,13 +130,14 @@ pub enum EsVersion {
     Es2018,
     Es2019,
     Es2020,
+    Es2021,
+    Es2022,
+    EsNext,
 }
 
 impl EsVersion {
-    /// Get the latest version. This is `es2020` for now, but it will be changed
-    /// if a new version of specification is released.
     pub const fn latest() -> Self {
-        EsVersion::Es2020
+        EsVersion::EsNext
     }
 }
 

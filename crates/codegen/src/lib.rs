@@ -364,38 +364,104 @@ impl<'a> Emitter<'a> {
         let span = get_span!(self, node.node_id);
         self.emit_leading_comments_of_span(span, false)?;
 
-        let value = get_quoted_utf16(&node.value, self.wr.target());
-
-        self.wr.write_str_lit(span, &value)
+        let target = self.cfg.target;
+        let value = get_quoted_utf16(&node.value, target);
+        self.wr.write_str_lit(DUMMY_SP, &value)
     }
 
     fn emit_num_lit(&mut self, num: &Number) -> Result {
-        self.wr.commit_pending_semi()?;
+        self.emit_num_lit_internal(num, false)?;
+        Ok(())
+    }
+
+    /// `1.toString` is an invalid property access,
+    /// should emit a dot after the literal if return true
+    fn emit_num_lit_internal(
+        &mut self,
+        num: &Number,
+        detect_dot: bool,
+    ) -> std::result::Result<bool, io::Error> {
+        let span = get_span!(self, num.node_id);
+        self.emit_leading_comments_of_span(span, false)?;
 
         // Handle infinity
         if num.value.is_infinite() {
-            let span = get_span!(self, num.node_id);
             if num.value.is_sign_negative() {
                 self.wr.write_str_lit(span, "-")?;
             }
-            if self.cfg.minify {
-                return self.wr.write_str_lit(span, "Infinity");
-            } else {
-                // 1/0 == Infinity: https://en.wikipedia.org/wiki/IEEE_754#Exception_handling
-                return self.wr.write_str_lit(span, "1/0");
+            self.wr.write_str_lit(span, "Infinity")?;
+
+            return Ok(false);
+        }
+
+        let mut striped_raw = None;
+        let mut value = String::default();
+
+        if self.cfg.minify {
+            value = minify_number(num.value);
+            self.wr.write_str_lit(span, &value)?;
+        } else {
+            match &num.raw {
+                Some(raw) => {
+                    if raw.len() > 2 && self.cfg.target < EsVersion::Es2015 && {
+                        let slice = &raw.as_bytes()[..2];
+                        slice == b"0b" || slice == b"0o" || slice == b"0B" || slice == b"0O"
+                    } {
+                        value = num.value.to_string();
+                        self.wr.write_str_lit(span, &value)?;
+                    } else if raw.len() > 2
+                        && self.cfg.target < EsVersion::Es2021
+                        && raw.contains('_')
+                    {
+                        let value = raw.replace('_', "");
+                        self.wr.write_str_lit(span, &value)?;
+
+                        striped_raw = Some(value);
+                    } else {
+                        self.wr.write_str_lit(span, raw)?;
+
+                        if !detect_dot {
+                            return Ok(false);
+                        }
+
+                        striped_raw = Some(raw.replace('_', ""));
+                    }
+                }
+                _ => {
+                    value = num.value.to_string();
+                    self.wr.write_str_lit(span, &value)?;
+                }
             }
         }
 
-        if self.cfg.minify {
-            let value = minify_number(num.value);
-            self.wr.write_str_lit(DUMMY_SP, &value)
-        } else {
-            let span = get_span!(self, num.node_id);
-            match &num.raw {
-                Some(raw) => self.wr.write_str_lit(span, raw),
-                None => self.wr.write_str_lit(span, &num.value.to_string()),
-            }
+        // fast return
+        if !detect_dot {
+            return Ok(false);
         }
+
+        Ok(striped_raw
+            .map(|raw| {
+                if raw.bytes().all(|c| c.is_ascii_digit()) {
+                    // Legacy octal contains only digits, but `value` and `raw` are
+                    // different
+                    if !num.value.to_string().eq(&raw) {
+                        return false;
+                    }
+
+                    return true;
+                }
+
+                false
+            })
+            .unwrap_or_else(|| {
+                let bytes = value.as_bytes();
+
+                if !bytes.contains(&b'.') && !bytes.contains(&b'e') {
+                    return true;
+                }
+
+                false
+            }))
     }
 
     fn emit_big_lit(&mut self, v: &BigInt) -> Result {
@@ -586,14 +652,20 @@ impl<'a> Emitter<'a> {
     fn emit_member_expr(&mut self, node: &MemberExpr) -> Result {
         self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
 
+        let mut needs_2dots_for_property_access = false;
+
         match &node.obj {
-            ExprOrSuper::Expr(obj) => {
-                if let Expr::New(new) = obj.as_ref() {
+            ExprOrSuper::Expr(obj) => match obj.as_ref() {
+                Expr::New(new) => {
                     self.emit_new(new, false)?;
-                } else {
+                }
+                Expr::Lit(Lit::Num(num)) => {
+                    needs_2dots_for_property_access = self.emit_num_lit_internal(num, true)?;
+            }
+                _ => {
                     self.emit_expr(obj)?;
                 }
-            }
+            },
             ExprOrSuper::Super(obj) => {
                 self.emit_super(obj)?;
             }
@@ -605,7 +677,9 @@ impl<'a> Emitter<'a> {
             punct!(self, "]");
         } else {
             let prop_span = get_span!(self, node.prop.node_id());
-            if self.needs_2dots_for_property_access(&node.obj) {
+            match node.prop.as_ref() {
+                Expr::Ident(ident) => {
+                    if needs_2dots_for_property_access {
                 if prop_span.lo() >= BytePos(2) {
                     self.emit_leading_comments(prop_span.lo() - BytePos(2), false)?;
                 }
@@ -615,51 +689,25 @@ impl<'a> Emitter<'a> {
                 self.emit_leading_comments(prop_span.lo() - BytePos(1), false)?;
             }
             punct!(self, ".");
-            self.emit_expr(&node.prop)?;
+                    self.emit_ident(ident)?;
         }
-        Ok(())
-    }
-
-    /// `1..toString` is a valid property access, emit a dot after the literal
-    pub fn needs_2dots_for_property_access(&self, expr: &ExprOrSuper) -> bool {
-        match expr {
-            ExprOrSuper::Expr(expr) => {
-                match expr.as_ref() {
-                    Expr::Lit(Lit::Num(Number { value, raw, .. })) => {
-                        if value.is_nan() || value.is_infinite() {
-                            return false;
+                Expr::PrivateName(private) => {
+                    if needs_2dots_for_property_access {
+                        if prop_span.lo() >= BytePos(2) {
+                            self.emit_leading_comments(prop_span.lo() - BytePos(2), false)?;
                         }
-                        match raw {
-                            Some(raw) => {
-                                if raw.bytes().all(|c| c.is_ascii_digit()) {
-                                    // Legacy octal contains only digits, but `value` and `raw` are
-                                    // different
-                                    if !value.to_string().eq(raw.as_ref()) {
-                                        return false;
+                        punct!(self, ".");
+                        }
+                    if prop_span.lo() >= BytePos(1) {
+                        self.emit_leading_comments(prop_span.lo() - BytePos(1), false)?;
                                     }
-
-                                    return true;
-                                }
-
-                                false
-                            }
-                            _ => {
-                                let s = value.to_string();
-                                let bytes = s.as_bytes();
-
-                                if !bytes.contains(&b'.') && !bytes.contains(&b'e') {
-                                    return true;
-                                }
-
-                                false
-                            }
-                        }
+                    punct!(self, ".");
+                    self.emit_private_name(private)?;
                     }
-                    _ => false,
+                _ => unreachable!(),
                 }
             }
-            _ => false,
-        }
+        Ok(())
     }
 
     fn emit_arrow_expr(&mut self, node: &ArrowExpr) -> Result {

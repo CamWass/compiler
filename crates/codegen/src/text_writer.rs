@@ -1,7 +1,6 @@
 pub use self::{basic_impl::JsWriter, semicolon::omit_trailing_semi};
 use super::*;
 use global_common::Span;
-use parser::JscTarget;
 
 mod basic_impl;
 mod semicolon;
@@ -13,15 +12,6 @@ pub type Symbol = Str;
 ///
 /// Ported from `EmitWriteJs`.
 pub trait WriteJs {
-    /// Returns javascript target which should be used while generating code.
-    ///
-    /// This defaults to [JscTarget::Es2020] because it preserves input as much
-    /// as possible.
-    ///
-    /// Implementor **should return same value** regardless how much time it is
-    /// called.
-    fn target(&self) -> EsVersion;
-
     fn increase_indent(&mut self) -> Result;
     fn decrease_indent(&mut self) -> Result;
 
@@ -108,9 +98,5 @@ where
 
     fn commit_pending_semi(&mut self) -> Result {
         (**self).commit_pending_semi()
-    }
-
-    fn target(&self) -> JscTarget {
-        (**self).target()
     }
 }

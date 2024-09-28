@@ -1,6 +1,5 @@
 use super::{Result, WriteJs};
 use global_common::{sync::Lrc, BytePos, LineCol, SourceMap, Span};
-use parser::JscTarget;
 use std::io::{self, Write};
 
 ///
@@ -20,7 +19,6 @@ pub struct JsWriter<'a, W: Write> {
     srcmap: Option<&'a mut Vec<(BytePos, LineCol)>>,
     wr: W,
     written_bytes: usize,
-    target: JscTarget,
 }
 
 impl<'a, W: Write> JsWriter<'a, W> {
@@ -29,16 +27,6 @@ impl<'a, W: Write> JsWriter<'a, W> {
         new_line: &'a str,
         wr: W,
         srcmap: Option<&'a mut Vec<(BytePos, LineCol)>>,
-    ) -> Self {
-        Self::with_target(cm, new_line, wr, srcmap, JscTarget::Es2020)
-    }
-
-    pub fn with_target(
-        cm: Lrc<SourceMap>,
-        new_line: &'a str,
-        wr: W,
-        srcmap: Option<&'a mut Vec<(BytePos, LineCol)>>,
-        target: JscTarget,
     ) -> Self {
         JsWriter {
             _cm: cm,
@@ -50,7 +38,6 @@ impl<'a, W: Write> JsWriter<'a, W> {
             srcmap,
             wr,
             written_bytes: 0,
-            target,
         }
     }
 
@@ -207,10 +194,6 @@ impl<'a, W: Write> WriteJs for JsWriter<'a, W> {
     fn write_punct(&mut self, span: Option<Span>, s: &'static str) -> Result {
         self.write(span, s)?;
         Ok(())
-    }
-
-    fn target(&self) -> JscTarget {
-        self.target
     }
 
     fn commit_pending_semi(&mut self) -> Result {

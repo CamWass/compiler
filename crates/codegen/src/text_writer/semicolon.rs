@@ -1,5 +1,4 @@
 use super::{Result, WriteJs};
-use ast::EsVersion;
 use global_common::Span;
 
 pub fn omit_trailing_semi<W: WriteJs>(w: W) -> impl WriteJs {
@@ -78,9 +77,5 @@ impl<W: WriteJs> WriteJs for OmitTrailingSemi<W> {
             self.pending_semi = false;
         }
         Ok(())
-    }
-
-    fn target(&self) -> EsVersion {
-        self.inner.target()
     }
 }
