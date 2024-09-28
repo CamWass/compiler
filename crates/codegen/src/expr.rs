@@ -168,6 +168,7 @@ mod tests {
         assert_min("({ foo(bar, baz) {} });", "({foo(bar,baz){}})");
         // let expected = "({\n    foo: true,\n    bar: false\n});";
         // assert_pretty("({ foo: true, bar: false })", expected);
+        assert_min("({a: a})", "({a})");
     }
 
     #[test]
@@ -201,5 +202,15 @@ mod tests {
     #[test]
     fn html_comment() {
         assert_min("a < !--b && c-- > d;", "a< !--b&&c-- >d");
+    }
+
+    #[test]
+    fn arrow_expr() {
+        assert_min("()=>{ return x ?? y; }", "()=>x??y");
+        assert_min("()=>{ return 5; }", "()=>5");
+        assert_min("()=>{ return; }", "()=>{}");
+        assert_min("(x)=>{ return x+1 }", "x=>x+1");
+        // TODO: proper paren handling
+        // assert_min("(x)=>{ return x++,5; }", "x=>(x++,5)");
     }
 }
