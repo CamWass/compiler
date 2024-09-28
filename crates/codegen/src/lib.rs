@@ -1397,16 +1397,12 @@ impl<'a> Emitter<'a> {
     fn emit_kv_prop(&mut self, node: &KeyValueProp) -> Result {
         self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
 
+        // Short hand properties e.g. `{foo:foo}` => `{foo}`
         if self.cfg.minify {
             if let PropName::Ident(key) = &node.key {
                 if let Expr::Ident(value) = node.value.as_ref() {
-                    if key.sym == value.sym && key.ctxt == value.ctxt {
-                        let span = get_span!(self, key.node_id);
-
-                        // TODO: span
-                        return self
-                            .wr
-                            .write_symbol(span, &handle_invalid_unicodes(&key.sym));
+                    if key.sym == value.sym {
+                        return self.emit_ident(key);
                     }
                 }
             }
@@ -1879,14 +1875,21 @@ impl<'a> Emitter<'a> {
 
         if self.cfg.minify {
             if let PropName::Ident(key) = &node.key {
+                // Short hand properties e.g. `{foo:foo}` => `{foo}`
                 if let Pat::Ident(value) = node.value.as_ref() {
-                    if key.sym == value.id.sym && key.ctxt == value.id.ctxt {
-                        let span = get_span!(self, key.node_id);
+                    if key.sym == value.id.sym {
+                        return self.emit_ident(key);
+                    }
+                }
 
-                        // TODO: span
-                        return self
-                            .wr
-                            .write_symbol(span, &handle_invalid_unicodes(&key.sym));
+                // Short hand assign  e.g. `{foo: foo = bar}` => `{foo = bar}`
+                if let Pat::Assign(value) = node.value.as_ref() {
+                    if let Pat::Ident(lhs) = value.left.as_ref() {
+                        if lhs.id.sym == key.sym {
+                            self.emit_ident(key)?;
+                            punct!(self, "=");
+                            return self.emit_expr(&value.right);
+                        }
                     }
                 }
             }

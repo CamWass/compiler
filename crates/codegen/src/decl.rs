@@ -126,4 +126,10 @@ class HogeFuga extends Hoge {};",
             "function*f(){yield({x})=>x}",
         );
     }
+
+    #[test]
+    fn test_destructuring() {
+        assert_min("const {a:a} = {};", "const{a}={}");
+        assert_min("const {a:a = b} = {};", "const{a=b}={}");
+    }
 }
