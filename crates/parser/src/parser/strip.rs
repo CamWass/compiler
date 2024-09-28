@@ -1495,15 +1495,6 @@ impl Default for TsImportExportAssignConfig {
 // {
 //     visit_obj_and_computed!();
 
-//     fn visit_assign_pat_prop(&mut self, n: &AssignPatProp) {
-//         if !self.in_var_pat {
-//             n.key.visit_with(self);
-//         } else {
-//             self.decl_names.insert(n.key.to_id());
-//         }
-//         n.value.visit_with(self);
-//     }
-
 //     fn visit_assign_prop(&mut self, n: &AssignProp) {
 //         n.value.visit_with(self);
 //     }

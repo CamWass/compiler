@@ -754,12 +754,6 @@ impl VisitMut<'_> for Hoister<'_, '_> {
     #[inline]
     fn visit_mut_arrow_expr(&mut self, _: &mut ArrowExpr) {}
 
-    fn visit_mut_assign_pat_prop(&mut self, node: &mut AssignPatProp) {
-        node.visit_mut_children_with(self);
-
-        self.add_pat_id(&mut node.key);
-    }
-
     fn visit_mut_block_stmt(&mut self, n: &mut BlockStmt) {
         let old_in_block = self.in_block;
         self.in_block = true;

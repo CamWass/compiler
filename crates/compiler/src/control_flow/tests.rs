@@ -141,7 +141,6 @@ make!(
     AssignPat,
     RestPat,
     KeyValuePatProp,
-    AssignPatProp,
     //prop
     KeyValueProp,
     AssignProp,

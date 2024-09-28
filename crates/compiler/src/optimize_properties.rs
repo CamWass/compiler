@@ -533,7 +533,6 @@ impl GraphVisitor<'_> {
                                 unreachable!("checked above")
                             }
 
-                            Prop::Shorthand(_) => unreachable!("normalised away"),
                             Prop::Assign(_) => unreachable!("invalid for obj lit"),
                         }
                     }
@@ -912,7 +911,7 @@ impl GraphVisitor<'_> {
                     ObjectPatProp::KeyValue(p) => {
                         !is_simple_prop_name(&p.key, self.store.unresolved_ctxt)
                     }
-                    ObjectPatProp::Assign(_) | ObjectPatProp::Rest(_) => false,
+                    ObjectPatProp::Rest(_) => false,
                 });
                 if has_complex_props {
                     self.invalidate(rhs);
@@ -940,9 +939,6 @@ impl GraphVisitor<'_> {
                                 .collect::<Vec<_>>();
 
                             self.visit_destructuring(&prop.value, &new_rhs);
-                        }
-                        ObjectPatProp::Assign(_) => {
-                            unreachable!("removed by normalization");
                         }
                         ObjectPatProp::Rest(rest) => {
                             debug_assert!(lhs.props.last().unwrap() == prop);
@@ -1394,12 +1390,6 @@ impl<'ast> Visit<'ast> for DeclFinder<'_> {
 
     fn visit_binding_ident(&mut self, node: &BindingIdent) {
         self.record_var(&node.id);
-    }
-
-    // The key of AssignPatProp is LHS but is an Ident, so won't be caught by
-    // the BindingIdent visitor above.
-    fn visit_assign_pat_prop(&mut self, p: &AssignPatProp) {
-        self.record_var(&p.key);
     }
 }
 

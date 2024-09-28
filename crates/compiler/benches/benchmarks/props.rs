@@ -62,11 +62,7 @@ fn bench(c: &mut Criterion) {
                 res.unwrap()
             };
 
-            let mut program_data = Rc::try_unwrap(program_data).unwrap().into_inner();
-
             program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark));
-
-            compiler::normalize_properties::normalize_properties(&mut program, &mut program_data);
 
             let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 

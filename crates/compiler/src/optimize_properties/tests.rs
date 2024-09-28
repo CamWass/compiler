@@ -15,8 +15,6 @@ fn test_transform(input: &str, expected: &str) {
 
                 program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark));
 
-                crate::normalize_properties::normalize_properties(&mut program, &mut program_data);
-
                 let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 
                 process(&mut program, &mut program_data, unresolved_ctxt);

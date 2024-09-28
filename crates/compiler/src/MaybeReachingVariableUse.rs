@@ -234,16 +234,6 @@ where
                 .add_to_use_if_local(node, self.cfg_node, self.output);
         }
     }
-    // The key of AssignPatProp is LHS but is an Ident, so won't be caught by
-    // the BindingIdent visitor above.
-    fn visit_assign_pat_prop(&mut self, node: &AssignPatProp) {
-        let old = self.in_lhs;
-        self.in_lhs = false;
-        node.value.visit_with(self);
-        self.in_lhs = true;
-        node.key.visit_with(self);
-        self.in_lhs = old;
-    }
 
     // TODO: these can be removed
     // fn visit_while_stmt(&mut self, node: &WhileStmt) {

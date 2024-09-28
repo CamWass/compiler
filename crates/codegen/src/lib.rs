@@ -661,7 +661,7 @@ impl<'a> Emitter<'a> {
                 }
                 Expr::Lit(Lit::Num(num)) => {
                     needs_2dots_for_property_access = self.emit_num_lit_internal(num, true)?;
-            }
+                }
                 _ => {
                     self.emit_expr(obj)?;
                 }
@@ -680,33 +680,33 @@ impl<'a> Emitter<'a> {
             match node.prop.as_ref() {
                 Expr::Ident(ident) => {
                     if needs_2dots_for_property_access {
-                if prop_span.lo() >= BytePos(2) {
-                    self.emit_leading_comments(prop_span.lo() - BytePos(2), false)?;
-                }
-                punct!(self, ".");
-            }
-            if prop_span.lo() >= BytePos(1) {
-                self.emit_leading_comments(prop_span.lo() - BytePos(1), false)?;
-            }
-            punct!(self, ".");
+                        if prop_span.lo() >= BytePos(2) {
+                            self.emit_leading_comments(prop_span.lo() - BytePos(2), false)?;
+                        }
+                        punct!(self, ".");
+                    }
+                    if prop_span.lo() >= BytePos(1) {
+                        self.emit_leading_comments(prop_span.lo() - BytePos(1), false)?;
+                    }
+                    punct!(self, ".");
                     self.emit_ident(ident)?;
-        }
+                }
                 Expr::PrivateName(private) => {
                     if needs_2dots_for_property_access {
                         if prop_span.lo() >= BytePos(2) {
                             self.emit_leading_comments(prop_span.lo() - BytePos(2), false)?;
                         }
                         punct!(self, ".");
-                        }
+                    }
                     if prop_span.lo() >= BytePos(1) {
                         self.emit_leading_comments(prop_span.lo() - BytePos(1), false)?;
-                                    }
+                    }
                     punct!(self, ".");
                     self.emit_private_name(private)?;
-                    }
-                _ => unreachable!(),
                 }
+                _ => unreachable!(),
             }
+        }
         Ok(())
     }
 
@@ -1385,7 +1385,6 @@ impl<'a> Emitter<'a> {
 
     fn emit_prop(&mut self, node: &Prop) -> Result {
         match node {
-            Prop::Shorthand(n) => self.emit_ident(n),
             Prop::KeyValue(n) => self.emit_kv_prop(n),
             Prop::Assign(n) => self.emit_assign_prop(n),
             Prop::Getter(n) => self.emit_getter_prop(n),
@@ -1397,6 +1396,21 @@ impl<'a> Emitter<'a> {
 
     fn emit_kv_prop(&mut self, node: &KeyValueProp) -> Result {
         self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
+
+        if self.cfg.minify {
+            if let PropName::Ident(key) = &node.key {
+                if let Expr::Ident(value) = node.value.as_ref() {
+                    if key.sym == value.sym && key.ctxt == value.ctxt {
+                        let span = get_span!(self, key.node_id);
+
+                        // TODO: span
+                        return self
+                            .wr
+                            .write_symbol(span, &handle_invalid_unicodes(&key.sym));
+                    }
+                }
+            }
+        }
 
         self.emit_prop_name(&node.key)?;
         punct!(self, ":");
@@ -1856,7 +1870,6 @@ impl<'a> Emitter<'a> {
     fn emit_object_pat_prop(&mut self, node: &ObjectPatProp) -> Result {
         match node {
             ObjectPatProp::KeyValue(node) => self.emit_object_kv_pat(node),
-            ObjectPatProp::Assign(node) => self.emit_object_assign_pat(node),
             ObjectPatProp::Rest(node) => self.emit_rest_pat(node),
         }
     }
@@ -1864,24 +1877,26 @@ impl<'a> Emitter<'a> {
     fn emit_object_kv_pat(&mut self, node: &KeyValuePatProp) -> Result {
         self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
 
+        if self.cfg.minify {
+            if let PropName::Ident(key) = &node.key {
+                if let Pat::Ident(value) = node.value.as_ref() {
+                    if key.sym == value.id.sym && key.ctxt == value.id.ctxt {
+                        let span = get_span!(self, key.node_id);
+
+                        // TODO: span
+                        return self
+                            .wr
+                            .write_symbol(span, &handle_invalid_unicodes(&key.sym));
+                    }
+                }
+            }
+        }
+
         self.emit_prop_name(&node.key)?;
         punct!(self, ":");
         formatting_space!(self);
         self.emit_pat(&node.value)?;
         formatting_space!(self);
-        Ok(())
-    }
-
-    fn emit_object_assign_pat(&mut self, node: &AssignPatProp) -> Result {
-        self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
-
-        self.emit_ident(&node.key)?;
-        formatting_space!(self);
-        if let Some(value) = &node.value {
-            punct!(self, "=");
-            self.emit_expr(value)?;
-            formatting_space!(self);
-        }
         Ok(())
     }
 

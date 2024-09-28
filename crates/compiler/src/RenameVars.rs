@@ -414,11 +414,6 @@ impl Visit<'_> for VarAnalyzer {
     fn visit_binding_ident(&mut self, i: &BindingIdent) {
         self.handle_decl(i.to_id());
     }
-    // The key of AssignPatProp is LHS but is an Ident, but won't be caught by
-    // the BindingIdent visitor above.
-    fn visit_assign_pat_prop(&mut self, node: &AssignPatProp) {
-        self.handle_decl(node.key.to_id())
-    }
 
     fn visit_var_decl(&mut self, node: &VarDecl) {
         if node.kind == VarDeclKind::Var {

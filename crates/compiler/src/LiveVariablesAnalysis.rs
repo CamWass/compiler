@@ -422,14 +422,6 @@ where
         node.value.visit_with(self);
         self.in_lhs = old;
     }
-    fn visit_assign_pat_prop(&mut self, node: &'ast AssignPatProp) {
-        let old = self.in_lhs;
-        self.in_lhs = true;
-        node.key.visit_with(self);
-        self.in_lhs = false;
-        node.value.visit_with(self);
-        self.in_lhs = old;
-    }
     fn visit_rest_pat(&mut self, node: &'ast RestPat) {
         let old = self.in_lhs;
         self.in_lhs = true;

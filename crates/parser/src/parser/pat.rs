@@ -566,11 +566,6 @@ impl<I: Tokens> Parser<I> {
                         .into_iter()
                         .map(|prop| {
                             match prop {
-                                Prop::Shorthand(id) => Ok(ObjectPatProp::Assign(AssignPatProp {
-                                    node_id: node_id_from!(self, id.node_id),
-                                    key: id,
-                                    value: None,
-                                })),
                                 Prop::KeyValue(kv_prop) => {
                                     let value =
                                         self.reparse_expr_as_pat(pat_ty.element(), kv_prop.value)?;
@@ -584,10 +579,18 @@ impl<I: Tokens> Parser<I> {
                                     }))
                                 }
                                 Prop::Assign(assign_prop) => {
-                                    Ok(ObjectPatProp::Assign(AssignPatProp {
+                                    let assign_pat = AssignPat {
                                         node_id: node_id_from!(self, assign_prop.node_id),
-                                        key: assign_prop.key,
-                                        value: Some(assign_prop.value),
+                                        left: Box::new(Pat::Ident(BindingIdent {
+                                            node_id: node_id_from!(self, assign_prop.key.node_id),
+                                            id: assign_prop.key.clone_node(program_data!(self)),
+                                        })),
+                                        right: assign_prop.value,
+                                    };
+                                    Ok(ObjectPatProp::KeyValue(KeyValuePatProp {
+                                        node_id: node_id_from!(self, assign_prop.node_id),
+                                        key: PropName::Ident(assign_prop.key),
+                                        value: Box::new(Pat::Assign(assign_pat)),
                                     }))
                                 }
                                 Prop::Spread(SpreadAssignment { expr, node_id, .. }) => {

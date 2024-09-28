@@ -1649,7 +1649,6 @@ where
         [visit_assign_pat, AssignPat],
         [visit_rest_pat, RestPat],
         [visit_key_value_pat_prop, KeyValuePatProp],
-        [visit_assign_pat_prop, AssignPatProp],
         [visit_key_value_prop, KeyValueProp],
         [visit_assign_prop, AssignProp],
         // [visit_getter_prop, GetterProp],

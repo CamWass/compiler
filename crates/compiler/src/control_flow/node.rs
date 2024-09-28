@@ -182,7 +182,6 @@ make!(
     AssignPat,
     RestPat,
     KeyValuePatProp,
-    AssignPatProp,
     //prop
     KeyValueProp,
     AssignProp,
@@ -353,7 +352,6 @@ impl<'ast> From<&'ast ::ast::ModuleDecl> for Node<'ast> {
 impl<'ast> From<&'ast ::ast::Prop> for Node<'ast> {
     fn from(other: &'ast ::ast::Prop) -> Node<'ast> {
         match other {
-            ast::Prop::Shorthand(_) => unreachable!("removed by normalization"),
             ast::Prop::KeyValue(n) => Node::from(n),
             ast::Prop::Assign(n) => Node::from(n),
             ast::Prop::Getter(n) => Node::from(n),
@@ -395,7 +393,6 @@ impl<'ast> From<&'ast ::ast::ObjectPatProp> for Node<'ast> {
     fn from(other: &'ast ::ast::ObjectPatProp) -> Node<'ast> {
         match other {
             ast::ObjectPatProp::KeyValue(n) => Node::from(n),
-            ast::ObjectPatProp::Assign(n) => Node::from(n),
             ast::ObjectPatProp::Rest(n) => Node::from(n),
         }
     }

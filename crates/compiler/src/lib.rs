@@ -18,7 +18,6 @@ mod denormalize;
 mod find_vars;
 mod graph;
 mod normalize;
-pub mod normalize_properties;
 pub mod optimize_properties;
 pub mod resolver;
 mod utils;
@@ -95,7 +94,6 @@ impl Compiler {
             // TODO: maybe add an 'AST verifier' that checks basic invariants after
             // each pass (e.g. that no two nodes have the same node_id).
 
-            normalize_properties::normalize_properties(&mut ast, program_data);
             normalize::normalize(&mut ast, program_data);
 
             let unresolved_mark = Mark::new();

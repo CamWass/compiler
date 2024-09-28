@@ -251,7 +251,12 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                 }));
             }
 
-            return Ok(Prop::Shorthand(ident));
+            let span = Span::new(key_start, self.input.last_pos());
+            return Ok(Prop::KeyValue(KeyValueProp {
+                node_id: node_id!(self, span),
+                value: Box::new(Expr::Ident(ident.clone_node(program_data!(self)))),
+                key: PropName::Ident(ident),
+            }));
         }
 
         // get a(){}
@@ -453,6 +458,7 @@ impl<I: Tokens> ParseObject<Pat> for Parser<I> {
 
         let key_start = self.input.cur_pos();
         let key = self.parse_prop_name()?;
+        let key_span = Span::new(key_start, self.input.last_pos());
         if self.input.eat(&tok!(':')) {
             let value = Box::new(self.parse_binding_element()?);
 
@@ -483,10 +489,30 @@ impl<I: Tokens> ParseObject<Pat> for Parser<I> {
             None
         };
 
-        Ok(ObjectPatProp::Assign(AssignPatProp {
-            node_id: node_id!(self, span!(self, start)),
-            key,
-            value,
-        }))
+        if let Some(value) = value {
+            let pat_span = Span::new(key_start, self.input.last_pos());
+            let assign_pat = AssignPat {
+                node_id: node_id!(self, pat_span),
+                left: Box::new(Pat::Ident(BindingIdent {
+                    node_id: node_id!(self, key_span),
+                    id: key.clone_node(program_data!(self)),
+                })),
+                right: value,
+            };
+            Ok(ObjectPatProp::KeyValue(KeyValuePatProp {
+                node_id: node_id!(self, pat_span),
+                key: PropName::Ident(key.clone_node(program_data!(self))),
+                value: Box::new(Pat::Assign(assign_pat)),
+            }))
+        } else {
+            Ok(ObjectPatProp::KeyValue(KeyValuePatProp {
+                node_id: node_id!(self, key_span),
+                value: Box::new(Pat::Ident(BindingIdent {
+                    node_id: node_id!(self, key_span),
+                    id: key.clone_node(program_data!(self)),
+                })),
+                key: PropName::Ident(key),
+            }))
+        }
     }
 }

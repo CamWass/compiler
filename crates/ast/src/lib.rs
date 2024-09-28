@@ -27,9 +27,7 @@ pub use self::{
         ImportStarAsSpecifier, ModuleDecl, NamedExport,
     },
     operators::{AssignOp, BinaryOp, UnaryOp, UpdateOp},
-    pat::{
-        ArrayPat, AssignPat, AssignPatProp, KeyValuePatProp, ObjectPat, ObjectPatProp, Pat, RestPat,
-    },
+    pat::{ArrayPat, AssignPat, KeyValuePatProp, ObjectPat, ObjectPatProp, Pat, RestPat},
     prop::{
         AssignProp, ComputedPropName, GetterProp, KeyValueProp, MethodProp, Prop, PropName,
         SetterProp, SpreadAssignment,

@@ -137,12 +137,6 @@ impl<'ast> Visit<'ast> for DeclFinder {
         self.record_var(node.to_id());
     }
 
-    // The key of AssignPatProp is LHS but is an Ident, so won't be caught by
-    // the BindingIdent visitor above.
-    fn visit_assign_pat_prop(&mut self, p: &AssignPatProp) {
-        self.record_var(p.key.to_id());
-    }
-
     fn visit_var_decl(&mut self, node: &VarDecl) {
         if self.skip_multi_decl_destructuring {
             if node.decls.len() == 1 {
@@ -194,12 +188,6 @@ impl<'a> Visit<'_> for DestructuringFinder<'a> {
     fn visit_binding_ident(&mut self, i: &BindingIdent) {
         self.found.push(i.to_id());
     }
-
-    // The key of AssignPatProp is LHS but is an Ident, but won't be caught by
-    // the BindingIdent visitor above.
-    fn visit_assign_pat_prop(&mut self, node: &AssignPatProp) {
-        self.found.push(node.key.to_id())
-    }
 }
 
 /// Finds the first LHS ident in a pattern.
@@ -229,14 +217,6 @@ impl<'ast> VisitMut<'ast> for FindFirstLHSIdent<'ast> {
     fn visit_mut_binding_ident(&mut self, i: &'ast mut BindingIdent) {
         if self.found.is_none() {
             self.found = Some(&mut i.id);
-        }
-    }
-
-    // The key of AssignPatProp is LHS but is an Ident, but won't be caught by
-    // the BindingIdent visitor above.
-    fn visit_mut_assign_pat_prop(&mut self, node: &'ast mut AssignPatProp) {
-        if self.found.is_none() {
-            self.found = Some(&mut node.key);
         }
     }
 }

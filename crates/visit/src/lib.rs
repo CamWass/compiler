@@ -688,7 +688,6 @@ define!({
     }
     pub enum ObjectPatProp {
         KeyValue(KeyValuePatProp),
-        Assign(AssignPatProp),
         Rest(RestPat),
     }
     pub struct KeyValuePatProp {
@@ -696,13 +695,7 @@ define!({
         pub key: PropName,
         pub value: Box<Pat>,
     }
-    pub struct AssignPatProp {
-        pub node_id: NodeId,
-        pub key: Ident,
-        pub value: Option<Box<Expr>>,
-    }
     pub enum Prop {
-        Shorthand(Ident),
         KeyValue(KeyValueProp),
         Assign(AssignProp),
         Getter(GetterProp),
