@@ -21,11 +21,11 @@
 ➖closureCodeRemoval
 ➖j2clAssertRemovalPass
 ❌inlineAndCollapseProperties
-❌stripCode
+➖stripCode
 ➖replaceIdGenerators
 ➖j2clPropertyInlinerPass
 ❌inferConsts
-❌checkConstParams
+➖checkConstParams
 ❌earlyInlineVariables
 ❌earlyPeepholeOptimizations
 ❌removeUnusedCodeOnce
