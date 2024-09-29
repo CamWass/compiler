@@ -132,4 +132,13 @@ class HogeFuga extends Hoge {};",
         assert_min("const {a:a} = {};", "const{a}={}");
         assert_min("const {a:a = b} = {};", "const{a=b}={}");
     }
+
+    #[test]
+    fn test_class() {
+        assert_min("class Foo extends Bar {}", "class Foo extends Bar{}");
+        assert_min(
+            "class Foo extends (1||Bar) {}",
+            "class Foo extends(1||Bar){}",
+        );
+    }
 }

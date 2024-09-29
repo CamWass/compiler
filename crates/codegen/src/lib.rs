@@ -945,7 +945,11 @@ impl<'a> Emitter<'a> {
 
     fn emit_extends_clause(&mut self, node: &ExtendsClause) -> Result {
         keyword!(self, "extends");
-        space!(self);
+        if node.super_class.as_ref().starts_with_alpha_num() {
+            space!(self);
+        } else {
+            formatting_space!(self);
+        }
         self.emit_expr(&node.super_class)
     }
 
