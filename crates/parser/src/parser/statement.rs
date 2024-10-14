@@ -1213,27 +1213,22 @@ impl<I: Tokens> Parser<I> {
             }
             parser.state.labels.push(label.sym.clone());
 
-            // TODO:
-            // let body = Box::new(if parser.input.is(&tok!("function")) {
-            //     let f = parser.parse_fn_decl(vec![])?;
-            //     if let Decl::Fn(FnDecl {
-            //         function:
-            //             Function {
-            //                 span,
-            //                 is_generator: true,
-            //                 ..
-            //             },
-            //         ..
-            //     }) = f
-            //     {
-            //         syntax_error!(p, span, SyntaxError::LabelledGenerator)
-            //     }
+            let body = Box::new(if parser.input.is(&tok!("function")) {
+                let f = parser.parse_fn_decl(Vec::new())?;
+                if let Decl::Fn(f) = &f {
+                    if f.function.is_generator {
+                        syntax_error!(
+                            p,
+                            get_span!(parser, f.node_id),
+                            SyntaxError::LabelledGenerator
+                        )
+                    }
+                }
 
-            //     f.into()
-            // } else {
-            //     parser.parse_stmt(StmtParseCtx::IfOrLabel, false)?
-            // });
-            let body = Box::new(parser.parse_stmt(StmtParseCtx::IfOrLabel, false)?);
+                Stmt::Decl(f)
+            } else {
+                parser.parse_stmt(StmtParseCtx::IfOrLabel, false)?
+            });
 
             {
                 let pos = parser.state.labels.iter().position(|v| v == &label.sym);
