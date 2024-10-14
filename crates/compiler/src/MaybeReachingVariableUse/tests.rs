@@ -259,7 +259,6 @@ fn assert_match_inner(src: &str, is_async: bool) {
         let extracted_info = extract_def_and_uses_from_input_labels(function, "x");
         let computed_uses = get_computed_uses(maybe_reaching_uses, &extracted_info);
         let extracted_uses = extracted_info.extracted_uses;
-        dbg!(&computed_uses, &extracted_uses);
         assert!(extracted_uses.iter().all(|u| computed_uses.contains(u)));
     });
 }
@@ -278,7 +277,6 @@ fn assert_not_match_inner(src: &str, is_async: bool) {
         let extracted_info = extract_def_and_uses_from_input_labels(function, "x");
         let computed_uses = get_computed_uses(maybe_reaching_uses, &extracted_info);
         let extracted_uses = extracted_info.extracted_uses;
-        dbg!(&computed_uses, &extracted_uses);
         assert!(extracted_uses.iter().any(|u| !computed_uses.contains(u)));
     });
 }
@@ -315,8 +313,6 @@ where
 
         // program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark, false));
 
-        // dbg!(&program);
-
         // let mut node_id_gen = NodeIdGen::default();
 
         // crate::normalize_properties::normalize_properties(&mut program, &mut node_id_gen);
@@ -346,13 +342,6 @@ where
         result
             .cfg
             .print_full_with_annotations::<DefaultPrinter>(None);
-
-        dbg!(&result.scope_variables, &result.ordered_vars);
-
-        dbg!(result
-            .lattice_elements
-            .iter_enumerated()
-            .collect::<Vec<_>>());
 
         op(function, &result);
     });

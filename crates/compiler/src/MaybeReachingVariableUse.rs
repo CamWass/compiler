@@ -41,13 +41,6 @@ impl<'ast> MaybeReachingResult<'ast> {
     pub fn get_uses(&self, name: &Id, def_node: Node) -> Option<&Vec<NodeId>> {
         if let Some(var) = self.scope_variables.get(name) {
             let ann = self.cfg.node_annotations.get(&def_node).unwrap();
-            dbg!(
-                name,
-                var,
-                def_node,
-                ann,
-                self.lattice_elements[ann.out].may_use_map.get(*var)
-            );
             self.lattice_elements[ann.out].may_use_map.get(*var)
         } else {
             None
@@ -171,7 +164,6 @@ where
      */
     fn add_to_use_if_local(&mut self, name: &Ident, node: Node<'ast>, usage: &mut ReachingUses) {
         let id = name.to_id();
-        dbg!(name, self.scope_variables.get(&id));
         if let Some(var) = self.scope_variables.get(&id) {
             if !self.escaped.contains(&id) {
                 usage.may_use_map.put(*var, node.node_id);
@@ -226,7 +218,6 @@ where
     fn visit_ident(&mut self, node: &Ident) {
         if self.in_lhs && self.in_destructuring {
             if !self.conditional {
-                println!("c");
                 self.analysis.remove_from_use_if_local(node, self.output);
             }
         } else {
@@ -400,7 +391,6 @@ where
     }
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
-        dbg!(node);
         let lhs_ident = match &node.left {
             PatOrExpr::Expr(n) => match n.as_ref() {
                 Expr::Ident(n) => Some(n),
@@ -426,14 +416,12 @@ where
 
         if let Some(lhs_ident) = lhs_ident {
             if !is_logical_assign && !self.conditional {
-                println!("a");
                 self.analysis
                     .remove_from_use_if_local(lhs_ident, self.output);
             }
 
             // In case of a += "Hello". There is a read of a.
             if !is_assign {
-                println!("b");
                 self.analysis
                     .add_to_use_if_local(lhs_ident, self.cfg_node, self.output);
             }
@@ -907,7 +895,6 @@ where
         self.compute_may_use(node, node, &mut output, conditional);
 
         if output != self.lattice_elements[input] {
-            // dbg!(&self.lattice_elements[input], &output);
             self.add_lattice_element(output)
         } else {
             // No changes compared to input.
