@@ -12,20 +12,10 @@ pub struct Error {
     pub(crate) error: Box<(Span, SyntaxError)>,
 }
 
-impl Error {
-    pub fn kind(&self) -> &SyntaxError {
-        &self.error.1
-    }
-
-    pub fn into_kind(self) -> SyntaxError {
-        self.error.1
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 // TODO: order
-pub enum SyntaxError {
+pub(super) enum SyntaxError {
     /// e.g. `new.\u0074arget` is not allowed
     EscapeInNewTarget,
     UnexpectedClassInSingleStatementCtx,
@@ -91,7 +81,6 @@ pub enum SyntaxError {
         left: String,
         left_span: Span,
     },
-    Hash,
     LineBreakInThrow,
     LineBreakBeforeArrow,
 
@@ -111,7 +100,6 @@ pub enum SyntaxError {
     ReservedWordInObjShorthandOrPat,
 
     NullishCoalescingWithLogicalOp,
-    NullishCoalescingNotEnabled,
 
     MultipleDefault {
         /// Span of the previous default case
@@ -126,7 +114,6 @@ pub enum SyntaxError {
     InvalidExpr,
     NotSimpleAssign,
     ExpectedIdent,
-    ExpctedSemi,
     DuplicateLabel(JsWord),
     AsyncGenerator,
     NonTopLevelImportExport,
@@ -152,7 +139,6 @@ pub enum SyntaxError {
     AsyncConstructor,
     PropertyNamedConstructor,
     DeclarePrivateIdentifier,
-    ClassProperty,
     ReadOnlyMethod,
     GeneratorConstructor,
     TsBindingPatCannotBeOptional,
@@ -161,7 +147,6 @@ pub enum SyntaxError {
     DynamicImport,
 
     ExportDefaultWithOutFrom,
-    ExportNamespaceFrom,
 
     DotsWithoutIdentifier,
 
@@ -303,7 +288,6 @@ impl SyntaxError {
                                                       binding identifier in strict mode"
                 .into(),
             SyntaxError::UnaryInExp { .. } => "** cannot be applied to unary expression".into(),
-            SyntaxError::Hash => "Unexpected token '#'".into(),
             SyntaxError::LineBreakInThrow => "LineBreak cannot follow 'throw'".into(),
             SyntaxError::LineBreakBeforeArrow => {
                 "Unexpected line break between arrow head and arrow".into()
@@ -341,7 +325,6 @@ impl SyntaxError {
             // TODO
             SyntaxError::NotSimpleAssign => "Cannot assign to this".into(),
             SyntaxError::ExpectedIdent => "Expected ident".into(),
-            SyntaxError::ExpctedSemi => "Expected ';' or line break".into(),
             SyntaxError::DuplicateLabel(label) => {
                 format!("Label {} is already declared", label).into()
             }
@@ -391,9 +374,6 @@ impl SyntaxError {
             SyntaxError::DeclarePrivateIdentifier => {
                 "'declare' modifier cannot be used with a private identifier".into()
             }
-            SyntaxError::ClassProperty => {
-                "Class property requires `jsc.parser.classProperty` to be true".into()
-            }
             SyntaxError::ReadOnlyMethod => "A method cannot be readonly".into(),
             SyntaxError::TsBindingPatCannotBeOptional => "A binding pattern parameter cannot be \
                                                           optional in an implementation signature."
@@ -408,9 +388,6 @@ impl SyntaxError {
             SyntaxError::ExportDefaultWithOutFrom => {
                 "export default statements required from '...';".into()
             }
-            SyntaxError::ExportNamespaceFrom => "export * as Foo from 'foo'; requires \
-                                                 `jsc.parser.exportNamespaceFrom` to be true"
-                .into(),
 
             SyntaxError::DotsWithoutIdentifier => {
                 "`...` must be followed by an identifier in declaration contexts".into()
@@ -423,9 +400,6 @@ impl SyntaxError {
             SyntaxError::NullishCoalescingWithLogicalOp => {
                 "Nullish coalescing operator(??) requires parens when mixing with logical operators"
                     .into()
-            }
-            SyntaxError::NullishCoalescingNotEnabled => {
-                "Nullish coalescing operator(??) requires jsc.parser.nullishCoalescing".into()
             }
 
             SyntaxError::TS1056 => {
@@ -558,7 +532,7 @@ impl Error {
     pub fn into_diagnostic(self, handler: &Handler) -> DiagnosticBuilder {
         let span = self.error.0;
 
-        let kind = self.into_kind();
+        let kind = self.error.1;
         let msg = kind.msg();
 
         let mut db = handler.struct_err(&msg);
