@@ -3,6 +3,7 @@ use self::expression::BlockStmtOrExpr;
 use super::*;
 use crate::lexer::TokenContexts;
 use atoms::js_word;
+use expression::MaybeParen;
 
 impl<I: Tokens> Parser<I> {
     /// `tsNextTokenCanFollowModifier`
@@ -672,7 +673,7 @@ impl<I: Tokens> Parser<I> {
     }
 
     /// `tsParseTypeAssertion`
-    pub(super) fn parse_ts_type_assertion(&mut self) -> PResult<Box<Expr>> {
+    pub(super) fn parse_ts_type_assertion(&mut self) -> PResult<MaybeParen> {
         debug_assert!(self.syntax().typescript());
 
         // Type annotation:

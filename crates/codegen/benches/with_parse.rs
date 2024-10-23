@@ -108,20 +108,19 @@ fn bench_emitter(b: &mut Bencher, s: &str) {
 
             let mut buf = vec![];
             {
-                let mut emitter = Emitter {
-                    cfg: codegen::Config {
+                let mut emitter = Emitter::new(
+                    codegen::Config {
                         ..Default::default()
                     },
-                    comments: None,
-                    cm: cm.clone(),
-                    wr: Box::new(codegen::text_writer::JsWriter::new(
+                    cm.clone(),
+                    Box::new(codegen::text_writer::JsWriter::new(
                         cm.clone(),
                         "\n",
                         &mut buf,
                         Some(&mut src_map_buf),
                     )),
-                    program_data: &program_data,
-                };
+                    &program_data,
+                );
 
                 let _ = emitter.emit_module(&module);
             }

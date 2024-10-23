@@ -272,15 +272,15 @@ macro_rules! expect_exact {
 
 macro_rules! return_if_arrow {
     ($parser:expr, $potential_arrow_start:expr, $expr:expr) => {{
-        match $potential_arrow_start {
-            Some(start)
-                if get_span!($parser, $expr.node_id()).lo == start
-                    && matches!(*$expr, Expr::Arrow { .. }) =>
-            {
-                return Ok($expr);
+        if let Some(start) = $potential_arrow_start {
+            if let MaybeParen::Expr(e) = &$expr {
+                if matches!(e.as_ref(), Expr::Arrow { .. })
+                    && get_span!($parser, $expr.node_id()).lo == start
+                {
+                    return Ok($expr);
+                }
             }
-            _ => {}
-        };
+        }
     }};
 }
 

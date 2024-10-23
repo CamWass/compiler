@@ -99,7 +99,6 @@ make!(
     Tpl,
     TaggedTpl,
     TplElement,
-    ParenExpr,
     Super,
     OptChainExpr,
     // function

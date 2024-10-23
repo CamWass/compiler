@@ -13,8 +13,8 @@ pub use self::{
     expr::{
         ArrayLit, ArrowExpr, AssignExpr, AwaitExpr, BinExpr, CallExpr, ClassExpr, CondExpr, Expr,
         ExprOrSpread, ExprOrSuper, FnExpr, MemberExpr, MetaPropExpr, NewExpr, ObjectLit,
-        OptChainExpr, ParenExpr, PatOrExpr, SeqExpr, SpreadElement, Super, TaggedTpl, ThisExpr,
-        Tpl, TplElement, UnaryExpr, UpdateExpr, YieldExpr,
+        OptChainExpr, PatOrExpr, SeqExpr, SpreadElement, Super, TaggedTpl, ThisExpr, Tpl,
+        TplElement, UnaryExpr, UpdateExpr, YieldExpr,
     },
     function::{Function, Param, ParamWithoutDecorators},
     ident::{BindingIdent, Ident, IdentExt, PrivateName},

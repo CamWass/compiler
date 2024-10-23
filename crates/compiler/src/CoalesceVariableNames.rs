@@ -336,14 +336,11 @@ impl CoalesceVariableNames<'_> {
 
                                 Stmt::Expr(ExprStmt {
                                     node_id: self.program_data.new_id_from(decl.node_id),
-                                    expr: Box::new(Expr::Paren(ParenExpr {
+                                    expr: Box::new(Expr::Assign(AssignExpr {
                                         node_id: self.program_data.new_id_from(decl.node_id),
-                                        expr: Box::new(Expr::Assign(AssignExpr {
-                                            node_id: self.program_data.new_id_from(decl.node_id),
-                                            op: AssignOp::Assign,
-                                            left: PatOrExpr::Pat(Box::new(decl.name)),
-                                            right: decl.init.unwrap(),
-                                        })),
+                                        op: AssignOp::Assign,
+                                        left: PatOrExpr::Pat(Box::new(decl.name)),
+                                        right: decl.init.unwrap(),
                                     })),
                                 })
                             });

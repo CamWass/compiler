@@ -1,4 +1,4 @@
-use super::{pat::PatType, util::ExprExt, *};
+use super::{pat::PatType, util::is_valid_simple_assignment_target, *};
 use crate::token::AssignOpToken;
 use atoms::js_word;
 use either::Either;
@@ -27,30 +27,31 @@ mod verifier;
 
 impl<I: Tokens> Parser<I> {
     // https://tc39.es/ecma262/#prod-Expression
-    pub fn parse_expr(&mut self) -> PResult<Box<Expr>> {
+    pub(super) fn parse_expr(&mut self) -> PResult<MaybeParen> {
         trace_cur!(self, parse_expr);
 
         let start = self.input.cur_pos();
         let expr = self.parse_assignment_expr()?;
 
         if self.input.is(&tok!(',')) {
-            let mut exprs = vec![expr];
+            let mut exprs = vec![expr.unwrap()];
 
             while self.input.eat(&tok!(',')) {
-                exprs.push(self.parse_assignment_expr()?);
+                exprs.push(self.parse_assignment_expr()?.unwrap());
             }
 
             return Ok(Box::new(Expr::Seq(SeqExpr {
                 node_id: node_id!(self, span!(self, start)),
                 exprs,
-            })));
+            }))
+            .into());
         }
 
         Ok(expr)
     }
 
     ///`parseMaybeAssign` (overridden)
-    pub(super) fn parse_assignment_expr(&mut self) -> PResult<Box<Expr>> {
+    pub(super) fn parse_assignment_expr(&mut self) -> PResult<MaybeParen> {
         trace_cur!(self, parse_assignment_expr);
 
         if self.input.syntax().typescript() && is!(self, '<') && peeked_is!(self, IdentName) {
@@ -59,13 +60,17 @@ impl<I: Tokens> Parser<I> {
                 // Type params.
                 p.parse_ts_type_params()?;
                 let arrow = p.parse_assignment_expr_base()?;
-                match arrow.as_ref() {
-                    Expr::Arrow(ArrowExpr { node_id, .. }) => {
-                        let s = get_span!(p, *node_id);
-                        set_span!(p, *node_id, Span::new(start, s.hi,));
-                    }
-                    _ => unexpected!(p, "("),
+                match &arrow {
+                    MaybeParen::Expr(arrow) => match arrow.as_ref() {
+                        Expr::Arrow(ArrowExpr { node_id, .. }) => {
+                            let s = get_span!(p, *node_id);
+                            set_span!(p, *node_id, Span::new(start, s.hi,));
+                        }
+                        _ => unexpected!(p, "("),
+                    },
+                    MaybeParen::Wrapped(_) => unexpected!(p, "("),
                 }
+
                 Ok(Some(arrow))
             });
             if let Some(res) = res {
@@ -80,11 +85,11 @@ impl<I: Tokens> Parser<I> {
     /// operators like `+=`.
     ///
     /// `parseMaybeAssign`
-    fn parse_assignment_expr_base(&mut self) -> PResult<Box<Expr>> {
+    fn parse_assignment_expr_base(&mut self) -> PResult<MaybeParen> {
         trace_cur!(self, parse_assignment_expr_base);
 
         if self.ctx().in_generator && is!(self, "yield") {
-            return self.parse_yield_expr();
+            return self.parse_yield_expr().map(From::from);
         }
 
         let start = self.input.cur_pos();
@@ -101,41 +106,48 @@ impl<I: Tokens> Parser<I> {
 
         return_if_arrow!(self, potential_arrow_start, cond);
 
-        match *cond {
-            // if cond is conditional expression but not left-hand-side expression,
-            // just return it.
-            Expr::Cond(..) | Expr::Bin(..) | Expr::Unary(..) | Expr::Update(..) => return Ok(cond),
-            _ => {}
+        if let MaybeParen::Expr(cond_expr) = &cond {
+            match cond_expr.as_ref() {
+                // if cond is conditional expression but not left-hand-side expression,
+                // just return it.
+                Expr::Cond(..) | Expr::Bin(..) | Expr::Unary(..) | Expr::Update(..) => {
+                    return Ok(cond)
+                }
+                _ => {}
+            }
         }
 
         self.finish_assignment_expr(start, cond)
     }
 
-    fn finish_assignment_expr(&mut self, start: BytePos, cond: Box<Expr>) -> PResult<Box<Expr>> {
+    fn finish_assignment_expr(&mut self, start: BytePos, cond: MaybeParen) -> PResult<MaybeParen> {
         trace_cur!(self, finish_assignment_expr);
 
         match cur!(self, false) {
             Ok(&Token::AssignOp(op)) => {
                 let left = if op == AssignOpToken::Assign {
-                    self.reparse_expr_as_pat(PatType::AssignPat, cond)
+                    self.reparse_expr_as_pat(PatType::AssignPat, cond.unwrap())
                         .map(Box::new)
                         .map(PatOrExpr::Pat)?
                 } else {
                     //It is an early Reference Error if IsValidSimpleAssignmentTarget of
                     // LeftHandSideExpression is false.
                     if !self.input.syntax().typescript()
-                        && !cond.is_valid_simple_assignment_target(self.ctx().strict)
+                        && !is_valid_simple_assignment_target(cond.inner(), self.ctx().strict)
                     {
                         self.emit_err(
                             get_span!(self, cond.node_id()),
                             SyntaxError::NotSimpleAssign,
                         )
                     }
-                    let is_eval_or_arguments = match *cond {
-                        Expr::Ident(ref i) => {
-                            i.sym == js_word!("eval") || i.sym == js_word!("arguments")
-                        }
-                        _ => false,
+                    let is_eval_or_arguments = match &cond {
+                        MaybeParen::Expr(cond) => match cond.as_ref() {
+                            Expr::Ident(i) => {
+                                i.sym == js_word!("eval") || i.sym == js_word!("arguments")
+                            }
+                            _ => false,
+                        },
+                        MaybeParen::Wrapped(_) => false,
                     };
                     if self.input.syntax().typescript() && is_eval_or_arguments {
                         self.emit_strict_mode_err(
@@ -145,25 +157,26 @@ impl<I: Tokens> Parser<I> {
                     }
 
                     // TODO(swc):
-                    PatOrExpr::Expr(cond)
+                    PatOrExpr::Expr(cond.unwrap())
                 };
 
                 self.input.bump();
-                let right = self.parse_assignment_expr()?;
+                let right = self.parse_assignment_expr()?.unwrap();
                 Ok(Box::new(Expr::Assign(AssignExpr {
                     node_id: node_id!(self, span!(self, start)),
                     op,
                     // TODO(swc):
                     left,
                     right,
-                })))
+                }))
+                .into())
             }
             _ => Ok(cond),
         }
     }
 
     /// Spec: 'ConditionalExpression'
-    fn parse_cond_expr(&mut self) -> PResult<Box<Expr>> {
+    fn parse_cond_expr(&mut self) -> PResult<MaybeParen> {
         trace_cur!(self, parse_cond_expr);
 
         let start = self.input.cur_pos();
@@ -179,21 +192,22 @@ impl<I: Tokens> Parser<I> {
                 include_in_expr: true,
                 ..self.ctx()
             };
-            let cons = self.with_ctx(ctx).parse_assignment_expr()?;
+            let cons = self.with_ctx(ctx).parse_assignment_expr()?.unwrap();
             expect!(self, ':');
             let ctx = Context {
                 in_cond_expr: true,
                 ..self.ctx()
             };
-            let alt = self.with_ctx(ctx).parse_assignment_expr()?;
+            let alt = self.with_ctx(ctx).parse_assignment_expr()?.unwrap();
             let hi = get_span!(self, alt.node_id()).hi();
             let span = Span::new(start, hi);
             Ok(Box::new(Expr::Cond(CondExpr {
                 node_id: node_id!(self, span),
-                test,
+                test: test.unwrap(),
                 cons,
                 alt,
-            })))
+            }))
+            .into())
         } else {
             Ok(test)
         }
@@ -201,7 +215,7 @@ impl<I: Tokens> Parser<I> {
 
     /// Parse a primary expression or arrow function
     #[allow(clippy::cognitive_complexity)]
-    pub(super) fn parse_primary_expr(&mut self) -> PResult<Box<Expr>> {
+    pub(super) fn parse_primary_expr(&mut self) -> PResult<MaybeParen> {
         trace_cur!(self, parse_primary_expr);
 
         let _ = self.input.cur();
@@ -219,7 +233,8 @@ impl<I: Tokens> Parser<I> {
                     self.input.bump();
                     return Ok(Box::new(Expr::This(ThisExpr {
                         node_id: node_id!(self, span!(self, start)),
-                    })));
+                    }))
+                    .into());
                 }
 
                 tok!("import") => {
@@ -228,7 +243,8 @@ impl<I: Tokens> Parser<I> {
                         return self
                             .parse_import_meta_prop(import)
                             .map(Expr::MetaProp)
-                            .map(Box::new);
+                            .map(Box::new)
+                            .map(From::from);
                     }
 
                     return self.parse_dynamic_import(start, import);
@@ -239,7 +255,7 @@ impl<I: Tokens> Parser<I> {
                         && !self.input.has_linebreak_between_cur_and_peeked()
                     {
                         // handle `async function` expression
-                        return self.parse_async_fn_expr();
+                        return self.parse_async_fn_expr().map(From::from);
                     }
 
                     if can_be_arrow
@@ -252,7 +268,7 @@ impl<I: Tokens> Parser<I> {
                             p.assert_and_bump(&tok!("async"));
                             p.try_parse_ts_generic_async_arrow_fn(start)
                         }) {
-                            return Ok(Box::new(Expr::Arrow(res)));
+                            return Ok(Box::new(Expr::Arrow(res)).into());
                         }
                     }
 
@@ -264,16 +280,16 @@ impl<I: Tokens> Parser<I> {
                 }
 
                 tok!('[') => {
-                    return self.parse_array_lit();
+                    return self.parse_array_lit().map(From::from);
                 }
 
                 tok!('{') => {
-                    return self.parse_object();
+                    return self.parse_object::<Box<Expr>>().map(From::from);
                 }
 
                 // Handle FunctionExpression and GeneratorExpression
                 tok!("function") => {
-                    return self.parse_fn_expr();
+                    return self.parse_fn_expr().map(From::from);
                 }
 
                 // Literals
@@ -283,7 +299,7 @@ impl<I: Tokens> Parser<I> {
                 | Token::Num { .. }
                 | Token::BigInt(..)
                 | Token::Str { .. } => {
-                    return Ok(Box::new(Expr::Lit(self.parse_lit()?)));
+                    return Ok(Box::new(Expr::Lit(self.parse_lit()?)).into());
                 }
 
                 // Regexp
@@ -293,14 +309,15 @@ impl<I: Tokens> Parser<I> {
                             node_id: node_id!(self, span!(self, start)),
                             exp,
                             flags,
-                        }))));
+                        })))
+                        .into());
                     }
                     _ => unreachable!(),
                 },
 
                 tok!('`') => {
                     // parse template literal
-                    return Ok(Box::new(Expr::Tpl(self.parse_tpl(false)?)));
+                    return Ok(Box::new(Expr::Tpl(self.parse_tpl(false)?)).into());
                 }
 
                 tok!('(') => {
@@ -314,7 +331,7 @@ impl<I: Tokens> Parser<I> {
         let decorators = self.parse_decorators(false)?;
 
         if is!(self, "class") {
-            return self.parse_class_expr(start, decorators);
+            return self.parse_class_expr(start, decorators).map(From::from);
         }
 
         if is!(self, "let")
@@ -357,7 +374,8 @@ impl<I: Tokens> Parser<I> {
                     body,
                     params,
                     is_async: true,
-                })));
+                }))
+                .into());
             } else if can_be_arrow
                 && !self.input.had_line_break_before_cur()
                 && self.input.eat(&tok!("=>"))
@@ -372,9 +390,10 @@ impl<I: Tokens> Parser<I> {
                     body,
                     params,
                     is_async: false,
-                })));
+                }))
+                .into());
             } else {
-                return Ok(Box::new(Expr::Ident(id)));
+                return Ok(Box::new(Expr::Ident(id)).into());
             }
         }
 
@@ -404,6 +423,7 @@ impl<I: Tokens> Parser<I> {
             let elem = self
                 .include_in_expr(true)
                 .parse_expr_or_spread()
+                .map(MaybeParenExprOrSpread::unwrap)
                 .map(Some)?;
 
             if is!(self, ',') {
@@ -460,18 +480,26 @@ impl<I: Tokens> Parser<I> {
         })
     }
 
-    fn parse_subscripts(&mut self, mut obj: ExprOrSuper, no_call: bool) -> PResult<Box<Expr>> {
+    fn parse_subscripts(
+        &mut self,
+        mut obj: MaybeParenExprOrSuper,
+        no_call: bool,
+    ) -> PResult<MaybeParen> {
         loop {
             obj = match self.parse_subscript(obj, no_call)? {
                 (expr, false) => return Ok(expr),
-                (expr, true) => ExprOrSuper::Expr(expr),
+                (expr, true) => MaybeParenExprOrSuper::Expr(expr),
             }
         }
     }
 
     /// returned bool is true if this method should be called again.
     #[allow(clippy::cognitive_complexity)]
-    fn parse_subscript(&mut self, obj: ExprOrSuper, no_call: bool) -> PResult<(Box<Expr>, bool)> {
+    fn parse_subscript(
+        &mut self,
+        obj: MaybeParenExprOrSuper,
+        no_call: bool,
+    ) -> PResult<(MaybeParen, bool)> {
         let start = get_span!(self, obj.node_id()).lo();
 
         if self.input.syntax().typescript() {
@@ -480,14 +508,14 @@ impl<I: Tokens> Parser<I> {
                 self.assert_and_bump(&tok!('!'));
 
                 let expr = match obj {
-                    ExprOrSuper::Super(..) => unimplemented!("super!"),
-                    ExprOrSuper::Expr(expr) => expr,
+                    MaybeParenExprOrSuper::Super(..) => unimplemented!("super!"),
+                    MaybeParenExprOrSuper::Expr(expr) => expr,
                 };
                 return Ok((expr, true));
             }
 
             // super() cannot be generic
-            if !matches!(obj, ExprOrSuper::Super(_)) && is!(self, '<') {
+            if !matches!(obj, MaybeParenExprOrSuper::Super(_)) && is!(self, '<') {
                 // tsTryParseAndCatch is expensive, so avoid if not necessary.
                 // There are number of things we are going to "maybe" parse, like type arguments
                 // on tagged template expressions. If any of them fail, walk it back and
@@ -495,15 +523,15 @@ impl<I: Tokens> Parser<I> {
                 let result = self.try_parse_ts(|p| {
                     if !no_call
                         && p.at_possible_async(match &obj {
-                            ExprOrSuper::Expr(expr) => expr,
+                            MaybeParenExprOrSuper::Expr(expr) => expr,
                             _ => unreachable!(),
-                        })?
+                        })
                     {
                         // Almost certainly this is a generic async function `async <T>() => ...
                         // But it might be a call with a type argument `async<T>();`
                         let async_arrow_fn = p.try_parse_ts_generic_async_arrow_fn(start)?;
                         if let Some(async_arrow_fn) = async_arrow_fn {
-                            return Ok(Some((Box::new(Expr::Arrow(async_arrow_fn)), true)));
+                            return Ok(Some((Box::new(Expr::Arrow(async_arrow_fn)).into(), true)));
                         }
                     }
 
@@ -518,17 +546,20 @@ impl<I: Tokens> Parser<I> {
                         Ok(Some((
                             Box::new(Expr::Call(CallExpr {
                                 node_id: node_id!(p, span!(p, start)),
-                                callee: obj.clone_node(program_data!(p)),
+                                callee: obj.clone_node(program_data!(p)).unwrap(),
                                 args,
-                            })),
+                            }))
+                            .into(),
                             true,
                         )))
                     } else if is!(p, '`') {
                         p.parse_tagged_tpl(match &obj {
-                            ExprOrSuper::Expr(obj) => obj.clone_node(program_data!(p)),
+                            MaybeParenExprOrSuper::Expr(obj) => {
+                                obj.clone_node(program_data!(p)).unwrap()
+                            }
                             _ => unreachable!(),
                         })
-                        .map(|expr| (Box::new(Expr::TaggedTpl(expr)), true))
+                        .map(|expr| (Box::new(Expr::TaggedTpl(expr)).into(), true))
                         .map(Some)
                     } else if no_call {
                         unexpected!(p, "`")
@@ -571,7 +602,7 @@ impl<I: Tokens> Parser<I> {
             && self.input.eat(&tok!('[')))
             || self.input.eat(&tok!('['))
         {
-            let prop = self.include_in_expr(true).parse_expr()?;
+            let prop = self.include_in_expr(true).parse_expr()?.unwrap();
             expect!(self, ']');
             let obj_span_lo = get_span!(self, obj.node_id()).lo();
             let span = Span::new(obj_span_lo, self.input.last_pos());
@@ -580,10 +611,11 @@ impl<I: Tokens> Parser<I> {
             return Ok((
                 Box::new(wrap!(Expr::Member(MemberExpr {
                     node_id: node_id!(self, span),
-                    obj,
+                    obj: obj.unwrap(),
                     prop,
                     computed: true,
-                }))),
+                })))
+                .into(),
                 true,
             ));
         }
@@ -598,9 +630,10 @@ impl<I: Tokens> Parser<I> {
             return Ok((
                 Box::new(wrap!(Expr::Call(CallExpr {
                     node_id: node_id!(self, span!(self, start)),
-                    callee: obj,
+                    callee: obj.unwrap(),
                     args,
-                }))),
+                })))
+                .into(),
                 true,
             ));
         }
@@ -619,26 +652,27 @@ impl<I: Tokens> Parser<I> {
             return Ok((
                 Box::new(wrap!(Expr::Member(MemberExpr {
                     node_id: node_id!(self, span),
-                    obj,
+                    obj: obj.unwrap(),
 
                     prop,
                     computed: false,
-                }))),
+                })))
+                .into(),
                 true,
             ));
         }
 
         match obj {
-            ExprOrSuper::Expr(expr) => {
+            MaybeParenExprOrSuper::Expr(expr) => {
                 // MemberExpression[?Yield, ?Await] TemplateLiteral[?Yield, ?Await, +Tagged]
                 if is!(self, '`') {
-                    let tpl = self.parse_tagged_tpl(expr)?;
-                    return Ok((Box::new(Expr::TaggedTpl(tpl)), true));
+                    let tpl = self.parse_tagged_tpl(expr.unwrap())?;
+                    return Ok((Box::new(Expr::TaggedTpl(tpl)).into(), true));
                 }
 
                 Ok((expr, false))
             }
-            ExprOrSuper::Super(..) => {
+            MaybeParenExprOrSuper::Super(..) => {
                 if no_call {
                     syntax_error!(self, self.input.cur_span(), SyntaxError::InvalidSuperCall);
                 }
@@ -648,12 +682,12 @@ impl<I: Tokens> Parser<I> {
     }
 
     /// Parse call, dot, and `[]`-subscript expressions.
-    pub(super) fn parse_lhs_expr(&mut self) -> PResult<Box<Expr>> {
+    pub(super) fn parse_lhs_expr(&mut self) -> PResult<MaybeParen> {
         let start = self.input.cur_pos();
 
         // `super()` can't be handled from parse_new_expr()
         if self.input.eat(&tok!("super")) {
-            let obj = ExprOrSuper::Super(Super {
+            let obj = MaybeParenExprOrSuper::Super(Super {
                 node_id: node_id!(self, span!(self, start)),
             });
             return self.parse_subscripts(obj, false);
@@ -677,18 +711,20 @@ impl<I: Tokens> Parser<I> {
             None
         };
 
-        if let Expr::New(ne @ NewExpr { args: None, .. }) = *callee {
-            // If this is parsed using 'NewExpression' rule, just return it.
-            // Because it's not left-recursive.
-            if type_args.is_some() {
-                // This fails with `expected (`
-                expect!(self, '(');
+        if let MaybeParen::Expr(callee_expr) = &callee {
+            if let Expr::New(NewExpr { args: None, .. }) = callee_expr.as_ref() {
+                // If this is parsed using 'NewExpression' rule, just return it.
+                // Because it's not left-recursive.
+                if type_args.is_some() {
+                    // This fails with `expected (`
+                    expect!(self, '(');
+                }
+                debug_assert!(
+                    !self.input.is(&tok!('(')),
+                    "parse_new_expr() should eat paren if it exists"
+                );
+                return Ok(callee);
             }
-            debug_assert!(
-                !self.input.is(&tok!('(')),
-                "parse_new_expr() should eat paren if it exists"
-            );
-            return Ok(Box::new(Expr::New(NewExpr { ..ne })));
         }
         // 'CallExpr' rule contains 'MemberExpr (...)',
         // and 'MemberExpr' rule contains 'new MemberExpr (...)'
@@ -696,17 +732,18 @@ impl<I: Tokens> Parser<I> {
         if is!(self, '(') {
             // This is parsed using production MemberExpression,
             // which is left-recursive.
-            let callee = ExprOrSuper::Expr(callee);
+            let callee = MaybeParenExprOrSuper::Expr(callee);
             let args = self.parse_args(is_import(&callee))?;
 
             let call_expr = Box::new(Expr::Call(CallExpr {
                 node_id: node_id!(self, span!(self, start)),
 
-                callee,
+                callee: callee.unwrap(),
                 args,
-            }));
+            }))
+            .into();
 
-            return self.parse_subscripts(ExprOrSuper::Expr(call_expr), false);
+            return self.parse_subscripts(MaybeParenExprOrSuper::Expr(call_expr), false);
         }
         if type_args.is_some() {
             // This fails
@@ -718,12 +755,12 @@ impl<I: Tokens> Parser<I> {
         Ok(callee)
     }
 
-    pub(super) fn parse_expr_or_pat(&mut self) -> PResult<Box<Expr>> {
+    pub(super) fn parse_expr_or_pat(&mut self) -> PResult<MaybeParen> {
         self.parse_expr()
     }
 
     #[allow(clippy::cognitive_complexity)]
-    pub(super) fn parse_args_or_pats(&mut self) -> PResult<Vec<PatOrExprOrSpread>> {
+    pub(super) fn parse_args_or_pats(&mut self) -> PResult<Vec<MaybeParenPatOrExprOrSpread>> {
         trace_cur!(self, parse_args_or_pats);
 
         expect!(self, '(');
@@ -744,9 +781,7 @@ impl<I: Tokens> Parser<I> {
                     self.state.potential_arrow_start = Some(self.input.cur_pos());
                     let expr = self.parse_assignment_expr()?;
                     expect!(self, ')');
-                    return Ok(vec![PatOrExprOrSpread::ExprOrSpread(ExprOrSpread::Expr(
-                        expr,
-                    ))]);
+                    return Ok(vec![MaybeParenPatOrExprOrSpread::Expr(expr)]);
                 }
             } else {
                 if current_item_has_spread && is!(self, ',') {
@@ -795,19 +830,19 @@ impl<I: Tokens> Parser<I> {
                     match spread_start {
                         Some(spread_start) => {
                             let span = Span::new(spread_start, self.input.cur_pos());
-                            ExprOrSpread::Spread(SpreadElement {
+                            MaybeParenExprOrSpread::Spread(MaybeParenSpreadElement {
                                 node_id: node_id!(self, span),
                                 expr,
                             })
                         }
-                        None => ExprOrSpread::Expr(expr),
+                        None => MaybeParenExprOrSpread::Expr(expr),
                     }
                 } else {
                     self.include_in_expr(true).parse_expr_or_spread()?
                 }
             };
 
-            if matches!(arg, ExprOrSpread::Spread(_)) {
+            if matches!(arg, MaybeParenExprOrSpread::Spread(_)) {
                 current_item_has_spread = true;
             }
 
@@ -824,9 +859,13 @@ impl<I: Tokens> Parser<I> {
                             self.emit_err(self.input.prev_span(), SyntaxError::TS1047);
                         }
                         match &arg {
-                            ExprOrSpread::Spread(SpreadElement { expr, .. })
-                            | ExprOrSpread::Expr(expr)
-                                if matches!(expr.as_ref(), Expr::Ident(_)) => {}
+                            MaybeParenExprOrSpread::Spread(MaybeParenSpreadElement {
+                                expr,
+                                ..
+                            })
+                            | MaybeParenExprOrSpread::Expr(expr)
+                                if matches!(expr, MaybeParen::Expr(e) if matches!(e.as_ref(), Expr::Ident(_))) =>
+                                {}
                             _ => {
                                 syntax_error!(
                                     self,
@@ -836,30 +875,33 @@ impl<I: Tokens> Parser<I> {
                             }
                         }
                         true
-                    } else if let ExprOrSpread::Expr(test) = arg {
+                    } else if let MaybeParenExprOrSpread::Expr(test) = arg {
                         expect!(self, '?');
                         let ctx = Context {
                             in_cond_expr: true,
                             include_in_expr: true,
                             ..self.ctx()
                         };
-                        let cons = self.with_ctx(ctx).parse_assignment_expr()?;
+                        let cons = self.with_ctx(ctx).parse_assignment_expr()?.unwrap();
                         expect!(self, ':');
                         let ctx = Context {
                             in_cond_expr: true,
                             ..self.ctx()
                         };
-                        let alt = self.with_ctx(ctx).parse_assignment_expr()?;
+                        let alt = self.with_ctx(ctx).parse_assignment_expr()?.unwrap();
 
                         let hi = get_span!(self, alt.node_id()).hi();
                         let span = Span::new(start, hi);
-                        arg = ExprOrSpread::Expr(Box::new(Expr::Cond(CondExpr {
-                            node_id: node_id!(self, span),
+                        arg = MaybeParenExprOrSpread::Expr(
+                            Box::new(Expr::Cond(CondExpr {
+                                node_id: node_id!(self, span),
 
-                            test,
-                            cons,
-                            alt,
-                        })));
+                                test: test.unwrap(),
+                                cons,
+                                alt,
+                            }))
+                            .into(),
+                        );
 
                         false
                     } else {
@@ -880,13 +922,15 @@ impl<I: Tokens> Parser<I> {
                 // }
 
                 let (expr, spread) = match arg {
-                    ExprOrSpread::Spread(SpreadElement { expr, node_id, .. }) => {
-                        (expr, Some(get_span!(self, node_id)))
-                    }
-                    ExprOrSpread::Expr(expr) => (expr, None),
+                    MaybeParenExprOrSpread::Spread(MaybeParenSpreadElement {
+                        expr,
+                        node_id,
+                        ..
+                    }) => (expr, Some(get_span!(self, node_id))),
+                    MaybeParenExprOrSpread::Expr(expr) => (expr, None),
                 };
 
-                let mut pat = self.reparse_expr_as_pat(PatType::BindingPat, expr)?;
+                let mut pat = self.reparse_expr_as_pat(PatType::BindingPat, expr.unwrap())?;
 
                 if let Some(span) = spread {
                     if let Some(rest_span) = rest_span {
@@ -931,7 +975,7 @@ impl<I: Tokens> Parser<I> {
                 }
 
                 if eat!(self, '=') {
-                    let right = self.parse_assignment_expr()?;
+                    let right = self.parse_assignment_expr()?.unwrap();
                     pat = Pat::Assign(AssignPat {
                         node_id: node_id!(self, span!(self, pat_start)),
                         left: Box::new(pat),
@@ -943,24 +987,32 @@ impl<I: Tokens> Parser<I> {
                     self.emit_err(span!(self, modifier_start), SyntaxError::TS2369);
                 }
 
-                items.push(PatOrExprOrSpread::Pat(pat))
+                items.push(MaybeParenPatOrExprOrSpread::Pat(pat))
             } else {
                 if has_modifier {
                     self.emit_err(span!(self, modifier_start), SyntaxError::TS2369);
                 }
 
-                items.push(PatOrExprOrSpread::ExprOrSpread(arg));
+                items.push(match arg {
+                    MaybeParenExprOrSpread::Expr(n) => MaybeParenPatOrExprOrSpread::Expr(n),
+                    MaybeParenExprOrSpread::Spread(n) => MaybeParenPatOrExprOrSpread::Spread(n),
+                });
             }
 
             // https://github.com/swc-project/swc/issues/433
             if first && self.input.eat(&tok!("=>")) && {
                 debug_assert_eq!(items.len(), 1);
                 match &items[0] {
-                    PatOrExprOrSpread::ExprOrSpread(
-                        ExprOrSpread::Spread(SpreadElement { expr, .. }) | ExprOrSpread::Expr(expr),
-                    )
-                    | PatOrExprOrSpread::Pat(Pat::Expr(expr)) => matches!(**expr, Expr::Ident(..)),
-                    PatOrExprOrSpread::Pat(Pat::Ident(..)) => true,
+                    MaybeParenPatOrExprOrSpread::Spread(MaybeParenSpreadElement {
+                        expr, ..
+                    })
+                    | MaybeParenPatOrExprOrSpread::Expr(expr) => {
+                        matches!(expr, MaybeParen::Expr(e) if matches!(e.as_ref(), Expr::Ident(_)))
+                    }
+                    MaybeParenPatOrExprOrSpread::Pat(Pat::Expr(expr)) => {
+                        matches!(**expr, Expr::Ident(..))
+                    }
+                    MaybeParenPatOrExprOrSpread::Pat(Pat::Ident(..)) => true,
                     _ => false,
                 }
             } {
@@ -975,14 +1027,15 @@ impl<I: Tokens> Parser<I> {
                 expect!(self, ')');
                 let span = span!(self, start);
 
-                return Ok(vec![PatOrExprOrSpread::ExprOrSpread(ExprOrSpread::Expr(
+                return Ok(vec![MaybeParenPatOrExprOrSpread::Expr(
                     Box::new(Expr::Arrow(ArrowExpr {
                         node_id: node_id!(self, span),
                         body,
                         is_async: false,
                         params,
-                    })),
-                ))]);
+                    }))
+                    .into(),
+                )]);
             }
 
             first = false;
@@ -993,7 +1046,7 @@ impl<I: Tokens> Parser<I> {
     }
 
     /// `is_new_expr`: true iff we are parsing production 'NewExpression'.
-    fn parse_member_expr_or_new_expr(&mut self, is_new_expr: bool) -> PResult<Box<Expr>> {
+    fn parse_member_expr_or_new_expr(&mut self, is_new_expr: bool) -> PResult<MaybeParen> {
         trace_cur!(self, parse_member_expr_or_new_expr);
 
         let start = self.input.cur_pos();
@@ -1012,9 +1065,10 @@ impl<I: Tokens> Parser<I> {
                         node_id: node_id!(self, span),
                         meta: self.new_ident(js_word!("new"), span_of_new),
                         prop: self.new_ident(js_word!("target"), span_of_target),
-                    }));
+                    }))
+                    .into();
 
-                    return self.parse_subscripts(ExprOrSuper::Expr(expr), true);
+                    return self.parse_subscripts(MaybeParenExprOrSuper::Expr(expr), true);
                 }
 
                 unexpected!(self, "target")
@@ -1025,6 +1079,8 @@ impl<I: Tokens> Parser<I> {
             // 'NewExpression' allows new call without paren.
             let callee = self.parse_member_expr_or_new_expr(is_new_expr)?;
             return_if_arrow!(self, potential_arrow_start, callee);
+
+            let callee = callee.unwrap();
 
             // Type arguments.
             if self.input.syntax().typescript() && is!(self, '<') {
@@ -1042,11 +1098,14 @@ impl<I: Tokens> Parser<I> {
                 // Parsed with 'MemberExpression' production.
                 let args = self.parse_args(false).map(Some)?;
 
-                let new_expr = ExprOrSuper::Expr(Box::new(Expr::New(NewExpr {
-                    node_id: node_id!(self, span!(self, start)),
-                    callee,
-                    args,
-                })));
+                let new_expr = MaybeParenExprOrSuper::Expr(
+                    Box::new(Expr::New(NewExpr {
+                        node_id: node_id!(self, span!(self, start)),
+                        callee,
+                        args,
+                    }))
+                    .into(),
+                );
 
                 // We should parse subscripts for MemberExpression.
                 // Because it's left recursive.
@@ -1059,11 +1118,12 @@ impl<I: Tokens> Parser<I> {
                 node_id: node_id!(self, span!(self, start)),
                 callee,
                 args: None,
-            })));
+            }))
+            .into());
         }
 
         if self.input.eat(&tok!("super")) {
-            let base = ExprOrSuper::Super(Super {
+            let base = MaybeParenExprOrSuper::Super(Super {
                 node_id: node_id!(self, span!(self, start)),
             });
             return self.parse_subscripts(base, true);
@@ -1074,12 +1134,12 @@ impl<I: Tokens> Parser<I> {
         let obj = self.parse_primary_expr()?;
         return_if_arrow!(self, potential_arrow_start, obj);
 
-        self.parse_subscripts(ExprOrSuper::Expr(obj), true)
+        self.parse_subscripts(MaybeParenExprOrSuper::Expr(obj), true)
     }
 
     /// Parse `NewExpression`.
     /// This includes `MemberExpression`.
-    pub(super) fn parse_new_expr(&mut self) -> PResult<Box<Expr>> {
+    pub(super) fn parse_new_expr(&mut self) -> PResult<MaybeParen> {
         trace_cur!(self, parse_new_expr);
 
         self.parse_member_expr_or_new_expr(true)
@@ -1114,7 +1174,7 @@ impl<I: Tokens> Parser<I> {
                 }
             }
 
-            expr_or_spreads.push(self.include_in_expr(true).parse_expr_or_spread()?);
+            expr_or_spreads.push(self.include_in_expr(true).parse_expr_or_spread()?.unwrap());
         }
 
         expect!(self, ')');
@@ -1123,7 +1183,7 @@ impl<I: Tokens> Parser<I> {
 
     /// AssignmentExpression[+In, ?Yield, ?Await]
     /// ...AssignmentExpression[+In, ?Yield, ?Await]
-    pub(super) fn parse_expr_or_spread(&mut self) -> PResult<ExprOrSpread> {
+    fn parse_expr_or_spread(&mut self) -> PResult<MaybeParenExprOrSpread> {
         trace_cur!(self, parse_expr_or_spread);
 
         let start = self.input.cur_pos();
@@ -1131,12 +1191,13 @@ impl<I: Tokens> Parser<I> {
         if self.input.eat(&tok!("...")) {
             let expr = self.include_in_expr(true).parse_assignment_expr()?;
             let span = Span::new(start, self.input.prev_span().hi);
-            Ok(ExprOrSpread::Spread(SpreadElement {
+            Ok(MaybeParenExprOrSpread::Spread(MaybeParenSpreadElement {
                 node_id: node_id!(self, span),
                 expr,
             }))
         } else {
-            self.parse_assignment_expr().map(ExprOrSpread::Expr)
+            self.parse_assignment_expr()
+                .map(MaybeParenExprOrSpread::Expr)
         }
     }
 
@@ -1145,7 +1206,7 @@ impl<I: Tokens> Parser<I> {
         &mut self,
         can_be_arrow: bool,
         async_span: Option<Span>,
-    ) -> PResult<Box<Expr>> {
+    ) -> PResult<MaybeParen> {
         trace_cur!(self, parse_paren_expr_or_arrow_fn);
 
         let expr_start = async_span
@@ -1160,7 +1221,7 @@ impl<I: Tokens> Parser<I> {
         let paren_items = self.include_in_expr(true).parse_args_or_pats()?;
         let has_pattern = paren_items
             .iter()
-            .any(|item| matches!(item, PatOrExprOrSpread::Pat(..)));
+            .any(|item| matches!(item, MaybeParenPatOrExprOrSpread::Pat(..)));
 
         // This is slow path. We handle arrow in conditional expression.
         if self.syntax().typescript() && self.ctx().in_cond_expr && is!(self, ':') {
@@ -1189,7 +1250,7 @@ impl<I: Tokens> Parser<I> {
                     body,
                 }))))
             }) {
-                return Ok(expr);
+                return Ok(expr.into());
             }
         }
 
@@ -1237,25 +1298,26 @@ impl<I: Tokens> Parser<I> {
                     // ) is required
                     self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
                     let errored_expr =
-                        self.parse_bin_op_recursively(Box::new(Expr::Arrow(arrow_expr)), 0)?;
+                        self.parse_bin_op_recursively(Box::new(Expr::Arrow(arrow_expr)).into(), 0)?;
 
                     if !is!(self, ';') {
                         // ; is required
                         self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
                     }
 
-                    return Ok(errored_expr);
+                    return Ok(errored_expr.into());
                 }
             }
-            return Ok(Box::new(Expr::Arrow(arrow_expr)));
+            return Ok(Box::new(Expr::Arrow(arrow_expr)).into());
         }
 
         let expr_or_spreads = paren_items
             .into_iter()
             .map(|item| -> PResult<_> {
                 match item {
-                    PatOrExprOrSpread::ExprOrSpread(e) => Ok(e),
-                    PatOrExprOrSpread::Pat(p) => {
+                    MaybeParenPatOrExprOrSpread::Expr(e) => Ok(ExprOrSpread::Expr(e.unwrap())),
+                    MaybeParenPatOrExprOrSpread::Spread(e) => Ok(ExprOrSpread::Spread(e.unwrap())),
+                    MaybeParenPatOrExprOrSpread::Pat(p) => {
                         syntax_error!(self, get_span!(self, p.node_id()), SyntaxError::InvalidExpr)
                     }
                 }
@@ -1265,11 +1327,12 @@ impl<I: Tokens> Parser<I> {
             // It's a call expression
             return Ok(Box::new(Expr::Call(CallExpr {
                 node_id: node_id!(self, span!(self, async_span.lo())),
-                callee: ExprOrSuper::Expr(Box::new(Expr::Ident(
-                    self.new_ident("async".into(), async_span),
-                ))),
+                callee: ExprOrSuper::Expr(
+                    Box::new(Expr::Ident(self.new_ident("async".into(), async_span))).into(),
+                ),
                 args: expr_or_spreads,
-            })));
+            }))
+            .into());
         }
 
         // It was not head of arrow function.
@@ -1293,10 +1356,8 @@ impl<I: Tokens> Parser<I> {
                 }
                 ExprOrSpread::Expr(e) => e,
             };
-            Ok(Box::new(Expr::Paren(ParenExpr {
-                node_id: node_id!(self, span!(self, expr_start)),
-                expr,
-            })))
+            self.state.parenthesised_exprs.insert(expr.node_id());
+            Ok(MaybeParen::Wrapped(expr))
         } else {
             debug_assert!(expr_or_spreads.len() >= 2);
 
@@ -1321,10 +1382,8 @@ impl<I: Tokens> Parser<I> {
                 node_id: node_id!(self, seq_expr_span),
                 exprs,
             }));
-            Ok(Box::new(Expr::Paren(ParenExpr {
-                node_id: node_id!(self, span!(self, expr_start)),
-                expr: seq_expr,
-            })))
+            self.state.parenthesised_exprs.insert(seq_expr.node_id());
+            Ok(MaybeParen::Wrapped(seq_expr))
         }
     }
 
@@ -1362,7 +1421,7 @@ impl<I: Tokens> Parser<I> {
 
         while !is_tail {
             expect!(self, "${");
-            exprs.push(self.include_in_expr(true).parse_expr()?);
+            exprs.push(self.include_in_expr(true).parse_expr()?.unwrap());
             expect!(self, '}');
             let elem = self.parse_tpl_element(is_tagged)?;
             is_tail = elem.tail;
@@ -1462,21 +1521,21 @@ fn word_contains_escape(span: &Span, word: &'static str) -> bool {
     span.hi.to_usize() - span.lo.to_usize() != word.len()
 }
 
-#[derive(Debug, PartialEq)]
-pub(crate) enum PatOrExprOrSpread {
-    Pat(Pat),
-    // TODO: maybe flatten
-    ExprOrSpread(ExprOrSpread),
-}
+// #[derive(Debug, PartialEq)]
+// pub(crate) enum MaybeParenPatOrExprOrSpread {
+//     Pat(Pat),
+//     // TODO: maybe flatten
+//     MaybeParenExprOrSpread(MaybeParenExprOrSpread),
+// }
 
-impl CloneNode for PatOrExprOrSpread {
-    fn clone_node(&self, program_data: &mut ProgramData) -> Self {
-        match self {
-            Self::Pat(n) => Self::Pat(n.clone_node(program_data)),
-            Self::ExprOrSpread(n) => Self::ExprOrSpread(n.clone_node(program_data)),
-        }
-    }
-}
+// impl CloneNode for MaybeParenPatOrExprOrSpread {
+//     fn clone_node(&self, program_data: &mut ProgramData) -> Self {
+//         match self {
+//             Self::Pat(n) => Self::Pat(n.clone_node(program_data)),
+//             Self::MaybeParenExprOrSpread(n) => Self::MaybeParenExprOrSpread(n.clone_node(program_data)),
+//         }
+//     }
+// }
 
 /// simple leaf methods.
 
@@ -1506,7 +1565,7 @@ impl<I: Tokens> Parser<I> {
             })))
         } else {
             let has_star = self.input.eat(&tok!('*'));
-            let arg = self.parse_assignment_expr()?;
+            let arg = self.parse_assignment_expr()?.unwrap();
 
             Ok(Box::new(Expr::Yield(YieldExpr {
                 node_id: node_id!(self, span!(self, start)),
@@ -1516,7 +1575,7 @@ impl<I: Tokens> Parser<I> {
         }
     }
 
-    fn at_possible_async(&mut self, expr: &Expr) -> PResult<bool> {
+    fn at_possible_async(&mut self, expr: &MaybeParen) -> bool {
         // The following todo is to match the behaviour of babel (and probably the spec).
         // We can use the length of the identifier to check the condition below.
         // If the length is 5 (the len of the word "async"), the ident does not
@@ -1524,15 +1583,20 @@ impl<I: Tokens> Parser<I> {
 
         // TODO(swc): !this.state.containsEsc &&
 
-        let span = get_span!(self, expr.node_id());
-        Ok(self.state.potential_arrow_start == Some(span.lo())
-            && matches!(
-                *expr,
+        if let MaybeParen::Expr(expr) = &expr {
+            match expr.as_ref() {
                 Expr::Ident(Ident {
                     sym: js_word!("async"),
                     ..
-                })
-            ))
+                }) => {
+                    let span = get_span!(self, expr.node_id());
+                    self.state.potential_arrow_start == Some(span.lo())
+                }
+                _ => false,
+            }
+        } else {
+            false
+        }
     }
 
     /// 12.2.5 Array Initializer
@@ -1590,7 +1654,7 @@ impl<I: Tokens> Parser<I> {
         &mut self,
         start: BytePos,
         import_ident: Ident,
-    ) -> PResult<Box<Expr>> {
+    ) -> PResult<MaybeParen> {
         if !self.input.syntax().dynamic_import() {
             syntax_error!(self, span!(self, start), SyntaxError::DynamicImport);
         }
@@ -1600,9 +1664,10 @@ impl<I: Tokens> Parser<I> {
             node_id: node_id!(self, span!(self, start)),
             callee: ExprOrSuper::Expr(Box::new(Expr::Ident(import_ident))),
             args,
-        }));
+        }))
+        .into();
 
-        self.parse_subscripts(ExprOrSuper::Expr(import), true)
+        self.parse_subscripts(MaybeParenExprOrSuper::Expr(import), true)
     }
 
     pub(super) fn check_assign_target(&mut self, expr: &Expr, deny_call: bool) {
@@ -1617,12 +1682,12 @@ impl<I: Tokens> Parser<I> {
                 self.emit_strict_mode_err(get_span!(self, expr.node_id()), SyntaxError::TS1100);
             }
 
-            fn should_deny(e: &Expr, deny_call: bool) -> bool {
+            fn should_deny(e: &Expr, deny_call: bool, state: &State) -> bool {
                 match e {
+                    _ if state.parenthesised_exprs.contains(&e.node_id()) => true,
                     Expr::Lit(..) => false,
                     Expr::Call(..) => deny_call,
                     Expr::Bin(..) => false,
-                    Expr::Paren(p) => should_deny(&p.expr, deny_call),
 
                     _ => true,
                 }
@@ -1632,26 +1697,29 @@ impl<I: Tokens> Parser<I> {
             // an ObjectLiteral nor an ArrayLiteral and
             // IsValidSimpleAssignmentTarget of LeftHandSideExpression is false.
             if !is_eval_or_arguments
-                && !expr.is_valid_simple_assignment_target(self.ctx().strict)
-                && should_deny(expr, deny_call)
+                && !is_valid_simple_assignment_target(expr, self.ctx().strict)
+                && should_deny(expr, deny_call, &self.state)
             {
                 self.emit_err(get_span!(self, expr.node_id()), SyntaxError::TS2406);
             }
-        } else if !expr.is_valid_simple_assignment_target(self.ctx().strict) {
+        } else if !is_valid_simple_assignment_target(expr, self.ctx().strict) {
             self.emit_err(get_span!(self, expr.node_id()), SyntaxError::TS2406);
         }
     }
 }
 
-fn is_import(obj: &ExprOrSuper) -> bool {
+fn is_import(obj: &MaybeParenExprOrSuper) -> bool {
     match obj {
-        ExprOrSuper::Expr(expr) => matches!(
-            **expr,
-            Expr::Ident(Ident {
-                sym: js_word!("import"),
-                ..
-            })
-        ),
+        MaybeParenExprOrSuper::Expr(expr) => match expr {
+            MaybeParen::Expr(expr) => matches!(
+                **expr,
+                Expr::Ident(Ident {
+                    sym: js_word!("import"),
+                    ..
+                })
+            ),
+            MaybeParen::Wrapped(_) => false,
+        },
         _ => false,
     }
 }
@@ -1659,4 +1727,147 @@ fn is_import(obj: &ExprOrSuper) -> bool {
 pub(super) enum BlockStmtOrExpr {
     BlockStmt(BlockStmt),
     Expr(Box<Expr>),
+}
+
+pub(super) enum MaybeParen {
+    Expr(Box<Expr>),
+    Wrapped(Box<Expr>),
+}
+
+impl MaybeParen {
+    pub fn unwrap(self) -> Box<Expr> {
+        match self {
+            MaybeParen::Expr(expr) => expr,
+            MaybeParen::Wrapped(expr) => expr,
+        }
+    }
+
+    pub fn inner(&self) -> &Expr {
+        match self {
+            MaybeParen::Expr(expr) => expr,
+            MaybeParen::Wrapped(expr) => expr,
+        }
+    }
+}
+
+impl From<Box<Expr>> for MaybeParen {
+    fn from(value: Box<Expr>) -> Self {
+        MaybeParen::Expr(value)
+    }
+}
+
+impl GetNodeId for MaybeParen {
+    fn node_id(&self) -> NodeId {
+        match self {
+            MaybeParen::Expr(expr) => expr.node_id(),
+            MaybeParen::Wrapped(expr) => expr.node_id(),
+        }
+    }
+}
+
+impl CloneNode for MaybeParen {
+    fn clone_node(&self, program_data: &mut ProgramData) -> Self {
+        match self {
+            MaybeParen::Expr(n) => MaybeParen::Expr(n.clone_node(program_data)),
+            MaybeParen::Wrapped(n) => MaybeParen::Wrapped(n.clone_node(program_data)),
+        }
+    }
+}
+
+enum MaybeParenExprOrSuper {
+    Expr(MaybeParen),
+    Super(Super),
+}
+
+impl MaybeParenExprOrSuper {
+    fn unwrap(self) -> ExprOrSuper {
+        match self {
+            MaybeParenExprOrSuper::Expr(n) => ExprOrSuper::Expr(n.unwrap()),
+            MaybeParenExprOrSuper::Super(n) => ExprOrSuper::Super(n),
+        }
+    }
+}
+
+impl GetNodeId for MaybeParenExprOrSuper {
+    fn node_id(&self) -> NodeId {
+        match self {
+            MaybeParenExprOrSuper::Expr(n) => n.node_id(),
+            MaybeParenExprOrSuper::Super(n) => n.node_id(),
+        }
+    }
+}
+
+impl CloneNode for MaybeParenExprOrSuper {
+    fn clone_node(&self, program_data: &mut ProgramData) -> Self {
+        match self {
+            MaybeParenExprOrSuper::Expr(n) => {
+                MaybeParenExprOrSuper::Expr(n.clone_node(program_data))
+            }
+            MaybeParenExprOrSuper::Super(n) => {
+                MaybeParenExprOrSuper::Super(n.clone_node(program_data))
+            }
+        }
+    }
+}
+
+pub(super) enum MaybeParenPatOrExprOrSpread {
+    Pat(Pat),
+    Expr(MaybeParen),
+    Spread(MaybeParenSpreadElement),
+}
+
+impl CloneNode for MaybeParenPatOrExprOrSpread {
+    fn clone_node(&self, program_data: &mut ProgramData) -> Self {
+        match self {
+            MaybeParenPatOrExprOrSpread::Pat(n) => Self::Pat(n.clone_node(program_data)),
+            MaybeParenPatOrExprOrSpread::Expr(n) => Self::Expr(n.clone_node(program_data)),
+            MaybeParenPatOrExprOrSpread::Spread(n) => Self::Spread(n.clone_node(program_data)),
+        }
+    }
+}
+
+enum MaybeParenExprOrSpread {
+    Expr(MaybeParen),
+    Spread(MaybeParenSpreadElement),
+}
+
+impl MaybeParenExprOrSpread {
+    fn unwrap(self) -> ExprOrSpread {
+        match self {
+            MaybeParenExprOrSpread::Expr(n) => ExprOrSpread::Expr(n.unwrap()),
+            MaybeParenExprOrSpread::Spread(n) => ExprOrSpread::Spread(n.unwrap()),
+        }
+    }
+}
+
+impl GetNodeId for MaybeParenExprOrSpread {
+    fn node_id(&self) -> NodeId {
+        match self {
+            MaybeParenExprOrSpread::Expr(n) => n.node_id(),
+            MaybeParenExprOrSpread::Spread(n) => n.expr.node_id(),
+        }
+    }
+}
+
+pub(super) struct MaybeParenSpreadElement {
+    pub node_id: NodeId,
+    pub expr: MaybeParen,
+}
+
+impl MaybeParenSpreadElement {
+    fn unwrap(self) -> SpreadElement {
+        SpreadElement {
+            node_id: self.node_id,
+            expr: self.expr.unwrap(),
+        }
+    }
+}
+
+impl CloneNode for MaybeParenSpreadElement {
+    fn clone_node(&self, program_data: &mut ProgramData) -> Self {
+        Self {
+            node_id: program_data.new_id_from(self.node_id),
+            expr: self.expr.clone_node(program_data),
+        }
+    }
 }

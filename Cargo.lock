@@ -720,6 +720,7 @@ dependencies = [
  "either",
  "global_common",
  "num-bigint",
+ "rustc-hash",
  "serde",
  "serde_json",
  "testing",

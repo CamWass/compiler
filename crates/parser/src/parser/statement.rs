@@ -4,6 +4,7 @@ use crate::{
     token::{Token, Word},
 };
 use atoms::js_word;
+use expression::MaybeParen;
 use global_common::{BytePos, Span};
 use statement::typescript::DeclOrEmpty;
 
@@ -73,7 +74,7 @@ impl<I: Tokens> StmtLikeParser<Stmt> for Parser<I> {
     fn handle_import_export(&mut self, _: bool, _: Vec<Decorator>) -> PResult<Option<Stmt>> {
         let start = self.input.cur_pos();
         if self.input.syntax().dynamic_import() && is!(self, "import") {
-            let expr = self.parse_expr()?;
+            let expr = self.parse_expr()?.unwrap();
 
             eat!(self, ';');
 
@@ -87,7 +88,7 @@ impl<I: Tokens> StmtLikeParser<Stmt> for Parser<I> {
             && is!(self, "import")
             && self.input.peeked_is(&tok!('.'))
         {
-            let expr = self.parse_expr()?;
+            let expr = self.parse_expr()?.unwrap();
 
             eat!(self, ';');
 
@@ -421,65 +422,70 @@ impl<I: Tokens> Parser<I> {
         // Identifier node, we switch to interpreting it as a label.
         let expr = self.include_in_expr(true).parse_expr()?;
 
-        let expr = match *expr {
-            Expr::Ident(ident) => {
-                if self.input.eat(&tok!(':')) {
-                    return self.parse_labelled_stmt(ident).map(Some);
+        match &expr {
+            MaybeParen::Expr(expr_ref) => match expr_ref.as_ref() {
+                Expr::Ident(_) => {
+                    if self.input.eat(&tok!(':')) {
+                        let ident = match *expr.unwrap() {
+                            Expr::Ident(ident) => ident,
+                            _ => unreachable!(),
+                        };
+                        return self.parse_labelled_stmt(ident).map(Some);
+                    }
                 }
-                Box::new(Expr::Ident(ident))
-            }
-            _ => self.verify_expr(expr),
-        };
-        if let Expr::Ident(ident) = expr.as_ref() {
-            if *ident.sym == js_word!("interface") && self.input.had_line_break_before_cur() {
-                self.emit_strict_mode_err(
-                    get_span!(self, ident.node_id),
-                    SyntaxError::InvalidIdentInStrict,
-                );
-
-                eat!(self, ';');
-
-                return Ok(Some(Stmt::Expr(ExprStmt {
-                    node_id: node_id!(self, span!(self, start)),
-                    expr,
-                })));
-            }
-
-            if self.input.syntax().typescript() {
-                if let Some(decl) = self.parse_ts_expr_stmt(decorators, ident)? {
-                    return match decl {
-                        DeclOrEmpty::Decl(d) => Ok(Some(Stmt::Decl(d))),
-                        DeclOrEmpty::Empty => Ok(None),
-                    };
-                }
-            }
+                _ => self.verify_expr(expr.inner()),
+            },
+            MaybeParen::Wrapped(expr) => self.verify_expr(expr),
         }
 
-        if let Expr::Ident(ident) = expr.as_ref() {
-            match ident.sym {
-                js_word!("enum") | js_word!("interface") => {
+        if let MaybeParen::Expr(expr_ref) = &expr {
+            if let Expr::Ident(ident) = expr_ref.as_ref() {
+                if *ident.sym == js_word!("interface") && self.input.had_line_break_before_cur() {
                     self.emit_strict_mode_err(
                         get_span!(self, ident.node_id),
                         SyntaxError::InvalidIdentInStrict,
                     );
-                }
-                _ => {}
-            }
-        }
 
-        if self.syntax().typescript() {
-            if let Expr::Ident(i) = expr.as_ref() {
-                match i.sym {
-                    js_word!("public") | js_word!("static") | js_word!("abstract") => {
-                        if eat!(self, "interface") {
-                            self.emit_err(get_span!(self, i.node_id), SyntaxError::TS2427);
-                            self.parse_ts_interface_decl()?;
-                            return Ok(Some(Stmt::Empty(EmptyStmt {
-                                node_id: node_id!(self, span!(self, start)),
-                            })));
-                        }
+                    eat!(self, ';');
+
+                    return Ok(Some(Stmt::Expr(ExprStmt {
+                        node_id: node_id!(self, span!(self, start)),
+                        expr: expr.unwrap(),
+                    })));
+                }
+
+                if self.input.syntax().typescript() {
+                    if let Some(decl) = self.parse_ts_expr_stmt(decorators, ident)? {
+                        return match decl {
+                            DeclOrEmpty::Decl(d) => Ok(Some(Stmt::Decl(d))),
+                            DeclOrEmpty::Empty => Ok(None),
+                        };
+                    }
+                }
+
+                match ident.sym {
+                    js_word!("enum") | js_word!("interface") => {
+                        self.emit_strict_mode_err(
+                            get_span!(self, ident.node_id),
+                            SyntaxError::InvalidIdentInStrict,
+                        );
                     }
                     _ => {}
+                }
+
+                if self.syntax().typescript() {
+                    match ident.sym {
+                        js_word!("public") | js_word!("static") | js_word!("abstract") => {
+                            if eat!(self, "interface") {
+                                self.emit_err(get_span!(self, ident.node_id), SyntaxError::TS2427);
+                                self.parse_ts_interface_decl()?;
+                                return Ok(Some(Stmt::Empty(EmptyStmt {
+                                    node_id: node_id!(self, span!(self, start)),
+                                })));
+                            }
+                        }
+                        _ => {}
+                    }
                 }
             }
         }
@@ -487,12 +493,12 @@ impl<I: Tokens> Parser<I> {
         if eat!(self, ';') {
             Ok(Some(Stmt::Expr(ExprStmt {
                 node_id: node_id!(self, span!(self, start)),
-                expr,
+                expr: expr.unwrap(),
             })))
         } else {
             if let Token::BinOp(..) = *cur!(self, false)? {
                 self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
-                let expr = self.parse_bin_op_recursively(expr, 0)?;
+                let expr = self.parse_bin_op_recursively(expr, 0)?.unwrap();
                 return Ok(Some(Stmt::Expr(ExprStmt {
                     node_id: node_id!(self, span!(self, start)),
                     expr,
@@ -530,7 +536,7 @@ impl<I: Tokens> Parser<I> {
         }))
     }
 
-    fn parse_header_expr(&mut self) -> PResult<Box<Expr>> {
+    fn parse_header_expr(&mut self) -> PResult<MaybeParen> {
         expect!(self, '(');
         let val = self.include_in_expr(true).parse_expr()?;
         expect!(self, ')');
@@ -554,7 +560,7 @@ impl<I: Tokens> Parser<I> {
             .map(Box::new)?;
 
         expect!(self, "while");
-        let test = self.parse_header_expr()?;
+        let test = self.parse_header_expr()?.unwrap();
         self.input.eat(&tok!(';'));
 
         Ok(Stmt::DoWhile(DoWhileStmt {
@@ -679,7 +685,7 @@ impl<I: Tokens> Parser<I> {
         if is_one_of!(self, "of", "in") {
             let is_in = is!(self, "in");
 
-            let pat = self.reparse_expr_as_pat(PatType::AssignPat, init)?;
+            let pat = self.reparse_expr_as_pat(PatType::AssignPat, init.unwrap())?;
 
             // for ({} in foo) is invalid
             if self.input.syntax().typescript() && is_in {
@@ -694,17 +700,17 @@ impl<I: Tokens> Parser<I> {
 
         expect_exact!(self, ';');
 
-        let init = self.verify_expr(init);
-        self.parse_normal_for_head(Some(VarDeclOrExpr::Expr(init)))
+        self.verify_expr(init.inner());
+        self.parse_normal_for_head(Some(VarDeclOrExpr::Expr(init.unwrap())))
     }
 
     fn parse_for_each_head(&mut self, left: VarDeclOrPat) -> PResult<ForHead> {
         let of = self.input.bump() == tok!("of");
         if of {
-            let right = self.include_in_expr(true).parse_assignment_expr()?;
+            let right = self.include_in_expr(true).parse_assignment_expr()?.unwrap();
             Ok(ForHead::ForOf { left, right })
         } else {
-            let right = self.include_in_expr(true).parse_expr()?;
+            let right = self.include_in_expr(true).parse_expr()?.unwrap();
             Ok(ForHead::ForIn { left, right })
         }
     }
@@ -713,7 +719,11 @@ impl<I: Tokens> Parser<I> {
         let test = if self.input.eat(&tok!(';')) {
             None
         } else {
-            let test = self.include_in_expr(true).parse_expr().map(Some)?;
+            let test = self
+                .include_in_expr(true)
+                .parse_expr()
+                .map(MaybeParen::unwrap)
+                .map(Some)?;
             expect_exact!(self, ';');
             test
         };
@@ -721,7 +731,10 @@ impl<I: Tokens> Parser<I> {
         let update = if self.input.is(&tok!(')')) {
             None
         } else {
-            self.include_in_expr(true).parse_expr().map(Some)?
+            self.include_in_expr(true)
+                .parse_expr()
+                .map(MaybeParen::unwrap)
+                .map(Some)?
         };
 
         Ok(ForHead::For { init, test, update })
@@ -735,7 +748,7 @@ impl<I: Tokens> Parser<I> {
         // TODO: let test = self.parse_header_expr()?;
 
         expect!(self, '(');
-        let test = self.include_in_expr(true).parse_expr()?;
+        let test = self.include_in_expr(true).parse_expr()?.unwrap();
         if !eat!(self, ')') {
             self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
 
@@ -785,7 +798,10 @@ impl<I: Tokens> Parser<I> {
         let arg = if is!(self, ';') {
             None
         } else {
-            self.include_in_expr(true).parse_expr().map(Some)?
+            self.include_in_expr(true)
+                .parse_expr()
+                .map(MaybeParen::unwrap)
+                .map(Some)?
         };
 
         expect!(self, ';');
@@ -804,7 +820,7 @@ impl<I: Tokens> Parser<I> {
 
         self.assert_and_bump(&tok!("switch"));
 
-        let discriminant = self.parse_header_expr()?;
+        let discriminant = self.parse_header_expr()?.unwrap();
         let mut cases = vec![];
         let mut span_of_previous_default = None;
 
@@ -830,7 +846,11 @@ impl<I: Tokens> Parser<I> {
                 };
 
                 let test = if is_case {
-                    parser.with_ctx(ctx).parse_expr().map(Some)?
+                    parser
+                        .with_ctx(ctx)
+                        .parse_expr()
+                        .map(MaybeParen::unwrap)
+                        .map(Some)?
                 } else {
                     if let Some(previous) = span_of_previous_default {
                         syntax_error!(parser, SyntaxError::MultipleDefault { previous });
@@ -877,7 +897,7 @@ impl<I: Tokens> Parser<I> {
             syntax_error!(self, SyntaxError::LineBreakInThrow);
         }
 
-        let arg = self.include_in_expr(true).parse_expr()?;
+        let arg = self.include_in_expr(true).parse_expr()?.unwrap();
         expect!(self, ';');
 
         Ok(Stmt::Throw(ThrowStmt {
@@ -1088,8 +1108,8 @@ impl<I: Tokens> Parser<I> {
         //FIXME(swc): This is wrong. Should check in/of only on first loop.
         let init = if !for_loop || !is_one_of!(self, "in", "of") {
             if self.input.eat(&tok!('=')) {
-                let expr = self.parse_assignment_expr()?;
-                let expr = self.verify_expr(expr);
+                let expr = self.parse_assignment_expr()?.unwrap();
+                self.verify_expr(&expr);
 
                 Some(expr)
             } else {
@@ -1126,7 +1146,7 @@ impl<I: Tokens> Parser<I> {
 
         self.assert_and_bump(&tok!("while"));
 
-        let test = self.parse_header_expr()?;
+        let test = self.parse_header_expr()?.unwrap();
 
         let ctx = Context {
             is_break_allowed: true,
@@ -1160,7 +1180,7 @@ impl<I: Tokens> Parser<I> {
 
         self.assert_and_bump(&tok!("with"));
 
-        let obj = self.parse_header_expr()?;
+        let obj = self.parse_header_expr()?.unwrap();
 
         let ctx = Context {
             in_function: true,

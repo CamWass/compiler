@@ -594,10 +594,6 @@ where
         todo!(stringify!(TplElement));
     }
 
-    // fn visit_paren_expr(&mut self, node: &ParenExpr) {
-    //     todo!(stringify!(ParenExpr));
-    // }
-
     // fn visit_super(&mut self, node: &Super) {
     //     todo!(stringify!(Super));
     // }

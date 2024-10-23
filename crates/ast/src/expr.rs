@@ -74,8 +74,6 @@ pub enum Expr {
 
     Await(AwaitExpr),
 
-    Paren(ParenExpr),
-
     PrivateName(PrivateName),
 
     OptChain(OptChainExpr),
@@ -286,13 +284,6 @@ pub struct TplElement {
     pub tail: bool,
     pub cooked: Option<Str>,
     pub raw: Str,
-}
-
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
-pub struct ParenExpr {
-    pub node_id: NodeId,
-
-    pub expr: Box<Expr>,
 }
 
 #[allow(variant_size_differences)]

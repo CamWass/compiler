@@ -79,18 +79,17 @@ impl<'a> Tester<'a> {
     pub fn print(&mut self, module: &Module, program_data: &ProgramData) -> String {
         let mut buf = vec![];
         {
-            let mut emitter = Emitter {
-                cfg: Default::default(),
-                cm: self.cm.clone(),
-                wr: Box::new(codegen::text_writer::JsWriter::new(
+            let mut emitter = Emitter::new(
+                Default::default(),
+                self.cm.clone(),
+                Box::new(codegen::text_writer::JsWriter::new(
                     self.cm.clone(),
                     "\n",
                     &mut buf,
                     None,
                 )),
-                comments: None,
                 program_data,
-            };
+            );
 
             // println!("Emitting: {:?}", module);
             emitter.emit_module(module).unwrap();

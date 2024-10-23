@@ -23,8 +23,8 @@ use atoms::JsWord;
 use global_common::{BytePos, SourceFile, Span};
 use input::Buffer;
 pub use input::Tokens;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 #[derive(Clone, Default)]
@@ -37,7 +37,8 @@ struct State {
     /// For example: `[...a,]`
     ///
     /// Only tracks the first matching comma in an array.
-    trailing_commas_after_rest: HashMap<Span, Span>,
+    trailing_commas_after_rest: FxHashMap<Span, Span>,
+    parenthesised_exprs: FxHashSet<NodeId>,
 }
 
 /// When error occurs, error is emitted and parser returns Err(()).

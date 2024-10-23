@@ -7,7 +7,7 @@ impl<I: Tokens> Parser<I> {
         let start = self.input.cur_pos();
 
         if self.input.peeked_is(&tok!('.')) {
-            let expr = self.parse_expr()?;
+            let expr = self.parse_expr()?.unwrap();
 
             eat!(self, ';');
 
@@ -18,7 +18,7 @@ impl<I: Tokens> Parser<I> {
         }
 
         if self.input.syntax().dynamic_import() && self.input.peeked_is(&tok!('(')) {
-            let expr = self.parse_expr()?;
+            let expr = self.parse_expr()?.unwrap();
 
             eat!(self, ';');
 
@@ -392,7 +392,7 @@ impl<I: Tokens> Parser<I> {
             {
                 export_default = Some(self.new_ident("default".into(), self.input.prev_span()))
             } else {
-                let expr = self.include_in_expr(true).parse_assignment_expr()?;
+                let expr = self.include_in_expr(true).parse_assignment_expr()?.unwrap();
                 expect!(self, ';');
                 return Ok(Some(ModuleDecl::ExportDefaultExpr(ExportDefaultExpr {
                     node_id: node_id!(self, span!(self, start)),

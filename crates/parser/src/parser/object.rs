@@ -79,13 +79,21 @@ impl<I: Tokens> Parser<I> {
                     parser.input.bump();
                     let inner_start = parser.input.cur_pos();
 
-                    let mut expr = parser.include_in_expr(true).parse_assignment_expr()?;
+                    let mut expr = parser
+                        .include_in_expr(true)
+                        .parse_assignment_expr()?
+                        .unwrap();
 
                     if parser.syntax().typescript() && is!(parser, ',') {
                         let mut exprs = vec![expr];
 
                         while eat!(parser, ',') {
-                            exprs.push(parser.include_in_expr(true).parse_assignment_expr()?);
+                            exprs.push(
+                                parser
+                                    .include_in_expr(true)
+                                    .parse_assignment_expr()?
+                                    .unwrap(),
+                            );
                         }
 
                         parser.emit_err(span!(parser, inner_start), SyntaxError::TS1171);
@@ -134,7 +142,7 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
         if self.input.eat(&tok!("...")) {
             // spread element
 
-            let expr = self.include_in_expr(true).parse_assignment_expr()?;
+            let expr = self.include_in_expr(true).parse_assignment_expr()?.unwrap();
 
             let span = Span::new(start, self.input.last_pos());
             return Ok(Prop::Spread(SpreadAssignment {
@@ -192,7 +200,7 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
         // { 0: 1, }
         // { a: expr, }
         if self.input.eat(&tok!(':')) {
-            let value = self.include_in_expr(true).parse_assignment_expr()?;
+            let value = self.include_in_expr(true).parse_assignment_expr()?.unwrap();
             let span = Span::new(key_start, self.input.last_pos());
             return Ok(Prop::KeyValue(KeyValueProp {
                 node_id: node_id!(self, span),
@@ -242,7 +250,7 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
             }
 
             if self.input.eat(&tok!('=')) {
-                let value = self.include_in_expr(true).parse_assignment_expr()?;
+                let value = self.include_in_expr(true).parse_assignment_expr()?.unwrap();
                 let span = Span::new(key_start, self.input.last_pos());
                 return Ok(Prop::Assign(AssignProp {
                     node_id: node_id!(self, span),
@@ -497,7 +505,7 @@ impl<I: Tokens> ParseObject<Pat> for Parser<I> {
                     node_id: node_id!(self, key_span),
                     id: key.clone_node(program_data!(self)),
                 })),
-                right: value,
+                right: value.unwrap(),
             };
             Ok(ObjectPatProp::KeyValue(KeyValuePatProp {
                 node_id: node_id!(self, pat_span),

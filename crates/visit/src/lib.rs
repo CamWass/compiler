@@ -296,7 +296,6 @@ define!({
         Yield(YieldExpr),
         MetaProp(MetaPropExpr),
         Await(AwaitExpr),
-        Paren(ParenExpr),
         PrivateName(PrivateName),
         OptChain(OptChainExpr),
         Invalid(Invalid),
@@ -410,10 +409,6 @@ define!({
         pub tail: bool,
         pub cooked: Option<Str>,
         pub raw: Str,
-    }
-    pub struct ParenExpr {
-        pub node_id: NodeId,
-        pub expr: Box<Expr>,
     }
     pub enum ExprOrSuper {
         Super(Super),

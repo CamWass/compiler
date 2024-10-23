@@ -206,7 +206,6 @@ where
         [visit_tpl, Tpl],
         [visit_tagged_tpl, TaggedTpl],
         [visit_tpl_element, TplElement],
-        [visit_paren_expr, ParenExpr],
         [visit_super, Super],
         [visit_opt_chain_expr, OptChainExpr],
         [visit_function, Function],

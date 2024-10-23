@@ -1,3 +1,5 @@
+use crate::Context;
+
 use super::{list::ListFormat, Emitter, Result};
 use ast::*;
 
@@ -89,7 +91,10 @@ impl<'a> Emitter<'a> {
             formatting_space!(self);
             punct!(self, "=");
             formatting_space!(self);
-            self.emit_expr(init)?
+            let old = self.ctx;
+            self.ctx = Context::ForcedExpr;
+            self.emit_expr(init)?;
+            self.ctx = old;
         }
         Ok(())
     }

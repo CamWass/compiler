@@ -829,7 +829,6 @@ impl GraphVisitor<'_> {
                 n.visit_children_with(self);
                 ret!(vec![PointerId::UNKNOWN])
             }
-            Expr::Paren(n) => self.get_rhs(&n.expr, used),
             Expr::PrivateName(_) => todo!(),
             Expr::OptChain(opt_chain) => match opt_chain.expr.as_ref() {
                 Expr::Member(_) | Expr::Call(_) => {

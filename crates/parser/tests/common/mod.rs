@@ -21,7 +21,6 @@ impl VisitMut<'_> for Normalizer {
         e.visit_mut_children_with(self);
 
         match e.take() {
-            Expr::Paren(ParenExpr { expr, .. }) if self.is_test262 => *e = *expr,
             Expr::New(n @ NewExpr { args: None, .. }) if self.is_test262 => {
                 *e = Expr::New(NewExpr {
                     args: Some(vec![]),

@@ -4,7 +4,7 @@ use crate::token::Keyword;
 
 impl<I: Tokens> Parser<I> {
     /// Name from spec: 'LogicalORExpression'
-    pub(super) fn parse_bin_expr(&mut self) -> PResult<Box<Expr>> {
+    pub(super) fn parse_bin_expr(&mut self) -> PResult<MaybeParen> {
         trace_cur!(self, parse_bin_expr);
 
         let include_in_expr = self.ctx().include_in_expr;
@@ -23,6 +23,7 @@ impl<I: Tokens> Parser<I> {
                         Box::new(Expr::Invalid(Invalid {
                             node_id: node_id!(self, err.error.0),
                         }))
+                        .into()
                     }
                     &Word(Word::Keyword(Keyword::InstanceOf)) | &Token::BinOp(..) => {
                         self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
@@ -30,6 +31,7 @@ impl<I: Tokens> Parser<I> {
                         Box::new(Expr::Invalid(Invalid {
                             node_id: node_id!(self, err.error.0),
                         }))
+                        .into()
                     }
                     _ => return Err(err),
                 }
@@ -49,33 +51,35 @@ impl<I: Tokens> Parser<I> {
     /// `parseExprOp`
     pub(in crate::parser) fn parse_bin_op_recursively(
         &mut self,
-        mut left: Box<Expr>,
+        mut left: MaybeParen,
         mut min_prec: u8,
-    ) -> PResult<Box<Expr>> {
+    ) -> PResult<MaybeParen> {
         loop {
             let (next_left, next_prec) = self.parse_bin_op_recursively_inner(left, min_prec)?;
 
-            match &*next_left {
-                Expr::Bin(BinExpr {
-                    node_id,
-                    left,
-                    op: op!("&&"),
-                    ..
-                })
-                | Expr::Bin(BinExpr {
-                    node_id,
-                    left,
-                    op: op!("||"),
-                    ..
-                }) => {
-                    if let Expr::Bin(BinExpr { op: op!("??"), .. }) = &**left {
-                        self.emit_err(
-                            get_span!(self, *node_id),
-                            SyntaxError::NullishCoalescingWithLogicalOp,
-                        );
+            if let MaybeParen::Expr(next_left) = &next_left {
+                match next_left.as_ref() {
+                    Expr::Bin(BinExpr {
+                        node_id,
+                        left,
+                        op: op!("&&"),
+                        ..
+                    })
+                    | Expr::Bin(BinExpr {
+                        node_id,
+                        left,
+                        op: op!("||"),
+                        ..
+                    }) => {
+                        if let Expr::Bin(BinExpr { op: op!("??"), .. }) = &**left {
+                            self.emit_err(
+                                get_span!(self, *node_id),
+                                SyntaxError::NullishCoalescingWithLogicalOp,
+                            );
+                        }
                     }
+                    _ => {}
                 }
-                _ => {}
             }
 
             min_prec = match next_prec {
@@ -90,9 +94,9 @@ impl<I: Tokens> Parser<I> {
     /// Returns `(left, Some(next_prec))` or `(expr, None)`.
     fn parse_bin_op_recursively_inner(
         &mut self,
-        left: Box<Expr>,
+        left: MaybeParen,
         min_prec: u8,
-    ) -> PResult<(Box<Expr>, Option<u8>)> {
+    ) -> PResult<(MaybeParen, Option<u8>)> {
         const PREC_OF_IN: u8 = 7;
 
         if self.input.syntax().typescript()
@@ -134,23 +138,23 @@ impl<I: Tokens> Parser<I> {
         }
         self.input.bump();
 
-        match *left {
-            // This is invalid syntax.
-            Expr::Unary(UnaryExpr { node_id, .. }) if op == op!("**") => {
-                // Correct implementation would be returning Ok(left) and
-                // returning "unexpected token '**'" on next.
-                // But it's not useful error message.
+        if let MaybeParen::Expr(left) = &left {
+            if let Expr::Unary(UnaryExpr { node_id, .. }) = left.as_ref() {
+                if op == op!("**") {
+                    // Correct implementation would be returning Ok(left) and
+                    // returning "unexpected token '**'" on next.
+                    // But it's not useful error message.
 
-                syntax_error!(
-                    self,
-                    SyntaxError::UnaryInExp {
-                        // FIXME: Use display
-                        left: format!("{:?}", left),
-                        left_span: get_span!(self, node_id),
-                    }
-                )
+                    syntax_error!(
+                        self,
+                        SyntaxError::UnaryInExp {
+                            // FIXME: Use display
+                            left: format!("{:?}", left),
+                            left_span: get_span!(self, *node_id),
+                        }
+                    )
+                }
             }
-            _ => {}
         }
 
         let right = {
@@ -178,24 +182,32 @@ impl<I: Tokens> Parser<I> {
          * throw it
          */
         if op == op!("??") {
-            match *left {
-                Expr::Bin(BinExpr { node_id, op, .. }) if op == op!("&&") || op == op!("||") => {
-                    self.emit_err(
-                        get_span!(self, node_id),
-                        SyntaxError::NullishCoalescingWithLogicalOp,
-                    );
+            if let MaybeParen::Expr(left) = &left {
+                match left.as_ref() {
+                    Expr::Bin(BinExpr { node_id, op, .. })
+                        if *op == op!("&&") || *op == op!("||") =>
+                    {
+                        self.emit_err(
+                            get_span!(self, *node_id),
+                            SyntaxError::NullishCoalescingWithLogicalOp,
+                        );
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
 
-            match *right {
-                Expr::Bin(BinExpr { node_id, op, .. }) if op == op!("&&") || op == op!("||") => {
-                    self.emit_err(
-                        get_span!(self, node_id),
-                        SyntaxError::NullishCoalescingWithLogicalOp,
-                    );
+            if let MaybeParen::Expr(right) = &right {
+                match right.as_ref() {
+                    Expr::Bin(BinExpr { node_id, op, .. })
+                        if *op == op!("&&") || *op == op!("||") =>
+                    {
+                        self.emit_err(
+                            get_span!(self, *node_id),
+                            SyntaxError::NullishCoalescingWithLogicalOp,
+                        );
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
         }
 
@@ -205,17 +217,17 @@ impl<I: Tokens> Parser<I> {
         let node = Box::new(Expr::Bin(BinExpr {
             node_id: node_id!(self, span),
             op,
-            left,
-            right,
+            left: left.unwrap(),
+            right: right.unwrap(),
         }));
 
-        Ok((node, Some(min_prec)))
+        Ok((node.into(), Some(min_prec)))
     }
 
     /// Parse unary expression and update expression.
     ///
     /// spec: 'UnaryExpression'
-    pub(in crate::parser) fn parse_unary_expr(&mut self) -> PResult<Box<Expr>> {
+    pub(in crate::parser) fn parse_unary_expr(&mut self) -> PResult<MaybeParen> {
         trace_cur!(self, parse_unary_expr);
 
         let start = self.input.cur_pos();
@@ -241,14 +253,15 @@ impl<I: Tokens> Parser<I> {
             let arg = self.parse_unary_expr()?;
             let hi = get_span!(self, arg.node_id()).hi();
             let span = Span::new(start, hi);
-            self.check_assign_target(&arg, false);
+            self.check_assign_target(arg.inner(), false);
 
             return Ok(Box::new(Expr::Update(UpdateExpr {
                 node_id: node_id!(self, span),
                 prefix: true,
                 op,
-                arg,
-            })));
+                arg: arg.unwrap(),
+            }))
+            .into());
         }
 
         // Parse unary expression
@@ -272,29 +285,23 @@ impl<I: Tokens> Parser<I> {
                     Box::new(Expr::Invalid(Invalid {
                         node_id: node_id!(self, span),
                     }))
+                    .into()
                 }
             };
 
-            if op == op!("delete") {
-                if let Expr::Ident(i) = arg.as_ref() {
-                    self.emit_strict_mode_err(get_span!(self, i.node_id), SyntaxError::TS1102)
-                }
-            }
-
-            if self.input.syntax().typescript() && op == op!("delete") {
-                fn unwrap_paren(e: &Expr) -> &Expr {
-                    match e {
-                        Expr::Paren(p) => unwrap_paren(&p.expr),
-                        _ => e,
+            if let MaybeParen::Expr(arg) = &arg {
+                if op == op!("delete") {
+                    if let Expr::Ident(i) = arg.as_ref() {
+                        self.emit_strict_mode_err(get_span!(self, i.node_id), SyntaxError::TS1102)
                     }
                 }
-                match &*arg {
-                    Expr::Member(..) => {}
-                    Expr::OptChain(e) if matches!(&*e.expr, Expr::Member(..)) => {}
-                    _ => self.emit_err(
-                        get_span!(self, unwrap_paren(&arg).node_id()),
-                        SyntaxError::TS2703,
-                    ),
+
+                if self.input.syntax().typescript() && op == op!("delete") {
+                    match arg.as_ref() {
+                        Expr::Member(..) => {}
+                        Expr::OptChain(e) if matches!(&*e.expr, Expr::Member(..)) => {}
+                        _ => self.emit_err(get_span!(self, arg.node_id()), SyntaxError::TS2703),
+                    }
                 }
             }
 
@@ -303,12 +310,13 @@ impl<I: Tokens> Parser<I> {
             return Ok(Box::new(Expr::Unary(UnaryExpr {
                 node_id: node_id!(self, span),
                 op,
-                arg,
-            })));
+                arg: arg.unwrap(),
+            }))
+            .into());
         }
 
         if (self.ctx().in_async || self.syntax().top_level_await()) && is!(self, "await") {
-            return self.parse_await_expr();
+            return self.parse_await_expr().map(From::from);
         }
 
         let potential_arrow_start = self.state.potential_arrow_start;
@@ -323,7 +331,7 @@ impl<I: Tokens> Parser<I> {
         }
 
         if is_one_of!(self, "++", "--") {
-            self.check_assign_target(&expr, false);
+            self.check_assign_target(expr.inner(), false);
 
             let op = if self.input.bump() == tok!("++") {
                 op!("++")
@@ -336,8 +344,9 @@ impl<I: Tokens> Parser<I> {
                 node_id: node_id!(self, span),
                 prefix: false,
                 op,
-                arg: expr,
-            })));
+                arg: expr.unwrap(),
+            }))
+            .into());
         }
         Ok(expr)
     }
@@ -357,7 +366,7 @@ impl<I: Tokens> Parser<I> {
             )));
         }
 
-        let arg = self.parse_unary_expr()?;
+        let arg = self.parse_unary_expr()?.unwrap();
         Ok(Box::new(Expr::Await(AwaitExpr {
             node_id: node_id!(self, span!(self, start)),
             arg,

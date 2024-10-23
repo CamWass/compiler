@@ -3,6 +3,7 @@ use self::expression::BlockStmtOrExpr;
 use super::{identifier::MaybeOptionalIdentParser, *};
 use crate::{error::SyntaxError, Tokens};
 use atoms::js_word;
+use expression::MaybeParen;
 
 /// Parser for function expression and function declaration.
 impl<I: Tokens> Parser<I> {
@@ -107,7 +108,7 @@ impl<I: Tokens> Parser<I> {
             let mut extends_clause = if is!(parser, "extends") {
                 let start = parser.input.cur_pos();
                 parser.input.bump();
-                let super_class = parser.parse_lhs_expr()?;
+                let super_class = parser.parse_lhs_expr()?.unwrap();
                 // Super type params.
                 if parser.syntax().typescript() && is!(parser, '<') {
                     parser.parse_ts_type_args()?;
@@ -159,7 +160,7 @@ impl<I: Tokens> Parser<I> {
                 let start = parser.input.cur_pos();
                 parser.input.bump();
 
-                let super_class = parser.parse_lhs_expr()?;
+                let super_class = parser.parse_lhs_expr()?.unwrap();
                 // Super type params.
                 if parser.syntax().typescript() && is!(parser, '<') {
                     parser.parse_ts_type_args()?;
@@ -235,7 +236,7 @@ impl<I: Tokens> Parser<I> {
         let expr = if eat!(self, '(') {
             let expr = self.parse_expr()?;
             expect!(self, ')');
-            expr
+            expr.unwrap()
         } else {
             let mut expr = self
                 .parse_ident(false, false)
@@ -865,7 +866,7 @@ impl<I: Tokens> Parser<I> {
         self.with_ctx(ctx).parse_with(|parser| {
             let value = if is!(parser, '=') {
                 parser.assert_and_bump(&tok!('='));
-                Some(parser.parse_assignment_expr()?)
+                Some(parser.parse_assignment_expr()?.unwrap())
             } else {
                 None
             };
@@ -1372,7 +1373,9 @@ impl<I: Tokens> FnBodyParser<BlockStmtOrExpr> for Parser<I> {
         if self.input.is(&tok!('{')) {
             self.parse_block(false).map(BlockStmtOrExpr::BlockStmt)
         } else {
-            self.parse_assignment_expr().map(BlockStmtOrExpr::Expr)
+            self.parse_assignment_expr()
+                .map(MaybeParen::unwrap)
+                .map(BlockStmtOrExpr::Expr)
         }
     }
 }
