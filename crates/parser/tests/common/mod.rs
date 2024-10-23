@@ -150,5 +150,6 @@ impl VisitMut<'_> for Normalizer {
             s.has_escape = false;
             s.kind = Default::default();
         }
+        s.node_id = NodeId::DUMMY;
     }
 }
