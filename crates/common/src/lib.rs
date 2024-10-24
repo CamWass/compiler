@@ -23,7 +23,6 @@ pub use self::{
 pub use global_visit::chain;
 
 pub mod chars;
-pub mod comments;
 pub mod errors;
 pub mod integer_decode;
 pub mod iter;

@@ -171,11 +171,6 @@ impl<'a, W: Write> WriteJs for JsWriter<'a, W> {
         Ok(())
     }
 
-    fn write_comment(&mut self, span: Span, s: &str) -> Result {
-        self.write(Some(span), s)?;
-        Ok(())
-    }
-
     fn write_str_lit(&mut self, span: Span, s: &str) -> Result {
         self.write(Some(span), s)?;
         Ok(())

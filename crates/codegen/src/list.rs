@@ -73,12 +73,10 @@ add_bitflags!(
         PreferNewLine: 1 << 15,
         /// Do not emit a trailing NewLine for a MultiLine list.
         NoTrailingNewLine: 1 << 16,
-        /// Do not emit comments between each node
-        NoInterveningComments: 1 << 17,
         /// If the literal is empty, do not add spaces between braces.
-        NoSpaceIfEmpty: 1 << 18,
-        SingleElement: 1 << 19,
-        ForceTrailingComma: 1 << 20,
+        NoSpaceIfEmpty: 1 << 17,
+        SingleElement: 1 << 18,
+        ForceTrailingComma: 1 << 19,
     },
     // Optimisation.
     Values {
@@ -86,7 +84,7 @@ add_bitflags!(
     },
     /// Precomputed Formats
     Values {
-        Modifiers: SingleLine | SpaceBetweenSiblings | NoInterveningComments,
+        Modifiers: SingleLine | SpaceBetweenSiblings,
         HeritageClauses: SingleLine | SpaceBetweenSiblings,
         SingleLineTypeLiteralMembers: SingleLine
             | SpaceBetweenBraces
@@ -131,7 +129,7 @@ add_bitflags!(
             | SingleLine
             | Parenthesis
             | OptionalIfUndefined,
-        TemplateExpressionSpans: SingleLine | NoInterveningComments,
+        TemplateExpressionSpans: SingleLine,
         SingleLineBlockStatements: SpaceBetweenBraces | SpaceBetweenSiblings | SingleLine,
         MultiLineBlockStatements: Indented | MultiLine,
         VariableDeclarationList: CommaDelimited | SpaceBetweenSiblings | SingleLine,

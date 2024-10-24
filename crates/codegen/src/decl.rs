@@ -18,8 +18,6 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_class_decl(&mut self, node: &ClassDecl) -> Result {
-        self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
-
         for dec in &node.class.decorators {
             self.emit_decorator(dec)?;
         }
@@ -31,8 +29,6 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_fn_decl(&mut self, node: &FnDecl) -> Result {
-        self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
-
         if node.function.is_async {
             keyword!(self, "async");
             space!(self);
@@ -53,8 +49,6 @@ impl<'a> Emitter<'a> {
 
     pub fn emit_var_decl(&mut self, node: &VarDecl) -> Result {
         let span = get_span!(self, node.node_id);
-
-        self.emit_leading_comments_of_span(span, false)?;
 
         {
             let span = self.cm.span_until_char(span, ' ');
@@ -77,14 +71,12 @@ impl<'a> Emitter<'a> {
         self.emit_list(
             span,
             &node.decls,
-            |e, n| e.emit_var_declarator(n).map(|_| Some(n.node_id)),
+            |e, n| e.emit_var_declarator(n),
             ListFormat::VariableDeclarationList,
         )
     }
 
     fn emit_var_declarator(&mut self, node: &VarDeclarator) -> Result {
-        self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
-
         self.emit_pat(&node.name)?;
 
         if let Some(init) = &node.init {

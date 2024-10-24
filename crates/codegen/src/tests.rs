@@ -2,7 +2,7 @@ use self::parser::Parser;
 use super::*;
 use crate::config::Config;
 use crate::text_writer::omit_trailing_semi;
-use global_common::{comments::SingleThreadedComments, FileName, SourceMap};
+use global_common::{FileName, SourceMap};
 use parser::{self, EsConfig, Syntax};
 use std::{
     cell::RefCell,
@@ -15,7 +15,6 @@ use std::{
 struct Builder {
     cfg: Config,
     cm: Lrc<SourceMap>,
-    comments: SingleThreadedComments,
     program_data: ProgramData,
 }
 
@@ -56,7 +55,6 @@ fn parse_then_emit(from: &str, cfg: Config, syntax: Syntax) -> String {
             from, src.start_pos, src.end_pos
         );
 
-        let comments = Default::default();
         let program_data = Rc::new(RefCell::new(ast::ProgramData::default()));
         let res = {
             let mut parser = Parser::new(Default::default(), &src, program_data.clone());
@@ -74,7 +72,6 @@ fn parse_then_emit(from: &str, cfg: Config, syntax: Syntax) -> String {
         let out = Builder {
             cfg,
             cm,
-            comments,
             program_data: Rc::try_unwrap(program_data).unwrap().into_inner(),
         }
         .text(from, |e| e.emit_module(&res).unwrap());
@@ -151,54 +148,6 @@ fn test_from_to_custom_config(from: &str, to: &str, cfg: Config, syntax: Syntax)
 fn empty_stmt() {
     test_from_to(";", ";");
 }
-
-// #[test]
-// fn comment_1() {
-//     test_from_to(
-//         "// foo
-// a",
-//         "// foo
-// a;",
-//     );
-// }
-
-// #[test]
-// fn comment_2() {
-//     test_from_to("a // foo", "a; // foo");
-// }
-
-// #[test]
-// fn comment_3() {
-//     test_from_to(
-//         "// foo
-// // bar
-// a
-// // foo
-// b // bar",
-//         "// foo
-// // bar
-// a;
-// // foo
-// b; // bar",
-//     );
-// }
-
-// #[test]
-// fn comment_4() {
-//     test_from_to("/** foo */ a", "/** foo */ a;");
-// }
-
-// #[test]
-// fn comment_5() {
-//     test_from_to(
-//         "// foo
-// // bar
-// a",
-//         "// foo
-// // bar
-// a;",
-//     );
-// }
 
 #[test]
 fn no_octal_escape() {
