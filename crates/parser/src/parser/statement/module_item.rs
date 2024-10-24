@@ -380,13 +380,11 @@ impl<I: Tokens> Parser<I> {
                 && self.input.peeked_is(&tok!("function"))
                 && !self.input.has_linebreak_between_cur_and_peeked()
             {
-                todo!()
-                // let decl = self.parse_default_async_fn(start, decorators)?;
-                // return Ok(ModuleDecl::ExportDefaultDecl(decl));
+                let decl = self.parse_default_async_fn(start, decorators)?;
+                return Ok(decl.map(|decl| ModuleDecl::ExportDefaultDecl(decl)));
             } else if is!(self, "function") {
-                todo!()
-                // let decl = self.parse_default_fn(start, decorators)?;
-                // return Ok(ModuleDecl::ExportDefaultDecl(decl));
+                let decl = self.parse_default_fn(start, decorators)?;
+                return Ok(decl.map(|decl| ModuleDecl::ExportDefaultDecl(decl)));
             } else if self.input.syntax().export_default_from()
                 && (is!(self, "from") || (is!(self, ',') && peeked_is!(self, '{')))
             {
@@ -403,17 +401,16 @@ impl<I: Tokens> Parser<I> {
 
         let decl = if !type_only && is!(self, "class") {
             let class_start = self.input.cur_pos();
-            self.parse_class_decl(start, class_start, decorators)?
+            self.parse_class_decl(start, class_start, decorators)
+                .map(Some)?
         } else if !type_only
             && is!(self, "async")
             && self.input.peeked_is(&tok!("function"))
             && !self.input.has_linebreak_between_cur_and_peeked()
         {
-            todo!()
-            // self.parse_async_fn_decl(decorators)?
+            self.parse_async_fn_decl(decorators)?
         } else if !type_only && is!(self, "function") {
-            todo!()
-            // self.parse_fn_decl_or_ts_overload_sig(decorators)?
+            self.parse_fn_decl_or_ts_overload_sig(decorators)?
         } else if !type_only
             && self.input.syntax().typescript()
             && is!(self, "const")
@@ -443,7 +440,7 @@ impl<I: Tokens> Parser<I> {
                         .map(|t| t.follows_keyword_let())
                         .unwrap_or(false))
         {
-            self.parse_var_stmt(false).map(Decl::Var)?
+            self.parse_var_stmt(false).map(Decl::Var).map(Some)?
         } else {
             // export {};
             // export {} from '';
@@ -559,10 +556,12 @@ impl<I: Tokens> Parser<I> {
             })));
         };
 
-        Ok(Some(ModuleDecl::ExportDecl(ExportDecl {
-            node_id: node_id!(self, span!(self, start)),
-            decl,
-        })))
+        Ok(decl.map(|decl| {
+            ModuleDecl::ExportDecl(ExportDecl {
+                node_id: node_id!(self, span!(self, start)),
+                decl,
+            })
+        }))
     }
 
     fn parse_named_export_specifier(&mut self) -> PResult<ExportNamedSpecifier> {
