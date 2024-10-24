@@ -2582,22 +2582,14 @@ impl<'a> Emitter<'a> {
     fn emit_return_stmt(&mut self, node: &ReturnStmt) -> Result {
         keyword!(self, "return");
         if let Some(arg) = &node.arg {
-            let arg_span = get_span!(self, arg.node_id());
-            let need_paren = !arg_span.is_dummy();
+            let need_paren = self.expr_starts_with_alpha_num(&arg)?;
             if need_paren {
-                punct!(self, "(");
-            } else {
-                if self.expr_starts_with_alpha_num(&arg)? {
                     space!(self);
                 } else {
                     formatting_space!(self);
-                }
             }
 
             self.emit_expr(arg)?;
-            if need_paren {
-                punct!(self, ")");
-            }
         }
         formatting_semi!(self);
         Ok(())
