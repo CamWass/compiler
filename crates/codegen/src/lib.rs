@@ -1,10 +1,11 @@
 #![recursion_limit = "1024"]
 
 pub use self::config::Config;
-use self::{list::ListFormat, text_writer::WriteJs, util::SourceMapperExt};
+use self::{list::ListFormat, util::SourceMapperExt};
 use ast::*;
 use global_common::{sync::Lrc, BytePos, SourceMap, Span, DUMMY_SP};
 use std::{borrow::Cow, fmt::Write, io};
+pub use text_writer::JsWriter;
 use util::{for_var_ends_with_alpha_num, prop_name_starts_with_alpha_num};
 
 #[macro_use]
@@ -24,8 +25,7 @@ pub type Result = io::Result<()>;
 pub struct Emitter<'a> {
     cfg: config::Config,
     cm: Lrc<SourceMap>,
-    // TODO: concrete:
-    wr: Box<(dyn 'a + WriteJs)>,
+    wr: JsWriter<'a>,
 
     program_data: &'a ProgramData,
 
@@ -37,7 +37,7 @@ impl<'a> Emitter<'a> {
     pub fn new(
         cfg: config::Config,
         cm: Lrc<SourceMap>,
-        wr: Box<(dyn 'a + WriteJs)>,
+        wr: JsWriter<'a>,
 
         program_data: &'a ProgramData,
     ) -> Self {
@@ -2988,12 +2988,7 @@ impl<'a> Emitter<'a> {
                 let mut new = Emitter {
                     cfg: self.cfg,
                     cm: self.cm.clone(),
-                    wr: Box::new(text_writer::JsWriter::new(
-                        self.cm.clone(),
-                        "\n",
-                        &mut buffer,
-                        None,
-                    )),
+                    wr: JsWriter::new("\n", &mut buffer, None),
                     program_data: self.program_data,
                     ctx: self.ctx,
                     flags: self.flags,
@@ -3013,12 +3008,7 @@ impl<'a> Emitter<'a> {
                 let mut new = Emitter {
                     cfg: self.cfg,
                     cm: self.cm.clone(),
-                    wr: Box::new(text_writer::JsWriter::new(
-                        self.cm.clone(),
-                        "\n",
-                        &mut buffer,
-                        None,
-                    )),
+                    wr: JsWriter::new("\n", &mut buffer, None),
                     program_data: self.program_data,
                     ctx: self.ctx,
                     flags: self.flags,
@@ -3390,53 +3380,6 @@ fn get_quoted_utf16(v: &str, target: EsVersion) -> String {
     } else {
         format!("\"{}\"", buf.replace('"', "\\\""))
     }
-}
-
-/// Returns [Some] if the span points to a string literal written by user.
-///
-/// Returns [None] if the span is created from a pass of swc. For example,
-/// spans of string literals created from [TplElement] do not have `starting`
-/// quote.
-fn is_single_quote(cm: &SourceMap, span: Span) -> Option<bool> {
-    if span.is_dummy() {
-        return None;
-    }
-
-    let start = cm.lookup_byte_offset(span.lo);
-    let end = cm.lookup_byte_offset(span.hi);
-
-    if start.sf.start_pos != end.sf.start_pos {
-        return None;
-    }
-
-    // Empty file
-    if start.sf.start_pos == start.sf.end_pos {
-        return None;
-    }
-
-    let start_index = start.pos.0;
-    let end_index = end.pos.0;
-    let source_len = (start.sf.end_pos - start.sf.start_pos).0;
-
-    if start_index > end_index || end_index > source_len {
-        return None;
-    }
-
-    let src = &start.sf.src;
-    let single_quote = match src.as_bytes()[start_index as usize] {
-        b'\'' => true,
-        b'"' => false,
-        _ => return None,
-    };
-    if end_index == 0 {
-        return None;
-    }
-
-    if src.as_bytes()[start_index as usize] != src.as_bytes()[(end_index - 1) as usize] {
-        return None;
-    }
-
-    Some(single_quote)
 }
 
 fn handle_invalid_unicodes(s: &str) -> Cow<str> {

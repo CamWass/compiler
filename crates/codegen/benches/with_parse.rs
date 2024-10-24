@@ -113,12 +113,7 @@ fn bench_emitter(b: &mut Bencher, s: &str) {
                         ..Default::default()
                     },
                     cm.clone(),
-                    Box::new(codegen::text_writer::JsWriter::new(
-                        cm.clone(),
-                        "\n",
-                        &mut buf,
-                        Some(&mut src_map_buf),
-                    )),
+                    codegen::JsWriter::new("\n", &mut buf, Some(&mut src_map_buf)),
                     &program_data,
                 );
 

@@ -69,7 +69,7 @@ impl<'a> Tester<'a> {
             let mut emitter = Emitter::new(
                 Default::default(),
                 self.cm.clone(),
-                Box::new(JsWriter::new(self.cm.clone(), "\n", &mut buf, None)),
+                JsWriter::new("\n", &mut buf, None),
                 program_data,
             );
 

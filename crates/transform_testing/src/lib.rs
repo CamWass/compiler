@@ -82,12 +82,7 @@ impl<'a> Tester<'a> {
             let mut emitter = Emitter::new(
                 Default::default(),
                 self.cm.clone(),
-                Box::new(codegen::text_writer::JsWriter::new(
-                    self.cm.clone(),
-                    "\n",
-                    &mut buf,
-                    None,
-                )),
+                codegen::JsWriter::new("\n", &mut buf, None),
                 program_data,
             );
 

@@ -1,15 +1,12 @@
 use self::parser::Parser;
 use super::*;
 use crate::config::Config;
-use crate::text_writer::omit_trailing_semi;
 use global_common::{FileName, SourceMap};
 use parser::{self, EsConfig, Syntax};
 use std::{
     cell::RefCell,
     fmt::{self, Debug, Display, Formatter},
-    io::Write,
     rc::Rc,
-    sync::{Arc, RwLock},
 };
 
 struct Builder {
@@ -19,29 +16,24 @@ struct Builder {
 }
 
 impl Builder {
-    pub fn with<F, Ret>(self, src: &str, s: &mut Vec<u8>, op: F) -> Ret
+    pub fn with<F, Ret>(self, s: &mut Vec<u8>, op: F) -> Ret
     where
         F: FnOnce(&mut Emitter<'_>) -> Ret,
     {
-        let writer = text_writer::JsWriter::new(self.cm.clone(), "\n", s, None);
-        let writer: Box<dyn WriteJs> = if self.cfg.minify {
-            Box::new(omit_trailing_semi(writer))
-        } else {
-            Box::new(writer)
-        };
+        let writer = text_writer::JsWriter::new("\n", s, None);
 
         let mut e = Emitter::new(self.cfg, self.cm.clone(), writer, &self.program_data);
 
         op(&mut e)
     }
 
-    pub fn text<F>(self, src: &str, op: F) -> String
+    pub fn text<F>(self, op: F) -> String
     where
         F: FnOnce(&mut Emitter<'_>),
     {
         let mut buf = vec![];
 
-        self.with(src, &mut buf, op);
+        self.with(&mut buf, op);
 
         String::from_utf8(buf).unwrap()
     }
@@ -57,7 +49,7 @@ fn parse_then_emit(from: &str, cfg: Config, syntax: Syntax) -> String {
 
         let program_data = Rc::new(RefCell::new(ast::ProgramData::default()));
         let res = {
-            let mut parser = Parser::new(Default::default(), &src, program_data.clone());
+            let mut parser = Parser::new(syntax, &src, program_data.clone());
             let res = parser
                 .parse_module()
                 .map_err(|e| e.into_diagnostic(handler).emit());
@@ -74,7 +66,7 @@ fn parse_then_emit(from: &str, cfg: Config, syntax: Syntax) -> String {
             cm,
             program_data: Rc::try_unwrap(program_data).unwrap().into_inner(),
         }
-        .text(from, |e| e.emit_module(&res).unwrap());
+        .text(|e| e.emit_module(&res).unwrap());
         Ok(out)
     })
     .unwrap()
@@ -98,7 +90,7 @@ pub(crate) fn assert_min_target(from: &str, to: &str, target: EsVersion) {
         from,
         Config {
             minify: true,
-            target: EsVersion::latest(),
+            target,
         },
         Syntax::default(),
     );
@@ -522,18 +514,18 @@ fn issue_1619_3() {
     assert_eq!(get_quoted_utf16("\x00\x31", EsVersion::Es3), "\"\\x001\"");
 }
 
-fn check_latest(src: &str, expected: &str) {
-    let actual = parse_then_emit(
-        src,
-        Config {
-            minify: false,
-            target: EsVersion::latest(),
-            ..Default::default()
-        },
-        Default::default(),
-    );
-    assert_eq!(expected, actual.trim());
-}
+// fn check_latest(src: &str, expected: &str) {
+//     let actual = parse_then_emit(
+//         src,
+//         Config {
+//             minify: false,
+//             target: EsVersion::latest(),
+//             ..Default::default()
+//         },
+//         Default::default(),
+//     );
+//     assert_eq!(expected, actual.trim());
+// }
 
 // #[test]
 // fn invalid_unicode_in_ident() {
@@ -548,18 +540,6 @@ fn check_latest(src: &str, expected: &str) {
 //         "'\\ud83d\\ud83d\\ud83d\\ud83d\\ud83d';",
 //     );
 // }
-
-#[derive(Debug, Clone)]
-struct Buf(Arc<RwLock<Vec<u8>>>);
-impl Write for Buf {
-    fn write(&mut self, data: &[u8]) -> io::Result<usize> {
-        self.0.write().unwrap().write(data)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.0.write().unwrap().flush()
-    }
-}
 
 #[derive(PartialEq, Eq)]
 struct DebugUsingDisplay<'a>(&'a str);
