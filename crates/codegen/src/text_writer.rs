@@ -1,5 +1,5 @@
 use super::Result;
-use global_common::{BytePos, LineCol, Span};
+use global_common::{BytePos, LineCol, Span, DUMMY_SP};
 use std::io::{self, Write};
 
 ///
@@ -17,6 +17,7 @@ pub struct JsWriter<'a> {
     srcmap: Option<&'a mut Vec<(BytePos, LineCol)>>,
     wr: &'a mut Vec<u8>,
     written_bytes: usize,
+    pending_semi: Option<Span>,
 }
 
 impl<'a> JsWriter<'a> {
@@ -34,6 +35,7 @@ impl<'a> JsWriter<'a> {
             srcmap,
             wr,
             written_bytes: 0,
+            pending_semi: None,
         }
     }
 
@@ -97,35 +99,41 @@ impl<'a> JsWriter<'a> {
 
 impl<'a> JsWriter<'a> {
     pub(super) fn increase_indent(&mut self) -> Result {
+        self.commit_pending_semi()?;
         self.indent += 1;
         Ok(())
     }
     pub(super) fn decrease_indent(&mut self) -> Result {
+        self.commit_pending_semi()?;
         self.indent -= 1;
         Ok(())
     }
 
     /// This *may* write semicolon.
     pub(super) fn write_semi(&mut self, span: Option<Span>) -> Result {
-        self.write(span, ";")?;
+        self.pending_semi = Some(span.unwrap_or(DUMMY_SP));
         Ok(())
     }
     pub(super) fn write_space(&mut self) -> Result {
+        self.commit_pending_semi()?;
         self.write(None, " ")?;
         Ok(())
     }
 
     pub(super) fn write_keyword(&mut self, span: Option<Span>, s: &'static str) -> Result {
+        self.commit_pending_semi()?;
         self.write(span, s)?;
         Ok(())
     }
 
     pub(super) fn write_operator(&mut self, span: Option<Span>, s: &str) -> Result {
+        self.commit_pending_semi()?;
         self.write(span, s)?;
         Ok(())
     }
 
     pub(super) fn write_line(&mut self) -> Result {
+        self.commit_pending_semi()?;
         if !self.line_start {
             self.raw_write(self.new_line.as_bytes())?;
             self.line_count += 1;
@@ -137,6 +145,7 @@ impl<'a> JsWriter<'a> {
     }
 
     pub(super) fn write_lit(&mut self, span: Span, s: &str) -> Result {
+        self.commit_pending_semi()?;
         if !s.is_empty() {
             if !span.is_dummy() {
                 self.srcmap(span.lo())
@@ -159,26 +168,42 @@ impl<'a> JsWriter<'a> {
     }
 
     pub(super) fn write_str_lit(&mut self, span: Span, s: &str) -> Result {
+        self.commit_pending_semi()?;
         self.write(Some(span), s)?;
         Ok(())
     }
 
     pub(super) fn write_str(&mut self, s: &str) -> Result {
+        self.commit_pending_semi()?;
         self.write(None, s)?;
         Ok(())
     }
 
     pub(super) fn write_symbol(&mut self, span: Span, s: &str) -> Result {
+        self.commit_pending_semi()?;
         self.write(Some(span), s)?;
         Ok(())
     }
 
     pub(super) fn write_punct(&mut self, span: Option<Span>, s: &'static str) -> Result {
+        match s {
+            "\"" | "'" | "[" | "!" | "/" | "{" | "(" | "~" | "-" | "+" | "#" | "`" | "*" => {
+                self.commit_pending_semi()?;
+            }
+
+            _ => {
+                self.pending_semi = None;
+            }
+        }
         self.write(span, s)?;
         Ok(())
     }
 
     pub(super) fn commit_pending_semi(&mut self) -> Result {
+        if self.pending_semi.is_some() {
+            self.write(self.pending_semi, ";")?;
+            self.pending_semi = None;
+        }
         Ok(())
     }
 }

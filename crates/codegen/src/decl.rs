@@ -111,7 +111,7 @@ mod tests {
         assert_min(
             "class Hoge {};
 class HogeFuga extends Hoge {};",
-            "class Hoge{};class HogeFuga extends Hoge{};",
+            "class Hoge{}class HogeFuga extends Hoge{}",
         );
     }
 

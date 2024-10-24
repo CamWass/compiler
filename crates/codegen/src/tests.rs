@@ -117,9 +117,6 @@ pub(crate) fn assert_pretty(from: &str, to: &str) {
 fn test_from_to(from: &str, expected: &str) {
     let out = parse_then_emit(from, Default::default(), Syntax::default());
 
-    dbg!(&out);
-    dbg!(&expected);
-
     assert_eq!(
         DebugUsingDisplay(out.trim()),
         DebugUsingDisplay(expected.trim()),
@@ -134,11 +131,6 @@ fn test_from_to_custom_config(from: &str, to: &str, cfg: Config, syntax: Syntax)
     let out = parse_then_emit(from, cfg, syntax);
 
     assert_eq!(DebugUsingDisplay(out.trim()), DebugUsingDisplay(to.trim()),);
-}
-
-#[test]
-fn empty_stmt() {
-    test_from_to(";", ";");
 }
 
 #[test]

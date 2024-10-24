@@ -65,7 +65,7 @@ impl<'a> Emitter<'a> {
             self.wr.write_line()?;
         }
         for stmt in &node.body {
-            self.emit_module_item(stmt)?;
+            self.emit_module_item(stmt, true)?;
         }
         Ok(())
     }
@@ -77,14 +77,14 @@ impl<'a> Emitter<'a> {
             self.wr.write_line()?;
         }
         for stmt in &node.body {
-            self.emit_stmt(stmt)?;
+            self.emit_stmt(stmt, true)?;
         }
         Ok(())
     }
 
-    fn emit_module_item(&mut self, node: &ModuleItem) -> Result {
+    fn emit_module_item(&mut self, node: &ModuleItem, ignore_empty: bool) -> Result {
         match node {
-            ModuleItem::Stmt(stmt) => self.emit_stmt(stmt),
+            ModuleItem::Stmt(stmt) => self.emit_stmt(stmt, ignore_empty),
             ModuleItem::ModuleDecl(decl) => self.emit_module_decl(decl),
         }
     }
@@ -1423,7 +1423,7 @@ impl<'a> Emitter<'a> {
             ClassMember::Method(n) => self.emit_class_method(n),
             ClassMember::PrivateMethod(n) => self.emit_private_method(n),
             ClassMember::PrivateProp(n) => self.emit_private_prop(n),
-            ClassMember::Empty(n) => self.emit_empty_stmt(n),
+            ClassMember::Empty(n) => self.emit_empty_stmt(n, true),
         }
     }
 
@@ -2419,7 +2419,7 @@ impl<'a> Emitter<'a> {
 
 /// Statements
 impl<'a> Emitter<'a> {
-    fn emit_stmt(&mut self, node: &Stmt) -> Result {
+    fn emit_stmt(&mut self, node: &Stmt, ignore_empty: bool) -> Result {
         let old = self.ctx;
         // only ExprStmt would have unparented expr,
         // which would be handled in its own visit function
@@ -2429,7 +2429,7 @@ impl<'a> Emitter<'a> {
             Stmt::Block(e) => {
                 return self.emit_block_stmt(e);
             }
-            Stmt::Empty(e) => self.emit_empty_stmt(e),
+            Stmt::Empty(e) => self.emit_empty_stmt(e, ignore_empty),
             Stmt::Debugger(e) => self.emit_debugger_stmt(e),
             Stmt::With(e) => self.emit_with_stmt(e),
             Stmt::Return(e) => self.emit_return_stmt(e),
@@ -2486,7 +2486,7 @@ impl<'a> Emitter<'a> {
         } else {
             formatting_space!(self);
         }
-        self.emit_stmt(stmt)
+        self.emit_stmt(stmt, false)
     }
 
     fn emit_expr_stmt(&mut self, e: &ExprStmt) -> Result {
@@ -2541,7 +2541,7 @@ impl<'a> Emitter<'a> {
         self.emit_list(
             span,
             &node.stmts,
-            |e, n| e.emit_stmt(n),
+            |e, n| e.emit_stmt(n, true),
             ListFormat::MultiLineBlockStatements,
         )?;
 
@@ -2558,8 +2558,10 @@ impl<'a> Emitter<'a> {
         Ok(())
     }
 
-    fn emit_empty_stmt(&mut self, _: &EmptyStmt) -> Result {
-        semi!(self);
+    fn emit_empty_stmt(&mut self, _: &EmptyStmt, ignore_empty: bool) -> Result {
+        if !ignore_empty {
+            semi!(self);
+        }
         Ok(())
     }
 
@@ -2584,9 +2586,9 @@ impl<'a> Emitter<'a> {
         if let Some(arg) = &node.arg {
             let need_paren = self.expr_starts_with_alpha_num(&arg)?;
             if need_paren {
-                    space!(self);
-                } else {
-                    formatting_space!(self);
+                space!(self);
+            } else {
+                formatting_space!(self);
             }
 
             self.emit_expr(arg)?;
@@ -2712,7 +2714,7 @@ impl<'a> Emitter<'a> {
         } else {
             punct!(self, ":");
         }
-        self.emit_list(span, &node.cons, |e, n| e.emit_stmt(n), format)
+        self.emit_list(span, &node.cons, |e, n| e.emit_stmt(n, true), format)
     }
 
     fn emit_throw_stmt(&mut self, node: &ThrowStmt) -> Result {

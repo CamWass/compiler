@@ -124,4 +124,11 @@ mod tests {
             r#""Q"+ +x1+","+ +y1+","+(this._x1=+x)+","+(this._y1=+y)"#,
         );
     }
+
+    #[test]
+    fn empty_stmt() {
+        assert_min(";", "");
+        assert_min("{;};", "{}");
+        assert_min("class C {;};", "class C{}");
+    }
 }
