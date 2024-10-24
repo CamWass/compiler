@@ -1366,7 +1366,6 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_class_trailing(&mut self, node: &Class) -> Result {
-        // TODO: fix
         let ctx = std::mem::replace(&mut self.ctx, Context::Default);
 
         if let Some(extends) = &node.extends {
@@ -1384,6 +1383,7 @@ impl<'a> Emitter<'a> {
             ListFormat::ClassMembers,
         )?;
         self.flags.set(Flags::in_for_stmt_head, in_for_stmt_head);
+        self.ctx = ctx;
         punct!(self, "}");
         Ok(())
     }
