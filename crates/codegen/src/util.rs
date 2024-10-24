@@ -6,7 +6,7 @@ use std::{rc::Rc, sync::Arc};
 pub trait SourceMapperExt {
     fn get_code_map(&self) -> &dyn SourceMapper;
 
-    fn is_on_same_line(&self, lo: BytePos, hi: BytePos) -> bool {
+    fn is_on_same_line(&self, _lo: BytePos, _hi: BytePos) -> bool {
         // let cm = self.get_code_map();
 
         // let lo = cm.lookup_char_pos(lo);

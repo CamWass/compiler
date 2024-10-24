@@ -1370,7 +1370,7 @@ impl DeclFinder<'_> {
     }
 }
 
-impl<'ast> Visit<'ast> for DeclFinder<'_> {
+impl Visit<'_> for DeclFinder<'_> {
     // Don't visit nested functions.
     fn visit_function(&mut self, _node: &Function) {}
     fn visit_constructor(&mut self, _node: &Constructor) {}

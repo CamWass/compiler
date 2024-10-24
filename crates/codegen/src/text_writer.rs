@@ -97,7 +97,7 @@ impl<'a> JsWriter<'a> {
     }
 }
 
-impl<'a> JsWriter<'a> {
+impl JsWriter<'_> {
     pub(super) fn increase_indent(&mut self) -> Result {
         self.commit_pending_semi()?;
         self.indent += 1;

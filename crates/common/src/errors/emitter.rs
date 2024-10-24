@@ -370,7 +370,7 @@ impl EmitterWriter {
         // 4 | | }
         //   | |_^ test
         if line.annotations.len() == 1 {
-            if let Some(ann) = line.annotations.get(0) {
+            if let Some(ann) = line.annotations.first() {
                 if let AnnotationType::MultilineStart(depth) = ann.annotation_type {
                     if source_string
                         .chars()
@@ -1538,7 +1538,7 @@ impl Destination {
     }
 }
 
-impl<'a> WritableDst<'a> {
+impl WritableDst<'_> {
     #[cfg(feature = "tty-emitter")]
     fn apply_style(&mut self, lvl: Level, style: Style) -> io::Result<()> {
         let mut spec = ColorSpec::new();
@@ -1606,7 +1606,7 @@ impl<'a> WritableDst<'a> {
     }
 }
 
-impl<'a> Write for WritableDst<'a> {
+impl Write for WritableDst<'_> {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         match self {
             #[cfg(feature = "tty-emitter")]
@@ -1628,7 +1628,7 @@ impl<'a> Write for WritableDst<'a> {
     }
 }
 
-impl<'a> Drop for WritableDst<'a> {
+impl Drop for WritableDst<'_> {
     fn drop(&mut self) {
         #[cfg(feature = "tty-emitter")]
         if let WritableDst::Buffered(dst, buf) = self {

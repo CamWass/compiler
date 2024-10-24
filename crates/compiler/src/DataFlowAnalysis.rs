@@ -506,7 +506,7 @@ macro_rules! visit_fn {
     };
 }
 
-impl<'ast, 'a> Visit<'ast> for EscapedVarFinder<'a> {
+impl Visit<'_> for EscapedVarFinder<'_> {
     // Only search for references in nested functions.
     visit_fn!(visit_function, Function);
     visit_fn!(visit_constructor, Constructor);
@@ -519,8 +519,8 @@ struct RefFinder<'a> {
     escaped: &'a mut FxHashSet<Id>,
 }
 
-impl<'ast, 'a> Visit<'ast> for RefFinder<'a> {
-    fn visit_ident(&mut self, node: &'ast ast::Ident) {
+impl Visit<'_> for RefFinder<'_> {
+    fn visit_ident(&mut self, node: &ast::Ident) {
         let id = node.to_id();
         if self.all_vars_in_fn.contains_key(&id) {
             self.escaped.insert(id);

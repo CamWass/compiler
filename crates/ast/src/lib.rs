@@ -69,7 +69,7 @@ pub trait GetNodeId {
     fn node_id(&self) -> NodeId;
 }
 
-impl<'a, T> GetNodeId for &'a T
+impl<T> GetNodeId for &T
 where
     T: GetNodeId,
 {

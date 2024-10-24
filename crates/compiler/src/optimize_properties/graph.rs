@@ -977,7 +977,7 @@ pub(super) enum SmallSetIter<'a> {
     Set(BitIter<'a, PointerId>),
 }
 
-impl<'a> Iterator for SmallSetIter<'a> {
+impl Iterator for SmallSetIter<'_> {
     type Item = PointerId;
 
     fn next(&mut self) -> Option<Self::Item> {

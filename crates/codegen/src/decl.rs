@@ -3,7 +3,7 @@ use crate::Context;
 use super::{list::ListFormat, Emitter, Result};
 use ast::*;
 
-impl<'a> Emitter<'a> {
+impl Emitter<'_> {
     pub fn emit_decl(&mut self, node: &Decl) -> Result {
         match node {
             Decl::Class(n) => self.emit_class_decl(n)?,

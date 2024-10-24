@@ -143,7 +143,7 @@ impl<'ast, E: Debug + PartialEq + Clone + Copy> DerefMut for WithParent<'_, 'ast
         self.inner
     }
 }
-impl<'w, 'ast, E> Drop for WithParent<'w, 'ast, E>
+impl<E> Drop for WithParent<'_, '_, E>
 where
     E: Debug + PartialEq + Clone + Copy,
 {

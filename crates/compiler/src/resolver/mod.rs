@@ -179,7 +179,7 @@ struct InnerConfig {
     unresolved_mark: Mark,
 }
 
-impl<'a> Resolver<'a> {
+impl Resolver<'_> {
     fn with_child<F>(&self, kind: ScopeKind, op: F)
     where
         F: for<'aa> FnOnce(&mut Resolver<'aa>),
@@ -340,7 +340,7 @@ macro_rules! track_ident_mut {
     };
 }
 
-impl<'a> VisitMut<'_> for Resolver<'a> {
+impl VisitMut<'_> for Resolver<'_> {
     fn visit_mut_member_expr(&mut self, n: &mut MemberExpr) {
         n.obj.visit_mut_with(self);
         if n.computed {
@@ -1085,7 +1085,7 @@ where
     found
 }
 
-impl<'a> Visit<'_> for DestructuringFinder<'a> {
+impl Visit<'_> for DestructuringFinder<'_> {
     /// No-op (we don't care about expressions)
     fn visit_expr(&mut self, _: &Expr) {}
 

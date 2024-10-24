@@ -240,7 +240,7 @@ where
     in_destructuring: bool,
 }
 
-impl<'a, 'b, 'ast, T> Visit<'ast> for GenKillComputer<'ast, 'a, 'b, T>
+impl<'a, 'ast, T> Visit<'ast> for GenKillComputer<'ast, 'a, '_, T>
 where
     T: FunctionLike<'a>,
 {

@@ -342,7 +342,7 @@ impl<'a, T: Idx> BitIter<'a, T> {
     }
 }
 
-impl<'a, T: Idx> Iterator for BitIter<'a, T> {
+impl<T: Idx> Iterator for BitIter<'_, T> {
     type Item = T;
     fn next(&mut self) -> Option<T> {
         loop {
@@ -678,7 +678,7 @@ pub enum HybridIter<'a, T: Idx> {
     Dense(BitIter<'a, T>),
 }
 
-impl<'a, T: Idx> Iterator for HybridIter<'a, T> {
+impl<T: Idx> Iterator for HybridIter<'_, T> {
     type Item = T;
 
     fn next(&mut self) -> Option<T> {

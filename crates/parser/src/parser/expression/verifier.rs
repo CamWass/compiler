@@ -9,7 +9,7 @@ impl<I: Tokens> Parser<I> {
             parser: self,
         };
 
-        v.visit_expr(&expr);
+        v.visit_expr(expr);
 
         for (span, error) in v.errors {
             self.emit_err(span, error);

@@ -11,10 +11,8 @@ use std::ops::Index;
 
 // TODO: account for other function like types (such as methods/getters etc)
 
-// TODO:
-#[derive(Debug)]
-pub struct DummyAnnotation;
-impl Annotation for DummyAnnotation {}
+// Dummy annotation.
+impl Annotation for () {}
 
 pub trait Annotation: fmt::Debug {}
 
@@ -201,7 +199,7 @@ where
 
 const CFG_DOT_FILE_NAME: &str = "cfg.dot";
 
-impl<'ast, NA> ControlFlowGraph<Node<'ast>, NA>
+impl<NA> ControlFlowGraph<Node<'_>, NA>
 where
     NA: Annotation,
 {
@@ -217,6 +215,7 @@ where
         std::fs::write(CFG_DOT_FILE_NAME, dot).expect("Failed to output control flow graph");
     }
 
+    #[allow(dead_code, reason = "used for debugging")]
     pub fn print_simple_with_annotations(&self) {
         // Only used for custom debug impl.
         struct CustomNode<'ast, 'a, NA>
@@ -277,6 +276,7 @@ where
     pub fn print_full(&self) {
         self.print_full_inner::<DefaultPrinter>(None, "cfg")
     }
+    #[allow(dead_code, reason = "used for debugging")]
     /// Same as `print_full` but also prints node annotations using `printer`.
     /// If `printer` is `None`, the annotations will be printed using [`Debug`][std::fmt::Debug].
     pub fn print_full_with_annotations<P>(&self, printer: Option<&P>)
@@ -289,6 +289,7 @@ where
         }
     }
 
+    #[allow(dead_code, reason = "used for debugging")]
     pub fn print_full_with_annotations_name(&self, name: &str) {
         self.print_full_inner::<DefaultPrinter>(Some(&DefaultPrinter), name);
     }

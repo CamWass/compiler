@@ -1686,7 +1686,6 @@ impl<'a> Emitter<'a> {
     }
 
     /// prints `(b){}` from `function a(b){}`
-
     fn emit_fn_trailing(&mut self, node: &Function) -> Result {
         punct!(self, "(");
         self.emit_list(
@@ -2244,7 +2243,7 @@ impl<'a> Emitter<'a> {
 }
 
 /// Patterns
-impl<'a> Emitter<'a> {
+impl Emitter<'_> {
     fn emit_param(&mut self, node: &Param) -> Result {
         let old = self.ctx;
         self.ctx = Context::ForcedExpr;
@@ -2418,7 +2417,7 @@ impl<'a> Emitter<'a> {
 }
 
 /// Statements
-impl<'a> Emitter<'a> {
+impl Emitter<'_> {
     fn emit_stmt(&mut self, node: &Stmt, ignore_empty: bool) -> Result {
         let old = self.ctx;
         // only ExprStmt would have unparented expr,
@@ -2584,7 +2583,7 @@ impl<'a> Emitter<'a> {
     fn emit_return_stmt(&mut self, node: &ReturnStmt) -> Result {
         keyword!(self, "return");
         if let Some(arg) = &node.arg {
-            let need_paren = self.expr_starts_with_alpha_num(&arg)?;
+            let need_paren = self.expr_starts_with_alpha_num(arg)?;
             if need_paren {
                 space!(self);
             } else {
@@ -2693,7 +2692,7 @@ impl<'a> Emitter<'a> {
         if let Some(test) = &node.test {
             keyword!(self, "case");
 
-            if self.expr_starts_with_alpha_num(&test)? {
+            if self.expr_starts_with_alpha_num(test)? {
                 space!(self);
             } else {
                 formatting_space!(self);
@@ -2835,24 +2834,22 @@ impl<'a> Emitter<'a> {
         let mut await_ident = false;
 
         if !node.is_await {
-            match &node.left {
-                VarDeclOrPat::Pat(p) => match p {
+            if let VarDeclOrPat::Pat(p) = &node.left {
+                match p {
                     Pat::Ident(ident) => {
                         if &ident.id.sym == "async" {
                             await_ident = true;
                         }
                     }
-                    Pat::Expr(expr) => match expr.as_ref() {
-                        Expr::Ident(ident) => {
+                    Pat::Expr(expr) => {
+                        if let Expr::Ident(ident) = expr.as_ref() {
                             if &ident.sym == "async" {
                                 await_ident = true;
                             }
                         }
-                        _ => {}
-                    },
+                    }
                     _ => {}
-                },
-                _ => {}
+                }
             }
         }
 
@@ -2892,7 +2889,7 @@ impl<'a> Emitter<'a> {
     }
 }
 
-impl<'a> Emitter<'a> {
+impl Emitter<'_> {
     fn write_delim(&mut self, f: ListFormat) -> Result {
         match f & ListFormat::DelimitersMask {
             ListFormat::None => {}
@@ -2923,7 +2920,7 @@ impl<'a> Emitter<'a> {
     }
 }
 
-impl<'a> Emitter<'a> {
+impl Emitter<'_> {
     /// In some cases, we need to emit a space between the operator and the operand.
     /// One obvious case is when the operator is an identifier, like delete or
     /// typeof. We also need to do this for plus and minus expressions in certain

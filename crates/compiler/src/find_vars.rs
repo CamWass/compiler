@@ -93,7 +93,7 @@ function f() {
 }
 "prop"s should not be collected
 */
-impl<'ast> Visit<'ast> for DeclFinder {
+impl Visit<'_> for DeclFinder {
     // Don't visit nested functions.
     fn visit_function(&mut self, _node: &Function) {}
     fn visit_constructor(&mut self, _node: &Constructor) {}
@@ -180,7 +180,7 @@ pub fn find_pat_ids(node: &Pat) -> Vec<Id> {
     found
 }
 
-impl<'a> Visit<'_> for DestructuringFinder<'a> {
+impl Visit<'_> for DestructuringFinder<'_> {
     /// No-op (we don't care about expressions)
     fn visit_expr(&mut self, _: &Expr) {}
     fn visit_prop_name(&mut self, _: &PropName) {}

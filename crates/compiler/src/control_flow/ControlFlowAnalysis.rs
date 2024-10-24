@@ -21,9 +21,9 @@ pub enum ControlFlowRoot<'ast> {
     SetterProp(&'ast SetterProp),
 }
 
-impl<'ast> Into<Node<'ast>> for ControlFlowRoot<'ast> {
-    fn into(self) -> Node<'ast> {
-        match self {
+impl<'ast> From<ControlFlowRoot<'ast>> for Node<'ast> {
+    fn from(val: ControlFlowRoot<'ast>) -> Self {
+        match val {
             ControlFlowRoot::Script(n) => Node::from(n),
             ControlFlowRoot::Module(n) => Node::from(n),
             ControlFlowRoot::Function(n) => Node::from(n),

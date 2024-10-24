@@ -572,7 +572,7 @@ impl<I: Tokens> Parser<I> {
         if eat!(self, '.') {
             self.parse_ts_module_or_ns_decl()?;
         } else {
-            self.parse_ts_module_block().map(From::from)?;
+            self.parse_ts_module_block()?;
         }
 
         Ok(())

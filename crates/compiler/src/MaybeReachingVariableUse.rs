@@ -28,7 +28,7 @@ pub struct MaybeReachingResult<'ast> {
     pub cfg: ControlFlowGraph<Node<'ast>, LinearFlowState>,
 }
 
-impl<'ast> MaybeReachingResult<'ast> {
+impl MaybeReachingResult<'_> {
     /**
      * Gets a list of nodes that may be using the value assigned to {@code name} in {@code defNode}.
      * {@code defNode} must be one of the control flow graph nodes.
@@ -197,7 +197,7 @@ where
     in_destructuring: bool,
 }
 
-impl<'a, 'b, 'ast, T> Visit<'_> for ReachingUseFinder<'ast, 'a, 'b, T>
+impl<'a, T> Visit<'_> for ReachingUseFinder<'_, 'a, '_, T>
 where
     T: FunctionLike<'a>,
 {
@@ -906,7 +906,7 @@ where
     }
 }
 
-impl<'ast, 'a, T> Index<LatticeElementId> for Inner<'ast, 'a, T>
+impl<'a, T> Index<LatticeElementId> for Inner<'_, 'a, T>
 where
     T: FunctionLike<'a>,
 {

@@ -1305,7 +1305,7 @@ impl<I: Tokens> Parser<I> {
                         self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
                     }
 
-                    return Ok(errored_expr.into());
+                    return Ok(errored_expr);
                 }
             }
             return Ok(Box::new(Expr::Arrow(arrow_expr)).into());
@@ -1327,9 +1327,9 @@ impl<I: Tokens> Parser<I> {
             // It's a call expression
             return Ok(Box::new(Expr::Call(CallExpr {
                 node_id: node_id!(self, span!(self, async_span.lo())),
-                callee: ExprOrSuper::Expr(
-                    Box::new(Expr::Ident(self.new_ident("async".into(), async_span))).into(),
-                ),
+                callee: ExprOrSuper::Expr(Box::new(Expr::Ident(
+                    self.new_ident("async".into(), async_span),
+                ))),
                 args: expr_or_spreads,
             }))
             .into());
@@ -1538,7 +1538,6 @@ fn word_contains_escape(span: &Span, word: &'static str) -> bool {
 // }
 
 /// simple leaf methods.
-
 impl<I: Tokens> Parser<I> {
     fn parse_yield_expr(&mut self) -> PResult<Box<Expr>> {
         let start = self.input.cur_pos();

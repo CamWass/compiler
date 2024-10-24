@@ -536,7 +536,7 @@ fn issue_1619_3() {
 #[derive(PartialEq, Eq)]
 struct DebugUsingDisplay<'a>(&'a str);
 
-impl<'a> Debug for DebugUsingDisplay<'a> {
+impl Debug for DebugUsingDisplay<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         Display::fmt(self.0, f)
     }
