@@ -177,8 +177,6 @@ where
 
         // Again, the implicit return node is always last.
         cfa.node_priorities[cfa.cfg.implicit_return_index.index()] = cfa.priority_counter;
-        // TODO: unnecessary? (never read after this?)
-        // cfa.priorityCounter += 1;
 
         // Every node in the cfg should have been prioritized.
         debug_assert_eq!(cfa.node_priorities.len(), cfa.cfg.graph.node_count());

@@ -3,26 +3,9 @@ use rustc_hash::FxHashMap;
 use std::cmp::Ordering;
 use std::hash::Hash;
 
-// TODO: comment
-// /**
-//  * Annotates the graph with a color in a way that no connected node will have
-//  * the same color. Nodes of the same color can then be partitioned together and
-//  * be represented by a super node. This class will merely annotate the nodes
-//  * with a color using {@link GraphNode#setAnnotation(Annotation)} and provide
-//  * a node to super node mapping with {@link #getPartitionSuperNode(Object)}. The
-//  * given graph itself will not be modified.
-//  *
-//  * <p>This algorithm is <b>NOT</b> deterministic by default. Passes that
-//  * requires deterministic output should provide a {@code Comparator} in the
-//  * constructor as a tie-breaker. This tie-break will be used when deciding
-//  * which node should be colored first when multiple nodes have the same degree.
-//  *
-//  * @param <N> Value type that the graph node stores.
-//  * @param <E> Value type that the graph edge stores.
-//  */
-/**
- * Greedily assign nodes with high degree unique colors.
- */
+/// Annotates the graph with colors in a way that no connected node will have the
+/// same color. Nodes of the same color can then be partitioned together and be
+/// represented by a super node.
 pub struct GreedyGraphColoring<T>
 where
     T: Clone + Eq + Hash,

@@ -4,7 +4,6 @@ use global_common::{util::take::Take, SyntaxContext};
 
 use crate::utils::unwrap_as;
 
-// TODO: colours:
 // TODO: preserve spans?
 
 pub fn normalize(ast: &mut Program, program_data: &mut ast::ProgramData) {

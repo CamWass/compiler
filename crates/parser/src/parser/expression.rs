@@ -1521,22 +1521,6 @@ fn word_contains_escape(span: &Span, word: &'static str) -> bool {
     span.hi.to_usize() - span.lo.to_usize() != word.len()
 }
 
-// #[derive(Debug, PartialEq)]
-// pub(crate) enum MaybeParenPatOrExprOrSpread {
-//     Pat(Pat),
-//     // TODO: maybe flatten
-//     MaybeParenExprOrSpread(MaybeParenExprOrSpread),
-// }
-
-// impl CloneNode for MaybeParenPatOrExprOrSpread {
-//     fn clone_node(&self, program_data: &mut ProgramData) -> Self {
-//         match self {
-//             Self::Pat(n) => Self::Pat(n.clone_node(program_data)),
-//             Self::MaybeParenExprOrSpread(n) => Self::MaybeParenExprOrSpread(n.clone_node(program_data)),
-//         }
-//     }
-// }
-
 /// simple leaf methods.
 impl<I: Tokens> Parser<I> {
     fn parse_yield_expr(&mut self) -> PResult<Box<Expr>> {

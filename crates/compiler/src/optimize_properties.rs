@@ -979,7 +979,6 @@ impl GraphVisitor<'_> {
             Pat::Rest(lhs) => {
                 self.invalidate(rhs);
                 let rhs = &[PointerId::UNKNOWN];
-                // TODO: lhs.arg should only be an identifier?
                 self.visit_destructuring(&lhs.arg, rhs);
             }
             Pat::Assign(lhs) => {

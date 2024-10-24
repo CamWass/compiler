@@ -210,7 +210,6 @@ mod tests {
         assert_min("()=>{ return 5; }", "()=>5");
         assert_min("()=>{ return; }", "()=>{}");
         assert_min("(x)=>{ return x+1 }", "x=>x+1");
-        // TODO: proper paren handling
-        // assert_min("(x)=>{ return x++,5; }", "x=>(x++,5)");
+        assert_min("(x)=>{ return x++,5; }", "x=>(x++,5)");
     }
 }
