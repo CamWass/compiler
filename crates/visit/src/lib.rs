@@ -499,7 +499,6 @@ define!({
     pub struct Number {
         pub node_id: NodeId,
         pub value: f64,
-        pub raw: Option<JsWord>,
     }
     pub enum Program {
         Module(Module),

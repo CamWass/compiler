@@ -90,11 +90,7 @@ pub enum Token {
     /// Regexp literal.
     Regex(JsWord, JsWord),
 
-    /// TODO: Make Num as enum and separate decimal, binary, ..etc
-    Num {
-        value: f64,
-        raw: JsWord,
-    },
+    Num(f64),
 
     BigInt(BigIntValue),
 
@@ -656,7 +652,7 @@ impl Debug for Token {
             Tilde => write!(f, "~")?,
             Str { value, .. } => write!(f, "string literal ({})", value)?,
             Regex(exp, flags) => write!(f, "regexp literal ({}, {})", exp, flags)?,
-            Num { value, raw } => write!(f, "numeric literal ({}, {})", value, raw)?,
+            Num(value) => write!(f, "numeric literal ({})", value,)?,
             BigInt(..) => write!(f, "bigint literal")?,
             Shebang(_) => write!(f, "#!")?,
             Token::Error(_) => write!(f, "<lexing error>")?,

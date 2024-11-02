@@ -409,74 +409,25 @@ impl<'a> Emitter<'a> {
             return Ok(false);
         }
 
-        let mut striped_raw = None;
-        let mut value = String::default();
-
-        if self.cfg.minify {
-            value = minify_number(num.value);
-            self.wr.write_str_lit(span, &value)?;
+        let value = if self.cfg.minify {
+            minify_number(num.value)
         } else {
-            match &num.raw {
-                Some(raw) => {
-                    if raw.len() > 2 && self.cfg.target < EsVersion::Es2015 && {
-                        let slice = &raw.as_bytes()[..2];
-                        slice == b"0b" || slice == b"0o" || slice == b"0B" || slice == b"0O"
-                    } {
-                        value = num.value.to_string();
-                        self.wr.write_str_lit(span, &value)?;
-                    } else if raw.len() > 2
-                        && self.cfg.target < EsVersion::Es2021
-                        && raw.contains('_')
-                    {
-                        let value = raw.replace('_', "");
-                        self.wr.write_str_lit(span, &value)?;
-
-                        striped_raw = Some(value);
-                    } else {
-                        self.wr.write_str_lit(span, raw)?;
-
-                        if !detect_dot {
-                            return Ok(false);
-                        }
-
-                        striped_raw = Some(raw.replace('_', ""));
-                    }
-                }
-                _ => {
-                    value = num.value.to_string();
-                    self.wr.write_str_lit(span, &value)?;
-                }
-            }
-        }
+            num.value.to_string()
+        };
+        self.wr.write_str_lit(span, &value)?;
 
         // fast return
         if !detect_dot {
             return Ok(false);
         }
 
-        Ok(striped_raw
-            .map(|raw| {
-                if raw.bytes().all(|c| c.is_ascii_digit()) {
-                    // Legacy octal contains only digits, but `value` and `raw` are
-                    // different
-                    if !num.value.to_string().eq(&raw) {
-                        return false;
-                    }
+        let bytes = value.as_bytes();
 
-                    return true;
-                }
+        if !bytes.contains(&b'.') && !bytes.contains(&b'e') {
+            return Ok(true);
+        }
 
-                false
-            })
-            .unwrap_or_else(|| {
-                let bytes = value.as_bytes();
-
-                if !bytes.contains(&b'.') && !bytes.contains(&b'e') {
-                    return true;
-                }
-
-                false
-            }))
+        Ok(false)
     }
 
     fn emit_big_lit(&mut self, v: &BigInt) -> Result {

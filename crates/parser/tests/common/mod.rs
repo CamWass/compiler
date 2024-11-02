@@ -55,21 +55,12 @@ impl VisitMut<'_> for Normalizer {
         let val = serde_json::Number::from_f64(n.value);
         let val = match val {
             Some(v) => v,
-            None => {
-                if self.is_test262 {
-                    n.raw = None;
-                }
-
-                return;
-            }
+            None => return,
         };
 
         match val.as_f64() {
             Some(value) => {
                 n.value = value;
-                if self.is_test262 {
-                    n.raw = None;
-                }
             }
             None => {}
         }

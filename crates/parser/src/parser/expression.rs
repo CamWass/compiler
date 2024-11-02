@@ -1614,10 +1614,9 @@ impl<I: Tokens> Parser<I> {
                 _ => unreachable!(),
             },
             Token::Num { .. } => match self.input.bump() {
-                Token::Num { value, raw } => Lit::Num(Number {
+                Token::Num(value) => Lit::Num(Number {
                     node_id: node_id!(self, span!(self, start)),
                     value,
-                    raw: Some(raw),
                 }),
                 _ => unreachable!(),
             },

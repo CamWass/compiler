@@ -310,7 +310,6 @@ impl CoalesceVariableNames<'_> {
                                     arg: Box::new(Expr::Lit(Lit::Num(Number {
                                         node_id: self.program_data.new_id(DUMMY_SP),
                                         value: 0.0,
-                                        raw: None,
                                     }))),
                                 })));
                             }
