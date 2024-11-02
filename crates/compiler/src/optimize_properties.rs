@@ -567,15 +567,16 @@ impl GraphVisitor<'_> {
                     UnaryOp::Bang | UnaryOp::Delete => {
                         ret!(vec![PointerId::BOOL])
                     }
-                    // Output type depends in input type.
+                    // Output type depends in input type, but is always Number or BigInt.
                     UnaryOp::Minus | UnaryOp::Tilde => {
-                        ret!(vec![PointerId::UNKNOWN])
+                        ret!(vec![PointerId::NUM, PointerId::BIG_INT])
                     }
                 }
             }
             Expr::Update(n) => {
                 n.visit_children_with(self);
-                ret!(vec![PointerId::UNKNOWN])
+                // Output type depends in input type, but is always Number or BigInt.
+                ret!(vec![PointerId::NUM, PointerId::BIG_INT])
             }
             Expr::Bin(n) => {
                 match n.op {
@@ -826,7 +827,8 @@ impl GraphVisitor<'_> {
                 ret!(vec![PointerId::UNKNOWN])
             }
             Expr::Await(n) => {
-                n.visit_children_with(self);
+                let value = self.get_rhs(&n.arg, true);
+                self.invalidate(&value);
                 ret!(vec![PointerId::UNKNOWN])
             }
             Expr::PrivateName(_) => todo!(),
