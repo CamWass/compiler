@@ -23,21 +23,19 @@ use crate::{Id, ToId};
 #[cfg(test)]
 mod tests;
 
-/**
- * Reuse variable names if possible.
- *
- * <p>For example, from <code>var x = 1; print(x); var y = 2; print(y); </code>
- * to <code>var x = 1; print(x); x = 2; print(x)</code>. The benefits are
- * slightly shorter code because of the removed <code>var<code> declaration,
- * less unique variables in hope for better renaming, and finally better gzip
- * compression.
- *
- * <p>The pass operates similar to a typical register allocator found in an
- * optimizing compiler by first computing live ranges with
- * {@link LiveVariablesAnalysis} and a variable interference graph. Then it uses
- * graph colouring in {@link GraphColouring} to determine which two variables can
- * be merge together safely.
- */
+/// Reuse variable names if possible.
+///
+/// For example, from `var x = 1; print(x); var y = 2; print(y);`
+/// to `var x = 1; print(x); x = 2; print(x)`. The benefits are
+/// slightly shorter code because of the removed `var` declaration,
+/// less unique variables in hope for better renaming, and finally better gzip
+/// compression.
+///
+/// The pass operates similar to a typical register allocator found in an
+/// optimizing compiler by first computing live ranges with
+/// [LiveVariablesAnalysis] and a variable interference graph. Then it uses
+/// [graph colouring][GreedyGraphColoring] to determine which two variables can
+/// be merge together safely.
 pub struct CoalesceVariableNames<'a> {
     // Maps a colour (represented by an integer) to a variable. If, for example,
     // the colour 5 is mapped to "foo". Then any other variables coloured with the
@@ -511,20 +509,14 @@ impl SubGraph<Id> for SimpleSubGraph<'_> {
     }
 }
 
-/**
- * In order to determine when it is appropriate to coalesce two variables, we use a live variables
- * analysis to make sure they are not alive at the same time. We take every CFG node and determine
- * which pairs of variables are alive at the same time. These pairs are set to true in a bit map.
- * We take every pairing of variables and use the bit map to check if the two variables are alive
- * at the same time. If two variables are alive at the same time, we create an edge between them
- * in the interference graph. The interference graph is the input to a graph coloring algorithm
- * that ensures any interfering variables are marked in different color groups, while variables
- * that can safely be coalesced are assigned the same color group.
- *
- * @param cfg
- * @param escaped we don't want to coalesce any escaped variables
- * @return graph with variable nodes and edges representing variable interference
- */
+/// In order to determine when it is appropriate to coalesce two variables, we use a live variables
+/// analysis to make sure they are not alive at the same time. We take every CFG node and determine
+/// which pairs of variables are alive at the same time. These pairs are set to true in a bit map.
+/// We take every pairing of variables and use the bit map to check if the two variables are alive
+/// at the same time. If two variables are alive at the same time, we create an edge between them
+/// in the interference graph. The interference graph is the input to a graph coloring algorithm
+/// that ensures any interfering variables are marked in different color groups, while variables
+/// that can safely be coalesced are assigned the same color group.
 fn compute_variable_names_interference_graph(
     cfg: &ControlFlowGraph<Node, LinearFlowState>,
     liveness: &LiveVariablesAnalysisResult,

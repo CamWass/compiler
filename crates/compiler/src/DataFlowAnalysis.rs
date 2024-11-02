@@ -19,7 +19,7 @@ use crate::{Id, ToId};
 mod tests;
 
 /// The maximum number of steps per individual CFG node before we assume the analysis is divergent.
-// <p>TODO(b/196398705): This is way too high. Find traversal ordering heuristic that reduces it.
+// TODO: This is way too high. Find traversal ordering heuristic that reduces it.
 pub const MAX_STEPS_PER_NODE: usize = 20000;
 
 impl<N, I, L, J> AnnotationPrinter<LinearFlowState> for DataFlowAnalysis<'_, N, I, L, J>
@@ -42,54 +42,6 @@ where
     }
 }
 
-/**
- * A framework to help writing static program analysis.
- *
- * <p>A subclass of this framework should specify how a single node changes the state of a program.
- * This class finds a safe estimate (a fixed-point) for the whole program. The proven facts about
- * the program will be annotated with {@link
- * com.google.javascript.jscomp.graph.GraphNode#setAnnotation} to the given control flow graph's
- * nodes in form of {@link LatticeElement} after calling {@link #analyze()}.
- *
- * <p>As a guideline, the following is a list of behaviors that any analysis can take:
- *
- * <ol>
- *   <li>Flow Direction: Is the analysis a forward or backward analysis?
- *   <li>Lattice Elements: How does the analysis represent the state of the program at any given
- *       point?
- *   <li>Branching: Does the analysis propagate a different lattice element along each branch
- *       exiting a node?
- *   <li>JOIN Operation: Given two incoming paths and a lattice state value, what can the compiler
- *       conclude at the join point?
- *   <li>Flow Equations: How does an instruction modify the state of program in terms of lattice
- *       values?
- *   <li>Initial Entry Value: What can the compiler assume at the beginning of the program?
- *   <li>Initial Estimate: What can the compiler assume at each point of the program? (What is the
- *       BOTTOM value of the lattice) By definition this lattice JOIN {@code x} for any {@code x}
- *       must also be {@code x}.
- *   <li>(Optional) Branch Operation: How should the flow branch along edges?
- * </ol>
- *
- * To make these behaviors known to the framework, the following steps must be taken.
- *
- * <ol>
- *   <li>Flow Direction: Implement {@link #isForward()}.
- *   <li>Lattice Elements: Implement {@link LatticeElement}.
- *   <li>JOIN Operation: Implement {@link JoinOp#apply}.
- *   <li>Flow Equations: Implement {@link #flowThrough(Object, LatticeElement)}.
- *   <li>Initial Entry Value: Implement {@link #createEntryLattice()}.
- *   <li>Initial Estimate: Implement {@link #createInitialEstimateLattice()}.
- *   <li>(Optional) Branch Operation: Return true from {@link #isBranched()} and implement {@link
- *       #createFlowBrancher}.
- * </ol>
- *
- * <p>Upon execution of the {@link #analyze()} method, nodes of the input control flow graph will be
- * annotated with a {@link FlowState} object that represents maximum fixed point solution. Any
- * previous annotations at the nodes of the control flow graph will be lost.
- *
- * @param <N> The control flow graph's node value type.
- * @param <L> Lattice element type.
- */
 pub struct DataFlowAnalysis<'p, N, I, L, J>
 where
     N: CfgNode,
@@ -99,7 +51,7 @@ where
 {
     pub inner: I,
 
-    /// The set of nodes that need to be considered, orderd by their priority
+    /// The set of nodes that need to be considered, ordered by their priority
     /// as determined by control flow analysis and data flow direction.
     work_queue: UniqueQueue<'p>,
 
@@ -115,25 +67,11 @@ where
     L: LatticeElement,
     J: FlowJoiner<L, I>,
 {
-    /**
-     * Constructs a data flow analysis.
-     *
-     * <p>Typical usage
-     *
-     * <pre>
-     * DataFlowAnalysis dfa = ...
-     * dfa.analyze();
-     * </pre>
-     *
-     * {@link #analyze()} annotates the result to the control flow graph by means of {@link
-     * DiGraphNode#setAnnotation} without any modification of the graph itself. Additional calls to
-     * {@link #analyze()} recomputes the analysis which can be useful if the control flow graph has
-     * been modified.
-     *
-     * @param cfg The control flow graph object that this object performs on. Modification of the
-     *     graph requires a separate call to {@link #analyze()}.
-     * @see #analyze()
-     */
+    /// Constructs a data flow analysis.
+    ///
+    /// `analyze` annotates the result to the control flow graph without any modification of the graph
+    /// itself. Additional calls to `analyze` recomputes the analysis which can be useful if the
+    /// control flow graph has been modified.
     pub fn new(inner: I, node_priorities: &'p [NodePriority]) -> Self {
         Self {
             work_queue: UniqueQueue::new(node_priorities, inner.is_forward()),
@@ -146,19 +84,16 @@ where
         }
     }
 
-    /**
-     * Finds a fixed-point solution. The function has the side effect of replacing the existing node
-     * annotations with the computed solutions using {@link
-     * com.google.javascript.jscomp.graph.GraphNode#setAnnotation(Annotation)}.
-     *
-     * <p>Initially, each node's input and output flow state contains the value given by {@link
-     * #createInitialEstimateLattice()} (with the exception of the entry node of the graph which takes
-     * on the {@link #createEntryLattice()} value. Each node will use the output state of its
-     * predecessor and compute an output state according to the instruction. At that time, any nodes
-     * that depend on the node's newly modified output value will need to recompute their output state
-     * again. Each step will perform a computation at one node until no extra computation will modify
-     * any existing output state anymore.
-     */
+    /// Finds a fixed-point solution. The function has the side effect of replacing the existing node
+    /// annotations with the computed solutions..
+    ///
+    /// Initially, each node's input and output flow state contains the value given by
+    /// `create_initial_estimate_lattice` (with the exception of the entry node of the graph which
+    /// takes on the `create_entry_lattice` value). Each node will use the output state of its
+    /// predecessor and compute an output state according to the instruction. At that time, any nodes
+    /// that depend on the node's newly modified output value will need to recompute their output state
+    /// again. Each step will perform a computation at one node until no extra computation will modify
+    /// any existing output state any more.
     pub fn analyze(&mut self) {
         self.analyze_inner()
             .expect("Dataflow analysis appears to diverge");
@@ -200,7 +135,7 @@ where
         Ok(())
     }
 
-    /** Initializes the work list and the control flow graph. */
+    /// Initializes the work list and the control flow graph.
     fn initialize(&mut self) {
         self.work_queue.clear();
 
@@ -218,11 +153,8 @@ where
         }
     }
 
-    /**
-     * Performs a single flow through a node.
-     *
-     * @return {@code true} if the flow state differs from the previous state.
-     */
+    /// Performs a single flow through a node.
+    /// Returns `true` if the flow state differs from the previous state.
     fn flow(&mut self, node: N) -> bool {
         let state = &self.inner.cfg().node_annotations[&node];
         if self.inner.is_forward() {
@@ -238,12 +170,8 @@ where
         }
     }
 
-    /**
-     * Computes the new flow state at a given node's entry by merging the output (input) lattice of
-     * the node's predecessor (successor).
-     *
-     * @param node Node to compute new join.
-     */
+    /// Computes the new flow state at a given node's entry by merging the output (input) lattice
+    /// of the node's predecessor (successor).
     fn join_inputs(&mut self, node: N) {
         if self.inner.is_forward() && self.inner.cfg().entry == node {
             self.get_flow_state_mut(&node).in_ = self.inner.create_entry_lattice();
@@ -319,6 +247,42 @@ where
     }
 }
 
+/// A framework to help writing static program analysis.
+///
+/// Implementers should specify how a single node changes the state of a program.
+/// This class finds a safe estimate (a fixed-point) for the whole program. The proven facts about
+/// the program will be annotated to the given control flow graph's nodes in form of [LatticeElement]
+/// after calling `analyze`.
+///
+/// As a guideline, the following is a list of behaviors that any analysis can take:
+///
+/// * Flow Direction: Is the analysis a forward or backward analysis?
+/// * Lattice Elements: How does the analysis represent the state of the program at any given
+///   point?
+/// * JOIN Operation: Given two incoming paths and a lattice state value, what can the compiler
+///   conclude at the join point?
+/// * Flow Equations: How does an instruction modify the state of program in terms of lattice
+///   values?
+/// * Initial Entry Value: What can the compiler assume at the beginning of the program?
+/// * Initial Estimate: What can the compiler assume at each point of the program? (What is the
+///   BOTTOM value of the lattice) By definition this lattice JOIN `x` for any `x`
+///   must also be `x`.
+///
+/// To make these behaviors known to the framework, the following steps must be taken.
+///
+/// * Flow Direction: Implement [DataFlowAnalysisInner::is_forward].
+/// * Lattice Elements: Implement [LatticeElement].
+/// * JOIN Operation: Implement [FlowJoiner::join_flow].
+/// * Flow Equations: Implement [DataFlowAnalysisInner::flow_through].
+/// * Initial Entry Value: Implement [DataFlowAnalysisInner::create_entry_lattice].
+/// * Initial Estimate: Implement [DataFlowAnalysisInner::create_initial_estimate_lattice].
+///
+/// Upon execution of the `analyze` method, nodes of the input control flow graph will be
+/// annotated with a `LinearFlowState` object that represents maximum fixed point solution. Any
+/// previous annotations at the nodes of the control flow graph will be lost.
+///
+/// - `N` The control flow graph's node value type.
+/// - `L` Lattice element type.
 pub trait DataFlowAnalysisInner<N, L, J>: Index<LatticeElementId, Output = L>
 where
     N: CfgNode,
@@ -327,45 +291,25 @@ where
     Self: Sized,
 {
     fn add_lattice_element(&mut self, element: L) -> LatticeElementId;
-    /**
-     * Checks whether the analysis is a forward flow analysis or backward flow analysis.
-     *
-     * @return {@code true} if it is a forward analysis.
-     */
+    /// Checks whether the analysis is a forward flow analysis or backward flow analysis.
     fn is_forward(&self) -> bool;
-    /**
-     * Gets the incoming state of the entry node.
-     *
-     * @return Entry state.
-     */
+    /// Gets the incoming state of the entry node.
     fn create_entry_lattice(&mut self) -> LatticeElementId;
-    /**
-     * Gets the state of the initial estimation at each node.
-     *
-     * @return Initial state.
-     */
+    /// Gets the state of the initial estimation at each node.
     fn create_initial_estimate_lattice(&mut self) -> LatticeElementId;
-    /**
-     * Gets a new joiner for an analysis step.
-     *
-     * <p>The joiner is invoked once for each input edge and then the final joined result is
-     * retrieved. No joiner will be created for a single input.
-     */
+    /// Gets a new joiner for an analysis step.
+    ///
+    /// The joiner is invoked once for each input edge and then the final joined result is
+    /// retrieved. No joiner will be created for a single input.
     fn create_flow_joiner(&self) -> J;
-    /**
-     * Computes the output state for a given node given its input state.
-     *
-     * @param node The node.
-     * @param input Input lattice that should be read-only.
-     * @return Output lattice.
-     */
+    /// Computes the output state for a given node given its input state.
     fn flow_through(&mut self, node: N, input: LatticeElementId) -> LatticeElementId;
 
     fn cfg(&self) -> &ControlFlowGraph<N, LinearFlowState>;
     fn cfg_mut(&mut self) -> &mut ControlFlowGraph<N, LinearFlowState>;
 }
 
-/** A reducer that joins flow states from distinct input states into a single input state. */
+/// A reducer that joins flow states from distinct input states into a single input state.
 pub trait FlowJoiner<L, I> {
     fn join_flow(&mut self, inner: &mut I, input: LatticeElementId);
 
@@ -374,7 +318,7 @@ pub trait FlowJoiner<L, I> {
 
 pub trait LatticeElement: Annotation + PartialEq {}
 
-/** The in and out states of a node. */
+/// The in and out states of a node.
 #[derive(Debug, Clone, Copy)]
 pub struct LinearFlowState {
     pub step_count: usize,
@@ -415,7 +359,6 @@ impl std::cmp::Ord for PrioritizedNode {
     }
 }
 
-// `PartialOrd` needs to be implemented as well.
 impl std::cmp::PartialOrd for PrioritizedNode {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
@@ -458,17 +401,14 @@ impl<'p> UniqueQueue<'p> {
     }
 }
 
-// TODO: comment. I think the only vars that get escaped are catch variables and variables referenced in nested functions.
-/**
- * Compute set of escaped variables. When a variable is escaped in a dataflow analysis, it can be
- * referenced outside of the code that we are analyzing. A variable is escaped if any of the
- * following is true:
- *
- * <p>1. Exported variables as they can be needed after the script terminates. 2. Names of named
- * functions because in JavaScript, function foo(){} does not kill foo in the dataflow.
- *
- * @param jsScope Must be a function scope
- */
+// TODO: comment. I think the only vars that get escaped are catch variables and variables referenced
+// in nested functions.
+/// Compute set of escaped variables. When a variable is escaped in a dataflow analysis, it can be
+/// referenced outside of the code that we are analysing. A variable is escaped if any of the
+/// following is true:
+///
+/// 1. Exported variables as they can be needed after the script terminates.
+/// 2. Names of named functions because in JavaScript, `function foo(){}` does not kill foo in the dataflow.
 pub fn compute_escaped<'a, T>(
     fn_scope: &T,
     all_vars_in_fn: &FxHashMap<Id, VarId>,

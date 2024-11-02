@@ -41,12 +41,10 @@ where
         self.partitions[color].count
     }
 
-    /**
-     * @param tieBreaker In case of a tie between two nodes of the same degree,
-     *     this comparator will determine which node should be colored first.
-     *
-     * returns The number of unique colors need.
-     */
+    /// `tieBreaker`: In case of a tie between two nodes of the same degree,
+    /// this comparator will determine which node should be colored first.
+    ///
+    /// Returns The number of unique colors need.
     pub fn color<C, W, S, F>(
         &mut self,
         mut nodes: Vec<T>,

@@ -6,10 +6,10 @@ use rustc_hash::FxHashSet;
 // is that we cannot use numbers as FIRST_CHAR yet the ACSII value of numbers
 // is very small. If we picked numbers first in NONFIRST_CHAR, we would
 // end up balancing the huffman tree and result is bad compression.
-/** Generate short name with this first character */
+/// Generate short name with this first character.
 static FIRST_CHAR: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ$";
 
-/** These appear after the first character */
+/// These appear after the first character.
 static NONFIRST_CHAR: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789$";
 
 #[derive(Default)]

@@ -189,10 +189,8 @@ where
         }
     }
 
-    /**
-     * Given an entry node, find all the nodes reachable from that node
-     * and prioritize them.
-     */
+    /// Given an entry node, find all the nodes reachable from that node
+    /// and prioritize them.
     fn prioritize_from_entry_node(&mut self, entry: NodeIndex) {
         #[derive(Debug)]
         struct PrioritizedNode(NodePriority, NodeIndex);
@@ -502,11 +500,9 @@ where
         self.cfg.create_edge(case, branch, follow_node);
     }
 
-    /**
-     * Connects cfgNode to the proper CATCH block if target subtree might throw
-     * an exception. If there are FINALLY blocks reached before a CATCH, it will
-     * make the corresponding entry in finallyMap.
-     */
+    /// Connects cfgNode to the proper CATCH block if target subtree might throw
+    /// an exception. If there are FINALLY blocks reached before a CATCH, it will
+    /// make the corresponding entry in finallyMap.
     fn connect_to_possible_exception_handler(
         &mut self,
         cfg_node: ExceptionHandler<'ast>,
