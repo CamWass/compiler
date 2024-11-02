@@ -108,10 +108,6 @@ pub struct Number {
     ///
     /// If you store `NaN` in this field, a hash map will behave strangely.
     pub value: f64,
-
-    /// The exact, original representaion of this number, as it was in the input.
-    /// `None` if this node was created synthetically (by a compiler pass).
-    pub raw: Option<JsWord>,
 }
 
 impl Eq for Number {}
