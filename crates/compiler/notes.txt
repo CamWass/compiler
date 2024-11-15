@@ -9,6 +9,5 @@ class Foo111 {
   static [(console.log(2),1)]=(console.log(3),1);
 }
 
-Merge constant vars/functions with their initialisers
 Update graph_map on merge to point to node of representative
 Merge derived pointers when merging. e.g. A.prop and B.prop are the same after merging A&B
