@@ -581,7 +581,6 @@ impl GraphVisitor<'_> {
             Expr::Bin(n) => {
                 match n.op {
                     BinaryOp::LogicalOr | BinaryOp::LogicalAnd | BinaryOp::NullishCoalescing => {
-                        // TODO: if LHS is object, then we know if RHS will execute.
                         let mut left = self.get_rhs(&n.left, used);
                         let mut right = self.get_rhs(&n.right, used);
                         left.append(&mut right);
