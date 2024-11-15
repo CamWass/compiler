@@ -5,7 +5,7 @@ use serde::Deserialize;
 use serde_json::error::Category;
 use std::{fs::read_to_string, path::Path};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     #[serde(default)]
