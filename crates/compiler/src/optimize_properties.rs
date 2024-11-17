@@ -1399,10 +1399,10 @@ struct FnVisitor<'s> {
     params_to_invalidate: &'s mut Vec<VarId>,
 }
 
-impl<'ast> FnVisitor<'_> {
-    fn handle_fn<T>(&mut self, node: &'ast T, fn_expr_name: Option<&'ast Ident>)
+impl FnVisitor<'_> {
+    fn handle_fn<T>(&mut self, node: &T, fn_expr_name: Option<&Ident>)
     where
-        T: FunctionLike<'ast> + GetNodeId,
+        T: FunctionLike + GetNodeId,
     {
         let var_start = self.store.vars.len().try_into().unwrap();
 

@@ -41,7 +41,7 @@ pub struct LiveVariablesAnalysisResult {
 /// the function. These variables will be considered as global and they can be retrieved from `escaped_locals`.
 pub struct LiveVariablesAnalysis<'ast, 'a, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     data_flow_analysis: DataFlowAnalysis<
         'a,
@@ -54,7 +54,7 @@ where
 
 impl<'ast, 'a, T> LiveVariablesAnalysis<'ast, 'a, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     /// Live Variables Analysis using the ES6 scope creator. This analysis should only be done on
     /// function where jsScope is the function scope. If we call LiveVariablesAnalysis from the
@@ -121,7 +121,7 @@ where
 #[derive(Debug)]
 struct Inner<'ast, 'a, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     unresolved_ctxt: SyntaxContext,
     num_vars: usize,
@@ -144,7 +144,7 @@ where
 
 impl<'ast, 'a, T> Inner<'ast, 'a, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     fn get_var_index(&self, var: &Id) -> Option<VarId> {
         self.scope_variables.get(var).copied()
@@ -215,7 +215,7 @@ where
 
 struct GenKillComputer<'ast, 'a, 'b, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     unresolved_ctxt: SyntaxContext,
     gen: &'b mut BitSet<VarId>,
@@ -228,7 +228,7 @@ where
 
 impl<'a, 'ast, T> Visit<'ast> for GenKillComputer<'ast, 'a, '_, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     // Don't enter any new control nodes. They will be handled by later.
     fn visit_block_stmt(&mut self, _: &'ast BlockStmt) {}
@@ -511,7 +511,7 @@ where
 impl<'ast, 'a, T> DataFlowAnalysisInner<Node<'ast>, LiveVariableLattice, LiveVariableJoinOp>
     for Inner<'ast, 'a, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     fn add_lattice_element(&mut self, element: LiveVariableLattice) -> LatticeElementId {
         self.lattice_elements.push(element)
@@ -574,7 +574,7 @@ where
 
 impl<'a, T> Index<LatticeElementId> for Inner<'_, 'a, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     type Output = LiveVariableLattice;
 
@@ -597,7 +597,7 @@ impl LiveVariableJoinOp {
 
 impl<'ast, 'a, T> FlowJoiner<LiveVariableLattice, Inner<'ast, 'a, T>> for LiveVariableJoinOp
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     fn join_flow(&mut self, inner: &mut Inner<'ast, 'a, T>, input: LatticeElementId) {
         self.result

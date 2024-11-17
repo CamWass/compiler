@@ -50,7 +50,7 @@ impl MaybeReachingResult<'_> {
 
 pub struct MaybeReachingVariableUse<'ast, 'a, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     data_flow_analysis:
         DataFlowAnalysis<'a, Node<'ast>, Inner<'ast, 'a, T>, ReachingUses, ReachingUsesJoinOp>,
@@ -58,7 +58,7 @@ where
 
 impl<'ast, 'a, T> MaybeReachingVariableUse<'ast, 'a, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     pub fn new(
         cfg: ControlFlowGraph<Node<'ast>, LinearFlowState>,
@@ -101,7 +101,7 @@ where
 
 struct Inner<'ast, 'a, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     num_vars: usize,
     fn_scope: &'a T,
@@ -122,7 +122,7 @@ where
 
 impl<'ast, 'a, T> Inner<'ast, 'a, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     fn has_exception_handler(&self, cfg_node: Node<'ast>) -> bool {
         self.cfg
@@ -187,7 +187,7 @@ where
 
 struct ReachingUseFinder<'ast, 'a, 'b, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     output: &'b mut ReachingUses,
     conditional: bool,
@@ -199,7 +199,7 @@ where
 
 impl<'a, T> Visit<'_> for ReachingUseFinder<'_, 'a, '_, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     // Don't enter any new control nodes. They will be handled by later.
     fn visit_block_stmt(&mut self, _: &BlockStmt) {}
@@ -848,7 +848,7 @@ where
 impl<'ast, 'a, T> DataFlowAnalysisInner<Node<'ast>, ReachingUses, ReachingUsesJoinOp>
     for Inner<'ast, 'a, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     fn add_lattice_element(&mut self, element: ReachingUses) -> LatticeElementId {
         self.lattice_elements.push(element)
@@ -908,7 +908,7 @@ where
 
 impl<'a, T> Index<LatticeElementId> for Inner<'_, 'a, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     type Output = ReachingUses;
 
@@ -986,7 +986,7 @@ struct ReachingUsesJoinOp {
 
 impl<'ast, 'a, T> FlowJoiner<ReachingUses, Inner<'ast, 'a, T>> for ReachingUsesJoinOp
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     fn join_flow(&mut self, inner: &mut Inner<'ast, 'a, T>, input: LatticeElementId) {
         for (k, v) in inner.lattice_elements[input].may_use_map.iter() {

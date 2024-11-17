@@ -409,13 +409,13 @@ impl<'p> UniqueQueue<'p> {
 ///
 /// 1. Exported variables as they can be needed after the script terminates.
 /// 2. Names of named functions because in JavaScript, `function foo(){}` does not kill foo in the dataflow.
-pub fn compute_escaped<'a, T>(
+pub fn compute_escaped<T>(
     fn_scope: &T,
     all_vars_in_fn: &FxHashMap<Id, VarId>,
     catch_vars: FxHashSet<Id>,
 ) -> FxHashSet<Id>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     // TODO (simranarora) catch variables should not be considered escaped in ES6. Getting rid of
     // the catch check is causing breakages however

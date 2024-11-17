@@ -323,7 +323,7 @@ where
     /// Handles functions/constructors/etc
     fn handle_function_like<T>(&mut self, node: &'ast T)
     where
-        T: FunctionLike<'ast>,
+        T: FunctionLike,
         &'ast T: Into<Node<'ast>>,
     {
         let body = node.body();
