@@ -231,6 +231,7 @@ pub trait FunctionLike {
         V: Visit<'ast>;
 
     fn params(&self) -> Self::ParamIter<'_>;
+    fn param_count(&self) -> usize;
 
     fn body(&self) -> Node<'_>;
 }
@@ -254,6 +255,10 @@ impl FunctionLike for Function {
 
     visit_body!();
 
+    fn param_count(&self) -> usize {
+        self.params.len()
+    }
+
     fn params(&self) -> Self::ParamIter<'_> {
         self.params.iter().map(get_pat_of_param)
     }
@@ -266,6 +271,10 @@ impl FunctionLike for Constructor {
     type ParamIter<'a> = std::iter::Map<std::slice::Iter<'a, Param>, fn(&'a Param) -> &'a Pat>;
 
     visit_body!();
+
+    fn param_count(&self) -> usize {
+        self.params.len()
+    }
 
     fn params(&self) -> Self::ParamIter<'_> {
         self.params.iter().map(get_pat_of_param)
@@ -286,6 +295,10 @@ impl FunctionLike for ArrowExpr {
 
     visit_body!();
 
+    fn param_count(&self) -> usize {
+        self.params.len()
+    }
+
     fn params(&self) -> Self::ParamIter<'_> {
         self.params.iter().map(get_pat_of_param_without_decorators)
     }
@@ -299,6 +312,10 @@ impl FunctionLike for GetterProp {
 
     visit_body!();
 
+    fn param_count(&self) -> usize {
+        0
+    }
+
     fn params(&self) -> Self::ParamIter<'_> {
         std::iter::empty()
     }
@@ -311,6 +328,10 @@ impl FunctionLike for SetterProp {
     type ParamIter<'a> = std::iter::Once<&'a Pat>;
 
     visit_body!();
+
+    fn param_count(&self) -> usize {
+        1
+    }
 
     fn params(&self) -> Self::ParamIter<'_> {
         std::iter::once(&self.param.pat)

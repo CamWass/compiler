@@ -573,23 +573,21 @@ impl Graph {
                             match store.pointers[concrete_callee] {
                                 Pointer::Fn(callee) => {
                                     let func = store.functions.get(&callee).unwrap();
-                                    match func.param_indices().nth(index as usize) {
-                                        Some(param) => {
-                                            let param = store.pointers.insert(Pointer::Var(param));
-                                            let param = self.get_graph_node_id(param);
-                                            if self.make_subset_of(dest, param, store) {
-                                                if !is_sink_node(
-                                                    &self.graph,
-                                                    self.graph_map[param.0.index()],
-                                                ) {
-                                                    self.queue.push(param.0);
-                                                }
+                                    if func.is_valid_arg_index(index) {
+                                        let concrete_arg = store
+                                            .pointers
+                                            .insert(Pointer::Arg(concrete_callee, index));
+                                        let concrete_arg = self.get_graph_node_id(concrete_arg);
+                                        if self.make_subset_of(dest, concrete_arg, store) {
+                                            if !is_sink_node(
+                                                &self.graph,
+                                                self.graph_map[concrete_arg.0.index()],
+                                            ) {
+                                                self.queue.push(concrete_arg.0);
                                             }
                                         }
-                                        None => {
-                                            // Don't invalidate extra arguments. The function cannot access them
-                                            // unless it uses e.g. arguments array, which is detected else where.
-                                        }
+                                    } else {
+                                        self.invalidate(dest.0, store);
                                     }
                                 }
 
@@ -779,7 +777,7 @@ pub(super) enum GraphEdge {
     Subset,
     Return,
     Prop(NameId),
-    Arg(u32),
+    Arg(u16),
 }
 
 impl Display for GraphEdge {

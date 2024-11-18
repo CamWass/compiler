@@ -39,6 +39,55 @@ fn test_same(input: &str) {
     test_transform(input, input);
 }
 
+#[test]
+fn test_non_simple_params() {
+    test_transform(
+        "
+function foo({ inner: inner }) {
+    inner.prop
+}
+foo({ inner: { prop: 1 } });
+    ",
+        "
+function foo({ a: inner }) {
+    inner.a
+}
+foo({ a: { a: 1 } });
+",
+    );
+    test_transform(
+        "
+function foo(a = { common: 1, aProp: 2 }) {
+    a.common;
+}
+foo({ common: 1 });
+    ",
+        "
+function foo(a = { a: 1, b: 2 }) {
+    a.a;
+}
+foo({ a: 1 });
+",
+    );
+    test_transform(
+        "
+function foo(a, ...b) {}
+foo({ prop1: 1 }, { prop2: 2 }, { prop3: 3 });
+    ",
+        "
+function foo(a, ...b) {}
+foo({ a: 1 }, { prop2: 2 }, { prop3: 3 });
+",
+    );
+    test_same(
+        "
+function foo(...a) {
+    (a || { prop: 1 }).prop;
+}
+",
+    );
+}
+
 fn test_props(obj: &str, props: &[JsWord]) {
     // Test that built-in props are not renamed.
     let mut accesses = String::new();

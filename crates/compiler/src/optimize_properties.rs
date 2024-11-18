@@ -714,7 +714,7 @@ impl GraphVisitor<'_> {
                             continue;
                         }
                         for (i, arg_values) in args.iter().enumerate() {
-                            let index = i.try_into().expect("< u32::MAX params");
+                            let index = i.try_into().expect("< u16::MAX params");
                             let arg_pointer =
                                 self.store.pointers.insert(Pointer::Arg(callee, index));
                             for value in arg_values {
@@ -802,9 +802,9 @@ impl GraphVisitor<'_> {
                 ret!(vec![PointerId::UNKNOWN])
             }
             Expr::Arrow(n) => {
-                n.params.visit_with(self);
                 let old = self.cur_fn;
                 self.cur_fn = Some(n.node_id);
+                n.params.visit_with(self);
                 n.body.visit_with(self);
                 self.cur_fn = old;
                 ret!(vec![self
@@ -1108,6 +1108,16 @@ impl GraphVisitor<'_> {
             self.graph.invalidate(*value, self.store);
         }
     }
+
+    fn handle_params<'a>(&mut self, params: impl Iterator<Item = &'a Pat>) {
+        let cur_fn = self.cur_fn.unwrap();
+        let cur_fn = self.store.pointers.insert(Pointer::Fn(cur_fn));
+        for (i, param) in params.enumerate() {
+            let index = i.try_into().expect("< u16::MAX params");
+            let rhs = self.store.pointers.insert(Pointer::Arg(cur_fn, index));
+            self.visit_destructuring(param, &[rhs]);
+        }
+    }
 }
 
 impl Visit<'_> for GraphVisitor<'_> {
@@ -1198,19 +1208,21 @@ impl Visit<'_> for GraphVisitor<'_> {
         }
     }
 
+    // TODO: we don't yet handle getters/setters
+
     fn visit_function(&mut self, n: &Function) {
-        n.params.visit_with(self);
-        n.decorators.visit_with(self);
         let old = self.cur_fn;
         self.cur_fn = Some(n.node_id);
+        n.params.visit_with(self);
+        n.decorators.visit_with(self);
         n.body.visit_with(self);
         self.cur_fn = old;
     }
 
     fn visit_arrow_expr(&mut self, n: &ArrowExpr) {
-        n.params.visit_with(self);
         let old = self.cur_fn;
         self.cur_fn = Some(n.node_id);
+        n.params.visit_with(self);
         n.body.visit_with(self);
         self.cur_fn = old;
     }
@@ -1230,6 +1242,14 @@ impl Visit<'_> for GraphVisitor<'_> {
     fn visit_module_decl(&mut self, _: &ModuleDecl) {
         todo!();
     }
+
+    fn visit_params(&mut self, params: &[Param]) {
+        self.handle_params(params.iter().map(|p| &p.pat));
+    }
+
+    fn visit_param_without_decorators_vec(&mut self, params: &[ParamWithoutDecorators]) {
+        self.handle_params(params.iter().map(|p| &p.pat));
+    }
 }
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -1246,7 +1266,7 @@ enum Pointer {
     BigInt,
     Regex,
     ReturnValue(PointerId),
-    Arg(PointerId, u32),
+    Arg(PointerId, u16),
 }
 
 impl Pointer {
@@ -1280,13 +1300,12 @@ enum Slot {
 
 #[derive(Debug, Clone, Copy)]
 struct StaticFunctionData {
-    var_start: u32,
-    param_count: u16,
+    tracked_param_count: u16,
 }
 
 impl StaticFunctionData {
-    fn param_indices(self) -> impl Iterator<Item = VarId> {
-        VarId::from_u32(self.var_start)..VarId::from_u32(self.var_start + self.param_count as u32)
+    fn is_valid_arg_index(&self, arg_index: u16) -> bool {
+        arg_index < self.tracked_param_count
     }
 }
 
@@ -1412,16 +1431,15 @@ impl FnVisitor<'_> {
             var_start: VarId::from_u32(var_start),
         };
 
+        let mut has_rest = false;
         for param in node.params() {
-            if let Pat::Ident(param) = param {
-                v.record_var(&param.id);
-            } else {
-                todo!("non-ident param");
+            v.visit_pat(param);
+            if matches!(param, Pat::Rest(_)) {
+                has_rest = true;
             }
         }
 
-        let param_count = v.vars.len() - var_start as usize;
-        let param_count: u16 = param_count.try_into().expect("> u16::MAX params");
+        let param_binding_count = v.vars.len() - var_start as usize;
 
         // FnExpr's name is local to it. Although the name comes before the
         // params, we record it afterwards to simplify tracking of where
@@ -1432,9 +1450,14 @@ impl FnVisitor<'_> {
 
         node.visit_body_with(&mut v);
 
+        let tracked_param_count = if has_rest {
+            node.param_count() - 1
+        } else {
+            node.param_count()
+        };
+
         let static_data = StaticFunctionData {
-            var_start,
-            param_count,
+            tracked_param_count: tracked_param_count.try_into().expect("> u16::MAX params"),
         };
 
         let node_id = node.node_id();
@@ -1446,12 +1469,20 @@ impl FnVisitor<'_> {
         let old_accesses_arguments_array = self.accesses_arguments_array;
         self.accesses_arguments_array = false;
 
+        for param in node.params() {
+            self.visit_pat(param);
+        }
         node.visit_body_with(self);
 
         if self.accesses_arguments_array {
             // Invalidate parameters for functions that access the arguments array.
+            self.params_to_invalidate.extend(
+                VarId::from_u32(var_start)..VarId::from_u32(var_start + param_binding_count as u32),
+            );
+        } else if has_rest {
+            // Invalidate the rest binding.
             self.params_to_invalidate
-                .extend(static_data.param_indices());
+                .push(VarId::from_u32(var_start + param_binding_count as u32 - 1));
         }
 
         self.accesses_arguments_array = old_accesses_arguments_array;
