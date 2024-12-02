@@ -142,7 +142,7 @@ pub struct FnExpr {
     pub node_id: NodeId,
 
     pub ident: Option<Ident>,
-    pub function: Function,
+    pub function: Box<Function>,
 }
 
 /// Class expression.

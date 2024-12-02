@@ -1282,7 +1282,7 @@ impl OutputType for Box<Expr> {
     ) -> Self {
         Box::new(Expr::Fn(FnExpr {
             ident,
-            function,
+            function: Box::new(function),
             node_id: node_id!(parser, span),
         }))
     }
@@ -1312,7 +1312,7 @@ impl OutputType for ExportDefaultDecl {
         ExportDefaultDecl {
             decl: DefaultDecl::Fn(FnExpr {
                 ident,
-                function,
+                function: Box::new(function),
                 node_id: node_id!(parser, span),
             }),
             node_id: node_id!(parser, span),
