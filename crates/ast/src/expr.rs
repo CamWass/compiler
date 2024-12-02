@@ -33,17 +33,6 @@ pub enum Expr {
 
     Assign(AssignExpr),
 
-    //
-    // Logical {
-    //
-    //     op: LogicalOp,
-    //     left: Box<Expr>,
-    //     right: Box<Expr>,
-    // },
-    /// A member expression. If computed is true, the node corresponds to a
-    /// computed (a[b]) member expression and property is an Expression. If
-    /// computed is false, the node corresponds to a static (a.b) member
-    /// expression and property is an Identifier.
     Member(MemberExpr),
 
     /// true ? 'a' : 'b'
