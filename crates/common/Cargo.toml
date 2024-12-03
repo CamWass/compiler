@@ -8,19 +8,19 @@ edition = "2018"
 tty-emitter = ["atty", "termcolor"]
 
 [dependencies]
-atty = { workspace = true, optional = true}
+atty = { workspace = true, optional = true }
 cfg-if = { workspace = true }
 either = { workspace = true }
 num-bigint = { workspace = true }
 once_cell = { workspace = true }
 rustc-hash = { workspace = true }
 scoped-tls = { workspace = true }
-sourcemap = {workspace = true, optional = true}
-termcolor = { workspace = true, optional = true}
+sourcemap = { workspace = true, optional = true }
+termcolor = { workspace = true, optional = true }
 tracing = { workspace = true }
 unicode-width = { workspace = true }
 
-global_visit = {path = "../../visit"}
+global_visit = { path = "../../visit" }
 
 [dev-dependencies]
 rayon = { workspace = true }

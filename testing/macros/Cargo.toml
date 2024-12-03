@@ -14,4 +14,9 @@ proc-macro2 = { workspace = true }
 quote = { workspace = true }
 regex = { workspace = true }
 relative-path = { workspace = true }
-syn = {workspace = true, features = ["fold", "parsing", "full", "extra-traits"]}
+syn = { workspace = true, features = [
+    "fold",
+    "parsing",
+    "full",
+    "extra-traits",
+] }

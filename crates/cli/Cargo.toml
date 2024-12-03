@@ -22,8 +22,8 @@ swc_visit = "0.6.2"
 
 rustc-hash = { workspace = true }
 
-ast = {path = "../ast"}
-codegen = {path = "../codegen"}
-compiler = {path = "../compiler"}
-global_common = {path = "../common", features = ["tty-emitter", "sourcemap"]}
-parser = {path = "../parser"}
+ast = { path = "../ast" }
+codegen = { path = "../codegen" }
+compiler = { path = "../compiler" }
+global_common = { path = "../common", features = ["tty-emitter", "sourcemap"] }
+parser = { path = "../parser" }
