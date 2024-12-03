@@ -16,7 +16,7 @@ pub use self::{
         OptChainExpr, PatOrExpr, SeqExpr, SpreadElement, Super, TaggedTpl, ThisExpr, Tpl,
         TplElement, UnaryExpr, UpdateExpr, YieldExpr,
     },
-    function::{Function, Param},
+    function::{FnFlags, Function, Param},
     ident::{BindingIdent, Ident, IdentExt, PrivateName},
     lit::{BigInt, Bool, Lit, Null, Number, Regex, Str, StrKind},
     module::{Module, ModuleItem, Program, Script},

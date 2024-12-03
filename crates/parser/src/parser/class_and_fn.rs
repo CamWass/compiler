@@ -941,12 +941,15 @@ impl<I: Tokens> Parser<I> {
                 }
             };
 
+            let mut flags = FnFlags::empty();
+            flags.set(FnFlags::ASYNC, is_async);
+            flags.set(FnFlags::GENERATOR, is_generator);
+
             Ok(Some(Function {
                 node_id: node_id!(parser, span!(parser, start)),
                 params,
                 body,
-                is_async,
-                is_generator,
+                flags,
             }))
         })
     }

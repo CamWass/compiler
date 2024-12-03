@@ -426,8 +426,7 @@ define!({
         pub node_id: NodeId,
         pub params: Vec<Param>,
         pub body: BlockStmt,
-        pub is_generator: bool,
-        pub is_async: bool,
+        pub flags: FnFlags,
     }
     pub struct Param {
         pub node_id: NodeId,

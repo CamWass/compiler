@@ -1228,7 +1228,7 @@ impl<I: Tokens> Parser<I> {
             let body = Box::new(if parser.input.is(&tok!("function")) {
                 let f = parser.parse_fn_decl()?;
                 if let Decl::Fn(f) = &f {
-                    if f.function.is_generator {
+                    if f.function.is_generator() {
                         syntax_error!(
                             p,
                             get_span!(parser, f.node_id),

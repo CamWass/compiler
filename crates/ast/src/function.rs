@@ -1,4 +1,5 @@
 use crate::{pat::Pat, stmt::BlockStmt, GetNodeId, NodeId, ProgramData};
+use bitflags::bitflags;
 use clone_node::CloneNode;
 use node_id::GetNodeIdMacro;
 
@@ -11,11 +12,30 @@ pub struct Function {
 
     pub body: BlockStmt,
 
-    /// if it's a generator.
-    pub is_generator: bool,
+    pub flags: FnFlags,
+}
 
-    /// if it's an async function.
-    pub is_async: bool,
+impl Function {
+    pub fn is_async(&self) -> bool {
+        self.flags.contains(FnFlags::ASYNC)
+    }
+
+    pub fn is_generator(&self) -> bool {
+        self.flags.contains(FnFlags::GENERATOR)
+    }
+}
+
+bitflags! {
+    pub struct FnFlags: u8 {
+        const GENERATOR = 1 << 0;
+        const ASYNC = 1 << 1;
+    }
+}
+
+impl crate::CloneNode for FnFlags {
+    fn clone_node(&self, _: &mut ProgramData) -> Self {
+        *self
+    }
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]

@@ -26,13 +26,13 @@ impl Emitter<'_> {
     }
 
     fn emit_fn_decl(&mut self, node: &FnDecl) -> Result {
-        if node.function.is_async {
+        if node.function.is_async() {
             keyword!(self, "async");
             space!(self);
         }
 
         keyword!(self, "function");
-        if node.function.is_generator {
+        if node.function.is_generator() {
             punct!(self, "*");
             formatting_space!(self);
         } else {

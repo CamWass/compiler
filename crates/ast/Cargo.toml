@@ -5,6 +5,7 @@ authors = ["Campbell <campbell.wass@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+bitflags = { workspace = true }
 num-bigint = { workspace = true }
 rustc-hash = { workspace = true }
 

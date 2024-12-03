@@ -1375,11 +1375,11 @@ impl<'a> Emitter<'a> {
         }
         match n.kind {
             MethodKind::Method => {
-                if n.function.is_async {
+                if n.function.is_async() {
                     keyword!(self, "async");
                 }
                 space!(self);
-                if n.function.is_generator {
+                if n.function.is_generator() {
                     punct!(self, "*");
                 }
             }
@@ -1403,9 +1403,9 @@ impl<'a> Emitter<'a> {
 
             let starts_with_alpha_num = match n.kind {
                 MethodKind::Method => {
-                    if n.function.is_async {
+                    if n.function.is_async() {
                         true
-                    } else if n.function.is_generator {
+                    } else if n.function.is_generator() {
                         false
                     } else {
                         prop_name_starts_with_alpha_num(&n.key)
@@ -1422,11 +1422,11 @@ impl<'a> Emitter<'a> {
         }
         match n.kind {
             MethodKind::Method => {
-                if n.function.is_async {
+                if n.function.is_async() {
                     keyword!(self, "async");
                     space!(self);
                 }
-                if n.function.is_generator {
+                if n.function.is_generator() {
                     punct!(self, "*");
                 }
             }
@@ -1600,13 +1600,13 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_fn_expr(&mut self, node: &FnExpr) -> Result {
-        if node.function.is_async {
+        if node.function.is_async() {
             keyword!(self, "async");
             space!(self);
         }
         keyword!(self, "function");
 
-        if node.function.is_generator {
+        if node.function.is_generator() {
             punct!(self, "*");
         }
         if let Some(i) = &node.ident {
@@ -1972,12 +1972,12 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_method_prop(&mut self, node: &MethodProp) -> Result {
-        if node.function.is_async {
+        if node.function.is_async() {
             keyword!(self, "async");
             space!(self);
         }
 
-        if node.function.is_generator {
+        if node.function.is_generator() {
             punct!(self, "*");
         }
 
