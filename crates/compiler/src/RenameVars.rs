@@ -14,9 +14,6 @@ mod tests;
 /// Renames all the variables names into short names, to reduce code size and
 /// also to obfuscate the code.
 pub fn rename_vars(ast: &mut Program, unresolved_ctxt: SyntaxContext) {
-    // TODO:
-    // this.externNames = NodeUtil.collectExternVariableNames(this.compiler, externs);
-
     let analysis = VarAnalyzer::analyze(ast, unresolved_ctxt);
 
     let mut renamer = RenameVars::new(analysis);
@@ -29,9 +26,6 @@ pub fn rename_vars(ast: &mut Program, unresolved_ctxt: SyntaxContext) {
 /// scope-index.
 #[allow(dead_code)]
 fn rename_debug(ast: &mut Program, unresolved_ctxt: SyntaxContext) {
-    // TODO:
-    // this.externNames = NodeUtil.collectExternVariableNames(this.compiler, externs);
-
     let analysis = VarAnalyzer::analyze(ast, unresolved_ctxt);
 
     let mut rename_map = FxHashMap::default();
@@ -68,10 +62,6 @@ impl RenameVars {
             global_count,
         }: VarAnalysis,
     ) -> Self {
-        // TODO:
-        // Make sure that new names don't overlap with extern names.
-        // reservedNames.addAll(externNames);
-
         let mut vars_by_frequency = slots.indices().collect::<Vec<_>>();
         vars_by_frequency.sort_unstable_by(|&a, &b| order_slots_by_frequency(&slots[a], &slots[b]));
 
@@ -102,11 +92,6 @@ impl RenameVars {
         let mut global_slots = Vec::with_capacity(global_count);
 
         for s in slots_by_frequency {
-            // TODO:
-            //   if (externNames.contains(a.oldName)) {
-            //     continue;
-            //   }
-
             if self.slots[s].local {
                 // Slots for local variables are immediately assigned a name.
                 let new_name = name_gen.generate_and_reserve_next_name();
@@ -338,16 +323,16 @@ impl VarAnalyzer {
 
         self.handle_reference(&name);
 
-        let scope_pos = if self.in_var_decl {
-            // There is always the global scope (which is a hoist scope) so it's ok to unwrap.
-            self.scopes.iter().rposition(|s| s.is_hoist_scope).unwrap()
-        } else {
-            self.scopes.len() - 1
-        };
-        // 0 is global scope.
-        let local = scope_pos != 0;
+        if let Entry::Vacant(entry_for_name) = self.analysis.slot_map.entry(name.clone()) {
+            let scope_pos = if self.in_var_decl {
+                // There is always the global scope (which is a hoist scope) so it's ok to unwrap.
+                self.scopes.iter().rposition(|s| s.is_hoist_scope).unwrap()
+            } else {
+                self.scopes.len() - 1
+            };
+            // 0 is global scope.
+            let local = scope_pos != 0;
 
-        if let Entry::Vacant(entry_for_name) = self.analysis.slot_map.entry(name) {
             let slot_id = if local {
                 // Slots for local variables are identified by their index in
                 // their scope; Every var at a given depth is mapped to the same slot.
