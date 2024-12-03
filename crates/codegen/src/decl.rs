@@ -18,9 +18,6 @@ impl Emitter<'_> {
     }
 
     fn emit_class_decl(&mut self, node: &ClassDecl) -> Result {
-        for dec in &node.class.decorators {
-            self.emit_decorator(dec)?;
-        }
         keyword!(self, "class");
         space!(self);
         self.emit_ident(&node.ident)?;

@@ -12,11 +12,7 @@ use node_id::GetNodeIdMacro;
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct Class {
     pub node_id: NodeId,
-
-    pub decorators: Vec<Decorator>,
-
     pub extends: Option<ExtendsClause>,
-
     pub body: Vec<ClassMember>,
 }
 
@@ -47,8 +43,6 @@ pub struct ClassProp {
     pub value: Option<Box<Expr>>,
 
     pub is_static: bool,
-
-    pub decorators: Vec<Decorator>,
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
@@ -60,8 +54,6 @@ pub struct PrivateProp {
     pub value: Option<Box<Expr>>,
 
     pub is_static: bool,
-
-    pub decorators: Vec<Decorator>,
 }
 
 macro_rules! method {
@@ -91,13 +83,6 @@ pub struct Constructor {
     pub params: Vec<Param>,
 
     pub body: BlockStmt,
-}
-
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
-pub struct Decorator {
-    pub node_id: NodeId,
-
-    pub expr: Box<Expr>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, CloneNode)]

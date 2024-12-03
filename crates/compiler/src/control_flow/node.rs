@@ -111,7 +111,6 @@ make!(
     ClassMethod,
     PrivateMethod,
     Constructor,
-    Decorator,
     // decl
     FnDecl,
     ClassDecl,
@@ -145,7 +144,6 @@ make!(
     // function
     Function,
     Param,
-    ParamWithoutDecorators,
     //ident
     BindingIdent,
     Ident,

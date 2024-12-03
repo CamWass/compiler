@@ -223,7 +223,7 @@ impl<I: Tokens> Parser<I> {
     }
 
     #[allow(clippy::cognitive_complexity)]
-    fn parse_export(&mut self, decorators: Vec<Decorator>) -> PResult<Option<ModuleDecl>> {
+    fn parse_export(&mut self) -> PResult<Option<ModuleDecl>> {
         if !self.ctx().is_module() {
             // Switch to module mode
             let ctx = Context {
@@ -243,9 +243,7 @@ impl<I: Tokens> Parser<I> {
         let declare = self.input.syntax().typescript() && eat!(self, "declare");
 
         if declare {
-            // TODO(swc): Remove
-            let decorators = decorators.clone_node(program_data!(self));
-            if let Some(decl) = self.try_parse_ts_declare(after_export_start, decorators)? {
+            if let Some(decl) = self.try_parse_ts_declare(after_export_start)? {
                 return match decl {
                     DeclOrEmpty::Decl(decl) => Ok(Some(ModuleDecl::ExportDecl(ExportDecl {
                         node_id: node_id!(self, span!(self, start)),
@@ -261,9 +259,7 @@ impl<I: Tokens> Parser<I> {
                 Token::Word(w) => w.clone().into(),
                 _ => unreachable!(),
             };
-            // TODO(swc): remove clone
-            let decorators = decorators.clone_node(program_data!(self));
-            if let Some(decl) = self.try_parse_ts_export_decl(decorators, sym) {
+            if let Some(decl) = self.try_parse_ts_export_decl(sym) {
                 return match decl {
                     DeclOrEmpty::Decl(decl) => Ok(Some(ModuleDecl::ExportDecl(ExportDecl {
                         node_id: node_id!(self, span!(self, start)),
@@ -348,7 +344,7 @@ impl<I: Tokens> Parser<I> {
                 {
                     let class_start = self.input.cur_pos();
                     self.assert_and_bump(&tok!("abstract"));
-                    let class = self.parse_default_class(start, class_start, decorators)?;
+                    let class = self.parse_default_class(start, class_start)?;
                     return Ok(Some(ModuleDecl::ExportDefaultDecl(class)));
                 }
                 if is!(self, "abstract") && peeked_is!(self, "interface") {
@@ -374,16 +370,16 @@ impl<I: Tokens> Parser<I> {
 
             if is!(self, "class") {
                 let class_start = self.input.cur_pos();
-                let decl = self.parse_default_class(start, class_start, decorators)?;
+                let decl = self.parse_default_class(start, class_start)?;
                 return Ok(Some(ModuleDecl::ExportDefaultDecl(decl)));
             } else if is!(self, "async")
                 && self.input.peeked_is(&tok!("function"))
                 && !self.input.has_linebreak_between_cur_and_peeked()
             {
-                let decl = self.parse_default_async_fn(start, decorators)?;
+                let decl = self.parse_default_async_fn(start)?;
                 return Ok(decl.map(|decl| ModuleDecl::ExportDefaultDecl(decl)));
             } else if is!(self, "function") {
-                let decl = self.parse_default_fn(start, decorators)?;
+                let decl = self.parse_default_fn(start)?;
                 return Ok(decl.map(|decl| ModuleDecl::ExportDefaultDecl(decl)));
             } else if self.input.syntax().export_default_from()
                 && (is!(self, "from") || (is!(self, ',') && peeked_is!(self, '{')))
@@ -401,16 +397,15 @@ impl<I: Tokens> Parser<I> {
 
         let decl = if !type_only && is!(self, "class") {
             let class_start = self.input.cur_pos();
-            self.parse_class_decl(start, class_start, decorators)
-                .map(Some)?
+            self.parse_class_decl(start, class_start).map(Some)?
         } else if !type_only
             && is!(self, "async")
             && self.input.peeked_is(&tok!("function"))
             && !self.input.has_linebreak_between_cur_and_peeked()
         {
-            self.parse_async_fn_decl(decorators)?
+            self.parse_async_fn_decl()?
         } else if !type_only && is!(self, "function") {
-            self.parse_fn_decl_or_ts_overload_sig(decorators)?
+            self.parse_fn_decl_or_ts_overload_sig()?
         } else if !type_only
             && self.input.syntax().typescript()
             && is!(self, "const")
@@ -628,11 +623,7 @@ impl IsDirective for ModuleItem {
 }
 
 impl<I: Tokens> StmtLikeParser<ModuleItem> for Parser<I> {
-    fn handle_import_export(
-        &mut self,
-        top_level: bool,
-        decorators: Vec<Decorator>,
-    ) -> PResult<Option<ModuleItem>> {
+    fn handle_import_export(&mut self, top_level: bool) -> PResult<Option<ModuleItem>> {
         if !top_level {
             syntax_error!(self, SyntaxError::NonTopLevelImportExport);
         }
@@ -640,8 +631,7 @@ impl<I: Tokens> StmtLikeParser<ModuleItem> for Parser<I> {
         if is!(self, "import") {
             self.parse_import().map(Some)
         } else if is!(self, "export") {
-            self.parse_export(decorators)
-                .map(|d| d.map(ModuleItem::ModuleDecl))
+            self.parse_export().map(|d| d.map(ModuleItem::ModuleDecl))
         } else {
             unreachable!(
                 "handle_import_export should not be called if current token isn't import nor \

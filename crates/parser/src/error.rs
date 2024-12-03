@@ -128,9 +128,6 @@ pub(super) enum SyntaxError {
 
     AwaitForStmt,
 
-    InvalidLeadingDecorator,
-    DecoratorOnExport,
-
     TsRequiredAfterOptional,
     TsInvalidParamPropPat,
 
@@ -351,13 +348,6 @@ impl SyntaxError {
                 "for await syntax is valid only for for-of statement".into()
             }
 
-            SyntaxError::InvalidLeadingDecorator => {
-                "Leading decorators must be attached to a class declaration".into()
-            }
-            SyntaxError::DecoratorOnExport => "Using the export keyword between a decorator and a \
-                                               class is not allowed. Please use `export @dec \
-                                               class` instead."
-                .into(),
             SyntaxError::TsRequiredAfterOptional => {
                 "A required element cannot follow an optional element.".into()
             }

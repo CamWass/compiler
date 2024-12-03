@@ -182,7 +182,6 @@ where
 define!({
     pub struct Class {
         pub node_id: NodeId,
-        pub decorators: Vec<Decorator>,
         pub extends: Option<ExtendsClause>,
         pub body: Vec<ClassMember>,
     }
@@ -206,14 +205,12 @@ define!({
         pub key: PropName,
         pub value: Option<Box<Expr>>,
         pub is_static: bool,
-        pub decorators: Vec<Decorator>,
     }
     pub struct PrivateProp {
         pub node_id: NodeId,
         pub key: PrivateName,
         pub value: Option<Box<Expr>>,
         pub is_static: bool,
-        pub decorators: Vec<Decorator>,
     }
     pub struct ClassMethod {
         pub node_id: NodeId,
@@ -233,10 +230,6 @@ define!({
         pub node_id: NodeId,
         pub params: Vec<Param>,
         pub body: BlockStmt,
-    }
-    pub struct Decorator {
-        pub node_id: NodeId,
-        pub expr: Box<Expr>,
     }
     pub enum MethodKind {
         Method,
@@ -376,7 +369,7 @@ define!({
     }
     pub struct ArrowExpr {
         pub node_id: NodeId,
-        pub params: Vec<ParamWithoutDecorators>,
+        pub params: Vec<Param>,
         pub body: BlockStmt,
         pub is_async: bool,
     }
@@ -432,17 +425,11 @@ define!({
     pub struct Function {
         pub node_id: NodeId,
         pub params: Vec<Param>,
-        pub decorators: Vec<Decorator>,
         pub body: BlockStmt,
         pub is_generator: bool,
         pub is_async: bool,
     }
     pub struct Param {
-        pub node_id: NodeId,
-        pub decorators: Vec<Decorator>,
-        pub pat: Pat,
-    }
-    pub struct ParamWithoutDecorators {
         pub node_id: NodeId,
         pub pat: Pat,
     }
@@ -715,7 +702,7 @@ define!({
     pub struct SetterProp {
         pub node_id: NodeId,
         pub key: PropName,
-        pub param: ParamWithoutDecorators,
+        pub param: Param,
         pub body: BlockStmt,
     }
     pub struct MethodProp {

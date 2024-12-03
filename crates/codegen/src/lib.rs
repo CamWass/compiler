@@ -947,7 +947,7 @@ impl<'a> Emitter<'a> {
         let space = !self.cfg.minify
             || matches!(
                 node.params.as_slice(),
-                [ParamWithoutDecorators {
+                [Param {
                     pat: Pat::Ident(_),
                     ..
                 }]
@@ -965,7 +965,7 @@ impl<'a> Emitter<'a> {
         let parens = !self.cfg.minify
             || !matches!(
                 node.params.as_slice(),
-                [ParamWithoutDecorators {
+                [Param {
                     pat: Pat::Ident(_),
                     ..
                 }]
@@ -981,7 +981,7 @@ impl<'a> Emitter<'a> {
         self.emit_list(
             span,
             &node.params,
-            |e, n| e.emit_param_without_decorators(n),
+            |e, n| e.emit_param(n),
             ListFormat::CommaListElements,
         )?;
         if parens {
@@ -1295,17 +1295,7 @@ impl<'a> Emitter<'a> {
         Ok(())
     }
 
-    fn emit_decorator(&mut self, node: &Decorator) -> Result {
-        punct!(self, "@");
-        self.emit_expr(&node.expr)?;
-        self.wr.write_line()
-    }
-
     fn emit_class_expr(&mut self, node: &ClassExpr) -> Result {
-        for dec in &node.class.decorators {
-            self.emit_decorator(dec)?;
-        }
-
         keyword!(self, "class");
 
         if let Some(i) = &node.ident {
@@ -1475,15 +1465,6 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_private_prop(&mut self, n: &PrivateProp) -> Result {
-        let span = get_span!(self, n.node_id);
-
-        self.emit_list(
-            span,
-            &n.decorators,
-            |e, n| e.emit_decorator(n),
-            ListFormat::Decorators,
-        )?;
-
         self.emit_private_name(&n.key)?;
 
         if let Some(value) = &n.value {
@@ -1984,7 +1965,7 @@ impl<'a> Emitter<'a> {
         formatting_space!(self);
 
         punct!(self, "(");
-        self.emit_param_without_decorators(&node.param)?;
+        self.emit_param(&node.param)?;
         punct!(self, ")");
 
         self.emit_block_stmt(&node.body)
@@ -2196,25 +2177,6 @@ impl<'a> Emitter<'a> {
 /// Patterns
 impl Emitter<'_> {
     fn emit_param(&mut self, node: &Param) -> Result {
-        let old = self.ctx;
-        self.ctx = Context::ForcedExpr;
-        let in_for_stmt_head = self.flags.replace(Flags::in_for_stmt_head, false);
-        let span = get_span!(self, node.node_id);
-
-        self.emit_list(
-            span,
-            &node.decorators,
-            |e, d| e.emit_decorator(d),
-            ListFormat::Decorators,
-        )?;
-
-        self.emit_pat(&node.pat)?;
-        self.flags.set(Flags::in_for_stmt_head, in_for_stmt_head);
-        self.ctx = old;
-        Ok(())
-    }
-
-    fn emit_param_without_decorators(&mut self, node: &ParamWithoutDecorators) -> Result {
         let old = self.ctx;
         self.ctx = Context::ForcedExpr;
         let in_for_stmt_head = self.flags.replace(Flags::in_for_stmt_head, false);

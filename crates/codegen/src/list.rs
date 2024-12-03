@@ -148,7 +148,6 @@ add_bitflags!(
         CaseOrDefaultClauseStatements: Indented | MultiLine | NoTrailingNewLine | OptionalIfEmpty,
         HeritageClauseTypes: CommaDelimited | SpaceBetweenSiblings | SingleLine,
         SourceFileStatements: MultiLine | NoTrailingNewLine,
-        Decorators: MultiLine | Optional,
         TypeArguments: CommaDelimited
             | SpaceBetweenSiblings
             | SingleLine

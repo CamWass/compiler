@@ -6,8 +6,8 @@
 
 pub use self::{
     class::{
-        Class, ClassMember, ClassMethod, ClassProp, Constructor, Decorator, ExtendsClause,
-        MethodKind, PrivateMethod, PrivateProp,
+        Class, ClassMember, ClassMethod, ClassProp, Constructor, ExtendsClause, MethodKind,
+        PrivateMethod, PrivateProp,
     },
     decl::{ClassDecl, Decl, FnDecl, VarDecl, VarDeclKind, VarDeclarator},
     expr::{
@@ -16,7 +16,7 @@ pub use self::{
         OptChainExpr, PatOrExpr, SeqExpr, SpreadElement, Super, TaggedTpl, ThisExpr, Tpl,
         TplElement, UnaryExpr, UpdateExpr, YieldExpr,
     },
-    function::{Function, Param, ParamWithoutDecorators},
+    function::{Function, Param},
     ident::{BindingIdent, Ident, IdentExt, PrivateName},
     lit::{BigInt, Bool, Lit, Null, Number, Regex, Str, StrKind},
     module::{Module, ModuleItem, Program, Script},

@@ -255,8 +255,6 @@ impl<I: Tokens> Parser<I> {
             }
 
             let param_start = self.input.cur_pos();
-            let decorators = self.parse_decorators(false)?;
-            let pat_start = self.input.cur_pos();
 
             if self.input.eat(&tok!("...")) {
                 let pat = self.parse_binding_pat_or_ident()?;
@@ -266,17 +264,16 @@ impl<I: Tokens> Parser<I> {
                 }
 
                 let pat = Pat::Rest(RestPat {
-                    node_id: node_id!(self, span!(self, pat_start)),
+                    node_id: node_id!(self, span!(self, param_start)),
                     arg: Box::new(pat),
                 });
                 params.push(Param {
                     node_id: node_id!(self, span!(self, param_start)),
-                    decorators,
                     pat,
                 });
                 break;
             } else {
-                let (param, prop) = self.parse_constructor_param(param_start, decorators)?;
+                let (param, prop) = self.parse_constructor_param(param_start)?;
                 if let Some(prop) = prop {
                     props.push((prop, get_span!(self, param.node_id)));
                 }
@@ -290,7 +287,6 @@ impl<I: Tokens> Parser<I> {
     fn parse_constructor_param(
         &mut self,
         param_start: BytePos,
-        decorators: Vec<Decorator>,
     ) -> PResult<(Param, Option<JsWord>)> {
         let (has_accessibility, is_override, readonly) = if self.input.syntax().typescript() {
             let has_accessibility = self.parse_access_modifier()?;
@@ -327,7 +323,6 @@ impl<I: Tokens> Parser<I> {
         Ok((
             Param {
                 node_id: node_id!(self, span!(self, param_start)),
-                decorators,
                 pat,
             },
             prop,
@@ -359,9 +354,6 @@ impl<I: Tokens> Parser<I> {
 
             let param_start = self.input.cur_pos();
 
-            let decorators = self.parse_decorators(false)?;
-            let pat_start = self.input.cur_pos();
-
             let pat = if self.input.eat(&tok!("...")) {
                 seen_dot3 = true;
 
@@ -371,7 +363,7 @@ impl<I: Tokens> Parser<I> {
                     let right = self.parse_assignment_expr()?.unwrap();
                     self.emit_err(get_span!(self, pat.node_id()), SyntaxError::TS1048);
                     pat = Pat::Assign(AssignPat {
-                        node_id: node_id!(self, span!(self, pat_start)),
+                        node_id: node_id!(self, span!(self, param_start)),
                         left: Box::new(pat),
                         right,
                     });
@@ -382,7 +374,7 @@ impl<I: Tokens> Parser<I> {
                     self.parse_ts_type_ann(true)?;
                 }
 
-                let pat_span = span!(self, pat_start);
+                let pat_span = span!(self, param_start);
                 let pat = Pat::Rest(RestPat {
                     node_id: node_id!(self, pat_span),
                     arg: Box::new(pat),
@@ -407,7 +399,6 @@ impl<I: Tokens> Parser<I> {
 
             params.push(Param {
                 node_id: node_id!(self, span!(self, param_start)),
-                decorators,
                 pat,
             });
         }

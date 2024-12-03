@@ -328,10 +328,8 @@ impl<I: Tokens> Parser<I> {
             }
         }
 
-        let decorators = self.parse_decorators(false)?;
-
         if is!(self, "class") {
-            return self.parse_class_expr(start, decorators).map(From::from);
+            return self.parse_class_expr(start).map(From::from);
         }
 
         if is!(self, "let")
@@ -364,7 +362,7 @@ impl<I: Tokens> Parser<I> {
             if can_be_arrow && id.sym == js_word!("async") && is!(self, BindingIdent) {
                 // async a => body
                 let arg = self.parse_binding_ident().map(Pat::Ident)?;
-                let params = vec![ParamWithoutDecorators::from_pat(arg, program_data!(self))];
+                let params = vec![Param::from_pat(arg, program_data!(self))];
                 expect!(self, "=>");
                 let body = self.parse_fn_body(true, false)?;
                 let body = self.make_arrow_fn_block(body);
@@ -381,7 +379,7 @@ impl<I: Tokens> Parser<I> {
                 && self.input.eat(&tok!("=>"))
             {
                 let pat = Pat::Ident(BindingIdent::from_ident(id, program_data!(self)));
-                let params = vec![ParamWithoutDecorators::from_pat(pat, program_data!(self))];
+                let params = vec![Param::from_pat(pat, program_data!(self))];
                 let body = self.parse_fn_body(false, false)?;
                 let body = self.make_arrow_fn_block(body);
 
@@ -400,7 +398,7 @@ impl<I: Tokens> Parser<I> {
         unexpected!(
             self,
             "this, import, async, function, [ for array literal, { for object literal, @ for \
-             decorator, function, class, null, true, false, number, bigint, string, regexp, ` for \
+             function, class, null, true, false, number, bigint, string, regexp, ` for \
              template literal, (, or an identifier"
         )
     }
@@ -1019,7 +1017,7 @@ impl<I: Tokens> Parser<I> {
                 let params = self
                     .parse_paren_items_as_params(items)?
                     .into_iter()
-                    .map(|p| ParamWithoutDecorators::from_pat(p, program_data!(self)))
+                    .map(|p| Param::from_pat(p, program_data!(self)))
                     .collect();
 
                 let body: BlockStmtOrExpr = self.parse_fn_body(false, false)?;
@@ -1237,7 +1235,7 @@ impl<I: Tokens> Parser<I> {
                 let params = p
                     .parse_paren_items_as_params(exprs)?
                     .into_iter()
-                    .map(|pat| ParamWithoutDecorators::from_pat(pat, program_data!(p)))
+                    .map(|pat| Param::from_pat(pat, program_data!(p)))
                     .collect();
 
                 let body = p.parse_fn_body(async_span.is_some(), false)?;
@@ -1281,7 +1279,7 @@ impl<I: Tokens> Parser<I> {
             let params = self
                 .parse_paren_items_as_params(paren_items)?
                 .into_iter()
-                .map(|p| ParamWithoutDecorators::from_pat(p, program_data!(self)))
+                .map(|p| Param::from_pat(p, program_data!(self)))
                 .collect();
 
             let body: BlockStmtOrExpr = self.parse_fn_body(async_span.is_some(), false)?;

@@ -4,7 +4,7 @@ use crate::{
     ident::Ident,
     lit::{Number, Str},
     stmt::BlockStmt,
-    BigInt, GetNodeId, NodeId, ParamWithoutDecorators,
+    BigInt, GetNodeId, NodeId, Param,
 };
 use clone_node::CloneNode;
 use node_id::GetNodeIdMacro;
@@ -51,8 +51,7 @@ pub struct GetterProp {
 pub struct SetterProp {
     pub node_id: NodeId,
     pub key: PropName,
-    // TODO:
-    pub param: ParamWithoutDecorators,
+    pub param: Param,
     pub body: BlockStmt,
 }
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]

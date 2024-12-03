@@ -486,10 +486,6 @@ where
         todo!(stringify!(Constructor));
     }
 
-    fn visit_decorator(&mut self, node: &Decorator) {
-        unimplemented!("Decorators not supported");
-    }
-
     fn visit_fn_decl(&mut self, node: &FnDecl) {
         node.function.visit_with(self);
         node.ident.visit_with(self);
@@ -606,12 +602,6 @@ where
     }
 
     fn visit_param(&mut self, node: &Param) {
-        self.in_lhs = true;
-        node.pat.visit_with(self);
-        self.in_lhs = false;
-    }
-
-    fn visit_param_without_decorators(&mut self, node: &ParamWithoutDecorators) {
         self.in_lhs = true;
         node.pat.visit_with(self);
         self.in_lhs = false;

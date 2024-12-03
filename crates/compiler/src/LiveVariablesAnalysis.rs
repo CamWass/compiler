@@ -487,12 +487,6 @@ where
         node.pat.visit_with(self);
         self.in_lhs = false;
     }
-    fn visit_param_without_decorators(&mut self, node: &'ast ParamWithoutDecorators) {
-        debug_assert!(!self.in_lhs);
-        self.in_lhs = true;
-        node.pat.visit_with(self);
-        self.in_lhs = false;
-    }
     fn visit_catch_clause(&mut self, node: &'ast CatchClause) {
         debug_assert!(!self.in_lhs);
         self.in_lhs = true;

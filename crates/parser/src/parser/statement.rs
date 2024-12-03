@@ -56,11 +56,7 @@ impl IsDirective for Stmt {
 }
 
 pub(super) trait StmtLikeParser<Type: IsDirective> {
-    fn handle_import_export(
-        &mut self,
-        top_level: bool,
-        decorators: Vec<Decorator>,
-    ) -> PResult<Option<Type>>;
+    fn handle_import_export(&mut self, top_level: bool) -> PResult<Option<Type>>;
 }
 
 #[derive(PartialEq, Eq)]
@@ -71,7 +67,7 @@ pub enum StmtParseCtx {
 }
 
 impl<I: Tokens> StmtLikeParser<Stmt> for Parser<I> {
-    fn handle_import_export(&mut self, _: bool, _: Vec<Decorator>) -> PResult<Option<Stmt>> {
+    fn handle_import_export(&mut self, _: bool) -> PResult<Option<Stmt>> {
         let start = self.input.cur_pos();
         if self.input.syntax().dynamic_import() && is!(self, "import") {
             let expr = self.parse_expr()?.unwrap();
@@ -189,13 +185,12 @@ impl<I: Tokens> Parser<I> {
     {
         trace_cur!(self, parse_stmt_like);
         let start = self.input.cur_pos();
-        let decorators = self.parse_decorators(true)?;
 
         if is_one_of!(self, "import", "export") {
-            return self.handle_import_export(top_level, decorators);
+            return self.handle_import_export(top_level);
         }
 
-        self.parse_stmt_content(start, parse_ctx, top_level, decorators)
+        self.parse_stmt_content(start, parse_ctx, top_level)
             .map(|s| s.map(From::from))
     }
     fn parse_stmt_content(
@@ -203,7 +198,6 @@ impl<I: Tokens> Parser<I> {
         start: BytePos,
         parse_ctx: StmtParseCtx,
         top_level: bool,
-        decorators: Vec<Decorator>,
     ) -> PResult<Option<Stmt>> {
         trace_cur!(self, parse_stmt_content);
 
@@ -283,10 +277,10 @@ impl<I: Tokens> Parser<I> {
                         syntax_error!(self, SyntaxError::SloppyFunction);
                     }
                     // TODO: disallow generator functions in single statement contexts.
-                    return self.parse_fn_decl(decorators).map(Stmt::Decl).map(Some);
+                    return self.parse_fn_decl().map(Stmt::Decl).map(Some);
                 } else {
                     return self
-                        .parse_fn_decl_or_ts_overload_sig(decorators)
+                        .parse_fn_decl_or_ts_overload_sig()
                         .map(|s| s.map(Stmt::Decl));
                 }
             }
@@ -295,7 +289,7 @@ impl<I: Tokens> Parser<I> {
                     syntax_error!(self, SyntaxError::UnexpectedClassInSingleStatementCtx);
                 }
                 return self
-                    .parse_class_decl(start, start, decorators)
+                    .parse_class_decl(start, start)
                     .map(Stmt::Decl)
                     .map(Some);
             }
@@ -409,9 +403,7 @@ impl<I: Tokens> Parser<I> {
             if parse_ctx != StmtParseCtx::None {
                 todo!("async fn not allowed in single stmt context");
             } else {
-                return self
-                    .parse_async_fn_decl(decorators)
-                    .map(|s| s.map(Stmt::Decl));
+                return self.parse_async_fn_decl().map(|s| s.map(Stmt::Decl));
             }
         }
 
@@ -455,7 +447,7 @@ impl<I: Tokens> Parser<I> {
                 }
 
                 if self.input.syntax().typescript() {
-                    if let Some(decl) = self.parse_ts_expr_stmt(decorators, ident)? {
+                    if let Some(decl) = self.parse_ts_expr_stmt(ident)? {
                         return match decl {
                             DeclOrEmpty::Decl(d) => Ok(Some(Stmt::Decl(d))),
                             DeclOrEmpty::Empty => Ok(None),
@@ -1234,7 +1226,7 @@ impl<I: Tokens> Parser<I> {
             parser.state.labels.push(label.sym.clone());
 
             let body = Box::new(if parser.input.is(&tok!("function")) {
-                let f = parser.parse_fn_decl(Vec::new())?;
+                let f = parser.parse_fn_decl()?;
                 if let Decl::Fn(f) = &f {
                     if f.function.is_generator {
                         syntax_error!(

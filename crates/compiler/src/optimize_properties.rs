@@ -1108,16 +1108,6 @@ impl GraphVisitor<'_> {
             self.graph.invalidate(*value, self.store);
         }
     }
-
-    fn handle_params<'a>(&mut self, params: impl Iterator<Item = &'a Pat>) {
-        let cur_fn = self.cur_fn.unwrap();
-        let cur_fn = self.store.pointers.insert(Pointer::Fn(cur_fn));
-        for (i, param) in params.enumerate() {
-            let index = i.try_into().expect("< u16::MAX params");
-            let rhs = self.store.pointers.insert(Pointer::Arg(cur_fn, index));
-            self.visit_destructuring(param, &[rhs]);
-        }
-    }
 }
 
 impl Visit<'_> for GraphVisitor<'_> {
@@ -1214,7 +1204,6 @@ impl Visit<'_> for GraphVisitor<'_> {
         let old = self.cur_fn;
         self.cur_fn = Some(n.node_id);
         n.params.visit_with(self);
-        n.decorators.visit_with(self);
         n.body.visit_with(self);
         self.cur_fn = old;
     }
@@ -1244,11 +1233,13 @@ impl Visit<'_> for GraphVisitor<'_> {
     }
 
     fn visit_params(&mut self, params: &[Param]) {
-        self.handle_params(params.iter().map(|p| &p.pat));
-    }
-
-    fn visit_param_without_decorators_vec(&mut self, params: &[ParamWithoutDecorators]) {
-        self.handle_params(params.iter().map(|p| &p.pat));
+        let cur_fn = self.cur_fn.unwrap();
+        let cur_fn = self.store.pointers.insert(Pointer::Fn(cur_fn));
+        for (i, param) in params.iter().enumerate() {
+            let index = i.try_into().expect("< u16::MAX params");
+            let rhs = self.store.pointers.insert(Pointer::Arg(cur_fn, index));
+            self.visit_destructuring(&param.pat, &[rhs]);
+        }
     }
 }
 

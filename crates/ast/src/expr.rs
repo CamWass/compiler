@@ -8,7 +8,7 @@ use crate::{
     pat::Pat,
     prop::Prop,
     stmt::BlockStmt,
-    GetNodeId, Invalid, NodeId, ParamWithoutDecorators,
+    GetNodeId, Invalid, NodeId, Param,
 };
 use clone_node::CloneNode;
 use global_common::util::take::Take;
@@ -216,8 +216,7 @@ pub struct SeqExpr {
 pub struct ArrowExpr {
     pub node_id: NodeId,
 
-    // TODO:
-    pub params: Vec<ParamWithoutDecorators>,
+    pub params: Vec<Param>,
 
     pub body: BlockStmt,
 

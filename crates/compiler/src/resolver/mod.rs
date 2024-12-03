@@ -9,8 +9,6 @@ use scope::{IdentType, ScopeKind};
 
 mod scope;
 
-// TODO: ParamWithoutDecorators and other differences from SWC's AST.
-
 /// # When to run
 ///
 /// The resolver expects 'clean' ast. You can get clean ast by parsing, or by
@@ -317,7 +315,6 @@ macro_rules! track_ident_mut {
         fn visit_mut_class(&mut self, c: &mut Class) {
             let old = self.ident_type;
             self.ident_type = IdentType::Ref;
-            c.decorators.visit_mut_with(self);
 
             self.ident_type = IdentType::Ref;
             if let Some(extends) = &mut c.extends {
@@ -390,8 +387,6 @@ impl VisitMut<'_> for Resolver<'_> {
     fn visit_mut_class_decl(&mut self, n: &mut ClassDecl) {
         self.modify(&mut n.ident);
 
-        n.class.decorators.visit_mut_with(self);
-
         // Create a child scope. The class name is only accessible within the class.
 
         self.with_child(ScopeKind::Fn, |child| {
@@ -416,16 +411,10 @@ impl VisitMut<'_> for Resolver<'_> {
     fn visit_mut_class_method(&mut self, m: &mut ClassMethod) {
         m.key.visit_mut_with(self);
 
-        for p in m.function.params.iter_mut() {
-            p.decorators.visit_mut_with(self);
-        }
-
         self.with_child(ScopeKind::Fn, |child| m.function.visit_mut_with(child));
     }
 
     fn visit_mut_class_prop(&mut self, p: &mut ClassProp) {
-        p.decorators.visit_mut_with(self);
-
         if let PropName::Computed(key) = &mut p.key {
             let old = self.ident_type;
             self.ident_type = IdentType::Binding;
@@ -492,14 +481,10 @@ impl VisitMut<'_> for Resolver<'_> {
     fn visit_mut_fn_decl(&mut self, node: &mut FnDecl) {
         // We don't fold this as Hoister handles this.
 
-        node.function.decorators.visit_mut_with(self);
-
         self.with_child(ScopeKind::Fn, |child| node.function.visit_mut_with(child));
     }
 
     fn visit_mut_fn_expr(&mut self, e: &mut FnExpr) {
-        e.function.decorators.visit_mut_with(self);
-
         self.with_child(ScopeKind::Fn, |child| {
             if let Some(ident) = &mut e.ident {
                 child.modify(ident)
@@ -541,7 +526,6 @@ impl VisitMut<'_> for Resolver<'_> {
 
     fn visit_mut_function(&mut self, f: &mut Function) {
         self.ident_type = IdentType::Ref;
-        f.decorators.visit_mut_with(self);
 
         self.ident_type = IdentType::Binding;
         f.params.visit_mut_with(self);

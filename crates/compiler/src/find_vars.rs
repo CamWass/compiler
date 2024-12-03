@@ -127,12 +127,6 @@ impl Visit<'_> for DeclFinder {
         self.in_param = false;
     }
 
-    fn visit_param_without_decorators(&mut self, e: &ParamWithoutDecorators) {
-        self.in_param = true;
-        e.pat.visit_with(self);
-        self.in_param = false;
-    }
-
     fn visit_binding_ident(&mut self, node: &BindingIdent) {
         self.record_var(node.to_id());
     }
@@ -284,14 +278,8 @@ impl FunctionLike for Constructor {
         Node::from(&self.body)
     }
 }
-fn get_pat_of_param_without_decorators(param: &ParamWithoutDecorators) -> &Pat {
-    &param.pat
-}
 impl FunctionLike for ArrowExpr {
-    type ParamIter<'a> = std::iter::Map<
-        std::slice::Iter<'a, ParamWithoutDecorators>,
-        fn(&'a ParamWithoutDecorators) -> &'a Pat,
-    >;
+    type ParamIter<'a> = std::iter::Map<std::slice::Iter<'a, Param>, fn(&'a Param) -> &'a Pat>;
 
     visit_body!();
 
@@ -300,7 +288,7 @@ impl FunctionLike for ArrowExpr {
     }
 
     fn params(&self) -> Self::ParamIter<'_> {
-        self.params.iter().map(get_pat_of_param_without_decorators)
+        self.params.iter().map(get_pat_of_param)
     }
 
     fn body(&self) -> Node<'_> {

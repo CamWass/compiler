@@ -154,8 +154,6 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
             let name = self.parse_prop_name()?;
             return self
                 .parse_fn_args_body(
-                    // no decorator in an object literal
-                    vec![],
                     start,
                     |parser| parser.parse_unique_formal_params(),
                     false,
@@ -212,8 +210,6 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
         if (self.input.syntax().typescript() && is!(self, '<')) || is!(self, '(') {
             return self
                 .parse_fn_args_body(
-                    // no decorator in an object literal
-                    vec![],
                     start,
                     |parser| parser.parse_unique_formal_params(),
                     false,
@@ -285,8 +281,6 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                 match ident.sym {
                     js_word!("get") => self
                         .parse_fn_args_body(
-                            // no decorator in an object literal
-                            vec![],
                             start,
                             |parser| {
                                 let params = parser.parse_formal_params()?;
@@ -317,8 +311,6 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                         }),
                     js_word!("set") => self
                         .parse_fn_args_body(
-                            // no decorator in an object literal
-                            vec![],
                             start,
                             |parser| {
                                 let params = parser.parse_formal_params()?;
@@ -353,29 +345,18 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                                 node_id: node_id!(self, span!(self, start)),
                                 key,
                                 body,
-                                param: params
-                                    .into_iter()
-                                    .map(|param| {
-                                        ParamWithoutDecorators::from_pat(
-                                            param.pat,
-                                            program_data!(self),
-                                        )
-                                    })
-                                    .next()
-                                    .unwrap_or_else(|| {
-                                        ParamWithoutDecorators::from_pat(
-                                            Pat::Invalid(Invalid {
-                                                node_id: node_id!(self, key_span),
-                                            }),
-                                            program_data!(self),
-                                        )
-                                    }),
+                                param: params.into_iter().next().unwrap_or_else(|| {
+                                    Param::from_pat(
+                                        Pat::Invalid(Invalid {
+                                            node_id: node_id!(self, key_span),
+                                        }),
+                                        program_data!(self),
+                                    )
+                                }),
                             })
                         }),
                     js_word!("async") => self
                         .parse_fn_args_body(
-                            // no decorator in an object literal
-                            vec![],
                             start,
                             |parser| parser.parse_unique_formal_params(),
                             true,
