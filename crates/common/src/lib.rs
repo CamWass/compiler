@@ -26,7 +26,6 @@ pub mod chars;
 pub mod errors;
 pub mod integer_decode;
 pub mod iter;
-pub mod macros;
 pub mod pass;
 mod rustc_data_structures;
 mod source_map;

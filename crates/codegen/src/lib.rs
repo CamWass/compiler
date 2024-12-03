@@ -3439,6 +3439,7 @@ pub enum Context {
 #[allow(non_upper_case_globals)]
 mod flags {
     bitflags::bitflags! {
+        #[derive(Copy, Clone)]
         pub(super) struct Flags: u8 {
             const in_for_stmt_head = 1 << 0;
             const in_opt_chain = 1 << 1;
@@ -3449,8 +3450,8 @@ mod flags {
 
     impl Flags {
         pub(super) fn replace(&mut self, flag: Flags, value: bool) -> bool {
-            debug_assert_eq!(flag.bits.count_ones(), 1);
-            let old = (self.bits & flag.bits) != 0;
+            debug_assert_eq!(flag.bits().count_ones(), 1);
+            let old = (self.bits() & flag.bits()) != 0;
             self.set(flag, value);
             old
         }
