@@ -151,9 +151,9 @@ impl RenameVars {
             }
 
             // Since our k new names are of the same length, assigning by
-            // frequency has no effect. Instead, we assign by order of occurence.
+            // frequency has no effect. Instead, we assign by order of occurrence.
             slots_by_occurrence.sort_unstable_by(|&a, &b| {
-                order_slots_by_occurence(&self.slots[a], &self.slots[b])
+                order_slots_by_occurrence(&self.slots[a], &self.slots[b])
             });
 
             // Now, finalize the assignments for the k names.
@@ -519,13 +519,13 @@ fn order_slots_by_frequency(a: &Slot, b: &Slot) -> Ordering {
     if result.is_eq() {
         // Break a tie using the order in which the variable first appears in
         // the source.
-        order_slots_by_occurence(a, b)
+        order_slots_by_occurrence(a, b)
     } else {
         result
     }
 }
 
 /// Sorts [`Slot`] objects by their order of occurrence in the source (ascending).
-fn order_slots_by_occurence(a: &Slot, b: &Slot) -> Ordering {
+fn order_slots_by_occurrence(a: &Slot, b: &Slot) -> Ordering {
     a.order_of_occurrence.cmp(&b.order_of_occurrence)
 }
