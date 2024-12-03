@@ -1,3 +1,5 @@
+// TODO: Let's not rely on compiler internals...
+#![allow(internal_features)]
 #![feature(allow_internal_unstable)]
 #![feature(extend_one)]
 #![feature(unboxed_closures)]

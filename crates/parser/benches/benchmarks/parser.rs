@@ -1,7 +1,6 @@
 use criterion::{black_box, criterion_group, Criterion, Throughput};
 use global_common::{sync::Lrc, FileName, FilePathMapping, SourceMap};
 use parser::Parser;
-use std::time::Duration;
 
 struct Bench(&'static str, &'static str);
 
