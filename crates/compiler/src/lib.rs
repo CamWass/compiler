@@ -193,7 +193,7 @@ fn finalise(
     // TODO: collapseVariableDeclarations
     denormalize::denormalize(ast);
     if passes.rename_vars {
-        RenameVars::rename_vars(ast, unresolved_ctxt);
+        RenameVars::process(ast, unresolved_ctxt);
     }
 
     if passes.rename_labels {
