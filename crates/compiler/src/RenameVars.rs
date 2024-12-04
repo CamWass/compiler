@@ -10,7 +10,6 @@ use crate::{DefaultNameGenerator::DefaultNameGenerator, Id, ToId};
 mod tests;
 
 pub fn process(ast: &mut Program, unresolved_ctxt: SyntaxContext) {
-    // dbg!(&ast);
     let (rename_map, var_info) = analyse(ast, unresolved_ctxt);
 
     // Actually assign the new names.
@@ -19,17 +18,16 @@ pub fn process(ast: &mut Program, unresolved_ctxt: SyntaxContext) {
         var_info,
         unresolved_ctxt,
     };
-
     ast.visit_mut_with(&mut renamer);
 }
 
 fn analyse(
-    ast: &mut Program,
+    ast: &Program,
     unresolved_ctxt: SyntaxContext,
-) -> (FxHashMap<usize, JsWord>, FxHashMap<Id, VarInfo>) {
+) -> (FxHashMap<u32, JsWord>, FxHashMap<Id, VarInfo>) {
     let mut analyser = Analyser {
         scopes: Default::default(),
-        buckets: Default::default(),
+        max_depth: 0,
         in_var_decl: false,
         var_info: Default::default(),
         unresolved_ctxt,
@@ -37,23 +35,19 @@ fn analyse(
     };
     ast.visit_with(&mut analyser);
 
-    let mut rename_map = FxHashMap::default();
+    let number_of_local_slots = analyser.max_depth + 1;
 
-    let mut slots = vec![Slot::default(); analyser.buckets.len() + analyser.global_declarations];
+    let num_slots = (number_of_local_slots + analyser.global_declarations) as usize;
+    let mut slots = vec![Slot::default(); num_slots];
 
     for info in analyser.var_info.values_mut() {
-        debug_assert!(info.slot != usize::MAX, "All variables should be declared");
+        debug_assert!(info.slot != u32::MAX, "All variables should be declared");
         if info.global {
-            // Global.
             // Globals are appended at the end, so update slot indices.
-            info.slot += analyser.buckets.len();
-            slots[info.slot].reference_count = info.reference_count;
-            slots[info.slot].depth = info.slot;
-        } else {
-            // Local.
-            slots[info.slot].reference_count += info.reference_count;
-            slots[info.slot].depth = info.slot;
+            info.slot += number_of_local_slots;
         }
+        slots[info.slot as usize].reference_count += info.reference_count;
+        slots[info.slot as usize].depth = info.slot;
     }
 
     debug_assert!(slots.iter().is_sorted_by_key(|x| x.depth));
@@ -61,7 +55,7 @@ fn analyse(
     slots.sort_by(|a, b| b.reference_count.cmp(&a.reference_count));
 
     let mut name_gen = DefaultNameGenerator::new(Default::default());
-
+    let mut rename_map = FxHashMap::with_capacity_and_hasher(num_slots, Default::default());
     for slot in slots {
         rename_map.insert(slot.depth, name_gen.generate_next_name());
     }
@@ -71,13 +65,13 @@ fn analyse(
 
 #[derive(Default, Clone, Copy)]
 struct Slot {
-    reference_count: usize,
-    depth: usize,
+    reference_count: u32,
+    depth: u32,
 }
 
 struct VarInfo {
-    reference_count: usize,
-    slot: usize,
+    reference_count: u32,
+    slot: u32,
     global: bool,
 }
 
@@ -85,7 +79,7 @@ impl Default for VarInfo {
     fn default() -> Self {
         Self {
             reference_count: 0,
-            slot: usize::MAX,
+            slot: u32::MAX,
             global: false,
         }
     }
@@ -93,12 +87,12 @@ impl Default for VarInfo {
 
 struct Analyser {
     scopes: Vec<Scope>,
-    buckets: FxHashMap<usize, Vec<Id>>,
+    max_depth: u32,
     /// Whether we are visiting the names in a `var` decl.
     in_var_decl: bool,
     unresolved_ctxt: SyntaxContext,
     var_info: FxHashMap<Id, VarInfo>,
-    global_declarations: usize,
+    global_declarations: u32,
 }
 
 impl Analyser {
@@ -125,7 +119,7 @@ impl Analyser {
         let info = self.var_info.entry(name.clone()).or_default();
         info.reference_count += 1;
 
-        if info.slot == usize::MAX {
+        if info.slot == u32::MAX {
             let scope_pos = if self.in_var_decl {
                 // There is always the global scope (which is a hoist scope).
                 self.scopes.iter().rposition(|s| s.is_hoist_scope)
@@ -137,9 +131,11 @@ impl Analyser {
                 let depth = self.scopes[..=scope_pos]
                     .iter()
                     .map(|s| s.num_declarations)
-                    .sum::<usize>();
+                    .sum::<u32>();
 
-                self.buckets.entry(depth).or_default().push(name.clone());
+                if depth > self.max_depth {
+                    self.max_depth = depth;
+                }
 
                 info.slot = depth;
                 self.scopes[scope_pos].num_declarations += 1;
@@ -268,25 +264,24 @@ impl Visit<'_> for Analyser {
 }
 
 struct Scope {
-    num_declarations: usize,
+    num_declarations: u32,
     is_hoist_scope: bool,
 }
 
 struct Renamer {
-    rename_map: FxHashMap<usize, JsWord>,
+    rename_map: FxHashMap<u32, JsWord>,
     var_info: FxHashMap<Id, VarInfo>,
     unresolved_ctxt: SyntaxContext,
 }
 
 impl VisitMut<'_> for Renamer {
     fn visit_mut_ident(&mut self, node: &mut Ident) {
-        // if node.ctxt == self.unresolved_ctxt || node.ctxt == SyntaxContext::empty() {
-        //     // These names were skipped in the analysis and won't be renamed.
-        //     return;
-        // }
+        if node.ctxt == self.unresolved_ctxt || node.ctxt == SyntaxContext::empty() {
+            // These names were skipped in the analysis and won't be renamed.
+            return;
+        }
         let id = node.to_id();
         if let Some(info) = self.var_info.get(&id) {
-            // TODO: index
             if let Some(new_name) = self.rename_map.get(&info.slot) {
                 node.sym = new_name.clone();
             }
