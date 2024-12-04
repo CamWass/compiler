@@ -2,7 +2,7 @@
 use std::time::Duration;
 
 use compiler::resolver::resolver;
-use criterion::{black_box, criterion_group, Criterion, Throughput};
+use criterion::{black_box, Criterion, Throughput};
 use ecma_visit::VisitMutWith;
 use global_common::{
     errors::{ColorConfig, Handler},
@@ -15,7 +15,7 @@ use parser::{Parser, Syntax};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-fn bench(c: &mut Criterion) {
+pub fn bench(c: &mut Criterion) {
     let benches: &'static [(&'static str, &'static str, u64, usize)] = &[
         (
             "small_typescript",
@@ -78,5 +78,3 @@ fn bench(c: &mut Criterion) {
     }
     group.finish();
 }
-
-criterion_group!(benches, bench);
