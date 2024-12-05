@@ -56,13 +56,15 @@ impl DefaultNameGenerator {
             }
         }
     }
-
-    /// Generates the next short name and reserves it so it can't be used for future names.
-    pub fn generate_and_reserve_next_name(&mut self) -> JsWord {
-        let new_name = self.generate_next_name();
-        self.reserved_names.insert(new_name.clone());
-        new_name
-    }
 }
 
 // TODO: tests from closure
+
+#[test]
+fn test_collision_with_past_names() {
+    let mut gen = DefaultNameGenerator::default();
+    let names = (0..1_000_000)
+        .map(|_| gen.generate_next_name())
+        .collect::<FxHashSet<_>>();
+    assert_eq!(names.len(), 1_000_000);
+}
