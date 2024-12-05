@@ -71,6 +71,21 @@ fn test_same(input: &str) {
 // }
 
 #[test]
+fn test_collisions_with_unresolved() {
+    test_transform(
+        "
+// a is a super-duper-important variable from the environment with value 5.
+console.log(a); // should print 5, don't want to rename `foo` to `a`.
+function foo() {}
+",
+        "
+console.log(a);
+function b() {}
+",
+    );
+}
+
+#[test]
 fn unresolved_binding_ident() {
     // Had a bug where the binding ident `ts` in `ts = {}` was creating a slot,
     // even though `ts` is unresolved.

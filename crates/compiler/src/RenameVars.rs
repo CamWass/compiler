@@ -2,7 +2,7 @@ use ast::*;
 use atoms::JsWord;
 use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use global_common::SyntaxContext;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{DefaultNameGenerator::DefaultNameGenerator, Id, ToId};
 
@@ -32,6 +32,7 @@ fn analyse(
         var_info: Default::default(),
         unresolved_ctxt,
         global_declarations: 0,
+        unresolved_references: FxHashSet::default(),
     };
     ast.visit_with(&mut analyser);
 
@@ -54,7 +55,7 @@ fn analyse(
 
     slots.sort_by(|a, b| b.reference_count.cmp(&a.reference_count));
 
-    let mut name_gen = DefaultNameGenerator::new(Default::default());
+    let mut name_gen = DefaultNameGenerator::new(analyser.unresolved_references);
     let mut rename_map = FxHashMap::with_capacity_and_hasher(num_slots, Default::default());
     for slot in slots {
         rename_map.insert(slot.depth, name_gen.generate_next_name());
@@ -93,14 +94,18 @@ struct Analyser {
     unresolved_ctxt: SyntaxContext,
     var_info: FxHashMap<Id, VarInfo>,
     global_declarations: u32,
+    unresolved_references: FxHashSet<JsWord>,
 }
 
 impl Analyser {
     /// Records a reference to an [`Id`].
     fn handle_reference(&mut self, name: &Id) {
-        if name.1 == self.unresolved_ctxt || name.1 == SyntaxContext::empty() {
-            // We're only interested in tracking names that we'll see the
-            // declarations for.
+        if name.1 == self.unresolved_ctxt {
+            self.unresolved_references.insert(name.0.clone());
+            return;
+        }
+        if name.1 == SyntaxContext::empty() {
+            // This isn't a variable reference.
             return;
         }
         self.var_info
@@ -111,9 +116,12 @@ impl Analyser {
 
     /// Records a declaration of (and reference to) an [`Id`].
     fn handle_decl(&mut self, name: Id) {
-        if name.1 == self.unresolved_ctxt || name.1 == SyntaxContext::empty() {
-            // We're only interested in tracking names that we'll see the
-            // declarations for.
+        if name.1 == self.unresolved_ctxt {
+            self.unresolved_references.insert(name.0);
+            return;
+        }
+        if name.1 == SyntaxContext::empty() {
+            // This isn't a variable reference.
             return;
         }
         let info = self.var_info.entry(name.clone()).or_default();
