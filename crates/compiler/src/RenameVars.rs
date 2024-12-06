@@ -247,11 +247,13 @@ impl Visit<'_> for Analyser {
     }
     fn visit_getter_prop(&mut self, node: &GetterProp) {
         self.with_scope(true, |visitor| {
+            node.key.visit_with(visitor);
             node.body.visit_children_with(visitor);
         });
     }
     fn visit_setter_prop(&mut self, node: &SetterProp) {
         self.with_scope(true, |visitor| {
+            node.key.visit_with(visitor);
             node.param.visit_with(visitor);
             node.body.visit_children_with(visitor);
         });
