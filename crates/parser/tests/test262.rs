@@ -32,11 +32,6 @@ const IGNORED_PASS_TESTS: &[&str] = &[
     // the second produces "1000000000000000000000000000000.0" (which appears to be correct).
     // For the test to pass, the values must be identical.
     "8386fbff927a9e0e.js",
-    // TODO: Stack size (Excessive parens)
-    "6b5e7e125097d439.js",
-    "714be6d28082eaa7.js",
-    "882910de7dd1aef9.js",
-    "dd3c63403db5c06e.js",
     // Wrong tests (variable name or value is different)
     "0339fa95c78c11bd.js",
     "0426f15dac46e92d.js",
@@ -349,7 +344,7 @@ fn identity_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
 fn parse_script(file_name: &Path) -> Result<Script, NormalizedOutput> {
     with_parser(file_name, |p| p.parse_script())
 }
-fn parse_module<'a>(file_name: &Path) -> Result<Module, NormalizedOutput> {
+fn parse_module(file_name: &Path) -> Result<Module, NormalizedOutput> {
     with_parser(file_name, |p| p.parse_module())
 }
 

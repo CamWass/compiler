@@ -111,7 +111,6 @@ make!(
     ClassMethod,
     PrivateMethod,
     Constructor,
-    Decorator,
     // decl
     FnDecl,
     ClassDecl,
@@ -140,13 +139,11 @@ make!(
     Tpl,
     TaggedTpl,
     TplElement,
-    ParenExpr,
     Super,
     OptChainExpr,
     // function
     Function,
     Param,
-    ParamWithoutDecorators,
     //ident
     BindingIdent,
     Ident,
@@ -182,7 +179,6 @@ make!(
     AssignPat,
     RestPat,
     KeyValuePatProp,
-    AssignPatProp,
     //prop
     KeyValueProp,
     AssignProp,
@@ -239,7 +235,6 @@ impl<'ast> From<&'ast ::ast::Expr> for Node<'ast> {
             ::ast::Expr::Yield(e) => Node::from(e),
             ::ast::Expr::MetaProp(e) => Node::from(e),
             ::ast::Expr::Await(e) => Node::from(e),
-            ::ast::Expr::Paren(e) => Node::from(e),
             ::ast::Expr::PrivateName(e) => Node::from(e),
             ::ast::Expr::OptChain(e) => Node::from(e),
             ::ast::Expr::Invalid(e) => Node::from(e),
@@ -353,7 +348,6 @@ impl<'ast> From<&'ast ::ast::ModuleDecl> for Node<'ast> {
 impl<'ast> From<&'ast ::ast::Prop> for Node<'ast> {
     fn from(other: &'ast ::ast::Prop) -> Node<'ast> {
         match other {
-            ast::Prop::Shorthand(_) => unreachable!("removed by normalization"),
             ast::Prop::KeyValue(n) => Node::from(n),
             ast::Prop::Assign(n) => Node::from(n),
             ast::Prop::Getter(n) => Node::from(n),
@@ -395,7 +389,6 @@ impl<'ast> From<&'ast ::ast::ObjectPatProp> for Node<'ast> {
     fn from(other: &'ast ::ast::ObjectPatProp) -> Node<'ast> {
         match other {
             ast::ObjectPatProp::KeyValue(n) => Node::from(n),
-            ast::ObjectPatProp::Assign(n) => Node::from(n),
             ast::ObjectPatProp::Rest(n) => Node::from(n),
         }
     }

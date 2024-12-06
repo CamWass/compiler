@@ -13,10 +13,7 @@ use node_id::GetNodeIdMacro;
 pub struct Class {
     pub node_id: NodeId,
 
-    pub decorators: Vec<Decorator>,
-
     pub extends: Option<ExtendsClause>,
-
     pub body: Vec<ClassMember>,
 }
 
@@ -43,12 +40,8 @@ pub struct ClassProp {
     pub node_id: NodeId,
 
     pub key: PropName,
-
     pub value: Option<Box<Expr>>,
-
     pub is_static: bool,
-
-    pub decorators: Vec<Decorator>,
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
@@ -56,48 +49,36 @@ pub struct PrivateProp {
     pub node_id: NodeId,
 
     pub key: PrivateName,
-
     pub value: Option<Box<Expr>>,
-
     pub is_static: bool,
-
-    pub decorators: Vec<Decorator>,
 }
 
-macro_rules! method {
-    ($name:ident, $KEY:ty) => {
-        #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
-        pub struct $name {
-            pub node_id: NodeId,
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+pub struct ClassMethod {
+    pub node_id: NodeId,
 
-            pub key: $KEY,
-
-            pub function: Function,
-
-            pub kind: MethodKind,
-
-            pub is_static: bool,
-        }
-    };
+    pub key: PropName,
+    pub function: Function,
+    pub kind: MethodKind,
+    pub is_static: bool,
 }
 
-method!(ClassMethod, PropName);
-method!(PrivateMethod, PrivateName);
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+pub struct PrivateMethod {
+    pub node_id: NodeId,
+
+    pub key: PrivateName,
+    pub function: Function,
+    pub kind: MethodKind,
+    pub is_static: bool,
+}
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct Constructor {
     pub node_id: NodeId,
 
     pub params: Vec<Param>,
-
     pub body: BlockStmt,
-}
-
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
-pub struct Decorator {
-    pub node_id: NodeId,
-
-    pub expr: Box<Expr>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, CloneNode)]

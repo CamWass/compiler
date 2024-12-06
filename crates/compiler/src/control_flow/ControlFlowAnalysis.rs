@@ -21,9 +21,9 @@ pub enum ControlFlowRoot<'ast> {
     SetterProp(&'ast SetterProp),
 }
 
-impl<'ast> Into<Node<'ast>> for ControlFlowRoot<'ast> {
-    fn into(self) -> Node<'ast> {
-        match self {
+impl<'ast> From<ControlFlowRoot<'ast>> for Node<'ast> {
+    fn from(val: ControlFlowRoot<'ast>) -> Self {
+        match val {
             ControlFlowRoot::Script(n) => Node::from(n),
             ControlFlowRoot::Module(n) => Node::from(n),
             ControlFlowRoot::Function(n) => Node::from(n),
@@ -55,13 +55,13 @@ impl_from!(&'ast SetterProp, SetterProp);
 
 pub type NodePriority = u32;
 
-pub struct ControlFlowAnalysisResult<N: CfgNode, NA: Annotation, EA: Annotation> {
-    pub cfg: ControlFlowGraph<N, NA, EA>,
+pub struct ControlFlowAnalysisResult<N: CfgNode, NA: Annotation> {
+    pub cfg: ControlFlowGraph<N, NA>,
     pub node_priorities: Vec<NodePriority>,
 }
 
-pub struct ControlFlowAnalysis<'ast, N: Annotation, E: Annotation> {
-    pub(super) cfg: ControlFlowGraph<Node<'ast>, N, E>,
+pub struct ControlFlowAnalysis<'ast, N: Annotation> {
+    pub(super) cfg: ControlFlowGraph<Node<'ast>, N>,
     ast_position: FxHashMap<NodeId, NodePriority>,
     pub(super) node_priorities: Vec<NodePriority>,
     ast_position_counter: NodePriority,
@@ -108,15 +108,14 @@ pub struct ControlFlowAnalysis<'ast, N: Annotation, E: Annotation> {
     finally_map: MultiMap<Node<'ast>, Node<'ast>>,
 }
 
-impl<'ast, N, E> ControlFlowAnalysis<'ast, N, E>
+impl<'ast, N> ControlFlowAnalysis<'ast, N>
 where
     N: Annotation,
-    E: Annotation,
 {
     pub fn analyze(
         root: ControlFlowRoot<'ast>,
         should_traverse_functions: bool,
-    ) -> ControlFlowAnalysisResult<Node<'ast>, N, E> {
+    ) -> ControlFlowAnalysisResult<Node<'ast>, N> {
         let root = root.into();
         let mut cfa = Self {
             cfg: ControlFlowGraph::new(compute_fall_through(root)),
@@ -178,8 +177,6 @@ where
 
         // Again, the implicit return node is always last.
         cfa.node_priorities[cfa.cfg.implicit_return_index.index()] = cfa.priority_counter;
-        // TODO: unnecessary? (never read after this?)
-        // cfa.priorityCounter += 1;
 
         // Every node in the cfg should have been prioritized.
         debug_assert_eq!(cfa.node_priorities.len(), cfa.cfg.graph.node_count());
@@ -192,10 +189,8 @@ where
         }
     }
 
-    /**
-     * Given an entry node, find all the nodes reachable from that node
-     * and prioritize them.
-     */
+    /// Given an entry node, find all the nodes reachable from that node
+    /// and prioritize them.
     fn prioritize_from_entry_node(&mut self, entry: NodeIndex) {
         #[derive(Debug)]
         struct PrioritizedNode(NodePriority, NodeIndex);
@@ -223,7 +218,7 @@ where
             }
         }
 
-        let mk = |s: &ControlFlowAnalysis<'ast, N, E>, node: NodeIndex| {
+        let mk = |s: &ControlFlowAnalysis<'ast, N>, node: NodeIndex| {
             let position = *s.ast_position.get(&s.cfg.graph[node].node_id).unwrap();
             PrioritizedNode(position, node)
         };
@@ -328,7 +323,7 @@ where
     /// Handles functions/constructors/etc
     fn handle_function_like<T>(&mut self, node: &'ast T)
     where
-        T: FunctionLike<'ast>,
+        T: FunctionLike,
         &'ast T: Into<Node<'ast>>,
     {
         let body = node.body();
@@ -505,11 +500,9 @@ where
         self.cfg.create_edge(case, branch, follow_node);
     }
 
-    /**
-     * Connects cfgNode to the proper CATCH block if target subtree might throw
-     * an exception. If there are FINALLY blocks reached before a CATCH, it will
-     * make the corresponding entry in finallyMap.
-     */
+    /// Connects cfgNode to the proper CATCH block if target subtree might throw
+    /// an exception. If there are FINALLY blocks reached before a CATCH, it will
+    /// make the corresponding entry in finallyMap.
     fn connect_to_possible_exception_handler(
         &mut self,
         cfg_node: ExceptionHandler<'ast>,
@@ -763,10 +756,9 @@ macro_rules! generate_visitors {
  * For example: within a Token.SWITCH, the expression in question does not
  * change the control flow and need not to be considered.
  */
-impl<'ast, N, E> Visit<'ast> for ControlFlowAnalysis<'ast, N, E>
+impl<'ast, N> Visit<'ast> for ControlFlowAnalysis<'ast, N>
 where
     N: Annotation,
-    E: Annotation,
 {
     fn visit_for_in_stmt(&mut self, node: &'ast ForInStmt) {
         p!(self, ForInStmt);
@@ -1589,7 +1581,6 @@ where
         [visit_class_method, ClassMethod],
         [visit_private_method, PrivateMethod],
         // [visit_constructor, Constructor],
-        [visit_decorator, Decorator],
         [visit_fn_decl, FnDecl],
         [visit_class_decl, ClassDecl],
         // [visit_var_decl, VarDecl],
@@ -1616,12 +1607,10 @@ where
         [visit_tpl, Tpl],
         [visit_tagged_tpl, TaggedTpl],
         [visit_tpl_element, TplElement],
-        [visit_paren_expr, ParenExpr],
         [visit_super, Super],
         [visit_opt_chain_expr, OptChainExpr],
         // [visit_function, Function],
         [visit_param, Param],
-        [visit_param_without_decorators, ParamWithoutDecorators],
         [visit_binding_ident, BindingIdent],
         [visit_ident, Ident],
         [visit_private_name, PrivateName],
@@ -1651,7 +1640,6 @@ where
         [visit_assign_pat, AssignPat],
         [visit_rest_pat, RestPat],
         [visit_key_value_pat_prop, KeyValuePatProp],
-        [visit_assign_pat_prop, AssignPatProp],
         [visit_key_value_prop, KeyValueProp],
         [visit_assign_prop, AssignProp],
         // [visit_getter_prop, GetterProp],

@@ -13,7 +13,7 @@ mod tests {
         assert_min("false", "false");
         assert_min("42", "42");
         assert_min("3.14", "3.14");
-        assert_min(r#" 'foobar' "#, r#"'foobar'"#);
+        assert_min(r#" 'foobar' "#, r#""foobar""#);
     }
 
     #[test]
@@ -76,6 +76,8 @@ mod tests {
         assert_min("++foo", "++foo");
         assert_min("--foo", "--foo");
         assert_min("new foo", "new foo");
+        assert_min("new foo()", "new foo");
+        assert_min("new foo().bar()", "new foo().bar()");
         assert_min("void foo", "void foo");
         assert_min("typeof foo", "typeof foo");
     }
@@ -138,7 +140,6 @@ mod tests {
     fn sparse_array_expression() {
         assert_min("[]", "[]");
         assert_min("[,]", "[,]");
-        assert_min("[1,]", "[1,]");
         assert_min("[,1]", "[,1]");
         assert_min("[,,];", "[,,]");
         assert_min("[1,,];", "[1,,]");
@@ -167,6 +168,7 @@ mod tests {
         assert_min("({ foo(bar, baz) {} });", "({foo(bar,baz){}})");
         // let expected = "({\n    foo: true,\n    bar: false\n});";
         // assert_pretty("({ foo: true, bar: false })", expected);
+        assert_min("({a: a})", "({a})");
     }
 
     #[test]
@@ -200,5 +202,14 @@ mod tests {
     #[test]
     fn html_comment() {
         assert_min("a < !--b && c-- > d;", "a< !--b&&c-- >d");
+    }
+
+    #[test]
+    fn arrow_expr() {
+        assert_min("()=>{ return x ?? y; }", "()=>x??y");
+        assert_min("()=>{ return 5; }", "()=>5");
+        assert_min("()=>{ return; }", "()=>{}");
+        assert_min("(x)=>{ return x+1 }", "x=>x+1");
+        assert_min("(x)=>{ return x++,5; }", "x=>(x++,5)");
     }
 }

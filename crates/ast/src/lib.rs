@@ -6,17 +6,17 @@
 
 pub use self::{
     class::{
-        Class, ClassMember, ClassMethod, ClassProp, Constructor, Decorator, ExtendsClause,
-        MethodKind, PrivateMethod, PrivateProp,
+        Class, ClassMember, ClassMethod, ClassProp, Constructor, ExtendsClause, MethodKind,
+        PrivateMethod, PrivateProp,
     },
     decl::{ClassDecl, Decl, FnDecl, VarDecl, VarDeclKind, VarDeclarator},
     expr::{
         ArrayLit, ArrowExpr, AssignExpr, AwaitExpr, BinExpr, CallExpr, ClassExpr, CondExpr, Expr,
         ExprOrSpread, ExprOrSuper, FnExpr, MemberExpr, MetaPropExpr, NewExpr, ObjectLit,
-        OptChainExpr, ParenExpr, PatOrExpr, SeqExpr, SpreadElement, Super, TaggedTpl, ThisExpr,
-        Tpl, TplElement, UnaryExpr, UpdateExpr, YieldExpr,
+        OptChainExpr, PatOrExpr, SeqExpr, SpreadElement, Super, TaggedTpl, ThisExpr, Tpl,
+        TplElement, UnaryExpr, UpdateExpr, YieldExpr,
     },
-    function::{Function, Param, ParamWithoutDecorators},
+    function::{FnFlags, Function, Param},
     ident::{BindingIdent, Ident, IdentExt, PrivateName},
     lit::{BigInt, Bool, Lit, Null, Number, Regex, Str, StrKind},
     module::{Module, ModuleItem, Program, Script},
@@ -27,9 +27,7 @@ pub use self::{
         ImportStarAsSpecifier, ModuleDecl, NamedExport,
     },
     operators::{AssignOp, BinaryOp, UnaryOp, UpdateOp},
-    pat::{
-        ArrayPat, AssignPat, AssignPatProp, KeyValuePatProp, ObjectPat, ObjectPatProp, Pat, RestPat,
-    },
+    pat::{ArrayPat, AssignPat, KeyValuePatProp, ObjectPat, ObjectPatProp, Pat, RestPat},
     prop::{
         AssignProp, ComputedPropName, GetterProp, KeyValueProp, MethodProp, Prop, PropName,
         SetterProp, SpreadAssignment,
@@ -71,7 +69,7 @@ pub trait GetNodeId {
     fn node_id(&self) -> NodeId;
 }
 
-impl<'a, T> GetNodeId for &'a T
+impl<T> GetNodeId for &T
 where
     T: GetNodeId,
 {
@@ -121,8 +119,8 @@ pub struct Invalid {
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, Default)]
 pub enum EsVersion {
-    #[default]
     Es3,
+    #[default]
     Es5,
     Es2015,
     Es2016,
@@ -130,13 +128,14 @@ pub enum EsVersion {
     Es2018,
     Es2019,
     Es2020,
+    Es2021,
+    Es2022,
+    EsNext,
 }
 
 impl EsVersion {
-    /// Get the latest version. This is `es2020` for now, but it will be changed
-    /// if a new version of specification is released.
     pub const fn latest() -> Self {
-        EsVersion::Es2020
+        EsVersion::EsNext
     }
 }
 

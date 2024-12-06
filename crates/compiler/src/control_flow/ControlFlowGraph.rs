@@ -1,7 +1,7 @@
 use super::node::{CfgNode, Node, NodeKind};
 use petgraph::{
     dot::Dot,
-    graph::{DiGraph, EdgeIndex, Neighbors, NodeIndex},
+    graph::{DiGraph, Neighbors, NodeIndex},
     visit::EdgeRef,
     EdgeDirection::{Incoming, Outgoing},
 };
@@ -11,10 +11,8 @@ use std::ops::Index;
 
 // TODO: account for other function like types (such as methods/getters etc)
 
-// TODO:
-#[derive(Debug)]
-pub struct DummyAnnotation;
-impl Annotation for DummyAnnotation {}
+// Dummy annotation.
+impl Annotation for () {}
 
 pub trait Annotation: fmt::Debug {}
 
@@ -24,7 +22,7 @@ pub trait Annotation: fmt::Debug {}
  * @param <N> The instruction type of the control flow graph.
  */
 #[derive(Debug)]
-pub struct ControlFlowGraph<N: CfgNode, NA: Annotation, EA: Annotation> {
+pub struct ControlFlowGraph<N: CfgNode, NA: Annotation> {
     pub map: FxHashMap<N, NodeIndex>,
     /**
      * A special node marked by the node value key null to a singleton
@@ -37,14 +35,12 @@ pub struct ControlFlowGraph<N: CfgNode, NA: Annotation, EA: Annotation> {
     pub entry_index: NodeIndex,
     pub graph: DiGraph<N, Branch>,
     pub node_annotations: FxHashMap<N, NA>,
-    pub edge_annotations: FxHashMap<EdgeIndex, EA>,
 }
 
-impl<N, NA, EA> ControlFlowGraph<N, NA, EA>
+impl<N, NA> ControlFlowGraph<N, NA>
 where
     N: CfgNode,
     NA: Annotation,
-    EA: Annotation,
 {
     pub fn new(entry: N) -> Self {
         let mut graph = DiGraph::<N, Branch>::new();
@@ -64,7 +60,6 @@ where
             graph,
             map,
             node_annotations: Default::default(),
-            edge_annotations: Default::default(),
         }
     }
 
@@ -204,10 +199,9 @@ where
 
 const CFG_DOT_FILE_NAME: &str = "cfg.dot";
 
-impl<'ast, NA, EA> ControlFlowGraph<Node<'ast>, NA, EA>
+impl<NA> ControlFlowGraph<Node<'_>, NA>
 where
     NA: Annotation,
-    EA: Annotation,
 {
     /// Prints a simple representation of the control flow graph to dot format.
     /// The resulting graph contains only the nodes and edges from the control
@@ -221,6 +215,7 @@ where
         std::fs::write(CFG_DOT_FILE_NAME, dot).expect("Failed to output control flow graph");
     }
 
+    #[allow(dead_code, reason = "used for debugging")]
     pub fn print_simple_with_annotations(&self) {
         // Only used for custom debug impl.
         struct CustomNode<'ast, 'a, NA>
@@ -281,6 +276,7 @@ where
     pub fn print_full(&self) {
         self.print_full_inner::<DefaultPrinter>(None, "cfg")
     }
+    #[allow(dead_code, reason = "used for debugging")]
     /// Same as `print_full` but also prints node annotations using `printer`.
     /// If `printer` is `None`, the annotations will be printed using [`Debug`][std::fmt::Debug].
     pub fn print_full_with_annotations<P>(&self, printer: Option<&P>)
@@ -293,6 +289,7 @@ where
         }
     }
 
+    #[allow(dead_code, reason = "used for debugging")]
     pub fn print_full_with_annotations_name(&self, name: &str) {
         self.print_full_inner::<DefaultPrinter>(Some(&DefaultPrinter), name);
     }
@@ -417,11 +414,10 @@ fn recolour_graph(mut dot: String, node_count: usize) -> String {
     dot
 }
 
-impl<N, NA, EA> Index<NodeIndex> for ControlFlowGraph<N, NA, EA>
+impl<N, NA> Index<NodeIndex> for ControlFlowGraph<N, NA>
 where
     N: CfgNode,
     NA: Annotation,
-    EA: Annotation,
 {
     type Output = N;
 

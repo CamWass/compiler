@@ -1,7 +1,9 @@
 //! 13.3.3 Destructuring Binding Patterns
-use super::{expression::PatOrExprOrSpread, util::ExprExt, *};
+use super::{expression::MaybeParenPatOrExprOrSpread, *};
 use crate::token::AssignOpToken;
 use atoms::js_word;
+use expression::MaybeParenSpreadElement;
+use util::is_valid_simple_assignment_target;
 
 impl<I: Tokens> Parser<I> {
     pub(super) fn parse_opt_binding_ident(&mut self) -> PResult<Option<BindingIdent>> {
@@ -63,7 +65,7 @@ impl<I: Tokens> Parser<I> {
         let left = self.parse_binding_pat_or_ident()?;
 
         if self.input.eat(&tok!('=')) {
-            let right = self.include_in_expr(true).parse_assignment_expr()?;
+            let right = self.include_in_expr(true).parse_assignment_expr()?.unwrap();
 
             if self.ctx().in_declare {
                 self.emit_err(span!(self, start), SyntaxError::TS2371);
@@ -212,7 +214,7 @@ impl<I: Tokens> Parser<I> {
                 self.emit_err(get_span!(self, pat.node_id()), SyntaxError::TS1015);
             }
 
-            let right = self.parse_assignment_expr()?;
+            let right = self.parse_assignment_expr()?.unwrap();
             if self.ctx().in_declare {
                 self.emit_err(span!(self, start), SyntaxError::TS2371);
             }
@@ -253,8 +255,6 @@ impl<I: Tokens> Parser<I> {
             }
 
             let param_start = self.input.cur_pos();
-            let decorators = self.parse_decorators(false)?;
-            let pat_start = self.input.cur_pos();
 
             if self.input.eat(&tok!("...")) {
                 let pat = self.parse_binding_pat_or_ident()?;
@@ -264,17 +264,16 @@ impl<I: Tokens> Parser<I> {
                 }
 
                 let pat = Pat::Rest(RestPat {
-                    node_id: node_id!(self, span!(self, pat_start)),
+                    node_id: node_id!(self, span!(self, param_start)),
                     arg: Box::new(pat),
                 });
                 params.push(Param {
                     node_id: node_id!(self, span!(self, param_start)),
-                    decorators,
                     pat,
                 });
                 break;
             } else {
-                let (param, prop) = self.parse_constructor_param(param_start, decorators)?;
+                let (param, prop) = self.parse_constructor_param(param_start)?;
                 if let Some(prop) = prop {
                     props.push((prop, get_span!(self, param.node_id)));
                 }
@@ -288,7 +287,6 @@ impl<I: Tokens> Parser<I> {
     fn parse_constructor_param(
         &mut self,
         param_start: BytePos,
-        decorators: Vec<Decorator>,
     ) -> PResult<(Param, Option<JsWord>)> {
         let (has_accessibility, is_override, readonly) = if self.input.syntax().typescript() {
             let has_accessibility = self.parse_access_modifier()?;
@@ -325,7 +323,6 @@ impl<I: Tokens> Parser<I> {
         Ok((
             Param {
                 node_id: node_id!(self, span!(self, param_start)),
-                decorators,
                 pat,
             },
             prop,
@@ -357,19 +354,16 @@ impl<I: Tokens> Parser<I> {
 
             let param_start = self.input.cur_pos();
 
-            let decorators = self.parse_decorators(false)?;
-            let pat_start = self.input.cur_pos();
-
             let pat = if self.input.eat(&tok!("...")) {
                 seen_dot3 = true;
 
                 let mut pat = self.parse_binding_pat_or_ident()?;
 
                 if self.input.eat(&tok!('=')) {
-                    let right = self.parse_assignment_expr()?;
+                    let right = self.parse_assignment_expr()?.unwrap();
                     self.emit_err(get_span!(self, pat.node_id()), SyntaxError::TS1048);
                     pat = Pat::Assign(AssignPat {
-                        node_id: node_id!(self, span!(self, pat_start)),
+                        node_id: node_id!(self, span!(self, param_start)),
                         left: Box::new(pat),
                         right,
                     });
@@ -380,7 +374,7 @@ impl<I: Tokens> Parser<I> {
                     self.parse_ts_type_ann(true)?;
                 }
 
-                let pat_span = span!(self, pat_start);
+                let pat_span = span!(self, param_start);
                 let pat = Pat::Rest(RestPat {
                     node_id: node_id!(self, pat_span),
                     arg: Box::new(pat),
@@ -405,7 +399,6 @@ impl<I: Tokens> Parser<I> {
 
             params.push(Param {
                 node_id: node_id!(self, span!(self, param_start)),
-                decorators,
                 pat,
             });
         }
@@ -438,6 +431,8 @@ impl PatType {
 }
 
 impl<I: Tokens> Parser<I> {
+    // We don't take `MaybeParen` here since that would require preserving parens while
+    // parsing patterns, so we use `state.parenthesised_exprs`.
     /// This does not return 'rest' pattern because non-last parameter cannot be
     /// rest.
     pub(super) fn reparse_expr_as_pat(&mut self, pat_ty: PatType, expr: Box<Expr>) -> PResult<Pat> {
@@ -447,7 +442,9 @@ impl<I: Tokens> Parser<I> {
 
         if pat_ty == PatType::AssignPat {
             match *expr {
-                Expr::Object(..) | Expr::Array(..) => {
+                Expr::Object(..) | Expr::Array(..)
+                    if !self.state.parenthesised_exprs.contains(&expr.node_id()) =>
+                {
                     // It is a Syntax Error if LeftHandSideExpression is either
                     // an ObjectLiteral or an ArrayLiteral
                     // and LeftHandSideExpression cannot
@@ -473,7 +470,17 @@ impl<I: Tokens> Parser<I> {
 
         let span = get_span!(self, expr.node_id());
 
+        let parenthesised = self.state.parenthesised_exprs.contains(&expr.node_id());
+
         if pat_ty == PatType::AssignPat {
+            // It is a Syntax Error if the LeftHandSideExpression is
+            // CoverParenthesizedExpressionAndArrowParameterList:(Expression) and
+            // Expression derives a phrase that would produce a Syntax Error according
+            // to these rules if that phrase were substituted for
+            // LeftHandSideExpression. This rule is recursively applied.
+            if parenthesised {
+                return Ok(Pat::Expr(expr));
+            }
             match *expr {
                 Expr::Object(..) | Expr::Array(..) => {
                     // It is a Syntax Error if LeftHandSideExpression is either
@@ -483,14 +490,6 @@ impl<I: Tokens> Parser<I> {
                 }
 
                 _ => match *expr {
-                    // It is a Syntax Error if the LeftHandSideExpression is
-                    // CoverParenthesizedExpressionAndArrowParameterList:(Expression) and
-                    // Expression derives a phrase that would produce a Syntax Error according
-                    // to these rules if that phrase were substituted for
-                    // LeftHandSideExpression. This rule is recursively applied.
-                    Expr::Paren(..) => {
-                        return Ok(Pat::Expr(expr));
-                    }
                     Expr::Ident(i) => {
                         return Ok(Pat::Ident(BindingIdent::from_ident(i, program_data!(self))))
                     }
@@ -507,44 +506,52 @@ impl<I: Tokens> Parser<I> {
         // DestructuringAssignmentTarget:
         //      LeftHandSideExpression
         if pat_ty == PatType::AssignElement {
-            match *expr {
-                Expr::Array(..) | Expr::Object(..) => {}
+            if parenthesised {
+                self.emit_err(span, SyntaxError::InvalidPat);
+            } else {
+                match *expr {
+                    Expr::Array(..) | Expr::Object(..) => {}
 
-                Expr::Member(..)
-                | Expr::Call(..)
-                | Expr::New(..)
-                | Expr::Lit(..)
-                | Expr::Ident(..)
-                | Expr::Fn(..)
-                | Expr::Class(..)
-                | Expr::Tpl(..) => {
-                    if !expr.is_valid_simple_assignment_target(self.ctx().strict) {
-                        self.emit_err(span, SyntaxError::NotSimpleAssign)
-                    }
-                    match *expr {
-                        Expr::Ident(i) => {
-                            return Ok(Pat::Ident(BindingIdent::from_ident(i, program_data!(self))))
+                    Expr::Member(..)
+                    | Expr::Call(..)
+                    | Expr::New(..)
+                    | Expr::Lit(..)
+                    | Expr::Ident(..)
+                    | Expr::Fn(..)
+                    | Expr::Class(..)
+                    | Expr::Tpl(..) => {
+                        if !is_valid_simple_assignment_target(&expr, self.ctx().strict) {
+                            self.emit_err(span, SyntaxError::NotSimpleAssign)
                         }
-                        _ => {
-                            return Ok(Pat::Expr(expr));
+                        match *expr {
+                            Expr::Ident(i) => {
+                                return Ok(Pat::Ident(BindingIdent::from_ident(
+                                    i,
+                                    program_data!(self),
+                                )))
+                            }
+                            _ => {
+                                return Ok(Pat::Expr(expr));
+                            }
                         }
                     }
+
+                    // It's special because of optional initializer
+                    Expr::Assign(..) => {}
+
+                    _ => self.emit_err(span, SyntaxError::InvalidPat),
                 }
-
-                // It's special because of optional initializer
-                Expr::Assign(..) => {}
-
-                _ => self.emit_err(span, SyntaxError::InvalidPat),
             }
         }
 
+        if parenthesised {
+            self.emit_err(span, SyntaxError::InvalidPat);
+            return Ok(Pat::Invalid(Invalid {
+                node_id: node_id!(self, span),
+            }));
+        }
+
         match *expr {
-            Expr::Paren(..) => {
-                self.emit_err(span, SyntaxError::InvalidPat);
-                Ok(Pat::Invalid(Invalid {
-                    node_id: node_id!(self, span),
-                }))
-            }
             Expr::Assign(AssignExpr {
                 node_id,
                 op: AssignOpToken::Assign,
@@ -566,11 +573,6 @@ impl<I: Tokens> Parser<I> {
                         .into_iter()
                         .map(|prop| {
                             match prop {
-                                Prop::Shorthand(id) => Ok(ObjectPatProp::Assign(AssignPatProp {
-                                    node_id: node_id_from!(self, id.node_id),
-                                    key: id,
-                                    value: None,
-                                })),
                                 Prop::KeyValue(kv_prop) => {
                                     let value =
                                         self.reparse_expr_as_pat(pat_ty.element(), kv_prop.value)?;
@@ -584,10 +586,18 @@ impl<I: Tokens> Parser<I> {
                                     }))
                                 }
                                 Prop::Assign(assign_prop) => {
-                                    Ok(ObjectPatProp::Assign(AssignPatProp {
+                                    let assign_pat = AssignPat {
                                         node_id: node_id_from!(self, assign_prop.node_id),
-                                        key: assign_prop.key,
-                                        value: Some(assign_prop.value),
+                                        left: Box::new(Pat::Ident(BindingIdent {
+                                            node_id: node_id_from!(self, assign_prop.key.node_id),
+                                            id: assign_prop.key.clone_node(program_data!(self)),
+                                        })),
+                                        right: assign_prop.value,
+                                    };
+                                    Ok(ObjectPatProp::KeyValue(KeyValuePatProp {
+                                        node_id: node_id_from!(self, assign_prop.node_id),
+                                        key: PropName::Ident(assign_prop.key),
+                                        value: Box::new(Pat::Assign(assign_pat)),
                                     }))
                                 }
                                 Prop::Spread(SpreadAssignment { expr, node_id, .. }) => {
@@ -732,7 +742,7 @@ impl<I: Tokens> Parser<I> {
 
     pub(super) fn parse_paren_items_as_params(
         &mut self,
-        mut exprs: Vec<PatOrExprOrSpread>,
+        mut exprs: Vec<MaybeParenPatOrExprOrSpread>,
     ) -> PResult<Vec<Pat>> {
         let pat_ty = PatType::BindingPat;
 
@@ -745,20 +755,19 @@ impl<I: Tokens> Parser<I> {
 
         for expr in exprs.drain(..len - 1) {
             match expr {
-                PatOrExprOrSpread::ExprOrSpread(ExprOrSpread::Spread(SpreadElement {
-                    node_id,
-                    ..
-                }))
-                | PatOrExprOrSpread::Pat(Pat::Rest(RestPat { node_id, .. })) => {
+                MaybeParenPatOrExprOrSpread::Spread(MaybeParenSpreadElement {
+                    node_id, ..
+                })
+                | MaybeParenPatOrExprOrSpread::Pat(Pat::Rest(RestPat { node_id, .. })) => {
                     if self.syntax().early_errors() {
                         let span = get_span!(self, node_id);
                         syntax_error!(self, span, SyntaxError::NonLastRestParam)
                     }
                 }
-                PatOrExprOrSpread::ExprOrSpread(ExprOrSpread::Expr(expr)) => {
-                    params.push(self.reparse_expr_as_pat(pat_ty, expr)?)
+                MaybeParenPatOrExprOrSpread::Expr(expr) => {
+                    params.push(self.reparse_expr_as_pat(pat_ty, expr.unwrap())?)
                 }
-                PatOrExprOrSpread::Pat(pat) => params.push(pat),
+                MaybeParenPatOrExprOrSpread::Pat(pat) => params.push(pat),
             }
         }
 
@@ -766,18 +775,18 @@ impl<I: Tokens> Parser<I> {
         let expr = exprs.into_iter().next().unwrap();
         let last = match expr {
             // Rest
-            PatOrExprOrSpread::ExprOrSpread(ExprOrSpread::Spread(SpreadElement {
-                expr, ..
-            })) => self.reparse_expr_as_pat(pat_ty, expr).map(|pat| {
-                Pat::Rest(RestPat {
-                    node_id: node_id_from!(self, pat.node_id()),
-                    arg: Box::new(pat),
-                })
-            })?,
-            PatOrExprOrSpread::ExprOrSpread(ExprOrSpread::Expr(expr)) => {
-                self.reparse_expr_as_pat(pat_ty, expr)?
+            MaybeParenPatOrExprOrSpread::Spread(MaybeParenSpreadElement { expr, .. }) => {
+                self.reparse_expr_as_pat(pat_ty, expr.unwrap()).map(|pat| {
+                    Pat::Rest(RestPat {
+                        node_id: node_id_from!(self, pat.node_id()),
+                        arg: Box::new(pat),
+                    })
+                })?
             }
-            PatOrExprOrSpread::Pat(pat) => pat,
+            MaybeParenPatOrExprOrSpread::Expr(expr) => {
+                self.reparse_expr_as_pat(pat_ty, expr.unwrap())?
+            }
+            MaybeParenPatOrExprOrSpread::Pat(pat) => pat,
         };
         params.push(last);
 

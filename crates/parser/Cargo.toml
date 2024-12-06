@@ -10,19 +10,20 @@ default = []
 [dependencies]
 either = { workspace = true }
 num-bigint = { workspace = true }
-serde = {workspace = true, features = ["derive"]}
+rustc-hash = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 unicode-xid = { workspace = true }
 
-ast = {path = "../ast"}
-atoms = {path = "../atoms"}
-ecma_visit = {path = "../visit"}
-global_common = {path = "../common"}
+ast = { path = "../ast" }
+atoms = { path = "../atoms" }
+ecma_visit = { path = "../visit" }
+global_common = { path = "../common" }
 
 [dev-dependencies]
 criterion = { workspace = true }
 serde_json = { workspace = true }
 
-testing = {path = "../../testing"}
+testing = { path = "../../testing" }
 transform_testing = { path = "../transform_testing" }
 
 [[bench]]

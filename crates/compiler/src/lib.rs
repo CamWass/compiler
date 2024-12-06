@@ -18,8 +18,8 @@ mod denormalize;
 mod find_vars;
 mod graph;
 mod normalize;
-pub mod normalize_properties;
 pub mod optimize_properties;
+mod peephole;
 pub mod resolver;
 mod utils;
 
@@ -62,6 +62,8 @@ pub struct PassConfig {
     pub rename_labels: bool,
     #[serde(default)]
     pub optimize_properties: bool,
+    #[serde(default)]
+    pub fuse_stmts: bool,
 }
 
 pub struct Compiler {
@@ -95,7 +97,6 @@ impl Compiler {
             // TODO: maybe add an 'AST verifier' that checks basic invariants after
             // each pass (e.g. that no two nodes have the same node_id).
 
-            normalize_properties::normalize_properties(&mut ast, program_data);
             normalize::normalize(&mut ast, program_data);
 
             let unresolved_mark = Mark::new();
@@ -129,7 +130,7 @@ fn optimise(
     // TODO: inferConsts
 
     // TODO: earlyInlineVariables
-    // TODO: earlyPeepholeOptimizations
+    // TODO: PeepholeRemoveDeadCode
 
     // TODO: removeUnusedCodeOnce
 
@@ -189,19 +190,42 @@ fn finalise(
     if passes.coalesce_variable_names {
         CoalesceVariableNames::coalesce_variable_names(ast, unresolved_ctxt, program_data);
     }
-    // TODO: coalesceVariableNames
     // TODO: peepholeOptimizationsOnce
     // TODO: exploitAssign
     // TODO: collapseVariableDeclarations
     denormalize::denormalize(ast);
     if passes.rename_vars {
-        RenameVars::rename_vars(ast, unresolved_ctxt);
+        RenameVars::process(ast, unresolved_ctxt);
     }
 
     if passes.rename_labels {
         RenameLabels::process(ast);
     }
 
+    late_peephole_optimisations(ast, passes, program_data, unresolved_ctxt);
     // TODO: latePeepholeOptimizations
     // TODO: optimizeToEs6
+}
+
+fn late_peephole_optimisations(
+    ast: &mut ::ast::Program,
+    passes: PassConfig,
+    program_data: &mut ::ast::ProgramData,
+    unresolved_ctxt: SyntaxContext,
+) {
+    //     final boolean late = true;
+    //     final boolean useTypesForOptimization = options.useTypesForLocalOptimization;
+    //     return new PeepholeOptimizationsPass(
+    //         compiler,
+    //         "latePeepholeOptimizations",
+    if passes.fuse_stmts {
+        peephole::fuse_stmts::process(ast, program_data);
+    }
+    //         new PeepholeRemoveDeadCode(),
+    //         new PeepholeMinimizeConditions(late),
+    //         new PeepholeSubstituteAlternateSyntax(late),
+    //         new PeepholeReplaceKnownMethods(late, useTypesForOptimization),
+    //         new PeepholeFoldConstants(late, useTypesForOptimization),
+    //         new PeepholeReorderConstantExpression());
+    //   })
 }

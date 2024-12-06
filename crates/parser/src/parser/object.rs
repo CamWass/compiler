@@ -57,10 +57,9 @@ impl<I: Tokens> Parser<I> {
                     _ => unreachable!(),
                 },
                 Token::Num { .. } => match parser.input.bump() {
-                    Token::Num { value, raw } => PropName::Num(Number {
+                    Token::Num(value) => PropName::Num(Number {
                         node_id: node_id!(parser, span!(parser, start)),
                         value,
-                        raw: Some(raw),
                     }),
                     _ => unreachable!(),
                 },
@@ -79,13 +78,21 @@ impl<I: Tokens> Parser<I> {
                     parser.input.bump();
                     let inner_start = parser.input.cur_pos();
 
-                    let mut expr = parser.include_in_expr(true).parse_assignment_expr()?;
+                    let mut expr = parser
+                        .include_in_expr(true)
+                        .parse_assignment_expr()?
+                        .unwrap();
 
                     if parser.syntax().typescript() && is!(parser, ',') {
                         let mut exprs = vec![expr];
 
                         while eat!(parser, ',') {
-                            exprs.push(parser.include_in_expr(true).parse_assignment_expr()?);
+                            exprs.push(
+                                parser
+                                    .include_in_expr(true)
+                                    .parse_assignment_expr()?
+                                    .unwrap(),
+                            );
                         }
 
                         parser.emit_err(span!(parser, inner_start), SyntaxError::TS1171);
@@ -134,7 +141,7 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
         if self.input.eat(&tok!("...")) {
             // spread element
 
-            let expr = self.include_in_expr(true).parse_assignment_expr()?;
+            let expr = self.include_in_expr(true).parse_assignment_expr()?.unwrap();
 
             let span = Span::new(start, self.input.last_pos());
             return Ok(Prop::Spread(SpreadAssignment {
@@ -147,8 +154,6 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
             let name = self.parse_prop_name()?;
             return self
                 .parse_fn_args_body(
-                    // no decorator in an object literal
-                    vec![],
                     start,
                     |parser| parser.parse_unique_formal_params(),
                     false,
@@ -192,7 +197,7 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
         // { 0: 1, }
         // { a: expr, }
         if self.input.eat(&tok!(':')) {
-            let value = self.include_in_expr(true).parse_assignment_expr()?;
+            let value = self.include_in_expr(true).parse_assignment_expr()?.unwrap();
             let span = Span::new(key_start, self.input.last_pos());
             return Ok(Prop::KeyValue(KeyValueProp {
                 node_id: node_id!(self, span),
@@ -205,8 +210,6 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
         if (self.input.syntax().typescript() && is!(self, '<')) || is!(self, '(') {
             return self
                 .parse_fn_args_body(
-                    // no decorator in an object literal
-                    vec![],
                     start,
                     |parser| parser.parse_unique_formal_params(),
                     false,
@@ -242,7 +245,7 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
             }
 
             if self.input.eat(&tok!('=')) {
-                let value = self.include_in_expr(true).parse_assignment_expr()?;
+                let value = self.include_in_expr(true).parse_assignment_expr()?.unwrap();
                 let span = Span::new(key_start, self.input.last_pos());
                 return Ok(Prop::Assign(AssignProp {
                     node_id: node_id!(self, span),
@@ -251,7 +254,12 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                 }));
             }
 
-            return Ok(Prop::Shorthand(ident));
+            let span = Span::new(key_start, self.input.last_pos());
+            return Ok(Prop::KeyValue(KeyValueProp {
+                node_id: node_id!(self, span),
+                value: Box::new(Expr::Ident(ident.clone_node(program_data!(self)))),
+                key: PropName::Ident(ident),
+            }));
         }
 
         // get a(){}
@@ -273,8 +281,6 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                 match ident.sym {
                     js_word!("get") => self
                         .parse_fn_args_body(
-                            // no decorator in an object literal
-                            vec![],
                             start,
                             |parser| {
                                 let params = parser.parse_formal_params()?;
@@ -305,8 +311,6 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                         }),
                     js_word!("set") => self
                         .parse_fn_args_body(
-                            // no decorator in an object literal
-                            vec![],
                             start,
                             |parser| {
                                 let params = parser.parse_formal_params()?;
@@ -341,29 +345,18 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
                                 node_id: node_id!(self, span!(self, start)),
                                 key,
                                 body,
-                                param: params
-                                    .into_iter()
-                                    .map(|param| {
-                                        ParamWithoutDecorators::from_pat(
-                                            param.pat,
-                                            program_data!(self),
-                                        )
-                                    })
-                                    .next()
-                                    .unwrap_or_else(|| {
-                                        ParamWithoutDecorators::from_pat(
-                                            Pat::Invalid(Invalid {
-                                                node_id: node_id!(self, key_span),
-                                            }),
-                                            program_data!(self),
-                                        )
-                                    }),
+                                param: params.into_iter().next().unwrap_or_else(|| {
+                                    Param::from_pat(
+                                        Pat::Invalid(Invalid {
+                                            node_id: node_id!(self, key_span),
+                                        }),
+                                        program_data!(self),
+                                    )
+                                }),
                             })
                         }),
                     js_word!("async") => self
                         .parse_fn_args_body(
-                            // no decorator in an object literal
-                            vec![],
                             start,
                             |parser| parser.parse_unique_formal_params(),
                             true,
@@ -453,6 +446,7 @@ impl<I: Tokens> ParseObject<Pat> for Parser<I> {
 
         let key_start = self.input.cur_pos();
         let key = self.parse_prop_name()?;
+        let key_span = Span::new(key_start, self.input.last_pos());
         if self.input.eat(&tok!(':')) {
             let value = Box::new(self.parse_binding_element()?);
 
@@ -483,10 +477,30 @@ impl<I: Tokens> ParseObject<Pat> for Parser<I> {
             None
         };
 
-        Ok(ObjectPatProp::Assign(AssignPatProp {
-            node_id: node_id!(self, span!(self, start)),
-            key,
-            value,
-        }))
+        if let Some(value) = value {
+            let pat_span = Span::new(key_start, self.input.last_pos());
+            let assign_pat = AssignPat {
+                node_id: node_id!(self, pat_span),
+                left: Box::new(Pat::Ident(BindingIdent {
+                    node_id: node_id!(self, key_span),
+                    id: key.clone_node(program_data!(self)),
+                })),
+                right: value.unwrap(),
+            };
+            Ok(ObjectPatProp::KeyValue(KeyValuePatProp {
+                node_id: node_id!(self, pat_span),
+                key: PropName::Ident(key.clone_node(program_data!(self))),
+                value: Box::new(Pat::Assign(assign_pat)),
+            }))
+        } else {
+            Ok(ObjectPatProp::KeyValue(KeyValuePatProp {
+                node_id: node_id!(self, key_span),
+                value: Box::new(Pat::Ident(BindingIdent {
+                    node_id: node_id!(self, key_span),
+                    id: key.clone_node(program_data!(self)),
+                })),
+                key: PropName::Ident(key),
+            }))
+        }
     }
 }

@@ -29,22 +29,19 @@ pub struct LiveVariablesAnalysisResult {
     pub lattice_elements: IndexVec<LatticeElementId, LiveVariableLattice>,
 }
 
-/**
- * Compute the "liveness" of all local variables. A variable is "live" at a point of a program if
- * the value it is currently holding might be read later. Otherwise, the variable is considered
- * "dead" if we know for sure that it will no longer be read. Dead variables are candidates for dead
- * assignment elimination and variable name sharing. The worst case safe assumption is to assume
- * that all variables are live. In that case, we will have no opportunity for optimizations. This is
- * especially the case within a TRY block when an assignment is not guaranteed to take place. We
- * bail out by assuming that all variables are live.
- *
- * <p>Due to the possibility of inner functions and closures, certain "local" variables can escape
- * the function. These variables will be considered as global and they can be retrieved with {@link
- * #getEscapedLocals()}.
- */
+/// Compute the "liveness" of all local variables. A variable is "live" at a point of a program if
+/// the value it is currently holding might be read later. Otherwise, the variable is considered
+/// "dead" if we know for sure that it will no longer be read. Dead variables are candidates for dead
+/// assignment elimination and variable name sharing. The worst case safe assumption is to assume
+/// that all variables are live. In that case, we will have no opportunity for optimizations. This is
+/// especially the case within a TRY block when an assignment is not guaranteed to take place. We
+/// bail out by assuming that all variables are live.
+///
+/// Due to the possibility of inner functions and closures, certain "local" variables can escape
+/// the function. These variables will be considered as global and they can be retrieved from `escaped_locals`.
 pub struct LiveVariablesAnalysis<'ast, 'a, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     data_flow_analysis: DataFlowAnalysis<
         'a,
@@ -57,27 +54,18 @@ where
 
 impl<'ast, 'a, T> LiveVariablesAnalysis<'ast, 'a, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
-    /**
-     * Live Variables Analysis using the ES6 scope creator. This analysis should only be done on
-     * function where jsScope is the function scope. If we call LiveVariablesAnalysis from the
-     * function scope of our pass, we can pass a null value for the JsScopeChild, but if we call it
-     * from the function block scope, then JsScopeChild will be the function block scope.
-     *
-     * <p>We call from the function scope when the pass requires us to traverse nodes beginning at the
-     * function parameters, and it from the function block scope when we are ignoring function
-     * parameters.
-     *
-     * @param cfg
-     * @param jsScope the function scope
-     * @param jsScopeChild null or function block scope
-     * @param compiler
-     * @param scopeCreator Es6 Scope creator
-     * @param allVarsDeclaredInFunction mapping of names to vars of everything reachable in a function
-     */
+    /// Live Variables Analysis using the ES6 scope creator. This analysis should only be done on
+    /// function where jsScope is the function scope. If we call LiveVariablesAnalysis from the
+    /// function scope of our pass, we can pass a null value for the JsScopeChild, but if we call it
+    /// from the function block scope, then JsScopeChild will be the function block scope.
+    ///
+    /// We call from the function scope when the pass requires us to traverse nodes beginning at the
+    /// function parameters, and it from the function block scope when we are ignoring function
+    /// parameters.
     pub fn new(
-        cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
+        cfg: ControlFlowGraph<Node<'ast>, LinearFlowState>,
         node_priorities: &'a [NodePriority],
         fn_scope: &'a T,
         all_vars_declared_in_function: AllVarsDeclaredInFunction,
@@ -109,7 +97,7 @@ where
         mut self,
     ) -> (
         LiveVariablesAnalysisResult,
-        ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
+        ControlFlowGraph<Node<'ast>, LinearFlowState>,
     ) {
         self.data_flow_analysis.analyze();
 
@@ -133,7 +121,7 @@ where
 #[derive(Debug)]
 struct Inner<'ast, 'a, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     unresolved_ctxt: SyntaxContext,
     num_vars: usize,
@@ -151,28 +139,28 @@ where
 
     lattice_elements: IndexVec<LatticeElementId, LiveVariableLattice>,
 
-    cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
+    cfg: ControlFlowGraph<Node<'ast>, LinearFlowState>,
 }
 
 impl<'ast, 'a, T> Inner<'ast, 'a, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     fn get_var_index(&self, var: &Id) -> Option<VarId> {
         self.scope_variables.get(var).copied()
     }
 
-    /**
-     * Computes the GEN and KILL set.
-     *
-     * @param n Root node.
-     * @param gen Local variables that are live because of the instruction at {@code n} will be added
-     *     to this set.
-     * @param kill Local variables that are killed because of the instruction at {@code n} will be
-     *     added to this set.
-     * @param conditional {@code true} if any assignments encountered are conditionally executed.
-     *     These assignments might not kill a variable.
-     */
+    /// Computes the GEN and KILL set.
+    ///
+    /// ## Parameters
+    ///
+    /// - `n`: Root node.
+    /// - `gen`: Local variables that are live because of the instruction at `n` will be added
+    ///   to this set.
+    /// - `kill`: Local variables that are killed because of the instruction at `n` will be
+    ///   added to this set.
+    /// - `conditional`: `true` if any assignments encountered are conditionally executed.
+    ///   These assignments might not kill a variable.
     fn compute_gen_kill<'b>(
         &mut self,
         n: Node<'ast>,
@@ -203,21 +191,19 @@ where
         }
     }
 
-    /**
-     * Give up computing liveness of formal parameters by putting all the simple parameters in the
-     * escaped set.
-     *
-     * <p>This only applies to simple parameters, that is NAMEs, because other parameter syntaxes
-     * never need to be escaped in this way. The known applications of this method are for uses of
-     * `arguments`, and for IE8. In a function with non-simple paremeters, `arguments` is not
-     * parameter-mapped, and so referencing it doesn't escape paremeters. IE8 just doess't support
-     * non-simple parameters.
-     *
-     * <p>We could actaully continue tracking simple parameters if any parameter is non-simple, but it
-     * wasn't worth the complexity or cost to do so.
-     *
-     * @see https://tc39.github.io/ecma262/#sec-functiondeclarationinstantiation
-     */
+    /// Give up computing liveness of formal parameters by putting all the simple parameters in the
+    /// escaped set.
+    ///
+    /// This only applies to simple parameters, that is NAMEs, because other parameter syntaxes
+    /// never need to be escaped in this way. The known applications of this method are for uses of
+    /// `arguments`, and for IE8. In a function with non-simple parameters, `arguments` is not
+    /// parameter-mapped, and so referencing it doesn't escape parameters. IE8 just doesn't support
+    /// non-simple parameters.
+    ///
+    /// We could actually continue tracking simple parameters if any parameter is non-simple, but it
+    /// wasn't worth the complexity or cost to do so.
+    ///
+    /// See: https://tc39.github.io/ecma262/#sec-functiondeclarationinstantiation
     fn mark_all_parameters_escaped(&mut self) {
         for param in self.fn_scope.params() {
             if let Pat::Ident(name) = param {
@@ -229,7 +215,7 @@ where
 
 struct GenKillComputer<'ast, 'a, 'b, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     unresolved_ctxt: SyntaxContext,
     gen: &'b mut BitSet<VarId>,
@@ -240,9 +226,9 @@ where
     in_destructuring: bool,
 }
 
-impl<'a, 'b, 'ast, T> Visit<'ast> for GenKillComputer<'ast, 'a, 'b, T>
+impl<'a, 'ast, T> Visit<'ast> for GenKillComputer<'ast, 'a, '_, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     // Don't enter any new control nodes. They will be handled by later.
     fn visit_block_stmt(&mut self, _: &'ast BlockStmt) {}
@@ -422,14 +408,6 @@ where
         node.value.visit_with(self);
         self.in_lhs = old;
     }
-    fn visit_assign_pat_prop(&mut self, node: &'ast AssignPatProp) {
-        let old = self.in_lhs;
-        self.in_lhs = true;
-        node.key.visit_with(self);
-        self.in_lhs = false;
-        node.value.visit_with(self);
-        self.in_lhs = old;
-    }
     fn visit_rest_pat(&mut self, node: &'ast RestPat) {
         let old = self.in_lhs;
         self.in_lhs = true;
@@ -509,12 +487,6 @@ where
         node.pat.visit_with(self);
         self.in_lhs = false;
     }
-    fn visit_param_without_decorators(&mut self, node: &'ast ParamWithoutDecorators) {
-        debug_assert!(!self.in_lhs);
-        self.in_lhs = true;
-        node.pat.visit_with(self);
-        self.in_lhs = false;
-    }
     fn visit_catch_clause(&mut self, node: &'ast CatchClause) {
         debug_assert!(!self.in_lhs);
         self.in_lhs = true;
@@ -533,7 +505,7 @@ where
 impl<'ast, 'a, T> DataFlowAnalysisInner<Node<'ast>, LiveVariableLattice, LiveVariableJoinOp>
     for Inner<'ast, 'a, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     fn add_lattice_element(&mut self, element: LiveVariableLattice) -> LatticeElementId {
         self.lattice_elements.push(element)
@@ -586,17 +558,17 @@ where
         }
     }
 
-    fn cfg(&self) -> &ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId> {
+    fn cfg(&self) -> &ControlFlowGraph<Node<'ast>, LinearFlowState> {
         &self.cfg
     }
-    fn cfg_mut(&mut self) -> &mut ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId> {
+    fn cfg_mut(&mut self) -> &mut ControlFlowGraph<Node<'ast>, LinearFlowState> {
         &mut self.cfg
     }
 }
 
 impl<'a, T> Index<LatticeElementId> for Inner<'_, 'a, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     type Output = LiveVariableLattice;
 
@@ -619,7 +591,7 @@ impl LiveVariableJoinOp {
 
 impl<'ast, 'a, T> FlowJoiner<LiveVariableLattice, Inner<'ast, 'a, T>> for LiveVariableJoinOp
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     fn join_flow(&mut self, inner: &mut Inner<'ast, 'a, T>, input: LatticeElementId) {
         self.result
@@ -632,11 +604,9 @@ where
     }
 }
 
-/**
- * The lattice that stores the liveness of all local variables at a given point in the program.
- * The whole lattice is the power set of all local variables and a variable is live if it is in
- * the set.
- */
+/// The lattice that stores the liveness of all local variables at a given point in the program.
+/// The whole lattice is the power set of all local variables and a variable is live if it is in
+/// the set.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LiveVariableLattice {
     live_set: BitSet<VarId>,

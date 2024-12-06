@@ -3,6 +3,7 @@ use self::expression::BlockStmtOrExpr;
 use super::*;
 use crate::lexer::TokenContexts;
 use atoms::js_word;
+use expression::MaybeParen;
 
 impl<I: Tokens> Parser<I> {
     /// `tsNextTokenCanFollowModifier`
@@ -571,7 +572,7 @@ impl<I: Tokens> Parser<I> {
         if eat!(self, '.') {
             self.parse_ts_module_or_ns_decl()?;
         } else {
-            self.parse_ts_module_block().map(From::from)?;
+            self.parse_ts_module_block()?;
         }
 
         Ok(())
@@ -672,7 +673,7 @@ impl<I: Tokens> Parser<I> {
     }
 
     /// `tsParseTypeAssertion`
-    pub(super) fn parse_ts_type_assertion(&mut self) -> PResult<Box<Expr>> {
+    pub(super) fn parse_ts_type_assertion(&mut self) -> PResult<MaybeParen> {
         debug_assert!(self.syntax().typescript());
 
         // Type annotation:
@@ -1578,15 +1579,11 @@ impl<I: Tokens> Parser<I> {
     }
 
     /// `tsParseExpressionStatement`
-    pub(super) fn parse_ts_expr_stmt(
-        &mut self,
-        decorators: Vec<Decorator>,
-        expr: &Ident,
-    ) -> PResult<Option<DeclOrEmpty>> {
+    pub(super) fn parse_ts_expr_stmt(&mut self, expr: &Ident) -> PResult<Option<DeclOrEmpty>> {
         let start = get_span!(self, expr.node_id).lo();
 
         match &*expr.sym {
-            "declare" => self.try_parse_ts_declare(start, decorators),
+            "declare" => self.try_parse_ts_declare(start),
             "global" => {
                 // `global { }` (with no `declare`) may appear inside an ambient module
                 // declaration.
@@ -1600,16 +1597,12 @@ impl<I: Tokens> Parser<I> {
                     Ok(None)
                 }
             }
-            _ => self.parse_ts_decl(start, decorators, expr.sym.clone(), false),
+            _ => self.parse_ts_decl(start, expr.sym.clone(), false),
         }
     }
 
     /// `tsTryParseDeclare`
-    pub(super) fn try_parse_ts_declare(
-        &mut self,
-        start: BytePos,
-        decorators: Vec<Decorator>,
-    ) -> PResult<Option<DeclOrEmpty>> {
+    pub(super) fn try_parse_ts_declare(&mut self, start: BytePos) -> PResult<Option<DeclOrEmpty>> {
         assert!(
             !is!(self, "declare"),
             "try_parse_ts_declare should be called after eating `declare`"
@@ -1628,7 +1621,7 @@ impl<I: Tokens> Parser<I> {
 
         self.with_ctx(ctx).parse_with(|p| {
             if is!(p, "function") {
-                let decl = p.parse_fn_decl_or_ts_overload_sig(decorators)?;
+                let decl = p.parse_fn_decl_or_ts_overload_sig()?;
                 if let Some(Decl::Fn(f)) = &decl {
                     let mut s = get_span!(p, f.function.node_id);
                     s.lo = declare_start;
@@ -1638,7 +1631,7 @@ impl<I: Tokens> Parser<I> {
             }
 
             if is!(p, "class") {
-                let decl = p.parse_class_decl(start, start, decorators)?;
+                let decl = p.parse_class_decl(start, start)?;
                 // Should always be the case.
                 if let Decl::Class(c) = &decl {
                     let mut s = get_span!(p, c.class.node_id);
@@ -1671,7 +1664,7 @@ impl<I: Tokens> Parser<I> {
                     Token::Word(w) => w.clone().into(),
                     _ => unreachable!(),
                 };
-                return p.parse_ts_decl(start, decorators, value, true);
+                return p.parse_ts_decl(start, value, true);
             }
 
             Ok(None)
@@ -1682,14 +1675,10 @@ impl<I: Tokens> Parser<I> {
     ///
     /// Note: this won't be called unless the keyword is allowed in
     /// `shouldParseExportDeclaration`.
-    pub(super) fn try_parse_ts_export_decl(
-        &mut self,
-        decorators: Vec<Decorator>,
-        value: JsWord,
-    ) -> Option<DeclOrEmpty> {
+    pub(super) fn try_parse_ts_export_decl(&mut self, value: JsWord) -> Option<DeclOrEmpty> {
         self.try_parse_ts(|p| {
             let start = p.input.cur_pos();
-            let opt = p.parse_ts_decl(start, decorators, value, true)?;
+            let opt = p.parse_ts_decl(start, value, true)?;
             Ok(opt)
         })
     }
@@ -1701,7 +1690,6 @@ impl<I: Tokens> Parser<I> {
     fn parse_ts_decl(
         &mut self,
         start: BytePos,
-        decorators: Vec<Decorator>,
         value: JsWord,
         next: bool,
     ) -> PResult<Option<DeclOrEmpty>> {
@@ -1711,7 +1699,7 @@ impl<I: Tokens> Parser<I> {
                     if next {
                         self.input.bump();
                     }
-                    let decl = self.parse_class_decl(start, start, decorators)?;
+                    let decl = self.parse_class_decl(start, start)?;
                     return Ok(Some(DeclOrEmpty::Decl(decl)));
                 }
             }
@@ -1787,11 +1775,7 @@ impl<I: Tokens> Parser<I> {
                 p.parse_ts_type_params()?;
                 // Don't use overloaded parseFunctionParams which would look for "<" again.
                 expect!(p, '(');
-                let params = p
-                    .parse_formal_params()?
-                    .into_iter()
-                    .map(|param| ParamWithoutDecorators::from_pat(param.pat, program_data!(p)))
-                    .collect();
+                let params = p.parse_formal_params()?;
                 expect!(p, ')');
                 // Return type:
                 p.try_parse_ts_type_or_type_predicate_ann()?;

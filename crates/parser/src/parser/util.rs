@@ -57,67 +57,51 @@ impl<I: Tokens> Drop for WithCtx<'_, I> {
     }
 }
 
-pub(super) trait ExprExt {
-    fn as_expr(&self) -> &Expr;
-
-    /// "IsValidSimpleAssignmentTarget" from spec.
-    fn is_valid_simple_assignment_target(&self, strict: YesMaybe) -> bool {
-        match self.as_expr() {
-            Expr::Ident(Ident { sym, .. }) => {
-                if strict == YesMaybe::Yes && (sym == "arguments" || sym == "eval") {
-                    return false;
-                }
-                true
+/// "IsValidSimpleAssignmentTarget" from spec.
+pub(super) fn is_valid_simple_assignment_target(expr: &Expr, strict: YesMaybe) -> bool {
+    match expr {
+        Expr::Ident(Ident { sym, .. }) => {
+            if strict == YesMaybe::Yes && (sym == "arguments" || sym == "eval") {
+                return false;
             }
-
-            Expr::This(..)
-            | Expr::Lit(..)
-            | Expr::Array(..)
-            | Expr::Object(..)
-            | Expr::Fn(..)
-            | Expr::Class(..)
-            | Expr::Tpl(..)
-            | Expr::TaggedTpl(..) => false,
-            Expr::Paren(ParenExpr { expr, .. }) => expr.is_valid_simple_assignment_target(strict),
-
-            Expr::Member(..) => true,
-
-            Expr::New(..) | Expr::Call(..) => false,
-            // TODO: Spec only mentions `new.target`
-            Expr::MetaProp(..) => false,
-
-            Expr::Update(..) => false,
-
-            Expr::Unary(..) | Expr::Await(..) => false,
-
-            Expr::Bin(..) => false,
-
-            Expr::Cond(..) => false,
-
-            Expr::Yield(..) | Expr::Arrow(..) | Expr::Assign(..) => false,
-
-            Expr::Seq(..) => false,
-
-            // MemberExpression is valid assignment target
-            Expr::PrivateName(..) => false,
-
-            Expr::OptChain(OptChainExpr { expr, .. }) => {
-                expr.is_valid_simple_assignment_target(strict)
-            }
-
-            Expr::Invalid(..) => false,
+            true
         }
-    }
-}
 
-impl ExprExt for Box<Expr> {
-    fn as_expr(&self) -> &Expr {
-        self
-    }
-}
-impl ExprExt for Expr {
-    fn as_expr(&self) -> &Expr {
-        self
+        Expr::This(..)
+        | Expr::Lit(..)
+        | Expr::Array(..)
+        | Expr::Object(..)
+        | Expr::Fn(..)
+        | Expr::Class(..)
+        | Expr::Tpl(..)
+        | Expr::TaggedTpl(..) => false,
+
+        Expr::Member(..) => true,
+
+        Expr::New(..) | Expr::Call(..) => false,
+        // TODO: Spec only mentions `new.target`
+        Expr::MetaProp(..) => false,
+
+        Expr::Update(..) => false,
+
+        Expr::Unary(..) | Expr::Await(..) => false,
+
+        Expr::Bin(..) => false,
+
+        Expr::Cond(..) => false,
+
+        Expr::Yield(..) | Expr::Arrow(..) | Expr::Assign(..) => false,
+
+        Expr::Seq(..) => false,
+
+        // MemberExpression is valid assignment target
+        Expr::PrivateName(..) => false,
+
+        Expr::OptChain(OptChainExpr { expr, .. }) => {
+            is_valid_simple_assignment_target(expr, strict)
+        }
+
+        Expr::Invalid(..) => false,
     }
 }
 

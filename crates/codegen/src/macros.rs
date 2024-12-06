@@ -54,9 +54,6 @@ macro_rules! space {
     ($emitter:expr) => {
         $emitter.wr.write_space()?;
     };
-    ($emitter:expr,) => {
-        space!($emitter)
-    };
 }
 
 macro_rules! formatting_space {
@@ -65,17 +62,11 @@ macro_rules! formatting_space {
             $emitter.wr.write_space()?;
         }
     };
-    ($emitter:expr,) => {
-        formatting_space!($emitter)
-    };
 }
 
 /// This macro *may* emit a semicolon, if it's required in this context.
 macro_rules! formatting_semi {
     ($emitter:expr) => {
-        punct!($emitter, ";")
-    };
-    ($emitter:expr, ) => {
         punct!($emitter, ";")
     };
 }

@@ -33,7 +33,7 @@ pub fn find_vars_declared_in_fn<'ast, T>(
     skip_multi_decl_destructuring: bool,
 ) -> AllVarsDeclaredInFunction
 where
-    T: FunctionLike<'ast> + VisitWith<'ast, DeclFinder>,
+    T: FunctionLike + VisitWith<'ast, DeclFinder>,
 {
     let mut v = DeclFinder {
         vars: AllVarsDeclaredInFunction::default(),
@@ -93,7 +93,7 @@ function f() {
 }
 "prop"s should not be collected
 */
-impl<'ast> Visit<'ast> for DeclFinder {
+impl Visit<'_> for DeclFinder {
     // Don't visit nested functions.
     fn visit_function(&mut self, _node: &Function) {}
     fn visit_constructor(&mut self, _node: &Constructor) {}
@@ -127,20 +127,8 @@ impl<'ast> Visit<'ast> for DeclFinder {
         self.in_param = false;
     }
 
-    fn visit_param_without_decorators(&mut self, e: &ParamWithoutDecorators) {
-        self.in_param = true;
-        e.pat.visit_with(self);
-        self.in_param = false;
-    }
-
     fn visit_binding_ident(&mut self, node: &BindingIdent) {
         self.record_var(node.to_id());
-    }
-
-    // The key of AssignPatProp is LHS but is an Ident, so won't be caught by
-    // the BindingIdent visitor above.
-    fn visit_assign_pat_prop(&mut self, p: &AssignPatProp) {
-        self.record_var(p.key.to_id());
     }
 
     fn visit_var_decl(&mut self, node: &VarDecl) {
@@ -186,19 +174,13 @@ pub fn find_pat_ids(node: &Pat) -> Vec<Id> {
     found
 }
 
-impl<'a> Visit<'_> for DestructuringFinder<'a> {
+impl Visit<'_> for DestructuringFinder<'_> {
     /// No-op (we don't care about expressions)
     fn visit_expr(&mut self, _: &Expr) {}
     fn visit_prop_name(&mut self, _: &PropName) {}
 
     fn visit_binding_ident(&mut self, i: &BindingIdent) {
         self.found.push(i.to_id());
-    }
-
-    // The key of AssignPatProp is LHS but is an Ident, but won't be caught by
-    // the BindingIdent visitor above.
-    fn visit_assign_pat_prop(&mut self, node: &AssignPatProp) {
-        self.found.push(node.key.to_id())
     }
 }
 
@@ -231,26 +213,21 @@ impl<'ast> VisitMut<'ast> for FindFirstLHSIdent<'ast> {
             self.found = Some(&mut i.id);
         }
     }
-
-    // The key of AssignPatProp is LHS but is an Ident, but won't be caught by
-    // the BindingIdent visitor above.
-    fn visit_mut_assign_pat_prop(&mut self, node: &'ast mut AssignPatProp) {
-        if self.found.is_none() {
-            self.found = Some(&mut node.key);
-        }
-    }
 }
 
-pub trait FunctionLike<'a> {
-    type ParamIter: Iterator<Item = &'a Pat>;
+pub trait FunctionLike {
+    type ParamIter<'a>: Iterator<Item = &'a Pat>
+    where
+        Self: 'a;
 
     fn visit_body_with<'ast, V>(&'ast self, visitor: &mut V)
     where
         V: Visit<'ast>;
 
-    fn params(&'a self) -> Self::ParamIter;
+    fn params(&self) -> Self::ParamIter<'_>;
+    fn param_count(&self) -> usize;
 
-    fn body(&'a self) -> Node<'a>;
+    fn body(&self) -> Node<'_>;
 }
 
 macro_rules! visit_body {
@@ -267,74 +244,88 @@ macro_rules! visit_body {
 fn get_pat_of_param(param: &Param) -> &Pat {
     &param.pat
 }
-impl<'a> FunctionLike<'a> for Function {
-    type ParamIter = std::iter::Map<std::slice::Iter<'a, Param>, fn(&'a Param) -> &'a Pat>;
+impl FunctionLike for Function {
+    type ParamIter<'a> = std::iter::Map<std::slice::Iter<'a, Param>, fn(&'a Param) -> &'a Pat>;
 
     visit_body!();
 
-    fn params(&'a self) -> Self::ParamIter {
+    fn param_count(&self) -> usize {
+        self.params.len()
+    }
+
+    fn params(&self) -> Self::ParamIter<'_> {
         self.params.iter().map(get_pat_of_param)
     }
 
-    fn body(&'a self) -> Node<'a> {
+    fn body(&self) -> Node<'_> {
         Node::from(&self.body)
     }
 }
-impl<'a> FunctionLike<'a> for Constructor {
-    type ParamIter = std::iter::Map<std::slice::Iter<'a, Param>, fn(&'a Param) -> &'a Pat>;
+impl FunctionLike for Constructor {
+    type ParamIter<'a> = std::iter::Map<std::slice::Iter<'a, Param>, fn(&'a Param) -> &'a Pat>;
 
     visit_body!();
 
-    fn params(&'a self) -> Self::ParamIter {
+    fn param_count(&self) -> usize {
+        self.params.len()
+    }
+
+    fn params(&self) -> Self::ParamIter<'_> {
         self.params.iter().map(get_pat_of_param)
     }
 
-    fn body(&'a self) -> Node<'a> {
+    fn body(&self) -> Node<'_> {
         Node::from(&self.body)
     }
 }
-fn get_pat_of_param_without_decorators(param: &ParamWithoutDecorators) -> &Pat {
-    &param.pat
-}
-impl<'a> FunctionLike<'a> for ArrowExpr {
-    type ParamIter = std::iter::Map<
-        std::slice::Iter<'a, ParamWithoutDecorators>,
-        fn(&'a ParamWithoutDecorators) -> &'a Pat,
-    >;
+impl FunctionLike for ArrowExpr {
+    type ParamIter<'a> = std::iter::Map<std::slice::Iter<'a, Param>, fn(&'a Param) -> &'a Pat>;
 
     visit_body!();
 
-    fn params(&'a self) -> Self::ParamIter {
-        self.params.iter().map(get_pat_of_param_without_decorators)
+    fn param_count(&self) -> usize {
+        self.params.len()
     }
 
-    fn body(&'a self) -> Node<'a> {
+    fn params(&self) -> Self::ParamIter<'_> {
+        self.params.iter().map(get_pat_of_param)
+    }
+
+    fn body(&self) -> Node<'_> {
         Node::from(&self.body)
     }
 }
-impl<'a> FunctionLike<'a> for GetterProp {
-    type ParamIter = std::iter::Empty<&'a Pat>;
+impl FunctionLike for GetterProp {
+    type ParamIter<'a> = std::iter::Empty<&'a Pat>;
 
     visit_body!();
 
-    fn params(&'a self) -> Self::ParamIter {
+    fn param_count(&self) -> usize {
+        0
+    }
+
+    fn params(&self) -> Self::ParamIter<'_> {
         std::iter::empty()
     }
 
-    fn body(&'a self) -> Node<'a> {
+    fn body(&self) -> Node<'_> {
         Node::from(&self.body)
     }
 }
-impl<'a> FunctionLike<'a> for SetterProp {
-    type ParamIter = std::iter::Once<&'a Pat>;
+impl FunctionLike for SetterProp {
+    type ParamIter<'a> = std::iter::Once<&'a Pat>;
 
     visit_body!();
 
-    fn params(&'a self) -> Self::ParamIter {
+    fn param_count(&self) -> usize {
+        1
+    }
+
+    fn params(&self) -> Self::ParamIter<'_> {
         std::iter::once(&self.param.pat)
     }
 
-    fn body(&'a self) -> Node<'a> {
+    fn body(&self) -> Node<'_> {
         Node::from(&self.body)
     }
 }

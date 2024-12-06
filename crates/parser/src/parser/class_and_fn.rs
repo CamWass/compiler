@@ -3,90 +3,72 @@ use self::expression::BlockStmtOrExpr;
 use super::{identifier::MaybeOptionalIdentParser, *};
 use crate::{error::SyntaxError, Tokens};
 use atoms::js_word;
+use expression::MaybeParen;
 
 /// Parser for function expression and function declaration.
 impl<I: Tokens> Parser<I> {
     pub(super) fn parse_async_fn_expr(&mut self) -> PResult<Box<Expr>> {
         let start = self.input.cur_pos();
         expect!(self, "async");
-        self.parse_fn(None, Some(start), vec![])
+        self.parse_fn(None, Some(start))
     }
 
     /// Parse function expression
     pub(super) fn parse_fn_expr(&mut self) -> PResult<Box<Expr>> {
-        self.parse_fn(None, None, vec![])
+        self.parse_fn(None, None)
     }
 
-    pub(super) fn parse_async_fn_decl(
-        &mut self,
-        decorators: Vec<Decorator>,
-    ) -> PResult<Option<Decl>> {
+    pub(super) fn parse_async_fn_decl(&mut self) -> PResult<Option<Decl>> {
         let start = self.input.cur_pos();
         expect!(self, "async");
-        self.parse_fn_or_ts_overload_sig(None, Some(start), decorators)
+        self.parse_fn_or_ts_overload_sig(None, Some(start))
     }
 
-    pub(super) fn parse_fn_decl(&mut self, decorators: Vec<Decorator>) -> PResult<Decl> {
-        self.parse_fn(None, None, decorators)
+    pub(super) fn parse_fn_decl(&mut self) -> PResult<Decl> {
+        self.parse_fn(None, None)
     }
 
-    pub(super) fn parse_fn_decl_or_ts_overload_sig(
-        &mut self,
-        decorators: Vec<Decorator>,
-    ) -> PResult<Option<Decl>> {
-        self.parse_fn_or_ts_overload_sig(None, None, decorators)
+    pub(super) fn parse_fn_decl_or_ts_overload_sig(&mut self) -> PResult<Option<Decl>> {
+        self.parse_fn_or_ts_overload_sig(None, None)
     }
 
     pub(super) fn parse_default_async_fn(
         &mut self,
         start: BytePos,
-        decorators: Vec<Decorator>,
     ) -> PResult<Option<ExportDefaultDecl>> {
         let start_of_async = self.input.cur_pos();
         expect!(self, "async");
-        self.parse_fn_or_ts_overload_sig(Some(start), Some(start_of_async), decorators)
+        self.parse_fn_or_ts_overload_sig(Some(start), Some(start_of_async))
     }
 
     pub(super) fn parse_default_fn(
         &mut self,
         start: BytePos,
-        decorators: Vec<Decorator>,
     ) -> PResult<Option<ExportDefaultDecl>> {
-        self.parse_fn_or_ts_overload_sig(Some(start), None, decorators)
+        self.parse_fn_or_ts_overload_sig(Some(start), None)
     }
 
     pub(super) fn parse_class_decl(
         &mut self,
         start: BytePos,
         class_start: BytePos,
-        decorators: Vec<Decorator>,
     ) -> PResult<Decl> {
-        self.parse_class(start, class_start, decorators)
+        self.parse_class(start, class_start)
     }
 
-    pub(super) fn parse_class_expr(
-        &mut self,
-        start: BytePos,
-        decorators: Vec<Decorator>,
-    ) -> PResult<Box<Expr>> {
-        self.parse_class(start, start, decorators)
+    pub(super) fn parse_class_expr(&mut self, start: BytePos) -> PResult<Box<Expr>> {
+        self.parse_class(start, start)
     }
 
     pub(super) fn parse_default_class(
         &mut self,
         start: BytePos,
         class_start: BytePos,
-        decorators: Vec<Decorator>,
     ) -> PResult<ExportDefaultDecl> {
-        self.parse_class(start, class_start, decorators)
+        self.parse_class(start, class_start)
     }
 
-    fn parse_class<T>(
-        &mut self,
-        start: BytePos,
-        class_start: BytePos,
-        decorators: Vec<Decorator>,
-    ) -> PResult<T>
+    fn parse_class<T>(&mut self, start: BytePos, class_start: BytePos) -> PResult<T>
     where
         T: OutputType,
         Self: MaybeOptionalIdentParser<T::Ident>,
@@ -107,7 +89,7 @@ impl<I: Tokens> Parser<I> {
             let mut extends_clause = if is!(parser, "extends") {
                 let start = parser.input.cur_pos();
                 parser.input.bump();
-                let super_class = parser.parse_lhs_expr()?;
+                let super_class = parser.parse_lhs_expr()?.unwrap();
                 // Super type params.
                 if parser.syntax().typescript() && is!(parser, '<') {
                     parser.parse_ts_type_args()?;
@@ -159,7 +141,7 @@ impl<I: Tokens> Parser<I> {
                 let start = parser.input.cur_pos();
                 parser.input.bump();
 
-                let super_class = parser.parse_lhs_expr()?;
+                let super_class = parser.parse_lhs_expr()?.unwrap();
                 // Super type params.
                 if parser.syntax().typescript() && is!(parser, '<') {
                     parser.parse_ts_type_args()?;
@@ -187,102 +169,12 @@ impl<I: Tokens> Parser<I> {
                 ident,
                 Class {
                     node_id: node_id!(parser, Span::new(class_start, end)),
-                    decorators,
                     extends: extends_clause,
                     body,
                 },
                 parser,
             ))
         })
-    }
-
-    pub(super) fn parse_decorators(&mut self, allow_export: bool) -> PResult<Vec<Decorator>> {
-        if !self.syntax().decorators() {
-            return Ok(vec![]);
-        }
-
-        let mut decorators = vec![];
-        let start = self.input.cur_pos();
-
-        while is!(self, '@') {
-            decorators.push(self.parse_decorator()?);
-        }
-        if decorators.is_empty() {
-            return Ok(decorators);
-        }
-
-        if is!(self, "export") {
-            if !allow_export {
-                syntax_error!(self, self.input.cur_span(), SyntaxError::ExportNotAllowed);
-            }
-
-            if !self.syntax().decorators_before_export() {
-                syntax_error!(self, span!(self, start), SyntaxError::DecoratorOnExport);
-            }
-        } else if !is!(self, "class") {
-            // syntax_error!(self, span!(self, start),
-            // SyntaxError::InvalidLeadingDecorator)
-        }
-
-        Ok(decorators)
-    }
-
-    fn parse_decorator(&mut self) -> PResult<Decorator> {
-        let start = self.input.cur_pos();
-
-        self.assert_and_bump(&tok!('@'));
-
-        let expr = if eat!(self, '(') {
-            let expr = self.parse_expr()?;
-            expect!(self, ')');
-            expr
-        } else {
-            let mut expr = self
-                .parse_ident(false, false)
-                .map(Expr::Ident)
-                .map(Box::new)?;
-
-            while eat!(self, '.') {
-                let ident = self.parse_ident(true, true)?;
-
-                let span = Span::new(start, get_span!(self, expr.node_id()).hi());
-
-                expr = Box::new(Expr::Member(MemberExpr {
-                    node_id: node_id!(self, span),
-                    obj: ExprOrSuper::Expr(expr),
-                    computed: false,
-                    prop: Box::new(Expr::Ident(ident)),
-                }));
-            }
-
-            expr
-        };
-
-        let expr = self.parse_maybe_decorator_args(expr)?;
-
-        Ok(Decorator {
-            node_id: node_id!(self, span!(self, start)),
-            expr,
-        })
-    }
-
-    fn parse_maybe_decorator_args(&mut self, expr: Box<Expr>) -> PResult<Box<Expr>> {
-        let type_args = if self.syntax().typescript() && is!(self, '<') {
-            Some(self.parse_ts_type_args()?)
-        } else {
-            None
-        };
-
-        if type_args.is_none() && !is!(self, '(') {
-            return Ok(expr);
-        }
-
-        let args = self.parse_args(false)?;
-        Ok(Box::new(Expr::Call(CallExpr {
-            node_id: node_id!(self, span!(self, get_span!(self, expr.node_id()).lo())),
-            callee: ExprOrSuper::Expr(expr),
-            args,
-        })))
     }
 
     fn parse_class_body(&mut self) -> PResult<Vec<ClassMember>> {
@@ -314,7 +206,6 @@ impl<I: Tokens> Parser<I> {
         trace_cur!(self, parse_class_member);
 
         let start = self.input.cur_pos();
-        let decorators = self.parse_decorators(false)?;
         let declare = self.syntax().typescript() && eat!(self, "declare");
         let has_accessibility = if self.syntax().typescript() {
             self.parse_access_modifier()?
@@ -338,7 +229,6 @@ impl<I: Tokens> Parser<I> {
                     |parser| parser.parse_unique_formal_params(),
                     MakeMethodArgs {
                         start,
-                        decorators,
                         is_abstract: false,
                         is_async: false,
                         is_generator: false,
@@ -354,15 +244,7 @@ impl<I: Tokens> Parser<I> {
                     self.new_ident(js_word!("declare"), span!(self, start)),
                 ));
                 let is_optional = self.syntax().typescript() && eat!(self, '?');
-                return self.make_property(
-                    start,
-                    decorators,
-                    key,
-                    false,
-                    is_optional,
-                    false,
-                    false,
-                );
+                return self.make_property(start, key, false, is_optional, false, false);
             } else {
                 Some(span!(self, start))
             }
@@ -393,7 +275,6 @@ impl<I: Tokens> Parser<I> {
                     |parser| parser.parse_unique_formal_params(),
                     MakeMethodArgs {
                         start,
-                        decorators,
                         is_abstract: false,
                         is_async: false,
                         is_generator: false,
@@ -409,15 +290,7 @@ impl<I: Tokens> Parser<I> {
                     self.new_ident(js_word!("static"), static_token),
                 ));
                 let is_optional = self.syntax().typescript() && eat!(self, '?');
-                return self.make_property(
-                    start,
-                    decorators,
-                    key,
-                    false,
-                    is_optional,
-                    declare,
-                    false,
-                );
+                return self.make_property(start, key, false, is_optional, declare, false);
             } else {
                 // TODO: error if static contains escape
             }
@@ -428,7 +301,6 @@ impl<I: Tokens> Parser<I> {
             declare_token,
             has_accessibility,
             static_token,
-            decorators,
         )
     }
 
@@ -439,7 +311,6 @@ impl<I: Tokens> Parser<I> {
         declare_token: Option<Span>,
         has_accessibility: bool,
         static_token: Option<Span>,
-        decorators: Vec<Decorator>,
     ) -> PResult<Option<ClassMember>> {
         let mut is_static = static_token.is_some();
 
@@ -533,7 +404,6 @@ impl<I: Tokens> Parser<I> {
                 |parser| parser.parse_unique_formal_params(),
                 MakeMethodArgs {
                     start,
-                    decorators,
                     is_async: false,
                     is_generator: true,
                     is_abstract,
@@ -673,7 +543,6 @@ impl<I: Tokens> Parser<I> {
                     |parser| parser.parse_formal_params(),
                     MakeMethodArgs {
                         start,
-                        decorators,
                         is_abstract,
                         static_token,
                         kind: MethodKind::Method,
@@ -686,15 +555,7 @@ impl<I: Tokens> Parser<I> {
         }
 
         if self.is_class_property()? {
-            return self.make_property(
-                start,
-                decorators,
-                key,
-                is_static,
-                is_optional,
-                declare,
-                is_abstract,
-            );
+            return self.make_property(start, key, is_static, is_optional, declare, is_abstract);
         }
 
         if match &key {
@@ -737,7 +598,6 @@ impl<I: Tokens> Parser<I> {
                     static_token,
                     key,
                     is_abstract,
-                    decorators,
                     kind: MethodKind::Method,
                     is_async: true,
                     is_generator,
@@ -775,7 +635,6 @@ impl<I: Tokens> Parser<I> {
                             Ok(params)
                         },
                         MakeMethodArgs {
-                            decorators,
                             start,
                             is_abstract,
                             is_async: false,
@@ -805,7 +664,6 @@ impl<I: Tokens> Parser<I> {
                             Ok(params)
                         },
                         MakeMethodArgs {
-                            decorators,
                             start,
                             is_abstract,
                             is_async: false,
@@ -827,7 +685,6 @@ impl<I: Tokens> Parser<I> {
     fn make_property(
         &mut self,
         start: BytePos,
-        decorators: Vec<Decorator>,
         key: Key,
         is_static: bool,
         is_optional: bool,
@@ -865,7 +722,7 @@ impl<I: Tokens> Parser<I> {
         self.with_ctx(ctx).parse_with(|parser| {
             let value = if is!(parser, '=') {
                 parser.assert_and_bump(&tok!('='));
-                Some(parser.parse_assignment_expr()?)
+                Some(parser.parse_assignment_expr()?.unwrap())
             } else {
                 None
             };
@@ -884,14 +741,12 @@ impl<I: Tokens> Parser<I> {
                     key,
                     value,
                     is_static,
-                    decorators,
                 }),
                 Key::PropName(key) => ClassMember::ClassProp(ClassProp {
                     node_id: node_id!(parser, span!(parser, start)),
                     key,
                     value,
                     is_static,
-                    decorators,
                 }),
             }))
         })
@@ -910,14 +765,13 @@ impl<I: Tokens> Parser<I> {
         &mut self,
         start_of_output_type: Option<BytePos>,
         start_of_async: Option<BytePos>,
-        decorators: Vec<Decorator>,
     ) -> PResult<T>
     where
         T: OutputType,
         Self: MaybeOptionalIdentParser<T::Ident>,
     {
         Ok(self
-            .parse_fn_or_ts_overload_sig(start_of_output_type, start_of_async, decorators)?
+            .parse_fn_or_ts_overload_sig(start_of_output_type, start_of_async)?
             .expect("Error already handled for overload sig"))
     }
 
@@ -925,7 +779,6 @@ impl<I: Tokens> Parser<I> {
         &mut self,
         start_of_output_type: Option<BytePos>,
         start_of_async: Option<BytePos>,
-        decorators: Vec<Decorator>,
     ) -> PResult<Option<T>>
     where
         T: OutputType,
@@ -966,7 +819,6 @@ impl<I: Tokens> Parser<I> {
 
         self.with_ctx(ctx).parse_with(|parser| {
             let f = parser.parse_fn_args_body_or_ts_overload_sig(
-                decorators,
                 start,
                 |parser| parser.parse_formal_params(),
                 is_async,
@@ -996,7 +848,6 @@ impl<I: Tokens> Parser<I> {
     /// `parse_args` closure should not eat '(' or ')'.
     pub(super) fn parse_fn_args_body<F>(
         &mut self,
-        decorators: Vec<Decorator>,
         start: BytePos,
         parse_args: F,
         is_async: bool,
@@ -1006,13 +857,7 @@ impl<I: Tokens> Parser<I> {
         F: FnOnce(&mut Self) -> PResult<Vec<Param>>,
     {
         Ok(self
-            .parse_fn_args_body_or_ts_overload_sig(
-                decorators,
-                start,
-                parse_args,
-                is_async,
-                is_generator,
-            )?
+            .parse_fn_args_body_or_ts_overload_sig(start, parse_args, is_async, is_generator)?
             .expect("Error already handled for overload sig"))
     }
 
@@ -1020,7 +865,6 @@ impl<I: Tokens> Parser<I> {
     /// Returns `None` an overload signature was parsed.
     fn parse_fn_args_body_or_ts_overload_sig<F>(
         &mut self,
-        decorators: Vec<Decorator>,
         start: BytePos,
         parse_args: F,
         is_async: bool,
@@ -1097,13 +941,15 @@ impl<I: Tokens> Parser<I> {
                 }
             };
 
+            let mut flags = FnFlags::empty();
+            flags.set(FnFlags::ASYNC, is_async);
+            flags.set(FnFlags::GENERATOR, is_generator);
+
             Ok(Some(Function {
                 node_id: node_id!(parser, span!(parser, start)),
-                decorators,
                 params,
                 body,
-                is_async,
-                is_generator,
+                flags,
             }))
         })
     }
@@ -1152,7 +998,6 @@ impl<I: Tokens> Parser<I> {
             start,
             is_abstract,
             static_token,
-            decorators,
             key,
             kind,
             is_async,
@@ -1166,13 +1011,8 @@ impl<I: Tokens> Parser<I> {
 
         let is_static = static_token.is_some();
 
-        let function = self.parse_fn_args_body_or_ts_overload_sig(
-            decorators,
-            start,
-            parse_args,
-            is_async,
-            is_generator,
-        )?;
+        let function =
+            self.parse_fn_args_body_or_ts_overload_sig(start, parse_args, is_async, is_generator)?;
 
         match kind {
             MethodKind::Getter | MethodKind::Setter
@@ -1281,7 +1121,7 @@ impl OutputType for Box<Expr> {
     ) -> Self {
         Box::new(Expr::Fn(FnExpr {
             ident,
-            function,
+            function: Box::new(function),
             node_id: node_id!(parser, span),
         }))
     }
@@ -1311,7 +1151,7 @@ impl OutputType for ExportDefaultDecl {
         ExportDefaultDecl {
             decl: DefaultDecl::Fn(FnExpr {
                 ident,
-                function,
+                function: Box::new(function),
                 node_id: node_id!(parser, span),
             }),
             node_id: node_id!(parser, span),
@@ -1372,7 +1212,9 @@ impl<I: Tokens> FnBodyParser<BlockStmtOrExpr> for Parser<I> {
         if self.input.is(&tok!('{')) {
             self.parse_block(false).map(BlockStmtOrExpr::BlockStmt)
         } else {
-            self.parse_assignment_expr().map(BlockStmtOrExpr::Expr)
+            self.parse_assignment_expr()
+                .map(MaybeParen::unwrap)
+                .map(BlockStmtOrExpr::Expr)
         }
     }
 }
@@ -1417,7 +1259,6 @@ struct MakeMethodArgs {
     start: BytePos,
     is_abstract: bool,
     static_token: Option<Span>,
-    decorators: Vec<Decorator>,
     key: Key,
     kind: MethodKind,
     is_async: bool,

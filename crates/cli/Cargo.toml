@@ -11,8 +11,19 @@ anyhow = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 
-ast = {path = "../ast"}
-codegen = {path = "../codegen"}
-compiler = {path = "../compiler"}
-global_common = {path = "../common", features = ["tty-emitter", "sourcemap"]}
-parser = {path = "../parser"}
+swc_common = { version = "0.39.0", features = ["tty-emitter"] }
+swc_ecma_ast = "0.120.0"
+swc_ecma_codegen = "0.157.0"
+swc_ecma_minifier = "0.207.0"
+swc_ecma_parser = "0.151.0"
+swc_ecma_transforms_base = "0.148.0"
+swc_ecma_visit = "0.106.0"
+swc_visit = "0.6.2"
+
+rustc-hash = { workspace = true }
+
+ast = { path = "../ast" }
+codegen = { path = "../codegen" }
+compiler = { path = "../compiler" }
+global_common = { path = "../common", features = ["tty-emitter", "sourcemap"] }
+parser = { path = "../parser" }

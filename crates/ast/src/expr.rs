@@ -8,7 +8,7 @@ use crate::{
     pat::Pat,
     prop::Prop,
     stmt::BlockStmt,
-    GetNodeId, Invalid, NodeId, ParamWithoutDecorators,
+    GetNodeId, Invalid, NodeId, Param,
 };
 use clone_node::CloneNode;
 use global_common::util::take::Take;
@@ -33,17 +33,6 @@ pub enum Expr {
 
     Assign(AssignExpr),
 
-    //
-    // Logical {
-    //
-    //     op: LogicalOp,
-    //     left: Box<Expr>,
-    //     right: Box<Expr>,
-    // },
-    /// A member expression. If computed is true, the node corresponds to a
-    /// computed (a[b]) member expression and property is an Expression. If
-    /// computed is false, the node corresponds to a static (a.b) member
-    /// expression and property is an Identifier.
     Member(MemberExpr),
 
     /// true ? 'a' : 'b'
@@ -73,8 +62,6 @@ pub enum Expr {
     MetaProp(MetaPropExpr),
 
     Await(AwaitExpr),
-
-    Paren(ParenExpr),
 
     PrivateName(PrivateName),
 
@@ -155,7 +142,7 @@ pub struct FnExpr {
     pub node_id: NodeId,
 
     pub ident: Option<Ident>,
-    pub function: Function,
+    pub function: Box<Function>,
 }
 
 /// Class expression.
@@ -229,8 +216,7 @@ pub struct SeqExpr {
 pub struct ArrowExpr {
     pub node_id: NodeId,
 
-    // TODO:
-    pub params: Vec<ParamWithoutDecorators>,
+    pub params: Vec<Param>,
 
     pub body: BlockStmt,
 
@@ -286,13 +272,6 @@ pub struct TplElement {
     pub tail: bool,
     pub cooked: Option<Str>,
     pub raw: Str,
-}
-
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
-pub struct ParenExpr {
-    pub node_id: NodeId,
-
-    pub expr: Box<Expr>,
 }
 
 #[allow(variant_size_differences)]

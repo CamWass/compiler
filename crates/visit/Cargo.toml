@@ -8,7 +8,7 @@ version = "0.1.0"
 [dependencies]
 num-bigint = { workspace = true }
 
-ast = {path = "../ast"}
-atoms = {path = "../atoms"}
-global_common = {path = "../common"}
-global_visit = {path = "../../visit"}
+ast = { path = "../ast" }
+atoms = { path = "../atoms" }
+global_common = { path = "../common" }
+global_visit = { path = "../../visit" }

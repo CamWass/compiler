@@ -1,69 +1,13 @@
-Where TSC uses readonly T[], we can use Rc<Vec<T>>. This will make cloning less expensive.
-In such cases maybe have a global empty Rc<Vec<_>> and clone it rather than create Vec::new() or Default::default(), reducing allocations.
-Rather than cloning the inner value of an Rc to create a modified copy, use RC::make_mut. This contains aditional optimisations to avoid cloning when possible.
-
-To find = assignments, TSC uses somthing like `isBinaryExpression(node) && node.operatorToken.kind === SyntaxKind.EqualsToken`.
-I have often ported this as `if let BoundNode::AssignExpr(assign) = node`, but this is incorrect. TSC's version only accepts assignments with the = operator,
-whil ours accepts any assignment expr, including `||=`, `+=`, etc.
-
-TODO: all occurances of "spread"
-
-add `debug_assert!(matches!(...))` to all functions where we have replaced a more specific type from TSC (e.g. `FunctionExpression | ArrowFunction`)
-with a less specific type (e.g. `BoundNode`).
-
 We use BindingIdent all over the place, which makes it hard to find BindingIdents used in Binding patterns (ObjectPat and ArrayPat).
-
-Ensure Visitors visit fields in the order of evaluation in ECMA/TSC:
-
-TODO: after Normalize has run, ast::Prop::Shorthand is replaced and therefore unreachable.
-
-TODO: we use both BindingIdent and Ident where TSC/Closure use only Identifier. Update our handling of Ident to also include BindingIdent.
-
-TODO: in codegen, we have patterns like:
-if let Some(type_params) = &node.class.type_params {
-    punct!("<");
-    self.emit_list(
-        node.class.span,
-        Some(type_params),
-        ListFormat::TypeParameters,
-    )?;
-    punct!(">");
-}
-Note how we match/destructure the `node.class.type_params` Option, only to then re-wrap the value to create a new Option: `Some(type_params)`.
-This could be simplified by using `node.class.type_params.is_some()`, then passing the Option directly, with no destructuring
-
-TODO: TSC frequently uses TypeFlags to differentiate types. I have sometimes ported using `match`, `if let`, or `unwrap_as!`, which is probably incorrect,
-as some type flags are shared by multiple variants of the `Type` enum (e.g. UnionType and ResolvedType can both have TypeFlags::Union)
-
-TODO: TSC has a fn called `length` that can get the length of nullable/optional values. I have ported this as somthing like:
-`Option.as_ref().map(|v|v.len()).unwrap_or_default()`. We can now use the `OptionalLength` trait and simply call Option.length()
-
-Type based optimisations should back off when code contains (dangerous) type assertions/casts, e.g. `const a: Foo = true as unknown as Foo`
-Also have to be careful with non-null assertions, e.g. `foo.prop!`
 
 TODO: for a memebr expr (and possibly others), if it's not computed, the key could be an ident OR private name. I have often assumed it can only
 be an ident, which is wrong.
-
-TODO: maybe add From<&ast::Expr> for Node/BoundNode (replacing Expr with other nodes/enums as well) to reduce the number of times we have
-to manually write expr.clone().into() or Node/BoundNode::from(expr.clone())
-
-TODO: since we indivitually generate bound bersions of all nodes, we can make all nodes except Script and Module have a definite parent
-while only those two will have no parent, this can reduce the number of .parent().unwrap() calles to just .parent. BoundNode.parent()
-would still have to return Option, and possible be unwrapped, but accessing the parent of a bare node would become nicer.
-
-TODO: codegen doesn't emmit implements clauses and possibly other TS things as well.
-
-TODO: everytime we create a new node, we should also try to set its type. E.g. when we transform a TsParamProp, we should set the types of the new AssignExpr.
-
-TODO: it may be possible to optimise the colour/type system to only collect/store/update the colours of nodes that passes actually care about e.g. classes
-objects, member exprs etc.
-
-Use petgraph::GraphMap in more places? (for its deduping of edges, and auto addition of nodes i.e.GraphMap::add_edge)
-
-TODO: use noop_visit_type every where possible
 
 ControlFlowGraph:
 class Foo111 {
   a=(console.log(1),1);
   static [(console.log(2),1)]=(console.log(3),1);
 }
+
+Update graph_map on merge to point to node of representative
+Merge derived pointers when merging. e.g. A.prop and B.prop are the same after merging A&B

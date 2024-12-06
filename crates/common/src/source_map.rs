@@ -999,7 +999,7 @@ impl SourceMap {
     }
 
     #[cfg(feature = "sourcemap")]
-    pub fn build_source_map(&self, mappings: &mut Vec<(BytePos, LineCol)>) -> sourcemap::SourceMap {
+    pub fn build_source_map(&self, mappings: &mut [(BytePos, LineCol)]) -> sourcemap::SourceMap {
         self.build_source_map_from(mappings, None)
     }
 
@@ -1007,7 +1007,7 @@ impl SourceMap {
     #[cfg(feature = "sourcemap")]
     pub fn build_source_map_from(
         &self,
-        mappings: &mut Vec<(BytePos, LineCol)>,
+        mappings: &mut [(BytePos, LineCol)],
         orig: Option<&sourcemap::SourceMap>,
     ) -> sourcemap::SourceMap {
         self.build_source_map_with_config(mappings, orig, DefaultSourceMapGenConfig)
@@ -1016,7 +1016,7 @@ impl SourceMap {
     #[cfg(feature = "sourcemap")]
     pub fn build_source_map_with_config(
         &self,
-        mappings: &mut Vec<(BytePos, LineCol)>,
+        mappings: &mut [(BytePos, LineCol)],
         orig: Option<&sourcemap::SourceMap>,
         config: impl SourceMapGenConfig,
     ) -> sourcemap::SourceMap {

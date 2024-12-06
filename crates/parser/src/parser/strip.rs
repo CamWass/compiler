@@ -743,13 +743,11 @@ impl Default for TsImportExportAssignConfig {
 //             span: DUMMY_SP,
 //             callee: Function {
 //                 span: DUMMY_SP,
-//                 decorators: Default::default(),
 //                 is_async: false,
 //                 is_generator: false,
 //                 type_params: Default::default(),
 //                 params: vec![Param {
 //                     span: id.span,
-//                     decorators: vec![],
 //                     pat: id.clone().into(),
 //                 }],
 //                 body: Some(BlockStmt {
@@ -927,10 +925,8 @@ impl Default for TsImportExportAssignConfig {
 //         let init_fn_expr: FnExpr = Function {
 //             params: vec![Param {
 //                 span: DUMMY_SP,
-//                 decorators: Default::default(),
 //                 pat: private_name.clone().into(),
 //             }],
-//             decorators: Default::default(),
 //             span: DUMMY_SP,
 //             body: Some(BlockStmt {
 //                 span: DUMMY_SP,
@@ -1495,15 +1491,6 @@ impl Default for TsImportExportAssignConfig {
 // {
 //     visit_obj_and_computed!();
 
-//     fn visit_assign_pat_prop(&mut self, n: &AssignPatProp) {
-//         if !self.in_var_pat {
-//             n.key.visit_with(self);
-//         } else {
-//             self.decl_names.insert(n.key.to_id());
-//         }
-//         n.value.visit_with(self);
-//     }
-
 //     fn visit_assign_prop(&mut self, n: &AssignProp) {
 //         n.value.visit_with(self);
 //     }
@@ -1517,7 +1504,6 @@ impl Default for TsImportExportAssignConfig {
 //     }
 
 //     fn visit_class(&mut self, c: &Class) {
-//         c.decorators.visit_with(self);
 //         c.super_class.visit_with(self);
 //         c.body.visit_with(self);
 //     }
@@ -1853,7 +1839,6 @@ impl Default for TsImportExportAssignConfig {
 //                                 i.clone(),
 //                                 Param {
 //                                     span: DUMMY_SP,
-//                                     decorators: Default::default(),
 //                                     pat: Pat::Ident(i),
 //                                 },
 //                             ),
@@ -1866,7 +1851,6 @@ impl Default for TsImportExportAssignConfig {
 //                                     i.clone(),
 //                                     Param {
 //                                         span: DUMMY_SP,
-//                                         decorators: Default::default(),
 //                                         pat: Pat::Assign(AssignPat {
 //                                             span,
 //                                             left: i.into(),
@@ -1972,7 +1956,6 @@ impl Default for TsImportExportAssignConfig {
 //                         ClassMember::ClassProp(ClassProp {
 //                             key: PropName::Ident(prop),
 //                             value: None,
-//                             decorators: Vec::new(),
 //                             is_static: false,
 //                             type_ann: None,
 //                             span: DUMMY_SP,

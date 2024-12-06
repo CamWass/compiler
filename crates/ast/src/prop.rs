@@ -4,18 +4,13 @@ use crate::{
     ident::Ident,
     lit::{Number, Str},
     stmt::BlockStmt,
-    BigInt, GetNodeId, NodeId, ParamWithoutDecorators,
+    BigInt, GetNodeId, NodeId, Param,
 };
-use atoms::js_word;
 use clone_node::CloneNode;
-use global_common::{util::take::Take, SyntaxContext};
 use node_id::GetNodeIdMacro;
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub enum Prop {
-    /// `a` in `{ a, }`
-    Shorthand(Ident),
-
     /// `key: value` in `{ key: value, }`
     KeyValue(KeyValueProp),
 
@@ -30,16 +25,6 @@ pub enum Prop {
 
     /// Spread properties, e.g., `{a: 1, ...obj, b: 2}`.
     Spread(SpreadAssignment),
-}
-
-impl Take for Prop {
-    fn dummy() -> Self {
-        Self::Shorthand(Ident {
-            node_id: NodeId::DUMMY,
-            sym: js_word!(""),
-            ctxt: SyntaxContext::empty(),
-        })
-    }
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
@@ -66,8 +51,7 @@ pub struct GetterProp {
 pub struct SetterProp {
     pub node_id: NodeId,
     pub key: PropName,
-    // TODO:
-    pub param: ParamWithoutDecorators,
+    pub param: Param,
     pub body: BlockStmt,
 }
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]

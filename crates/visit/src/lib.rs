@@ -182,7 +182,6 @@ where
 define!({
     pub struct Class {
         pub node_id: NodeId,
-        pub decorators: Vec<Decorator>,
         pub extends: Option<ExtendsClause>,
         pub body: Vec<ClassMember>,
     }
@@ -206,14 +205,12 @@ define!({
         pub key: PropName,
         pub value: Option<Box<Expr>>,
         pub is_static: bool,
-        pub decorators: Vec<Decorator>,
     }
     pub struct PrivateProp {
         pub node_id: NodeId,
         pub key: PrivateName,
         pub value: Option<Box<Expr>>,
         pub is_static: bool,
-        pub decorators: Vec<Decorator>,
     }
     pub struct ClassMethod {
         pub node_id: NodeId,
@@ -233,10 +230,6 @@ define!({
         pub node_id: NodeId,
         pub params: Vec<Param>,
         pub body: BlockStmt,
-    }
-    pub struct Decorator {
-        pub node_id: NodeId,
-        pub expr: Box<Expr>,
     }
     pub enum MethodKind {
         Method,
@@ -296,7 +289,6 @@ define!({
         Yield(YieldExpr),
         MetaProp(MetaPropExpr),
         Await(AwaitExpr),
-        Paren(ParenExpr),
         PrivateName(PrivateName),
         OptChain(OptChainExpr),
         Invalid(Invalid),
@@ -377,7 +369,7 @@ define!({
     }
     pub struct ArrowExpr {
         pub node_id: NodeId,
-        pub params: Vec<ParamWithoutDecorators>,
+        pub params: Vec<Param>,
         pub body: BlockStmt,
         pub is_async: bool,
     }
@@ -411,10 +403,6 @@ define!({
         pub cooked: Option<Str>,
         pub raw: Str,
     }
-    pub struct ParenExpr {
-        pub node_id: NodeId,
-        pub expr: Box<Expr>,
-    }
     pub enum ExprOrSuper {
         Super(Super),
         Expr(Box<Expr>),
@@ -437,17 +425,10 @@ define!({
     pub struct Function {
         pub node_id: NodeId,
         pub params: Vec<Param>,
-        pub decorators: Vec<Decorator>,
         pub body: BlockStmt,
-        pub is_generator: bool,
-        pub is_async: bool,
+        pub flags: FnFlags,
     }
     pub struct Param {
-        pub node_id: NodeId,
-        pub decorators: Vec<Decorator>,
-        pub pat: Pat,
-    }
-    pub struct ParamWithoutDecorators {
         pub node_id: NodeId,
         pub pat: Pat,
     }
@@ -504,7 +485,6 @@ define!({
     pub struct Number {
         pub node_id: NodeId,
         pub value: f64,
-        pub raw: Option<JsWord>,
     }
     pub enum Program {
         Module(Module),
@@ -688,7 +668,6 @@ define!({
     }
     pub enum ObjectPatProp {
         KeyValue(KeyValuePatProp),
-        Assign(AssignPatProp),
         Rest(RestPat),
     }
     pub struct KeyValuePatProp {
@@ -696,13 +675,7 @@ define!({
         pub key: PropName,
         pub value: Box<Pat>,
     }
-    pub struct AssignPatProp {
-        pub node_id: NodeId,
-        pub key: Ident,
-        pub value: Option<Box<Expr>>,
-    }
     pub enum Prop {
-        Shorthand(Ident),
         KeyValue(KeyValueProp),
         Assign(AssignProp),
         Getter(GetterProp),
@@ -728,7 +701,7 @@ define!({
     pub struct SetterProp {
         pub node_id: NodeId,
         pub key: PropName,
-        pub param: ParamWithoutDecorators,
+        pub param: Param,
         pub body: BlockStmt,
     }
     pub struct MethodProp {

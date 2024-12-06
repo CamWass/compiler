@@ -4,7 +4,6 @@ use global_common::{util::take::Take, SyntaxContext};
 
 use crate::utils::unwrap_as;
 
-// TODO: colours:
 // TODO: preserve spans?
 
 pub fn normalize(ast: &mut Program, program_data: &mut ast::ProgramData) {
@@ -112,8 +111,6 @@ struct BlockCreator<'a> {
 
 impl BlockCreator<'_> {
     fn handle_single_stmt(&mut self, stmt: &mut Stmt) {
-        stmt.visit_mut_with(self);
-
         if !matches!(stmt, Stmt::Block(_)) {
             stmt.map_with_mut(|stmt| self.create_block_from_stmt(stmt));
         }
@@ -132,6 +129,7 @@ impl BlockCreator<'_> {
 
 impl VisitMut<'_> for BlockCreator<'_> {
     fn visit_mut_with_stmt(&mut self, node: &mut WithStmt) {
+        node.visit_mut_children_with(self);
         self.handle_single_stmt(node.body.as_mut());
     }
     fn visit_mut_labeled_stmt(&mut self, node: &mut LabeledStmt) {
@@ -167,24 +165,30 @@ impl VisitMut<'_> for BlockCreator<'_> {
         }
     }
     fn visit_mut_if_stmt(&mut self, node: &mut IfStmt) {
+        node.visit_mut_children_with(self);
         self.handle_single_stmt(node.cons.as_mut());
         if let Some(alt) = &mut node.alt {
             self.handle_single_stmt(alt.as_mut());
         }
     }
     fn visit_mut_while_stmt(&mut self, node: &mut WhileStmt) {
+        node.visit_mut_children_with(self);
         self.handle_single_stmt(node.body.as_mut());
     }
     fn visit_mut_do_while_stmt(&mut self, node: &mut DoWhileStmt) {
+        node.visit_mut_children_with(self);
         self.handle_single_stmt(node.body.as_mut());
     }
     fn visit_mut_for_stmt(&mut self, node: &mut ForStmt) {
+        node.visit_mut_children_with(self);
         self.handle_single_stmt(node.body.as_mut());
     }
     fn visit_mut_for_in_stmt(&mut self, node: &mut ForInStmt) {
+        node.visit_mut_children_with(self);
         self.handle_single_stmt(node.body.as_mut());
     }
     fn visit_mut_for_of_stmt(&mut self, node: &mut ForOfStmt) {
+        node.visit_mut_children_with(self);
         self.handle_single_stmt(node.body.as_mut());
     }
 }

@@ -51,34 +51,11 @@ impl Syntax {
         )
     }
 
-    pub fn decorators(self) -> bool {
-        matches!(
-            self,
-            Syntax::Es(EsConfig {
-                decorators: true,
-                ..
-            }) | Syntax::Typescript(TsConfig {
-                decorators: true,
-                ..
-            })
-        )
-    }
-
     pub fn class_private_props(self) -> bool {
         matches!(
             self,
             Syntax::Es(EsConfig {
                 class_private_props: true,
-                ..
-            }) | Syntax::Typescript(..)
-        )
-    }
-
-    pub fn decorators_before_export(self) -> bool {
-        matches!(
-            self,
-            Syntax::Es(EsConfig {
-                decorators_before_export: true,
                 ..
             }) | Syntax::Typescript(..)
         )
@@ -141,9 +118,6 @@ pub struct TsConfig {
     pub tsx: bool,
 
     #[serde(default)]
-    pub decorators: bool,
-
-    #[serde(default)]
     pub dynamic_import: bool,
 
     /// `.d.ts`
@@ -164,17 +138,6 @@ pub struct EsConfig {
     #[serde(rename = "classPrivateProperty")]
     #[serde(default)]
     pub class_private_props: bool,
-
-    /// Enable decorators.
-    #[serde(default)]
-    pub decorators: bool,
-
-    /// babel: `decorators.decoratorsBeforeExport`
-    ///
-    /// Effective only if `decorator` is true.
-    #[serde(rename = "decoratorsBeforeExport")]
-    #[serde(default)]
-    pub decorators_before_export: bool,
 
     #[serde(default)]
     pub export_default_from: bool,

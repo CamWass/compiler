@@ -143,7 +143,7 @@ impl<'ast, E: Debug + PartialEq + Clone + Copy> DerefMut for WithParent<'_, 'ast
         self.inner
     }
 }
-impl<'w, 'ast, E> Drop for WithParent<'w, 'ast, E>
+impl<E> Drop for WithParent<'_, '_, E>
 where
     E: Debug + PartialEq + Clone + Copy,
 {
@@ -179,7 +179,6 @@ where
         [visit_class_method, ClassMethod],
         [visit_private_method, PrivateMethod],
         [visit_constructor, Constructor],
-        [visit_decorator, Decorator],
         [visit_fn_decl, FnDecl],
         [visit_class_decl, ClassDecl],
         [visit_var_decl, VarDecl],
@@ -206,12 +205,10 @@ where
         [visit_tpl, Tpl],
         [visit_tagged_tpl, TaggedTpl],
         [visit_tpl_element, TplElement],
-        [visit_paren_expr, ParenExpr],
         [visit_super, Super],
         [visit_opt_chain_expr, OptChainExpr],
         [visit_function, Function],
         [visit_param, Param],
-        [visit_param_without_decorators, ParamWithoutDecorators],
         [visit_binding_ident, BindingIdent],
         [visit_ident, Ident],
         [visit_private_name, PrivateName],
@@ -241,7 +238,6 @@ where
         [visit_assign_pat, AssignPat],
         [visit_rest_pat, RestPat],
         [visit_key_value_pat_prop, KeyValuePatProp],
-        [visit_assign_pat_prop, AssignPatProp],
         [visit_key_value_prop, KeyValueProp],
         [visit_assign_prop, AssignProp],
         [visit_getter_prop, GetterProp],

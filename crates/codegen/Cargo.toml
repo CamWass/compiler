@@ -11,12 +11,12 @@ bitflags = { workspace = true }
 num-bigint = { workspace = true, features = ["serde"] }
 sourcemap = { workspace = true }
 
-ast = {path = "../ast"}
-atoms = {path = "../atoms"}
-global_common = {path = "../common"}
-parser = {path = "../parser"}
+ast = { path = "../ast" }
+atoms = { path = "../atoms" }
+global_common = { path = "../common" }
+parser = { path = "../parser" }
 
 [dev-dependencies]
-testing = {path = "../../testing"}
+testing = { path = "../../testing" }
 
-global_common = {path = "../common", features = ["sourcemap"]}
+global_common = { path = "../common", features = ["sourcemap"] }

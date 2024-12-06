@@ -79,18 +79,12 @@ impl<'a> Tester<'a> {
     pub fn print(&mut self, module: &Module, program_data: &ProgramData) -> String {
         let mut buf = vec![];
         {
-            let mut emitter = Emitter {
-                cfg: Default::default(),
-                cm: self.cm.clone(),
-                wr: Box::new(codegen::text_writer::JsWriter::new(
-                    self.cm.clone(),
-                    "\n",
-                    &mut buf,
-                    None,
-                )),
-                comments: None,
+            let mut emitter = Emitter::new(
+                Default::default(),
+                self.cm.clone(),
+                codegen::JsWriter::new("\n", &mut buf, None),
                 program_data,
-            };
+            );
 
             // println!("Emitting: {:?}", module);
             emitter.emit_module(module).unwrap();
@@ -160,8 +154,6 @@ pub fn test_transform<F, P>(
     Tester::run(|tester| {
         let expected = tester.apply_transform(Dummy, "output.js", syntax, expected)?;
 
-        // let expected_comments = take(&mut tester.comments);
-
         println!("----- Actual -----");
 
         let tr = tr(tester);
@@ -171,26 +163,14 @@ pub fn test_transform<F, P>(
         //     Ok(ref s) if s == "1" => {
         //         let hygiene_src = tester.print(
         //             &actual.clone().fold_with(&mut HygieneVisualizer),
-        //             &tester.comments.clone(),
         //         );
         //         println!("----- Hygiene -----\n{}", hygiene_src);
         //     }
         //     _ => {}
         // }
 
-        // println!("{:?}", tester.comments);
-        // println!("{:?}", expected_comments);
-
-        {
-            // let (actual_leading, actual_trailing) = tester.comments.borrow_all();
-            // let (expected_leading, expected_trailing) = expected_comments.borrow_all();
-
-            if actual.0 == expected.0
-            // && *actual_leading == *expected_leading
-            // && *actual_trailing == *expected_trailing
-            {
-                return Ok(());
-            }
+        if actual.0 == expected.0 {
+            return Ok(());
         }
 
         let (actual_src, expected_src) = (
@@ -259,7 +239,6 @@ macro_rules! test {
 //             Ok(ref s) if s == "1" => {
 //                 let hygiene_src = tester.print(
 //                     &module.clone().fold_with(&mut HygieneVisualizer),
-//                     &tester.comments.clone(),
 //                 );
 //                 println!("----- Hygiene -----\n{}", hygiene_src);
 //             }
@@ -268,12 +247,12 @@ macro_rules! test {
 
 //         let mut module = module
 //             .fold_with(&mut hygiene::hygiene())
-//             .fold_with(&mut fixer::fixer(Some(&tester.comments)));
+//             .fold_with(&mut fixer::fixer());
 
-//         let src_without_helpers = tester.print(&module, &tester.comments.clone());
+//         let src_without_helpers = tester.print(&module);
 //         module = module.fold_with(&mut inject_helpers(Mark::fresh(Mark::root())));
 
-//         let transformed_src = tester.print(&module, &tester.comments.clone());
+//         let transformed_src = tester.print(&module);
 
 //         println!(
 //             "\t>>>>> Orig <<<<<\n{}\n\t>>>>> Code <<<<<\n{}",
@@ -316,7 +295,6 @@ macro_rules! test {
 //             Ok(ref s) if s == "1" => {
 //                 let hygiene_src = tester.print(
 //                     &module.clone().fold_with(&mut HygieneVisualizer),
-//                     &tester.comments.clone(),
 //                 );
 //                 println!("----- Hygiene -----\n{}", hygiene_src);
 //             }
@@ -325,12 +303,12 @@ macro_rules! test {
 
 //         let mut module = module
 //             .fold_with(&mut hygiene::hygiene())
-//             .fold_with(&mut fixer::fixer(Some(&tester.comments)));
+//             .fold_with(&mut fixer::fixer());
 
-//         let src_without_helpers = tester.print(&module, &tester.comments.clone());
+//         let src_without_helpers = tester.print(&module);
 //         module = module.fold_with(&mut inject_helpers(Mark::fresh(Mark::root())));
 
-//         let src = tester.print(&module, &tester.comments.clone());
+//         let src = tester.print(&module);
 
 //         println!(
 //             "\t>>>>> {} <<<<<\n{}\n\t>>>>> {} <<<<<\n{}",
@@ -574,7 +552,7 @@ impl VisitMut<'_> for Normalizer {
 //     let expected_src = Tester::run(|tester| {
 //         let expected_module = tester.apply_transform(noop(), "expected.js", syntax, &expected)?;
 
-//         let expected_src = tester.print(&expected_module, &tester.comments.clone());
+//         let expected_src = tester.print(&expected_module);
 
 //         println!(
 //             "----- {} -----\n{}",
@@ -604,7 +582,6 @@ impl VisitMut<'_> for Normalizer {
 //         //     Ok(ref s) if s == "1" => {
 //         //         let hygiene_src = tester.print(
 //         //             &actual.clone().fold_with(&mut HygieneVisualizer),
-//         //             &tester.comments.clone(),
 //         //         );
 //         //         println!(
 //         //             "----- {} -----\n{}",
@@ -617,7 +594,6 @@ impl VisitMut<'_> for Normalizer {
 
 //         let actual_src = {
 //             let module = &actual;
-//             let comments: &Rc<SingleThreadedComments> = &tester.comments.clone();
 //             let mut buf = vec![];
 //             {
 //                 let mut emitter = Emitter {
@@ -629,7 +605,6 @@ impl VisitMut<'_> for Normalizer {
 //                         &mut buf,
 //                         src_map.as_mut(),
 //                     )),
-//                     comments: Some(comments),
 //                 };
 
 //                 // println!("Emitting: {:?}", module);

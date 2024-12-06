@@ -1,7 +1,9 @@
+use crate::Context;
+
 use super::{list::ListFormat, Emitter, Result};
 use ast::*;
 
-impl<'a> Emitter<'a> {
+impl Emitter<'_> {
     pub fn emit_decl(&mut self, node: &Decl) -> Result {
         match node {
             Decl::Class(n) => self.emit_class_decl(n)?,
@@ -16,11 +18,6 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_class_decl(&mut self, node: &ClassDecl) -> Result {
-        self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
-
-        for dec in &node.class.decorators {
-            self.emit_decorator(dec)?;
-        }
         keyword!(self, "class");
         space!(self);
         self.emit_ident(&node.ident)?;
@@ -29,15 +26,13 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_fn_decl(&mut self, node: &FnDecl) -> Result {
-        self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
-
-        if node.function.is_async {
+        if node.function.is_async() {
             keyword!(self, "async");
             space!(self);
         }
 
         keyword!(self, "function");
-        if node.function.is_generator {
+        if node.function.is_generator() {
             punct!(self, "*");
             formatting_space!(self);
         } else {
@@ -51,8 +46,6 @@ impl<'a> Emitter<'a> {
 
     pub fn emit_var_decl(&mut self, node: &VarDecl) -> Result {
         let span = get_span!(self, node.node_id);
-
-        self.emit_leading_comments_of_span(span, false)?;
 
         {
             let span = self.cm.span_until_char(span, ' ');
@@ -75,21 +68,22 @@ impl<'a> Emitter<'a> {
         self.emit_list(
             span,
             &node.decls,
-            |e, n| e.emit_var_declarator(n).map(|_| Some(n.node_id)),
+            |e, n| e.emit_var_declarator(n),
             ListFormat::VariableDeclarationList,
         )
     }
 
     fn emit_var_declarator(&mut self, node: &VarDeclarator) -> Result {
-        self.emit_leading_comments_of_span(get_span!(self, node.node_id), false)?;
-
         self.emit_pat(&node.name)?;
 
         if let Some(init) = &node.init {
             formatting_space!(self);
             punct!(self, "=");
             formatting_space!(self);
-            self.emit_expr(init)?
+            let old = self.ctx;
+            self.ctx = Context::ForcedExpr;
+            self.emit_expr(init)?;
+            self.ctx = old;
         }
         Ok(())
     }
@@ -114,7 +108,7 @@ mod tests {
         assert_min(
             "class Hoge {};
 class HogeFuga extends Hoge {};",
-            "class Hoge{};class HogeFuga extends Hoge{};",
+            "class Hoge{}class HogeFuga extends Hoge{}",
         );
     }
 
@@ -124,6 +118,21 @@ class HogeFuga extends Hoge {};",
         assert_min(
             "function* f(){ yield ({x}) => x}",
             "function*f(){yield({x})=>x}",
+        );
+    }
+
+    #[test]
+    fn test_destructuring() {
+        assert_min("const {a:a} = {};", "const{a}={}");
+        assert_min("const {a:a = b} = {};", "const{a=b}={}");
+    }
+
+    #[test]
+    fn test_class() {
+        assert_min("class Foo extends Bar {}", "class Foo extends Bar{}");
+        assert_min(
+            "class Foo extends (1||Bar) {}",
+            "class Foo extends(1||Bar){}",
         );
     }
 }

@@ -15,8 +15,6 @@ fn test_transform(input: &str, expected: &str) {
 
                 program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark));
 
-                crate::normalize_properties::normalize_properties(&mut program, &mut program_data);
-
                 let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 
                 process(&mut program, &mut program_data, unresolved_ctxt);
@@ -39,6 +37,55 @@ fn test_same_in_fn(input: &str) {
 }
 fn test_same(input: &str) {
     test_transform(input, input);
+}
+
+#[test]
+fn test_non_simple_params() {
+    test_transform(
+        "
+function foo({ inner: inner }) {
+    inner.prop
+}
+foo({ inner: { prop: 1 } });
+    ",
+        "
+function foo({ a: inner }) {
+    inner.a
+}
+foo({ a: { a: 1 } });
+",
+    );
+    test_transform(
+        "
+function foo(a = { common: 1, aProp: 2 }) {
+    a.common;
+}
+foo({ common: 1 });
+    ",
+        "
+function foo(a = { a: 1, b: 2 }) {
+    a.a;
+}
+foo({ a: 1 });
+",
+    );
+    test_transform(
+        "
+function foo(a, ...b) {}
+foo({ prop1: 1 }, { prop2: 2 }, { prop3: 3 });
+    ",
+        "
+function foo(a, ...b) {}
+foo({ a: 1 }, { prop2: 2 }, { prop3: 3 });
+",
+    );
+    test_same(
+        "
+function foo(...a) {
+    (a || { prop: 1 }).prop;
+}
+",
+    );
 }
 
 fn test_props(obj: &str, props: &[JsWord]) {
@@ -262,7 +309,7 @@ fn test_unary_operators() {
     test_transform(
         "
 function f() {
-    const expr = +true || typeof 1 || void 1 || !1 || delete 1;
+    const expr = +true || typeof 1 || void 1 || !1 || delete 1 || -1 || ~1;
     const obj = expr || { prop1: 1 };
     obj.prop1;
     return obj;
@@ -271,7 +318,7 @@ f().prop1;
 ",
         "
 function f() {
-    const expr = +true || typeof 1 || void 1 || !1 || delete 1;
+    const expr = +true || typeof 1 || void 1 || !1 || delete 1 || -1 || ~1;
     const obj = expr || { a: 1 };
     obj.a;
     return obj;
@@ -279,16 +326,28 @@ function f() {
 f().a;
 ",
     );
-    // We don't currently track the input type, so can't know the output type
-    // for numeric ops.
-    test_same(
+}
+
+#[test]
+fn test_update_operators() {
+    test_transform(
         "
 function f() {
-    const obj = -1 || ~1 || { prop1: 1 };
+    const expr = ++x || --x || x++ || x--;
+    const obj = expr || { prop1: 1 };
     obj.prop1;
     return obj;
 }
 f().prop1;
+",
+        "
+function f() {
+    const expr = ++x || --x || x++ || x--;
+    const obj = expr || { a: 1 };
+    obj.a;
+    return obj;
+}
+f().a;
 ",
     );
 }
@@ -1264,6 +1323,17 @@ fn test_yield_invalidation() {
         "
 function* f() {
     yield { prop: 1 };
+}
+",
+    );
+}
+
+#[test]
+fn test_await_invalidation() {
+    test_same(
+        "
+async function f() {
+    await { prop: 1 };
 }
 ",
     );

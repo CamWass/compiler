@@ -66,13 +66,12 @@ impl<'a> Tester<'a> {
     fn print(&mut self, program: &Program, program_data: &ProgramData) -> String {
         let mut buf = vec![];
         {
-            let mut emitter = Emitter {
-                cfg: Default::default(),
-                cm: self.cm.clone(),
-                wr: Box::new(JsWriter::new(self.cm.clone(), "\n", &mut buf, None)),
-                comments: None,
+            let mut emitter = Emitter::new(
+                Default::default(),
+                self.cm.clone(),
+                JsWriter::new("\n", &mut buf, None),
                 program_data,
-            };
+            );
 
             emitter.emit_program(program).unwrap();
         }

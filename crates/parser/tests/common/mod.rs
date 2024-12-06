@@ -21,7 +21,6 @@ impl VisitMut<'_> for Normalizer {
         e.visit_mut_children_with(self);
 
         match e.take() {
-            Expr::Paren(ParenExpr { expr, .. }) if self.is_test262 => *e = *expr,
             Expr::New(n @ NewExpr { args: None, .. }) if self.is_test262 => {
                 *e = Expr::New(NewExpr {
                     args: Some(vec![]),
@@ -56,21 +55,12 @@ impl VisitMut<'_> for Normalizer {
         let val = serde_json::Number::from_f64(n.value);
         let val = match val {
             Some(v) => v,
-            None => {
-                if self.is_test262 {
-                    n.raw = None;
-                }
-
-                return;
-            }
+            None => return,
         };
 
         match val.as_f64() {
             Some(value) => {
                 n.value = value;
-                if self.is_test262 {
-                    n.raw = None;
-                }
             }
             None => {}
         }
@@ -151,5 +141,6 @@ impl VisitMut<'_> for Normalizer {
             s.has_escape = false;
             s.kind = Default::default();
         }
+        s.node_id = NodeId::DUMMY;
     }
 }

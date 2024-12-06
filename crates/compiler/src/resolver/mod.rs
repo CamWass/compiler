@@ -9,8 +9,6 @@ use scope::{IdentType, ScopeKind};
 
 mod scope;
 
-// TODO: ParamWithoutDecorators and other differences from SWC's AST.
-
 /// # When to run
 ///
 /// The resolver expects 'clean' ast. You can get clean ast by parsing, or by
@@ -179,7 +177,7 @@ struct InnerConfig {
     unresolved_mark: Mark,
 }
 
-impl<'a> Resolver<'a> {
+impl Resolver<'_> {
     fn with_child<F>(&self, kind: ScopeKind, op: F)
     where
         F: for<'aa> FnOnce(&mut Resolver<'aa>),
@@ -317,7 +315,6 @@ macro_rules! track_ident_mut {
         fn visit_mut_class(&mut self, c: &mut Class) {
             let old = self.ident_type;
             self.ident_type = IdentType::Ref;
-            c.decorators.visit_mut_with(self);
 
             self.ident_type = IdentType::Ref;
             if let Some(extends) = &mut c.extends {
@@ -340,7 +337,7 @@ macro_rules! track_ident_mut {
     };
 }
 
-impl<'a> VisitMut<'_> for Resolver<'a> {
+impl VisitMut<'_> for Resolver<'_> {
     fn visit_mut_member_expr(&mut self, n: &mut MemberExpr) {
         n.obj.visit_mut_with(self);
         if n.computed {
@@ -390,8 +387,6 @@ impl<'a> VisitMut<'_> for Resolver<'a> {
     fn visit_mut_class_decl(&mut self, n: &mut ClassDecl) {
         self.modify(&mut n.ident);
 
-        n.class.decorators.visit_mut_with(self);
-
         // Create a child scope. The class name is only accessible within the class.
 
         self.with_child(ScopeKind::Fn, |child| {
@@ -416,16 +411,10 @@ impl<'a> VisitMut<'_> for Resolver<'a> {
     fn visit_mut_class_method(&mut self, m: &mut ClassMethod) {
         m.key.visit_mut_with(self);
 
-        for p in m.function.params.iter_mut() {
-            p.decorators.visit_mut_with(self);
-        }
-
         self.with_child(ScopeKind::Fn, |child| m.function.visit_mut_with(child));
     }
 
     fn visit_mut_class_prop(&mut self, p: &mut ClassProp) {
-        p.decorators.visit_mut_with(self);
-
         if let PropName::Computed(key) = &mut p.key {
             let old = self.ident_type;
             self.ident_type = IdentType::Binding;
@@ -492,14 +481,10 @@ impl<'a> VisitMut<'_> for Resolver<'a> {
     fn visit_mut_fn_decl(&mut self, node: &mut FnDecl) {
         // We don't fold this as Hoister handles this.
 
-        node.function.decorators.visit_mut_with(self);
-
         self.with_child(ScopeKind::Fn, |child| node.function.visit_mut_with(child));
     }
 
     fn visit_mut_fn_expr(&mut self, e: &mut FnExpr) {
-        e.function.decorators.visit_mut_with(self);
-
         self.with_child(ScopeKind::Fn, |child| {
             if let Some(ident) = &mut e.ident {
                 child.modify(ident)
@@ -541,7 +526,6 @@ impl<'a> VisitMut<'_> for Resolver<'a> {
 
     fn visit_mut_function(&mut self, f: &mut Function) {
         self.ident_type = IdentType::Ref;
-        f.decorators.visit_mut_with(self);
 
         self.ident_type = IdentType::Binding;
         f.params.visit_mut_with(self);
@@ -753,12 +737,6 @@ impl Hoister<'_, '_> {
 impl VisitMut<'_> for Hoister<'_, '_> {
     #[inline]
     fn visit_mut_arrow_expr(&mut self, _: &mut ArrowExpr) {}
-
-    fn visit_mut_assign_pat_prop(&mut self, node: &mut AssignPatProp) {
-        node.visit_mut_children_with(self);
-
-        self.add_pat_id(&mut node.key);
-    }
 
     fn visit_mut_block_stmt(&mut self, n: &mut BlockStmt) {
         let old_in_block = self.in_block;
@@ -1091,7 +1069,7 @@ where
     found
 }
 
-impl<'a> Visit<'_> for DestructuringFinder<'a> {
+impl Visit<'_> for DestructuringFinder<'_> {
     /// No-op (we don't care about expressions)
     fn visit_expr(&mut self, _: &Expr) {}
 

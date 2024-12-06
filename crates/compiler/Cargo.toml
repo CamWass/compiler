@@ -8,24 +8,24 @@ edition = "2018"
 [dependencies]
 arrayvec = { workspace = true }
 indexmap = { workspace = true }
-lexical = { workspace = true, features = ["power-of-two", "format"]}
+lexical = { workspace = true, features = ["power-of-two", "format"] }
 petgraph = { workspace = true }
 priority-queue = { workspace = true }
 rustc-hash = { workspace = true }
-serde = { workspace = true, features = ["derive"]}
+serde = { workspace = true, features = ["derive"] }
 
-ast = {path = "../ast"}
-atoms = {path = "../atoms"}
-ecma_visit = {path = "../visit"}
-global_common = {path = "../common"}
-index = {path = "../index"}
+ast = { path = "../ast" }
+atoms = { path = "../atoms" }
+ecma_visit = { path = "../visit" }
+global_common = { path = "../common" }
+index = { path = "../index" }
 
 [dev-dependencies]
 criterion = { workspace = true }
 
-testing = {path = "../../testing"}
-parser = {path = "../parser"}
-codegen = {path = "../codegen"}
+testing = { path = "../../testing" }
+parser = { path = "../parser" }
+codegen = { path = "../codegen" }
 
 [[bench]]
 name = "bench_main"

@@ -738,7 +738,6 @@ impl GraphVisitor<'_> {
                                 unreachable!("checked above")
                             }
 
-                            Prop::Shorthand(_) => unreachable!("normalised away"),
                             Prop::Assign(_) => unreachable!("invalid for obj lit"),
                         }
                     }
@@ -773,20 +772,20 @@ impl GraphVisitor<'_> {
                     UnaryOp::Bang | UnaryOp::Delete => {
                         ret!(vec![PointerId::BOOL])
                     }
-                    // Output type depends in input type.
+                    // Output type depends in input type, but is always Number or BigInt.
                     UnaryOp::Minus | UnaryOp::Tilde => {
-                        ret!(vec![PointerId::UNKNOWN])
+                        ret!(vec![PointerId::NUM, PointerId::BIG_INT])
                     }
                 }
             }
             Expr::Update(n) => {
                 n.visit_children_with(self);
-                ret!(vec![PointerId::UNKNOWN])
+                // Output type depends in input type, but is always Number or BigInt.
+                ret!(vec![PointerId::NUM, PointerId::BIG_INT])
             }
             Expr::Bin(n) => {
                 match n.op {
                     BinaryOp::LogicalOr | BinaryOp::LogicalAnd | BinaryOp::NullishCoalescing => {
-                        // TODO: if LHS is object, then we know if RHS will execute.
                         let mut left = self.get_rhs(&n.left, used);
                         let mut right = self.get_rhs(&n.right, used);
                         left.append(&mut right);
@@ -923,7 +922,7 @@ impl GraphVisitor<'_> {
                             continue;
                         }
                         for (i, arg_values) in args.iter().enumerate() {
-                            let index = i.try_into().expect("< u32::MAX params");
+                            let index = i.try_into().expect("< u16::MAX params");
                             let arg_pointer =
                                 self.store.pointers.insert(Pointer::Arg(callee, index));
                             for value in arg_values {
@@ -1011,9 +1010,9 @@ impl GraphVisitor<'_> {
                 ret!(vec![PointerId::UNKNOWN])
             }
             Expr::Arrow(n) => {
-                n.params.visit_with(self);
                 let old = self.cur_fn;
                 self.cur_fn = Some(n.node_id);
+                n.params.visit_with(self);
                 n.body.visit_with(self);
                 self.cur_fn = old;
                 ret!(vec![self
@@ -1035,10 +1034,10 @@ impl GraphVisitor<'_> {
                 ret!(vec![PointerId::UNKNOWN])
             }
             Expr::Await(n) => {
-                n.visit_children_with(self);
+                let value = self.get_rhs(&n.arg, true);
+                self.invalidate(&value);
                 ret!(vec![PointerId::UNKNOWN])
             }
-            Expr::Paren(n) => self.get_rhs(&n.expr, used),
             Expr::PrivateName(_) => todo!(),
             Expr::OptChain(opt_chain) => match opt_chain.expr.as_ref() {
                 Expr::Member(_) | Expr::Call(_) => {
@@ -1120,7 +1119,7 @@ impl GraphVisitor<'_> {
                     ObjectPatProp::KeyValue(p) => {
                         !is_simple_prop_name(&p.key, self.store.unresolved_ctxt)
                     }
-                    ObjectPatProp::Assign(_) | ObjectPatProp::Rest(_) => false,
+                    ObjectPatProp::Rest(_) => false,
                 });
                 if has_complex_props {
                     self.invalidate(rhs);
@@ -1159,9 +1158,6 @@ impl GraphVisitor<'_> {
                                     self.visit_destructuring(&prop.value, &new_rhs);
                                 }
                             }
-                        }
-                        ObjectPatProp::Assign(_) => {
-                            unreachable!("removed by normalization");
                         }
                         ObjectPatProp::Rest(rest) => {
                             debug_assert!(lhs.props.last().unwrap() == prop);
@@ -1203,7 +1199,6 @@ impl GraphVisitor<'_> {
             Pat::Rest(lhs) => {
                 self.invalidate(rhs);
                 let rhs = &[PointerId::UNKNOWN];
-                // TODO: lhs.arg should only be an identifier?
                 self.visit_destructuring(&lhs.arg, rhs);
             }
             Pat::Assign(lhs) => {
@@ -1444,19 +1439,20 @@ impl Visit<'_> for GraphVisitor<'_> {
         }
     }
 
+    // TODO: we don't yet handle getters/setters
+
     fn visit_function(&mut self, n: &Function) {
-        n.params.visit_with(self);
-        n.decorators.visit_with(self);
         let old = self.cur_fn;
         self.cur_fn = Some(n.node_id);
+        n.params.visit_with(self);
         n.body.visit_with(self);
         self.cur_fn = old;
     }
 
     fn visit_arrow_expr(&mut self, n: &ArrowExpr) {
-        n.params.visit_with(self);
         let old = self.cur_fn;
         self.cur_fn = Some(n.node_id);
+        n.params.visit_with(self);
         n.body.visit_with(self);
         self.cur_fn = old;
     }
@@ -1476,6 +1472,16 @@ impl Visit<'_> for GraphVisitor<'_> {
     fn visit_module_decl(&mut self, _: &ModuleDecl) {
         todo!();
     }
+
+    fn visit_params(&mut self, params: &[Param]) {
+        let cur_fn = self.cur_fn.unwrap();
+        let cur_fn = self.store.pointers.insert(Pointer::Fn(cur_fn));
+        for (i, param) in params.iter().enumerate() {
+            let index = i.try_into().expect("< u16::MAX params");
+            let rhs = self.store.pointers.insert(Pointer::Arg(cur_fn, index));
+            self.visit_destructuring(&param.pat, &[rhs]);
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -1492,7 +1498,7 @@ enum Pointer {
     BigInt,
     Regex,
     ReturnValue(PointerId),
-    Arg(PointerId, u32),
+    Arg(PointerId, u16),
 }
 
 impl Pointer {
@@ -1526,13 +1532,12 @@ enum Slot {
 
 #[derive(Debug, Clone, Copy)]
 struct StaticFunctionData {
-    var_start: u32,
-    param_count: u16,
+    tracked_param_count: u16,
 }
 
 impl StaticFunctionData {
-    fn param_indices(self) -> impl Iterator<Item = VarId> {
-        VarId::from_u32(self.var_start)..VarId::from_u32(self.var_start + self.param_count as u32)
+    fn is_valid_arg_index(&self, arg_index: u16) -> bool {
+        arg_index < self.tracked_param_count
     }
 }
 
@@ -1625,7 +1630,7 @@ impl DeclFinder<'_> {
     }
 }
 
-impl<'ast> Visit<'ast> for DeclFinder<'_> {
+impl Visit<'_> for DeclFinder<'_> {
     // Don't visit nested functions.
     fn visit_function(&mut self, _node: &Function) {}
     fn visit_constructor(&mut self, _node: &Constructor) {}
@@ -1645,12 +1650,6 @@ impl<'ast> Visit<'ast> for DeclFinder<'_> {
     fn visit_binding_ident(&mut self, node: &BindingIdent) {
         self.record_var(&node.id);
     }
-
-    // The key of AssignPatProp is LHS but is an Ident, so won't be caught by
-    // the BindingIdent visitor above.
-    fn visit_assign_pat_prop(&mut self, p: &AssignPatProp) {
-        self.record_var(&p.key);
-    }
 }
 
 struct FnVisitor<'s> {
@@ -1660,10 +1659,10 @@ struct FnVisitor<'s> {
     params_to_invalidate: &'s mut Vec<VarId>,
 }
 
-impl<'ast> FnVisitor<'_> {
-    fn handle_fn<T>(&mut self, node: &'ast T, fn_expr_name: Option<&'ast Ident>)
+impl FnVisitor<'_> {
+    fn handle_fn<T>(&mut self, node: &T, fn_expr_name: Option<&Ident>)
     where
-        T: FunctionLike<'ast> + GetNodeId,
+        T: FunctionLike + GetNodeId,
     {
         let var_start = self.store.vars.len().try_into().unwrap();
 
@@ -1673,16 +1672,15 @@ impl<'ast> FnVisitor<'_> {
             var_start: VarId::from_u32(var_start),
         };
 
+        let mut has_rest = false;
         for param in node.params() {
-            if let Pat::Ident(param) = param {
-                v.record_var(&param.id);
-            } else {
-                todo!("non-ident param");
+            v.visit_pat(param);
+            if matches!(param, Pat::Rest(_)) {
+                has_rest = true;
             }
         }
 
-        let param_count = v.vars.len() - var_start as usize;
-        let param_count: u16 = param_count.try_into().expect("> u16::MAX params");
+        let param_binding_count = v.vars.len() - var_start as usize;
 
         // FnExpr's name is local to it. Although the name comes before the
         // params, we record it afterwards to simplify tracking of where
@@ -1693,9 +1691,14 @@ impl<'ast> FnVisitor<'_> {
 
         node.visit_body_with(&mut v);
 
+        let tracked_param_count = if has_rest {
+            node.param_count() - 1
+        } else {
+            node.param_count()
+        };
+
         let static_data = StaticFunctionData {
-            var_start,
-            param_count,
+            tracked_param_count: tracked_param_count.try_into().expect("> u16::MAX params"),
         };
 
         let node_id = node.node_id();
@@ -1707,12 +1710,20 @@ impl<'ast> FnVisitor<'_> {
         let old_accesses_arguments_array = self.accesses_arguments_array;
         self.accesses_arguments_array = false;
 
+        for param in node.params() {
+            self.visit_pat(param);
+        }
         node.visit_body_with(self);
 
         if self.accesses_arguments_array {
             // Invalidate parameters for functions that access the arguments array.
+            self.params_to_invalidate.extend(
+                VarId::from_u32(var_start)..VarId::from_u32(var_start + param_binding_count as u32),
+            );
+        } else if has_rest {
+            // Invalidate the rest binding.
             self.params_to_invalidate
-                .extend(static_data.param_indices());
+                .push(VarId::from_u32(var_start + param_binding_count as u32 - 1));
         }
 
         self.accesses_arguments_array = old_accesses_arguments_array;
@@ -1738,7 +1749,7 @@ impl<'ast> Visit<'ast> for FnVisitor<'_> {
         self.handle_fn(&node.function, None);
     }
     fn visit_fn_expr(&mut self, node: &'ast FnExpr) {
-        self.handle_fn(&node.function, node.ident.as_ref());
+        self.handle_fn(node.function.as_ref(), node.ident.as_ref());
     }
     fn visit_function(&mut self, node: &'ast Function) {
         self.handle_fn(node, None);

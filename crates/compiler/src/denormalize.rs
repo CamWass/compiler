@@ -4,7 +4,7 @@ use global_common::util::take::Take;
 
 use crate::utils::unwrap_as;
 
-// TODO: feature parity with closure
+// TODO: move logic into codegen
 
 pub fn denormalize(ast: &mut Program) {
     {
@@ -33,7 +33,7 @@ impl VisitMut<'_> for Denormalize {
         if let Expr::Bin(assign_rhs) = node.right.as_ref() {
             if let Expr::Ident(bin_lhs) = assign_rhs.left.as_ref() {
                 if assign_lhs.sym == bin_lhs.sym {
-                    // We have somthing of the form `lhs = lhs X foo` where `X`
+                    // We have something of the form `lhs = lhs X foo` where `X`
                     // is a bin op and `foo` is some expr.
                     let new_assign_op = match assign_rhs.op {
                         BinaryOp::Add => AssignOp::AddAssign,

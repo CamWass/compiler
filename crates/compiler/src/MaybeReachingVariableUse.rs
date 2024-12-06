@@ -25,10 +25,10 @@ pub struct MaybeReachingResult<'ast> {
     pub scope_variables: FxHashMap<Id, VarId>,
     pub ordered_vars: IndexVec<VarId, Id>,
     pub lattice_elements: IndexVec<LatticeElementId, ReachingUses>,
-    pub cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
+    pub cfg: ControlFlowGraph<Node<'ast>, LinearFlowState>,
 }
 
-impl<'ast> MaybeReachingResult<'ast> {
+impl MaybeReachingResult<'_> {
     /**
      * Gets a list of nodes that may be using the value assigned to {@code name} in {@code defNode}.
      * {@code defNode} must be one of the control flow graph nodes.
@@ -41,13 +41,6 @@ impl<'ast> MaybeReachingResult<'ast> {
     pub fn get_uses(&self, name: &Id, def_node: Node) -> Option<&Vec<NodeId>> {
         if let Some(var) = self.scope_variables.get(name) {
             let ann = self.cfg.node_annotations.get(&def_node).unwrap();
-            dbg!(
-                name,
-                var,
-                def_node,
-                ann,
-                self.lattice_elements[ann.out].may_use_map.get(*var)
-            );
             self.lattice_elements[ann.out].may_use_map.get(*var)
         } else {
             None
@@ -57,7 +50,7 @@ impl<'ast> MaybeReachingResult<'ast> {
 
 pub struct MaybeReachingVariableUse<'ast, 'a, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     data_flow_analysis:
         DataFlowAnalysis<'a, Node<'ast>, Inner<'ast, 'a, T>, ReachingUses, ReachingUsesJoinOp>,
@@ -65,10 +58,10 @@ where
 
 impl<'ast, 'a, T> MaybeReachingVariableUse<'ast, 'a, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     pub fn new(
-        cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
+        cfg: ControlFlowGraph<Node<'ast>, LinearFlowState>,
         node_priorities: &'a [NodePriority],
         fn_scope: &'a T,
         all_vars_declared_in_function: AllVarsDeclaredInFunction,
@@ -108,7 +101,7 @@ where
 
 struct Inner<'ast, 'a, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     num_vars: usize,
     fn_scope: &'a T,
@@ -124,12 +117,12 @@ where
     fn_and_class_names: FxHashSet<VarId>,
 
     lattice_elements: IndexVec<LatticeElementId, ReachingUses>,
-    cfg: ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId>,
+    cfg: ControlFlowGraph<Node<'ast>, LinearFlowState>,
 }
 
 impl<'ast, 'a, T> Inner<'ast, 'a, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     fn has_exception_handler(&self, cfg_node: Node<'ast>) -> bool {
         self.cfg
@@ -171,7 +164,6 @@ where
      */
     fn add_to_use_if_local(&mut self, name: &Ident, node: Node<'ast>, usage: &mut ReachingUses) {
         let id = name.to_id();
-        dbg!(name, self.scope_variables.get(&id));
         if let Some(var) = self.scope_variables.get(&id) {
             if !self.escaped.contains(&id) {
                 usage.may_use_map.put(*var, node.node_id);
@@ -195,7 +187,7 @@ where
 
 struct ReachingUseFinder<'ast, 'a, 'b, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     output: &'b mut ReachingUses,
     conditional: bool,
@@ -205,9 +197,9 @@ where
     in_destructuring: bool,
 }
 
-impl<'a, 'b, 'ast, T> Visit<'_> for ReachingUseFinder<'ast, 'a, 'b, T>
+impl<'a, T> Visit<'_> for ReachingUseFinder<'_, 'a, '_, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     // Don't enter any new control nodes. They will be handled by later.
     fn visit_block_stmt(&mut self, _: &BlockStmt) {}
@@ -226,23 +218,12 @@ where
     fn visit_ident(&mut self, node: &Ident) {
         if self.in_lhs && self.in_destructuring {
             if !self.conditional {
-                println!("c");
                 self.analysis.remove_from_use_if_local(node, self.output);
             }
         } else {
             self.analysis
                 .add_to_use_if_local(node, self.cfg_node, self.output);
         }
-    }
-    // The key of AssignPatProp is LHS but is an Ident, so won't be caught by
-    // the BindingIdent visitor above.
-    fn visit_assign_pat_prop(&mut self, node: &AssignPatProp) {
-        let old = self.in_lhs;
-        self.in_lhs = false;
-        node.value.visit_with(self);
-        self.in_lhs = true;
-        node.key.visit_with(self);
-        self.in_lhs = old;
     }
 
     // TODO: these can be removed
@@ -410,7 +391,6 @@ where
     }
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
-        dbg!(node);
         let lhs_ident = match &node.left {
             PatOrExpr::Expr(n) => match n.as_ref() {
                 Expr::Ident(n) => Some(n),
@@ -436,14 +416,12 @@ where
 
         if let Some(lhs_ident) = lhs_ident {
             if !is_logical_assign && !self.conditional {
-                println!("a");
                 self.analysis
                     .remove_from_use_if_local(lhs_ident, self.output);
             }
 
             // In case of a += "Hello". There is a read of a.
             if !is_assign {
-                println!("b");
                 self.analysis
                     .add_to_use_if_local(lhs_ident, self.cfg_node, self.output);
             }
@@ -506,10 +484,6 @@ where
 
     fn visit_constructor(&mut self, node: &Constructor) {
         todo!(stringify!(Constructor));
-    }
-
-    fn visit_decorator(&mut self, node: &Decorator) {
-        unimplemented!("Decorators not supported");
     }
 
     fn visit_fn_decl(&mut self, node: &FnDecl) {
@@ -616,10 +590,6 @@ where
         todo!(stringify!(TplElement));
     }
 
-    // fn visit_paren_expr(&mut self, node: &ParenExpr) {
-    //     todo!(stringify!(ParenExpr));
-    // }
-
     // fn visit_super(&mut self, node: &Super) {
     //     todo!(stringify!(Super));
     // }
@@ -632,12 +602,6 @@ where
     }
 
     fn visit_param(&mut self, node: &Param) {
-        self.in_lhs = true;
-        node.pat.visit_with(self);
-        self.in_lhs = false;
-    }
-
-    fn visit_param_without_decorators(&mut self, node: &ParamWithoutDecorators) {
         self.in_lhs = true;
         node.pat.visit_with(self);
         self.in_lhs = false;
@@ -874,7 +838,7 @@ where
 impl<'ast, 'a, T> DataFlowAnalysisInner<Node<'ast>, ReachingUses, ReachingUsesJoinOp>
     for Inner<'ast, 'a, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     fn add_lattice_element(&mut self, element: ReachingUses) -> LatticeElementId {
         self.lattice_elements.push(element)
@@ -917,7 +881,6 @@ where
         self.compute_may_use(node, node, &mut output, conditional);
 
         if output != self.lattice_elements[input] {
-            // dbg!(&self.lattice_elements[input], &output);
             self.add_lattice_element(output)
         } else {
             // No changes compared to input.
@@ -925,17 +888,17 @@ where
         }
     }
 
-    fn cfg(&self) -> &ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId> {
+    fn cfg(&self) -> &ControlFlowGraph<Node<'ast>, LinearFlowState> {
         &self.cfg
     }
-    fn cfg_mut(&mut self) -> &mut ControlFlowGraph<Node<'ast>, LinearFlowState, LatticeElementId> {
+    fn cfg_mut(&mut self) -> &mut ControlFlowGraph<Node<'ast>, LinearFlowState> {
         &mut self.cfg
     }
 }
 
-impl<'ast, 'a, T> Index<LatticeElementId> for Inner<'ast, 'a, T>
+impl<'a, T> Index<LatticeElementId> for Inner<'_, 'a, T>
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     type Output = ReachingUses;
 
@@ -1013,7 +976,7 @@ struct ReachingUsesJoinOp {
 
 impl<'ast, 'a, T> FlowJoiner<ReachingUses, Inner<'ast, 'a, T>> for ReachingUsesJoinOp
 where
-    T: FunctionLike<'a>,
+    T: FunctionLike,
 {
     fn join_flow(&mut self, inner: &mut Inner<'ast, 'a, T>, input: LatticeElementId) {
         for (k, v) in inner.lattice_elements[input].may_use_map.iter() {

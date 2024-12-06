@@ -23,11 +23,9 @@ pub use self::{
 pub use global_visit::chain;
 
 pub mod chars;
-pub mod comments;
 pub mod errors;
 pub mod integer_decode;
 pub mod iter;
-pub mod macros;
 pub mod pass;
 mod rustc_data_structures;
 mod source_map;

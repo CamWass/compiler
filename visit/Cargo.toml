@@ -9,4 +9,4 @@ version = "0.1.0"
 [dependencies]
 either = { workspace = true }
 
-visit_macros = {path = "./macros"}
+visit_macros = { path = "./macros" }

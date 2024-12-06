@@ -2,7 +2,7 @@
 use std::time::Duration;
 
 use compiler::resolver::resolver;
-use criterion::{black_box, criterion_group, Criterion, Throughput};
+use criterion::{black_box, Criterion, Throughput};
 use ecma_visit::VisitMutWith;
 use global_common::{
     errors::{ColorConfig, Handler},
@@ -15,7 +15,7 @@ use parser::{Parser, Syntax};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-fn bench(c: &mut Criterion) {
+pub fn bench(c: &mut Criterion) {
     let benches: &'static [(&'static str, &'static str, u64, usize)] = &[
         (
             "small_typescript",
@@ -62,11 +62,7 @@ fn bench(c: &mut Criterion) {
                 res.unwrap()
             };
 
-            let mut program_data = Rc::try_unwrap(program_data).unwrap().into_inner();
-
             program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark));
-
-            compiler::normalize_properties::normalize_properties(&mut program, &mut program_data);
 
             let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 
@@ -82,5 +78,3 @@ fn bench(c: &mut Criterion) {
     }
     group.finish();
 }
-
-criterion_group!(benches, bench);

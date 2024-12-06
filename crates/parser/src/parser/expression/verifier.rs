@@ -3,19 +3,17 @@ use ecma_visit::{Visit, VisitWith};
 use global_common::Span;
 
 impl<I: Tokens> Parser<I> {
-    pub(in crate::parser) fn verify_expr(&mut self, expr: Box<Expr>) -> Box<Expr> {
+    pub(in crate::parser) fn verify_expr(&mut self, expr: &Expr) {
         let mut v = Verifier {
             errors: vec![],
             parser: self,
         };
 
-        v.visit_expr(&expr);
+        v.visit_expr(expr);
 
         for (span, error) in v.errors {
             self.emit_err(span, error);
         }
-
-        expr
     }
 }
 
