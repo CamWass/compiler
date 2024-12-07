@@ -28,8 +28,6 @@ pub struct Graph {
 
     pub graph: GraphType,
     graph_map: Vec<NodeIndex>,
-
-    invalidation_queue: Vec<NodeIndex>,
 }
 
 /// Returns true if the given node has no out edges.
@@ -84,7 +82,6 @@ fn invalidate(
 
     pointer: PointerId,
     store: &mut Store,
-    queue: &mut Vec<NodeIndex>,
 
     force_visit_neighbours: bool,
 ) -> bool {
@@ -100,9 +97,7 @@ fn invalidate(
         return false;
     }
 
-    debug_assert!(queue.is_empty());
-    queue.clear();
-    queue.push(node);
+    let mut queue = vec![node];
 
     let mut changed = false;
 
@@ -217,8 +212,6 @@ fn record_computed_access(
             graph_map,
             edges,
             subset_edges,
-            &mut Vec::new(),
-            &mut Vec::new(),
             pointer,
             node,
             store,
@@ -241,10 +234,6 @@ fn merge_prop_accesses(
     edges: &mut FxHashSet<Edge>,
     subset_edges: &mut FxHashSet<(NodeIndex, NodeIndex)>,
 
-    invalidation_queue: &mut Vec<NodeIndex>,
-
-    prop_merge_queue: &mut Vec<RepId>,
-
     pointer: PointerId,
     node: NodeIndex,
     store: &mut Store,
@@ -262,7 +251,7 @@ fn merge_prop_accesses(
         return None;
     }
 
-    prop_merge_queue.clear();
+    let mut to_merge = Vec::new();
 
     let dest = store.pointers.insert(Pointer::Prop(pointer, NameId::MAX));
     let mut rep = RepId(nodes.find_mut(dest));
@@ -292,10 +281,10 @@ fn merge_prop_accesses(
             // rep is still the representative
             src = prop_pointer;
         }
-        prop_merge_queue.push(src);
+        to_merge.push(src);
     }
 
-    if prop_merge_queue.is_empty() {
+    if to_merge.is_empty() {
         return None;
     }
 
@@ -306,11 +295,10 @@ fn merge_prop_accesses(
         graph_map,
         edges,
         subset_edges,
-        invalidation_queue,
         rep,
         invalid,
         accessed_dynamically,
-        prop_merge_queue,
+        &to_merge,
         store,
     );
 
@@ -330,8 +318,6 @@ fn merge_nodes(
 
     edges: &mut FxHashSet<Edge>,
     subset_edges: &mut FxHashSet<(NodeIndex, NodeIndex)>,
-
-    invalidation_queue: &mut Vec<NodeIndex>,
 
     rep: RepId,
     invalid: bool,
@@ -430,16 +416,7 @@ fn merge_nodes(
     }
 
     if invalid {
-        invalidate(
-            points_to,
-            nodes,
-            graph,
-            graph_map,
-            rep.0,
-            store,
-            invalidation_queue,
-            true,
-        );
+        invalidate(points_to, nodes, graph, graph_map, rep.0, store, true);
     }
 
     if accessed_dynamically {
@@ -586,7 +563,6 @@ impl Graph {
             &mut self.graph_map,
             pointer,
             store,
-            &mut self.invalidation_queue,
             force_visit_neighbours,
         )
     }
@@ -617,29 +593,27 @@ impl Graph {
         pointer: PointerId,
         node: NodeIndex,
         store: &mut Store,
-        props: &mut Vec<NodeIndex>,
-        prop_merge_queue: &mut Vec<RepId>,
     ) -> Option<(RepId, NodeIndex)> {
-        props.clear();
-        props.extend(
+        let mut queue = Vec::new();
+        queue.extend(
             self.graph
                 .edges_directed(node, Outgoing)
                 .filter(|e| matches!(e.weight(), GraphEdge::Prop(_)))
                 .map(|e| e.target()),
         );
 
-        if !props.is_empty() {
+        if !queue.is_empty() {
             return None;
         }
 
-        prop_merge_queue.clear();
+        let mut to_merge = Vec::new();
 
         let dest = store.pointers.insert(Pointer::Prop(pointer, NameId::MAX));
         let mut rep = self.get_graph_node_id(dest);
         let mut invalid = store.invalid_pointers.contains(rep.0);
         let mut accessed_dynamically = store.accessed_dynamically.contains(rep.0);
-        for prop_node in props {
-            let prop_pointer = self.graph[*prop_node];
+        for prop_node in queue {
+            let prop_pointer = self.graph[prop_node];
             let prop_pointer = self.get_graph_node_id(prop_pointer);
 
             if prop_pointer.0 == rep.0 {
@@ -662,15 +636,15 @@ impl Graph {
                 // rep is still the representative
                 src = prop_pointer;
             }
-            prop_merge_queue.push(src);
+            to_merge.push(src);
         }
 
-        if prop_merge_queue.is_empty() {
+        if to_merge.is_empty() {
             return None;
         }
 
         let (changed, rep, rep_node) =
-            self.merge_nodes(rep, invalid, accessed_dynamically, &prop_merge_queue, store);
+            self.merge_nodes(rep, invalid, accessed_dynamically, &to_merge, store);
 
         if changed {
             Some((rep, rep_node))
@@ -694,7 +668,6 @@ impl Graph {
             &mut self.graph_map,
             &mut self.edges,
             &mut self.subset_edges,
-            &mut self.invalidation_queue,
             rep,
             invalid,
             accessed_dynamically,
@@ -730,9 +703,9 @@ impl Graph {
 
         // todo!();
 
-        let mut prop_merge_queue = Vec::new();
-
         {
+            let mut to_merge = Vec::new();
+
             let mut tarjan = TarjanSubsetScc::new();
 
             let self_points_to = &mut self.points_to;
@@ -740,13 +713,12 @@ impl Graph {
             let self_nodes = &mut self.nodes;
             let self_edges = &mut self.edges;
             let self_subset_edges = &mut self.subset_edges;
-            let self_invalidation_queue = &mut self.invalidation_queue;
 
             tarjan.run(&mut self.graph, |scc, g| {
                 if scc.len() > 1 {
                     debug_assert!(scc.iter().all(|n| !store.is_concrete(g[*n])));
 
-                    prop_merge_queue.clear();
+                    to_merge.clear();
 
                     let mut rep = RepId(self_nodes.find_mut(g[scc[0]]));
                     let mut invalid = store.invalid_pointers.contains(rep.0);
@@ -771,7 +743,7 @@ impl Graph {
                             // rep is still the representative
                             src = pointer;
                         }
-                        prop_merge_queue.push(src);
+                        to_merge.push(src);
                     }
 
                     let (_, rep, _) = merge_nodes(
@@ -781,11 +753,10 @@ impl Graph {
                         self_graph_map,
                         self_edges,
                         self_subset_edges,
-                        self_invalidation_queue,
                         rep,
                         invalid,
                         accessed_dynamically,
-                        &prop_merge_queue,
+                        &to_merge,
                         store,
                     );
 
@@ -797,7 +768,6 @@ impl Graph {
                             self_graph_map,
                             rep.0,
                             store,
-                            self_invalidation_queue,
                             true,
                         );
                     }
@@ -844,17 +814,10 @@ impl Graph {
         self.queue.extend(internal_nodes);
         let mut edges = Vec::new();
 
-        let mut prop_merge_buffer = Vec::new();
-
         let mut first = true;
 
         loop {
-            self.flow_edges(
-                store,
-                &mut edges,
-                &mut prop_merge_queue,
-                &mut prop_merge_buffer,
-            );
+            self.flow_edges(store, &mut edges);
             // After we've reached a fixedpoint above, if we couldn't infer the values
             // of a pointer, set them to Unknown and run fixedpoint again to propagate
             // the Unknowns.
@@ -865,13 +828,9 @@ impl Graph {
                     if store.accessed_dynamically.contains(pointer) {
                         let node = self.get_graph_node_id(pointer);
                         if let Some(node) = pointer_to_node(&self.graph_map, node.0) {
-                            if let Some((rep, rep_node)) = self.merge_prop_accesses(
-                                pointer,
-                                node,
-                                store,
-                                &mut prop_merge_buffer,
-                                &mut prop_merge_queue,
-                            ) {
+                            if let Some((rep, rep_node)) =
+                                self.merge_prop_accesses(pointer, node, store)
+                            {
                                 if !is_sink_node(&self.graph, rep_node) {
                                     self.prioritise(rep_node);
                                     self.queue.push(rep.0);
@@ -1001,6 +960,43 @@ impl Graph {
         }
 
         // {
+        //     let mut excess_edges = 0;
+        //     let mut excess_count: FxHashMap<&str, usize> = FxHashMap::default();
+
+        //     for node in self.graph.node_indices() {
+        //         let mut seen_return = false;
+        //         let mut edges = FxHashSet::default();
+        //         for edge in self.graph.edges_directed(node, Outgoing) {
+        //             match edge.weight() {
+        //                 GraphEdge::Subset(_) => {}
+        //                 GraphEdge::Return(_) => {
+        //                     if !seen_return {
+        //                         seen_return = true;
+        //                     } else {
+        //                         excess_edges += 1;
+        //                         *excess_count.entry("Return").or_default() += 1;
+        //                     }
+        //                 }
+        //                 GraphEdge::Prop(_) | GraphEdge::Arg(_) => {
+        //                     if !edges.insert(*edge.weight()) {
+        //                         excess_edges += 1;
+        //                         let key = match edge.weight() {
+        //                             GraphEdge::Subset(_) => "Subset",
+        //                             GraphEdge::Return(_) => "Return",
+        //                             GraphEdge::Prop(_) => "Prop",
+        //                             GraphEdge::Arg(_) => "Arg",
+        //                         };
+        //                         *excess_count.entry(key).or_default() += 1;
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //     }
+
+        //     dbg!(excess_edges, excess_count);
+        // }
+
+        // {
         //     let mut counts: std::collections::BTreeMap<usize, usize> =
         //         std::collections::BTreeMap::default();
         //     for (_, set) in self.points_to.iter() {
@@ -1078,11 +1074,8 @@ impl Graph {
 
         scc: &[NodeIndex],
         store: &mut Store,
-
-        invalidation_queue: &mut Vec<NodeIndex>,
-        prop_merge_queue: &mut Vec<RepId>,
     ) {
-        prop_merge_queue.clear();
+        let mut to_merge = Vec::new();
 
         let mut rep = RepId(nodes.find_mut(graph[scc[0]]));
         let mut invalid = store.invalid_pointers.contains(rep.0);
@@ -1106,7 +1099,7 @@ impl Graph {
                 // rep is still the representative
                 src = pointer;
             }
-            prop_merge_queue.push(src);
+            to_merge.push(src);
         }
 
         let (_, rep, _) = merge_nodes(
@@ -1116,25 +1109,15 @@ impl Graph {
             graph_map,
             edges,
             subset_edges,
-            invalidation_queue,
             rep,
             invalid,
             accessed_dynamically,
-            prop_merge_queue,
+            &to_merge,
             store,
         );
 
         if invalid {
-            invalidate(
-                points_to,
-                nodes,
-                graph,
-                graph_map,
-                rep.0,
-                store,
-                invalidation_queue,
-                true,
-            );
+            invalidate(points_to, nodes, graph, graph_map, rep.0, store, true);
         }
 
         if accessed_dynamically {
@@ -1152,13 +1135,7 @@ impl Graph {
         }
     }
 
-    fn flow_edges(
-        &mut self,
-        store: &mut Store,
-        edges: &mut Vec<(NodeIndex, GraphEdge)>,
-        prop_merge_queue: &mut Vec<RepId>,
-        prop_merge_buffer: &mut Vec<NodeIndex>,
-    ) {
+    fn flow_edges(&mut self, store: &mut Store, edges: &mut Vec<(NodeIndex, GraphEdge)>) {
         let mut iter = 0;
         while let Some(node) = self.queue.pop() {
             // Skip nodes that aren't their representative. The representative should
@@ -1171,7 +1148,7 @@ impl Graph {
             let node = rep.0;
 
             if iter % 100_000 == 0 {
-                println!("Iter: {}, queue size: {}", iter, self.queue.inner.len());
+                // println!("Iter: {}, queue size: {}", iter, self.queue.inner.len());
 
                 // {
                 //     let mut redundant_prop_nodes = 0;
@@ -1237,7 +1214,6 @@ impl Graph {
                     let self_edges = &mut self.edges;
                     let self_subset_edges = &mut self.subset_edges;
                     let self_graph_map = &mut self.graph_map;
-                    let self_invalidation_queue = &mut self.invalidation_queue;
 
                     tarjan.run(&mut self.graph, |scc, g| {
                         if scc.len() > 1 {
@@ -1250,8 +1226,6 @@ impl Graph {
                                 self_graph_map,
                                 scc,
                                 store,
-                                self_invalidation_queue,
-                                prop_merge_queue,
                             );
                         }
                     });
@@ -1346,7 +1320,7 @@ impl Graph {
                             None => continue,
                         };
 
-                        prop_merge_queue.clear();
+                        let mut to_merge = Vec::new();
 
                         // if name == NameId::MAX {
                         //     debug_assert!(concrete_objects.iter().all(|c| !self
@@ -1435,7 +1409,7 @@ impl Graph {
                                 // rep is still the representative
                                 src = prop_pointer;
                             }
-                            prop_merge_queue.push(src);
+                            to_merge.push(src);
                         }
 
                         let mut changed = false;
@@ -1447,7 +1421,7 @@ impl Graph {
                             changed |= self.insert(rep.0, PointerId::NULL_OR_VOID, store);
                         }
 
-                        if prop_merge_queue.is_empty() {
+                        if to_merge.is_empty() {
                             debug_assert_eq!(rep.0, dest.0);
                             if changed {
                                 if !is_sink_node(&self.graph, dest_node) {
@@ -1458,13 +1432,8 @@ impl Graph {
                             continue;
                         }
 
-                        let (ch, rep, rep_node) = self.merge_nodes(
-                            rep,
-                            invalid,
-                            accessed_dynamically,
-                            prop_merge_queue,
-                            store,
-                        );
+                        let (ch, rep, rep_node) =
+                            self.merge_nodes(rep, invalid, accessed_dynamically, &to_merge, store);
 
                         if ch || changed {
                             if !is_sink_node(&self.graph, rep_node) {
