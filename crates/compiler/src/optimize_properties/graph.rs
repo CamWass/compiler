@@ -502,6 +502,17 @@ impl Graph {
     ) {
         let src_node = self.get_node(src);
         let dest_node = self.get_node(dest);
+        if matches!(kind, GraphEdge::Subset(_)) && store.is_concrete(src) {
+            if store.invalid_pointers.contains(dest) {
+                store.invalidate(src);
+            }
+            if store.accessed_dynamically.contains(dest) {
+                self.record_computed_access(src, store, false);
+            }
+            let dest = self.nodes.find_mut(dest);
+            self.points_to.entry(dest).or_default().insert(src);
+            return;
+        }
 
         if matches!(kind, GraphEdge::Subset(_)) {
             debug_assert_ne!(src, dest);
@@ -517,16 +528,24 @@ impl Graph {
         self.add_edge(src_node, dest_node, kind, true);
     }
 
-    fn make_subset_of<T: GetRepId, U: GetRepId>(
-        &mut self,
-        src: T,
-        dest: U,
-        store: &mut Store,
-    ) -> bool {
-        let src = src.get_rep_id(self);
-        let dest = dest.get_rep_id(self);
+    fn make_subset_of(&mut self, src: RepId, dest: RepId, store: &mut Store) -> bool {
         if src.0 == dest.0 {
             return false;
+        }
+
+        if store.is_concrete(src.0) {
+            if store.invalid_pointers.contains(dest.0) {
+                store.invalidate(src.0);
+            }
+            if store.accessed_dynamically.contains(dest.0) {
+                self.record_computed_access(src.0, store, false);
+            }
+
+            return self
+                .points_to
+                .entry(self.nodes.find_mut(dest.0))
+                .or_default()
+                .insert(src.0);
         }
 
         let src_node = self.get_node(src.0);
@@ -1060,6 +1079,19 @@ impl Graph {
                 self.graph.edge_count(),
                 "Graph should not contain duplicate edges"
             );
+
+            // Check that concrete pointers don't have any outgoing subset edges.
+            for p in store.concrete_pointers() {
+                if let Some(node) = pointer_to_node(&self.graph_map, p) {
+                    debug_assert!(self.graph.edges_directed(node, Incoming).count() == 0);
+                    let subset_edges = self
+                        .graph
+                        .edges_directed(node, Outgoing)
+                        .filter(|e| *e.weight() == GraphEdge::Subset(0))
+                        .count();
+                    debug_assert_eq!(subset_edges, 0);
+                }
+            }
         }
     }
 
@@ -1296,14 +1328,17 @@ impl Graph {
                         };
                         let mut changed = false;
                         for callee in &callees {
-                            if !store.is_callable_pointer(callee) && callee != PointerId::UNKNOWN {
+                            if !store.is_callable_pointer(callee) {
+                                continue;
+                            }
+                            if callee == PointerId::UNKNOWN {
+                                if self.make_subset_of(RepId(PointerId::UNKNOWN), dest, store) {
+                                    changed = true;
+                                }
                                 continue;
                             }
                             let return_node = store.pointers.insert(Pointer::ReturnValue(callee));
                             let return_node = self.get_graph_node_id(return_node);
-                            if return_node.0 == dest.0 {
-                                continue;
-                            }
                             if self.make_subset_of(return_node, dest, store) {
                                 changed = true;
                             }
