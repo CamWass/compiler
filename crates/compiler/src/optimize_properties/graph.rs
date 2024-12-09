@@ -28,7 +28,7 @@ pub struct Graph {
     graph: petgraph::Graph<PointerId, GraphEdge, Directed>,
     graph_map: Vec<NodeIndex>,
 
-    invalidation_queue: Vec<NodeIndex>,
+    invalidation_queue: Vec<RepId>,
 }
 
 /// Returns true if the given node has no out edges.
@@ -94,6 +94,14 @@ impl Graph {
         kind: GraphEdge,
         store: &mut Store,
     ) {
+        if matches!(kind, GraphEdge::Subset) && store.is_concrete(src) {
+            if store.invalid_pointers.contains(dest) {
+                store.invalidate(src);
+            }
+            self.points_to.entry(dest).or_default().insert(src);
+            return;
+        }
+
         self.add_edge(src, dest, kind);
 
         if matches!(kind, GraphEdge::Subset) {
@@ -105,16 +113,16 @@ impl Graph {
         }
     }
 
-    fn make_subset_of<T: GetRepId, U: GetRepId>(
-        &mut self,
-        src: T,
-        dest: U,
-        store: &mut Store,
-    ) -> bool {
-        let src = src.get_rep_id(self);
-        let dest = dest.get_rep_id(self);
+    fn make_subset_of(&mut self, src: RepId, dest: RepId, store: &mut Store) -> bool {
         if src.0 == dest.0 {
             return false;
+        }
+
+        if store.is_concrete(src.0) {
+            if store.invalid_pointers.contains(dest.0) {
+                store.invalidate(src.0);
+            }
+            return self.points_to.entry(dest.0).or_default().insert(src.0);
         }
 
         self.prioritise(src);
@@ -132,46 +140,40 @@ impl Graph {
 
     pub fn invalidate(&mut self, pointer: PointerId, store: &mut Store) -> bool {
         let pointer = RepId(self.nodes.find_mut(pointer));
-        let Some(node) = pointer_to_node(&self.graph_map, pointer.0) else {
-            return store.invalidate(pointer.0);
-        };
-
-        if pointer.0.is_built_in() || store.invalid_pointers.contains(pointer.0) {
-            return false;
-        }
 
         debug_assert!(self.invalidation_queue.is_empty());
         self.invalidation_queue.clear();
-        self.invalidation_queue.push(node);
+        self.invalidation_queue.push(pointer);
 
         let mut changed = false;
 
-        while let Some(node) = self.invalidation_queue.pop() {
-            let pointer = self.graph[node];
-            if pointer.is_built_in() || store.invalid_pointers.contains(pointer) {
+        while let Some(pointer) = self.invalidation_queue.pop() {
+            if pointer.0.is_built_in() || store.invalid_pointers.contains(pointer.0) {
                 continue;
             }
 
             changed = true;
-            store.invalidate(pointer);
+            store.invalidate(pointer.0);
 
-            for incoming in self.graph.edges_directed(node, Incoming) {
-                if matches!(incoming.weight(), GraphEdge::Subset) {
-                    let source = incoming.source();
-                    if !self.graph[source].is_built_in()
-                        && !store.invalid_pointers.contains(self.graph[source])
-                    {
-                        self.invalidation_queue.push(source);
+            if let Some(node) = pointer_to_node(&self.graph_map, pointer.0) {
+                for incoming in self.graph.edges_directed(node, Incoming) {
+                    if matches!(incoming.weight(), GraphEdge::Subset) {
+                        let source = incoming.source();
+                        if !self.graph[source].is_built_in()
+                            && !store.invalid_pointers.contains(self.graph[source])
+                        {
+                            let p = RepId(self.nodes.find_mut(self.graph[source]));
+                            self.invalidation_queue.push(p);
+                        }
                     }
                 }
             }
 
-            if let Some(values) = self.points_to.get(&pointer).cloned() {
-                let graph_map = &self.graph_map;
+            if let Some(values) = self.points_to.get(&pointer.0).cloned() {
                 let valid_values = values
                     .iter()
                     .filter(|v| !v.is_built_in() && !store.invalid_pointers.contains(*v))
-                    .map(|v| graph_map[v.index()]);
+                    .map(RepId);
                 self.invalidation_queue.extend(valid_values);
             }
         }
@@ -356,6 +358,19 @@ impl Graph {
                 self.graph.edge_count(),
                 "Graph should not contain duplicate edges"
             );
+
+            // Check that concrete pointers don't have any outgoing subset edges.
+            for p in store.concrete_pointers() {
+                if let Some(node) = pointer_to_node(&self.graph_map, p) {
+                    debug_assert!(self.graph.edges_directed(node, Incoming).count() == 0);
+                    let subset_edges = self
+                        .graph
+                        .edges_directed(node, Outgoing)
+                        .filter(|e| *e.weight() == GraphEdge::Subset)
+                        .count();
+                    debug_assert_eq!(subset_edges, 0);
+                }
+            }
         }
     }
 
@@ -408,16 +423,13 @@ impl Graph {
                                 continue;
                             }
                             if callee == PointerId::UNKNOWN {
-                                if self.make_subset_of(PointerId::UNKNOWN, dest, store) {
+                                if self.make_subset_of(RepId(PointerId::UNKNOWN), dest, store) {
                                     changed = true;
                                 }
                                 continue;
                             }
                             let return_node = store.pointers.insert(Pointer::ReturnValue(callee));
                             let return_node = self.get_graph_node_id(return_node);
-                            if return_node.0 == dest.0 {
-                                continue;
-                            }
                             if self.make_subset_of(return_node, dest, store) {
                                 changed = true;
                             }
