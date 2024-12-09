@@ -453,11 +453,11 @@ impl Graph {
                         let mut invalid = store.invalid_pointers.contains(dest.0);
                         for concrete_object in &concrete_objects {
                             if concrete_object == PointerId::UNKNOWN {
-                                changed |= self.insert(rep.0, PointerId::UNKNOWN, store);
+                                changed |= self.insert(rep, PointerId::UNKNOWN, store);
                                 continue;
                             }
                             if concrete_object == PointerId::NULL_OR_VOID {
-                                changed |= self.insert(rep.0, PointerId::NULL_OR_VOID, store);
+                                changed |= self.insert(rep, PointerId::NULL_OR_VOID, store);
                                 continue;
                             }
                             if concrete_object.is_primitive()
@@ -630,17 +630,16 @@ impl Graph {
         }
     }
 
-    fn prioritise<T: GetRepId>(&mut self, pointer: T) {
-        let pointer = pointer.get_rep_id(self).0;
-        if !self.queue.priorities.contains_key(&pointer) {
-            let node = self.get_node(pointer);
+    fn prioritise(&mut self, pointer: RepId) {
+        if !self.queue.priorities.contains_key(&pointer.0) {
+            let node = self.get_node(pointer.0);
             let priority = self
                 .graph
                 .neighbors_directed(node, Incoming)
                 .map(|n| self.queue.priorities[&self.graph[n]])
                 .min()
                 .unwrap_or(u32::MAX);
-            self.queue.priorities.insert(pointer, priority);
+            self.queue.priorities.insert(pointer.0, priority);
         }
     }
 
@@ -648,18 +647,16 @@ impl Graph {
         RepId(self.nodes.find_mut(pointer))
     }
 
-    fn insert<T: GetRepId>(&mut self, pointer: T, value: PointerId, store: &Store) -> bool {
+    fn insert(&mut self, pointer: RepId, value: PointerId, store: &Store) -> bool {
         debug_assert!(store.is_concrete(value));
 
-        let node = pointer.get_rep_id(self).0;
-        debug_assert!(!store.is_concrete(node));
+        debug_assert!(!store.is_concrete(pointer.0));
 
-        self.points_to.entry(node).or_default().insert(value)
+        self.points_to.entry(pointer.0).or_default().insert(value)
     }
 
-    fn points_to_nothing<T: GetRepId>(&mut self, pointer: T) -> bool {
-        let node = pointer.get_rep_id(self).0;
-        !self.points_to.contains_key(&node)
+    fn points_to_nothing(&mut self, pointer: RepId) -> bool {
+        !self.points_to.contains_key(&pointer.0)
     }
 
     fn add_all<T: GetRepId, U: GetRepId>(&mut self, src: T, dest: U, store: &mut Store) -> bool {
