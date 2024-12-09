@@ -411,6 +411,7 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> (Store, Gr
                     debug_assert_ne!(*p, PointerId::STRING);
                     debug_assert_ne!(*p, PointerId::BIG_INT);
                     debug_assert_ne!(*p, PointerId::REGEX);
+                    debug_assert_ne!(*p, PointerId::UNKNOWN);
                 }
 
                 Pointer::Prop(obj, name) => {
@@ -710,7 +711,13 @@ impl GraphVisitor<'_> {
                     }
 
                     for &callee in &callee {
-                        if !self.store.is_callable_pointer(callee) && callee != PointerId::UNKNOWN {
+                        if callee == PointerId::UNKNOWN {
+                            for arg in &args {
+                                self.invalidate(arg);
+                            }
+                            continue;
+                        }
+                        if !self.store.is_callable_pointer(callee) {
                             continue;
                         }
                         for (i, arg_values) in args.iter().enumerate() {
