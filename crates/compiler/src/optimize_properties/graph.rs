@@ -1450,10 +1450,10 @@ impl Graph {
                         let mut changed = false;
 
                         if has_unknown {
-                            changed |= self.insert(rep.0, PointerId::UNKNOWN, store);
+                            changed |= self.insert(rep, PointerId::UNKNOWN, store);
                         }
                         if has_null_or_void {
-                            changed |= self.insert(rep.0, PointerId::NULL_OR_VOID, store);
+                            changed |= self.insert(rep, PointerId::NULL_OR_VOID, store);
                         }
 
                         if to_merge.is_empty() {
@@ -1638,18 +1638,16 @@ impl Graph {
         RepId(self.nodes.find_mut(pointer))
     }
 
-    fn insert<T: GetRepId>(&mut self, pointer: T, value: PointerId, store: &Store) -> bool {
+    fn insert(&mut self, pointer: RepId, value: PointerId, store: &Store) -> bool {
         debug_assert!(store.is_concrete(value));
 
-        let node = pointer.get_rep_id(self).0;
-        debug_assert!(!store.is_concrete(node));
+        debug_assert!(!store.is_concrete(pointer.0));
 
-        self.points_to.entry(node).or_default().insert(value)
+        self.points_to.entry(pointer.0).or_default().insert(value)
     }
 
-    fn points_to_nothing<T: GetRepId>(&mut self, pointer: T) -> bool {
-        let node = pointer.get_rep_id(self).0;
-        !self.points_to.contains_key(&node)
+    fn points_to_nothing(&mut self, pointer: RepId) -> bool {
+        !self.points_to.contains_key(&pointer.0)
     }
 
     fn add_all<T: GetRepId, U: GetRepId>(&mut self, src: T, dest: U, store: &mut Store) -> bool {

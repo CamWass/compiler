@@ -1491,7 +1491,7 @@ impl Visit<'_> for GraphVisitor<'_> {
     }
 }
 
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 enum Pointer {
     Prop(PointerId, NameId),
     Var(VarId),
@@ -2059,7 +2059,7 @@ fn is_simple_prop_name(prop_name: &PropName, unresolved_ctxt: SyntaxContext) -> 
 
 index::newtype_index!(struct NameId { .. });
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct Id(NameId, SyntaxContext);
 
 impl Id {
