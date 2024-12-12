@@ -1,0 +1,1 @@
+dot -Tsvg relo.dot -o relo.svg & start relo.svg
