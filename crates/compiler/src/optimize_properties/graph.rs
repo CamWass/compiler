@@ -787,7 +787,7 @@ impl GetRepId for RepId {
     }
 }
 
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub(super) enum GraphEdge {
     Subset,
     Return,
