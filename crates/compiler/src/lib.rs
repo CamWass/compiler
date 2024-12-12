@@ -202,7 +202,7 @@ fn finalise(
         RenameLabels::process(ast);
     }
 
-    late_peephole_optimisations(ast, passes, program_data, unresolved_ctxt);
+    late_peephole_optimisations(ast, passes, program_data);
     // TODO: latePeepholeOptimizations
     // TODO: optimizeToEs6
 }
@@ -211,7 +211,6 @@ fn late_peephole_optimisations(
     ast: &mut ::ast::Program,
     passes: PassConfig,
     program_data: &mut ::ast::ProgramData,
-    unresolved_ctxt: SyntaxContext,
 ) {
     //     final boolean late = true;
     //     final boolean useTypesForOptimization = options.useTypesForLocalOptimization;

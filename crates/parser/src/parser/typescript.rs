@@ -772,52 +772,52 @@ impl<I: Tokens> Parser<I> {
         Ok(())
     }
 
-    /// `tsParseImportEqualsDeclaration`
-    pub(super) fn parse_ts_import_equals_decl(&mut self) -> PResult<()> {
-        debug_assert!(self.syntax().typescript());
+    // /// `tsParseImportEqualsDeclaration`
+    // pub(super) fn parse_ts_import_equals_decl(&mut self) -> PResult<()> {
+    //     debug_assert!(self.syntax().typescript());
 
-        // Identifier:
-        self.parse_ident_name()?;
-        expect!(self, '=');
+    //     // Identifier:
+    //     self.parse_ident_name()?;
+    //     expect!(self, '=');
 
-        // Module reference:
-        self.parse_ts_module_ref()?;
-        expect!(self, ';');
-        Ok(())
-    }
+    //     // Module reference:
+    //     self.parse_ts_module_ref()?;
+    //     expect!(self, ';');
+    //     Ok(())
+    // }
 
-    /// `tsIsExternalModuleReference`
-    fn is_ts_external_module_ref(&mut self) -> PResult<bool> {
-        debug_assert!(self.syntax().typescript());
+    // /// `tsIsExternalModuleReference`
+    // fn is_ts_external_module_ref(&mut self) -> PResult<bool> {
+    //     debug_assert!(self.syntax().typescript());
 
-        Ok(is!(self, "require") && peeked_is!(self, '('))
-    }
+    //     Ok(is!(self, "require") && peeked_is!(self, '('))
+    // }
 
-    /// `tsParseModuleReference`
-    fn parse_ts_module_ref(&mut self) -> PResult<()> {
-        debug_assert!(self.syntax().typescript());
+    // /// `tsParseModuleReference`
+    // fn parse_ts_module_ref(&mut self) -> PResult<()> {
+    //     debug_assert!(self.syntax().typescript());
 
-        if self.is_ts_external_module_ref()? {
-            self.parse_ts_external_module_ref().map(From::from)
-        } else {
-            self.parse_ts_entity_name(false).map(From::from)
-        }
-    }
+    //     if self.is_ts_external_module_ref()? {
+    //         self.parse_ts_external_module_ref().map(From::from)
+    //     } else {
+    //         self.parse_ts_entity_name(false).map(From::from)
+    //     }
+    // }
 
-    /// `tsParseExternalModuleReference`
-    fn parse_ts_external_module_ref(&mut self) -> PResult<()> {
-        debug_assert!(self.syntax().typescript());
+    // /// `tsParseExternalModuleReference`
+    // fn parse_ts_external_module_ref(&mut self) -> PResult<()> {
+    //     debug_assert!(self.syntax().typescript());
 
-        expect!(self, "require");
-        expect!(self, '(');
-        match *cur!(self, true)? {
-            Token::Str { .. } => {}
-            _ => unexpected!(self, "a string literal"),
-        }
-        self.parse_lit()?;
-        expect!(self, ')');
-        Ok(())
-    }
+    //     expect!(self, "require");
+    //     expect!(self, '(');
+    //     match *cur!(self, true)? {
+    //         Token::Str { .. } => {}
+    //         _ => unexpected!(self, "a string literal"),
+    //     }
+    //     self.parse_lit()?;
+    //     expect!(self, ')');
+    //     Ok(())
+    // }
 
     pub(super) fn ts_look_ahead<T, F>(&mut self, op: F) -> PResult<T>
     where

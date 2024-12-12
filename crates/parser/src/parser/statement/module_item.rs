@@ -281,9 +281,9 @@ impl<I: Tokens> Parser<I> {
 
             if eat!(self, '=') {
                 // `export = x;`
-                let expr = self.parse_expr()?;
-                expect!(self, ';');
                 todo!();
+                // let expr = self.parse_expr()?;
+                // expect!(self, ';');
                 // return Ok(TsExportAssignment {
                 //     node_id: node_id!(self),
                 //     span: span!(self, start),
@@ -295,9 +295,9 @@ impl<I: Tokens> Parser<I> {
             if eat!(self, "as") {
                 // `export as namespace A;`
                 // See `parseNamespaceExportDeclaration` in TypeScript's own parser
-                expect!(self, "namespace");
-                let id = self.parse_ident(false, false)?;
-                expect!(self, ';');
+                // expect!(self, "namespace");
+                // let id = self.parse_ident(false, false)?;
+                // expect!(self, ';');
                 todo!();
                 // return Ok(TsNamespaceExportDecl {
                 //     node_id: node_id!(self),
@@ -353,9 +353,9 @@ impl<I: Tokens> Parser<I> {
                 }
 
                 if is!(self, "interface") {
-                    let interface_start = self.input.cur_pos();
-                    self.assert_and_bump(&tok!("interface"));
                     todo!();
+                    // let interface_start = self.input.cur_pos();
+                    // self.assert_and_bump(&tok!("interface"));
                     // let decl = self
                     //     .parse_ts_interface_decl(interface_start)
                     //     .map(DefaultDecl::from)?;
@@ -411,10 +411,10 @@ impl<I: Tokens> Parser<I> {
             && is!(self, "const")
             && peeked_is!(self, "enum")
         {
-            let start = self.input.cur_pos();
-            self.assert_and_bump(&tok!("const"));
-            self.assert_and_bump(&tok!("enum"));
             todo!();
+            // let start = self.input.cur_pos();
+            // self.assert_and_bump(&tok!("const"));
+            // self.assert_and_bump(&tok!("enum"));
             // return self
             //     .parse_ts_enum_decl(start, true)
             //     .map(Decl::from)

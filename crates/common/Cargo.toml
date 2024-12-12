@@ -5,6 +5,7 @@ authors = ["Campbell <campbell.wass@gmail.com>"]
 edition = "2018"
 
 [features]
+concurrent = []
 tty-emitter = ["atty", "termcolor"]
 
 [dependencies]

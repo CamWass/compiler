@@ -26,13 +26,12 @@ pub(super) enum SyntaxError {
     MalformedRegExpFlags,
     Eof,
 
-    PrivateNameInInterface,
-
+    // PrivateNameInInterface,
     InvalidSuperCall,
     InvalidSuper,
 
     ArrowNotAllowed,
-    ExportNotAllowed,
+    // ExportNotAllowed,
     GetterSetterCannotBeReadonly,
     GetterParam,
     SetterParam,
@@ -115,7 +114,7 @@ pub(super) enum SyntaxError {
     NotSimpleAssign,
     ExpectedIdent,
     DuplicateLabel(JsWord),
-    AsyncGenerator,
+    // AsyncGenerator,
     NonTopLevelImportExport,
     ImportExportInScript,
     PatVarWithoutInit,
@@ -152,7 +151,7 @@ pub(super) enum SyntaxError {
     TS1003,
     TS1005,
     TS1009,
-    TS1014,
+    // TS1014,
     TS1015,
     TS1029(JsWord, JsWord),
     TS1030(JsWord),
@@ -172,8 +171,8 @@ pub(super) enum SyntaxError {
     TS1105,
     TS1107,
     TS1109,
-    TS1110,
-    TS1114,
+    // TS1110,
+    // TS1114,
     TS1115,
     TS1116,
     TS1123,
@@ -187,7 +186,7 @@ pub(super) enum SyntaxError {
     TS1175,
     TS1183,
     TS1093,
-    TS1196,
+    // TS1196,
     TS1242,
     TS1243(JsWord, JsWord),
     TS2369,
@@ -227,9 +226,9 @@ impl SyntaxError {
             }
             SyntaxError::DuplicateRegExpFlags => "Duplicate regular expression flag".into(),
             SyntaxError::MalformedRegExpFlags => "Invalid regular expression flag".into(),
-            SyntaxError::PrivateNameInInterface => {
-                "private names are now allowed in interface".into()
-            }
+            // SyntaxError::PrivateNameInInterface => {
+            //     "private names are now allowed in interface".into()
+            // }
             SyntaxError::TopLevelAwait => "top level await requires target to es2017 or higher \
                                            and topLevelAwait:true for ecmascript"
                 .into(),
@@ -325,7 +324,7 @@ impl SyntaxError {
             SyntaxError::DuplicateLabel(label) => {
                 format!("Label {} is already declared", label).into()
             }
-            SyntaxError::AsyncGenerator => "An async function cannot be generator".into(),
+            // SyntaxError::AsyncGenerator => "An async function cannot be generator".into(),
             SyntaxError::NonTopLevelImportExport => {
                 "'import', and 'export' are not permitted here".into()
             }
@@ -395,7 +394,7 @@ impl SyntaxError {
             SyntaxError::TS1056 => {
                 "jsc.target should be es5 or upper to use getter / setter".into()
             }
-            SyntaxError::TS1110 => "type expected".into(),
+            // SyntaxError::TS1110 => "type expected".into(),
             SyntaxError::TS1141 => "literal in an import type should be string literal".into(),
 
             SyntaxError::Eof => "Unexpected eof".into(),
@@ -406,7 +405,7 @@ impl SyntaxError {
             SyntaxError::InvalidSuperCall => "Invalid `super()`".into(),
             SyntaxError::InvalidSuper => "Invalid access to super".into(),
             SyntaxError::ArrowNotAllowed => "An arrow function is not allowed here".into(),
-            SyntaxError::ExportNotAllowed => "`export` is not allowed here".into(),
+            // SyntaxError::ExportNotAllowed => "`export` is not allowed here".into(),
             SyntaxError::GetterSetterCannotBeReadonly => {
                 "A getter or a setter cannot be readonly".into()
             }
@@ -419,7 +418,7 @@ impl SyntaxError {
             SyntaxError::TS1003 => "Expected an identifier".into(),
             SyntaxError::TS1005 => "Expected a semicolon".into(),
             SyntaxError::TS1009 => "Trailing comma is not allowed".into(),
-            SyntaxError::TS1014 => "A rest parameter must be last in a parameter list".into(),
+            // SyntaxError::TS1014 => "A rest parameter must be last in a parameter list".into(),
             SyntaxError::TS1015 => "Parameter cannot have question mark and initializer".into(),
             SyntaxError::TS1029(left, right) => {
                 format!("'{}' modifier must precede '{}' modifier.", left, right).into()
@@ -454,7 +453,7 @@ impl SyntaxError {
                 .into(),
             SyntaxError::TS1107 => "Jump target cannot cross function boundary".into(),
             SyntaxError::TS1109 => "Expression expected".into(),
-            SyntaxError::TS1114 => "Duplicate label".into(),
+            // SyntaxError::TS1114 => "Duplicate label".into(),
             SyntaxError::TS1115 => "A 'continue' statement can only jump to a label of an \
                                     enclosing iteration statement"
                 .into(),
@@ -477,7 +476,7 @@ impl SyntaxError {
             SyntaxError::TS1093 => {
                 "Type annotation cannot appear on a constructor declaration".into()
             }
-            SyntaxError::TS1196 => "Catch clause variable cannot have a type annotation".into(),
+            // SyntaxError::TS1196 => "Catch clause variable cannot have a type annotation".into(),
             SyntaxError::TS1242 => {
                 "`abstract` modifier can only appear on a class or method declaration".into()
             }
