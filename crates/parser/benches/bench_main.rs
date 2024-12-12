@@ -1,3 +1,5 @@
+extern crate custom_alloc;
+
 use criterion::criterion_main;
 
 mod benchmarks;

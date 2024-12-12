@@ -25,5 +25,6 @@ rustc-hash = { workspace = true }
 ast = { path = "../ast" }
 codegen = { path = "../codegen" }
 compiler = { path = "../compiler" }
+custom_alloc = { path = "../custom_alloc" }
 global_common = { path = "../common", features = ["tty-emitter", "sourcemap"] }
 parser = { path = "../parser" }

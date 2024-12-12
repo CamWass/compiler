@@ -1,3 +1,5 @@
+extern crate custom_alloc;
+
 use anyhow::{bail, Context, Error, Result};
 use codegen::{self, Emitter, JsWriter};
 use compiler::Compiler;

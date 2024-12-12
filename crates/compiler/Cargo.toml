@@ -15,6 +15,7 @@ serde = { workspace = true, features = ["derive"] }
 
 ast = { path = "../ast" }
 atoms = { path = "../atoms" }
+custom_alloc = { path = "../custom_alloc" }
 ecma_visit = { path = "../visit" }
 global_common = { path = "../common" }
 index = { path = "../index" }

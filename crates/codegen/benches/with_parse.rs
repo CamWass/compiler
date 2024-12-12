@@ -1,5 +1,6 @@
 #![feature(test)]
 
+extern crate custom_alloc;
 extern crate test;
 
 use codegen::{self, Emitter};

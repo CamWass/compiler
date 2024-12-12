@@ -1,0 +1,8 @@
+[package]
+name = "custom_alloc"
+version = "0.1.0"
+authors = ["Campbell <campbell.wass@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+mimalloc = { version = "0.1" }
