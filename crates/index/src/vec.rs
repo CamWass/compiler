@@ -25,23 +25,23 @@ pub trait Idx: Copy + 'static + Ord + Debug + Hash {
 }
 
 impl Idx for usize {
-    #[inline]
+    #[inline(always)]
     fn new(idx: usize) -> Self {
         idx
     }
-    #[inline]
+    #[inline(always)]
     fn index(self) -> usize {
         self
     }
 }
 
 impl Idx for u32 {
-    #[inline]
+    #[inline(always)]
     fn new(idx: usize) -> Self {
         assert!(idx <= u32::MAX as usize);
         idx as u32
     }
-    #[inline]
+    #[inline(always)]
     fn index(self) -> usize {
         self as usize
     }
@@ -113,7 +113,7 @@ macro_rules! newtype_index {
 
             $v const MAX: Self = Self::from_u32($max);
 
-            #[inline]
+            #[inline(always)]
             $v const fn from_usize(value: usize) -> Self {
                 // FIXME: replace with `assert!(value <= ($max as usize));` once `const_panic` is stable
                 [()][(value > ($max as usize)) as usize];
@@ -122,7 +122,7 @@ macro_rules! newtype_index {
                 }
             }
 
-            #[inline]
+            #[inline(always)]
             $v const fn from_u32(value: u32) -> Self {
                 // FIXME: replace with `assert!(value <= $max);` once `const_panic` is stable
                 [()][(value > $max) as usize];
@@ -131,25 +131,25 @@ macro_rules! newtype_index {
                 }
             }
 
-            #[inline]
+            #[inline(always)]
             $v const unsafe fn from_u32_unchecked(value: u32) -> Self {
                 Self { private: value }
             }
 
             /// Extracts the value of this index as an integer.
-            #[inline]
+            #[inline(always)]
             $v const fn index(self) -> usize {
                 self.as_usize()
             }
 
             /// Extracts the value of this index as a `u32`.
-            #[inline]
+            #[inline(always)]
             $v const fn as_u32(self) -> u32 {
                 self.private
             }
 
             /// Extracts the value of this index as a `usize`.
-            #[inline]
+            #[inline(always)]
             $v const fn as_usize(self) -> usize {
                 self.as_u32() as usize
             }
@@ -164,12 +164,12 @@ macro_rules! newtype_index {
         }
 
         impl $crate::vec::Idx for $type {
-            #[inline]
+            #[inline(always)]
             fn new(value: usize) -> Self {
                 Self::from_usize(value)
             }
 
-            #[inline]
+            #[inline(always)]
             fn index(self) -> usize {
                 self.as_usize()
             }
@@ -198,33 +198,33 @@ macro_rules! newtype_index {
         // Safety: The implementation of `Step` upholds all invariants.
         // unsafe impl ::std::iter::TrustedStep for $type {}
 
-        impl From<$type> for u32 {
-            #[inline]
-            fn from(v: $type) -> u32 {
-                v.as_u32()
-            }
-        }
+        // impl From<$type> for u32 {
+        //     #[inline(always)]
+        //     fn from(v: $type) -> u32 {
+        //         v.as_u32()
+        //     }
+        // }
 
-        impl From<$type> for usize {
-            #[inline]
-            fn from(v: $type) -> usize {
-                v.as_usize()
-            }
-        }
+        // impl From<$type> for usize {
+        //     #[inline(always)]
+        //     fn from(v: $type) -> usize {
+        //         v.as_usize()
+        //     }
+        // }
 
-        impl From<usize> for $type {
-            #[inline]
-            fn from(value: usize) -> Self {
-                Self::from_usize(value)
-            }
-        }
+        // impl From<usize> for $type {
+        //     #[inline(always)]
+        //     fn from(value: usize) -> Self {
+        //         Self::from_usize(value)
+        //     }
+        // }
 
-        impl From<u32> for $type {
-            #[inline]
-            fn from(value: u32) -> Self {
-                Self::from_u32(value)
-            }
-        }
+        // impl From<u32> for $type {
+        //     #[inline(always)]
+        //     fn from(value: u32) -> Self {
+        //         Self::from_u32(value)
+        //     }
+        // }
 
         $crate::newtype_index!(
             @handle_debug
