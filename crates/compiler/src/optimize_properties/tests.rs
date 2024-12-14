@@ -1312,6 +1312,14 @@ function f() {
 f().a;
 ",
     );
+
+    test_same(
+        "
+const v = unknown;
+const ret = v() || 1;
+(ret || { prop: 1 }).prop;
+",
+    );
 }
 
 #[test]

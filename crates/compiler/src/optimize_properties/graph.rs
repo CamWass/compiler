@@ -419,13 +419,13 @@ impl Graph {
                         };
                         let mut changed = false;
                         for callee in &callees {
-                            if !store.is_callable_pointer(callee) {
-                                continue;
-                            }
                             if callee == PointerId::UNKNOWN {
                                 if self.make_subset_of(RepId(PointerId::UNKNOWN), dest, store) {
                                     changed = true;
                                 }
+                                continue;
+                            }
+                            if !store.is_callable_pointer(callee) {
                                 continue;
                             }
                             let return_node = store.pointers.insert(Pointer::ReturnValue(callee));
