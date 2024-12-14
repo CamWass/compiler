@@ -17,7 +17,7 @@ impl<I: Tokens> Parser<I> {
     }
 }
 
-pub(super) struct Verifier<'a, I: Tokens> {
+struct Verifier<'a, I: Tokens> {
     pub errors: Vec<(Span, SyntaxError)>,
     parser: &'a Parser<I>,
 }

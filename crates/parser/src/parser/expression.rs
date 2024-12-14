@@ -215,7 +215,7 @@ impl<I: Tokens> Parser<I> {
 
     /// Parse a primary expression or arrow function
     #[allow(clippy::cognitive_complexity)]
-    pub(super) fn parse_primary_expr(&mut self) -> PResult<MaybeParen> {
+    fn parse_primary_expr(&mut self) -> PResult<MaybeParen> {
         trace_cur!(self, parse_primary_expr);
 
         let _ = self.input.cur();
@@ -458,7 +458,7 @@ impl<I: Tokens> Parser<I> {
     }
 
     /// `parseImportMetaProperty`
-    pub(super) fn parse_import_meta_prop(&mut self, import: Ident) -> PResult<MetaPropExpr> {
+    fn parse_import_meta_prop(&mut self, import: Ident) -> PResult<MetaPropExpr> {
         let start = self.input.cur_pos();
         let meta = import;
 
@@ -758,7 +758,7 @@ impl<I: Tokens> Parser<I> {
     }
 
     #[allow(clippy::cognitive_complexity)]
-    pub(super) fn parse_args_or_pats(&mut self) -> PResult<Vec<MaybeParenPatOrExprOrSpread>> {
+    fn parse_args_or_pats(&mut self) -> PResult<Vec<MaybeParenPatOrExprOrSpread>> {
         trace_cur!(self, parse_args_or_pats);
 
         expect!(self, '(');
@@ -1137,14 +1137,14 @@ impl<I: Tokens> Parser<I> {
 
     /// Parse `NewExpression`.
     /// This includes `MemberExpression`.
-    pub(super) fn parse_new_expr(&mut self) -> PResult<MaybeParen> {
+    fn parse_new_expr(&mut self) -> PResult<MaybeParen> {
         trace_cur!(self, parse_new_expr);
 
         self.parse_member_expr_or_new_expr(true)
     }
 
     /// Parse `Arguments[Yield, Await]`
-    pub(super) fn parse_args(&mut self, is_dynamic_import: bool) -> PResult<Vec<ExprOrSpread>> {
+    fn parse_args(&mut self, is_dynamic_import: bool) -> PResult<Vec<ExprOrSpread>> {
         trace_cur!(self, parse_args);
 
         let start = self.input.cur_pos();
@@ -1444,7 +1444,7 @@ impl<I: Tokens> Parser<I> {
         })
     }
 
-    pub(super) fn parse_tpl(&mut self, is_tagged: bool) -> PResult<Tpl> {
+    fn parse_tpl(&mut self, is_tagged: bool) -> PResult<Tpl> {
         trace_cur!(self, parse_tpl);
 
         let start = self.input.cur_pos();
@@ -1630,11 +1630,7 @@ impl<I: Tokens> Parser<I> {
         Ok(v)
     }
 
-    pub(super) fn parse_dynamic_import(
-        &mut self,
-        start: BytePos,
-        import_ident: Ident,
-    ) -> PResult<MaybeParen> {
+    fn parse_dynamic_import(&mut self, start: BytePos, import_ident: Ident) -> PResult<MaybeParen> {
         if !self.input.syntax().dynamic_import() {
             syntax_error!(self, span!(self, start), SyntaxError::DynamicImport);
         }

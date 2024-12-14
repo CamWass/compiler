@@ -153,7 +153,7 @@ impl<I: Tokens> Parser<I> {
     /// spec: 'FormalParameter'
     ///
     /// babel: `parseAssignableListItem`
-    pub(super) fn parse_formal_param_pat(&mut self) -> PResult<Pat> {
+    fn parse_formal_param_pat(&mut self) -> PResult<Pat> {
         let start = self.input.cur_pos();
 
         let has_modifier = self.eat_any_ts_modifier()?;
@@ -460,11 +460,7 @@ impl<I: Tokens> Parser<I> {
         self.reparse_expr_as_pat_inner(pat_ty, expr)
     }
 
-    pub(super) fn reparse_expr_as_pat_inner(
-        &mut self,
-        pat_ty: PatType,
-        expr: Box<Expr>,
-    ) -> PResult<Pat> {
+    fn reparse_expr_as_pat_inner(&mut self, pat_ty: PatType, expr: Box<Expr>) -> PResult<Pat> {
         // In dts, we do not reparse.
         debug_assert!(!self.input.syntax().dts());
 
