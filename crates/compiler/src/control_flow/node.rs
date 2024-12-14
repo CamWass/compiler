@@ -349,7 +349,7 @@ impl<'ast> From<&'ast ::ast::Prop> for Node<'ast> {
     fn from(other: &'ast ::ast::Prop) -> Node<'ast> {
         match other {
             ast::Prop::KeyValue(n) => Node::from(n),
-            ast::Prop::Assign(n) => Node::from(n),
+            ast::Prop::Assign(_) => unreachable!(),
             ast::Prop::Getter(n) => Node::from(n),
             ast::Prop::Setter(n) => Node::from(n),
             ast::Prop::Method(n) => Node::from(n),

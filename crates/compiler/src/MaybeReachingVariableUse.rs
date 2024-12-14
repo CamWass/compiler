@@ -734,10 +734,6 @@ where
         node.key.visit_with(self);
     }
 
-    fn visit_assign_prop(&mut self, node: &AssignProp) {
-        todo!(stringify!(AssignProp));
-    }
-
     fn visit_getter_prop(&mut self, node: &GetterProp) {
         node.body.visit_with(self);
         node.key.visit_with(self);

@@ -1893,7 +1893,7 @@ impl<'a> Emitter<'a> {
     fn emit_prop(&mut self, node: &Prop) -> Result {
         match node {
             Prop::KeyValue(n) => self.emit_kv_prop(n),
-            Prop::Assign(n) => self.emit_assign_prop(n),
+            Prop::Assign(_) => unreachable!(),
             Prop::Getter(n) => self.emit_getter_prop(n),
             Prop::Setter(n) => self.emit_setter_prop(n),
             Prop::Method(n) => self.emit_method_prop(n),
@@ -1924,12 +1924,6 @@ impl<'a> Emitter<'a> {
         } else {
             self.emit_expr(&node.value)
         }
-    }
-
-    fn emit_assign_prop(&mut self, node: &AssignProp) -> Result {
-        self.emit_ident(&node.key)?;
-        punct!(self, "=");
-        self.emit_expr(&node.value)
     }
 
     fn emit_getter_prop(&mut self, node: &GetterProp) -> Result {
