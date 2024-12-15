@@ -9,14 +9,6 @@ pub struct Normalizer {
 }
 
 impl VisitMut<'_> for Normalizer {
-    fn visit_mut_class_members(&mut self, node: &mut Vec<ClassMember>) {
-        node.visit_mut_children_with(self);
-
-        if self.is_test262 {
-            node.retain(|v| !matches!(v, ClassMember::Empty(..)));
-        }
-    }
-
     fn visit_mut_expr(&mut self, e: &mut Expr) {
         e.visit_mut_children_with(self);
 

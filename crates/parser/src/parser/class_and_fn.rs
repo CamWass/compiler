@@ -181,11 +181,6 @@ impl<I: Tokens> Parser<I> {
         let mut elems = vec![];
         while !eof!(self) && !is!(self, '}') {
             if self.input.eat(&tok!(';')) {
-                let span = self.input.prev_span();
-                let span = Span::new(span.lo, span.hi);
-                elems.push(ClassMember::Empty(EmptyStmt {
-                    node_id: node_id!(self, span),
-                }));
                 continue;
             }
 

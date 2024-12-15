@@ -4,7 +4,7 @@ use crate::{
     ident::PrivateName,
     prop::PropName,
     stmt::BlockStmt,
-    EmptyStmt, GetNodeId, NodeId,
+    GetNodeId, NodeId,
 };
 use clone_node::CloneNode;
 use node_id::GetNodeIdMacro;
@@ -32,7 +32,6 @@ pub enum ClassMember {
     /// stage 0 / Typescript
     ClassProp(ClassProp),
     PrivateProp(PrivateProp),
-    Empty(EmptyStmt),
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]

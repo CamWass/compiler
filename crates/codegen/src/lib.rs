@@ -1364,7 +1364,6 @@ impl<'a> Emitter<'a> {
             ClassMember::Method(n) => self.emit_class_method(n),
             ClassMember::PrivateMethod(n) => self.emit_private_method(n),
             ClassMember::PrivateProp(n) => self.emit_private_prop(n),
-            ClassMember::Empty(n) => self.emit_empty_stmt(n, true),
         }
     }
 

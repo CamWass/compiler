@@ -197,7 +197,6 @@ define!({
         PrivateMethod(PrivateMethod),
         ClassProp(ClassProp),
         PrivateProp(PrivateProp),
-        Empty(EmptyStmt),
     }
 
     pub struct ClassProp {
