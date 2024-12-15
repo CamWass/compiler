@@ -988,7 +988,9 @@ impl<'a> Emitter<'a> {
             punct!(self, ")");
         }
 
+        formatting_space!(self);
         punct!(self, "=>");
+        formatting_space!(self);
         if node.body.stmts.len() == 1 {
             if let Stmt::Return(ret) = &node.body.stmts[0] {
                 self.wr.increase_indent()?;
@@ -1936,7 +1938,6 @@ impl<'a> Emitter<'a> {
         }
 
         self.emit_prop_name(&node.key)?;
-        formatting_space!(self);
         punct!(self, "(");
         punct!(self, ")");
         formatting_space!(self);
@@ -1955,12 +1956,11 @@ impl<'a> Emitter<'a> {
         }
 
         self.emit_prop_name(&node.key)?;
-        formatting_space!(self);
 
         punct!(self, "(");
         self.emit_param(&node.param)?;
         punct!(self, ")");
-
+        formatting_space!(self);
         self.emit_block_stmt(&node.body)
     }
 
@@ -1975,7 +1975,6 @@ impl<'a> Emitter<'a> {
         }
 
         self.emit_prop_name(&node.key)?;
-        formatting_space!(self);
         // TODO
         self.emit_fn_trailing(&node.function)
     }
