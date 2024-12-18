@@ -1414,15 +1414,13 @@ impl<I: Tokens> Parser<I> {
         let mut exprs = vec![];
 
         let cur_elem = self.parse_tpl_element(is_tagged)?;
-        let mut is_tail = cur_elem.tail;
         let mut quasis = vec![cur_elem];
 
-        while !is_tail {
+        while !is!(self, '`') {
             expect!(self, "${");
             exprs.push(self.include_in_expr(true).parse_expr()?.unwrap());
             expect!(self, '}');
             let elem = self.parse_tpl_element(is_tagged)?;
-            is_tail = elem.tail;
             quasis.push(elem);
         }
 
@@ -1496,12 +1494,9 @@ impl<I: Tokens> Parser<I> {
             )
         }
 
-        let tail = is!(self, '`');
         Ok(TplElement {
             node_id: node_id!(self, span!(self, start)),
             raw,
-            tail,
-
             cooked,
         })
     }

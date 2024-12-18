@@ -398,7 +398,6 @@ define!({
     }
     pub struct TplElement {
         pub node_id: NodeId,
-        pub tail: bool,
         pub cooked: Option<Str>,
         pub raw: Str,
     }

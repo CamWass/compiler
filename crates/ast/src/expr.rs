@@ -269,7 +269,6 @@ pub struct TaggedTpl {
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct TplElement {
     pub node_id: NodeId,
-    pub tail: bool,
     pub cooked: Option<Str>,
     pub raw: Str,
 }

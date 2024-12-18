@@ -1325,15 +1325,13 @@ impl<I: Tokens> Parser<I> {
         let mut types = vec![];
 
         let cur_elem = self.parse_tpl_element(false)?;
-        let mut is_tail = cur_elem.tail;
         let mut quasis = vec![cur_elem];
 
-        while !is_tail {
+        while !is!(self, '`') {
             expect!(self, "${");
             types.push(self.parse_ts_type()?);
             expect!(self, '}');
             let elem = self.parse_tpl_element(false)?;
-            is_tail = elem.tail;
             quasis.push(elem);
         }
 
