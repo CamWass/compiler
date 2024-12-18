@@ -58,7 +58,7 @@ impl<I: Tokens> Parser<I> {
             let res = self.try_parse_ts(|p| {
                 let start = p.input.cur_pos();
                 // Type params.
-                p.parse_ts_type_params()?;
+                p.eat_ts_type_params(|_, _| {})?;
                 let arrow = p.parse_assignment_expr_base()?;
                 match &arrow {
                     MaybeParen::Expr(arrow) => match arrow.as_ref() {

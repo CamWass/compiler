@@ -83,33 +83,30 @@ impl<I: Tokens> Parser<I> {
     }
 
     /// `tsParseDelimitedList`
-    fn parse_ts_delimited_list<T, F>(
+    fn eat_ts_delimited_list<F>(
         &mut self,
         kind: ParsingContext,
         mut parse_element: F,
-    ) -> PResult<Vec<T>>
+    ) -> PResult<()>
     where
-        F: FnMut(&mut Self) -> PResult<T>,
+        F: FnMut(&mut Self) -> PResult<()>,
     {
-        self.parse_ts_delimited_list_inner(kind, |p| {
-            let start = p.input.cur_pos();
-
-            Ok((start, parse_element(p)?))
+        self.eat_ts_delimited_list_inner(kind, |p| {
+            parse_element(p)?;
+            Ok(())
         })
     }
 
     /// `tsParseDelimitedList`
-    fn parse_ts_delimited_list_inner<T, F>(
+    fn eat_ts_delimited_list_inner<F>(
         &mut self,
         kind: ParsingContext,
         mut parse_element: F,
-    ) -> PResult<Vec<T>>
+    ) -> PResult<()>
     where
-        F: FnMut(&mut Self) -> PResult<(BytePos, T)>,
+        F: FnMut(&mut Self) -> PResult<()>,
     {
         debug_assert!(self.syntax().typescript());
-
-        let mut buf = vec![];
 
         loop {
             trace_cur!(self, parse_ts_delimited_list_inner__element);
@@ -117,8 +114,7 @@ impl<I: Tokens> Parser<I> {
             if self.is_ts_list_terminator(kind)? {
                 break;
             }
-            let (_, element) = parse_element(self)?;
-            buf.push(element);
+            parse_element(self)?;
 
             if eat!(self, ',') {
                 continue;
@@ -143,38 +139,7 @@ impl<I: Tokens> Parser<I> {
             expect!(self, ',');
         }
 
-        Ok(buf)
-    }
-
-    fn parse_ts_bracketed_list<T, F>(
-        &mut self,
-        kind: ParsingContext,
-        parse_element: F,
-        bracket: bool,
-        skip_first_token: bool,
-    ) -> PResult<Vec<T>>
-    where
-        F: FnMut(&mut Self) -> PResult<T>,
-    {
-        debug_assert!(self.syntax().typescript());
-
-        if !skip_first_token {
-            if bracket {
-                expect!(self, '[');
-            } else {
-                expect!(self, '<');
-            }
-        }
-
-        let result = self.parse_ts_delimited_list(kind, parse_element)?;
-
-        if bracket {
-            expect!(self, ']');
-        } else {
-            expect!(self, '>');
-        }
-
-        Ok(result)
+        Ok(())
     }
 
     /// `tsParseEntityName`
@@ -315,19 +280,21 @@ impl<I: Tokens> Parser<I> {
     }
 
     /// `tsParseTypeParameter`
-    pub(super) fn parse_ts_type_params(&mut self) -> PResult<Vec<Span>> {
+    pub(super) fn eat_ts_type_params(
+        &mut self,
+        mut op: impl FnMut(&mut Self, Span),
+    ) -> PResult<()> {
         self.in_type().parse_with(|p| {
             p.ts_in_no_context(|p| {
                 expect!(p, '<');
+                p.eat_ts_delimited_list(ParsingContext::TypeParametersOrArguments, |p| {
+                    let span = p.parse_ts_type_param()?;
+                    op(p, span);
+                    Ok(())
+                })?;
+                expect!(p, '>');
 
-                let params = p.parse_ts_bracketed_list(
-                    ParsingContext::TypeParametersOrArguments,
-                    |p| p.parse_ts_type_param(),
-                    false,
-                    true,
-                )?;
-
-                Ok(params)
+                Ok(())
             })
         })
     }
@@ -543,7 +510,7 @@ impl<I: Tokens> Parser<I> {
 
         self.parse_ident_name()?;
         expect!(self, '{');
-        self.parse_ts_delimited_list(ParsingContext::EnumMembers, |p| p.parse_ts_enum_member())?;
+        self.eat_ts_delimited_list(ParsingContext::EnumMembers, |p| p.parse_ts_enum_member())?;
         expect!(self, '}');
 
         Ok(())
@@ -686,11 +653,16 @@ impl<I: Tokens> Parser<I> {
     }
 
     /// `tsParseHeritageClause`
-    pub(super) fn parse_ts_heritage_clause(&mut self) -> PResult<Vec<Span>> {
+    pub(super) fn eat_ts_heritage_clause(
+        &mut self,
+        mut op: impl FnMut(&mut Self, Span),
+    ) -> PResult<()> {
         debug_assert!(self.syntax().typescript());
 
-        self.parse_ts_delimited_list(ParsingContext::HeritageClauseElement, |p| {
-            p.parse_expr_with_type_args()
+        self.eat_ts_delimited_list(ParsingContext::HeritageClauseElement, |p| {
+            let span = p.parse_expr_with_type_args()?;
+            op(p, span);
+            Ok(())
         })
     }
 
@@ -734,10 +706,10 @@ impl<I: Tokens> Parser<I> {
             _ => {}
         }
 
-        self.try_parse_ts_type_params()?;
+        self.try_eat_ts_type_params(|_, _| {})?;
 
         if eat!(self, "extends") {
-            self.parse_ts_heritage_clause()?;
+            self.eat_ts_heritage_clause(|_, _| {})?;
         }
 
         // Recover from
@@ -765,7 +737,7 @@ impl<I: Tokens> Parser<I> {
         // Identifier:
         self.parse_ident_name()?;
         // Type parameters:
-        self.try_parse_ts_type_params()?;
+        self.try_eat_ts_type_params(|_, _| {})?;
         // Type annotation:
         self.expect_then_parse_ts_type(&tok!('='), "=")?;
         expect!(self, ';');
@@ -921,7 +893,7 @@ impl<I: Tokens> Parser<I> {
 
         // ----- inlined self.tsFillSignature(tt.colon, node);
         // Type parameters:
-        self.try_parse_ts_type_params()?;
+        self.try_eat_ts_type_params(|_, _| {})?;
         expect!(self, '(');
         // Params:
         self.parse_ts_binding_list_for_signature()?;
@@ -991,7 +963,7 @@ impl<I: Tokens> Parser<I> {
         if !readonly && is_one_of!(self, '(', '<') {
             // ----- inlined self.tsFillSignature(tt.colon, node);
             // Type parameters:
-            self.try_parse_ts_type_params()?;
+            self.try_eat_ts_type_params(|_, _| {})?;
             expect!(self, '(');
             // Parameters:
             self.parse_ts_binding_list_for_signature()?;
@@ -1173,37 +1145,30 @@ impl<I: Tokens> Parser<I> {
     /// `tsParseTupleType`
     fn parse_ts_tuple_type(&mut self) -> PResult<()> {
         debug_assert!(self.syntax().typescript());
-        // TODO: check while parsing list, rather than allocating a vec and then checking.
 
-        let start = self.input.cur_pos();
-        let elem_types = self.parse_ts_bracketed_list(
-            ParsingContext::TupleElementTypes,
-            |p| p.parse_ts_tuple_element_type(),
-            true,
-            false,
-        )?;
+        expect!(self, '[');
 
         // Validate the elementTypes to ensure:
         //   No mandatory elements may follow optional elements
         //   If there's a rest element, it must be at the end of the tuple
-
         let mut seen_optional_element = false;
-        for elem_type in elem_types.iter() {
-            match elem_type {
+        self.eat_ts_delimited_list(ParsingContext::TupleElementTypes, |p| {
+            let start = p.input.cur_pos();
+            let kind = p.parse_ts_tuple_element_type()?;
+            match kind {
                 TupleElementType::Rest => {}
                 TupleElementType::Optional => {
                     seen_optional_element = true;
                 }
-                _ if seen_optional_element => {
-                    syntax_error!(
-                        self,
-                        span!(self, start),
-                        SyntaxError::TsRequiredAfterOptional
-                    )
+                TupleElementType::Other if seen_optional_element => {
+                    syntax_error!(p, span!(p, start), SyntaxError::TsRequiredAfterOptional)
                 }
                 _ => {}
             }
-        }
+            Ok(())
+        })?;
+
+        expect!(self, ']');
 
         Ok(())
     }
@@ -1282,7 +1247,7 @@ impl<I: Tokens> Parser<I> {
 
         // ----- inlined `self.tsFillSignature(tt.arrow, node)`
         // Type parameters:
-        self.try_parse_ts_type_params()?;
+        self.try_eat_ts_type_params(|_, _| {})?;
         expect!(self, '(');
         // Parameters:
         self.parse_ts_binding_list_for_signature()?;
@@ -1322,17 +1287,13 @@ impl<I: Tokens> Parser<I> {
     fn parse_ts_tpl_type_elements(&mut self) -> PResult<()> {
         trace_cur!(self, parse_tpl_elements);
 
-        let mut types = vec![];
-
-        let cur_elem = self.parse_tpl_element(false)?;
-        let mut quasis = vec![cur_elem];
+        self.parse_tpl_element(false)?;
 
         while !is!(self, '`') {
             expect!(self, "${");
-            types.push(self.parse_ts_type()?);
+            self.parse_ts_type()?;
             expect!(self, '}');
-            let elem = self.parse_tpl_element(false)?;
-            quasis.push(elem);
+            self.parse_tpl_element(false)?;
         }
 
         Ok(())
@@ -1391,11 +1352,14 @@ impl<I: Tokens> Parser<I> {
     }
 
     /// `tsTryParseTypeParameters`
-    pub(super) fn try_parse_ts_type_params(&mut self) -> PResult<Option<Vec<Span>>> {
+    pub(super) fn try_eat_ts_type_params(
+        &mut self,
+        mut op: impl FnMut(&mut Self, Span),
+    ) -> PResult<()> {
         if is!(self, '<') {
-            return self.parse_ts_type_params().map(Some);
+            self.eat_ts_type_params(|p, span| op(p, span))?;
         }
-        Ok(None)
+        Ok(())
     }
 
     /// `tsParseNonArrayType`
@@ -1770,7 +1734,7 @@ impl<I: Tokens> Parser<I> {
         let res = if is!(self, '<') {
             self.try_parse_ts(|p| {
                 // Type parameters:
-                p.parse_ts_type_params()?;
+                p.eat_ts_type_params(|_, _| {})?;
                 // Don't use overloaded parseFunctionParams which would look for "<" again.
                 expect!(p, '(');
                 let params = p.parse_formal_params()?;
@@ -1819,10 +1783,11 @@ impl<I: Tokens> Parser<I> {
             // tokens.
             p.ts_in_no_context(|p| {
                 expect!(p, '<');
-                p.parse_ts_delimited_list(ParsingContext::TypeParametersOrArguments, |p| {
+                p.eat_ts_delimited_list(ParsingContext::TypeParametersOrArguments, |p| {
                     trace_cur!(p, parse_ts_type_args__arg);
 
-                    p.parse_ts_type()
+                    p.parse_ts_type()?;
+                    Ok(())
                 })
             })
         })?;

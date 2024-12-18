@@ -83,7 +83,7 @@ impl<I: Tokens> Parser<I> {
 
             // Type params.
             if parser.syntax().typescript() {
-                parser.try_parse_ts_type_params()?;
+                parser.try_eat_ts_type_params(|_, _| {})?;
             }
 
             let mut extends_clause = if is!(parser, "extends") {
@@ -97,11 +97,9 @@ impl<I: Tokens> Parser<I> {
                 let span = span!(parser, start);
 
                 if parser.syntax().typescript() && eat!(parser, ',') {
-                    let exprs = parser.parse_ts_heritage_clause()?;
-
-                    for e in exprs {
-                        parser.emit_err(e, SyntaxError::TS1174);
-                    }
+                    parser.eat_ts_heritage_clause(|parser, span| {
+                        parser.emit_err(span, SyntaxError::TS1174);
+                    })?;
                 }
 
                 Some(ExtendsClause {
@@ -123,7 +121,7 @@ impl<I: Tokens> Parser<I> {
             };
 
             if parser.syntax().typescript() && eat!(parser, "implements") {
-                parser.parse_ts_heritage_clause()?;
+                parser.eat_ts_heritage_clause(|_, _| {})?;
             }
 
             {
@@ -131,7 +129,7 @@ impl<I: Tokens> Parser<I> {
                 if parser.syntax().typescript() && eat!(parser, "implements") {
                     parser.emit_err(parser.input.prev_span(), SyntaxError::TS1175);
 
-                    parser.parse_ts_heritage_clause()?;
+                    parser.eat_ts_heritage_clause(|_, _| {})?;
                 }
             }
 
@@ -451,13 +449,9 @@ impl<I: Tokens> Parser<I> {
                         self.emit_err(span!(self, start), SyntaxError::TS1098);
                         self.emit_err(span!(self, start2), SyntaxError::TS1092);
                     } else {
-                        let type_params = self.try_parse_ts_type_params()?;
-
-                        if let Some(type_params) = type_params {
-                            for param in type_params {
-                                self.emit_err(param, SyntaxError::TS1092);
-                            }
-                        }
+                        self.try_eat_ts_type_params(|p, span| {
+                            p.emit_err(span, SyntaxError::TS1092);
+                        })?;
                     }
                 }
 
@@ -884,7 +878,7 @@ impl<I: Tokens> Parser<I> {
                     trace_cur!(parser, parse_fn_args_body__type_params);
 
                     if is!(parser, '<') {
-                        parser.parse_ts_type_params()?;
+                        parser.eat_ts_type_params(|_, _| {})?;
                     }
                     Ok(Some(()))
                 })?;
