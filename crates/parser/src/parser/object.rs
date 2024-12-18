@@ -50,9 +50,6 @@ impl<I: Tokens> Parser<I> {
                         node_id: node_id!(parser, span!(parser, start)),
                         value,
                         has_escape,
-                        kind: StrKind::Normal {
-                            contains_quote: true,
-                        },
                     }),
                     _ => unreachable!(),
                 },

@@ -1476,17 +1476,11 @@ impl<I: Tokens> Parser<I> {
                         node_id: node_id!(self, span!(self, start)),
                         value: raw,
                         has_escape,
-                        kind: StrKind::Normal {
-                            contains_quote: false,
-                        },
                     },
                     cooked.map(|cooked| Str {
                         node_id: node_id!(self, span!(self, start)),
                         value: cooked,
                         has_escape,
-                        kind: StrKind::Normal {
-                            contains_quote: false,
-                        },
                     }),
                 ),
                 _ => unreachable!(),
@@ -1605,9 +1599,6 @@ impl<I: Tokens> Parser<I> {
                     node_id: node_id!(self, span!(self, start)),
                     value,
                     has_escape,
-                    kind: StrKind::Normal {
-                        contains_quote: true,
-                    },
                 }),
                 _ => unreachable!(),
             },

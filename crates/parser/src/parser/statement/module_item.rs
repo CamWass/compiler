@@ -58,9 +58,6 @@ impl<I: Tokens> Parser<I> {
                     node_id: node_id!(self, span!(self, str_start)),
                     value,
                     has_escape,
-                    kind: StrKind::Normal {
-                        contains_quote: true,
-                    },
                 },
                 _ => unreachable!(),
             };
@@ -136,9 +133,6 @@ impl<I: Tokens> Parser<I> {
                         node_id: node_id!(self, span!(self, str_start)),
                         value,
                         has_escape,
-                        kind: StrKind::Normal {
-                            contains_quote: true,
-                        },
                     },
                     _ => unreachable!(),
                 },
@@ -588,9 +582,6 @@ impl<I: Tokens> Parser<I> {
                     node_id: node_id!(self, span!(self, str_start)),
                     value,
                     has_escape,
-                    kind: StrKind::Normal {
-                        contains_quote: true,
-                    },
                 },
                 _ => unreachable!(),
             },

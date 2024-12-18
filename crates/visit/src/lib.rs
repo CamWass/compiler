@@ -467,7 +467,6 @@ define!({
         pub node_id: NodeId,
         pub value: JsWord,
         pub has_escape: bool,
-        pub kind: StrKind,
     }
     pub struct Bool {
         pub node_id: NodeId,
