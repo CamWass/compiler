@@ -1,7 +1,6 @@
 use criterion::{black_box, criterion_group, Criterion, Throughput};
 use global_common::{sync::Lrc, FileName, FilePathMapping, SourceMap};
 use parser::lexer::Lexer;
-use std::time::Duration;
 
 struct Bench(&'static str, &'static str);
 
@@ -20,9 +19,7 @@ fn bench(c: &mut Criterion) {
     ];
 
     let mut group = c.benchmark_group("lexer");
-    group
-        .measurement_time(Duration::from_secs(20))
-        .sample_size(200);
+    group.sample_size(100);
     for Bench(id, src) in benches.iter() {
         group.throughput(Throughput::Bytes(src.len() as u64));
 
