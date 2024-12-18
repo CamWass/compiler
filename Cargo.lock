@@ -909,6 +909,7 @@ dependencies = [
  "either",
  "global_common",
  "num-bigint",
+ "num-traits",
  "rustc-hash",
  "serde",
  "serde_json",

@@ -11,6 +11,7 @@ use crate::{
 };
 use global_common::BytePos;
 use num_bigint::BigInt as BigIntValue;
+use num_traits::Num as _;
 use std::{fmt::Write, iter::FusedIterator};
 
 fn is_forbidden_numeric_separator_sibling(b: Option<u8>, radix: u8) -> bool {
@@ -215,7 +216,7 @@ impl Lexer<'_> {
 
     /// This can read long integers like
     /// "13612536612375123612312312312312312312312".
-    fn read_number_no_dot_as_str(&mut self, radix: u8) -> LexResult<(f64, BigIntValue)> {
+    fn read_number_no_dot_as_str(&mut self, radix: u8) -> LexResult<f64> {
         debug_assert!(
             radix == 2 || radix == 8 || radix == 10 || radix == 16,
             "radix for read_number_no_dot should be one of 2, 8, 10, 16, but got {}",
@@ -225,15 +226,13 @@ impl Lexer<'_> {
 
         let mut read_any = false;
 
-        let mut raw = String::new();
-
         let val = self.read_digits(
             radix,
             |total, radix, v| {
                 read_any = true;
                 (f64::mul_add(total, radix as f64, v as f64), true)
             },
-            Some(&mut raw),
+            None,
             true,
         );
 
@@ -241,15 +240,7 @@ impl Lexer<'_> {
             self.error(start, SyntaxError::ExpectedDigit { radix })?;
         }
 
-        Ok((
-            val,
-            // TODO: this seems inefficient; we have a string, convert it to
-            // bytes, and then pass it to BigIntValue::parse_bytes which converts
-            // it back into a string. Look into a more direct way to create a
-            // Bigint from a string.
-            BigIntValue::parse_bytes(raw.as_bytes(), radix as _)
-                .expect("failed to parse string as a bigint"),
-        ))
+        Ok(val)
     }
 
     /// Ensure that an identifier does not directly follow a number.
@@ -273,17 +264,23 @@ impl Lexer<'_> {
 
         self.advance(2); // 0 followed by one of x, X, o, O, b, B
 
-        let (value, s) = self.read_number_no_dot_as_str(radix)?;
+        let raw_start = self.cur_pos();
 
-        let is_big_int = self.eat(b'n');
+        let value = self.read_number_no_dot_as_str(radix)?;
+
+        let tok = if self.is(b'n') {
+            let raw = self.slice_to_cur(raw_start);
+            let b = BigIntValue::from_str_radix(raw, radix as _)
+                .expect("failed to parse string as a bigint");
+            self.bump(); // 'n'
+            BigInt(b)
+        } else {
+            Num(value)
+        };
 
         self.ensure_not_ident()?;
 
-        if is_big_int {
-            Ok(BigInt(s))
-        } else {
-            Ok(Num(value))
-        }
+        Ok(tok)
     }
 
     /// Read an integer in the given radix. Returns the integer value, or `None`
@@ -369,11 +366,16 @@ impl Lexer<'_> {
             let starts_with_zero = self.is(b'0');
 
             // Use read_number_no_dot to support long numbers.
-            let (val, s) = self.read_number_no_dot_as_str(10)?;
+            let val = self.read_number_no_dot_as_str(10)?;
 
-            if self.eat(b'n') {
+            if self.is(b'n') {
+                let raw = self.slice_to_cur(start);
+                let b = BigIntValue::from_str_radix(raw, 10)
+                    .expect("failed to parse string as a bigint");
+                self.bump(); // 'n'
+
                 // TODO: do we need to check ensure_not_ident()?
-                return Ok(BigInt(s));
+                return Ok(BigInt(b));
             }
 
             if starts_with_zero {
