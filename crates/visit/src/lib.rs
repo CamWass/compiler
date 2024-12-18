@@ -492,12 +492,10 @@ define!({
     pub struct Module {
         pub node_id: NodeId,
         pub body: Vec<ModuleItem>,
-        pub shebang: Option<JsWord>,
     }
     pub struct Script {
         pub node_id: NodeId,
         pub body: Vec<Stmt>,
-        pub shebang: Option<JsWord>,
     }
     pub enum ModuleItem {
         ModuleDecl(ModuleDecl),

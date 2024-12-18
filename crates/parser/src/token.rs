@@ -94,7 +94,6 @@ pub enum Token {
 
     BigInt(BigIntValue),
 
-    Shebang(JsWord),
     Error(Error),
 }
 
@@ -654,7 +653,6 @@ impl Debug for Token {
             Regex(exp, flags) => write!(f, "regexp literal ({}, {})", exp, flags)?,
             Num(value) => write!(f, "numeric literal ({})", value,)?,
             BigInt(..) => write!(f, "bigint literal")?,
-            Shebang(_) => write!(f, "#!")?,
             Token::Error(_) => write!(f, "<lexing error>")?,
         }
 

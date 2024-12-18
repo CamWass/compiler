@@ -93,12 +93,9 @@ impl<I: Tokens> Parser<I> {
 
         let start = self.input.cur_pos();
 
-        let shebang = self.parse_shebang()?;
-
         self.parse_block_body(true, true, None).map(|body| Script {
             node_id: node_id!(self, span!(self, start)),
             body,
-            shebang,
         })
     }
 
@@ -106,7 +103,6 @@ impl<I: Tokens> Parser<I> {
     /// module.
     pub fn parse_program(&mut self) -> PResult<Program> {
         let start = self.input.cur_pos();
-        let shebang = self.parse_shebang()?;
 
         let body: Vec<ModuleItem> = self.parse_block_body(true, true, None)?;
 
@@ -121,13 +117,11 @@ impl<I: Tokens> Parser<I> {
             Program::Script(Script {
                 node_id: node_id!(self, span!(self, start)),
                 body,
-                shebang,
             })
         } else {
             Program::Module(Module {
                 node_id: node_id!(self, span!(self, start)),
                 body,
-                shebang,
             })
         })
     }
@@ -142,23 +136,11 @@ impl<I: Tokens> Parser<I> {
         self.set_ctx(ctx);
 
         let start = self.input.cur_pos();
-        let shebang = self.parse_shebang()?;
 
         self.parse_block_body(true, true, None).map(|body| Module {
             node_id: node_id!(self, span!(self, start)),
             body,
-            shebang,
         })
-    }
-
-    fn parse_shebang(&mut self) -> PResult<Option<JsWord>> {
-        match self.input.cur() {
-            Some(Token::Shebang(..)) => match self.input.bump() {
-                Token::Shebang(v) => Ok(Some(v)),
-                _ => unreachable!(),
-            },
-            _ => Ok(None),
-        }
     }
 
     fn ctx(&self) -> Context {

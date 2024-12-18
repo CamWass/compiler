@@ -59,11 +59,6 @@ impl<'a> Emitter<'a> {
     }
 
     pub fn emit_module(&mut self, node: &Module) -> Result {
-        if let Some(shebang) = &node.shebang {
-            punct!(self, "#!");
-            self.wr.write_str_lit(DUMMY_SP, shebang)?;
-            self.wr.write_line()?;
-        }
         for stmt in &node.body {
             self.emit_module_item(stmt, true)?;
         }
@@ -71,11 +66,6 @@ impl<'a> Emitter<'a> {
     }
 
     pub fn emit_script(&mut self, node: &Script) -> Result {
-        if let Some(shebang) = &node.shebang {
-            punct!(self, "#!");
-            self.wr.write_str_lit(DUMMY_SP, shebang)?;
-            self.wr.write_line()?;
-        }
         for stmt in &node.body {
             self.emit_stmt(stmt, true)?;
         }

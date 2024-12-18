@@ -1,5 +1,4 @@
 use crate::{module_decl::ModuleDecl, stmt::Stmt, GetNodeId, NodeId};
-use atoms::JsWord;
 use clone_node::CloneNode;
 use node_id::GetNodeIdMacro;
 
@@ -14,8 +13,6 @@ pub struct Module {
     pub node_id: NodeId,
 
     pub body: Vec<ModuleItem>,
-
-    pub shebang: Option<JsWord>,
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
@@ -23,8 +20,6 @@ pub struct Script {
     pub node_id: NodeId,
 
     pub body: Vec<Stmt>,
-
-    pub shebang: Option<JsWord>,
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
