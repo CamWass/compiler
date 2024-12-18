@@ -16,7 +16,7 @@ struct Builder {
 }
 
 impl Builder {
-    pub fn with<F, Ret>(self, s: &mut Vec<u8>, op: F) -> Ret
+    fn with<F, Ret>(self, s: &mut Vec<u8>, op: F) -> Ret
     where
         F: FnOnce(&mut Emitter<'_>) -> Ret,
     {
@@ -27,7 +27,7 @@ impl Builder {
         op(&mut e)
     }
 
-    pub fn text<F>(self, op: F) -> String
+    fn text<F>(self, op: F) -> String
     where
         F: FnOnce(&mut Emitter<'_>),
     {
