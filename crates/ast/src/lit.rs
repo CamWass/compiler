@@ -1,11 +1,12 @@
-use crate::{GetNodeId, NodeId};
+use crate::{GetNodeId, NodeId, ProgramData};
 use atoms::JsWord;
+use bitflags::bitflags;
 use clone_node::CloneNode;
 use global_common::integer_decode::integer_decode;
 use node_id::GetNodeIdMacro;
 use num_bigint::BigInt as BigIntValue;
 use std::{
-    fmt::{self, Display, Formatter},
+    fmt::{self, Display, Formatter, Write},
     hash::{Hash, Hasher},
 };
 
@@ -98,7 +99,57 @@ pub struct Regex {
 
     pub exp: JsWord,
 
-    pub flags: JsWord,
+    pub flags: RegexFlags,
+}
+
+bitflags! {
+    #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+    pub struct RegexFlags: u8 {
+        const D = 1 << 0;
+        const G = 1 << 1;
+        const I = 1 << 2;
+        const M = 1 << 3;
+        const S = 1 << 4;
+        const U = 1 << 5;
+        const V = 1 << 6;
+        const Y = 1 << 7;
+    }
+}
+
+impl Display for RegexFlags {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if self.contains(Self::D) {
+            f.write_char('d')?
+        }
+        if self.contains(Self::G) {
+            f.write_char('g')?
+        }
+        if self.contains(Self::I) {
+            f.write_char('i')?
+        }
+        if self.contains(Self::M) {
+            f.write_char('m')?
+        }
+        if self.contains(Self::S) {
+            f.write_char('s')?
+        }
+        if self.contains(Self::U) {
+            f.write_char('u')?
+        }
+        if self.contains(Self::V) {
+            f.write_char('v')?
+        }
+        if self.contains(Self::Y) {
+            f.write_char('y')?
+        }
+        Ok(())
+    }
+}
+
+impl crate::CloneNode for RegexFlags {
+    fn clone_node(&self, _: &mut ProgramData) -> Self {
+        *self
+    }
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode)]

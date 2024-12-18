@@ -479,7 +479,7 @@ define!({
     pub struct Regex {
         pub node_id: NodeId,
         pub exp: JsWord,
-        pub flags: JsWord,
+        pub flags: RegexFlags,
     }
     pub struct Number {
         pub node_id: NodeId,

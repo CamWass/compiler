@@ -18,7 +18,7 @@ pub use self::{
     },
     function::{FnFlags, Function, Param},
     ident::{BindingIdent, Ident, IdentExt, PrivateName},
-    lit::{BigInt, Bool, Lit, Null, Number, Regex, Str, StrKind},
+    lit::{BigInt, Bool, Lit, Null, Number, Regex, RegexFlags, Str, StrKind},
     module::{Module, ModuleItem, Program, Script},
     module_decl::{
         DefaultDecl, ExportAll, ExportDecl, ExportDefaultDecl, ExportDefaultExpr,

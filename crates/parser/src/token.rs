@@ -1,7 +1,7 @@
 pub(crate) use self::{AssignOpToken::*, BinOpToken::*, Keyword::*, Token::*};
 use crate::error::Error;
 pub(crate) use ast::AssignOp as AssignOpToken;
-use ast::BinaryOp;
+use ast::{BinaryOp, RegexFlags};
 use atoms::{js_word, JsWord};
 use global_common::Span;
 use num_bigint::BigInt as BigIntValue;
@@ -88,7 +88,7 @@ pub enum Token {
     },
 
     /// Regexp literal.
-    Regex(JsWord, JsWord),
+    Regex(JsWord, RegexFlags),
 
     Num(f64),
 

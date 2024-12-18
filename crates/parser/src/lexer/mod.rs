@@ -9,14 +9,14 @@ use crate::{
     token::*,
     JscTarget, Syntax,
 };
-use ast::op;
+use ast::{op, RegexFlags};
 use atoms::JsWord;
 use global_common::{chars::char_literals, BytePos, SourceFile, Span};
 use identifier::{is_ident_part, is_ident_start};
 use state::State;
 pub use state::{TokenContext, TokenContexts};
 use std::{cell::RefCell, iter::FusedIterator, rc::Rc};
-use util::{char_bytes, is_line_break, is_valid_regex_flag};
+use util::{char_bytes, is_line_break};
 
 pub(crate) type LexResult<T> = Result<T, Error>;
 
@@ -578,14 +578,25 @@ impl<'src> Lexer<'src> {
 
         self.advance(1); // '/'
 
-        // TODO: Use bit_flags?
-        // 6 is the number of valid flags.
-        let mut mods = String::with_capacity(6);
+        let mut mods = RegexFlags::empty();
 
         while let Some(ch) = self.cur() {
-            if is_valid_regex_flag(ch) {
-                if mods.find(ch).is_some() {
+            let flag = match ch {
+                'd' => Some(RegexFlags::D),
+                'g' => Some(RegexFlags::G),
+                'i' => Some(RegexFlags::I),
+                'm' => Some(RegexFlags::M),
+                's' => Some(RegexFlags::S),
+                'u' => Some(RegexFlags::U),
+                'v' => Some(RegexFlags::V),
+                'y' => Some(RegexFlags::Y),
+                _ => None,
+            };
+            if let Some(flag) = flag {
+                if mods.contains(flag) {
                     self.error(self.cur_pos(), SyntaxError::DuplicateRegExpFlags)?
+                } else {
+                    mods.insert(flag);
                 }
             } else if is_ident_part(ch) || ch == '\\' {
                 self.error(self.cur_pos(), SyntaxError::MalformedRegExpFlags)?
@@ -594,10 +605,9 @@ impl<'src> Lexer<'src> {
             }
 
             self.bump();
-            mods.push(ch);
         }
 
-        Ok(Regex(content, mods.into()))
+        Ok(Regex(content, mods))
     }
 
     fn read_code_point(&mut self) -> LexResult<char> {

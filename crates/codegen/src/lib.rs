@@ -361,7 +361,30 @@ impl<'a> Emitter<'a> {
                 punct!(self, "/");
                 self.wr.write_str(&n.exp)?;
                 punct!(self, "/");
-                self.wr.write_str(&n.flags)?;
+                if n.flags.contains(RegexFlags::D) {
+                    self.wr.write_str("d")?
+                }
+                if n.flags.contains(RegexFlags::G) {
+                    self.wr.write_str("g")?
+                }
+                if n.flags.contains(RegexFlags::I) {
+                    self.wr.write_str("i")?
+                }
+                if n.flags.contains(RegexFlags::M) {
+                    self.wr.write_str("m")?
+                }
+                if n.flags.contains(RegexFlags::S) {
+                    self.wr.write_str("s")?
+                }
+                if n.flags.contains(RegexFlags::U) {
+                    self.wr.write_str("u")?
+                }
+                if n.flags.contains(RegexFlags::V) {
+                    self.wr.write_str("v")?
+                }
+                if n.flags.contains(RegexFlags::Y) {
+                    self.wr.write_str("y")?
+                }
             }
         }
         Ok(())

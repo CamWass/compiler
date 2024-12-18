@@ -59,10 +59,6 @@ pub mod char_bytes {
     pub const CARRIAGE_RETURN: u8 = 13;
 }
 
-pub fn is_valid_regex_flag(ch: char) -> bool {
-    matches!(ch, 'g' | 'm' | 's' | 'i' | 'y' | 'u')
-}
-
 impl Lexer<'_> {
     /// Returns the remaining portion of the input as a str.
     #[inline(always)]
