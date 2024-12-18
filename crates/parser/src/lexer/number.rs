@@ -4,13 +4,9 @@
 //! See https://tc39.github.io/ecma262/#sec-literals-numeric-literals
 
 use super::{is_ident_start, pos_span, LexResult, Lexer};
-use crate::{
-    error::SyntaxError,
-    token::{BigInt, Num, Token},
-    JscTarget,
-};
+use crate::{error::SyntaxError, token::Token, JscTarget};
 use global_common::BytePos;
-use num_bigint::BigInt as BigIntValue;
+use num_bigint::BigUint;
 use num_traits::Num as _;
 use std::{fmt::Write, iter::FusedIterator};
 
@@ -270,12 +266,12 @@ impl Lexer<'_> {
 
         let tok = if self.is(b'n') {
             let raw = self.slice_to_cur(raw_start);
-            let b = BigIntValue::from_str_radix(raw, radix as _)
+            let b = BigUint::from_str_radix(raw, radix as _)
                 .expect("failed to parse string as a bigint");
             self.bump(); // 'n'
-            BigInt(b)
+            Token::BigInt(b)
         } else {
-            Num(value)
+            Token::Num(value)
         };
 
         self.ensure_not_ident()?;
@@ -370,12 +366,12 @@ impl Lexer<'_> {
 
             if self.is(b'n') {
                 let raw = self.slice_to_cur(start);
-                let b = BigIntValue::from_str_radix(raw, 10)
-                    .expect("failed to parse string as a bigint");
+                let b =
+                    BigUint::from_str_radix(raw, 10).expect("failed to parse string as a bigint");
                 self.bump(); // 'n'
 
                 // TODO: do we need to check ensure_not_ident()?
-                return Ok(BigInt(b));
+                return Ok(Token::BigInt(b));
             }
 
             if starts_with_zero {
@@ -392,7 +388,7 @@ impl Lexer<'_> {
                     if start.0 != self.cur_pos().0 - 1 {
                         // `-1` is utf 8 length of `0`
 
-                        return self.make_legacy_octal(start, 0f64).map(|v| Num(v));
+                        return self.make_legacy_octal(start, 0f64).map(Token::Num);
                     }
                 } else {
                     // strict mode hates non-zero decimals starting with zero.
@@ -413,7 +409,7 @@ impl Lexer<'_> {
                                 .to_string()
                                 .parse()
                                 .expect("failed to parse numeric value as f64");
-                            return self.make_legacy_octal(start, val).map(|v| Num(v));
+                            return self.make_legacy_octal(start, val).map(Token::Num);
                         }
                     }
                 }
@@ -490,6 +486,6 @@ impl Lexer<'_> {
 
         self.ensure_not_ident()?;
 
-        Ok(Num(val))
+        Ok(Token::Num(val))
     }
 }

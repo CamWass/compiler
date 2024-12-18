@@ -6,7 +6,7 @@ use ast::*;
 use atoms::JsWord;
 use global_common::SyntaxContext;
 use global_visit::{define, AndThen, Repeat, Repeated};
-use num_bigint::BigInt as BigIntValue;
+use num_bigint::BigUint;
 use std::any::Any;
 
 /// Visitable nodes.
@@ -461,7 +461,7 @@ define!({
     }
     pub struct BigInt {
         pub node_id: NodeId,
-        pub value: BigIntValue,
+        pub value: BigUint,
     }
     pub struct Str {
         pub node_id: NodeId,

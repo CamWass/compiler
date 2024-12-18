@@ -4,7 +4,7 @@ use bitflags::bitflags;
 use clone_node::CloneNode;
 use global_common::integer_decode::integer_decode;
 use node_id::GetNodeIdMacro;
-use num_bigint::BigInt as BigIntValue;
+use num_bigint::BigUint;
 use std::{
     fmt::{self, Display, Formatter, Write},
     hash::{Hash, Hasher},
@@ -28,7 +28,7 @@ pub enum Lit {
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct BigInt {
     pub node_id: NodeId,
-    pub value: BigIntValue,
+    pub value: BigUint,
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]

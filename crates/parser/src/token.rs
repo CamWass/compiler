@@ -4,7 +4,7 @@ pub(crate) use ast::AssignOp as AssignOpToken;
 use ast::{BinaryOp, RegexFlags};
 use atoms::{js_word, JsWord};
 use global_common::Span;
-use num_bigint::BigInt as BigIntValue;
+use num_bigint::BigUint;
 use std::{
     borrow::Cow,
     fmt::{self, Debug, Display, Formatter},
@@ -92,7 +92,7 @@ pub enum Token {
 
     Num(f64),
 
-    BigInt(BigIntValue),
+    BigInt(BigUint),
 
     Error(Error),
 }

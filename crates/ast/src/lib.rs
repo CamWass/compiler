@@ -178,4 +178,4 @@ impl_clone_node!(bool);
 impl_clone_node!(f64);
 impl_clone_node!(JsWord);
 impl_clone_node!(SyntaxContext);
-impl_clone_node!(num_bigint::BigInt);
+impl_clone_node!(num_bigint::BigUint);
