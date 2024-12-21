@@ -94,12 +94,12 @@ impl<I: Tokens> Parser<I> {
 
         let start = self.input.cur_pos();
 
-        self.state.potential_arrow_start = match *cur!(self, true)? {
+        self.potential_arrow_start = match *cur!(self, true)? {
             Word(Word::Ident(..)) | tok!('(') | tok!("yield") => Some(start),
             _ => None,
         };
 
-        let potential_arrow_start = self.state.potential_arrow_start;
+        let potential_arrow_start = self.potential_arrow_start;
 
         // Try to parse conditional expression.
         let cond = self.parse_cond_expr()?;
@@ -181,7 +181,7 @@ impl<I: Tokens> Parser<I> {
 
         let start = self.input.cur_pos();
 
-        let potential_arrow_start = self.state.potential_arrow_start;
+        let potential_arrow_start = self.potential_arrow_start;
 
         let test = self.parse_bin_expr()?;
         return_if_arrow!(self, potential_arrow_start, test);
@@ -222,7 +222,6 @@ impl<I: Tokens> Parser<I> {
         let start = self.input.cur_pos();
 
         let can_be_arrow = self
-            .state
             .potential_arrow_start
             .map(|s| s == start)
             .unwrap_or(false);
@@ -443,18 +442,14 @@ impl<I: Tokens> Parser<I> {
 
         expect!(self, ']');
 
-        let span = span!(self, start);
+        let node_id = node_id!(self, span!(self, start));
 
         if let Some(trailing_comma_span) = trailing_comma_span {
-            self.state
-                .trailing_commas_after_rest
-                .insert(span, trailing_comma_span);
+            self.trailing_commas_after_rest
+                .insert(node_id, trailing_comma_span);
         }
 
-        Ok(Box::new(Expr::Array(ArrayLit {
-            node_id: node_id!(self, span),
-            elems,
-        })))
+        Ok(Box::new(Expr::Array(ArrayLit { node_id, elems })))
     }
 
     /// `parseImportMetaProperty`
@@ -691,7 +686,7 @@ impl<I: Tokens> Parser<I> {
             return self.parse_subscripts(obj, false);
         }
 
-        let potential_arrow_start = self.state.potential_arrow_start;
+        let potential_arrow_start = self.potential_arrow_start;
 
         let callee = self.parse_new_expr()?;
         return_if_arrow!(self, potential_arrow_start, callee);
@@ -776,7 +771,7 @@ impl<I: Tokens> Parser<I> {
                 // TODO: this appears to be incorrect. See: (async x => x, 1, y => y)(1);
                 if is!(self, "async") {
                     // https://github.com/swc-project/swc/issues/410
-                    self.state.potential_arrow_start = Some(self.input.cur_pos());
+                    self.potential_arrow_start = Some(self.input.cur_pos());
                     let expr = self.parse_assignment_expr()?;
                     expect!(self, ')');
                     return Ok(vec![MaybeParenPatOrExprOrSpread::Expr(expr)]);
@@ -795,7 +790,7 @@ impl<I: Tokens> Parser<I> {
             current_item_has_spread = false;
 
             let start = self.input.cur_pos();
-            self.state.potential_arrow_start = Some(start);
+            self.potential_arrow_start = Some(start);
             let modifier_start = start;
 
             let has_modifier = self.eat_any_ts_modifier()?;
@@ -1072,7 +1067,7 @@ impl<I: Tokens> Parser<I> {
                 unexpected!(self, "target")
             }
 
-            let potential_arrow_start = self.state.potential_arrow_start;
+            let potential_arrow_start = self.potential_arrow_start;
 
             // 'NewExpression' allows new call without paren.
             let callee = self.parse_member_expr_or_new_expr(is_new_expr)?;
@@ -1127,7 +1122,7 @@ impl<I: Tokens> Parser<I> {
             return self.parse_subscripts(base, true);
         }
 
-        let potential_arrow_start = self.state.potential_arrow_start;
+        let potential_arrow_start = self.potential_arrow_start;
 
         let obj = self.parse_primary_expr()?;
         return_if_arrow!(self, potential_arrow_start, obj);
@@ -1354,7 +1349,7 @@ impl<I: Tokens> Parser<I> {
                 }
                 ExprOrSpread::Expr(e) => e,
             };
-            self.state.parenthesised_exprs.insert(expr.node_id());
+            self.parenthesised_exprs.insert(expr.node_id());
             Ok(MaybeParen::Wrapped(expr))
         } else {
             debug_assert!(expr_or_spreads.len() >= 2);
@@ -1380,7 +1375,7 @@ impl<I: Tokens> Parser<I> {
                 node_id: node_id!(self, seq_expr_span),
                 exprs,
             }));
-            self.state.parenthesised_exprs.insert(seq_expr.node_id());
+            self.parenthesised_exprs.insert(seq_expr.node_id());
             Ok(MaybeParen::Wrapped(seq_expr))
         }
     }
@@ -1560,7 +1555,7 @@ impl<I: Tokens> Parser<I> {
                     ..
                 }) => {
                     let span = get_span!(self, expr.node_id());
-                    self.state.potential_arrow_start == Some(span.lo())
+                    self.potential_arrow_start == Some(span.lo())
                 }
                 _ => false,
             }
@@ -1644,9 +1639,13 @@ impl<I: Tokens> Parser<I> {
                 self.emit_strict_mode_err(get_span!(self, expr.node_id()), SyntaxError::TS1100);
             }
 
-            fn should_deny(e: &Expr, deny_call: bool, state: &State) -> bool {
+            fn should_deny(
+                e: &Expr,
+                deny_call: bool,
+                parenthesised_exprs: &FxHashSet<NodeId>,
+            ) -> bool {
                 match e {
-                    _ if state.parenthesised_exprs.contains(&e.node_id()) => true,
+                    _ if parenthesised_exprs.contains(&e.node_id()) => true,
                     Expr::Lit(..) => false,
                     Expr::Call(..) => deny_call,
                     Expr::Bin(..) => false,
@@ -1660,7 +1659,7 @@ impl<I: Tokens> Parser<I> {
             // IsValidSimpleAssignmentTarget of LeftHandSideExpression is false.
             if !is_eval_or_arguments
                 && !is_valid_simple_assignment_target(expr, self.ctx().strict)
-                && should_deny(expr, deny_call, &self.state)
+                && should_deny(expr, deny_call, &self.parenthesised_exprs)
             {
                 self.emit_err(get_span!(self, expr.node_id()), SyntaxError::TS2406);
             }

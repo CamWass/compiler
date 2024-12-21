@@ -971,11 +971,11 @@ impl<I: Tokens> Parser<I> {
             is_continue_allowed: false,
             ..self.ctx()
         };
-        let state = State {
-            labels: vec![],
-            ..Default::default()
-        };
-        self.with_ctx(ctx).with_state(state).parse_fn_body_inner()
+
+        let prev_labels = std::mem::take(&mut self.labels);
+        let res = self.with_ctx(ctx).parse_fn_body_inner();
+        self.labels = prev_labels;
+        res
     }
 }
 

@@ -340,7 +340,8 @@ impl<I: Tokens> Parser<I> {
         })
     }
 
-    /// `tsTryParse`
+    /// `tsTryParse`.
+    /// `op` should not modify state.
     fn try_parse_ts_bool<F>(&mut self, op: F) -> PResult<bool>
     where
         F: FnOnce(&mut Self) -> PResult<Option<bool>>,
@@ -349,17 +350,34 @@ impl<I: Tokens> Parser<I> {
             return Ok(false);
         }
         let prev_emit_err = self.emit_err;
-        let mut cloned = self.clone();
-        cloned.emit_err = false;
-        let res = op(&mut cloned);
+
+        let Parser {
+            emit_err,
+            input,
+            program_data: _,
+            labels: _,
+            potential_arrow_start: _,
+            trailing_commas_after_rest: _,
+            parenthesised_exprs: _,
+        } = &*self;
+
+        let old_emit_err = *emit_err;
+        let old_input = input.clone();
+
+        self.emit_err = false;
+        let res = op(self);
+
         match res {
             Ok(Some(res)) if res => {
-                *self = cloned;
                 self.emit_err = prev_emit_err;
                 Ok(res)
             }
-            Err(..) => Ok(false),
-            _ => Ok(false),
+            _ => {
+                self.emit_err = old_emit_err;
+                self.input = old_input;
+
+                Ok(false)
+            }
         }
     }
 
@@ -374,24 +392,34 @@ impl<I: Tokens> Parser<I> {
         trace_cur!(self, try_parse_ts);
         let prev_emit_err = self.emit_err;
 
-        let mut cloned = self.clone();
-        cloned.emit_err = false;
-        let res = op(&mut cloned);
+        let Parser {
+            emit_err,
+            input,
+            program_data: _,
+            labels,
+            potential_arrow_start,
+            trailing_commas_after_rest: _,
+            parenthesised_exprs: _,
+        } = &*self;
+
+        let old_emit_err = *emit_err;
+        let old_input = input.clone();
+        let prev_labels_len = labels.len();
+        let old_potential_arrow_start = potential_arrow_start.clone();
+
+        self.emit_err = false;
+        let res = op(self);
+
         match res {
             Ok(Some(res)) => {
-                *self = cloned;
-                trace_cur!(self, try_parse_ts__success_value);
-
                 self.emit_err = prev_emit_err;
                 Some(res)
             }
-            Ok(None) => {
-                trace_cur!(self, try_parse_ts__success_no_value);
-
-                None
-            }
-            Err(..) => {
-                trace_cur!(self, try_parse_ts__fail);
+            Ok(None) | Err(..) => {
+                self.emit_err = old_emit_err;
+                self.input = old_input;
+                self.labels.truncate(prev_labels_len);
+                self.potential_arrow_start = old_potential_arrow_start;
 
                 None
             }
@@ -797,9 +825,30 @@ impl<I: Tokens> Parser<I> {
     {
         debug_assert!(self.syntax().typescript());
 
-        let mut cloned = self.clone();
-        cloned.emit_err = false;
-        op(&mut cloned)
+        let Parser {
+            emit_err,
+            input,
+            program_data: _,
+            labels,
+            potential_arrow_start,
+            trailing_commas_after_rest: _,
+            parenthesised_exprs: _,
+        } = &*self;
+
+        let old_emit_err = *emit_err;
+        let prev_labels_len = labels.len();
+        let old_potential_arrow_start = potential_arrow_start.clone();
+        let old_input = input.clone();
+
+        self.emit_err = false;
+        let res = op(self);
+
+        self.emit_err = old_emit_err;
+        self.input = old_input;
+        self.labels.truncate(prev_labels_len);
+        self.potential_arrow_start = old_potential_arrow_start;
+
+        res
     }
 
     /// `tsIsUnambiguouslyStartOfFunctionType`

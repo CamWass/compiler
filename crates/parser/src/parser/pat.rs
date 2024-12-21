@@ -443,7 +443,7 @@ impl<I: Tokens> Parser<I> {
         if pat_ty == PatType::AssignPat {
             match *expr {
                 Expr::Object(..) | Expr::Array(..)
-                    if !self.state.parenthesised_exprs.contains(&expr.node_id()) =>
+                    if !self.parenthesised_exprs.contains(&expr.node_id()) =>
                 {
                     // It is a Syntax Error if LeftHandSideExpression is either
                     // an ObjectLiteral or an ArrayLiteral
@@ -466,7 +466,7 @@ impl<I: Tokens> Parser<I> {
 
         let span = get_span!(self, expr.node_id());
 
-        let parenthesised = self.state.parenthesised_exprs.contains(&expr.node_id());
+        let parenthesised = self.parenthesised_exprs.contains(&expr.node_id());
 
         if pat_ty == PatType::AssignPat {
             // It is a Syntax Error if the LeftHandSideExpression is
@@ -668,11 +668,7 @@ impl<I: Tokens> Parser<I> {
                 // Now that we are reparsing this array as a pattern, any commas
                 // we found directly after a spread element are now errors. We
                 // only bother tracking/reporting the first violation.
-                if let Some(trailing_comma_span) = self
-                    .state
-                    .trailing_commas_after_rest
-                    .get(&get_span!(self, array_id))
-                {
+                if let Some(trailing_comma_span) = self.trailing_commas_after_rest.get(&array_id) {
                     syntax_error!(
                         self,
                         *trailing_comma_span,

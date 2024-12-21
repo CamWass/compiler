@@ -508,14 +508,14 @@ impl<I: Tokens> Parser<I> {
 
     fn verify_break_continue(&self, is_break: bool, label: &Option<Ident>, span: Span) {
         if is_break {
-            if label.is_some() && !self.state.labels.contains(&label.as_ref().unwrap().sym) {
+            if label.is_some() && !self.labels.contains(&label.as_ref().unwrap().sym) {
                 self.emit_err(span, SyntaxError::TS1116);
             } else if !self.ctx().is_break_allowed {
                 self.emit_err(span, SyntaxError::TS1105);
             }
         } else if !self.ctx().is_continue_allowed {
             self.emit_err(span, SyntaxError::TS1115);
-        } else if label.is_some() && !self.state.labels.contains(&label.as_ref().unwrap().sym) {
+        } else if label.is_some() && !self.labels.contains(&label.as_ref().unwrap().sym) {
             self.emit_err(span, SyntaxError::TS1107);
         }
     }
@@ -667,11 +667,11 @@ impl<I: Tokens> Parser<I> {
             return self.parse_normal_for_head(Some(VarDeclOrExpr::VarDecl(decl)));
         }
 
-        let init = if self.input.eat(&tok!(';')) {
+        if self.input.eat(&tok!(';')) {
             return self.parse_normal_for_head(None);
-        } else {
-            self.include_in_expr(false).parse_expr_or_pat()?
-        };
+        }
+
+        let init = self.include_in_expr(false).parse_expr_or_pat()?;
 
         // for (a of b)
         if is_one_of!(self, "of", "in") {
@@ -1215,7 +1215,7 @@ impl<I: Tokens> Parser<I> {
         };
 
         self.with_ctx(ctx).parse_with(|parser| {
-            for existing_label in &parser.state.labels {
+            for existing_label in &parser.labels {
                 if label.sym == *existing_label {
                     parser.emit_err(
                         get_span!(parser, label.node_id),
@@ -1223,7 +1223,7 @@ impl<I: Tokens> Parser<I> {
                     );
                 }
             }
-            parser.state.labels.push(label.sym.clone());
+            parser.labels.push(label.sym.clone());
 
             let body = Box::new(if parser.input.is(&tok!("function")) {
                 let f = parser.parse_fn_decl()?;
@@ -1243,9 +1243,9 @@ impl<I: Tokens> Parser<I> {
             });
 
             {
-                let pos = parser.state.labels.iter().position(|v| v == &label.sym);
+                let pos = parser.labels.iter().position(|v| v == &label.sym);
                 if let Some(pos) = pos {
-                    parser.state.labels.remove(pos);
+                    parser.labels.remove(pos);
                 }
             }
 

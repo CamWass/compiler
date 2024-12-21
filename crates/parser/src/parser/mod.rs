@@ -27,8 +27,16 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-#[derive(Clone, Default)]
-struct State {
+/// When error occurs, error is emitted and parser returns Err(()).
+pub type PResult<T> = Result<T, Error>;
+
+/// EcmaScript parser.
+pub struct Parser<I: Tokens> {
+    /// [false] while backtracking
+    emit_err: bool,
+    input: Buffer<I>,
+    program_data: Rc<RefCell<ProgramData>>,
+
     labels: Vec<JsWord>,
     /// Start position of an assignment expression.
     potential_arrow_start: Option<BytePos>,
@@ -37,21 +45,8 @@ struct State {
     /// For example: `[...a,]`
     ///
     /// Only tracks the first matching comma in an array.
-    trailing_commas_after_rest: FxHashMap<Span, Span>,
+    trailing_commas_after_rest: FxHashMap<NodeId, Span>,
     parenthesised_exprs: FxHashSet<NodeId>,
-}
-
-/// When error occurs, error is emitted and parser returns Err(()).
-pub type PResult<T> = Result<T, Error>;
-
-/// EcmaScript parser.
-#[derive(Clone)]
-pub struct Parser<I: Tokens> {
-    /// [false] while backtracking
-    emit_err: bool,
-    state: State,
-    input: Buffer<I>,
-    program_data: Rc<RefCell<ProgramData>>,
 }
 
 impl<'src> Parser<Lexer<'src>> {
@@ -68,9 +63,13 @@ impl<I: Tokens> Parser<I> {
     pub fn new_from(input: I, program_data: Rc<RefCell<ProgramData>>) -> Self {
         Parser {
             emit_err: true,
-            state: Default::default(),
             input: Buffer::new(input),
             program_data,
+
+            labels: Vec::new(),
+            potential_arrow_start: None,
+            trailing_commas_after_rest: FxHashMap::default(),
+            parenthesised_exprs: FxHashSet::default(),
         }
     }
 
