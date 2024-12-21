@@ -17,7 +17,6 @@ unicode-xid = { workspace = true }
 
 ast = { path = "../ast" }
 atoms = { path = "../atoms" }
-custom_alloc = { path = "../custom_alloc" }
 ecma_visit = { path = "../visit" }
 global_common = { path = "../common" }
 
@@ -25,6 +24,7 @@ global_common = { path = "../common" }
 criterion = { workspace = true }
 serde_json = { workspace = true }
 
+custom_alloc = { path = "../custom_alloc" }
 testing = { path = "../../testing" }
 transform_testing = { path = "../transform_testing" }
 

@@ -15,7 +15,6 @@ serde = { workspace = true, features = ["derive"] }
 
 ast = { path = "../ast" }
 atoms = { path = "../atoms" }
-custom_alloc = { path = "../custom_alloc" }
 ecma_visit = { path = "../visit" }
 global_common = { path = "../common" }
 index = { path = "../index" }
@@ -23,9 +22,10 @@ index = { path = "../index" }
 [dev-dependencies]
 criterion = { workspace = true }
 
-testing = { path = "../../testing" }
-parser = { path = "../parser" }
 codegen = { path = "../codegen" }
+custom_alloc = { path = "../custom_alloc" }
+parser = { path = "../parser" }
+testing = { path = "../../testing" }
 
 [[bench]]
 name = "bench_main"

@@ -13,11 +13,10 @@ sourcemap = { workspace = true }
 
 ast = { path = "../ast" }
 atoms = { path = "../atoms" }
-custom_alloc = { path = "../custom_alloc" }
 global_common = { path = "../common" }
 parser = { path = "../parser" }
 
 [dev-dependencies]
-testing = { path = "../../testing" }
-
+custom_alloc = { path = "../custom_alloc" }
 global_common = { path = "../common", features = ["sourcemap"] }
+testing = { path = "../../testing" }
