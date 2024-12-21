@@ -6,7 +6,7 @@ use atoms::js_word;
 use expression::MaybeParen;
 
 /// Parser for function expression and function declaration.
-impl<I: Tokens> Parser<I> {
+impl<I: Tokens> Parser<'_, I> {
     pub(super) fn parse_async_fn_expr(&mut self) -> PResult<Box<Expr>> {
         let start = self.input.cur_pos();
         expect!(self, "async");
@@ -979,7 +979,7 @@ impl<I: Tokens> Parser<I> {
     }
 }
 
-impl<I: Tokens> Parser<I> {
+impl<I: Tokens> Parser<'_, I> {
     fn make_method<F>(
         &mut self,
         parse_args: F,
@@ -1196,7 +1196,7 @@ pub(super) trait FnBodyParser<Body> {
     fn parse_fn_body_inner(&mut self) -> PResult<Body>;
 }
 
-impl<I: Tokens> FnBodyParser<BlockStmtOrExpr> for Parser<I> {
+impl<I: Tokens> FnBodyParser<BlockStmtOrExpr> for Parser<'_, I> {
     fn parse_fn_body_inner(&mut self) -> PResult<BlockStmtOrExpr> {
         if self.input.is(&tok!('{')) {
             self.parse_block(false).map(BlockStmtOrExpr::BlockStmt)
@@ -1208,7 +1208,7 @@ impl<I: Tokens> FnBodyParser<BlockStmtOrExpr> for Parser<I> {
     }
 }
 
-impl<I: Tokens> FnBodyParser<Option<BlockStmt>> for Parser<I> {
+impl<I: Tokens> FnBodyParser<Option<BlockStmt>> for Parser<'_, I> {
     fn parse_fn_body_inner(&mut self) -> PResult<Option<BlockStmt>> {
         // allow omitting body and allow placing `{` on next line
         if self.input.syntax().typescript() && !is!(self, '{') && eat!(self, ';') {

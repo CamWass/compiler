@@ -12,8 +12,6 @@ use global_common::{
 use global_common::{FileName, FilePathMapping};
 use global_common::{Globals, Mark, GLOBALS};
 use parser::{Parser, Syntax};
-use std::cell::RefCell;
-use std::rc::Rc;
 
 pub fn bench(c: &mut Criterion) {
     let benches: &'static [(&'static str, &'static str, u64, usize)] = &[
@@ -40,7 +38,7 @@ pub fn bench(c: &mut Criterion) {
             let unresolved_mark = Mark::new();
             let top_level_mark = Mark::new();
 
-            let program_data = Rc::new(RefCell::new(ast::ProgramData::default()));
+            let mut program_data = ast::ProgramData::default();
 
             let handler =
                 Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
@@ -49,7 +47,7 @@ pub fn bench(c: &mut Criterion) {
                 let mut p = Parser::new(
                     Syntax::Typescript(Default::default()),
                     &fm,
-                    program_data.clone(),
+                    &mut program_data,
                 );
                 let res = p
                     .parse_program()

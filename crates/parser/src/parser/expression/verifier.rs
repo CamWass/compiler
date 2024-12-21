@@ -2,7 +2,7 @@ use super::*;
 use ecma_visit::{Visit, VisitWith};
 use global_common::Span;
 
-impl<I: Tokens> Parser<I> {
+impl<I: Tokens> Parser<'_, I> {
     pub(in crate::parser) fn verify_expr(&mut self, expr: &Expr) {
         let mut v = Verifier {
             errors: vec![],
@@ -19,7 +19,7 @@ impl<I: Tokens> Parser<I> {
 
 struct Verifier<'a, I: Tokens> {
     pub errors: Vec<(Span, SyntaxError)>,
-    parser: &'a Parser<I>,
+    parser: &'a Parser<'a, I>,
 }
 
 impl<I: Tokens> Visit<'_> for Verifier<'_, I> {

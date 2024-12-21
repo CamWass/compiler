@@ -3,8 +3,6 @@
 #![deny(unused)]
 #![allow(clippy::result_unit_err)]
 
-use std::{cell::RefCell, rc::Rc};
-
 use ansi_term::Color;
 use ast::{Pat, *};
 use codegen::Emitter;
@@ -49,10 +47,10 @@ impl<'a> Tester<'a> {
             .cm
             .new_source_file(FileName::Real(name.into()), src.into());
 
-        let program_data = Rc::new(RefCell::new(ast::ProgramData::default()));
+        let mut program_data = ast::ProgramData::default();
 
         let module = {
-            let mut p = Parser::new(syntax, &fm, program_data.clone());
+            let mut p = Parser::new(syntax, &fm, &mut program_data);
             let res = p
                 .parse_module()
                 .map_err(|e| e.into_diagnostic(self.handler).emit());
@@ -63,8 +61,6 @@ impl<'a> Tester<'a> {
 
             res?
         };
-
-        let program_data = Rc::try_unwrap(program_data).unwrap().into_inner();
 
         let mut module = Program::Module(module);
         module.visit_mut_with(&mut tr);

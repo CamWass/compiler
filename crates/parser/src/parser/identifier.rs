@@ -5,7 +5,7 @@ use atoms::js_word;
 use either::Either;
 use global_common::SyntaxContext;
 
-impl<I: Tokens> Parser<I> {
+impl<I: Tokens> Parser<'_, I> {
     pub(super) fn new_ident(&mut self, sym: JsWord, span: Span) -> Ident {
         Ident {
             node_id: node_id!(self, span),
@@ -143,12 +143,12 @@ impl<I: Tokens> Parser<I> {
 pub(super) trait MaybeOptionalIdentParser<Ident> {
     fn parse_maybe_opt_binding_ident(&mut self) -> PResult<Ident>;
 }
-impl<I: Tokens> MaybeOptionalIdentParser<Ident> for Parser<I> {
+impl<I: Tokens> MaybeOptionalIdentParser<Ident> for Parser<'_, I> {
     fn parse_maybe_opt_binding_ident(&mut self) -> PResult<Ident> {
         self.parse_binding_ident().map(|i| i.id)
     }
 }
-impl<I: Tokens> MaybeOptionalIdentParser<Option<Ident>> for Parser<I> {
+impl<I: Tokens> MaybeOptionalIdentParser<Option<Ident>> for Parser<'_, I> {
     fn parse_maybe_opt_binding_ident(&mut self) -> PResult<Option<Ident>> {
         self.parse_opt_binding_ident().map(|opt| opt.map(|i| i.id))
     }

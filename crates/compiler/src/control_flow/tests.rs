@@ -187,7 +187,8 @@ fn parse_script(input: &str) -> ast::Script {
 
     let fm = cm.new_source_file(FileName::Real("input".into()), input.into());
 
-    let mut p = Parser::new(Syntax::Es(Default::default()), &fm, Default::default());
+    let mut program_data = Default::default();
+    let mut p = Parser::new(Syntax::Es(Default::default()), &fm, &mut program_data);
     let res = match p.parse_script() {
         Ok(p) => p,
         Err(e) => {

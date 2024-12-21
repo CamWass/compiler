@@ -25,7 +25,7 @@ mod verifier;
 //
 // [opp]: http://en.wikipedia.org/wiki/Operator-precedence_parser
 
-impl<I: Tokens> Parser<I> {
+impl<I: Tokens> Parser<'_, I> {
     // https://tc39.es/ecma262/#prod-Expression
     pub(super) fn parse_expr(&mut self) -> PResult<MaybeParen> {
         trace_cur!(self, parse_expr);
@@ -546,14 +546,15 @@ impl<I: Tokens> Parser<I> {
                             true,
                         )))
                     } else if is!(p, '`') {
-                        p.parse_tagged_tpl(match &obj {
+                        let tag = match &obj {
                             MaybeParenExprOrSuper::Expr(obj) => {
                                 obj.clone_node(program_data!(p)).unwrap()
                             }
                             _ => unreachable!(),
-                        })
-                        .map(|expr| (Box::new(Expr::TaggedTpl(expr)).into(), true))
-                        .map(Some)
+                        };
+                        p.parse_tagged_tpl(tag)
+                            .map(|expr| (Box::new(Expr::TaggedTpl(expr)).into(), true))
+                            .map(Some)
                     } else if no_call {
                         unexpected!(p, "`")
                     } else {
@@ -1504,7 +1505,7 @@ fn word_contains_escape(span: &Span, word: &'static str) -> bool {
 }
 
 /// simple leaf methods.
-impl<I: Tokens> Parser<I> {
+impl<I: Tokens> Parser<'_, I> {
     fn parse_yield_expr(&mut self) -> PResult<Box<Expr>> {
         let start = self.input.cur_pos();
 

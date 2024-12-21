@@ -66,7 +66,7 @@ pub enum StmtParseCtx {
     None,
 }
 
-impl<I: Tokens> StmtLikeParser<Stmt> for Parser<I> {
+impl<I: Tokens> StmtLikeParser<Stmt> for Parser<'_, I> {
     fn handle_import_export(&mut self, _: bool) -> PResult<Option<Stmt>> {
         let start = self.input.cur_pos();
         if self.input.syntax().dynamic_import() && is!(self, "import") {
@@ -98,7 +98,7 @@ impl<I: Tokens> StmtLikeParser<Stmt> for Parser<I> {
     }
 }
 
-impl<I: Tokens> Parser<I> {
+impl<I: Tokens> Parser<'_, I> {
     pub(super) fn parse_block_body<Type>(
         &mut self,
         allow_directives: bool,

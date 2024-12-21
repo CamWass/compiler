@@ -6,7 +6,7 @@ extern crate test;
 use codegen::{self, Emitter};
 use global_common::FileName;
 use parser::Parser;
-use std::{cell::RefCell, hint::black_box, rc::Rc};
+use std::hint::black_box;
 use test::Bencher;
 
 const COLORS_JS: &str = r#"
@@ -89,10 +89,10 @@ fn bench_emitter(b: &mut Bencher, s: &str) {
     let _ = ::testing::run_test(true, |cm, handler| {
         b.iter(|| {
             let fm = cm.new_source_file(FileName::Anon, s.into());
-            let program_data = Rc::new(RefCell::new(ast::ProgramData::default()));
+            let mut program_data = ast::ProgramData::default();
             let mut src_map_buf = vec![];
             let module = {
-                let mut parser = Parser::new(Default::default(), &fm, program_data.clone());
+                let mut parser = Parser::new(Default::default(), &fm, &mut program_data);
                 let m = parser
                     .parse_module()
                     .map_err(|e| e.into_diagnostic(handler).emit())
@@ -104,8 +104,6 @@ fn bench_emitter(b: &mut Bencher, s: &str) {
 
                 m
             };
-
-            let program_data = Rc::try_unwrap(program_data).unwrap().into_inner();
 
             let mut buf = vec![];
             {

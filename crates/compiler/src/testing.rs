@@ -3,8 +3,6 @@ use codegen::{text_writer::JsWriter, Emitter};
 use ecma_visit::{VisitMut, VisitMutWith};
 use global_common::{errors::Handler, sync::Lrc, FileName, SourceMap};
 use parser::{Parser, Syntax};
-use std::cell::RefCell;
-use std::rc::Rc;
 
 struct Tester<'a> {
     cm: Lrc<SourceMap>,
@@ -37,13 +35,13 @@ impl<'a> Tester<'a> {
             .cm
             .new_source_file(FileName::Real(name.into()), src.into());
 
-        let program_data = Rc::new(RefCell::new(ast::ProgramData::default()));
+        let mut program_data = ast::ProgramData::default();
 
         let program = {
             let mut p = Parser::new(
                 Syntax::Typescript(Default::default()),
                 &fm,
-                program_data.clone(),
+                &mut program_data,
             );
             let res = p
                 .parse_program()
@@ -55,8 +53,6 @@ impl<'a> Tester<'a> {
 
             res?
         };
-
-        let mut program_data = Rc::try_unwrap(program_data).unwrap().into_inner();
 
         let program = tr(program, &mut program_data);
 

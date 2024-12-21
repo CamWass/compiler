@@ -3,11 +3,7 @@ use super::*;
 use crate::config::Config;
 use global_common::{FileName, SourceMap};
 use parser::{self, EsConfig, Syntax};
-use std::{
-    cell::RefCell,
-    fmt::{self, Debug, Display, Formatter},
-    rc::Rc,
-};
+use std::fmt::{self, Debug, Display, Formatter};
 
 struct Builder {
     cfg: Config,
@@ -47,9 +43,9 @@ fn parse_then_emit(from: &str, cfg: Config, syntax: Syntax) -> String {
             from, src.start_pos, src.end_pos
         );
 
-        let program_data = Rc::new(RefCell::new(ast::ProgramData::default()));
+        let mut program_data = ast::ProgramData::default();
         let res = {
-            let mut parser = Parser::new(syntax, &src, program_data.clone());
+            let mut parser = Parser::new(syntax, &src, &mut program_data);
             let res = parser
                 .parse_module()
                 .map_err(|e| e.into_diagnostic(handler).emit());
@@ -64,7 +60,7 @@ fn parse_then_emit(from: &str, cfg: Config, syntax: Syntax) -> String {
         let out = Builder {
             cfg,
             cm,
-            program_data: Rc::try_unwrap(program_data).unwrap().into_inner(),
+            program_data,
         }
         .text(|e| e.emit_module(&res).unwrap());
         Ok(out)

@@ -2,7 +2,7 @@
 use super::*;
 use crate::token::Keyword;
 
-impl<I: Tokens> Parser<I> {
+impl<I: Tokens> Parser<'_, I> {
     /// Name from spec: 'LogicalORExpression'
     pub(super) fn parse_bin_expr(&mut self) -> PResult<MaybeParen> {
         trace_cur!(self, parse_bin_expr);

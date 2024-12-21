@@ -5,7 +5,7 @@ use crate::lexer::TokenContexts;
 use atoms::js_word;
 use expression::MaybeParen;
 
-impl<I: Tokens> Parser<I> {
+impl<I: Tokens> Parser<'_, I> {
     /// `tsNextTokenCanFollowModifier`
     fn ts_next_token_can_follow_modifier(&mut self) -> PResult<bool> {
         debug_assert!(self.syntax().typescript());
@@ -1904,7 +1904,7 @@ impl<I: Tokens> Parser<I> {
     }
 }
 
-impl<I: Tokens> Parser<I> {
+impl<I: Tokens> Parser<'_, I> {
     /// In no lexer context
     fn ts_in_no_context<T, F>(&mut self, op: F) -> PResult<T>
     where

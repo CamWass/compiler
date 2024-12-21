@@ -1,7 +1,7 @@
 use super::*;
 use crate::context::{YesMaybe, YesNoMaybe};
 
-impl<I: Tokens> Parser<I> {
+impl<I: Tokens> Parser<'_, I> {
     #[allow(clippy::cognitive_complexity)]
     fn parse_import(&mut self) -> PResult<ModuleItem> {
         let start = self.input.cur_pos();
@@ -613,7 +613,7 @@ impl IsDirective for ModuleItem {
     }
 }
 
-impl<I: Tokens> StmtLikeParser<ModuleItem> for Parser<I> {
+impl<I: Tokens> StmtLikeParser<ModuleItem> for Parser<'_, I> {
     fn handle_import_export(&mut self, top_level: bool) -> PResult<Option<ModuleItem>> {
         if !top_level {
             syntax_error!(self, SyntaxError::NonTopLevelImportExport);

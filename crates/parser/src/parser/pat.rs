@@ -5,7 +5,7 @@ use atoms::js_word;
 use expression::MaybeParenSpreadElement;
 use util::is_valid_simple_assignment_target;
 
-impl<I: Tokens> Parser<I> {
+impl<I: Tokens> Parser<'_, I> {
     pub(super) fn parse_opt_binding_ident(&mut self) -> PResult<Option<BindingIdent>> {
         trace_cur!(self, parse_opt_binding_ident);
 
@@ -430,7 +430,7 @@ impl PatType {
     }
 }
 
-impl<I: Tokens> Parser<I> {
+impl<I: Tokens> Parser<'_, I> {
     // We don't take `MaybeParen` here since that would require preserving parens while
     // parsing patterns, so we use `state.parenthesised_exprs`.
     /// This does not return 'rest' pattern because non-last parameter cannot be

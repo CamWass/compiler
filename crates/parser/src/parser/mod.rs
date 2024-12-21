@@ -24,18 +24,16 @@ use global_common::{BytePos, SourceFile, Span};
 use input::Buffer;
 pub use input::Tokens;
 use rustc_hash::{FxHashMap, FxHashSet};
-use std::cell::RefCell;
-use std::rc::Rc;
 
 /// When error occurs, error is emitted and parser returns Err(()).
 pub type PResult<T> = Result<T, Error>;
 
 /// EcmaScript parser.
-pub struct Parser<I: Tokens> {
+pub struct Parser<'d, I: Tokens> {
     /// [false] while backtracking
     emit_err: bool,
     input: Buffer<I>,
-    program_data: Rc<RefCell<ProgramData>>,
+    program_data: &'d mut ProgramData,
 
     labels: Vec<JsWord>,
     /// Start position of an assignment expression.
@@ -49,18 +47,14 @@ pub struct Parser<I: Tokens> {
     parenthesised_exprs: FxHashSet<NodeId>,
 }
 
-impl<'src> Parser<Lexer<'src>> {
-    pub fn new(
-        syntax: Syntax,
-        input: &'src SourceFile,
-        program_data: Rc<RefCell<ProgramData>>,
-    ) -> Self {
+impl<'d, 'src> Parser<'d, Lexer<'src>> {
+    pub fn new(syntax: Syntax, input: &'src SourceFile, program_data: &'d mut ProgramData) -> Self {
         Self::new_from(Lexer::new(syntax, Default::default(), input), program_data)
     }
 }
 
-impl<I: Tokens> Parser<I> {
-    pub fn new_from(input: I, program_data: Rc<RefCell<ProgramData>>) -> Self {
+impl<'d, I: Tokens> Parser<'d, I> {
+    pub fn new_from(input: I, program_data: &'d mut ProgramData) -> Self {
         Parser {
             emit_err: true,
             input: Buffer::new(input),

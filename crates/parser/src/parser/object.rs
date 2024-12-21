@@ -3,7 +3,7 @@
 use super::{class_and_fn::is_not_this, util::ParseObject, *};
 use atoms::js_word;
 
-impl<I: Tokens> Parser<I> {
+impl<I: Tokens> Parser<'_, I> {
     /// Parse a object literal or object pattern.
     pub(super) fn parse_object<T>(&mut self) -> PResult<T>
     where
@@ -118,7 +118,7 @@ impl<I: Tokens> Parser<I> {
     }
 }
 
-impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
+impl<I: Tokens> ParseObject<Box<Expr>> for Parser<'_, I> {
     type Prop = Prop;
 
     fn make_object(&mut self, span: Span, props: Vec<Self::Prop>) -> PResult<Box<Expr>> {
@@ -384,7 +384,7 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<I> {
     }
 }
 
-impl<I: Tokens> ParseObject<Pat> for Parser<I> {
+impl<I: Tokens> ParseObject<Pat> for Parser<'_, I> {
     type Prop = ObjectPatProp;
 
     fn make_object(&mut self, span: Span, props: Vec<Self::Prop>) -> PResult<Pat> {

@@ -11,8 +11,6 @@ use global_common::{
 };
 use parser::{Parser, Syntax};
 use rustc_hash::FxHashSet;
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::time::Instant;
 use std::{env, path::Path};
 use swc_common::Spanned;
@@ -24,7 +22,7 @@ fn create_program(
     config: &Config,
     cm: Lrc<SourceMap>,
     handler: &Handler,
-    program_data: Rc<RefCell<ast::ProgramData>>,
+    program_data: &mut ast::ProgramData,
 ) -> Result<ast::Program> {
     let syntax = if filename.ends_with(".js") {
         Syntax::Es(config.ecmascript)
@@ -67,17 +65,9 @@ fn compile(entry_file: &str, config: Config) -> Result<()> {
     let cm = Lrc::<SourceMap>::default();
     let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
 
-    let program_data = Rc::new(RefCell::new(ast::ProgramData::default()));
+    let mut program_data = ast::ProgramData::default();
 
-    let program = create_program(
-        entry_file,
-        &config,
-        cm.clone(),
-        &handler,
-        program_data.clone(),
-    )?;
-
-    let mut program_data = Rc::try_unwrap(program_data).unwrap().into_inner();
+    let program = create_program(entry_file, &config, cm.clone(), &handler, &mut program_data)?;
 
     let compiler = Compiler::new();
 
@@ -310,12 +300,12 @@ fn compile_ours(input: String, config: Config) -> Result<String> {
     let cm = Lrc::<SourceMap>::default();
     let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
 
-    let program_data = Rc::new(RefCell::new(ast::ProgramData::default()));
+    let mut program_data = ast::ProgramData::default();
 
     let fm = cm.new_source_file(FileName::Anon.into(), input);
 
     let program = {
-        let mut parser = Parser::new(Default::default(), &fm, program_data.clone());
+        let mut parser = Parser::new(Default::default(), &fm, &mut program_data);
 
         let program = parser.parse_program();
 
@@ -337,8 +327,6 @@ fn compile_ours(input: String, config: Config) -> Result<String> {
 
         program
     };
-
-    let program_data = Rc::try_unwrap(program_data).unwrap().into_inner();
 
     // let compiler = Compiler::new();
 
