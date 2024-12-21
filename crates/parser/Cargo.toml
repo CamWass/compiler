@@ -17,7 +17,6 @@ unicode-xid = { workspace = true }
 
 ast = { path = "../ast" }
 atoms = { path = "../atoms" }
-ecma_visit = { path = "../visit" }
 global_common = { path = "../common" }
 
 [dev-dependencies]
