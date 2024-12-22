@@ -7,6 +7,7 @@ use atoms::js_word;
 use expression::MaybeParen;
 use global_common::{BytePos, Span};
 use statement::typescript::DeclOrEmpty;
+use util::AssignProps;
 
 mod module_item;
 
@@ -70,7 +71,7 @@ impl<I: Tokens> StmtLikeParser<Stmt> for Parser<'_, I> {
     fn handle_import_export(&mut self, _: bool) -> PResult<Option<Stmt>> {
         let start = self.input.cur_pos();
         if self.input.syntax().dynamic_import() && is!(self, "import") {
-            let expr = self.parse_expr()?.unwrap();
+            let expr = self.parse_expr(&mut AssignProps::Emit)?.unwrap();
 
             eat!(self, ';');
 
@@ -84,7 +85,7 @@ impl<I: Tokens> StmtLikeParser<Stmt> for Parser<'_, I> {
             && is!(self, "import")
             && self.input.peeked_is(&tok!('.'))
         {
-            let expr = self.parse_expr()?.unwrap();
+            let expr = self.parse_expr(&mut AssignProps::Emit)?.unwrap();
 
             eat!(self, ';');
 
@@ -412,22 +413,20 @@ impl<I: Tokens> Parser<'_, I> {
         // simply start parsing an expression, and afterwards, if the
         // next token is a colon and the expression was a simple
         // Identifier node, we switch to interpreting it as a label.
-        let expr = self.include_in_expr(true).parse_expr()?;
+        let expr = self
+            .include_in_expr(true)
+            .parse_expr(&mut AssignProps::Emit)?;
 
-        match &expr {
-            MaybeParen::Expr(expr_ref) => match expr_ref.as_ref() {
-                Expr::Ident(_) => {
-                    if self.input.eat(&tok!(':')) {
-                        let ident = match *expr.unwrap() {
-                            Expr::Ident(ident) => ident,
-                            _ => unreachable!(),
-                        };
-                        return self.parse_labelled_stmt(ident).map(Some);
-                    }
+        if let MaybeParen::Expr(expr_ref) = &expr {
+            if let Expr::Ident(_) = expr_ref.as_ref() {
+                if self.input.eat(&tok!(':')) {
+                    let ident = match *expr.unwrap() {
+                        Expr::Ident(ident) => ident,
+                        _ => unreachable!(),
+                    };
+                    return self.parse_labelled_stmt(ident).map(Some);
                 }
-                _ => self.verify_expr(expr.inner()),
-            },
-            MaybeParen::Wrapped(expr) => self.verify_expr(expr),
+            }
         }
 
         if let MaybeParen::Expr(expr_ref) = &expr {
@@ -530,7 +529,9 @@ impl<I: Tokens> Parser<'_, I> {
 
     fn parse_header_expr(&mut self) -> PResult<MaybeParen> {
         expect!(self, '(');
-        let val = self.include_in_expr(true).parse_expr()?;
+        let val = self
+            .include_in_expr(true)
+            .parse_expr(&mut AssignProps::Emit)?;
         expect!(self, ')');
         Ok(val)
     }
@@ -671,7 +672,10 @@ impl<I: Tokens> Parser<'_, I> {
             return self.parse_normal_for_head(None);
         }
 
-        let init = self.include_in_expr(false).parse_expr_or_pat()?;
+        let mut assign_props = AssignProps::Buffer(Vec::new());
+        let init = self
+            .include_in_expr(false)
+            .parse_expr_or_pat(&mut assign_props)?;
 
         // for (a of b)
         if is_one_of!(self, "of", "in") {
@@ -692,17 +696,29 @@ impl<I: Tokens> Parser<'_, I> {
 
         expect_exact!(self, ';');
 
-        self.verify_expr(init.inner());
+        let assign_props = match assign_props {
+            AssignProps::Buffer(props) => props,
+            _ => unreachable!(),
+        };
+        for prop in assign_props {
+            self.emit_err(prop, SyntaxError::AssignProperty);
+        }
         self.parse_normal_for_head(Some(VarDeclOrExpr::Expr(init.unwrap())))
     }
 
     fn parse_for_each_head(&mut self, left: VarDeclOrPat) -> PResult<ForHead> {
         let of = self.input.bump() == tok!("of");
         if of {
-            let right = self.include_in_expr(true).parse_assignment_expr()?.unwrap();
+            let right = self
+                .include_in_expr(true)
+                .parse_assignment_expr(&mut AssignProps::Emit)?
+                .unwrap();
             Ok(ForHead::ForOf { left, right })
         } else {
-            let right = self.include_in_expr(true).parse_expr()?.unwrap();
+            let right = self
+                .include_in_expr(true)
+                .parse_expr(&mut AssignProps::Emit)?
+                .unwrap();
             Ok(ForHead::ForIn { left, right })
         }
     }
@@ -713,7 +729,7 @@ impl<I: Tokens> Parser<'_, I> {
         } else {
             let test = self
                 .include_in_expr(true)
-                .parse_expr()
+                .parse_expr(&mut AssignProps::Emit)
                 .map(MaybeParen::unwrap)
                 .map(Some)?;
             expect_exact!(self, ';');
@@ -724,7 +740,7 @@ impl<I: Tokens> Parser<'_, I> {
             None
         } else {
             self.include_in_expr(true)
-                .parse_expr()
+                .parse_expr(&mut AssignProps::Emit)
                 .map(MaybeParen::unwrap)
                 .map(Some)?
         };
@@ -740,7 +756,10 @@ impl<I: Tokens> Parser<'_, I> {
         // TODO: let test = self.parse_header_expr()?;
 
         expect!(self, '(');
-        let test = self.include_in_expr(true).parse_expr()?.unwrap();
+        let test = self
+            .include_in_expr(true)
+            .parse_expr(&mut AssignProps::Emit)?
+            .unwrap();
         if !eat!(self, ')') {
             self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
 
@@ -791,7 +810,7 @@ impl<I: Tokens> Parser<'_, I> {
             None
         } else {
             self.include_in_expr(true)
-                .parse_expr()
+                .parse_expr(&mut AssignProps::Emit)
                 .map(MaybeParen::unwrap)
                 .map(Some)?
         };
@@ -840,7 +859,7 @@ impl<I: Tokens> Parser<'_, I> {
                 let test = if is_case {
                     parser
                         .with_ctx(ctx)
-                        .parse_expr()
+                        .parse_expr(&mut AssignProps::Emit)
                         .map(MaybeParen::unwrap)
                         .map(Some)?
                 } else {
@@ -889,7 +908,10 @@ impl<I: Tokens> Parser<'_, I> {
             syntax_error!(self, SyntaxError::LineBreakInThrow);
         }
 
-        let arg = self.include_in_expr(true).parse_expr()?.unwrap();
+        let arg = self
+            .include_in_expr(true)
+            .parse_expr(&mut AssignProps::Emit)?
+            .unwrap();
         expect!(self, ';');
 
         Ok(Stmt::Throw(ThrowStmt {
@@ -991,7 +1013,7 @@ impl<I: Tokens> Parser<'_, I> {
                         return Ok(false);
                     }
 
-                    parser.parse_assignment_expr()?;
+                    parser.parse_assignment_expr(&mut AssignProps::Emit)?;
                     expect!(parser, ')');
 
                     Ok(true)
@@ -1059,7 +1081,7 @@ impl<I: Tokens> Parser<'_, I> {
         if !for_loop && !eat!(self, ';') {
             self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
 
-            let _ = self.parse_expr();
+            let _ = self.parse_expr(&mut AssignProps::Emit);
 
             while !eat!(self, ';') {
                 self.input.bump();
@@ -1100,10 +1122,7 @@ impl<I: Tokens> Parser<'_, I> {
         //FIXME(swc): This is wrong. Should check in/of only on first loop.
         let init = if !for_loop || !is_one_of!(self, "in", "of") {
             if self.input.eat(&tok!('=')) {
-                let expr = self.parse_assignment_expr()?.unwrap();
-                self.verify_expr(&expr);
-
-                Some(expr)
+                Some(self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap())
             } else {
                 // Destructuring bindings require initializers, but
                 // typescript allows `declare` vars not to have initializers.

@@ -3,7 +3,7 @@ use super::{expression::MaybeParenPatOrExprOrSpread, *};
 use crate::token::AssignOpToken;
 use atoms::js_word;
 use expression::MaybeParenSpreadElement;
-use util::is_valid_simple_assignment_target;
+use util::{is_valid_simple_assignment_target, AssignProps};
 
 impl<I: Tokens> Parser<'_, I> {
     pub(super) fn parse_opt_binding_ident(&mut self) -> PResult<Option<BindingIdent>> {
@@ -46,7 +46,7 @@ impl<I: Tokens> Parser<'_, I> {
         match *cur!(self, true)? {
             tok!("yield") | Word(..) => self.parse_binding_ident().map(Pat::Ident),
             tok!('[') => self.parse_array_binding_pat(),
-            tok!('{') => self.parse_object(),
+            tok!('{') => self.parse_object(&mut AssignProps::Ignore),
             // tok!('(') => {
             //     bump!(self);
             //     let pat = self.parse_binding_pat_or_ident()?;
@@ -65,7 +65,10 @@ impl<I: Tokens> Parser<'_, I> {
         let left = self.parse_binding_pat_or_ident()?;
 
         if self.input.eat(&tok!('=')) {
-            let right = self.include_in_expr(true).parse_assignment_expr()?.unwrap();
+            let right = self
+                .include_in_expr(true)
+                .parse_assignment_expr(&mut AssignProps::Emit)?
+                .unwrap();
 
             if self.ctx().in_declare {
                 self.emit_err(span!(self, start), SyntaxError::TS2371);
@@ -214,7 +217,7 @@ impl<I: Tokens> Parser<'_, I> {
                 self.emit_err(get_span!(self, pat.node_id()), SyntaxError::TS1015);
             }
 
-            let right = self.parse_assignment_expr()?.unwrap();
+            let right = self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap();
             if self.ctx().in_declare {
                 self.emit_err(span!(self, start), SyntaxError::TS2371);
             }
@@ -360,7 +363,7 @@ impl<I: Tokens> Parser<'_, I> {
                 let mut pat = self.parse_binding_pat_or_ident()?;
 
                 if self.input.eat(&tok!('=')) {
-                    let right = self.parse_assignment_expr()?.unwrap();
+                    let right = self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap();
                     self.emit_err(get_span!(self, pat.node_id()), SyntaxError::TS1048);
                     pat = Pat::Assign(AssignPat {
                         node_id: node_id!(self, span!(self, param_start)),

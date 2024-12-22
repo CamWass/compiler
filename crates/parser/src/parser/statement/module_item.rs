@@ -1,3 +1,5 @@
+use util::AssignProps;
+
 use super::*;
 use crate::context::{YesMaybe, YesNoMaybe};
 
@@ -7,7 +9,7 @@ impl<I: Tokens> Parser<'_, I> {
         let start = self.input.cur_pos();
 
         if self.input.peeked_is(&tok!('.')) {
-            let expr = self.parse_expr()?.unwrap();
+            let expr = self.parse_expr(&mut AssignProps::Emit)?.unwrap();
 
             eat!(self, ';');
 
@@ -18,7 +20,7 @@ impl<I: Tokens> Parser<'_, I> {
         }
 
         if self.input.syntax().dynamic_import() && self.input.peeked_is(&tok!('(')) {
-            let expr = self.parse_expr()?.unwrap();
+            let expr = self.parse_expr(&mut AssignProps::Emit)?.unwrap();
 
             eat!(self, ';');
 
@@ -144,7 +146,7 @@ impl<I: Tokens> Parser<'_, I> {
             && !self.input.had_line_break_before_cur()
             && eat!(self, "assert")
         {
-            match *self.parse_object::<Box<Expr>>()? {
+            match *self.parse_object::<Box<Expr>>(&mut AssignProps::Emit)? {
                 Expr::Object(v) => Some(v),
                 _ => unreachable!(),
             }
@@ -380,7 +382,10 @@ impl<I: Tokens> Parser<'_, I> {
             {
                 export_default = Some(self.new_ident("default".into(), self.input.prev_span()))
             } else {
-                let expr = self.include_in_expr(true).parse_assignment_expr()?.unwrap();
+                let expr = self
+                    .include_in_expr(true)
+                    .parse_assignment_expr(&mut AssignProps::Emit)?
+                    .unwrap();
                 expect!(self, ';');
                 return Ok(Some(ModuleDecl::ExportDefaultExpr(ExportDefaultExpr {
                     node_id: node_id!(self, span!(self, start)),
@@ -592,7 +597,7 @@ impl<I: Tokens> Parser<'_, I> {
             && !self.input.had_line_break_before_cur()
             && eat!(self, "assert")
         {
-            match *self.parse_object::<Box<Expr>>()? {
+            match *self.parse_object::<Box<Expr>>(&mut AssignProps::Emit)? {
                 Expr::Object(v) => Some(v),
                 _ => unreachable!(),
             }

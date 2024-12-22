@@ -4,6 +4,7 @@ use super::*;
 use crate::lexer::TokenContexts;
 use atoms::js_word;
 use expression::MaybeParen;
+use util::AssignProps;
 
 impl<I: Tokens> Parser<'_, I> {
     /// `tsNextTokenCanFollowModifier`
@@ -508,7 +509,7 @@ impl<I: Tokens> Parser<'_, I> {
             }
             Token::LBracket => {
                 self.assert_and_bump(&tok!('['));
-                let _ = self.parse_expr()?;
+                let _ = self.parse_expr(&mut AssignProps::Emit)?;
 
                 self.emit_err(span!(self, start), SyntaxError::TS1164);
 
@@ -521,7 +522,7 @@ impl<I: Tokens> Parser<'_, I> {
 
         // Init:
         if eat!(self, '=') {
-            self.parse_assignment_expr()?;
+            self.parse_assignment_expr(&mut AssignProps::Emit)?;
         } else if !(is!(self, ',') || is!(self, '}')) {
             let start = self.input.cur_pos();
             self.input.bump();
@@ -677,7 +678,7 @@ impl<I: Tokens> Parser<'_, I> {
         // `tsParseType`.
         self.in_type().parse_with(|p| p.parse_ts_type())?;
         expect!(self, '>');
-        self.parse_unary_expr()
+        self.parse_unary_expr(&mut AssignProps::Emit)
     }
 
     /// `tsParseHeritageClause`

@@ -1,17 +1,19 @@
 //! Parser for unary operations and binary operations.
+use util::AssignProps;
+
 use super::*;
 use crate::token::Keyword;
 
 impl<I: Tokens> Parser<'_, I> {
     /// Name from spec: 'LogicalORExpression'
-    pub(super) fn parse_bin_expr(&mut self) -> PResult<MaybeParen> {
+    pub(super) fn parse_bin_expr(&mut self, assign_props: &mut AssignProps) -> PResult<MaybeParen> {
         trace_cur!(self, parse_bin_expr);
 
         let include_in_expr = self.ctx().include_in_expr;
 
         let potential_arrow_start = self.potential_arrow_start;
 
-        let left = match self.parse_unary_expr() {
+        let left = match self.parse_unary_expr(assign_props) {
             Ok(v) => v,
             Err(err) => {
                 trace_cur!(self, parse_bin_expr__recovery_unary_err);
@@ -158,7 +160,7 @@ impl<I: Tokens> Parser<'_, I> {
         }
 
         let right = {
-            let left_of_right = self.parse_unary_expr()?;
+            let left_of_right = self.parse_unary_expr(&mut AssignProps::Emit)?;
             self.parse_bin_op_recursively(
                 left_of_right,
                 if op == op!("**") {
@@ -227,7 +229,10 @@ impl<I: Tokens> Parser<'_, I> {
     /// Parse unary expression and update expression.
     ///
     /// spec: 'UnaryExpression'
-    pub(in crate::parser) fn parse_unary_expr(&mut self) -> PResult<MaybeParen> {
+    pub(in crate::parser) fn parse_unary_expr(
+        &mut self,
+        assign_props: &mut AssignProps,
+    ) -> PResult<MaybeParen> {
         trace_cur!(self, parse_unary_expr);
 
         let start = self.input.cur_pos();
@@ -235,7 +240,7 @@ impl<I: Tokens> Parser<'_, I> {
         if self.input.syntax().typescript() && eat!(self, '<') {
             if eat!(self, "const") {
                 expect!(self, '>');
-                let expr = self.parse_unary_expr()?;
+                let expr = self.parse_unary_expr(&mut AssignProps::Emit)?;
                 return Ok(expr);
             }
 
@@ -250,7 +255,7 @@ impl<I: Tokens> Parser<'_, I> {
                 op!("--")
             };
 
-            let arg = self.parse_unary_expr()?;
+            let arg = self.parse_unary_expr(&mut AssignProps::Emit)?;
             let hi = get_span!(self, arg.node_id()).hi();
             let span = Span::new(start, hi);
             self.check_assign_target(arg.inner(), false);
@@ -277,7 +282,7 @@ impl<I: Tokens> Parser<'_, I> {
                 _ => unreachable!(),
             };
             let arg_start = self.input.cur_pos() - BytePos(1);
-            let arg = match self.parse_unary_expr() {
+            let arg = match self.parse_unary_expr(&mut AssignProps::Emit) {
                 Ok(expr) => expr,
                 Err(err) => {
                     self.emit_error(err);
@@ -322,7 +327,7 @@ impl<I: Tokens> Parser<'_, I> {
         let potential_arrow_start = self.potential_arrow_start;
 
         // UpdateExpression
-        let expr = self.parse_lhs_expr()?;
+        let expr = self.parse_lhs_expr(assign_props)?;
         return_if_arrow!(self, potential_arrow_start, expr);
 
         // Line terminator isn't allowed here.
@@ -366,7 +371,7 @@ impl<I: Tokens> Parser<'_, I> {
             )));
         }
 
-        let arg = self.parse_unary_expr()?.unwrap();
+        let arg = self.parse_unary_expr(&mut AssignProps::Emit)?.unwrap();
         Ok(Box::new(Expr::Await(AwaitExpr {
             node_id: node_id!(self, span!(self, start)),
             arg,

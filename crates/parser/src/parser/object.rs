@@ -2,10 +2,11 @@
 
 use super::{class_and_fn::is_not_this, util::ParseObject, *};
 use atoms::js_word;
+use util::AssignProps;
 
 impl<I: Tokens> Parser<'_, I> {
     /// Parse a object literal or object pattern.
-    pub(super) fn parse_object<T>(&mut self) -> PResult<T>
+    pub(super) fn parse_object<T>(&mut self, assign_props: &mut AssignProps) -> PResult<T>
     where
         Self: ParseObject<T>,
     {
@@ -28,7 +29,7 @@ impl<I: Tokens> Parser<'_, I> {
                 }
             }
 
-            let prop = self.parse_object_prop()?;
+            let prop = self.parse_object_prop(assign_props)?;
             props.push(prop);
         }
 
@@ -77,7 +78,7 @@ impl<I: Tokens> Parser<'_, I> {
 
                     let mut expr = parser
                         .include_in_expr(true)
-                        .parse_assignment_expr()?
+                        .parse_assignment_expr(&mut AssignProps::Emit)?
                         .unwrap();
 
                     if parser.syntax().typescript() && is!(parser, ',') {
@@ -87,7 +88,7 @@ impl<I: Tokens> Parser<'_, I> {
                             exprs.push(
                                 parser
                                     .include_in_expr(true)
-                                    .parse_assignment_expr()?
+                                    .parse_assignment_expr(&mut AssignProps::Emit)?
                                     .unwrap(),
                             );
                         }
@@ -129,7 +130,7 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<'_, I> {
     }
 
     /// spec: 'PropertyDefinition'
-    fn parse_object_prop(&mut self) -> PResult<Self::Prop> {
+    fn parse_object_prop(&mut self, assign_props: &mut AssignProps) -> PResult<Self::Prop> {
         trace_cur!(self, parse_object_prop);
 
         let start = self.input.cur_pos();
@@ -138,7 +139,10 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<'_, I> {
         if self.input.eat(&tok!("...")) {
             // spread element
 
-            let expr = self.include_in_expr(true).parse_assignment_expr()?.unwrap();
+            let expr = self
+                .include_in_expr(true)
+                .parse_assignment_expr(assign_props)?
+                .unwrap();
 
             let span = Span::new(start, self.input.last_pos());
             return Ok(Prop::Spread(SpreadAssignment {
@@ -194,7 +198,10 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<'_, I> {
         // { 0: 1, }
         // { a: expr, }
         if self.input.eat(&tok!(':')) {
-            let value = self.include_in_expr(true).parse_assignment_expr()?.unwrap();
+            let value = self
+                .include_in_expr(true)
+                .parse_assignment_expr(assign_props)?
+                .unwrap();
             let span = Span::new(key_start, self.input.last_pos());
             return Ok(Prop::KeyValue(KeyValueProp {
                 node_id: node_id!(self, span),
@@ -242,8 +249,20 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<'_, I> {
             }
 
             if self.input.eat(&tok!('=')) {
-                let value = self.include_in_expr(true).parse_assignment_expr()?.unwrap();
+                let value = self
+                    .include_in_expr(true)
+                    .parse_assignment_expr(assign_props)?
+                    .unwrap();
                 let span = Span::new(key_start, self.input.last_pos());
+                match assign_props {
+                    AssignProps::Buffer(buffer) => {
+                        buffer.push(span);
+                    }
+                    AssignProps::Emit => {
+                        self.emit_err(span, SyntaxError::AssignProperty);
+                    }
+                    AssignProps::Ignore => {}
+                }
                 return Ok(Prop::Assign(AssignProp {
                     node_id: node_id!(self, span),
                     key: ident,
@@ -427,7 +446,7 @@ impl<I: Tokens> ParseObject<Pat> for Parser<'_, I> {
     }
 
     /// Production 'BindingProperty'
-    fn parse_object_prop(&mut self) -> PResult<Self::Prop> {
+    fn parse_object_prop(&mut self, _assign_props: &mut AssignProps) -> PResult<Self::Prop> {
         let start = self.input.cur_pos();
 
         if self.input.eat(&tok!("...")) {
@@ -461,7 +480,7 @@ impl<I: Tokens> ParseObject<Pat> for Parser<'_, I> {
 
         let value = if self.input.eat(&tok!('=')) {
             self.include_in_expr(true)
-                .parse_assignment_expr()
+                .parse_assignment_expr(&mut AssignProps::Emit)
                 .map(Some)?
         } else {
             if self.ctx().is_reserved_word(&key.sym) {

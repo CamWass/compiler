@@ -4,6 +4,7 @@ use super::{identifier::MaybeOptionalIdentParser, *};
 use crate::{error::SyntaxError, Tokens};
 use atoms::js_word;
 use expression::MaybeParen;
+use util::AssignProps;
 
 /// Parser for function expression and function declaration.
 impl<I: Tokens> Parser<'_, I> {
@@ -89,7 +90,7 @@ impl<I: Tokens> Parser<'_, I> {
             let mut extends_clause = if is!(parser, "extends") {
                 let start = parser.input.cur_pos();
                 parser.input.bump();
-                let super_class = parser.parse_lhs_expr()?.unwrap();
+                let super_class = parser.parse_lhs_expr(&mut AssignProps::Emit)?.unwrap();
                 // Super type params.
                 if parser.syntax().typescript() && is!(parser, '<') {
                     parser.parse_ts_type_args()?;
@@ -114,7 +115,7 @@ impl<I: Tokens> Parser<'_, I> {
             if parser.input.eat(&tok!("extends")) {
                 parser.emit_err(parser.input.prev_span(), SyntaxError::TS1172);
 
-                parser.parse_lhs_expr()?;
+                parser.parse_lhs_expr(&mut AssignProps::Emit)?;
                 if parser.syntax().typescript() && is!(parser, '<') {
                     parser.parse_ts_type_args()?;
                 }
@@ -139,7 +140,7 @@ impl<I: Tokens> Parser<'_, I> {
                 let start = parser.input.cur_pos();
                 parser.input.bump();
 
-                let super_class = parser.parse_lhs_expr()?.unwrap();
+                let super_class = parser.parse_lhs_expr(&mut AssignProps::Emit)?.unwrap();
                 // Super type params.
                 if parser.syntax().typescript() && is!(parser, '<') {
                     parser.parse_ts_type_args()?;
@@ -711,7 +712,11 @@ impl<I: Tokens> Parser<'_, I> {
         self.with_ctx(ctx).parse_with(|parser| {
             let value = if is!(parser, '=') {
                 parser.assert_and_bump(&tok!('='));
-                Some(parser.parse_assignment_expr()?.unwrap())
+                Some(
+                    parser
+                        .parse_assignment_expr(&mut AssignProps::Emit)?
+                        .unwrap(),
+                )
             } else {
                 None
             };
@@ -1201,7 +1206,7 @@ impl<I: Tokens> FnBodyParser<BlockStmtOrExpr> for Parser<'_, I> {
         if self.input.is(&tok!('{')) {
             self.parse_block(false).map(BlockStmtOrExpr::BlockStmt)
         } else {
-            self.parse_assignment_expr()
+            self.parse_assignment_expr(&mut AssignProps::Emit)
                 .map(MaybeParen::unwrap)
                 .map(BlockStmtOrExpr::Expr)
         }
