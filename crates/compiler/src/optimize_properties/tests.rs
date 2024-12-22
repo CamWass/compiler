@@ -8,7 +8,7 @@ use super::*;
 
 fn test_transform(input: &str, expected: &str) {
     crate::testing::test_transform(
-        |mut program, mut program_data| {
+        |mut program, program_data| {
             GLOBALS.set(&Globals::new(), || {
                 let unresolved_mark = Mark::new();
                 let top_level_mark = Mark::new();
@@ -17,7 +17,7 @@ fn test_transform(input: &str, expected: &str) {
 
                 let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 
-                process(&mut program, &mut program_data, unresolved_ctxt);
+                process(&mut program, program_data, unresolved_ctxt);
 
                 program
             })

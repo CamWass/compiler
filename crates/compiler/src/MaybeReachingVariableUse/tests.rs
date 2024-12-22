@@ -284,8 +284,8 @@ fn assert_not_match_inner(src: &str, is_async: bool) {
 /**
  * Returns may-be-reaching uses of definition of variable `x` on the node extracted at label `D:`.
  */
-fn get_computed_uses<'ast>(
-    reaching_use: &MaybeReachingResult<'ast>,
+fn get_computed_uses(
+    reaching_use: &MaybeReachingResult<'_>,
     extracted_info: &ExtractedInfo,
 ) -> Vec<NodeId> {
     reaching_use

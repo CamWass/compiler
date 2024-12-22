@@ -373,10 +373,10 @@ impl<I: Tokens> Parser<'_, I> {
                 && !self.input.has_linebreak_between_cur_and_peeked()
             {
                 let decl = self.parse_default_async_fn(start)?;
-                return Ok(decl.map(|decl| ModuleDecl::ExportDefaultDecl(decl)));
+                return Ok(decl.map(ModuleDecl::ExportDefaultDecl));
             } else if is!(self, "function") {
                 let decl = self.parse_default_fn(start)?;
-                return Ok(decl.map(|decl| ModuleDecl::ExportDefaultDecl(decl)));
+                return Ok(decl.map(ModuleDecl::ExportDefaultDecl));
             } else if self.input.syntax().export_default_from()
                 && (is!(self, "from") || (is!(self, ',') && peeked_is!(self, '{')))
             {

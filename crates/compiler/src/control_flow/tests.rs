@@ -311,8 +311,8 @@ fn get_all_edges_of_CFG(cfg: &ControlFlowGraph<Node<'_>, ()>) -> Vec<SimpleEdge>
 * Gets all the control flow edges from some node with the first token to
 * some node with the second token.
 */
-fn get_all_edges<'a>(
-    cfg: &'a ControlFlowGraph<Node<'_>, ()>,
+fn get_all_edges(
+    cfg: &ControlFlowGraph<Node<'_>, ()>,
     start_token: Token,
     end_token: Token,
 ) -> Vec<SimpleEdge> {
@@ -326,8 +326,8 @@ fn get_all_edges<'a>(
 * Gets all the control flow edges from some node with the first token to
 * some node with the second token.
 */
-fn get_all_edges_predicate<'a, S, E>(
-    cfg: &'a ControlFlowGraph<Node<'_>, ()>,
+fn get_all_edges_predicate<S, E>(
+    cfg: &ControlFlowGraph<Node<'_>, ()>,
     start: S,
     end: E,
 ) -> Vec<SimpleEdge>
@@ -345,8 +345,8 @@ where
 * Gets all the control flow edges of the given type from some node with the
 * first token to some node with the second token.
 */
-fn get_all_edges_of_type<'a>(
-    cfg: &'a ControlFlowGraph<Node<'_>, ()>,
+fn get_all_edges_of_type(
+    cfg: &ControlFlowGraph<Node<'_>, ()>,
     start_token: Token,
     end_token: Token,
     edge_type: Branch,
@@ -361,8 +361,8 @@ fn get_all_edges_of_type<'a>(
 * Gets all the control flow edges of the given type from some node with the
 * first token to some node with the second token.
 */
-fn get_all_edges_of_type_predicate<'a, S, E>(
-    cfg: &'a ControlFlowGraph<Node<'_>, ()>,
+fn get_all_edges_of_type_predicate<S, E>(
+    cfg: &ControlFlowGraph<Node<'_>, ()>,
     start: S,
     end: E,
     edge_type: Branch,

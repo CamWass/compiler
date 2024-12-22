@@ -802,8 +802,8 @@ where
  * Use this for lexical declarations which can't be labelled; e.g. `LABEL: let x = 0;` is invalid
  * syntax.
  */
-fn get_flow_state_at_declaration<'a>(
-    liveness: &'a LiveVariablesAnalysis<Function>,
+fn get_flow_state_at_declaration(
+    liveness: &LiveVariablesAnalysis<Function>,
     name: &str,
 ) -> Option<LinearFlowState> {
     let mut v = FlowStateFinder {

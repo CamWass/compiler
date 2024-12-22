@@ -19,7 +19,7 @@ use crate::{find_vars::find_vars_declared_in_fn, utils::unwrap_as};
 
 use super::*;
 
-/**
+/*
  * A test suite with a very small programming language that has two types of instructions: {@link
  * BranchInstruction} and {@link ArithmeticInstruction}. Test cases must construct a small program
  * with these instructions and manually put each instruction in a {@code ControlFlowGraph}.
@@ -190,7 +190,7 @@ impl<I> Default for ConstPropJoinOp<I> {
     fn default() -> Self {
         Self {
             result: None,
-            _phantom: PhantomData::default(),
+            _phantom: PhantomData,
         }
     }
 }
@@ -590,7 +590,7 @@ function f() {
 // LiveVariablesAnalysis class
 fn computeEscapedLocals(src: &str) -> FxHashSet<Id> {
     GLOBALS.set(&Globals::new(), || {
-        let mut program = Program::Script(parse_script(&src));
+        let mut program = Program::Script(parse_script(src));
 
         let unresolved_mark = Mark::new();
         let top_level_mark = Mark::new();

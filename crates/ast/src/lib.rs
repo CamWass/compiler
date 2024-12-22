@@ -17,7 +17,7 @@ pub use self::{
         TplElement, UnaryExpr, UpdateExpr, YieldExpr,
     },
     function::{FnFlags, Function, Param},
-    ident::{BindingIdent, Ident, IdentExt, PrivateName},
+    ident::{BindingIdent, Ident, PrivateName},
     lit::{BigInt, Bool, Lit, Null, Number, Regex, RegexFlags, Str},
     module::{Module, ModuleItem, Program, Script},
     module_decl::{

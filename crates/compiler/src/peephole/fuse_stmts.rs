@@ -88,7 +88,7 @@ fn is_fusable_control_statement(stmt: &Stmt) -> bool {
         Stmt::Block(b) => b
             .stmts
             .first()
-            .map(|s| is_fusable_control_statement(s))
+            .map(is_fusable_control_statement)
             .unwrap_or_default(),
         _ => false,
     }
@@ -101,12 +101,10 @@ fn fuse_statements(block: &mut BlockStmt, program_data: &mut ProgramData) -> Seq
         .drain(..(block.stmts.len() - 1))
         .map(|s| unwrap_as!(s, Stmt::Expr(e), e).expr)
         .collect();
-    let seq = SeqExpr {
+    SeqExpr {
         node_id: program_data.new_id(DUMMY_SP),
         exprs,
-    };
-
-    seq
+    }
 }
 
 fn fuse_expression_into_control_flow_statement(
@@ -286,14 +284,14 @@ mod tests {
 
     fn test_transform(input: &str, expected: &str) {
         crate::testing::test_transform(
-            |mut program, mut program_data| {
+            |mut program, program_data| {
                 GLOBALS.set(&Globals::new(), || {
                     let unresolved_mark = Mark::new();
                     let top_level_mark = Mark::new();
 
                     program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark));
 
-                    process(&mut program, &mut program_data);
+                    process(&mut program, program_data);
 
                     program
                 })

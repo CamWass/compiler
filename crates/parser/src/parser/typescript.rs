@@ -406,7 +406,7 @@ impl<I: Tokens> Parser<'_, I> {
         let old_emit_err = *emit_err;
         let old_input = input.clone();
         let prev_labels_len = labels.len();
-        let old_potential_arrow_start = potential_arrow_start.clone();
+        let old_potential_arrow_start = *potential_arrow_start;
 
         self.emit_err = false;
         let res = op(self);
@@ -838,7 +838,7 @@ impl<I: Tokens> Parser<'_, I> {
 
         let old_emit_err = *emit_err;
         let prev_labels_len = labels.len();
-        let old_potential_arrow_start = potential_arrow_start.clone();
+        let old_potential_arrow_start = *potential_arrow_start;
         let old_input = input.clone();
 
         self.emit_err = false;

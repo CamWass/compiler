@@ -142,7 +142,7 @@ where
     cfg: ControlFlowGraph<Node<'ast>, LinearFlowState>,
 }
 
-impl<'ast, 'a, T> Inner<'ast, 'a, T>
+impl<'ast, T> Inner<'ast, '_, T>
 where
     T: FunctionLike,
 {
@@ -226,7 +226,7 @@ where
     in_destructuring: bool,
 }
 
-impl<'a, 'ast, T> Visit<'ast> for GenKillComputer<'ast, 'a, '_, T>
+impl<'ast, T> Visit<'ast> for GenKillComputer<'ast, '_, '_, T>
 where
     T: FunctionLike,
 {
@@ -502,8 +502,8 @@ where
     }
 }
 
-impl<'ast, 'a, T> DataFlowAnalysisInner<Node<'ast>, LiveVariableLattice, LiveVariableJoinOp>
-    for Inner<'ast, 'a, T>
+impl<'ast, T> DataFlowAnalysisInner<Node<'ast>, LiveVariableLattice, LiveVariableJoinOp>
+    for Inner<'ast, '_, T>
 where
     T: FunctionLike,
 {
@@ -566,7 +566,7 @@ where
     }
 }
 
-impl<'a, T> Index<LatticeElementId> for Inner<'_, 'a, T>
+impl<T> Index<LatticeElementId> for Inner<'_, '_, T>
 where
     T: FunctionLike,
 {

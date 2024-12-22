@@ -9,7 +9,7 @@ struct Tester<'a> {
     handler: &'a Handler,
 }
 
-impl<'a> Tester<'a> {
+impl Tester<'_> {
     fn run<F>(op: F)
     where
         F: FnOnce(&mut Tester<'_>) -> Result<(), ()>,

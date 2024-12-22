@@ -50,11 +50,8 @@ impl VisitMut<'_> for Normalizer {
             None => return,
         };
 
-        match val.as_f64() {
-            Some(value) => {
-                n.value = value;
-            }
-            None => {}
+        if let Some(value) = val.as_f64() {
+            n.value = value;
         }
     }
 

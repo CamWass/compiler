@@ -23,7 +23,7 @@ pub struct Tester<'a> {
     pub handler: &'a Handler,
 }
 
-impl<'a> Tester<'a> {
+impl Tester<'_> {
     pub fn run<F, Ret>(op: F) -> Ret
     where
         F: FnOnce(&mut Tester<'_>) -> Result<Ret, ()>,

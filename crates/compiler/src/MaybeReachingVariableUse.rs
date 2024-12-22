@@ -120,7 +120,7 @@ where
     cfg: ControlFlowGraph<Node<'ast>, LinearFlowState>,
 }
 
-impl<'ast, 'a, T> Inner<'ast, 'a, T>
+impl<'ast, T> Inner<'ast, '_, T>
 where
     T: FunctionLike,
 {
@@ -197,7 +197,7 @@ where
     in_destructuring: bool,
 }
 
-impl<'a, T> Visit<'_> for ReachingUseFinder<'_, 'a, '_, T>
+impl<T> Visit<'_> for ReachingUseFinder<'_, '_, '_, T>
 where
     T: FunctionLike,
 {
@@ -831,8 +831,8 @@ where
     }
 }
 
-impl<'ast, 'a, T> DataFlowAnalysisInner<Node<'ast>, ReachingUses, ReachingUsesJoinOp>
-    for Inner<'ast, 'a, T>
+impl<'ast, T> DataFlowAnalysisInner<Node<'ast>, ReachingUses, ReachingUsesJoinOp>
+    for Inner<'ast, '_, T>
 where
     T: FunctionLike,
 {
@@ -892,7 +892,7 @@ where
     }
 }
 
-impl<'a, T> Index<LatticeElementId> for Inner<'_, 'a, T>
+impl<T> Index<LatticeElementId> for Inner<'_, '_, T>
 where
     T: FunctionLike,
 {

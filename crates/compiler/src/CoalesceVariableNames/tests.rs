@@ -8,18 +8,18 @@ use super::*;
 
 fn test_transform(input: &str, expected: &str) {
     crate::testing::test_transform(
-        |mut program, mut program_data| {
+        |mut program, program_data| {
             GLOBALS.set(&Globals::new(), || {
                 let unresolved_mark = Mark::new();
                 let top_level_mark = Mark::new();
 
                 program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark));
 
-                crate::normalize::normalize(&mut program, &mut program_data);
+                crate::normalize::normalize(&mut program, program_data);
 
                 let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 
-                coalesce_variable_names(&mut program, unresolved_ctxt, &mut program_data);
+                coalesce_variable_names(&mut program, unresolved_ctxt, program_data);
 
                 program
             })

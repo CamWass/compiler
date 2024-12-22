@@ -302,7 +302,7 @@ fn compile_ours(input: String, config: Config) -> Result<String> {
 
     let mut program_data = ast::ProgramData::default();
 
-    let fm = cm.new_source_file(FileName::Anon.into(), input);
+    let fm = cm.new_source_file(FileName::Anon, input);
 
     let program = {
         let mut parser = Parser::new(Default::default(), &fm, &mut program_data);
@@ -412,7 +412,7 @@ fn swc_print(program: &swc_ecma_ast::Program, minify: bool) -> Result<String> {
                 comments: None,
             };
 
-            emitter.emit_program(&program).unwrap();
+            emitter.emit_program(program).unwrap();
         }
 
         String::from_utf8_lossy(&buf).to_string()
@@ -570,7 +570,7 @@ fn swc_print_script(program: &swc_ecma_ast::Script, minify: bool) -> Result<Stri
                 comments: None,
             };
 
-            emitter.emit_script(&program).unwrap();
+            emitter.emit_script(program).unwrap();
         }
 
         String::from_utf8_lossy(&buf).to_string()
