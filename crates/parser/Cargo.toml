@@ -24,6 +24,7 @@ criterion = { workspace = true }
 serde_json = { workspace = true }
 
 custom_alloc = { path = "../custom_alloc" }
+ecma_visit = { path = "../visit" }
 testing = { path = "../../testing" }
 transform_testing = { path = "../transform_testing" }
 
