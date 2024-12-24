@@ -4,11 +4,11 @@ use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, ToTokens};
 use std::{collections::HashSet, mem::replace};
 use syn::{
-    parse_macro_input, parse_quote, punctuated::Punctuated, spanned::Spanned, Arm, AttrStyle,
-    Attribute, Block, Expr, ExprBlock, ExprMatch, FieldPat, Fields, FnArg, GenericArgument,
-    GenericParam, Generics, ImplItem, ImplItemFn, Index, Item, ItemImpl, ItemTrait, Lifetime,
-    LifetimeParam, Member, Pat, PatIdent, Path, PathArguments, ReturnType, Signature, Stmt, Token,
-    TraitItem, TraitItemFn, Type, TypePath, TypeReference, Visibility,
+    parse_macro_input, parse_quote, punctuated::Punctuated, spanned::Spanned, token::Underscore,
+    Arm, Block, Expr, ExprBlock, ExprMatch, FieldPat, Fields, FnArg, GenericArgument, GenericParam,
+    Generics, Index, Item, ItemTrait, Lifetime, LifetimeParam, Member, Pat, PatIdent, PatWild,
+    Path, PathArguments, ReturnType, Signature, Stmt, Token, TraitItem, TraitItemFn, Type,
+    TypePath, TypeReference, Visibility,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,10 +74,10 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
     }
 
     let mut tokens = TokenStream::new();
-    let mut ref_methods = vec![];
-    let mut optional_methods = vec![];
-    let mut either_methods = vec![];
-    let mut visit_all_methods = vec![];
+    // let mut ref_methods = vec![];
+    // let mut optional_methods = vec![];
+    // let mut either_methods = vec![];
+    // let mut visit_all_methods = vec![];
     {
         let mut new = vec![];
         for ty in &types {
@@ -118,116 +118,109 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
         let sig = create_method_sig(mode, ty);
         let name = sig.ident.clone();
 
-        {
-            let visit = &name;
-            // &'_ mut V, Box<V>
-            let block = match mode {
-                Mode::Visit | Mode::VisitAll => {
-                    parse_quote!({ (**self).#visit(n) })
-                }
-                Mode::Fold | Mode::VisitMut => {
-                    parse_quote!({ (**self).#visit(n) })
-                }
-            };
+        // {
+        //     let visit = &name;
+        //     // &'_ mut V, Box<V>
+        //     let block = match mode {
+        //         Mode::Visit | Mode::VisitAll => {
+        //             parse_quote!({ (**self).#visit(n) })
+        //         }
+        //         Mode::Fold | Mode::VisitMut => {
+        //             parse_quote!({ (**self).#visit(n) })
+        //         }
+        //     };
 
-            ref_methods.push(ImplItemFn {
-                attrs: vec![],
-                vis: Visibility::Inherited,
-                defaultness: None,
-                sig: sig.clone(),
-                block,
-            });
-        }
+        //     ref_methods.push(ImplItemFn {
+        //         attrs: vec![],
+        //         vis: Visibility::Inherited,
+        //         defaultness: None,
+        //         sig: sig.clone(),
+        //         block,
+        //     });
+        // }
 
-        {
-            // Either
-            let method_name = &name;
-            either_methods.push(ImplItemFn {
-                attrs: vec![],
-                vis: Visibility::Inherited,
-                defaultness: None,
-                sig: sig.clone(),
-                block: match mode {
-                    Mode::Visit | Mode::VisitAll => parse_quote!(
-                        {
-                            match self {
-                                global_visit::Either::Left(v) => v.#method_name(n),
-                                global_visit::Either::Right(v) => v.#method_name(n),
-                            }
-                        }
-                    ),
-                    Mode::Fold | Mode::VisitMut => parse_quote!(
-                        {
-                            match self {
-                                global_visit::Either::Left(v) => v.#method_name(n),
-                                global_visit::Either::Right(v) => v.#method_name(n),
-                            }
-                        }
-                    ),
-                },
-            });
-        }
+        // {
+        //     // Either
+        //     let method_name = &name;
+        //     either_methods.push(ImplItemFn {
+        //         attrs: vec![],
+        //         vis: Visibility::Inherited,
+        //         defaultness: None,
+        //         sig: sig.clone(),
+        //         block: match mode {
+        //             Mode::Visit | Mode::VisitAll => parse_quote!(
+        //                 {
+        //                     match self {
+        //                         global_visit::Either::Left(v) => v.#method_name(n),
+        //                         global_visit::Either::Right(v) => v.#method_name(n),
+        //                     }
+        //                 }
+        //             ),
+        //             Mode::Fold | Mode::VisitMut => parse_quote!(
+        //                 {
+        //                     match self {
+        //                         global_visit::Either::Left(v) => v.#method_name(n),
+        //                         global_visit::Either::Right(v) => v.#method_name(n),
+        //                     }
+        //                 }
+        //             ),
+        //         },
+        //     });
+        // }
 
-        {
-            // Optional
-            let method_name = &name;
-            optional_methods.push(ImplItemFn {
-                attrs: vec![],
-                vis: Visibility::Inherited,
-                defaultness: None,
-                sig: sig.clone(),
-                block: match mode {
-                    Mode::VisitAll | Mode::Visit => parse_quote!(
-                        {
-                            if self.enabled {
-                                self.visitor.#method_name(n)
-                            }
-                        }
-                    ),
-                    Mode::VisitMut => parse_quote!(
-                        {
-                            if self.enabled {
-                                self.visitor.#method_name(n)
-                            }
-                        }
-                    ),
-                    Mode::Fold => parse_quote!(
-                        {
-                            if self.enabled {
-                                self.visitor.#method_name(n)
-                            } else {
-                                n
-                            }
-                        }
-                    ),
-                },
-            });
-        }
+        // {
+        //     // Optional
+        //     let method_name = &name;
+        //     optional_methods.push(ImplItemFn {
+        //         attrs: vec![],
+        //         vis: Visibility::Inherited,
+        //         defaultness: None,
+        //         sig: sig.clone(),
+        //         block: match mode {
+        //             Mode::VisitAll | Mode::Visit => parse_quote!(
+        //                 {
+        //                     if self.enabled {
+        //                         self.visitor.#method_name(n)
+        //                     }
+        //                 }
+        //             ),
+        //             Mode::VisitMut => parse_quote!(
+        //                 {
+        //                     if self.enabled {
+        //                         self.visitor.#method_name(n)
+        //                     }
+        //                 }
+        //             ),
+        //             Mode::Fold => parse_quote!(
+        //                 {
+        //                     if self.enabled {
+        //                         self.visitor.#method_name(n)
+        //                     } else {
+        //                         n
+        //                     }
+        //                 }
+        //             ),
+        //         },
+        //     });
+        // }
 
-        {
-            // Visit <-> VisitAll using global_visit::All
-            let method_name = &name;
-            visit_all_methods.push(ImplItemFn {
-                attrs: vec![],
-                vis: Visibility::Inherited,
-                defaultness: None,
-                sig: sig.clone(),
-                block: parse_quote!({
-                    self.visitor.#method_name(n);
-                    #method_name(self, n);
-                }),
-            });
-        }
+        // {
+        //     // Visit <-> VisitAll using global_visit::All
+        //     let method_name = &name;
+        //     visit_all_methods.push(ImplItemFn {
+        //         attrs: vec![],
+        //         vis: Visibility::Inherited,
+        //         defaultness: None,
+        //         sig: sig.clone(),
+        //         block: parse_quote!({
+        //             self.visitor.#method_name(n);
+        //             #method_name(self, n);
+        //         }),
+        //     });
+        // }
     }
 
     methods.iter_mut().for_each(|v| {
-        v.attrs.push(Attribute {
-            pound_token: Default::default(),
-            style: AttrStyle::Outer,
-            bracket_token: Default::default(),
-            meta: parse_quote!(allow(non_shorthand_field_patterns, unused_variables)),
-        });
-
         let fn_name = v.sig.ident.clone();
         let default_body = replace(
             &mut v.default,
@@ -256,21 +249,18 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
 
         match mode {
             Mode::Fold => tokens.extend(quote! {
-                #[allow(non_shorthand_field_patterns, unused_variables)]
                 pub fn #fn_name<V: ?Sized + #trait_name>(_visitor: &mut V, n: #arg_ty) -> #arg_ty {
                     #default_body
                 }
             }),
 
             Mode::VisitMut => tokens.extend(quote! {
-                #[allow(non_shorthand_field_patterns, unused_variables)]
                 pub fn #fn_name<'ast, V: ?Sized + #trait_name<'ast>>(_visitor: &mut V, n: #arg_ty) {
                     #default_body
                 }
             }),
 
             Mode::Visit => tokens.extend(quote! {
-                #[allow(non_shorthand_field_patterns, unused_variables)]
                 pub fn #fn_name<'ast, V: ?Sized + #trait_name<'ast>>(_visitor: &mut V, n: #arg_ty) {
                     #default_body
                 }
@@ -308,110 +298,110 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
         .to_token_stream(),
     );
 
-    {
-        // impl Visit for &'_ mut V
-        let trait_name = Ident::new(mode.trait_name(), Span::call_site());
-        let mut item: ItemImpl = if mode == Mode::Visit
-            || mode == Mode::VisitAll
-            || mode == Mode::VisitMut
-        {
-            parse_quote! {
-                impl<'a, 'ast, V> #trait_name<'ast> for &'a mut V where V: ?Sized + #trait_name<'ast> {}
-            }
-        } else {
-            parse_quote! {
-                impl<'a, V> #trait_name for &'a mut V where V: ?Sized + #trait_name {}
-            }
-        };
+    // {
+    //     // impl Visit for &'_ mut V
+    //     let trait_name = Ident::new(mode.trait_name(), Span::call_site());
+    //     let mut item: ItemImpl = if mode == Mode::Visit
+    //         || mode == Mode::VisitAll
+    //         || mode == Mode::VisitMut
+    //     {
+    //         parse_quote! {
+    //             impl<'a, 'ast, V> #trait_name<'ast> for &'a mut V where V: ?Sized + #trait_name<'ast> {}
+    //         }
+    //     } else {
+    //         parse_quote! {
+    //             impl<'a, V> #trait_name for &'a mut V where V: ?Sized + #trait_name {}
+    //         }
+    //     };
 
-        item.items
-            .extend(ref_methods.clone().into_iter().map(ImplItem::Fn));
-        tokens.extend(item.to_token_stream());
-    }
-    {
-        // impl Visit for Box<V>
-        let trait_name = Ident::new(mode.trait_name(), Span::call_site());
-        let mut item: ItemImpl = if mode == Mode::Visit
-            || mode == Mode::VisitAll
-            || mode == Mode::VisitMut
-        {
-            parse_quote! {
-                impl<'ast, V> #trait_name<'ast> for Box<V> where V: ?Sized + #trait_name<'ast> {}
-            }
-        } else {
-            parse_quote! {
-                impl<V> #trait_name for Box<V> where V: ?Sized + #trait_name {}
-            }
-        };
+    //     item.items
+    //         .extend(ref_methods.clone().into_iter().map(ImplItem::Fn));
+    //     tokens.extend(item.to_token_stream());
+    // }
+    // {
+    //     // impl Visit for Box<V>
+    //     let trait_name = Ident::new(mode.trait_name(), Span::call_site());
+    //     let mut item: ItemImpl = if mode == Mode::Visit
+    //         || mode == Mode::VisitAll
+    //         || mode == Mode::VisitMut
+    //     {
+    //         parse_quote! {
+    //             impl<'ast, V> #trait_name<'ast> for Box<V> where V: ?Sized + #trait_name<'ast> {}
+    //         }
+    //     } else {
+    //         parse_quote! {
+    //             impl<V> #trait_name for Box<V> where V: ?Sized + #trait_name {}
+    //         }
+    //     };
 
-        item.items.extend(ref_methods.into_iter().map(ImplItem::Fn));
-        tokens.extend(item.to_token_stream());
-    }
+    //     item.items.extend(ref_methods.into_iter().map(ImplItem::Fn));
+    //     tokens.extend(item.to_token_stream());
+    // }
 
-    {
-        // impl Trait for Optional
-        let trait_name = Ident::new(mode.trait_name(), Span::call_site());
-        let mut item: ItemImpl = if mode == Mode::Visit
-            || mode == Mode::VisitAll
-            || mode == Mode::VisitMut
-        {
-            parse_quote! {
-                impl<'ast, V> #trait_name<'ast> for ::global_visit::Optional<V> where V: #trait_name<'ast> {}
-            }
-        } else {
-            parse_quote! {
-                impl<V> #trait_name for ::global_visit::Optional<V> where V: #trait_name {}
-            }
-        };
+    // {
+    //     // impl Trait for Optional
+    //     let trait_name = Ident::new(mode.trait_name(), Span::call_site());
+    //     let mut item: ItemImpl = if mode == Mode::Visit
+    //         || mode == Mode::VisitAll
+    //         || mode == Mode::VisitMut
+    //     {
+    //         parse_quote! {
+    //             impl<'ast, V> #trait_name<'ast> for ::global_visit::Optional<V> where V: #trait_name<'ast> {}
+    //         }
+    //     } else {
+    //         parse_quote! {
+    //             impl<V> #trait_name for ::global_visit::Optional<V> where V: #trait_name {}
+    //         }
+    //     };
 
-        item.items
-            .extend(optional_methods.into_iter().map(ImplItem::Fn));
-        tokens.extend(item.to_token_stream());
-    }
+    //     item.items
+    //         .extend(optional_methods.into_iter().map(ImplItem::Fn));
+    //     tokens.extend(item.to_token_stream());
+    // }
 
-    {
-        // impl Trait for Either
-        let trait_name = Ident::new(mode.trait_name(), Span::call_site());
-        let mut item: ItemImpl =
-            if mode == Mode::Visit || mode == Mode::VisitAll || mode == Mode::VisitMut {
-                parse_quote! {
-                    impl<'ast, A, B> #trait_name<'ast> for ::global_visit::Either<A, B>
-                    where
-                        A: #trait_name<'ast>,
-                        B: #trait_name<'ast>,
-                    {
-                    }
-                }
-            } else {
-                parse_quote! {
-                    impl<A, B> #trait_name for ::global_visit::Either<A, B>
-                    where
-                        A: #trait_name,
-                        B: #trait_name,
-                    {
-                    }
-                }
-            };
+    // {
+    //     // impl Trait for Either
+    //     let trait_name = Ident::new(mode.trait_name(), Span::call_site());
+    //     let mut item: ItemImpl =
+    //         if mode == Mode::Visit || mode == Mode::VisitAll || mode == Mode::VisitMut {
+    //             parse_quote! {
+    //                 impl<'ast, A, B> #trait_name<'ast> for ::global_visit::Either<A, B>
+    //                 where
+    //                     A: #trait_name<'ast>,
+    //                     B: #trait_name<'ast>,
+    //                 {
+    //                 }
+    //             }
+    //         } else {
+    //             parse_quote! {
+    //                 impl<A, B> #trait_name for ::global_visit::Either<A, B>
+    //                 where
+    //                     A: #trait_name,
+    //                     B: #trait_name,
+    //                 {
+    //                 }
+    //             }
+    //         };
 
-        item.items
-            .extend(either_methods.into_iter().map(ImplItem::Fn));
-        tokens.extend(item.to_token_stream());
-    }
+    //     item.items
+    //         .extend(either_methods.into_iter().map(ImplItem::Fn));
+    //     tokens.extend(item.to_token_stream());
+    // }
 
-    // impl Visit for global_visit::All<V> where V: VisitAll
-    if mode == Mode::VisitAll {
-        let mut item: ItemImpl = parse_quote! {
-            impl<'ast, V> Visit<'ast> for ::global_visit::All<V> where V: VisitAll<'ast> {}
-        };
+    // // impl Visit for global_visit::All<V> where V: VisitAll
+    // if mode == Mode::VisitAll {
+    //     let mut item: ItemImpl = parse_quote! {
+    //         impl<'ast, V> Visit<'ast> for ::global_visit::All<V> where V: VisitAll<'ast> {}
+    //     };
 
-        item.items
-            .extend(visit_all_methods.into_iter().map(ImplItem::Fn));
+    //     item.items
+    //         .extend(visit_all_methods.into_iter().map(ImplItem::Fn));
 
-        tokens.extend(item.to_token_stream());
-        tokens.extend(quote!(
-            pub use global_visit::All;
-        ));
-    }
+    //     tokens.extend(item.to_token_stream());
+    //     tokens.extend(quote!(
+    //         pub use global_visit::All;
+    //     ));
+    // }
 
     {
         // Add FoldWith, VisitWith
@@ -681,7 +671,7 @@ fn visit_expr(mode: Mode, ty: &Type, visitor: &Expr, expr: Expr) -> Expr {
     })
 }
 
-fn make_arm_from_struct(mode: Mode, path: &Path, variant: &Fields) -> Arm {
+fn make_arm_from_struct(mode: Mode, path: &Path, variant: &Fields, is_enum: bool) -> Arm {
     let mut stmts = vec![];
     let mut fields: Punctuated<FieldPat, Token![,]> = Default::default();
 
@@ -715,14 +705,25 @@ fn make_arm_from_struct(mode: Mode, path: &Path, variant: &Fields) -> Arm {
             } else {
                 Member::Named(field.ident.clone().unwrap())
             },
-            colon_token: Some(Default::default()),
-            pat: Box::new(Pat::Ident(PatIdent {
-                attrs: Default::default(),
-                by_ref: None,
-                mutability: None,
-                ident: binding_ident,
-                subpat: None,
-            })),
+            colon_token: if is_enum || skip(ty) {
+                Some(Default::default())
+            } else {
+                None
+            },
+            pat: if skip(ty) {
+                Box::new(Pat::Wild(PatWild {
+                    attrs: Default::default(),
+                    underscore_token: Underscore::default(),
+                }))
+            } else {
+                Box::new(Pat::Ident(PatIdent {
+                    attrs: Default::default(),
+                    by_ref: None,
+                    mutability: None,
+                    ident: binding_ident,
+                    subpat: None,
+                }))
+            },
         });
     }
 
@@ -819,7 +820,7 @@ fn make_method(mode: Mode, e: &Item, types: &mut Vec<Type>) -> TraitItemFn {
             }
 
             let block = {
-                let arm = make_arm_from_struct(mode, &s.ident.clone().into(), &s.fields);
+                let arm = make_arm_from_struct(mode, &s.ident.clone().into(), &s.fields, false);
 
                 let mut match_expr: ExprMatch = parse_quote!(match n {});
                 match_expr.arms.push(arm);
@@ -871,6 +872,7 @@ fn make_method(mode: Mode, e: &Item, types: &mut Vec<Type>) -> TraitItemFn {
                         mode,
                         &parse_quote!(#enum_name::#variant_name),
                         &variant.fields,
+                        true,
                     );
                     arms.push(arm);
                 }
