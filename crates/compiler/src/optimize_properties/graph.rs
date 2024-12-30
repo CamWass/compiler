@@ -22,10 +22,10 @@ use super::{is_built_in_property, NameId, Pointer, PointerId, Store};
 #[derive(Default)]
 pub struct Graph {
     nodes: GrowableUnionFind<PointerId>,
-    points_to: FxHashMap<PointerId, SmallSet>,
+    pub points_to: FxHashMap<PointerId, SmallSet>,
     queue: UniqueQueue,
 
-    graph: petgraph::Graph<PointerId, GraphEdge, Directed>,
+    pub graph: petgraph::Graph<PointerId, GraphEdge, Directed>,
     graph_map: Vec<NodeIndex>,
 
     invalidation_queue: Vec<RepId>,
@@ -94,13 +94,13 @@ impl Graph {
         kind: GraphEdge,
         store: &mut Store,
     ) {
-        if matches!(kind, GraphEdge::Subset) && store.is_concrete(src) {
-            if store.invalid_pointers.contains(dest) {
-                store.invalidate(src);
-            }
-            self.points_to.entry(dest).or_default().insert(src);
-            return;
-        }
+        // if matches!(kind, GraphEdge::Subset) && store.is_concrete(src) {
+        //     if store.invalid_pointers.contains(dest) {
+        //         store.invalidate(src);
+        //     }
+        //     self.points_to.entry(dest).or_default().insert(src);
+        //     return;
+        // }
 
         self.add_edge(src, dest, kind);
 
@@ -118,12 +118,12 @@ impl Graph {
             return false;
         }
 
-        if store.is_concrete(src.0) {
-            if store.invalid_pointers.contains(dest.0) {
-                store.invalidate(src.0);
-            }
-            return self.points_to.entry(dest.0).or_default().insert(src.0);
-        }
+        // if store.is_concrete(src.0) {
+        //     if store.invalid_pointers.contains(dest.0) {
+        //         store.invalidate(src.0);
+        //     }
+        //     return self.points_to.entry(dest.0).or_default().insert(src.0);
+        // }
 
         self.prioritise(src);
         self.prioritise(dest);
@@ -360,17 +360,17 @@ impl Graph {
             );
 
             // Check that concrete pointers don't have any outgoing subset edges.
-            for p in store.concrete_pointers() {
-                if let Some(node) = pointer_to_node(&self.graph_map, p) {
-                    debug_assert!(self.graph.edges_directed(node, Incoming).count() == 0);
-                    let subset_edges = self
-                        .graph
-                        .edges_directed(node, Outgoing)
-                        .filter(|e| *e.weight() == GraphEdge::Subset)
-                        .count();
-                    debug_assert_eq!(subset_edges, 0);
-                }
-            }
+            // for p in store.concrete_pointers() {
+            //     if let Some(node) = pointer_to_node(&self.graph_map, p) {
+            //         debug_assert!(self.graph.edges_directed(node, Incoming).count() == 0);
+            //         let subset_edges = self
+            //             .graph
+            //             .edges_directed(node, Outgoing)
+            //             .filter(|e| *e.weight() == GraphEdge::Subset)
+            //             .count();
+            //         debug_assert_eq!(subset_edges, 0);
+            //     }
+            // }
         }
     }
 
@@ -428,11 +428,40 @@ impl Graph {
                             if !store.is_callable_pointer(callee) {
                                 continue;
                             }
-                            let return_node = store.pointers.insert(Pointer::ReturnValue(callee));
-                            let return_node = self.get_graph_node_id(return_node);
-                            if self.make_subset_of(return_node, dest, store) {
+                            let concrete_node = store.pointers.insert(Pointer::ReturnValue(callee));
+                            let concrete_node = self.get_graph_node_id(concrete_node);
+                            if self.make_subset_of(concrete_node, dest, store) {
                                 changed = true;
                             }
+                        }
+                        if changed {
+                            if !is_sink_node(&self.graph, dest_node) {
+                                self.queue.push(dest.0);
+                            }
+                        }
+                    }
+                    GraphEdge::This => {
+                        let callees = match self.get(node) {
+                            Some(c) => c.clone(),
+                            None => continue,
+                        };
+                        let mut changed = false;
+                        for callee in &callees {
+                            if callee == PointerId::UNKNOWN {
+                                if self.make_subset_of(RepId(PointerId::UNKNOWN), dest, store) {
+                                    changed = true;
+                                }
+                                continue;
+                            }
+                            if !store.is_callable_pointer(callee) {
+                                continue;
+                            }
+                            let concrete_node = store.pointers.insert(Pointer::This(callee));
+                            let concrete_node = self.get_graph_node_id(concrete_node);
+                            // if self.make_subset_of(concrete_node, dest, store) {
+                            //     changed = true;
+                            // }
+                            if self.make_subset_of(dest, concrete_node, store) {}
                         }
                         if changed {
                             if !is_sink_node(&self.graph, dest_node) {
@@ -621,7 +650,8 @@ impl Graph {
                                 Pointer::Prop(_, _)
                                 | Pointer::Var(_)
                                 | Pointer::ReturnValue(_)
-                                | Pointer::Arg(_, _) => unreachable!("non-concrete"),
+                                | Pointer::Arg(_, _)
+                                | Pointer::This(_) => unreachable!("non-concrete"),
                             }
                         }
                     }
@@ -747,6 +777,9 @@ impl Graph {
                     Pointer::Arg(func, index) => {
                         format!("Arg({}, {})", func.as_u32(), index)
                     }
+                    Pointer::This(receiver) => {
+                        format!("This({})", receiver.as_u32())
+                    }
                 };
                 if pointers.len() > 1 {
                     write!(&mut res, "{}|{} ", p.as_u32(), value).unwrap();
@@ -793,6 +826,7 @@ pub(super) enum GraphEdge {
     Return,
     Prop(NameId),
     Arg(u16),
+    This,
 }
 
 impl Display for GraphEdge {

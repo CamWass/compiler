@@ -37,13 +37,7 @@ use unionfind::UnionFind;
 const OUTPUT_PROP_GRAPH: bool = false;
 /// When true, the data flow relations are outputted as a graph in graphviz dot
 /// format (debug builds only).
-const OUTPUT_RELO_GRAPH: bool = false;
-
-/*
-TODO:
-invalidate:
-    params that can't be statically bound? e.g. rest params
-*/
+const OUTPUT_RELO_GRAPH: bool = true;
 
 pub fn process(
     ast: &mut ast::Program,
@@ -51,6 +45,47 @@ pub fn process(
     unresolved_ctxt: SyntaxContext,
 ) {
     let (mut store, points_to) = analyse(ast, unresolved_ctxt);
+
+    if true {
+        // let mut points_to_unknown = Vec::new();
+        let Graph {
+            points_to,
+            graph: _,
+            ..
+        } = &points_to;
+        let points_to = points_to
+            .iter()
+            .filter_map(|(&p, c)| {
+                // if c.TODO_TEMP_LEN() == 1 && matches!(c.iter().next().unwrap(), PointerId::UNKNOWN)
+                // {
+                //     points_to_unknown.push(p);
+                //     None
+                // } else {
+                Some((p, c.iter().collect::<Vec<_>>()))
+                // }
+            })
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let pointers = (0..store.pointers.len())
+            .map(|p| {
+                (
+                    PointerId::from_usize(p),
+                    store.pointers[PointerId::from_usize(p)],
+                )
+            })
+            .collect::<Vec<_>>();
+        let names = (0..store.names.len())
+            .map(|p| {
+                (
+                    PointerId::from_usize(p),
+                    store.names[NameId::from_usize(p)].clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut invalid_pointers = store.invalid_pointers.iter().collect::<Vec<_>>();
+        invalid_pointers.sort_unstable();
+        dbg!(pointers, &store.references, invalid_pointers, &names);
+        dbg!(points_to,);
+    }
 
     let rename_map = create_renaming_map(&mut store, &points_to);
 
@@ -387,6 +422,7 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> (Store, Gr
             store: &mut store,
             accesses_arguments_array: false,
             params_to_invalidate: &mut params_to_invalidate,
+            references_this: false,
         };
         ast.visit_with(&mut visitor);
 
@@ -404,7 +440,7 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> (Store, Gr
     if cfg!(debug_assertions) {
         for p in &store.pointers {
             match p {
-                Pointer::ReturnValue(p) | Pointer::Arg(p, _) => {
+                Pointer::ReturnValue(p) | Pointer::Arg(p, _) | Pointer::This(p) => {
                     debug_assert_ne!(*p, PointerId::NULL_OR_VOID);
                     debug_assert_ne!(*p, PointerId::BOOL);
                     debug_assert_ne!(*p, PointerId::NUM);
@@ -460,6 +496,7 @@ fn compute_relations(ast: &ast::Program, store: &mut Store) -> Graph {
         store,
         graph: &mut graph,
         cur_fn: None,
+        cur_this_fn: None,
     };
     ast.visit_with(&mut visitor);
 
@@ -470,6 +507,7 @@ struct GraphVisitor<'a> {
     store: &'a mut Store,
     graph: &'a mut Graph,
     cur_fn: Option<NodeId>,
+    cur_this_fn: Option<NodeId>,
 }
 
 impl GraphVisitor<'_> {
@@ -484,7 +522,22 @@ impl GraphVisitor<'_> {
             };
         }
         match expr {
-            Expr::This(_) => ret!(vec![PointerId::UNKNOWN]),
+            Expr::This(_) => {
+                if used {
+                    match self.cur_this_fn {
+                        Some(func) => {
+                            let func = self.store.pointers.insert(Pointer::Fn(func));
+                            let this = self.store.pointers.insert(Pointer::This(func));
+                            self.graph
+                                .add_initial_edge(func, this, GraphEdge::This, self.store);
+                            vec![this]
+                        }
+                        None => vec![PointerId::UNKNOWN],
+                    }
+                } else {
+                    Vec::new()
+                }
+            }
             Expr::Array(n) => {
                 for element in &n.elems {
                     match element {
@@ -506,35 +559,86 @@ impl GraphVisitor<'_> {
                     .unwrap();
 
                 let is_simple_obj_lit = n.props.iter().all(|p| match p {
-                    Prop::KeyValue(p) => is_simple_prop_name(&p.key, self.store.unresolved_ctxt),
-                    _ => false,
+                    Prop::KeyValue(KeyValueProp { key, .. })
+                    | Prop::Method(MethodProp { key, .. }) => {
+                        is_simple_prop_name(key, self.store.unresolved_ctxt)
+                    }
+                    Prop::Setter(_) | Prop::Getter(_) | Prop::Spread(_) => false,
+                    Prop::Assign(_) => unreachable!(),
                 });
 
                 if is_simple_obj_lit {
                     for prop in &n.props {
+                        let key = match prop {
+                            Prop::KeyValue(KeyValueProp { key, .. })
+                            | Prop::Method(MethodProp { key, .. }) => key,
+                            _ => unreachable!("checked above"),
+                        };
+                        let key = PropKey::from_prop_name(
+                            key,
+                            self.store.unresolved_ctxt,
+                            &mut self.store.names,
+                        )
+                        .expect("checked above");
+
                         match prop {
                             Prop::KeyValue(prop) => {
-                                let key = PropKey::from_prop_name(
-                                    &prop.key,
-                                    self.store.unresolved_ctxt,
-                                    &mut self.store.names,
-                                )
-                                .expect("checked above");
                                 let value = self.get_rhs(&prop.value, true);
                                 let prop = self.get_prop_value(obj, key.0);
                                 self.reference_prop(obj, key);
                                 for value in value {
                                     self.make_subset_of(value, prop);
+
+                                    if value == PointerId::UNKNOWN {
+                                        // Even if value is a function, its `this` can't be bound to obj unless
+                                        // we have e.g. `value.bind(obj)`, which we would detect elsewhere.
+                                    } else if value.is_primitive()
+                                        || matches!(self.store.pointers[value], Pointer::Object(_))
+                                    {
+                                        // These aren't functions and can't access obj.
+                                    } else {
+                                        // Value might be a function, in which case its `this` will be bound to obj.
+                                        let this = self.store.pointers.insert(Pointer::This(value));
+                                        self.graph.add_initial_edge(
+                                            value,
+                                            this,
+                                            GraphEdge::This,
+                                            self.store,
+                                        );
+                                        self.make_subset_of(obj, this);
+                                    }
                                 }
                             }
-                            Prop::Getter(_)
-                            | Prop::Setter(_)
-                            | Prop::Method(_)
-                            | Prop::Spread(_) => {
+                            Prop::Method(prop) => {
+                                prop.function.visit_with(self);
+                                let rhs = self
+                                    .store
+                                    .pointers
+                                    .insert(Pointer::Fn(prop.function.node_id));
+                                let prop_pointer = self.get_prop_value(obj, key.0);
+                                self.reference_prop(obj, key);
+                                self.make_subset_of(rhs, prop_pointer);
+
+                                if let Some(func) = self.store.functions.get(&prop.function.node_id)
+                                {
+                                    if func.references_this {
+                                        let this = self.store.pointers.insert(Pointer::This(rhs));
+                                        self.graph.add_initial_edge(
+                                            rhs,
+                                            this,
+                                            GraphEdge::This,
+                                            self.store,
+                                        );
+                                        self.make_subset_of(obj, this);
+                                    }
+                                }
+                            }
+
+                            Prop::Getter(_) | Prop::Setter(_) | Prop::Spread(_) => {
                                 unreachable!("checked above")
                             }
 
-                            Prop::Assign(_) => unreachable!("invalid for obj lit"),
+                            Prop::Assign(_) => unreachable!(),
                         }
                     }
                 } else {
@@ -1208,11 +1312,14 @@ impl Visit<'_> for GraphVisitor<'_> {
     // TODO: we don't yet handle getters/setters
 
     fn visit_function(&mut self, n: &Function) {
-        let old = self.cur_fn;
+        let old_cur_fn = self.cur_fn;
+        let old_cur_this_fn = self.cur_this_fn;
         self.cur_fn = Some(n.node_id);
+        self.cur_this_fn = Some(n.node_id);
         n.params.visit_with(self);
         n.body.visit_with(self);
-        self.cur_fn = old;
+        self.cur_fn = old_cur_fn;
+        self.cur_this_fn = old_cur_this_fn;
     }
 
     fn visit_arrow_expr(&mut self, n: &ArrowExpr) {
@@ -1265,6 +1372,7 @@ enum Pointer {
     Regex,
     ReturnValue(PointerId),
     Arg(PointerId, u16),
+    This(PointerId),
 }
 
 impl Pointer {
@@ -1273,7 +1381,8 @@ impl Pointer {
             Pointer::ReturnValue(_)
             | Pointer::Arg(_, _)
             | Pointer::Prop(_, _)
-            | Pointer::Var(_) => false,
+            | Pointer::Var(_)
+            | Pointer::This(_) => false,
 
             Pointer::Object(_)
             | Pointer::Fn(_)
@@ -1299,6 +1408,7 @@ enum Slot {
 #[derive(Debug, Clone, Copy)]
 struct StaticFunctionData {
     tracked_param_count: u16,
+    references_this: bool,
 }
 
 impl StaticFunctionData {
@@ -1340,7 +1450,8 @@ impl Store {
                 | Pointer::Var(_)
                 | Pointer::ReturnValue(_)
                 | Pointer::Arg(_, _)
-                | Pointer::Fn(_) => true,
+                | Pointer::Fn(_)
+                | Pointer::This(_) => true,
 
                 Pointer::Object(_) => false,
 
@@ -1414,6 +1525,7 @@ struct FnVisitor<'s> {
     /// Whether the current function accesses the `arguments` array.
     accesses_arguments_array: bool,
     params_to_invalidate: &'s mut Vec<VarId>,
+    references_this: bool,
 }
 
 impl FnVisitor<'_> {
@@ -1454,18 +1566,20 @@ impl FnVisitor<'_> {
             node.param_count()
         };
 
-        let static_data = StaticFunctionData {
+        let mut static_data = StaticFunctionData {
             tracked_param_count: tracked_param_count.try_into().expect("> u16::MAX params"),
+            references_this: false,
         };
 
         let node_id = node.node_id();
 
         self.store.pointers.insert(Pointer::Fn(node_id));
 
-        self.store.functions.insert(node_id, static_data);
-
         let old_accesses_arguments_array = self.accesses_arguments_array;
         self.accesses_arguments_array = false;
+
+        let old_references_this = self.references_this;
+        self.references_this = false;
 
         for param in node.params() {
             self.visit_pat(param);
@@ -1483,6 +1597,11 @@ impl FnVisitor<'_> {
                 .push(VarId::from_u32(var_start + param_binding_count as u32 - 1));
         }
 
+        static_data.references_this = self.references_this;
+
+        self.store.functions.insert(node_id, static_data);
+
+        self.references_this = old_references_this;
         self.accesses_arguments_array = old_accesses_arguments_array;
     }
 }
@@ -1500,6 +1619,10 @@ impl<'ast> Visit<'ast> for FnVisitor<'_> {
         {
             self.accesses_arguments_array = true;
         }
+    }
+
+    fn visit_this_expr(&mut self, _: &'ast ThisExpr) {
+        self.references_this = true;
     }
 
     fn visit_fn_decl(&mut self, node: &'ast FnDecl) {
