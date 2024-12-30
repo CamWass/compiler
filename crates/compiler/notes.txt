@@ -11,3 +11,13 @@ class Foo111 {
 
 Update graph_map on merge to point to node of representative
 Merge derived pointers when merging. e.g. A.prop and B.prop are the same after merging A&B
+
+set MIMALLOC_SHOW_STATS=1
+
+set RUSTFLAGS=-Zprint-type-sizes & cargo build --release --target-dir ./temp-cache > dump.txt 2>&1
+
+Store names outside of ast. Just store e.g. index into list of names. Allows us to rename without modifying AST.
+Most passes don't care about actual names, just whether two names are te same etc
+
+delay merging nodes until we see tham again laer in the queue?
+To avoid mergeing nodes that we'll never visit again

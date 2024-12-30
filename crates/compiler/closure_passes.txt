@@ -27,7 +27,7 @@
 ❌inferConsts
 ➖checkConstParams
 ❌earlyInlineVariables
-❌earlyPeepholeOptimizations
+➖earlyPeepholeOptimizations
 ❌removeUnusedCodeOnce
 ✅disambiguateProperties
 ❌markPureFunctions
