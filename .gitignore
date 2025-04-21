@@ -6,3 +6,4 @@ node_modules/
 *.svg
 config.json
 closure_ast.json
+out.js
