@@ -702,8 +702,7 @@ impl<I: Tokens> Parser<'_, I> {
         self.try_parse_ts_type_ann()?;
 
         let ctx = Context {
-            flags: (self.ctx().flags | ContextFlags::in_class_prop | ContextFlags::include_in_expr)
-                & !ContextFlags::in_method,
+            flags: (self.ctx().flags | ContextFlags::in_class_prop | ContextFlags::include_in_expr),
             ..self.ctx()
         };
         self.with_ctx(ctx).parse_with(|parser| {

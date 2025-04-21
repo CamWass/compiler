@@ -53,13 +53,12 @@ bitflags! {
         const in_parameters = 1 << 9;
 
         const has_super_class = 1 << 10;
-        const in_method = 1 << 11;
-        const in_class_prop = 1 << 12;
+        const in_class_prop = 1 << 11;
 
-        const in_property_name = 1 << 13;
+        const in_property_name = 1 << 12;
 
         /// If true, `:` should not be treated as a type annotation.
-        const in_case_cond = 1 << 14;
+        const in_case_cond = 1 << 13;
     }
 }
 
