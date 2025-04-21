@@ -1,7 +1,7 @@
 use self::expression::BlockStmtOrExpr;
 
 use super::{identifier::MaybeOptionalIdentParser, *};
-use crate::{error::SyntaxError, Tokens};
+use crate::{context::ContextFlags, error::SyntaxError, Tokens};
 use atoms::js_word;
 use expression::MaybeParen;
 use util::AssignProps;
@@ -155,12 +155,10 @@ impl<I: Tokens> Parser<'_, I> {
             }
 
             expect!(parser, '{');
-            let body = parser
-                .with_ctx(Context {
-                    has_super_class: extends_clause.is_some(),
-                    ..parser.ctx()
-                })
-                .parse_class_body()?;
+            let mut ctx = parser.ctx();
+            ctx.flags
+                .set(ContextFlags::has_super_class, extends_clause.is_some());
+            let body = parser.with_ctx(ctx).parse_class_body()?;
             expect!(parser, '}');
             let end = parser.input.last_pos();
             Ok(T::finish_class(
@@ -349,7 +347,7 @@ impl<I: Tokens> Parser<'_, I> {
                             self.input.prev_span(),
                             SyntaxError::TS1243(js_word!("override"), js_word!("declare")),
                         );
-                    } else if !self.ctx().has_super_class {
+                    } else if !self.ctx().has_super_class() {
                         self.emit_err(self.input.prev_span(), SyntaxError::TS4112);
                     } else {
                         is_override = true;
@@ -704,9 +702,8 @@ impl<I: Tokens> Parser<'_, I> {
         self.try_parse_ts_type_ann()?;
 
         let ctx = Context {
-            in_class_prop: true,
-            in_method: false,
-            include_in_expr: true,
+            flags: (self.ctx().flags | ContextFlags::in_class_prop | ContextFlags::include_in_expr)
+                & !ContextFlags::in_method,
             ..self.ctx()
         };
         self.with_ctx(ctx).parse_with(|parser| {
@@ -793,19 +790,14 @@ impl<I: Tokens> Parser<'_, I> {
             }
         };
 
-        let ctx = Context {
-            in_async: is_async,
-            in_generator: is_generator,
-            ..self.ctx()
-        };
+        let mut ctx = self.ctx();
+        ctx.flags.set(ContextFlags::in_async, is_async);
+        ctx.flags.set(ContextFlags::in_generator, is_generator);
 
         let ident = if T::is_fn_expr() {
-            //
-            self.with_ctx(Context {
-                in_generator: is_generator,
-                ..ctx
-            })
-            .parse_maybe_opt_binding_ident()?
+            let mut ctx = ctx;
+            ctx.flags.set(ContextFlags::in_generator, is_generator);
+            self.with_ctx(ctx).parse_maybe_opt_binding_ident()?
         } else {
             // function declaration does not change context for `BindingIdentifier`.
             self.parse_maybe_opt_binding_ident()?
@@ -870,11 +862,9 @@ impl<I: Tokens> Parser<'_, I> {
         trace_cur!(self, parse_fn_args_body);
 
         // let prev_in_generator = self.ctx().in_generator;
-        let ctx = Context {
-            in_async: is_async,
-            in_generator: is_generator,
-            ..self.ctx()
-        };
+        let mut ctx = self.ctx();
+        ctx.flags.set(ContextFlags::in_async, is_async);
+        ctx.flags.set(ContextFlags::in_generator, is_generator);
 
         self.with_ctx(ctx).parse_with(|parser| {
             // Type params.
@@ -892,7 +882,7 @@ impl<I: Tokens> Parser<'_, I> {
             expect!(parser, '(');
 
             let arg_ctx = Context {
-                in_parameters: true,
+                flags: parser.ctx().flags | ContextFlags::in_parameters,
                 // in_generator: prev_in_generator,
                 ..parser.ctx()
             };
@@ -960,7 +950,7 @@ impl<I: Tokens> Parser<'_, I> {
     where
         Self: FnBodyParser<T>,
     {
-        if self.ctx().in_declare && self.syntax().typescript() && is!(self, '{') {
+        if self.ctx().in_declare() && self.syntax().typescript() && is!(self, '{') {
             //            self.emit_err(
             //                self.ctx().span_of_fn_name.expect("we are not in function"),
             //                SyntaxError::TS1183,
@@ -968,14 +958,14 @@ impl<I: Tokens> Parser<'_, I> {
             self.emit_err(self.input.cur_span(), SyntaxError::TS1183);
         }
 
-        let ctx = Context {
-            in_async: is_async,
-            in_generator: is_generator,
-            in_function: true,
-            is_break_allowed: false,
-            is_continue_allowed: false,
+        let mut ctx = Context {
+            flags: (self.ctx().flags | ContextFlags::in_function)
+                & !ContextFlags::is_break_allowed
+                & !ContextFlags::is_continue_allowed,
             ..self.ctx()
         };
+        ctx.flags.set(ContextFlags::in_async, is_async);
+        ctx.flags.set(ContextFlags::in_generator, is_generator);
 
         let prev_labels = std::mem::take(&mut self.labels);
         let res = self.with_ctx(ctx).parse_fn_body_inner();

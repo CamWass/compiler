@@ -1,5 +1,6 @@
 use crate::token::{Keyword, Word};
 use atoms::{js_word, JsWord};
+use bitflags::bitflags;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum YesNoMaybe {
@@ -26,42 +27,49 @@ impl Default for YesMaybe {
     }
 }
 
+bitflags! {
+    #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Default)]
+    pub struct ContextFlags: u16 {
+        const include_in_expr = 1 << 0;
+        /// If true, await expression is parsed, and "await" is treated as a
+        /// keyword.
+        const in_async = 1 << 1;
+        /// If true, yield expression is parsed, and "yield" is treated as a
+        /// keyword.
+        const in_generator = 1 << 2;
+
+        const is_continue_allowed = 1 << 3;
+        const is_break_allowed = 1 << 4;
+
+        const in_type = 1 << 5;
+        /// Typescript extension.
+        const in_declare = 1 << 6;
+
+        /// If true, `:` should not be treated as a type annotation.
+        const in_cond_expr = 1 << 7;
+
+        const in_function = 1 << 8;
+
+        const in_parameters = 1 << 9;
+
+        const has_super_class = 1 << 10;
+        const in_method = 1 << 11;
+        const in_class_prop = 1 << 12;
+
+        const in_property_name = 1 << 13;
+
+        /// If true, `:` should not be treated as a type annotation.
+        const in_case_cond = 1 << 14;
+    }
+}
+
 /// Syntactic context.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Context {
     /// Is in module code?
     pub module: YesNoMaybe,
     pub strict: YesMaybe,
-    pub include_in_expr: bool,
-    /// If true, await expression is parsed, and "await" is treated as a
-    /// keyword.
-    pub in_async: bool,
-    /// If true, yield expression is parsed, and "yield" is treated as a
-    /// keyword.
-    pub in_generator: bool,
-
-    pub is_continue_allowed: bool,
-    pub is_break_allowed: bool,
-
-    pub in_type: bool,
-    /// Typescript extension.
-    pub in_declare: bool,
-
-    /// If true, `:` should not be treated as a type annotation.
-    pub in_cond_expr: bool,
-
-    pub in_function: bool,
-
-    pub in_parameters: bool,
-
-    pub has_super_class: bool,
-    pub in_method: bool,
-    pub in_class_prop: bool,
-
-    pub in_property_name: bool,
-
-    /// If true, `:` should not be treated as a type annotation.
-    pub in_case_cond: bool,
+    pub flags: ContextFlags,
 }
 
 impl Context {
@@ -77,8 +85,12 @@ impl Context {
     pub(crate) fn is_reserved(self, word: &Word) -> bool {
         match *word {
             Word::Keyword(Keyword::Let) => self.is_strict(),
-            Word::Keyword(Keyword::Await) => self.in_async || self.is_strict(),
-            Word::Keyword(Keyword::Yield) => self.in_generator || self.is_strict(),
+            Word::Keyword(Keyword::Await) => {
+                self.flags.contains(ContextFlags::in_async) || self.is_strict()
+            }
+            Word::Keyword(Keyword::Yield) => {
+                self.flags.contains(ContextFlags::in_generator) || self.is_strict()
+            }
 
             Word::Null
             | Word::True
@@ -137,8 +149,10 @@ impl Context {
     pub fn is_reserved_word(self, word: &JsWord) -> bool {
         match *word {
             js_word!("let") => self.is_strict(),
-            js_word!("await") => self.in_async || self.is_strict(),
-            js_word!("yield") => self.in_generator || self.is_strict(),
+            js_word!("await") => self.flags.contains(ContextFlags::in_async) || self.is_strict(),
+            js_word!("yield") => {
+                self.flags.contains(ContextFlags::in_generator) || self.is_strict()
+            }
 
             js_word!("null")
             | js_word!("true")
@@ -192,5 +206,53 @@ impl Context {
 
             _ => false,
         }
+    }
+
+    pub fn include_in_expr(&self) -> bool {
+        self.flags.contains(ContextFlags::include_in_expr)
+    }
+
+    pub fn in_async(&self) -> bool {
+        self.flags.contains(ContextFlags::in_async)
+    }
+
+    pub fn in_generator(&self) -> bool {
+        self.flags.contains(ContextFlags::in_generator)
+    }
+
+    pub fn is_continue_allowed(&self) -> bool {
+        self.flags.contains(ContextFlags::is_continue_allowed)
+    }
+
+    pub fn is_break_allowed(&self) -> bool {
+        self.flags.contains(ContextFlags::is_break_allowed)
+    }
+
+    pub fn in_type(&self) -> bool {
+        self.flags.contains(ContextFlags::in_type)
+    }
+
+    pub fn in_declare(&self) -> bool {
+        self.flags.contains(ContextFlags::in_declare)
+    }
+
+    pub fn in_cond_expr(&self) -> bool {
+        self.flags.contains(ContextFlags::in_cond_expr)
+    }
+
+    pub fn in_function(&self) -> bool {
+        self.flags.contains(ContextFlags::in_function)
+    }
+
+    pub fn in_parameters(&self) -> bool {
+        self.flags.contains(ContextFlags::in_parameters)
+    }
+
+    pub fn has_super_class(&self) -> bool {
+        self.flags.contains(ContextFlags::has_super_class)
+    }
+
+    pub fn in_case_cond(&self) -> bool {
+        self.flags.contains(ContextFlags::in_case_cond)
     }
 }

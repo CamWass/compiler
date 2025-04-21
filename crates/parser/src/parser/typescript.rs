@@ -1,7 +1,7 @@
 use self::expression::BlockStmtOrExpr;
 
 use super::*;
-use crate::lexer::TokenContexts;
+use crate::{context::ContextFlags, lexer::TokenContexts};
 use atoms::js_word;
 use expression::MaybeParen;
 use util::AssignProps;
@@ -611,7 +611,7 @@ impl<I: Tokens> Parser<'_, I> {
         debug_assert!(self.syntax().typescript());
 
         // Need to set `ctx.in_type` so that we don't parse JSX in a type context.
-        debug_assert!(self.ctx().in_type);
+        debug_assert!(self.ctx().in_type());
 
         let start = self.input.cur_pos();
 
@@ -1620,14 +1620,14 @@ impl<I: Tokens> Parser<'_, I> {
             "try_parse_ts_declare should be called after eating `declare`"
         );
 
-        if self.ctx().in_declare {
+        if self.ctx().in_declare() {
             let span_of_declare = span!(self, start);
             self.emit_err(span_of_declare, SyntaxError::TS1038);
         }
 
         let declare_start = start;
         let ctx = Context {
-            in_declare: true,
+            flags: self.ctx().flags | ContextFlags::in_declare,
             ..self.ctx()
         };
 
@@ -1805,8 +1805,7 @@ impl<I: Tokens> Parser<'_, I> {
         };
 
         let ctx = Context {
-            in_async: true,
-            in_generator: false,
+            flags: (self.ctx().flags | ContextFlags::in_async) & !ContextFlags::in_generator,
             ..self.ctx()
         };
         self.with_ctx(ctx).parse_with(|p| {

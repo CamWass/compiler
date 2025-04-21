@@ -9,7 +9,7 @@ impl<I: Tokens> Parser<'_, I> {
     pub(super) fn parse_bin_expr(&mut self, assign_props: &mut AssignProps) -> PResult<MaybeParen> {
         trace_cur!(self, parse_bin_expr);
 
-        let include_in_expr = self.ctx().include_in_expr;
+        let include_in_expr = self.ctx().include_in_expr();
 
         let potential_arrow_start = self.potential_arrow_start;
 
@@ -127,7 +127,7 @@ impl<I: Tokens> Parser<'_, I> {
             _ => return Ok((left, None)),
         };
         let op = match *word {
-            Word(Word::Keyword(Keyword::In)) if ctx.include_in_expr => op!("in"),
+            Word(Word::Keyword(Keyword::In)) if ctx.include_in_expr() => op!("in"),
             Word(Word::Keyword(Keyword::InstanceOf)) => op!("instanceof"),
             Token::BinOp(op) => op.into(),
             _ => {
@@ -320,7 +320,7 @@ impl<I: Tokens> Parser<'_, I> {
             .into());
         }
 
-        if (self.ctx().in_async || self.syntax().top_level_await()) && is!(self, "await") {
+        if (self.ctx().in_async() || self.syntax().top_level_await()) && is!(self, "await") {
             return self.parse_await_expr().map(From::from);
         }
 
@@ -365,7 +365,7 @@ impl<I: Tokens> Parser<'_, I> {
             syntax_error!(self, SyntaxError::AwaitStar);
         }
 
-        if is_one_of!(self, ')', ']') && !self.ctx().in_async {
+        if is_one_of!(self, ')', ']') && !self.ctx().in_async() {
             return Ok(Box::new(Expr::Ident(
                 self.new_ident(js_word!("await"), span!(self, start)),
             )));

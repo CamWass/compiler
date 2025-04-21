@@ -1,5 +1,5 @@
 use super::{pat::PatType, util::is_valid_simple_assignment_target, *};
-use crate::token::AssignOpToken;
+use crate::{context::ContextFlags, token::AssignOpToken};
 use atoms::js_word;
 use either::Either;
 use global_common::Pos;
@@ -94,7 +94,7 @@ impl<I: Tokens> Parser<'_, I> {
     ) -> PResult<MaybeParen> {
         trace_cur!(self, parse_assignment_expr_base);
 
-        if self.ctx().in_generator && is!(self, "yield") {
+        if self.ctx().in_generator() && is!(self, "yield") {
             return self.parse_yield_expr().map(From::from);
         }
 
@@ -228,8 +228,9 @@ impl<I: Tokens> Parser<'_, I> {
 
         if eat!(self, '?') {
             let ctx = Context {
-                in_cond_expr: true,
-                include_in_expr: true,
+                flags: self.ctx().flags
+                    | ContextFlags::in_cond_expr
+                    | ContextFlags::include_in_expr,
                 ..self.ctx()
             };
             let cons = self
@@ -238,7 +239,7 @@ impl<I: Tokens> Parser<'_, I> {
                 .unwrap();
             expect!(self, ':');
             let ctx = Context {
-                in_cond_expr: true,
+                flags: self.ctx().flags | ContextFlags::in_cond_expr,
                 ..self.ctx()
             };
             let alt = self
@@ -928,8 +929,9 @@ impl<I: Tokens> Parser<'_, I> {
                     } else if let MaybeParenExprOrSpread::Expr(test) = arg {
                         expect!(self, '?');
                         let ctx = Context {
-                            in_cond_expr: true,
-                            include_in_expr: true,
+                            flags: self.ctx().flags
+                                | ContextFlags::in_cond_expr
+                                | ContextFlags::include_in_expr,
                             ..self.ctx()
                         };
                         let cons = self
@@ -938,7 +940,7 @@ impl<I: Tokens> Parser<'_, I> {
                             .unwrap();
                         expect!(self, ':');
                         let ctx = Context {
-                            in_cond_expr: true,
+                            flags: self.ctx().flags | ContextFlags::in_cond_expr,
                             ..self.ctx()
                         };
                         let alt = self
@@ -1302,7 +1304,7 @@ impl<I: Tokens> Parser<'_, I> {
         };
 
         // This is slow path. We handle arrow in conditional expression.
-        if self.syntax().typescript() && self.ctx().in_cond_expr && is!(self, ':') {
+        if self.syntax().typescript() && self.ctx().in_cond_expr() && is!(self, ':') {
             // TODO: Remove clone
             let items_ref = &paren_items;
             if let Some(expr) = self.try_parse_ts(|p| {
@@ -1332,10 +1334,10 @@ impl<I: Tokens> Parser<'_, I> {
             }
         }
 
-        let return_type = if !self.ctx().in_cond_expr
+        let return_type = if !self.ctx().in_cond_expr()
             && self.input.syntax().typescript()
             && is!(self, ':')
-            && !self.ctx().in_case_cond
+            && !self.ctx().in_case_cond()
         {
             Some(self.parse_ts_type_or_type_predicate_ann(&tok!(':'))?)
         } else {
@@ -1603,13 +1605,13 @@ impl<I: Tokens> Parser<'_, I> {
         let start = self.input.cur_pos();
 
         self.assert_and_bump(&tok!("yield"));
-        debug_assert!(self.ctx().in_generator);
+        debug_assert!(self.ctx().in_generator());
 
         // Spec says
         // YieldExpression cannot be used within the FormalParameters of a generator
         // function because any expressions that are part of FormalParameters are
         // evaluated before the resulting generator object is in a resumable state.
-        if self.ctx().in_parameters {
+        if self.ctx().in_parameters() {
             syntax_error!(self, self.input.prev_span(), SyntaxError::YieldParamInGen)
         }
 

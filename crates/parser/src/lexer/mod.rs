@@ -60,7 +60,7 @@ impl Iterator for Lexer<'_> {
                 return self.read_tmpl_token(start_pos_of_tpl).map(Some);
             }
 
-            if self.syntax.typescript() && self.ctx.in_type {
+            if self.syntax.typescript() && self.ctx.in_type() {
                 if self.eat(b'<') {
                     return Ok(Some(tok!('<')));
                 } else if self.eat(b'>') {
