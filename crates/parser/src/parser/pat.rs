@@ -30,10 +30,10 @@ impl<I: Tokens> Parser<'_, I> {
                 SyntaxError::EvalAndArgumentsInStrict,
             );
         }
-        if self.ctx().in_async && ident.sym == js_word!("await") {
+        if self.ctx().in_async() && ident.sym == js_word!("await") {
             self.emit_err(get_span!(self, ident.node_id), SyntaxError::ExpectedIdent);
         }
-        if self.ctx().in_generator && ident.sym == js_word!("yield") {
+        if self.ctx().in_generator() && ident.sym == js_word!("yield") {
             self.emit_err(get_span!(self, ident.node_id), SyntaxError::ExpectedIdent);
         }
 
@@ -70,7 +70,7 @@ impl<I: Tokens> Parser<'_, I> {
                 .parse_assignment_expr(&mut AssignProps::Emit)?
                 .unwrap();
 
-            if self.ctx().in_declare {
+            if self.ctx().in_declare() {
                 self.emit_err(span!(self, start), SyntaxError::TS2371);
             }
 
@@ -124,7 +124,7 @@ impl<I: Tokens> Parser<'_, I> {
 
         expect!(self, ']');
         // TS optional.
-        if self.input.syntax().dts() || self.ctx().in_declare {
+        if self.input.syntax().dts() || self.ctx().in_declare() {
             eat!(self, '?');
         }
 
@@ -171,7 +171,7 @@ impl<I: Tokens> Parser<'_, I> {
                     Pat::Ident(_) | Pat::Array(_) | Pat::Object(_) => {
                         opt = true;
                     }
-                    _ if self.input.syntax().dts() || self.ctx().in_declare => {}
+                    _ if self.input.syntax().dts() || self.ctx().in_declare() => {}
                     _ => {
                         syntax_error!(
                             self,
@@ -218,7 +218,7 @@ impl<I: Tokens> Parser<'_, I> {
             }
 
             let right = self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap();
-            if self.ctx().in_declare {
+            if self.ctx().in_declare() {
                 self.emit_err(span!(self, start), SyntaxError::TS2371);
             }
 
@@ -718,7 +718,7 @@ impl<I: Tokens> Parser<'_, I> {
                 }))
             }
 
-            Expr::Yield(..) if self.ctx().in_generator => {
+            Expr::Yield(..) if self.ctx().in_generator() => {
                 self.emit_err(span, SyntaxError::InvalidPat);
                 Ok(Pat::Invalid(Invalid {
                     node_id: node_id!(self, span),

@@ -169,7 +169,7 @@ impl Graph {
                 }
             }
 
-            if let Some(values) = self.points_to.get(&pointer.0).cloned() {
+            if let Some(values) = self.points_to.get(&pointer.0) {
                 let valid_values = values
                     .iter()
                     .filter(|v| !v.is_built_in() && !store.invalid_pointers.contains(*v))

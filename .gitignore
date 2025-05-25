@@ -2,9 +2,8 @@
 
 node_modules/
 
-*.js
-*.ts
 *.dot
 *.svg
 config.json
 closure_ast.json
+out.js

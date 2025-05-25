@@ -1,7 +1,7 @@
 use util::AssignProps;
 
 use super::*;
-use crate::context::{YesMaybe, YesNoMaybe};
+use crate::context::{ContextFlags, YesMaybe, YesNoMaybe};
 
 impl<I: Tokens> Parser<'_, I> {
     #[allow(clippy::cognitive_complexity)]
@@ -211,8 +211,7 @@ impl<I: Tokens> Parser<'_, I> {
 
     fn parse_imported_binding(&mut self) -> PResult<Ident> {
         let ctx = Context {
-            in_async: false,
-            in_generator: false,
+            flags: self.ctx().flags & !ContextFlags::in_async & !ContextFlags::in_generator,
             ..self.ctx()
         };
         Ok(self.with_ctx(ctx).parse_binding_ident()?.id)

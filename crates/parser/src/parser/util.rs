@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    context::{Context, YesMaybe},
+    context::{Context, ContextFlags, YesMaybe},
     token::Token,
 };
 use global_common::Span;
@@ -133,7 +133,7 @@ impl<'d, I: Tokens> Parser<'d, I> {
     /// Original context is restored when returned guard is dropped.
     pub(super) fn in_type(&mut self) -> WithCtx<'d, '_, I> {
         let ctx = Context {
-            in_type: true,
+            flags: self.ctx().flags | ContextFlags::in_type,
             ..self.ctx()
         };
         self.with_ctx(ctx)
@@ -141,10 +141,9 @@ impl<'d, I: Tokens> Parser<'d, I> {
 
     /// Original context is restored when returned guard is dropped.
     pub(super) fn include_in_expr(&mut self, include_in_expr: bool) -> WithCtx<'d, '_, I> {
-        let ctx = Context {
-            include_in_expr,
-            ..self.ctx()
-        };
+        let mut ctx = self.ctx();
+        ctx.flags
+            .set(ContextFlags::include_in_expr, include_in_expr);
         self.with_ctx(ctx)
     }
 

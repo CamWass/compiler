@@ -1,6 +1,6 @@
 use super::{pat::PatType, *};
 use crate::{
-    context::{Context, YesMaybe},
+    context::{Context, ContextFlags, YesMaybe},
     token::{Token, Word},
 };
 use atoms::js_word;
@@ -509,10 +509,10 @@ impl<I: Tokens> Parser<'_, I> {
         if is_break {
             if label.is_some() && !self.labels.contains(&label.as_ref().unwrap().sym) {
                 self.emit_err(span, SyntaxError::TS1116);
-            } else if !self.ctx().is_break_allowed {
+            } else if !self.ctx().is_break_allowed() {
                 self.emit_err(span, SyntaxError::TS1105);
             }
-        } else if !self.ctx().is_continue_allowed {
+        } else if !self.ctx().is_continue_allowed() {
             self.emit_err(span, SyntaxError::TS1115);
         } else if label.is_some() && !self.labels.contains(&label.as_ref().unwrap().sym) {
             self.emit_err(span, SyntaxError::TS1107);
@@ -542,8 +542,9 @@ impl<I: Tokens> Parser<'_, I> {
         self.assert_and_bump(&tok!("do"));
 
         let ctx = Context {
-            is_break_allowed: true,
-            is_continue_allowed: true,
+            flags: self.ctx().flags
+                | ContextFlags::is_break_allowed
+                | ContextFlags::is_continue_allowed,
             ..self.ctx()
         };
 
@@ -586,8 +587,9 @@ impl<I: Tokens> Parser<'_, I> {
         expect!(self, ')');
 
         let ctx = Context {
-            is_break_allowed: true,
-            is_continue_allowed: true,
+            flags: self.ctx().flags
+                | ContextFlags::is_break_allowed
+                | ContextFlags::is_continue_allowed,
             ..self.ctx()
         };
         let body = self
@@ -817,7 +819,7 @@ impl<I: Tokens> Parser<'_, I> {
 
         expect!(self, ';');
 
-        if !self.ctx().in_function {
+        if !self.ctx().in_function() {
             self.emit_err(span!(self, start), SyntaxError::ReturnNotAllowed);
         }
         Ok(Stmt::Return(ReturnStmt {
@@ -838,7 +840,7 @@ impl<I: Tokens> Parser<'_, I> {
         expect!(self, '{');
 
         let ctx = Context {
-            is_break_allowed: true,
+            flags: self.ctx().flags | ContextFlags::is_break_allowed,
             ..self.ctx()
         };
 
@@ -851,8 +853,9 @@ impl<I: Tokens> Parser<'_, I> {
                 parser.input.bump();
 
                 let ctx = Context {
-                    in_case_cond: true,
-                    include_in_expr: true,
+                    flags: parser.ctx().flags
+                        | ContextFlags::in_case_cond
+                        | ContextFlags::include_in_expr,
                     ..parser.ctx()
                 };
 
@@ -978,14 +981,8 @@ impl<I: Tokens> Parser<'_, I> {
 
             // Type annotation.
             if self.syntax().typescript() && eat!(self, ':') {
-                let ctx = Context {
-                    in_type: true,
-                    ..self.ctx()
-                };
-
                 // Type annotation.
-                self.with_ctx(ctx)
-                    .parse_with(|parser| parser.parse_ts_type())?;
+                self.in_type().parse_with(|parser| parser.parse_ts_type())?;
                 // self.emit_err(ty.span(), SyntaxError::TS1196);
             }
             expect!(self, ')');
@@ -1049,7 +1046,7 @@ impl<I: Tokens> Parser<'_, I> {
 
             let ctx = if should_include_in {
                 Context {
-                    include_in_expr: true,
+                    flags: self.ctx().flags | ContextFlags::include_in_expr,
                     ..self.ctx()
                 }
             } else {
@@ -1126,7 +1123,7 @@ impl<I: Tokens> Parser<'_, I> {
             } else {
                 // Destructuring bindings require initializers, but
                 // typescript allows `declare` vars not to have initializers.
-                if self.ctx().in_declare {
+                if self.ctx().in_declare() {
                     None
                 } else {
                     match name {
@@ -1160,8 +1157,9 @@ impl<I: Tokens> Parser<'_, I> {
         let test = self.parse_header_expr()?.unwrap();
 
         let ctx = Context {
-            is_break_allowed: true,
-            is_continue_allowed: true,
+            flags: self.ctx().flags
+                | ContextFlags::is_break_allowed
+                | ContextFlags::is_continue_allowed,
             ..self.ctx()
         };
         let body = self
@@ -1194,7 +1192,7 @@ impl<I: Tokens> Parser<'_, I> {
         let obj = self.parse_header_expr()?.unwrap();
 
         let ctx = Context {
-            in_function: true,
+            flags: self.ctx().flags | ContextFlags::in_function,
             ..self.ctx()
         };
         let body = self
@@ -1229,7 +1227,7 @@ impl<I: Tokens> Parser<'_, I> {
 
     fn parse_labelled_stmt(&mut self, label: Ident) -> PResult<Stmt> {
         let ctx = Context {
-            is_break_allowed: true,
+            flags: self.ctx().flags | ContextFlags::is_break_allowed,
             ..self.ctx()
         };
 

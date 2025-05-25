@@ -1,5 +1,7 @@
 //! Parser for object literal.
 
+use crate::context::ContextFlags;
+
 use super::{class_and_fn::is_not_this, util::ParseObject, *};
 use atoms::js_word;
 use util::AssignProps;
@@ -39,7 +41,7 @@ impl<I: Tokens> Parser<'_, I> {
     /// spec: 'PropertyName'
     pub(super) fn parse_prop_name(&mut self) -> PResult<PropName> {
         self.with_ctx(Context {
-            in_property_name: true,
+            flags: self.ctx().flags | ContextFlags::in_property_name,
             ..self.ctx()
         })
         .parse_with(|parser| {
@@ -435,7 +437,7 @@ impl<I: Tokens> ParseObject<Pat> for Parser<'_, I> {
         }
 
         // TS optional.
-        if self.input.syntax().dts() || self.ctx().in_declare {
+        if self.input.syntax().dts() || self.ctx().in_declare() {
             self.input.eat(&tok!('?'));
         }
 
