@@ -424,7 +424,7 @@ where
         all_vars_in_fn,
         escaped: &mut escaped,
     };
-    fn_scope.visit_body_with(&mut v);
+    fn_scope.body().visit_with(&mut v);
     escaped
 }
 

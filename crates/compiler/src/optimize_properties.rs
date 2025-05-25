@@ -1446,7 +1446,7 @@ impl FnVisitor<'_> {
             v.record_var(fn_expr_name);
         }
 
-        node.visit_body_with(&mut v);
+        node.body().visit_with(&mut v);
 
         let tracked_param_count = if has_rest {
             node.param_count() - 1
@@ -1470,7 +1470,7 @@ impl FnVisitor<'_> {
         for param in node.params() {
             self.visit_pat(param);
         }
-        node.visit_body_with(self);
+        node.body().visit_with(self);
 
         if self.accesses_arguments_array {
             // Invalidate parameters for functions that access the arguments array.

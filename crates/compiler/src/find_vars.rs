@@ -5,7 +5,6 @@ use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use index::vec::IndexVec;
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::control_flow::node::Node;
 use crate::{Id, ToId};
 
 #[derive(Default, Debug)]
@@ -220,25 +219,10 @@ pub trait FunctionLike {
     where
         Self: 'a;
 
-    fn visit_body_with<'ast, V>(&'ast self, visitor: &mut V)
-    where
-        V: Visit<'ast>;
-
     fn params(&self) -> Self::ParamIter<'_>;
     fn param_count(&self) -> usize;
 
-    fn body(&self) -> Node<'_>;
-}
-
-macro_rules! visit_body {
-    () => {
-        fn visit_body_with<'ast, V>(&'ast self, visitor: &mut V)
-        where
-            V: Visit<'ast>,
-        {
-            self.body.visit_with(visitor);
-        }
-    };
+    fn body(&self) -> &BlockStmt;
 }
 
 fn get_pat_of_param(param: &Param) -> &Pat {
@@ -247,8 +231,6 @@ fn get_pat_of_param(param: &Param) -> &Pat {
 impl FunctionLike for Function {
     type ParamIter<'a> = std::iter::Map<std::slice::Iter<'a, Param>, fn(&'a Param) -> &'a Pat>;
 
-    visit_body!();
-
     fn param_count(&self) -> usize {
         self.params.len()
     }
@@ -257,15 +239,13 @@ impl FunctionLike for Function {
         self.params.iter().map(get_pat_of_param)
     }
 
-    fn body(&self) -> Node<'_> {
-        Node::from(&self.body)
+    fn body(&self) -> &BlockStmt {
+        &self.body
     }
 }
 impl FunctionLike for Constructor {
     type ParamIter<'a> = std::iter::Map<std::slice::Iter<'a, Param>, fn(&'a Param) -> &'a Pat>;
 
-    visit_body!();
-
     fn param_count(&self) -> usize {
         self.params.len()
     }
@@ -274,15 +254,13 @@ impl FunctionLike for Constructor {
         self.params.iter().map(get_pat_of_param)
     }
 
-    fn body(&self) -> Node<'_> {
-        Node::from(&self.body)
+    fn body(&self) -> &BlockStmt {
+        &self.body
     }
 }
 impl FunctionLike for ArrowExpr {
     type ParamIter<'a> = std::iter::Map<std::slice::Iter<'a, Param>, fn(&'a Param) -> &'a Pat>;
 
-    visit_body!();
-
     fn param_count(&self) -> usize {
         self.params.len()
     }
@@ -291,14 +269,12 @@ impl FunctionLike for ArrowExpr {
         self.params.iter().map(get_pat_of_param)
     }
 
-    fn body(&self) -> Node<'_> {
-        Node::from(&self.body)
+    fn body(&self) -> &BlockStmt {
+        &self.body
     }
 }
 impl FunctionLike for GetterProp {
     type ParamIter<'a> = std::iter::Empty<&'a Pat>;
-
-    visit_body!();
 
     fn param_count(&self) -> usize {
         0
@@ -308,14 +284,12 @@ impl FunctionLike for GetterProp {
         std::iter::empty()
     }
 
-    fn body(&self) -> Node<'_> {
-        Node::from(&self.body)
+    fn body(&self) -> &BlockStmt {
+        &self.body
     }
 }
 impl FunctionLike for SetterProp {
     type ParamIter<'a> = std::iter::Once<&'a Pat>;
-
-    visit_body!();
 
     fn param_count(&self) -> usize {
         1
@@ -325,8 +299,8 @@ impl FunctionLike for SetterProp {
         std::iter::once(&self.param.pat)
     }
 
-    fn body(&self) -> Node<'_> {
-        Node::from(&self.body)
+    fn body(&self) -> &BlockStmt {
+        &self.body
     }
 }
 

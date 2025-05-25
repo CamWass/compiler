@@ -331,25 +331,22 @@ where
         self.prioritize_node(node);
 
         if self.should_traverse_functions || node == self.cfg.entry {
-            // We don't want to descend into an expr body of an ArrowExpr e.g. `a => foo()`.
-            if matches!(body.kind, NodeKind::BlockStmt(_)) {
-                self.exception_handler
-                    .push(ExceptionHandler::new(&self.parent_stack, node));
+            let body_node = Node::from(body);
 
-                self.parent_stack.push_with_child_node(node, body);
-                // Only traverse the body.
-                body.visit_with(self);
-                self.parent_stack.pop();
+            self.exception_handler
+                .push(ExceptionHandler::new(&self.parent_stack, node));
 
-                // A function transfers control to its body.
-                self.cfg
-                    .create_edge(node, Branch::Unconditional, compute_fall_through(body));
+            self.parent_stack.push_with_child_node(node, body_node);
+            // Only traverse the body.
+            body.visit_with(self);
+            self.parent_stack.pop();
 
-                debug_assert!(
-                    self.exception_handler.last().map(|handler| handler.node) == Some(node)
-                );
-                self.exception_handler.pop();
-            }
+            // A function transfers control to its body.
+            self.cfg
+                .create_edge(node, Branch::Unconditional, compute_fall_through(body_node));
+
+            debug_assert!(self.exception_handler.last().map(|handler| handler.node) == Some(node));
+            self.exception_handler.pop();
         }
     }
 
