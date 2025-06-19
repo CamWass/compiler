@@ -7,3 +7,5 @@ node_modules/
 config.json
 closure_ast.json
 out.js
+
+.DS_store
