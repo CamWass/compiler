@@ -7,10 +7,8 @@ use crate::utils::unwrap_as;
 // TODO: move logic into codegen
 
 pub fn denormalize(ast: &mut Program) {
-    {
-        let mut v = Denormalize {};
-        ast.visit_mut_with(&mut v);
-    }
+    let mut v = Denormalize {};
+    ast.visit_mut_with(&mut v);
 }
 
 struct Denormalize {}
