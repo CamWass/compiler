@@ -17,6 +17,7 @@ mod convert;
 mod denormalize;
 mod find_vars;
 mod graph;
+mod inline_functions;
 mod normalize;
 pub mod optimize_properties;
 mod peephole;
@@ -64,6 +65,8 @@ pub struct PassConfig {
     pub optimize_properties: bool,
     #[serde(default)]
     pub fuse_stmts: bool,
+    #[serde(default)]
+    pub inline_functions: bool,
 }
 
 pub struct Compiler {
@@ -141,7 +144,7 @@ fn optimise(
     // TODO: crossModuleCodeMotion
     // TODO: devirtualizeMethods
     // TODO: flowSensitiveInlineVariables
-    getMainOptimizationLoop(ast);
+    getMainOptimizationLoop(ast, passes, program_data, unresolved_ctxt);
 }
 
 fn getEarlyOptimizationLoopPasses(_ast: &mut ::ast::Program) {
@@ -152,12 +155,22 @@ fn getEarlyOptimizationLoopPasses(_ast: &mut ::ast::Program) {
     // TODO: removeUnreachableCode
 }
 
-fn getMainOptimizationLoop(_ast: &mut ::ast::Program) {
+fn getMainOptimizationLoop(
+    ast: &mut ::ast::Program,
+    passes: PassConfig,
+    program_data: &mut ::ast::ProgramData,
+    unresolved_ctxt: SyntaxContext,
+) {
     // TODO: inlineSimpleMethods
     // TODO: inlineProperties
     // TODO: deadPropertyAssignmentElimination
     // TODO: optimizeCalls
     // TODO: inlineFunctions
+
+    if passes.inline_functions {
+        inline_functions::process(ast, program_data, unresolved_ctxt);
+    }
+
     // TODO: inlineVariables
     // TODO: deadAssignmentsElimination
     // TODO: collapseObjectLiterals

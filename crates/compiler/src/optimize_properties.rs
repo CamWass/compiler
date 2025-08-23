@@ -369,6 +369,7 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> (Store, Gr
         references: FxHashSet::default(),
         invalid_pointers: GrowableBitSet::default(),
         concrete_pointer_bound: PointerId::MAX,
+        calls: FxHashSet::default(),
     };
 
     {
@@ -689,6 +690,11 @@ impl GraphVisitor<'_> {
                 ExprOrSuper::Super(_) => todo!(),
                 ExprOrSuper::Expr(callee) => {
                     let mut callee = self.get_rhs(callee, true);
+
+                    if callee.len() == 1 {
+                        self.record_single_callee_call(callee[0], n.node_id);
+                    }
+
                     let args = n
                         .args
                         .iter()
@@ -1115,6 +1121,10 @@ impl GraphVisitor<'_> {
             self.graph.invalidate(*value, self.store);
         }
     }
+
+    fn record_single_callee_call(&mut self, callee: PointerId, node: NodeId) {
+        self.store.calls.insert((node, callee));
+    }
 }
 
 impl Visit<'_> for GraphVisitor<'_> {
@@ -1251,7 +1261,7 @@ impl Visit<'_> for GraphVisitor<'_> {
 }
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
-enum Pointer {
+pub enum Pointer {
     Prop(PointerId, NameId),
     Var(VarId),
     Object(NodeId),
@@ -1315,10 +1325,11 @@ pub struct Store {
     functions: FxHashMap<NodeId, StaticFunctionData>,
     names: IndexSet<NameId, JsWord>,
     vars: IndexSet<VarId, Id>,
-    pointers: IndexSet<PointerId, Pointer>,
+    pub pointers: IndexSet<PointerId, Pointer>,
     references: FxHashSet<(PropKey, PointerId)>,
-    invalid_pointers: GrowableBitSet<PointerId>,
+    pub invalid_pointers: GrowableBitSet<PointerId>,
     concrete_pointer_bound: PointerId,
+    pub calls: FxHashSet<(NodeId, PointerId)>,
 }
 
 impl Store {
@@ -1806,7 +1817,7 @@ fn is_simple_prop_name(prop_name: &PropName, unresolved_ctxt: SyntaxContext) -> 
     }
 }
 
-index::newtype_index!(struct NameId { .. });
+index::newtype_index!(pub struct NameId { .. });
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct Id(NameId, SyntaxContext);

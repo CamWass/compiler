@@ -696,7 +696,7 @@ impl Graph {
         self.points_to.get(&representative)
     }
 
-    pub(super) fn get_immutable(&self, pointer: PointerId) -> Option<&SmallSet> {
+    pub fn get_immutable(&self, pointer: PointerId) -> Option<&SmallSet> {
         let representative = self.nodes.find(pointer);
         self.points_to.get(&representative)
     }
@@ -848,7 +848,7 @@ impl UniqueQueue {
 }
 
 #[derive(Debug, Clone)]
-pub(super) enum SmallSet {
+pub enum SmallSet {
     Inline(ArrayVec<PointerId, 2>),
     Heap(Rc<GrowableBitSet<PointerId>>),
 }
@@ -896,7 +896,7 @@ impl SmallSet {
         }
     }
 
-    pub(super) fn iter(&self) -> SmallSetIter<'_> {
+    pub fn iter(&self) -> SmallSetIter<'_> {
         match self {
             SmallSet::Inline(set) => SmallSetIter::Slice(set.iter()),
             SmallSet::Heap(set) => SmallSetIter::Set(set.iter()),
@@ -975,6 +975,13 @@ impl SmallSet {
             },
         }
     }
+
+    pub fn len(&self) -> usize {
+        match self {
+            SmallSet::Inline(set) => set.len(),
+            SmallSet::Heap(set) => set.count(),
+        }
+    }
 }
 
 impl<'a> IntoIterator for &'a SmallSet {
@@ -985,7 +992,7 @@ impl<'a> IntoIterator for &'a SmallSet {
     }
 }
 
-pub(super) enum SmallSetIter<'a> {
+pub enum SmallSetIter<'a> {
     Slice(std::slice::Iter<'a, PointerId>),
     Set(BitIter<'a, PointerId>),
 }
