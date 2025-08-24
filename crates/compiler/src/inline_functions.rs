@@ -1,6 +1,7 @@
 use ast::*;
+use atoms::{js_word, JsWord};
 use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
-use global_common::SyntaxContext;
+use global_common::{SyntaxContext, DUMMY_SP};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::optimize_properties::{analyse, Pointer};
@@ -37,16 +38,73 @@ pub fn process(
     }
 
     struct BodyCollector<'a> {
-        bodies: FxHashMap<NodeId, Lit>,
+        bodies: FxHashMap<NodeId, Option<Expr>>,
         program_data: &'a mut ProgramData,
         functions_to_collect: &'a FxHashSet<NodeId>,
+        references_this: bool,
+        references_self: bool,
+        current_function_name: Option<JsWord>,
     }
 
     impl<'ast> Visit<'ast> for BodyCollector<'_> {
-        fn visit_fn_decl(&mut self, n: &'ast FnDecl) {
+        fn visit_function(&mut self, n: &Function) {
+            let old_references_this = self.references_this;
             n.visit_children_with(self);
+            self.references_this = old_references_this
+        }
+        fn visit_constructor(&mut self, n: &Constructor) {
+            let old_references_this = self.references_this;
+            n.visit_children_with(self);
+            self.references_this = old_references_this
+        }
+        fn visit_arrow_expr(&mut self, n: &ArrowExpr) {
+            let old_references_this = self.references_this;
+            n.visit_children_with(self);
+            self.references_this = old_references_this
+        }
+        fn visit_getter_prop(&mut self, n: &GetterProp) {
+            let old_references_this = self.references_this;
+            n.visit_children_with(self);
+            self.references_this = old_references_this
+        }
+        fn visit_setter_prop(&mut self, n: &SetterProp) {
+            let old_references_this = self.references_this;
+            n.visit_children_with(self);
+            self.references_this = old_references_this
+        }
+
+        fn visit_this_expr(&mut self, _n: &ThisExpr) {
+            self.references_this = true;
+        }
+
+        fn visit_ident(&mut self, n: &Ident) {
+            if Some(&n.sym) == self.current_function_name.as_ref() {
+                self.references_self = true;
+            }
+        }
+
+        fn visit_fn_decl(&mut self, n: &FnDecl) {
+            let old_fn_name = self.current_function_name.clone();
+            let old_references_self = self.references_self;
+
+            self.current_function_name = Some(n.ident.sym.clone());
+            self.references_self = false;
+
+            // Visit function's children directly to bypass the Function visitor
+            // above, since that visitor will create a new scope for tracking
+            // `this` usage.
+            n.function.visit_children_with(self);
+
+            let references_self = self.references_self;
+
+            self.current_function_name = old_fn_name;
+            self.references_self = old_references_self;
 
             if n.function.is_async() || n.function.is_generator() {
+                return;
+            }
+
+            if self.references_this || references_self {
                 return;
             }
 
@@ -59,10 +117,11 @@ pub fn process(
             }
 
             if let [Stmt::Return(r)] = n.function.body.stmts.as_slice() {
-                if let Some(Expr::Lit(lit)) = r.arg.as_deref() {
-                    self.bodies
-                        .insert(n.function.node_id, lit.clone_node(self.program_data));
-                }
+                let arg = r
+                    .arg
+                    .as_ref()
+                    .map(|a| a.as_ref().clone_node(self.program_data));
+                self.bodies.insert(n.function.node_id, arg);
             }
         }
     }
@@ -72,23 +131,35 @@ pub fn process(
             bodies: FxHashMap::default(),
             program_data,
             functions_to_collect: &functions_to_collect,
+            references_this: false,
+            references_self: false,
+            current_function_name: None,
         };
         ast.visit_with(&mut v);
         v.bodies
     };
 
     struct Inliner<'a> {
-        bodies: FxHashMap<NodeId, Lit>,
+        bodies: FxHashMap<NodeId, Option<Expr>>,
         program_data: &'a mut ProgramData,
         inline_map: FxHashMap<NodeId, NodeId>,
+        unresolved_ctxt: SyntaxContext,
     }
 
     impl<'ast> VisitMut<'ast> for Inliner<'_> {
         fn visit_mut_expr(&mut self, n: &'ast mut Expr) {
             let node_id = n.node_id();
             if let Some(func) = self.inline_map.get(&node_id) {
-                if let Some(body) = self.bodies.get(func) {
-                    *n = Expr::Lit(body.clone_node(self.program_data));
+                if let Some(body) = self.bodies.remove(func) {
+                    let body = match body {
+                        Some(expr) => expr,
+                        None => Expr::Ident(Ident {
+                            node_id: self.program_data.new_id(DUMMY_SP),
+                            sym: js_word!("undefined"),
+                            ctxt: self.unresolved_ctxt,
+                        }),
+                    };
+                    *n = body;
                 } else {
                     n.visit_mut_children_with(self);
                 }
@@ -100,6 +171,7 @@ pub fn process(
         bodies,
         program_data,
         inline_map,
+        unresolved_ctxt,
     };
     ast.visit_mut_with(&mut inliner);
 }
@@ -201,6 +273,57 @@ function func() {
 }
 const obj = { func };
 1
+",
+        );
+    }
+
+    #[test]
+    fn inline_empty_return() {
+        test_transform(
+            "
+function func() {
+    return;
+}
+func();
+",
+            "
+function func() {
+    return;
+}
+undefined;
+",
+        );
+    }
+
+    #[test]
+    fn inline_non_literal() {
+        test_transform(
+            "
+function func() {
+    return { prop: 1 };
+}
+func();
+",
+            "
+function func() {
+    return { prop: 1 };
+}
+({ prop: 1 });
+",
+        );
+
+        test_transform(
+            "
+function func() {
+    return someFunc();
+}
+func();
+",
+            "
+function func() {
+    return someFunc();
+}
+someFunc();
 ",
         );
     }
