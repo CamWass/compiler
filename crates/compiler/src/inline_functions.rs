@@ -46,6 +46,10 @@ pub fn process(
         fn visit_fn_decl(&mut self, n: &'ast FnDecl) {
             n.visit_children_with(self);
 
+            if n.function.is_async() || n.function.is_generator() {
+                return;
+            }
+
             if !self.functions_to_collect.contains(&n.function.node_id) {
                 return;
             }
@@ -290,6 +294,30 @@ func();
             "
 function func() {
     return func;
+}
+func();
+",
+        );
+    }
+
+    #[test]
+    fn test_does_not_inline_async_function() {
+        test_same(
+            "
+async function func() {
+    return 1;
+}
+func();
+",
+        );
+    }
+
+    #[test]
+    fn test_does_not_inline_generator_function() {
+        test_same(
+            "
+function* func() {
+    return 1;
 }
 func();
 ",
