@@ -48,180 +48,6 @@ pub fn process(
         }
     }
 
-    struct BodyCollector<'a> {
-        stmt_bodies: FxHashMap<NodeId, Vec<Stmt>>,
-        expr_bodies: FxHashMap<NodeId, Expr>,
-        program_data: &'a mut ProgramData,
-        functions_to_collect: &'a FxHashMap<NodeId, ExprContext>,
-        unresolved_ctxt: SyntaxContext,
-
-        references_this: bool,
-        references_self: bool,
-        current_function_name: Option<JsWord>,
-        return_count: usize,
-    }
-
-    impl<'ast> Visit<'ast> for BodyCollector<'_> {
-        fn visit_function(&mut self, n: &Function) {
-            let old_references_this = self.references_this;
-            n.visit_children_with(self);
-            self.references_this = old_references_this
-        }
-        fn visit_constructor(&mut self, n: &Constructor) {
-            let old_references_this = self.references_this;
-            n.visit_children_with(self);
-            self.references_this = old_references_this
-        }
-        fn visit_arrow_expr(&mut self, n: &ArrowExpr) {
-            let old_references_this = self.references_this;
-            n.visit_children_with(self);
-            self.references_this = old_references_this
-        }
-        fn visit_getter_prop(&mut self, n: &GetterProp) {
-            let old_references_this = self.references_this;
-            n.visit_children_with(self);
-            self.references_this = old_references_this
-        }
-        fn visit_setter_prop(&mut self, n: &SetterProp) {
-            let old_references_this = self.references_this;
-            n.visit_children_with(self);
-            self.references_this = old_references_this
-        }
-
-        fn visit_this_expr(&mut self, _n: &ThisExpr) {
-            self.references_this = true;
-        }
-
-        fn visit_ident(&mut self, n: &Ident) {
-            if Some(&n.sym) == self.current_function_name.as_ref() {
-                self.references_self = true;
-            }
-        }
-
-        fn visit_return_stmt(&mut self, n: &ReturnStmt) {
-            n.arg.visit_with(self);
-
-            self.return_count += 1;
-        }
-
-        fn visit_fn_decl(&mut self, n: &FnDecl) {
-            let old_fn_name = self.current_function_name.clone();
-            let old_references_self = self.references_self;
-            let old_return_count = self.return_count;
-
-            self.current_function_name = Some(n.ident.sym.clone());
-            self.references_self = false;
-            self.return_count = 0;
-
-            // Visit function's children directly to bypass the Function visitor
-            // above, since that visitor will create a new scope for tracking
-            // `this` usage.
-            n.function.visit_children_with(self);
-
-            let references_self = self.references_self;
-            let return_count = self.return_count;
-
-            self.current_function_name = old_fn_name;
-            self.references_self = old_references_self;
-            self.return_count = old_return_count;
-
-            if n.function.is_async() || n.function.is_generator() {
-                return;
-            }
-
-            if self.references_this || references_self {
-                return;
-            }
-
-            if n.function.params.len() > 0 {
-                return;
-            }
-
-            if return_count > 1 {
-                return;
-            }
-
-            let ctxt = match self.functions_to_collect.get(&n.function.node_id) {
-                Some(ctxt) => *ctxt,
-                None => return,
-            };
-
-            if ctxt == ExprContext::Expression {
-                if n.function.body.stmts.is_empty() {
-                    // Only the implicit return, which is the same as explicitly
-                    // returning `undefined`.
-                    let body = make_undefined(self.program_data, self.unresolved_ctxt);
-                    self.expr_bodies.insert(n.function.node_id, body);
-                    return;
-                }
-
-                let all_but_last_are_expr = n
-                    .function
-                    .body
-                    .stmts
-                    .iter()
-                    .rev()
-                    .skip(1)
-                    .all(|s| matches!(s, Stmt::Expr(_)));
-
-                if all_but_last_are_expr {
-                    if let Some(Stmt::Return(last)) = n.function.body.stmts.last() {
-                        let tail = match &last.arg {
-                            Some(arg) => arg.as_ref().clone_node(self.program_data),
-                            None => make_undefined(self.program_data, self.unresolved_ctxt),
-                        };
-
-                        let body = convert_statements_to_expressions(
-                            &n.function.body.stmts[..n.function.body.stmts.len() - 1],
-                            self.program_data,
-                            self.program_data.get_span(n.function.body.node_id),
-                            tail,
-                        );
-
-                        self.expr_bodies.insert(n.function.node_id, body);
-
-                        return;
-                    }
-
-                    if let Some(Stmt::Expr(last)) = n.function.body.stmts.last() {
-                        // All statements are expressions.
-
-                        let tail = last.expr.as_ref().clone_node(self.program_data);
-
-                        let body = convert_statements_to_expressions(
-                            &n.function.body.stmts[..(n.function.body.stmts.len() - 1)],
-                            self.program_data,
-                            self.program_data.get_span(n.function.body.node_id),
-                            tail,
-                        );
-
-                        self.expr_bodies.insert(n.function.node_id, body);
-
-                        return;
-                    }
-                }
-
-                return;
-            }
-
-            if ctxt == ExprContext::Statement {
-                if n.function.body.stmts.is_empty() {
-                    // Only the implicit return, which is the same as explicitly
-                    // returning `undefined`.
-                    self.stmt_bodies.insert(n.function.node_id, Vec::new());
-                    return;
-                }
-
-                let mut body = n.function.body.stmts.clone_node(self.program_data);
-                remove_return_stmts(&mut body, self.program_data);
-
-                self.stmt_bodies.insert(n.function.node_id, body);
-
-                return;
-            }
-        }
-    }
-
     let (expr_bodies, stmt_bodies) = {
         let mut v = BodyCollector {
             expr_bodies: FxHashMap::default(),
@@ -238,92 +64,6 @@ pub fn process(
         (v.expr_bodies, v.stmt_bodies)
     };
 
-    struct Inliner<'a> {
-        expr_bodies: FxHashMap<NodeId, Expr>,
-        stmt_bodies: FxHashMap<NodeId, Vec<Stmt>>,
-        program_data: &'a mut ProgramData,
-        stmt_inline_map: FxHashMap<NodeId, NodeId>,
-        expr_inline_map: FxHashMap<NodeId, NodeId>,
-    }
-
-    impl<'ast> VisitMut<'ast> for Inliner<'_> {
-        // Handle single-statement contexts.
-        fn visit_mut_stmt(&mut self, stmt: &'ast mut Stmt) {
-            stmt.visit_mut_children_with(self);
-
-            if let Stmt::Expr(expr_stmt) = stmt {
-                if let Some(func) = self.stmt_inline_map.get(&expr_stmt.expr.node_id()) {
-                    if let Some(body) = self.stmt_bodies.remove(func) {
-                        if body.is_empty() {
-                            *stmt = Stmt::Empty(EmptyStmt {
-                                node_id: self.program_data.new_id_from(expr_stmt.node_id),
-                            });
-
-                            return;
-                        }
-
-                        if body.len() == 1 {
-                            let first = body.into_iter().next().unwrap();
-                            *stmt = first;
-
-                            return;
-                        }
-
-                        *stmt = Stmt::Block(BlockStmt {
-                            node_id: self.program_data.new_id_from(expr_stmt.node_id),
-                            stmts: body,
-                        });
-                    }
-                };
-            }
-        }
-
-        fn visit_mut_stmts(&mut self, stmts: &'ast mut Vec<Stmt>) {
-            let mut i = stmts.len();
-
-            while i > 0 {
-                i -= 1;
-
-                let stmt = &mut stmts[i];
-
-                // Skip the single statement visitor above.
-                stmt.visit_mut_children_with(self);
-
-                if let Stmt::Expr(expr_stmt) = stmt {
-                    if let Some(func) = self.stmt_inline_map.get(&expr_stmt.expr.node_id()) {
-                        if let Some(body) = self.stmt_bodies.remove(func) {
-                            if body.is_empty() {
-                                stmts.remove(i);
-
-                                continue;
-                            }
-
-                            if body.len() == 1 {
-                                let first = body.into_iter().next().unwrap();
-                                *stmt = first;
-
-                                continue;
-                            }
-
-                            stmts.splice(i..=i, body.into_iter());
-                        }
-                    };
-                }
-            }
-        }
-
-        fn visit_mut_expr(&mut self, n: &'ast mut Expr) {
-            let node_id = n.node_id();
-            if let Some(func) = self.expr_inline_map.get(&node_id) {
-                if let Some(body) = self.expr_bodies.remove(func) {
-                    *n = body;
-                } else {
-                    n.visit_mut_children_with(self);
-                }
-            }
-        }
-    }
-
     let mut inliner = Inliner {
         expr_bodies,
         stmt_bodies,
@@ -332,6 +72,266 @@ pub fn process(
         stmt_inline_map,
     };
     ast.visit_mut_with(&mut inliner);
+}
+
+struct BodyCollector<'a> {
+    stmt_bodies: FxHashMap<NodeId, Vec<Stmt>>,
+    expr_bodies: FxHashMap<NodeId, Expr>,
+    program_data: &'a mut ProgramData,
+    functions_to_collect: &'a FxHashMap<NodeId, ExprContext>,
+    unresolved_ctxt: SyntaxContext,
+
+    references_this: bool,
+    references_self: bool,
+    current_function_name: Option<JsWord>,
+    return_count: usize,
+}
+
+impl<'ast> Visit<'ast> for BodyCollector<'_> {
+    fn visit_function(&mut self, n: &Function) {
+        let old_references_this = self.references_this;
+        n.visit_children_with(self);
+        self.references_this = old_references_this
+    }
+    fn visit_constructor(&mut self, n: &Constructor) {
+        let old_references_this = self.references_this;
+        n.visit_children_with(self);
+        self.references_this = old_references_this
+    }
+    fn visit_arrow_expr(&mut self, n: &ArrowExpr) {
+        let old_references_this = self.references_this;
+        n.visit_children_with(self);
+        self.references_this = old_references_this
+    }
+    fn visit_getter_prop(&mut self, n: &GetterProp) {
+        let old_references_this = self.references_this;
+        n.visit_children_with(self);
+        self.references_this = old_references_this
+    }
+    fn visit_setter_prop(&mut self, n: &SetterProp) {
+        let old_references_this = self.references_this;
+        n.visit_children_with(self);
+        self.references_this = old_references_this
+    }
+
+    fn visit_this_expr(&mut self, _n: &ThisExpr) {
+        self.references_this = true;
+    }
+
+    fn visit_ident(&mut self, n: &Ident) {
+        if Some(&n.sym) == self.current_function_name.as_ref() {
+            self.references_self = true;
+        }
+    }
+
+    fn visit_return_stmt(&mut self, n: &ReturnStmt) {
+        n.arg.visit_with(self);
+
+        self.return_count += 1;
+    }
+
+    fn visit_fn_decl(&mut self, n: &FnDecl) {
+        let old_fn_name = self.current_function_name.clone();
+        let old_references_self = self.references_self;
+        let old_return_count = self.return_count;
+
+        self.current_function_name = Some(n.ident.sym.clone());
+        self.references_self = false;
+        self.return_count = 0;
+
+        // Visit function's children directly to bypass the Function visitor
+        // above, since that visitor will create a new scope for tracking
+        // `this` usage.
+        n.function.visit_children_with(self);
+
+        let references_self = self.references_self;
+        let return_count = self.return_count;
+
+        self.current_function_name = old_fn_name;
+        self.references_self = old_references_self;
+        self.return_count = old_return_count;
+
+        if n.function.is_async() || n.function.is_generator() {
+            return;
+        }
+
+        if self.references_this || references_self {
+            return;
+        }
+
+        if n.function.params.len() > 0 {
+            return;
+        }
+
+        if return_count > 1 {
+            return;
+        }
+
+        let ctxt = match self.functions_to_collect.get(&n.function.node_id) {
+            Some(ctxt) => *ctxt,
+            None => return,
+        };
+
+        if ctxt == ExprContext::Expression {
+            if n.function.body.stmts.is_empty() {
+                // Only the implicit return, which is the same as explicitly
+                // returning `undefined`.
+                let body = make_undefined(self.program_data, self.unresolved_ctxt);
+                self.expr_bodies.insert(n.function.node_id, body);
+                return;
+            }
+
+            let all_but_last_are_expr = n
+                .function
+                .body
+                .stmts
+                .iter()
+                .rev()
+                .skip(1)
+                .all(|s| matches!(s, Stmt::Expr(_)));
+
+            if all_but_last_are_expr {
+                if let Some(Stmt::Return(last)) = n.function.body.stmts.last() {
+                    let tail = match &last.arg {
+                        Some(arg) => arg.as_ref().clone_node(self.program_data),
+                        None => make_undefined(self.program_data, self.unresolved_ctxt),
+                    };
+
+                    let body = convert_statements_to_expressions(
+                        &n.function.body.stmts[..n.function.body.stmts.len() - 1],
+                        self.program_data,
+                        self.program_data.get_span(n.function.body.node_id),
+                        tail,
+                    );
+
+                    self.expr_bodies.insert(n.function.node_id, body);
+
+                    return;
+                }
+
+                if let Some(Stmt::Expr(last)) = n.function.body.stmts.last() {
+                    // All statements are expressions.
+
+                    let tail = last.expr.as_ref().clone_node(self.program_data);
+
+                    let body = convert_statements_to_expressions(
+                        &n.function.body.stmts[..(n.function.body.stmts.len() - 1)],
+                        self.program_data,
+                        self.program_data.get_span(n.function.body.node_id),
+                        tail,
+                    );
+
+                    self.expr_bodies.insert(n.function.node_id, body);
+
+                    return;
+                }
+            }
+
+            return;
+        }
+
+        if ctxt == ExprContext::Statement {
+            if n.function.body.stmts.is_empty() {
+                // Only the implicit return, which is the same as explicitly
+                // returning `undefined`.
+                self.stmt_bodies.insert(n.function.node_id, Vec::new());
+                return;
+            }
+
+            let mut body = n.function.body.stmts.clone_node(self.program_data);
+            remove_return_stmts(&mut body, self.program_data);
+
+            self.stmt_bodies.insert(n.function.node_id, body);
+
+            return;
+        }
+    }
+}
+
+struct Inliner<'a> {
+    expr_bodies: FxHashMap<NodeId, Expr>,
+    stmt_bodies: FxHashMap<NodeId, Vec<Stmt>>,
+    program_data: &'a mut ProgramData,
+    stmt_inline_map: FxHashMap<NodeId, NodeId>,
+    expr_inline_map: FxHashMap<NodeId, NodeId>,
+}
+
+impl<'ast> VisitMut<'ast> for Inliner<'_> {
+    // Handle single-statement contexts.
+    fn visit_mut_stmt(&mut self, stmt: &'ast mut Stmt) {
+        stmt.visit_mut_children_with(self);
+
+        if let Stmt::Expr(expr_stmt) = stmt {
+            if let Some(func) = self.stmt_inline_map.get(&expr_stmt.expr.node_id()) {
+                if let Some(body) = self.stmt_bodies.remove(func) {
+                    if body.is_empty() {
+                        *stmt = Stmt::Empty(EmptyStmt {
+                            node_id: self.program_data.new_id_from(expr_stmt.node_id),
+                        });
+
+                        return;
+                    }
+
+                    if body.len() == 1 {
+                        let first = body.into_iter().next().unwrap();
+                        *stmt = first;
+
+                        return;
+                    }
+
+                    *stmt = Stmt::Block(BlockStmt {
+                        node_id: self.program_data.new_id_from(expr_stmt.node_id),
+                        stmts: body,
+                    });
+                }
+            };
+        }
+    }
+
+    fn visit_mut_stmts(&mut self, stmts: &'ast mut Vec<Stmt>) {
+        let mut i = stmts.len();
+
+        while i > 0 {
+            i -= 1;
+
+            let stmt = &mut stmts[i];
+
+            // Skip the single statement visitor above.
+            stmt.visit_mut_children_with(self);
+
+            if let Stmt::Expr(expr_stmt) = stmt {
+                if let Some(func) = self.stmt_inline_map.get(&expr_stmt.expr.node_id()) {
+                    if let Some(body) = self.stmt_bodies.remove(func) {
+                        if body.is_empty() {
+                            stmts.remove(i);
+
+                            continue;
+                        }
+
+                        if body.len() == 1 {
+                            let first = body.into_iter().next().unwrap();
+                            *stmt = first;
+
+                            continue;
+                        }
+
+                        stmts.splice(i..=i, body.into_iter());
+                    }
+                };
+            }
+        }
+    }
+
+    fn visit_mut_expr(&mut self, n: &'ast mut Expr) {
+        let node_id = n.node_id();
+        if let Some(func) = self.expr_inline_map.get(&node_id) {
+            if let Some(body) = self.expr_bodies.remove(func) {
+                *n = body;
+            } else {
+                n.visit_mut_children_with(self);
+            }
+        }
+    }
 }
 
 /// Panics if the statements are not all [`ExprStmt`].
