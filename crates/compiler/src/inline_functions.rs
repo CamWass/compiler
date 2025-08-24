@@ -44,6 +44,7 @@ pub fn process(
         references_this: bool,
         references_self: bool,
         current_function_name: Option<JsWord>,
+        return_count: usize,
     }
 
     impl<'ast> Visit<'ast> for BodyCollector<'_> {
@@ -83,12 +84,20 @@ pub fn process(
             }
         }
 
+        fn visit_return_stmt(&mut self, n: &ReturnStmt) {
+            n.arg.visit_with(self);
+
+            self.return_count += 1;
+        }
+
         fn visit_fn_decl(&mut self, n: &FnDecl) {
             let old_fn_name = self.current_function_name.clone();
             let old_references_self = self.references_self;
+            let old_return_count = self.return_count;
 
             self.current_function_name = Some(n.ident.sym.clone());
             self.references_self = false;
+            self.return_count = 0;
 
             // Visit function's children directly to bypass the Function visitor
             // above, since that visitor will create a new scope for tracking
@@ -96,9 +105,11 @@ pub fn process(
             n.function.visit_children_with(self);
 
             let references_self = self.references_self;
+            let return_count = self.return_count;
 
             self.current_function_name = old_fn_name;
             self.references_self = old_references_self;
+            self.return_count = old_return_count;
 
             if n.function.is_async() || n.function.is_generator() {
                 return;
@@ -116,12 +127,21 @@ pub fn process(
                 return;
             }
 
-            if let [Stmt::Return(r)] = n.function.body.stmts.as_slice() {
-                let arg = r
-                    .arg
-                    .as_ref()
-                    .map(|a| a.as_ref().clone_node(self.program_data));
-                self.bodies.insert(n.function.node_id, arg);
+            if n.function.body.stmts.is_empty() {
+                // Only the implicit return, which is the same as explicitly
+                // returning `undefined`.
+                self.bodies.insert(n.function.node_id, None);
+                return;
+            }
+
+            if return_count == 1 {
+                if let [Stmt::Return(r)] = n.function.body.stmts.as_slice() {
+                    let arg = r
+                        .arg
+                        .as_ref()
+                        .map(|a| a.as_ref().clone_node(self.program_data));
+                    self.bodies.insert(n.function.node_id, arg);
+                }
             }
         }
     }
@@ -134,6 +154,7 @@ pub fn process(
             references_this: false,
             references_self: false,
             current_function_name: None,
+            return_count: 0,
         };
         ast.visit_with(&mut v);
         v.bodies
@@ -329,14 +350,21 @@ someFunc();
     }
 
     #[test]
-    fn test_does_not_inline_fn_with_that_is_not_simple_return() {
-        test_same(
+    fn inline_implicit_return() {
+        test_transform(
             "
 function func() {}
 func();
 ",
+            "
+function func() {}
+undefined;
+",
         );
+    }
 
+    #[test]
+    fn test_does_not_inline_fn_with_that_is_not_simple_return() {
         test_same(
             "
 function func() {
