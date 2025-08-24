@@ -474,7 +474,7 @@ struct GraphVisitor<'a> {
 }
 
 impl GraphVisitor<'_> {
-    fn get_rhs(&mut self, expr: &Expr, used: bool) -> Vec<PointerId> {
+    fn get_rhs(&mut self, expr: &Expr, used: bool, expr_ctxt: ExprContext) -> Vec<PointerId> {
         macro_rules! ret {
             ($val:expr) => {
                 if used {
@@ -491,7 +491,7 @@ impl GraphVisitor<'_> {
                     match element {
                         Some(ExprOrSpread::Spread(SpreadElement { expr: element, .. }))
                         | Some(ExprOrSpread::Expr(element)) => {
-                            let value = self.get_rhs(element, true);
+                            let value = self.get_rhs(element, true, ExprContext::Expression);
                             self.invalidate(&value);
                         }
                         None => {}
@@ -521,7 +521,8 @@ impl GraphVisitor<'_> {
                                     &mut self.store.names,
                                 )
                                 .expect("checked above");
-                                let value = self.get_rhs(&prop.value, true);
+                                let value =
+                                    self.get_rhs(&prop.value, true, ExprContext::Expression);
                                 let prop = self.get_prop_value(obj, key.0);
                                 self.reference_prop(obj, key);
                                 for value in value {
@@ -583,14 +584,14 @@ impl GraphVisitor<'_> {
             Expr::Bin(n) => {
                 match n.op {
                     BinaryOp::LogicalOr | BinaryOp::LogicalAnd | BinaryOp::NullishCoalescing => {
-                        let mut left = self.get_rhs(&n.left, used);
-                        let mut right = self.get_rhs(&n.right, used);
+                        let mut left = self.get_rhs(&n.left, used, ExprContext::Expression);
+                        let mut right = self.get_rhs(&n.right, used, ExprContext::Expression);
                         left.append(&mut right);
                         ret!(left)
                     }
                     BinaryOp::In => {
-                        self.get_rhs(&n.left, false);
-                        let obj = self.get_rhs(&n.right, true);
+                        self.get_rhs(&n.left, false, ExprContext::Expression);
+                        let obj = self.get_rhs(&n.right, true, ExprContext::Expression);
 
                         if let Some(prop) = PropKey::from_expr(
                             &n.left,
@@ -656,7 +657,7 @@ impl GraphVisitor<'_> {
             Expr::Member(n) => match &n.obj {
                 ExprOrSuper::Super(_) => todo!(),
                 ExprOrSuper::Expr(obj) => {
-                    let mut obj = self.get_rhs(obj, true);
+                    let mut obj = self.get_rhs(obj, true, ExprContext::Expression);
 
                     if n.computed {
                         n.prop.visit_with(self);
@@ -681,26 +682,30 @@ impl GraphVisitor<'_> {
             },
             Expr::Cond(n) => {
                 n.test.visit_with(self);
-                let mut cons = self.get_rhs(&n.cons, used);
-                let mut alt = self.get_rhs(&n.alt, used);
+                let mut cons = self.get_rhs(&n.cons, used, ExprContext::Expression);
+                let mut alt = self.get_rhs(&n.alt, used, ExprContext::Expression);
                 cons.append(&mut alt);
                 ret!(cons)
             }
             Expr::Call(n) => match &n.callee {
                 ExprOrSuper::Super(_) => todo!(),
                 ExprOrSuper::Expr(callee) => {
-                    let mut callee = self.get_rhs(callee, true);
+                    let mut callee = self.get_rhs(callee, true, ExprContext::Expression);
 
                     if callee.len() == 1 {
-                        self.record_single_callee_call(callee[0], n.node_id);
+                        self.record_single_callee_call(callee[0], n.node_id, expr_ctxt);
                     }
 
                     let args = n
                         .args
                         .iter()
                         .map(|arg| match arg {
-                            ExprOrSpread::Spread(arg) => self.get_rhs(&arg.expr, true),
-                            ExprOrSpread::Expr(arg) => self.get_rhs(arg, true),
+                            ExprOrSpread::Spread(arg) => {
+                                self.get_rhs(&arg.expr, true, ExprContext::Expression)
+                            }
+                            ExprOrSpread::Expr(arg) => {
+                                self.get_rhs(arg, true, ExprContext::Expression)
+                            }
                         })
                         .collect::<Vec<_>>();
 
@@ -755,7 +760,7 @@ impl GraphVisitor<'_> {
                 }
             },
             Expr::New(n) => {
-                let callee = self.get_rhs(&n.callee, true);
+                let callee = self.get_rhs(&n.callee, true, ExprContext::Expression);
                 self.invalidate(&callee);
                 if let Some(args) = &n.args {
                     for arg in args {
@@ -763,7 +768,7 @@ impl GraphVisitor<'_> {
                             ExprOrSpread::Spread(arg) => &arg.expr,
                             ExprOrSpread::Expr(arg) => arg,
                         };
-                        let value = self.get_rhs(arg, true);
+                        let value = self.get_rhs(arg, true, ExprContext::Expression);
                         self.invalidate(&value);
                     }
                 }
@@ -778,7 +783,7 @@ impl GraphVisitor<'_> {
                     i += 1;
                 }
 
-                self.get_rhs(&n.exprs[i], used)
+                self.get_rhs(&n.exprs[i], used, ExprContext::Expression)
             }
             Expr::Ident(n) => {
                 if n.ctxt == self.store.unresolved_ctxt {
@@ -808,7 +813,7 @@ impl GraphVisitor<'_> {
             Expr::TaggedTpl(n) => {
                 n.tag.visit_with(self);
                 for expr in &n.tpl.exprs {
-                    let obj = self.get_rhs(expr, true);
+                    let obj = self.get_rhs(expr, true, ExprContext::Expression);
                     // Expressions in tagged templates can be accessed by the tag function.
                     self.invalidate(&obj);
                 }
@@ -829,7 +834,7 @@ impl GraphVisitor<'_> {
             Expr::Class(_) => todo!(),
             Expr::Yield(n) => {
                 if let Some(arg) = &n.arg {
-                    let value = self.get_rhs(arg, true);
+                    let value = self.get_rhs(arg, true, ExprContext::Expression);
                     self.invalidate(&value);
                 }
                 ret!(vec![PointerId::UNKNOWN])
@@ -839,7 +844,7 @@ impl GraphVisitor<'_> {
                 ret!(vec![PointerId::UNKNOWN])
             }
             Expr::Await(n) => {
-                let value = self.get_rhs(&n.arg, true);
+                let value = self.get_rhs(&n.arg, true, ExprContext::Expression);
                 self.invalidate(&value);
                 ret!(vec![PointerId::UNKNOWN])
             }
@@ -848,7 +853,7 @@ impl GraphVisitor<'_> {
                 Expr::Member(_) | Expr::Call(_) => {
                     // Note: optional chaining can short circuit and also return undefined,
                     // but that does not impact our analysis, so we ignore it.
-                    self.get_rhs(&opt_chain.expr, used)
+                    self.get_rhs(&opt_chain.expr, used, ExprContext::Expression)
                 }
                 _ => unreachable!("invalid optional chain expr"),
             },
@@ -903,7 +908,7 @@ impl GraphVisitor<'_> {
             }
             _ => {
                 let lhs = self.visit_and_get_slot(lhs);
-                let rhs = self.get_rhs(rhs, true);
+                let rhs = self.get_rhs(rhs, true, ExprContext::Expression);
 
                 self.assign_to_slot(lhs, &rhs);
                 rhs
@@ -912,7 +917,7 @@ impl GraphVisitor<'_> {
     }
 
     fn handle_destructuring(&mut self, lhs: &Pat, rhs: &Expr) -> Vec<PointerId> {
-        let rhs = self.get_rhs(rhs, true);
+        let rhs = self.get_rhs(rhs, true, ExprContext::Expression);
         self.visit_destructuring(lhs, &rhs);
         rhs
     }
@@ -996,7 +1001,7 @@ impl GraphVisitor<'_> {
                 self.visit_destructuring(&lhs.arg, rhs);
             }
             Pat::Assign(lhs) => {
-                let mut default_value = self.get_rhs(&lhs.right, true);
+                let mut default_value = self.get_rhs(&lhs.right, true, ExprContext::Expression);
                 default_value.extend_from_slice(rhs);
 
                 self.visit_destructuring(&lhs.left, &default_value);
@@ -1044,7 +1049,7 @@ impl GraphVisitor<'_> {
             Expr::Member(node) => {
                 let obj = match &node.obj {
                     ExprOrSuper::Super(_) => todo!(),
-                    ExprOrSuper::Expr(obj) => self.get_rhs(obj, true),
+                    ExprOrSuper::Expr(obj) => self.get_rhs(obj, true, ExprContext::Expression),
                 };
 
                 if node.computed {
@@ -1122,8 +1127,8 @@ impl GraphVisitor<'_> {
         }
     }
 
-    fn record_single_callee_call(&mut self, callee: PointerId, node: NodeId) {
-        self.store.calls.insert((node, callee));
+    fn record_single_callee_call(&mut self, callee: PointerId, node: NodeId, context: ExprContext) {
+        self.store.calls.insert((node, callee, context));
     }
 }
 
@@ -1131,7 +1136,7 @@ impl Visit<'_> for GraphVisitor<'_> {
     fn visit_stmt(&mut self, n: &Stmt) {
         match n {
             Stmt::With(n) => {
-                let obj = self.get_rhs(&n.obj, true);
+                let obj = self.get_rhs(&n.obj, true, ExprContext::Expression);
                 self.invalidate(&obj);
                 n.body.visit_with(self);
             }
@@ -1140,7 +1145,7 @@ impl Visit<'_> for GraphVisitor<'_> {
                     Some(cur_fn) => cur_fn,
                     None => {
                         if let Some(value) = &n.arg {
-                            let rhs = self.get_rhs(value, true);
+                            let rhs = self.get_rhs(value, true, ExprContext::Expression);
                             self.invalidate(&rhs);
                         }
                         return;
@@ -1149,7 +1154,7 @@ impl Visit<'_> for GraphVisitor<'_> {
                 let cur_fn = self.store.pointers.get_index(&Pointer::Fn(cur_fn)).unwrap();
                 let lhs = self.get_return_value(cur_fn);
                 if let Some(value) = &n.arg {
-                    let rhs = self.get_rhs(value, true);
+                    let rhs = self.get_rhs(value, true, ExprContext::Expression);
                     for rhs in rhs {
                         self.make_subset_of(rhs, lhs);
                     }
@@ -1159,14 +1164,14 @@ impl Visit<'_> for GraphVisitor<'_> {
                 }
             }
             Stmt::Throw(n) => {
-                let value = self.get_rhs(&n.arg, true);
+                let value = self.get_rhs(&n.arg, true, ExprContext::Expression);
                 self.invalidate(&value);
             }
             Stmt::ForOf(ForOfStmt {
                 left, right, body, ..
             }) => {
                 left.visit_with(self);
-                let rhs = self.get_rhs(right, true);
+                let rhs = self.get_rhs(right, true, ExprContext::Expression);
                 self.invalidate(&rhs);
                 body.visit_with(self);
             }
@@ -1184,9 +1189,12 @@ impl Visit<'_> for GraphVisitor<'_> {
                 };
                 self.visit_destructuring(lhs, &[PointerId::STRING]);
 
-                let rhs = self.get_rhs(right, true);
+                let rhs = self.get_rhs(right, true, ExprContext::Expression);
                 self.invalidate(&rhs);
                 body.visit_with(self);
+            }
+            Stmt::Expr(n) => {
+                self.get_rhs(&n.expr, false, ExprContext::Statement);
             }
             _ => {
                 n.visit_children_with(self);
@@ -1242,7 +1250,7 @@ impl Visit<'_> for GraphVisitor<'_> {
     }
 
     fn visit_expr(&mut self, n: &Expr) {
-        self.get_rhs(n, false);
+        self.get_rhs(n, false, ExprContext::Expression);
     }
 
     fn visit_module_decl(&mut self, _: &ModuleDecl) {
@@ -1319,6 +1327,20 @@ impl StaticFunctionData {
 
 index::newtype_index!(pub struct PointerId { .. });
 
+/// Where an expression occurs - either in an expression statement or in another
+/// expression.
+/// ```js
+/// foo(); // <- Call expression is in an expression statement, context is Statement.
+/// ```
+/// ```js
+/// const a = foo(); // <- Call expression is in an expression, context is Expression.
+/// ```
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
+pub enum ExprContext {
+    Expression,
+    Statement,
+}
+
 #[derive(Debug)]
 pub struct Store {
     unresolved_ctxt: SyntaxContext,
@@ -1329,7 +1351,7 @@ pub struct Store {
     references: FxHashSet<(PropKey, PointerId)>,
     pub invalid_pointers: GrowableBitSet<PointerId>,
     concrete_pointer_bound: PointerId,
-    pub calls: FxHashSet<(NodeId, PointerId)>,
+    pub calls: FxHashSet<(NodeId, PointerId, ExprContext)>,
 }
 
 impl Store {
