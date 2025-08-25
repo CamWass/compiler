@@ -2482,3 +2482,35 @@ function instantiateMappedType() {
 ",
     );
 }
+
+#[test]
+fn test_arrow_expr_arguments_access() {
+    // Arrow functions don't have their own `arguments` array - references to
+    // `arguments` in arrow functions refer to the parent function's
+    // `arguments`. In this test, the `arguments` access invalidates the params
+    // of `func`, NOT `arrow`.
+    test_transform(
+        "
+function func(a) {
+    const arrow = (b) => {
+        arguments;
+    };
+    const obj1 = { prop: 1 };
+    arrow(obj1);
+}
+const obj2 = { prop: 2 };
+func(obj2);
+",
+        "
+function func(a) {
+    const arrow = (b) => {
+        arguments;
+    };
+    const obj1 = { a: 1 };
+    arrow(obj1);
+}
+const obj2 = { prop: 2 };
+func(obj2);
+",
+    );
+}

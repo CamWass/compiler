@@ -1450,7 +1450,7 @@ struct FnVisitor<'s> {
 }
 
 impl FnVisitor<'_> {
-    fn handle_fn<T>(&mut self, node: &T, fn_expr_name: Option<&Ident>)
+    fn handle_fn<T>(&mut self, node: &T, fn_expr_name: Option<&Ident>, is_arrow: bool)
     where
         T: FunctionLike + GetNodeId,
     {
@@ -1498,14 +1498,19 @@ impl FnVisitor<'_> {
         self.store.functions.insert(node_id, static_data);
 
         let old_accesses_arguments_array = self.accesses_arguments_array;
-        self.accesses_arguments_array = false;
+
+        // Arrow functions don't have their own `arguments` array, so we want to
+        // continue tracking for the parent function.
+        if !is_arrow {
+            self.accesses_arguments_array = false;
+        }
 
         for param in node.params() {
             self.visit_pat(param);
         }
         node.body().visit_with(self);
 
-        if self.accesses_arguments_array {
+        if self.accesses_arguments_array && !is_arrow {
             // Invalidate parameters for functions that access the arguments array.
             self.params_to_invalidate.extend(
                 VarId::from_u32(var_start)..VarId::from_u32(var_start + param_binding_count as u32),
@@ -1516,7 +1521,9 @@ impl FnVisitor<'_> {
                 .push(VarId::from_u32(var_start + param_binding_count as u32 - 1));
         }
 
-        self.accesses_arguments_array = old_accesses_arguments_array;
+        if !is_arrow {
+            self.accesses_arguments_array = old_accesses_arguments_array;
+        }
     }
 }
 
@@ -1536,25 +1543,25 @@ impl<'ast> Visit<'ast> for FnVisitor<'_> {
     }
 
     fn visit_fn_decl(&mut self, node: &'ast FnDecl) {
-        self.handle_fn(&node.function, None);
+        self.handle_fn(&node.function, None, false);
     }
     fn visit_fn_expr(&mut self, node: &'ast FnExpr) {
-        self.handle_fn(node.function.as_ref(), node.ident.as_ref());
+        self.handle_fn(node.function.as_ref(), node.ident.as_ref(), false);
     }
     fn visit_function(&mut self, node: &'ast Function) {
-        self.handle_fn(node, None);
+        self.handle_fn(node, None, false);
     }
     fn visit_constructor(&mut self, node: &'ast Constructor) {
-        self.handle_fn(node, None);
+        self.handle_fn(node, None, false);
     }
     fn visit_arrow_expr(&mut self, node: &'ast ArrowExpr) {
-        self.handle_fn(node, None);
+        self.handle_fn(node, None, true);
     }
     fn visit_getter_prop(&mut self, node: &'ast GetterProp) {
-        self.handle_fn(node, None);
+        self.handle_fn(node, None, false);
     }
     fn visit_setter_prop(&mut self, node: &'ast SetterProp) {
-        self.handle_fn(node, None);
+        self.handle_fn(node, None, false);
     }
 }
 
