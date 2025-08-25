@@ -1,4 +1,4 @@
-An (experimental) optimising compiler for TypeScript/JavaScript.
+An (experimental) optimising compiler for TypeScript/JavaScript, written in Rust.
 
 TypeScript is transpiled to JavaScript, which is minified and optimised.
 
