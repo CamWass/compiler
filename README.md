@@ -2,6 +2,8 @@ An (experimental) optimising compiler for TypeScript/JavaScript.
 
 TypeScript is transpiled to JavaScript, which is minified and optimised.
 
+## Purpose
+
 Current compilers are limited to fairly basic optimisations, such as whitespace removal, basic inlining, basic dead code removal, etc. Many classical optimisation techniques are tricky to implement for JavaScript due to its dynamic nature, or simply haven't been attempted - only one compiler I'm aware of uses control flow or advanced type inference, for example.
 
 That compiler is the [Google Closure Compiler](https://github.com/google/closure-compiler), which is in a league of its own in terms of the optimisations it can perform. It has two major problems however:
