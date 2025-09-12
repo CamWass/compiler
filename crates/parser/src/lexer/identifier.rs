@@ -5,7 +5,6 @@ use super::char_literals;
 /// https://tc39.github.io/ecma262/#prod-IdentifierStart
 #[inline]
 pub fn is_ident_start(character: char) -> bool {
-    // // TODO (swc): Use Unicode ID instead of XID.
     match character {
         '$' | '_' | 'A'..='Z' | 'a'..='z' => true,
         _ => {
@@ -21,7 +20,6 @@ pub fn is_ident_start(character: char) -> bool {
 /// Test whether a given character is part of an identifier.
 #[inline]
 pub fn is_ident_part(character: char) -> bool {
-    // // TODO (swc): Use Unicode ID instead of XID.
     match character {
         '$'
         | '_'
