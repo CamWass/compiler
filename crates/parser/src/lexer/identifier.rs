@@ -1,7 +1,4 @@
-extern crate unicode_xid;
-
 use super::char_literals;
-use unicode_xid::UnicodeXID;
 
 /// Test whether a given character code starts an identifier.
 ///
@@ -15,7 +12,7 @@ pub fn is_ident_start(character: char) -> bool {
             if character.is_ascii() {
                 false
             } else {
-                UnicodeXID::is_xid_start(character)
+                unicode_id_start::is_id_start(character)
             }
         }
     }
@@ -37,7 +34,7 @@ pub fn is_ident_part(character: char) -> bool {
             if character.is_ascii() {
                 false
             } else {
-                UnicodeXID::is_xid_continue(character)
+                unicode_id_start::is_id_continue(character)
             }
         }
     }

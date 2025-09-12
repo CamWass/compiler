@@ -14,7 +14,7 @@ num-bigint = { workspace = true }
 num-traits = { workspace = true }
 rustc-hash = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-unicode-xid = { workspace = true }
+unicode-id-start = { workspace = true }
 
 ast = { path = "../ast" }
 atoms = { path = "../atoms" }
