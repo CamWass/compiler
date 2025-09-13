@@ -17,32 +17,27 @@ impl Visitor<'_> {
         prop.visit_mut_children_with(self);
 
         // TODO: can also handle a[undefined] -> a.undefined, a[NaN] -> a.NaN, and a[null] -> a.null
-        if let PropName::Str(prop_name) = &prop {
-            // ['constructor']() and constructor() define different things in classes, so we can't substitute them.
-            if is_class_prop && prop_name.value == js_word!("constructor") {
-                return;
-            }
-            if is_valid_prop_ident(&prop_name.value) {
-                *prop = PropName::Ident(Ident {
-                    ctxt: SyntaxContext::empty(),
-                    node_id: self.program_data.new_id_from(prop_name.node_id),
-                    sym: prop_name.value.clone(),
-                });
-            }
-        } else if let PropName::Computed(computed_prop) = &prop {
-            if let Expr::Lit(Lit::Str(prop_name)) = computed_prop.expr.as_ref() {
-                // ['constructor']() and constructor() define different things in classes, so we can't substitute them.
-                if is_class_prop && prop_name.value == js_word!("constructor") {
-                    return;
-                }
-                if is_valid_prop_ident(&prop_name.value) {
-                    *prop = PropName::Ident(Ident {
-                        ctxt: SyntaxContext::empty(),
-                        node_id: self.program_data.new_id_from(computed_prop.node_id),
-                        sym: prop_name.value.clone(),
-                    });
-                }
-            }
+
+        let (prop_name, old_node_id) = match &prop {
+            PropName::Str(prop_name) => (prop_name, prop_name.node_id),
+            PropName::Computed(computed_prop) => match computed_prop.expr.as_ref() {
+                Expr::Lit(Lit::Str(prop_name)) => (prop_name, computed_prop.node_id),
+                _ => return,
+            },
+            _ => return,
+        };
+
+        // ['constructor']() and constructor() define different things in
+        // classes, so we can't substitute them.
+        if is_class_prop && prop_name.value == js_word!("constructor") {
+            return;
+        }
+        if is_valid_prop_ident(&prop_name.value) {
+            *prop = PropName::Ident(Ident {
+                ctxt: SyntaxContext::empty(),
+                node_id: self.program_data.new_id_from(old_node_id),
+                sym: prop_name.value.clone(),
+            });
         }
     }
 }
@@ -68,21 +63,18 @@ impl VisitMut<'_> for Visitor<'_> {
 
         for member in n.body.iter_mut() {
             match member {
-                ClassMember::Constructor(member) => {
-                    member.visit_mut_with(self);
-                }
                 ClassMember::Method(member) => {
                     member.function.visit_mut_with(self);
                     self.handle_prop_name(&mut member.key, true);
-                }
-                ClassMember::PrivateMethod(member) => {
-                    member.visit_mut_with(self);
                 }
                 ClassMember::ClassProp(member) => {
                     member.value.visit_mut_with(self);
                     self.handle_prop_name(&mut member.key, true);
                 }
-                ClassMember::PrivateProp(member) => {
+
+                ClassMember::Constructor(_)
+                | ClassMember::PrivateMethod(_)
+                | ClassMember::PrivateProp(_) => {
                     member.visit_mut_with(self);
                 }
             }
