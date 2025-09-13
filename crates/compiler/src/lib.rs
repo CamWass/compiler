@@ -201,7 +201,7 @@ fn finalise(
 
     // TODO: renameProperties
     if passes.convert_to_dot_properties {
-        convert_to_dot_properties::process(ast, program_data);
+        convert_to_dot_properties::process(ast, program_data, unresolved_ctxt);
     }
     // TODO: convertToDottedProperties
     // TODO: rewriteFunctionExpressions

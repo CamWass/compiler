@@ -3,25 +3,49 @@ use atoms::js_word;
 use ecma_visit::{VisitMut, VisitMutWith};
 use global_common::SyntaxContext;
 
-pub fn process(ast: &mut Program, program_data: &mut ProgramData) {
-    let mut visitor = Visitor { program_data };
+pub fn process(ast: &mut Program, program_data: &mut ProgramData, unresolved_ctxt: SyntaxContext) {
+    let mut visitor = Visitor {
+        program_data,
+        unresolved_ctxt,
+    };
     ast.visit_mut_with(&mut visitor);
 }
 
 struct Visitor<'a> {
     program_data: &'a mut ProgramData,
+    unresolved_ctxt: SyntaxContext,
 }
 
 impl Visitor<'_> {
     fn handle_prop_name(&mut self, prop: &mut PropName, is_class_prop: bool) {
         prop.visit_mut_children_with(self);
 
-        // TODO: can also handle a[undefined] -> a.undefined, a[NaN] -> a.NaN, and a[null] -> a.null
-
         let (prop_name, old_node_id) = match &prop {
-            PropName::Str(prop_name) => (prop_name, prop_name.node_id),
+            PropName::Str(prop_name) => (&prop_name.value, prop_name.node_id),
             PropName::Computed(computed_prop) => match computed_prop.expr.as_ref() {
-                Expr::Lit(Lit::Str(prop_name)) => (prop_name, computed_prop.node_id),
+                Expr::Lit(lit) => match lit {
+                    Lit::Str(str) => (&str.value, computed_prop.node_id),
+                    Lit::Null(_) => (&js_word!("null"), computed_prop.node_id),
+                    Lit::Bool(bool) => {
+                        if bool.value {
+                            (&js_word!("true"), computed_prop.node_id)
+                        } else {
+                            (&js_word!("false"), computed_prop.node_id)
+                        }
+                    }
+                    _ => return,
+                },
+                Expr::Ident(ident) => {
+                    if ident.ctxt == self.unresolved_ctxt
+                        && (ident.sym == js_word!("undefined")
+                            || ident.sym == js_word!("NaN")
+                            || ident.sym == js_word!("Infinity"))
+                    {
+                        (&ident.sym, computed_prop.node_id)
+                    } else {
+                        return;
+                    }
+                }
                 _ => return,
             },
             _ => return,
@@ -29,14 +53,14 @@ impl Visitor<'_> {
 
         // ['constructor']() and constructor() define different things in
         // classes, so we can't substitute them.
-        if is_class_prop && prop_name.value == js_word!("constructor") {
+        if is_class_prop && prop_name == &js_word!("constructor") {
             return;
         }
-        if is_valid_prop_ident(&prop_name.value) {
+        if is_valid_prop_ident(&prop_name) {
             *prop = PropName::Ident(Ident {
                 ctxt: SyntaxContext::empty(),
                 node_id: self.program_data.new_id_from(old_node_id),
-                sym: prop_name.value.clone(),
+                sym: prop_name.clone(),
             });
         }
     }
@@ -45,16 +69,41 @@ impl Visitor<'_> {
 impl VisitMut<'_> for Visitor<'_> {
     fn visit_mut_member_expr(&mut self, n: &mut MemberExpr) {
         n.visit_mut_children_with(self);
-        // TODO: can also handle a[undefined] -> a.undefined, a[NaN] -> a.NaN, and a[null] -> a.null
-        if let Expr::Lit(Lit::Str(prop)) = n.prop.as_ref() {
-            if is_valid_prop_ident(&prop.value) {
-                n.computed = false;
-                n.prop = Box::new(Expr::Ident(Ident {
-                    ctxt: SyntaxContext::empty(),
-                    node_id: self.program_data.new_id_from(prop.node_id),
-                    sym: prop.value.clone(),
-                }));
+
+        let (prop_name, old_node_id) = match n.prop.as_ref() {
+            Expr::Lit(lit) => match lit {
+                Lit::Str(str) => (&str.value, str.node_id),
+                Lit::Null(null) => (&js_word!("null"), null.node_id),
+                Lit::Bool(bool) => {
+                    if bool.value {
+                        (&js_word!("true"), bool.node_id)
+                    } else {
+                        (&js_word!("false"), bool.node_id)
+                    }
+                }
+                _ => return,
+            },
+            Expr::Ident(ident) => {
+                if ident.ctxt == self.unresolved_ctxt
+                    && (ident.sym == js_word!("undefined")
+                        || ident.sym == js_word!("NaN")
+                        || ident.sym == js_word!("Infinity"))
+                {
+                    (&ident.sym, ident.node_id)
+                } else {
+                    return;
+                }
             }
+            _ => return,
+        };
+
+        if is_valid_prop_ident(prop_name) {
+            n.computed = false;
+            n.prop = Box::new(Expr::Ident(Ident {
+                ctxt: SyntaxContext::empty(),
+                node_id: self.program_data.new_id_from(old_node_id),
+                sym: prop_name.clone(),
+            }));
         }
     }
 
@@ -313,6 +362,79 @@ class C {
         test_transform("({ ['constructor']: 1 })", "({ constructor: 1 })");
     }
 
+    fn test_simple_value(value: &str) {
+        test_transform(
+            &format!(
+                "
+const a = {{
+  {value}: 1,
+  [{value}]: 1,
+}};
+",
+            ),
+            &format!(
+                "
+const a = {{
+  {value}: 1,
+  {value}: 1,
+}};
+",
+            ),
+        );
+        test_transform(
+            &format!(
+                "
+class A {{
+  {value} = 1;
+  [{value}] = 1;
+  [{value}](){{}};
+}};
+",
+            ),
+            &format!(
+                "
+class A {{
+  {value} = 1;
+  {value} = 1;
+  {value}(){{}};
+}};
+",
+            ),
+        );
+
+        test_transform(&format!("a[{value}]"), &format!("a.{value}"));
+        test_transform(
+            &format!("const {{[{value}]: a}} = {{}}"),
+            &format!("const {{{value}: a}} = {{}}"),
+        );
+    }
+
+    #[test]
+    fn test_undefined() {
+        test_simple_value("undefined");
+    }
+
+    #[test]
+    fn test_null() {
+        test_simple_value("null");
+    }
+
+    #[test]
+    fn test_infinity() {
+        test_simple_value("NaN");
+    }
+
+    #[test]
+    fn test_nan() {
+        test_simple_value("Infinity");
+    }
+
+    #[test]
+    fn test_booleans() {
+        test_simple_value("true");
+        test_simple_value("false");
+    }
+
     fn test_transform(input: &str, expected: &str) {
         crate::testing::test_transform(
             |mut program, program_data| {
@@ -322,7 +444,9 @@ class C {
 
                     program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark));
 
-                    process(&mut program, program_data);
+                    let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
+
+                    process(&mut program, program_data, unresolved_ctxt);
 
                     program
                 })
