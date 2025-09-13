@@ -8,6 +8,7 @@ edition = "2018"
 bitflags = { workspace = true }
 num-bigint = { workspace = true }
 rustc-hash = { workspace = true }
+unicode-id-start = { workspace = true }
 
 atoms = { path = "../atoms" }
 clone_node = { path = "../../macros/clone_node" }

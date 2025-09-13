@@ -3,7 +3,7 @@
 //!
 //! See https://tc39.github.io/ecma262/#sec-literals-numeric-literals
 
-use super::{is_ident_start, pos_span, LexResult, Lexer};
+use super::{pos_span, LexResult, Lexer};
 use crate::{error::SyntaxError, token::Token, JscTarget};
 use global_common::BytePos;
 use num_bigint::BigUint;
@@ -242,7 +242,7 @@ impl Lexer<'_> {
     /// Ensure that an identifier does not directly follow a number.
     fn ensure_not_ident(&mut self) -> LexResult<()> {
         match self.cur() {
-            Some(ch) if is_ident_start(ch) => {
+            Some(ch) if ast::Ident::is_valid_start(ch) => {
                 let span = pos_span(self.cur_pos());
                 self.error_span(span, SyntaxError::IdentAfterNum)?
             }

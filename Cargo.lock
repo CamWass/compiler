@@ -81,6 +81,7 @@ dependencies = [
  "node_id",
  "num-bigint",
  "rustc-hash",
+ "unicode-id-start",
 ]
 
 [[package]]

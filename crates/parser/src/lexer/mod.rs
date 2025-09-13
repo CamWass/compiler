@@ -1,4 +1,3 @@
-pub mod identifier;
 mod number;
 mod state;
 mod util;
@@ -12,7 +11,6 @@ use crate::{
 use ast::{op, RegexFlags};
 use atoms::JsWord;
 use global_common::{chars::char_literals, BytePos, SourceFile, Span};
-use identifier::{is_ident_part, is_ident_start};
 use state::State;
 pub use state::{TokenContext, TokenContexts};
 use std::{cell::RefCell, iter::FusedIterator, rc::Rc};
@@ -235,7 +233,7 @@ impl<'src> Lexer<'src> {
             _ => {
                 let ch = self.cur_unchecked();
 
-                if is_ident_start(ch) {
+                if ast::Ident::is_valid_start(ch) {
                     // Identifier or keyword.
                     self.read_ident_or_keyword().map(Some)
                 } else {
@@ -598,7 +596,7 @@ impl<'src> Lexer<'src> {
                 } else {
                     mods.insert(flag);
                 }
-            } else if is_ident_part(ch) || ch == '\\' {
+            } else if ast::Ident::is_valid_continue(ch) || ch == '\\' {
                 self.error(self.cur_pos(), SyntaxError::MalformedRegExpFlags)?
             } else {
                 break;
@@ -824,7 +822,8 @@ impl<'src> Lexer<'src> {
     // Read an identifier.
     fn read_word(&mut self) -> LexResult<(Word, bool)> {
         debug_assert!(
-            self.is(b'\\') || (self.cur().is_some() && is_ident_start(self.cur().unwrap()))
+            self.is(b'\\')
+                || (self.cur().is_some() && ast::Ident::is_valid_start(self.cur().unwrap()))
         );
 
         let mut first = true;
@@ -835,7 +834,7 @@ impl<'src> Lexer<'src> {
             while let Some(ch) = {
                 // Optimization
                 {
-                    let s = lexer.uncons_while_chars(is_ident_part);
+                    let s = lexer.uncons_while_chars(ast::Ident::is_valid_continue);
                     if !s.is_empty() {
                         first = false;
                     }
@@ -858,9 +857,9 @@ impl<'src> Lexer<'src> {
                         let ch = lexer.read_unicode_escape(start)?;
 
                         let valid = if first {
-                            is_ident_start(ch)
+                            ast::Ident::is_valid_start(ch)
                         } else {
-                            is_ident_part(ch)
+                            ast::Ident::is_valid_continue(ch)
                         };
 
                         if !valid {
@@ -889,7 +888,8 @@ impl<'src> Lexer<'src> {
     // See https://tc39.github.io/ecma262/#sec-names-and-keywords
     fn read_ident_or_keyword(&mut self) -> LexResult<Token> {
         debug_assert!(
-            self.is(b'\\') || (self.cur().is_some() && is_ident_start(self.cur().unwrap()))
+            self.is(b'\\')
+                || (self.cur().is_some() && ast::Ident::is_valid_start(self.cur().unwrap()))
         );
 
         let start = self.cur_pos();
