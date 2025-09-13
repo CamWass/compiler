@@ -14,6 +14,7 @@ mod RenameLabels;
 mod RenameVars;
 mod control_flow;
 mod convert;
+mod convert_to_dot_properties;
 mod denormalize;
 mod find_vars;
 mod graph;
@@ -67,6 +68,8 @@ pub struct PassConfig {
     pub fuse_stmts: bool,
     #[serde(default)]
     pub inline_functions: bool,
+    #[serde(default)]
+    pub convert_to_dot_properties: bool,
 }
 
 pub struct Compiler {
@@ -197,6 +200,9 @@ fn finalise(
     }
 
     // TODO: renameProperties
+    if passes.convert_to_dot_properties {
+        convert_to_dot_properties::process(ast, program_data);
+    }
     // TODO: convertToDottedProperties
     // TODO: rewriteFunctionExpressions
     // TODO: aliasStrings
