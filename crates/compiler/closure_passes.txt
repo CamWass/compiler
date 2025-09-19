@@ -1,23 +1,27 @@
+❌ - TODO
+➖ - Won't do
+✅ - Done
+
 ❌checkRegExpForOptimizations
 ➖j2clSourceFileChecker
 ➖removeCastNodes
 ➖typesToColors
-❌removeUnnecessarySyntheticExterns
-❌injectTranspilationRuntimeLibraries
-❌rewritePolyfills
-❌injectRuntimeLibrariesForOptimizations
+➖removeUnnecessarySyntheticExterns
+➖injectTranspilationRuntimeLibraries
+➖rewritePolyfills
+➖injectRuntimeLibrariesForOptimizations
 ➖closureProvidesRequires
 ➖replaceMessagesForChrome
 ➖ReplaceMessages
 ➖protectLocaleData
-❌processDefinesOptimize
+➖processDefinesOptimize
 ❌addEarlyOptimizationTranspilationPasses()
 ❌normalize
 ❌gatherGettersAndSetters
 ➖j2clUtilGetDefineRewriterPass
-❌instrumentForCodeCoverage
+➖instrumentForCodeCoverage
 ❌gatherExternPropertiesOptimize
-❌optimizeArgumentsArray
+✅optimizeArgumentsArray
 ➖closureCodeRemoval
 ➖j2clAssertRemovalPass
 ❌inlineAndCollapseProperties
@@ -53,14 +57,14 @@
 ❌crossModuleMethodMotion
 ➖substituteLocaleData
 ❌optimizeConstructors
-❌isolatePolyfills
+➖isolatePolyfills
 ❌collapseAnonymousFunctions
 ➖rewriteGlobalDeclarationsForTryCatchWrapping
 ❌extractPrototypeMemberDeclarations
-❌renameProperties
+➖renameProperties
 ✅ambiguateProperties
-❌gatherRawExports
-❌convertToDottedProperties
+➖gatherRawExports
+✅convertToDottedProperties
 ❌rewriteFunctionExpressions
 ❌aliasStrings
 ✅coalesceVariableNames
@@ -76,8 +80,6 @@
 ❌rescopeGlobalSymbols
 ✅optimizeToEs6
 ❌convertChunksToESModules
-
-At a glance, it appears that the only optimisation passes that rely on types (or at least 'colors') are:
 ❌inlineProperties
 ✅ambiguateProperties
 ✅disambiguateProperties
