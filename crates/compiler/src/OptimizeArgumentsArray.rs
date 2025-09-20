@@ -124,9 +124,8 @@ impl OptimizeArgumentsArray<'_> {
         // that the value is the number of parameters to the function.
         let highest_index =
             FnBodyVisitor::get_highest_index(func.get_body(), highest_index, self.unresolved_ctxt);
-        let highest_index = match highest_index {
-            Some(highest_index) => highest_index,
-            None => return,
+        let Some(highest_index) = highest_index else {
+            return;
         };
 
         let arg_names = func.assemble_param_names(highest_index + 1);
@@ -222,10 +221,7 @@ impl AsFn for ast::Function {
         }
         // ... then synthesize any additional param names.
         while index < max_count {
-            map.insert(
-                index,
-                (JsWord::from(format!("p{}", index)), private_ctxt!()),
-            );
+            map.insert(index, (JsWord::from(format!("p{index}")), private_ctxt!()));
             index += 1;
         }
 
@@ -264,10 +260,7 @@ impl AsFn for ast::Constructor {
         }
         // ... then synthesize any additional param names.
         while index < max_count {
-            map.insert(
-                index,
-                (JsWord::from(format!("p{}", index)), private_ctxt!()),
-            );
+            map.insert(index, (JsWord::from(format!("p{index}")), private_ctxt!()));
             index += 1;
         }
 
@@ -319,7 +312,7 @@ impl FnBodyVisitor {
         const PRINT: bool = false && cfg!(debug_assertions);
 
         if PRINT {
-            println!("FnBodyVisitor: invalidating because: {}", _reason);
+            println!("FnBodyVisitor: invalidating because: {_reason}");
         }
     }
 
@@ -559,7 +552,7 @@ function f() {
 function f(p0) {
     console.log(p0);
 }",
-        )
+        );
     }
 
     // =================================================================

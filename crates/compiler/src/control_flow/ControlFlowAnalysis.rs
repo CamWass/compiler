@@ -168,7 +168,7 @@ where
         // unreachable nodes have not been given a priority. Put them last.
         // Presumably, it doesn't really matter what priority they get, since
         // this shouldn't happen in real code.
-        for candidate in cfa.node_priorities.iter_mut() {
+        for candidate in &mut cfa.node_priorities {
             if *candidate == NodePriority::MAX {
                 *candidate = cfa.priority_counter;
                 cfa.priority_counter += 1;
@@ -375,117 +375,105 @@ where
             current_case.cons.visit_with(self);
             self.parent_stack.pop();
 
-            match &current_case.test {
-                Some(test) => {
-                    // Normal case.
+            if let Some(test) = &current_case.test {
+                // Normal case.
 
-                    // Case is a bit tricky. First, if condition is true, it
-                    // goes into...
-                    match current_case.cons.first() {
-                        Some(stmt) => {
-                            // ...the first stmt of the body. Or...
-                            self.cfg
-                                .create_edge(case_node, Branch::True, Node::from(stmt));
-                        }
-                        None => {
-                            // ...if the body is empty...
+                // Case is a bit tricky. First, if condition is true, it
+                // goes into...
+                if let Some(stmt) = current_case.cons.first() {
+                    // ...the first stmt of the body. Or...
+                    self.cfg
+                        .create_edge(case_node, Branch::True, Node::from(stmt));
+                } else {
+                    // ...if the body is empty...
 
-                            let mut follow = None;
-                            let next_siblings = cases_iter.clone();
+                    let mut follow = None;
+                    let next_siblings = cases_iter.clone();
 
-                            for next_sibling in next_siblings {
-                                if let Some(stmt) = next_sibling.cons.first() {
-                                    follow = Some(Node::from(stmt));
-                                    break;
-                                }
-                            }
-
-                            match follow {
-                                Some(follow) => {
-                                    // ...it falls through into the body of the
-                                    // next case. Or...
-                                    self.cfg.create_edge(case_node, Branch::True, follow)
-                                }
-                                None => {
-                                    // ...if there are no more cases, or they
-                                    // are all empty, it goes to the follow node
-                                    // of the parent switch stmt.
-                                    let follow_node = self.compute_follow_node_with_parent(
-                                        Node::from(switch),
-                                        self.parent_stack.len() - 1,
-                                    );
-
-                                    self.cfg.create_edge(case_node, Branch::True, follow_node);
-                                }
-                            }
+                    for next_sibling in next_siblings {
+                        if let Some(stmt) = next_sibling.cons.first() {
+                            follow = Some(Node::from(stmt));
+                            break;
                         }
                     }
 
-                    // Look for the next CASE, skipping over DEFAULT.
-                    let next = cases_iter.clone().find(|case| {
-                        if case.is_default() {
-                            default_case = Some(*case);
-                            false
-                        } else {
-                            true
-                        }
-                    });
+                    if let Some(follow) = follow {
+                        // ...it falls through into the body of the
+                        // next case. Or...
+                        self.cfg.create_edge(case_node, Branch::True, follow);
+                    } else {
+                        // ...if there are no more cases, or they
+                        // are all empty, it goes to the follow node
+                        // of the parent switch stmt.
+                        let follow_node = self.compute_follow_node_with_parent(
+                            Node::from(switch),
+                            self.parent_stack.len() - 1,
+                        );
 
-                    // If the cases condition is false, it goes to the next
-                    // case, or, if there are no more cases, the default case.
-                    match next {
-                        Some(next) => {
-                            // Found next case.
-                            self.cfg
-                                .create_edge(case_node, Branch::False, Node::from(next));
-                        }
-                        None => {
-                            // No more cases.
-                            match default_case {
-                                Some(default) => match default.cons.first() {
-                                    Some(_) => {
-                                        // Go to default case.
-                                        self.cfg.create_edge(
-                                            case_node,
-                                            Branch::False,
-                                            Node::from(default),
-                                        );
-                                    }
-                                    None => {
-                                        // Default case has no stmts, go to the follow of the switch.
-                                        self.create_edge_to_case_follow(case_node, Branch::False);
-                                    }
-                                },
+                        self.cfg.create_edge(case_node, Branch::True, follow_node);
+                    }
+                }
+
+                // Look for the next CASE, skipping over DEFAULT.
+                let next = cases_iter.clone().find(|case| {
+                    if case.is_default() {
+                        default_case = Some(*case);
+                        false
+                    } else {
+                        true
+                    }
+                });
+
+                // If the cases condition is false, it goes to the next
+                // case, or, if there are no more cases, the default case.
+                match next {
+                    Some(next) => {
+                        // Found next case.
+                        self.cfg
+                            .create_edge(case_node, Branch::False, Node::from(next));
+                    }
+                    None => {
+                        // No more cases.
+                        match default_case {
+                            Some(default) => match default.cons.first() {
+                                Some(_) => {
+                                    // Go to default case.
+                                    self.cfg.create_edge(
+                                        case_node,
+                                        Branch::False,
+                                        Node::from(default),
+                                    );
+                                }
                                 None => {
-                                    // No default case, go to the follow of the switch.
+                                    // Default case has no stmts, go to the follow of the switch.
                                     self.create_edge_to_case_follow(case_node, Branch::False);
                                 }
+                            },
+                            None => {
+                                // No default case, go to the follow of the switch.
+                                self.create_edge_to_case_follow(case_node, Branch::False);
                             }
                         }
                     }
-
-                    self.connect_to_possible_exception_handler(
-                        ExceptionHandler::new(&self.parent_stack, case_node),
-                        Node::from(&**test),
-                    );
                 }
-                None => {
-                    // Default case. Control unconditionally goes to the
-                    // default's first stmt, or, if the default is empty, the
-                    // default's follow.
 
-                    default_case = Some(current_case);
-                    match current_case.cons.first() {
-                        Some(stmt) => {
-                            self.cfg.create_edge(
-                                case_node,
-                                Branch::Unconditional,
-                                Node::from(stmt),
-                            );
-                        }
-                        None => {
-                            self.create_edge_to_case_follow(case_node, Branch::Unconditional);
-                        }
+                self.connect_to_possible_exception_handler(
+                    ExceptionHandler::new(&self.parent_stack, case_node),
+                    Node::from(&**test),
+                );
+            } else {
+                // Default case. Control unconditionally goes to the
+                // default's first stmt, or, if the default is empty, the
+                // default's follow.
+
+                default_case = Some(current_case);
+                match current_case.cons.first() {
+                    Some(stmt) => {
+                        self.cfg
+                            .create_edge(case_node, Branch::Unconditional, Node::from(stmt));
+                    }
+                    None => {
+                        self.create_edge_to_case_follow(case_node, Branch::Unconditional);
                     }
                 }
             }
@@ -623,33 +611,27 @@ where
                 NodeKind::TryStmt(try_stmt) => {
                     // If we are coming out of the TRY block...
                     if try_stmt.block.node_id == node.node_id {
-                        match &try_stmt.finalizer {
-                            Some(finally) => {
-                                // and have FINALLY block.
-                                return compute_fall_through(Node::from(finally));
-                            }
-                            None => {
-                                // and have no FINALLY.
-                                // Control is transferred up the AST to the parent's follow
-                                // node.
-                                node = parent.node;
-                                continue;
-                            }
+                        if let Some(finally) = &try_stmt.finalizer {
+                            // and have FINALLY block.
+                            return compute_fall_through(Node::from(finally));
+                        } else {
+                            // and have no FINALLY.
+                            // Control is transferred up the AST to the parent's follow
+                            // node.
+                            node = parent.node;
+                            continue;
                         }
 
                     // CATCH block.
                     } else if try_stmt.handler.as_ref().map(Node::from) == Some(node) {
-                        match &try_stmt.finalizer {
-                            Some(finally) => {
-                                // and have FINALLY block.
-                                return compute_fall_through(Node::from(finally));
-                            }
-                            None => {
-                                // Control is transferred up the AST to the parent's follow
-                                // node.
-                                node = parent.node;
-                                continue;
-                            }
+                        if let Some(finally) = &try_stmt.finalizer {
+                            // and have FINALLY block.
+                            return compute_fall_through(Node::from(finally));
+                        } else {
+                            // Control is transferred up the AST to the parent's follow
+                            // node.
+                            node = parent.node;
+                            continue;
                         }
 
                     // If we are coming out of the FINALLY block...
@@ -685,14 +667,13 @@ where
                 // Skip function declarations because control doesn't get passed into it.
                 .find(|sibling| !matches!(sibling.kind, NodeKind::FnDecl(_)));
 
-            match next_sibling {
-                Some(next_sibling) => return compute_fall_through(*next_sibling),
-                None => {
-                    // If there are no more siblings, control is transferred up
-                    // the AST to the parent's follow node.
-                    node = parent.node;
-                    continue;
-                }
+            if let Some(next_sibling) = next_sibling {
+                return compute_fall_through(*next_sibling);
+            } else {
+                // If there are no more siblings, control is transferred up
+                // the AST to the parent's follow node.
+                node = parent.node;
+                continue;
             }
         }
 
@@ -896,17 +877,14 @@ where
         self.cfg
             .create_edge(if_node, Branch::True, compute_fall_through(then_node));
 
-        match &node.alt {
-            Some(alt) => {
-                let else_node = Node::from(&**alt);
-                self.cfg
-                    .create_edge(if_node, Branch::False, compute_fall_through(else_node));
-            }
-            None => {
-                // not taken branch
-                let to_node = self.compute_follow_node(if_node);
-                self.cfg.create_edge(if_node, Branch::False, to_node);
-            }
+        if let Some(alt) = &node.alt {
+            let else_node = Node::from(&**alt);
+            self.cfg
+                .create_edge(if_node, Branch::False, compute_fall_through(else_node));
+        } else {
+            // not taken branch
+            let to_node = self.compute_follow_node(if_node);
+            self.cfg.create_edge(if_node, Branch::False, to_node);
         }
 
         self.connect_to_possible_exception_handler(
@@ -1235,7 +1213,7 @@ where
         self.parent_stack.pop();
 
         self.cfg
-            .create_edge(try_node, Branch::Unconditional, Node::from(&node.block))
+            .create_edge(try_node, Branch::Unconditional, Node::from(&node.block));
     }
 
     fn visit_script(&mut self, node: &'ast Script) {
@@ -1333,25 +1311,22 @@ where
             .iter()
             .find(|stmt| !matches!(stmt, Stmt::Decl(Decl::Fn(_))));
 
-        match child {
-            Some(child) => {
-                self.cfg.create_edge(
-                    block_node,
-                    Branch::Unconditional,
-                    compute_fall_through(Node::from(child)),
-                );
+        if let Some(child) = child {
+            self.cfg.create_edge(
+                block_node,
+                Branch::Unconditional,
+                compute_fall_through(Node::from(child)),
+            );
 
-                self.parent_stack
-                    .push_with_child_nodes(block_node, node.stmts.iter().map(Node::from).collect());
+            self.parent_stack
+                .push_with_child_nodes(block_node, node.stmts.iter().map(Node::from).collect());
 
-                node.stmts.visit_with(self);
-                self.parent_stack.pop();
-            }
-            None => {
-                let follow_node = self.compute_follow_node(block_node);
-                self.cfg
-                    .create_edge(block_node, Branch::Unconditional, follow_node);
-            }
+            node.stmts.visit_with(self);
+            self.parent_stack.pop();
+        } else {
+            let follow_node = self.compute_follow_node(block_node);
+            self.cfg
+                .create_edge(block_node, Branch::Unconditional, follow_node);
         }
     }
 
@@ -1377,7 +1352,7 @@ where
             Stmt::Decl(d) => match d {
                 Decl::Fn(d) => d.visit_with(self),
                 Decl::Class(c) => self.handle_class_decl(c),
-                _ => self.handle_simple_stmt(Node::from(stmt)),
+                Decl::Var(_) => self.handle_simple_stmt(Node::from(stmt)),
             },
         }
     }
@@ -1421,9 +1396,8 @@ where
 
             previous = Some(cur);
 
-            let parent = match parents.next() {
-                Some(parent) => parent,
-                None => unreachable!("Cannot find continue target."),
+            let Some(parent) = parents.next() else {
+                unreachable!("Cannot find continue target.");
             };
 
             cur = parent.node;
@@ -1487,9 +1461,8 @@ where
                 }
             }
 
-            let parent = match parents.next() {
-                Some(parent) => parent,
-                None => unreachable!("Cannot find break target."),
+            let Some(parent) = parents.next() else {
+                unreachable!("Cannot find break target.");
             };
 
             break_target_parent_index -= 1;

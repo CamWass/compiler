@@ -48,7 +48,7 @@ impl Tester<'_> {
                 .map_err(|e| e.into_diagnostic(self.handler).emit());
 
             for e in p.take_errors() {
-                e.into_diagnostic(self.handler).emit()
+                e.into_diagnostic(self.handler).emit();
             }
 
             res?
@@ -102,9 +102,9 @@ where
             return Ok(());
         }
 
-        println!(">>>>> Input <<<<<\n{}", input);
-        println!(">>>>> Output <<<<<\n{}", actual_src);
-        println!(">>>>> Expected <<<<<\n{}", expected_src);
+        println!(">>>>> Input <<<<<\n{input}");
+        println!(">>>>> Output <<<<<\n{actual_src}");
+        println!(">>>>> Expected <<<<<\n{expected_src}");
         if actual_src != expected_src {
             panic!(
                 r#"assertion failed: `(left == right)`

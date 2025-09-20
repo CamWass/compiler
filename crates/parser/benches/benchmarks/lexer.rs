@@ -20,7 +20,7 @@ fn bench(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("lexer");
     group.sample_size(100);
-    for Bench(id, src) in benches.iter() {
+    for Bench(id, src) in &benches {
         group.throughput(Throughput::Bytes(src.len() as u64));
 
         let cm = Lrc::new(SourceMap::new(FilePathMapping::empty()));
@@ -32,7 +32,7 @@ fn bench(c: &mut Criterion) {
                 for t in lexer {
                     black_box(t);
                 }
-            })
+            });
         });
     }
     group.finish();

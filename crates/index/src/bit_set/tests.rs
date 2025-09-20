@@ -300,7 +300,7 @@ fn union_hybrid_sparse_empty_to_dense(b: &mut Bencher) {
         let dense = pre_dense.clone();
         let mut sparse = pre_sparse.clone();
         sparse.union(&dense);
-    })
+    });
 }
 
 /// Merge dense hybrid set into full hybrid set with same indices.
@@ -318,7 +318,7 @@ fn union_hybrid_sparse_full_to_dense(b: &mut Bencher) {
         let dense = pre_dense.clone();
         let mut sparse = pre_sparse.clone();
         sparse.union(&dense);
-    })
+    });
 }
 
 /// Merge dense hybrid set into full hybrid set with indices over the whole domain.
@@ -336,7 +336,7 @@ fn union_hybrid_sparse_domain_to_dense(b: &mut Bencher) {
         let dense = pre_dense.clone();
         let mut sparse = pre_sparse.clone();
         sparse.union(&dense);
-    })
+    });
 }
 
 /// Merge dense hybrid set into empty hybrid set where the domain is very small.
@@ -351,7 +351,7 @@ fn union_hybrid_sparse_empty_small_domain(b: &mut Bencher) {
         let dense = pre_dense.clone();
         let mut sparse = pre_sparse.clone();
         sparse.union(&dense);
-    })
+    });
 }
 
 /// Merge dense hybrid set into full hybrid set where the domain is very small.
@@ -369,7 +369,7 @@ fn union_hybrid_sparse_full_small_domain(b: &mut Bencher) {
         let dense = pre_dense.clone();
         let mut sparse = pre_sparse.clone();
         sparse.union(&dense);
-    })
+    });
 }
 
 #[bench]

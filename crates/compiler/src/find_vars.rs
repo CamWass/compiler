@@ -71,7 +71,7 @@ impl DeclFinder {
 
     fn record_decl_name(&mut self, name: Id) {
         if let Entry::Vacant(entry) = self.vars.scope_variables.entry(name.clone()) {
-            let var_id = self.vars.ordered_vars.push(name.clone());
+            let var_id = self.vars.ordered_vars.push(name);
             entry.insert(var_id);
             self.vars.fn_and_class_names.insert(var_id);
         }

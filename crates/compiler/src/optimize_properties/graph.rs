@@ -54,18 +54,15 @@ fn pointer_to_node(graph_map: &[NodeIndex], pointer: PointerId) -> Option<NodeIn
 impl Graph {
     fn get_node(&mut self, pointer: PointerId) -> NodeIndex {
         let idx = pointer.as_usize();
-        match self.graph_map.get_mut(idx) {
-            Some(slot) => {
-                if *slot == NodeIndex::end() {
-                    *slot = self.graph.add_node(pointer);
-                }
-                *slot
+        if let Some(slot) = self.graph_map.get_mut(idx) {
+            if *slot == NodeIndex::end() {
+                *slot = self.graph.add_node(pointer);
             }
-            None => {
-                self.graph_map.resize_with(idx + 1, NodeIndex::end);
-                self.graph_map[idx] = self.graph.add_node(pointer);
-                self.graph_map[idx]
-            }
+            *slot
+        } else {
+            self.graph_map.resize_with(idx + 1, NodeIndex::end);
+            self.graph_map[idx] = self.graph.add_node(pointer);
+            self.graph_map[idx]
         }
     }
 
@@ -79,11 +76,11 @@ impl Graph {
 
         let mut existing = self.graph.edges_connecting(src, dest);
 
-        if !existing.any(|e| *e.weight() == kind) {
+        if existing.any(|e| *e.weight() == kind) {
+            false
+        } else {
             self.graph.add_edge(src, dest, kind);
             true
-        } else {
-            false
         }
     }
 
@@ -231,7 +228,7 @@ impl Graph {
                     if let Pointer::Arg(callee, _) = store.pointers[pointer] {
                         let unknown_callee = self
                             .get(callee)
-                            .map(|concrete_callees| concrete_callees.contains(&PointerId::UNKNOWN))
+                            .map(|concrete_callees| concrete_callees.contains(PointerId::UNKNOWN))
                             .unwrap_or(false);
 
                         if unknown_callee {
@@ -481,13 +478,13 @@ impl Graph {
                             let new_rep = self.get_graph_node_id(rep.0);
 
                             let src;
-                            if new_rep.0 != rep.0 {
+                            if new_rep.0 == rep.0 {
+                                // rep is still the representative
+                                src = prop_pointer;
+                            } else {
                                 // prop_pointer became representative
                                 src = rep;
                                 rep = new_rep;
-                            } else {
-                                // rep is still the representative
-                                src = prop_pointer;
                             }
                             prop_merge_queue.push(src);
                         }
@@ -676,7 +673,7 @@ impl Graph {
         };
 
         if store.invalid_pointers.contains(dest) & !store.invalid_pointers.contains(src) {
-            for p in src_set.iter() {
+            for p in &src_set {
                 self.invalidate(p, store);
             }
         }
@@ -717,7 +714,7 @@ impl Graph {
                     }
                 })
                 .collect::<Vec<_>>();
-            let mut res = format!("{:?}: ", n);
+            let mut res = format!("{n:?}: ");
 
             for &p in &pointers {
                 let value: String = match &store.pointers[p] {
@@ -751,7 +748,7 @@ impl Graph {
                 if pointers.len() > 1 {
                     write!(&mut res, "{}|{} ", p.as_u32(), value).unwrap();
                 } else {
-                    write!(&mut res, "{} ", value).unwrap();
+                    write!(&mut res, "{value} ").unwrap();
                 }
             }
 
@@ -869,7 +866,9 @@ impl SmallSet {
     fn insert(&mut self, value: PointerId) -> bool {
         match self {
             SmallSet::Inline(set) => {
-                if !set.contains(&value) {
+                if set.contains(&value) {
+                    false
+                } else {
                     if set.len() == set.capacity() {
                         let mut heap = GrowableBitSet::default();
                         for v in set {
@@ -881,18 +880,16 @@ impl SmallSet {
                         set.push(value);
                     }
                     true
-                } else {
-                    false
                 }
             }
             SmallSet::Heap(set) => Rc::make_mut(set).insert(value),
         }
     }
 
-    fn contains(&self, value: &PointerId) -> bool {
+    fn contains(&self, value: PointerId) -> bool {
         match self {
-            SmallSet::Inline(set) => set.contains(value),
-            SmallSet::Heap(set) => set.contains(*value),
+            SmallSet::Inline(set) => set.contains(&value),
+            SmallSet::Heap(set) => set.contains(value),
         }
     }
 

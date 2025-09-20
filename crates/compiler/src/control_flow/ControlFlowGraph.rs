@@ -64,15 +64,14 @@ where
     }
 
     fn create_node(&mut self, value: N) -> NodeIndex {
-        match self.map.get(&value) {
-            Some(index) => *index,
-            None => {
-                let index = self.graph.add_node(value);
+        if let Some(index) = self.map.get(&value) {
+            *index
+        } else {
+            let index = self.graph.add_node(value);
 
-                self.map.insert(value, index);
+            self.map.insert(value, index);
 
-                index
-            }
+            index
         }
     }
 
@@ -193,7 +192,7 @@ where
     A: Annotation,
 {
     fn print(&self, annotation: &A, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_fmt(format_args!("{:?}", annotation))
+        f.write_fmt(format_args!("{annotation:?}"))
     }
 }
 
@@ -274,7 +273,7 @@ where
     /// The resulting graph contains represents the full AST of the entry node,
     /// as well as any control flow edges.
     pub fn print_full(&self) {
-        self.print_full_inner::<DefaultPrinter>(None, "cfg")
+        self.print_full_inner::<DefaultPrinter>(None, "cfg");
     }
     #[allow(dead_code, reason = "used for debugging")]
     /// Same as `print_full` but also prints node annotations using `printer`.
@@ -382,7 +381,7 @@ where
 
         std::fs::create_dir_all("cfg").expect("failed to create cfg dir");
 
-        std::fs::write(format!("cfg/{}.dot", name), dot)
+        std::fs::write(format!("cfg/{name}.dot"), dot)
             .expect("Failed to output control flow graph");
 
         // std::fs::write(CFG_DOT_FILE_NAME, dot).expect("Failed to output control flow graph");

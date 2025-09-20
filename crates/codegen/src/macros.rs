@@ -26,14 +26,14 @@ macro_rules! keyword {
 
 macro_rules! punct {
     ($emitter:expr, $sp:expr, ";") => {
-        $emitter.wr.write_semi(Some($sp))?;
+        $emitter.wr.write_semi(Some($sp));
     };
     ($emitter:expr, $sp:expr, $s:expr) => {
         $emitter.wr.write_punct(Some($sp), $s)?;
     };
 
     ($emitter:expr, ";") => {
-        $emitter.wr.write_semi(None)?;
+        $emitter.wr.write_semi(None);
     };
     ($emitter:expr, $s:expr) => {
         $emitter.wr.write_punct(None, $s)?

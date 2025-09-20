@@ -750,10 +750,10 @@ impl GraphVisitor<'_> {
                         if *callee == PointerId::UNKNOWN {
                             continue;
                         }
-                        if !self.store.is_callable_pointer(*callee) {
-                            *callee = PointerId::NULL_OR_VOID;
-                        } else {
+                        if self.store.is_callable_pointer(*callee) {
                             *callee = self.get_return_value(*callee);
+                        } else {
+                            *callee = PointerId::NULL_OR_VOID;
                         }
                     }
                     ret!(callee)
@@ -901,18 +901,15 @@ impl GraphVisitor<'_> {
             op,
             AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
         );
-        match lhs {
-            PatOrExpr::Pat(pat @ (Pat::Array(_) | Pat::Object(_))) => {
-                debug_assert!(!conditional_assign, "invalid assignment target");
-                self.handle_destructuring(pat, rhs)
-            }
-            _ => {
-                let lhs = self.visit_and_get_slot(lhs);
-                let rhs = self.get_rhs(rhs, true, ExprContext::Expression);
+        if let PatOrExpr::Pat(pat @ (Pat::Array(_) | Pat::Object(_))) = lhs {
+            debug_assert!(!conditional_assign, "invalid assignment target");
+            self.handle_destructuring(pat, rhs)
+        } else {
+            let lhs = self.visit_and_get_slot(lhs);
+            let rhs = self.get_rhs(rhs, true, ExprContext::Expression);
 
-                self.assign_to_slot(lhs, &rhs);
-                rhs
-            }
+            self.assign_to_slot(lhs, &rhs);
+            rhs
         }
     }
 
@@ -939,13 +936,12 @@ impl GraphVisitor<'_> {
                     match prop {
                         ObjectPatProp::KeyValue(prop) => {
                             prop.key.visit_with(self);
-                            let key = match PropKey::from_prop_name(
+                            let Some(key) = PropKey::from_prop_name(
                                 &prop.key,
                                 self.store.unresolved_ctxt,
                                 &mut self.store.names,
-                            ) {
-                                Some(k) => k,
-                                None => continue,
+                            ) else {
+                                continue;
                             };
                             for rhs in rhs {
                                 self.reference_prop(*rhs, key);
@@ -1141,15 +1137,12 @@ impl Visit<'_> for GraphVisitor<'_> {
                 n.body.visit_with(self);
             }
             Stmt::Return(n) => {
-                let cur_fn = match self.cur_fn {
-                    Some(cur_fn) => cur_fn,
-                    None => {
-                        if let Some(value) = &n.arg {
-                            let rhs = self.get_rhs(value, true, ExprContext::Expression);
-                            self.invalidate(&rhs);
-                        }
-                        return;
+                let Some(cur_fn) = self.cur_fn else {
+                    if let Some(value) = &n.arg {
+                        let rhs = self.get_rhs(value, true, ExprContext::Expression);
+                        self.invalidate(&rhs);
                     }
+                    return;
                 };
                 let cur_fn = self.store.pointers.get_index(&Pointer::Fn(cur_fn)).unwrap();
                 let lhs = self.get_return_value(cur_fn);

@@ -45,10 +45,7 @@ impl VisitMut<'_> for Normalizer {
         n.visit_mut_children_with(self);
 
         let val = serde_json::Number::from_f64(n.value);
-        let val = match val {
-            Some(v) => v,
-            None => return,
-        };
+        let Some(val) = val else { return };
 
         if let Some(value) = val.as_f64() {
             n.value = value;
@@ -82,7 +79,7 @@ impl VisitMut<'_> for Normalizer {
                     *node = PatOrExpr::Pat(Box::new(Pat::Ident(BindingIdent {
                         node_id: NodeId::DUMMY,
                         id,
-                    })))
+                    })));
                 }
                 expr => *node = PatOrExpr::Expr(Box::new(expr)),
             },
@@ -106,14 +103,14 @@ impl VisitMut<'_> for Normalizer {
                     node_id: NodeId::DUMMY,
                     value: sym.clone(),
                     has_escape: false,
-                })
+                });
             }
             PropName::Num(num) => {
                 *n = PropName::Str(Str {
                     node_id: NodeId::DUMMY,
                     value: num.to_string().into(),
                     has_escape: false,
-                })
+                });
             }
             _ => {}
         }

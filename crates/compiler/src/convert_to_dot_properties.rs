@@ -56,7 +56,7 @@ impl Visitor<'_> {
         if is_class_prop && prop_name == &js_word!("constructor") {
             return;
         }
-        if is_valid_prop_ident(&prop_name) {
+        if is_valid_prop_ident(prop_name) {
             *prop = PropName::Ident(Ident {
                 ctxt: SyntaxContext::empty(),
                 node_id: self.program_data.new_id_from(old_node_id),
@@ -110,7 +110,7 @@ impl VisitMut<'_> for Visitor<'_> {
     fn visit_mut_class(&mut self, n: &mut Class) {
         n.extends.visit_mut_with(self);
 
-        for member in n.body.iter_mut() {
+        for member in &mut n.body {
             match member {
                 ClassMember::Method(member) => {
                     member.function.visit_mut_with(self);

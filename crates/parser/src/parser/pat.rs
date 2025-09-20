@@ -102,7 +102,7 @@ impl<I: Tokens> Parser<'_, I> {
                 let cnt = if elems.is_empty() { comma } else { comma - 1 };
                 elems.reserve(cnt);
                 for _ in 0..cnt {
-                    elems.push(None)
+                    elems.push(None);
                 }
                 comma = 0;
             }
@@ -117,9 +117,9 @@ impl<I: Tokens> Parser<'_, I> {
                 elems.push(Some(pat));
                 // Trailing comma isn't allowed
                 break;
-            } else {
-                elems.push(self.parse_binding_element().map(Some)?);
             }
+
+            elems.push(self.parse_binding_element().map(Some)?);
         }
 
         expect!(self, ']');
@@ -207,7 +207,7 @@ impl<I: Tokens> Parser<'_, I> {
                     }
                 }
                 Pat::Invalid(..) => {}
-                _ => unreachable!("invalid syntax: Pat: {:?}", pat),
+                Pat::Expr(_) => unreachable!("invalid syntax: Pat: {:?}", pat),
             }
         }
 
@@ -275,13 +275,13 @@ impl<I: Tokens> Parser<'_, I> {
                     pat,
                 });
                 break;
-            } else {
-                let (param, prop) = self.parse_constructor_param(param_start)?;
-                if let Some(prop) = prop {
-                    props.push((prop, get_span!(self, param.node_id)));
-                }
-                params.push(param);
             }
+
+            let (param, prop) = self.parse_constructor_param(param_start)?;
+            if let Some(prop) = prop {
+                props.push((prop, get_span!(self, param.node_id)));
+            }
+            params.push(param);
         }
 
         Ok((params, props))
@@ -520,7 +520,7 @@ impl<I: Tokens> Parser<'_, I> {
                     | Expr::Class(..)
                     | Expr::Tpl(..) => {
                         if !is_valid_simple_assignment_target(&expr, self.ctx().strict) {
-                            self.emit_err(span, SyntaxError::NotSimpleAssign)
+                            self.emit_err(span, SyntaxError::NotSimpleAssign);
                         }
                         match *expr {
                             Expr::Ident(i) => {
@@ -662,7 +662,8 @@ impl<I: Tokens> Parser<'_, I> {
                             }
                         }
                         Some(ExprOrSpread::Expr(expr)) => {
-                            params.push(self.reparse_expr_as_pat(pat_ty.element(), expr).map(Some)?)
+                            params
+                                .push(self.reparse_expr_as_pat(pat_ty.element(), expr).map(Some)?);
                         }
                         None => params.push(None),
                     }
@@ -760,7 +761,7 @@ impl<I: Tokens> Parser<'_, I> {
                     }
                 }
                 MaybeParenPatOrExprOrSpread::Expr(expr) => {
-                    params.push(self.reparse_expr_as_pat(pat_ty, expr.unwrap())?)
+                    params.push(self.reparse_expr_as_pat(pat_ty, expr.unwrap())?);
                 }
                 MaybeParenPatOrExprOrSpread::Pat(pat) => params.push(pat),
             }

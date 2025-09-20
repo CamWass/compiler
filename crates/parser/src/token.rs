@@ -407,12 +407,11 @@ impl From<Word> for JsWord {
 
 impl Debug for Word {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Word::Ident(s) => Display::fmt(s, f),
-            _ => {
-                let s: JsWord = self.clone().into();
-                Display::fmt(&s, f)
-            }
+        if let Word::Ident(s) = self {
+            Display::fmt(s, f)
+        } else {
+            let s: JsWord = self.clone().into();
+            Display::fmt(&s, f)
         }
     }
 }
@@ -623,7 +622,7 @@ impl Debug for Token {
     #[inline(never)]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Token::Word(w) => write!(f, "{:?}", w)?,
+            Token::Word(w) => write!(f, "{w:?}")?,
             Arrow => write!(f, "=>")?,
             Hash => write!(f, "#")?,
             At => write!(f, "@")?,
@@ -639,7 +638,7 @@ impl Debug for Token {
             Semi => write!(f, ";")?,
             Comma => write!(f, ",")?,
             BackQuote => write!(f, "`")?,
-            Template { raw, .. } => write!(f, "template token ({})", raw)?,
+            Template { raw, .. } => write!(f, "template token ({raw})")?,
             Colon => write!(f, ":")?,
             ColonColon => write!(f, "::")?,
             BinOp(op) => write!(f, "{}", BinaryOp::from(*op).as_str())?,
@@ -649,9 +648,9 @@ impl Debug for Token {
             PlusPlus => write!(f, "++")?,
             MinusMinus => write!(f, "--")?,
             Tilde => write!(f, "~")?,
-            Str { value, .. } => write!(f, "string literal ({})", value)?,
-            Regex(exp, flags) => write!(f, "regexp literal ({}, {})", exp, flags)?,
-            Num(value) => write!(f, "numeric literal ({})", value,)?,
+            Str { value, .. } => write!(f, "string literal ({value})")?,
+            Regex(exp, flags) => write!(f, "regexp literal ({exp}, {flags})")?,
+            Num(value) => write!(f, "numeric literal ({value})")?,
             BigInt(..) => write!(f, "bigint literal")?,
             Token::Error(_) => write!(f, "<lexing error>")?,
         }

@@ -122,12 +122,9 @@ impl<I: Tokens> Parser<'_, I> {
             let c = self.input.cur();
             c != end
         } {
-            let stmt = match self.parse_stmt_like(StmtParseCtx::None, top_level)? {
-                Some(s) => s,
-                None => {
-                    parsed_non_directive = true;
-                    continue;
-                }
+            let Some(stmt) = self.parse_stmt_like(StmtParseCtx::None, top_level)? else {
+                parsed_non_directive = true;
+                continue;
             };
 
             if allow_directives && !parsed_non_directive {
@@ -247,19 +244,19 @@ impl<I: Tokens> Parser<'_, I> {
 
                 let span = span!(self, start);
 
-                self.verify_break_continue(is_break, &label, span);
+                self.verify_break_continue(is_break, label.as_ref(), span);
 
                 if is_break {
                     return Ok(Some(Stmt::Break(BreakStmt {
                         node_id: node_id!(self, span),
                         label,
                     })));
-                } else {
-                    return Ok(Some(Stmt::Continue(ContinueStmt {
-                        node_id: node_id!(self, span),
-                        label,
-                    })));
                 }
+
+                return Ok(Some(Stmt::Continue(ContinueStmt {
+                    node_id: node_id!(self, span),
+                    label,
+                })));
             }
             tok!("debugger") => {
                 return self.parse_debugger_stmt(start).map(Some);
@@ -401,11 +398,11 @@ impl<I: Tokens> Parser<'_, I> {
             // self.input.bump();
             // return self.parseFunctionStatement(node, true, context.is_none());
 
-            if parse_ctx != StmtParseCtx::None {
-                todo!("async fn not allowed in single stmt context");
-            } else {
+            if parse_ctx == StmtParseCtx::None {
                 return self.parse_async_fn_decl().map(|s| s.map(Stmt::Decl));
             }
+
+            todo!("async fn not allowed in single stmt context");
         }
 
         // If the statement does not start with a statement keyword or a
@@ -505,16 +502,16 @@ impl<I: Tokens> Parser<'_, I> {
         }
     }
 
-    fn verify_break_continue(&self, is_break: bool, label: &Option<Ident>, span: Span) {
+    fn verify_break_continue(&self, is_break: bool, label: Option<&Ident>, span: Span) {
         if is_break {
-            if label.is_some() && !self.labels.contains(&label.as_ref().unwrap().sym) {
+            if label.is_some() && !self.labels.contains(&label.unwrap().sym) {
                 self.emit_err(span, SyntaxError::TS1116);
             } else if !self.ctx().is_break_allowed() {
                 self.emit_err(span, SyntaxError::TS1105);
             }
         } else if !self.ctx().is_continue_allowed() {
             self.emit_err(span, SyntaxError::TS1115);
-        } else if label.is_some() && !self.labels.contains(&label.as_ref().unwrap().sym) {
+        } else if label.is_some() && !self.labels.contains(&label.unwrap().sym) {
             self.emit_err(span, SyntaxError::TS1107);
         }
     }
@@ -698,9 +695,8 @@ impl<I: Tokens> Parser<'_, I> {
 
         expect_exact!(self, ';');
 
-        let assign_props = match assign_props {
-            AssignProps::Buffer(props) => props,
-            _ => unreachable!(),
+        let AssignProps::Buffer(assign_props) = assign_props else {
+            unreachable!()
         };
         for prop in assign_props {
             self.emit_err(prop, SyntaxError::AssignProperty);
@@ -982,7 +978,7 @@ impl<I: Tokens> Parser<'_, I> {
             // Type annotation.
             if self.syntax().typescript() && eat!(self, ':') {
                 // Type annotation.
-                self.in_type().parse_with(|parser| parser.parse_ts_type())?;
+                self.in_type().parse_with(Parser::parse_ts_type)?;
                 // self.emit_err(ty.span(), SyntaxError::TS1196);
             }
             expect!(self, ')');

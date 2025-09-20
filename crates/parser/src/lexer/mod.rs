@@ -126,11 +126,8 @@ impl<'src> Lexer<'src> {
     }
 
     fn read_token(&mut self) -> LexResult<Option<Token>> {
-        let b = match self.cur_byte() {
-            Some(ch) => ch,
-            None => {
-                return Ok(None);
-            }
+        let Some(b) = self.cur_byte() else {
+            return Ok(None);
         };
 
         // A lookup table of `byte -> fn(l: &mut Lexer) -> Token` is slower than
@@ -240,7 +237,7 @@ impl<'src> Lexer<'src> {
                     // unexpected character
                     self.bump();
                     let start = self.cur_pos();
-                    self.error_span(pos_span(start), SyntaxError::UnexpectedChar { c: ch })?
+                    Lexer::error_span(pos_span(start), SyntaxError::UnexpectedChar { c: ch })?
                 }
             }
         }
@@ -262,12 +259,9 @@ impl<'src> Lexer<'src> {
     fn read_token_dot(&mut self) -> LexResult<Option<Token>> {
         debug_assert!(self.is(b'.'));
 
-        let next = match self.peek_nth(1) {
-            Some(next) => next,
-            None => {
-                self.advance(1); // '.'
-                return Ok(Some(tok!('.')));
-            }
+        let Some(next) = self.peek_nth(1) else {
+            self.advance(1); // '.'
+            return Ok(Some(tok!('.')));
         };
 
         if next.is_ascii_digit() {
@@ -334,7 +328,7 @@ impl<'src> Lexer<'src> {
 
         // check for **
         if is_mul && self.eat(b'*') {
-            token = BinOp(Exp)
+            token = BinOp(Exp);
         }
 
         if self.eat(b'=') {
@@ -343,7 +337,7 @@ impl<'src> Lexer<'src> {
                 BinOp(Mod) => AssignOp(ModAssign),
                 BinOp(Exp) => AssignOp(ExpAssign),
                 _ => unreachable!(),
-            }
+            };
         }
 
         token
@@ -592,12 +586,12 @@ impl<'src> Lexer<'src> {
             };
             if let Some(flag) = flag {
                 if mods.contains(flag) {
-                    self.error(self.cur_pos(), SyntaxError::DuplicateRegExpFlags)?
+                    self.error(self.cur_pos(), SyntaxError::DuplicateRegExpFlags)?;
                 } else {
                     mods.insert(flag);
                 }
             } else if ast::Ident::is_valid_continue(ch) || ch == '\\' {
-                self.error(self.cur_pos(), SyntaxError::MalformedRegExpFlags)?
+                self.error(self.cur_pos(), SyntaxError::MalformedRegExpFlags)?;
             } else {
                 break;
             }
@@ -628,7 +622,7 @@ impl<'src> Lexer<'src> {
             let ch = self.read_code_point()?;
 
             if !self.eat(b'}') {
-                self.error(start, SyntaxError::InvalidUnicodeEscape)?
+                self.error(start, SyntaxError::InvalidUnicodeEscape)?;
             }
 
             Ok(ch)
@@ -673,13 +667,13 @@ impl<'src> Lexer<'src> {
                         if let Some(s) = lexer.read_escaped_char(false)? {
                             out.push(s);
                         }
-                        has_escape = true
+                        has_escape = true;
                     }
                     char_bytes::LINE_FEED | char_bytes::CARRIAGE_RETURN => {
                         // String literals cannot span multiple lines.
                         // LINE_SEPARATOR and PARAGRAPH_SEPARATOR are permitted.
                         let pos = lexer.cur_pos();
-                        lexer.error(pos, SyntaxError::UnterminatedStrLit)?
+                        lexer.error(pos, SyntaxError::UnterminatedStrLit)?;
                     }
                     _ => {
                         out.push(lexer.next_char());
@@ -701,7 +695,7 @@ impl<'src> Lexer<'src> {
         self.advance(1); // '\'
         let ch = match self.cur() {
             Some(ch) => ch,
-            None => self.error_span(pos_span(start), SyntaxError::InvalidStrEscape)?,
+            None => Lexer::error_span(pos_span(start), SyntaxError::InvalidStrEscape)?,
         };
         self.bump();
 
@@ -838,7 +832,7 @@ impl<'src> Lexer<'src> {
                     if !s.is_empty() {
                         first = false;
                     }
-                    buf.push_str(s)
+                    buf.push_str(s);
                 }
 
                 lexer.cur_byte()
@@ -851,7 +845,7 @@ impl<'src> Lexer<'src> {
                         lexer.advance(1); // '\'
 
                         if !lexer.eat(b'u') {
-                            lexer.error_span(pos_span(start), SyntaxError::ExpectedUnicodeEscape)?
+                            Lexer::error_span(pos_span(start), SyntaxError::ExpectedUnicodeEscape)?;
                         }
 
                         let ch = lexer.read_unicode_escape(start)?;
@@ -931,10 +925,10 @@ impl<'src> Lexer<'src> {
                     if c == b'$' {
                         self.advance(2); // '${'
                         return Ok(tok!("${"));
-                    } else {
-                        self.advance(1); // '`'
-                        return Ok(tok!('`'));
                     }
+
+                    self.advance(1); // '`'
+                    return Ok(tok!('`'));
                 }
 
                 let raw = self.slice_to_cur(start);
@@ -970,7 +964,7 @@ impl<'src> Lexer<'src> {
                         let new_chunk = self.slice_to_cur(cooked_chunk_start);
                         existing_cooked.push_str(new_chunk);
                     }
-                    _ => {}
+                    CookedType::None => {}
                 }
 
                 match self.read_escaped_char(true) {
@@ -1001,7 +995,7 @@ impl<'src> Lexer<'src> {
                             existing_cooked.push_str(new_chunk);
                             existing_cooked.push('\n');
                         }
-                        _ => {}
+                        CookedType::None => {}
                     }
 
                     self.advance(2); // '\r\n'

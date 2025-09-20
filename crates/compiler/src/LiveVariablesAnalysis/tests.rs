@@ -671,15 +671,9 @@ where
     GLOBALS.set(&Globals::new(), || {
         // Set up test case
         let src = if is_async {
-            format!(
-                "async function _FUNCTION(param1, param2 = 1, ...param3){{{}}}",
-                src
-            )
+            format!("async function _FUNCTION(param1, param2 = 1, ...param3){{{src}}}")
         } else {
-            format!(
-                "function _FUNCTION(param1, param2 = 1, ...param3){{{}}}",
-                src
-            )
+            format!("function _FUNCTION(param1, param2 = 1, ...param3){{{src}}}")
         };
         let mut program = Program::Script(parse_script(&src));
 
@@ -748,7 +742,7 @@ fn get_flow_state_at_x(liveness: &LiveVariablesAnalysis<Function>) -> Option<Lin
         .cfg
         .entry
         .visit_with(&mut v);
-    v.flow_state.cloned()
+    v.flow_state.copied()
 }
 
 struct FlowStateFinder<'a, 'ast, P>
@@ -834,7 +828,7 @@ fn get_flow_state_at_declaration(
         .cfg
         .entry
         .visit_with(&mut v);
-    v.flow_state.cloned()
+    v.flow_state.copied()
 }
 
 fn assert_escaped(src: &str, name: &str) {
@@ -884,9 +878,7 @@ fn parse_script(input: &str) -> Script {
         error = true;
     }
 
-    if error {
-        panic!("Failed to parse");
-    }
+    assert!(!error, "Failed to parse");
 
     res
 }

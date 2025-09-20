@@ -32,7 +32,7 @@ impl Tester<'_> {
 
         match out {
             Ok(ret) => ret,
-            Err(stderr) => panic!("Stderr:\n{}", stderr),
+            Err(stderr) => panic!("Stderr:\n{stderr}",),
         }
     }
 
@@ -56,7 +56,7 @@ impl Tester<'_> {
                 .map_err(|e| e.into_diagnostic(self.handler).emit());
 
             for e in p.take_errors() {
-                e.into_diagnostic(self.handler).emit()
+                e.into_diagnostic(self.handler).emit();
             }
 
             res?

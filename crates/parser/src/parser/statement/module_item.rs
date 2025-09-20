@@ -167,41 +167,40 @@ impl<I: Tokens> Parser<'_, I> {
     /// Parse `foo`, `foo2 as bar` in `import { foo, foo2 as bar }`
     fn parse_import_specifier(&mut self) -> PResult<ImportSpecifier> {
         let start = self.input.cur_pos();
-        match self.input.cur() {
-            Some(&Word(..)) => {
-                let orig_name = self.parse_ident_name()?;
+        if let Some(&Word(..)) = self.input.cur() {
+            let orig_name = self.parse_ident_name()?;
 
-                if eat!(self, "as") {
-                    let local = self.parse_binding_ident()?.id;
-                    let hi = get_span!(self, local.node_id).hi();
-                    let span = Span::new(start, hi);
-                    return Ok(ImportSpecifier::Named(ImportNamedSpecifier {
-                        node_id: node_id!(self, span),
-                        local,
-                        imported: Some(orig_name),
-                    }));
-                }
-
-                // Handle difference between
-                //
-                // 'ImportedBinding'
-                // 'IdentifierName' as 'ImportedBinding'
-                if self.ctx().is_reserved_word(&orig_name.sym) {
-                    syntax_error!(
-                        self,
-                        get_span!(self, orig_name.node_id),
-                        SyntaxError::ReservedWordInImport
-                    )
-                }
-
-                let local = orig_name;
-                Ok(ImportSpecifier::Named(ImportNamedSpecifier {
-                    node_id: node_id!(self, span!(self, start)),
+            if eat!(self, "as") {
+                let local = self.parse_binding_ident()?.id;
+                let hi = get_span!(self, local.node_id).hi();
+                let span = Span::new(start, hi);
+                return Ok(ImportSpecifier::Named(ImportNamedSpecifier {
+                    node_id: node_id!(self, span),
                     local,
-                    imported: None,
-                }))
+                    imported: Some(orig_name),
+                }));
             }
-            _ => unexpected!(self, "an identifier"),
+
+            // Handle difference between
+            //
+            // 'ImportedBinding'
+            // 'IdentifierName' as 'ImportedBinding'
+            if self.ctx().is_reserved_word(&orig_name.sym) {
+                syntax_error!(
+                    self,
+                    get_span!(self, orig_name.node_id),
+                    SyntaxError::ReservedWordInImport
+                )
+            }
+
+            let local = orig_name;
+            Ok(ImportSpecifier::Named(ImportNamedSpecifier {
+                node_id: node_id!(self, span!(self, start)),
+                local,
+                imported: None,
+            }))
+        } else {
+            unexpected!(self, "an identifier")
         }
     }
 
@@ -379,7 +378,7 @@ impl<I: Tokens> Parser<'_, I> {
             } else if self.input.syntax().export_default_from()
                 && (is!(self, "from") || (is!(self, ',') && peeked_is!(self, '{')))
             {
-                export_default = Some(self.new_ident("default".into(), self.input.prev_span()))
+                export_default = Some(self.new_ident("default".into(), self.input.prev_span()));
             } else {
                 let expr = self
                     .include_in_expr(true)
@@ -430,7 +429,7 @@ impl<I: Tokens> Parser<'_, I> {
                     && self
                         .input
                         .peek()
-                        .map(|t| t.follows_keyword_let())
+                        .map(Token::follows_keyword_let)
                         .unwrap_or(false))
         {
             self.parse_var_stmt(false).map(Decl::Var).map(Some)?
@@ -495,19 +494,19 @@ impl<I: Tokens> Parser<'_, I> {
             let has_ns = export_ns.is_some();
             let has_default = default.is_some();
             if has_ns || has_default {
-                expect!(self, ',')
+                expect!(self, ',');
             }
 
             expect!(self, '{');
             let mut specifiers = vec![];
             if let Some(s) = export_ns {
-                specifiers.push(s)
+                specifiers.push(s);
             }
             if let Some(default) = default {
                 specifiers.push(ExportSpecifier::Default(ExportDefaultSpecifier {
                     node_id: node_id_from!(self, default.node_id),
                     exported: default,
-                }))
+                }));
             }
             let mut first = true;
             while is_one_of!(self, ',', IdentName) {
@@ -612,7 +611,7 @@ impl IsDirective for ModuleItem {
     fn as_ref(&self) -> Option<&Stmt> {
         match self {
             ModuleItem::Stmt(s) => Some(s),
-            _ => None,
+            ModuleItem::ModuleDecl(_) => None,
         }
     }
 }

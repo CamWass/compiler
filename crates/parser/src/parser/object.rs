@@ -156,12 +156,7 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<'_, I> {
         if self.input.eat(&tok!('*')) {
             let name = self.parse_prop_name()?;
             return self
-                .parse_fn_args_body(
-                    start,
-                    |parser| parser.parse_unique_formal_params(),
-                    false,
-                    true,
-                )
+                .parse_fn_args_body(start, Parser::parse_unique_formal_params, false, true)
                 .map(|function| {
                     Prop::Method(MethodProp {
                         node_id: node_id_from!(self, function.node_id),
@@ -215,12 +210,7 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<'_, I> {
         // Handle `a(){}` (and async(){} / get(){} / set(){})
         if (self.input.syntax().typescript() && is!(self, '<')) || is!(self, '(') {
             return self
-                .parse_fn_args_body(
-                    start,
-                    |parser| parser.parse_unique_formal_params(),
-                    false,
-                    false,
-                )
+                .parse_fn_args_body(start, Parser::parse_unique_formal_params, false, false)
                 .map(|function| {
                     Prop::Method(MethodProp {
                         node_id: node_id_from!(self, function.node_id),
@@ -376,7 +366,7 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<'_, I> {
                     js_word!("async") => self
                         .parse_fn_args_body(
                             start,
-                            |parser| parser.parse_unique_formal_params(),
+                            Parser::parse_unique_formal_params,
                             true,
                             is_generator,
                         )

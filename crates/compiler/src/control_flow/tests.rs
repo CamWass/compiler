@@ -204,9 +204,7 @@ fn parse_script(input: &str) -> ast::Script {
         error = true;
     }
 
-    if error {
-        panic!("Failed to parse");
-    }
+    assert!(!error, "Failed to parse");
 
     res
 }

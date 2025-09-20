@@ -244,7 +244,7 @@ impl Lexer<'_> {
         match self.cur() {
             Some(ch) if ast::Ident::is_valid_start(ch) => {
                 let span = pos_span(self.cur_pos());
-                self.error_span(span, SyntaxError::IdentAfterNum)?
+                Lexer::error_span(span, SyntaxError::IdentAfterNum)?
             }
             _ => Ok(()),
         }
@@ -440,7 +440,7 @@ impl Lexer<'_> {
                 // String::with_capacity()?
                 let mut buffer = String::new();
 
-                write!(buffer, "{}.", val).unwrap();
+                write!(buffer, "{val}.").unwrap();
 
                 if dec_val.is_some() {
                     buffer.push_str(&raw);
@@ -461,12 +461,11 @@ impl Lexer<'_> {
         if self.is(b'e') || self.is(b'E') {
             self.advance(1); // 'e' or 'E'
 
-            let next = match self.cur_byte() {
-                Some(next) => next,
-                None => {
-                    let pos = self.cur_pos();
-                    self.error(pos, SyntaxError::NumLitTerminatedWithExp)?
-                }
+            let next = if let Some(next) = self.cur_byte() {
+                next
+            } else {
+                let pos = self.cur_pos();
+                self.error(pos, SyntaxError::NumLitTerminatedWithExp)?
             };
 
             let positive = if next == b'+' || next == b'-' {
@@ -479,7 +478,7 @@ impl Lexer<'_> {
             let exp = self.read_number_no_dot(10)?;
             let flag = if positive { '+' } else { '-' };
             // TODO(swc):
-            val = format!("{}e{}{}", val, flag, exp)
+            val = format!("{val}e{flag}{exp}")
                 .parse()
                 .expect("failed to parse float literal");
         }

@@ -370,9 +370,7 @@ fn parse_script(input: &str) -> Script {
         error = true;
     }
 
-    if error {
-        panic!("Failed to parse");
-    }
+    assert!(!error, "Failed to parse");
 
     res
 }
@@ -447,7 +445,7 @@ impl<'ast> Visit<'ast> for InfoExtractor<'ast> {
         if &node.label.sym == "D" {
             assert!(self.extracted_def == None, "Multiple D: labels in test src");
             self.extracted_def = Some(Node::from(node.body.as_ref()));
-        } else if node.label.sym.starts_with("U") {
+        } else if node.label.sym.starts_with('U') {
             self.extracted_uses.push(node.body.node_id());
         }
         node.body.visit_with(self);

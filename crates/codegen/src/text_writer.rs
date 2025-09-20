@@ -68,7 +68,7 @@ impl<'a> JsWriter<'a> {
 
             if let Some(span) = span {
                 if !span.is_dummy() {
-                    self.srcmap(span.lo())
+                    self.srcmap(span.lo());
                 }
             }
 
@@ -76,7 +76,7 @@ impl<'a> JsWriter<'a> {
 
             if let Some(span) = span {
                 if !span.is_dummy() {
-                    self.srcmap(span.hi())
+                    self.srcmap(span.hi());
                 }
             }
         }
@@ -92,7 +92,7 @@ impl<'a> JsWriter<'a> {
                     line: self.line_count as _,
                     col: self.line_pos as _,
                 },
-            ))
+            ));
         }
     }
 }
@@ -110,9 +110,8 @@ impl JsWriter<'_> {
     }
 
     /// This *may* write semicolon.
-    pub(super) fn write_semi(&mut self, span: Option<Span>) -> Result {
+    pub(super) fn write_semi(&mut self, span: Option<Span>) {
         self.pending_semi = Some(span.unwrap_or(DUMMY_SP));
-        Ok(())
     }
     pub(super) fn write_space(&mut self) -> Result {
         self.commit_pending_semi()?;
@@ -148,7 +147,7 @@ impl JsWriter<'_> {
         self.commit_pending_semi()?;
         if !s.is_empty() {
             if !span.is_dummy() {
-                self.srcmap(span.lo())
+                self.srcmap(span.lo());
             }
 
             self.write(None, s)?;
@@ -156,11 +155,11 @@ impl JsWriter<'_> {
             let line_start_of_s = compute_line_starts(s);
             if line_start_of_s.len() > 1 {
                 self.line_count = self.line_count + line_start_of_s.len() - 1;
-                self.line_pos = s.len() - line_start_of_s.last().cloned().unwrap_or(0);
+                self.line_pos = s.len() - line_start_of_s.last().copied().unwrap_or(0);
             }
 
             if !span.is_dummy() {
-                self.srcmap(span.hi())
+                self.srcmap(span.hi());
             }
         }
 

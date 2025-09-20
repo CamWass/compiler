@@ -254,17 +254,17 @@ impl SyntaxError {
             SyntaxError::UnterminatedStrLit => "Unterminated string constant".into(),
             SyntaxError::ExpectedUnicodeEscape => "Expected unicode escape".into(),
             SyntaxError::EscapeInReservedWord { word } => {
-                format!("Unexpected escape sequence in reserved word: {}", word).into()
+                format!("Unexpected escape sequence in reserved word: {word}").into()
             }
             SyntaxError::UnterminatedRegxp => "Unterminated regexp literal".into(),
             SyntaxError::UnterminatedTpl => "Unterminated template".into(),
             SyntaxError::IdentAfterNum => "Identifier cannot follow number".into(),
-            SyntaxError::UnexpectedChar { c } => format!("Unexpected character {:?}", c).into(),
+            SyntaxError::UnexpectedChar { c } => format!("Unexpected character {c:?}").into(),
             SyntaxError::InvalidStrEscape => "Invalid string escape".into(),
             SyntaxError::InvalidUnicodeEscape => "Invalid unicode escape".into(),
             SyntaxError::InvalidCodePoint => "Invalid unicode code point".into(),
             SyntaxError::ExpectedHexChars { count } => {
-                format!("Expected {} hex characters", count).into()
+                format!("Expected {count} hex characters").into()
             }
             SyntaxError::InvalidEscapeInTemplate => "Invalid escape sequence in template".into(),
             SyntaxError::InvalidNumericEscapeInStrict => {
@@ -288,12 +288,12 @@ impl SyntaxError {
             SyntaxError::LineBreakBeforeArrow => {
                 "Unexpected line break between arrow head and arrow".into()
             }
-            SyntaxError::Unexpected { got, expected } => format!("Unexpected token `{}`. Expected {}", got, expected).into(),
+            SyntaxError::Unexpected { got, expected } => format!("Unexpected token `{got}`. Expected {expected}").into(),
 
             SyntaxError::ReservedWordInImport => "cannot import as reserved word".into(),
             SyntaxError::AssignProperty => "assignment property is invalid syntax".into(),
             SyntaxError::Expected(token, got) => {
-                format!("Expected `{:?}`, got `{}`", token, got).into()
+                format!("Expected `{token:?}`, got `{got}`").into()
             }
             SyntaxError::ExpectedSemiForExprStmt { .. } => "Expected ';', '}' or <eof>".into(),
 
@@ -322,7 +322,7 @@ impl SyntaxError {
             SyntaxError::NotSimpleAssign => "Cannot assign to this".into(),
             SyntaxError::ExpectedIdent => "Expected ident".into(),
             SyntaxError::DuplicateLabel(label) => {
-                format!("Label {} is already declared", label).into()
+                format!("Label {label} is already declared").into()
             }
             // SyntaxError::AsyncGenerator => "An async function cannot be generator".into(),
             SyntaxError::NonTopLevelImportExport => {
@@ -421,9 +421,9 @@ impl SyntaxError {
             // SyntaxError::TS1014 => "A rest parameter must be last in a parameter list".into(),
             SyntaxError::TS1015 => "Parameter cannot have question mark and initializer".into(),
             SyntaxError::TS1029(left, right) => {
-                format!("'{}' modifier must precede '{}' modifier.", left, right).into()
+                format!("'{left}' modifier must precede '{right}' modifier.").into()
             }
-            SyntaxError::TS1030(word) => format!("'{}' modifier already seen.", word).into(),
+            SyntaxError::TS1030(word) => format!("'{word}' modifier already seen.").into(),
             SyntaxError::TS1031 => "`declare` modifier cannot appear on a class element".into(),
             SyntaxError::TS1038 => {
                 "`declare` modifier not allowed for code already in an ambient context".into()
@@ -435,8 +435,7 @@ impl SyntaxError {
                                     ECMAScript 5 and higher"
                 .into(),
             SyntaxError::TS1089(word) => format!(
-                "'{}' modifier cannot appear on a constructor declaration",
-                word
+                "'{word}' modifier cannot appear on a constructor declaration"
             )
             .into(),
             SyntaxError::TS1092 => {
@@ -481,8 +480,7 @@ impl SyntaxError {
                 "`abstract` modifier can only appear on a class or method declaration".into()
             }
             SyntaxError::TS1243(left, right) => format!(
-                "'{}' modifier cannot be used with '{}' modifier.",
-                left, right
+                "'{left}' modifier cannot be used with '{right}' modifier."
             )
             .into(),
             SyntaxError::TS2369 => {

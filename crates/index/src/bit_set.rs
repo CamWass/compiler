@@ -450,7 +450,7 @@ impl<T: Idx> SparseBitSet<T> {
 
     fn to_dense(&self) -> BitSet<T> {
         let mut dense = BitSet::new_empty(self.domain_size);
-        for elem in self.elems.iter() {
+        for elem in &self.elems {
             dense.insert(*elem);
         }
         dense
@@ -536,14 +536,11 @@ impl<T: Idx> HybridBitSet<T> {
     }
 
     pub fn superset(&self, other: &HybridBitSet<T>) -> bool {
-        match (self, other) {
-            (HybridBitSet::Dense(self_dense), HybridBitSet::Dense(other_dense)) => {
-                self_dense.superset(other_dense)
-            }
-            _ => {
-                assert!(self.domain_size() == other.domain_size());
-                other.iter().all(|elem| self.contains(elem))
-            }
+        if let (HybridBitSet::Dense(self_dense), HybridBitSet::Dense(other_dense)) = (self, other) {
+            self_dense.superset(other_dense)
+        } else {
+            assert!(self.domain_size() == other.domain_size());
+            other.iter().all(|elem| self.contains(elem))
         }
     }
 
@@ -710,7 +707,7 @@ impl<T: Idx> GrowableBitSet<T> {
 
         let min_num_words = num_words(min_domain_size);
         if self.bit_set.words.len() < min_num_words {
-            self.bit_set.words.resize(min_num_words, 0)
+            self.bit_set.words.resize(min_num_words, 0);
         }
     }
 
@@ -849,7 +846,7 @@ impl<R: Idx, C: Idx> BitMatrix<R, C> {
             words: iter::repeat(row.words())
                 .take(num_rows)
                 .flatten()
-                .cloned()
+                .copied()
                 .collect(),
             marker: PhantomData,
         }

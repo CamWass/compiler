@@ -140,7 +140,7 @@ impl Deriver {
                             .map(|(i, f)| {
                                 // Since the field is unnamed, we need to generate
                                 // a variable name to bind it to. e.g. _0, _1, _2
-                                let field_name = Ident::new(&format!("_{}", i), f.ty.span());
+                                let field_name = Ident::new(&format!("_{i}"), f.ty.span());
                                 // The bound variable.
                                 let var = Pat::Ident(PatIdent {
                                     attrs: vec![],

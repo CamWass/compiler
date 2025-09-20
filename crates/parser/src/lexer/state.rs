@@ -76,7 +76,7 @@ impl Tokens for Lexer<'_> {
             self.errors.borrow_mut().append(&mut *strict_errors);
         }
 
-        self.ctx = ctx
+        self.ctx = ctx;
     }
 
     fn ctx(&self) -> Context {
@@ -91,7 +91,7 @@ impl Tokens for Lexer<'_> {
     }
 
     fn set_expr_allowed(&mut self, allow: bool) {
-        self.set_expr_allowed(allow)
+        self.set_expr_allowed(allow);
     }
 
     fn token_context(&self) -> &TokenContexts {
@@ -253,7 +253,7 @@ impl TokenContexts {
         self.0.pop()
     }
     pub fn current(&self) -> Option<TokenContext> {
-        self.0.last().cloned()
+        self.0.last().copied()
     }
     fn push(&mut self, t: TokenContext) {
         self.0.push(t);

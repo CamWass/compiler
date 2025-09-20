@@ -92,7 +92,7 @@ fn unresolved_binding_ident() {
     test_transform(
         "(function (ts) {}(ts || (ts = {})));",
         "(function (a) {}(ts || (ts = {})));",
-    )
+    );
 }
 
 // Tests from closure:

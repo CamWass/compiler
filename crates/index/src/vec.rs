@@ -661,17 +661,17 @@ impl<I: Idx, T> IndexVec<I, T> {
 
     #[inline]
     pub fn shrink_to_fit(&mut self) {
-        self.raw.shrink_to_fit()
+        self.raw.shrink_to_fit();
     }
 
     #[inline]
     pub fn swap(&mut self, a: I, b: I) {
-        self.raw.swap(a.index(), b.index())
+        self.raw.swap(a.index(), b.index());
     }
 
     #[inline]
     pub fn truncate(&mut self, a: usize) {
-        self.raw.truncate(a)
+        self.raw.truncate(a);
     }
 
     #[inline]
@@ -739,7 +739,7 @@ impl<I: Idx, T> IndexVec<I, T> {
 impl<I: Idx, T: Clone> IndexVec<I, T> {
     #[inline]
     pub fn resize(&mut self, new_len: usize, value: T) {
-        self.raw.resize(new_len, value)
+        self.raw.resize(new_len, value);
     }
 }
 

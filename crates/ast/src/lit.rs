@@ -85,28 +85,28 @@ bitflags! {
 impl Display for RegexFlags {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         if self.contains(Self::D) {
-            f.write_char('d')?
+            f.write_char('d')?;
         }
         if self.contains(Self::G) {
-            f.write_char('g')?
+            f.write_char('g')?;
         }
         if self.contains(Self::I) {
-            f.write_char('i')?
+            f.write_char('i')?;
         }
         if self.contains(Self::M) {
-            f.write_char('m')?
+            f.write_char('m')?;
         }
         if self.contains(Self::S) {
-            f.write_char('s')?
+            f.write_char('s')?;
         }
         if self.contains(Self::U) {
-            f.write_char('u')?
+            f.write_char('u')?;
         }
         if self.contains(Self::V) {
-            f.write_char('v')?
+            f.write_char('v')?;
         }
         if self.contains(Self::Y) {
-            f.write_char('y')?
+            f.write_char('y')?;
         }
         Ok(())
     }

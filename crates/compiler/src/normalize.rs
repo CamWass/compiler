@@ -93,7 +93,7 @@ impl VisitMut<'_> for NormalizeAssignShorthand<'_> {
 }
 
 /// Visits statements that are in single-statement contexts (e.g. for loop body).
-/// If the statement is not a [BlockStmt], it is replaced with a [BlockStmt]
+/// If the statement is not a [`BlockStmt`], it is replaced with a [`BlockStmt`]
 /// containing the statement as its only child. E.g.
 /// ```js
 /// for (;;) foo();
@@ -118,10 +118,10 @@ impl BlockCreator<'_> {
 
     fn create_block_from_stmt(&mut self, stmt: Stmt) -> Stmt {
         let node_id = self.program_data.new_id_from(stmt.node_id());
-        let stmts = if !matches!(stmt, Stmt::Empty(_)) {
-            vec![stmt]
-        } else {
+        let stmts = if matches!(stmt, Stmt::Empty(_)) {
             vec![]
+        } else {
+            vec![stmt]
         };
         Stmt::Block(BlockStmt { node_id, stmts })
     }

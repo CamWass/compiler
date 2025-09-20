@@ -281,7 +281,7 @@ impl
             Instruction::ArithmeticInstruction(n) => {
                 flow_through_arithmetic_instruction(n, &self.lattice_elements[input])
             }
-            _ => unreachable!(),
+            Instruction::ImplicitReturn => unreachable!(),
         };
         self.add_lattice_element(elem)
     }
@@ -311,20 +311,16 @@ fn flow_through_arithmetic_instruction(
     let mut left_const = None;
     if let Value::NumberValue(n) = a_inst.operand1 {
         left_const = Some(n.value);
-    } else {
-        if let Some(n) = input.const_map.get(&a_inst.operand1) {
-            left_const = Some(*n);
-        }
+    } else if let Some(n) = input.const_map.get(&a_inst.operand1) {
+        left_const = Some(*n);
     }
 
     // Do the same thing to the right.
     let mut right_const = None;
     if let Value::NumberValue(n) = a_inst.operand2 {
         right_const = Some(n.value);
-    } else {
-        if let Some(n) = input.const_map.get(&a_inst.operand2) {
-            right_const = Some(*n);
-        }
+    } else if let Some(n) = input.const_map.get(&a_inst.operand2) {
+        right_const = Some(*n);
     }
 
     // If both are known constant we can perform the operation.
@@ -647,9 +643,7 @@ fn parse_script(input: &str) -> Script {
         error = true;
     }
 
-    if error {
-        panic!("Failed to parse");
-    }
+    assert!(!error, "Failed to parse");
 
     res
 }

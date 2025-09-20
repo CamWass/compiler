@@ -226,11 +226,10 @@ fn error_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
 
             let dir = dir.clone();
             // let error_reference_dir = error_reference_dir.clone();
-            let name = format!("test262::error_reporting::{}::{}", err_type, file_name);
+            let name = format!("test262::error_reporting::{err_type}::{file_name}");
             add_test(tests, name, ignore, move || {
                 eprintln!(
-                    "\n\n========== Running error reporting test {}\nSource:\n{}\n",
-                    file_name, input
+                    "\n\n========== Running error reporting test {file_name}\nSource:\n{input}\n"
                 );
 
                 let path = dir.join(&file_name);
@@ -298,11 +297,10 @@ fn identity_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
         let module = file_name.contains("module");
 
         let root = root.clone();
-        let name = format!("test262::identity::{}", file_name);
+        let name = format!("test262::identity::{file_name}");
         add_test(tests, name, ignore, move || {
             eprintln!(
-                "\n\n\n========== Running test {}\nSource:\n{}\nExplicit:\n{}",
-                file_name, input, explicit
+                "\n\n\n========== Running test {file_name}\nSource:\n{input}\nExplicit:\n{explicit}"
             );
 
             if module {

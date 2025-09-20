@@ -166,7 +166,7 @@ impl<I: Tokens> Parser<'_, I> {
                         self.emit_err(
                             get_span!(self, cond.node_id()),
                             SyntaxError::NotSimpleAssign,
-                        )
+                        );
                     }
                     let is_eval_or_arguments = match &cond {
                         MaybeParen::Expr(cond) => match cond.as_ref() {
@@ -564,7 +564,7 @@ impl<I: Tokens> Parser<'_, I> {
                     if !no_call
                         && p.at_possible_async(match &obj {
                             MaybeParenExprOrSuper::Expr(expr) => expr,
-                            _ => unreachable!(),
+                            MaybeParenExprOrSuper::Super(_) => unreachable!(),
                         })
                     {
                         // Almost certainly this is a generic async function `async <T>() => ...
@@ -597,7 +597,7 @@ impl<I: Tokens> Parser<'_, I> {
                             MaybeParenExprOrSuper::Expr(obj) => {
                                 obj.clone_node(program_data!(p)).unwrap()
                             }
-                            _ => unreachable!(),
+                            MaybeParenExprOrSuper::Super(_) => unreachable!(),
                         };
                         p.parse_tagged_tpl(tag)
                             .map(|expr| (Box::new(Expr::TaggedTpl(expr)).into(), true))
@@ -1045,7 +1045,7 @@ impl<I: Tokens> Parser<'_, I> {
                     self.emit_err(span!(self, modifier_start), SyntaxError::TS2369);
                 }
 
-                items.push(MaybeParenPatOrExprOrSpread::Pat(pat))
+                items.push(MaybeParenPatOrExprOrSpread::Pat(pat));
             } else {
                 if has_modifier {
                     self.emit_err(span!(self, modifier_start), SyntaxError::TS2369);
@@ -1071,7 +1071,7 @@ impl<I: Tokens> Parser<'_, I> {
                         matches!(**expr, Expr::Ident(..))
                     }
                     MaybeParenPatOrExprOrSpread::Pat(Pat::Ident(..)) => true,
-                    _ => false,
+                    MaybeParenPatOrExprOrSpread::Pat(_) => false,
                 }
             } {
                 let params = self
@@ -1133,7 +1133,7 @@ impl<I: Tokens> Parser<'_, I> {
                     return self.parse_subscripts(MaybeParenExprOrSuper::Expr(expr), true);
                 }
 
-                unexpected!(self, "target")
+                unexpected!(self, "target");
             }
 
             let potential_arrow_start = self.potential_arrow_start;
@@ -1281,7 +1281,7 @@ impl<I: Tokens> Parser<'_, I> {
         trace_cur!(self, parse_paren_expr_or_arrow_fn);
 
         let expr_start = async_span
-            .map(|x| x.lo())
+            .map(Span::lo)
             .unwrap_or_else(|| self.input.cur_pos());
 
         // At this point, we can't know if it's parenthesized
@@ -1777,7 +1777,7 @@ fn is_import(obj: &MaybeParenExprOrSuper) -> bool {
             ),
             MaybeParen::Wrapped(_) => false,
         },
-        _ => false,
+        MaybeParenExprOrSuper::Super(_) => false,
     }
 }
 

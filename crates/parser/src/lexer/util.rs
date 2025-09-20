@@ -184,7 +184,7 @@ impl Lexer<'_> {
     {
         let start = self.cur;
 
-        for &b in self.bytes[self.cur..].iter() {
+        for &b in &self.bytes[self.cur..] {
             if pred(b) {
                 self.cur += 1;
             } else {
@@ -239,12 +239,12 @@ impl Lexer<'_> {
     #[inline(never)]
     pub(super) fn error<T>(&mut self, start: BytePos, kind: SyntaxError) -> LexResult<T> {
         let span = self.span(start);
-        self.error_span(Span::new(span.lo, span.hi), kind)
+        Lexer::error_span(Span::new(span.lo, span.hi), kind)
     }
 
     #[cold]
     #[inline(never)]
-    pub(super) fn error_span<T>(&mut self, span: Span, kind: SyntaxError) -> LexResult<T> {
+    pub(super) fn error_span<T>(span: Span, kind: SyntaxError) -> LexResult<T> {
         Err(Error {
             error: Box::new((span, kind)),
         })
@@ -254,7 +254,7 @@ impl Lexer<'_> {
     #[inline(never)]
     pub(super) fn emit_error(&mut self, start: BytePos, kind: SyntaxError) {
         let span = self.span(start);
-        self.emit_error_span(Span::new(span.lo, span.hi), kind)
+        self.emit_error_span(Span::new(span.lo, span.hi), kind);
     }
 
     #[cold]
@@ -270,7 +270,7 @@ impl Lexer<'_> {
     #[inline(never)]
     pub(super) fn emit_strict_mode_error(&mut self, start: BytePos, kind: SyntaxError) {
         let span = self.span(start);
-        self.emit_strict_mode_error_span(Span::new(span.lo, span.hi), kind)
+        self.emit_strict_mode_error_span(Span::new(span.lo, span.hi), kind);
     }
 
     #[cold]
@@ -292,7 +292,7 @@ impl Lexer<'_> {
     #[inline(never)]
     pub(super) fn emit_module_mode_error(&mut self, start: BytePos, kind: SyntaxError) {
         let span = self.span(start);
-        self.emit_module_mode_error_span(Span::new(span.lo, span.hi), kind)
+        self.emit_module_mode_error_span(Span::new(span.lo, span.hi), kind);
     }
 
     /// Some code is valid in a strict mode script but invalid in a module.

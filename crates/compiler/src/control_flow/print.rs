@@ -22,7 +22,7 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
-            Some(e) => f.write_fmt(format_args!("{:?}", e)),
+            Some(e) => f.write_fmt(format_args!("{e:?}")),
             None => Ok(()),
         }
     }
@@ -68,15 +68,14 @@ where
     }
 
     fn create_node(&mut self, value: Node<'ast>) -> NodeIndex {
-        match self.map.get(&value) {
-            Some(index) => *index,
-            None => {
-                let index = self.graph.add_node(value);
+        if let Some(index) = self.map.get(&value) {
+            *index
+        } else {
+            let index = self.graph.add_node(value);
 
-                self.map.insert(value, index);
+            self.map.insert(value, index);
 
-                index
-            }
+            index
         }
     }
 

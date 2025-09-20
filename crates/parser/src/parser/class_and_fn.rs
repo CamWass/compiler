@@ -209,7 +209,7 @@ impl<I: Tokens> Parser<'_, I> {
 
         let declare_token = if declare {
             // Handle declare(){}
-            if self.is_class_method()? {
+            if self.is_class_method() {
                 let key = Key::PropName(PropName::Ident(
                     self.new_ident(js_word!("declare"), span!(self, start)),
                 ));
@@ -218,7 +218,7 @@ impl<I: Tokens> Parser<'_, I> {
                     eat!(self, '?');
                 }
                 return self.make_method(
-                    |parser| parser.parse_unique_formal_params(),
+                    Parser::parse_unique_formal_params,
                     MakeMethodArgs {
                         start,
                         is_abstract: false,
@@ -229,7 +229,7 @@ impl<I: Tokens> Parser<'_, I> {
                         kind: MethodKind::Method,
                     },
                 );
-            } else if self.is_class_property()? {
+            } else if self.is_class_property() {
                 // Property named `declare`
 
                 let key = Key::PropName(PropName::Ident(
@@ -255,7 +255,7 @@ impl<I: Tokens> Parser<'_, I> {
 
         if let Some(static_token) = static_token {
             // Handle static(){}
-            if self.is_class_method()? {
+            if self.is_class_method() {
                 let key = Key::PropName(PropName::Ident(
                     self.new_ident(js_word!("static"), static_token),
                 ));
@@ -264,7 +264,7 @@ impl<I: Tokens> Parser<'_, I> {
                     eat!(self, '?');
                 }
                 return self.make_method(
-                    |parser| parser.parse_unique_formal_params(),
+                    Parser::parse_unique_formal_params,
                     MakeMethodArgs {
                         start,
                         is_abstract: false,
@@ -275,7 +275,7 @@ impl<I: Tokens> Parser<'_, I> {
                         kind: MethodKind::Method,
                     },
                 );
-            } else if self.is_class_property()? {
+            } else if self.is_class_property() {
                 // Property named `static`
 
                 let key = Key::PropName(PropName::Ident(
@@ -393,7 +393,7 @@ impl<I: Tokens> Parser<'_, I> {
             }
 
             return self.make_method(
-                |parser| parser.parse_unique_formal_params(),
+                Parser::parse_unique_formal_params,
                 MakeMethodArgs {
                     start,
                     is_async: false,
@@ -416,13 +416,13 @@ impl<I: Tokens> Parser<'_, I> {
         };
         let is_optional = self.syntax().typescript() && eat!(self, '?');
 
-        if self.is_class_method()? {
+        if self.is_class_method() {
             // handle a(){} / get(){} / set(){} / async(){}
 
             trace_cur!(self, parse_class_member_with_is_static__normal_class_method);
 
             if let Some(token) = declare_token {
-                self.emit_err(token, SyntaxError::TS1031)
+                self.emit_err(token, SyntaxError::TS1031);
             }
 
             if readonly.is_some() {
@@ -489,14 +489,14 @@ impl<I: Tokens> Parser<'_, I> {
                         };
 
                         if let Some(span) = span {
-                            self.emit_err(span, SyntaxError::TS2371)
+                            self.emit_err(span, SyntaxError::TS2371);
                         }
                     }
                 }
 
                 if self.syntax().typescript() {
                     if let Some(static_token) = static_token {
-                        self.emit_err(static_token, SyntaxError::TS1089(js_word!("static")))
+                        self.emit_err(static_token, SyntaxError::TS1089(js_word!("static")));
                     }
                 }
 
@@ -506,18 +506,15 @@ impl<I: Tokens> Parser<'_, I> {
                     }
                 }
 
-                let body = match body {
-                    Some(b) => b,
-                    None => {
-                        if self.syntax().typescript() {
-                            if param_props.is_empty() {
-                                return Ok(None);
-                            } else {
-                                unreachable!("should have thrown error above");
-                            }
-                        } else {
-                            unreachable!("parse_fn_body should have returned Err");
+                let Some(body) = body else {
+                    if self.syntax().typescript() {
+                        if param_props.is_empty() {
+                            return Ok(None);
                         }
+
+                        unreachable!("should have thrown error above");
+                    } else {
+                        unreachable!("parse_fn_body should have returned Err");
                     }
                 };
 
@@ -528,7 +525,7 @@ impl<I: Tokens> Parser<'_, I> {
                 })));
             } else {
                 return self.make_method(
-                    |parser| parser.parse_formal_params(),
+                    Parser::parse_formal_params,
                     MakeMethodArgs {
                         start,
                         is_abstract,
@@ -542,7 +539,7 @@ impl<I: Tokens> Parser<'_, I> {
             }
         }
 
-        if self.is_class_property()? {
+        if self.is_class_property() {
             return self.make_property(start, key, is_static, is_optional, declare, is_abstract);
         }
 
@@ -580,7 +577,7 @@ impl<I: Tokens> Parser<'_, I> {
                 eat!(self, '?');
             }
             return self.make_method(
-                |parser| parser.parse_unique_formal_params(),
+                Parser::parse_unique_formal_params,
                 MakeMethodArgs {
                     start,
                     static_token,
@@ -742,13 +739,13 @@ impl<I: Tokens> Parser<'_, I> {
         })
     }
 
-    fn is_class_method(&mut self) -> PResult<bool> {
-        Ok(is!(self, '(') || (self.syntax().typescript() && is!(self, '<')))
+    fn is_class_method(&mut self) -> bool {
+        is!(self, '(') || (self.syntax().typescript() && is!(self, '<'))
     }
 
-    fn is_class_property(&mut self) -> PResult<bool> {
-        Ok((self.syntax().typescript() && is_one_of!(self, '!', ':'))
-            || is_one_of!(self, '=', ';', '}'))
+    fn is_class_property(&mut self) -> bool {
+        (self.syntax().typescript() && is_one_of!(self, '!', ':'))
+            || is_one_of!(self, '=', ';', '}')
     }
 
     fn parse_fn<T>(
@@ -805,7 +802,7 @@ impl<I: Tokens> Parser<'_, I> {
         self.with_ctx(ctx).parse_with(|parser| {
             let f = parser.parse_fn_args_body_or_ts_overload_sig(
                 start,
-                |parser| parser.parse_formal_params(),
+                Parser::parse_formal_params,
                 is_async,
                 is_generator,
             )?;
@@ -914,7 +911,7 @@ impl<I: Tokens> Parser<'_, I> {
                             };
 
                             if let Some(span) = span {
-                                parser.emit_err(span, SyntaxError::TS2371)
+                                parser.emit_err(span, SyntaxError::TS2371);
                             }
                         }
                         return Ok(None);
@@ -1010,9 +1007,8 @@ impl<I: Tokens> Parser<'_, I> {
             return Ok(None);
         }
 
-        let function = match function {
-            Some(f) => f,
-            None => return Ok(None),
+        let Some(function) = function else {
+            return Ok(None);
         };
 
         Ok(Some(match key {

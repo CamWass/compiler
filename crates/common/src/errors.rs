@@ -577,7 +577,7 @@ impl Handler {
         self.span_bug(sp, &format!("unimplemented {}", msg));
     }
     pub fn failure(&self, msg: &str) {
-        DiagnosticBuilder::new(self, FailureNote, msg).emit()
+        DiagnosticBuilder::new(self, FailureNote, msg).emit();
     }
     pub fn fatal(&self, msg: &str) -> FatalError {
         if self.flags.treat_err_as_bug {
@@ -607,7 +607,7 @@ impl Handler {
         panic!("{}", ExplicitBug);
     }
     pub fn unimpl(&self, msg: &str) -> ! {
-        self.bug(&format!("unimplemented {}", msg));
+        self.bug(&format!("unimplemented {msg}"));
     }
 
     fn bump_err_count(&self) {
@@ -641,7 +641,7 @@ impl Handler {
                 .iter()
                 .filter_map(|x| match x {
                     DiagnosticId::Error(s) => Some(s.clone()),
-                    _ => None,
+                    DiagnosticId::Lint(_) => None,
                 })
                 .collect::<Vec<_>>();
             if !error_codes.is_empty() {

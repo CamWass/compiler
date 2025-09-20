@@ -99,7 +99,12 @@ impl<'d, I: Tokens> Parser<'d, I> {
 
         let body: Vec<ModuleItem> = self.parse_block_body(true, true, None)?;
 
-        Ok(if !self.ctx().is_module() {
+        Ok(if self.ctx().is_module() {
+            Program::Module(Module {
+                node_id: node_id!(self, span!(self, start)),
+                body,
+            })
+        } else {
             let body = body
                 .into_iter()
                 .map(|item| match item {
@@ -108,11 +113,6 @@ impl<'d, I: Tokens> Parser<'d, I> {
                 })
                 .collect();
             Program::Script(Script {
-                node_id: node_id!(self, span!(self, start)),
-                body,
-            })
-        } else {
-            Program::Module(Module {
                 node_id: node_id!(self, span!(self, start)),
                 body,
             })
@@ -148,7 +148,7 @@ impl<'d, I: Tokens> Parser<'d, I> {
 
         self.emit_error(Error {
             error: Box::new((span, error)),
-        })
+        });
     }
 
     #[cold]

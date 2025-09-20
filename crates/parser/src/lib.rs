@@ -99,7 +99,7 @@ impl Syntax {
     pub fn dts(self) -> bool {
         match self {
             Syntax::Typescript(t) => t.dts,
-            _ => false,
+            Syntax::Es(_) => false,
         }
     }
 

@@ -87,31 +87,31 @@ struct BodyCollector<'a> {
     return_count: usize,
 }
 
-impl<'ast> Visit<'ast> for BodyCollector<'_> {
+impl Visit<'_> for BodyCollector<'_> {
     fn visit_function(&mut self, n: &Function) {
         let old_references_this = self.references_this;
         n.visit_children_with(self);
-        self.references_this = old_references_this
+        self.references_this = old_references_this;
     }
     fn visit_constructor(&mut self, n: &Constructor) {
         let old_references_this = self.references_this;
         n.visit_children_with(self);
-        self.references_this = old_references_this
+        self.references_this = old_references_this;
     }
     fn visit_arrow_expr(&mut self, n: &ArrowExpr) {
         let old_references_this = self.references_this;
         n.visit_children_with(self);
-        self.references_this = old_references_this
+        self.references_this = old_references_this;
     }
     fn visit_getter_prop(&mut self, n: &GetterProp) {
         let old_references_this = self.references_this;
         n.visit_children_with(self);
-        self.references_this = old_references_this
+        self.references_this = old_references_this;
     }
     fn visit_setter_prop(&mut self, n: &SetterProp) {
         let old_references_this = self.references_this;
         n.visit_children_with(self);
-        self.references_this = old_references_this
+        self.references_this = old_references_this;
     }
 
     fn visit_this_expr(&mut self, _n: &ThisExpr) {
@@ -159,7 +159,7 @@ impl<'ast> Visit<'ast> for BodyCollector<'_> {
             return;
         }
 
-        if n.function.params.len() > 0 {
+        if !n.function.params.is_empty() {
             return;
         }
 
@@ -242,8 +242,6 @@ impl<'ast> Visit<'ast> for BodyCollector<'_> {
             remove_return_stmts(&mut body, self.program_data);
 
             self.stmt_bodies.insert(n.function.node_id, body);
-
-            return;
         }
     }
 }
@@ -341,7 +339,7 @@ fn convert_statements_to_expressions(
     block_span: Span,
     tail: Expr,
 ) -> Expr {
-    if statements.len() > 0 {
+    if !statements.is_empty() {
         let mut expr = SeqExpr {
             exprs: Vec::with_capacity(statements.len() + 1),
             node_id: program_data.new_id(block_span),
@@ -377,7 +375,7 @@ struct ReturnRemover<'a> {
     program_data: &'a mut ProgramData,
 }
 
-impl<'ast> VisitMut<'ast> for ReturnRemover<'_> {
+impl VisitMut<'_> for ReturnRemover<'_> {
     fn visit_mut_stmt(&mut self, n: &mut Stmt) {
         if let Stmt::Return(ret) = n {
             if let Some(arg) = ret.arg.as_mut() {
@@ -388,10 +386,10 @@ impl<'ast> VisitMut<'ast> for ReturnRemover<'_> {
             } else {
                 *n = Stmt::Empty(EmptyStmt {
                     node_id: self.program_data.new_id_from(ret.node_id),
-                })
+                });
             }
         } else {
-            n.visit_mut_children_with(self)
+            n.visit_mut_children_with(self);
         }
     }
 }

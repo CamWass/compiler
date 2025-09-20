@@ -397,7 +397,7 @@ impl<'p> UniqueQueue<'p> {
     }
 
     pub fn clear(&mut self) {
-        self.inner.clear()
+        self.inner.clear();
     }
 }
 

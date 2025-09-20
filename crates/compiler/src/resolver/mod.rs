@@ -193,7 +193,7 @@ impl Resolver<'_> {
 
     fn visit_mut_stmt_within_child_scope(&mut self, s: &mut Stmt) {
         self.with_child(ScopeKind::Block, |child| {
-            child.visit_mut_stmt_within_same_scope(s)
+            child.visit_mut_stmt_within_same_scope(s);
         });
     }
 
@@ -369,7 +369,7 @@ impl VisitMut<'_> for Resolver<'_> {
     fn visit_mut_block_stmt(&mut self, block: &mut BlockStmt) {
         self.with_child(ScopeKind::Block, |child| {
             block.visit_mut_children_with(child);
-        })
+        });
     }
 
     fn visit_mut_catch_clause(&mut self, c: &mut CatchClause) {
@@ -440,7 +440,7 @@ impl VisitMut<'_> for Resolver<'_> {
     }
 
     fn visit_mut_decl(&mut self, decl: &mut Decl) {
-        decl.visit_mut_children_with(self)
+        decl.visit_mut_children_with(self);
     }
 
     fn visit_mut_export_default_decl(&mut self, e: &mut ExportDefaultDecl) {
@@ -453,12 +453,12 @@ impl VisitMut<'_> for Resolver<'_> {
                         f.function.visit_mut_with(child);
                     });
                 } else {
-                    f.visit_mut_with(self)
+                    f.visit_mut_with(self);
                 }
             }
             DefaultDecl::Class(c) => {
                 // Skip class expression visitor to treat as a declaration.
-                c.class.visit_mut_with(self)
+                c.class.visit_mut_with(self);
             }
         }
     }
@@ -487,7 +487,7 @@ impl VisitMut<'_> for Resolver<'_> {
     fn visit_mut_fn_expr(&mut self, e: &mut FnExpr) {
         self.with_child(ScopeKind::Fn, |child| {
             if let Some(ident) = &mut e.ident {
-                child.modify(ident)
+                child.modify(ident);
             }
             e.function.visit_mut_with(child);
         });
@@ -552,7 +552,7 @@ impl VisitMut<'_> for Resolver<'_> {
                 } else {
                     i.ctxt = i.ctxt.apply_mark(self.config.unresolved_mark);
                     // Support hoisting
-                    self.modify(i)
+                    self.modify(i);
                 }
             }
             // We currently does not touch labels
@@ -592,11 +592,11 @@ impl VisitMut<'_> for Resolver<'_> {
                 catch_param_decls: Default::default(),
                 excluded_from_catch: Default::default(),
             };
-            stmts.visit_mut_with(&mut hoister)
+            stmts.visit_mut_with(&mut hoister);
         }
 
         // Phase 2.
-        stmts.visit_mut_children_with(self)
+        stmts.visit_mut_children_with(self);
     }
 
     fn visit_mut_named_export(&mut self, e: &mut NamedExport) {
@@ -666,11 +666,11 @@ impl VisitMut<'_> for Resolver<'_> {
                 catch_param_decls: Default::default(),
                 excluded_from_catch: Default::default(),
             };
-            stmts.visit_mut_with(&mut hoister)
+            stmts.visit_mut_with(&mut hoister);
         }
 
         // Phase 2.
-        stmts.visit_mut_children_with(self)
+        stmts.visit_mut_children_with(self);
     }
 
     fn visit_mut_switch_stmt(&mut self, s: &mut SwitchStmt) {
@@ -730,7 +730,7 @@ impl Hoister<'_, '_> {
             }
         }
 
-        self.resolver.modify(id)
+        self.resolver.modify(id);
     }
 }
 
@@ -828,14 +828,14 @@ impl VisitMut<'_> for Hoister<'_, '_> {
                     self.resolver.modify(id);
                 }
 
-                f.visit_mut_with(self)
+                f.visit_mut_with(self);
             }
             DefaultDecl::Class(c) => {
                 if let Some(id) = &mut c.ident {
                     self.resolver.modify(id);
                 }
 
-                c.visit_mut_with(self)
+                c.visit_mut_with(self);
             }
         }
     }
@@ -918,7 +918,7 @@ impl VisitMut<'_> for Hoister<'_, '_> {
         if self.in_block {
             match node.kind {
                 VarDeclKind::Const | VarDeclKind::Let => return,
-                _ => {}
+                VarDeclKind::Var => {}
             }
         }
 
@@ -966,7 +966,7 @@ impl VisitMut<'_> for Hoister<'_, '_> {
             //   }
             // }
             VarDeclOrPat::Pat(..) => {}
-            _ => {
+            VarDeclOrPat::VarDecl(_) => {
                 n.visit_mut_children_with(self);
             }
         }

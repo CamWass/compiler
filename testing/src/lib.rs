@@ -54,16 +54,14 @@ pub fn find_executable(name: &str) -> Option<PathBuf> {
     }
 
     let path = env::var_os("PATH").and_then(|paths| {
-        env::split_paths(&paths)
-            .filter_map(|dir| {
-                let full_path = dir.join(name);
-                if full_path.is_file() {
-                    Some(full_path)
-                } else {
-                    None
-                }
-            })
-            .next()
+        env::split_paths(&paths).find_map(|dir| {
+            let full_path = dir.join(name);
+            if full_path.is_file() {
+                Some(full_path)
+            } else {
+                None
+            }
+        })
     });
 
     if let Some(path) = path.clone() {
@@ -110,7 +108,7 @@ where
 
 /// Run test and print errors.
 pub fn run_test_with_source_map<F, Ret>(
-    cm: Lrc<SourceMap>,
+    cm: &Lrc<SourceMap>,
     treat_err_as_bug: bool,
     op: F,
 ) -> Result<Ret, StdErr>
@@ -202,12 +200,12 @@ fn write_to_file(path: &Path, content: &str) {
             )
         })
         .write_all(content.as_bytes())
-        .expect("failed to write data of the failed assertion")
+        .expect("failed to write data of the failed assertion");
 }
 
 pub fn print_left_right(left: &dyn Debug, right: &dyn Debug) -> String {
     fn print(t: &dyn Debug) -> String {
-        let s = format!("{:#?}", t);
+        let s = format!("{t:#?}");
 
         // Replace 'Span { lo: BytePos(0), hi: BytePos(0), ctxt: #0 }' with '_'
         let s = {
@@ -239,7 +237,7 @@ pub fn print_left_right(left: &dyn Debug, right: &dyn Debug) -> String {
     let target_dir = {
         let mut buf = paths::test_results_dir().to_path_buf();
         for m in test_name.split("::") {
-            buf.push(m)
+            buf.push(m);
         }
 
         create_dir_all(&buf).unwrap_or_else(|err| {
@@ -256,10 +254,7 @@ pub fn print_left_right(left: &dyn Debug, right: &dyn Debug) -> String {
     write_to_file(&target_dir.join("left"), &left);
     write_to_file(&target_dir.join("right"), &right);
 
-    format!(
-        "----- {}\n    left:\n{}\n    right:\n{}",
-        test_name, left, right
-    )
+    format!("----- {test_name}\n    left:\n{left}\n    right:\n{right}")
 }
 
 #[macro_export]
@@ -276,7 +271,7 @@ macro_rules! assert_eq_ignore_span {
 pub fn diff(l: &str, r: &str) -> String {
     let cs = Changeset::new(l, r, "\n");
 
-    format!("{}", cs)
+    format!("{cs}")
 }
 
 /// Used for assertions.

@@ -306,11 +306,11 @@ mod tests {
 
     fn fuse(before: &str, after: &str) {
         test_transform(
-            &format!("function F(){{if(CONDITION){{{}}}}}", before),
-            &format!("function F(){{if(CONDITION){{{}}}}}", after),
+            &format!("function F(){{if(CONDITION){{{before}}}}}"),
+            &format!("function F(){{if(CONDITION){{{after}}}}}"),
         );
     }
     fn fuse_same(code: &str) {
-        test_same(&format!("function F(){{if(CONDITION){{{}}}}}", code));
+        test_same(&format!("function F(){{if(CONDITION){{{code}}}}}"));
     }
 }

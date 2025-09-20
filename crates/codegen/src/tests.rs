@@ -51,7 +51,7 @@ fn parse_then_emit(from: &str, cfg: Config, syntax: Syntax) -> String {
                 .map_err(|e| e.into_diagnostic(handler).emit());
 
             for err in parser.take_errors() {
-                err.into_diagnostic(handler).emit()
+                err.into_diagnostic(handler).emit();
             }
 
             res?
@@ -104,8 +104,8 @@ pub(crate) fn assert_pretty(from: &str, to: &str) {
         Syntax::default(),
     );
 
-    println!("Expected: {:?}", to);
-    println!("Actual:   {:?}", out);
+    println!("Expected: {to:?}");
+    println!("Actual:   {out:?}");
     assert_eq!(DebugUsingDisplay(out.trim()), DebugUsingDisplay(to),);
 }
 
@@ -120,7 +120,7 @@ fn test_from_to(from: &str, expected: &str) {
 }
 
 fn test_identical(from: &str) {
-    test_from_to(from, from)
+    test_from_to(from, from);
 }
 
 fn test_from_to_custom_config(from: &str, to: &str, cfg: Config, syntax: Syntax) {
@@ -255,12 +255,12 @@ fn named_and_namespace_export_from_min() {
 #[test]
 fn issue_450() {
     test_from_to(
-        r#"console.log(`
+        r"console.log(`
 \`\`\`html
 <h1>It works!</h1>
 \`\`\`
-`);"#,
-        r#"console.log(`\n\`\`\`html\n<h1>It works!</h1>\n\`\`\`\n`);"#,
+`);",
+        r"console.log(`\n\`\`\`html\n<h1>It works!</h1>\n\`\`\`\n`);",
     );
 }
 
@@ -314,7 +314,7 @@ fn tpl_1() {
     test_from_to(
         "`id '${id}' must be a non-empty string`;",
         "`id '${id}' must be a non-empty string`;",
-    )
+    );
 }
 
 #[test]
@@ -330,7 +330,7 @@ fn tpl_escape_1() {
     test_from_to(
         "`${parent.path}\x00${request}`",
         "`${parent.path}\x00${request}`;",
-    )
+    );
 }
 
 #[test]
@@ -341,24 +341,24 @@ fn tpl_escape_2() {
 #[test]
 fn tpl_escape_3() {
     test_from_to(
-        r#"`${resolvedDevice.toLowerCase()}\\`"#,
-        r#"`${resolvedDevice.toLowerCase()}\\`;"#,
+        r"`${resolvedDevice.toLowerCase()}\\`",
+        r"`${resolvedDevice.toLowerCase()}\\`;",
     );
 }
 
 #[test]
 fn tpl_escape_4() {
     test_from_to(
-        r#"`\\\\${firstPart}\\${path.slice(last)}`"#,
-        r#"`\\\\${firstPart}\\${path.slice(last)}`;"#,
+        r"`\\\\${firstPart}\\${path.slice(last)}`",
+        r"`\\\\${firstPart}\\${path.slice(last)}`;",
     );
 }
 
 #[test]
 fn tpl_escape_5() {
     test_from_to(
-        r#"const data = text.encode(`${arg}\0`);"#,
-        r#"const data = text.encode(`${arg}\0`);"#,
+        r"const data = text.encode(`${arg}\0`);",
+        r"const data = text.encode(`${arg}\0`);",
     );
 }
 
@@ -381,12 +381,12 @@ fn tpl_escape_6() {
 
 #[test]
 fn issue_915_1() {
-    test_identical(r#"relResolveCacheIdentifier = `${parent.path}\x00${request}`;"#);
+    test_identical(r"relResolveCacheIdentifier = `${parent.path}\x00${request}`;");
 }
 
 #[test]
 fn issue_915_2() {
-    test_identical(r#"relResolveCacheIdentifier = `${parent.path}\x00${request}`;"#);
+    test_identical(r"relResolveCacheIdentifier = `${parent.path}\x00${request}`;");
 }
 
 #[test]
@@ -396,7 +396,7 @@ fn issue_915_3() {
 
 #[test]
 fn issue_915_4() {
-    test_identical(r#"`\\r\\n--${this.boundary}`;"#);
+    test_identical(r"`\\r\\n--${this.boundary}`;");
 }
 
 #[test]
@@ -559,11 +559,11 @@ mod parens {
         };
     }
 
-    identical!(fn_expr_position, r#"foo(function(){}())"#);
+    identical!(fn_expr_position, "foo(function(){}())");
 
-    identical!(fn_decl, r#"function foo(){}"#);
+    identical!(fn_decl, "function foo(){}");
 
-    identical!(iife, r#"(function(){})()"#);
+    identical!(iife, "(function(){})()");
 
     identical!(paren_seq_arg, "foo((_temp=_this=init(),_temp))");
 

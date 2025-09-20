@@ -30,8 +30,7 @@ pub fn load_config(path: &Path) -> Result<Config> {
             Category::Eof => "unexpected eof",
         };
         Error::new(e).context(format!(
-            "Failed to deserialize config (json) file: {}: {}:{}",
-            msg, line, column
+            "Failed to deserialize config (json) file: {msg}: {line}:{column}",
         ))
     }
 

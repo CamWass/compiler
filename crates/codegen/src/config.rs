@@ -4,11 +4,11 @@ use ast::EsVersion;
 pub struct Config {
     /// The target runtime environment.
     ///
-    /// This defaults to [EsVersion::latest] because it preserves input as much
+    /// This defaults to [`EsVersion::latest`] because it preserves input as much
     /// as possible.
     ///
     /// Note: This does not verify if output is valid for the target runtime.
-    /// e.g. `const foo = 1;` with [EsVersion::Es3] will emitted as `const foo =
+    /// e.g. `const foo = 1;` with [`EsVersion::Es3`] will emitted as `const foo =
     /// 1` without verification.
     /// This is because it's not a concern of the code generator.
     pub target: EsVersion,

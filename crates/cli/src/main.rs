@@ -20,7 +20,7 @@ mod config;
 fn create_program(
     filename: &str,
     config: &Config,
-    cm: Lrc<SourceMap>,
+    cm: &SourceMap,
     handler: &Handler,
     program_data: &mut ast::ProgramData,
 ) -> Result<ast::Program> {
@@ -67,7 +67,7 @@ fn compile(entry_file: &str, config: Config) -> Result<()> {
 
     let mut program_data = ast::ProgramData::default();
 
-    let program = create_program(entry_file, &config, cm.clone(), &handler, &mut program_data)?;
+    let program = create_program(entry_file, &config, &cm, &handler, &mut program_data)?;
 
     let compiler = Compiler::new();
 
@@ -76,9 +76,9 @@ fn compile(entry_file: &str, config: Config) -> Result<()> {
     let result = compiler.compile(program, config.passes, &mut program_data);
 
     let elapsed = start.elapsed();
-    println!("\nCompilation took: {:.2?}", elapsed);
+    println!("\nCompilation took: {elapsed:.2?}",);
 
-    // dbg!(result);
+    // dbg!(&result);
 
     // Ok(())
     println!("\n\n\nSuccessfully parsed");
@@ -117,13 +117,14 @@ fn main() -> Result<()> {
     let reduce_mode = matches!(args.get(2).map(|s| s.as_str()), Some("--reduce"));
 
     if reduce_mode {
-        reduce(entry_file, config)
+        reduce(entry_file, config);
+        Ok(())
     } else {
         compile(entry_file, config)
     }
 }
 
-fn reduce(entry_file: &str, config: Config) -> Result<()> {
+fn reduce(entry_file: &str, config: Config) {
     let initial = std::fs::read_to_string(entry_file).unwrap();
 
     let initial_len = initial.len();
@@ -133,14 +134,13 @@ fn reduce(entry_file: &str, config: Config) -> Result<()> {
     // let predicate = |ours: &str, theirs: &str| ours.contains("bad");
     let predicate = |ours: &str, theirs: &str| ours.len() > theirs.len();
 
-    let mut swc_output = swc_print(&best_program, true).unwrap();
+    let mut swc_output = swc_print(&best_program, true);
     let mut our_output = compile_ours(initial, config.clone()).unwrap();
     {
         if !predicate(&our_output, &swc_output) {
             println!("Original file did not satisfy predicate");
             std::fs::write("reduced_ours.js", our_output).unwrap();
             std::fs::write("reduced_swc.js", swc_output).unwrap();
-            return Ok(());
         }
     }
 
@@ -172,10 +172,10 @@ fn reduce(entry_file: &str, config: Config) -> Result<()> {
 
     reduce_first(&mut best_program, &config, predicate);
 
-    let best_string = swc_print(&best_program, false).unwrap();
+    let best_string = swc_print(&best_program, false);
     let mut best_string_len = best_string.len();
 
-    swc_output = swc_print(&best_program, true).unwrap();
+    swc_output = swc_print(&best_program, true);
     our_output = compile_ours(best_string.clone(), config.clone()).unwrap();
 
     let mut reducer = Reducer::default();
@@ -184,12 +184,12 @@ fn reduce(entry_file: &str, config: Config) -> Result<()> {
     let mut gen = 0;
 
     'outer: loop {
-        println!("Starting generation: {}", gen);
+        println!("Starting generation: {gen}",);
         gen += 1;
         let mut changed = false;
         loop {
             if iter % 10 == 0 {
-                println!("Current length: {}", best_string_len);
+                println!("Current length: {best_string_len}",);
                 std::fs::write("reduced_out.js", &best_string).unwrap();
                 std::fs::write("reduced_ours.js", &our_output).unwrap();
                 std::fs::write("reduced_swc.js", &swc_output).unwrap();
@@ -202,10 +202,10 @@ fn reduce(entry_file: &str, config: Config) -> Result<()> {
                 break;
             }
             changed = true;
-            let new_best_string = swc_print(&new_best_program, false).unwrap();
+            let new_best_string = swc_print(&new_best_program, false);
             let new_best_string_len = new_best_string.len();
 
-            let new_swc_output = swc_print(&new_best_program, true).unwrap();
+            let new_swc_output = swc_print(&new_best_program, true);
             let new_our_output = compile_ours(new_best_string, config.clone()).unwrap();
 
             if iter == 100 {
@@ -232,7 +232,7 @@ fn reduce(entry_file: &str, config: Config) -> Result<()> {
     }
 
     // TODO: new_best_string?
-    let reduced = swc_print(&best_program, false).unwrap();
+    let reduced = swc_print(&best_program, false);
 
     if reduced.len() == initial_len {
         println!("Could not reduce input");
@@ -243,7 +243,6 @@ fn reduce(entry_file: &str, config: Config) -> Result<()> {
     std::fs::write("reduced_out.js", reduced).unwrap();
     std::fs::write("reduced_ours.js", our_output).unwrap();
     std::fs::write("reduced_swc.js", swc_output).unwrap();
-    Ok(())
 }
 
 fn reduce_first(
@@ -263,12 +262,12 @@ fn reduce_first(
     // of the array
     let mut sz = script.body.len() >> 1;
     while sz > 0 {
-        println!("chunk size {}", sz);
+        println!("chunk size {sz}",);
         let nchunks = script.body.len() / sz;
         let mut chunk_idx = nchunks.checked_sub(1);
         while let Some(i) = chunk_idx {
             // try removing chunk i
-            println!("chunk #{}", i);
+            println!("chunk #{i}");
             let lo = i * sz;
             let hi = if i == nchunks - 1 {
                 script.body.len()
@@ -280,9 +279,9 @@ fn reduce_first(
             if lo > 0 || hi < script.body.len() {
                 removed.extend(script.body.drain(lo..hi));
 
-                let best_string = swc_print_script(script, false).unwrap();
+                let best_string = swc_print_script(script, false);
 
-                let swc_output = swc_print_script(script, true).unwrap();
+                let swc_output = swc_print_script(script, true);
                 let our_output = compile_ours(best_string, config.clone()).unwrap();
 
                 if !predicate(&our_output, &swc_output) {
@@ -292,7 +291,7 @@ fn reduce_first(
             }
             chunk_idx = i.checked_sub(1);
         }
-        sz >>= 1
+        sz >>= 1;
     }
 }
 
@@ -397,7 +396,7 @@ fn swc_parse(input: String) -> Result<swc_ecma_ast::Program> {
     Ok(program)
 }
 
-fn swc_print(program: &swc_ecma_ast::Program, minify: bool) -> Result<String> {
+fn swc_print(program: &swc_ecma_ast::Program, minify: bool) -> String {
     use swc_ecma_codegen::{text_writer::JsWriter, Config, Emitter};
 
     let code = {
@@ -418,7 +417,7 @@ fn swc_print(program: &swc_ecma_ast::Program, minify: bool) -> Result<String> {
         String::from_utf8_lossy(&buf).to_string()
     };
 
-    Ok(code)
+    code
 
     // use swc_common::Mark;
     // use swc_ecma_minifier::optimize;
@@ -555,7 +554,7 @@ fn swc_print(program: &swc_ecma_ast::Program, minify: bool) -> Result<String> {
     // }
 }
 
-fn swc_print_script(program: &swc_ecma_ast::Script, minify: bool) -> Result<String> {
+fn swc_print_script(program: &swc_ecma_ast::Script, minify: bool) -> String {
     use swc_ecma_codegen::{text_writer::JsWriter, Config, Emitter};
 
     let code = {
@@ -576,7 +575,7 @@ fn swc_print_script(program: &swc_ecma_ast::Script, minify: bool) -> Result<Stri
         String::from_utf8_lossy(&buf).to_string()
     };
 
-    Ok(code)
+    code
 }
 
 use swc_ecma_visit::{noop_visit_mut_type, VisitMut, VisitMutWith};

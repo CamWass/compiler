@@ -26,7 +26,7 @@ mod tests {
         assert_eq!("123", ecma_number_to_string(123_f64));
         assert_eq!("-123", ecma_number_to_string(-123_f64));
 
-        assert_eq!("61453", ecma_number_to_string(0xF00D as f64));
+        assert_eq!("61453", ecma_number_to_string(f64::from(0xF00D)));
 
         assert_eq!("NaN", ecma_number_to_string(f64::NAN));
 
@@ -34,8 +34,8 @@ mod tests {
         assert_eq!("-Infinity", ecma_number_to_string(f64::NEG_INFINITY));
 
         assert_eq!(ecma_number_to_string(0.0), "0");
-        assert_eq!(ecma_number_to_string(i32::MIN as f64), "-2147483648");
-        assert_eq!(ecma_number_to_string(i32::MAX as f64), "2147483647");
+        assert_eq!(ecma_number_to_string(f64::from(i32::MIN)), "-2147483648");
+        assert_eq!(ecma_number_to_string(f64::from(i32::MAX)), "2147483647");
         // ES section 7.1.12.1 #sec-tostring-applied-to-the-number-type:
         // -0.0 is stringified to "0".
         assert_eq!(ecma_number_to_string(-0.0), "0");

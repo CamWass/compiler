@@ -128,10 +128,10 @@ fn bench_emitter(b: &mut Bencher, s: &str) {
 
 #[bench]
 fn emit_colors(b: &mut Bencher) {
-    bench_emitter(b, COLORS_JS)
+    bench_emitter(b, COLORS_JS);
 }
 
 #[bench]
 fn emit_large(b: &mut Bencher) {
-    bench_emitter(b, LARGE_PARTIAL_JS)
+    bench_emitter(b, LARGE_PARTIAL_JS);
 }

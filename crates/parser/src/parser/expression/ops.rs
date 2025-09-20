@@ -122,9 +122,8 @@ impl<I: Tokens> Parser<'_, I> {
 
         let ctx = self.ctx();
         // Return left on eof
-        let word = match self.input.cur() {
-            Some(cur) => cur,
-            _ => return Ok((left, None)),
+        let Some(word) = self.input.cur() else {
+            return Ok((left, None));
         };
         let op = match *word {
             Word(Word::Keyword(Keyword::In)) if ctx.include_in_expr() => op!("in"),
@@ -151,7 +150,7 @@ impl<I: Tokens> Parser<'_, I> {
                         self,
                         SyntaxError::UnaryInExp {
                             // FIXME: Use display
-                            left: format!("{:?}", left),
+                            left: format!("{left:?}"),
                             left_span: get_span!(self, *node_id),
                         }
                     )
@@ -297,7 +296,7 @@ impl<I: Tokens> Parser<'_, I> {
             if let MaybeParen::Expr(arg) = &arg {
                 if op == op!("delete") {
                     if let Expr::Ident(i) = arg.as_ref() {
-                        self.emit_strict_mode_err(get_span!(self, i.node_id), SyntaxError::TS1102)
+                        self.emit_strict_mode_err(get_span!(self, i.node_id), SyntaxError::TS1102);
                     }
                 }
 

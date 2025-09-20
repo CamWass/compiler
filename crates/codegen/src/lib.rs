@@ -284,7 +284,7 @@ impl<'a> Emitter<'a> {
                     result.has_namespace_spec = true;
                     // There can only be one namespace export specifier.
                     if result.namespace_spec.is_none() {
-                        result.namespace_spec = Some(spec)
+                        result.namespace_spec = Some(spec);
                     }
                     result
                 }
@@ -348,9 +348,9 @@ impl<'a> Emitter<'a> {
         match node {
             Lit::Bool(Bool { value, .. }) => {
                 if *value {
-                    keyword!(self, span, "true")
+                    keyword!(self, span, "true");
                 } else {
-                    keyword!(self, span, "false")
+                    keyword!(self, span, "false");
                 }
             }
             Lit::Null(_) => keyword!(self, span, "null"),
@@ -362,28 +362,28 @@ impl<'a> Emitter<'a> {
                 self.wr.write_str(&n.exp)?;
                 punct!(self, "/");
                 if n.flags.contains(RegexFlags::D) {
-                    self.wr.write_str("d")?
+                    self.wr.write_str("d")?;
                 }
                 if n.flags.contains(RegexFlags::G) {
-                    self.wr.write_str("g")?
+                    self.wr.write_str("g")?;
                 }
                 if n.flags.contains(RegexFlags::I) {
-                    self.wr.write_str("i")?
+                    self.wr.write_str("i")?;
                 }
                 if n.flags.contains(RegexFlags::M) {
-                    self.wr.write_str("m")?
+                    self.wr.write_str("m")?;
                 }
                 if n.flags.contains(RegexFlags::S) {
-                    self.wr.write_str("s")?
+                    self.wr.write_str("s")?;
                 }
                 if n.flags.contains(RegexFlags::U) {
-                    self.wr.write_str("u")?
+                    self.wr.write_str("u")?;
                 }
                 if n.flags.contains(RegexFlags::V) {
-                    self.wr.write_str("v")?
+                    self.wr.write_str("v")?;
                 }
                 if n.flags.contains(RegexFlags::Y) {
-                    self.wr.write_str("y")?
+                    self.wr.write_str("y")?;
                 }
             }
         }
@@ -1200,10 +1200,8 @@ impl<'a> Emitter<'a> {
 
                 Expr::Seq(..)
                 | Expr::Unary(UnaryExpr {
-                    op: op!("delete"), ..
-                })
-                | Expr::Unary(UnaryExpr {
-                    op: op!("void"), ..
+                    op: op!("delete") | op!("void"),
+                    ..
                 })
                 | Expr::Yield(..)
                 | Expr::Cond(..)
@@ -1284,7 +1282,7 @@ impl<'a> Emitter<'a> {
                 if is_kwd_op {
                     self.expr_starts_with_alpha_num(&node.right)?
                 } else {
-                    require_space_before_rhs(&node.right, &node.op)
+                    require_space_before_rhs(&node.right, node.op)
                 }
             } else {
                 is_kwd_op
@@ -1450,7 +1448,7 @@ impl<'a> Emitter<'a> {
                 if prop_name_starts_with_alpha_num(&n.key) {
                     space!(self);
                 } else {
-                    formatting_space!(self)
+                    formatting_space!(self);
                 }
             }
             MethodKind::Setter => {
@@ -1459,7 +1457,7 @@ impl<'a> Emitter<'a> {
                 if prop_name_starts_with_alpha_num(&n.key) {
                     space!(self);
                 } else {
-                    formatting_space!(self)
+                    formatting_space!(self);
                 }
             }
         }
@@ -2854,17 +2852,12 @@ impl Emitter<'_> {
     /// whose operand is a plus expression - (++(+x)) The same is true of minus of
     /// course.
     fn should_emit_whitespace_before_operand(&self, node: &UnaryExpr) -> io::Result<bool> {
-        match node {
-            UnaryExpr {
-                op: op!("void"), ..
-            }
-            | UnaryExpr {
-                op: op!("typeof"), ..
-            }
-            | UnaryExpr {
-                op: op!("delete"), ..
-            } => return self.expr_starts_with_alpha_num(&node.arg),
-            _ => {}
+        if let UnaryExpr {
+            op: op!("void") | op!("typeof") | op!("delete"),
+            ..
+        } = node
+        {
+            return self.expr_starts_with_alpha_num(&node.arg);
         }
 
         match *node.arg {
@@ -3021,15 +3014,15 @@ fn unescape_tpl_lit(s: &str) -> String {
         }
 
         match radix {
-            2 => write!(buf, "\\b{:b}", v).unwrap(),
+            2 => write!(buf, "\\b{v:b}").unwrap(),
 
-            8 => write!(buf, "\\o{:o}", v).unwrap(),
+            8 => write!(buf, "\\o{v:o}").unwrap(),
 
             16 => {
                 if v < 16 {
-                    write!(buf, "\\x0{:x}", v).unwrap()
+                    write!(buf, "\\x0{v:x}").unwrap();
                 } else {
-                    write!(buf, "\\x{:x}", v).unwrap()
+                    write!(buf, "\\x{v:x}").unwrap();
                 }
             }
 
@@ -3213,7 +3206,7 @@ fn get_quoted_utf16(v: &str, target: EsVersion) -> String {
                                     buf.push_str("\\\\");
                                 }
                             } else {
-                                buf.push_str("\\\\")
+                                buf.push_str("\\\\");
                             }
                         } else if is_curly {
                             buf.push_str("\\\\");
@@ -3273,7 +3266,7 @@ fn get_quoted_utf16(v: &str, target: EsVersion) -> String {
                         let h = ((c as u32 - 0x10000) / 0x400) + 0xd800;
                         let l = (c as u32 - 0x10000) % 0x400 + 0xdc00;
 
-                        let _ = write!(buf, "\\u{:04X}\\u{:04X}", h, l);
+                        let _ = write!(buf, "\\u{h:04X}\\u{l:04X}",);
                     } else {
                         buf.push(c);
                     }
@@ -3299,9 +3292,9 @@ fn handle_invalid_unicodes(s: &str) -> Cow<str> {
     Cow::Owned(s.replace("\\\0", "\\"))
 }
 
-fn require_space_before_rhs(rhs: &Expr, op: &BinaryOp) -> bool {
+fn require_space_before_rhs(rhs: &Expr, op: BinaryOp) -> bool {
     match rhs {
-        Expr::Lit(Lit::Num(v)) if v.value.is_sign_negative() && *op == op!(bin, "-") => true,
+        Expr::Lit(Lit::Num(v)) if v.value.is_sign_negative() && op == op!(bin, "-") => true,
 
         Expr::Update(UpdateExpr {
             prefix: true,
@@ -3315,7 +3308,7 @@ fn require_space_before_rhs(rhs: &Expr, op: &BinaryOp) -> bool {
         // space is mandatory to avoid outputting <!--
         Expr::Unary(UnaryExpr {
             op: op!("!"), arg, ..
-        }) if *op == op!("<") || *op == op!("<<") => {
+        }) if op == op!("<") || op == op!("<<") => {
             matches!(**arg, Expr::Update(UpdateExpr { op: op!("--"), .. }))
         }
 
@@ -3338,7 +3331,7 @@ fn minify_number(num: f64) -> String {
         if num.fract() == 0.0 && num.abs() <= u64::MAX as f64 {
             let int = num.abs() as u64;
 
-            if int < 10000000 {
+            if int < 10_000_000 {
                 break 'hex;
             }
 
@@ -3362,7 +3355,7 @@ fn minify_number(num: f64) -> String {
         if cnt > 2 {
             return format!("{}e-{}", &num[cnt..], num.len());
         }
-        return format!(".{}", num);
+        return format!(".{num}",);
     }
 
     if let Some(num) = num.strip_prefix("-0.") {
@@ -3370,7 +3363,7 @@ fn minify_number(num: f64) -> String {
         if cnt > 2 {
             return format!("-{}e-{}", &num[cnt..], num.len());
         }
-        return format!("-.{}", num);
+        return format!("-.{num}",);
     }
 
     if num.ends_with("000") {

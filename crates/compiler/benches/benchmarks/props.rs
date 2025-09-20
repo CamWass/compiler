@@ -25,7 +25,7 @@ pub fn bench(c: &mut Criterion) {
     ];
 
     let mut group = c.benchmark_group("props");
-    for (id, src, time, samples) in benches.iter() {
+    for (id, src, time, samples) in benches {
         group
             .measurement_time(Duration::from_secs(*time))
             .sample_size(*samples);
@@ -54,7 +54,7 @@ pub fn bench(c: &mut Criterion) {
                     .map_err(|e| e.into_diagnostic(&handler).emit());
 
                 for e in p.take_errors() {
-                    e.into_diagnostic(&handler).emit()
+                    e.into_diagnostic(&handler).emit();
                 }
 
                 res.unwrap()
@@ -68,7 +68,7 @@ pub fn bench(c: &mut Criterion) {
                 b.iter(|| {
                     let r = compiler::optimize_properties::analyse(program, unresolved_ctxt);
                     black_box(r);
-                })
+                });
             });
 
             program

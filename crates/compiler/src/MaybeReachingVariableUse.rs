@@ -876,11 +876,11 @@ where
         let conditional = self.has_exception_handler(node);
         self.compute_may_use(node, node, &mut output, conditional);
 
-        if output != self.lattice_elements[input] {
-            self.add_lattice_element(output)
-        } else {
+        if output == self.lattice_elements[input] {
             // No changes compared to input.
             input
+        } else {
+            self.add_lattice_element(output)
         }
     }
 

@@ -84,16 +84,15 @@ where
                     subgraph.add_node(node.clone());
                     let color = GraphColor::from_usize(count);
                     self.color_map.insert(node.clone(), color);
-                    match self.partitions.get_mut(color) {
-                        Some(p) => p.count += 1,
-                        None => {
-                            let p = Partition {
-                                super_node: None,
-                                count: 1,
-                            };
-                            let idx = self.partitions.push(p);
-                            debug_assert!(idx == color);
-                        }
+                    if let Some(p) = self.partitions.get_mut(color) {
+                        p.count += 1;
+                    } else {
+                        let p = Partition {
+                            super_node: None,
+                            count: 1,
+                        };
+                        let idx = self.partitions.push(p);
+                        debug_assert!(idx == color);
                     }
                     false
                 } else {

@@ -144,11 +144,11 @@ impl From<String> for NormalizedOutput {
                 } else {
                     s
                 };
-                buf.push_str(&s)
+                buf.push_str(&s);
             } else {
                 buf.push_str(line);
             }
-            buf.push('\n')
+            buf.push('\n');
         }
 
         NormalizedOutput(buf)

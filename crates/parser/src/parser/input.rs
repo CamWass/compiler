@@ -113,7 +113,7 @@ impl<I: Tokens> Buffer<I> {
     #[inline(never)]
     pub fn dump_cur(&mut self) -> String {
         match self.cur() {
-            Some(v) => format!("{:?}", v),
+            Some(v) => format!("{v:?}"),
             None => "<eof>".to_string(),
         }
     }
@@ -129,9 +129,8 @@ impl<I: Tokens> Buffer<I> {
             )
         }
 
-        let prev = match self.cur.take() {
-            Some(t) => t,
-            None => invalid_state(),
+        let Some(prev) = self.cur.take() else {
+            invalid_state()
         };
         self.prev_span = prev.span;
 
@@ -273,7 +272,7 @@ impl<I: Tokens> Buffer<I> {
 
     #[inline]
     pub(crate) fn set_expr_allowed(&mut self, allow: bool) {
-        self.iter.set_expr_allowed(allow)
+        self.iter.set_expr_allowed(allow);
     }
 
     #[inline]
@@ -282,6 +281,6 @@ impl<I: Tokens> Buffer<I> {
     }
     #[inline]
     pub(crate) fn set_token_context(&mut self, c: TokenContexts) {
-        self.iter.set_token_context(c)
+        self.iter.set_token_context(c);
     }
 }

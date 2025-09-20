@@ -20,7 +20,7 @@ fn bench(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("parser");
     group.sample_size(100);
-    for Bench(id, src) in benches.iter() {
+    for Bench(id, src) in &benches {
         group.throughput(Throughput::Bytes(src.len() as u64));
 
         let cm = Lrc::new(SourceMap::new(FilePathMapping::empty()));
@@ -31,7 +31,7 @@ fn bench(c: &mut Criterion) {
                 let mut program_data = Default::default();
                 let mut parser = Parser::new(Default::default(), f, &mut program_data);
                 black_box(parser.parse_module())
-            })
+            });
         });
     }
     group.finish();

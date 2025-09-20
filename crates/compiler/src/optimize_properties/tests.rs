@@ -28,8 +28,8 @@ fn test_transform(input: &str, expected: &str) {
 }
 fn test_transform_in_fn(input: &str, expected: &str) {
     test_transform(
-        &format!("function FUNCTION(){{{}}}", input),
-        &format!("function FUNCTION(){{{}}}", expected),
+        &format!("function FUNCTION(){{{input}}}"),
+        &format!("function FUNCTION(){{{expected}}}"),
     );
 }
 fn test_same_in_fn(input: &str) {
@@ -2111,7 +2111,7 @@ if (obj.a !== undefined) {
   // obj is not a person
 }
 ",
-    )
+    );
 }
 
 #[test]
