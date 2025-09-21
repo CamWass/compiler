@@ -351,20 +351,20 @@ impl CoalesceVariableNames<'_> {
     }
 }
 
-impl<'ast> VisitMut<'ast> for CoalesceVariableNames<'_> {
-    fn visit_mut_function(&mut self, node: &'ast mut Function) {
+impl VisitMut<'_> for CoalesceVariableNames<'_> {
+    fn visit_mut_function(&mut self, node: &mut Function) {
         handle_fn!(self, node);
     }
-    fn visit_mut_constructor(&mut self, node: &'ast mut Constructor) {
+    fn visit_mut_constructor(&mut self, node: &mut Constructor) {
         handle_fn!(self, node);
     }
-    fn visit_mut_arrow_expr(&mut self, node: &'ast mut ArrowExpr) {
+    fn visit_mut_arrow_expr(&mut self, node: &mut ArrowExpr) {
         handle_fn!(self, node);
     }
-    fn visit_mut_getter_prop(&mut self, node: &'ast mut GetterProp) {
+    fn visit_mut_getter_prop(&mut self, node: &mut GetterProp) {
         handle_fn!(self, node);
     }
-    fn visit_mut_setter_prop(&mut self, node: &'ast mut SetterProp) {
+    fn visit_mut_setter_prop(&mut self, node: &mut SetterProp) {
         handle_fn!(self, node);
     }
 
@@ -375,7 +375,7 @@ impl<'ast> VisitMut<'ast> for CoalesceVariableNames<'_> {
         self.handle_stmt_list(stmts);
     }
 
-    fn visit_mut_for_stmt(&mut self, node: &'ast mut ForStmt) {
+    fn visit_mut_for_stmt(&mut self, node: &mut ForStmt) {
         if let Some(VarDeclOrExpr::VarDecl(var_decl)) = &mut node.init {
             if var_decl.decls.len() == 1 {
                 let decl = var_decl.decls.first_mut().unwrap();
@@ -454,20 +454,20 @@ impl<'ast> VisitMut<'ast> for CoalesceVariableNames<'_> {
         node.update.visit_mut_with(self);
         self.visit_loop_body(node.body.as_mut());
     }
-    fn visit_mut_for_in_stmt(&mut self, node: &'ast mut ForInStmt) {
+    fn visit_mut_for_in_stmt(&mut self, node: &mut ForInStmt) {
         self.handle_enhanced_for(&mut node.left, &mut node.right, node.body.as_mut());
     }
-    fn visit_mut_for_of_stmt(&mut self, node: &'ast mut ForOfStmt) {
+    fn visit_mut_for_of_stmt(&mut self, node: &mut ForOfStmt) {
         self.handle_enhanced_for(&mut node.left, &mut node.right, node.body.as_mut());
     }
-    fn visit_mut_while_stmt(&mut self, node: &'ast mut WhileStmt) {
+    fn visit_mut_while_stmt(&mut self, node: &mut WhileStmt) {
         self.handle_simple_loop(node.test.as_mut(), node.body.as_mut());
     }
-    fn visit_mut_do_while_stmt(&mut self, node: &'ast mut DoWhileStmt) {
+    fn visit_mut_do_while_stmt(&mut self, node: &mut DoWhileStmt) {
         self.handle_simple_loop(node.test.as_mut(), node.body.as_mut());
     }
 
-    fn visit_mut_ident(&mut self, node: &'ast mut Ident) {
+    fn visit_mut_ident(&mut self, node: &mut Ident) {
         self.maybe_coalesce_name(node);
     }
 }
@@ -605,20 +605,20 @@ struct GlobalVisitor<'a> {
     program_data: &'a mut ast::ProgramData,
 }
 
-impl<'ast> VisitMut<'ast> for GlobalVisitor<'_> {
-    fn visit_mut_function(&mut self, node: &'ast mut Function) {
+impl VisitMut<'_> for GlobalVisitor<'_> {
+    fn visit_mut_function(&mut self, node: &mut Function) {
         handle_fn!(self, node);
     }
-    fn visit_mut_constructor(&mut self, node: &'ast mut Constructor) {
+    fn visit_mut_constructor(&mut self, node: &mut Constructor) {
         handle_fn!(self, node);
     }
-    fn visit_mut_arrow_expr(&mut self, node: &'ast mut ArrowExpr) {
+    fn visit_mut_arrow_expr(&mut self, node: &mut ArrowExpr) {
         handle_fn!(self, node);
     }
-    fn visit_mut_getter_prop(&mut self, node: &'ast mut GetterProp) {
+    fn visit_mut_getter_prop(&mut self, node: &mut GetterProp) {
         handle_fn!(self, node);
     }
-    fn visit_mut_setter_prop(&mut self, node: &'ast mut SetterProp) {
+    fn visit_mut_setter_prop(&mut self, node: &mut SetterProp) {
         handle_fn!(self, node);
     }
 }
