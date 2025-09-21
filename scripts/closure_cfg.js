@@ -2,7 +2,7 @@ const fs = require("fs");
 const https = require("https");
 const { URL, URLSearchParams } = require("url");
 
-const js = fs.readFileSync(`${__dirname}/${process.argv[2]}`, {
+const js = fs.readFileSync(process.argv[2], {
   encoding: "utf-8",
 });
 
@@ -81,5 +81,7 @@ function recolour(dot) {
   dot = recolour(dot);
   // dot = removeDeadNodes(dot);
 
-  await fs.promises.writeFile(`${__dirname}/closure_cfg.dot`, dot);
+  console.log(dot)
+
+  // await fs.promises.writeFile(`${__dirname}/closure_cfg.dot`, dot);
 })();
