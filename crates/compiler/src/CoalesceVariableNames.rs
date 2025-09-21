@@ -75,18 +75,6 @@ macro_rules! handle_fn {
             let (liveness, cfg) =
                 LiveVariablesAnalysis::new(cfa.cfg, &cfa.node_priorities, $function, all_vars_declared_in_func, $parent_visitor.unresolved_ctxt).analyze();
 
-            // TODO:
-            // if (FeatureSet.ES3.contains(compiler.getOptions().getOutputFeatureSet())) {
-            //     // If the function has exactly 2 params, mark them as escaped. This is a work-around for a
-            //     // bug in IE 8 and below, where it throws an exception if you write to the parameters of the
-            //     // callback in a sort(). See http://blickly.github.io/closure-compiler-issues/#58 and
-            //     // https://www.zachleat.com/web/array-sort/
-            //     Node enclosingFunction = scope.getRootNode();
-            //     if (NodeUtil.getFunctionParameters(enclosingFunction).hasTwoChildren()) {
-            //       liveness.markAllParametersEscaped();
-            //     }
-            // }
-
             // The interference graph has the function's variables as its nodes and any interference
             // between the variables as the edges. Interference between two variables means that they are
             // alive at overlapping times, which means that their variable names cannot be coalesced.
