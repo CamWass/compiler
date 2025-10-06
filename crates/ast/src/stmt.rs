@@ -187,8 +187,6 @@ pub struct ForInStmt {
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
 pub struct ForOfStmt {
     pub node_id: NodeId,
-    /// es2018
-    ///
     /// for-await-of statements, e.g., `for await (const x of xs) {`
     pub is_await: bool,
     pub left: VarDeclOrPat,
