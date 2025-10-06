@@ -394,20 +394,20 @@ fn recolour_graph(mut dot: String, node_count: usize) -> String {
 
     dot = dot
         .replace(
-            "[ label = \"UNCOND\" ]",
-            "[label=\"UNCOND\", fontcolor=\"purple\", color=\"purple\"]",
+            "[ label = \"Unconditional\" ]",
+            "[label=\"Unconditional\", fontcolor=\"purple\", color=\"purple\"]",
         )
         .replace(
-            "[ label = \"ON_FALSE\" ]",
-            "[label=\"ON_FALSE\", fontcolor=\"orange\", color=\"orange\"]",
+            "[ label = \"False\" ]",
+            "[label=\"False\", fontcolor=\"orange\", color=\"orange\"]",
         )
         .replace(
-            "[ label = \"ON_TRUE\" ]",
-            "[label=\"ON_TRUE\", fontcolor=\"green\", color=\"green\"]",
+            "[ label = \"True\" ]",
+            "[label=\"True\", fontcolor=\"green\", color=\"green\"]",
         )
         .replace(
-            "[ label = \"ON_EX\" ]",
-            "[label=\"ON_EX\", fontcolor=\"red\", color=\"red\"]",
+            "[ label = \"Exception\" ]",
+            "[label=\"Exception\", fontcolor=\"red\", color=\"red\"]",
         );
 
     dot
