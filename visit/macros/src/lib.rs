@@ -105,7 +105,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
 
     methods.iter_mut().for_each(|v| {
         let fn_name = v.sig.ident.clone();
-        let default_body = replace(&mut v.default, Some(parse_quote!({#fn_name(self, n)})));
+        let default_body = replace(&mut v.default, Some(parse_quote!({#fn_name(self, node)})));
 
         let arg_ty = v
             .sig
@@ -121,7 +121,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
         let trait_name = Ident::new(mode.trait_name(), Span::call_site());
 
         tokens.extend(quote! {
-            pub fn #fn_name<'ast, V: ?Sized + #trait_name<'ast>>(_visitor: &mut V, n: #arg_ty) {
+            pub fn #fn_name<'ast, V: ?Sized + #trait_name<'ast>>(_visitor: &mut V, node: #arg_ty) {
                 #default_body
             }
         })
@@ -397,10 +397,10 @@ fn method_sig(mode: Mode, ty: &Type) -> Signature {
             p.push_punct(Default::default());
             match mode {
                 Mode::VisitMut => {
-                    p.push_value(parse_quote!( n: &'ast mut #ty ));
+                    p.push_value(parse_quote!( node: &'ast mut #ty ));
                 }
                 Mode::Visit => {
-                    p.push_value(parse_quote!( n: &'ast #ty ));
+                    p.push_value(parse_quote!( node: &'ast #ty ));
                 }
             }
 
@@ -441,7 +441,7 @@ fn make_method(mode: Mode, e: &Item, types: &mut Vec<Type>) -> TraitItemFn {
             let block = {
                 let arm = make_arm_from_struct(mode, &s.ident.clone().into(), &s.fields, false);
 
-                let mut match_expr: ExprMatch = parse_quote!(match n {});
+                let mut match_expr: ExprMatch = parse_quote!(match node {});
                 match_expr.arms.push(arm);
 
                 Block {
@@ -499,7 +499,7 @@ fn make_method(mode: Mode, e: &Item, types: &mut Vec<Type>) -> TraitItemFn {
                         Expr::Match(ExprMatch {
                             attrs: vec![],
                             match_token: Default::default(),
-                            expr: parse_quote!(n),
+                            expr: parse_quote!(node),
                             brace_token: Default::default(),
                             arms,
                         }),
@@ -538,7 +538,7 @@ fn create_method_sig(mode: Mode, ty: &Type) -> Signature {
                 let mut p = Punctuated::default();
                 p.push_value(parse_quote!(&mut self));
                 p.push_punct(Default::default());
-                p.push_value(parse_quote!( n: #ty ));
+                p.push_value(parse_quote!( node: #ty ));
 
                 p
             },
@@ -642,7 +642,7 @@ fn create_method_body(mode: Mode, ty: &Type) -> Block {
         match mode {
             Mode::Visit => {
                 let visit = method_name(mode, ty);
-                return parse_quote!({ _visitor.#visit(n) });
+                return parse_quote!({ _visitor.#visit(node) });
             }
             Mode::VisitMut => {
                 return Block {
@@ -673,8 +673,8 @@ fn create_method_body(mode: Mode, ty: &Type) -> Block {
                                     let ident = method_name(mode, arg);
 
                                     return parse_quote!({
-                                        match n {
-                                            Some(n) => _visitor.#ident(n),
+                                        match node {
+                                            Some(node) => _visitor.#ident(node),
                                             None => {}
                                         }
                                     });
@@ -698,21 +698,21 @@ fn create_method_body(mode: Mode, ty: &Type) -> Block {
                                     return if is_option(arg) {
                                         match mode {
                                             Mode::VisitMut => {
-                                                parse_quote!({ n.iter_mut().for_each(|v| _visitor.#ident(v)) })
+                                                parse_quote!({ node.iter_mut().for_each(|v| _visitor.#ident(v)) })
                                             }
                                             Mode::Visit => parse_quote!({
-                                                n.iter()
+                                                node.iter()
                                                     .for_each(|v| _visitor.#ident(v.as_ref()))
                                             }),
                                         }
                                     } else {
                                         match mode {
                                             Mode::VisitMut => {
-                                                parse_quote!({ n.iter_mut().for_each(|v| _visitor.#ident(v)) })
+                                                parse_quote!({ node.iter_mut().for_each(|v| _visitor.#ident(v)) })
                                             }
 
                                             Mode::Visit => {
-                                                parse_quote!({ n.iter().for_each(|v| _visitor.#ident(v)) })
+                                                parse_quote!({ node.iter().for_each(|v| _visitor.#ident(v)) })
                                             }
                                         }
                                     };
