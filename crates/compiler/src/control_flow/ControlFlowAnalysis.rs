@@ -53,6 +53,15 @@ impl_from!(&'ast ArrowExpr, ArrowExpr);
 impl_from!(&'ast GetterProp, GetterProp);
 impl_from!(&'ast SetterProp, SetterProp);
 
+impl<'ast> From<&'ast Program> for ControlFlowRoot<'ast> {
+    fn from(value: &'ast Program) -> Self {
+        match value {
+            Program::Module(n) => ControlFlowRoot::Module(n),
+            Program::Script(n) => ControlFlowRoot::Script(n),
+        }
+    }
+}
+
 pub type NodePriority = u32;
 
 pub struct ControlFlowAnalysisResult<N: CfgNode, NA: Annotation> {
@@ -260,8 +269,8 @@ where
     }
 
     #[allow(dead_code)]
-    pub fn print_full_graph(&self) {
-        self.cfg.print_full();
+    pub fn print_full_graph(&self, program_data: &ProgramData) {
+        self.cfg.print_full(program_data);
     }
 
     fn handle_simple_stmt(&mut self, node: Node<'ast>) {

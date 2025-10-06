@@ -1,4 +1,4 @@
-use ast::{GetNodeId, NodeId};
+use ast::{GetNodeId, NodeId, ProgramData};
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 
@@ -62,13 +62,21 @@ impl<'ast> Node<'ast> {
     pub fn visit_with<V: ecma_visit::Visit<'ast>>(&self, v: &mut V) {
         self.kind.visit_with(v);
     }
-}
 
-// impl Spanned for Node<'_> {
-//     fn span(&self) -> global_common::Span {
-//         self.kind.span()
-//     }
-// }
+    pub fn get_debug_string(&self, program_data: &ProgramData) -> String {
+        if self.node_id == NodeId::DUMMY {
+            return String::from("ImplicitReturn");
+        }
+
+        let kind = self.kind.get_discriminant();
+        let span = program_data.get_span(self.node_id);
+
+        let lo = span.lo.0;
+        let hi = span.hi.0;
+
+        format!("{kind}({lo}..{hi})")
+    }
+}
 
 macro_rules! make {
     ($($field:ident,)*) => {
@@ -93,8 +101,15 @@ macro_rules! make {
             pub fn visit_with<V: ecma_visit::Visit<'ast>>(&self, v: &mut V) {
                 use ecma_visit::VisitWith;
                 match self {
-                    NodeKind::ImplicitReturn=>{},
+                    NodeKind::ImplicitReturn => {},
                     $(NodeKind::$field(n) => n.visit_with(v),)*
+                }
+            }
+
+            fn get_discriminant(&self) -> &'static str {
+                match self {
+                    NodeKind::ImplicitReturn => "ImplicitReturn",
+                    $(NodeKind::$field(_) => stringify!($field),)*
                 }
             }
         }

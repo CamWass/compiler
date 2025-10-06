@@ -1,4 +1,5 @@
 use super::node::{CfgNode, Node, NodeKind};
+use ast::ProgramData;
 use petgraph::{
     dot::Dot,
     graph::{DiGraph, Neighbors, NodeIndex},
@@ -215,7 +216,7 @@ where
     }
 
     #[allow(dead_code, reason = "used for debugging")]
-    pub fn print_simple_with_annotations(&self) {
+    pub fn print_simple_with_annotations(&self, program_data: &ProgramData) {
         // Only used for custom debug impl.
         struct CustomNode<'ast, 'a, NA>
         where
@@ -223,6 +224,7 @@ where
         {
             node: Node<'ast>,
             annotation: Option<&'a NA>,
+            program_data: &'a ProgramData,
         }
 
         impl<NA> fmt::Debug for CustomNode<'_, '_, NA>
@@ -241,7 +243,7 @@ where
                         f.write_fmt(format_args!("Ident({})", s.sym))?;
                     }
                     _ => {
-                        f.write_fmt(format_args!("{:?}", self.node.kind))?;
+                        f.write_str(&self.node.get_debug_string(self.program_data))?;
                     }
                 }
                 if let Some(ann) = self.annotation {
@@ -256,6 +258,7 @@ where
         let custom_node = |node| CustomNode {
             node,
             annotation: self.node_annotations.get(&node),
+            program_data,
         };
 
         let graph = self.graph.map(|_, n| custom_node(*n), |_, e| *e);
@@ -272,29 +275,29 @@ where
     /// Prints a rich representation of the control flow graph to dot format.
     /// The resulting graph contains represents the full AST of the entry node,
     /// as well as any control flow edges.
-    pub fn print_full(&self) {
-        self.print_full_inner::<DefaultPrinter>(None, "cfg");
+    pub fn print_full(&self, program_data: &ProgramData) {
+        self.print_full_inner::<DefaultPrinter>(None, "cfg", program_data);
     }
     #[allow(dead_code, reason = "used for debugging")]
     /// Same as `print_full` but also prints node annotations using `printer`.
     /// If `printer` is `None`, the annotations will be printed using [`Debug`][std::fmt::Debug].
-    pub fn print_full_with_annotations<P>(&self, printer: Option<&P>)
+    pub fn print_full_with_annotations<P>(&self, printer: Option<&P>, program_data: &ProgramData)
     where
         P: AnnotationPrinter<NA>,
     {
         match printer {
-            Some(p) => self.print_full_inner(Some(p), "cfg"),
-            None => self.print_full_inner(Some(&DefaultPrinter), "cfg"),
+            Some(p) => self.print_full_inner(Some(p), "cfg", program_data),
+            None => self.print_full_inner(Some(&DefaultPrinter), "cfg", program_data),
         }
     }
 
     #[allow(dead_code, reason = "used for debugging")]
-    pub fn print_full_with_annotations_name(&self, name: &str) {
-        self.print_full_inner::<DefaultPrinter>(Some(&DefaultPrinter), name);
+    pub fn print_full_with_annotations_name(&self, name: &str, program_data: &ProgramData) {
+        self.print_full_inner::<DefaultPrinter>(Some(&DefaultPrinter), name, program_data);
     }
 
     /// If `printer` is `None`, node annotations are not printed.
-    fn print_full_inner<P>(&self, printer: Option<&P>, name: &str)
+    fn print_full_inner<P>(&self, printer: Option<&P>, name: &str, program_data: &ProgramData)
     where
         P: AnnotationPrinter<NA>,
     {
@@ -307,6 +310,7 @@ where
             node: Node<'ast>,
             annotation: Option<&'a NA>,
             printer: Option<&'a P>,
+            program_data: &'a ProgramData,
         }
 
         impl<NA, P> fmt::Debug for CustomNode<'_, '_, NA, P>
@@ -326,7 +330,7 @@ where
                         f.write_fmt(format_args!("Ident({})", s.sym))?;
                     }
                     _ => {
-                        f.write_fmt(format_args!("{:?}", self.node.kind))?;
+                        f.write_str(&self.node.get_debug_string(self.program_data))?;
                     }
                 }
                 if let (Some(printer), Some(ann)) = (self.printer, self.annotation) {
@@ -342,6 +346,7 @@ where
             node,
             annotation: self.node_annotations.get(&node),
             printer,
+            program_data,
         };
 
         // Create graph of AST nodes.

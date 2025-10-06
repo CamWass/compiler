@@ -7,10 +7,7 @@ use global_common::{
 };
 use parser::{Parser, Syntax};
 
-use crate::control_flow::{
-    ControlFlowAnalysis::{ControlFlowAnalysis, ControlFlowRoot},
-    ControlFlowGraph::DefaultPrinter,
-};
+use crate::control_flow::ControlFlowAnalysis::{ControlFlowAnalysis, ControlFlowRoot};
 use crate::Id;
 use crate::{find_vars::find_vars_declared_in_fn, utils::unwrap_as};
 
@@ -338,10 +335,6 @@ where
             all_vars_declared_in_function,
         )
         .analyze();
-
-        result
-            .cfg
-            .print_full_with_annotations::<DefaultPrinter>(None);
 
         op(function, &result);
     });
