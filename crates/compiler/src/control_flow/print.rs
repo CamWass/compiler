@@ -3,10 +3,7 @@ use ast::*;
 use ecma_visit::{Visit, VisitWith};
 use petgraph::graph::{DiGraph, NodeIndex};
 use rustc_hash::FxHashMap;
-use std::{
-    fmt::{self, Debug},
-    ops::{Deref, DerefMut},
-};
+use std::fmt::{self, Debug};
 
 // TODO: account for other function like types (such as methods/getters etc)
 
@@ -106,60 +103,18 @@ where
             self.create_edge(parent, Edge(None), node);
         }
     }
-
-    /// Original parent is restored when returned guard is dropped.
-    fn with_parent(&mut self, parent: Node<'ast>) -> WithParent<'_, 'ast, E> {
-        let orig = self.current_parent;
-        self.current_parent = Some(parent);
-        WithParent { orig, inner: self }
-    }
-
-    #[inline(always)]
-    fn with<F, Ret>(&mut self, f: F) -> Ret
-    where
-        F: FnOnce(&mut Self) -> Ret,
-    {
-        f(self)
-    }
-}
-
-struct WithParent<'w, 'ast, E>
-where
-    E: Debug + PartialEq + Clone + Copy,
-{
-    inner: &'w mut NodeVisitor<'ast, E>,
-    orig: Option<Node<'ast>>,
-}
-impl<'ast, E: Debug + PartialEq + Clone + Copy> Deref for WithParent<'_, 'ast, E> {
-    type Target = NodeVisitor<'ast, E>;
-
-    fn deref(&self) -> &NodeVisitor<'ast, E> {
-        self.inner
-    }
-}
-impl<'ast, E: Debug + PartialEq + Clone + Copy> DerefMut for WithParent<'_, 'ast, E> {
-    fn deref_mut(&mut self) -> &mut NodeVisitor<'ast, E> {
-        self.inner
-    }
-}
-impl<E> Drop for WithParent<'_, '_, E>
-where
-    E: Debug + PartialEq + Clone + Copy,
-{
-    fn drop(&mut self) {
-        std::mem::swap(&mut self.inner.current_parent, &mut self.orig);
-    }
 }
 
 macro_rules! generate_visitors {
     ([$([$name:ident, $N:tt]$(,)?)*]) => {
         $(
-            #[inline]
             fn $name(&mut self, n: &'ast $N) {
                 let new_parent = Node::from(n);
                 self.connect_node_to_parent(new_parent);
-                self.with_parent(new_parent)
-                    .with(|v| n.visit_children_with(v));
+                let previous_parent = self.current_parent;
+                self.current_parent = Some(new_parent);
+                n.visit_children_with(self);
+                self.current_parent = previous_parent;
             }
         )*
 
