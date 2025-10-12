@@ -1,4 +1,5 @@
 use ast::*;
+use ecma_visit::VisitWith;
 use ecma_visit::{VisitMut, VisitMutWith};
 use global_common::SyntaxContext;
 use rustc_hash::FxHashMap;
@@ -6,6 +7,8 @@ use rustc_hash::FxHashMap;
 use crate::control_flow::ControlFlowAnalysis::ControlFlowAnalysis;
 use crate::control_flow::ControlFlowAnalysis::ControlFlowRoot;
 use crate::find_vars::find_vars_declared_in_fn;
+use crate::find_vars::DeclFinder;
+use crate::find_vars::FunctionLike;
 use crate::find_vars::VarId;
 use crate::utils::unwrap_as;
 use crate::DataFlowAnalysis::LinearFlowState;
@@ -184,14 +187,22 @@ struct Driver<'a> {
     function_stack: Vec<FunctionData>,
 }
 
-impl VisitMut<'_> for Driver<'_> {
-    fn visit_mut_function(&mut self, node: &mut Function) {
+impl Driver<'_> {
+    fn handle_fn<T>(&mut self, node: &mut T)
+    where
+        T: FunctionLike
+            + GetNodeId
+            + for<'b> VisitWith<'b, DeclFinder>
+            + for<'b> VisitMutWith<'b, DeadAssignmentElimination<'b>>,
+        for<'b> ControlFlowRoot<'b>: From<&'b T>,
+    {
         if let Some(function_data) = self.function_stack.last_mut() {
             function_data.contains_function = true;
         }
 
         self.function_stack.push(FunctionData::default());
-        node.visit_mut_children_with(self);
+        node.params_mut().for_each(|p| p.visit_mut_with(self));
+        node.body_mut().visit_mut_with(self);
         let function_data = self.function_stack.pop().unwrap();
 
         // TODO: should we find and skip the specific variables that are
@@ -210,7 +221,9 @@ impl VisitMut<'_> for Driver<'_> {
             return;
         }
 
-        let all_vars_declared_in_func = find_vars_declared_in_fn(node, false);
+        let node_id = node.node_id();
+
+        let all_vars_declared_in_func = find_vars_declared_in_fn(&*node, false);
 
         if all_vars_declared_in_func.ordered_vars.len() > MAX_VARIABLES_TO_ANALYZE {
             return;
@@ -233,7 +246,7 @@ impl VisitMut<'_> for Driver<'_> {
             .collect::<FxHashMap<_, _>>();
 
         let current_state = *cfg_node_states
-            .get(&node.node_id)
+            .get(&node_id)
             .expect("function should have cfg node");
 
         let mut visitor = DeadAssignmentElimination {
@@ -242,20 +255,27 @@ impl VisitMut<'_> for Driver<'_> {
             cfg_node_states,
             current_state,
         };
-        node.visit_mut_children_with(&mut visitor);
+
+        node.visit_mut_with(&mut visitor);
     }
-    // fn visit_mut_constructor(&mut self, node: &mut Constructor) {
-    //     handle_fn!(self, node);
-    // }
-    // fn visit_mut_arrow_expr(&mut self, node: &mut ArrowExpr) {
-    //     handle_fn!(self, node);
-    // }
-    // fn visit_mut_getter_prop(&mut self, node: &mut GetterProp) {
-    //     handle_fn!(self, node);
-    // }
-    // fn visit_mut_setter_prop(&mut self, node: &mut SetterProp) {
-    //     handle_fn!(self, node);
-    // }
+}
+
+impl VisitMut<'_> for Driver<'_> {
+    fn visit_mut_function(&mut self, node: &mut Function) {
+        self.handle_fn(node);
+    }
+    fn visit_mut_constructor(&mut self, node: &mut Constructor) {
+        self.handle_fn(node);
+    }
+    fn visit_mut_arrow_expr(&mut self, node: &mut ArrowExpr) {
+        self.handle_fn(node);
+    }
+    fn visit_mut_getter_prop(&mut self, node: &mut GetterProp) {
+        self.handle_fn(node);
+    }
+    fn visit_mut_setter_prop(&mut self, node: &mut SetterProp) {
+        self.handle_fn(node);
+    }
 
     fn visit_mut_for_stmt(&mut self, node: &mut ForStmt) {
         node.test.visit_mut_with(self);
