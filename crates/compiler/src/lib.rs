@@ -15,6 +15,7 @@ mod RenameVars;
 mod control_flow;
 mod convert;
 mod convert_to_dot_properties;
+mod dead_assignment_elimination;
 mod denormalize;
 mod find_vars;
 mod graph;
@@ -70,6 +71,8 @@ pub struct PassConfig {
     pub inline_functions: bool,
     #[serde(default)]
     pub convert_to_dot_properties: bool,
+    #[serde(default)]
+    pub dead_assignment_elimination: bool,
 }
 
 pub struct Compiler {
@@ -175,7 +178,11 @@ fn getMainOptimizationLoop(
     }
 
     // TODO: inlineVariables
-    // TODO: deadAssignmentsElimination
+
+    if passes.dead_assignment_elimination {
+        dead_assignment_elimination::process(ast, program_data, unresolved_ctxt);
+    }
+
     // TODO: collapseObjectLiterals
     // TODO: removeUnusedCode
     // TODO: peepholeOptimizations
