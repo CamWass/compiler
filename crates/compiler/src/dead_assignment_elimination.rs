@@ -101,6 +101,8 @@ impl VisitMut<'_> for DeadAssignmentElimination<'_> {
             let mut can_optimise = false;
 
             self.with_control_flow_node(stmt.node_id(), |visitor| {
+                // Recurse first. Example: dead_x = dead_y = 1; We try to clean
+                // up dead_y first.
                 stmt.visit_mut_children_with(visitor);
 
                 let Stmt::Decl(Decl::Var(var)) = stmt else {
