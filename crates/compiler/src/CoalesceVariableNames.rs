@@ -735,6 +735,10 @@ impl Visit<'_> for LiveRangeChecker<'_> {
         node.left.visit_with(self);
     }
 
+    // TODO: this incorrectly assumes that the bodies of if/for etc are only
+    // BlockStmts, but they can be any statement.
+    // Also need to double check the handling of switch cases, which create CFG
+    // nodes.
     // Don't enter any new control nodes. They will be handled by later
     // LiveRangeCheckers.
     fn visit_block_stmt(&mut self, _node: &BlockStmt) {}

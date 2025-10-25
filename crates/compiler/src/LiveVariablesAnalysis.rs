@@ -230,6 +230,10 @@ impl<'ast, T> Visit<'ast> for GenKillComputer<'ast, '_, '_, T>
 where
     T: FunctionLike,
 {
+    // TODO: this incorrectly assumes that the bodies of if/for etc are only
+    // BlockStmts, but they can be any statement.
+    // Also need to double check the handling of switch cases, which create CFG
+    // nodes.
     // Don't enter any new control nodes. They will be handled by later.
     fn visit_block_stmt(&mut self, _: &'ast BlockStmt) {}
     fn visit_for_stmt(&mut self, node: &'ast ForStmt) {

@@ -201,6 +201,10 @@ impl<T> Visit<'_> for ReachingUseFinder<'_, '_, '_, T>
 where
     T: FunctionLike,
 {
+    // TODO: this incorrectly assumes that the bodies of if/for etc are only
+    // BlockStmts, but they can be any statement.
+    // Also need to double check the handling of switch cases, which create CFG
+    // nodes.
     // Don't enter any new control nodes. They will be handled by later.
     fn visit_block_stmt(&mut self, _: &BlockStmt) {}
     fn visit_switch_case(&mut self, node: &SwitchCase) {
