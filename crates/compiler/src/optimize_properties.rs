@@ -1426,6 +1426,10 @@ impl Visit<'_> for DeclFinder<'_> {
         self.record_var(&node.ident);
     }
 
+    fn visit_class_decl(&mut self, node: &ClassDecl) {
+        self.record_var(&node.ident);
+    }
+
     // Expressions can't declare new vars.
     fn visit_expr(&mut self, _node: &Expr) {}
     fn visit_prop_name(&mut self, _node: &PropName) {}
