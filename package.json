@@ -1,4 +1,5 @@
 {
+  "name": "compiler",
   "scripts": {
     "closure": "ts-node closure_debug.ts"
   },
@@ -8,7 +9,6 @@
     "typescript": "^4.6.3"
   },
   "dependencies": {
-    "he": "^1.2.0",
     "jsdelta": "^1.0.0",
     "prettier": "^2.7.1"
   }
