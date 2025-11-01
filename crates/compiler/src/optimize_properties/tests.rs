@@ -2514,3 +2514,29 @@ func(obj2);
 ",
     );
 }
+
+#[test]
+fn test_this_invalidation() {
+    test_same(
+        "
+function func(arg) {
+    this;
+    return arg;
+}
+func({ prop: 1 }).prop;
+",
+    );
+
+    test_same("({ prop: this })");
+
+    test_same(
+        "
+const obj = {
+    prop: 1,
+    method() {
+        this;
+    }
+};
+",
+    );
+}

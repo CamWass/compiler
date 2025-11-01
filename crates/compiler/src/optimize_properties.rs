@@ -461,6 +461,7 @@ fn compute_relations(ast: &ast::Program, store: &mut Store) -> Graph {
         store,
         graph: &mut graph,
         cur_fn: None,
+        cur_this_pointer: None,
     };
     ast.visit_with(&mut visitor);
 
@@ -471,6 +472,7 @@ struct GraphVisitor<'a> {
     store: &'a mut Store,
     graph: &'a mut Graph,
     cur_fn: Option<NodeId>,
+    cur_this_pointer: Option<PointerId>,
 }
 
 impl GraphVisitor<'_> {
@@ -485,7 +487,13 @@ impl GraphVisitor<'_> {
             };
         }
         match expr {
-            Expr::This(_) => ret!(vec![PointerId::UNKNOWN]),
+            Expr::This(_) => {
+                if let Some(this_pointer) = self.cur_this_pointer {
+                    self.invalidate(&[this_pointer]);
+                }
+
+                ret!(vec![PointerId::UNKNOWN])
+            }
             Expr::Array(n) => {
                 for element in &n.elems {
                     match element {
@@ -505,6 +513,10 @@ impl GraphVisitor<'_> {
                     .pointers
                     .get_index(&Pointer::Object(n.node_id))
                     .unwrap();
+
+                let old_cur_this_pointer = self.cur_this_pointer;
+
+                self.cur_this_pointer = Some(obj);
 
                 let is_simple_obj_lit = n.props.iter().all(|p| match p {
                     Prop::KeyValue(p) => is_simple_prop_name(&p.key, self.store.unresolved_ctxt),
@@ -543,6 +555,9 @@ impl GraphVisitor<'_> {
                     n.props.visit_with(self);
                     self.invalidate(&[obj]);
                 }
+
+                self.cur_this_pointer = old_cur_this_pointer;
+
                 ret!(vec![obj])
             }
             Expr::Fn(n) => {
@@ -1225,11 +1240,29 @@ impl Visit<'_> for GraphVisitor<'_> {
     // TODO: we don't yet handle getters/setters
 
     fn visit_function(&mut self, n: &Function) {
-        let old = self.cur_fn;
+        let old_cur_fn = self.cur_fn;
         self.cur_fn = Some(n.node_id);
+
         n.params.visit_with(self);
+
+        // Set the function as the current `this` pointer _after_ we visit the
+        // params, since `this` only points to the function in the body.
+
+        let old_cur_this_pointer = self.cur_this_pointer;
+
+        let func = self
+            .store
+            .pointers
+            .get_index(&Pointer::Fn(n.node_id))
+            .unwrap();
+
+        self.cur_this_pointer = Some(func);
+
         n.body.visit_with(self);
-        self.cur_fn = old;
+
+        self.cur_this_pointer = old_cur_this_pointer;
+
+        self.cur_fn = old_cur_fn;
     }
 
     fn visit_constructor(&mut self, n: &Constructor) {
@@ -1246,6 +1279,19 @@ impl Visit<'_> for GraphVisitor<'_> {
         n.params.visit_with(self);
         n.body.visit_with(self);
         self.cur_fn = old;
+    }
+
+    fn visit_class(&mut self, n: &Class) {
+        n.extends.visit_children_with(self);
+
+        let old_cur_this_pointer = self.cur_this_pointer;
+
+        // TODO: set this to the class pointer when that is supported.
+        self.cur_this_pointer = None;
+
+        n.body.visit_children_with(self);
+
+        self.cur_this_pointer = old_cur_this_pointer;
     }
 
     fn visit_var_declarator(&mut self, n: &VarDeclarator) {
