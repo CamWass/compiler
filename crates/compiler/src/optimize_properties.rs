@@ -1197,7 +1197,13 @@ impl Visit<'_> for GraphVisitor<'_> {
 
     fn visit_decl(&mut self, n: &Decl) {
         match n {
-            Decl::Class(_) => todo!(),
+            Decl::Class(class) => {
+                let name = Id::new(&class.ident, &mut self.store.names);
+                let var = self.store.vars.get_index(&name).unwrap();
+                let var = self.store.pointers.insert(Pointer::Var(var));
+                self.invalidate(&[var]);
+                class.visit_children_with(self);
+            }
             Decl::Fn(func) => {
                 let name = Id::new(&func.ident, &mut self.store.names);
                 let var = self.store.vars.get_index(&name).unwrap();
