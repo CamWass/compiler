@@ -1232,6 +1232,14 @@ impl Visit<'_> for GraphVisitor<'_> {
         self.cur_fn = old;
     }
 
+    fn visit_constructor(&mut self, n: &Constructor) {
+        let old = self.cur_fn;
+        self.cur_fn = Some(n.node_id);
+        n.params.visit_with(self);
+        n.body.visit_with(self);
+        self.cur_fn = old;
+    }
+
     fn visit_arrow_expr(&mut self, n: &ArrowExpr) {
         let old = self.cur_fn;
         self.cur_fn = Some(n.node_id);
