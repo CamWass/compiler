@@ -8,7 +8,7 @@
 #[cfg(test)]
 mod tests;
 
-mod graph;
+pub mod graph;
 mod growable_unionfind;
 mod simple_set;
 mod unionfind;
@@ -1398,8 +1398,8 @@ pub enum ExprContext {
 pub struct Store {
     unresolved_ctxt: SyntaxContext,
     functions: FxHashMap<NodeId, StaticFunctionData>,
-    names: IndexSet<NameId, JsWord>,
-    vars: IndexSet<VarId, Id>,
+    pub names: IndexSet<NameId, JsWord>,
+    pub vars: IndexSet<VarId, Id>,
     pub pointers: IndexSet<PointerId, Pointer>,
     references: FxHashSet<(PropKey, PointerId)>,
     pub invalid_pointers: GrowableBitSet<PointerId>,
@@ -1638,14 +1638,14 @@ const STATIC_POINTERS: [(PointerId, Pointer); 7] = [
 ];
 
 impl PointerId {
-    const BOOL: Self = Self::from_u32(0);
-    const NUM: Self = Self::from_u32(1);
-    const STRING: Self = Self::from_u32(2);
-    const BIG_INT: Self = Self::from_u32(3);
-    const REGEX: Self = Self::from_u32(4);
-    const NULL_OR_VOID: Self = Self::from_u32(5);
+    pub const BOOL: Self = Self::from_u32(0);
+    pub const NUM: Self = Self::from_u32(1);
+    pub const STRING: Self = Self::from_u32(2);
+    pub const BIG_INT: Self = Self::from_u32(3);
+    pub const REGEX: Self = Self::from_u32(4);
+    pub const NULL_OR_VOID: Self = Self::from_u32(5);
 
-    const UNKNOWN: Self = Self::from_u32(6);
+    pub const UNKNOWN: Self = Self::from_u32(6);
 
     fn is_primitive(self) -> bool {
         self.as_u32() <= Self::NULL_OR_VOID.as_u32()
@@ -1906,10 +1906,10 @@ fn is_simple_prop_name(prop_name: &PropName, unresolved_ctxt: SyntaxContext) -> 
 index::newtype_index!(pub struct NameId { .. });
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-struct Id(NameId, SyntaxContext);
+pub struct Id(NameId, SyntaxContext);
 
 impl Id {
-    fn new(ident: &Ident, names: &mut IndexSet<NameId, JsWord>) -> Self {
+    pub fn new(ident: &Ident, names: &mut IndexSet<NameId, JsWord>) -> Self {
         Self(names.insert(ident.sym.clone()), ident.ctxt)
     }
 }

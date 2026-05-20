@@ -886,7 +886,7 @@ impl SmallSet {
         }
     }
 
-    fn contains(&self, value: PointerId) -> bool {
+    pub fn contains(&self, value: PointerId) -> bool {
         match self {
             SmallSet::Inline(set) => set.contains(&value),
             SmallSet::Heap(set) => set.contains(value),

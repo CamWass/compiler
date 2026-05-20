@@ -21,3 +21,27 @@ Most passes don't care about actual names, just whether two names are te same et
 
 delay merging nodes until we see tham again laer in the queue?
 To avoid mergeing nodes that we'll never visit again
+
+All prop pointers will eventually be assigned to the set of property accesses/definitions/references in the source
+code? SO instead of creating an exponential amount of pointers, if we could find a way to only use the source code
+locations then our pointer set would be bounded? (Or al least MUCH smaller):
+
+const foo = a || b;
+foo.prop
+
+Only one prop access - we'd currently have a.prop, b.prop, and foo.prop as pointers, but in the end we'll have:
+a.prop = b.prop = foo.prop => only one "prop" we need to represent.
+
+const foo = a || b;
+const bar = foo.prop1
+const baz = bar.prop2
+
+baz <- bar.prop2 <- foo.prop1.prop2 <- a.prop1.prop2 | b.prop1.prop2
+
+
+
+
+We know the components because we build the graph.
+replace queue with one for each component.
+Components can be processed independently.
+Within each component we process topologically.

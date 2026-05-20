@@ -1,5 +1,60 @@
-function* foo(a = function* inner() {yield;}) {}
+function foo() {
+    let a = 1;
+}
 
+
+// "".length = window.l;
+
+// ({ prop: 1 } || ''.length).prop;
+
+// const a = "";
+// a.length;
+
+// const Object = {};
+// Object.prototype = {};
+
+// const String = {};
+// String.prototype = {};
+
+// String.prototype.banana = 1;
+
+// "".banana;
+
+
+////////////////////////////////////////
+
+// class Foo {
+//     "prop1" = 1;
+
+//     ["prop2"]() {}
+
+//     get ["prop3"](){}
+//     set ["prop3"](a){}
+
+//     get"prop4"(){}
+//     set"prop4"(a){}
+
+//     get prop5(){}
+//     set prop5(a){}
+// }
+
+////////////////////////////////////////
+
+// function outer() {
+//     function inner() {
+//         return 1;
+//     }
+
+//     return inner();
+// }
+
+// outer();
+
+////////////////////////////////////////
+
+// function* foo(a = function* inner() {yield;}) {}
+
+////////////////////////////////////////
 
 // // function func1() {
 // //     this.inner.prop3;

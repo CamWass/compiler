@@ -21,6 +21,7 @@ mod find_vars;
 mod graph;
 mod inline_functions;
 mod normalize;
+mod optimise_typeof;
 pub mod optimize_properties;
 mod peephole;
 pub mod resolver;
