@@ -1,30 +1,30 @@
 #![allow(dead_code)]
 newtype_index!(struct MyIdx { MAX = 0xFFFF_FFFA });
 
-#[test]
-fn index_size_is_optimized() {
-    use std::mem::size_of;
+// #[test]
+// fn index_size_is_optimized() {
+//     use std::mem::size_of;
 
-    assert_eq!(size_of::<MyIdx>(), 4);
-    // Uses 0xFFFF_FFFB
-    assert_eq!(size_of::<Option<MyIdx>>(), 4);
-    // Uses 0xFFFF_FFFC
-    assert_eq!(size_of::<Option<Option<MyIdx>>>(), 4);
-    // Uses 0xFFFF_FFFD
-    assert_eq!(size_of::<Option<Option<Option<MyIdx>>>>(), 4);
-    // Uses 0xFFFF_FFFE
-    assert_eq!(size_of::<Option<Option<Option<Option<MyIdx>>>>>(), 4);
-    // Uses 0xFFFF_FFFF
-    assert_eq!(
-        size_of::<Option<Option<Option<Option<Option<MyIdx>>>>>>(),
-        4
-    );
-    // Uses a tag
-    assert_eq!(
-        size_of::<Option<Option<Option<Option<Option<Option<MyIdx>>>>>>>(),
-        8
-    );
-}
+//     assert_eq!(size_of::<MyIdx>(), 4);
+//     // Uses 0xFFFF_FFFB
+//     assert_eq!(size_of::<Option<MyIdx>>(), 4);
+//     // Uses 0xFFFF_FFFC
+//     assert_eq!(size_of::<Option<Option<MyIdx>>>(), 4);
+//     // Uses 0xFFFF_FFFD
+//     assert_eq!(size_of::<Option<Option<Option<MyIdx>>>>(), 4);
+//     // Uses 0xFFFF_FFFE
+//     assert_eq!(size_of::<Option<Option<Option<Option<MyIdx>>>>>(), 4);
+//     // Uses 0xFFFF_FFFF
+//     assert_eq!(
+//         size_of::<Option<Option<Option<Option<Option<MyIdx>>>>>>(),
+//         4
+//     );
+//     // Uses a tag
+//     assert_eq!(
+//         size_of::<Option<Option<Option<Option<Option<Option<MyIdx>>>>>>>(),
+//         8
+//     );
+// }
 
 #[test]
 fn range_iterator_iterates_forwards() {

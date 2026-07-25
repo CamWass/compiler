@@ -3284,7 +3284,7 @@ fn get_quoted_utf16(v: &str, target: EsVersion) -> String {
     }
 }
 
-fn handle_invalid_unicodes(s: &str) -> Cow<str> {
+fn handle_invalid_unicodes(s: &str) -> Cow<'_, str> {
     if !s.contains("\\\0") {
         return Cow::Borrowed(s);
     }

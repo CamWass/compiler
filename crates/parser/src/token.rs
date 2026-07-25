@@ -605,7 +605,7 @@ impl Token {
 }
 
 impl Word {
-    pub(crate) fn cow(&self) -> Cow<JsWord> {
+    pub(crate) fn cow(&self) -> Cow<'_, JsWord> {
         match self {
             Word::Keyword(k) => Cow::Owned(k.into_js_word()),
             Word::Ident(w) => Cow::Borrowed(w),

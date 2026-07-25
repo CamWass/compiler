@@ -516,7 +516,7 @@ impl SyntaxError {
 impl Error {
     #[cold]
     #[inline(never)]
-    pub fn into_diagnostic(self, handler: &Handler) -> DiagnosticBuilder {
+    pub fn into_diagnostic(self, handler: &Handler) -> DiagnosticBuilder<'_> {
         let span = self.error.0;
 
         let kind = self.error.1;

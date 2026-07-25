@@ -1,5 +1,4 @@
 #![feature(iter_order_by)]
-#![feature(map_many_mut)]
 // TODO:
 #![allow(non_snake_case)]
 #![deny(unused_imports)]

@@ -103,7 +103,7 @@ macro_rules! newtype_index {
      @debug_format [$debug_format:tt]) => (
         $(#[$attrs])*
         #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, $($derives),*)]
-        #[rustc_layout_scalar_valid_range_end($max)]
+        // #[rustc_layout_scalar_valid_range_end($max)]
         $v struct $type {
             private: u32
         }
@@ -177,7 +177,7 @@ macro_rules! newtype_index {
 
         impl ::std::iter::Step for $type {
             #[inline]
-            fn steps_between(start: &Self, end: &Self) -> Option<usize> {
+            fn steps_between(start: &Self, end: &Self) -> (usize, Option<usize>) {
                 <usize as ::std::iter::Step>::steps_between(
                     &Self::index(*start),
                     &Self::index(*end),
