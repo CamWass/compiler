@@ -7,37 +7,31 @@ use crate::token::Keyword;
 impl<I: Tokens> Parser<'_, I> {
     /// Name from spec: 'LogicalORExpression'
     pub(super) fn parse_bin_expr(&mut self, assign_props: &mut AssignProps) -> PResult<MaybeParen> {
-        trace_cur!(self, parse_bin_expr);
-
         let include_in_expr = self.ctx().include_in_expr();
 
         let potential_arrow_start = self.potential_arrow_start;
 
         let left = match self.parse_unary_expr(assign_props) {
             Ok(v) => v,
-            Err(err) => {
-                trace_cur!(self, parse_bin_expr__recovery_unary_err);
+            Err(err) => match cur!(self, true)? {
+                &Word(Word::Keyword(Keyword::In)) if include_in_expr => {
+                    self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
 
-                match cur!(self, true)? {
-                    &Word(Word::Keyword(Keyword::In)) if include_in_expr => {
-                        self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
-
-                        Box::new(Expr::Invalid(Invalid {
-                            node_id: node_id!(self, err.error.0),
-                        }))
-                        .into()
-                    }
-                    &Word(Word::Keyword(Keyword::InstanceOf)) | &Token::BinOp(..) => {
-                        self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
-
-                        Box::new(Expr::Invalid(Invalid {
-                            node_id: node_id!(self, err.error.0),
-                        }))
-                        .into()
-                    }
-                    _ => return Err(err),
+                    Box::new(Expr::Invalid(Invalid {
+                        node_id: node_id!(self, err.error.0),
+                    }))
+                    .into()
                 }
-            }
+                &Word(Word::Keyword(Keyword::InstanceOf)) | &Token::BinOp(..) => {
+                    self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
+
+                    Box::new(Expr::Invalid(Invalid {
+                        node_id: node_id!(self, err.error.0),
+                    }))
+                    .into()
+                }
+                _ => return Err(err),
+            },
         };
 
         return_if_arrow!(self, potential_arrow_start, left);
@@ -232,8 +226,6 @@ impl<I: Tokens> Parser<'_, I> {
         &mut self,
         assign_props: &mut AssignProps,
     ) -> PResult<MaybeParen> {
-        trace_cur!(self, parse_unary_expr);
-
         let start = self.input.cur_pos();
 
         if self.input.syntax().typescript() && eat!(self, '<') {

@@ -12,8 +12,6 @@ impl<I: Tokens> Parser<'_, I> {
     where
         Self: ParseObject<T>,
     {
-        trace_cur!(self, parse_object);
-
         let start = self.input.cur_pos();
         self.assert_and_bump(&tok!('{'));
 
@@ -133,8 +131,6 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<'_, I> {
 
     /// spec: 'PropertyDefinition'
     fn parse_object_prop(&mut self, assign_props: &mut AssignProps) -> PResult<Self::Prop> {
-        trace_cur!(self, parse_object_prop);
-
         let start = self.input.cur_pos();
         // Parse as 'MethodDefinition'
 
@@ -177,8 +173,6 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<'_, I> {
             && !(self.input.syntax().typescript() && is!(self, '<'))
             && !(is!(self, '}') && matches!(key, PropName::Ident(..)))
         {
-            trace_cur!(self, parse_object_prop_error);
-
             self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
             let span = Span::new(key_start, self.input.cur_pos());
             return Ok(Prop::KeyValue(KeyValueProp {
@@ -276,8 +270,6 @@ impl<I: Tokens> ParseObject<Box<Expr>> for Parser<'_, I> {
 
         match ident.sym {
             js_word!("get") | js_word!("set") | js_word!("async") => {
-                trace_cur!(self, parse_object_prop__after_accessor);
-
                 if has_modifiers {
                     self.emit_err(modifiers_span, SyntaxError::TS1042);
                 }

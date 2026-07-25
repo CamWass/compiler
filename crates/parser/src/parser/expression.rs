@@ -28,8 +28,6 @@ mod ops;
 impl<I: Tokens> Parser<'_, I> {
     // https://tc39.es/ecma262/#prod-Expression
     pub(super) fn parse_expr(&mut self, assign_props: &mut AssignProps) -> PResult<MaybeParen> {
-        trace_cur!(self, parse_expr);
-
         let start = self.input.cur_pos();
         let expr = self.parse_assignment_expr(assign_props)?;
 
@@ -55,8 +53,6 @@ impl<I: Tokens> Parser<'_, I> {
         &mut self,
         assign_props: &mut AssignProps,
     ) -> PResult<MaybeParen> {
-        trace_cur!(self, parse_assignment_expr);
-
         if self.input.syntax().typescript() && is!(self, '<') && peeked_is!(self, IdentName) {
             let res = self.try_parse_ts(|p| {
                 let start = p.input.cur_pos();
@@ -92,8 +88,6 @@ impl<I: Tokens> Parser<'_, I> {
         &mut self,
         assign_props: &mut AssignProps,
     ) -> PResult<MaybeParen> {
-        trace_cur!(self, parse_assignment_expr_base);
-
         if self.ctx().in_generator() && is!(self, "yield") {
             return self.parse_yield_expr().map(From::from);
         }
@@ -149,8 +143,6 @@ impl<I: Tokens> Parser<'_, I> {
         assign_props: &mut AssignProps,
         mut inner_assign_props: Vec<Span>,
     ) -> PResult<MaybeParen> {
-        trace_cur!(self, finish_assignment_expr);
-
         match cur!(self, false) {
             Ok(&Token::AssignOp(op)) => {
                 let left = if op == AssignOpToken::Assign {
@@ -217,8 +209,6 @@ impl<I: Tokens> Parser<'_, I> {
 
     /// Spec: 'ConditionalExpression'
     fn parse_cond_expr(&mut self, assign_props: &mut AssignProps) -> PResult<MaybeParen> {
-        trace_cur!(self, parse_cond_expr);
-
         let start = self.input.cur_pos();
 
         let potential_arrow_start = self.potential_arrow_start;
@@ -263,8 +253,6 @@ impl<I: Tokens> Parser<'_, I> {
     /// Parse a primary expression or arrow function
     #[allow(clippy::cognitive_complexity)]
     fn parse_primary_expr(&mut self, assign_props: &mut AssignProps) -> PResult<MaybeParen> {
-        trace_cur!(self, parse_primary_expr);
-
         let _ = self.input.cur();
         let start = self.input.cur_pos();
 
@@ -450,8 +438,6 @@ impl<I: Tokens> Parser<'_, I> {
     }
 
     fn parse_array_lit(&mut self, assign_props: &mut AssignProps) -> PResult<Box<Expr>> {
-        trace_cur!(self, parse_array_lit);
-
         let start = self.input.cur_pos();
 
         self.assert_and_bump(&tok!('['));
@@ -807,8 +793,6 @@ impl<I: Tokens> Parser<'_, I> {
         &mut self,
         assign_props: &mut AssignProps,
     ) -> PResult<Vec<MaybeParenPatOrExprOrSpread>> {
-        trace_cur!(self, parse_args_or_pats);
-
         expect!(self, '(');
 
         let mut first = true;
@@ -1105,8 +1089,6 @@ impl<I: Tokens> Parser<'_, I> {
         is_new_expr: bool,
         assign_props: &mut AssignProps,
     ) -> PResult<MaybeParen> {
-        trace_cur!(self, parse_member_expr_or_new_expr);
-
         let start = self.input.cur_pos();
         if self.input.eat(&tok!("new")) {
             let span_of_new = span!(self, start);
@@ -1198,15 +1180,11 @@ impl<I: Tokens> Parser<'_, I> {
     /// Parse `NewExpression`.
     /// This includes `MemberExpression`.
     fn parse_new_expr(&mut self, assign_props: &mut AssignProps) -> PResult<MaybeParen> {
-        trace_cur!(self, parse_new_expr);
-
         self.parse_member_expr_or_new_expr(true, assign_props)
     }
 
     /// Parse `Arguments[Yield, Await]`
     fn parse_args(&mut self, is_dynamic_import: bool) -> PResult<Vec<ExprOrSpread>> {
-        trace_cur!(self, parse_args);
-
         let start = self.input.cur_pos();
         expect!(self, '(');
 
@@ -1249,8 +1227,6 @@ impl<I: Tokens> Parser<'_, I> {
         &mut self,
         assign_props: &mut AssignProps,
     ) -> PResult<MaybeParenExprOrSpread> {
-        trace_cur!(self, parse_expr_or_spread);
-
         let start = self.input.cur_pos();
 
         if self.input.eat(&tok!("...")) {
@@ -1274,8 +1250,6 @@ impl<I: Tokens> Parser<'_, I> {
         can_be_arrow: bool,
         async_span: Option<Span>,
     ) -> PResult<MaybeParen> {
-        trace_cur!(self, parse_paren_expr_or_arrow_fn);
-
         let expr_start = async_span
             .map(Span::lo)
             .unwrap_or_else(|| self.input.cur_pos());
@@ -1492,8 +1466,6 @@ impl<I: Tokens> Parser<'_, I> {
         &mut self,
         is_tagged: bool,
     ) -> PResult<(Vec<Box<Expr>>, Vec<TplElement>)> {
-        trace_cur!(self, parse_tpl_elements);
-
         let mut exprs = vec![];
 
         let cur_elem = self.parse_tpl_element(is_tagged)?;
@@ -1515,8 +1487,6 @@ impl<I: Tokens> Parser<'_, I> {
     }
 
     fn parse_tagged_tpl(&mut self, tag: Box<Expr>) -> PResult<TaggedTpl> {
-        trace_cur!(self, parse_tagged_tpl);
-
         let tagged_tpl_start = get_span!(self, tag.node_id()).lo();
 
         let tpl = self.parse_tpl(true)?;
@@ -1530,8 +1500,6 @@ impl<I: Tokens> Parser<'_, I> {
     }
 
     fn parse_tpl(&mut self, is_tagged: bool) -> PResult<Tpl> {
-        trace_cur!(self, parse_tpl);
-
         let start = self.input.cur_pos();
 
         self.assert_and_bump(&tok!('`'));

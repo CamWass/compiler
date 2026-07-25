@@ -282,12 +282,6 @@ macro_rules! return_if_arrow {
     }};
 }
 
-macro_rules! trace_cur {
-    ($parser:expr, $name:ident) => {{
-        // println!("{}: {:?}", stringify!($name), $parser.input.cur());
-    }};
-}
-
 macro_rules! make_error {
     ($parser:expr, $span:expr, $err:expr) => {{
         crate::error::Error {

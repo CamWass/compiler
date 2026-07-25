@@ -7,8 +7,6 @@ use util::{AssignProps, is_valid_simple_assignment_target};
 
 impl<I: Tokens> Parser<'_, I> {
     pub(super) fn parse_opt_binding_ident(&mut self) -> PResult<Option<BindingIdent>> {
-        trace_cur!(self, parse_opt_binding_ident);
-
         if is!(self, BindingIdent) || (self.input.syntax().typescript() && is!(self, "this")) {
             self.parse_binding_ident().map(Some)
         } else {
@@ -20,8 +18,6 @@ impl<I: Tokens> Parser<'_, I> {
     ///
     /// spec: `BindingIdentifier`
     pub(super) fn parse_binding_ident(&mut self) -> PResult<BindingIdent> {
-        trace_cur!(self, parse_binding_ident);
-
         // "yield" and "await" is **lexically** accepted.
         let ident = self.parse_ident(true, true)?;
         if ident.sym == js_word!("arguments") || ident.sym == js_word!("eval") {
@@ -41,8 +37,6 @@ impl<I: Tokens> Parser<'_, I> {
     }
 
     pub(super) fn parse_binding_pat_or_ident(&mut self) -> PResult<Pat> {
-        trace_cur!(self, parse_binding_pat_or_ident);
-
         match *cur!(self, true)? {
             tok!("yield") | Word(..) => self.parse_binding_ident().map(Pat::Ident),
             tok!('[') => self.parse_array_binding_pat(),
@@ -59,8 +53,6 @@ impl<I: Tokens> Parser<'_, I> {
 
     /// babel: `parseBindingAtom`
     pub(super) fn parse_binding_element(&mut self) -> PResult<Pat> {
-        trace_cur!(self, parse_binding_element);
-
         let start = self.input.cur_pos();
         let left = self.parse_binding_pat_or_ident()?;
 

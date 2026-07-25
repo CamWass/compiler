@@ -110,8 +110,6 @@ impl<I: Tokens> Parser<'_, I> {
         debug_assert!(self.syntax().typescript());
 
         loop {
-            trace_cur!(self, parse_ts_delimited_list_inner__element);
-
             if self.is_ts_list_terminator(kind) {
                 break;
             }
@@ -180,7 +178,6 @@ impl<I: Tokens> Parser<'_, I> {
 
     /// `tsParseTypeReference`
     fn parse_ts_type_ref(&mut self) -> PResult<()> {
-        trace_cur!(self, parse_ts_type_ref);
         debug_assert!(self.syntax().typescript());
 
         let start = self.input.cur_pos();
@@ -189,7 +186,7 @@ impl<I: Tokens> Parser<'_, I> {
 
         // Type name:
         self.parse_ts_entity_name(true)?;
-        trace_cur!(self, parse_ts_type_ref__type_args);
+
         // Type parameters:
         if !self.input.had_line_break_before_cur() && is!(self, '<') {
             self.parse_ts_type_args()?;
@@ -390,7 +387,7 @@ impl<I: Tokens> Parser<'_, I> {
         if !self.syntax().typescript() {
             return None;
         }
-        trace_cur!(self, try_parse_ts);
+
         let prev_emit_err = self.emit_err;
 
         let Parser {
@@ -547,8 +544,6 @@ impl<I: Tokens> Parser<'_, I> {
 
     /// `tsParseModuleBlock`
     fn parse_ts_module_block(&mut self) -> PResult<()> {
-        trace_cur!(self, parse_ts_module_block);
-
         debug_assert!(self.syntax().typescript());
 
         expect!(self, '{');
@@ -606,8 +601,6 @@ impl<I: Tokens> Parser<'_, I> {
     ///
     /// `tsParseType`
     pub(super) fn parse_ts_type(&mut self) -> PResult<Span> {
-        trace_cur!(self, parse_ts_type);
-
         debug_assert!(self.syntax().typescript());
 
         // Need to set `ctx.in_type` so that we don't parse JSX in a type context.
@@ -638,8 +631,6 @@ impl<I: Tokens> Parser<'_, I> {
 
     /// `tsParseNonConditionalType`
     fn parse_ts_non_conditional_type(&mut self) -> PResult<Span> {
-        trace_cur!(self, parse_ts_non_conditional_type);
-
         debug_assert!(self.syntax().typescript());
 
         let start = self.input.cur_pos();
@@ -1286,8 +1277,6 @@ impl<I: Tokens> Parser<'_, I> {
 
     /// `tsParseFunctionOrConstructorType`
     fn parse_ts_fn_or_constructor_type(&mut self, is_fn_type: bool) -> PResult<()> {
-        trace_cur!(self, parse_ts_fn_or_constructor_type);
-
         debug_assert!(self.syntax().typescript());
 
         if !is_fn_type {
@@ -1335,8 +1324,6 @@ impl<I: Tokens> Parser<'_, I> {
     }
 
     fn parse_ts_tpl_type_elements(&mut self) -> PResult<()> {
-        trace_cur!(self, parse_tpl_elements);
-
         self.parse_tpl_element(false)?;
 
         while !is!(self, '`') {
@@ -1414,7 +1401,6 @@ impl<I: Tokens> Parser<'_, I> {
 
     /// `tsParseNonArrayType`
     fn parse_ts_non_array_type(&mut self) -> PResult<()> {
-        trace_cur!(self, parse_ts_non_array_type);
         debug_assert!(self.syntax().typescript());
 
         match *cur!(self, true)? {
@@ -1518,7 +1504,6 @@ impl<I: Tokens> Parser<'_, I> {
 
     /// `tsParseArrayTypeOrHigher`
     fn parse_ts_array_type_or_higher(&mut self) -> PResult<()> {
-        trace_cur!(self, parse_ts_array_type_or_higher);
         debug_assert!(self.syntax().typescript());
 
         self.parse_ts_non_array_type()?;
@@ -1562,7 +1547,6 @@ impl<I: Tokens> Parser<'_, I> {
 
     /// `tsParseTypeOperatorOrHigher`
     fn parse_ts_type_operator_or_higher(&mut self) -> PResult<()> {
-        trace_cur!(self, parse_ts_type_operator_or_higher);
         debug_assert!(self.syntax().typescript());
 
         let operator = if is!(self, "keyof") {
@@ -1578,8 +1562,6 @@ impl<I: Tokens> Parser<'_, I> {
         if let Some(operator) = operator {
             self.parse_ts_type_operator(operator)
         } else {
-            trace_cur!(self, parse_ts_type_operator_or_higher__not_operator);
-
             if is!(self, "infer") {
                 self.parse_ts_infer_type()
             } else {
@@ -1819,7 +1801,6 @@ impl<I: Tokens> Parser<'_, I> {
 
     /// `tsParseTypeArguments`
     pub fn parse_ts_type_args(&mut self) -> PResult<()> {
-        trace_cur!(self, parse_ts_type_args);
         debug_assert!(self.syntax().typescript());
 
         // Params
@@ -1829,8 +1810,6 @@ impl<I: Tokens> Parser<'_, I> {
             p.ts_in_no_context(|p| {
                 expect!(p, '<');
                 p.eat_ts_delimited_list(ParsingContext::TypeParametersOrArguments, |p| {
-                    trace_cur!(p, parse_ts_type_args__arg);
-
                     p.parse_ts_type()?;
                     Ok(())
                 })
@@ -1846,8 +1825,6 @@ impl<I: Tokens> Parser<'_, I> {
 
     /// `tsParseIntersectionTypeOrHigher`
     fn parse_ts_intersection_type_or_higher(&mut self) -> PResult<()> {
-        trace_cur!(self, parse_ts_intersection_type_or_higher);
-
         debug_assert!(self.syntax().typescript());
 
         self.parse_ts_union_or_intersection_type(
@@ -1858,7 +1835,6 @@ impl<I: Tokens> Parser<'_, I> {
 
     /// `tsParseUnionTypeOrHigher`
     fn parse_ts_union_type_or_higher(&mut self) -> PResult<()> {
-        trace_cur!(self, parse_ts_union_type_or_higher);
         debug_assert!(self.syntax().typescript());
 
         self.parse_ts_union_or_intersection_type(
@@ -1876,20 +1852,14 @@ impl<I: Tokens> Parser<'_, I> {
     where
         F: FnMut(&mut Self) -> PResult<()>,
     {
-        trace_cur!(self, parse_ts_union_or_intersection_type);
-
         debug_assert!(self.syntax().typescript());
 
         self.input.eat(operator);
-        trace_cur!(self, parse_ts_union_or_intersection_type__first_type);
 
         parse_constituent_type(self)?;
-        trace_cur!(self, parse_ts_union_or_intersection_type__after_first);
 
         if self.input.is(operator) {
             while self.input.eat(operator) {
-                trace_cur!(self, parse_ts_union_or_intersection_type__constituent);
-
                 parse_constituent_type(self)?;
             }
 

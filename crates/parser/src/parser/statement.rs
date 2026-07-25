@@ -110,8 +110,6 @@ impl<I: Tokens> Parser<'_, I> {
         Self: StmtLikeParser<Type>,
         Type: IsDirective + From<Stmt>,
     {
-        trace_cur!(self, parse_block_body);
-
         let old_ctx = self.ctx();
 
         let mut parsed_non_directive = false;
@@ -158,7 +156,6 @@ impl<I: Tokens> Parser<'_, I> {
     }
 
     fn parse_stmt(&mut self, parse_ctx: StmtParseCtx, top_level: bool) -> PResult<Stmt> {
-        trace_cur!(self, parse_stmt);
         debug_assert!(parse_ctx != StmtParseCtx::None);
         // None is only encountered for typescript things that are stripped.
         // These should have been handled by parse_stmt_like returning Err or
@@ -167,7 +164,6 @@ impl<I: Tokens> Parser<'_, I> {
     }
 
     fn parse_stmt_list_item(&mut self, top_level: bool) -> PResult<Option<Stmt>> {
-        trace_cur!(self, parse_stmt_list_item);
         self.parse_stmt_like(StmtParseCtx::None, top_level)
     }
 
@@ -181,7 +177,6 @@ impl<I: Tokens> Parser<'_, I> {
         Self: StmtLikeParser<Type>,
         Type: IsDirective + From<Stmt>,
     {
-        trace_cur!(self, parse_stmt_like);
         let start = self.input.cur_pos();
 
         if is_one_of!(self, "import", "export") {
@@ -197,8 +192,6 @@ impl<I: Tokens> Parser<'_, I> {
         parse_ctx: StmtParseCtx,
         top_level: bool,
     ) -> PResult<Option<Stmt>> {
-        trace_cur!(self, parse_stmt_content);
-
         // Most types of statements are recognized by the keyword they
         // start with. Many are trivial to parse, some require a bit of
         // complexity.

@@ -195,8 +195,6 @@ impl<I: Tokens> Parser<'_, I> {
     }
 
     fn parse_class_member(&mut self) -> PResult<Option<ClassMember>> {
-        trace_cur!(self, parse_class_member);
-
         let start = self.input.cur_pos();
         let declare = self.syntax().typescript() && eat!(self, "declare");
         let has_accessibility = if self.syntax().typescript() {
@@ -406,7 +404,6 @@ impl<I: Tokens> Parser<'_, I> {
             );
         }
 
-        trace_cur!(self, parse_class_member_with_is_static__normal_class_member);
         let key = if readonly.is_some() && is_one_of!(self, '!', ':') {
             Key::PropName(PropName::Ident(
                 self.new_ident("readonly".into(), readonly.unwrap()),
@@ -418,8 +415,6 @@ impl<I: Tokens> Parser<'_, I> {
 
         if self.is_class_method() {
             // handle a(){} / get(){} / set(){} / async(){}
-
-            trace_cur!(self, parse_class_member_with_is_static__normal_class_method);
 
             if let Some(token) = declare_token {
                 self.emit_err(token, SyntaxError::TS1031);
@@ -855,8 +850,6 @@ impl<I: Tokens> Parser<'_, I> {
     where
         F: FnOnce(&mut Self) -> PResult<Vec<Param>>,
     {
-        trace_cur!(self, parse_fn_args_body);
-
         // let prev_in_generator = self.ctx().in_generator;
         let mut ctx = self.ctx();
         ctx.flags.set(ContextFlags::in_async, is_async);
@@ -866,8 +859,6 @@ impl<I: Tokens> Parser<'_, I> {
             // Type params.
             if parser.syntax().typescript() {
                 parser.in_type().parse_with(|parser| {
-                    trace_cur!(parser, parse_fn_args_body__type_params);
-
                     if is!(parser, '<') {
                         parser.eat_ts_type_params(|_, _| {})?;
                     }
@@ -987,8 +978,6 @@ impl<I: Tokens> Parser<'_, I> {
     where
         F: FnOnce(&mut Self) -> PResult<Vec<Param>>,
     {
-        trace_cur!(self, make_method);
-
         let is_static = static_token.is_some();
 
         let function =

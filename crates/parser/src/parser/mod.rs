@@ -76,8 +76,6 @@ impl<'d, I: Tokens> Parser<'d, I> {
     }
 
     pub fn parse_script(&mut self) -> PResult<Script> {
-        trace_cur!(self, parse_script);
-
         let ctx = Context {
             module: YesNoMaybe::No,
             ..self.ctx()
