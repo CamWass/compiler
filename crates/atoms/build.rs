@@ -5,10 +5,10 @@ fn main() {
         .lines()
         .map(|l| l.trim())
         .collect::<Vec<_>>();
-    gen("js_word", "JsWord", &strs);
+    generate("js_word", "JsWord", &strs);
 }
 
-fn gen(mac_name: &str, type_name: &str, atoms: &[&str]) {
+fn generate(mac_name: &str, type_name: &str, atoms: &[&str]) {
     string_cache_codegen::AtomType::new(type_name, &format!("{}!", mac_name))
         .atoms(atoms)
         .write_to_file(&Path::new(&env::var("OUT_DIR").unwrap()).join(format!("{}.rs", mac_name)))
