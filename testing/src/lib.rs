@@ -21,8 +21,6 @@ use std::{
 pub use testing_macros::fixture;
 use tracing_subscriber::EnvFilter;
 
-#[macro_use]
-mod macros;
 mod diag_errors;
 mod output;
 mod paths;
@@ -255,17 +253,6 @@ pub fn print_left_right(left: &dyn Debug, right: &dyn Debug) -> String {
     write_to_file(&target_dir.join("right"), &right);
 
     format!("----- {test_name}\n    left:\n{left}\n    right:\n{right}")
-}
-
-#[macro_export]
-macro_rules! assert_eq_ignore_span {
-    ($l:expr, $r:expr) => {{
-        println!("{}", module_path!());
-        let (l, r) = ($crate::drop_span($l), $crate::drop_span($r));
-        if l != r {
-            panic!("assertion failed\n{}", $crate::print_left_right(&l, &r));
-        }
-    }};
 }
 
 pub fn diff(l: &str, r: &str) -> String {

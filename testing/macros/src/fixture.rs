@@ -30,7 +30,6 @@ impl Parse for Config {
                     .map(|i| *i == "exclude")
                     .unwrap_or(false)
                 {
-                    //
                     macro_rules! fail {
                         () => {{ fail!("invalid input to the attribute") }};
                         ($inner:expr) => {{

@@ -371,8 +371,6 @@ where
 
         let mut default_case = None;
         while let Some(current_case) = cases_iter.next() {
-            // p!(self, SwitchCase);
-
             let case_node = Node::from(current_case);
             self.prioritize_node(case_node);
 
@@ -690,8 +688,6 @@ where
     }
 
     fn handle_class_decl(&mut self, class: &'ast ClassDecl) {
-        // p!(self, Class);
-
         // Node: the class decl node will be prioritized by handle_simple_stmt.
         self.handle_simple_stmt(Node::from(class));
 
@@ -700,13 +696,6 @@ where
             class.class.body.visit_with(self);
         }
     }
-}
-
-macro_rules! p {
-    ($cfa:expr, $name:ident) => {
-        // println!("node: {:?}", stringify!($name));
-        // println!("parent_stack: {:#?}", $cfa.parent_stack);
-    };
 }
 
 /// Returns whether the given expr is a bool literal with the value `true`.
@@ -748,17 +737,14 @@ where
     N: Annotation,
 {
     fn visit_for_in_stmt(&mut self, node: &'ast ForInStmt) {
-        p!(self, ForInStmt);
         self.handle_enhanced_for(Node::from(node));
     }
 
     fn visit_for_of_stmt(&mut self, node: &'ast ForOfStmt) {
-        p!(self, ForOfStmt);
         self.handle_enhanced_for(Node::from(node));
     }
 
     fn visit_for_stmt(&mut self, node: &'ast ForStmt) {
-        p!(self, ForStmt);
         let for_node = Node::from(node);
         self.prioritize_node(for_node);
         self.parent_stack.push_with_child(for_node, &node.body);
@@ -832,7 +818,6 @@ where
     }
 
     fn visit_do_while_stmt(&mut self, node: &'ast DoWhileStmt) {
-        p!(self, DoWhileStmt);
         let do_while_node = Node::from(node);
         self.prioritize_node(do_while_node);
 
@@ -867,7 +852,6 @@ where
     }
 
     fn visit_if_stmt(&mut self, node: &'ast IfStmt) {
-        p!(self, IfStmt);
         let if_node = Node::from(node);
         self.prioritize_node(if_node);
         let test_node = Node::from(node.test.as_ref());
@@ -903,7 +887,6 @@ where
     }
 
     fn visit_while_stmt(&mut self, node: &'ast WhileStmt) {
-        p!(self, WhileStmt);
         let while_node = Node::from(node);
         self.prioritize_node(while_node);
 
@@ -938,7 +921,6 @@ where
     }
 
     fn visit_with_stmt(&mut self, node: &'ast WithStmt) {
-        p!(self, WithStmt);
         let with_node = Node::from(node);
         self.prioritize_node(with_node);
         self.parent_stack.push_with_child(with_node, &node.body);
@@ -958,8 +940,6 @@ where
     }
 
     fn visit_switch_stmt(&mut self, node: &'ast SwitchStmt) {
-        p!(self, SwitchStmt);
-
         let switch_node = Node::from(node);
         self.prioritize_node(switch_node);
 
@@ -1003,7 +983,6 @@ where
     }
 
     // fn visit_switch_case(&mut self, node: &'ast SwitchCase) {
-    //     p!(self, SwitchCase);
 
     //     let case_node = Node::SwitchCase(node);
 
@@ -1131,8 +1110,6 @@ where
     // }
 
     fn visit_catch_clause(&mut self, node: &'ast CatchClause) {
-        p!(self, CatchClause);
-
         let catch_node = Node::from(node);
         self.prioritize_node(catch_node);
 
@@ -1148,7 +1125,6 @@ where
     }
 
     fn visit_labeled_stmt(&mut self, node: &'ast LabeledStmt) {
-        p!(self, LabeledStmt);
         let label_node = Node::from(node);
         self.prioritize_node(label_node);
         self.parent_stack.push_with_child(label_node, &node.body);
@@ -1158,23 +1134,18 @@ where
     }
 
     fn visit_function(&mut self, node: &'ast Function) {
-        p!(self, Function);
         self.handle_function_like(node);
     }
     fn visit_constructor(&mut self, node: &'ast Constructor) {
-        p!(self, Constructor);
         self.handle_function_like(node);
     }
     fn visit_arrow_expr(&mut self, node: &'ast ArrowExpr) {
-        p!(self, ArrowExpr);
         self.handle_function_like(node);
     }
     fn visit_getter_prop(&mut self, node: &'ast GetterProp) {
-        p!(self, GetterProp);
         self.handle_function_like(node);
     }
     fn visit_setter_prop(&mut self, node: &'ast SetterProp) {
-        p!(self, SetterProp);
         self.handle_function_like(node);
     }
 
@@ -1183,7 +1154,6 @@ where
     }
 
     fn visit_try_stmt(&mut self, node: &'ast TryStmt) {
-        p!(self, TryStmt);
         let try_node = Node::from(node);
         self.prioritize_node(try_node);
         self.exception_handler
@@ -1226,8 +1196,6 @@ where
     }
 
     fn visit_script(&mut self, node: &'ast Script) {
-        p!(self, Script);
-
         let script_node = Node::from(node);
         self.prioritize_node(script_node);
         self.parent_stack
@@ -1261,8 +1229,6 @@ where
     }
 
     fn visit_module(&mut self, node: &'ast Module) {
-        p!(self, Module);
-
         let module_node = Node::from(node);
         self.prioritize_node(module_node);
         let children = node
@@ -1308,7 +1274,6 @@ where
     }
 
     fn visit_block_stmt(&mut self, node: &'ast BlockStmt) {
-        p!(self, BlockStmt);
         let block_node = Node::from(node);
         self.prioritize_node(block_node);
 

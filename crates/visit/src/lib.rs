@@ -7,31 +7,6 @@ use atoms::JsWord;
 use global_common::SyntaxContext;
 use global_visit::{AndThen, Repeat, Repeated, define};
 use num_bigint::BigUint;
-use std::any::Any;
-
-/// Visitable nodes.
-pub trait Node: Any {}
-
-impl<T: ?Sized> Node for T where T: Any {}
-
-// impl<A, B> Fold for AndThen<A, B>
-// where
-//     A: Fold,
-
-//     B: Fold,
-// {
-//     #[inline(always)]
-//     fn fold_module(&mut self, n: Module) -> Module {
-//         let n = self.first.fold_module(n);
-//         self.second.fold_module(n)
-//     }
-
-//     #[inline(always)]
-//     fn fold_script(&mut self, n: Script) -> Script {
-//         let n = self.first.fold_script(n);
-//         self.second.fold_script(n)
-//     }
-// }
 
 impl<'ast, A, B> Visit<'ast> for AndThen<A, B>
 where
@@ -48,37 +23,6 @@ where
         self.second.visit_script(n);
     }
 }
-
-// impl<V> Fold for Repeat<V>
-// where
-//     V: Fold + Repeated,
-// {
-//     fn fold_module(&mut self, mut node: Module) -> Module {
-//         loop {
-//             self.pass.reset();
-//             node = node.fold_with(&mut self.pass);
-
-//             if !self.pass.changed() {
-//                 break;
-//             }
-//         }
-
-//         node
-//     }
-
-//     fn fold_script(&mut self, mut node: Script) -> Script {
-//         loop {
-//             self.pass.reset();
-//             node = node.fold_with(&mut self.pass);
-
-//             if !self.pass.changed() {
-//                 break;
-//             }
-//         }
-
-//         node
-//     }
-// }
 
 impl<V> VisitMut<'_> for Repeat<V>
 where
@@ -117,67 +61,6 @@ where
         }
     }
 }
-
-// pub fn as_folder<V>(v: V) -> Folder<V>
-// where
-//     V: VisitMut,
-// {
-//     Folder(v)
-// }
-
-// /// Wrap a [VisitMut] as a [Fold]
-// #[derive(Debug, Clone, Copy)]
-// pub struct Folder<V: VisitMut>(V);
-
-// impl<V> Repeated for Folder<V>
-// where
-//     V: Repeated + VisitMut,
-// {
-//     #[inline(always)]
-//     fn changed(&self) -> bool {
-//         self.0.changed()
-//     }
-
-//     #[inline(always)]
-//     fn reset(&mut self) {
-//         self.0.reset();
-//     }
-// }
-
-// impl<V> CompilerPass for Folder<V>
-// where
-//     V: VisitMut + CompilerPass,
-// {
-//     fn name() -> Cow<'static, str> {
-//         V::name()
-//     }
-// }
-
-// macro_rules! method {
-//     ($name:ident, $T:ty) => {
-//         #[inline(always)]
-//         fn $name(&mut self, mut n: $T) -> $T {
-//             n.visit_mut_with(&mut self.0);
-//             n
-//         }
-//     };
-// }
-
-// impl<V> Fold for Folder<V>
-// where
-//     V: VisitMut,
-// {
-//     method!(fold_ident, Ident);
-
-//     method!(fold_expr, Expr);
-//     method!(fold_decl, Decl);
-//     method!(fold_stmt, Stmt);
-//     method!(fold_pat, Pat);
-
-//     method!(fold_module, Module);
-//     method!(fold_script, Script);
-//     method!(fold_program, Program);
-// }
 
 define!({
     pub struct Class {
