@@ -60,106 +60,43 @@ impl Idx for u32 {
 ///   to create/return a value.
 ///
 /// Internally, the index uses a u32, so the index must not exceed
-/// `u32::MAX`. You can also customize things like the `Debug` impl,
-/// what traits are derived, and so forth via the macro.
+/// `u32::MAX`.
 #[macro_export]
-#[allow_internal_unstable(step_trait, rustc_attrs, trusted_step)]
 macro_rules! newtype_index {
-    // ---- public rules ----
-
-    // Use default constants
-    ($(#[$attrs:meta])* $v:vis struct $name:ident { .. }) => (
-        $crate::newtype_index!(
-            // Leave out derives marker so we can use its absence to ensure it comes first
-            @attrs        [$(#[$attrs])*]
-            @type         [$name]
-            // shave off 256 indices at the end to allow space for packing these indices into enums
-            @max          [0xFFFF_FF00]
-            @vis          [$v]
-            @debug_format ["{}"]);
-    );
-
-    // Define any constants
-    ($(#[$attrs:meta])* $v:vis struct $name:ident { $($tokens:tt)+ }) => (
-        $crate::newtype_index!(
-            // Leave out derives marker so we can use its absence to ensure it comes first
-            @attrs        [$(#[$attrs])*]
-            @type         [$name]
-            // shave off 256 indices at the end to allow space for packing these indices into enums
-            @max          [0xFFFF_FF00]
-            @vis          [$v]
-            @debug_format ["{}"]
-                          $($tokens)+);
-    );
-
-    // ---- private rules ----
-
-    // Base case, user-defined constants (if any) have already been defined
-    (@derives      [$($derives:ident,)*]
-     @attrs        [$(#[$attrs:meta])*]
-     @type         [$type:ident]
-     @max          [$max:expr]
-     @vis          [$v:vis]
-     @debug_format [$debug_format:tt]) => (
-        $(#[$attrs])*
-        #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, $($derives),*)]
-        // #[rustc_layout_scalar_valid_range_end($max)]
-        $v struct $type {
-            private: u32
-        }
+    ($v:vis $type:ident) => (
+        #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+        $v struct $type(u32);
 
         impl $type {
-            $v const MAX_AS_U32: u32 = $max;
-
-            $v const MAX: Self = Self::from_u32($max);
+            pub const MAX: Self = Self::from_u32(u32::MAX);
 
             #[inline(always)]
-            $v const fn from_usize(value: usize) -> Self {
-                // FIXME: replace with `assert!(value <= ($max as usize));` once `const_panic` is stable
-                [()][(value > ($max as usize)) as usize];
-                unsafe {
-                    Self::from_u32_unchecked(value as u32)
-                }
+            pub const fn from_usize(value: usize) -> Self {
+                assert!(value <= u32::MAX as usize);
+                Self(value as u32)
             }
 
             #[inline(always)]
-            $v const fn from_u32(value: u32) -> Self {
-                // FIXME: replace with `assert!(value <= $max);` once `const_panic` is stable
-                [()][(value > $max) as usize];
-                unsafe {
-                    Self::from_u32_unchecked(value)
-                }
-            }
-
-            #[inline(always)]
-            $v const unsafe fn from_u32_unchecked(value: u32) -> Self {
-                Self { private: value }
+            pub const fn from_u32(value: u32) -> Self {
+                Self(value)
             }
 
             /// Extracts the value of this index as an integer.
             #[inline(always)]
-            $v const fn index(self) -> usize {
+            pub const fn index(self) -> usize {
                 self.as_usize()
             }
 
             /// Extracts the value of this index as a `u32`.
             #[inline(always)]
-            $v const fn as_u32(self) -> u32 {
-                self.private
+            pub const fn as_u32(self) -> u32 {
+                self.0
             }
 
             /// Extracts the value of this index as a `usize`.
             #[inline(always)]
-            $v const fn as_usize(self) -> usize {
+            pub const fn as_usize(self) -> usize {
                 self.as_u32() as usize
-            }
-        }
-
-        impl std::ops::Add<usize> for $type {
-            type Output = Self;
-
-            fn add(self, other: usize) -> Self {
-                Self::from_usize(self.index() + other)
             }
         }
 
@@ -175,303 +112,11 @@ macro_rules! newtype_index {
             }
         }
 
-        impl ::std::iter::Step for $type {
-            #[inline]
-            fn steps_between(start: &Self, end: &Self) -> (usize, Option<usize>) {
-                <usize as ::std::iter::Step>::steps_between(
-                    &Self::index(*start),
-                    &Self::index(*end),
-                )
-            }
-
-            #[inline]
-            fn forward_checked(start: Self, u: usize) -> Option<Self> {
-                Self::index(start).checked_add(u).map(Self::from_usize)
-            }
-
-            #[inline]
-            fn backward_checked(start: Self, u: usize) -> Option<Self> {
-                Self::index(start).checked_sub(u).map(Self::from_usize)
-            }
-        }
-
-        // Safety: The implementation of `Step` upholds all invariants.
-        // unsafe impl ::std::iter::TrustedStep for $type {}
-
-        // impl From<$type> for u32 {
-        //     #[inline(always)]
-        //     fn from(v: $type) -> u32 {
-        //         v.as_u32()
-        //     }
-        // }
-
-        // impl From<$type> for usize {
-        //     #[inline(always)]
-        //     fn from(v: $type) -> usize {
-        //         v.as_usize()
-        //     }
-        // }
-
-        // impl From<usize> for $type {
-        //     #[inline(always)]
-        //     fn from(value: usize) -> Self {
-        //         Self::from_usize(value)
-        //     }
-        // }
-
-        // impl From<u32> for $type {
-        //     #[inline(always)]
-        //     fn from(value: u32) -> Self {
-        //         Self::from_u32(value)
-        //     }
-        // }
-
-        $crate::newtype_index!(
-            @handle_debug
-            @derives      [$($derives,)*]
-            @type         [$type]
-            @debug_format [$debug_format]);
-    );
-
-    // base case for handle_debug where format is custom. No Debug implementation is emitted.
-    (@handle_debug
-     @derives      [$($_derives:ident,)*]
-     @type         [$type:ident]
-     @debug_format [custom]) => ();
-
-    // base case for handle_debug, no debug overrides found, so use default
-    (@handle_debug
-     @derives      []
-     @type         [$type:ident]
-     @debug_format [$debug_format:tt]) => (
         impl ::std::fmt::Debug for $type {
             fn fmt(&self, fmt: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                write!(fmt, $debug_format, self.as_u32())
+                write!(fmt, "{}({})", stringify!($type), self.as_u32())
             }
         }
-    );
-
-    // Debug is requested for derive, don't generate any Debug implementation.
-    (@handle_debug
-     @derives      [Debug, $($derives:ident,)*]
-     @type         [$type:ident]
-     @debug_format [$debug_format:tt]) => ();
-
-    // It's not Debug, so just pop it off the front of the derives stack and check the rest.
-    (@handle_debug
-     @derives      [$_derive:ident, $($derives:ident,)*]
-     @type         [$type:ident]
-     @debug_format [$debug_format:tt]) => (
-        $crate::newtype_index!(
-            @handle_debug
-            @derives      [$($derives,)*]
-            @type         [$type]
-            @debug_format [$debug_format]);
-    );
-
-    // Append comma to end of derives list if it's missing
-    (@attrs        [$(#[$attrs:meta])*]
-     @type         [$type:ident]
-     @max          [$max:expr]
-     @vis          [$v:vis]
-     @debug_format [$debug_format:tt]
-                   derive [$($derives:ident),*]
-                   $($tokens:tt)*) => (
-        $crate::newtype_index!(
-            @attrs        [$(#[$attrs])*]
-            @type         [$type]
-            @max          [$max]
-            @vis          [$v]
-            @debug_format [$debug_format]
-                          derive [$($derives,)*]
-                          $($tokens)*);
-    );
-
-    // By not including the @derives marker in this list nor in the default args, we can force it
-    // to come first if it exists. When encodable is custom, just use the derives list as-is.
-    (@attrs        [$(#[$attrs:meta])*]
-     @type         [$type:ident]
-     @max          [$max:expr]
-     @vis          [$v:vis]
-     @debug_format [$debug_format:tt]
-                   derive [$($derives:ident,)+]
-                   ENCODABLE = custom
-                   $($tokens:tt)*) => (
-        $crate::newtype_index!(
-            @attrs        [$(#[$attrs])*]
-            @derives      [$($derives,)+]
-            @type         [$type]
-            @max          [$max]
-            @vis          [$v]
-            @debug_format [$debug_format]
-                          $($tokens)*);
-    );
-
-    // By not including the @derives marker in this list nor in the default args, we can force it
-    // to come first if it exists. When encodable isn't custom, add serialization traits by default.
-    (@attrs        [$(#[$attrs:meta])*]
-     @type         [$type:ident]
-     @max          [$max:expr]
-     @vis          [$v:vis]
-     @debug_format [$debug_format:tt]
-                   derive [$($derives:ident,)+]
-                   $($tokens:tt)*) => (
-        $crate::newtype_index!(
-            @derives      [$($derives,)+]
-            @attrs        [$(#[$attrs])*]
-            @type         [$type]
-            @max          [$max]
-            @vis          [$v]
-            @debug_format [$debug_format]
-                          $($tokens)*);
-        $crate::newtype_index!(@serializable $type);
-    );
-
-    // The case where no derives are added, but encodable is overridden. Don't
-    // derive serialization traits
-    (@attrs        [$(#[$attrs:meta])*]
-     @type         [$type:ident]
-     @max          [$max:expr]
-     @vis          [$v:vis]
-     @debug_format [$debug_format:tt]
-                   ENCODABLE = custom
-                   $($tokens:tt)*) => (
-        $crate::newtype_index!(
-            @derives      []
-            @attrs        [$(#[$attrs])*]
-            @type         [$type]
-            @max          [$max]
-            @vis          [$v]
-            @debug_format [$debug_format]
-                          $($tokens)*);
-    );
-
-    // The case where no derives are added, add serialization derives by default
-    (@attrs        [$(#[$attrs:meta])*]
-     @type         [$type:ident]
-     @max          [$max:expr]
-     @vis          [$v:vis]
-     @debug_format [$debug_format:tt]
-                   $($tokens:tt)*) => (
-        $crate::newtype_index!(
-            @derives      []
-            @attrs        [$(#[$attrs])*]
-            @type         [$type]
-            @max          [$max]
-            @vis          [$v]
-            @debug_format [$debug_format]
-                          $($tokens)*);
-        $crate::newtype_index!(@serializable $type);
-    );
-
-    (@serializable $type:ident) => (
-        // impl<D: ::rustc_serialize::Decoder> ::rustc_serialize::Decodable<D> for $type {
-        //     fn decode(d: &mut D) -> Result<Self, D::Error> {
-        //         d.read_u32().map(Self::from_u32)
-        //     }
-        // }
-        // impl<E: ::rustc_serialize::Encoder> ::rustc_serialize::Encodable<E> for $type {
-        //     fn encode(&self, e: &mut E) -> Result<(), E::Error> {
-        //         e.emit_u32(self.private)
-        //     }
-        // }
-    );
-
-    // Rewrite final without comma to one that includes comma
-    (@derives      [$($derives:ident,)*]
-     @attrs        [$(#[$attrs:meta])*]
-     @type         [$type:ident]
-     @max          [$max:expr]
-     @vis          [$v:vis]
-     @debug_format [$debug_format:tt]
-                   $name:ident = $constant:expr) => (
-        $crate::newtype_index!(
-            @derives      [$($derives,)*]
-            @attrs        [$(#[$attrs])*]
-            @type         [$type]
-            @max          [$max]
-            @vis          [$v]
-            @debug_format [$debug_format]
-                          $name = $constant,);
-    );
-
-    // Rewrite final const without comma to one that includes comma
-    (@derives      [$($derives:ident,)*]
-     @attrs        [$(#[$attrs:meta])*]
-     @type         [$type:ident]
-     @max          [$max:expr]
-     @vis          [$v:vis]
-     @debug_format [$debug_format:tt]
-                   $(#[doc = $doc:expr])*
-                   const $name:ident = $constant:expr) => (
-        $crate::newtype_index!(
-            @derives      [$($derives,)*]
-            @attrs        [$(#[$attrs])*]
-            @type         [$type]
-            @max          [$max]
-            @vis          [$v]
-            @debug_format [$debug_format]
-                          $(#[doc = $doc])* const $name = $constant,);
-    );
-
-    // Replace existing default for max
-    (@derives      [$($derives:ident,)*]
-     @attrs        [$(#[$attrs:meta])*]
-     @type         [$type:ident]
-     @max          [$_max:expr]
-     @vis          [$v:vis]
-     @debug_format [$debug_format:tt]
-                   MAX = $max:expr,
-                   $($tokens:tt)*) => (
-        $crate::newtype_index!(
-            @derives      [$($derives,)*]
-            @attrs        [$(#[$attrs])*]
-            @type         [$type]
-            @max          [$max]
-            @vis          [$v]
-            @debug_format [$debug_format]
-                          $($tokens)*);
-    );
-
-    // Replace existing default for debug_format
-    (@derives      [$($derives:ident,)*]
-     @attrs        [$(#[$attrs:meta])*]
-     @type         [$type:ident]
-     @max          [$max:expr]
-     @vis          [$v:vis]
-     @debug_format [$_debug_format:tt]
-                   DEBUG_FORMAT = $debug_format:tt,
-                   $($tokens:tt)*) => (
-        $crate::newtype_index!(
-            @derives      [$($derives,)*]
-            @attrs        [$(#[$attrs])*]
-            @type         [$type]
-            @max          [$max]
-            @vis          [$v]
-            @debug_format [$debug_format]
-                          $($tokens)*);
-    );
-
-    // Assign a user-defined constant
-    (@derives      [$($derives:ident,)*]
-     @attrs        [$(#[$attrs:meta])*]
-     @type         [$type:ident]
-     @max          [$max:expr]
-     @vis          [$v:vis]
-     @debug_format [$debug_format:tt]
-                   $(#[doc = $doc:expr])*
-                   const $name:ident = $constant:expr,
-                   $($tokens:tt)*) => (
-        $(#[doc = $doc])*
-        $v const $name: $type = $type::from_u32($constant);
-        $crate::newtype_index!(
-            @derives      [$($derives,)*]
-            @attrs        [$(#[$attrs])*]
-            @type         [$type]
-            @max          [$max]
-            @vis          [$v]
-            @debug_format [$debug_format]
-                          $($tokens)*);
     );
 }
 
@@ -484,24 +129,6 @@ pub struct IndexVec<I: Idx, T> {
 // Whether `IndexVec` is `Send` depends only on the data,
 // not the phantom data.
 unsafe impl<I: Idx, T> Send for IndexVec<I, T> where T: Send {}
-
-// impl<S: Encoder, I: Idx, T: Encodable<S>> Encodable<S> for IndexVec<I, T> {
-//     fn encode(&self, s: &mut S) -> Result<(), S::Error> {
-//         Encodable::encode(&self.raw, s)
-//     }
-// }
-
-// impl<S: Encoder, I: Idx, T: Encodable<S>> Encodable<S> for &IndexVec<I, T> {
-//     fn encode(&self, s: &mut S) -> Result<(), S::Error> {
-//         Encodable::encode(&self.raw, s)
-//     }
-// }
-
-// impl<D: Decoder, I: Idx, T: Decodable<D>> Decodable<D> for IndexVec<I, T> {
-//     fn decode(d: &mut D) -> Result<Self, D::Error> {
-//         Decodable::decode(d).map(|v| IndexVec { raw: v, _marker: PhantomData })
-//     }
-// }
 
 impl<I: Idx, T: fmt::Debug> fmt::Debug for IndexVec<I, T> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -866,6 +493,3 @@ impl<I: Idx> FnMut<(usize,)> for IntoIdx<I> {
         I::new(n)
     }
 }
-
-#[cfg(test)]
-mod tests;

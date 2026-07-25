@@ -106,7 +106,7 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
         invalid: bool,
     }
 
-    index::newtype_index!(struct PropId { .. });
+    index::newtype_index!(PropId);
 
     let mut objects: FxHashMap<PointerId, Object> = FxHashMap::default();
     let mut properties: IndexVec<PropId, Property> = IndexVec::default();
@@ -186,7 +186,7 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
         }
     }
 
-    index::newtype_index!(struct RepId { .. });
+    index::newtype_index!(RepId);
 
     let labeling = union_find.into_labeling();
 
@@ -1378,7 +1378,7 @@ impl StaticFunctionData {
     }
 }
 
-index::newtype_index!(pub struct PointerId { .. });
+index::newtype_index!(pub PointerId);
 
 /// Where an expression occurs - either in an expression statement or in another
 /// expression.
@@ -1446,11 +1446,12 @@ impl Store {
     }
 
     fn concrete_pointers(&self) -> impl Iterator<Item = PointerId> {
-        PointerId::from_u32(0)..self.concrete_pointer_bound
+        (0..self.concrete_pointer_bound.as_u32()).map(PointerId::from_u32)
     }
 
     fn non_concrete_pointers(&self) -> impl Iterator<Item = PointerId> {
-        self.concrete_pointer_bound..PointerId::from_usize(self.pointers.len())
+        (self.concrete_pointer_bound.as_u32()..self.pointers.len().try_into().unwrap())
+            .map(PointerId::from_u32)
     }
 }
 
@@ -1569,9 +1570,8 @@ impl FnVisitor<'_> {
 
         if self.accesses_arguments_array && !is_arrow {
             // Invalidate parameters for functions that access the arguments array.
-            self.params_to_invalidate.extend(
-                VarId::from_u32(var_start)..VarId::from_u32(var_start + param_binding_count as u32),
-            );
+            self.params_to_invalidate
+                .extend((var_start..(var_start + param_binding_count as u32)).map(VarId::from_u32));
         } else if has_rest {
             // Invalidate the rest binding.
             self.params_to_invalidate
@@ -1903,7 +1903,7 @@ fn is_simple_prop_name(prop_name: &PropName, unresolved_ctxt: SyntaxContext) -> 
     }
 }
 
-index::newtype_index!(pub struct NameId { .. });
+index::newtype_index!(pub NameId);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct Id(NameId, SyntaxContext);

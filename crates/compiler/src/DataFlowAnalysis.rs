@@ -338,7 +338,7 @@ impl LinearFlowState {
 
 impl Annotation for LinearFlowState {}
 
-newtype_index!(pub struct LatticeElementId { .. });
+newtype_index!(pub LatticeElementId);
 
 impl Annotation for LatticeElementId {}
 

@@ -362,11 +362,7 @@ impl FunctionLike for SetterProp {
     }
 }
 
-index::newtype_index! {
-    pub struct VarId {
-        DEBUG_FORMAT = "VarId({})"
-    }
-}
+index::newtype_index!(pub VarId);
 
 /*
 

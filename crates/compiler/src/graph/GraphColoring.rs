@@ -123,8 +123,4 @@ struct Partition<T> {
     count: usize,
 }
 
-newtype_index! {
-    pub struct GraphColor {
-        DEBUG_FORMAT = "GraphColor({})"
-    }
-}
+newtype_index!(pub GraphColor);

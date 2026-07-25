@@ -59,7 +59,7 @@ mod pat;
 mod prop;
 mod stmt;
 
-index::newtype_index!(pub struct NodeId { .. });
+index::newtype_index!(pub NodeId);
 
 impl NodeId {
     pub const DUMMY: NodeId = NodeId::MAX;
