@@ -512,7 +512,6 @@ dependencies = [
  "either",
  "num-bigint",
  "once_cell",
- "rayon",
  "rustc-hash",
  "scoped-tls",
  "sourcemap 6.4.1",

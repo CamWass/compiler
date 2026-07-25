@@ -1,11 +1,12 @@
 pub use self::hygiene::{Mark, SyntaxContext};
-use crate::{rustc_data_structures::stable_hasher::StableHasher, sync::Lrc};
+use crate::rustc_data_structures::stable_hasher::StableHasher;
 use std::{
     borrow::Cow,
     cmp, fmt,
     hash::{Hash, Hasher},
     ops::{Add, Sub},
     path::PathBuf,
+    rc::Rc,
     sync::Mutex,
 };
 
@@ -448,7 +449,7 @@ pub struct SourceFile {
     /// Indicates which crate this `SourceFile` was imported from.
     pub crate_of_origin: u32,
     /// The complete source code
-    pub src: Lrc<String>,
+    pub src: Rc<String>,
     /// The source code's hash
     pub src_hash: u128,
     /// The start position of this source in the `SourceMap`
@@ -501,7 +502,7 @@ impl SourceFile {
             name_was_remapped,
             unmapped_path: Some(unmapped_path),
             crate_of_origin: 0,
-            src: Lrc::new(src),
+            src: Rc::new(src),
             src_hash,
             start_pos,
             end_pos: Pos::from_usize(end_pos),
@@ -709,7 +710,7 @@ impl Sub for CharPos {
 #[derive(Debug, Clone)]
 pub struct Loc {
     /// Information about the original source
-    pub file: Lrc<SourceFile>,
+    pub file: Rc<SourceFile>,
     /// The (1-based) line number
     pub line: usize,
     /// The (0-based) column offset
@@ -726,18 +727,18 @@ pub struct LocWithOpt {
     pub filename: FileName,
     pub line: usize,
     pub col: CharPos,
-    pub file: Option<Lrc<SourceFile>>,
+    pub file: Option<Rc<SourceFile>>,
 }
 
 // used to be structural records. Better names, anyone?
 #[derive(Debug)]
 pub struct SourceFileAndLine {
-    pub sf: Lrc<SourceFile>,
+    pub sf: Rc<SourceFile>,
     pub line: usize,
 }
 #[derive(Debug)]
 pub struct SourceFileAndBytePos {
-    pub sf: Lrc<SourceFile>,
+    pub sf: Rc<SourceFile>,
     pub pos: BytePos,
 }
 
@@ -761,7 +762,7 @@ pub struct LineCol {
 }
 
 pub struct FileLines {
-    pub file: Lrc<SourceFile>,
+    pub file: Rc<SourceFile>,
     pub lines: Vec<LineInfo>,
 }
 

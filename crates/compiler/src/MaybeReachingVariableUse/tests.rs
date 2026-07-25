@@ -1,9 +1,10 @@
+use std::rc::Rc;
+
 use ast::*;
 use ecma_visit::{Visit, VisitWith};
 use global_common::{
     FileName, GLOBALS, Globals, SourceMap,
     errors::{ColorConfig, Handler},
-    sync::Lrc,
 };
 use parser::{Parser, Syntax};
 
@@ -341,7 +342,7 @@ where
 }
 
 fn parse_script(input: &str) -> Script {
-    let cm = Lrc::<SourceMap>::default();
+    let cm = Rc::<SourceMap>::default();
     let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
 
     let fm = cm.new_source_file(FileName::Real("input".into()), input.into());

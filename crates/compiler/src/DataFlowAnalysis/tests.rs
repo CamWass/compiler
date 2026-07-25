@@ -3,12 +3,11 @@ use ecma_visit::VisitMutWith;
 use global_common::{
     FileName, GLOBALS, Globals, Mark, SourceMap, SyntaxContext,
     errors::{ColorConfig, Handler},
-    sync::Lrc,
 };
 use index::vec::IndexVec;
 use parser::{Parser, Syntax};
 use rustc_hash::FxHashMap;
-use std::sync::atomic::AtomicU32;
+use std::{rc::Rc, sync::atomic::AtomicU32};
 
 use crate::DataFlowAnalysis::LinearFlowState;
 use crate::Id;
@@ -625,7 +624,7 @@ fn computeEscapedLocals(src: &str) -> FxHashSet<Id> {
 }
 
 fn parse_script(input: &str) -> Script {
-    let cm = Lrc::<SourceMap>::default();
+    let cm = Rc::<SourceMap>::default();
     let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
 
     let fm = cm.new_source_file(FileName::Real("input".into()), input.into());

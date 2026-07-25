@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::control_flow::ControlFlowAnalysis::ControlFlowRoot;
 
 use super::ControlFlowAnalysis::ControlFlowAnalysis;
@@ -9,7 +11,6 @@ use ast::NodeId;
 use global_common::{
     FileName, SourceMap,
     errors::{ColorConfig, Handler},
-    sync::Lrc,
 };
 use parser::{Parser, Syntax};
 use petgraph::algo::has_path_connecting;
@@ -182,7 +183,7 @@ where
 }
 
 fn parse_script(input: &str) -> ast::Script {
-    let cm = Lrc::<SourceMap>::default();
+    let cm = Rc::<SourceMap>::default();
     let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
 
     let fm = cm.new_source_file(FileName::Real("input".into()), input.into());

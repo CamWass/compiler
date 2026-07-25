@@ -3,8 +3,8 @@
 pub use self::config::Config;
 use self::{list::ListFormat, util::SourceMapperExt};
 use ast::*;
-use global_common::{BytePos, DUMMY_SP, SourceMap, Span, sync::Lrc};
-use std::{borrow::Cow, fmt::Write, io};
+use global_common::{BytePos, DUMMY_SP, SourceMap, Span};
+use std::{borrow::Cow, fmt::Write, io, rc::Rc};
 pub use text_writer::JsWriter;
 use util::{for_var_ends_with_alpha_num, prop_name_starts_with_alpha_num};
 
@@ -24,7 +24,7 @@ pub type Result = io::Result<()>;
 
 pub struct Emitter<'a> {
     cfg: config::Config,
-    cm: Lrc<SourceMap>,
+    cm: Rc<SourceMap>,
     wr: JsWriter<'a>,
 
     program_data: &'a ProgramData,
@@ -36,7 +36,7 @@ pub struct Emitter<'a> {
 impl<'a> Emitter<'a> {
     pub fn new(
         cfg: config::Config,
-        cm: Lrc<SourceMap>,
+        cm: Rc<SourceMap>,
         wr: JsWriter<'a>,
 
         program_data: &'a ProgramData,

@@ -5,7 +5,6 @@ authors = ["Campbell <campbell.wass@gmail.com>"]
 edition = "2024"
 
 [features]
-concurrent = []
 tty-emitter = ["atty", "termcolor"]
 
 [dependencies]
@@ -19,6 +18,3 @@ scoped-tls = { workspace = true }
 sourcemap = { workspace = true, optional = true }
 termcolor = { workspace = true, optional = true }
 unicode-width = { workspace = true }
-
-[dev-dependencies]
-rayon = { workspace = true }

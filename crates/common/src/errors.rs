@@ -14,8 +14,6 @@ pub use self::{
     diagnostic_builder::DiagnosticBuilder,
     emitter::{ColorConfig, Emitter, EmitterWriter},
 };
-#[cfg(feature = "tty-emitter")]
-use crate::sync::Lrc;
 use crate::{
     rustc_data_structures::stable_hasher::StableHasher,
     sync::{Lock, LockCell},
@@ -26,6 +24,7 @@ use std::{
     cell::RefCell,
     collections::HashSet,
     error, fmt, panic,
+    rc::Rc,
     sync::atomic::{AtomicUsize, Ordering::SeqCst},
 };
 #[cfg(feature = "tty-emitter")]
@@ -336,7 +335,7 @@ impl Handler {
         color_config: ColorConfig,
         can_emit_warnings: bool,
         treat_err_as_bug: bool,
-        cm: Option<Lrc<SourceMapperDyn>>,
+        cm: Option<Rc<SourceMapperDyn>>,
     ) -> Handler {
         Handler::with_tty_emitter_and_flags(
             color_config,
@@ -352,7 +351,7 @@ impl Handler {
     #[cfg(feature = "tty-emitter")]
     pub fn with_tty_emitter_and_flags(
         color_config: ColorConfig,
-        cm: Option<Lrc<SourceMapperDyn>>,
+        cm: Option<Rc<SourceMapperDyn>>,
         flags: HandlerFlags,
     ) -> Handler {
         let emitter = Box::new(EmitterWriter::stderr(color_config, cm, false, false));

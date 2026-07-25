@@ -8,137 +8,34 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! This module defines types which are thread safe if `cfg!(feature =
-//! "concurrent")` is true.
-//!
-//! `Lrc` is an alias of either Rc or Arc.
-//!
-//! `Lock` is a mutex.
-//! It internally uses `parking_lot::Mutex` if cfg!(parallel_queries) is true,
-//! `RefCell` otherwise.
-//!
-//! `RwLock` is a read-write lock.
-//! It internally uses `parking_lot::RwLock` if cfg!(parallel_queries) is true,
-//! `RefCell` otherwise.
-//!
-//! `LockCell` is a thread safe version of `Cell`, with `set` and `get`
-//! operations. It can never deadlock. It uses `Cell` when
-//! cfg!(parallel_queries) is false, otherwise it is a `Lock`.
-//!
-//! `MTLock` is a mutex which disappears if cfg!(parallel_queries) is false.
-//!
-//! `MTRef` is a immutable reference if cfg!(parallel_queries), and an mutable
-//! reference otherwise.
-//!
-//! `rustc_erase_owner!` erases a OwningRef owner into Erased or Erased + Send +
-//! Sync depending on the value of cfg!(parallel_queries).
-
-#[cfg(feature = "concurrent")]
-use parking_lot::{Mutex as InnerLock, RwLock as InnerRwLock};
-#[cfg(not(feature = "concurrent"))]
-use std::cell::{RefCell as InnerRwLock, RefCell as InnerLock};
+use std::cell::{Ref, RefCell, RefMut};
 use std::fmt;
-
-#[cfg(feature = "concurrent")]
-pub use self::concurrent::*;
-#[cfg(not(feature = "concurrent"))]
-pub use self::single::*;
 use std::{
     cmp::Ordering,
-    collections::HashMap,
     fmt::{Debug, Formatter},
-    hash::{BuildHasher, Hash},
 };
 
-#[cfg(feature = "concurrent")]
-mod concurrent {
-    pub use once_cell::sync::{Lazy, OnceCell};
-    pub use parking_lot::{
-        MappedMutexGuard as MappedLockGuard, MappedRwLockReadGuard as MappedReadGuard,
-        MappedRwLockWriteGuard as MappedWriteGuard, MutexGuard as LockGuard,
-        RwLockReadGuard as ReadGuard, RwLockWriteGuard as WriteGuard,
-    };
-    pub use std::{
-        marker::{Send, Sync},
-        sync::Arc as Lrc,
-    };
-}
-
-#[cfg(not(feature = "concurrent"))]
-mod single {
-    pub use once_cell::unsync::{Lazy, OnceCell};
-    /// Dummy trait because global_common is in single thread mode.
-    pub trait Send {}
-    /// Dummy trait because global_common is in single thread mode.
-    pub trait Sync {}
-
-    impl<T> Send for T where T: ?Sized {}
-    impl<T> Sync for T where T: ?Sized {}
-
-    pub use std::{
-        cell::{
-            Ref as ReadGuard, Ref as MappedReadGuard, RefMut as WriteGuard,
-            RefMut as MappedWriteGuard, RefMut as LockGuard, RefMut as MappedLockGuard,
-        },
-        rc::{Rc as Lrc, Weak},
-    };
-}
-
 #[derive(Debug)]
-pub struct Lock<T>(InnerLock<T>);
+pub struct Lock<T>(RefCell<T>);
 
 impl<T> Lock<T> {
     #[inline(always)]
     pub fn new(inner: T) -> Self {
-        Lock(InnerLock::new(inner))
+        Lock(RefCell::new(inner))
     }
 
-    // #[inline(always)]
-    // pub fn into_inner(self) -> T {
-    //     self.0.into_inner()
-    // }
-    //
-    // #[inline(always)]
-    // pub fn get_mut(&mut self) -> &mut T {
-    //     self.0.get_mut()
-    // }
-
-    // #[cfg(feature = "concurrent")]
-    // #[inline(always)]
-    // pub fn try_lock(&self) -> Option<LockGuard<'_, T>> {
-    //     self.0.try_lock()
-    // }
-    //
-    // #[cfg(not(feature = "concurrent"))]
-    // #[inline(always)]
-    // pub fn try_lock(&self) -> Option<LockGuard<'_, T>> {
-    //     self.0.try_borrow_mut().ok()
-    // }
-
-    #[cfg(feature = "concurrent")]
     #[inline(always)]
-    pub fn lock(&self) -> LockGuard<'_, T> {
-        self.0.lock()
-    }
-
-    #[cfg(not(feature = "concurrent"))]
-    #[inline(always)]
-    pub fn lock(&self) -> LockGuard<'_, T> {
+    pub fn lock(&self) -> RefMut<'_, T> {
         self.0.borrow_mut()
     }
 
-    // #[inline(always)]
-    // pub fn with_lock<F: FnOnce(&mut T) -> R, R>(&self, f: F) -> R {
-    //     f(&mut *self.lock())
-    // }
-
     #[inline(always)]
-    pub fn borrow(&self) -> LockGuard<'_, T> {
+    pub fn borrow(&self) -> RefMut<'_, T> {
         self.lock()
     }
 
     #[inline(always)]
-    pub fn borrow_mut(&self) -> LockGuard<'_, T> {
+    pub fn borrow_mut(&self) -> RefMut<'_, T> {
         self.lock()
     }
 }
@@ -167,20 +64,6 @@ impl<T> LockCell<T> {
         T: Copy,
     {
         *self.0.lock()
-    }
-}
-
-pub trait HashMapExt<K, V> {
-    /// Same as HashMap::insert, but it may panic if there's already an
-    /// entry for `key` with a value not equal to `value`
-    fn insert_same(&mut self, key: K, value: V);
-}
-
-impl<K: Eq + Hash, V: Eq, S: BuildHasher> HashMapExt<K, V> for HashMap<K, V, S> {
-    fn insert_same(&mut self, key: K, value: V) {
-        self.entry(key)
-            .and_modify(|old| assert!(*old == value))
-            .or_insert(value);
     }
 }
 
@@ -244,28 +127,21 @@ impl<T: Ord + Copy> Ord for LockCell<T> {
 }
 
 #[derive(Debug, Default)]
-pub struct RwLock<T>(InnerRwLock<T>);
+pub struct RwLock<T>(RefCell<T>);
 
 impl<T> RwLock<T> {
     #[inline(always)]
     pub fn new(inner: T) -> Self {
-        RwLock(InnerRwLock::new(inner))
+        RwLock(RefCell::new(inner))
     }
 
-    #[cfg(not(feature = "concurrent"))]
     #[inline(always)]
-    pub fn read(&self) -> ReadGuard<'_, T> {
+    pub fn read(&self) -> Ref<'_, T> {
         self.0.borrow()
     }
 
-    #[cfg(feature = "concurrent")]
     #[inline(always)]
-    pub fn read(&self) -> ReadGuard<'_, T> {
-        self.0.read()
-    }
-
-    #[inline(always)]
-    pub fn borrow(&self) -> ReadGuard<'_, T> {
+    pub fn borrow(&self) -> Ref<'_, T> {
         self.read()
     }
 
@@ -279,28 +155,14 @@ impl<T> RwLock<T> {
         f(&*self.read())
     }
 
-    #[cfg(not(feature = "concurrent"))]
     #[inline(always)]
-    pub fn try_write(&self) -> Result<WriteGuard<'_, T>, ()> {
+    pub fn try_write(&self) -> Result<RefMut<'_, T>, ()> {
         self.0.try_borrow_mut().map_err(|_| ())
     }
 
-    #[cfg(feature = "concurrent")]
     #[inline(always)]
-    pub fn try_write(&self) -> Result<WriteGuard<'_, T>, ()> {
-        self.0.try_write().ok_or(())
-    }
-
-    #[cfg(not(feature = "concurrent"))]
-    #[inline(always)]
-    pub fn write(&self) -> WriteGuard<'_, T> {
+    pub fn write(&self) -> RefMut<'_, T> {
         self.0.borrow_mut()
-    }
-
-    #[cfg(feature = "concurrent")]
-    #[inline(always)]
-    pub fn write(&self) -> WriteGuard<'_, T> {
-        self.0.write()
     }
 
     #[inline(always)]
@@ -309,16 +171,8 @@ impl<T> RwLock<T> {
     }
 
     #[inline(always)]
-    pub fn borrow_mut(&self) -> WriteGuard<'_, T> {
+    pub fn borrow_mut(&self) -> RefMut<'_, T> {
         self.write()
-    }
-}
-
-// FIXME: Probably a bad idea
-impl<T: Clone> Clone for RwLock<T> {
-    #[inline]
-    fn clone(&self) -> Self {
-        RwLock::new(self.borrow().clone())
     }
 }
 

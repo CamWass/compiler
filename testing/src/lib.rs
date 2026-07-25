@@ -3,7 +3,6 @@ use difference::Changeset;
 use global_common::{
     FilePathMapping, SourceMap,
     errors::{Diagnostic, Handler},
-    sync::Lrc,
 };
 use once_cell::sync::Lazy;
 pub use pretty_assertions::{assert_eq, assert_ne};
@@ -15,6 +14,7 @@ use std::{
     fs::{File, create_dir_all},
     io::Write,
     path::{Path, PathBuf},
+    rc::Rc,
     sync::RwLock,
     thread,
 };
@@ -73,11 +73,11 @@ pub fn find_executable(name: &str) -> Option<PathBuf> {
 /// Run test and print errors.
 pub fn run_test<F, Ret>(treat_err_as_bug: bool, op: F) -> Result<Ret, StdErr>
 where
-    F: FnOnce(Lrc<SourceMap>, &Handler) -> Result<Ret, ()>,
+    F: FnOnce(Rc<SourceMap>, &Handler) -> Result<Ret, ()>,
 {
     let _log = init();
 
-    let cm = Lrc::new(SourceMap::new(FilePathMapping::empty()));
+    let cm = Rc::new(SourceMap::new(FilePathMapping::empty()));
     let (handler, errors) = self::string_errors::new_handler(cm.clone(), treat_err_as_bug);
     let result = global_common::GLOBALS.set(&global_common::Globals::new(), || op(cm, &handler));
 
@@ -90,11 +90,11 @@ where
 /// Run test and print errors.
 pub fn run_test2<F, Ret>(treat_err_as_bug: bool, op: F) -> Result<Ret, StdErr>
 where
-    F: FnOnce(Lrc<SourceMap>, Handler) -> Result<Ret, ()>,
+    F: FnOnce(Rc<SourceMap>, Handler) -> Result<Ret, ()>,
 {
     let _log = init();
 
-    let cm = Lrc::new(SourceMap::new(FilePathMapping::empty()));
+    let cm = Rc::new(SourceMap::new(FilePathMapping::empty()));
     let (handler, errors) = self::string_errors::new_handler(cm.clone(), treat_err_as_bug);
     let result = global_common::GLOBALS.set(&global_common::Globals::new(), || op(cm, handler));
 
@@ -106,7 +106,7 @@ where
 
 /// Run test and print errors.
 pub fn run_test_with_source_map<F, Ret>(
-    cm: &Lrc<SourceMap>,
+    cm: &Rc<SourceMap>,
     treat_err_as_bug: bool,
     op: F,
 ) -> Result<Ret, StdErr>
@@ -125,7 +125,7 @@ where
 }
 
 pub struct Tester {
-    pub cm: Lrc<SourceMap>,
+    pub cm: Rc<SourceMap>,
     pub globals: global_common::Globals,
     treat_err_as_bug: bool,
 }
@@ -135,7 +135,7 @@ impl Tester {
         let _log = init();
 
         Tester {
-            cm: Lrc::new(SourceMap::new(FilePathMapping::empty())),
+            cm: Rc::new(SourceMap::new(FilePathMapping::empty())),
             globals: global_common::Globals::new(),
             treat_err_as_bug: false,
         }
@@ -149,7 +149,7 @@ impl Tester {
     /// Run test and print errors.
     pub fn print_errors<F, Ret>(&self, op: F) -> Result<Ret, StdErr>
     where
-        F: FnOnce(Lrc<SourceMap>, Handler) -> Result<Ret, ()>,
+        F: FnOnce(Rc<SourceMap>, Handler) -> Result<Ret, ()>,
     {
         let (handler, errors) =
             self::string_errors::new_handler(self.cm.clone(), self.treat_err_as_bug);
@@ -164,7 +164,7 @@ impl Tester {
     /// Run test and collect errors.
     pub fn errors<F, Ret>(&self, op: F) -> Result<Ret, Vec<Diagnostic>>
     where
-        F: FnOnce(Lrc<SourceMap>, Handler) -> Result<Ret, ()>,
+        F: FnOnce(Rc<SourceMap>, Handler) -> Result<Ret, ()>,
     {
         let (handler, errors) =
             self::diag_errors::new_handler(self.cm.clone(), self.treat_err_as_bug);

@@ -1,5 +1,7 @@
+use std::rc::Rc;
+
 use criterion::{Criterion, Throughput, black_box, criterion_group};
-use global_common::{FileName, FilePathMapping, SourceMap, sync::Lrc};
+use global_common::{FileName, FilePathMapping, SourceMap};
 use parser::lexer::Lexer;
 
 struct Bench(&'static str, &'static str);
@@ -23,7 +25,7 @@ fn bench(c: &mut Criterion) {
     for Bench(id, src) in &benches {
         group.throughput(Throughput::Bytes(src.len() as u64));
 
-        let cm = Lrc::new(SourceMap::new(FilePathMapping::empty()));
+        let cm = Rc::new(SourceMap::new(FilePathMapping::empty()));
         let fm = cm.new_source_file(FileName::Anon, src.to_string());
 
         group.bench_with_input(*id, &fm, |b, f| {

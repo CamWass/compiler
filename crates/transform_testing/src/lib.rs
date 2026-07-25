@@ -7,7 +7,7 @@ use ansi_term::Color;
 use ast::{Pat, *};
 use codegen::Emitter;
 use ecma_visit::{VisitMut, VisitMutWith};
-use global_common::{FileName, SourceMap, errors::Handler, sync::Lrc, util::take::Take};
+use global_common::{FileName, SourceMap, errors::Handler, util::take::Take};
 use parser::{Parser, Syntax};
 // use swc_ecma_testing::{exec_node_js, JsExecOptions};
 // use swc_ecma_transforms_base::{
@@ -18,8 +18,10 @@ use parser::{Parser, Syntax};
 // };
 // use swc_ecma_utils::{quote_ident, quote_str, ExprFactory};
 
+use std::rc::Rc;
+
 pub struct Tester<'a> {
-    pub cm: Lrc<SourceMap>,
+    pub cm: Rc<SourceMap>,
     pub handler: &'a Handler,
 }
 

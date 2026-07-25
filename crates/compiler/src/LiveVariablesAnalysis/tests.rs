@@ -1,10 +1,11 @@
+use std::rc::Rc;
+
 use ast::*;
 use atoms::JsWord;
 use ecma_visit::{Visit, VisitMutWith, VisitWith};
 use global_common::{
     FileName, GLOBALS, Globals, Mark, SourceMap, SyntaxContext,
     errors::{ColorConfig, Handler},
-    sync::Lrc,
 };
 use parser::{Parser, Syntax};
 use rustc_hash::FxHashMap;
@@ -856,7 +857,7 @@ fn assert_not_escaped(src: &str, name: &str) {
 }
 
 fn parse_script(input: &str) -> Script {
-    let cm = Lrc::<SourceMap>::default();
+    let cm = Rc::<SourceMap>::default();
     let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
 
     let fm = cm.new_source_file(FileName::Real("input".into()), input.into());

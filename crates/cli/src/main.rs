@@ -7,12 +7,11 @@ use config::{Config, load_config};
 use global_common::{
     FileName, SourceMap,
     errors::{ColorConfig, Handler},
-    sync::Lrc,
 };
 use parser::{Parser, Syntax};
 use rustc_hash::FxHashSet;
 use std::time::Instant;
-use std::{env, path::Path};
+use std::{env, path::Path, rc::Rc};
 use swc_common::Spanned;
 
 mod config;
@@ -62,7 +61,7 @@ fn create_program(
 }
 
 fn compile(entry_file: &str, config: Config) -> Result<()> {
-    let cm = Lrc::<SourceMap>::default();
+    let cm = Rc::<SourceMap>::default();
     let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
 
     let mut program_data = ast::ProgramData::default();
@@ -296,7 +295,7 @@ fn reduce_first(
 }
 
 fn compile_ours(input: String, config: Config) -> Result<String> {
-    let cm = Lrc::<SourceMap>::default();
+    let cm = Rc::<SourceMap>::default();
     let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
 
     let mut program_data = ast::ProgramData::default();
@@ -355,11 +354,10 @@ fn swc_parse(input: String) -> Result<swc_ecma_ast::Program> {
     use swc_common::{
         FileName, SourceMap,
         errors::{ColorConfig, Handler},
-        sync::Lrc,
     };
     use swc_ecma_parser::{Capturing, Parser, StringInput, lexer::Lexer};
 
-    let cm: Lrc<SourceMap> = Default::default();
+    let cm: Rc<SourceMap> = Default::default();
     let handler = Handler::with_tty_emitter(ColorConfig::Auto, true, false, Some(cm.clone()));
 
     let fm = cm.new_source_file(FileName::Anon.into(), input);
@@ -403,7 +401,7 @@ fn swc_print(program: &swc_ecma_ast::Program, minify: bool) -> String {
         let mut buf = Vec::new();
 
         {
-            let cm: Lrc<swc_common::SourceMap> = Default::default();
+            let cm: Rc<swc_common::SourceMap> = Default::default();
             let mut emitter = Emitter {
                 cfg: Config::default().with_minify(minify),
                 wr: JsWriter::new(cm.clone(), "\n", &mut buf, None),
@@ -426,7 +424,7 @@ fn swc_print(program: &swc_ecma_ast::Program, minify: bool) -> String {
     // use swc_ecma_visit::FoldWith;
 
     // if minify {
-    //     let cm: Lrc<swc_common::SourceMap> = Default::default();
+    //     let cm: Rc<swc_common::SourceMap> = Default::default();
     //     let minify_options = MinifyOptions {
     //         rename: false,
     //         compress: Some(CompressOptions {
@@ -536,7 +534,7 @@ fn swc_print(program: &swc_ecma_ast::Program, minify: bool) -> String {
     //         let mut buf = Vec::new();
 
     //         {
-    //             let cm: Lrc<swc_common::SourceMap> = Default::default();
+    //             let cm: Rc<swc_common::SourceMap> = Default::default();
     //             let mut emitter = Emitter {
     //                 cfg: Config::default().with_minify(true),
     //                 wr: JsWriter::new(cm.clone(), "\n", &mut buf, None),
@@ -561,7 +559,7 @@ fn swc_print_script(program: &swc_ecma_ast::Script, minify: bool) -> String {
         let mut buf = Vec::new();
 
         {
-            let cm: Lrc<swc_common::SourceMap> = Default::default();
+            let cm: Rc<swc_common::SourceMap> = Default::default();
             let mut emitter = Emitter {
                 cfg: Config::default().with_minify(minify),
                 wr: JsWriter::new(cm.clone(), "\n", &mut buf, None),

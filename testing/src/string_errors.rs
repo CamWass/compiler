@@ -1,16 +1,14 @@
 use super::StdErr;
-use global_common::{
-    errors::{EmitterWriter, Handler, HandlerFlags, SourceMapperDyn},
-    sync::Lrc,
-};
+use global_common::errors::{EmitterWriter, Handler, HandlerFlags, SourceMapperDyn};
 use std::{
     io::{self, Write},
+    rc::Rc,
     sync::{Arc, RwLock},
 };
 
 /// Creates a new handler for testing.
 pub(crate) fn new_handler(
-    cm: Lrc<SourceMapperDyn>,
+    cm: Rc<SourceMapperDyn>,
     treat_err_as_bug: bool,
 ) -> (Handler, BufferedError) {
     let buf: BufferedError = Default::default();

@@ -1,11 +1,13 @@
+use std::rc::Rc;
+
 use ast::*;
 use codegen::{Emitter, text_writer::JsWriter};
 use ecma_visit::{VisitMut, VisitMutWith};
-use global_common::{FileName, SourceMap, errors::Handler, sync::Lrc};
+use global_common::{FileName, SourceMap, errors::Handler};
 use parser::{Parser, Syntax};
 
 struct Tester<'a> {
-    cm: Lrc<SourceMap>,
+    cm: Rc<SourceMap>,
     handler: &'a Handler,
 }
 

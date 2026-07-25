@@ -1,4 +1,6 @@
-#[deny(unused_imports)]
+#![deny(unused_imports)]
+
+use std::rc::Rc;
 use std::time::Duration;
 
 use compiler::resolver::resolver;
@@ -9,7 +11,6 @@ use global_common::{GLOBALS, Globals, Mark};
 use global_common::{
     SourceMap, SyntaxContext,
     errors::{ColorConfig, Handler},
-    sync::Lrc,
 };
 use parser::{Parser, Syntax};
 
@@ -31,7 +32,7 @@ pub fn bench(c: &mut Criterion) {
             .sample_size(*samples);
         group.throughput(Throughput::Bytes(src.len() as u64));
 
-        let cm = Lrc::new(SourceMap::new(FilePathMapping::empty()));
+        let cm = Rc::new(SourceMap::new(FilePathMapping::empty()));
         let fm = cm.new_source_file(FileName::Anon, src.to_string());
 
         GLOBALS.set(&Globals::new(), || {
