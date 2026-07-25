@@ -164,14 +164,14 @@ where
     fn compute_gen_kill<'b>(
         &mut self,
         n: Node<'ast>,
-        gen: &'b mut BitSet<VarId>,
-        kill: &'b mut BitSet<VarId>,
+        gen_set: &'b mut BitSet<VarId>,
+        kill_set: &'b mut BitSet<VarId>,
         conditional: bool,
     ) {
         let mut v = GenKillComputer {
             unresolved_ctxt: self.unresolved_ctxt,
-            gen,
-            kill,
+            gen_set,
+            kill_set,
             conditional,
             analysis: self,
             in_lhs: false,
@@ -218,8 +218,8 @@ where
     T: FunctionLike,
 {
     unresolved_ctxt: SyntaxContext,
-    gen: &'b mut BitSet<VarId>,
-    kill: &'b mut BitSet<VarId>,
+    gen_set: &'b mut BitSet<VarId>,
+    kill_set: &'b mut BitSet<VarId>,
     conditional: bool,
     analysis: &'b mut Inner<'ast, 'a, T>,
     in_lhs: bool,
@@ -295,7 +295,8 @@ where
             if let Some(init) = &node.init {
                 init.visit_with(self);
                 if !self.conditional {
-                    self.analysis.add_to_set_if_local(&name.to_id(), self.kill);
+                    self.analysis
+                        .add_to_set_if_local(&name.to_id(), self.kill_set);
                 }
             }
             return;
@@ -304,7 +305,7 @@ where
 
         if !self.conditional {
             for lhs_node in &find_pat_ids(&node.name) {
-                self.analysis.add_to_set_if_local(lhs_node, self.kill);
+                self.analysis.add_to_set_if_local(lhs_node, self.kill_set);
             }
         }
         self.in_lhs = true;
@@ -434,7 +435,8 @@ where
             if node.sym == js_word!("arguments") && node.ctxt == self.unresolved_ctxt {
                 self.analysis.mark_all_parameters_escaped();
             } else {
-                self.analysis.add_to_set_if_local(&node.to_id(), self.gen);
+                self.analysis
+                    .add_to_set_if_local(&node.to_id(), self.gen_set);
             }
         }
     }
@@ -443,11 +445,13 @@ where
         debug_assert!(!self.in_lhs);
         let mut handle_ident_lhs = |lhs: &Ident| {
             if !self.conditional {
-                self.analysis.add_to_set_if_local(&lhs.to_id(), self.kill);
+                self.analysis
+                    .add_to_set_if_local(&lhs.to_id(), self.kill_set);
             }
             if node.op != AssignOp::Assign {
                 // assignments such as a += 1 reads a.
-                self.analysis.add_to_set_if_local(&lhs.to_id(), self.gen);
+                self.analysis
+                    .add_to_set_if_local(&lhs.to_id(), self.gen_set);
             }
             node.right.visit_with(self);
         };
@@ -464,7 +468,7 @@ where
                     && !self.conditional
                 {
                     for lhs_node in &find_pat_ids(left) {
-                        self.analysis.add_to_set_if_local(lhs_node, self.kill);
+                        self.analysis.add_to_set_if_local(lhs_node, self.kill_set);
                     }
                 }
                 self.in_lhs = true;
@@ -532,7 +536,7 @@ where
     }
 
     fn flow_through(&mut self, node: Node<'ast>, input: LatticeElementId) -> LatticeElementId {
-        let mut gen = BitSet::new_empty(self.num_vars);
+        let mut gen_set = BitSet::new_empty(self.num_vars);
         let mut kill = BitSet::new_empty(self.num_vars);
 
         // Make kills conditional if the node can end abruptly by an exception.
@@ -541,16 +545,16 @@ where
             .graph
             .edges(self.cfg.map[&node])
             .any(|e| *e.weight() == Branch::Exception);
-        self.compute_gen_kill(node, &mut gen, &mut kill, conditional);
+        self.compute_gen_kill(node, &mut gen_set, &mut kill, conditional);
 
-        if gen.is_empty() && kill.is_empty() {
+        if gen_set.is_empty() && kill.is_empty() {
             // No changes compared to input.
             input
         } else {
             let mut new_live_set = self[input].live_set.clone();
             // L_in = L_out - Kill + Gen
             new_live_set.subtract(&kill);
-            new_live_set.union(&gen);
+            new_live_set.union(&gen_set);
             if new_live_set != self[input].live_set {
                 self.add_lattice_element(LiveVariableLattice {
                     live_set: new_live_set,

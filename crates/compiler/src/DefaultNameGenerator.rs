@@ -62,9 +62,9 @@ impl DefaultNameGenerator {
 
 #[test]
 fn test_collision_with_past_names() {
-    let mut gen = DefaultNameGenerator::default();
+    let mut generator = DefaultNameGenerator::default();
     let names = (0..1_000_000)
-        .map(|_| gen.generate_next_name())
+        .map(|_| generator.generate_next_name())
         .collect::<FxHashSet<_>>();
     assert_eq!(names.len(), 1_000_000);
 }

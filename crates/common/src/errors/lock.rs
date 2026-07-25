@@ -36,7 +36,7 @@ pub fn acquire_global_lock(name: &str) -> Box<dyn Any> {
     const WAIT_OBJECT_0: DWORD = 0;
     const WAIT_ABANDONED: DWORD = 0x00000080;
 
-    extern "system" {
+    unsafe extern "system" {
         fn CreateMutexA(
             lpMutexAttributes: LPSECURITY_ATTRIBUTES,
             bInitialOwner: BOOL,

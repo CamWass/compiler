@@ -1445,11 +1445,11 @@ impl Store {
         pointer < self.concrete_pointer_bound
     }
 
-    fn concrete_pointers(&self) -> impl Iterator<Item = PointerId> {
+    fn concrete_pointers(&self) -> impl Iterator<Item = PointerId> + use<> {
         (0..self.concrete_pointer_bound.as_u32()).map(PointerId::from_u32)
     }
 
-    fn non_concrete_pointers(&self) -> impl Iterator<Item = PointerId> {
+    fn non_concrete_pointers(&self) -> impl Iterator<Item = PointerId> + use<> {
         (self.concrete_pointer_bound.as_u32()..self.pointers.len().try_into().unwrap())
             .map(PointerId::from_u32)
     }

@@ -27,13 +27,13 @@ pub struct GrowableUnionFind<K> {
 #[inline]
 unsafe fn get_unchecked<K>(xs: &[K], index: usize) -> &K {
     debug_assert!(index < xs.len());
-    xs.get_unchecked(index)
+    unsafe { xs.get_unchecked(index) }
 }
 
 #[inline]
 unsafe fn get_unchecked_mut<K>(xs: &mut [K], index: usize) -> &mut K {
     debug_assert!(index < xs.len());
-    xs.get_unchecked_mut(index)
+    unsafe { xs.get_unchecked_mut(index) }
 }
 
 impl<K> GrowableUnionFind<K>
@@ -75,14 +75,16 @@ where
     }
 
     unsafe fn find_mut_recursive(&mut self, mut x: K) -> K {
-        let mut parent = *get_unchecked(&self.parent, x.index());
-        while parent != x {
-            let grandparent = *get_unchecked(&self.parent, parent.index());
-            *get_unchecked_mut(&mut self.parent, x.index()) = grandparent;
-            x = parent;
-            parent = grandparent;
+        unsafe {
+            let mut parent = *get_unchecked(&self.parent, x.index());
+            while parent != x {
+                let grandparent = *get_unchecked(&self.parent, parent.index());
+                *get_unchecked_mut(&mut self.parent, x.index()) = grandparent;
+                x = parent;
+                parent = grandparent;
+            }
+            x
         }
-        x
     }
 
     /// Unify the two sets containing `x` and `y`.

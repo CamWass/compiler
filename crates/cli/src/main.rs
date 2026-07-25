@@ -181,11 +181,11 @@ fn reduce(entry_file: &str, config: Config) {
     let mut reducer = Reducer::default();
 
     let mut iter = 0;
-    let mut gen = 0;
+    let mut generation = 0;
 
     'outer: loop {
-        println!("Starting generation: {gen}",);
-        gen += 1;
+        println!("Starting generation: {generation}",);
+        generation += 1;
         let mut changed = false;
         loop {
             if iter % 10 == 0 {

@@ -82,111 +82,113 @@ cfg_if::cfg_if! {
                                        lines: &mut Vec<BytePos>,
                                        multi_byte_chars: &mut Vec<MultiByteChar>,
                                        non_narrow_chars: &mut Vec<NonNarrowChar>) {
-            #[cfg(target_arch = "x86")]
-            use std::arch::x86::*;
-            #[cfg(target_arch = "x86_64")]
-            use std::arch::x86_64::*;
+            unsafe {
+                #[cfg(target_arch = "x86")]
+                use std::arch::x86::*;
+                #[cfg(target_arch = "x86_64")]
+                use std::arch::x86_64::*;
 
-            const CHUNK_SIZE: usize = 16;
+                const CHUNK_SIZE: usize = 16;
 
-            let src_bytes = src.as_bytes();
+                let src_bytes = src.as_bytes();
 
-            let chunk_count = src.len() / CHUNK_SIZE;
+                let chunk_count = src.len() / CHUNK_SIZE;
 
-            // This variable keeps track of where we should start decoding a
-            // chunk. If a multi-byte character spans across chunk boundaries,
-            // we need to skip that part in the next chunk because we already
-            // handled it.
-            let mut intra_chunk_offset = 0;
+                // This variable keeps track of where we should start decoding a
+                // chunk. If a multi-byte character spans across chunk boundaries,
+                // we need to skip that part in the next chunk because we already
+                // handled it.
+                let mut intra_chunk_offset = 0;
 
-            for chunk_index in 0 .. chunk_count {
-                let ptr = src_bytes.as_ptr() as *const __m128i;
-                // We don't know if the pointer is aligned to 16 bytes, so we
-                // use `loadu`, which supports unaligned loading.
-                let chunk = _mm_loadu_si128(ptr.offset(chunk_index as isize));
+                for chunk_index in 0 .. chunk_count {
+                    let ptr = src_bytes.as_ptr() as *const __m128i;
+                    // We don't know if the pointer is aligned to 16 bytes, so we
+                    // use `loadu`, which supports unaligned loading.
+                    let chunk = _mm_loadu_si128(ptr.offset(chunk_index as isize));
 
-                // For character in the chunk, see if its byte value is < 0, which
-                // indicates that it's part of a UTF-8 char.
-                let multibyte_test = _mm_cmplt_epi8(chunk, _mm_set1_epi8(0));
-                // Create a bit mask from the comparison results.
-                let multibyte_mask = _mm_movemask_epi8(multibyte_test);
+                    // For character in the chunk, see if its byte value is < 0, which
+                    // indicates that it's part of a UTF-8 char.
+                    let multibyte_test = _mm_cmplt_epi8(chunk, _mm_set1_epi8(0));
+                    // Create a bit mask from the comparison results.
+                    let multibyte_mask = _mm_movemask_epi8(multibyte_test);
 
-                // If the bit mask is all zero, we only have ASCII chars here:
-                if multibyte_mask == 0 {
-                    assert!(intra_chunk_offset == 0);
+                    // If the bit mask is all zero, we only have ASCII chars here:
+                    if multibyte_mask == 0 {
+                        assert!(intra_chunk_offset == 0);
 
-                    // Check if there are any control characters in the chunk. All
-                    // control characters that we can encounter at this point have a
-                    // byte value less than 32 or ...
-                    let control_char_test0 = _mm_cmplt_epi8(chunk, _mm_set1_epi8(32));
-                    let control_char_mask0 = _mm_movemask_epi8(control_char_test0);
+                        // Check if there are any control characters in the chunk. All
+                        // control characters that we can encounter at this point have a
+                        // byte value less than 32 or ...
+                        let control_char_test0 = _mm_cmplt_epi8(chunk, _mm_set1_epi8(32));
+                        let control_char_mask0 = _mm_movemask_epi8(control_char_test0);
 
-                    // ... it's the ASCII 'DEL' character with a value of 127.
-                    let control_char_test1 = _mm_cmpeq_epi8(chunk, _mm_set1_epi8(127));
-                    let control_char_mask1 = _mm_movemask_epi8(control_char_test1);
+                        // ... it's the ASCII 'DEL' character with a value of 127.
+                        let control_char_test1 = _mm_cmpeq_epi8(chunk, _mm_set1_epi8(127));
+                        let control_char_mask1 = _mm_movemask_epi8(control_char_test1);
 
-                    let control_char_mask = control_char_mask0 | control_char_mask1;
+                        let control_char_mask = control_char_mask0 | control_char_mask1;
 
-                    if control_char_mask != 0 {
-                        // Check for newlines in the chunk
-                        let newlines_test = _mm_cmpeq_epi8(chunk, _mm_set1_epi8(b'\n' as i8));
-                        let newlines_mask = _mm_movemask_epi8(newlines_test);
+                        if control_char_mask != 0 {
+                            // Check for newlines in the chunk
+                            let newlines_test = _mm_cmpeq_epi8(chunk, _mm_set1_epi8(b'\n' as i8));
+                            let newlines_mask = _mm_movemask_epi8(newlines_test);
 
-                        if control_char_mask == newlines_mask {
-                            // All control characters are newlines, record them
-                            let mut newlines_mask = 0xFFFF0000 | newlines_mask as u32;
-                            let output_offset = output_offset +
-                                BytePos::from_usize(chunk_index * CHUNK_SIZE + 1);
+                            if control_char_mask == newlines_mask {
+                                // All control characters are newlines, record them
+                                let mut newlines_mask = 0xFFFF0000 | newlines_mask as u32;
+                                let output_offset = output_offset +
+                                    BytePos::from_usize(chunk_index * CHUNK_SIZE + 1);
 
-                            loop {
-                                let index = newlines_mask.trailing_zeros();
+                                loop {
+                                    let index = newlines_mask.trailing_zeros();
 
-                                if index >= CHUNK_SIZE as u32 {
-                                    // We have arrived at the end of the chunk.
-                                    break
+                                    if index >= CHUNK_SIZE as u32 {
+                                        // We have arrived at the end of the chunk.
+                                        break
+                                    }
+
+                                    lines.push(BytePos(index) + output_offset);
+
+                                    // Clear the bit, so we can find the next one.
+                                    newlines_mask &= (!1) << index;
                                 }
 
-                                lines.push(BytePos(index) + output_offset);
-
-                                // Clear the bit, so we can find the next one.
-                                newlines_mask &= (!1) << index;
+                                // We are done for this chunk. All control characters were
+                                // newlines and we took care of those.
+                                continue
+                            } else {
+                                // Some of the control characters are not newlines,
+                                // fall through to the slow path below.
                             }
-
-                            // We are done for this chunk. All control characters were
-                            // newlines and we took care of those.
-                            continue
                         } else {
-                            // Some of the control characters are not newlines,
-                            // fall through to the slow path below.
+                            // No control characters, nothing to record for this chunk
+                            continue
                         }
-                    } else {
-                        // No control characters, nothing to record for this chunk
-                        continue
                     }
+
+                    // The slow path.
+                    // There are control chars in here, fallback to generic decoding.
+                    let scan_start = chunk_index * CHUNK_SIZE + intra_chunk_offset;
+                    intra_chunk_offset = analyze_source_file_generic(
+                        &src[scan_start .. ],
+                        CHUNK_SIZE - intra_chunk_offset,
+                        BytePos::from_usize(scan_start) + output_offset,
+                        lines,
+                        multi_byte_chars,
+                        non_narrow_chars
+                    );
                 }
 
-                // The slow path.
-                // There are control chars in here, fallback to generic decoding.
-                let scan_start = chunk_index * CHUNK_SIZE + intra_chunk_offset;
-                intra_chunk_offset = analyze_source_file_generic(
-                    &src[scan_start .. ],
-                    CHUNK_SIZE - intra_chunk_offset,
-                    BytePos::from_usize(scan_start) + output_offset,
-                    lines,
-                    multi_byte_chars,
-                    non_narrow_chars
-                );
-            }
-
-            // There might still be a tail left to analyze
-            let tail_start = chunk_count * CHUNK_SIZE + intra_chunk_offset;
-            if tail_start < src.len() {
-                analyze_source_file_generic(&src[tail_start..],
-                                        src.len() - tail_start,
-                                        output_offset + BytePos::from_usize(tail_start),
-                                        lines,
-                                        multi_byte_chars,
-                                        non_narrow_chars);
+                // There might still be a tail left to analyze
+                let tail_start = chunk_count * CHUNK_SIZE + intra_chunk_offset;
+                if tail_start < src.len() {
+                    analyze_source_file_generic(&src[tail_start..],
+                                            src.len() - tail_start,
+                                            output_offset + BytePos::from_usize(tail_start),
+                                            lines,
+                                            multi_byte_chars,
+                                            non_narrow_chars);
+                }
             }
         }
     } else {

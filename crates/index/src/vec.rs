@@ -245,7 +245,7 @@ impl<I: Idx, T> IndexVec<I, T> {
     }
 
     #[inline]
-    pub fn indices(&self) -> impl Iterator<Item = I> {
+    pub fn indices(&self) -> impl Iterator<Item = I> + use<I, T> {
         (0..self.len()).map(I::new)
     }
 
