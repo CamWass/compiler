@@ -1,5 +1,8 @@
-use once_cell::sync::Lazy;
-use std::{env, path::PathBuf, sync::Arc};
+use std::{
+    env,
+    path::PathBuf,
+    sync::{Arc, LazyLock},
+};
 
 pub fn manifest_dir() -> PathBuf {
     env::var("CARGO_MANIFEST_DIR")
@@ -17,7 +20,7 @@ pub fn test_results_dir() -> Arc<PathBuf> {
         manifest_dir().join("target").join("test-results")
     }
 
-    static DIR: Lazy<Arc<PathBuf>> = Lazy::new(|| Arc::new(detect()));
+    static DIR: LazyLock<Arc<PathBuf>> = LazyLock::new(|| Arc::new(detect()));
 
     DIR.clone()
 }

@@ -12,7 +12,6 @@ atty = { workspace = true, optional = true }
 cfg-if = { workspace = true }
 either = { workspace = true }
 num-bigint = { workspace = true }
-once_cell = { workspace = true }
 rustc-hash = { workspace = true }
 scoped-tls = { workspace = true }
 sourcemap = { workspace = true, optional = true }

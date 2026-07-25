@@ -4,18 +4,17 @@ use global_common::{
     FilePathMapping, SourceMap,
     errors::{Diagnostic, Handler},
 };
-use once_cell::sync::Lazy;
 pub use pretty_assertions::{assert_eq, assert_ne};
 use regex::Regex;
 use std::{
     collections::HashMap,
-    env, fmt,
-    fmt::{Debug, Display, Formatter},
+    env,
+    fmt::{self, Debug, Display, Formatter},
     fs::{File, create_dir_all},
     io::Write,
     path::{Path, PathBuf},
     rc::Rc,
-    sync::RwLock,
+    sync::{LazyLock, RwLock},
     thread,
 };
 pub use testing_macros::fixture;
@@ -42,7 +41,7 @@ pub fn init() -> tracing::subscriber::DefaultGuard {
 }
 
 pub fn find_executable(name: &str) -> Option<PathBuf> {
-    static CACHE: Lazy<RwLock<HashMap<String, PathBuf>>> = Lazy::new(Default::default);
+    static CACHE: LazyLock<RwLock<HashMap<String, PathBuf>>> = LazyLock::new(Default::default);
 
     {
         let locked = CACHE.read().unwrap();
@@ -207,15 +206,15 @@ pub fn print_left_right(left: &dyn Debug, right: &dyn Debug) -> String {
 
         // Replace 'Span { lo: BytePos(0), hi: BytePos(0), ctxt: #0 }' with '_'
         let s = {
-            static RE: Lazy<Regex> =
-                Lazy::new(|| Regex::new("Span \\{[\\a-zA-Z0#:\\(\\)]*\\}").unwrap());
+            static RE: LazyLock<Regex> =
+                LazyLock::new(|| Regex::new("Span \\{[\\a-zA-Z0#:\\(\\)]*\\}").unwrap());
 
             &RE
         }
         .replace_all(&s, "_");
         // Remove 'span: _,'
         let s = {
-            static RE: Lazy<Regex> = Lazy::new(|| Regex::new("span: _[,]?\\s*").unwrap());
+            static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new("span: _[,]?\\s*").unwrap());
 
             &RE
         }
