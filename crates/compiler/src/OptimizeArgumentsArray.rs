@@ -1,15 +1,13 @@
 use crate::{Id, ToId};
-use atoms::{js_word, JsWord};
+use atoms::{JsWord, js_word};
 use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
-use global_common::{SyntaxContext, DUMMY_SP};
+use global_common::{DUMMY_SP, SyntaxContext};
 use std::collections::BTreeMap;
 use std::iter::FromIterator;
 
 /// Returns a globally unique [SyntaxContext].
 macro_rules! private_ctxt {
-    () => {{
-        ::global_common::SyntaxContext::empty().apply_mark(::global_common::Mark::new())
-    }};
+    () => {{ ::global_common::SyntaxContext::empty().apply_mark(::global_common::Mark::new()) }};
 }
 
 /// Creates a new [Ident][ast::Ident] from the provided [sym][atoms::JsWord], [syntax_ctxt][global_common::SyntaxContext], and [NodeId][ast::NodeId].

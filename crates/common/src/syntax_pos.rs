@@ -176,11 +176,7 @@ impl Span {
 
     /// Returns `self` if `self` is not the dummy span, and `other` otherwise.
     pub fn substitute_dummy(self, other: Span) -> Span {
-        if self.is_dummy() {
-            other
-        } else {
-            self
-        }
+        if self.is_dummy() { other } else { self }
     }
 
     /// Return true if `self` fully encloses `other`.
@@ -816,7 +812,7 @@ fn lookup_line(lines: &[BytePos], pos: BytePos) -> isize {
 
 #[cfg(test)]
 mod tests {
-    use super::{lookup_line, BytePos, Span};
+    use super::{BytePos, Span, lookup_line};
 
     #[test]
     fn test_lookup_line() {

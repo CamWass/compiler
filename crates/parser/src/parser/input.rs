@@ -1,12 +1,12 @@
 use crate::{
+    JscTarget, Syntax,
     context::Context,
     error::Error,
     lexer::TokenContexts,
     parser::Parser,
     token::{Token, TokenAndSpan},
-    JscTarget, Syntax,
 };
-use global_common::{BytePos, Span, DUMMY_SP};
+use global_common::{BytePos, DUMMY_SP, Span};
 
 /// Clone should be cheap if you are parsing typescript because typescript
 /// syntax requires backtracking.

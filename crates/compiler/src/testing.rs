@@ -1,7 +1,7 @@
 use ast::*;
-use codegen::{text_writer::JsWriter, Emitter};
+use codegen::{Emitter, text_writer::JsWriter};
 use ecma_visit::{VisitMut, VisitMutWith};
-use global_common::{errors::Handler, sync::Lrc, FileName, SourceMap};
+use global_common::{FileName, SourceMap, errors::Handler, sync::Lrc};
 use parser::{Parser, Syntax};
 
 struct Tester<'a> {

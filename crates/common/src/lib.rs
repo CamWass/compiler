@@ -11,9 +11,9 @@
 #![deny(unused)]
 
 pub use self::syntax_pos::{
-    hygiene, BytePos, CharPos, FileName, Globals, Loc, LocWithOpt, Mark, MultiSpan, SourceFile,
-    SourceFileAndBytePos, SourceFileAndLine, Span, SpanLinesError, SyntaxContext, DUMMY_SP,
-    GLOBALS,
+    BytePos, CharPos, DUMMY_SP, FileName, GLOBALS, Globals, Loc, LocWithOpt, Mark, MultiSpan,
+    SourceFile, SourceFileAndBytePos, SourceFileAndLine, Span, SpanLinesError, SyntaxContext,
+    hygiene,
 };
 pub use self::{
     errors::{SourceMapper, SourceMapperDyn},

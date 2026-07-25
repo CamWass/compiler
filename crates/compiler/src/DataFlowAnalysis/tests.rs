@@ -1,20 +1,20 @@
 use ast::*;
 use ecma_visit::VisitMutWith;
 use global_common::{
+    FileName, GLOBALS, Globals, Mark, SourceMap, SyntaxContext,
     errors::{ColorConfig, Handler},
     sync::Lrc,
-    FileName, Globals, Mark, SourceMap, SyntaxContext, GLOBALS,
 };
 use index::vec::IndexVec;
 use parser::{Parser, Syntax};
 use rustc_hash::FxHashMap;
 use std::sync::atomic::AtomicU32;
 
-use crate::control_flow::{ControlFlowAnalysis::*, ControlFlowGraph::Branch};
-use crate::resolver::resolver;
 use crate::DataFlowAnalysis::LinearFlowState;
 use crate::Id;
 use crate::LiveVariablesAnalysis::LiveVariablesAnalysis;
+use crate::control_flow::{ControlFlowAnalysis::*, ControlFlowGraph::Branch};
+use crate::resolver::resolver;
 use crate::{find_vars::find_vars_declared_in_fn, utils::unwrap_as};
 
 use super::*;
@@ -540,8 +540,9 @@ function f() {
 
 #[test]
 fn testEscapedFunctionLayered() {
-    assert!(computeEscapedLocals(
-        "
+    assert!(
+        computeEscapedLocals(
+            "
 function f() {
     function ff() {
         var x = 0; 
@@ -549,8 +550,9 @@ function f() {
         alert(x);
     }
 }"
-    )
-    .is_empty());
+        )
+        .is_empty()
+    );
 }
 
 #[test]
@@ -569,8 +571,9 @@ fn testEscapedFunctionAssignment() {
 fn testEscapedArrowFunction() {
     // When the body of the arrow fn is analyzed, x is considered an escaped var. When the outer
     // block containing "const value ..." is analyzed, 'x' is not considered an escaped var
-    assert!(computeEscapedLocals(
-        "
+    assert!(
+        computeEscapedLocals(
+            "
 function f() {
     const value = () => {
         var x = 0; 
@@ -578,8 +581,9 @@ function f() {
         alert(x);
     };
 }",
-    )
-    .is_empty(),);
+        )
+        .is_empty(),
+    );
 }
 
 // test computeEscaped helper method that returns the liveness analysis performed by the

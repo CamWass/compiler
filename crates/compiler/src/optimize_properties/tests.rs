@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use global_common::{Globals, Mark, GLOBALS};
+use global_common::{GLOBALS, Globals, Mark};
 
 use crate::resolver::resolver;
 

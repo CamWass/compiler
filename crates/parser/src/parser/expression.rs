@@ -745,11 +745,7 @@ impl<I: Tokens> Parser<'_, I> {
         let type_args = if self.input.syntax().typescript() && is!(self, '<') {
             self.try_parse_ts(|p| {
                 p.parse_ts_type_args()?;
-                if is!(p, '(') {
-                    Ok(Some(()))
-                } else {
-                    Ok(None)
-                }
+                if is!(p, '(') { Ok(Some(())) } else { Ok(None) }
             })
         } else {
             None

@@ -1,7 +1,7 @@
 use self::expression::BlockStmtOrExpr;
 
 use super::{identifier::MaybeOptionalIdentParser, *};
-use crate::{context::ContextFlags, error::SyntaxError, Tokens};
+use crate::{Tokens, context::ContextFlags, error::SyntaxError};
 use atoms::js_word;
 use expression::MaybeParen;
 use util::AssignProps;

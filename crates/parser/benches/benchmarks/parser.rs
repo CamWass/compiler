@@ -1,5 +1,5 @@
-use criterion::{black_box, criterion_group, Criterion, Throughput};
-use global_common::{sync::Lrc, FileName, FilePathMapping, SourceMap};
+use criterion::{Criterion, Throughput, black_box, criterion_group};
+use global_common::{FileName, FilePathMapping, SourceMap, sync::Lrc};
 use parser::Parser;
 
 struct Bench(&'static str, &'static str);

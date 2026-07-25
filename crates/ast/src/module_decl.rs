@@ -1,9 +1,9 @@
 use crate::{
+    GetNodeId, NodeId, ObjectLit,
     decl::Decl,
     expr::{ClassExpr, Expr, FnExpr},
     ident::Ident,
     lit::Str,
-    GetNodeId, NodeId, ObjectLit,
 };
 use clone_node::CloneNode;
 use node_id::GetNodeIdMacro;

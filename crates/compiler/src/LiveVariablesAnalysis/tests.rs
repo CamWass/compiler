@@ -2,18 +2,18 @@ use ast::*;
 use atoms::JsWord;
 use ecma_visit::{Visit, VisitMutWith, VisitWith};
 use global_common::{
+    FileName, GLOBALS, Globals, Mark, SourceMap, SyntaxContext,
     errors::{ColorConfig, Handler},
     sync::Lrc,
-    FileName, Globals, Mark, SourceMap, SyntaxContext, GLOBALS,
 };
 use parser::{Parser, Syntax};
 use rustc_hash::FxHashMap;
 
-use crate::control_flow::node::Node;
-use crate::control_flow::ControlFlowAnalysis::{ControlFlowAnalysis, ControlFlowRoot};
-use crate::resolver::resolver;
 use crate::DataFlowAnalysis::LinearFlowState;
 use crate::Id;
+use crate::control_flow::ControlFlowAnalysis::{ControlFlowAnalysis, ControlFlowRoot};
+use crate::control_flow::node::Node;
+use crate::resolver::resolver;
 use crate::{find_vars::find_vars_declared_in_fn, utils::unwrap_as};
 
 use super::LiveVariablesAnalysis;

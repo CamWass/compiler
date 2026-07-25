@@ -1,23 +1,23 @@
 use ast::*;
 use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use global_common::DUMMY_SP;
-use global_common::{util::take::Take, SyntaxContext};
+use global_common::{SyntaxContext, util::take::Take};
 use index::bit_set::{BitMatrix, BitSet};
 use petgraph::graph::{NodeIndex, UnGraph};
 use rustc_hash::FxHashMap;
 
-use crate::control_flow::{
-    node::Node,
-    ControlFlowAnalysis::{ControlFlowAnalysis, ControlFlowRoot},
-    ControlFlowGraph::ControlFlowGraph,
-};
-use crate::find_vars::{find_first_lhs_ident, find_pat_ids, find_vars_declared_in_fn, VarId};
-use crate::graph::GraphColoring::{GreedyGraphColoring, SubGraph};
-use crate::utils::unwrap_as;
 use crate::DataFlowAnalysis::LinearFlowState;
 use crate::LiveVariablesAnalysis::{
     LiveVariablesAnalysis, LiveVariablesAnalysisResult, MAX_VARIABLES_TO_ANALYZE,
 };
+use crate::control_flow::{
+    ControlFlowAnalysis::{ControlFlowAnalysis, ControlFlowRoot},
+    ControlFlowGraph::ControlFlowGraph,
+    node::Node,
+};
+use crate::find_vars::{VarId, find_first_lhs_ident, find_pat_ids, find_vars_declared_in_fn};
+use crate::graph::GraphColoring::{GreedyGraphColoring, SubGraph};
+use crate::utils::unwrap_as;
 use crate::{Id, ToId};
 
 #[cfg(test)]

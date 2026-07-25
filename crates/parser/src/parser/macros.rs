@@ -102,9 +102,7 @@ macro_rules! is {
 }
 
 macro_rules! is_exact {
-    ($parser:expr, $t:tt) => {{
-        $parser.input.is(&tok!($t))
-    }};
+    ($parser:expr, $t:tt) => {{ $parser.input.is(&tok!($t)) }};
 }
 
 macro_rules! is_one_of {

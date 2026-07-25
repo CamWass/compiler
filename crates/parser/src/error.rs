@@ -1,8 +1,8 @@
 use crate::token::Token;
 use atoms::JsWord;
 use global_common::{
-    errors::{DiagnosticBuilder, Handler},
     Span,
+    errors::{DiagnosticBuilder, Handler},
 };
 use std::{borrow::Cow, fmt::Debug};
 

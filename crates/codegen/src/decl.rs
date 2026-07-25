@@ -1,6 +1,6 @@
 use crate::Context;
 
-use super::{list::ListFormat, Emitter, Result};
+use super::{Emitter, Result, list::ListFormat};
 use ast::*;
 
 impl Emitter<'_> {

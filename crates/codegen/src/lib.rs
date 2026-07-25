@@ -3,7 +3,7 @@
 pub use self::config::Config;
 use self::{list::ListFormat, util::SourceMapperExt};
 use ast::*;
-use global_common::{sync::Lrc, BytePos, SourceMap, Span, DUMMY_SP};
+use global_common::{BytePos, DUMMY_SP, SourceMap, Span, sync::Lrc};
 use std::{borrow::Cow, fmt::Write, io};
 pub use text_writer::JsWriter;
 use util::{for_var_ends_with_alpha_num, prop_name_starts_with_alpha_num};

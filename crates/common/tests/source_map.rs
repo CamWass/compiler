@@ -1,7 +1,7 @@
 #![cfg(feature = "concurrent")]
 
 use global_common::{FileName, FilePathMapping, SourceMap};
-use rayon::{prelude::*, ThreadPoolBuilder};
+use rayon::{ThreadPoolBuilder, prelude::*};
 
 #[test]
 fn stress() {

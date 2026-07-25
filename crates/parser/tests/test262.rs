@@ -5,15 +5,15 @@ extern crate test;
 use ast::*;
 use common::Normalizer;
 use ecma_visit::VisitMutWith;
-use parser::{lexer::Lexer, PResult, Parser};
+use parser::{PResult, Parser, lexer::Lexer};
 use std::{
     env,
-    fs::{read_dir, File},
+    fs::{File, read_dir},
     io::{self, Read},
     path::Path,
 };
 use test::{
-    test_main, DynTestFn, Options, ShouldPanic::No, TestDesc, TestDescAndFn, TestName, TestType,
+    DynTestFn, Options, ShouldPanic::No, TestDesc, TestDescAndFn, TestName, TestType, test_main,
 };
 use testing::{NormalizedOutput, StdErr};
 

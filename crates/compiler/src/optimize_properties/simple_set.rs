@@ -4,8 +4,8 @@ use std::marker::PhantomData;
 use std::ops::Index;
 
 use index::vec::Idx;
-use indexmap::set::Iter;
 use indexmap::IndexSet as ISet;
+use indexmap::set::Iter;
 use rustc_hash::FxHasher;
 
 #[derive(Debug)]

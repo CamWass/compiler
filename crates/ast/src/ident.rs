@@ -1,7 +1,7 @@
 use crate::{GetNodeId, NodeId, ProgramData};
-use atoms::{js_word, JsWord};
+use atoms::{JsWord, js_word};
 use clone_node::CloneNode;
-use global_common::{util::take::Take, SyntaxContext};
+use global_common::{SyntaxContext, util::take::Take};
 use node_id::GetNodeIdMacro;
 
 /// Identifier used as a pattern.

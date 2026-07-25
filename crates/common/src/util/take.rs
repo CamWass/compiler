@@ -1,6 +1,6 @@
 use std::mem::replace;
 
-use crate::{Span, DUMMY_SP};
+use crate::{DUMMY_SP, Span};
 
 pub trait Take: Sized {
     fn take(&mut self) -> Self {

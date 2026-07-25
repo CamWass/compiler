@@ -1,7 +1,7 @@
 use crate::paths;
 use std::{
     fmt,
-    fs::{create_dir_all, File},
+    fs::{File, create_dir_all},
     io::Read,
     ops::Deref,
     path::Path,

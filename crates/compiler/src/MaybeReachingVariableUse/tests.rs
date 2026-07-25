@@ -1,14 +1,14 @@
 use ast::*;
 use ecma_visit::{Visit, VisitWith};
 use global_common::{
+    FileName, GLOBALS, Globals, SourceMap,
     errors::{ColorConfig, Handler},
     sync::Lrc,
-    FileName, Globals, SourceMap, GLOBALS,
 };
 use parser::{Parser, Syntax};
 
-use crate::control_flow::ControlFlowAnalysis::{ControlFlowAnalysis, ControlFlowRoot};
 use crate::Id;
+use crate::control_flow::ControlFlowAnalysis::{ControlFlowAnalysis, ControlFlowRoot};
 use crate::{find_vars::find_vars_declared_in_fn, utils::unwrap_as};
 
 use super::*;

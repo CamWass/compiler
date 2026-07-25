@@ -3,14 +3,14 @@ mod state;
 mod util;
 
 use crate::{
+    JscTarget, Syntax,
     context::Context,
     error::{Error, SyntaxError},
     token::*,
-    JscTarget, Syntax,
 };
-use ast::{op, RegexFlags};
+use ast::{RegexFlags, op};
 use atoms::JsWord;
-use global_common::{chars::char_literals, BytePos, SourceFile, Span};
+use global_common::{BytePos, SourceFile, Span, chars::char_literals};
 use state::State;
 pub use state::{TokenContext, TokenContexts};
 use std::{cell::RefCell, iter::FusedIterator, rc::Rc};

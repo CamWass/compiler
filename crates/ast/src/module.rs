@@ -1,4 +1,4 @@
-use crate::{module_decl::ModuleDecl, stmt::Stmt, GetNodeId, NodeId};
+use crate::{GetNodeId, NodeId, module_decl::ModuleDecl, stmt::Stmt};
 use clone_node::CloneNode;
 use node_id::GetNodeIdMacro;
 

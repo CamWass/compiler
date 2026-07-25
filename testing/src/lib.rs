@@ -1,9 +1,9 @@
 pub use self::output::{NormalizedOutput, StdErr, StdOut, TestOutput};
 use difference::Changeset;
 use global_common::{
+    FilePathMapping, SourceMap,
     errors::{Diagnostic, Handler},
     sync::Lrc,
-    FilePathMapping, SourceMap,
 };
 use once_cell::sync::Lazy;
 pub use pretty_assertions::{assert_eq, assert_ne};
@@ -12,7 +12,7 @@ use std::{
     collections::HashMap,
     env, fmt,
     fmt::{Debug, Display, Formatter},
-    fs::{create_dir_all, File},
+    fs::{File, create_dir_all},
     io::Write,
     path::{Path, PathBuf},
     sync::RwLock,

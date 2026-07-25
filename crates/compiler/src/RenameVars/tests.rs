@@ -1,4 +1,4 @@
-use global_common::{Globals, Mark, SyntaxContext, GLOBALS};
+use global_common::{GLOBALS, Globals, Mark, SyntaxContext};
 
 use crate::resolver::resolver;
 

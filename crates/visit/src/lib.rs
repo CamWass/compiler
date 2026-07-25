@@ -5,7 +5,7 @@ pub extern crate ast;
 use ast::*;
 use atoms::JsWord;
 use global_common::SyntaxContext;
-use global_visit::{define, AndThen, Repeat, Repeated};
+use global_visit::{AndThen, Repeat, Repeated, define};
 use num_bigint::BigUint;
 use std::any::Any;
 

@@ -1,10 +1,10 @@
 use super::node::{CfgNode, Node, NodeKind};
 use ast::ProgramData;
 use petgraph::{
+    EdgeDirection::{Incoming, Outgoing},
     dot::Dot,
     graph::{DiGraph, Neighbors, NodeIndex},
     visit::EdgeRef,
-    EdgeDirection::{Incoming, Outgoing},
 };
 use rustc_hash::FxHashMap;
 use std::fmt::{self, Write};

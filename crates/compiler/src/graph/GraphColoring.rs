@@ -55,7 +55,6 @@ where
     where
         C: FnMut(&T, &T) -> Ordering,
         W: FnMut(&T) -> usize,
-
         S: SubGraph<T>,
         F: FnMut() -> S,
     {

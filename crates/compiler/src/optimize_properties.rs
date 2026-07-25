@@ -16,12 +16,12 @@ mod unionfind;
 use std::collections::hash_map::Entry;
 use std::convert::TryInto;
 
+use crate::DefaultNameGenerator::DefaultNameGenerator;
 use crate::convert::ecma_number_to_string;
 use crate::find_vars::{FunctionLike, VarId};
 use crate::utils::unwrap_as;
-use crate::DefaultNameGenerator::DefaultNameGenerator;
 use ast::*;
-use atoms::{js_word, JsWord};
+use atoms::{JsWord, js_word};
 use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use global_common::SyntaxContext;
 use graph::{Graph, GraphEdge, SmallSet};
@@ -479,11 +479,7 @@ impl GraphVisitor<'_> {
     fn get_rhs(&mut self, expr: &Expr, used: bool, expr_ctxt: ExprContext) -> Vec<PointerId> {
         macro_rules! ret {
             ($val:expr) => {
-                if used {
-                    $val
-                } else {
-                    Vec::new()
-                }
+                if used { $val } else { Vec::new() }
             };
         }
         match expr {
@@ -840,11 +836,12 @@ impl GraphVisitor<'_> {
                 n.params.visit_with(self);
                 n.body.visit_with(self);
                 self.cur_fn = old;
-                ret!(vec![self
-                    .store
-                    .pointers
-                    .get_index(&Pointer::Fn(n.node_id))
-                    .unwrap()])
+                ret!(vec![
+                    self.store
+                        .pointers
+                        .get_index(&Pointer::Fn(n.node_id))
+                        .unwrap()
+                ])
             }
             Expr::Class(_) => todo!(),
             Expr::Yield(n) => {
@@ -1046,7 +1043,7 @@ impl GraphVisitor<'_> {
                 Pat::Ident(node) => {
                     return self
                         .get_var_id_from_ident(&node.id)
-                        .map(|v| vec![Slot::Var(v)])
+                        .map(|v| vec![Slot::Var(v)]);
                 }
                 Pat::Expr(e) => e.as_ref(),
                 _ => {

@@ -9,11 +9,11 @@ use index::vec::IndexVec;
 use petgraph::Direction::Outgoing;
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::DataFlowAnalysis::*;
 use crate::control_flow::ControlFlowAnalysis::NodePriority;
 use crate::control_flow::ControlFlowGraph::{Branch, ControlFlowGraph};
-use crate::control_flow::{node::Node, util::MultiMap, ControlFlowGraph::Annotation};
+use crate::control_flow::{ControlFlowGraph::Annotation, node::Node, util::MultiMap};
 use crate::find_vars::{AllVarsDeclaredInFunction, FunctionLike, VarId};
-use crate::DataFlowAnalysis::*;
 use crate::{Id, ToId};
 
 #[cfg(test)]

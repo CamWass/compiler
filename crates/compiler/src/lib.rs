@@ -31,7 +31,7 @@ mod testing;
 use crate::resolver::resolver;
 use atoms::JsWord;
 use ecma_visit::VisitMutWith;
-use global_common::{Globals, Mark, SyntaxContext, GLOBALS};
+use global_common::{GLOBALS, Globals, Mark, SyntaxContext};
 use serde::Deserialize;
 
 pub type Id = (JsWord, SyntaxContext);

@@ -1,9 +1,9 @@
 use super::Lexer;
 use crate::{
+    JscTarget, Syntax, Tokens,
     context::{Context, YesMaybe, YesNoMaybe},
     error::Error,
     token::*,
-    JscTarget, Syntax, Tokens,
 };
 use global_common::BytePos;
 

@@ -1,12 +1,12 @@
 use crate::find_vars::FunctionLike;
 
+use super::ControlFlowGraph::{Annotation, Branch, ControlFlowGraph};
 use super::node::{CfgNode, Node, NodeKind};
 use super::util::*;
-use super::ControlFlowGraph::{Annotation, Branch, ControlFlowGraph};
 use ast::*;
 use ecma_visit::{Visit, VisitWith};
-use petgraph::graph::NodeIndex;
 use petgraph::Direction::Outgoing;
+use petgraph::graph::NodeIndex;
 use rustc_hash::FxHashMap;
 use std::collections::BinaryHeap;
 

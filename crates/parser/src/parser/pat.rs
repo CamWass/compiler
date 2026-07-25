@@ -3,7 +3,7 @@ use super::{expression::MaybeParenPatOrExprOrSpread, *};
 use crate::token::AssignOpToken;
 use atoms::js_word;
 use expression::MaybeParenSpreadElement;
-use util::{is_valid_simple_assignment_target, AssignProps};
+use util::{AssignProps, is_valid_simple_assignment_target};
 
 impl<I: Tokens> Parser<'_, I> {
     pub(super) fn parse_opt_binding_ident(&mut self) -> PResult<Option<BindingIdent>> {
@@ -490,7 +490,7 @@ impl<I: Tokens> Parser<'_, I> {
 
                 _ => match *expr {
                     Expr::Ident(i) => {
-                        return Ok(Pat::Ident(BindingIdent::from_ident(i, program_data!(self))))
+                        return Ok(Pat::Ident(BindingIdent::from_ident(i, program_data!(self))));
                     }
                     _ => {
                         return Ok(Pat::Expr(expr));
@@ -527,7 +527,7 @@ impl<I: Tokens> Parser<'_, I> {
                                 return Ok(Pat::Ident(BindingIdent::from_ident(
                                     i,
                                     program_data!(self),
-                                )))
+                                )));
                             }
                             _ => {
                                 return Ok(Pat::Expr(expr));

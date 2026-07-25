@@ -9,7 +9,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::control_flow::ControlFlowAnalysis::NodePriority;
 use crate::control_flow::ControlFlowGraph::{Branch, ControlFlowGraph};
-use crate::control_flow::{node::Node, ControlFlowGraph::Annotation};
+use crate::control_flow::{ControlFlowGraph::Annotation, node::Node};
 use crate::find_vars::*;
 use crate::{DataFlowAnalysis::*, Id, ToId};
 

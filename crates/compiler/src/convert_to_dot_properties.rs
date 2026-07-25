@@ -143,7 +143,7 @@ pub fn is_valid_prop_ident(s: &str) -> bool {
 mod tests {
     use super::*;
     use crate::resolver::resolver;
-    use global_common::{Globals, Mark, GLOBALS};
+    use global_common::{GLOBALS, Globals, Mark};
 
     #[test]
     fn test_valid_computed_prop_accesses() {

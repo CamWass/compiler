@@ -1,13 +1,13 @@
 extern crate custom_alloc;
 
-use anyhow::{bail, Context, Error, Result};
+use anyhow::{Context, Error, Result, bail};
 use codegen::{self, Emitter, JsWriter};
 use compiler::Compiler;
-use config::{load_config, Config};
+use config::{Config, load_config};
 use global_common::{
+    FileName, SourceMap,
     errors::{ColorConfig, Handler},
     sync::Lrc,
-    FileName, SourceMap,
 };
 use parser::{Parser, Syntax};
 use rustc_hash::FxHashSet;
@@ -353,11 +353,11 @@ fn compile_ours(input: String, config: Config) -> Result<String> {
 
 fn swc_parse(input: String) -> Result<swc_ecma_ast::Program> {
     use swc_common::{
+        FileName, SourceMap,
         errors::{ColorConfig, Handler},
         sync::Lrc,
-        FileName, SourceMap,
     };
-    use swc_ecma_parser::{lexer::Lexer, Capturing, Parser, StringInput};
+    use swc_ecma_parser::{Capturing, Parser, StringInput, lexer::Lexer};
 
     let cm: Lrc<SourceMap> = Default::default();
     let handler = Handler::with_tty_emitter(ColorConfig::Auto, true, false, Some(cm.clone()));
@@ -397,7 +397,7 @@ fn swc_parse(input: String) -> Result<swc_ecma_ast::Program> {
 }
 
 fn swc_print(program: &swc_ecma_ast::Program, minify: bool) -> String {
-    use swc_ecma_codegen::{text_writer::JsWriter, Config, Emitter};
+    use swc_ecma_codegen::{Config, Emitter, text_writer::JsWriter};
 
     let code = {
         let mut buf = Vec::new();
@@ -555,7 +555,7 @@ fn swc_print(program: &swc_ecma_ast::Program, minify: bool) -> String {
 }
 
 fn swc_print_script(program: &swc_ecma_ast::Script, minify: bool) -> String {
-    use swc_ecma_codegen::{text_writer::JsWriter, Config, Emitter};
+    use swc_ecma_codegen::{Config, Emitter, text_writer::JsWriter};
 
     let code = {
         let mut buf = Vec::new();
@@ -578,7 +578,7 @@ fn swc_print_script(program: &swc_ecma_ast::Script, minify: bool) -> String {
     code
 }
 
-use swc_ecma_visit::{noop_visit_mut_type, VisitMut, VisitMutWith};
+use swc_ecma_visit::{VisitMut, VisitMutWith, noop_visit_mut_type};
 
 #[derive(Default, Debug)]
 struct Reducer {

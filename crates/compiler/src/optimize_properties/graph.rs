@@ -1,23 +1,23 @@
 #![allow(clippy::collapsible_if)]
 
-use std::collections::hash_map::Entry;
 use std::collections::BinaryHeap;
+use std::collections::hash_map::Entry;
 use std::fmt::{Display, Write};
 use std::rc::Rc;
 
 use arrayvec::ArrayVec;
 use index::bit_set::{BitIter, GrowableBitSet};
+use petgraph::Directed;
+use petgraph::Direction::{Incoming, Outgoing};
 use petgraph::algo::TarjanScc;
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
-use petgraph::Directed;
-use petgraph::Direction::{Incoming, Outgoing};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::utils::unwrap_as;
 
 use super::growable_unionfind::GrowableUnionFind;
-use super::{is_built_in_property, NameId, Pointer, PointerId, Store};
+use super::{NameId, Pointer, PointerId, Store, is_built_in_property};
 
 #[derive(Default)]
 pub struct Graph {
@@ -707,11 +707,7 @@ impl Graph {
                 .filter_map(|p| {
                     let p = PointerId::from_usize(p);
                     let id = self.get_graph_node_id(p).0;
-                    if id == n {
-                        Some(p)
-                    } else {
-                        None
-                    }
+                    if id == n { Some(p) } else { None }
                 })
                 .collect::<Vec<_>>();
             let mut res = format!("{n:?}: ");

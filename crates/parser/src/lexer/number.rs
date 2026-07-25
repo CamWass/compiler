@@ -3,8 +3,8 @@
 //!
 //! See https://tc39.github.io/ecma262/#sec-literals-numeric-literals
 
-use super::{pos_span, LexResult, Lexer};
-use crate::{error::SyntaxError, token::Token, JscTarget};
+use super::{LexResult, Lexer, pos_span};
+use crate::{JscTarget, error::SyntaxError, token::Token};
 use global_common::BytePos;
 use num_bigint::BigUint;
 use num_traits::Num as _;
@@ -301,11 +301,7 @@ impl Lexer<'_> {
             Some(raw),
             allow_num_separator,
         );
-        if len != 0 && count != len {
-            None
-        } else {
-            v
-        }
+        if len != 0 && count != len { None } else { v }
     }
 
     /// See documentation for `read_int`.
@@ -326,11 +322,7 @@ impl Lexer<'_> {
             None,
             allow_num_separator,
         );
-        if len != 0 && count != len {
-            None
-        } else {
-            v
-        }
+        if len != 0 && count != len { None } else { v }
     }
 
     fn make_legacy_octal(&mut self, start: BytePos, val: f64) -> LexResult<f64> {

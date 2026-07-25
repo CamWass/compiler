@@ -9,10 +9,10 @@ use std::{
     path::{Component, PathBuf},
 };
 use syn::{
-    parse::{Parse, ParseStream},
-    parse2, parse_quote,
-    punctuated::Punctuated,
     Ident, ItemFn, LitStr, Meta, Token,
+    parse::{Parse, ParseStream},
+    parse_quote, parse2,
+    punctuated::Punctuated,
 };
 
 pub struct Config {
@@ -32,9 +32,7 @@ impl Parse for Config {
                 {
                     //
                     macro_rules! fail {
-                        () => {{
-                            fail!("invalid input to the attribute")
-                        }};
+                        () => {{ fail!("invalid input to the attribute") }};
                         ($inner:expr) => {{
                             panic!(
                                 "{}\nnote: exclude() expects one or more comma-separated \

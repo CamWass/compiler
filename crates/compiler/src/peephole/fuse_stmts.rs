@@ -1,6 +1,6 @@
 use ast::*;
 use ecma_visit::{VisitMut, VisitMutWith};
-use global_common::{util::take::Take, DUMMY_SP};
+use global_common::{DUMMY_SP, util::take::Take};
 
 use crate::utils::unwrap_as;
 
@@ -163,7 +163,7 @@ fn fuse_exprs(mut seq: SeqExpr, other: &mut Box<Expr>) {
 mod tests {
     use super::*;
     use crate::resolver::resolver;
-    use global_common::{Globals, Mark, GLOBALS};
+    use global_common::{GLOBALS, Globals, Mark};
 
     #[test]
     fn test_nothing_to_do() {

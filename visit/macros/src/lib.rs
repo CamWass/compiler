@@ -1,14 +1,14 @@
 extern crate proc_macro;
 
 use proc_macro2::{Ident, Span, TokenStream};
-use quote::{quote, ToTokens};
+use quote::{ToTokens, quote};
 use std::{collections::HashSet, mem::replace};
 use syn::{
-    parse_macro_input, parse_quote, punctuated::Punctuated, spanned::Spanned, token::Underscore,
     Arm, Block, Expr, ExprBlock, ExprMatch, FieldPat, Fields, FnArg, GenericArgument, GenericParam,
     Generics, Index, Item, ItemTrait, Lifetime, LifetimeParam, Member, Pat, PatIdent, PatWild,
     Path, PathArguments, ReturnType, Signature, Stmt, Token, TraitItem, TraitItemFn, Type,
-    TypePath, TypeReference, Visibility,
+    TypePath, TypeReference, Visibility, parse_macro_input, parse_quote, punctuated::Punctuated,
+    spanned::Spanned, token::Underscore,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -648,7 +648,7 @@ fn create_method_body(mode: Mode, ty: &Type) -> Block {
                 return Block {
                     brace_token: Default::default(),
                     stmts: vec![],
-                }
+                };
             }
         }
     }

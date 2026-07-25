@@ -7,7 +7,7 @@ use ansi_term::Color;
 use ast::{Pat, *};
 use codegen::Emitter;
 use ecma_visit::{VisitMut, VisitMutWith};
-use global_common::{errors::Handler, sync::Lrc, util::take::Take, FileName, SourceMap};
+use global_common::{FileName, SourceMap, errors::Handler, sync::Lrc, util::take::Take};
 use parser::{Parser, Syntax};
 // use swc_ecma_testing::{exec_node_js, JsExecOptions};
 // use swc_ecma_transforms_base::{

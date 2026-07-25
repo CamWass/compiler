@@ -12,11 +12,11 @@ mod typescript;
 mod util;
 
 use crate::{
+    JscTarget, Syntax,
     context::{Context, YesMaybe, YesNoMaybe},
     error::{Error, SyntaxError},
     lexer::Lexer,
     token::{Token, Word},
-    JscTarget, Syntax,
 };
 use ast::*;
 use atoms::JsWord;

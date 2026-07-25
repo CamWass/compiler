@@ -1,5 +1,6 @@
 #![allow(clippy::vec_box)]
 use crate::{
+    GetNodeId, Invalid, NodeId, Param,
     class::Class,
     function::Function,
     ident::{Ident, PrivateName},
@@ -8,7 +9,6 @@ use crate::{
     pat::Pat,
     prop::Prop,
     stmt::BlockStmt,
-    GetNodeId, Invalid, NodeId, Param,
 };
 use clone_node::CloneNode;
 use global_common::util::take::Take;

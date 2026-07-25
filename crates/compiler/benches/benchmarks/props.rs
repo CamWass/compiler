@@ -2,15 +2,15 @@
 use std::time::Duration;
 
 use compiler::resolver::resolver;
-use criterion::{black_box, Criterion, Throughput};
+use criterion::{Criterion, Throughput, black_box};
 use ecma_visit::VisitMutWith;
+use global_common::{FileName, FilePathMapping};
+use global_common::{GLOBALS, Globals, Mark};
 use global_common::{
+    SourceMap, SyntaxContext,
     errors::{ColorConfig, Handler},
     sync::Lrc,
-    SourceMap, SyntaxContext,
 };
-use global_common::{FileName, FilePathMapping};
-use global_common::{Globals, Mark, GLOBALS};
 use parser::{Parser, Syntax};
 
 pub fn bench(c: &mut Criterion) {

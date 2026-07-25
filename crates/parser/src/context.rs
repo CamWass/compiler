@@ -1,5 +1,5 @@
 use crate::token::{Keyword, Word};
-use atoms::{js_word, JsWord};
+use atoms::{JsWord, js_word};
 use bitflags::bitflags;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

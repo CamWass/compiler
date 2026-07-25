@@ -1,11 +1,11 @@
 use ast::*;
-use atoms::{js_word, JsWord};
+use atoms::{JsWord, js_word};
 use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
-use global_common::{util::take::Take, Span, SyntaxContext, DUMMY_SP};
+use global_common::{DUMMY_SP, Span, SyntaxContext, util::take::Take};
 use rustc_hash::FxHashMap;
 
 use crate::{
-    optimize_properties::{analyse, ExprContext, Pointer},
+    optimize_properties::{ExprContext, Pointer, analyse},
     utils::unwrap_as,
 };
 
@@ -398,7 +398,7 @@ impl VisitMut<'_> for ReturnRemover<'_> {
 mod tests {
     use super::*;
     use crate::resolver::resolver;
-    use global_common::{Globals, Mark, GLOBALS};
+    use global_common::{GLOBALS, Globals, Mark};
 
     #[test]
     fn test_inline_simple_return() {

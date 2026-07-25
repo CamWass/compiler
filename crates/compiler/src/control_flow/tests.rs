@@ -1,15 +1,15 @@
 use crate::control_flow::ControlFlowAnalysis::ControlFlowRoot;
 
-use super::node::{Node, NodeKind};
-use super::print::ast_graph;
 use super::ControlFlowAnalysis::ControlFlowAnalysis;
 use super::ControlFlowGraph::{Branch, ControlFlowGraph};
+use super::node::{Node, NodeKind};
+use super::print::ast_graph;
 
 use ast::NodeId;
 use global_common::{
+    FileName, SourceMap,
     errors::{ColorConfig, Handler},
     sync::Lrc,
-    FileName, SourceMap,
 };
 use parser::{Parser, Syntax};
 use petgraph::algo::has_path_connecting;

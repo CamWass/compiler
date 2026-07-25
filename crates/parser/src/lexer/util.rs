@@ -1,9 +1,9 @@
-use super::{Dispatch, LexResult, Lexer, DISPATCHER};
+use super::{DISPATCHER, Dispatch, LexResult, Lexer};
 use crate::{
-    error::{Error, SyntaxError},
     Tokens,
+    error::{Error, SyntaxError},
 };
-use global_common::{chars::char_literals, BytePos, Pos, Span};
+use global_common::{BytePos, Pos, Span, chars::char_literals};
 
 /// See https://tc39.github.io/ecma262/#sec-line-terminators
 pub fn is_line_break(ch: char) -> bool {

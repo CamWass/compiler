@@ -1,10 +1,10 @@
 use crate::{
+    GetNodeId, NodeId,
     expr::Expr,
     function::{Function, Param},
     ident::PrivateName,
     prop::PropName,
     stmt::BlockStmt,
-    GetNodeId, NodeId,
 };
 use clone_node::CloneNode;
 use node_id::GetNodeIdMacro;

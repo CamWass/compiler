@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::{snippet::Style, Applicability, CodeSuggestion, Level, Substitution, SubstitutionPart};
+use super::{Applicability, CodeSuggestion, Level, Substitution, SubstitutionPart, snippet::Style};
 use crate::syntax_pos::{MultiSpan, Span};
 use std::fmt;
 

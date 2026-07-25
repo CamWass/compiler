@@ -10,9 +10,9 @@
 
 use self::Destination::*;
 use super::{
+    CodeSuggestion, DiagnosticBuilder, DiagnosticId, Level, SourceMapperDyn, SubDiagnostic,
     snippet::{Annotation, AnnotationType, Line, MultilineAnnotation, Style, StyledString},
     styled_buffer::StyledBuffer,
-    CodeSuggestion, DiagnosticBuilder, DiagnosticId, Level, SourceMapperDyn, SubDiagnostic,
 };
 use crate::{
     sync::Lrc,
@@ -22,7 +22,7 @@ use crate::{
 use atty;
 use std::{
     borrow::Cow,
-    cmp::{min, Reverse},
+    cmp::{Reverse, min},
     collections::HashMap,
     io::{self, prelude::*},
     ops::Range,

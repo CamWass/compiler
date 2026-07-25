@@ -1,6 +1,6 @@
 #![cfg(feature = "concurrent")]
 
-use global_common::{sync::Lrc, FilePathMapping, SourceFile, SourceMap};
+use global_common::{FilePathMapping, SourceFile, SourceMap, sync::Lrc};
 use rayon::prelude::*;
 use std::{env, path::PathBuf, sync::Arc};
 

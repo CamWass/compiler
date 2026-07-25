@@ -4,18 +4,18 @@ use ecma_visit::{VisitMut, VisitMutWith};
 use global_common::SyntaxContext;
 use rustc_hash::FxHashMap;
 
-use crate::control_flow::ControlFlowAnalysis::ControlFlowAnalysis;
-use crate::control_flow::ControlFlowAnalysis::ControlFlowRoot;
-use crate::find_vars::find_vars_declared_in_fn;
-use crate::find_vars::DeclFinder;
-use crate::find_vars::FunctionLike;
-use crate::find_vars::VarId;
-use crate::utils::unwrap_as;
 use crate::DataFlowAnalysis::LinearFlowState;
 use crate::LiveVariablesAnalysis::LiveVariablesAnalysis;
 use crate::LiveVariablesAnalysis::LiveVariablesAnalysisResult;
 use crate::LiveVariablesAnalysis::MAX_VARIABLES_TO_ANALYZE;
 use crate::ToId;
+use crate::control_flow::ControlFlowAnalysis::ControlFlowAnalysis;
+use crate::control_flow::ControlFlowAnalysis::ControlFlowRoot;
+use crate::find_vars::DeclFinder;
+use crate::find_vars::FunctionLike;
+use crate::find_vars::VarId;
+use crate::find_vars::find_vars_declared_in_fn;
+use crate::utils::unwrap_as;
 
 // TODO: default parameter values?
 // e.g. the default param assignment is dead here:

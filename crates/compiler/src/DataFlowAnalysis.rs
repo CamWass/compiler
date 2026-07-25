@@ -5,13 +5,13 @@ use std::{collections::BTreeSet, ops::Index};
 use ecma_visit::{Visit, VisitWith};
 use index::newtype_index;
 use petgraph::{
-    graph::{EdgeIndex, NodeIndex},
     EdgeDirection,
+    graph::{EdgeIndex, NodeIndex},
 };
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::control_flow::ControlFlowAnalysis::NodePriority;
-use crate::control_flow::{node::CfgNode, ControlFlowGraph::*};
+use crate::control_flow::{ControlFlowGraph::*, node::CfgNode};
 use crate::find_vars::{FunctionLike, VarId};
 use crate::{Id, ToId};
 

@@ -1,5 +1,5 @@
 use crate::{
-    class::Class, expr::Expr, function::Function, ident::Ident, pat::Pat, GetNodeId, NodeId,
+    GetNodeId, NodeId, class::Class, expr::Expr, function::Function, ident::Ident, pat::Pat,
 };
 use clone_node::CloneNode;
 use node_id::GetNodeIdMacro;
