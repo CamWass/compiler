@@ -1,5 +1,5 @@
 [package]
-edition = "2018"
+edition = "2021"
 include = ["Cargo.toml", "src/**/*.rs"]
 license = "Apache-2.0/MIT"
 name = "codegen"

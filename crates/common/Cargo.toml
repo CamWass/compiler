@@ -2,7 +2,7 @@
 name = "global_common"
 version = "0.1.0"
 authors = ["Campbell <campbell.wass@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 [features]
 concurrent = []
