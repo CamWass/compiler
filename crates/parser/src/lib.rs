@@ -1,3 +1,5 @@
+#![deny(unused)]
+
 pub use self::parser::*;
 pub use ast::EsVersion as JscTarget;
 use serde::{Deserialize, Serialize};

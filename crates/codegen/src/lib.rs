@@ -1,4 +1,5 @@
 #![recursion_limit = "1024"]
+#![deny(unused)]
 
 pub use self::config::Config;
 use self::{list::ListFormat, util::SourceMapperExt};

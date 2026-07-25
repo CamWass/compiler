@@ -3,6 +3,7 @@
 #![deny(trivial_numeric_casts)]
 #![deny(unreachable_pub)]
 #![deny(variant_size_differences)]
+#![deny(unused)]
 
 pub use self::{
     class::{

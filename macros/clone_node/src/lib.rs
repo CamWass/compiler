@@ -1,3 +1,5 @@
+#![deny(unused)]
+
 use proc_macro2::Span;
 use quote::ToTokens;
 use syn::punctuated::Punctuated;

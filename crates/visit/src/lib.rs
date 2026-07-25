@@ -1,3 +1,5 @@
+#![deny(unused)]
+
 // This is not a public api.
 #[doc(hidden)]
 pub extern crate ast;

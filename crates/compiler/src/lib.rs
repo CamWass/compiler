@@ -1,7 +1,8 @@
-#![feature(iter_order_by)]
+#![cfg_attr(test, feature(iter_order_by))]
+#![deny(unused_imports)]
+#![deny(unused)]
 // TODO:
 #![allow(non_snake_case)]
-#![deny(unused_imports)]
 
 mod CoalesceVariableNames;
 mod DataFlowAnalysis;

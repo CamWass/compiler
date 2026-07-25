@@ -1,4 +1,4 @@
-extern crate proc_macro;
+#![deny(unused)]
 
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{ToTokens, quote};

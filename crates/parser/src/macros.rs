@@ -5,9 +5,6 @@ macro_rules! tok {
     (';') => {
         crate::token::Token::Semi
     };
-    ('@') => {
-        crate::token::Token::At
-    };
     ('#') => {
         crate::token::Token::Hash
     };
@@ -30,12 +27,6 @@ macro_rules! tok {
     ('!') => {
         crate::token::Token::Bang
     };
-    ("&&=") => {
-        crate::token::Token::AssignOp(crate::token::AssignOpToken::AndAssign)
-    };
-    ("||=") => {
-        crate::token::Token::AssignOp(crate::token::AssignOpToken::OrAssign)
-    };
     ("??=") => {
         crate::token::Token::AssignOp(crate::token::AssignOpToken::NullishAssign)
     };
@@ -53,9 +44,6 @@ macro_rules! tok {
     (':') => {
         crate::token::Token::Colon
     };
-    ("::") => {
-        crate::token::Token::ColonColon
-    };
     ('.') => {
         crate::token::Token::Dot
     };
@@ -69,12 +57,6 @@ macro_rules! tok {
         crate::token::Token::DollarLBrace
     };
 
-    ('+') => {
-        crate::token::Token::BinOp(crate::token::BinOpToken::Add)
-    };
-    ('-') => {
-        crate::token::Token::BinOp(crate::token::BinOpToken::Sub)
-    };
     ('*') => {
         crate::token::Token::BinOp(crate::token::BinOpToken::Mul)
     };
@@ -84,20 +66,11 @@ macro_rules! tok {
     ("/=") => {
         crate::token::Token::AssignOp(DivAssign)
     };
-    ('%') => {
-        crate::token::Token::BinOp(Mod)
-    };
-    ('~') => {
-        crate::token::Token::Tilde
-    };
     ('<') => {
         crate::token::Token::BinOp(crate::token::BinOpToken::Lt)
     };
     ('>') => {
         crate::token::Token::BinOp(crate::token::BinOpToken::Gt)
-    };
-    ("**") => {
-        crate::token::Token::BinOp(crate::token::BinOpToken::Exp)
     };
 
     ("++") => {
@@ -272,9 +245,6 @@ macro_rules! tok {
     ("is") => {
         crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("is")))
     };
-    ("new") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("new")))
-    };
     ("keyof") => {
         crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("keyof")))
     };
@@ -287,20 +257,11 @@ macro_rules! tok {
     ("global") => {
         crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("global")))
     };
-    ("require") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("require")))
-    };
     ("enum") => {
         crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("enum")))
     };
     ("readonly") => {
         crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("readonly")))
-    };
-    ("as") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("as")))
-    };
-    ("namespace") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("namespace")))
     };
     ("abstract") => {
         crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("abstract")))
@@ -334,9 +295,6 @@ macro_rules! tok {
     };
     ("unknown") => {
         crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("unknown")))
-    };
-    ("require") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("require")))
     };
     ("interface") => {
         crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("interface")))

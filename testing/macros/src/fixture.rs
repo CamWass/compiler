@@ -31,7 +31,6 @@ impl Parse for Config {
                     .unwrap_or(false)
                 {
                     macro_rules! fail {
-                        () => {{ fail!("invalid input to the attribute") }};
                         ($inner:expr) => {{
                             panic!(
                                 "{}\nnote: exclude() expects one or more comma-separated \

@@ -1,3 +1,5 @@
+#![deny(unused)]
+
 pub use either::Either;
 pub use visit_macros::define;
 

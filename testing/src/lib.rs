@@ -1,3 +1,5 @@
+#![deny(unused)]
+
 pub use self::output::{NormalizedOutput, StdErr, StdOut, TestOutput};
 use difference::Changeset;
 use global_common::{

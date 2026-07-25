@@ -115,14 +115,6 @@ macro_rules! is_one_of {
 }
 
 macro_rules! peeked_is {
-    ($parser:expr, BindingIdent) => {{
-        let ctx = $parser.ctx();
-        match peek!($parser) {
-            Ok(Word(w)) => !ctx.is_reserved_word(&w.cow()),
-            _ => false,
-        }
-    }};
-
     ($parser:expr, IdentRef) => {{
         let ctx = $parser.ctx();
         match peek!($parser) {

@@ -46,12 +46,6 @@ struct DeadAssignmentElimination<'a> {
 }
 
 impl DeadAssignmentElimination<'_> {
-    fn is_var_live_before_current_cfg_node(&self, var: VarId) -> bool {
-        let in_state = &self.live_variable_analysis.lattice_elements[self.current_state.in_];
-
-        in_state.is_live(var)
-    }
-
     fn is_var_live_after_current_cfg_node(&self, var: VarId) -> bool {
         let out_state = &self.live_variable_analysis.lattice_elements[self.current_state.out];
 
