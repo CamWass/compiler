@@ -10,11 +10,11 @@ use crate::{
 };
 use ast::{RegexFlags, op};
 use atoms::JsWord;
-use global_common::{BytePos, SourceFile, Span, chars::char_literals};
+use global_common::{BytePos, SourceFile, Span};
 use state::State;
 pub use state::{TokenContext, TokenContexts};
 use std::{cell::RefCell, iter::FusedIterator, rc::Rc};
-use util::{char_bytes, is_line_break};
+use util::{char_bytes, char_literals, is_line_break};
 
 pub(crate) type LexResult<T> = Result<T, Error>;
 

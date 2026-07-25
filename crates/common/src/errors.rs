@@ -102,7 +102,7 @@ pub struct SubstitutionPart {
 
 pub type SourceMapperDyn = dyn SourceMapper;
 
-pub trait SourceMapper: crate::sync::Send + crate::sync::Sync {
+pub trait SourceMapper {
     fn lookup_char_pos(&self, pos: BytePos) -> Loc;
     fn span_to_lines(&self, sp: Span) -> FileLinesResult;
     fn span_to_string(&self, sp: Span) -> String;

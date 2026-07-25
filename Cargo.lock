@@ -510,7 +510,6 @@ dependencies = [
  "atty",
  "cfg-if",
  "either",
- "global_visit",
  "num-bigint",
  "once_cell",
  "rayon",
@@ -518,7 +517,6 @@ dependencies = [
  "scoped-tls",
  "sourcemap 6.4.1",
  "termcolor",
- "tracing",
  "unicode-width",
 ]
 

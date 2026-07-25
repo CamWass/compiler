@@ -34,7 +34,12 @@ use std::{
     path::{Path, PathBuf},
     sync::atomic::{AtomicUsize, Ordering::SeqCst},
 };
-use tracing::debug;
+
+macro_rules! debug {
+    ($($arg:tt)*) => {
+        // println!($($arg)*);
+    };
+}
 
 // _____________________________________________________________________________
 // SourceFile, MultiByteChar, FileName, FileLines

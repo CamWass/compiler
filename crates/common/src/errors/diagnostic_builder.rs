@@ -15,7 +15,6 @@ use std::{
     ops::{Deref, DerefMut},
     thread::panicking,
 };
-use tracing::debug;
 
 /// Used for emitting structured error messages and other diagnostic
 /// information.
@@ -114,7 +113,7 @@ impl<'a> DiagnosticBuilder<'a> {
         };
         // Logging here is useful to help track down where in logs an error was
         // actually emitted.
-        debug!("buffer: diagnostic={:?}", diagnostic);
+        // println!("buffer: diagnostic={:?}", diagnostic);
         buffered_diagnostics.push(*diagnostic);
     }
 

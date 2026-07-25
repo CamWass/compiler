@@ -20,13 +20,8 @@ pub use self::{
     source_map::{FileLines, FileLoader, FilePathMapping, SourceMap, SpanSnippetError},
     syntax_pos::{LineCol, Pos},
 };
-pub use global_visit::chain;
 
-pub mod chars;
 pub mod errors;
-pub mod integer_decode;
-pub mod iter;
-pub mod pass;
 mod rustc_data_structures;
 mod source_map;
 pub mod sync;
