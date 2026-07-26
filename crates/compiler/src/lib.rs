@@ -21,6 +21,7 @@ mod find_vars;
 mod graph;
 mod inline_functions;
 mod normalize;
+mod optimise_equality;
 pub mod optimize_properties;
 mod peephole;
 pub mod resolver;
@@ -73,6 +74,8 @@ pub struct PassConfig {
     pub convert_to_dot_properties: bool,
     #[serde(default)]
     pub dead_assignment_elimination: bool,
+    #[serde(default)]
+    pub optimise_equality: bool,
 }
 
 pub struct Compiler {
@@ -231,6 +234,10 @@ fn finalise(
     late_peephole_optimisations(ast, passes, program_data);
     // TODO: latePeepholeOptimizations
     // TODO: optimizeToEs6
+
+    if passes.optimise_equality {
+        optimise_equality::process(ast);
+    }
 }
 
 fn late_peephole_optimisations(
