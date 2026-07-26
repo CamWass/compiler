@@ -236,7 +236,7 @@ fn finalise(
     // TODO: optimizeToEs6
 
     if passes.optimise_equality {
-        optimise_equality::process(ast);
+        optimise_equality::process(ast, unresolved_ctxt);
     }
 }
 
