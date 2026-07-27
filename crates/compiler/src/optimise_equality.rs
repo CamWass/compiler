@@ -15,13 +15,8 @@ struct Visitor {
 }
 
 impl VisitMut<'_> for Visitor {
-    // TODO: Just visit BinExpr.
-    fn visit_mut_expr(&mut self, expr: &mut Expr) {
-        expr.visit_mut_children_with(self);
-
-        let Expr::Bin(bin_expr) = expr else {
-            return;
-        };
+    fn visit_mut_bin_expr(&mut self, bin_expr: &mut BinExpr) {
+        bin_expr.visit_mut_children_with(self);
 
         // TODO: extract to function.
         if bin_expr.op == BinaryOp::EqEqEq || bin_expr.op == BinaryOp::NotEqEq {
