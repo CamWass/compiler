@@ -67,13 +67,15 @@ fn get_primitive_type_of_expr(
             | Expr::Arrow(_)
             | Expr::Class(_)
             | Expr::Yield(_)
-            | Expr::Await(_)
             | Expr::PrivateName(_)
             | Expr::OptChain(_)
             | Expr::Invalid(_)
             | Expr::This(_)
             | Expr::TaggedTpl(_)
             | Expr::MetaProp(_) => return None,
+
+            // This is only true for primitive arguments to await.
+            Expr::Await(await_expr) => expr = &await_expr.arg,
 
             Expr::Ident(ident) => {
                 if ident.ctxt == unresolved_ctxt {
@@ -345,6 +347,12 @@ mod tests {
 
         // Expr::Tpl - template literal,
         test_strict_to_loose_equality_case("`template`", STRING);
+
+        // Expr::Await.
+        test_transform(
+            "async function f() { (await 1) === 1; }",
+            "async function f() { (await 1) == 1; }",
+        );
     }
 
     #[test]
@@ -464,9 +472,6 @@ mod tests {
 
         // Expr::Yield.
         test_same("function* f() { (yield 1) === 1; }");
-
-        // Expr::Await.
-        test_same("async function f() { (await 1) === 1; }");
     }
 
     fn test_strict_to_loose_equality_case(a: &str, b: &str) {
