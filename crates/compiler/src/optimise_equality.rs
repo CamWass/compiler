@@ -3,8 +3,6 @@ use atoms::{JsWord, js_word};
 use ecma_visit::{VisitMut, VisitMutWith};
 use global_common::SyntaxContext;
 
-use crate::utils::unwrap_as;
-
 pub fn process(ast: &mut Program, unresolved_ctxt: SyntaxContext) {
     let mut visitor = Visitor { unresolved_ctxt };
     ast.visit_mut_with(&mut visitor);
@@ -39,70 +37,52 @@ fn optimise_strict_equality(bin_expr: &mut BinExpr, unresolved_ctxt: SyntaxConte
 }
 
 fn optimise_loose_equality(bin_expr: &mut BinExpr) {
-    let is_lhs_typeof = matches!(
-        bin_expr.left.as_ref(),
-        Expr::Unary(UnaryExpr {
-            op: UnaryOp::TypeOf,
-            ..
-        })
-    );
-
-    let is_rhs_typeof = matches!(
-        bin_expr.right.as_ref(),
-        Expr::Unary(UnaryExpr {
-            op: UnaryOp::TypeOf,
-            ..
-        })
-    );
-
-    let is_lhs_undefined_string_lit = matches!(
-        bin_expr.left.as_ref(),
-        Expr::Lit(Lit::Str(Str {
-            value: js_word!("undefined"),
-            ..
-        }))
-    );
-    let is_rhs_undefined_string_lit = matches!(
-        bin_expr.right.as_ref(),
-        Expr::Lit(Lit::Str(Str {
-            value: js_word!("undefined"),
-            ..
-        }))
-    );
+    let is_lhs_typeof = is_typeof(&bin_expr.left);
+    let is_rhs_typeof = is_typeof(&bin_expr.right);
 
     // This optimisation isn't safe on Internet Explorer, which returned
     // "unknown" for the type of some objects.
-    if (is_lhs_typeof && is_rhs_undefined_string_lit)
-        || (is_lhs_undefined_string_lit && is_rhs_typeof)
-    {
+
+    if is_lhs_typeof && let Some(undefined_string) = get_undefined_string(&mut bin_expr.right) {
         // `typeof x != "undefined"` => `typeof x < "u"`
-        if is_lhs_typeof && bin_expr.op == BinaryOp::NotEq {
+        if bin_expr.op == BinaryOp::NotEq {
             bin_expr.op = BinaryOp::Lt;
         }
 
         // `typeof x == "undefined"` => `typeof x > "u"`
-        if is_lhs_typeof && bin_expr.op == BinaryOp::EqEq {
+        if bin_expr.op == BinaryOp::EqEq {
             bin_expr.op = BinaryOp::Gt;
         }
 
+        undefined_string.value = JsWord::from("u");
+    }
+
+    if is_rhs_typeof && let Some(undefined_string) = get_undefined_string(&mut bin_expr.left) {
         // `"undefined" != typeof x` => `"u" > typeof x`
-        if is_rhs_typeof && bin_expr.op == BinaryOp::NotEq {
+        if bin_expr.op == BinaryOp::NotEq {
             bin_expr.op = BinaryOp::Gt;
         }
 
         // `"undefined" == typeof x` => `"u" < typeof x`
-        if is_rhs_typeof && bin_expr.op == BinaryOp::EqEq {
+        if bin_expr.op == BinaryOp::EqEq {
             bin_expr.op = BinaryOp::Lt;
         }
 
-        // TODO: get mut ref from match above rather than matches!+unwrap_as!.
-        let string_lit = if is_lhs_undefined_string_lit {
-            unwrap_as!(bin_expr.left.as_mut(), Expr::Lit(Lit::Str(s)), s)
-        } else {
-            unwrap_as!(bin_expr.right.as_mut(), Expr::Lit(Lit::Str(s)), s)
-        };
+        undefined_string.value = JsWord::from("u");
+    }
+}
 
-        string_lit.value = JsWord::from("u");
+fn is_typeof(e: &Expr) -> bool {
+    match e {
+        Expr::Unary(e) => e.op == UnaryOp::TypeOf,
+        _ => false,
+    }
+}
+
+fn get_undefined_string(e: &mut Expr) -> Option<&mut Str> {
+    match e {
+        Expr::Lit(Lit::Str(s)) if s.value == js_word!("undefined") => Some(s),
+        _ => None,
     }
 }
 
