@@ -76,6 +76,8 @@ pub struct PassConfig {
     pub dead_assignment_elimination: bool,
     #[serde(default)]
     pub optimise_equality: bool,
+    #[serde(default)]
+    pub remove_dead_code: bool,
 }
 
 pub struct Compiler {
@@ -253,7 +255,11 @@ fn late_peephole_optimisations(
     if passes.fuse_stmts {
         peephole::fuse_stmts::process(ast, program_data);
     }
-    //         new PeepholeRemoveDeadCode(),
+
+    if passes.remove_dead_code {
+        peephole::remove_dead_code::process(ast);
+    }
+
     //         new PeepholeMinimizeConditions(late),
     //         new PeepholeSubstituteAlternateSyntax(late),
     //         new PeepholeReplaceKnownMethods(late, useTypesForOptimization),
