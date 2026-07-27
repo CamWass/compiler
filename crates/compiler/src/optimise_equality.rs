@@ -1,7 +1,9 @@
 use ast::*;
-use atoms::js_word;
+use atoms::{JsWord, js_word};
 use ecma_visit::{VisitMut, VisitMutWith};
 use global_common::SyntaxContext;
+
+use crate::utils::unwrap_as;
 
 pub fn process(ast: &mut Program, unresolved_ctxt: SyntaxContext) {
     let mut visitor = Visitor { unresolved_ctxt };
@@ -13,6 +15,7 @@ struct Visitor {
 }
 
 impl VisitMut<'_> for Visitor {
+    // TODO: Just visit BinExpr.
     fn visit_mut_expr(&mut self, expr: &mut Expr) {
         expr.visit_mut_children_with(self);
 
@@ -20,14 +23,85 @@ impl VisitMut<'_> for Visitor {
             return;
         };
 
-        let new_op = match bin_expr.op {
-            BinaryOp::EqEqEq => BinaryOp::EqEq,
-            BinaryOp::NotEqEq => BinaryOp::NotEq,
-            _ => return,
-        };
+        // TODO: extract to function.
+        if bin_expr.op == BinaryOp::EqEqEq || bin_expr.op == BinaryOp::NotEqEq {
+            let new_loose_op = match bin_expr.op {
+                BinaryOp::EqEqEq => BinaryOp::EqEq,
+                BinaryOp::NotEqEq => BinaryOp::NotEq,
+                _ => unreachable!(),
+            };
 
-        if can_change_strict_to_loose(&bin_expr.left, &bin_expr.right, self.unresolved_ctxt) {
-            bin_expr.op = new_op;
+            if can_change_strict_to_loose(&bin_expr.left, &bin_expr.right, self.unresolved_ctxt) {
+                bin_expr.op = new_loose_op;
+            }
+        }
+
+        let is_lhs_typeof = matches!(
+            bin_expr.left.as_ref(),
+            Expr::Unary(UnaryExpr {
+                op: UnaryOp::TypeOf,
+                ..
+            })
+        );
+
+        let is_rhs_typeof = matches!(
+            bin_expr.right.as_ref(),
+            Expr::Unary(UnaryExpr {
+                op: UnaryOp::TypeOf,
+                ..
+            })
+        );
+
+        let is_lhs_undefined_string_lit = matches!(
+            bin_expr.left.as_ref(),
+            Expr::Lit(Lit::Str(Str {
+                value: js_word!("undefined"),
+                ..
+            }))
+        );
+        let is_rhs_undefined_string_lit = matches!(
+            bin_expr.right.as_ref(),
+            Expr::Lit(Lit::Str(Str {
+                value: js_word!("undefined"),
+                ..
+            }))
+        );
+
+        // TODO: extract to function.
+
+        // This optimisation isn't safe on Internet Explorer, which returned
+        // "unknown" for the type of some objects.
+        if (is_lhs_typeof && is_rhs_undefined_string_lit)
+            || (is_lhs_undefined_string_lit && is_rhs_typeof)
+        {
+            // `typeof x != "undefined"` => `typeof x < "u"`
+            if is_lhs_typeof && bin_expr.op == BinaryOp::NotEq {
+                bin_expr.op = BinaryOp::Lt;
+            }
+
+            // `typeof x == "undefined"` => `typeof x > "u"`
+            if is_lhs_typeof && bin_expr.op == BinaryOp::EqEq {
+                bin_expr.op = BinaryOp::Gt;
+            }
+
+            // `"undefined" != typeof x` => `"u" > typeof x`
+            if is_rhs_typeof && bin_expr.op == BinaryOp::NotEq {
+                bin_expr.op = BinaryOp::Gt;
+            }
+
+            // `"undefined" == typeof x` => `"u" < typeof x`
+            if is_rhs_typeof && bin_expr.op == BinaryOp::EqEq {
+                bin_expr.op = BinaryOp::Lt;
+            }
+
+            // TODO: get mut ref from match above rather than matches!+unwrap_as!.
+            let string_lit = if is_lhs_undefined_string_lit {
+                unwrap_as!(bin_expr.left.as_mut(), Expr::Lit(Lit::Str(s)), s)
+            } else {
+                unwrap_as!(bin_expr.right.as_mut(), Expr::Lit(Lit::Str(s)), s)
+            };
+
+            string_lit.value = JsWord::from("u");
         }
     }
 }
@@ -257,6 +331,33 @@ mod tests {
     use super::*;
     use crate::resolver::resolver;
     use global_common::{GLOBALS, Globals, Mark};
+
+    #[test]
+    fn test_combined_optimisation() {
+        test_transform("typeof x !== 'undefined'", "typeof x < 'u'");
+        test_transform("typeof x === 'undefined'", "typeof x > 'u'");
+        test_transform("'undefined' !== typeof x", "'u' > typeof x");
+        test_transform("'undefined' === typeof x", "'u' < typeof x");
+    }
+
+    #[test]
+    fn test_loose_equality_to_relational_op() {
+        test_transform("typeof x != 'undefined'", "typeof x < 'u'");
+        test_transform("typeof x == 'undefined'", "typeof x > 'u'");
+        test_transform("'undefined' != typeof x", "'u' > typeof x");
+        test_transform("'undefined' == typeof x", "'u' < typeof x");
+
+        // This optimisation should only apply to 'undefined'.
+        test_same("typeof x != 'string'");
+        test_same("typeof x == 'string'");
+        test_same("'string' != typeof x");
+        test_same("'string' == typeof x");
+
+        test_same("typeof x != 'bigint'");
+        test_same("typeof x == 'bigint'");
+        test_same("'bigint' != typeof x");
+        test_same("'bigint' == typeof x");
+    }
 
     #[test]
     fn test_strict_to_loose_equality_cases() {
