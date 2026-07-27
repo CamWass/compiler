@@ -1344,7 +1344,7 @@ function f(p0) {
         test_same("function f(x = 0) { arguments[0]; }");
 
         test_transform(
-            "function f(x = 0) { arguments[1]; }", //
+            "function f(x = 0) { arguments[1]; }",
             "function f(x = 0, p1) { p1; }",
         );
     }
