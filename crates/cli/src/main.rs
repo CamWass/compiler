@@ -60,7 +60,7 @@ fn create_program(
     Ok(program)
 }
 
-fn compile(entry_file: &str, config: Config) -> Result<()> {
+fn compile(entry_file: &str, config: Config, output_file: Option<&str>) -> Result<()> {
     let cm = Rc::<SourceMap>::default();
     let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
 
@@ -103,7 +103,7 @@ fn compile(entry_file: &str, config: Config) -> Result<()> {
         String::from_utf8(buf).expect("Invalid utf8 character detected")
     };
 
-    std::fs::write("out.js", src).context("Failed to write file")
+    std::fs::write(output_file.unwrap_or("out.js"), src).context("Failed to write file")
 }
 
 fn main() -> Result<()> {
@@ -119,7 +119,8 @@ fn main() -> Result<()> {
         reduce(entry_file, config);
         Ok(())
     } else {
-        compile(entry_file, config)
+        let output_file = args.get(2).map(|s| s.as_str());
+        compile(entry_file, config, output_file)
     }
 }
 
