@@ -12,6 +12,7 @@ mod MaybeReachingVariableUse;
 mod OptimizeArgumentsArray;
 mod RenameLabels;
 mod RenameVars;
+mod collapse_variable_declarations;
 mod control_flow;
 mod convert;
 mod convert_to_dot_properties;
@@ -78,6 +79,8 @@ pub struct PassConfig {
     pub optimise_equality: bool,
     #[serde(default)]
     pub remove_dead_code: bool,
+    #[serde(default)]
+    pub collapse_variable_declarations: bool,
 }
 
 pub struct Compiler {
@@ -223,8 +226,13 @@ fn finalise(
     }
     // TODO: peepholeOptimizationsOnce
     // TODO: exploitAssign
-    // TODO: collapseVariableDeclarations
+
+    if passes.collapse_variable_declarations {
+        collapse_variable_declarations::process(ast);
+    }
+
     denormalize::denormalize(ast);
+
     if passes.rename_vars {
         RenameVars::process(ast, unresolved_ctxt);
     }
