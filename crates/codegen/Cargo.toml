@@ -8,7 +8,7 @@ version = "0.1.0"
 
 [dependencies]
 bitflags = { workspace = true }
-num-bigint = { workspace = true, features = ["serde"] }
+num-bigint = { workspace = true }
 sourcemap = { workspace = true }
 
 ast = { path = "../ast" }
