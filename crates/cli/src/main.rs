@@ -75,9 +75,6 @@ fn compile(entry_file: &str, config: Config, output_file: Option<&str>) -> Resul
     let elapsed = start.elapsed();
     println!("\nCompilation took: {elapsed:.2?}",);
 
-    // dbg!(&result);
-
-    // Ok(())
     println!("\n\n\nSuccessfully parsed");
 
     let src = {
