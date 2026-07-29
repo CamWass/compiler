@@ -1,11 +1,5 @@
 use crate::paths;
-use std::{
-    fmt,
-    fs::{File, create_dir_all},
-    io::Read,
-    ops::Deref,
-    path::Path,
-};
+use std::{fmt, ops::Deref, path::Path};
 
 #[must_use]
 pub struct TestOutput<R> {
@@ -15,13 +9,6 @@ pub struct TestOutput<R> {
 }
 
 pub type StdErr = NormalizedOutput;
-
-#[derive(Debug, Clone, Hash)]
-pub struct Diff {
-    pub actual: NormalizedOutput,
-    /// Output stored in file.
-    pub expected: NormalizedOutput,
-}
 
 /// Normalized stdout/stderr.
 ///
@@ -46,70 +33,6 @@ impl fmt::Display for NormalizedOutput {
 impl fmt::Debug for NormalizedOutput {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt(&self.0, f)
-    }
-}
-
-impl NormalizedOutput {
-    /// If output differs, prints actual stdout/stderr to
-    /// `CARGO_MANIFEST_DIR/target/test-results/ui/$rel_path` where
-    /// `$rel_path`: `path.strip_prefix(CARGO_MANIFEST_DIR)`
-    pub fn compare_to_file<P>(self, path: P) -> Result<(), Diff>
-    where
-        P: AsRef<Path>,
-    {
-        let path = path.as_ref();
-        let path = path.canonicalize().unwrap_or_else(|err| {
-            eprintln!(
-                "compare_to_file: failed to canonicalize outfile path `{}`: {:?}",
-                path.display(),
-                err
-            );
-            path.to_path_buf()
-        });
-
-        let expected: NormalizedOutput = NormalizedOutput(
-            File::open(&path)
-                .map(|mut file| {
-                    let mut buf = String::new();
-                    file.read_to_string(&mut buf).unwrap();
-                    buf
-                })
-                .unwrap_or_else(|_| {
-                    // If xxx.stderr file does not exist, stderr should be empty.
-                    String::new()
-                })
-                .replace("\r\n", "\n"),
-        );
-
-        if expected == self {
-            return Ok(());
-        }
-
-        eprintln!("Comparing output to {}", path.display());
-        create_dir_all(path.parent().unwrap()).expect("failed to run `mkdir -p`");
-
-        if std::env::var("UPDATE").unwrap_or(String::from("0")) == "1" {
-            crate::write_to_file(&path, &self.0);
-
-            eprintln!(
-                "Assertion failed: \nActual file printed to {}",
-                path.display()
-            );
-        }
-
-        if self.0.lines().count() <= 5 {
-            assert_eq!(expected, self, "Actual:\n{}", self);
-        }
-
-        let diff = Diff {
-            expected,
-            actual: self,
-        };
-
-        pretty_assertions::assert_eq!(diff.expected, diff.actual, "Actual:\n{}", diff.actual);
-
-        // Actually unreachable.
-        Err(diff)
     }
 }
 

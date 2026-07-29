@@ -2,57 +2,16 @@
 
 pub use self::output::{NormalizedOutput, StdErr, StdOut, TestOutput};
 use difference::Changeset;
-use global_common::{
-    errors::{Diagnostic, Handler},
-    FilePathMapping, SourceMap,
-};
+use global_common::{FilePathMapping, SourceMap, errors::Handler};
 pub use pretty_assertions::{assert_eq, assert_ne};
-use regex::Regex;
 use std::{
-    collections::HashMap,
-    env,
     fmt::{self, Debug, Display, Formatter},
-    fs::{create_dir_all, File},
-    io::Write,
-    path::{Path, PathBuf},
     rc::Rc,
-    sync::{LazyLock, RwLock},
-    thread,
 };
 
-mod diag_errors;
 mod output;
 mod paths;
 mod string_errors;
-
-pub fn find_executable(name: &str) -> Option<PathBuf> {
-    static CACHE: LazyLock<RwLock<HashMap<String, PathBuf>>> = LazyLock::new(Default::default);
-
-    {
-        let locked = CACHE.read().unwrap();
-        if let Some(cached) = locked.get(name) {
-            return Some(cached.clone());
-        }
-    }
-
-    let path = env::var_os("PATH").and_then(|paths| {
-        env::split_paths(&paths).find_map(|dir| {
-            let full_path = dir.join(name);
-            if full_path.is_file() {
-                Some(full_path)
-            } else {
-                None
-            }
-        })
-    });
-
-    if let Some(path) = path.clone() {
-        let mut locked = CACHE.write().unwrap();
-        locked.insert(name.to_string(), path);
-    }
-
-    path
-}
 
 /// Run test and print errors.
 pub fn run_test<F, Ret>(treat_err_as_bug: bool, op: F) -> Result<Ret, StdErr>
@@ -67,168 +26,6 @@ where
         Ok(res) => Ok(res),
         Err(()) => Err(errors.into()),
     }
-}
-
-/// Run test and print errors.
-pub fn run_test2<F, Ret>(treat_err_as_bug: bool, op: F) -> Result<Ret, StdErr>
-where
-    F: FnOnce(Rc<SourceMap>, Handler) -> Result<Ret, ()>,
-{
-    let cm = Rc::new(SourceMap::new(FilePathMapping::empty()));
-    let (handler, errors) = self::string_errors::new_handler(cm.clone(), treat_err_as_bug);
-    let result = global_common::GLOBALS.set(&global_common::Globals::new(), || op(cm, handler));
-
-    match result {
-        Ok(res) => Ok(res),
-        Err(()) => Err(errors.into()),
-    }
-}
-
-/// Run test and print errors.
-pub fn run_test_with_source_map<F, Ret>(
-    cm: &Rc<SourceMap>,
-    treat_err_as_bug: bool,
-    op: F,
-) -> Result<Ret, StdErr>
-where
-    F: FnOnce(&Handler) -> Result<Ret, ()>,
-{
-    let (handler, errors) = self::string_errors::new_handler(cm.clone(), treat_err_as_bug);
-    let result = global_common::GLOBALS.set(&global_common::Globals::new(), || op(&handler));
-
-    match result {
-        Ok(res) => Ok(res),
-        Err(()) => Err(errors.into()),
-    }
-}
-
-pub struct Tester {
-    pub cm: Rc<SourceMap>,
-    pub globals: global_common::Globals,
-    treat_err_as_bug: bool,
-}
-
-impl Tester {
-    pub fn new() -> Self {
-        Tester {
-            cm: Rc::new(SourceMap::new(FilePathMapping::empty())),
-            globals: global_common::Globals::new(),
-            treat_err_as_bug: false,
-        }
-    }
-
-    pub fn no_error(mut self) -> Self {
-        self.treat_err_as_bug = true;
-        self
-    }
-
-    /// Run test and print errors.
-    pub fn print_errors<F, Ret>(&self, op: F) -> Result<Ret, StdErr>
-    where
-        F: FnOnce(Rc<SourceMap>, Handler) -> Result<Ret, ()>,
-    {
-        let (handler, errors) =
-            self::string_errors::new_handler(self.cm.clone(), self.treat_err_as_bug);
-        let result = global_common::GLOBALS.set(&self.globals, || op(self.cm.clone(), handler));
-
-        match result {
-            Ok(res) => Ok(res),
-            Err(()) => Err(errors.into()),
-        }
-    }
-
-    /// Run test and collect errors.
-    pub fn errors<F, Ret>(&self, op: F) -> Result<Ret, Vec<Diagnostic>>
-    where
-        F: FnOnce(Rc<SourceMap>, Handler) -> Result<Ret, ()>,
-    {
-        let (handler, errors) =
-            self::diag_errors::new_handler(self.cm.clone(), self.treat_err_as_bug);
-        let result = global_common::GLOBALS.set(&self.globals, || op(self.cm.clone(), handler));
-
-        let mut errs: Vec<_> = errors.into();
-        errs.sort_by_key(|d| {
-            let span = d.span.primary_span().unwrap();
-            let cp = self.cm.lookup_char_pos(span.lo());
-
-            let line = cp.line;
-            let column = cp.col.0 + 1;
-
-            line * 10000 + column
-        });
-
-        match result {
-            Ok(res) => Ok(res),
-            Err(()) => Err(errs),
-        }
-    }
-}
-
-fn write_to_file(path: &Path, content: &str) {
-    File::create(path)
-        .unwrap_or_else(|err| {
-            panic!(
-                "failed to create file ({}) for writing data of the failed assertion: {}",
-                path.display(),
-                err
-            )
-        })
-        .write_all(content.as_bytes())
-        .expect("failed to write data of the failed assertion");
-}
-
-pub fn print_left_right(left: &dyn Debug, right: &dyn Debug) -> String {
-    fn print(t: &dyn Debug) -> String {
-        let s = format!("{t:#?}");
-
-        // Replace 'Span { lo: BytePos(0), hi: BytePos(0), ctxt: #0 }' with '_'
-        let s = {
-            static RE: LazyLock<Regex> =
-                LazyLock::new(|| Regex::new("Span \\{[\\a-zA-Z0#:\\(\\)]*\\}").unwrap());
-
-            &RE
-        }
-        .replace_all(&s, "_");
-        // Remove 'span: _,'
-        let s = {
-            static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new("span: _[,]?\\s*").unwrap());
-
-            &RE
-        }
-        .replace_all(&s, "");
-
-        s.into()
-    }
-
-    let (left, right) = (print(left), print(right));
-
-    let cur = thread::current();
-    let test_name = cur
-        .name()
-        .expect("rustc sets test name as the name of thread");
-
-    // ./target/debug/tests/${test_name}/
-    let target_dir = {
-        let mut buf = paths::test_results_dir().to_path_buf();
-        for m in test_name.split("::") {
-            buf.push(m);
-        }
-
-        create_dir_all(&buf).unwrap_or_else(|err| {
-            panic!(
-                "failed to create directory ({}) for writing data of the failed assertion: {}",
-                buf.display(),
-                err
-            )
-        });
-
-        buf
-    };
-
-    write_to_file(&target_dir.join("left"), &left);
-    write_to_file(&target_dir.join("right"), &right);
-
-    format!("----- {test_name}\n    left:\n{left}\n    right:\n{right}")
 }
 
 pub fn diff(l: &str, r: &str) -> String {
