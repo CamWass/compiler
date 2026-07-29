@@ -20,27 +20,11 @@ use std::{
     thread,
 };
 pub use testing_macros::fixture;
-use tracing_subscriber::EnvFilter;
 
 mod diag_errors;
 mod output;
 mod paths;
 mod string_errors;
-
-/// Configures logger
-#[must_use]
-pub fn init() -> tracing::subscriber::DefaultGuard {
-    let logger = tracing_subscriber::FmtSubscriber::builder()
-        .without_time()
-        .with_target(false)
-        .with_ansi(true)
-        .with_env_filter(EnvFilter::from_default_env())
-        .with_test_writer()
-        .pretty()
-        .finish();
-
-    tracing::subscriber::set_default(logger)
-}
 
 pub fn find_executable(name: &str) -> Option<PathBuf> {
     static CACHE: LazyLock<RwLock<HashMap<String, PathBuf>>> = LazyLock::new(Default::default);
@@ -76,8 +60,6 @@ pub fn run_test<F, Ret>(treat_err_as_bug: bool, op: F) -> Result<Ret, StdErr>
 where
     F: FnOnce(Rc<SourceMap>, &Handler) -> Result<Ret, ()>,
 {
-    let _log = init();
-
     let cm = Rc::new(SourceMap::new(FilePathMapping::empty()));
     let (handler, errors) = self::string_errors::new_handler(cm.clone(), treat_err_as_bug);
     let result = global_common::GLOBALS.set(&global_common::Globals::new(), || op(cm, &handler));
@@ -93,8 +75,6 @@ pub fn run_test2<F, Ret>(treat_err_as_bug: bool, op: F) -> Result<Ret, StdErr>
 where
     F: FnOnce(Rc<SourceMap>, Handler) -> Result<Ret, ()>,
 {
-    let _log = init();
-
     let cm = Rc::new(SourceMap::new(FilePathMapping::empty()));
     let (handler, errors) = self::string_errors::new_handler(cm.clone(), treat_err_as_bug);
     let result = global_common::GLOBALS.set(&global_common::Globals::new(), || op(cm, handler));
@@ -114,8 +94,6 @@ pub fn run_test_with_source_map<F, Ret>(
 where
     F: FnOnce(&Handler) -> Result<Ret, ()>,
 {
-    let _log = init();
-
     let (handler, errors) = self::string_errors::new_handler(cm.clone(), treat_err_as_bug);
     let result = global_common::GLOBALS.set(&global_common::Globals::new(), || op(&handler));
 
@@ -133,8 +111,6 @@ pub struct Tester {
 
 impl Tester {
     pub fn new() -> Self {
-        let _log = init();
-
         Tester {
             cm: Rc::new(SourceMap::new(FilePathMapping::empty())),
             globals: global_common::Globals::new(),

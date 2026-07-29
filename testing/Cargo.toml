@@ -9,8 +9,6 @@ ansi_term = { workspace = true }
 difference = { workspace = true }
 pretty_assertions = { workspace = true }
 regex = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 global_common = { path = "../crates/common", features = ["tty-emitter"] }
 testing_macros = { path = "./macros" }
