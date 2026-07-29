@@ -8,7 +8,7 @@
 //! ## `sourcemap`
 //!
 //! Adds methods to generate web sourcemap.
-#![deny(unused)]
+#![warn(unused)]
 
 pub use self::syntax_pos::{
     BytePos, CharPos, DUMMY_SP, FileName, GLOBALS, Globals, Loc, LocWithOpt, Mark, MultiSpan,
