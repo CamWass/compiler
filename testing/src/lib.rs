@@ -3,8 +3,8 @@
 pub use self::output::{NormalizedOutput, StdErr, StdOut, TestOutput};
 use difference::Changeset;
 use global_common::{
-    FilePathMapping, SourceMap,
     errors::{Diagnostic, Handler},
+    FilePathMapping, SourceMap,
 };
 pub use pretty_assertions::{assert_eq, assert_ne};
 use regex::Regex;
@@ -12,14 +12,13 @@ use std::{
     collections::HashMap,
     env,
     fmt::{self, Debug, Display, Formatter},
-    fs::{File, create_dir_all},
+    fs::{create_dir_all, File},
     io::Write,
     path::{Path, PathBuf},
     rc::Rc,
     sync::{LazyLock, RwLock},
     thread,
 };
-pub use testing_macros::fixture;
 
 mod diag_errors;
 mod output;

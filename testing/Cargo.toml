@@ -11,4 +11,3 @@ pretty_assertions = { workspace = true }
 regex = { workspace = true }
 
 global_common = { path = "../crates/common", features = ["tty-emitter"] }
-testing_macros = { path = "./macros" }
