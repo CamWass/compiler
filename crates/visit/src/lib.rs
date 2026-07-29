@@ -1,9 +1,5 @@
 #![deny(unused)]
 
-// This is not a public api.
-#[doc(hidden)]
-pub extern crate ast;
-
 use ast::*;
 use atoms::JsWord;
 use global_common::SyntaxContext;
