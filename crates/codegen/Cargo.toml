@@ -8,15 +8,12 @@ version = "0.1.0"
 
 [dependencies]
 bitflags = { workspace = true }
-num-bigint = { workspace = true }
-sourcemap = { workspace = true }
 
 ast = { path = "../ast" }
-atoms = { path = "../atoms" }
 global_common = { path = "../common" }
-parser = { path = "../parser" }
 
 [dev-dependencies]
 custom_alloc = { path = "../custom_alloc" }
 global_common = { path = "../common", features = ["sourcemap"] }
+parser = { path = "../parser" }
 testing = { path = "../../testing" }

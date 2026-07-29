@@ -14,7 +14,6 @@ num-bigint = { workspace = true }
 num-traits = { workspace = true }
 rustc-hash = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-unicode-id-start = { workspace = true }
 
 ast = { path = "../ast" }
 atoms = { path = "../atoms" }
@@ -27,7 +26,6 @@ serde_json = { workspace = true }
 custom_alloc = { path = "../custom_alloc" }
 ecma_visit = { path = "../visit" }
 testing = { path = "../../testing" }
-transform_testing = { path = "../transform_testing" }
 
 [[bench]]
 name = "bench_main"

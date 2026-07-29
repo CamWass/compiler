@@ -5,9 +5,7 @@ name = "testing"
 version = "0.1.0"
 
 [dependencies]
-ansi_term = { workspace = true }
 difference = { workspace = true }
 pretty_assertions = { workspace = true }
-regex = { workspace = true }
 
 global_common = { path = "../crates/common", features = ["tty-emitter"] }

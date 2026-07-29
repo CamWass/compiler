@@ -5,9 +5,6 @@ version = "0.1.0"
 
 [dependencies]
 ansi_term = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-sourcemap = { workspace = true }
 
 ast = { path = "../ast" }
 codegen = { path = "../codegen" }

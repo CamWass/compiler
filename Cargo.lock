@@ -55,7 +55,6 @@ dependencies = [
  "index",
  "node_id",
  "num-bigint",
- "rustc-hash",
  "unicode-id-start",
 ]
 
@@ -200,13 +199,10 @@ name = "codegen"
 version = "0.1.0"
 dependencies = [
  "ast",
- "atoms",
  "bitflags",
  "custom_alloc",
  "global_common",
- "num-bigint",
  "parser",
- "sourcemap",
  "testing",
 ]
 
@@ -395,9 +391,6 @@ version = "0.1.0"
 dependencies = [
  "atty",
  "cfg-if",
- "either",
- "num-bigint",
- "rustc-hash",
  "scoped-tls",
  "sourcemap",
  "termcolor",
@@ -408,7 +401,6 @@ dependencies = [
 name = "global_visit"
 version = "0.1.0"
 dependencies = [
- "either",
  "visit_macros",
 ]
 
@@ -726,8 +718,6 @@ dependencies = [
  "serde",
  "serde_json",
  "testing",
- "transform_testing",
- "unicode-id-start",
 ]
 
 [[package]]
@@ -1099,11 +1089,9 @@ dependencies = [
 name = "testing"
 version = "0.1.0"
 dependencies = [
- "ansi_term",
  "difference",
  "global_common",
  "pretty_assertions",
- "regex",
 ]
 
 [[package]]
@@ -1141,9 +1129,6 @@ dependencies = [
  "ecma_visit",
  "global_common",
  "parser",
- "serde",
- "serde_json",
- "sourcemap",
  "testing",
 ]
 
