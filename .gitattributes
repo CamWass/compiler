@@ -1,3 +1,4 @@
 test_inputs/** linguist-vendored
 bugs/** linguist-vendored
-crates/parser/benches/files/** linguist-vendored
+**/benches/**/*.js linguist-vendored
+**/benches/**/*.ts linguist-vendored
