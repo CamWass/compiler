@@ -210,35 +210,6 @@ impl Lexer<'_> {
         Ok(res)
     }
 
-    /// This can read long integers like
-    /// "13612536612375123612312312312312312312312".
-    fn read_number_no_dot_as_str(&mut self, radix: u8) -> LexResult<f64> {
-        debug_assert!(
-            radix == 2 || radix == 8 || radix == 10 || radix == 16,
-            "radix for read_number_no_dot should be one of 2, 8, 10, 16, but got {}",
-            radix
-        );
-        let start = self.cur_pos();
-
-        let mut read_any = false;
-
-        let val = self.read_digits(
-            radix,
-            |total, radix, v| {
-                read_any = true;
-                (f64::mul_add(total, radix as f64, v as f64), true)
-            },
-            None,
-            true,
-        );
-
-        if !read_any {
-            self.error(start, SyntaxError::ExpectedDigit { radix })?;
-        }
-
-        Ok(val)
-    }
-
     /// Ensure that an identifier does not directly follow a number.
     fn ensure_not_ident(&mut self) -> LexResult<()> {
         match self.cur() {
@@ -262,7 +233,7 @@ impl Lexer<'_> {
 
         let raw_start = self.cur_pos();
 
-        let value = self.read_number_no_dot_as_str(radix)?;
+        let value = self.read_number_no_dot(radix)?;
 
         let tok = if self.is(b'n') {
             let raw = self.slice_to_cur(raw_start);
@@ -354,7 +325,7 @@ impl Lexer<'_> {
             let starts_with_zero = self.is(b'0');
 
             // Use read_number_no_dot to support long numbers.
-            let val = self.read_number_no_dot_as_str(10)?;
+            let val = self.read_number_no_dot(10)?;
 
             if self.is(b'n') {
                 let raw = self.slice_to_cur(start);
