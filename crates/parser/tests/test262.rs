@@ -20,8 +20,6 @@ use visit::VisitMutWith;
 mod common;
 
 const IGNORED_PASS_TESTS: &[&str] = &[
-    // TODO: Temporarily ignored
-    "431ecef8c85d4d24.js",
     // TODO: Temporarily ignored. Appears to result from incorrect lexing of number
     // literals.
     // Sources:
