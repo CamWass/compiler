@@ -12,24 +12,16 @@ use std::ops::Index;
 
 // TODO: account for other function like types (such as methods/getters etc)
 
+pub trait Annotation: fmt::Debug {}
+
 // Dummy annotation.
 impl Annotation for () {}
 
-pub trait Annotation: fmt::Debug {}
-
-/**
- * Control flow graph.
- *
- * @param <N> The instruction type of the control flow graph.
- */
 #[derive(Debug)]
 pub struct ControlFlowGraph<N: CfgNode, NA: Annotation = ()> {
     pub map: FxHashMap<N, NodeIndex>,
-    /**
-     * A special node marked by the node value key null to a singleton
-     * "return" when control is transferred outside of the current control flow
-     * graph.
-     */
+    /// A special node marked by the node value key null to a singleton "return"
+    /// when control is transferred outside of the current control flow graph.
     pub implicit_return: N,
     pub implicit_return_index: NodeIndex,
     pub entry: N,
@@ -76,105 +68,58 @@ where
         }
     }
 
-    /**
-     * Connects the two nodes in the control flow graph.
-     *
-     * @param fromNode Source.
-     * @param toNode Destination.
-     */
+    /// Connects the two nodes in the control flow graph.
     pub fn create_edge(&mut self, from: N, branch: Branch, to: N) {
         let from_node = self.create_node(from);
         let to_node = self.create_node(to);
         self.connect_if_not_found(from_node, branch, to_node);
     }
 
-    /**
-     * Checks whether two nodes in the graph are connected by the given
-     * edge type.
-     *
-     * @param n1 Node 1.
-     * @param e The edge type.
-     * @param n2 Node 2.
-     */
+    /// Checks whether two nodes in the graph are connected by the given edge
+    /// type.
     fn is_connected(&self, n1: NodeIndex, edge: Branch, n2: NodeIndex) -> bool {
         self.graph
             .edges_connecting(n1, n2)
             .any(|e| *e.weight() == edge)
     }
 
-    /**
-     * Connects two nodes in the graph with an edge if such edge does not already
-     * exists between the nodes.
-     *
-     * @param n1 First node.
-     * @param edge The edge.
-     * @param n2 Second node.
-     */
+    /// Connects two nodes in the graph with an edge if such edge does not
+    /// already exists between the nodes.
     fn connect_if_not_found(&mut self, n1: NodeIndex, edge: Branch, n2: NodeIndex) {
         if !self.is_connected(n1, edge, n2) {
             self.graph.add_edge(n1, n2, edge);
         }
     }
 
-    // pub fn edges_from(&self, node: Node) -> Edges<'_, Branch, Directed> {
-    //     let index = match self.map.get(&node) {
-    //         Some(i) => *i,
-    //         // Note: We use ::end() as a sentinel value here. It should never be
-    //         // assigned to a node, and passing an unused index to graph.edges()
-    //         // conveniently returns an empty iterator, saving us from
-    //         // constructing one manually.
-    //         None => NodeIndex::end(),
-    //     };
-    //     self.graph.edges(index)
-    // }
-
-    // pub fn edges_to(&self, node: Node) -> Edges<'_, Branch, Directed> {
-    //     let index = match self.map.get(&node) {
-    //         Some(i) => *i,
-    //         // Note: We use ::end() as a sentinel value here. It should never be
-    //         // assigned to a node, and passing an unused index to
-    //         // graph.edges_directed() conveniently returns an empty iterator,
-    //         // saving us from constructing one manually.
-    //         None => NodeIndex::end(),
-    //     };
-    //     self.graph.edges_directed(index, Incoming)
-    // }
-
-    /// Note: neighbor are listed in reverse order of their addition to the graph,
-    /// so the most recently added edge's neighbor is listed first.
     pub fn get_directed_pred_nodes(&self, node: N) -> Neighbors<'_, Branch> {
         self.graph
             .neighbors_directed(*self.map.get(&node).unwrap(), Incoming)
     }
 
-    /// Note: neighbor are listed in reverse order of their addition to the graph,
-    /// so the most recently added edge's neighbor is listed first.
     pub fn get_directed_succ_nodes(&self, node: N) -> Neighbors<'_, Branch> {
         self.graph
             .neighbors_directed(*self.map.get(&node).unwrap(), Outgoing)
     }
 }
 
-/**
- * The edge object for the control flow graph.
- */
+/// The edge type for the control flow graph.
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum Branch {
-    /** Edge is taken if the condition is true. */
+    /// Edge is taken if the condition is true.
     True,
-    /** Edge is taken if the condition is false. */
+    /// Edge is taken if the condition is false.
     False,
-    /** Unconditional branch. */
+    /// Unconditional branch.
     Unconditional,
-    /**
-     * Exception-handling code paths.
-     * Conflates two kind of control flow passing:
-     * - An exception is thrown, and falls into a catch or finally block
-     * - During exception handling, a finally block finishes and control
-     *   passes to the next finally block.
-     * In theory, we need 2 different edge types. In practice, we
-     * can just treat them as "the edges we can't really optimize".
-     */
+    /// Exception-handling code paths.
+    ///
+    /// Conflates two kind of control flow passing:
+    /// - An exception is thrown, and falls into a catch or finally block.
+    /// - During exception handling, a finally block finishes and control passes
+    ///   to the next finally block.
+    ///
+    /// In theory, we need 2 different edge types. In practice, we can just
+    /// treat them as "the edges we can't really optimise".
     Exception,
 }
 
@@ -185,7 +130,8 @@ pub trait AnnotationPrinter<A: Annotation> {
     fn print(&self, annotation: &A, f: &mut fmt::Formatter<'_>) -> fmt::Result;
 }
 
-/// Default [`AnnotationPrinter`] that uses the annotations impl of [`Debug`][std::fmt::Debug].
+/// Default [`AnnotationPrinter`] that uses the annotation's impl of
+/// [`Debug`][std::fmt::Debug].
 pub struct DefaultPrinter;
 
 impl<A> AnnotationPrinter<A> for DefaultPrinter
@@ -266,8 +212,6 @@ where
         let mut dot = format!("{:?}", Dot::with_config(&graph, &[]));
 
         dot = recolour_graph(dot, graph.node_count());
-
-        // println!("creating dot file");
 
         std::fs::write(CFG_DOT_FILE_NAME, dot).expect("Failed to output control flow graph");
     }
@@ -352,17 +296,19 @@ where
         // Create graph of AST nodes.
         let (map, graph) = super::print::ast_graph::<Branch>(&self.entry);
 
-        // Map the nodes of the AST graph to our custom node type. This preserves their edges and node indicies.
+        // Map the nodes of the AST graph to our custom node type. This
+        // preserves their edges and node indices.
         let mut graph = graph.map(|_, n| custom_node(*n), |_, e| *e);
 
-        // Implicit return isn't a 'real' AST node, so it won't be in the AST graph. Add it manually.
+        // Implicit return isn't a 'real' AST node, so it won't be in the AST
+        // graph. Add it manually.
         let implicit_return = graph.add_node(custom_node(self.implicit_return));
 
         // Add the control flow edges to the AST graph.
         for e in self.graph.edge_references() {
-            // For each node of the CFG edge, use the map to find the corresponding
-            // node in the AST graph. Since the CFG nodes are a sub-set of the
-            // AST nodes, this lookup should never fail.
+            // For each node of the CFG edge, use the map to find the
+            // corresponding node in the AST graph. Since the CFG nodes are a
+            // sub-set of the AST nodes, this lookup should never fail.
             let source = self.graph[e.source()];
             let source = if source == self.implicit_return {
                 implicit_return
@@ -382,18 +328,15 @@ where
 
         dot = recolour_graph(dot, graph.node_count());
 
-        // println!("creating dot file");
-
         std::fs::create_dir_all("cfg").expect("failed to create cfg dir");
 
         std::fs::write(format!("cfg/{name}.dot"), dot)
             .expect("Failed to output control flow graph");
-
-        // std::fs::write(CFG_DOT_FILE_NAME, dot).expect("Failed to output control flow graph");
     }
 }
 
-/// Changes the colours of control flow edges so they can be visually distinguished.
+/// Changes the colours of control flow edges so they can be visually
+/// distinguished.
 fn recolour_graph(mut dot: String, node_count: usize) -> String {
     dot = dot.replacen("[ ", "[color=lightblue2, style=filled, ", node_count);
 
