@@ -23,7 +23,7 @@ pub trait Annotation: fmt::Debug {}
  * @param <N> The instruction type of the control flow graph.
  */
 #[derive(Debug)]
-pub struct ControlFlowGraph<N: CfgNode, NA: Annotation> {
+pub struct ControlFlowGraph<N: CfgNode, NA: Annotation = ()> {
     pub map: FxHashMap<N, NodeIndex>,
     /**
      * A special node marked by the node value key null to a singleton
