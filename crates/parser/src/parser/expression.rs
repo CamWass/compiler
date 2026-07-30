@@ -1,8 +1,9 @@
 use super::{pat::PatType, util::is_valid_simple_assignment_target, *};
-use crate::{context::ContextFlags, token::AssignOpToken};
+use crate::{
+    context::ContextFlags, parser::identifier::PrivateNameOrIdentifier, token::AssignOpToken,
+};
 use atoms::js_word;
 use common::Pos;
-use either::Either;
 use util::AssignProps;
 
 mod ops;
@@ -672,8 +673,8 @@ impl<I: Tokens> Parser<'_, I> {
         // $obj.name
         if self.input.eat(&tok!('.')) {
             let prop: Box<Expr> = Box::new(self.parse_maybe_private_name().map(|e| match e {
-                Either::Left(p) => Expr::PrivateName(p),
-                Either::Right(i) => Expr::Ident(i),
+                PrivateNameOrIdentifier::PrivateName(p) => Expr::PrivateName(p),
+                PrivateNameOrIdentifier::Identifier(i) => Expr::Ident(i),
             })?);
             let span = span!(self, get_span!(self, obj.node_id()).lo());
             debug_assert_eq!(get_span!(self, obj.node_id()).lo(), span.lo());

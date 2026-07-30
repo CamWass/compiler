@@ -3,7 +3,6 @@ use super::*;
 use crate::token::Keyword;
 use atoms::js_word;
 use common::SyntaxContext;
-use either::Either;
 
 impl<I: Tokens> Parser<'_, I> {
     pub(super) fn new_ident(&mut self, sym: JsWord, span: Span) -> Ident {
@@ -14,13 +13,15 @@ impl<I: Tokens> Parser<'_, I> {
         }
     }
 
-    pub(super) fn parse_maybe_private_name(&mut self) -> PResult<Either<PrivateName, Ident>> {
+    pub(super) fn parse_maybe_private_name(&mut self) -> PResult<PrivateNameOrIdentifier> {
         let is_private = is!(self, '#');
 
         if is_private {
-            self.parse_private_name().map(Either::Left)
+            self.parse_private_name()
+                .map(PrivateNameOrIdentifier::PrivateName)
         } else {
-            self.parse_ident_name().map(Either::Right)
+            self.parse_ident_name()
+                .map(PrivateNameOrIdentifier::Identifier)
         }
     }
 
@@ -136,6 +137,11 @@ impl<I: Tokens> Parser<'_, I> {
 
         Ok(self.new_ident(word, span!(self, start)))
     }
+}
+
+pub(super) enum PrivateNameOrIdentifier {
+    PrivateName(PrivateName),
+    Identifier(Ident),
 }
 
 pub(super) trait MaybeOptionalIdentParser<Ident> {

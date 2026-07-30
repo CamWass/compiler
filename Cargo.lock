@@ -692,7 +692,6 @@ dependencies = [
  "common",
  "criterion",
  "custom_alloc",
- "either",
  "num-bigint",
  "num-traits",
  "rustc-hash",
