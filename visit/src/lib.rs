@@ -2,8 +2,6 @@
 
 pub use visit_macros::define;
 
-pub mod util;
-
 /// Visit all children nodes. This converts `VisitAll` to `Visit`. The type
 /// parameter `V` should implement `VisitAll` and `All<V>` implements `Visit`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
