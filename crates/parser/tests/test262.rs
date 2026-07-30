@@ -17,7 +17,6 @@ use test::{
 use testing::{NormalizedOutput, StdErr};
 use visit::VisitMutWith;
 
-#[path = "common/mod.rs"]
 mod common;
 
 const IGNORED_PASS_TESTS: &[&str] = &[
