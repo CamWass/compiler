@@ -60,7 +60,7 @@ impl<I: Tokens> Parser<'_, I> {
 
         match kind {
             ParsingContext::EnumMembers | ParsingContext::TypeMembers => is!(self, '}'),
-            ParsingContext::HeritageClauseElement { .. } => {
+            ParsingContext::HeritageClauseElement => {
                 is!(self, '{') || is!(self, "implements") || is!(self, "extends")
             }
             ParsingContext::TupleElementTypes => is!(self, ']'),

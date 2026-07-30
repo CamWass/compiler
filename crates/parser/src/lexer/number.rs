@@ -214,7 +214,7 @@ impl Lexer<'_> {
     ) -> Option<f64> {
         self.read_digits(radix, Some(len), raw, allow_num_separator);
 
-        if raw.len() == 0 || len != 0 && raw.len() != len {
+        if raw.is_empty() || len != 0 && raw.len() != len {
             None
         } else {
             Some(parse_float_from_str(raw, radix))
@@ -232,7 +232,7 @@ impl Lexer<'_> {
 
         self.read_digits(radix, Some(len), &mut raw, allow_num_separator);
 
-        if raw.len() == 0 || len != 0 && raw.len() != len {
+        if raw.is_empty() || len != 0 && raw.len() != len {
             None
         } else {
             Some(u32::from_str_radix(&raw, radix as u32).unwrap())

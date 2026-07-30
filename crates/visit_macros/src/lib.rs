@@ -2,7 +2,7 @@
 
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{ToTokens, quote};
-use std::{collections::HashSet, mem::replace};
+use std::collections::HashSet;
 use syn::{
     Arm, Block, Expr, ExprBlock, ExprMatch, FieldPat, Fields, FnArg, GenericArgument, GenericParam,
     Generics, Index, Item, ItemTrait, Lifetime, LifetimeParam, Member, Pat, PatIdent, PatWild,
@@ -105,7 +105,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
 
     methods.iter_mut().for_each(|v| {
         let fn_name = v.sig.ident.clone();
-        let default_body = replace(&mut v.default, Some(parse_quote!({#fn_name(self, node)})));
+        let default_body = v.default.replace(parse_quote!({#fn_name(self, node)}));
 
         let arg_ty = v
             .sig

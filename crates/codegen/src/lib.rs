@@ -3337,7 +3337,7 @@ fn minify_number(num: f64) -> String {
             }
 
             // use scientific notation
-            if int % 1000 == 0 {
+            if int.is_multiple_of(1000) {
                 break 'hex;
             }
 

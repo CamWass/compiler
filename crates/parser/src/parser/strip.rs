@@ -98,12 +98,13 @@ pub struct TsEnumConfig {
     pub ts_enum_is_readonly: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum TsImportExportAssignConfig {
     /// - Rewrite `import foo = require("foo")` to `var foo = require("foo")`
     /// - Rewrite `export =` to `module.exports = `
     /// Note: This option is deprecated as all CJS/AMD/UMD can handle it
     /// themselves.
+    #[default]
     Classic,
 
     /// preserve for CJS/AMD/UMD
@@ -122,12 +123,6 @@ pub enum TsImportExportAssignConfig {
     /// Both `import =` and `export =` are disabled.
     /// An error will be reported if an import/export assignment is found.
     EsNext,
-}
-
-impl Default for TsImportExportAssignConfig {
-    fn default() -> Self {
-        Self::Classic
-    }
 }
 
 // impl TsEnumConfig {

@@ -99,11 +99,11 @@ impl VisitMut<'_> for Visitor<'_> {
 
         if is_valid_prop_ident(prop_name) {
             n.computed = false;
-            n.prop = Box::new(Expr::Ident(Ident {
+            *n.prop = Expr::Ident(Ident {
                 ctxt: SyntaxContext::empty(),
                 node_id: self.program_data.new_id_from(old_node_id),
                 sym: prop_name.clone(),
-            }));
+            });
         }
     }
 

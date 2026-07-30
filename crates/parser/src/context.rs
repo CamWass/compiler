@@ -2,29 +2,19 @@ use crate::token::{Keyword, Word};
 use atoms::{JsWord, js_word};
 use bitflags::bitflags;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum YesNoMaybe {
     Yes,
     No,
+    #[default]
     Maybe,
 }
 
-impl Default for YesNoMaybe {
-    fn default() -> Self {
-        Self::Maybe
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum YesMaybe {
     Yes,
+    #[default]
     Maybe,
-}
-
-impl Default for YesMaybe {
-    fn default() -> Self {
-        Self::Maybe
-    }
 }
 
 bitflags! {

@@ -663,7 +663,7 @@ where
             // immediate sibling, unless its sibling is a function.
 
             debug_assert!(
-                parent.children.iter().any(|child| *child == node),
+                parent.children.contains(&node),
                 "Needle should be present in haystack"
             );
 

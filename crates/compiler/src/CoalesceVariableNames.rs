@@ -388,14 +388,14 @@ impl VisitMut<'_> for CoalesceVariableNames<'_> {
                                     unwrap_as!(init, Some(VarDeclOrExpr::VarDecl(d)), d);
                                 let decl = var_decl.decls.pop().unwrap();
 
-                                if decl.init.is_some() {
+                                if let Some(init) = decl.init {
                                     // Replace decl with assignment e.g. `let x = 0;` to `x = 0;`.
                                     let name = unwrap_as!(decl.name, Pat::Ident(n), n);
                                     Some(VarDeclOrExpr::Expr(Box::new(Expr::Assign(AssignExpr {
                                         node_id: self.program_data.new_id_from(decl.node_id),
                                         op: AssignOp::Assign,
                                         left: PatOrExpr::Expr(Box::new(Expr::Ident(name.id))),
-                                        right: decl.init.unwrap(),
+                                        right: init,
                                     }))))
                                 } else {
                                     // Remove empty decl e.g. `var x;`.

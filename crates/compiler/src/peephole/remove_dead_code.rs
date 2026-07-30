@@ -22,7 +22,7 @@ impl VisitMut<'_> for Visitor {
                 let block = unwrap_as!(stmt, Stmt::Block(b), b);
                 let num_stmts = block.stmts.len();
                 // Insert the new statements at the index of the old one to preserve ordering.
-                stmts.splice(i..i, block.stmts.into_iter());
+                stmts.splice(i..i, block.stmts);
 
                 if num_stmts > 0 {
                     // Skip over the new stmts.
@@ -47,10 +47,7 @@ impl VisitMut<'_> for Visitor {
                 let block = unwrap_as!(stmt, ModuleItem::Stmt(Stmt::Block(b)), b);
                 let num_stmts = block.stmts.len();
                 // Insert the new statements at the index of the old one to preserve ordering.
-                items.splice(
-                    i..i,
-                    block.stmts.into_iter().map(|stmt| ModuleItem::Stmt(stmt)),
-                );
+                items.splice(i..i, block.stmts.into_iter().map(ModuleItem::Stmt));
 
                 if num_stmts > 0 {
                     // Skip over the new stmts.

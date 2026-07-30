@@ -313,7 +313,7 @@ impl<'ast> VisitMut<'ast> for Inliner<'_> {
                             continue;
                         }
 
-                        stmts.splice(i..=i, body.into_iter());
+                        stmts.splice(i..=i, body);
                     }
                 };
             }

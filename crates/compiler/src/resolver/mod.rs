@@ -156,7 +156,7 @@ impl<'a> Scope<'a> {
             return true;
         }
 
-        self.parent.map_or(false, |p| p.is_declared(symbol))
+        self.parent.is_some_and(|p| p.is_declared(symbol))
     }
 }
 

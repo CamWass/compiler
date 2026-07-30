@@ -404,10 +404,10 @@ impl<I: Tokens> Parser<'_, I> {
             );
         }
 
-        let key = if readonly.is_some() && is_one_of!(self, '!', ':') {
-            Key::PropName(PropName::Ident(
-                self.new_ident("readonly".into(), readonly.unwrap()),
-            ))
+        let key = if let Some(readonly) = readonly
+            && is_one_of!(self, '!', ':')
+        {
+            Key::PropName(PropName::Ident(self.new_ident("readonly".into(), readonly)))
         } else {
             self.parse_class_prop_name()?
         };

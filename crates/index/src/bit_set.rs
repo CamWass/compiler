@@ -274,9 +274,8 @@ impl<T: Idx> fmt::Debug for BitSet<T> {
     }
 }
 
-impl<T: Idx> ToString for BitSet<T> {
-    fn to_string(&self) -> String {
-        let mut result = String::new();
+impl<T: Idx> fmt::Display for BitSet<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut sep = '[';
 
         // Note: this is a little endian printout of bytes.
@@ -293,7 +292,7 @@ impl<T: Idx> ToString for BitSet<T> {
                 assert!(mask <= 0xFF);
                 let byte = word & mask;
 
-                result.push_str(&format!("{}{:02x}", sep, byte));
+                f.write_fmt(format_args!("{}{:02x}", sep, byte))?;
 
                 if remain <= 8 {
                     break;
@@ -304,9 +303,8 @@ impl<T: Idx> ToString for BitSet<T> {
             }
             sep = '|';
         }
-        result.push(']');
 
-        result
+        f.write_str("]")
     }
 }
 
@@ -506,7 +504,7 @@ impl<T: Idx> fmt::Debug for HybridBitSet<T> {
     fn fmt(&self, w: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Sparse(b) => b.fmt(w),
-            Self::Dense(b) => b.fmt(w),
+            Self::Dense(b) => fmt::Debug::fmt(&b, w),
         }
     }
 }
@@ -1065,7 +1063,7 @@ impl<R: Idx, C: Idx> SparseBitMatrix<R, C> {
     /// if the matrix represents (transitive) reachability, can
     /// `row` reach `column`?
     pub fn contains(&self, row: R, column: C) -> bool {
-        self.row(row).map_or(false, |r| r.contains(column))
+        self.row(row).is_some_and(|r| r.contains(column))
     }
 
     /// Adds the bits from row `read` to the bits from row `write`, and

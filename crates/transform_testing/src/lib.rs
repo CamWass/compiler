@@ -1,6 +1,4 @@
-#![deny(clippy::all)]
 #![deny(unused)]
-#![allow(clippy::result_unit_err)]
 
 use ansi_term::Color;
 use ast::{Pat, *};
@@ -37,6 +35,7 @@ impl Tester<'_> {
         }
     }
 
+    #[allow(clippy::result_unit_err)]
     pub fn apply_transform<T: for<'b> VisitMut<'b>>(
         &mut self,
         mut tr: T,
