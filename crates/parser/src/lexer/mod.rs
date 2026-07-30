@@ -803,7 +803,7 @@ impl<'src> Lexer<'src> {
     fn read_hex_char(&mut self, start: BytePos, len: u8) -> LexResult<char> {
         debug_assert!(len == 2 || len == 4);
 
-        let val = self.read_int_u32(Radix::Hex, len, false);
+        let val = self.read_int_u32(Radix::Hex, len as usize, false);
 
         if let Some(val) = val {
             if let Some(ch) = std::char::from_u32(val) {

@@ -92,24 +92,14 @@ fn digits(value: u64, radix: u64) -> impl Iterator<Item = u64> + Clone + 'static
 }
 
 impl Lexer<'_> {
-    /// `op`- |total, radix, value| -> (total * radix + value, continue)
-    fn read_digits<F, Ret>(
+    fn read_digits(
         &mut self,
         radix: Radix,
-        mut op: F,
-        // TODO: explore making callers of this function use a slice of the
-        // source to get the number as a string, rather than passing a String
-        // to be populated.
-        mut raw: Option<&mut String>,
+        max_len: Option<usize>,
+        raw: &mut String,
         allow_num_separator: bool,
-    ) -> Ret
-    where
-        F: FnMut(Ret, Radix, u32) -> (Ret, bool),
-        Ret: Copy + Default,
-    {
+    ) {
         let start = self.cur_pos();
-
-        let mut total: Ret = Default::default();
 
         while let Some(c) = self.cur() {
             if c == '_' {
@@ -138,30 +128,25 @@ impl Lexer<'_> {
                     );
                 }
 
-                // Ignore this '_' character
+                // Ignore this '_' character.
                 self.advance(1);
                 continue;
             }
 
-            let val = if let Some(val) = c.to_digit(radix as u32) {
-                val
-            } else {
-                return total;
-            };
-
-            if let Some(raw) = &mut raw {
-                raw.push(c);
+            if !c.is_digit(radix as u32) {
+                return;
             }
+
+            raw.push(c);
 
             self.bump();
-            let (t, cont) = op(total, radix, val);
-            total = t;
-            if !cont {
-                return total;
+
+            if let Some(max_len) = max_len
+                && max_len == raw.len()
+            {
+                return;
             }
         }
-
-        total
     }
 
     /// This can read long integers like
@@ -169,22 +154,16 @@ impl Lexer<'_> {
     fn read_number_no_dot(&mut self, radix: Radix) -> LexResult<f64> {
         let start = self.cur_pos();
 
-        let mut read_any = false;
+        let mut raw = String::new();
 
-        let res = self.read_digits(
-            radix,
-            |total, radix, v| {
-                read_any = true;
-                (f64::mul_add(total, radix as u8 as f64, v as f64), true)
-            },
-            None,
-            true,
-        );
+        self.read_digits(radix, None, &mut raw, true);
 
-        if !read_any {
+        if raw.is_empty() {
             self.error(start, SyntaxError::ExpectedDigit { radix: radix as u8 })?;
+            Ok(0.0)
+        } else {
+            Ok(parse_float_from_str(&raw, radix))
         }
-        Ok(res)
     }
 
     /// Ensure that an identifier does not directly follow a number.
@@ -229,43 +208,35 @@ impl Lexer<'_> {
     pub(super) fn read_int(
         &mut self,
         radix: Radix,
-        len: u8,
+        len: usize,
         raw: &mut String,
         allow_num_separator: bool,
     ) -> Option<f64> {
-        let mut count = 0;
-        let v = self.read_digits(
-            radix,
-            |opt: Option<f64>, radix, val| {
-                count += 1;
-                let total = opt.unwrap_or_default() * radix as u8 as f64 + val as f64;
-                (Some(total), count != len)
-            },
-            Some(raw),
-            allow_num_separator,
-        );
-        if len != 0 && count != len { None } else { v }
+        self.read_digits(radix, Some(len), raw, allow_num_separator);
+
+        if raw.len() == 0 || len != 0 && raw.len() != len {
+            None
+        } else {
+            Some(parse_float_from_str(raw, radix))
+        }
     }
 
     /// See documentation for `read_int`.
     pub(super) fn read_int_u32(
         &mut self,
         radix: Radix,
-        len: u8,
+        len: usize,
         allow_num_separator: bool,
     ) -> Option<u32> {
-        let mut count = 0;
-        let v = self.read_digits(
-            radix,
-            |opt: Option<u32>, radix, val| {
-                count += 1;
-                let total = opt.unwrap_or_default() * radix as u32 + val;
-                (Some(total), count != len)
-            },
-            None,
-            allow_num_separator,
-        );
-        if len != 0 && count != len { None } else { v }
+        let mut raw = String::new();
+
+        self.read_digits(radix, Some(len), &mut raw, allow_num_separator);
+
+        if raw.len() == 0 || len != 0 && raw.len() != len {
+            None
+        } else {
+            Some(u32::from_str_radix(&raw, radix as u32).unwrap())
+        }
     }
 
     fn make_legacy_octal(&mut self, start: BytePos, val: f64) -> LexResult<f64> {
@@ -421,6 +392,28 @@ impl Lexer<'_> {
         self.ensure_not_ident()?;
 
         Ok(Token::Num(val))
+    }
+}
+
+fn parse_float_from_str(str: &str, radix: Radix) -> f64 {
+    debug_assert!(!str.is_empty());
+    debug_assert!(str.chars().all(|c| c.is_digit(radix as u32)));
+
+    match radix {
+        Radix::Bin | Radix::Oct | Radix::Hex => str.as_bytes().iter().fold(0.0, |result, &cur| {
+            result.mul_add(
+                radix as u8 as f64,
+                char::from_u32(cur as u32)
+                    .unwrap()
+                    .to_digit(radix as u32)
+                    .unwrap() as f64,
+            )
+        }),
+
+        // The above method is not exact when the radix not a power of two. For
+        // example, 1e+30 is parsed as 9.999999999999999e29 when the radix is
+        // 10.
+        Radix::Dec => str.parse::<f64>().unwrap(),
     }
 }
 

@@ -20,15 +20,6 @@ use visit::VisitMutWith;
 mod common;
 
 const IGNORED_PASS_TESTS: &[&str] = &[
-    // TODO: Temporarily ignored. Appears to result from incorrect lexing of number
-    // literals.
-    // Sources:
-    // Pass: 1000000000000000000000000000000
-    // Pass-explicit: 1e30;
-    // The first is lexed to a value of "999999999999999900000000000000.0" while
-    // the second produces "1000000000000000000000000000000.0" (which appears to be correct).
-    // For the test to pass, the values must be identical.
-    "8386fbff927a9e0e.js",
     // Wrong tests (variable name or value is different)
     "0339fa95c78c11bd.js",
     "0426f15dac46e92d.js",
