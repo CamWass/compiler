@@ -16,7 +16,7 @@ serde = { workspace = true, features = ["derive"] }
 
 ast = { path = "../ast" }
 atoms = { path = "../atoms" }
-global_common = { path = "../common" }
+common = { path = "../common" }
 
 [dev-dependencies]
 criterion = { workspace = true }

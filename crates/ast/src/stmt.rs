@@ -6,7 +6,7 @@ use crate::{
     pat::Pat,
 };
 use clone_node::CloneNode;
-use global_common::util::take::Take;
+use common::util::take::Take;
 use node_id::GetNodeIdMacro;
 
 /// Use when only block statements are allowed.

@@ -5,7 +5,7 @@ use crate::{
     error::Error,
     token::*,
 };
-use global_common::BytePos;
+use common::BytePos;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum TokenType {

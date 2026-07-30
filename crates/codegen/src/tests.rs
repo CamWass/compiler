@@ -1,7 +1,7 @@
 use self::parser::Parser;
 use super::*;
 use crate::config::Config;
-use global_common::{FileName, SourceMap};
+use common::{FileName, SourceMap};
 use parser::{self, EsConfig, Syntax};
 use std::fmt::{self, Debug, Display, Formatter};
 use std::rc::Rc;

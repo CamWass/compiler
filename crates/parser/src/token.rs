@@ -3,7 +3,7 @@ use crate::error::Error;
 pub(crate) use ast::AssignOp as AssignOpToken;
 use ast::{BinaryOp, RegexFlags};
 use atoms::{JsWord, js_word};
-use global_common::Span;
+use common::Span;
 use num_bigint::BigUint;
 use std::{
     borrow::Cow,

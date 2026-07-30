@@ -41,7 +41,7 @@ pub use self::{
 };
 use atoms::JsWord;
 use clone_node::CloneNode;
-use global_common::{Span, SyntaxContext};
+use common::{Span, SyntaxContext};
 use index::vec::IndexVec;
 use node_id::GetNodeIdMacro;
 

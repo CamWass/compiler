@@ -5,7 +5,7 @@
 
 use super::{LexResult, Lexer, pos_span};
 use crate::{JscTarget, error::SyntaxError, token::Token};
-use global_common::BytePos;
+use common::BytePos;
 use num_bigint::BigUint;
 use num_traits::Num as _;
 use std::{fmt::Write, iter::FusedIterator};

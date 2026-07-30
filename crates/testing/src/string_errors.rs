@@ -1,5 +1,5 @@
 use super::StdErr;
-use global_common::errors::{EmitterWriter, Handler, HandlerFlags, SourceMapperDyn};
+use common::errors::{EmitterWriter, Handler, HandlerFlags, SourceMapperDyn};
 use std::{
     io::{self, Write},
     rc::Rc,

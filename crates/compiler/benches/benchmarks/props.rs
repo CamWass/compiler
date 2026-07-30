@@ -6,9 +6,9 @@ use std::time::Duration;
 use compiler::resolver::resolver;
 use criterion::{Criterion, Throughput, black_box};
 use ecma_visit::VisitMutWith;
-use global_common::{FileName, FilePathMapping};
-use global_common::{GLOBALS, Globals, Mark};
-use global_common::{
+use common::{FileName, FilePathMapping};
+use common::{GLOBALS, Globals, Mark};
+use common::{
     SourceMap, SyntaxContext,
     errors::{ColorConfig, Handler},
 };

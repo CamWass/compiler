@@ -3,7 +3,7 @@ use crate::{
     Tokens,
     error::{Error, SyntaxError},
 };
-use global_common::{BytePos, Pos, Span};
+use common::{BytePos, Pos, Span};
 
 #[allow(dead_code)]
 pub mod char_literals {

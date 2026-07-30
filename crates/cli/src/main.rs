@@ -2,12 +2,12 @@ extern crate custom_alloc;
 
 use anyhow::{Context, Error, Result, bail};
 use codegen::{self, Emitter, JsWriter};
-use compiler::Compiler;
-use config::{Config, load_config};
-use global_common::{
+use common::{
     SourceMap,
     errors::{ColorConfig, Handler},
 };
+use compiler::Compiler;
+use config::{Config, load_config};
 use parser::{Parser, Syntax};
 use std::time::Instant;
 use std::{env, path::Path, rc::Rc};

@@ -14,7 +14,7 @@ serde = { workspace = true, features = ["derive"] }
 ast = { path = "../ast" }
 atoms = { path = "../atoms" }
 ecma_visit = { path = "../visit" }
-global_common = { path = "../common" }
+common = { path = "../common" }
 index = { path = "../index" }
 
 [dev-dependencies]

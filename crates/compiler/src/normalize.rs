@@ -1,6 +1,6 @@
 use ast::*;
 use ecma_visit::{VisitMut, VisitMutWith};
-use global_common::{SyntaxContext, util::take::Take};
+use common::{SyntaxContext, util::take::Take};
 
 use crate::utils::unwrap_as;
 

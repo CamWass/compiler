@@ -1,16 +1,16 @@
 use crate::{Id, ToId};
 use atoms::{JsWord, js_word};
 use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
-use global_common::{DUMMY_SP, SyntaxContext};
+use common::{DUMMY_SP, SyntaxContext};
 use std::collections::BTreeMap;
 use std::iter::FromIterator;
 
 /// Returns a globally unique [SyntaxContext].
 macro_rules! private_ctxt {
-    () => {{ ::global_common::SyntaxContext::empty().apply_mark(::global_common::Mark::new()) }};
+    () => {{ ::common::SyntaxContext::empty().apply_mark(::common::Mark::new()) }};
 }
 
-/// Creates a new [Ident][ast::Ident] from the provided [sym][atoms::JsWord], [syntax_ctxt][global_common::SyntaxContext], and [NodeId][ast::NodeId].
+/// Creates a new [Ident][ast::Ident] from the provided [sym][atoms::JsWord], [syntax_ctxt][common::SyntaxContext], and [NodeId][ast::NodeId].
 macro_rules! ident {
     ($sym:expr, $syntax_ctxt:expr,  $id:expr) => {
         ast::Ident {
@@ -503,7 +503,7 @@ mod tests {
     #![allow(non_snake_case)]
     use crate::resolver::resolver;
     use ecma_visit::VisitMutWith;
-    use global_common::{Mark, SyntaxContext};
+    use common::{Mark, SyntaxContext};
 
     fn test_transform(input: &str, expected: &str) {
         crate::testing::test_transform(

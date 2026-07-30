@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use criterion::{Criterion, Throughput, black_box, criterion_group};
-use global_common::{FileName, FilePathMapping, SourceMap};
+use common::{FileName, FilePathMapping, SourceMap};
 use parser::lexer::Lexer;
 
 struct Bench(&'static str, &'static str);

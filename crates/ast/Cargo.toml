@@ -10,6 +10,6 @@ unicode-id-start = { workspace = true }
 
 atoms = { path = "../atoms" }
 clone_node = { path = "../clone_node" }
-global_common = { path = "../common" }
+common = { path = "../common" }
 index = { path = "../index" }
 node_id = { path = "../node_id" }

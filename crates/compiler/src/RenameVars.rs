@@ -1,7 +1,7 @@
 use ast::*;
 use atoms::JsWord;
 use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
-use global_common::SyntaxContext;
+use common::SyntaxContext;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{DefaultNameGenerator::DefaultNameGenerator, Id, ToId};

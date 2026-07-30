@@ -6,7 +6,7 @@ use crate::{
     parser::Parser,
     token::{Token, TokenAndSpan},
 };
-use global_common::{BytePos, DUMMY_SP, Span};
+use common::{BytePos, DUMMY_SP, Span};
 
 /// Clone should be cheap if you are parsing typescript because typescript
 /// syntax requires backtracking.

@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use ast::*;
 use ecma_visit::{Visit, VisitWith};
-use global_common::{
+use common::{
     FileName, GLOBALS, Globals, SourceMap,
     errors::{ColorConfig, Handler},
 };

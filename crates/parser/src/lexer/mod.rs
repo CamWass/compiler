@@ -10,7 +10,7 @@ use crate::{
 };
 use ast::{RegexFlags, op};
 use atoms::JsWord;
-use global_common::{BytePos, SourceFile, Span};
+use common::{BytePos, SourceFile, Span};
 use state::State;
 pub use state::{TokenContext, TokenContexts};
 use std::{cell::RefCell, iter::FusedIterator, rc::Rc};

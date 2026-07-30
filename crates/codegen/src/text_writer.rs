@@ -1,5 +1,5 @@
 use super::Result;
-use global_common::{BytePos, DUMMY_SP, LineCol, Span};
+use common::{BytePos, DUMMY_SP, LineCol, Span};
 use std::io::{self, Write};
 
 ///

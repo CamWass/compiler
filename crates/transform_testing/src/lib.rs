@@ -5,8 +5,8 @@
 use ansi_term::Color;
 use ast::{Pat, *};
 use codegen::Emitter;
+use common::{FileName, SourceMap, errors::Handler, util::take::Take};
 use ecma_visit::{VisitMut, VisitMutWith};
-use global_common::{FileName, SourceMap, errors::Handler, util::take::Take};
 use parser::{Parser, Syntax};
 // use swc_ecma_testing::{exec_node_js, JsExecOptions};
 // use swc_ecma_transforms_base::{
@@ -656,11 +656,11 @@ impl VisitMut<'_> for Normalizer {
 // struct SourceMapConfigImpl;
 
 // impl SourceMapGenConfig for SourceMapConfigImpl {
-//     fn file_name_to_source(&self, f: &global_common::FileName) -> String {
+//     fn file_name_to_source(&self, f: &common::FileName) -> String {
 //         f.to_string()
 //     }
 
-//     fn inline_sources_content(&self, _: &global_common::FileName) -> bool {
+//     fn inline_sources_content(&self, _: &common::FileName) -> bool {
 //         true
 //     }
 // }

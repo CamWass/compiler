@@ -1,6 +1,6 @@
 use super::list::ListFormat;
 use ast::*;
-use global_common::{BytePos, SourceMap, SourceMapperDyn, Span, errors::SourceMapper};
+use common::{BytePos, SourceMap, SourceMapperDyn, Span, errors::SourceMapper};
 use std::{rc::Rc, sync::Arc};
 
 pub trait SourceMapperExt {

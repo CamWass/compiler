@@ -65,7 +65,7 @@ fn merge_consecutive_in_place<T, U>(
 mod tests {
     use super::*;
     use crate::resolver::resolver;
-    use global_common::{GLOBALS, Globals, Mark};
+    use common::{GLOBALS, Globals, Mark};
 
     #[test]
     fn test_collapsing() {

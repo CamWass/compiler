@@ -6,7 +6,7 @@
 //     as_folder, noop_visit_mut_type, visit_obj_and_computed, Fold, Visit, VisitMut, VisitMutWith,
 //     VisitWith,
 // };
-// use global_common::{
+// use common::{
 //     chain,
 //     collections::{AHashMap, AHashSet},
 //     comments::{Comments, NoopComments},

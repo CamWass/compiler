@@ -2,7 +2,7 @@ use crate::Id;
 use ast::*;
 use atoms::JsWord;
 use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
-use global_common::{Mark, SyntaxContext};
+use common::{Mark, SyntaxContext};
 use rustc_hash::FxHashSet;
 
 use scope::{IdentType, ScopeKind};

@@ -1,6 +1,6 @@
 use ast::*;
 use ecma_visit::VisitMutWith;
-use global_common::{
+use common::{
     FileName, GLOBALS, Globals, Mark, SourceMap, SyntaxContext,
     errors::{ColorConfig, Handler},
 };

@@ -1,7 +1,7 @@
 use ast::*;
 use atoms::{JsWord, js_word};
 use ecma_visit::{VisitMut, VisitMutWith};
-use global_common::SyntaxContext;
+use common::SyntaxContext;
 
 pub fn process(ast: &mut Program, unresolved_ctxt: SyntaxContext) {
     let mut visitor = Visitor { unresolved_ctxt };
@@ -310,7 +310,7 @@ fn merge_primitive_types(a: &Expr, b: &Expr, unresolved_ctxt: SyntaxContext) -> 
 mod tests {
     use super::*;
     use crate::resolver::resolver;
-    use global_common::{GLOBALS, Globals, Mark};
+    use common::{GLOBALS, Globals, Mark};
 
     #[test]
     fn test_combined_optimisation() {

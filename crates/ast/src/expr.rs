@@ -11,7 +11,7 @@ use crate::{
     stmt::BlockStmt,
 };
 use clone_node::CloneNode;
-use global_common::util::take::Take;
+use common::util::take::Take;
 use node_id::GetNodeIdMacro;
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]

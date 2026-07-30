@@ -1,7 +1,7 @@
 use ast::*;
 use ecma_visit::VisitWith;
 use ecma_visit::{VisitMut, VisitMutWith};
-use global_common::SyntaxContext;
+use common::SyntaxContext;
 use rustc_hash::FxHashMap;
 
 use crate::DataFlowAnalysis::LinearFlowState;

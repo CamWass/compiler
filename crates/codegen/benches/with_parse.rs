@@ -4,7 +4,7 @@ extern crate custom_alloc;
 extern crate test;
 
 use codegen::{self, Emitter};
-use global_common::FileName;
+use common::FileName;
 use parser::Parser;
 use std::hint::black_box;
 use test::Bencher;

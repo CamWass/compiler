@@ -3,7 +3,7 @@ use std::{fmt, ops::Deref, path::Path};
 
 #[must_use]
 pub struct TestOutput<R> {
-    /// Errors produced by `global_common::error::Handler`.
+    /// Errors produced by `common::error::Handler`.
     pub errors: StdErr,
     pub result: R,
 }

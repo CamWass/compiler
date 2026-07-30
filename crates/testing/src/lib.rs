@@ -2,7 +2,7 @@
 
 pub use self::output::{NormalizedOutput, StdErr, StdOut, TestOutput};
 use difference::Changeset;
-use global_common::{FilePathMapping, SourceMap, errors::Handler};
+use common::{FilePathMapping, SourceMap, errors::Handler};
 pub use pretty_assertions::{assert_eq, assert_ne};
 use std::{
     fmt::{self, Debug, Display, Formatter},
@@ -20,7 +20,7 @@ where
 {
     let cm = Rc::new(SourceMap::new(FilePathMapping::empty()));
     let (handler, errors) = self::string_errors::new_handler(cm.clone(), treat_err_as_bug);
-    let result = global_common::GLOBALS.set(&global_common::Globals::new(), || op(cm, &handler));
+    let result = common::GLOBALS.set(&common::Globals::new(), || op(cm, &handler));
 
     match result {
         Ok(res) => Ok(res),

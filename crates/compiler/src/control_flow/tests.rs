@@ -8,7 +8,7 @@ use super::node::{Node, NodeKind};
 use super::print::ast_graph;
 
 use ast::NodeId;
-use global_common::{
+use common::{
     FileName, SourceMap,
     errors::{ColorConfig, Handler},
 };

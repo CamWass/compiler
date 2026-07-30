@@ -1,6 +1,6 @@
 use crate::token::Token;
 use atoms::JsWord;
-use global_common::{
+use common::{
     Span,
     errors::{DiagnosticBuilder, Handler},
 };

@@ -1,7 +1,7 @@
 macro_rules! span {
     ($parser:expr, $start:expr) => {{
-        let start: ::global_common::BytePos = $start;
-        let end: ::global_common::BytePos = $parser.input.prev_span().hi;
+        let start: ::common::BytePos = $start;
+        let end: ::common::BytePos = $parser.input.prev_span().hi;
 
         debug_assert!(
             start <= end,
@@ -9,7 +9,7 @@ macro_rules! span {
             start.0,
             end.0
         );
-        ::global_common::Span::new(start, end)
+        ::common::Span::new(start, end)
     }};
 }
 

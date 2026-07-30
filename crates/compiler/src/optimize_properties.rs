@@ -23,7 +23,7 @@ use crate::utils::unwrap_as;
 use ast::*;
 use atoms::{JsWord, js_word};
 use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
-use global_common::SyntaxContext;
+use common::SyntaxContext;
 use graph::{Graph, GraphEdge, SmallSet};
 use index::bit_set::{BitMatrix, BitSet, GrowableBitSet};
 use index::vec::IndexVec;

@@ -51,7 +51,7 @@ dependencies = [
  "atoms",
  "bitflags",
  "clone_node",
- "global_common",
+ "common",
  "index",
  "node_id",
  "num-bigint",
@@ -176,9 +176,9 @@ dependencies = [
  "anyhow",
  "ast",
  "codegen",
+ "common",
  "compiler",
  "custom_alloc",
- "global_common",
  "parser",
  "rustc-hash",
  "serde",
@@ -200,10 +200,22 @@ version = "0.1.0"
 dependencies = [
  "ast",
  "bitflags",
+ "common",
  "custom_alloc",
- "global_common",
  "parser",
  "testing",
+]
+
+[[package]]
+name = "common"
+version = "0.1.0"
+dependencies = [
+ "atty",
+ "cfg-if",
+ "scoped-tls",
+ "sourcemap",
+ "termcolor",
+ "unicode-width",
 ]
 
 [[package]]
@@ -214,10 +226,10 @@ dependencies = [
  "ast",
  "atoms",
  "codegen",
+ "common",
  "criterion",
  "custom_alloc",
  "ecma_visit",
- "global_common",
  "index",
  "indexmap",
  "lexical",
@@ -336,7 +348,7 @@ version = "0.1.0"
 dependencies = [
  "ast",
  "atoms",
- "global_common",
+ "common",
  "num-bigint",
  "visit_macros",
 ]
@@ -383,18 +395,6 @@ dependencies = [
  "cfg-if",
  "libc",
  "wasi",
-]
-
-[[package]]
-name = "global_common"
-version = "0.1.0"
-dependencies = [
- "atty",
- "cfg-if",
- "scoped-tls",
- "sourcemap",
- "termcolor",
- "unicode-width",
 ]
 
 [[package]]
@@ -700,11 +700,11 @@ dependencies = [
  "ast",
  "atoms",
  "bitflags",
+ "common",
  "criterion",
  "custom_alloc",
  "ecma_visit",
  "either",
- "global_common",
  "num-bigint",
  "num-traits",
  "rustc-hash",
@@ -1082,8 +1082,8 @@ dependencies = [
 name = "testing"
 version = "0.1.0"
 dependencies = [
+ "common",
  "difference",
- "global_common",
  "pretty_assertions",
 ]
 
@@ -1119,8 +1119,8 @@ dependencies = [
  "ansi_term",
  "ast",
  "codegen",
+ "common",
  "ecma_visit",
- "global_common",
  "parser",
  "testing",
 ]

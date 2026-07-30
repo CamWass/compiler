@@ -7,10 +7,10 @@ version = "0.1.0"
 bitflags = { workspace = true }
 
 ast = { path = "../ast" }
-global_common = { path = "../common" }
+common = { path = "../common" }
 
 [dev-dependencies]
 custom_alloc = { path = "../custom_alloc" }
-global_common = { path = "../common", features = ["sourcemap"] }
+common = { path = "../common", features = ["sourcemap"] }
 parser = { path = "../parser" }
 testing = { path = "../testing" }

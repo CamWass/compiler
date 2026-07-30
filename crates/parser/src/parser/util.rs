@@ -3,7 +3,7 @@ use crate::{
     context::{Context, ContextFlags, YesMaybe},
     token::Token,
 };
-use global_common::Span;
+use common::Span;
 use std::ops::{Deref, DerefMut};
 
 pub trait ParseObject<Obj> {

@@ -20,7 +20,7 @@ use crate::{
 };
 use ast::*;
 use atoms::JsWord;
-use global_common::{BytePos, SourceFile, Span};
+use common::{BytePos, SourceFile, Span};
 use input::Buffer;
 pub use input::Tokens;
 use rustc_hash::{FxHashMap, FxHashSet};

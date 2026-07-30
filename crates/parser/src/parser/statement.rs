@@ -5,7 +5,7 @@ use crate::{
 };
 use atoms::js_word;
 use expression::MaybeParen;
-use global_common::{BytePos, Span};
+use common::{BytePos, Span};
 use statement::typescript::DeclOrEmpty;
 use util::AssignProps;
 

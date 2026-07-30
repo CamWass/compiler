@@ -3,7 +3,7 @@ use std::ops::Index;
 use ast::*;
 use atoms::js_word;
 use ecma_visit::{Visit, VisitWith};
-use global_common::SyntaxContext;
+use common::SyntaxContext;
 use index::{bit_set::BitSet, vec::IndexVec};
 use rustc_hash::{FxHashMap, FxHashSet};
 

@@ -1,7 +1,7 @@
 use ast::*;
 use atoms::js_word;
 use ecma_visit::{VisitMut, VisitMutWith};
-use global_common::SyntaxContext;
+use common::SyntaxContext;
 
 pub fn process(ast: &mut Program, program_data: &mut ProgramData, unresolved_ctxt: SyntaxContext) {
     let mut visitor = Visitor {
@@ -143,7 +143,7 @@ pub fn is_valid_prop_ident(s: &str) -> bool {
 mod tests {
     use super::*;
     use crate::resolver::resolver;
-    use global_common::{GLOBALS, Globals, Mark};
+    use common::{GLOBALS, Globals, Mark};
 
     #[test]
     fn test_valid_computed_prop_accesses() {

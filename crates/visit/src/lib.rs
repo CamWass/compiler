@@ -2,7 +2,7 @@
 
 use ast::*;
 use atoms::JsWord;
-use global_common::SyntaxContext;
+use common::SyntaxContext;
 use num_bigint::BigUint;
 use visit_macros::define;
 
