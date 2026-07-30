@@ -25,7 +25,7 @@ criterion = { workspace = true }
 codegen = { path = "../codegen" }
 custom_alloc = { path = "../custom_alloc" }
 parser = { path = "../parser" }
-testing = { path = "../../testing" }
+testing = { path = "../testing" }
 
 [[bench]]
 name = "bench_main"

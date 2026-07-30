@@ -11,4 +11,4 @@ codegen = { path = "../codegen" }
 ecma_visit = { path = "../visit" }
 global_common = { path = "../common", features = ["sourcemap"] }
 parser = { path = "../parser" }
-testing = { path = "../../testing" }
+testing = { path = "../testing" }

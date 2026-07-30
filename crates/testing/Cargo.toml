@@ -1,6 +1,5 @@
 [package]
 edition = "2024"
-license = "Apache-2.0/MIT"
 name = "testing"
 version = "0.1.0"
 
@@ -8,4 +7,4 @@ version = "0.1.0"
 difference = { workspace = true }
 pretty_assertions = { workspace = true }
 
-global_common = { path = "../crates/common", features = ["tty-emitter"] }
+global_common = { path = "../common", features = ["tty-emitter"] }

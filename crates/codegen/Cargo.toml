@@ -16,4 +16,4 @@ global_common = { path = "../common" }
 custom_alloc = { path = "../custom_alloc" }
 global_common = { path = "../common", features = ["sourcemap"] }
 parser = { path = "../parser" }
-testing = { path = "../../testing" }
+testing = { path = "../testing" }
