@@ -13,11 +13,11 @@ use atoms::JsWord;
 use common::{BytePos, SourceFile, Span};
 use number::{NonDecRadix, Radix};
 use state::State;
-pub use state::{TokenContext, TokenContexts};
+pub(crate) use state::{TokenContext, TokenContexts};
 use std::{cell::RefCell, iter::FusedIterator, rc::Rc};
 use util::{char_bytes, char_literals, is_line_break};
 
-pub(crate) type LexResult<T> = Result<T, Error>;
+type LexResult<T> = Result<T, Error>;
 
 #[derive(Clone)]
 pub struct Lexer<'src> {
@@ -26,10 +26,10 @@ pub struct Lexer<'src> {
     bytes: &'src [u8],
     start_pos: BytePos,
 
-    pub(crate) ctx: Context,
+    ctx: Context,
     state: State,
-    pub(crate) syntax: Syntax,
-    pub(crate) target: JscTarget,
+    syntax: Syntax,
+    target: JscTarget,
     buf: String,
 
     errors: Rc<RefCell<Vec<Error>>>,
@@ -1021,7 +1021,7 @@ impl<'src> Lexer<'src> {
         unsafe { *DISPATCHER.get_unchecked(byte as usize) }
     }
 
-    pub fn set_expr_allowed(&mut self, allow: bool) {
+    fn set_expr_allowed(&mut self, allow: bool) {
         self.state.is_expr_allowed = allow;
     }
 }

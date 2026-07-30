@@ -23,7 +23,7 @@ pub enum TokenType {
     },
 }
 impl TokenType {
-    pub fn before_expr(self) -> bool {
+    fn before_expr(self) -> bool {
         match self {
             TokenType::Template | TokenType::Dot | TokenType::RParen => false,
 
@@ -243,13 +243,10 @@ impl TokenContexts {
         !is_expr_allowed
     }
 
-    pub fn len(&self) -> usize {
+    fn len(&self) -> usize {
         self.0.len()
     }
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-    pub fn pop(&mut self) -> Option<TokenContext> {
+    fn pop(&mut self) -> Option<TokenContext> {
         self.0.pop()
     }
     pub fn current(&self) -> Option<TokenContext> {
