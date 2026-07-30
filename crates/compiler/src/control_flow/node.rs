@@ -59,7 +59,7 @@ impl Hash for Node<'_> {
 }
 
 impl<'ast> Node<'ast> {
-    pub fn visit_with<V: ecma_visit::Visit<'ast>>(&self, v: &mut V) {
+    pub fn visit_with<V: visit::Visit<'ast>>(&self, v: &mut V) {
         self.kind.visit_with(v);
     }
 
@@ -98,8 +98,8 @@ macro_rules! make {
         )*
 
         impl <'ast> NodeKind<'ast> {
-            pub fn visit_with<V: ecma_visit::Visit<'ast>>(&self, v: &mut V) {
-                use ecma_visit::VisitWith;
+            pub fn visit_with<V: visit::Visit<'ast>>(&self, v: &mut V) {
+                use visit::VisitWith;
                 match self {
                     NodeKind::ImplicitReturn => {},
                     $(NodeKind::$field(n) => n.visit_with(v),)*

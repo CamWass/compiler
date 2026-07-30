@@ -1,6 +1,6 @@
 use super::node::Node;
 use ast::*;
-use ecma_visit::{Visit, VisitWith};
+use visit::{Visit, VisitWith};
 use petgraph::graph::{DiGraph, NodeIndex};
 use rustc_hash::FxHashMap;
 use std::fmt::{self, Debug};

@@ -1,10 +1,10 @@
 use ast::*;
-use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use common::DUMMY_SP;
 use common::{SyntaxContext, util::take::Take};
 use index::bit_set::{BitMatrix, BitSet};
 use petgraph::graph::{NodeIndex, UnGraph};
 use rustc_hash::FxHashMap;
+use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use crate::DataFlowAnalysis::LinearFlowState;
 use crate::LiveVariablesAnalysis::{

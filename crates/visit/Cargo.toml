@@ -1,6 +1,6 @@
 [package]
 edition = "2024"
-name = "ecma_visit"
+name = "visit"
 version = "0.1.0"
 
 [dependencies]

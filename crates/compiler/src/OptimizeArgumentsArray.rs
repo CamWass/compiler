@@ -1,6 +1,6 @@
 use crate::{Id, ToId};
 use atoms::{JsWord, js_word};
-use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
+use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use common::{DUMMY_SP, SyntaxContext};
 use std::collections::BTreeMap;
 use std::iter::FromIterator;
@@ -502,7 +502,7 @@ impl VisitMut<'_> for FnBodyReWriter<'_> {
 mod tests {
     #![allow(non_snake_case)]
     use crate::resolver::resolver;
-    use ecma_visit::VisitMutWith;
+    use visit::VisitMutWith;
     use common::{Mark, SyntaxContext};
 
     fn test_transform(input: &str, expected: &str) {

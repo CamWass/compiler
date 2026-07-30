@@ -1,6 +1,6 @@
 use ast::*;
 use atoms::{JsWord, js_word};
-use ecma_visit::{VisitMut, VisitMutWith};
+use visit::{VisitMut, VisitMutWith};
 use common::SyntaxContext;
 
 pub fn process(ast: &mut Program, unresolved_ctxt: SyntaxContext) {

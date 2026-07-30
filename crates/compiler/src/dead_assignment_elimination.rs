@@ -1,6 +1,6 @@
 use ast::*;
-use ecma_visit::VisitWith;
-use ecma_visit::{VisitMut, VisitMutWith};
+use visit::VisitWith;
+use visit::{VisitMut, VisitMutWith};
 use common::SyntaxContext;
 use rustc_hash::FxHashMap;
 

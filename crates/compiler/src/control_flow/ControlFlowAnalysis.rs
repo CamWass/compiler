@@ -4,7 +4,7 @@ use super::ControlFlowGraph::{Annotation, Branch, ControlFlowGraph};
 use super::node::{CfgNode, Node, NodeKind};
 use super::util::*;
 use ast::*;
-use ecma_visit::{Visit, VisitWith};
+use visit::{Visit, VisitWith};
 use petgraph::Direction::Outgoing;
 use petgraph::graph::NodeIndex;
 use rustc_hash::FxHashMap;

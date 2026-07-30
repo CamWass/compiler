@@ -1,5 +1,5 @@
 use ast::*;
-use ecma_visit::{VisitMut, VisitMutWith};
+use visit::{VisitMut, VisitMutWith};
 
 pub fn process(ast: &mut Program) {
     let mut visitor = Visitor;

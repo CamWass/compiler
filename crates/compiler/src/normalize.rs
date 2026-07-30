@@ -1,5 +1,5 @@
 use ast::*;
-use ecma_visit::{VisitMut, VisitMutWith};
+use visit::{VisitMut, VisitMutWith};
 use common::{SyntaxContext, util::take::Take};
 
 use crate::utils::unwrap_as;

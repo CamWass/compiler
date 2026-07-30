@@ -33,7 +33,7 @@ mod testing;
 
 use crate::resolver::resolver;
 use atoms::JsWord;
-use ecma_visit::VisitMutWith;
+use visit::VisitMutWith;
 use common::{GLOBALS, Globals, Mark, SyntaxContext};
 use serde::Deserialize;
 

@@ -4,7 +4,7 @@
 use std::ops::Index;
 
 use ast::*;
-use ecma_visit::{Visit, VisitWith};
+use visit::{Visit, VisitWith};
 use index::vec::IndexVec;
 use petgraph::Direction::Outgoing;
 use rustc_hash::{FxHashMap, FxHashSet};

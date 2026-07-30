@@ -1,7 +1,7 @@
 use std::collections::hash_map::Entry;
 
 use ast::*;
-use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
+use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use index::vec::IndexVec;
 use rustc_hash::{FxHashMap, FxHashSet};
 

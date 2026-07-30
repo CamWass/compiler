@@ -22,7 +22,7 @@ use crate::find_vars::{FunctionLike, VarId};
 use crate::utils::unwrap_as;
 use ast::*;
 use atoms::{JsWord, js_word};
-use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
+use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use common::SyntaxContext;
 use graph::{Graph, GraphEdge, SmallSet};
 use index::bit_set::{BitMatrix, BitSet, GrowableBitSet};

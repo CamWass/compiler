@@ -1,5 +1,5 @@
 use atoms::JsWord;
-use ecma_visit::{VisitMut, VisitMutWith};
+use visit::{VisitMut, VisitMutWith};
 use common::util::take::Take;
 use rustc_hash::FxHashMap;
 

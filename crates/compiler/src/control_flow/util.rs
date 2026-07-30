@@ -1,7 +1,7 @@
 use super::node::{Node, NodeKind};
 use ast::*;
 use atoms::JsWord;
-use ecma_visit::{Visit, VisitWith};
+use visit::{Visit, VisitWith};
 use rustc_hash::FxHashMap;
 use std::hash::Hash;
 

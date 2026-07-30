@@ -1,5 +1,5 @@
 use ast::*;
-use ecma_visit::{VisitMut, VisitMutWith};
+use visit::{VisitMut, VisitMutWith};
 use common::util::take::Take;
 
 /// Normalizes certain expressions, drops node IDs, and optionally drops spans.

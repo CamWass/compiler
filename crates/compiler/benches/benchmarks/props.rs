@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use compiler::resolver::resolver;
 use criterion::{Criterion, Throughput, black_box};
-use ecma_visit::VisitMutWith;
+use visit::VisitMutWith;
 use common::{FileName, FilePathMapping};
 use common::{GLOBALS, Globals, Mark};
 use common::{

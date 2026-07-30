@@ -2,7 +2,7 @@
 
 // use ast::*;
 // use atoms::{js_word, JsWord};
-// use ecma_visit::{
+// use visit::{
 //     as_folder, noop_visit_mut_type, visit_obj_and_computed, Fold, Visit, VisitMut, VisitMutWith,
 //     VisitWith,
 // };

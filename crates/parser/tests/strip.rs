@@ -1,4 +1,4 @@
-// use ecma_visit::VisitMut;
+// use visit::VisitMut;
 // use common::{chain, comments::SingleThreadedComments, pass::Optional, Mark};
 // use parser::{
 //     strip::{self, TsImportExportAssignConfig},

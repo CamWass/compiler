@@ -229,7 +229,6 @@ dependencies = [
  "common",
  "criterion",
  "custom_alloc",
- "ecma_visit",
  "index",
  "indexmap",
  "lexical",
@@ -238,6 +237,7 @@ dependencies = [
  "rustc-hash",
  "serde",
  "testing",
+ "visit",
 ]
 
 [[package]]
@@ -341,17 +341,6 @@ name = "difference"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "524cbf6897b527295dff137cec09ecf3a05f4fddffd7dfcd1585403449e74198"
-
-[[package]]
-name = "ecma_visit"
-version = "0.1.0"
-dependencies = [
- "ast",
- "atoms",
- "common",
- "num-bigint",
- "visit_macros",
-]
 
 [[package]]
 name = "either"
@@ -703,7 +692,6 @@ dependencies = [
  "common",
  "criterion",
  "custom_alloc",
- "ecma_visit",
  "either",
  "num-bigint",
  "num-traits",
@@ -711,6 +699,7 @@ dependencies = [
  "serde",
  "serde_json",
  "testing",
+ "visit",
 ]
 
 [[package]]
@@ -1120,9 +1109,9 @@ dependencies = [
  "ast",
  "codegen",
  "common",
- "ecma_visit",
  "parser",
  "testing",
+ "visit",
 ]
 
 [[package]]
@@ -1180,6 +1169,17 @@ name = "uuid"
 version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81dfa00651efa65069b0b6b651f4aaa31ba9e3c3ce0137aaad053604ee7e0314"
+
+[[package]]
+name = "visit"
+version = "0.1.0"
+dependencies = [
+ "ast",
+ "atoms",
+ "common",
+ "num-bigint",
+ "visit_macros",
+]
 
 [[package]]
 name = "visit_macros"

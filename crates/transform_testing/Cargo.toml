@@ -8,7 +8,7 @@ ansi_term = { workspace = true }
 
 ast = { path = "../ast" }
 codegen = { path = "../codegen" }
-ecma_visit = { path = "../visit" }
+visit = { path = "../visit" }
 common = { path = "../common", features = ["sourcemap"] }
 parser = { path = "../parser" }
 testing = { path = "../testing" }

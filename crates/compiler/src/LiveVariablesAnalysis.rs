@@ -2,10 +2,10 @@ use std::ops::Index;
 
 use ast::*;
 use atoms::js_word;
-use ecma_visit::{Visit, VisitWith};
 use common::SyntaxContext;
 use index::{bit_set::BitSet, vec::IndexVec};
 use rustc_hash::{FxHashMap, FxHashSet};
+use visit::{Visit, VisitWith};
 
 use crate::control_flow::ControlFlowAnalysis::NodePriority;
 use crate::control_flow::ControlFlowGraph::{Branch, ControlFlowGraph};

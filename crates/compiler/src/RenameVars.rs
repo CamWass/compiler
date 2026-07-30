@@ -1,6 +1,6 @@
 use ast::*;
 use atoms::JsWord;
-use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
+use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use common::SyntaxContext;
 use rustc_hash::{FxHashMap, FxHashSet};
 

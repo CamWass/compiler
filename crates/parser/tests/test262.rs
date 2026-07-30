@@ -4,7 +4,7 @@ extern crate test;
 
 use ast::*;
 use common::Normalizer;
-use ecma_visit::VisitMutWith;
+use visit::VisitMutWith;
 use parser::{PResult, Parser, lexer::Lexer};
 use std::{
     env,

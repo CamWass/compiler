@@ -2,9 +2,9 @@ use std::rc::Rc;
 
 use ast::*;
 use codegen::{Emitter, text_writer::JsWriter};
-use ecma_visit::{VisitMut, VisitMutWith};
 use common::{FileName, SourceMap, errors::Handler};
 use parser::{Parser, Syntax};
+use visit::{VisitMut, VisitMutWith};
 
 struct Tester<'a> {
     cm: Rc<SourceMap>,

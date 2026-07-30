@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use ast::*;
 use atoms::JsWord;
-use ecma_visit::{Visit, VisitMutWith, VisitWith};
+use visit::{Visit, VisitMutWith, VisitWith};
 use common::{
     FileName, GLOBALS, Globals, Mark, SourceMap, SyntaxContext,
     errors::{ColorConfig, Handler},

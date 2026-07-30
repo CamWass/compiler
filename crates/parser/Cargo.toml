@@ -23,7 +23,7 @@ criterion = { workspace = true }
 serde_json = { workspace = true }
 
 custom_alloc = { path = "../custom_alloc" }
-ecma_visit = { path = "../visit" }
+visit = { path = "../visit" }
 testing = { path = "../testing" }
 
 [[bench]]

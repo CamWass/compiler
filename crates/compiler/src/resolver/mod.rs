@@ -1,7 +1,7 @@
 use crate::Id;
 use ast::*;
 use atoms::JsWord;
-use ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
+use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use common::{Mark, SyntaxContext};
 use rustc_hash::FxHashSet;
 

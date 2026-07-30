@@ -2,7 +2,7 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 use std::{collections::BTreeSet, ops::Index};
 
-use ecma_visit::{Visit, VisitWith};
+use visit::{Visit, VisitWith};
 use index::newtype_index;
 use petgraph::{
     EdgeDirection,
