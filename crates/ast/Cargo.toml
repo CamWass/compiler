@@ -10,7 +10,7 @@ num-bigint = { workspace = true }
 unicode-id-start = { workspace = true }
 
 atoms = { path = "../atoms" }
-clone_node = { path = "../../macros/clone_node" }
+clone_node = { path = "../clone_node" }
 global_common = { path = "../common" }
 index = { path = "../index" }
-node_id = { path = "../../macros/node_id" }
+node_id = { path = "../node_id" }
