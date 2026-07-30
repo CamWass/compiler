@@ -628,7 +628,7 @@ impl<'src> Lexer<'src> {
 
             Ok(ch)
         } else {
-            self.read_hex_char(start, 4)
+            self.read_hex_char(start, EscapeSequenceLength::Unicode)
         }
     }
 
@@ -715,7 +715,9 @@ impl<'src> Lexer<'src> {
             'n' => Ok(Some('\n')),
             // Carriage return
             'r' => Ok(Some('\r')),
-            'x' => self.read_hex_char(start, 2).map(Some),
+            'x' => self
+                .read_hex_char(start, EscapeSequenceLength::Hex)
+                .map(Some),
             'u' => self.read_unicode_escape(start).map(Some),
             // Tab
             't' => Ok(Some('\t')),
@@ -800,9 +802,7 @@ impl<'src> Lexer<'src> {
     }
 
     // Used to read character escape sequences ('\x', '\u').
-    fn read_hex_char(&mut self, start: BytePos, len: u8) -> LexResult<char> {
-        debug_assert!(len == 2 || len == 4);
-
+    fn read_hex_char(&mut self, start: BytePos, len: EscapeSequenceLength) -> LexResult<char> {
         let val = self.read_int_u32(Radix::Hex, len as usize, false);
 
         if let Some(val) = val {
@@ -811,7 +811,7 @@ impl<'src> Lexer<'src> {
             }
         }
 
-        self.error(start, SyntaxError::ExpectedHexChars { count: len })?
+        self.error(start, SyntaxError::ExpectedHexChars { count: len as u8 })?
     }
 
     // Read an identifier.
@@ -1092,4 +1092,10 @@ static DISPATCHER: [Dispatch; 256] = [
 
 fn pos_span(p: BytePos) -> Span {
     Span::new(p, p)
+}
+
+#[derive(Clone, Copy)]
+enum EscapeSequenceLength {
+    Hex = 2,
+    Unicode = 4,
 }
