@@ -10,55 +10,44 @@ use num_bigint::BigUint;
 use num_traits::Num as _;
 use std::{fmt::Write, iter::FusedIterator};
 
-fn is_forbidden_numeric_separator_sibling(b: Option<u8>, radix: u8) -> bool {
-    match b {
-        Some(b) => {
-            if radix == 16 {
-                // These characters are forbidden from being an immediate sibling of
-                // a NumericLiteralSeparator '_' in hex numbers.
-                matches!(b, b'.' | b'X' | b'_' | b'x')
-            } else {
-                // These characters are forbidden from being an immediate sibling of
-                // a NumericLiteralSeparator '_' in decimal, binary, and octal numbers.
-                matches!(b, b'.' | b'B' | b'E' | b'O' | b'_' | b'b' | b'e' | b'o')
-            }
+fn is_forbidden_numeric_separator_sibling(b: Option<u8>, radix: Radix) -> bool {
+    let Some(b) = b else {
+        return false;
+    };
+
+    match radix {
+        Radix::Hex => {
+            // These characters are forbidden from being an immediate sibling of
+            // a NumericLiteralSeparator '_' in hex numbers.
+            matches!(b, b'.' | b'X' | b'_' | b'x')
         }
-        None => false,
+        Radix::Bin | Radix::Oct | Radix::Dec => {
+            // These characters are forbidden from being an immediate sibling of
+            // a NumericLiteralSeparator '_' in decimal, binary, and octal numbers.
+            matches!(b, b'.' | b'B' | b'E' | b'O' | b'_' | b'b' | b'e' | b'o')
+        }
     }
 }
 
-fn is_allowed_numeric_separator_siblings(b: Option<u8>, radix: u8) -> bool {
-    debug_assert!(
-        radix == 2 || radix == 8 || radix == 10 || radix == 16,
-        "radix should be one of 2, 8, 10, 16, but got {}",
-        radix
-    );
+fn is_allowed_numeric_separator_siblings(b: Option<u8>, radix: Radix) -> bool {
+    let Some(b) = b else {
+        return false;
+    };
 
-    match b {
-        Some(b) => {
-            // Only valid digits in the given radix are valid numeric separator siblings.
-
-            match radix {
-                10 => {
-                    matches!(b, b'0'..=b'9')
-                }
-                2 => {
-                    matches!(b, b'0' | b'1')
-                }
-                8 => {
-                    matches!(b, b'0'..=b'7')
-                }
-                16 => {
-                    matches!(b, b'0'..=b'F')
-                }
-                _ => unsafe {
-                    // Safety: This function is only called with a fixed set of
-                    // radices, as checked above.
-                    core::hint::unreachable_unchecked();
-                },
-            }
+    // Only valid digits in the given radix are valid numeric separator siblings.
+    match radix {
+        Radix::Dec => {
+            matches!(b, b'0'..=b'9')
         }
-        None => false,
+        Radix::Bin => {
+            matches!(b, b'0' | b'1')
+        }
+        Radix::Oct => {
+            matches!(b, b'0'..=b'7')
+        }
+        Radix::Hex => {
+            matches!(b, b'0'..=b'F')
+        }
     }
 }
 
@@ -106,7 +95,7 @@ impl Lexer<'_> {
     /// `op`- |total, radix, value| -> (total * radix + value, continue)
     fn read_digits<F, Ret>(
         &mut self,
-        radix: u8,
+        radix: Radix,
         mut op: F,
         // TODO: explore making callers of this function use a slice of the
         // source to get the number as a string, rather than passing a String
@@ -115,15 +104,9 @@ impl Lexer<'_> {
         allow_num_separator: bool,
     ) -> Ret
     where
-        F: FnMut(Ret, u8, u32) -> (Ret, bool),
+        F: FnMut(Ret, Radix, u32) -> (Ret, bool),
         Ret: Copy + Default,
     {
-        debug_assert!(
-            radix == 2 || radix == 8 || radix == 10 || radix == 16,
-            "radix for read_int should be one of 2, 8, 10, 16, but got {}",
-            radix
-        );
-
         let start = self.cur_pos();
 
         let mut total: Ret = Default::default();
@@ -183,13 +166,7 @@ impl Lexer<'_> {
 
     /// This can read long integers like
     /// "13612536612375123612312312312312312312312".
-    fn read_number_no_dot(&mut self, radix: u8) -> LexResult<f64> {
-        debug_assert!(
-            radix == 2 || radix == 8 || radix == 10 || radix == 16,
-            "radix for read_number_no_dot should be one of 2, 8, 10, 16, but got {}",
-            radix
-        );
-
+    fn read_number_no_dot(&mut self, radix: Radix) -> LexResult<f64> {
         let start = self.cur_pos();
 
         let mut read_any = false;
@@ -198,14 +175,14 @@ impl Lexer<'_> {
             radix,
             |total, radix, v| {
                 read_any = true;
-                (f64::mul_add(total, radix as f64, v as f64), true)
+                (f64::mul_add(total, radix as u8 as f64, v as f64), true)
             },
             None,
             true,
         );
 
         if !read_any {
-            self.error(start, SyntaxError::ExpectedDigit { radix })?;
+            self.error(start, SyntaxError::ExpectedDigit { radix: radix as u8 })?;
         }
         Ok(res)
     }
@@ -221,19 +198,14 @@ impl Lexer<'_> {
         }
     }
 
-    pub(super) fn read_radix_number(&mut self, radix: u8) -> LexResult<Token> {
-        debug_assert!(
-            radix == 2 || radix == 8 || radix == 16,
-            "radix should be one of 2, 8, 16, but got {}",
-            radix
-        );
+    pub(super) fn read_radix_number(&mut self, radix: NonDecRadix) -> LexResult<Token> {
         debug_assert!(self.is(b'0'));
 
         self.advance(2); // 0 followed by one of x, X, o, O, b, B
 
         let raw_start = self.cur_pos();
 
-        let value = self.read_number_no_dot(radix)?;
+        let value = self.read_number_no_dot(radix.into())?;
 
         let tok = if self.is(b'n') {
             let raw = self.slice_to_cur(raw_start);
@@ -256,7 +228,7 @@ impl Lexer<'_> {
     /// exactly `len` digits.
     pub(super) fn read_int(
         &mut self,
-        radix: u8,
+        radix: Radix,
         len: u8,
         raw: &mut String,
         allow_num_separator: bool,
@@ -266,7 +238,7 @@ impl Lexer<'_> {
             radix,
             |opt: Option<f64>, radix, val| {
                 count += 1;
-                let total = opt.unwrap_or_default() * radix as f64 + val as f64;
+                let total = opt.unwrap_or_default() * radix as u8 as f64 + val as f64;
                 (Some(total), count != len)
             },
             Some(raw),
@@ -278,7 +250,7 @@ impl Lexer<'_> {
     /// See documentation for `read_int`.
     pub(super) fn read_int_u32(
         &mut self,
-        radix: u8,
+        radix: Radix,
         len: u8,
         allow_num_separator: bool,
     ) -> Option<u32> {
@@ -325,7 +297,7 @@ impl Lexer<'_> {
             let starts_with_zero = self.is(b'0');
 
             // Use read_number_no_dot to support long numbers.
-            let val = self.read_number_no_dot(10)?;
+            let val = self.read_number_no_dot(Radix::Dec)?;
 
             if self.is(b'n') {
                 let raw = self.slice_to_cur(start);
@@ -396,7 +368,7 @@ impl Lexer<'_> {
 
             let mut raw = String::new();
             // Read numbers after dot
-            let dec_val = self.read_int(10, 0, &mut raw, true);
+            let dec_val = self.read_int(Radix::Dec, 0, &mut raw, true);
 
             val = {
                 // TODO: is it possible/worthwhile to pre-allocate this using
@@ -438,7 +410,7 @@ impl Lexer<'_> {
                 true
             };
 
-            let exp = self.read_number_no_dot(10)?;
+            let exp = self.read_number_no_dot(Radix::Dec)?;
             let flag = if positive { '+' } else { '-' };
             // TODO(swc):
             val = format!("{val}e{flag}{exp}")
@@ -449,5 +421,30 @@ impl Lexer<'_> {
         self.ensure_not_ident()?;
 
         Ok(Token::Num(val))
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum Radix {
+    Bin = 2,
+    Oct = 8,
+    Dec = 10,
+    Hex = 16,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum NonDecRadix {
+    Bin = 2,
+    Oct = 8,
+    Hex = 16,
+}
+
+impl From<NonDecRadix> for Radix {
+    fn from(radix: NonDecRadix) -> Self {
+        match radix {
+            NonDecRadix::Bin => Radix::Bin,
+            NonDecRadix::Oct => Radix::Oct,
+            NonDecRadix::Hex => Radix::Hex,
+        }
     }
 }

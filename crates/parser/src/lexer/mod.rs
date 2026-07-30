@@ -11,6 +11,7 @@ use crate::{
 use ast::{RegexFlags, op};
 use atoms::JsWord;
 use common::{BytePos, SourceFile, Span};
+use number::{NonDecRadix, Radix};
 use state::State;
 pub use state::{TokenContext, TokenContexts};
 use std::{cell::RefCell, iter::FusedIterator, rc::Rc};
@@ -190,11 +191,11 @@ impl<'src> Lexer<'src> {
             ZER => {
                 (match self.peek_nth(1) {
                     // '0x', '0X' - hex number
-                    Some(b'x') | Some(b'X') => self.read_radix_number(16),
+                    Some(b'x') | Some(b'X') => self.read_radix_number(NonDecRadix::Hex),
                     // '0o', '0O' - octal number
-                    Some(b'o') | Some(b'O') => self.read_radix_number(8),
+                    Some(b'o') | Some(b'O') => self.read_radix_number(NonDecRadix::Oct),
                     // '0b', '0B' - binary number
-                    Some(b'b') | Some(b'B') => self.read_radix_number(2),
+                    Some(b'b') | Some(b'B') => self.read_radix_number(NonDecRadix::Bin),
 
                     _ => self.read_number(false),
                 })
@@ -604,7 +605,7 @@ impl<'src> Lexer<'src> {
 
     fn read_code_point(&mut self) -> LexResult<char> {
         let start = self.cur_pos();
-        let val = self.read_int_u32(16, 0, false);
+        let val = self.read_int_u32(Radix::Hex, 0, false);
 
         if let Some(val) = val {
             if 0x0010_FFFF >= val {
@@ -802,7 +803,7 @@ impl<'src> Lexer<'src> {
     fn read_hex_char(&mut self, start: BytePos, len: u8) -> LexResult<char> {
         debug_assert!(len == 2 || len == 4);
 
-        let val = self.read_int_u32(16, len, false);
+        let val = self.read_int_u32(Radix::Hex, len, false);
 
         if let Some(val) = val {
             if let Some(ch) = std::char::from_u32(val) {
