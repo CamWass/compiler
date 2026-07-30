@@ -11,4 +11,4 @@ num-bigint = { workspace = true }
 ast = { path = "../ast" }
 atoms = { path = "../atoms" }
 global_common = { path = "../common" }
-global_visit = { path = "../../visit" }
+visit_macros = { path = "../../visit/macros" }

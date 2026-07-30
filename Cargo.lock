@@ -337,8 +337,8 @@ dependencies = [
  "ast",
  "atoms",
  "global_common",
- "global_visit",
  "num-bigint",
+ "visit_macros",
 ]
 
 [[package]]
@@ -395,13 +395,6 @@ dependencies = [
  "sourcemap",
  "termcolor",
  "unicode-width",
-]
-
-[[package]]
-name = "global_visit"
-version = "0.1.0"
-dependencies = [
- "visit_macros",
 ]
 
 [[package]]
