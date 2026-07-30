@@ -1,9 +1,9 @@
 use super::node::{Node, NodeKind};
 use ast::*;
 use atoms::JsWord;
-use visit::{Visit, VisitWith};
 use rustc_hash::FxHashMap;
 use std::hash::Hash;
+use visit::{Visit, VisitWith};
 
 /// Determines whether the given node is a FOR, DO, or WHILE node.
 pub fn is_loop_structure(n: Node) -> bool {

@@ -1,5 +1,4 @@
 use ast::*;
-use visit::VisitMutWith;
 use common::{
     FileName, GLOBALS, Globals, Mark, SourceMap, SyntaxContext,
     errors::{ColorConfig, Handler},
@@ -8,6 +7,7 @@ use index::vec::IndexVec;
 use parser::{Parser, Syntax};
 use rustc_hash::FxHashMap;
 use std::{rc::Rc, sync::atomic::AtomicU32};
+use visit::VisitMutWith;
 
 use crate::DataFlowAnalysis::LinearFlowState;
 use crate::Id;

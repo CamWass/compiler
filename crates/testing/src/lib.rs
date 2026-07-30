@@ -1,8 +1,8 @@
 #![deny(unused)]
 
 pub use self::output::{NormalizedOutput, StdErr, StdOut, TestOutput};
-use difference::Changeset;
 use common::{FilePathMapping, SourceMap, errors::Handler};
+use difference::Changeset;
 pub use pretty_assertions::{assert_eq, assert_ne};
 use std::{
     fmt::{self, Debug, Display, Formatter},

@@ -2,13 +2,13 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 use std::{collections::BTreeSet, ops::Index};
 
-use visit::{Visit, VisitWith};
 use index::newtype_index;
 use petgraph::{
     EdgeDirection,
     graph::{EdgeIndex, NodeIndex},
 };
 use rustc_hash::{FxHashMap, FxHashSet};
+use visit::{Visit, VisitWith};
 
 use crate::control_flow::ControlFlowAnalysis::NodePriority;
 use crate::control_flow::{ControlFlowGraph::*, node::CfgNode};

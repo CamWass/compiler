@@ -33,9 +33,9 @@ mod testing;
 
 use crate::resolver::resolver;
 use atoms::JsWord;
-use visit::VisitMutWith;
 use common::{GLOBALS, Globals, Mark, SyntaxContext};
 use serde::Deserialize;
+use visit::VisitMutWith;
 
 pub type Id = (JsWord, SyntaxContext);
 

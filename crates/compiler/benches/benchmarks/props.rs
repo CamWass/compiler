@@ -3,16 +3,16 @@
 use std::rc::Rc;
 use std::time::Duration;
 
-use compiler::resolver::resolver;
-use criterion::{Criterion, Throughput, black_box};
-use visit::VisitMutWith;
 use common::{FileName, FilePathMapping};
 use common::{GLOBALS, Globals, Mark};
 use common::{
     SourceMap, SyntaxContext,
     errors::{ColorConfig, Handler},
 };
+use compiler::resolver::resolver;
+use criterion::{Criterion, Throughput, black_box};
 use parser::{Parser, Syntax};
+use visit::VisitMutWith;
 
 pub fn bench(c: &mut Criterion) {
     let benches: &'static [(&'static str, &'static str, u64, usize)] = &[

@@ -1,8 +1,8 @@
 use ast::*;
-use visit::VisitWith;
-use visit::{VisitMut, VisitMutWith};
 use common::SyntaxContext;
 use rustc_hash::FxHashMap;
+use visit::VisitWith;
+use visit::{VisitMut, VisitMutWith};
 
 use crate::DataFlowAnalysis::LinearFlowState;
 use crate::LiveVariablesAnalysis::LiveVariablesAnalysis;

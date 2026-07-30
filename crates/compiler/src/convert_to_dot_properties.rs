@@ -1,7 +1,7 @@
 use ast::*;
 use atoms::js_word;
-use visit::{VisitMut, VisitMutWith};
 use common::SyntaxContext;
+use visit::{VisitMut, VisitMutWith};
 
 pub fn process(ast: &mut Program, program_data: &mut ProgramData, unresolved_ctxt: SyntaxContext) {
     let mut visitor = Visitor {

@@ -1,9 +1,9 @@
 use crate::{Id, ToId};
 use atoms::{JsWord, js_word};
-use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use common::{DUMMY_SP, SyntaxContext};
 use std::collections::BTreeMap;
 use std::iter::FromIterator;
+use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 /// Returns a globally unique [SyntaxContext].
 macro_rules! private_ctxt {
@@ -502,8 +502,8 @@ impl VisitMut<'_> for FnBodyReWriter<'_> {
 mod tests {
     #![allow(non_snake_case)]
     use crate::resolver::resolver;
-    use visit::VisitMutWith;
     use common::{Mark, SyntaxContext};
+    use visit::VisitMutWith;
 
     fn test_transform(input: &str, expected: &str) {
         crate::testing::test_transform(

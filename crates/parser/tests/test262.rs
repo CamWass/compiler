@@ -4,7 +4,6 @@ extern crate test;
 
 use ast::*;
 use common::Normalizer;
-use visit::VisitMutWith;
 use parser::{PResult, Parser, lexer::Lexer};
 use std::{
     env,
@@ -16,6 +15,7 @@ use test::{
     DynTestFn, Options, ShouldPanic::No, TestDesc, TestDescAndFn, TestName, TestType, test_main,
 };
 use testing::{NormalizedOutput, StdErr};
+use visit::VisitMutWith;
 
 #[path = "common/mod.rs"]
 mod common;

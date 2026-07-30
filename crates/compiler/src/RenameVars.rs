@@ -1,8 +1,8 @@
 use ast::*;
 use atoms::JsWord;
-use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use common::SyntaxContext;
 use rustc_hash::{FxHashMap, FxHashSet};
+use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use crate::{DefaultNameGenerator::DefaultNameGenerator, Id, ToId};
 

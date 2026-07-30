@@ -1,9 +1,9 @@
 use super::node::Node;
 use ast::*;
-use visit::{Visit, VisitWith};
 use petgraph::graph::{DiGraph, NodeIndex};
 use rustc_hash::FxHashMap;
 use std::fmt::{self, Debug};
+use visit::{Visit, VisitWith};
 
 // TODO: account for other function like types (such as methods/getters etc)
 

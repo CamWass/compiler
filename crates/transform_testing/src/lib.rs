@@ -6,8 +6,8 @@ use ansi_term::Color;
 use ast::{Pat, *};
 use codegen::Emitter;
 use common::{FileName, SourceMap, errors::Handler, util::take::Take};
-use visit::{VisitMut, VisitMutWith};
 use parser::{Parser, Syntax};
+use visit::{VisitMut, VisitMutWith};
 // use swc_ecma_testing::{exec_node_js, JsExecOptions};
 // use swc_ecma_transforms_base::{
 //     fixer,

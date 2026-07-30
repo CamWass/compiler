@@ -2,13 +2,13 @@ use std::rc::Rc;
 
 use ast::*;
 use atoms::JsWord;
-use visit::{Visit, VisitMutWith, VisitWith};
 use common::{
     FileName, GLOBALS, Globals, Mark, SourceMap, SyntaxContext,
     errors::{ColorConfig, Handler},
 };
 use parser::{Parser, Syntax};
 use rustc_hash::FxHashMap;
+use visit::{Visit, VisitMutWith, VisitWith};
 
 use crate::DataFlowAnalysis::LinearFlowState;
 use crate::Id;

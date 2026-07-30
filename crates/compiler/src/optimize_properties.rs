@@ -22,7 +22,6 @@ use crate::find_vars::{FunctionLike, VarId};
 use crate::utils::unwrap_as;
 use ast::*;
 use atoms::{JsWord, js_word};
-use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use common::SyntaxContext;
 use graph::{Graph, GraphEdge, SmallSet};
 use index::bit_set::{BitMatrix, BitSet, GrowableBitSet};
@@ -31,6 +30,7 @@ use petgraph::graph::UnGraph;
 use rustc_hash::{FxHashMap, FxHashSet};
 use simple_set::IndexSet;
 use unionfind::UnionFind;
+use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 /// When true, the property interference relations are outputted as a graph in
 /// graphviz dot format (debug builds only).

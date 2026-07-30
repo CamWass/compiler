@@ -1,9 +1,9 @@
 use crate::Id;
 use ast::*;
 use atoms::JsWord;
-use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use common::{Mark, SyntaxContext};
 use rustc_hash::FxHashSet;
+use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use scope::{IdentType, ScopeKind};
 

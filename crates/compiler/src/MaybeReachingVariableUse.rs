@@ -4,10 +4,10 @@
 use std::ops::Index;
 
 use ast::*;
-use visit::{Visit, VisitWith};
 use index::vec::IndexVec;
 use petgraph::Direction::Outgoing;
 use rustc_hash::{FxHashMap, FxHashSet};
+use visit::{Visit, VisitWith};
 
 use crate::DataFlowAnalysis::*;
 use crate::control_flow::ControlFlowAnalysis::NodePriority;

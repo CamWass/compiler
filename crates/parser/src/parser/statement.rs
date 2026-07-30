@@ -4,8 +4,8 @@ use crate::{
     token::{Token, Word},
 };
 use atoms::js_word;
-use expression::MaybeParen;
 use common::{BytePos, Span};
+use expression::MaybeParen;
 use statement::typescript::DeclOrEmpty;
 use util::AssignProps;
 

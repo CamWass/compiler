@@ -1,6 +1,6 @@
 use ast::*;
-use visit::{VisitMut, VisitMutWith};
 use common::util::take::Take;
+use visit::{VisitMut, VisitMutWith};
 
 /// Normalizes certain expressions, drops node IDs, and optionally drops spans.
 pub struct Normalizer {

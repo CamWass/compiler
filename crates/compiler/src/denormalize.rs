@@ -1,6 +1,6 @@
 use ast::*;
-use visit::{VisitMut, VisitMutWith};
 use common::util::take::Take;
+use visit::{VisitMut, VisitMutWith};
 
 use crate::utils::unwrap_as;
 

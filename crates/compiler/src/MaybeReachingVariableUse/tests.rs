@@ -1,12 +1,12 @@
 use std::rc::Rc;
 
 use ast::*;
-use visit::{Visit, VisitWith};
 use common::{
     FileName, GLOBALS, Globals, SourceMap,
     errors::{ColorConfig, Handler},
 };
 use parser::{Parser, Syntax};
+use visit::{Visit, VisitWith};
 
 use crate::Id;
 use crate::control_flow::ControlFlowAnalysis::{ControlFlowAnalysis, ControlFlowRoot};

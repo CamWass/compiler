@@ -2,8 +2,8 @@
 use super::*;
 use crate::token::Keyword;
 use atoms::js_word;
-use either::Either;
 use common::SyntaxContext;
+use either::Either;
 
 impl<I: Tokens> Parser<'_, I> {
     pub(super) fn new_ident(&mut self, sym: JsWord, span: Span) -> Ident {

@@ -1,8 +1,8 @@
 use super::{pat::PatType, util::is_valid_simple_assignment_target, *};
 use crate::{context::ContextFlags, token::AssignOpToken};
 use atoms::js_word;
-use either::Either;
 use common::Pos;
+use either::Either;
 use util::AssignProps;
 
 mod ops;

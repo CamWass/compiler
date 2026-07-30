@@ -1,9 +1,9 @@
 use std::collections::hash_map::Entry;
 
 use ast::*;
-use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use index::vec::IndexVec;
 use rustc_hash::{FxHashMap, FxHashSet};
+use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use crate::{Id, ToId};
 
