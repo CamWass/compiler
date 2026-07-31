@@ -77,21 +77,13 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
 
     // Remove `Box`
     types.retain(|ty| extract_generic("Box", ty).is_none());
-    types.sort_by_cached_key(|ty| method_name_as_str(mode, ty));
-    types.dedup_by_key(|ty| method_name_as_str(mode, ty));
+    types.sort_by_cached_key(|ty| method_name_suffix(ty));
+    types.dedup_by_key(|ty| method_name_suffix(ty));
 
     let types = types;
 
-    methods.sort_by_cached_key(|v| v.sig.ident.to_string());
-    methods.dedup_by_key(|v| v.sig.ident.to_string());
-
     for ty in &types {
         let sig = create_method_sig(mode, ty);
-        let name = sig.ident.clone();
-        let s = name.to_string();
-        if methods.iter().any(|m| m.sig.ident == *s) {
-            continue;
-        }
 
         methods.push(TraitItemFn {
             attrs: vec![],
@@ -102,6 +94,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
     }
 
     methods.sort_by_cached_key(|v| v.sig.ident.to_string());
+    methods.dedup_by_key(|v| v.sig.ident.to_string());
 
     methods.iter_mut().for_each(|v| {
         let fn_name = v.sig.ident.clone();
@@ -729,29 +722,29 @@ fn is_opt_vec(ty: &Type) -> bool {
     }
 }
 
-fn method_name_as_str(mode: Mode, ty: &Type) -> String {
-    fn suffix(ty: &Type) -> String {
-        // Box<T> has same name as T
-        if let Some(ty) = extract_generic("Box", ty) {
-            return suffix(ty);
-        }
-
-        if let Some(ty) = extract_generic("Option", ty) {
-            return format!("opt_{}", suffix(ty));
-        }
-        if let Some(ty) = extract_generic("Vec", ty) {
-            if let Some(ty) = extract_generic("Option", ty) {
-                return format!("opt_vec_{}", to_plural(suffix(ty)));
-            }
-            if to_plural(suffix(ty)) == suffix(ty) {
-                return format!("{}_vec", to_plural(suffix(ty)));
-            }
-            return to_plural(suffix(ty));
-        }
-        to_case_snake_like(&type_to_name(ty))
+fn method_name_suffix(ty: &Type) -> String {
+    // Box<T> has same name as T
+    if let Some(ty) = extract_generic("Box", ty) {
+        return method_name_suffix(ty);
     }
 
-    format!("{}_{}", mode.prefix(), suffix(ty))
+    if let Some(ty) = extract_generic("Option", ty) {
+        return format!("opt_{}", method_name_suffix(ty));
+    }
+    if let Some(ty) = extract_generic("Vec", ty) {
+        if let Some(ty) = extract_generic("Option", ty) {
+            return format!("opt_vec_{}", to_plural(method_name_suffix(ty)));
+        }
+        if to_plural(method_name_suffix(ty)) == method_name_suffix(ty) {
+            return format!("{}_vec", to_plural(method_name_suffix(ty)));
+        }
+        return to_plural(method_name_suffix(ty));
+    }
+    to_case_snake_like(&type_to_name(ty))
+}
+
+fn method_name_as_str(mode: Mode, ty: &Type) -> String {
+    format!("{}_{}", mode.prefix(), method_name_suffix(ty))
 }
 
 fn to_plural(mut s: String) -> String {
