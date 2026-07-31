@@ -638,21 +638,6 @@ fn create_method_sig(mode: Mode, ty: &Type) -> Signature {
 }
 
 fn create_method_body(mode: Mode, ty: &Type) -> Block {
-    if let Some(ty) = extract_generic("Arc", ty) {
-        match mode {
-            Mode::Visit => {
-                let visit = method_name(mode, ty);
-                return parse_quote!({ _visitor.#visit(node) });
-            }
-            Mode::VisitMut => {
-                return Block {
-                    brace_token: Default::default(),
-                    stmts: vec![],
-                };
-            }
-        }
-    }
-
     match ty {
         Type::Paren(ty) => create_method_body(mode, &ty.elem),
         Type::Path(p) => {
@@ -743,10 +728,6 @@ fn add_required(types: &mut Vec<Type>, ty: &Type) {
         types.push(ty.clone());
         return;
     }
-    if let Some(ty) = extract_generic("Arc", ty) {
-        add_required(types, ty);
-        types.push(ty.clone());
-    }
 }
 
 fn is_option(ty: &Type) -> bool {
@@ -806,9 +787,6 @@ fn method_name_as_str(mode: Mode, ty: &Type) -> String {
             return suffix(ty);
         }
 
-        if let Some(ty) = extract_generic("Arc", ty) {
-            return format!("arc_{}", suffix(ty));
-        }
         if let Some(ty) = extract_generic("Option", ty) {
             return format!("opt_{}", suffix(ty));
         }
