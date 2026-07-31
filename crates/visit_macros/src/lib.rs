@@ -768,16 +768,16 @@ fn to_plural(mut s: String) -> String {
 }
 
 // Adapted from https://github.com/whatisinternet/Inflector/blob/a4a95eac75043f4bffb127c7c8ec886b5b106053/src/cases/case/mod.rs#L15
-fn to_case_snake_like(convertable_string: &str) -> String {
+fn to_case_snake_like(convertible_string: &str) -> String {
     let mut first_character: bool = true;
-    let mut result: String = String::with_capacity(convertable_string.len() * 2);
-    for char_with_index in convertable_string.char_indices() {
+    let mut result: String = String::with_capacity(convertible_string.len() * 2);
+    for char_with_index in convertible_string.char_indices() {
         if !char_with_index.1.is_alphanumeric() {
             if !first_character {
                 first_character = true;
                 result.push('_');
             }
-        } else if requires_seperator(char_with_index, first_character, convertable_string) {
+        } else if requires_separator(char_with_index, first_character, convertible_string) {
             first_character = false;
             result.push('_');
             result.push(char_with_index.1.to_ascii_lowercase());
@@ -789,23 +789,23 @@ fn to_case_snake_like(convertable_string: &str) -> String {
     result
 }
 
-fn requires_seperator(
+fn requires_separator(
     char_with_index: (usize, char),
     first_character: bool,
-    convertable_string: &str,
+    convertible_string: &str,
 ) -> bool {
     !first_character
         && char_is_uppercase(char_with_index.1)
-        && next_or_previous_char_is_lowercase(convertable_string, char_with_index.0)
+        && next_or_previous_char_is_lowercase(convertible_string, char_with_index.0)
 }
 
-fn next_or_previous_char_is_lowercase(convertable_string: &str, char_with_index: usize) -> bool {
-    convertable_string
+fn next_or_previous_char_is_lowercase(convertible_string: &str, char_with_index: usize) -> bool {
+    convertible_string
         .chars()
         .nth(char_with_index + 1)
         .unwrap_or('A')
         .is_lowercase()
-        || convertable_string
+        || convertible_string
             .chars()
             .nth(char_with_index - 1)
             .unwrap_or('A')
