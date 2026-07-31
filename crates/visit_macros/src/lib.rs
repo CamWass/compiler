@@ -442,11 +442,9 @@ fn make_method(mode: Mode, e: &Item) -> TraitItemFn {
                 }
             };
 
-            let sig = method_sig_from_ident(mode, &s.ident);
-
             TraitItemFn {
                 attrs: vec![],
-                sig,
+                sig: method_sig_from_ident(mode, &s.ident),
                 default: Some(block),
                 semi_token: None,
             }
@@ -539,7 +537,6 @@ fn create_method_sig(mode: Mode, ty: &Type) -> Signature {
     }
 
     match ty {
-        Type::Paren(ty) => create_method_sig(mode, &ty.elem),
         Type::Path(p) => {
             let last = p.path.segments.last().unwrap();
             let ident = method_name(mode, ty);
@@ -614,7 +611,6 @@ fn create_method_sig(mode: Mode, ty: &Type) -> Signature {
 
 fn create_method_body(mode: Mode, ty: &Type) -> Block {
     match ty {
-        Type::Paren(ty) => create_method_body(mode, &ty.elem),
         Type::Path(p) => {
             let last = p.path.segments.last().unwrap();
 
