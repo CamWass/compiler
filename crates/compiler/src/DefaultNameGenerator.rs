@@ -1,17 +1,19 @@
 use atoms::JsWord;
 use rustc_hash::FxHashSet;
 
+// TODO: each generator usually generates a small set of names - we could
+// pregenerate some reasonable number and just maintain an index into that array.
 // TODO: why can't we use '_' as a first char?
-// It is important that the ordering of FIRST_CHAR is as close to NONFIRST_CHAR
+// It is important that the ordering of FIRST_CHAR is as close to NON_FIRST_CHAR
 // as possible. Using the ASCII ordering is not a good idea. The reason
-// is that we cannot use numbers as FIRST_CHAR yet the ACSII value of numbers
-// is very small. If we picked numbers first in NONFIRST_CHAR, we would
+// is that we cannot use numbers as FIRST_CHAR yet the ASCII value of numbers
+// is very small. If we picked numbers first in NON_FIRST_CHAR, we would
 // end up balancing the huffman tree and result is bad compression.
 /// Generate short name with this first character.
 static FIRST_CHAR: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ$";
 
 /// These appear after the first character.
-static NONFIRST_CHAR: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789$";
+static NON_FIRST_CHAR: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789$";
 
 #[derive(Default)]
 pub struct DefaultNameGenerator {
@@ -41,9 +43,9 @@ impl DefaultNameGenerator {
 
             while i > 0 {
                 i -= 1;
-                let pos = i % NONFIRST_CHAR.len();
-                name.push(NONFIRST_CHAR.as_bytes()[pos] as char);
-                i /= NONFIRST_CHAR.len();
+                let pos = i % NON_FIRST_CHAR.len();
+                name.push(NON_FIRST_CHAR.as_bytes()[pos] as char);
+                i /= NON_FIRST_CHAR.len();
             }
 
             self.name_count += 1;
