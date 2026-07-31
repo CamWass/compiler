@@ -2,7 +2,6 @@
 
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{ToTokens, quote};
-use std::collections::HashSet;
 use syn::{
     Arm, Block, Expr, ExprBlock, ExprMatch, FieldPat, Fields, FnArg, GenericArgument, GenericParam,
     Generics, Index, Item, ItemTrait, Lifetime, LifetimeParam, Member, Pat, PatIdent, PatWild,
@@ -213,28 +212,13 @@ fn make(mode: Mode, stmts: &[Stmt], types: &[Type]) -> TokenStream {
         };
         tokens.extend(trait_decl.to_token_stream());
 
-        let mut names = HashSet::new();
-
         for ty in types {
-            if extract_generic("Box", ty).is_some() {
-                continue;
-            }
-
             // Signature of visit_item
             let method_sig = method_sig(mode, ty);
             let method_name = method_sig.ident;
 
-            // Prevent duplicate implementations.
-            let s = method_name.to_string();
-            if names.contains(&s) {
-                continue;
-            }
-            names.insert(s);
-
             let expr = visit_expr(mode, ty, &parse_quote!(v), parse_quote!(self));
 
-            match mode {
-                Mode::Visit => {
                     let default_body = adjust_expr(
                         mode,
                         ty,
@@ -242,6 +226,8 @@ fn make(mode: Mode, stmts: &[Stmt], types: &[Type]) -> TokenStream {
                         |expr| parse_quote!(#method_name(_visitor, #expr)),
                     );
 
+            match mode {
+                Mode::Visit => {
                     tokens.extend(quote! {
                         impl<'ast, V: Visit<'ast>> VisitWith<'ast, V> for #ty {
                             fn visit_with(&'ast self, v: &mut V) {
@@ -256,13 +242,6 @@ fn make(mode: Mode, stmts: &[Stmt], types: &[Type]) -> TokenStream {
                 }
 
                 Mode::VisitMut => {
-                    let default_body = adjust_expr(
-                        mode,
-                        ty,
-                        parse_quote!(self),
-                        |expr| parse_quote!(#method_name(_visitor, #expr)),
-                    );
-
                     tokens.extend(quote! {
                         impl<'ast, V: VisitMut<'ast>> VisitMutWith<'ast, V> for #ty {
                             fn visit_mut_with(&'ast mut self, v: &mut V) {
