@@ -76,7 +76,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
     }
 
     // Remove `Box`
-    types.retain(|ty| as_box(ty).is_none());
+    types.retain(|ty| extract_generic("Box", ty).is_none());
     types.sort_by_cached_key(|ty| method_name_as_str(mode, ty));
     types.dedup_by_key(|ty| method_name_as_str(mode, ty));
 
@@ -178,7 +178,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
         let mut names = HashSet::new();
 
         for ty in &types {
-            if as_box(ty).is_some() {
+            if extract_generic("Box", ty).is_some() {
                 continue;
             }
 
@@ -248,7 +248,7 @@ fn adjust_expr<F>(mode: Mode, ty: &Type, mut expr: Expr, visit: F) -> Expr
 where
     F: FnOnce(Expr) -> Expr,
 {
-    if is_option(ty) {
+    if extract_generic("Option", ty).is_some() {
         expr = if is_opt_vec(ty) {
             match mode {
                 Mode::VisitMut => expr,
@@ -267,8 +267,6 @@ where
     visit(expr)
 }
 
-///
-///
 /// - `Box<Expr>` => visit(&node) or Box::new(visit(*node))
 /// - `Vec<Expr>` => &*node or
 fn visit_expr(mode: Mode, ty: &Type, visitor: &Expr, expr: Expr) -> Expr {
@@ -541,7 +539,7 @@ fn create_method_sig(mode: Mode, ty: &Type) -> Signature {
             let ident = method_name(mode, ty);
 
             if !last.arguments.is_empty() {
-                if let Some(arg) = as_box(ty) {
+                if let Some(arg) = extract_generic("Box", ty) {
                     let ident = method_name(mode, arg);
                     let mutable = mode == Mode::VisitMut;
                     return mk_ref(ident, arg, mutable);
@@ -550,7 +548,7 @@ fn create_method_sig(mode: Mode, ty: &Type) -> Signature {
                 if let Some(arg) = extract_generic("Option", ty) {
                     let ident = method_name(mode, ty);
 
-                    if let Some(item) = extract_vec(arg) {
+                    if let Some(item) = extract_generic("Vec", arg) {
                         match mode {
                             Mode::VisitMut => {
                                 return mk_exact(
@@ -615,7 +613,7 @@ fn create_method_body(mode: Mode, ty: &Type) -> Block {
             let last = p.path.segments.last().unwrap();
 
             if !last.arguments.is_empty() {
-                if let Some(arg) = as_box(ty) {
+                if let Some(arg) = extract_generic("Box", ty) {
                     return create_method_body(mode, arg);
                 }
 
@@ -651,7 +649,7 @@ fn create_method_body(mode: Mode, ty: &Type) -> Block {
                                 GenericArgument::Type(arg) => {
                                     let ident = method_name(mode, arg);
 
-                                    return if is_option(arg) {
+                                    return if extract_generic("Option", arg).is_some() {
                                         match mode {
                                             Mode::VisitMut => {
                                                 parse_quote!({ node.iter_mut().for_each(|v| _visitor.#ident(v)) })
@@ -701,22 +699,6 @@ fn add_required(types: &mut Vec<Type>, ty: &Type) {
     }
 }
 
-fn is_option(ty: &Type) -> bool {
-    if let Type::Path(p) = ty {
-        let last = p.path.segments.last().unwrap();
-
-        if !last.arguments.is_empty() && last.ident == "Option" {
-            return true;
-        }
-    }
-
-    false
-}
-
-fn as_box(ty: &Type) -> Option<&Type> {
-    extract_generic("Box", ty)
-}
-
 fn extract_generic<'a>(name: &str, ty: &'a Type) -> Option<&'a Type> {
     if let Type::Path(p) = ty {
         let last = p.path.segments.last().unwrap();
@@ -739,13 +721,9 @@ fn extract_generic<'a>(name: &str, ty: &'a Type) -> Option<&'a Type> {
     None
 }
 
-fn extract_vec(ty: &Type) -> Option<&Type> {
-    extract_generic("Vec", ty)
-}
-
 fn is_opt_vec(ty: &Type) -> bool {
     if let Some(inner) = extract_generic("Option", ty) {
-        extract_vec(inner).is_some()
+        extract_generic("Vec", inner).is_some()
     } else {
         false
     }
