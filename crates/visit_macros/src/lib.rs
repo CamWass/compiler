@@ -58,16 +58,15 @@ fn gather_types(stmts: &[Stmt]) -> Vec<Type> {
     let mut types = vec![];
 
     for stmts in stmts {
-        let item = match stmts {
-            Stmt::Item(item) => item,
-            _ => unimplemented!("error reporting for something other than Item"),
+        let Stmt::Item(item) = stmts else {
+            unimplemented!("error reporting for something other than Item")
         };
 
         match item {
             Item::Struct(s) => {
                 types.push(Type::Path(TypePath {
                     qself: None,
-                    path: (&s.ident).clone().into(),
+                    path: s.ident.clone().into(),
                 }));
                 for f in &s.fields {
                     if skip(&f.ty) {
@@ -114,9 +113,8 @@ fn make(mode: Mode, stmts: &[Stmt], types: &[Type]) -> TokenStream {
     let mut methods = vec![];
 
     for stmts in stmts {
-        let item = match stmts {
-            Stmt::Item(item) => item,
-            _ => unimplemented!("error reporting for something other than Item"),
+        let Stmt::Item(item) = stmts else {
+            unimplemented!("error reporting for something other than Item")
         };
 
         let mtd = make_method(mode, item);
@@ -140,7 +138,7 @@ fn make(mode: Mode, stmts: &[Stmt], types: &[Type]) -> TokenStream {
     methods.sort_by_cached_key(|v| v.sig.ident.to_string());
     methods.dedup_by_key(|v| v.sig.ident.to_string());
 
-    methods.iter_mut().for_each(|v| {
+    for v in &mut methods {
         let fn_name = v.sig.ident.clone();
         let default_body = v.default.replace(parse_quote!({#fn_name(self, node)}));
 
@@ -161,8 +159,8 @@ fn make(mode: Mode, stmts: &[Stmt], types: &[Type]) -> TokenStream {
             pub fn #fn_name<'ast, V: ?Sized + #trait_name<'ast>>(_visitor: &mut V, node: #arg_ty) {
                 #default_body
             }
-        })
-    });
+        });
+    }
 
     let mut generics = Generics::default();
     generics
@@ -219,12 +217,12 @@ fn make(mode: Mode, stmts: &[Stmt], types: &[Type]) -> TokenStream {
 
             let expr = visit_expr(mode, ty, &parse_quote!(v), parse_quote!(self));
 
-                    let default_body = adjust_expr(
-                        mode,
-                        ty,
-                        parse_quote!(self),
-                        |expr| parse_quote!(#method_name(_visitor, #expr)),
-                    );
+            let default_body = adjust_expr(
+                mode,
+                ty,
+                parse_quote!(self),
+                |expr| parse_quote!(#method_name(_visitor, #expr)),
+            );
 
             match mode {
                 Mode::Visit => {
@@ -305,7 +303,7 @@ fn make_arm_from_struct(mode: Mode, path: &Path, variant: &Fields, is_enum: bool
         let binding_ident = field
             .ident
             .clone()
-            .unwrap_or_else(|| Ident::new(&format!("_{}", i), Span::call_site()));
+            .unwrap_or_else(|| Ident::new(&format!("_{i}"), Span::call_site()));
 
         if !skip(ty) {
             let expr = parse_quote!(#binding_ident);
