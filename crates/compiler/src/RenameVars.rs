@@ -4,7 +4,7 @@ use common::SyntaxContext;
 use rustc_hash::{FxHashMap, FxHashSet};
 use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
-use crate::{DefaultNameGenerator::DefaultNameGenerator, Id, ToId};
+use crate::{Id, ToId, name_generator::NameGenerator};
 
 #[cfg(test)]
 mod tests;
@@ -55,7 +55,7 @@ fn analyse(
 
     slots.sort_by(|a, b| b.reference_count.cmp(&a.reference_count));
 
-    let mut name_gen = DefaultNameGenerator::new(analyser.unresolved_references);
+    let mut name_gen = NameGenerator::new(analyser.unresolved_references);
     let mut rename_map = FxHashMap::with_capacity_and_hasher(num_slots, Default::default());
     for slot in slots {
         rename_map.insert(slot.depth, name_gen.generate_next_name());

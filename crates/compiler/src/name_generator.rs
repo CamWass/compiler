@@ -16,12 +16,12 @@ static FIRST_CHAR: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ$
 static NON_FIRST_CHAR: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789$";
 
 #[derive(Default)]
-pub struct DefaultNameGenerator {
+pub struct NameGenerator {
     reserved_names: FxHashSet<JsWord>,
     name_count: usize,
 }
 
-impl DefaultNameGenerator {
+impl NameGenerator {
     pub fn new(reserved_names: FxHashSet<JsWord>) -> Self {
         Self {
             reserved_names,
@@ -137,7 +137,7 @@ fn is_reserved(name: &str) -> bool {
 
 #[test]
 fn test_collision_with_past_names() {
-    let mut generator = DefaultNameGenerator::default();
+    let mut generator = NameGenerator::default();
     let names = (0..1_000_000)
         .map(|_| generator.generate_next_name())
         .collect::<FxHashSet<_>>();
@@ -146,7 +146,7 @@ fn test_collision_with_past_names() {
 
 #[test]
 fn test_no_reserved_keywords() {
-    let mut generator = DefaultNameGenerator::default();
+    let mut generator = NameGenerator::default();
     let names = (0..1_000_000)
         .map(|_| generator.generate_next_name())
         .collect::<FxHashSet<_>>();

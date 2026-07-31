@@ -6,7 +6,6 @@
 
 mod CoalesceVariableNames;
 mod DataFlowAnalysis;
-mod DefaultNameGenerator;
 mod LiveVariablesAnalysis;
 mod MaybeReachingVariableUse;
 mod OptimizeArgumentsArray;
@@ -21,6 +20,7 @@ mod denormalize;
 mod find_vars;
 mod graph;
 mod inline_functions;
+mod name_generator;
 mod normalize;
 mod optimise_equality;
 pub mod optimize_properties;

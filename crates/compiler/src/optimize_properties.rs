@@ -16,9 +16,9 @@ mod unionfind;
 use std::collections::hash_map::Entry;
 use std::convert::TryInto;
 
-use crate::DefaultNameGenerator::DefaultNameGenerator;
 use crate::convert::ecma_number_to_string;
 use crate::find_vars::{FunctionLike, VarId};
+use crate::name_generator::NameGenerator;
 use crate::utils::unwrap_as;
 use ast::*;
 use atoms::{JsWord, js_word};
@@ -333,7 +333,7 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
     }
 
     // Generate new names for the properties that will be renamed.
-    let mut name_gen = DefaultNameGenerator::default();
+    let mut name_gen = NameGenerator::default();
     let mut colour_map = Vec::with_capacity(cur_colour as usize);
     for _ in 0..cur_colour {
         colour_map.push(name_gen.generate_next_name());

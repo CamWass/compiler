@@ -3,7 +3,7 @@ use common::util::take::Take;
 use rustc_hash::FxHashMap;
 use visit::{VisitMut, VisitMutWith};
 
-use crate::DefaultNameGenerator::DefaultNameGenerator;
+use crate::name_generator::NameGenerator;
 
 pub fn process(ast: &mut ast::Program) {
     let mut visitor = RenameLabels::default();
@@ -44,7 +44,7 @@ pub fn process(ast: &mut ast::Program) {
 /// be safely removed, is known when the label node is visited.
 #[derive(Default)]
 struct RenameLabels {
-    name_supplier: DefaultNameGenerator,
+    name_supplier: NameGenerator,
     // A stack of labels namespaces. Labels in an outer scope aren't part of an
     // inner scope, so a new namespace is created each time a scope is entered.
     namespace_stack: Vec<LabelNamespace>,
