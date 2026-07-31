@@ -44,16 +44,19 @@ impl Mode {
 pub fn define(tts: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let block = parse_macro_input!(tts as Block);
 
+    let types = gather_types(&block.stmts);
+
     let mut q = TokenStream::new();
-    q.extend(make(Mode::Visit, &block.stmts));
-    q.extend(make(Mode::VisitMut, &block.stmts));
+    q.extend(make(Mode::Visit, &block.stmts, &types));
+    q.extend(make(Mode::VisitMut, &block.stmts, &types));
 
     q.into()
 }
 
-fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
+/// Walks over the input items and collects their types and the types of their
+/// fields.
+fn gather_types(stmts: &[Stmt]) -> Vec<Type> {
     let mut types = vec![];
-    let mut methods = vec![];
 
     for stmts in stmts {
         let item = match stmts {
@@ -61,12 +64,37 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
             _ => unimplemented!("error reporting for something other than Item"),
         };
 
-        let mtd = make_method(mode, item, &mut types);
+        match item {
+            Item::Struct(s) => {
+                types.push(Type::Path(TypePath {
+                    qself: None,
+                    path: (&s.ident).clone().into(),
+                }));
+                for f in &s.fields {
+                    if skip(&f.ty) {
+                        continue;
+                    }
 
-        methods.push(mtd);
+                    types.push(f.ty.clone());
+                }
+            }
+            Item::Enum(e) => {
+                types.push(
+                    TypePath {
+                        qself: None,
+                        path: e.ident.clone().into(),
+                    }
+                    .into(),
+                );
+            }
+
+            _ => unimplemented!(
+                "proper error reporting for item other than struct / enum: {:?}",
+                item
+            ),
+        }
     }
 
-    let mut tokens = TokenStream::new();
     {
         let mut new = vec![];
         for ty in &types {
@@ -80,9 +108,26 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
     types.sort_by_cached_key(|ty| method_name_suffix(ty));
     types.dedup_by_key(|ty| method_name_suffix(ty));
 
-    let types = types;
+    types
+}
 
-    for ty in &types {
+fn make(mode: Mode, stmts: &[Stmt], types: &[Type]) -> TokenStream {
+    let mut methods = vec![];
+
+    for stmts in stmts {
+        let item = match stmts {
+            Stmt::Item(item) => item,
+            _ => unimplemented!("error reporting for something other than Item"),
+        };
+
+        let mtd = make_method(mode, item);
+
+        methods.push(mtd);
+    }
+
+    let mut tokens = TokenStream::new();
+
+    for ty in types {
         let sig = create_method_sig(mode, ty);
 
         methods.push(TraitItemFn {
@@ -170,7 +215,7 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
 
         let mut names = HashSet::new();
 
-        for ty in &types {
+        for ty in types {
             if extract_generic("Box", ty).is_some() {
                 continue;
             }
@@ -260,8 +305,6 @@ where
     visit(expr)
 }
 
-/// - `Box<Expr>` => visit(&node) or Box::new(visit(*node))
-/// - `Vec<Expr>` => &*node or
 fn visit_expr(mode: Mode, ty: &Type, visitor: &Expr, expr: Expr) -> Expr {
     let visit_name = method_name(mode, ty);
 
@@ -384,22 +427,9 @@ fn method_sig_from_ident(mode: Mode, v: &Ident) -> Signature {
 }
 
 /// Returns None if it's skipped.
-fn make_method(mode: Mode, e: &Item, types: &mut Vec<Type>) -> TraitItemFn {
+fn make_method(mode: Mode, e: &Item) -> TraitItemFn {
     match e {
         Item::Struct(s) => {
-            let type_name = &s.ident;
-            types.push(Type::Path(TypePath {
-                qself: None,
-                path: type_name.clone().into(),
-            }));
-            for f in &s.fields {
-                if skip(&f.ty) {
-                    continue;
-                }
-
-                types.push(f.ty.clone());
-            }
-
             let block = {
                 let arm = make_arm_from_struct(mode, &s.ident.clone().into(), &s.fields, false);
 
@@ -412,7 +442,7 @@ fn make_method(mode: Mode, e: &Item, types: &mut Vec<Type>) -> TraitItemFn {
                 }
             };
 
-            let sig = method_sig_from_ident(mode, type_name);
+            let sig = method_sig_from_ident(mode, &s.ident);
 
             TraitItemFn {
                 attrs: vec![],
@@ -422,27 +452,10 @@ fn make_method(mode: Mode, e: &Item, types: &mut Vec<Type>) -> TraitItemFn {
             }
         }
         Item::Enum(e) => {
-            let type_name = &e.ident;
-
-            types.push(
-                TypePath {
-                    qself: None,
-                    path: e.ident.clone().into(),
-                }
-                .into(),
-            );
-
             let block = {
                 let mut arms = vec![];
 
                 for variant in &e.variants {
-                    for f in &variant.fields {
-                        if skip(&f.ty) {
-                            continue;
-                        }
-                        types.push(f.ty.clone());
-                    }
-
                     let enum_name = &e.ident;
                     let variant_name = &variant.ident;
 
@@ -472,7 +485,7 @@ fn make_method(mode: Mode, e: &Item, types: &mut Vec<Type>) -> TraitItemFn {
 
             TraitItemFn {
                 attrs: vec![],
-                sig: method_sig_from_ident(mode, type_name),
+                sig: method_sig_from_ident(mode, &e.ident),
                 default: Some(block),
                 semi_token: None,
             }
