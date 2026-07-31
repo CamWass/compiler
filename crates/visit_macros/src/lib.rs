@@ -163,21 +163,6 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
                     /// Visit children nodes of self with `v`
                     fn visit_children_with(&'ast self, v: &mut V);
                 }
-
-                impl<'ast, V, T> VisitWith<'ast, V> for Box<T>
-                where
-                    V: Visit<'ast>,
-                    T: 'static + VisitWith<'ast, V>,
-                {
-                    fn visit_with(&'ast self, v: &mut V) {
-                        (**self).visit_with(v)
-                    }
-
-                    /// Visit children nodes of self with `v`
-                    fn visit_children_with(&'ast self, v: &mut V) {
-                        (**self).visit_children_with(v)
-                    }
-                }
             },
 
             Mode::VisitMut => quote! {
@@ -185,20 +170,6 @@ fn make(mode: Mode, stmts: &[Stmt]) -> TokenStream {
                     fn visit_mut_with(&'ast mut self, v: &mut V);
 
                     fn visit_mut_children_with(&'ast mut self, v: &mut V);
-                }
-
-                impl<'ast, V, T> VisitMutWith<'ast, V> for Box<T>
-                where
-                    V: VisitMut<'ast>,
-                    T: 'static + VisitMutWith<'ast, V>,
-                {
-                    fn visit_mut_with(&'ast mut self, v: &mut V) {
-                        (**self).visit_mut_with(v);
-                    }
-
-                    fn visit_mut_children_with(&'ast mut self, v: &mut V) {
-                        (**self).visit_mut_children_with(v);
-                    }
                 }
             },
         };
