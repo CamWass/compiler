@@ -321,7 +321,7 @@ if (true) {
 }",
         "
 if (true) {
-    var c = function b(a) {return a;}
+    var b = function a(a) {return a;}
 }",
     );
 }

@@ -237,16 +237,21 @@ impl Visit<'_> for Analyser {
     }
 
     fn visit_fn_expr(&mut self, node: &FnExpr) {
-        // TODO: this should only be accessible in the function scope?
         if let Some(name) = &node.ident {
-            self.handle_decl(name.to_id());
+            self.with_scope(false, |visitor| {
+                visitor.handle_decl(name.to_id());
+            });
         }
+
         node.visit_children_with(self);
     }
     fn visit_class_expr(&mut self, node: &ClassExpr) {
         if let Some(name) = &node.ident {
-            self.handle_decl(name.to_id());
+            self.with_scope(false, |visitor| {
+                visitor.handle_decl(name.to_id());
+            });
         }
+
         node.visit_children_with(self);
     }
 
