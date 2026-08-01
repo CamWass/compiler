@@ -64,6 +64,13 @@ mod tests {
         assert_min("2 >> 2", "2>>2");
         assert_min("2 >>> 2", "2>>>2");
         assert_min("foo in bar", "foo in bar");
+
+        assert_min("foo in $", "foo in $");
+        assert_min("foo in _", "foo in _");
+
+        assert_min("$ in foo", "$ in foo");
+        assert_min("_ in foo", "_ in foo");
+
         assert_min("foo instanceof Foo", "foo instanceof Foo");
     }
 
