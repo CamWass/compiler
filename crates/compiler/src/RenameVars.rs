@@ -27,11 +27,11 @@ pub fn process(ast: &mut Program, unresolved_ctxt: SyntaxContext) {
 fn analyse(
     ast: &Program,
     unresolved_ctxt: SyntaxContext,
-) -> (FxHashMap<usize, JsWord>, FxHashMap<Id, usize>) {
+) -> (FxHashMap<SlotId, JsWord>, FxHashMap<Id, SlotId>) {
     let mut analyser = Analyser {
-        cur_scope: 0,
+        cur_scope: ScopeId(0),
         // Global scope is hoist scope.
-        cur_hoist_scope: 0,
+        cur_hoist_scope: ScopeId(0),
         scopes: vec![Scope {
             names: IndexSet::default(),
             parent: None,
@@ -45,7 +45,7 @@ fn analyse(
     };
     ast.visit_with(&mut analyser);
 
-    let mut slots = FxHashMap::<usize, Slot>::default();
+    let mut slots = FxHashMap::<SlotId, Slot>::default();
     let mut slot_map = FxHashMap::default();
 
     for scope in &analyser.scopes {
@@ -54,14 +54,15 @@ fn analyse(
         let mut cur = scope;
 
         while let Some(parent) = cur.parent {
-            base_depth += analyser.scopes[parent].names.len();
-            cur = &analyser.scopes[parent];
+            let parent = &analyser.scopes[parent.0];
+            base_depth += parent.names.len();
+            cur = parent;
         }
 
         for (i, name) in scope.names.iter().enumerate() {
             debug_assert!(!slot_map.contains_key(name));
 
-            let slot = base_depth + i + 1;
+            let slot = SlotId(base_depth + i + 1);
 
             slot_map.insert(name.clone(), slot);
 
@@ -72,11 +73,11 @@ fn analyse(
 
             match slots.entry(slot) {
                 Entry::Occupied(mut occupied_entry) => {
-                    occupied_entry.get_mut().reference_count += reference_count as usize;
+                    occupied_entry.get_mut().reference_count += reference_count;
                 }
                 Entry::Vacant(vacant_entry) => {
                     vacant_entry.insert(Slot {
-                        reference_count: reference_count as usize,
+                        reference_count: reference_count,
                         order_of_occurrence: analyser
                             .order_of_occurrence
                             .get_index_of(name)
@@ -108,21 +109,15 @@ fn analyse(
     (rename_map, slot_map)
 }
 
-struct Slot {
-    order_of_occurrence: usize,
-    reference_count: usize,
-}
-
-#[derive(Debug)]
 struct Analyser {
-    cur_scope: usize,
-    cur_hoist_scope: usize,
+    cur_scope: ScopeId,
+    cur_hoist_scope: ScopeId,
     scopes: Vec<Scope>,
     /// Whether we are visiting the names in a `var` decl.
     in_var_decl: bool,
     unresolved_ctxt: SyntaxContext,
     in_decl: bool,
-    reference_count: FxHashMap<Id, u32>,
+    reference_count: FxHashMap<Id, usize>,
     unresolved_references: FxHashSet<JsWord>,
     order_of_occurrence: IndexSet<Id>,
 }
@@ -155,7 +150,7 @@ impl Analyser {
             self.cur_scope
         };
 
-        let scope = &mut self.scopes[scope_pos];
+        let scope = &mut self.scopes[scope_pos.0];
 
         scope.names.insert(name);
     }
@@ -165,7 +160,7 @@ impl Analyser {
     where
         F: FnMut(&mut Self),
     {
-        let next_scope_id = self.scopes.len();
+        let next_scope_id = ScopeId(self.scopes.len());
         let prev = self.cur_scope;
         self.scopes.push(Scope {
             parent: Some(prev),
@@ -318,16 +313,26 @@ impl Visit<'_> for Analyser {
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+struct SlotId(usize);
+
+struct Slot {
+    order_of_occurrence: usize,
+    reference_count: usize,
+}
+
+#[derive(Clone, Copy)]
+struct ScopeId(usize);
+
 struct Scope {
-    parent: Option<usize>,
+    parent: Option<ScopeId>,
     names: IndexSet<Id>,
 }
 
 struct Renamer {
     /// Slot index -> new name.
-    rename_map: FxHashMap<usize, JsWord>,
-    slot_map: FxHashMap<Id, usize>,
+    rename_map: FxHashMap<SlotId, JsWord>,
+    slot_map: FxHashMap<Id, SlotId>,
     unresolved_ctxt: SyntaxContext,
 }
 
