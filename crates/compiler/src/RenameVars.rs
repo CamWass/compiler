@@ -237,22 +237,20 @@ impl Visit<'_> for Analyser {
     }
 
     fn visit_fn_expr(&mut self, node: &FnExpr) {
-        if let Some(name) = &node.ident {
-            self.with_scope(false, |visitor| {
+        self.with_scope(false, |visitor| {
+            if let Some(name) = &node.ident {
                 visitor.handle_decl(name.to_id());
-            });
-        }
-
-        node.visit_children_with(self);
+            }
+            node.visit_children_with(visitor);
+        });
     }
     fn visit_class_expr(&mut self, node: &ClassExpr) {
-        if let Some(name) = &node.ident {
-            self.with_scope(false, |visitor| {
+        self.with_scope(false, |visitor| {
+            if let Some(name) = &node.ident {
                 visitor.handle_decl(name.to_id());
-            });
-        }
-
-        node.visit_children_with(self);
+            }
+            node.visit_children_with(visitor);
+        });
     }
 
     // For functions, we don't want to use the BlockStmt visitor since it
@@ -326,9 +324,10 @@ struct Slot {
     reference_count: usize,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 struct ScopeId(usize);
 
+#[derive(Debug)]
 struct Scope {
     parent: Option<ScopeId>,
     names: IndexSet<Id>,

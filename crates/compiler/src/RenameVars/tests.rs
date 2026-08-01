@@ -28,47 +28,26 @@ fn test_same(input: &str) {
     test_transform(input, input);
 }
 
-// fn test_local_var_indices(input: &str, expected: &str) {
-//     crate::testing::test_transform(
-//         |mut program, _| {
-//             GLOBALS.set(&Globals::new(), || {
-//                 let unresolved_mark = Mark::new();
-//                 let top_level_mark = Mark::new();
-
-//                 program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark));
-
-//                 let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
-
-//                 rename_debug(&mut program, unresolved_ctxt);
-
-//                 program
-//             })
-//         },
-//         input,
-//         expected,
-//     );
-// }
-
-// #[test]
-// fn function_scope_creation() {
-//     // Had a bug where the BlockStmt of a function would be a sub-scope of the
-//     // function scope. This meant that for `var` decls in the body were being
-//     // declared in the wrong scope because their scope wasn't a hoist scope.
-//     // This meant the scope index was incorrectly calculated and caused an
-//     // out-of-bounds index panic.
-//     test_local_var_indices(
-//         "
-// function func() {
-//     const foo = 1;
-//     var bar = 2;
-// }",
-//         "
-// function func() {
-//     const L0 = 1;
-//     var L1 = 2; // The bug caused this to also be renamed L0
-// }",
-//     )
-// }
+#[test]
+fn function_scope_creation() {
+    // Had a bug where the BlockStmt of a function would be a sub-scope of the
+    // function scope. This meant that for `var` decls in the body were being
+    // declared in the wrong scope because their scope wasn't a hoist scope.
+    // This meant the scope index was incorrectly calculated and caused an
+    // out-of-bounds index panic.
+    test_transform(
+        "
+function func() {
+    const foo = 1;
+    var bar = 2;
+}",
+        "
+function a() {
+    const b = 1;
+    var c = 2; // The bug caused this to also be renamed b
+}",
+    )
+}
 
 #[test]
 fn test_order_of_occurrence_based_on_reference_not_declaration() {
@@ -206,45 +185,23 @@ function f1(v3, v4) {f1()};",
 function a(b, c) {a()};
 function a(b, c) {a()};",
     );
-
-    // TODO:
-
-    //   localRenamingOnly = true;
-
-    //   test_transform(
-    //       lines(
-    //           "function f1(v1, v2) {f1()};",
-    //           "/** @suppress {duplicate} */",
-    //           "function f1(v3, v4) {f1()};"),
-    //       lines(
-    //           "function f1(a, b) {f1()};",
-    //           "/** @suppress {duplicate} */",
-    //           "function f1(a, b) {f1()};"));
 }
 
-// TODO:
-// #[test]
-// fn testRecursiveFunctions1() {
-//     test_transform(
-//         "
-// var walk = function walk(node, aFunction) {
-//     walk(node, aFunction);
-// };",
-//         "
-// var a = function a(b, c) {
-//     a(b, c);
-// };",
-//     );
-
-// //     //   localRenamingOnly = true;
-
-// //     //   test_transform("var walk = function walk(node, aFunction) {" +
-// //     //        "  walk(node, aFunction);" +
-// //     //        "};",
-// //     //        "var walk = function walk(a, b) {" +
-// //     //        "  walk(a, b);" +
-// //     //        "};");
-// // }
+#[test]
+fn testRecursiveFunctions1() {
+    test_transform(
+        "
+var walk = function walk(node, aFunction) {
+    walk(node, aFunction);
+};
+",
+        "
+var d = function a(b, c) {
+    a(b, c);
+};
+",
+    );
+}
 
 #[test]
 fn testRenameLocalsClashingWithGlobals() {
@@ -266,51 +223,53 @@ fn testRenameNested() {
     );
 }
 
-// TODO:
-// #[test]
-// fn testBleedingRecursiveFunctions1() {
-//   // On IE, bleeding functions will interfere with each other if
-//   // they are in the same scope. In the below example, we want to be
-//   // sure that a and b get separate names.
-//   test_transform("var x = function a(x) { return x ? 1 : a(1); };" +
-//        "var y = function b(x) { return x ? 2 : b(2); };",
-//        "var c = function b(a) { return a ? 1 : b(1); };" +
-//        "var e = function d(a) { return a ? 2 : d(2); };");
-// }
+#[test]
+fn testBleedingRecursiveFunctions1() {
+    test_transform(
+        "
+var x = function a(x) { return x ? 1 : a(1); };
+var y = function b(x) { return x ? 2 : b(2); };
+",
+        "
+var c = function a(b) { return b ? 1 : a(1); };
+var d = function a(b) { return b ? 2 : a(2); };
+",
+    );
+}
 
-// TODO:
-// #[test]
-// fn testBleedingRecursiveFunctions2() {
-//   test_transform(
-//       lines(
-//           "function f() {",
-//           "  var x = function a(x) { return x ? 1 : a(1); };",
-//           "  var y = function b(x) { return x ? 2 : b(2); };",
-//           "}"),
-//       lines(
-//           "function d() {",
-//           "  var e = function a(b) { return b ? 1 : a(1); };",
-//           "  var f = function c(a) { return a ? 2 : c(2); };",
-//           "}"));
-// }
+#[test]
+fn testBleedingRecursiveFunctions2() {
+    test_transform(
+        "
+function f() {
+    var x = function a(x) { return x ? 1 : a(1); };
+    var y = function b(x) { return x ? 2 : b(2); };
+}",
+        "
+function c() {
+    var d = function a(b) { return b ? 1 : a(1); };
+    var e = function a(b) { return b ? 2 : a(2); };
+}",
+    );
+}
 
-// TODO:
-// #[test]
-// fn testBleedingRecursiveFunctions3() {
-//   test_transform(
-//       lines(
-//           "function f() {",
-//           "  var x = function a(x) { return x ? 1 : a(1); };",
-//           "  var y = function b(x) { return x ? 2 : b(2); };",
-//           "  var z = function c(x) { return x ? y : c(2); };",
-//           "}"),
-//       lines(
-//           "function f() {",
-//           "  var g = function a(c) { return c ? 1 : a(1); };",
-//           "  var d = function b(a) { return a ? 2 : b(2); };",
-//           "  var h = function e(b) { return b ? d : e(2); };",
-//           "}"));
-// }
+#[test]
+fn testBleedingRecursiveFunctions3() {
+    test_transform(
+        "
+function f() {
+    var x = function a(x) { return x ? 1 : a(1); };
+    var y = function b(x) { return x ? 2 : b(2); };
+    var z = function c(x) { return x ? y : c(2); };
+}",
+        "
+function d() {
+    var e = function a(b) { return b ? 1 : a(1); };
+    var c = function a(b) { return b ? 2 : a(2); };
+    var f = function a(b) { return b ? c : a(2); };
+}",
+    );
+}
 
 #[test]
 fn testBleedingFunctionInBlocks() {
@@ -321,7 +280,7 @@ if (true) {
 }",
         "
 if (true) {
-    var b = function a(a) {return a;}
+    var c = function b(a) {return a;}
 }",
     );
 }
