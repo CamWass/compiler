@@ -2382,7 +2382,7 @@ impl Emitter<'_> {
             if block.stmts.is_empty() {
                 semi!(self);
                 return Ok(());
-            } else if block.stmts.len() == 1 {
+            } else if block.stmts.len() == 1 && self.cfg.minify {
                 let first_stmt = &block.stmts[0];
                 let is_class = matches!(first_stmt, Stmt::Decl(Decl::Class(_)));
                 let is_lexical_var = matches!(

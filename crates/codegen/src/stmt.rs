@@ -40,7 +40,7 @@ mod tests {
     }
 
     #[test]
-    fn if_statement() {
+    fn if_statement_min() {
         assert_min("if (true) foo;", "if(true)foo");
         assert_min("if (true) { foo; }", "if(true)foo");
         assert_min("if (true) foo; else bar;", "if(true)foo;else bar");
@@ -50,6 +50,18 @@ mod tests {
         assert_min("if (true) y(); else x++;", "if(true)y();else x++");
         assert_min("if (true) y(); else x--;", "if(true)y();else x--");
         assert_min("if (true) { let foo = 1; }", "if(true){let foo=1}");
+    }
+
+    #[test]
+    fn blocks_are_preserved_in_single_statement_contexts() {
+        assert_pretty(
+            "
+if (true) { foo; }
+",
+            "if (true) {
+    foo;
+}",
+        );
     }
 
     #[test]
