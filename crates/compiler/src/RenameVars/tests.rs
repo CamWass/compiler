@@ -71,6 +71,56 @@ fn test_same(input: &str) {
 // }
 
 #[test]
+fn test_order_of_occurrence_based_on_reference_not_declaration() {
+    // `one` and `two` have equal frequencies, but `one` is referenced first, so
+    // it gets the shorter name even though `two` is declared first.
+    test_transform(
+        "
+one;
+var two;
+var one;
+two;
+",
+        "
+a;
+var b;
+var a;
+b;
+",
+    );
+}
+
+#[test]
+fn test_nested_scoped() {
+    // This was a bug where we were calculating the depth of variables before
+    // visiting the siblings of parents. `map` was assigned depth 1 because when
+    // we visited it the parent scope only contained `createMultiMap`, but when
+    // we later visited `multiMapAdd`, the current scope contained one variable
+    // (`createMultiMap`), so `multiMapAdd` also got depth 1 and collided with
+    // `map`.
+    test_transform(
+        "
+{
+    function createMultiMap() {
+        var map = {};
+        map.add = multiMapAdd;
+    }
+    function multiMapAdd() {}
+}
+",
+        "
+{
+    function c() {
+        var a = {};
+        a.add = b;
+    }
+    function b() {}
+}
+",
+    );
+}
+
+#[test]
 fn test_collisions_with_unresolved() {
     test_transform(
         "
@@ -101,7 +151,7 @@ fn unresolved_binding_ident() {
 fn testRenameSimple() {
     test_transform(
         "function Foo(v1, v2) {return v1;} Foo();",
-        "function b(a, c) {return a;} b();",
+        "function a(b, c) {return b;} a();",
     );
 }
 
@@ -200,7 +250,7 @@ function a(b, c) {a()};",
 fn testRenameLocalsClashingWithGlobals() {
     test_transform(
         "function a(v1, v2) {return v1;} a();",
-        "function b(a, c) {return a;} b();",
+        "function a(b, c) {return b;} a();",
     );
 }
 
@@ -208,11 +258,11 @@ fn testRenameLocalsClashingWithGlobals() {
 fn testRenameNested() {
     test_transform(
         "function f1(v1, v2) { (function(v3, v4) {}) }",
-        "function e(a, b) { (function(c, d) {}) }",
+        "function a(b, c) { (function(d, e) {}) }",
     );
     test_transform(
         "function f1(v1, v2) { function f2(v3, v4) {} }",
-        "function f(a, b) { function c(d, e) {} }",
+        "function a(b, c) { function d(e, f) {} }",
     );
 }
 
@@ -295,7 +345,7 @@ fn testNamingBasedOnOrderOfOccurrence() {
         "
 var q,p,m,n,l,k; try { } catch(r) {try {} catch(s) {}}; var t = q + q;",
         "
-var a,d,e,f,g,h; try { } catch(b) {try {} catch(c) {}}; var i = a + a;",
+var a,b,c,d,e,f; try { } catch(g) {try {} catch(h) {}}; var i = a + a;",
     );
     test_transform("
 (function(A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z,a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z,$){});
@@ -371,13 +421,13 @@ class fooBar {
 }
 var x = new fooBar(2, 3);",
         "
-class c {
-    constructor(a, b) {
-        this.foo = a;
-        this.bar = b;
+class a {
+    constructor(b, c) {
+        this.foo = b;
+        this.bar = c;
     }
 }
-var d = new c(2, 3);",
+var d = new a(2, 3);",
     );
 
     test_transform(
@@ -394,16 +444,16 @@ class fooBar {
 var x = new fooBar(2,3);
 var abcd = x.func(5);",
         "
-class c {
-    constructor(a, b) {
+class b {
+    constructor(a, c) {
         this.foo = a;
-        this.bar = b;
+        this.bar = c;
     }
     func(a) {
         return this.foo + a;
     }
 }
-var d = new c(2,3);
+var d = new b(2,3);
 var e = d.func(5);",
     );
 }
@@ -424,13 +474,13 @@ let zyx = 1; {
 let xyz = 'potato';
 zyx = 4;",
         "
-let b = 1; {
+let a = 1; {
     const c = 1;
-    let a = 2;
-    a = 3;
+    let b = 2;
+    b = 3;
 }
 let d = 'potato';
-b = 4;",
+a = 4;",
     );
 }
 
@@ -444,11 +494,11 @@ function* gen() {
 }
 gen().next()",
         "
-function* b() {
-    var a = 3;
-    yield a + 4;
+function* a() {
+    var b = 3;
+    yield b + 4;
 }
-b().next()",
+a().next()",
     );
 }
 
