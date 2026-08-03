@@ -1,40 +1,9 @@
 use self::parser::Parser;
 use super::*;
 use crate::config::Config;
-use common::{FileName, SourceMap};
+use common::FileName;
 use parser::{self, EsConfig, Syntax};
 use std::fmt::{self, Debug, Display, Formatter};
-use std::rc::Rc;
-
-struct Builder {
-    cfg: Config,
-    cm: Rc<SourceMap>,
-    program_data: ProgramData,
-}
-
-impl Builder {
-    fn with<F, Ret>(self, s: &mut String, op: F) -> Ret
-    where
-        F: FnOnce(&mut Emitter<'_>) -> Ret,
-    {
-        let writer = text_writer::JsWriter::new("\n", s, None);
-
-        let mut e = Emitter::new(self.cfg, self.cm.clone(), writer, &self.program_data);
-
-        op(&mut e)
-    }
-
-    fn text<F>(self, op: F) -> String
-    where
-        F: FnOnce(&mut Emitter<'_>),
-    {
-        let mut buf = String::new();
-
-        self.with(&mut buf, op);
-
-        buf
-    }
-}
 
 fn parse_then_emit(from: &str, cfg: Config, syntax: Syntax) -> String {
     ::testing::run_test(false, |cm, handler| {
@@ -58,13 +27,14 @@ fn parse_then_emit(from: &str, cfg: Config, syntax: Syntax) -> String {
             res?
         };
 
-        let out = Builder {
-            cfg,
-            cm,
-            program_data,
-        }
-        .text(|e| e.emit_module(&res).unwrap());
-        Ok(out)
+        let mut buf = String::new();
+
+        let writer = text_writer::JsWriter::new("\n", &mut buf, None);
+        let mut e = Emitter::new(cfg, cm.clone(), writer, &program_data);
+
+        e.emit_module(&res).unwrap();
+
+        Ok(buf)
     })
     .unwrap()
 }
