@@ -4,7 +4,7 @@ use crate::{
     token::{Token, Word},
 };
 use atoms::js_word;
-use common::{BytePos, Span};
+use common::{BytePos, Pos, Span};
 use expression::MaybeParen;
 use statement::typescript::DeclOrEmpty;
 use util::AssignProps;
@@ -29,10 +29,27 @@ enum ForHead {
 
 pub(super) trait IsDirective {
     fn as_ref(&self) -> Option<&Stmt>;
-    fn is_use_strict(&self) -> bool {
+    fn is_use_strict(&self, parser: &Parser<impl Tokens>) -> bool {
         match self.as_ref() {
             Some(Stmt::Expr(expr)) => match expr.expr.as_ref() {
-                Expr::Lit(Lit::Str(Str { value, .. })) => value == "use strict",
+                Expr::Lit(Lit::Str(Str { value, node_id })) => {
+                    if value == "use strict" {
+                        // Directives can't contain escapes - we check by
+                        // comparing the length of the string's raw value
+                        // against the directive. Any escapes will make the raw
+                        // length longer.
+
+                        let string_span = parser.program_data.get_span(*node_id);
+
+                        // -2 since string spans include the quotes.
+                        let string_content_len =
+                            (string_span.hi.to_usize() - string_span.lo.to_usize()) - 2;
+
+                        string_content_len == "use strict".len()
+                    } else {
+                        false
+                    }
+                }
                 _ => false,
             },
             _ => false,
@@ -123,7 +140,7 @@ impl<I: Tokens> Parser<'_, I> {
 
             if allow_directives && !parsed_non_directive {
                 if stmt.is_valid_directive() {
-                    if !has_strict_mode_directive && stmt.is_use_strict() {
+                    if !has_strict_mode_directive && stmt.is_use_strict(self) {
                         has_strict_mode_directive = true;
 
                         let ctx = Context {
