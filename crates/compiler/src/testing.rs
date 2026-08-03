@@ -62,20 +62,18 @@ impl Tester<'_> {
     }
 
     fn print(&mut self, program: &Program, program_data: &ProgramData) -> String {
-        let mut buf = vec![];
-        {
-            let mut emitter = Emitter::new(
-                Default::default(),
-                self.cm.clone(),
-                JsWriter::new("\n", &mut buf, None),
-                program_data,
-            );
+        let mut buf = String::new();
 
-            emitter.emit_program(program).unwrap();
-        }
+        let mut emitter = Emitter::new(
+            Default::default(),
+            self.cm.clone(),
+            JsWriter::new("\n", &mut buf, None),
+            program_data,
+        );
 
-        let s = String::from_utf8_lossy(&buf);
-        s.to_string()
+        emitter.emit_program(program).unwrap();
+
+        buf
     }
 }
 

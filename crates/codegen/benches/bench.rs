@@ -105,7 +105,7 @@ fn bench_emitter(b: &mut Bencher, s: &str) {
         };
 
         b.iter(|| {
-            let mut buf = vec![];
+            let mut buf = String::new();
             {
                 let mut emitter = Emitter::new(
                     codegen::Config {

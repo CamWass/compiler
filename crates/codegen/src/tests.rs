@@ -13,7 +13,7 @@ struct Builder {
 }
 
 impl Builder {
-    fn with<F, Ret>(self, s: &mut Vec<u8>, op: F) -> Ret
+    fn with<F, Ret>(self, s: &mut String, op: F) -> Ret
     where
         F: FnOnce(&mut Emitter<'_>) -> Ret,
     {
@@ -28,11 +28,11 @@ impl Builder {
     where
         F: FnOnce(&mut Emitter<'_>),
     {
-        let mut buf = vec![];
+        let mut buf = String::new();
 
         self.with(&mut buf, op);
 
-        String::from_utf8(buf).unwrap()
+        buf
     }
 }
 

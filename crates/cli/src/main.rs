@@ -78,24 +78,23 @@ fn compile(entry_file: &str, config: Config, output_file: Option<&str>) -> Resul
     println!("\n\n\nSuccessfully parsed");
 
     let src = {
-        let mut buf = vec![];
-        {
-            let mut emitter = Emitter::new(
-                codegen::Config {
-                    minify: !config.pretty_print,
-                    target: ast::EsVersion::EsNext,
-                },
-                cm.clone(),
-                JsWriter::new("\n", &mut buf, None),
-                &program_data,
-            );
+        let mut buf = String::new();
 
-            emitter
-                .emit_program(&result)
-                .context("Failed to emit module")?;
-        }
-        // Invalid utf8 is valid in javascript world.
-        String::from_utf8(buf).expect("Invalid utf8 character detected")
+        let mut emitter = Emitter::new(
+            codegen::Config {
+                minify: !config.pretty_print,
+                target: ast::EsVersion::EsNext,
+            },
+            cm.clone(),
+            JsWriter::new("\n", &mut buf, None),
+            &program_data,
+        );
+
+        emitter
+            .emit_program(&result)
+            .context("Failed to emit module")?;
+
+        buf
     };
 
     std::fs::write(output_file.unwrap_or("out.js"), src).context("Failed to write file")

@@ -73,21 +73,18 @@ impl Tester<'_> {
     }
 
     pub fn print(&mut self, module: &Module, program_data: &ProgramData) -> String {
-        let mut buf = vec![];
-        {
-            let mut emitter = Emitter::new(
-                Default::default(),
-                self.cm.clone(),
-                codegen::JsWriter::new("\n", &mut buf, None),
-                program_data,
-            );
+        let mut buf = String::new();
 
-            // println!("Emitting: {:?}", module);
-            emitter.emit_module(module).unwrap();
-        }
+        let mut emitter = Emitter::new(
+            Default::default(),
+            self.cm.clone(),
+            codegen::JsWriter::new("\n", &mut buf, None),
+            program_data,
+        );
 
-        let s = String::from_utf8_lossy(&buf);
-        s.to_string()
+        emitter.emit_module(module).unwrap();
+
+        buf
     }
 }
 

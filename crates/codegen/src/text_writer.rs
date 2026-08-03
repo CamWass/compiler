@@ -1,6 +1,6 @@
 use super::Result;
 use common::{BytePos, DUMMY_SP, LineCol, Span};
-use std::io::{self, Write};
+use std::io::{self};
 
 ///
 /// -----
@@ -15,7 +15,7 @@ pub struct JsWriter<'a> {
     line_pos: usize,
     new_line: &'a str,
     srcmap: Option<&'a mut Vec<(BytePos, LineCol)>>,
-    wr: &'a mut Vec<u8>,
+    wr: &'a mut String,
     written_bytes: usize,
     pending_semi: Option<Span>,
 }
@@ -23,7 +23,7 @@ pub struct JsWriter<'a> {
 impl<'a> JsWriter<'a> {
     pub fn new(
         new_line: &'a str,
-        wr: &'a mut Vec<u8>,
+        wr: &'a mut String,
         srcmap: Option<&'a mut Vec<(BytePos, LineCol)>>,
     ) -> Self {
         JsWriter {
@@ -40,7 +40,7 @@ impl<'a> JsWriter<'a> {
     }
 
     fn write_indent_string(&mut self) -> io::Result<usize> {
-        const INDENT: &[u8] = b"    ";
+        const INDENT: &str = "    ";
 
         let mut cnt = 0;
         for _ in 0..self.indent {
@@ -50,8 +50,9 @@ impl<'a> JsWriter<'a> {
         Ok(cnt)
     }
 
-    fn raw_write(&mut self, data: &[u8]) -> io::Result<usize> {
-        let written = self.wr.write(data)?;
+    fn raw_write(&mut self, data: &str) -> io::Result<usize> {
+        self.wr.push_str(data);
+        let written = data.len();
         self.written_bytes += written;
         self.line_pos += written;
         Ok(written)
@@ -72,7 +73,7 @@ impl<'a> JsWriter<'a> {
                 }
             }
 
-            cnt += self.raw_write(data.as_bytes())?;
+            cnt += self.raw_write(data)?;
 
             if let Some(span) = span {
                 if !span.is_dummy() {
@@ -134,7 +135,7 @@ impl JsWriter<'_> {
     pub(super) fn write_line(&mut self) -> Result {
         self.commit_pending_semi()?;
         if !self.line_start {
-            self.raw_write(self.new_line.as_bytes())?;
+            self.raw_write(self.new_line)?;
             self.line_count += 1;
             self.line_pos = 0;
             self.line_start = true;

@@ -2886,7 +2886,7 @@ impl Emitter<'_> {
 
     fn expr_ends_with_alpha_num(&self, expr: &Expr) -> io::Result<bool> {
         let last = {
-            let mut buffer = vec![];
+            let mut buffer = String::new();
             {
                 let mut new = Emitter {
                     cfg: self.cfg,
@@ -2899,14 +2899,14 @@ impl Emitter<'_> {
 
                 new.emit_expr(expr)?;
             }
-            *buffer.last().unwrap()
+            *buffer.as_bytes().last().unwrap()
         };
         Ok(is_alpha_num(last))
     }
 
     fn expr_starts_with_alpha_num(&self, expr: &Expr) -> io::Result<bool> {
         let first = {
-            let mut buffer = vec![];
+            let mut buffer = String::new();
             {
                 let mut new = Emitter {
                     cfg: self.cfg,
@@ -2919,7 +2919,7 @@ impl Emitter<'_> {
 
                 new.emit_expr(expr)?;
             }
-            *buffer.first().unwrap()
+            *buffer.as_bytes().first().unwrap()
         };
         Ok(is_alpha_num(first))
     }
