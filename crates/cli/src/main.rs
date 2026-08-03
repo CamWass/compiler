@@ -73,7 +73,7 @@ fn compile(entry_file: &str, config: Config, output_file: Option<&str>) -> Resul
     let result = compiler.compile(program, config.passes, &mut program_data);
 
     let elapsed = start.elapsed();
-    println!("\nCompilation took: {elapsed:.2?}",);
+    println!("\nCompilation took: {elapsed:.2?}");
 
     println!("\n\n\nSuccessfully parsed");
 

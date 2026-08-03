@@ -31,7 +31,7 @@ impl Tester<'_> {
 
         match out {
             Ok(ret) => ret,
-            Err(stderr) => panic!("Stderr:\n{stderr}",),
+            Err(stderr) => panic!("Stderr:\n{stderr}"),
         }
     }
 

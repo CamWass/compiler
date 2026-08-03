@@ -3225,7 +3225,7 @@ fn get_quoted_utf16(v: &str, target: EsVersion) -> String {
                         let h = ((c as u32 - 0x10000) / 0x400) + 0xd800;
                         let l = (c as u32 - 0x10000) % 0x400 + 0xdc00;
 
-                        let _ = write!(buf, "\\u{h:04X}\\u{l:04X}",);
+                        let _ = write!(buf, "\\u{h:04X}\\u{l:04X}");
                     } else {
                         buf.push(c);
                     }
@@ -3314,7 +3314,7 @@ fn minify_number(num: f64) -> String {
         if cnt > 2 {
             return format!("{}e-{}", &num[cnt..], num.len());
         }
-        return format!(".{num}",);
+        return format!(".{num}");
     }
 
     if let Some(num) = num.strip_prefix("-0.") {
@@ -3322,7 +3322,7 @@ fn minify_number(num: f64) -> String {
         if cnt > 2 {
             return format!("-{}e-{}", &num[cnt..], num.len());
         }
-        return format!("-.{num}",);
+        return format!("-.{num}");
     }
 
     if num.ends_with("000") {

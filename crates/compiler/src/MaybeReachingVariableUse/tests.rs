@@ -303,7 +303,7 @@ where
     GLOBALS.set(&Globals::new(), || {
         // Set up test case
         let async_str = if is_async { "async" } else { "" };
-        let source = format!("{async_str} function _FUNCTION(param1, param2){{{src}}}",);
+        let source = format!("{async_str} function _FUNCTION(param1, param2){{{src}}}");
         let program = Program::Script(parse_script(&source));
 
         // let unresolved_mark = Mark::new();
