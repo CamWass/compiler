@@ -395,7 +395,6 @@ define!({
     }
     pub struct TplElement {
         pub node_id: NodeId,
-        pub cooked: Option<Str>,
         pub raw: Str,
     }
     pub enum ExprOrSuper {
@@ -462,7 +461,6 @@ define!({
     pub struct Str {
         pub node_id: NodeId,
         pub value: JsWord,
-        pub has_escape: bool,
     }
     pub struct Bool {
         pub node_id: NodeId,

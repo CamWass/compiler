@@ -102,14 +102,12 @@ impl VisitMut<'_> for Normalizer {
                 *n = PropName::Str(Str {
                     node_id: NodeId::DUMMY,
                     value: sym.clone(),
-                    has_escape: false,
                 });
             }
             PropName::Num(num) => {
                 *n = PropName::Str(Str {
                     node_id: NodeId::DUMMY,
                     value: num.to_string().into(),
-                    has_escape: false,
                 });
             }
             _ => {}
@@ -121,9 +119,6 @@ impl VisitMut<'_> for Normalizer {
     }
 
     fn visit_mut_str(&mut self, s: &mut Str) {
-        if self.is_test262 {
-            s.has_escape = false;
-        }
         s.node_id = NodeId::DUMMY;
     }
 }

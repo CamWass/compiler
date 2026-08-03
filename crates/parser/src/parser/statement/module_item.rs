@@ -56,10 +56,9 @@ impl<I: Tokens> Parser<'_, I> {
         let str_start = self.input.cur_pos();
         if let Some(&Token::Str { .. }) = self.input.cur() {
             let src = match self.input.bump() {
-                Token::Str { value, has_escape } => Str {
+                Token::Str { value } => Str {
                     node_id: node_id!(self, span!(self, str_start)),
                     value,
-                    has_escape,
                 },
                 _ => unreachable!(),
             };
@@ -131,10 +130,9 @@ impl<I: Tokens> Parser<'_, I> {
             let str_start = self.input.cur_pos();
             match *cur!(self, true)? {
                 Token::Str { .. } => match self.input.bump() {
-                    Token::Str { value, has_escape } => Str {
+                    Token::Str { value } => Str {
                         node_id: node_id!(self, span!(self, str_start)),
                         value,
-                        has_escape,
                     },
                     _ => unreachable!(),
                 },
@@ -581,10 +579,9 @@ impl<I: Tokens> Parser<'_, I> {
         let str_start = self.input.cur_pos();
         let src = match *cur!(self, true)? {
             Token::Str { .. } => match self.input.bump() {
-                Token::Str { value, has_escape } => Str {
+                Token::Str { value } => Str {
                     node_id: node_id!(self, span!(self, str_start)),
                     value,
-                    has_escape,
                 },
                 _ => unreachable!(),
             },

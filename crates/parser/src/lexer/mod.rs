@@ -9,7 +9,6 @@ use crate::{
     token::*,
 };
 use ast::{RegexFlags, op};
-use atoms::JsWord;
 use common::{BytePos, SourceFile, Span};
 use number::{NonDecRadix, Radix};
 use state::State;
@@ -641,8 +640,6 @@ impl<'src> Lexer<'src> {
         self.advance(1); // ' or "
 
         self.with_buf(|lexer, out| {
-            let mut has_escape = false;
-
             while let Some(ch) = {
                 // Optimization
                 {
@@ -661,14 +658,12 @@ impl<'src> Lexer<'src> {
                         lexer.advance(1); // ' or "
                         return Ok(Token::Str {
                             value: out.as_str().into(),
-                            has_escape,
                         });
                     }
                     b'\\' => {
                         if let Some(s) = lexer.read_escaped_char(false)? {
                             out.push(s);
                         }
-                        has_escape = true;
                     }
                     char_bytes::LINE_FEED | char_bytes::CARRIAGE_RETURN => {
                         // String literals cannot span multiple lines.
@@ -703,7 +698,11 @@ impl<'src> Lexer<'src> {
         macro_rules! invalid_escape {
             () => {{
                 if in_template {
-                    self.error(start, SyntaxError::InvalidEscapeInTemplate)?
+                    // Note: we don't emit the error here since invalid escapes
+                    // are allowed for tagged templates in newer ECMAScript
+                    // versions - we'll emit the error in the parser if
+                    // necessary, once we have the necessary context.
+                    Lexer::error_span(pos_span(start), SyntaxError::InvalidEscapeInTemplate)?
                 } else {
                     self.emit_strict_mode_error(start, SyntaxError::InvalidNumericEscapeInStrict);
                 }
@@ -908,17 +907,9 @@ impl<'src> Lexer<'src> {
     // TODO: Verify that the raw value is spec compliant/look at swc/babel's implementations.
     // TODO: use uncons_while
     fn read_tmpl_token(&mut self, start_of_tpl: BytePos) -> LexResult<Token> {
-        enum CookedType {
-            None,
-            SameAsRaw,
-            DifferentFromRaw(String),
-        }
-
         let start = self.cur_pos();
-        let mut cooked_chunk_start = start;
 
-        let mut has_escape = false;
-        let mut cooked = CookedType::SameAsRaw;
+        let mut has_invalid_escape = false;
 
         while let Some(c) = self.cur_byte() {
             if c == b'`' || (c == b'$' && self.peek_nth(1) == Some(b'{')) {
@@ -934,76 +925,20 @@ impl<'src> Lexer<'src> {
 
                 let raw = self.slice_to_cur(start);
 
-                let cooked = match &mut cooked {
-                    CookedType::SameAsRaw => Some(raw.into()),
-                    CookedType::DifferentFromRaw(existing_cooked) => {
-                        let chunk = self.slice_to_cur(cooked_chunk_start);
-                        existing_cooked.push_str(chunk);
-                        Some(JsWord::from(existing_cooked.as_str()))
-                    }
-                    CookedType::None => None,
-                };
-
-                // TODO(swc): Handle error
                 return Ok(Template {
-                    cooked,
                     raw: raw.into(),
-                    has_escape,
+                    has_invalid_escape,
                 });
             }
 
             if c == b'\\' {
-                has_escape = true;
-
-                match &mut cooked {
-                    CookedType::SameAsRaw => {
-                        let new_cooked = String::from(self.slice_to_cur(start));
-
-                        cooked = CookedType::DifferentFromRaw(new_cooked);
-                    }
-                    CookedType::DifferentFromRaw(existing_cooked) => {
-                        let new_chunk = self.slice_to_cur(cooked_chunk_start);
-                        existing_cooked.push_str(new_chunk);
-                    }
-                    CookedType::None => {}
-                }
-
-                match self.read_escaped_char(true) {
-                    Ok(Some(s)) => {
-                        if let CookedType::DifferentFromRaw(existing_cooked) = &mut cooked {
-                            existing_cooked.push(s);
-
-                            cooked_chunk_start = self.cur_pos();
-                        }
-                    }
-                    Ok(None) => {}
-                    Err(..) => {
-                        cooked = CookedType::None;
-                    }
-                }
+                if self.read_escaped_char(true).is_err() {
+                    has_invalid_escape = true;
+                };
             } else if is_line_break(self.cur_unchecked()) {
                 self.state.had_line_break = true;
                 if c == b'\r' && self.peek_nth(1) == Some(b'\n') {
-                    match &mut cooked {
-                        CookedType::SameAsRaw => {
-                            let mut new_cooked = String::from(self.slice_to_cur(start));
-                            new_cooked.push('\n');
-
-                            cooked = CookedType::DifferentFromRaw(new_cooked);
-                        }
-                        CookedType::DifferentFromRaw(existing_cooked) => {
-                            let new_chunk = self.slice_to_cur(cooked_chunk_start);
-                            existing_cooked.push_str(new_chunk);
-                            existing_cooked.push('\n');
-                        }
-                        CookedType::None => {}
-                    }
-
                     self.advance(2); // '\r\n'
-
-                    if let CookedType::DifferentFromRaw(..) = cooked {
-                        cooked_chunk_start = self.cur_pos();
-                    }
                 } else {
                     self.bump();
                 }

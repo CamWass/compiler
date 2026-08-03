@@ -35,9 +35,6 @@ pub struct Str {
     pub node_id: NodeId,
 
     pub value: JsWord,
-
-    /// This includes line escape.
-    pub has_escape: bool,
 }
 
 impl Str {

@@ -47,10 +47,9 @@ impl<I: Tokens> Parser<'_, I> {
 
             let v = match *cur!(parser, true)? {
                 Token::Str { .. } => match parser.input.bump() {
-                    Token::Str { value, has_escape } => PropName::Str(Str {
+                    Token::Str { value } => PropName::Str(Str {
                         node_id: node_id!(parser, span!(parser, start)),
                         value,
-                        has_escape,
                     }),
                     _ => unreachable!(),
                 },

@@ -55,8 +55,7 @@ pub enum Token {
     BackQuote,
     Template {
         raw: JsWord,
-        cooked: Option<JsWord>,
-        has_escape: bool,
+        has_invalid_escape: bool,
     },
     /// ':'
     Colon,
@@ -82,9 +81,6 @@ pub enum Token {
     /// String literal. Span of this token contains quote.
     Str {
         value: JsWord,
-        /// This field exists because 'use\x20strict' is **not** an use strict
-        /// directive.
-        has_escape: bool,
     },
 
     /// Regexp literal.

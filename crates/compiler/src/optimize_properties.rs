@@ -1812,7 +1812,6 @@ impl VisitMut<'_> for Renamer<'_> {
     fn visit_mut_str(&mut self, node: &mut Str) {
         if let Some(new_name) = self.rename_map.get(&node.node_id) {
             node.value = new_name.clone();
-            node.has_escape = false;
         }
     }
 }

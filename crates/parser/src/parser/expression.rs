@@ -1519,30 +1519,24 @@ impl<I: Tokens> Parser<'_, I> {
     pub(super) fn parse_tpl_element(&mut self, is_tagged: bool) -> PResult<TplElement> {
         let start = self.input.cur_pos();
 
-        let (raw, cooked) = match *cur!(self, true)? {
+        let (raw, has_invalid_escape) = match *cur!(self, true)? {
             Token::Template { .. } => match self.input.bump() {
                 Token::Template {
                     raw,
-                    cooked,
-                    has_escape,
+                    has_invalid_escape,
                 } => (
                     Str {
                         node_id: node_id!(self, span!(self, start)),
                         value: raw,
-                        has_escape,
                     },
-                    cooked.map(|cooked| Str {
-                        node_id: node_id!(self, span!(self, start)),
-                        value: cooked,
-                        has_escape,
-                    }),
+                    has_invalid_escape,
                 ),
                 _ => unreachable!(),
             },
             _ => unexpected!(self, "template token"),
         };
 
-        if cooked.is_none() && (!is_tagged || self.input.target() < JscTarget::Es2018) {
+        if has_invalid_escape && (!is_tagged || self.input.target() < JscTarget::Es2018) {
             syntax_error!(
                 self,
                 span!(self, start),
@@ -1553,7 +1547,6 @@ impl<I: Tokens> Parser<'_, I> {
         Ok(TplElement {
             node_id: node_id!(self, span!(self, start)),
             raw,
-            cooked,
         })
     }
 }
@@ -1646,10 +1639,9 @@ impl<I: Tokens> Parser<'_, I> {
                 })
             }
             Token::Str { .. } => match self.input.bump() {
-                Token::Str { value, has_escape } => Lit::Str(Str {
+                Token::Str { value } => Lit::Str(Str {
                     node_id: node_id!(self, span!(self, start)),
                     value,
-                    has_escape,
                 }),
                 _ => unreachable!(),
             },
