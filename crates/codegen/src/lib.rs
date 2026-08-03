@@ -1,4 +1,3 @@
-#![recursion_limit = "1024"]
 #![deny(unused)]
 
 pub use self::config::Config;
@@ -262,40 +261,25 @@ impl<'a> Emitter<'a> {
     fn emit_named_export(&mut self, node: &NamedExport) -> Result {
         let span = get_span!(self, node.node_id);
 
-        struct Specifiers<'a> {
-            has_namespace_spec: bool,
-            namespace_spec: Option<&'a ExportNamespaceSpecifier>,
-            has_named_specs: bool,
-            named_specs: Vec<&'a ExportSpecifier>,
-        }
-        let Specifiers {
-            has_namespace_spec,
-            namespace_spec,
-            has_named_specs,
-            named_specs,
-        } = node.specifiers.iter().fold(
-            Specifiers {
-                has_namespace_spec: false,
-                namespace_spec: None,
-                has_named_specs: false,
-                named_specs: vec![],
-            },
-            |mut result, s| match s {
+        let mut namespace_spec: Option<&ExportNamespaceSpecifier> = None;
+        let mut named_specs: Vec<&ExportSpecifier> = vec![];
+
+        for specifier in &node.specifiers {
+            match specifier {
                 ExportSpecifier::Namespace(spec) => {
-                    result.has_namespace_spec = true;
                     // There can only be one namespace export specifier.
-                    if result.namespace_spec.is_none() {
-                        result.namespace_spec = Some(spec);
+                    if namespace_spec.is_none() {
+                        namespace_spec = Some(spec);
                     }
-                    result
                 }
                 spec => {
-                    result.has_named_specs = true;
-                    result.named_specs.push(spec);
-                    result
+                    named_specs.push(spec);
                 }
-            },
-        );
+            }
+        }
+
+        let has_named_specs: bool = !named_specs.is_empty();
+        let has_namespace_spec: bool = namespace_spec.is_some();
 
         keyword!(self, "export");
         formatting_space!(self);
@@ -450,30 +434,6 @@ impl<'a> Emitter<'a> {
         self.wr.write_lit(span, &v.value.to_string())?;
         self.wr.write_lit(span, "n")
     }
-
-    // fn emit_object_binding_pat(&mut self, node: &ObjectPat) -> Result {
-    //     self.wr.write_punct("{")?;
-    //     self.emit_list(
-    //         node.span(),
-    //         &node.props,
-    //         ListFormat::ObjectBindingPatternElements,
-    //     );
-    //     self.wr.write_punct("}")?;
-
-    //     Ok(())
-    // }
-
-    // fn emit_array_binding_pat(&mut self, node: &ArrayPat) -> Result {
-    //     self.wr.write_punct("[")?;
-    //     self.emit_list(
-    //         node.span(),
-    //         &node.elems,
-    //         ListFormat::ArrayBindingPatternElements,
-    //     );
-    //     self.wr.write_punct("]")?;
-
-    //     Ok(())
-    // }
 
     fn emit_expr_or_super(&mut self, node: &ExprOrSuper) -> Result {
         match node {

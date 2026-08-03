@@ -1,10 +1,6 @@
 use super::Result;
 use common::{BytePos, DUMMY_SP, LineCol, Span};
-use std::io::{self};
 
-///
-/// -----
-///
 /// Ported from `createTextWriter` of the typescript compiler.
 ///
 /// https://github.com/Microsoft/TypeScript/blob/45eaf42006/src/compiler/utilities.ts#L2548
@@ -37,30 +33,26 @@ impl<'a> JsWriter<'a> {
         }
     }
 
-    fn write_indent_string(&mut self) -> io::Result<usize> {
+    fn write_indent_string(&mut self) -> Result {
         const INDENT: &str = "    ";
 
-        let mut cnt = 0;
         for _ in 0..self.indent {
-            cnt += self.raw_write(INDENT)?;
+            self.raw_write(INDENT)?;
         }
 
-        Ok(cnt)
+        Ok(())
     }
 
-    fn raw_write(&mut self, data: &str) -> io::Result<usize> {
+    fn raw_write(&mut self, data: &str) -> Result {
         self.wr.push_str(data);
-        let written = data.len();
-        self.line_pos += written;
-        Ok(written)
+        self.line_pos += data.len();
+        Ok(())
     }
 
-    fn write(&mut self, span: Option<Span>, data: &str) -> io::Result<usize> {
-        let mut cnt = 0;
-
+    fn write(&mut self, span: Option<Span>, data: &str) -> Result {
         if !data.is_empty() {
             if self.line_start {
-                cnt += self.write_indent_string()?;
+                self.write_indent_string()?;
                 self.line_start = false;
             }
 
@@ -70,7 +62,7 @@ impl<'a> JsWriter<'a> {
                 }
             }
 
-            cnt += self.raw_write(data)?;
+            self.raw_write(data)?;
 
             if let Some(span) = span {
                 if !span.is_dummy() {
@@ -79,7 +71,7 @@ impl<'a> JsWriter<'a> {
             }
         }
 
-        Ok(cnt)
+        Ok(())
     }
 
     fn srcmap(&mut self, byte_pos: BytePos) {
