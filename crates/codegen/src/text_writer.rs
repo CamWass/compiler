@@ -16,7 +16,6 @@ pub struct JsWriter<'a> {
     new_line: &'a str,
     srcmap: Option<&'a mut Vec<(BytePos, LineCol)>>,
     wr: &'a mut String,
-    written_bytes: usize,
     pending_semi: Option<Span>,
 }
 
@@ -34,7 +33,6 @@ impl<'a> JsWriter<'a> {
             new_line,
             srcmap,
             wr,
-            written_bytes: 0,
             pending_semi: None,
         }
     }
@@ -53,7 +51,6 @@ impl<'a> JsWriter<'a> {
     fn raw_write(&mut self, data: &str) -> io::Result<usize> {
         self.wr.push_str(data);
         let written = data.len();
-        self.written_bytes += written;
         self.line_pos += written;
         Ok(written)
     }
