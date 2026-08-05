@@ -26,9 +26,12 @@ p {
 
 textarea {
   resize: vertical;
-  min-height: 300px;
   width: 100%;
   flex-grow: 1;
+}
+
+#input {
+  min-height: 600px;
 }
 
 .input-container {
@@ -50,4 +53,8 @@ body {
 
 #output {
   color: inherit;
+}
+
+#config {
+  min-height: 290px;
 }
