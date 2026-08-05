@@ -1,4 +1,3 @@
-
 import init, { process } from "./wasm/wasm.js";
 
 const DEFAULT_CONFIG = `{
@@ -55,17 +54,33 @@ const input = document.getElementById("input");
 const output = document.getElementById("output");
 const config = document.getElementById("config");
 
+const inputSizeLabel = document.getElementById("input-size");
+const outputSizeLabel = document.getElementById("output-size");
+
 input.value = DEFAULT_INPUT;
 config.value = DEFAULT_CONFIG;
 
 await init();
 
 function run() {
+  const inputSize = getStringSizeInBytes(input.value);
+  inputSizeLabel.textContent = `${inputSize} bytes`;
+
   try {
     output.value = process(input.value, config.value);
+
+    const outputSize = getStringSizeInBytes(output.value);
+
+    const delta = inputSize - outputSize;
+    const percentDelta = (delta / inputSize) * 100;
+    const isDecrease = delta > 0;
+    const changeSymbol = isDecrease ? '-' : '+';
+
+    outputSizeLabel.textContent = `${outputSize} bytes • ${changeSymbol}${delta} bytes • ${changeSymbol}${percentDelta.toFixed(1)}%`;
   } catch (e) {
     console.error(e);
     output.value = e;
+    outputSizeLabel.textContent = "error";
   }
 }
 
@@ -78,3 +93,7 @@ config.addEventListener("input", () => {
 });
 
 run();
+
+function getStringSizeInBytes(string) {
+  return new Blob([string]).size;
+}
