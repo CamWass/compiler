@@ -4,11 +4,15 @@ use anyhow::{Context, Error, Result, bail};
 use codegen::{self, Emitter, JsWriter};
 use common::{
     FileName, SourceMap,
-    errors::{ColorConfig, Handler},
+    errors::{EmitterWriter, Handler, HandlerFlags},
 };
 use compiler::Compiler;
 use parser::{Parser, Syntax};
-use std::rc::Rc;
+use std::{
+    io::{self, Write},
+    rc::Rc,
+    sync::{Arc, RwLock},
+};
 
 use compiler::PassConfig;
 use parser::{EsConfig, TsConfig};
@@ -71,11 +75,43 @@ fn create_program(
     Ok(program)
 }
 
-fn compile(entry_file: &str, src: &str, config: &str) -> Result<String> {
+#[derive(Clone, Default)]
+pub(crate) struct BufferedError(Arc<RwLock<Vec<u8>>>);
+
+impl Write for BufferedError {
+    fn write(&mut self, d: &[u8]) -> io::Result<usize> {
+        self.0.write().unwrap().write(d)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+fn compile(
+    entry_file: &str,
+    src: &str,
+    config: &str,
+    error_buffer: &BufferedError,
+) -> Result<String> {
     let config = load_config(config)?;
 
     let cm = Rc::<SourceMap>::default();
-    let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
+
+    let e = EmitterWriter::new(
+        Box::new(error_buffer.clone()),
+        Some(cm.clone()),
+        false,
+        true,
+    );
+
+    let handler = Handler::with_emitter_and_flags(
+        Box::new(e),
+        HandlerFlags {
+            treat_err_as_bug: false,
+            can_emit_warnings: true,
+            ..Default::default()
+        },
+    );
 
     let mut program_data = ast::ProgramData::default();
 
@@ -127,5 +163,10 @@ pub fn load_config(content: &str) -> Result<Config> {
 pub fn process(input: &str, config: &str) -> Result<String, JsError> {
     console_error_panic_hook::set_once();
 
-    compile("input_file.js", input, config).map_err(|e| JsError::new(&e.to_string()))
+    let error_buffer: BufferedError = Default::default();
+
+    compile("input_file.js", input, config, &error_buffer).map_err(|e| {
+        let buffered_errors = String::from_utf8_lossy(&error_buffer.0.read().unwrap()).into_owned();
+        JsError::new(&format!("{buffered_errors}\n{e}"))
+    })
 }
