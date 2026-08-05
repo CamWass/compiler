@@ -1,0 +1,131 @@
+use wasm_bindgen::prelude::*;
+
+use anyhow::{Context, Error, Result, bail};
+use codegen::{self, Emitter, JsWriter};
+use common::{
+    FileName, SourceMap,
+    errors::{ColorConfig, Handler},
+};
+use compiler::Compiler;
+use parser::{Parser, Syntax};
+use std::rc::Rc;
+
+use compiler::PassConfig;
+use parser::{EsConfig, TsConfig};
+use serde::Deserialize;
+use serde_json::error::Category;
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct Config {
+    #[serde(default)]
+    pub pretty_print: bool,
+    #[serde(default)]
+    pub ecmascript: EsConfig,
+    #[serde(default)]
+    pub typescript: TsConfig,
+    #[serde(default)]
+    pub passes: PassConfig,
+}
+
+fn create_program(
+    filename: &str,
+    src: &str,
+    config: &Config,
+    cm: &SourceMap,
+    handler: &Handler,
+    program_data: &mut ast::ProgramData,
+) -> Result<ast::Program> {
+    let syntax = if filename.ends_with(".js") {
+        Syntax::Es(config.ecmascript)
+    } else if filename.ends_with(".ts") {
+        let mut ts_config = config.typescript;
+        ts_config.dts = filename.ends_with(".d.ts");
+        Syntax::Typescript(ts_config)
+    } else {
+        panic!()
+    };
+
+    let fm = cm.new_source_file(FileName::Real(filename.into()), src.into());
+
+    let mut parser = Parser::new(syntax, &fm, program_data);
+
+    let program = parser.parse_program();
+
+    let mut error = false;
+
+    for e in parser.take_errors() {
+        e.into_diagnostic(handler).emit();
+        error = true;
+    }
+
+    let program = program.map_err(|e| {
+        e.into_diagnostic(handler).emit();
+        Error::msg("Failed to parse")
+    })?;
+
+    if error {
+        bail!("Failed to parse");
+    }
+
+    Ok(program)
+}
+
+fn compile(entry_file: &str, src: &str, config: &str) -> Result<String> {
+    let config = load_config(config)?;
+
+    let cm = Rc::<SourceMap>::default();
+    let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
+
+    let mut program_data = ast::ProgramData::default();
+
+    let program = create_program(entry_file, src, &config, &cm, &handler, &mut program_data)?;
+
+    let compiler = Compiler::new();
+
+    let result = compiler.compile(program, config.passes, &mut program_data);
+
+    let mut buf = String::new();
+
+    let mut emitter = Emitter::new(
+        codegen::Config {
+            minify: !config.pretty_print,
+            target: ast::EsVersion::EsNext,
+        },
+        cm.clone(),
+        JsWriter::new("\n", &mut buf, None),
+        &program_data,
+    );
+
+    emitter
+        .emit_program(&result)
+        .context("Failed to emit module")?;
+
+    Ok(buf)
+}
+
+pub fn load_config(content: &str) -> Result<Config> {
+    fn convert_json_err(e: serde_json::Error) -> Error {
+        let line = e.line();
+        let column = e.column();
+
+        let msg = match e.classify() {
+            Category::Io => "io error",
+            Category::Syntax => "syntax error",
+            Category::Data => "unmatched data",
+            Category::Eof => "unexpected eof",
+        };
+        Error::new(e).context(format!(
+            "Failed to deserialize config (json) file: {msg}: {line}:{column}",
+        ))
+    }
+
+    serde_json::from_str::<Config>(&content).map_err(convert_json_err)
+}
+
+#[wasm_bindgen]
+pub fn process(input: &str, config: &str) -> Result<String, JsError> {
+    console_error_panic_hook::set_once();
+
+    compile("input_file.js", input, config).map_err(|e| JsError::new(&e.to_string()))
+}

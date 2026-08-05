@@ -1,0 +1,81 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+}
+
+p {
+  color: white;
+  margin-bottom: 0.2rem;
+}
+
+.container {
+  display: flex;
+  gap: 2rem;
+  margin: 1rem;
+  margin-left: 2rem;
+  flex-grow: 1;
+}
+
+.panel {
+  display: flex;
+  flex-grow: 1;
+  flex-direction: column;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 300px;
+  width: 100%;
+  flex-grow: 1;
+}
+
+.input-container {
+  position: relative;
+  display: flex;
+  flex-grow: 1;
+}
+
+.background {
+  height: 100%;
+  width: 100%;
+  background-color: #eb3678;
+  position: absolute;
+  left: -0.75rem;
+  top: 0.75rem;
+  z-index: -1;
+}
+
+body {
+  background-color: #180161;
+  display: flex;
+}
+
+.config-container {
+  margin: 1rem;
+  min-width: 200px;
+}
+
+#config {
+  display: flex;
+  flex-direction: column;
+  background-color: white;
+  padding: 1rem;
+  gap: 1rem;
+}
+
+.config-input-container {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.config-toggleable-input-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
