@@ -9,15 +9,12 @@
 }
 
 p {
-  color: white;
   margin-bottom: 0.2rem;
 }
 
 .container {
   display: flex;
-  gap: 2rem;
-  margin: 1rem;
-  margin-left: 2rem;
+  gap: 1rem;
   flex-grow: 1;
 }
 
@@ -40,42 +37,17 @@ textarea {
   flex-grow: 1;
 }
 
-.background {
-  height: 100%;
-  width: 100%;
-  background-color: #eb3678;
-  position: absolute;
-  left: -0.75rem;
-  top: 0.75rem;
-  z-index: -1;
-}
-
 body {
-  background-color: #180161;
   display: flex;
+  margin: 1rem;
+  gap: 1rem;
 }
 
 .config-container {
-  margin: 1rem;
-  min-width: 200px;
+  margin-left: 0;
+  min-width: 320px;
 }
 
-#config {
-  display: flex;
-  flex-direction: column;
-  background-color: white;
-  padding: 1rem;
-  gap: 1rem;
-}
-
-.config-input-container {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.config-toggleable-input-container {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+#output {
+  color: inherit;
 }
