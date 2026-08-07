@@ -5,7 +5,7 @@ use quote::ToTokens;
 use syn::{self, *};
 
 #[proc_macro_derive(GetNodeIdMacro)]
-pub fn derive_string_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input: DeriveInput =
         syn::parse::<DeriveInput>(input).expect("failed to parse derive input");
     let mut tts = TokenStream::new();
