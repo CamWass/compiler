@@ -1,10 +1,11 @@
 use crate::{GetNodeId, NodeId, ProgramData, pat::Pat, stmt::BlockStmt};
 use bitflags::bitflags;
 use clone_node::CloneNode;
+use node_eq::NodeEq;
 use node_id::GetNodeIdMacro;
 
 /// Common parts of function and method.
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct Function {
     pub node_id: NodeId,
 
@@ -39,7 +40,13 @@ impl crate::CloneNode for FnFlags {
     }
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+impl crate::NodeEq for FnFlags {
+    fn eq_ignoring_node_id(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct Param {
     pub node_id: NodeId,
     pub pat: Pat,

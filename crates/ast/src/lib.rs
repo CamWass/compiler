@@ -4,6 +4,7 @@
 #![deny(unreachable_pub)]
 #![deny(variant_size_differences)]
 #![deny(unused)]
+#![feature(iter_order_by)]
 
 pub use self::{
     class::{
@@ -43,6 +44,7 @@ use atoms::JsWord;
 use clone_node::CloneNode;
 use common::{Span, SyntaxContext};
 use index::vec::IndexVec;
+use node_eq::NodeEq;
 use node_id::GetNodeIdMacro;
 
 #[macro_use]
@@ -113,7 +115,7 @@ impl ProgramData {
 }
 
 /// Represents a invalid node.
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct Invalid {
     pub node_id: NodeId,
 }
@@ -180,3 +182,45 @@ impl_clone_node!(f64);
 impl_clone_node!(JsWord);
 impl_clone_node!(SyntaxContext);
 impl_clone_node!(num_bigint::BigUint);
+
+pub trait NodeEq {
+    fn eq_ignoring_node_id(&self, other: &Self) -> bool;
+}
+
+impl<T: NodeEq> NodeEq for Option<T> {
+    fn eq_ignoring_node_id(&self, other: &Self) -> bool {
+        match (self, other) {
+            (None, None) => true,
+            (None, Some(_)) => false,
+            (Some(_), None) => false,
+            (Some(a), Some(b)) => a.eq_ignoring_node_id(b),
+        }
+    }
+}
+impl<T: NodeEq> NodeEq for Vec<T> {
+    fn eq_ignoring_node_id(&self, other: &Self) -> bool {
+        self.iter()
+            .eq_by(other.iter(), |a, b| a.eq_ignoring_node_id(b))
+    }
+}
+impl<T: NodeEq> NodeEq for Box<T> {
+    fn eq_ignoring_node_id(&self, other: &Self) -> bool {
+        self.as_ref().eq_ignoring_node_id(&other)
+    }
+}
+
+macro_rules! impl_eq_ignoring_node_id {
+    ($t:ty) => {
+        impl NodeEq for $t {
+            fn eq_ignoring_node_id(&self, other: &Self) -> bool {
+                self == other
+            }
+        }
+    };
+}
+
+impl_eq_ignoring_node_id!(bool);
+impl_eq_ignoring_node_id!(f64);
+impl_eq_ignoring_node_id!(JsWord);
+impl_eq_ignoring_node_id!(SyntaxContext);
+impl_eq_ignoring_node_id!(num_bigint::BigUint);

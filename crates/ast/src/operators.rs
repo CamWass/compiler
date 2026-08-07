@@ -1,6 +1,7 @@
 use clone_node::CloneNode;
+use node_eq::NodeEq;
 
-#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode, NodeEq)]
 pub enum BinaryOp {
     /// `==`
     EqEq,
@@ -139,7 +140,7 @@ impl std::fmt::Debug for BinaryOp {
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode, NodeEq)]
 pub enum AssignOp {
     /// `=`
     Assign,
@@ -209,7 +210,7 @@ impl std::fmt::Debug for AssignOp {
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode, NodeEq)]
 pub enum UpdateOp {
     /// `++`
     PlusPlus,
@@ -233,7 +234,7 @@ impl std::fmt::Debug for UpdateOp {
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode, NodeEq)]
 pub enum UnaryOp {
     /// `-`
     Minus,

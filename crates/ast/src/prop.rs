@@ -7,9 +7,10 @@ use crate::{
     stmt::BlockStmt,
 };
 use clone_node::CloneNode;
+use node_eq::NodeEq;
 use node_id::GetNodeIdMacro;
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub enum Prop {
     /// `key: value` in `{ key: value, }`
     KeyValue(KeyValueProp),
@@ -27,34 +28,34 @@ pub enum Prop {
     Spread(SpreadAssignment),
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct KeyValueProp {
     pub node_id: NodeId,
     pub key: PropName,
     pub value: Box<Expr>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct AssignProp {
     pub node_id: NodeId,
     pub key: Ident,
     pub value: Box<Expr>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct GetterProp {
     pub node_id: NodeId,
     pub key: PropName,
     pub body: BlockStmt,
 }
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct SetterProp {
     pub node_id: NodeId,
     pub key: PropName,
     pub param: Param,
     pub body: BlockStmt,
 }
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct MethodProp {
     pub node_id: NodeId,
 
@@ -62,7 +63,7 @@ pub struct MethodProp {
     pub function: Function,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub enum PropName {
     Ident(Ident),
     /// String literal.
@@ -73,14 +74,14 @@ pub enum PropName {
     BigInt(BigInt),
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct ComputedPropName {
     pub node_id: NodeId,
 
     pub expr: Box<Expr>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct SpreadAssignment {
     pub node_id: NodeId,
     pub expr: Box<Expr>,

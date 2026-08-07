@@ -6,9 +6,10 @@ use crate::{
     lit::Str,
 };
 use clone_node::CloneNode;
+use node_eq::NodeEq;
 use node_id::GetNodeIdMacro;
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub enum ModuleDecl {
     Import(ImportDecl),
 
@@ -23,21 +24,21 @@ pub enum ModuleDecl {
     ExportAll(ExportAll),
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct ExportDefaultExpr {
     pub node_id: NodeId,
 
     pub expr: Box<Expr>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct ExportDecl {
     pub node_id: NodeId,
 
     pub decl: Decl,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct ImportDecl {
     pub node_id: NodeId,
 
@@ -49,7 +50,7 @@ pub struct ImportDecl {
 }
 
 /// `export * from 'mod'`
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct ExportAll {
     pub node_id: NodeId,
 
@@ -60,7 +61,7 @@ pub struct ExportAll {
 
 /// `export { foo } from 'mod'`
 /// `export { foo as bar } from 'mod'`
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct NamedExport {
     pub node_id: NodeId,
 
@@ -71,21 +72,21 @@ pub struct NamedExport {
     pub asserts: Option<ObjectLit>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct ExportDefaultDecl {
     pub node_id: NodeId,
 
     pub decl: DefaultDecl,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub enum DefaultDecl {
     Class(ClassExpr),
 
     Fn(FnExpr),
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub enum ImportSpecifier {
     Named(ImportNamedSpecifier),
     Default(ImportDefaultSpecifier),
@@ -93,14 +94,14 @@ pub enum ImportSpecifier {
 }
 
 /// e.g. `import foo from 'mod.js'`
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct ImportDefaultSpecifier {
     pub node_id: NodeId,
 
     pub local: Ident,
 }
 /// e.g. `import * as foo from 'mod.js'`.
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct ImportStarAsSpecifier {
     pub node_id: NodeId,
 
@@ -109,7 +110,7 @@ pub struct ImportStarAsSpecifier {
 /// e.g. local = foo, imported = None `import { foo } from 'mod.js'`
 /// e.g. local = bar, imported = Some(foo) for `import { foo as bar } from
 /// 'mod.js'`
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct ImportNamedSpecifier {
     pub node_id: NodeId,
 
@@ -118,7 +119,7 @@ pub struct ImportNamedSpecifier {
     pub imported: Option<Ident>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub enum ExportSpecifier {
     Namespace(ExportNamespaceSpecifier),
 
@@ -128,7 +129,7 @@ pub enum ExportSpecifier {
 }
 
 /// `export * as foo from 'src';`
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct ExportNamespaceSpecifier {
     pub node_id: NodeId,
 
@@ -136,13 +137,13 @@ pub struct ExportNamespaceSpecifier {
 }
 
 // export v from 'mod';
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct ExportDefaultSpecifier {
     pub node_id: NodeId,
     pub exported: Ident,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct ExportNamedSpecifier {
     pub node_id: NodeId,
     /// `foo` in `export { foo as bar }`

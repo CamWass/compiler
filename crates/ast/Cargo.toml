@@ -12,4 +12,5 @@ atoms = { path = "../atoms" }
 clone_node = { path = "../clone_node" }
 common = { path = "../common" }
 index = { path = "../index" }
+node_eq = { path = "../node_eq" }
 node_id = { path = "../node_id" }

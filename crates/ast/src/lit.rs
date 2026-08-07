@@ -2,6 +2,7 @@ use crate::{GetNodeId, NodeId, ProgramData};
 use atoms::JsWord;
 use bitflags::bitflags;
 use clone_node::CloneNode;
+use node_eq::NodeEq;
 use node_id::GetNodeIdMacro;
 use num_bigint::BigUint;
 use std::{
@@ -9,7 +10,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub enum Lit {
     Str(Str),
 
@@ -24,13 +25,13 @@ pub enum Lit {
     Regex(Regex),
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct BigInt {
     pub node_id: NodeId,
     pub value: BigUint,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct Str {
     pub node_id: NodeId,
 
@@ -44,18 +45,18 @@ impl Str {
     }
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct Bool {
     pub node_id: NodeId,
     pub value: bool,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct Null {
     pub node_id: NodeId,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
 pub struct Regex {
     pub node_id: NodeId,
 
@@ -114,7 +115,13 @@ impl crate::CloneNode for RegexFlags {
     }
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode)]
+impl crate::NodeEq for RegexFlags {
+    fn eq_ignoring_node_id(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq)]
 pub struct Number {
     pub node_id: NodeId,
     /// **Note**: This should not be `NaN`. Use [crate::Ident] to represent NaN.
