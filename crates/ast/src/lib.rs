@@ -224,3 +224,27 @@ impl_eq_ignoring_node_id!(f64);
 impl_eq_ignoring_node_id!(JsWord);
 impl_eq_ignoring_node_id!(SyntaxContext);
 impl_eq_ignoring_node_id!(num_bigint::BigUint);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_node_eq_vec() {
+        assert!(vec![true, false].eq_ignoring_node_id(&vec![true, false]));
+        assert!(!vec![true, false].eq_ignoring_node_id(&vec![false, true]));
+    }
+
+    #[test]
+    fn test_node_eq_option() {
+        assert!(None::<bool>.eq_ignoring_node_id(&None));
+        assert!(Some(true).eq_ignoring_node_id(&Some(true)));
+        assert!(!Some(false).eq_ignoring_node_id(&Some(true)));
+        assert!(!Some(false).eq_ignoring_node_id(&None));
+    }
+
+    #[test]
+    fn test_node_eq_node() {
+        assert!(Null { node_id: NodeId(0) }.eq_ignoring_node_id(&Null { node_id: NodeId(1) }));
+    }
+}
