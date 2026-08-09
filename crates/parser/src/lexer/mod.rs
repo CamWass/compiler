@@ -9,12 +9,12 @@ use crate::{
     token::*,
 };
 use ast::{RegexFlags, op};
-use common::{BytePos, SourceFile, Span};
+use common::{BytePos, SourceFile, Span, chars::char_literals};
 use number::{NonDecRadix, Radix};
 use state::State;
 pub(crate) use state::{TokenContext, TokenContexts};
 use std::{cell::RefCell, iter::FusedIterator, rc::Rc};
-use util::{char_bytes, char_literals, is_line_break};
+use util::{char_bytes, is_line_break};
 
 type LexResult<T> = Result<T, Error>;
 

@@ -21,6 +21,7 @@ mod find_vars;
 mod graph;
 mod inline_functions;
 mod name_generator;
+mod node_util;
 mod normalize;
 mod optimise_equality;
 pub mod optimize_properties;
@@ -241,7 +242,7 @@ fn finalise(
         RenameLabels::process(ast);
     }
 
-    late_peephole_optimisations(ast, passes, program_data);
+    late_peephole_optimisations(ast, passes, program_data, unresolved_ctxt);
     // TODO: latePeepholeOptimizations
     // TODO: optimizeToEs6
 
@@ -254,6 +255,7 @@ fn late_peephole_optimisations(
     ast: &mut ::ast::Program,
     passes: PassConfig,
     program_data: &mut ::ast::ProgramData,
+    unresolved_ctxt: SyntaxContext,
 ) {
     //     final boolean late = true;
     //     final boolean useTypesForOptimization = options.useTypesForLocalOptimization;
@@ -265,7 +267,7 @@ fn late_peephole_optimisations(
     }
 
     if passes.remove_dead_code {
-        peephole::remove_dead_code::process(ast);
+        peephole::remove_dead_code::process(ast, program_data, unresolved_ctxt);
     }
 
     //         new PeepholeMinimizeConditions(late),

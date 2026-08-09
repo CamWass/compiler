@@ -21,6 +21,7 @@ pub use self::{
     syntax_pos::{LineCol, Pos},
 };
 
+pub mod chars;
 pub mod errors;
 mod rustc_data_structures;
 mod source_map;
