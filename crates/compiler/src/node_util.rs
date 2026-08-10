@@ -368,7 +368,7 @@ fn getBigIntValue(expr: &Expr, unresolved_ctxt: SyntaxContext) -> Option<num_big
 }
 
 /// Returns true if calling this callee may have side-effects.
-fn function_call_may_have_side_effects(callee: &Expr, unresolved_ctxt: SyntaxContext) -> bool {
+pub fn function_call_may_have_side_effects(callee: &Expr, unresolved_ctxt: SyntaxContext) -> bool {
     if let Expr::Ident(callee) = callee {
         if callee.ctxt == unresolved_ctxt
             && matches!(
@@ -686,10 +686,10 @@ fn prop_name_may_have_side_effects(name: &PropName, unresolved_ctxt: SyntaxConte
 }
 
 /// Do calls to this constructor have side effects?
-fn constructorCallHasSideEffects(new: &NewExpr, unresolved_ctxt: SyntaxContext) -> bool {
+pub fn constructorCallHasSideEffects(new: &NewExpr, unresolved_ctxt: SyntaxContext) -> bool {
     match new.callee.as_ref() {
         Expr::Ident(callee) => {
-            callee.ctxt == unresolved_ctxt
+            let is_pure_built_in = callee.ctxt == unresolved_ctxt
                 && matches!(
                     callee.sym,
                     js_word!("Array")
@@ -698,7 +698,9 @@ fn constructorCallHasSideEffects(new: &NewExpr, unresolved_ctxt: SyntaxContext) 
                         | js_word!("Object")
                         | js_word!("RegExp")
                         | js_word!("XMLHttpRequest")
-                )
+                );
+
+            if is_pure_built_in { false } else { true }
         }
         _ => true,
     }
@@ -706,7 +708,7 @@ fn constructorCallHasSideEffects(new: &NewExpr, unresolved_ctxt: SyntaxContext) 
 
 /// Returns true if `expr` is guaranteed to be an `Iterable` that causes no
 /// side-effects during iteration, false otherwise.
-fn isPureIterable(expr: &Expr) -> bool {
+pub fn isPureIterable(expr: &Expr) -> bool {
     match expr {
         // These iterables are known to be pure.
         Expr::Array(_) | Expr::Tpl(_) | Expr::Lit(Lit::Str(_)) => true,

@@ -1,9 +1,12 @@
 use ast::*;
-use common::{SyntaxContext, util::take::Take};
+use common::{DUMMY_SP, SyntaxContext, util::take::Take};
 use visit::{VisitMut, VisitMutWith};
 
 use crate::{
-    node_util::{expr_may_have_side_effects, get_boolean_value},
+    node_util::{
+        constructorCallHasSideEffects, expr_may_have_side_effects,
+        function_call_may_have_side_effects, get_boolean_value, isPureIterable,
+    },
     utils::unwrap_as,
 };
 
@@ -18,6 +21,565 @@ pub fn process(ast: &mut Program, program_data: &mut ProgramData, unresolved_ctx
 struct Visitor<'a> {
     program_data: &'a mut ProgramData,
     unresolved_ctxt: SyntaxContext,
+}
+
+#[derive(PartialEq)]
+enum OptimiseExprResult {
+    /// The expression has side-effects and must remain.
+    Keep,
+    // The expression has no side-effects and should be removed.
+    Remove,
+}
+
+impl Visitor<'_> {
+    // TODO: clean up, notably all of the OptimiseExprResult <-> mapping with
+    // ifs etc.
+    /// Simplifies the expression in-place, returning whether the expression can
+    /// be removed from its parent.
+    fn simplify_unused_expr(&mut self, expr: &mut Expr) -> OptimiseExprResult {
+        use OptimiseExprResult::*;
+
+        match expr {
+            Expr::Cond(cond) => {
+                // Try to remove one or more of the conditional children and transform the HOOK to an
+                // equivalent operation. Remember that if either value branch still exists, the result of
+                // the predicate expression is being used, and so cannot be removed.
+                //    x() ? foo() : 1 --> x() && foo()
+                //    x() ? 1 : foo() --> x() || foo()
+                //    x() ? 1 : 1 --> x()
+                //    x ? 1 : 1 --> null
+                let true_branch = self.simplify_unused_expr(&mut cond.cons);
+                let false_branch = self.simplify_unused_expr(&mut cond.alt);
+                if true_branch == Remove && false_branch == Keep {
+                    *expr = Expr::Bin(BinExpr {
+                        node_id: self.program_data.new_id_from(cond.node_id),
+                        op: BinaryOp::LogicalOr,
+                        left: cond.test.take(),
+                        right: cond.alt.take(),
+                    });
+
+                    return Keep;
+                } else if true_branch == Keep && false_branch == Remove {
+                    *expr = Expr::Bin(BinExpr {
+                        node_id: self.program_data.new_id_from(cond.node_id),
+                        op: BinaryOp::LogicalAnd,
+                        left: cond.test.take(),
+                        right: cond.cons.take(),
+                    });
+
+                    return Keep;
+                } else if true_branch == Remove && false_branch == Remove {
+                    let condition = self.simplify_unused_expr(&mut cond.test);
+                    if condition == Keep {
+                        *expr = cond.test.as_mut().take();
+                        return Keep;
+                    } else {
+                        return Remove;
+                    }
+                } else {
+                    return Keep;
+                }
+            }
+            Expr::Bin(bin) => match bin.op {
+                BinaryOp::LogicalOr | BinaryOp::LogicalAnd | BinaryOp::NullishCoalescing => {
+                    // Try to remove the second operand from a AND, OR, and COALESCE operations. Remember that
+                    // if the second
+                    // child still exists, the result of the first expression is being used, and so cannot be
+                    // removed.
+                    //    x() ?? f --> x()
+                    //    x() || f --> x()
+                    //    x() && f --> x()
+                    let rhs = self.simplify_unused_expr(&mut bin.right);
+                    if rhs == Remove {
+                        // Don't bother adding a second child to make the AST valid; this op is going to be
+                        // deleted. We just need to collect any side-effects from the predicate first child.
+                        let lhs = self.simplify_unused_expr(&mut bin.left);
+                        if lhs == Keep {
+                            *expr = bin.left.as_mut().take();
+                            return Keep;
+                        } else {
+                            return Remove;
+                        }
+                    } else {
+                        return Keep;
+                    }
+                }
+
+                _ => {}
+            },
+            Expr::Fn(_) | Expr::Arrow(_) => {
+                // Functions that aren't being invoked are dead. If they were invoked we'd see the CALL
+                // before arriving here. We don't want to look at any children since they'll never execute.
+                return Remove;
+            }
+            _ => {}
+        }
+
+        match expr {
+            Expr::This(_) => Remove,
+            Expr::Array(array) => {
+                // TODO: for array elements and call/new args, we produce a flat
+                // array if there are any impure spread elements, but closure
+                // produces a SeqExpr of the elements, with each spread wrapped
+                // in its own array. This is more verbose, but might allow for
+                // further optimisation since a sequence of expressions is
+                // simpler than an array.
+                array.elems.retain_mut(|el| match el {
+                    Some(el) => match el {
+                        ExprOrSpread::Spread(spread) => {
+                            if isPureIterable(&spread.expr) {
+                                let remove_expr = self.simplify_unused_expr(&mut spread.expr);
+                                if remove_expr == Remove { false } else { true }
+                            } else {
+                                true
+                            }
+                        }
+                        ExprOrSpread::Expr(expr) => {
+                            let remove_expr = self.simplify_unused_expr(expr);
+                            if remove_expr == Remove { false } else { true }
+                        }
+                    },
+                    None => false,
+                });
+
+                if array.elems.is_empty() {
+                    return Remove;
+                }
+
+                let has_spreads = array
+                    .elems
+                    .iter()
+                    .any(|a| matches!(a, Some(ExprOrSpread::Spread(_))));
+
+                if has_spreads {
+                    return Keep;
+                }
+
+                if array.elems.len() == 1 {
+                    *expr = unwrap_as!(
+                        array.elems.first_mut(),
+                        Some(Some(ExprOrSpread::Expr(e))),
+                        e.as_mut().take()
+                    );
+                    Keep
+                } else {
+                    *expr = Expr::Seq(SeqExpr {
+                        node_id: self.program_data.new_id_from(array.node_id),
+                        exprs: array
+                            .elems
+                            .take()
+                            .into_iter()
+                            .map(|a| unwrap_as!(a, Some(ExprOrSpread::Expr(e)), e))
+                            .collect(),
+                    });
+                    Keep
+                }
+            }
+            Expr::Object(obj) => {
+                let mut side_effects = Vec::new();
+
+                for prop in &mut obj.props {
+                    match prop {
+                        Prop::Assign(_) => unreachable!(),
+                        Prop::KeyValue(KeyValueProp { key, value, .. }) => {
+                            match key {
+                                PropName::Ident(_)
+                                | PropName::Str(_)
+                                | PropName::Num(_)
+                                | PropName::BigInt(_) => {}
+                                PropName::Computed(computed) => {
+                                    let remove_key = self.simplify_unused_expr(&mut computed.expr);
+                                    if remove_key == Keep {
+                                        side_effects.push(computed.expr.take());
+                                    }
+                                }
+                            }
+
+                            let remove_value = self.simplify_unused_expr(value);
+                            if remove_value == Keep {
+                                side_effects.push(value.take());
+                            }
+                        }
+                        Prop::Getter(GetterProp { key, .. })
+                        | Prop::Setter(SetterProp { key, .. })
+                        | Prop::Method(MethodProp { key, .. }) => match key {
+                            PropName::Ident(_)
+                            | PropName::Str(_)
+                            | PropName::Num(_)
+                            | PropName::BigInt(_) => {}
+                            PropName::Computed(computed) => {
+                                let remove_key = self.simplify_unused_expr(&mut computed.expr);
+                                if remove_key == Keep {
+                                    side_effects.push(computed.expr.take());
+                                }
+                            }
+                        },
+                        Prop::Spread(spread) => {
+                            let remove_arg = self.simplify_unused_expr(&mut spread.expr);
+                            if remove_arg == Keep {
+                                side_effects.push(spread.expr.take());
+                            }
+                        }
+                    }
+                }
+
+                if side_effects.is_empty() {
+                    Remove
+                } else if side_effects.len() == 1 {
+                    *expr = *side_effects.into_iter().next().unwrap();
+                    Keep
+                } else {
+                    *expr = Expr::Seq(SeqExpr {
+                        node_id: self.program_data.new_id_from(obj.node_id),
+                        exprs: side_effects,
+                    });
+                    Keep
+                }
+            }
+
+            Expr::Unary(unary) => {
+                if unary.op == UnaryOp::Delete {
+                    Keep
+                } else {
+                    let remove_arg = self.simplify_unused_expr(&mut unary.arg);
+                    if remove_arg == Remove {
+                        Remove
+                    } else {
+                        *expr = unary.arg.as_mut().take();
+                        Keep
+                    }
+                }
+            }
+            Expr::Update(_) => Keep,
+            Expr::Bin(bin) => {
+                assert!(
+                    !matches!(
+                        bin.op,
+                        BinaryOp::LogicalOr | BinaryOp::LogicalAnd | BinaryOp::NullishCoalescing
+                    ),
+                    "handled above"
+                );
+
+                let can_remove_lhs = self.simplify_unused_expr(&mut bin.left);
+                let can_remove_rhs = self.simplify_unused_expr(&mut bin.right);
+
+                if can_remove_lhs == Remove && can_remove_rhs == Keep {
+                    *expr = bin.right.as_mut().take();
+                    Keep
+                } else if can_remove_lhs == Keep && can_remove_rhs == Remove {
+                    *expr = bin.left.as_mut().take();
+                    Keep
+                } else if can_remove_lhs == Remove && can_remove_rhs == Remove {
+                    Remove
+                } else {
+                    *expr = Expr::Seq(SeqExpr {
+                        node_id: self.program_data.new_id_from(bin.node_id),
+                        exprs: vec![bin.left.take(), bin.right.take()],
+                    });
+                    Keep
+                }
+            }
+            Expr::Assign(_) => Keep,
+            Expr::Member(member) => {
+                let remove_prop = self.simplify_unused_expr(&mut member.prop);
+
+                let remove_obj = match &mut member.obj {
+                    ExprOrSuper::Super(_) => Remove,
+                    ExprOrSuper::Expr(expr) => self.simplify_unused_expr(expr),
+                };
+
+                if remove_obj == Keep && remove_prop == Remove {
+                    *expr = unwrap_as!(&mut member.obj, ExprOrSuper::Expr(e), e.as_mut().take());
+                    Keep
+                } else if remove_obj == Remove && remove_prop == Keep {
+                    *expr = member.prop.as_mut().take();
+                    Keep
+                } else if remove_obj == Remove && remove_prop == Remove {
+                    Remove
+                } else {
+                    Keep
+                }
+            }
+
+            Expr::Call(call) => {
+                let call_may_have_side_effects = match &call.callee {
+                    ExprOrSuper::Super(_) => true,
+                    ExprOrSuper::Expr(callee) => {
+                        function_call_may_have_side_effects(callee, self.unresolved_ctxt)
+                    }
+                };
+
+                if call_may_have_side_effects {
+                    return Keep;
+                }
+
+                call.args.retain_mut(|el| match el {
+                    ExprOrSpread::Spread(spread) => {
+                        if isPureIterable(&spread.expr) {
+                            let remove_expr = self.simplify_unused_expr(&mut spread.expr);
+                            if remove_expr == Remove { false } else { true }
+                        } else {
+                            true
+                        }
+                    }
+                    ExprOrSpread::Expr(expr) => {
+                        let remove_expr = self.simplify_unused_expr(expr);
+                        if remove_expr == Remove { false } else { true }
+                    }
+                });
+
+                if call.args.is_empty() {
+                    return Remove;
+                }
+
+                let has_spreads = call
+                    .args
+                    .iter()
+                    .any(|a| matches!(a, ExprOrSpread::Spread(_)));
+
+                if has_spreads {
+                    *expr = Expr::Array(ArrayLit {
+                        node_id: self.program_data.new_id_from(call.node_id),
+                        elems: call.args.take().into_iter().map(Some).collect(),
+                    });
+
+                    return Keep;
+                }
+
+                if call.args.len() == 1 {
+                    *expr = unwrap_as!(
+                        call.args.first_mut(),
+                        Some(ExprOrSpread::Expr(e)),
+                        e.as_mut().take()
+                    );
+                    Keep
+                } else {
+                    *expr = Expr::Seq(SeqExpr {
+                        node_id: self.program_data.new_id(DUMMY_SP),
+                        exprs: call
+                            .args
+                            .take()
+                            .into_iter()
+                            .map(|a| unwrap_as!(a, ExprOrSpread::Expr(e), e))
+                            .collect(),
+                    });
+                    Keep
+                }
+            }
+            Expr::New(new) => {
+                let constructor_may_have_side_effects =
+                    constructorCallHasSideEffects(new, self.unresolved_ctxt);
+
+                if constructor_may_have_side_effects {
+                    return Keep;
+                }
+
+                let Some(args) = &mut new.args else {
+                    return Remove;
+                };
+
+                args.retain_mut(|el| match el {
+                    ExprOrSpread::Spread(spread) => {
+                        if isPureIterable(&spread.expr) {
+                            let remove_expr = self.simplify_unused_expr(&mut spread.expr);
+                            if remove_expr == Remove { false } else { true }
+                        } else {
+                            true
+                        }
+                    }
+                    ExprOrSpread::Expr(expr) => {
+                        let remove_expr = self.simplify_unused_expr(expr);
+                        if remove_expr == Remove { false } else { true }
+                    }
+                });
+
+                if args.is_empty() {
+                    return Remove;
+                }
+
+                let has_spreads = args.iter().any(|a| matches!(a, ExprOrSpread::Spread(_)));
+
+                if has_spreads {
+                    *expr = Expr::Array(ArrayLit {
+                        node_id: self.program_data.new_id_from(new.node_id),
+                        elems: args.take().into_iter().map(Some).collect(),
+                    });
+
+                    return Keep;
+                }
+
+                if args.len() == 1 {
+                    *expr = unwrap_as!(
+                        args.first_mut(),
+                        Some(ExprOrSpread::Expr(e)),
+                        e.as_mut().take()
+                    );
+                    Keep
+                } else {
+                    *expr = Expr::Seq(SeqExpr {
+                        node_id: self.program_data.new_id(DUMMY_SP),
+                        exprs: args
+                            .take()
+                            .into_iter()
+                            .map(|a| unwrap_as!(a, ExprOrSpread::Expr(e), e))
+                            .collect(),
+                    });
+                    Keep
+                }
+            }
+            Expr::Seq(seq) => {
+                seq.exprs.retain_mut(|expr| {
+                    let remove_expr = self.simplify_unused_expr(expr);
+                    if remove_expr == Remove { false } else { true }
+                });
+
+                if seq.exprs.len() == 1 {
+                    *expr = unwrap_as!(seq.exprs.first_mut(), Some(e), e.as_mut().take());
+                    Keep
+                } else if seq.exprs.is_empty() {
+                    Remove
+                } else {
+                    Keep
+                }
+            }
+            Expr::Ident(_) => Remove,
+            Expr::Lit(_) => Remove,
+            Expr::Tpl(tpl) => {
+                tpl.exprs.retain_mut(|expr| {
+                    let remove_expr = self.simplify_unused_expr(expr);
+                    if remove_expr == Remove { false } else { true }
+                });
+
+                if tpl.exprs.is_empty() {
+                    Remove
+                } else if tpl.exprs.len() == 1 {
+                    *expr = tpl.exprs.first_mut().unwrap().as_mut().take();
+                    Keep
+                } else {
+                    *expr = Expr::Seq(SeqExpr {
+                        node_id: self.program_data.new_id(DUMMY_SP),
+                        exprs: tpl.exprs.take().into_iter().collect(),
+                    });
+                    Keep
+                }
+            }
+            Expr::TaggedTpl(tpl) => {
+                let tag_call_may_have_side_effects =
+                    function_call_may_have_side_effects(&tpl.tag, self.unresolved_ctxt);
+
+                if tag_call_may_have_side_effects {
+                    return Keep;
+                }
+
+                tpl.tpl.exprs.retain_mut(|expr| {
+                    let remove_expr = self.simplify_unused_expr(expr);
+                    if remove_expr == Remove { false } else { true }
+                });
+
+                if tpl.tpl.exprs.is_empty() {
+                    Remove
+                } else if tpl.tpl.exprs.len() == 1 {
+                    *expr = tpl.tpl.exprs.first_mut().unwrap().as_mut().take();
+                    Keep
+                } else {
+                    *expr = Expr::Seq(SeqExpr {
+                        node_id: self.program_data.new_id(DUMMY_SP),
+                        exprs: tpl.tpl.exprs.take().into_iter().collect(),
+                    });
+                    Keep
+                }
+            }
+            Expr::Class(class) => {
+                let mut side_effects = Vec::new();
+
+                if let Some(extends) = &mut class.class.extends {
+                    let remove_extends = self.simplify_unused_expr(&mut extends.super_class);
+                    if remove_extends == Keep {
+                        side_effects.push(extends.super_class.take());
+                    }
+                }
+
+                for member in &mut class.class.body {
+                    match member {
+                        ClassMember::Method(class_method) => {
+                            if let PropName::Computed(key) = &mut class_method.key {
+                                let remove_key = self.simplify_unused_expr(&mut key.expr);
+                                if remove_key == Keep {
+                                    side_effects.push(key.expr.take());
+                                }
+                            }
+                        }
+                        ClassMember::PrivateMethod(_) | ClassMember::Constructor(_) => {}
+                        ClassMember::ClassProp(class_prop) => {
+                            if let Some(value) = &mut class_prop.value {
+                                if class_prop.is_static {
+                                    // TODO: static props can access the
+                                    // ClassExpr name and cause the ClassExpr to
+                                    // have side-effects. We should normalise
+                                    // static prop initialisers like closure
+                                    // does to avoid this.
+                                    todo!();
+                                }
+
+                                let remove_value = self.simplify_unused_expr(value);
+                                if remove_value == Keep {
+                                    side_effects.push(value.take());
+                                }
+                            }
+
+                            if let PropName::Computed(key) = &mut class_prop.key {
+                                let remove_key = self.simplify_unused_expr(&mut key.expr);
+                                if remove_key == Keep {
+                                    side_effects.push(key.expr.take());
+                                }
+                            }
+                        }
+                        ClassMember::PrivateProp(private_prop) => {
+                            if let Some(value) = &mut private_prop.value {
+                                if private_prop.is_static {
+                                    // TODO: static props can access the
+                                    // ClassExpr name and cause the ClassExpr to
+                                    // have side-effects. We should normalise
+                                    // static prop initialisers like closure
+                                    // does to avoid this.
+                                    todo!();
+                                }
+
+                                let remove_value = self.simplify_unused_expr(value);
+                                if remove_value == Keep {
+                                    side_effects.push(value.take());
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if side_effects.is_empty() {
+                    Remove
+                } else if side_effects.len() == 1 {
+                    *expr = *side_effects.into_iter().next().unwrap();
+                    Keep
+                } else {
+                    *expr = Expr::Seq(SeqExpr {
+                        node_id: self.program_data.new_id_from(class.node_id),
+                        exprs: side_effects,
+                    });
+                    Keep
+                }
+            }
+            Expr::Yield(_) => Keep,
+            Expr::MetaProp(_) => Remove,
+            Expr::Await(_) => Keep,
+            Expr::PrivateName(_) => Remove,
+            Expr::OptChain(opt) => {
+                let remove_expr = self.simplify_unused_expr(&mut opt.expr);
+                if remove_expr == Remove { Remove } else { Keep }
+            }
+
+            Expr::Fn(_) | Expr::Arrow(_) | Expr::Cond(_) => unreachable!("handled above"),
+            Expr::Invalid(_) => unreachable!(),
+        }
+    }
 }
 
 impl VisitMut<'_> for Visitor<'_> {
@@ -37,6 +599,21 @@ impl VisitMut<'_> for Visitor<'_> {
                 if num_stmts > 0 {
                     // Skip over the new stmts.
                     i += num_stmts - 1;
+                    continue;
+                } else {
+                    i += 1;
+                    continue;
+                }
+            }
+
+            if let Stmt::Expr(stmt) = &mut stmts[i] {
+                let remove = self.simplify_unused_expr(&mut stmt.expr);
+
+                if remove == OptimiseExprResult::Remove {
+                    stmts.remove(i);
+                    continue;
+                } else {
+                    i += 1;
                     continue;
                 }
             }
@@ -61,6 +638,21 @@ impl VisitMut<'_> for Visitor<'_> {
                 if num_stmts > 0 {
                     // Skip over the new stmts.
                     i += num_stmts - 1;
+                    continue;
+                } else {
+                    i += 1;
+                    continue;
+                }
+            }
+
+            if let ModuleItem::Stmt(Stmt::Expr(stmt)) = &mut items[i] {
+                let remove = self.simplify_unused_expr(&mut stmt.expr);
+
+                if remove == OptimiseExprResult::Remove {
+                    items.remove(i);
+                    continue;
+                } else {
+                    i += 1;
                     continue;
                 }
             }
@@ -157,6 +749,31 @@ impl VisitMut<'_> for Visitor<'_> {
 
                 *node = replacement;
             }
+            Expr::Seq(seq) => {
+                seq.visit_mut_children_with(self);
+
+                let mut i = 0;
+                let last_idx = seq.exprs.len() - 1;
+                seq.exprs.retain_mut(|expr| {
+                    let is_last = i == last_idx;
+
+                    i += 1;
+
+                    if is_last {
+                        return true;
+                    }
+
+                    if self.simplify_unused_expr(expr) == OptimiseExprResult::Remove {
+                        false
+                    } else {
+                        true
+                    }
+                });
+
+                if seq.exprs.len() == 1 {
+                    *node = seq.exprs[0].as_mut().take();
+                }
+            }
             _ => node.visit_mut_children_with(self),
         }
     }
@@ -179,7 +796,7 @@ mod tests {
         test_same("function f() {let x}");
         test_transform("{const x = 1}", "const x = 1;");
         test_transform("{x = 2; y = 4; let z;}", "x = 2; y = 4; let z;");
-        test_transform("{'hi'; let x;}", "'hi'; let x;");
+        test_transform("{'hi'; let x;}", "let x;");
         test_transform("{x = 4; {let y}}", "x = 4; let y;");
         test_transform("{class C {}} {class C {}}", "class C {} class C {}");
         test_transform("{label: var x}", "label: var x");
@@ -225,10 +842,6 @@ mod tests {
 
     //   #[test]
     //   fn  testFoldBlock() {
-    //     test_transform("{{foo()}}", "foo()");
-    //     test_transform("{foo();{}}", "foo()");
-    //     test_transform("{{foo()}{}}", "foo()");
-    //     test_transform("{{foo()}{bar()}}", "foo();bar()");
     //     test_transform("{if(false)foo(); {bar()}}", "bar()");
     //     test_transform("{if(false)if(false)if(false)foo(); {bar()}}", "bar()");
 
@@ -310,8 +923,8 @@ mod tests {
         test_transform("true ? a() : b()", "a()");
         test_transform("false ? a() : b()", "b()");
 
-        // test_transform("a() ? b() : true", "a() && b()");
-        // test_transform("a() ? true : b()", "a() || b()");
+        test_transform("a() ? b() : true", "a() && b()");
+        test_transform("a() ? true : b()", "a() || b()");
 
         test_transform("(a = true) ? b() : c()", "a = true, b()");
         test_transform("(a = false) ? b() : c()", "a = false, c()");
@@ -340,21 +953,21 @@ mod tests {
 
         test_transform("y = (x ? void 0 : void 0)", "y = void 0");
         test_transform("y = (x ? f() : f())", "y = f()");
-        // test_transform("(function(){}) ? function(){} : function(){}", "");
+        test_transform("(function(){}) ? function(){} : function(){}", "");
 
-        // test_transform("1 ? 2 : 3", "");
+        test_transform("1 ? 2 : 3", "");
 
-        // test_transform("x ? a() : 3", "x && a()");
+        test_transform("x ? a() : 3", "x && a()");
 
-        // test_transform("x ? 2 : a()", "x || a()");
+        test_transform("x ? 2 : a()", "x || a()");
 
         test_same("x ? a() : b()");
 
-        // test_transform("a() ? 1 : 2", "a()");
+        test_transform("a() ? 1 : 2", "a()");
 
-        // test_transform("a() ? b() : 2", "a() && b()");
+        test_transform("a() ? b() : 2", "a() && b()");
 
-        // test_transform("a() ? 1 : b()", "a() || b()");
+        test_transform("a() ? 1 : b()", "a() || b()");
 
         test_same("a() ? b() : c()");
 
@@ -364,10 +977,10 @@ mod tests {
             "(function f() {alert(x)})()",
         );
         test_transform("((function () {}), true) ? a() : b()", "a()");
-        // test_transform(
-        //     "((function () {alert(x)})(), true) ? a() : b()",
-        //     "(function(){alert(x)})(),a()",
-        // );
+        test_transform(
+            "((function () {alert(x)})(), true) ? a() : b()",
+            "(function(){alert(x)})(),a()",
+        );
     }
 
     //   #[test]
@@ -385,16 +998,16 @@ mod tests {
     //     test_same("b=1;if(foo=1,b)x=b;");
     //   }
 
-    //   #[test]
-    //   fn  testConstantConditionWithSideEffect2() {
-    //     test_transform("(b=true)?x=1:x=2;", "b=true,x=1");
-    //     test_transform("(b=false)?x=1:x=2;", "b=false,x=2");
-    //     test_transform("if (b=/ab/) x=1;", "b=/ab/;x=1");
-    //     test_transform("var b;b=/ab/;(b)?x=1:x=2;", "var b;b=/ab/;x=1");
-    //     test_same("var b;b=f();(b)?x=1:x=2;");
-    //     test_transform("var b=/ab/;(b)?x=1:x=2;", "var b=/ab/;x=1");
-    //     test_same("var b=f();(b)?x=1:x=2;");
-    //   }
+    #[test]
+    fn testConstantConditionWithSideEffect2() {
+        test_transform("(b=true)?x=1:x=2;", "b=true,x=1");
+        test_transform("(b=false)?x=1:x=2;", "b=false,x=2");
+        // test_transform("if (b=/ab/) x=1;", "b=/ab/;x=1");
+        // test_transform("var b;b=/ab/;(b)?x=1:x=2;", "var b;b=/ab/;x=1");
+        // test_same("var b;b=f();(b)?x=1:x=2;");
+        // test_transform("var b=/ab/;(b)?x=1:x=2;", "var b=/ab/;x=1");
+        // test_same("var b=f();(b)?x=1:x=2;");
+    }
 
     //   #[test]
     //   fn  testConstantConditionWithSideEffect_coalesce() {
@@ -611,92 +1224,92 @@ mod tests {
     //     test_transform("do { foo(); } while ('')", "foo();");
     //   }
 
-    //   #[test]
-    //   fn  testFoldConstantCommaExpressions() {
-    //     test_transform("if (true, false) {foo()}", "");
-    //     test_transform("if (false, true) {foo()}", "foo()");
-    //     test_transform("true, foo()", "foo()");
-    //     test_transform("true, foo?.()", "foo?.()");
-    //     test_transform("(1 + 2 + ''), foo()", "foo()");
-    //     test_transform("(1 + 2 + ''), foo?.()", "foo?.()");
-    //   }
+    #[test]
+    fn testFoldConstantCommaExpressions() {
+        // test_transform("if (true, false) {foo()}", "");
+        // test_transform("if (false, true) {foo()}", "foo()");
+        test_transform("true, foo()", "foo()");
+        test_transform("true, foo?.()", "foo?.()");
+        test_transform("(1 + 2 + ''), foo()", "foo()");
+        test_transform("(1 + 2 + ''), foo?.()", "foo?.()");
+    }
 
     #[test]
     fn testRemoveUselessOps1() {
         test_same("(function () { f(); })();");
     }
 
-    //   #[test]
-    //   fn  testCallSideEffectsPreserved() {
-    //     // Functions calls known to be free of side effects are removed.
-    //     test_transform("Math.random()", "");
-    //     test_transform("Math?.random()", "");
-    //     test_transform("Math.random(f() + g())", "f(),g();");
-    //     test_transform("Math?.random(f() + g())", "f(),g();");
-    //     test_transform("Math.random(f(),g(),h())", "f(),g(),h();");
-    //     test_transform("Math?.random(f(),g(),h())", "f(),g(),h();");
+    #[test]
+    fn testCallSideEffectsPreserved() {
+        // Functions calls known to be free of side effects are removed.
+        test_transform("Math.random()", "");
+        test_transform("Math?.random()", "");
+        test_transform("Math.random(f() + g())", "f(),g();");
+        test_transform("Math?.random(f() + g())", "f(),g();");
+        test_transform("Math.random(f(),g(),h())", "f(),g(),h();");
+        test_transform("Math?.random(f(),g(),h())", "f(),g(),h();");
 
-    //     // Calls to functions with unknown side-effects are preserved.
-    //     test_same("f();");
-    //     test_same("f?.();");
-    //     test_same("(function () { f(); })();");
-    //   }
+        // Calls to functions with unknown side-effects are preserved.
+        test_same("f();");
+        test_same("f?.();");
+        test_same("(function () { f(); })();");
+    }
 
-    //   #[test]
-    //   fn  testRemoveUselessOps2() {
-    //     // There are four place where expression results are discarded:
-    //     //  - a top-level expression EXPR_RESULT
-    //     //  - the LHS of a COMMA
-    //     //  - the FOR init expression
-    //     //  - the FOR increment expression
+    #[test]
+    fn testRemoveUselessOps2() {
+        // There are four place where expression results are discarded:
+        //  - a top-level expression EXPR_RESULT
+        //  - the LHS of a COMMA
+        //  - the FOR init expression
+        //  - the FOR increment expression
 
-    //     // We know that this function has no side effects because of the
-    //     // PureFunctionIdentifier.
-    //     test_transform("(function () {})();", "");
+        // We know that this function has no side effects because of the
+        // PureFunctionIdentifier.
+        // test_transform("(function () {})();", "");
 
-    //     // Uncalled function expressions are removed
-    //     test_transform("(function () {});", "");
-    //     test_transform("(function f() {});", "");
-    //     test_transform("(function* f() {})", "");
-    //     // ... including any code they contain.
-    //     test_transform("(function () {foo();});", "");
+        // Uncalled function expressions are removed
+        test_transform("(function () {});", "");
+        test_transform("(function f() {});", "");
+        test_transform("(function* f() {})", "");
+        // ... including any code they contain.
+        test_transform("(function () {foo();});", "");
 
-    //     // Useless operators are removed.
-    //     test_transform("+f()", "f()");
-    //     test_transform("+f?.()", "f?.()");
-    //     test_transform("a=(+f(),g())", "a=(f(),g())");
-    //     test_transform("a=(+f?.(),g())", "a=(f?.(),g())");
-    //     test_transform("a=(true,g())", "a=g()");
-    //     test_transform("f(),true", "f()");
-    //     test_transform("f() + g()", "f(),g()");
+        // Useless operators are removed.
+        test_transform("+f()", "f()");
+        test_transform("+f?.()", "f?.()");
+        test_transform("a=(+f(),g())", "a=(f(),g())");
+        test_transform("a=(+f?.(),g())", "a=(f?.(),g())");
+        test_transform("a=(true,g())", "a=g()");
+        test_transform("f(),true", "f()");
+        test_transform("f() + g()", "f(),g()");
 
-    //     test_transform("for(;;+f()){}", "for(;;f()){}");
-    //     test_transform("for(+f();;g()){}", "for(f();;g()){}");
-    //     test_transform("for(;;Math.random(f(),g(),h())){}", "for(;;f(),g(),h()){}");
+        // test_transform("for(;;+f()){}", "for(;;f()){}");
+        // test_transform("for(+f();;g()){}", "for(f();;g()){}");
+        // test_transform("for(;;Math.random(f(),g(),h())){}", "for(;;f(),g(),h()){}");
 
-    //     // The optimization cascades into conditional expressions:
-    //     test_transform("g() && +f()", "g() && f()");
-    //     test_transform("g() || +f()", "g() || f()");
-    //     test_transform("x ? g() : +f()", "x ? g() : f()");
+        // The optimization cascades into conditional expressions:
+        test_transform("g() && +f()", "g() && f()");
+        test_transform("g() || +f()", "g() || f()");
+        test_transform("x ? g() : +f()", "x ? g() : f()");
 
-    //     test_transform("+x()", "x()");
-    //     test_transform("+x() * 2", "x()");
-    //     test_transform("-(+x() * 2)", "x()");
-    //     test_transform("2 -(+x() * 2)", "x()");
-    //     test_transform("x().foo", "x()");
-    //     test_same("x().foo()");
+        test_transform("+x()", "x()");
+        test_transform("+x() * 2", "x()");
+        test_transform("-(+x() * 2)", "x()");
+        test_transform("2 -(+x() * 2)", "x()");
+        test_transform("x().foo", "x()");
+        test_same("x().foo()");
 
-    //     test_same("x++");
-    //     test_same("++x");
-    //     test_same("x--");
-    //     test_same("--x");
-    //     test_same("x = 2");
-    //     test_same("x *= 2");
+        test_same("x++");
+        test_same("++x");
+        test_same("x--");
+        test_same("--x");
+        test_same("x = 2");
+        test_same("x *= 2");
 
-    //     // Sanity check, other expression are left alone.
-    //     test_same("function f() {}");
-    //     test_same("var x;");
-    //   }
+        // Sanity check, other expression are left alone.
+        test_same("function f() {}");
+        test_same("var x;");
+    }
 
     //   #[test]
     //   fn  testOptimizeSwitch() {
@@ -1064,14 +1677,14 @@ mod tests {
     //         "outer: {f(); break outer;}");
     //   }
 
-    //   // `a[b]` could trigger a getter or setter, and have side effects. However, we always assume it
-    //   // does not (even though it's unsound) because the code size cost of assuming all GETELEM nodes
-    //   // have side effects is unacceptable.
-    //   #[test]
-    //   fn  testUnusedGetElemRemoved() {
-    //     test_transform("a[b]", "");
-    //     test_transform("a?.[b]", "");
-    //   }
+    // `a[b]` could trigger a getter or setter, and have side effects. However, we always assume it
+    // does not (even though it's unsound) because the code size cost of assuming all GETELEM nodes
+    // have side effects is unacceptable.
+    #[test]
+    fn testUnusedGetElemRemoved() {
+        test_transform("a[b]", "");
+        test_transform("a?.[b]", "");
+    }
 
     //   #[test]
     //   fn  testOptimizeSwitch2() {
@@ -1440,60 +2053,66 @@ mod tests {
         test_same("a: { b: try { foo(); break a; } finally { foo(); } bar(); }");
     }
 
-    //   #[test]
-    //   fn  testRemoveNumber() {
-    //     test_transform("3", "");
-    //   }
+    #[test]
+    fn testRemoveNumber() {
+        test_transform("3", "");
+    }
 
-    //   #[test]
-    //   fn  testRemoveVarGet1() {
-    //     test_transform("a", "");
-    //   }
+    #[test]
+    fn testRemoveVarGet1() {
+        test_transform("a", "");
+    }
 
-    //   #[test]
-    //   fn  testRemoveVarGet2() {
-    //     test_transform("var a = 1;a", "var a = 1");
-    //   }
+    #[test]
+    fn testRemoveVarGet2() {
+        test_transform("var a = 1;a", "var a = 1");
+    }
 
-    //   #[test]
-    //   fn  testRemoveUnusedGetProp() {
-    //     test_transform("var a = {};a.b", "var a = {}");
-    //   }
+    #[test]
+    fn testRemoveUnusedGetProp() {
+        test_transform("var a = {};a.b", "var a = {}");
+    }
 
-    //   #[test]
-    //   fn  testRemoveUnusedOptChainGetProp() {
-    //     test_transform("var a = {};a?.b", "var a = {}");
-    //   }
+    #[test]
+    fn testRemoveUnusedOptChainGetProp() {
+        test_transform("var a = {};a?.b", "var a = {}");
+    }
 
-    //   #[test]
-    //   fn  testRemoveUnusedGetProp2() {
-    //     test_transform("var a = {};a.b=1;a.b", "var a = {};a.b=1");
-    //   }
+    #[test]
+    fn testRemoveUnusedGetProp2() {
+        test_transform("var a = {};a.b=1;a.b", "var a = {};a.b=1");
+    }
 
-    //   #[test]
-    //   fn  testRemoveUnusedOptChainGetProp2() {
-    //     test_transform("var a = {};a.b=1;a?.b", "var a = {};a.b=1");
-    //   }
+    #[test]
+    fn testRemoveUnusedOptChainGetProp2() {
+        test_transform("var a = {};a.b=1;a?.b", "var a = {};a.b=1");
+    }
 
-    //   #[test]
-    //   fn  testRemovePrototypeGet1() {
-    //     test_transform("var a = {};a.prototype.b", "var a = {}");
-    //   }
+    #[test]
+    fn testRemovePrototypeGet1() {
+        test_transform("var a = {};a.prototype.b", "var a = {}");
+    }
 
-    //   #[test]
-    //   fn  testRemoveOptChainPrototypeGet1() {
-    //     test_transform("var a = {};a?.prototype.b", "var a = {}");
-    //   }
+    #[test]
+    fn testRemoveOptChainPrototypeGet1() {
+        test_transform("var a = {};a?.prototype.b", "var a = {}");
+    }
 
-    //   #[test]
-    //   fn  testRemovePrototypeGet2() {
-    //     test_transform("var a = {};a.prototype.b = 1;a.prototype.b", "var a = {};a.prototype.b = 1");
-    //   }
+    #[test]
+    fn testRemovePrototypeGet2() {
+        test_transform(
+            "var a = {};a.prototype.b = 1;a.prototype.b",
+            "var a = {};a.prototype.b = 1",
+        );
+    }
 
-    //   #[test]
-    //   fn  testRemoveOptChainPrototypeGet2() {
-    //     test_transform("var a = {};a.prototype.b = 1;a?.prototype.b", "var a = {};a.prototype.b = 1");
-    //   }
+    #[test]
+    fn testRemoveOptChainPrototypeGet2() {
+        test_transform(
+            "var a = {};a.prototype.b = 1;a?.prototype.b",
+            "var a = {};a.prototype.b = 1",
+        );
+    }
 
     #[test]
     fn testNotRemovePrototypeGet2() {
@@ -1505,10 +2124,10 @@ mod tests {
         test_same("var a = {};a.prototype.b = 1; let x = a?.prototype.b");
     }
 
-    //   #[test]
-    //   fn  testRemoveAdd1() {
-    //     test_transform("1 + 2", "");
-    //   }
+    #[test]
+    fn testRemoveAdd1() {
+        test_transform("1 + 2", "");
+    }
 
     #[test]
     fn testNoRemoveVar1() {
@@ -1530,10 +2149,10 @@ mod tests {
         test_same("a = b = 1");
     }
 
-    //   #[test]
-    //   fn  testNoRemoveAssign3() {
-    //     test_transform("1 + (a = 2)", "a = 2");
-    //   }
+    #[test]
+    fn testNoRemoveAssign3() {
+        test_transform("1 + (a = 2)", "a = 2");
+    }
 
     #[test]
     fn testNoRemoveAssign4() {
@@ -1545,10 +2164,10 @@ mod tests {
         test_same("x.a = x.b = 1");
     }
 
-    //   #[test]
-    //   fn  testNoRemoveAssign6() {
-    //     test_transform("1 + (x.a = 2)", "x.a = 2");
-    //   }
+    #[test]
+    fn testNoRemoveAssign6() {
+        test_transform("1 + (x.a = 2)", "x.a = 2");
+    }
 
     #[test]
     fn testNoRemoveCall1() {
@@ -1560,15 +2179,15 @@ mod tests {
         test_same("a?.()");
     }
 
-    //   #[test]
-    //   fn  testNoRemoveCall2() {
-    //     test_transform("a()+b()", "a(),b()");
-    //   }
+    #[test]
+    fn testNoRemoveCall2() {
+        test_transform("a()+b()", "a(),b()");
+    }
 
-    //   #[test]
-    //   fn  testNoRemoveOptChainCall2() {
-    //     test_transform("a?.()+b?.()", "a?.(),b?.()");
-    //   }
+    #[test]
+    fn testNoRemoveOptChainCall2() {
+        test_transform("a?.()+b?.()", "a?.(),b?.()");
+    }
 
     #[test]
     fn testNoRemoveCall3() {
@@ -1600,25 +2219,25 @@ mod tests {
         test_same("a?.() ?? b?.()");
     }
 
-    //   #[test]
-    //   fn  testNoRemoveCall5NullishCoalesce() {
-    //     test_transform("a() ?? 1", "a()");
-    //   }
+    #[test]
+    fn testNoRemoveCall5NullishCoalesce() {
+        test_transform("a() ?? 1", "a()");
+    }
 
-    //   #[test]
-    //   fn  testNoRemoveOptChainCall5NullishCoalesce() {
-    //     test_transform("a?.() ?? 1", "a?.()");
-    //   }
+    #[test]
+    fn testNoRemoveOptChainCall5NullishCoalesce() {
+        test_transform("a?.() ?? 1", "a?.()");
+    }
 
     #[test]
     fn testNoRemoveCall6NullishCoalesce() {
         test_same("1 ?? a()");
     }
 
-    //   #[test]
-    //   fn  testNoRemoveCall5() {
-    //     test_transform("a() || 1", "a()");
-    //   }
+    #[test]
+    fn testNoRemoveCall5() {
+        test_transform("a() || 1", "a()");
+    }
 
     #[test]
     fn testNoRemoveCall6() {
@@ -1650,60 +2269,60 @@ mod tests {
     //     test_transform("for(1;2;3) 4", "for(;;);");
     //   }
 
-    //   #[test]
-    //   fn  testShortCircuit1() {
-    //     test_same("1 && a()");
-    //   }
+    #[test]
+    fn testShortCircuit1() {
+        test_same("1 && a()");
+    }
 
-    //   #[test]
-    //   fn  testShortCircuit2NullishCoalesce() {
-    //     test_transform("1 ?? a() ?? 2", "1 ?? a()");
-    //   }
+    #[test]
+    fn testShortCircuit2NullishCoalesce() {
+        test_transform("1 ?? a() ?? 2", "1 ?? a()");
+    }
 
-    //   #[test]
-    //   fn  testShortCircuit3NullishCoalesce() {
-    //     test_transform("a() ?? 1 ?? 2", "a()");
-    //   }
+    #[test]
+    fn testShortCircuit3NullishCoalesce() {
+        test_transform("a() ?? 1 ?? 2", "a()");
+    }
 
     #[test]
     fn testShortCircuit4NullishCoalesce() {
         test_same("a() ?? 1 ?? b()");
     }
 
-    //   #[test]
-    //   fn  testShortCircuit2() {
-    //     test_transform("1 && a() && 2", "1 && a()");
-    //   }
+    #[test]
+    fn testShortCircuit2() {
+        test_transform("1 && a() && 2", "1 && a()");
+    }
 
-    //   #[test]
-    //   fn  testShortCircuit3() {
-    //     test_transform("a() && 1 && 2", "a()");
-    //   }
+    #[test]
+    fn testShortCircuit3() {
+        test_transform("a() && 1 && 2", "a()");
+    }
 
     #[test]
     fn testShortCircuit4() {
         test_same("a() && 1 && b()");
     }
 
-    //   #[test]
-    //   fn  testComplex1() {
-    //     test_transform("1 && a() + b() + c()", "1 && (a(), b(), c())");
-    //   }
+    #[test]
+    fn testComplex1() {
+        test_transform("1 && a() + b() + c()", "1 && (a(), b(), c())");
+    }
 
-    //   #[test]
-    //   fn  testComplex2() {
-    //     test_transform("1 && (a() ? b() : 1)", "1 && (a() && b())");
-    //   }
+    #[test]
+    fn testComplex2() {
+        test_transform("1 && (a() ? b() : 1)", "1 && (a() && b())");
+    }
 
-    //   #[test]
-    //   fn  testComplex3() {
-    //     test_transform("1 && (a() ? b() : 1 + c())", "1 && (a() ? b() : c())");
-    //   }
+    #[test]
+    fn testComplex3() {
+        test_transform("1 && (a() ? b() : 1 + c())", "1 && (a() ? b() : c())");
+    }
 
-    //   #[test]
-    //   fn  testComplex4() {
-    //     test_transform("1 && (a() ? 1 : 1 + c())", "1 && (a() || c())");
-    //   }
+    #[test]
+    fn testComplex4() {
+        test_transform("1 && (a() ? 1 : 1 + c())", "1 && (a() || c())");
+    }
 
     #[test]
     fn testComplex5() {
@@ -1768,67 +2387,67 @@ mod tests {
     //     test_transform("LBL: foo() + 1 + bar()", "LBL: foo(),bar()");
     //   }
 
-    //   #[test]
-    //   fn  testCall() {
-    //     test_same("foo(0)");
-    //     // We use a function with no side-effects, otherwise the entire invocation would be preserved.
-    //     test_transform("Math.sin(0);", "");
-    //     test_transform("1 + Math.sin(0);", "");
-    //   }
+    #[test]
+    fn testCall() {
+        test_same("foo(0)");
+        // We use a function with no side-effects, otherwise the entire invocation would be preserved.
+        test_transform("Math.sin(0);", "");
+        test_transform("1 + Math.sin(0);", "");
+    }
 
-    //   #[test]
-    //   fn  testCall_containingSpread() {
-    //     // We use a function with no side-effects, otherwise the entire invocation would be preserved.
-    //     test_transform("Math.sin(...c)", "([...c])");
-    //     test_transform("Math.sin(4, ...c, a)", "([...c])");
-    //     test_transform("Math.sin(foo(), ...c, bar())", "(foo(), [...c], bar())");
-    //     test_transform("Math.sin(...a, b, ...c)", "([...a], [...c])");
-    //     test_transform("Math.sin(...b, ...c)", "([...b], [...c])");
-    //   }
+    #[test]
+    fn testCall_containingSpread() {
+        // We use a function with no side-effects, otherwise the entire invocation would be preserved.
+        test_transform("Math.sin(...c)", "([...c])");
+        test_transform("Math.sin(4, ...c, a)", "([...c])");
+        test_transform("Math.sin(foo(), ...c, bar())", "[foo(), ...c, bar()]");
+        test_transform("Math.sin(...a, b, ...c)", "[...a, ...c]");
+        test_transform("Math.sin(...b, ...c)", "[...b, ...c]");
+    }
 
-    //   #[test]
-    //   fn  testOptChainCall_containingSpread() {
-    //     // We use a function with no side-effects, otherwise the entire invocation would be preserved.
-    //     test_transform("Math?.sin(...c)", "([...c])");
-    //     test_transform("Math?.sin(4, ...c, a)", "([...c])");
-    //     test_transform("Math?.sin(foo(), ...c, bar())", "(foo(), [...c], bar())");
-    //     test_transform("Math?.sin(...a, b, ...c)", "([...a], [...c])");
-    //     test_transform("Math?.sin(...b, ...c)", "([...b], [...c])");
-    //   }
+    #[test]
+    fn testOptChainCall_containingSpread() {
+        // We use a function with no side-effects, otherwise the entire invocation would be preserved.
+        test_transform("Math?.sin(...c)", "([...c])");
+        test_transform("Math?.sin(4, ...c, a)", "([...c])");
+        test_transform("Math?.sin(foo(), ...c, bar())", "[foo(), ...c, bar()]");
+        test_transform("Math?.sin(...a, b, ...c)", "[...a, ...c]");
+        test_transform("Math?.sin(...b, ...c)", "[...b, ...c]");
+    }
 
-    //   #[test]
-    //   fn  testNew() {
-    //     test_same("new foo(0)");
-    //     // We use a function with no side-effects, otherwise the entire invocation would be preserved.
-    //     test_transform("new Date;", "");
-    //     test_transform("1 + new Date;", "");
-    //   }
+    #[test]
+    fn testNew() {
+        test_same("new foo(0)");
+        // We use a function with no side-effects, otherwise the entire invocation would be preserved.
+        test_transform("new Date;", "");
+        test_transform("1 + new Date;", "");
+    }
 
-    //   #[test]
-    //   fn  testNew_containingSpread() {
-    //     // We use a function with no side-effects, otherwise the entire invocation would be preserved.
-    //     test_transform("new Date(...c)", "([...c])");
-    //     test_transform("new Date(4, ...c, a)", "([...c])");
-    //     test_transform("new Date(foo(), ...c, bar())", "(foo(), [...c], bar())");
-    //     test_transform("new Date(...a, b, ...c)", "([...a], [...c])");
-    //     test_transform("new Date(...b, ...c)", "([...b], [...c])");
-    //   }
+    #[test]
+    fn testNew_containingSpread() {
+        // We use a function with no side-effects, otherwise the entire invocation would be preserved.
+        test_transform("new Date(...c)", "([...c])");
+        test_transform("new Date(4, ...c, a)", "([...c])");
+        test_transform("new Date(foo(), ...c, bar())", "[foo(), ...c, bar()]");
+        test_transform("new Date(...a, b, ...c)", "[...a, ...c]");
+        test_transform("new Date(...b, ...c)", "[...b, ...c]");
+    }
 
-    //   #[test]
-    //   fn  testTaggedTemplateLit_simpleTemplate() {
-    //     test_same("foo`Simple`");
-    //     // We use a function with no side-effects, otherwise the entire invocation would be preserved.
-    //     test_transform("Math.sin`Simple`", "");
-    //     test_transform("1 + Math.sin`Simple`", "");
-    //   }
+    #[test]
+    fn testTaggedTemplateLit_simpleTemplate() {
+        test_same("foo`Simple`");
+        // We use a function with no side-effects, otherwise the entire invocation would be preserved.
+        test_transform("Math.sin`Simple`", "");
+        test_transform("1 + Math.sin`Simple`", "");
+    }
 
-    //   #[test]
-    //   fn  testTaggedTemplateLit_substitutingTemplate() {
-    //     test_same("foo`Complex ${butSafe}`");
-    //     // We use a function with no side-effects, otherwise the entire invocation would be preserved.
-    //     test_transform("Math.sin`Complex ${butSafe}`", "");
-    //     test_transform("Math.sin`Complex ${andDangerous()}`", "andDangerous()");
-    //   }
+    #[test]
+    fn testTaggedTemplateLit_substitutingTemplate() {
+        test_same("foo`Complex ${butSafe}`");
+        // We use a function with no side-effects, otherwise the entire invocation would be preserved.
+        test_transform("Math.sin`Complex ${butSafe}`", "");
+        test_transform("Math.sin`Complex ${andDangerous()}`", "andDangerous()");
+    }
 
     #[test]
     fn testFoldAssign() {
@@ -1859,39 +2478,40 @@ mod tests {
     //     test_transform("L2:L1:try {} catch (e) {} finally {}", "");
     //   }
 
-    //   #[test]
-    //   fn  testObjectLiteral() {
-    //     test_transform("({})", "");
-    //     test_transform("({a:1})", "");
-    //     test_transform("({a:foo()})", "foo()");
-    //     test_transform("({'a':foo()})", "foo()");
-    //     // Object-spread may tigger getters.
-    //     test_same("({...a})");
-    //     test_same("({...foo()})");
-    //   }
+    #[test]
+    fn testObjectLiteral() {
+        test_transform("({})", "");
+        test_transform("({a:1})", "");
+        test_transform("({a:foo()})", "foo()");
+        test_transform("({'a':foo()})", "foo()");
+        // Object-spread may trigger getters, but we assume they are
+        // side-effect-free.
+        test_transform("({...a})", "");
+        test_transform("({...foo()})", "foo()");
+    }
 
-    //   #[test]
-    //   fn  testArrayLiteral() {
-    //     test_transform("([])", "");
-    //     test_transform("([1])", "");
-    //     test_transform("([a])", "");
-    //     test_transform("([foo()])", "foo()");
-    //   }
+    #[test]
+    fn testArrayLiteral() {
+        test_transform("([])", "");
+        test_transform("([1])", "");
+        test_transform("([a])", "");
+        test_transform("([foo()])", "foo()");
+    }
 
-    //   #[test]
-    //   fn  testArrayLiteral_containingSpread() {
-    //     test_same("([...c])");
-    //     test_transform("([4, ...c, a])", "([...c])");
-    //     test_transform("([foo(), ...c, bar()])", "(foo(), [...c], bar())");
-    //     test_transform("([...a, b, ...c])", "([...a], [...c])");
-    //     test_same("([...b, ...c])"); // It would also be fine if the spreads were split apart.
-    //   }
+    #[test]
+    fn testArrayLiteral_containingSpread() {
+        test_same("([...c])");
+        test_transform("([4, ...c, a])", "([...c])");
+        test_transform("([foo(), ...c, bar()])", "[foo(), ...c, bar()]");
+        test_transform("([...a, b, ...c])", "[...a, ...c]");
+        test_same("([...b, ...c])"); // It would also be fine if the spreads were split apart.
+    }
 
-    //   #[test]
-    //   fn  testAwait() {
-    //     test_same("async function f() { await something(); }");
-    //     test_same("async function f() { await some.thing(); }");
-    //   }
+    #[test]
+    fn testAwait() {
+        test_same("async function f() { await something(); }");
+        test_same("async function f() { await some.thing(); }");
+    }
 
     //   #[test]
     //   fn  testEmptyPatternInDeclarationRemoved() {
@@ -2200,39 +2820,41 @@ mod tests {
     //         """);
     //   }
 
-    //   #[test]
-    //   fn  testClassField() {
-    //     test_transform(
-    //         """
-    //         class C {
-    //           f1 = (5,2);
-    //         }
-    //         """,
-    //         """
-    //         class C {
-    //           f1 = 2;
-    //         }
-    //         """);
-    //   }
+    #[test]
+    fn testClassField() {
+        test_transform(
+            "
+class C {
+    f1 = (5,2);
+}
+",
+            "
+class C {
+    f1 = 2;
+}
+",
+        );
+    }
 
-    //   #[test]
-    //   fn  testThis() {
-    //     test_transform(
-    //         """
-    //         class C {
-    //           constructor() {
-    //             this.f1 = (5,2);
-    //           }
-    //         }
-    //         """,
-    //         """
-    //         class C {
-    //           constructor() {
-    //             this.f1 = 2;
-    //           }
-    //         }
-    //         """);
-    //   }
+    #[test]
+    fn testThis() {
+        test_transform(
+            "
+class C {
+    constructor() {
+    this.f1 = (5,2);
+    }
+}
+",
+            "
+class C {
+    constructor() {
+    this.f1 = 2;
+    }
+}
+",
+        );
+    }
 
     //   #[test]
     //   fn  testClassStaticBlock() {
@@ -2258,8 +2880,8 @@ mod tests {
     //         """);
     //   }
 
-    //   #[test]
-    //   fn  testRemoveUnreachableOptionalChainingCall() {
+    // #[test]
+    // fn testRemoveUnreachableOptionalChainingCall() {
     //     test_transform("(null)?.();", "");
     //     test_transform("(void 0)?.();", "");
     //     test_transform("(undefined)?.();", "");
@@ -2282,20 +2904,20 @@ mod tests {
     //     test_same("f?.()");
     //     test_transform("a?.x;", "");
     //     test_transform("a?.['x'];", "");
-    //   }
+    // }
 
-    //   #[test]
-    //   fn  testRemoveUnusedVoid() {
-    //     // remove void at statement level
-    //     test_transform("void 0;", "");
-    //     test_transform("void foo();", "foo();");
-    //     // preserve void when passed somewhere else
-    //     test_same("use(void 0);");
-    //     test_same("use(void foo());");
-    //     test_same("use(() => void foo());");
+    #[test]
+    fn testRemoveUnusedVoid() {
+        // remove void at statement level
+        test_transform("void 0;", "");
+        test_transform("void foo();", "foo();");
+        // preserve void when passed somewhere else
+        test_same("use(void 0);");
+        test_same("use(void foo());");
+        test_same("use(() => void foo());");
 
-    //     test_transform("void use(() => void foo());", "use(() => void foo());");
-    //   }
+        test_transform("void use(() => void foo());", "use(() => void foo());");
+    }
 
     //   private void testInFn(String js, String expected) {
     //     String pre = "function f() {";
