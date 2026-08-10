@@ -160,29 +160,23 @@ fn is_whitespace(ch: char) -> bool {
 #[derive(Clone)]
 struct Input<'src> {
     cur: usize,
-    bytes: &'src [u8],
+    src: &'src str,
 }
 
 impl<'src> Input<'src> {
     /// Returns the remaining portion of the input as a str.
-    #[inline(always)]
-    fn as_str(&self) -> &str {
-        debug_assert!(unsafe {
-            std::str::from_utf8(&self.bytes.get_unchecked(self.cur..)).is_ok()
-        });
 
-        // Safety: We know this is safe because we require the input to be valid utf8 and
-        // cur always points to a character boundary.
-        unsafe { std::str::from_utf8_unchecked(&self.bytes.get_unchecked(self.cur..)) }
+    fn as_str(&self) -> &str {
+        &self.src[self.cur..]
     }
 
     /// Gets the current char in the input.
     fn cur(&self) -> Option<char> {
-        self.as_str().chars().next()
+        self.src[self.cur..].chars().next()
     }
 
     fn cur_byte(&self) -> Option<u8> {
-        self.bytes.get(self.cur).copied()
+        self.src.as_bytes().get(self.cur).copied()
     }
 
     fn advance(&mut self, amount: usize) {
@@ -196,10 +190,7 @@ impl<'src> Input<'src> {
     }
 
     fn is(&self, c: u8) -> bool {
-        match self.bytes.get(self.cur).copied() {
-            Some(ch) if ch == c => true,
-            _ => false,
-        }
+        self.cur_byte() == Some(c)
     }
 
     fn eat(&mut self, c: u8) -> bool {
@@ -225,7 +216,7 @@ impl<'src> Input<'src> {
     }
 
     fn finished(&self) -> bool {
-        self.cur == self.bytes.len()
+        self.cur == self.src.as_bytes().len()
     }
 
     fn is_cur_ascii_digit(&self) -> bool {
@@ -291,7 +282,7 @@ fn parse_int_from_string(string: &str, radix: u8) -> f64 {
 }
 
 // TODO: can use lexical flags such as NumberFormatBuilder::new().required_exponent_digits to make `parse`
-// closure more resiliant to trailing junk, preventing special handling involving input.cur.
+// closure more resilient to trailing junk, preventing special handling involving input.cur.
 // See the JAVASCRIPT_LITERAL/JAVASCRIPT_STRING presets
 
 /// Parses number from a string according to the ECMAScript spec.
@@ -304,7 +295,7 @@ fn parse_int_from_string(string: &str, radix: u8) -> f64 {
 fn parse_num(string: &str, flags: ConversionFlags, empty_string_val: f64) -> f64 {
     let mut input = Input {
         cur: 0,
-        bytes: string.as_bytes(),
+        src: string,
     };
 
     if !input.advance_to_non_space() {
@@ -348,7 +339,7 @@ fn parse_num(string: &str, flags: ConversionFlags, empty_string_val: f64) -> f64
     let start = input.cur;
 
     let parse = |octal, end, input: Input| {
-        let slice = &input.bytes[start..end];
+        let slice = &input.src.as_bytes()[start..end];
 
         let radix = if octal { 8 } else { 10 };
         const RADIX_FORMAT: u128 = lexical::NumberFormatBuilder::new().radix(8).build();
@@ -540,6 +531,50 @@ fn parse_num(string: &str, flags: ConversionFlags, empty_string_val: f64) -> f64
 mod tests {
     use super::*;
 
+    fn white_space_string() -> String {
+        [
+            char_literals::LINE_FEED,
+            char_literals::CARRIAGE_RETURN,
+            char_literals::LINE_SEPARATOR,
+            char_literals::PARAGRAPH_SEPARATOR,
+            char_literals::CHARACTER_TABULATION,
+            char_literals::LINE_TABULATION,
+            char_literals::FORM_FEED,
+            char_literals::SPACE,
+            char_literals::NON_BREAKING_SPACE,
+            char_literals::OGHAM_SPACE_MARK,
+            char_literals::EN_QUAD,
+            char_literals::EM_QUAD,
+            char_literals::EN_SPACE,
+            char_literals::EM_SPACE,
+            char_literals::THREE_PER_EM_SPACE,
+            char_literals::FOUR_PER_EM_SPACE,
+            char_literals::SIX_PER_EM_SPACE,
+            char_literals::FIGURE_SPACE,
+            char_literals::PUNCTUATION_SPACE,
+            char_literals::THIN_SPACE,
+            char_literals::HAIR_SPACE,
+            char_literals::NARROW_NO_BREAK_SPACE,
+            char_literals::MEDIUM_MATHEMATICAL_SPACE,
+            char_literals::IDEOGRAPHIC_SPACE,
+            char_literals::ZERO_WIDTH_NO_BREAK_SPACE,
+        ]
+        .into_iter()
+        .collect()
+    }
+
+    #[test]
+    fn test_ecma_string_to_big_int() {
+        assert_eq!(
+            ecma_string_to_big_int(&format!(
+                "{}12345{}",
+                white_space_string(),
+                white_space_string()
+            )),
+            Some(BigInt::from(12345))
+        );
+    }
+
     #[test]
     fn convert_string_to_number() {
         assert_eq!(ecma_string_to_number("123"), 123_f64);
@@ -566,6 +601,15 @@ mod tests {
         assert_eq!(ecma_string_to_number("000123"), 123_f64);
 
         assert!(ecma_string_to_number("123_111").is_nan());
+
+        assert_eq!(
+            ecma_string_to_number(&format!(
+                "{}12345{}",
+                white_space_string(),
+                white_space_string()
+            )),
+            12345_f64
+        );
     }
 
     #[test]
