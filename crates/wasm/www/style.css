@@ -29,9 +29,7 @@ textarea {
   resize: vertical;
   width: 100%;
   flex-grow: 1;
-}
-
-#input {
+  color: inherit;
   min-height: 600px;
 }
 
@@ -39,6 +37,7 @@ textarea {
   position: relative;
   display: flex;
   flex-grow: 1;
+  flex-direction: column;
 }
 
 body {
@@ -50,10 +49,6 @@ body {
 .config-container {
   margin-left: 0;
   min-width: 320px;
-}
-
-#output {
-  color: inherit;
 }
 
 #config {

@@ -9,16 +9,17 @@ use clone_node::CloneNode;
 use common::util::take::Take;
 use node_eq::NodeEq;
 use node_id::GetNodeIdMacro;
+use serde::Serialize;
 
 /// Use when only block statements are allowed.
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct BlockStmt {
     pub node_id: NodeId,
 
     pub stmts: Vec<Stmt>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub enum Stmt {
     Block(BlockStmt),
 
@@ -68,55 +69,55 @@ impl Take for Stmt {
     }
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct ExprStmt {
     pub node_id: NodeId,
     pub expr: Box<Expr>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct EmptyStmt {
     pub node_id: NodeId,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct DebuggerStmt {
     pub node_id: NodeId,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct WithStmt {
     pub node_id: NodeId,
     pub obj: Box<Expr>,
     pub body: Box<Stmt>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct ReturnStmt {
     pub node_id: NodeId,
     pub arg: Option<Box<Expr>>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct LabeledStmt {
     pub node_id: NodeId,
     pub label: Ident,
     pub body: Box<Stmt>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct BreakStmt {
     pub node_id: NodeId,
     pub label: Option<Ident>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct ContinueStmt {
     pub node_id: NodeId,
     pub label: Option<Ident>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct IfStmt {
     pub node_id: NodeId,
     pub test: Box<Expr>,
@@ -126,20 +127,20 @@ pub struct IfStmt {
     pub alt: Option<Box<Stmt>>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct SwitchStmt {
     pub node_id: NodeId,
     pub discriminant: Box<Expr>,
     pub cases: Vec<SwitchCase>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct ThrowStmt {
     pub node_id: NodeId,
     pub arg: Box<Expr>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct TryStmt {
     pub node_id: NodeId,
 
@@ -150,21 +151,21 @@ pub struct TryStmt {
     pub finalizer: Option<BlockStmt>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct WhileStmt {
     pub node_id: NodeId,
     pub test: Box<Expr>,
     pub body: Box<Stmt>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct DoWhileStmt {
     pub node_id: NodeId,
     pub test: Box<Expr>,
     pub body: Box<Stmt>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct ForStmt {
     pub node_id: NodeId,
 
@@ -177,7 +178,7 @@ pub struct ForStmt {
     pub body: Box<Stmt>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct ForInStmt {
     pub node_id: NodeId,
     pub left: VarDeclOrPat,
@@ -185,7 +186,7 @@ pub struct ForInStmt {
     pub body: Box<Stmt>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct ForOfStmt {
     pub node_id: NodeId,
     /// for-await-of statements, e.g., `for await (const x of xs) {`
@@ -195,7 +196,7 @@ pub struct ForOfStmt {
     pub body: Box<Stmt>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct SwitchCase {
     pub node_id: NodeId,
 
@@ -211,7 +212,7 @@ impl SwitchCase {
     }
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct CatchClause {
     pub node_id: NodeId,
     /// es2019
@@ -223,7 +224,7 @@ pub struct CatchClause {
     pub body: BlockStmt,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub enum VarDeclOrPat {
     VarDecl(VarDecl),
 
@@ -236,7 +237,7 @@ impl Take for VarDeclOrPat {
     }
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 #[allow(variant_size_differences)]
 pub enum VarDeclOrExpr {
     VarDecl(VarDecl),

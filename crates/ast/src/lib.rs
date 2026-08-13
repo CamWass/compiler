@@ -46,6 +46,7 @@ use common::{Span, SyntaxContext};
 use index::vec::IndexVec;
 use node_eq::NodeEq;
 use node_id::GetNodeIdMacro;
+use serde::Serialize;
 
 #[macro_use]
 mod macros;
@@ -62,7 +63,7 @@ mod pat;
 mod prop;
 mod stmt;
 
-index::newtype_index!(pub NodeId);
+index::newtype_index!(pub NodeId, Serialize);
 
 impl NodeId {
     pub const DUMMY: NodeId = NodeId::MAX;
@@ -115,7 +116,7 @@ impl ProgramData {
 }
 
 /// Represents a invalid node.
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct Invalid {
     pub node_id: NodeId,
 }

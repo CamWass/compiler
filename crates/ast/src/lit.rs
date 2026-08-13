@@ -5,12 +5,13 @@ use clone_node::CloneNode;
 use node_eq::NodeEq;
 use node_id::GetNodeIdMacro;
 use num_bigint::BigUint;
+use serde::Serialize;
 use std::{
     fmt::{self, Display, Formatter, Write},
     hash::{Hash, Hasher},
 };
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub enum Lit {
     Str(Str),
 
@@ -25,13 +26,13 @@ pub enum Lit {
     Regex(Regex),
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct BigInt {
     pub node_id: NodeId,
     pub value: BigUint,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct Str {
     pub node_id: NodeId,
 
@@ -45,18 +46,18 @@ impl Str {
     }
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct Bool {
     pub node_id: NodeId,
     pub value: bool,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct Null {
     pub node_id: NodeId,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct Regex {
     pub node_id: NodeId,
 
@@ -66,7 +67,7 @@ pub struct Regex {
 }
 
 bitflags! {
-    #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+    #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize)]
     pub struct RegexFlags: u8 {
         const D = 1 << 0;
         const G = 1 << 1;
@@ -121,7 +122,7 @@ impl crate::NodeEq for RegexFlags {
     }
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct Number {
     pub node_id: NodeId,
     /// **Note**: This should not be `NaN`. Use [crate::Ident] to represent NaN.

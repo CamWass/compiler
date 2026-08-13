@@ -63,8 +63,8 @@ impl Idx for u32 {
 /// `u32::MAX`.
 #[macro_export]
 macro_rules! newtype_index {
-    ($v:vis $type:ident) => (
-        #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+    ($v:vis $type:ident $(, $extra:path)*) => (
+        #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord $(, $extra)*)]
         $v struct $type(u32);
 
         impl $type {

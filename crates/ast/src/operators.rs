@@ -1,7 +1,8 @@
 use clone_node::CloneNode;
 use node_eq::NodeEq;
+use serde::Serialize;
 
-#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode, NodeEq)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode, NodeEq, Serialize)]
 pub enum BinaryOp {
     /// `==`
     EqEq,
@@ -140,7 +141,7 @@ impl std::fmt::Debug for BinaryOp {
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode, NodeEq)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode, NodeEq, Serialize)]
 pub enum AssignOp {
     /// `=`
     Assign,
@@ -210,7 +211,7 @@ impl std::fmt::Debug for AssignOp {
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode, NodeEq)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode, NodeEq, Serialize)]
 pub enum UpdateOp {
     /// `++`
     PlusPlus,
@@ -234,7 +235,7 @@ impl std::fmt::Debug for UpdateOp {
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode, NodeEq)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode, NodeEq, Serialize)]
 pub enum UnaryOp {
     /// `-`
     Minus,

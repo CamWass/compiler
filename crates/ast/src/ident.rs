@@ -4,9 +4,10 @@ use clone_node::CloneNode;
 use common::{SyntaxContext, util::take::Take};
 use node_eq::NodeEq;
 use node_id::GetNodeIdMacro;
+use serde::Serialize;
 
 /// Identifier used as a pattern.
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct BindingIdent {
     pub node_id: NodeId,
     pub id: Ident,
@@ -22,7 +23,7 @@ impl BindingIdent {
 }
 
 /// Ident.
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct Ident {
     pub node_id: NodeId,
     pub sym: JsWord,
@@ -108,7 +109,7 @@ impl Ident {
     }
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct PrivateName {
     pub node_id: NodeId,
     pub id: Ident,

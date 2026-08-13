@@ -16,7 +16,7 @@ use std::{
 
 use compiler::PassConfig;
 use parser::{EsConfig, TsConfig};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::error::Category;
 
 #[derive(Debug, Deserialize, Clone)]
@@ -87,12 +87,19 @@ impl Write for BufferedError {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+struct CompileOutput {
+    output: String,
+    output_ast: String,
+    input_ast: String,
+}
+
 fn compile(
     entry_file: &str,
     src: &str,
     config: &str,
     error_buffer: &BufferedError,
-) -> Result<String> {
+) -> Result<CompileOutput> {
     let config = load_config(config)?;
 
     let cm = Rc::<SourceMap>::default();
@@ -117,6 +124,8 @@ fn compile(
 
     let program = create_program(entry_file, src, &config, &cm, &handler, &mut program_data)?;
 
+    let input_ast_string = serde_json::to_string_pretty(&program)?;
+
     let compiler = Compiler::new();
 
     let result = compiler.compile(program, config.passes, &mut program_data);
@@ -137,7 +146,13 @@ fn compile(
         .emit_program(&result)
         .context("Failed to emit module")?;
 
-    Ok(buf)
+    let output_ast_string = serde_json::to_string_pretty(&result)?;
+
+    Ok(CompileOutput {
+        output: buf,
+        output_ast: output_ast_string,
+        input_ast: input_ast_string,
+    })
 }
 
 pub fn load_config(content: &str) -> Result<Config> {
@@ -160,13 +175,16 @@ pub fn load_config(content: &str) -> Result<Config> {
 }
 
 #[wasm_bindgen]
-pub fn process(input: &str, config: &str) -> Result<String, JsError> {
+pub fn process(input: &str, config: &str) -> Result<JsValue, JsError> {
     console_error_panic_hook::set_once();
 
     let error_buffer: BufferedError = Default::default();
 
-    compile("input_file.js", input, config, &error_buffer).map_err(|e| {
+    let res = compile("input_file.js", input, config, &error_buffer).map_err(|e| {
         let buffered_errors = String::from_utf8_lossy(&error_buffer.0.read().unwrap()).into_owned();
         JsError::new(&format!("{buffered_errors}\n{e}"))
-    })
+    })?;
+
+    serde_wasm_bindgen::to_value(&res)
+        .map_err(|e| JsError::new(&format!("Serialization failed: {e}")))
 }

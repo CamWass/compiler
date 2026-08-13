@@ -50,49 +50,80 @@ inner.prop3;
 result.prop3;
 `;
 
-const input = document.getElementById("input");
-const output = document.getElementById("output");
-const config = document.getElementById("config");
+const inputTextTextArea = document.getElementById("input-text");
+const inputAstJsonTextArea = document.getElementById("input-ast-json");
+const viewInputTextButton =  document.getElementById("view-input-text-button");
+const viewInputAstButton =  document.getElementById("view-input-ast-button");
+
+const outputTextTextArea = document.getElementById("output-text");
+const outputAstJsonTextArea = document.getElementById("output-ast-json");
+const viewOutputTextButton =  document.getElementById("view-output-text-button");
+const viewOutputAstButton =  document.getElementById("view-output-ast-button");
+
+const configTextArea = document.getElementById("config");
 
 const inputSizeLabel = document.getElementById("input-size");
 const outputSizeLabel = document.getElementById("output-size");
 
-input.value = DEFAULT_INPUT;
-config.value = DEFAULT_CONFIG;
+inputTextTextArea.value = DEFAULT_INPUT;
+configTextArea.value = DEFAULT_CONFIG;
 
 await init();
 
 function run() {
-  const inputSize = getStringSizeInBytes(input.value);
+  const inputSize = getStringSizeInBytes(inputTextTextArea.value);
   inputSizeLabel.textContent = `${inputSize} bytes`;
 
   try {
-    output.value = process(input.value, config.value);
+    const result = process(inputTextTextArea.value, configTextArea.value);
+    outputTextTextArea.value = result.output;
+    outputAstJsonTextArea.value = result.output_ast;
+    inputAstJsonTextArea.value = result.input_ast;
 
-    const outputSize = getStringSizeInBytes(output.value);
+    const outputSize = getStringSizeInBytes(outputTextTextArea.value);
 
-    const delta = inputSize - outputSize;
+    const delta = Math.abs(inputSize - outputSize);
     const percentDelta = (delta / inputSize) * 100;
-    const isDecrease = delta > 0;
-    const changeSymbol = isDecrease ? '-' : '+';
+    const changeSymbol =
+      inputSize > outputSize ? "-" : inputSize === outputSize ? "" : "+";
 
-    outputSizeLabel.textContent = `${outputSize} bytes • ${changeSymbol}${delta} bytes • ${changeSymbol}${percentDelta.toFixed(1)}%`;
+    outputSizeLabel.textContent = `${outputSize} bytes • ${changeSymbol}${delta} bytes • ${changeSymbol}${percentDelta.toFixed(
+      1,
+    )}%`;
   } catch (e) {
     console.error(e);
-    output.value = e;
+    outputTextTextArea.value = e;
     outputSizeLabel.textContent = "error";
   }
 }
 
-input.addEventListener("input", () => {
+inputTextTextArea.addEventListener("input", () => {
   run();
 });
 
-config.addEventListener("input", () => {
+configTextArea.addEventListener("input", () => {
   run();
 });
 
 run();
+
+viewInputTextButton.addEventListener("click", () => {
+  inputAstJsonTextArea.style.display = "none";
+  inputTextTextArea.style.display = "initial";
+});
+viewInputAstButton.addEventListener("click", () => {
+  inputTextTextArea.style.display = "none";
+  inputAstJsonTextArea.style.display = "initial";
+});
+
+viewOutputTextButton.addEventListener("click", () => {
+  outputAstJsonTextArea.style.display = "none";
+  outputTextTextArea.style.display = "initial";
+});
+viewOutputAstButton.addEventListener("click", () => {
+  outputTextTextArea.style.display = "none";
+  outputAstJsonTextArea.style.display = "initial";
+});
 
 function getStringSizeInBytes(string) {
   return new Blob([string]).size;

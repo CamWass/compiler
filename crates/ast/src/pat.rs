@@ -3,8 +3,9 @@ use clone_node::CloneNode;
 use common::util::take::Take;
 use node_eq::NodeEq;
 use node_id::GetNodeIdMacro;
+use serde::Serialize;
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub enum Pat {
     Ident(BindingIdent),
 
@@ -30,21 +31,21 @@ impl Take for Pat {
     }
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct ArrayPat {
     pub node_id: NodeId,
 
     pub elems: Vec<Option<Pat>>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct ObjectPat {
     pub node_id: NodeId,
 
     pub props: Vec<ObjectPatProp>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct AssignPat {
     pub node_id: NodeId,
 
@@ -54,21 +55,21 @@ pub struct AssignPat {
 }
 
 /// EsTree `RestElement`
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct RestPat {
     pub node_id: NodeId,
 
     pub arg: Box<Pat>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub enum ObjectPatProp {
     KeyValue(KeyValuePatProp),
     Rest(RestPat),
 }
 
 /// `{key: value}`
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct KeyValuePatProp {
     pub node_id: NodeId,
     pub key: PropName,

@@ -19,13 +19,27 @@
       <div class="panel">
         <p>Input (<span id="input-size"></span>)</p>
         <div class="input-container">
-          <textarea id="input"></textarea>
+          <div>
+            <button id="view-input-text-button">View input text</button>
+            <button id="view-input-ast-button">View input AST</button>
+          </div>
+          <textarea id="input-text"></textarea>
+          <textarea id="input-ast-json" style="display: none"></textarea>
         </div>
       </div>
       <div class="panel">
         <p>Output (<span id="output-size"></span>)</p>
         <div class="input-container">
-          <textarea id="output" disabled></textarea>
+          <div>
+            <button id="view-output-text-button">View output text</button>
+            <button id="view-output-ast-button">View output AST</button>
+          </div>
+          <textarea id="output-text" disabled></textarea>
+          <textarea
+            id="output-ast-json"
+            disabled
+            style="display: none"
+          ></textarea>
         </div>
       </div>
     </div>

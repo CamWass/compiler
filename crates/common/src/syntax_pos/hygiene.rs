@@ -15,6 +15,8 @@
 //! and definition contexts*. J. Funct. Program. 22, 2 (March 2012), 181-216.
 //! DOI=10.1017/S0956796812000093 <https://doi.org/10.1017/S0956796812000093>
 
+use serde::Serialize;
+
 use super::GLOBALS;
 use std::{
     collections::{HashMap, HashSet},
@@ -23,7 +25,7 @@ use std::{
 
 /// A SyntaxContext represents a chain of macro expansions (represented by
 /// marks).
-#[derive(Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord, Hash, Serialize)]
 pub struct SyntaxContext(u32);
 
 #[derive(Copy, Clone, Debug)]

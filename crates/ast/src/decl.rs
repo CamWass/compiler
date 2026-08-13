@@ -4,15 +4,16 @@ use crate::{
 use clone_node::CloneNode;
 use node_eq::NodeEq;
 use node_id::GetNodeIdMacro;
+use serde::Serialize;
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub enum Decl {
     Class(ClassDecl),
     Fn(FnDecl),
     Var(VarDecl),
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct FnDecl {
     pub node_id: NodeId,
 
@@ -20,7 +21,7 @@ pub struct FnDecl {
     pub function: Function,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct ClassDecl {
     pub node_id: NodeId,
 
@@ -28,7 +29,7 @@ pub struct ClassDecl {
     pub class: Class,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct VarDecl {
     pub node_id: NodeId,
 
@@ -37,7 +38,7 @@ pub struct VarDecl {
     pub decls: Vec<VarDeclarator>,
 }
 
-#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode, NodeEq)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, CloneNode, NodeEq, Serialize)]
 pub enum VarDeclKind {
     /// `var`
     Var,
@@ -64,7 +65,7 @@ impl std::fmt::Debug for VarDeclKind {
     }
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct VarDeclarator {
     pub node_id: NodeId,
 

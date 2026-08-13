@@ -9,8 +9,9 @@ use crate::{
 use clone_node::CloneNode;
 use node_eq::NodeEq;
 use node_id::GetNodeIdMacro;
+use serde::Serialize;
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct Class {
     pub node_id: NodeId,
 
@@ -18,13 +19,13 @@ pub struct Class {
     pub body: Vec<ClassMember>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct ExtendsClause {
     pub node_id: NodeId,
     pub super_class: Box<Expr>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub enum ClassMember {
     Constructor(Constructor),
     /// `es2015`
@@ -35,7 +36,7 @@ pub enum ClassMember {
     PrivateProp(PrivateProp),
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct ClassProp {
     pub node_id: NodeId,
 
@@ -44,7 +45,7 @@ pub struct ClassProp {
     pub is_static: bool,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct PrivateProp {
     pub node_id: NodeId,
 
@@ -53,7 +54,7 @@ pub struct PrivateProp {
     pub is_static: bool,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct ClassMethod {
     pub node_id: NodeId,
 
@@ -63,7 +64,7 @@ pub struct ClassMethod {
     pub is_static: bool,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct PrivateMethod {
     pub node_id: NodeId,
 
@@ -73,7 +74,7 @@ pub struct PrivateMethod {
     pub is_static: bool,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct Constructor {
     pub node_id: NodeId,
 
@@ -81,7 +82,7 @@ pub struct Constructor {
     pub body: BlockStmt,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, CloneNode, NodeEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, CloneNode, NodeEq, Serialize)]
 pub enum MethodKind {
     Method,
     Getter,
