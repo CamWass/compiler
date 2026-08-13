@@ -103,6 +103,7 @@ impl VisitMut<'_> for DeadAssignmentElimination<'_> {
                     return;
                 };
 
+                // TODO: THIS IS NOT TRUE ATM - we don't yet normalize like closure does.
                 debug_assert_eq!(
                     var.decls.len(),
                     1,

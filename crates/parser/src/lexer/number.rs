@@ -303,6 +303,8 @@ impl Lexer<'_> {
                     if val.fract() < 1e-10 {
                         let mut d = digits(val.round() as u64, 10);
 
+                        // TODO: should we be checking the string representation
+                        // rather than the digits of the parsed decimal value?
                         // if it contains '8' or '9', it's decimal.
                         if d.any(|v| v == 8 || v == 9) {
                             // Continue parsing

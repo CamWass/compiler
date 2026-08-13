@@ -806,6 +806,7 @@ fn get_flow_state_at_declaration(
         flow_state: None,
         predicate: |stmt| {
             if let Stmt::Decl(Decl::Var(d)) = stmt {
+                // TODO: THIS IS NOT TRUE ATM - we don't yet normalize like closure does.
                 assert!(d.decls.len() == 1);
                 let decl = d.decls.first().unwrap();
                 if let Pat::Ident(n) = &decl.name {

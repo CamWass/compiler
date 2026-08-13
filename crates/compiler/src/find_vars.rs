@@ -7,6 +7,9 @@ use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use crate::{Id, ToId};
 
+// TODO: everything in this file would probably be mre clear if written with
+// walk functions rather than visitors.
+
 #[derive(Default, Debug)]
 pub struct AllVarsDeclaredInFunction {
     pub scope_variables: FxHashMap<Id, VarId>,

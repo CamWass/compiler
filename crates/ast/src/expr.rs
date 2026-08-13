@@ -253,6 +253,7 @@ pub struct AwaitExpr {
 pub struct Tpl {
     pub node_id: NodeId,
 
+    // TODO: why Vec<Box<Expr>> and not just Vec<Expr>?
     pub exprs: Vec<Box<Expr>>,
 
     pub quasis: Vec<TplElement>,

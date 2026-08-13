@@ -244,6 +244,7 @@ impl CoalesceVariableNames<'_> {
     fn handle_stmt_list(&mut self, stmts: &mut Vec<Stmt>) {
         stmts.retain_mut(|stmt| match stmt {
             Stmt::Decl(Decl::Var(var_decl)) => {
+                // TODO: THIS IS NOT TRUE ATM - we don't yet normalize like closure does.
                 assert!(var_decl.decls.len() == 1);
                 let decl = var_decl.decls.first_mut().unwrap();
 
@@ -377,6 +378,7 @@ impl VisitMut<'_> for CoalesceVariableNames<'_> {
 
     fn visit_mut_for_stmt(&mut self, node: &mut ForStmt) {
         if let Some(VarDeclOrExpr::VarDecl(var_decl)) = &mut node.init {
+            // TODO: this can contain multiple decls!
             if var_decl.decls.len() == 1 {
                 let decl = var_decl.decls.first_mut().unwrap();
 

@@ -512,6 +512,7 @@ impl<I: Tokens> Parser<'_, I> {
                     | Expr::Class(..)
                     | Expr::Tpl(..) => {
                         if !is_valid_simple_assignment_target(&expr, self.ctx().strict) {
+                            // TODO: should we only emit when strict?
                             self.emit_err(span, SyntaxError::NotSimpleAssign);
                         }
                         match *expr {
