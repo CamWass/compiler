@@ -1,6 +1,13 @@
 import init, { process } from "./wasm/wasm.js";
 
-const DEFAULT_CONFIG = `{
+const source = await fetch(new URL("out.js", import.meta.url)).then((r) =>
+  r.text(),
+);
+
+const INPUTS = {
+  properties: {
+    label: "Property optimisation",
+    config: `{
   "pretty_print": true,
   "passes": {
     "optimize_arguments_array": false,
@@ -15,11 +22,11 @@ const DEFAULT_CONFIG = `{
   },
   "ecmascript": {
     "dynamicImport": true,
-    "importMeta": true
+    "importMeta": true,
+    "topLevelAwait": true
   }
-}`;
-
-const DEFAULT_INPUT = `function addInner(a) {
+}`,
+    input: `function addInner(a) {
     a.inner = { zCommon: 1, prop3: 3 };
     return a;
 }
@@ -48,25 +55,59 @@ const inner = result.inner;
 inner.zCommon; inner.zCommon; inner.zCommon;
 inner.prop3;
 result.prop3;
-`;
+`,
+  },
+  website: {
+    label: "This website's source code",
+    config: `{
+  "pretty_print": false,
+  "passes": {
+    "optimize_arguments_array": true,
+    "rename_vars": true,
+    "rename_labels": true,
+    "coalesce_variable_names": true,
+    "optimize_properties": true,
+    "fuse_stmts": true,
+    "optimise_equality": true,
+    "remove_dead_code": true,
+    "collapse_variable_declarations": true
+  },
+  "ecmascript": {
+    "dynamicImport": true,
+    "importMeta": true,
+    "topLevelAwait": true
+  }
+}`,
+    input: source,
+  },
+};
+
+const exampleSelect = document.getElementById("example-select");
 
 const inputTextTextArea = document.getElementById("input-text");
 const inputAstJsonTextArea = document.getElementById("input-ast-json");
-const viewInputTextButton =  document.getElementById("view-input-text-button");
-const viewInputAstButton =  document.getElementById("view-input-ast-button");
+const viewInputTextButton = document.getElementById("view-input-text-button");
+const viewInputAstButton = document.getElementById("view-input-ast-button");
 
 const outputTextTextArea = document.getElementById("output-text");
 const outputAstJsonTextArea = document.getElementById("output-ast-json");
-const viewOutputTextButton =  document.getElementById("view-output-text-button");
-const viewOutputAstButton =  document.getElementById("view-output-ast-button");
+const viewOutputTextButton = document.getElementById("view-output-text-button");
+const viewOutputAstButton = document.getElementById("view-output-ast-button");
 
 const configTextArea = document.getElementById("config");
 
 const inputSizeLabel = document.getElementById("input-size");
 const outputSizeLabel = document.getElementById("output-size");
 
-inputTextTextArea.value = DEFAULT_INPUT;
-configTextArea.value = DEFAULT_CONFIG;
+inputTextTextArea.value = INPUTS.website.input;
+configTextArea.value = INPUTS.website.config;
+
+for (const [inputId, input] of Object.entries(INPUTS)) {
+  const option = document.createElement("option");
+  option.value = inputId;
+  option.textContent = input.label;
+  exampleSelect.append(option);
+}
 
 await init();
 
@@ -103,6 +144,16 @@ inputTextTextArea.addEventListener("input", () => {
 
 configTextArea.addEventListener("input", () => {
   run();
+});
+
+exampleSelect.addEventListener("input", (e) => {
+  if (INPUTS[exampleSelect.value]) {
+    e.preventDefault();
+    inputTextTextArea.value = INPUTS[exampleSelect.value].input;
+    configTextArea.value = INPUTS[exampleSelect.value].config;
+    exampleSelect.value = "";
+    run();
+  }
 });
 
 run();

@@ -6,40 +6,46 @@
   </head>
 
   <body>
-    <div class="config-container">
-      <div style="position: sticky; top: 1rem">
-        <p>Config</p>
-        <div style="position: relative">
-          <textarea id="config"></textarea>
-        </div>
-      </div>
-    </div>
+    <select id="example-select">
+      <option value="">Select an example...</option>
+    </select>
 
-    <div class="container">
-      <div class="panel">
-        <p>Input (<span id="input-size"></span>)</p>
-        <div class="input-container">
-          <div>
-            <button id="view-input-text-button">View input text</button>
-            <button id="view-input-ast-button">View input AST</button>
+    <div id="main-content">
+      <div class="config-container">
+        <div style="position: sticky; top: 1rem">
+          <p>Config</p>
+          <div style="position: relative">
+            <textarea id="config"></textarea>
           </div>
-          <textarea id="input-text"></textarea>
-          <textarea id="input-ast-json" style="display: none"></textarea>
         </div>
       </div>
-      <div class="panel">
-        <p>Output (<span id="output-size"></span>)</p>
-        <div class="input-container">
-          <div>
-            <button id="view-output-text-button">View output text</button>
-            <button id="view-output-ast-button">View output AST</button>
+
+      <div class="container">
+        <div class="panel">
+          <p>Input (<span id="input-size"></span>)</p>
+          <div class="input-container">
+            <div>
+              <button id="view-input-text-button">View input text</button>
+              <button id="view-input-ast-button">View input AST</button>
+            </div>
+            <textarea id="input-text"></textarea>
+            <textarea id="input-ast-json" style="display: none"></textarea>
           </div>
-          <textarea id="output-text" disabled></textarea>
-          <textarea
-            id="output-ast-json"
-            disabled
-            style="display: none"
-          ></textarea>
+        </div>
+        <div class="panel">
+          <p>Output (<span id="output-size"></span>)</p>
+          <div class="input-container">
+            <div>
+              <button id="view-output-text-button">View output text</button>
+              <button id="view-output-ast-button">View output AST</button>
+            </div>
+            <textarea id="output-text" disabled></textarea>
+            <textarea
+              id="output-ast-json"
+              disabled
+              style="display: none"
+            ></textarea>
+          </div>
         </div>
       </div>
     </div>

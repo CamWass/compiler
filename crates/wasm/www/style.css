@@ -40,10 +40,13 @@ textarea {
   flex-direction: column;
 }
 
-body {
+#main-content {
   display: flex;
-  margin: 1rem;
   gap: 1rem;
+}
+
+body {
+  margin: 1rem;
 }
 
 .config-container {
@@ -52,5 +55,5 @@ body {
 }
 
 #config {
-  min-height: 290px;
+  min-height: 300px;
 }
