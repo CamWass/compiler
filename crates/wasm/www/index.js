@@ -99,8 +99,10 @@ const configTextArea = document.getElementById("config");
 const inputSizeLabel = document.getElementById("input-size");
 const outputSizeLabel = document.getElementById("output-size");
 
-inputTextTextArea.value = INPUTS.website.input;
-configTextArea.value = INPUTS.website.config;
+const DEFAULT_INPUT = INPUTS.properties;
+
+inputTextTextArea.value = DEFAULT_INPUT.input;
+configTextArea.value = DEFAULT_INPUT.config;
 
 for (const [inputId, input] of Object.entries(INPUTS)) {
   const option = document.createElement("option");
