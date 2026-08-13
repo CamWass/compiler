@@ -124,7 +124,6 @@ pub struct Invalid {
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, Default)]
 pub enum EsVersion {
     Es3,
-    #[default]
     Es5,
     Es2015,
     Es2016,
@@ -134,6 +133,7 @@ pub enum EsVersion {
     Es2020,
     Es2021,
     Es2022,
+    #[default]
     EsNext,
 }
 
