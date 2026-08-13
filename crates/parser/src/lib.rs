@@ -63,7 +63,7 @@ impl Syntax {
         )
     }
 
-    /// Should we pare typescript?
+    /// Should we parse typescript?
     pub fn typescript(self) -> bool {
         matches!(self, Syntax::Typescript(..))
     }
