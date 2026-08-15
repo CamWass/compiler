@@ -1597,7 +1597,7 @@ impl<'ast> Visit<'ast> for FnVisitor<'_> {
     }
 
     fn visit_fn_decl(&mut self, node: &'ast FnDecl) {
-        self.handle_fn(&node.function, None, false);
+        self.handle_fn(node.function.as_ref(), None, false);
     }
     fn visit_fn_expr(&mut self, node: &'ast FnExpr) {
         self.handle_fn(node.function.as_ref(), node.ident.as_ref(), false);

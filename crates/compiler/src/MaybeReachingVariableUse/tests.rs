@@ -327,12 +327,12 @@ where
         let cfa = ControlFlowAnalysis::analyze(ControlFlowRoot::Function(function), false);
 
         // All variables declared in function
-        let all_vars_declared_in_function = find_vars_declared_in_fn(function, false);
+        let all_vars_declared_in_function = find_vars_declared_in_fn(function.as_ref(), false);
 
         let result = MaybeReachingVariableUse::new(
             cfa.cfg,
             &cfa.node_priorities,
-            function,
+            function.as_ref(),
             all_vars_declared_in_function,
         )
         .analyze();

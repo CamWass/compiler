@@ -1153,7 +1153,7 @@ impl OutputType for Decl {
     ) -> Self {
         Decl::Fn(FnDecl {
             ident,
-            function,
+            function: Box::new(function),
             node_id: node_id!(parser, span),
         })
     }
@@ -1165,7 +1165,7 @@ impl OutputType for Decl {
     ) -> Self {
         Decl::Class(ClassDecl {
             ident,
-            class,
+            class: Box::new(class),
             node_id: node_id!(parser, span),
         })
     }

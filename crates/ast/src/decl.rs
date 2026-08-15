@@ -18,7 +18,7 @@ pub struct FnDecl {
     pub node_id: NodeId,
 
     pub ident: Ident,
-    pub function: Function,
+    pub function: Box<Function>,
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
@@ -26,7 +26,7 @@ pub struct ClassDecl {
     pub node_id: NodeId,
 
     pub ident: Ident,
-    pub class: Class,
+    pub class: Box<Class>,
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
