@@ -120,18 +120,18 @@ struct BlockCreator<'a> {
 impl BlockCreator<'_> {
     fn handle_single_stmt(&mut self, stmt: &mut Stmt) {
         if !matches!(stmt, Stmt::Block(_)) {
-            stmt.map_with_mut(|stmt| self.create_block_from_stmt(stmt));
+            self.create_block_from_stmt(stmt);
         }
     }
 
-    fn create_block_from_stmt(&mut self, stmt: Stmt) -> Stmt {
+    fn create_block_from_stmt(&mut self, stmt: &mut Stmt) {
         let node_id = self.program_data.new_id_from(stmt.node_id());
         let stmts = if matches!(stmt, Stmt::Empty(_)) {
             vec![]
         } else {
-            vec![stmt]
+            vec![stmt.take()]
         };
-        Stmt::Block(BlockStmt { node_id, stmts })
+        *stmt = Stmt::Block(BlockStmt { node_id, stmts })
     }
 }
 
@@ -167,9 +167,7 @@ impl VisitMut<'_> for BlockCreator<'_> {
                 | Stmt::While(_)
                 | Stmt::DoWhile(_)
         ) {
-            node.body
-                .as_mut()
-                .map_with_mut(|stmt| self.create_block_from_stmt(stmt));
+            self.create_block_from_stmt(&mut node.body);
         }
     }
     fn visit_mut_if_stmt(&mut self, node: &mut IfStmt) {

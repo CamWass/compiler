@@ -90,79 +90,72 @@ macro_rules! handle_scope {
 
 impl VisitMut<'_> for RenameLabels {
     fn visit_mut_stmt(&mut self, node: &mut ast::Stmt) {
-        node.map_with_mut(|mut stmt| {
-            match stmt {
-                ast::Stmt::Labeled(mut labeled_stmt) => {
-                    // Determine the new name for this label.
-                    let current = self.namespace_stack.last_mut().unwrap();
-                    let current_depth = current.rename_map.len() + 1;
-                    let id = current_depth;
-                    let name = &labeled_stmt.label;
+        match node {
+            ast::Stmt::Labeled(labeled_stmt) => {
+                // Determine the new name for this label.
+                let current = self.namespace_stack.last_mut().unwrap();
+                let current_depth = current.rename_map.len() + 1;
+                let id = current_depth;
+                let name = &labeled_stmt.label;
 
-                    // Store the context for this label name.
-                    let li = LabelInfo {
-                        id,
-                        referenced: false,
-                    };
-                    debug_assert!(!current.rename_map.contains_key(&name.sym));
-                    current.rename_map.insert(name.sym.clone(), li);
+                // Store the context for this label name.
+                let li = LabelInfo {
+                    id,
+                    referenced: false,
+                };
+                debug_assert!(!current.rename_map.contains_key(&name.sym));
+                current.rename_map.insert(name.sym.clone(), li);
 
-                    // Create a new name, if needed, for this depth.
-                    if self.names.len() < current_depth {
-                        self.names.push(self.name_supplier.generate_next_name());
+                // Create a new name, if needed, for this depth.
+                if self.names.len() < current_depth {
+                    self.names.push(self.name_supplier.generate_next_name());
+                }
+
+                labeled_stmt.visit_mut_children_with(self);
+
+                let label = &mut labeled_stmt.label;
+                let name = label.sym.clone();
+
+                let li = self.get_label_info(&name).unwrap();
+                // This is a label...
+                if li.referenced {
+                    let new_name = self.get_name_for_id(id);
+                    if &name != new_name {
+                        // ... and it is used, give it the short name.
+                        label.sym = new_name.clone();
                     }
-
-                    labeled_stmt.visit_mut_children_with(self);
-
-                    let label = &mut labeled_stmt.label;
+                } else {
+                    // ... and it is not referenced, just remove it.
+                    *node = labeled_stmt.body.as_mut().take()
+                };
+                // Remove the label from the current stack of labels.
+                self.namespace_stack
+                    .last_mut()
+                    .unwrap()
+                    .rename_map
+                    .remove(&name);
+            }
+            ast::Stmt::Break(ast::BreakStmt { label, .. })
+            | ast::Stmt::Continue(ast::ContinueStmt { label, .. }) => {
+                if let Some(label) = label {
+                    // This is a named break or continue;
                     let name = label.sym.clone();
-
-                    let li = self.get_label_info(&name).unwrap();
-                    // This is a label...
-                    let res = if li.referenced {
+                    let id = self.get_label_info(&name).map(|info| info.id);
+                    if let Some(id) = id {
                         let new_name = self.get_name_for_id(id);
                         if &name != new_name {
-                            // ... and it is used, give it the short name.
+                            // Give it the short name.
                             label.sym = new_name.clone();
                         }
-                        ast::Stmt::Labeled(labeled_stmt)
-                    } else {
-                        // ... and it is not referenced, just remove it.
-                        *labeled_stmt.body
-                    };
-                    // Remove the label from the current stack of labels.
-                    self.namespace_stack
-                        .last_mut()
-                        .unwrap()
-                        .rename_map
-                        .remove(&name);
-
-                    res
-                }
-                ast::Stmt::Break(ast::BreakStmt { ref mut label, .. })
-                | ast::Stmt::Continue(ast::ContinueStmt { ref mut label, .. }) => {
-                    if let Some(label) = label {
-                        // This is a named break or continue;
-                        let name = label.sym.clone();
-                        let id = self.get_label_info(&name).map(|info| info.id);
-                        if let Some(id) = id {
-                            let new_name = self.get_name_for_id(id);
-                            if &name != new_name {
-                                // Give it the short name.
-                                label.sym = new_name.clone();
-                            }
-                            // Mark the label as referenced so it isn't removed.
-                            self.get_label_info(&name).unwrap().referenced = true;
-                        }
+                        // Mark the label as referenced so it isn't removed.
+                        self.get_label_info(&name).unwrap().referenced = true;
                     }
-                    stmt
-                }
-                _ => {
-                    stmt.visit_mut_children_with(self);
-                    stmt
                 }
             }
-        });
+            _ => {
+                node.visit_mut_children_with(self);
+            }
+        }
     }
 
     // Note:
