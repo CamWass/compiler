@@ -44,7 +44,7 @@ pub enum Stmt {
     Throw(ThrowStmt),
 
     /// A try statement. If handler is null then finalizer must be a BlockStmt.
-    Try(TryStmt),
+    Try(Box<TryStmt>),
 
     While(WhileStmt),
 

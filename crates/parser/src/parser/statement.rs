@@ -942,12 +942,12 @@ impl<I: Tokens> Parser<'_, I> {
             self.emit_err(Span::new(catch_start, catch_start), SyntaxError::TS1005);
         }
 
-        Ok(Stmt::Try(TryStmt {
+        Ok(Stmt::Try(Box::new(TryStmt {
             node_id: node_id!(self, span!(self, start)),
             block,
             handler,
             finalizer,
-        }))
+        })))
     }
 
     fn parse_catch_clause(&mut self) -> PResult<Option<CatchClause>> {

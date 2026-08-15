@@ -284,7 +284,7 @@ impl<'ast> From<&'ast ::ast::Stmt> for Node<'ast> {
             ::ast::Stmt::If(s) => Node::from(s),
             ::ast::Stmt::Switch(s) => Node::from(s),
             ::ast::Stmt::Throw(s) => Node::from(s),
-            ::ast::Stmt::Try(s) => Node::from(s),
+            ::ast::Stmt::Try(s) => Node::from(s.as_ref()),
             ::ast::Stmt::While(s) => Node::from(s),
             ::ast::Stmt::DoWhile(s) => Node::from(s),
             ::ast::Stmt::For(s) => Node::from(s),
