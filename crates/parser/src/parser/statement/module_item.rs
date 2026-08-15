@@ -376,7 +376,7 @@ impl<I: Tokens> Parser<'_, I> {
             } else if self.input.syntax().export_default_from()
                 && (is!(self, "from") || (is!(self, ',') && peeked_is!(self, '{')))
             {
-                export_default = Some(self.new_ident("default".into(), self.input.prev_span()));
+                export_default = Some(self.new_ident(js_word!("default"), self.input.prev_span()));
             } else {
                 let expr = self
                     .include_in_expr(true)

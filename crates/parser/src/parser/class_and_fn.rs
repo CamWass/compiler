@@ -407,7 +407,9 @@ impl<I: Tokens> Parser<'_, I> {
         let key = if let Some(readonly) = readonly
             && is_one_of!(self, '!', ':')
         {
-            Key::PropName(PropName::Ident(self.new_ident("readonly".into(), readonly)))
+            Key::PropName(PropName::Ident(
+                self.new_ident(js_word!("readonly"), readonly),
+            ))
         } else {
             self.parse_class_prop_name()?
         };

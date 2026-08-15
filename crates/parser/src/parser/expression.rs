@@ -1387,7 +1387,7 @@ impl<I: Tokens> Parser<'_, I> {
             return Ok(Box::new(Expr::Call(CallExpr {
                 node_id: node_id!(self, span!(self, async_span.lo())),
                 callee: ExprOrSuper::Expr(Box::new(Expr::Ident(
-                    self.new_ident("async".into(), async_span),
+                    self.new_ident(js_word!("async"), async_span),
                 ))),
                 args: expr_or_spreads,
             }))
