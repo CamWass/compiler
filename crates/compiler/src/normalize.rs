@@ -24,6 +24,8 @@ pub fn normalize(ast: &mut Program, program_data: &mut ast::ProgramData) {
     }
 }
 
+// TODO: how useful is this if it can't simplify all shorthand assigns? Would
+// it be better to just make passes handle shorthand, as many already do?
 /// Converts shorthand assignments to plain assignments with a binary expr. E.g.
 /// ```js
 /// a += 1;
@@ -90,6 +92,12 @@ impl VisitMut<'_> for NormalizeAssignShorthand<'_> {
         });
         node.op = AssignOp::Assign;
     }
+}
+
+#[cfg(test)]
+pub fn add_blocks_to_stmt_contexts(ast: &mut Program, program_data: &mut ast::ProgramData) {
+    let mut v = BlockCreator { program_data };
+    ast.visit_mut_with(&mut v);
 }
 
 /// Visits statements that are in single-statement contexts (e.g. for loop body).

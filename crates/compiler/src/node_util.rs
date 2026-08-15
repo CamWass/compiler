@@ -1,5 +1,6 @@
 use ast::*;
 use atoms::{JsWord, js_word};
+use bitflags::bitflags;
 use common::SyntaxContext;
 use num_traits::{FromPrimitive, identities::Zero};
 
@@ -125,7 +126,7 @@ pub fn get_boolean_value(expr: &Expr, unresolved_ctxt: SyntaxContext) -> Option<
 /// Returns the value of an expression as a String, or None if it cannot be
 /// converted. When a String is returned, this function effectively emulates the
 /// `String()` JavaScript cast function.
-fn getStringValue(expr: &Expr, unresolved_ctxt: SyntaxContext) -> Option<JsWord> {
+pub fn getStringValue(expr: &Expr, unresolved_ctxt: SyntaxContext) -> Option<JsWord> {
     match expr {
         Expr::Lit(lit) => match lit {
             Lit::Str(string) => Some(string.value.clone()),
@@ -237,7 +238,7 @@ fn arrayToString(array: &ArrayLit, unresolved_ctxt: SyntaxContext) -> Option<JsW
 /// Returns the value of am expression as a Number, or None if it cannot be
 /// converted. When it returns a number, this function effectively emulates the
 /// `Number()` JavaScript cast function.
-fn get_number_value(expr: &Expr, unresolved_ctxt: SyntaxContext) -> Option<f64> {
+pub fn get_number_value(expr: &Expr, unresolved_ctxt: SyntaxContext) -> Option<f64> {
     get_number_value_inner(expr, unresolved_ctxt, true)
 }
 
@@ -333,7 +334,7 @@ fn get_number_value_inner(
 /// Returns the value of an expression as a BigInt, or None if it cannot be
 /// converted. When it returns a BigInt, this function effectively emulates the
 /// `BigInt()` JavaScript cast function.
-fn getBigIntValue(expr: &Expr, unresolved_ctxt: SyntaxContext) -> Option<num_bigint::BigInt> {
+pub fn getBigIntValue(expr: &Expr, unresolved_ctxt: SyntaxContext) -> Option<num_bigint::BigInt> {
     match expr {
         Expr::Lit(lit) => match lit {
             Lit::Str(string) => ecma_string_to_big_int(&string.value),
@@ -715,5 +716,411 @@ pub fn isPureIterable(expr: &Expr) -> bool {
         // Anything else, including a non-iterable (e.g. `null`), would be
         // impure.
         _ => false,
+    }
+}
+
+/**
+ * Returns true if this is a literal value. We define a literal value as any node that evaluates
+ * to the same thing regardless of when or where it is evaluated. So /xyz/ and [3, 5] are
+ * literals, but the name a is not.
+ *
+ * <p>Function literals do not meet this definition, because they lexically capture variables. For
+ * example, if you have <code>
+ * function() { return a; }
+ * </code> If it is evaluated in a different scope, then it captures a different variable. Even if
+ * the function did not read any captured variables directly, it would still fail this definition,
+ * because it affects the lifecycle of variables in the enclosing scope.
+ *
+ * <p>However, a function literal with respect to a particular scope is a literal.
+ *
+ * @param includeFunctions If true, all function expressions will be treated as literals.
+ */
+pub fn isLiteralValue(expr: &Expr, includeFunctions: bool, unresolved_ctxt: SyntaxContext) -> bool {
+    match expr {
+        Expr::Array(array) => array.elems.iter().all(|el| {
+            el.as_ref().is_none_or(|el| match el {
+                ExprOrSpread::Spread(_) => false,
+                ExprOrSpread::Expr(el) => isLiteralValue(el, includeFunctions, unresolved_ctxt),
+            })
+        }),
+        Expr::Lit(Lit::Regex(_)) => true,
+        Expr::Object(obj) => obj.props.iter().all(|prop| match prop {
+            Prop::KeyValue(key_value_prop) => {
+                isLiteralValue(&key_value_prop.value, includeFunctions, unresolved_ctxt)
+                    && match &key_value_prop.key {
+                        PropName::Computed(computed) => {
+                            isLiteralValue(&computed.expr, includeFunctions, unresolved_ctxt)
+                        }
+                        PropName::Str(_)
+                        | PropName::Num(_)
+                        | PropName::BigInt(_)
+                        | PropName::Ident(_) => true,
+                    }
+            }
+            Prop::Getter(GetterProp { key, .. })
+            | Prop::Setter(SetterProp { key, .. })
+            | Prop::Method(MethodProp { key, .. }) => {
+                includeFunctions
+                    && match key {
+                        PropName::Computed(computed) => {
+                            isLiteralValue(&computed.expr, includeFunctions, unresolved_ctxt)
+                        }
+                        PropName::Ident(_) => false,
+                        PropName::Str(_) | PropName::Num(_) | PropName::BigInt(_) => true,
+                    }
+            }
+            Prop::Spread(spread) => isLiteralValue(&spread.expr, includeFunctions, unresolved_ctxt),
+            Prop::Assign(_) => unreachable!(),
+        }),
+        Expr::Fn(_) => includeFunctions,
+        Expr::Tpl(tpl) => tpl
+            .exprs
+            .iter()
+            .all(|e| isLiteralValue(e, includeFunctions, unresolved_ctxt)),
+        _ => isImmutableValue(expr, unresolved_ctxt),
+    }
+}
+
+/** Returns true if this is an immutable value. */
+fn isImmutableValue(expr: &Expr, unresolved_ctxt: SyntaxContext) -> bool {
+    match expr {
+        Expr::Lit(lit) => match lit {
+            Lit::Str(_) | Lit::Bool(_) | Lit::Null(_) | Lit::Num(_) | Lit::BigInt(_) => true,
+            Lit::Regex(_) => false,
+        },
+        Expr::Unary(unary) => {
+            match unary.op {
+                UnaryOp::Minus | UnaryOp::Bang | UnaryOp::Void => {
+                    isImmutableValue(&unary.arg, unresolved_ctxt)
+                }
+                // TODO: why not these ones?
+                UnaryOp::Plus | UnaryOp::Tilde | UnaryOp::TypeOf | UnaryOp::Delete => false,
+            }
+        }
+        Expr::Ident(ident) => {
+            if ident.ctxt == unresolved_ctxt {
+                matches!(
+                    ident.sym,
+                    js_word!("undefined") | js_word!("NaN") | js_word!("Infinity")
+                )
+            } else {
+                false
+            }
+        }
+        Expr::Tpl(tpl) => tpl
+            .exprs
+            .iter()
+            .all(|e| isImmutableValue(e, unresolved_ctxt)),
+        _ => false,
+    }
+}
+
+#[derive(PartialEq)]
+pub enum TypeofResult {
+    Undefined,
+    Object,
+    Boolean,
+    Number,
+    BigInt,
+    String,
+    #[allow(unused)]
+    Symbol,
+    Function,
+}
+
+bitflags! {
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+    pub struct TypeFlags: u8 {
+        const NULL = 1 << 0;
+        const UNDEFINED = 1 << 1;
+        const NUMBER = 1 << 2;
+        const BIG_INT = 1 << 3;
+        const STRING = 1 << 4;
+        const BOOLEAN = 1 << 5;
+        const OBJECT = 1 << 6;
+        const FUNCTION = 1 << 7;
+    }
+}
+
+impl TypeFlags {
+    pub const UNKNOWN: Self = Self::all();
+
+    /// Whether the type is definitely null or undefined.
+    pub fn is_nullish(self) -> bool {
+        (Self::UNDEFINED | Self::NULL).contains(self)
+    }
+
+    /// Whether type could be a string, or an object/function (which may
+    /// implicitly be converted to a string).
+    fn may_be_string(self) -> bool {
+        self.intersects(Self::STRING | Self::OBJECT | Self::FUNCTION)
+    }
+
+    /// Emulates the `typeof` operator on this type, returning `None` if the
+    /// result is not statically determinable.
+    pub fn get_typeof_result(self) -> Option<TypeofResult> {
+        match self {
+            Self::NULL => Some(TypeofResult::Object),
+            Self::UNDEFINED => Some(TypeofResult::Undefined),
+            Self::NUMBER => Some(TypeofResult::Number),
+            Self::BIG_INT => Some(TypeofResult::BigInt),
+            Self::STRING => Some(TypeofResult::String),
+            Self::BOOLEAN => Some(TypeofResult::Boolean),
+            Self::OBJECT => Some(TypeofResult::Object),
+            Self::FUNCTION => Some(TypeofResult::Function),
+            _ => None,
+        }
+    }
+}
+
+pub fn getKnownValueType(mut expr: &Expr, unresolved_ctxt: SyntaxContext) -> TypeFlags {
+    loop {
+        match expr {
+            Expr::Fn(_) | Expr::Arrow(_) | Expr::Class(_) => return TypeFlags::FUNCTION,
+            // `typeof new Foo` is normally "object", but can also be "function"
+            // if the constructor explicitly returns a function.
+            Expr::New(_) => return TypeFlags::OBJECT | TypeFlags::FUNCTION,
+
+            Expr::Array(_) | Expr::Object(_) => return TypeFlags::OBJECT,
+
+            Expr::Member(_)
+            | Expr::Call(_)
+            | Expr::Yield(_)
+            | Expr::PrivateName(_)
+            | Expr::OptChain(_)
+            | Expr::Invalid(_)
+            | Expr::This(_)
+            | Expr::TaggedTpl(_)
+            | Expr::MetaProp(_) => return TypeFlags::UNKNOWN,
+
+            // This is only true for primitive arguments to await.
+            Expr::Await(await_expr) => expr = &await_expr.arg,
+
+            Expr::Ident(ident) => {
+                if ident.ctxt == unresolved_ctxt {
+                    return match ident.sym {
+                        js_word!("undefined") => TypeFlags::UNDEFINED,
+                        js_word!("NaN") | js_word!("Infinity") => TypeFlags::NUMBER,
+                        _ => TypeFlags::UNKNOWN,
+                    };
+                } else {
+                    return TypeFlags::UNKNOWN;
+                }
+            }
+
+            Expr::Unary(unary_expr) => {
+                return match unary_expr.op {
+                    // Cannot be BigInt as +BigInt throws a type error.
+                    UnaryOp::Plus => TypeFlags::NUMBER,
+                    UnaryOp::Bang => TypeFlags::BOOLEAN,
+                    UnaryOp::Tilde | UnaryOp::Minus => {
+                        let arg = getKnownValueType(&unary_expr.arg, unresolved_ctxt);
+                        if arg == TypeFlags::BIG_INT {
+                            // Arg is definitely BigInt, so the result is
+                            // definitely BigInt too.
+                            return TypeFlags::BIG_INT;
+                        }
+                        if arg.contains(TypeFlags::BIG_INT) {
+                            // Arg might be a BigInt - result is BigInt or
+                            // Number.
+                            return TypeFlags::BIG_INT | TypeFlags::NUMBER;
+                        }
+                        // Arg is definitely not BigInt - result is always
+                        // Number.
+                        return TypeFlags::NUMBER;
+                    }
+                    UnaryOp::TypeOf => TypeFlags::STRING,
+                    UnaryOp::Void => TypeFlags::UNDEFINED,
+                    UnaryOp::Delete => TypeFlags::BOOLEAN,
+                };
+            }
+            // BigInt if arg is BigInt, otherwise Number.
+            Expr::Update(update) => {
+                let arg = getKnownValueType(&update.arg, unresolved_ctxt);
+                if arg == TypeFlags::BIG_INT {
+                    // Arg is definitely BigInt, so the result is definitely
+                    // BigInt too.
+                    return TypeFlags::BIG_INT;
+                }
+                if arg.contains(TypeFlags::BIG_INT) {
+                    // Arg might be a BigInt - result is BigInt or Number.
+                    return TypeFlags::BIG_INT | TypeFlags::NUMBER;
+                }
+                // Arg is definitely not BigInt - result is always Number.
+                return TypeFlags::NUMBER;
+            }
+            Expr::Bin(bin_expr) => {
+                return match bin_expr.op {
+                    BinaryOp::EqEq
+                    | BinaryOp::NotEq
+                    | BinaryOp::EqEqEq
+                    | BinaryOp::NotEqEq
+                    | BinaryOp::Lt
+                    | BinaryOp::LtEq
+                    | BinaryOp::Gt
+                    | BinaryOp::GtEq
+                    | BinaryOp::In
+                    | BinaryOp::InstanceOf => TypeFlags::BOOLEAN,
+
+                    BinaryOp::LogicalOr | BinaryOp::LogicalAnd => {
+                        getKnownValueType(&bin_expr.left, unresolved_ctxt)
+                            | getKnownValueType(&bin_expr.right, unresolved_ctxt)
+                    }
+                    BinaryOp::Add => {
+                        let left = getKnownValueType(&bin_expr.left, unresolved_ctxt);
+                        let right = getKnownValueType(&bin_expr.right, unresolved_ctxt);
+
+                        if left == TypeFlags::STRING || right == TypeFlags::STRING {
+                            // If either operand is definitely String, then
+                            // result is always String.
+                            return TypeFlags::STRING;
+                        }
+
+                        if !left.may_be_string() && !right.may_be_string() {
+                            if left == TypeFlags::BIG_INT || right == TypeFlags::BIG_INT {
+                                // If both operands definitely aren't strings,
+                                // and either is definitely BigInt, then the
+                                // result is a BigInt or there's a type error.
+                                return TypeFlags::BIG_INT;
+                            }
+
+                            if left.contains(TypeFlags::BIG_INT)
+                                || right.contains(TypeFlags::BIG_INT)
+                            {
+                                // If both operands definitely aren't strings,
+                                // but either might be BigInt, then the result
+                                // is BigInt or Number.
+                                return TypeFlags::NUMBER | TypeFlags::BIG_INT;
+                            }
+
+                            // Operands are definitely not String or Bigint, so
+                            // the result is always Number.
+                            return TypeFlags::NUMBER;
+                        }
+
+                        return TypeFlags::NUMBER | TypeFlags::BIG_INT | TypeFlags::STRING;
+                    }
+
+                    // BigInt or Number.
+                    BinaryOp::Sub
+                    | BinaryOp::Mul
+                    | BinaryOp::Div
+                    | BinaryOp::Mod
+                    | BinaryOp::Exp
+                    | BinaryOp::BitOr
+                    | BinaryOp::BitXor
+                    | BinaryOp::BitAnd
+                    | BinaryOp::LShift
+                    | BinaryOp::RShift
+                    | BinaryOp::ZeroFillRShift => {
+                        let left = getKnownValueType(&bin_expr.left, unresolved_ctxt);
+                        let right = getKnownValueType(&bin_expr.right, unresolved_ctxt);
+
+                        if left == TypeFlags::BIG_INT || right == TypeFlags::BIG_INT {
+                            // If either operand is definitely BigInt, then the
+                            // result is a BigInt or there's a type error.
+                            return TypeFlags::BIG_INT;
+                        }
+
+                        if left.contains(TypeFlags::BIG_INT) || right.contains(TypeFlags::BIG_INT) {
+                            // If either operand might be BigInt, then the
+                            // result is BigInt or Number.
+                            // Mixing BigInt with another type will error, but
+                            // we can't statically determine if the types will
+                            // be different and error, or the same and work.
+                            return TypeFlags::NUMBER | TypeFlags::BIG_INT;
+                        }
+
+                        // Operands are definitely not Bigint, so the result is
+                        // always Number.
+                        return TypeFlags::NUMBER;
+                    }
+
+                    BinaryOp::NullishCoalescing => {
+                        let left = getKnownValueType(&bin_expr.left, unresolved_ctxt);
+                        let right = getKnownValueType(&bin_expr.right, unresolved_ctxt);
+
+                        if left.is_nullish() {
+                            return right;
+                        }
+
+                        if left != TypeFlags::UNKNOWN {
+                            // Definitely not Null or Undefined.
+                            return left;
+                        }
+
+                        TypeFlags::UNKNOWN
+                    }
+                };
+            }
+            Expr::Assign(assign_expr) => match assign_expr.op {
+                AssignOp::Assign => expr = &assign_expr.right,
+                AssignOp::AddAssign => {
+                    let right = getKnownValueType(&assign_expr.right, unresolved_ctxt);
+
+                    if right == TypeFlags::STRING {
+                        // `a += ""` is always a String.
+                        return TypeFlags::STRING;
+                    }
+
+                    return TypeFlags::NUMBER | TypeFlags::BIG_INT | TypeFlags::STRING;
+                }
+
+                AssignOp::SubAssign
+                | AssignOp::MulAssign
+                | AssignOp::DivAssign
+                | AssignOp::ModAssign
+                | AssignOp::ExpAssign
+                | AssignOp::BitOrAssign
+                | AssignOp::BitXorAssign
+                | AssignOp::BitAndAssign
+                | AssignOp::LShiftAssign
+                | AssignOp::RShiftAssign
+                | AssignOp::ZeroFillRShiftAssign => {
+                    let right = getKnownValueType(&assign_expr.right, unresolved_ctxt);
+
+                    if right == TypeFlags::BIG_INT {
+                        // Result is a BigInt or there's a type error if LHS is
+                        // not BigInt.
+                        return TypeFlags::BIG_INT;
+                    }
+
+                    if right.contains(TypeFlags::BIG_INT) {
+                        // Mixing BigInt with another type will error, but we
+                        // can't statically determine if the types will be
+                        // different and error, or the same and work.
+                        return TypeFlags::NUMBER | TypeFlags::BIG_INT;
+                    }
+
+                    // If RHS is definitely not BigInt, then the result will be
+                    // a type error if LHS is BigInt, or Number if LHS is
+                    // anything else.
+                    return TypeFlags::NUMBER;
+                }
+
+                // The type of these expressions is either the type of the lhs
+                // or rhs, but the only valid lhs for these assign ops are
+                // identifiers/member expressions, neither of which we can
+                // determine the type of, so the type of the whole assign is
+                // effectively unknown.
+                AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign => {
+                    return TypeFlags::UNKNOWN;
+                }
+            },
+            Expr::Cond(cond) => {
+                return getKnownValueType(&cond.cons, unresolved_ctxt)
+                    | getKnownValueType(&cond.alt, unresolved_ctxt);
+            }
+            Expr::Seq(seq_expr) => expr = seq_expr.exprs.last().unwrap(),
+            Expr::Lit(lit) => match lit {
+                Lit::Str(_) => return TypeFlags::STRING,
+                Lit::Bool(_) => return TypeFlags::BOOLEAN,
+                Lit::Null(_) => return TypeFlags::NULL,
+                Lit::Num(_) => return TypeFlags::NUMBER,
+                Lit::BigInt(_) => return TypeFlags::BIG_INT,
+                Lit::Regex(_) => return TypeFlags::OBJECT,
+            },
+            Expr::Tpl(_) => return TypeFlags::STRING,
+        }
     }
 }

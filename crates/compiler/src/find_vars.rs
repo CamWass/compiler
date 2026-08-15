@@ -148,12 +148,12 @@ impl Visit<'_> for DeclFinder {
         if self.skip_multi_decl_destructuring {
             if names.len() == 1 {
                 for name in names {
-                    self.record_var(name);
+                    self.record_var(name.0);
                 }
             }
         } else {
             for name in names {
-                self.record_var(name);
+                self.record_var(name.0);
             }
         }
     }
@@ -161,11 +161,11 @@ impl Visit<'_> for DeclFinder {
 
 /// Finds all **binding** idents of variables.
 struct DestructuringFinder<'a> {
-    found: &'a mut Vec<Id>,
+    found: &'a mut Vec<(Id, NodeId)>,
 }
 
 /// Finds all **binding** idents of `node`.
-pub fn find_pat_ids(node: &Pat) -> Vec<Id> {
+pub fn find_pat_ids(node: &Pat) -> Vec<(Id, NodeId)> {
     let mut found = vec![];
 
     {
@@ -182,7 +182,7 @@ impl Visit<'_> for DestructuringFinder<'_> {
     fn visit_prop_name(&mut self, _: &PropName) {}
 
     fn visit_binding_ident(&mut self, i: &BindingIdent) {
-        self.found.push(i.to_id());
+        self.found.push((i.to_id(), i.node_id));
     }
 }
 

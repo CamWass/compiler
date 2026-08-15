@@ -3,6 +3,8 @@ use atoms::{JsWord, js_word};
 use common::SyntaxContext;
 use visit::{VisitMut, VisitMutWith};
 
+use crate::node_util::getKnownValueType;
+
 pub fn process(ast: &mut Program, unresolved_ctxt: SyntaxContext) {
     let mut visitor = Visitor { unresolved_ctxt };
     ast.visit_mut_with(&mut visitor);
@@ -87,223 +89,12 @@ fn get_undefined_string(e: &mut Expr) -> Option<&mut Str> {
 }
 
 fn can_change_strict_to_loose(a: &Expr, b: &Expr, unresolved_ctxt: SyntaxContext) -> bool {
-    let a_type = get_primitive_type_of_expr(a, unresolved_ctxt);
-    let b_type = get_primitive_type_of_expr(b, unresolved_ctxt);
+    let a_type = getKnownValueType(a, unresolved_ctxt).get_typeof_result();
+    let b_type = getKnownValueType(b, unresolved_ctxt).get_typeof_result();
 
     // We can change strict to loose equality iff we can statically determine
     // the types of the lhs and rhs, and those types are the same.
     a_type == b_type && a_type.is_some()
-}
-
-#[derive(PartialEq)]
-enum Primitive {
-    String,
-    Number,
-    Undefined,
-    Null,
-    Boolean,
-    BigInt,
-}
-
-/// Returns None if the type is not primitive or not statically determinable.
-fn get_primitive_type_of_expr(
-    mut expr: &Expr,
-    unresolved_ctxt: SyntaxContext,
-) -> Option<Primitive> {
-    loop {
-        match expr {
-            Expr::Array(_)
-            | Expr::Object(_)
-            | Expr::Fn(_)
-            | Expr::Member(_)
-            | Expr::Call(_)
-            | Expr::New(_)
-            | Expr::Arrow(_)
-            | Expr::Class(_)
-            | Expr::Yield(_)
-            | Expr::PrivateName(_)
-            | Expr::OptChain(_)
-            | Expr::Invalid(_)
-            | Expr::This(_)
-            | Expr::TaggedTpl(_)
-            | Expr::MetaProp(_) => return None,
-
-            // This is only true for primitive arguments to await.
-            Expr::Await(await_expr) => expr = &await_expr.arg,
-
-            Expr::Ident(ident) => {
-                if ident.ctxt == unresolved_ctxt {
-                    return match ident.sym {
-                        js_word!("undefined") => Some(Primitive::Undefined),
-                        js_word!("NaN") | js_word!("Infinity") => Some(Primitive::Number),
-                        _ => None,
-                    };
-                } else {
-                    return None;
-                }
-            }
-
-            Expr::Unary(unary_expr) => {
-                return match unary_expr.op {
-                    // Cannot be BigInt as +BigInt throws a type error.
-                    UnaryOp::Plus => Some(Primitive::Number),
-                    UnaryOp::Bang => Some(Primitive::Boolean),
-                    UnaryOp::Tilde | UnaryOp::Minus => {
-                        let arg = get_primitive_type_of_expr(&unary_expr.arg, unresolved_ctxt);
-                        if arg == Some(Primitive::BigInt) {
-                            return Some(Primitive::BigInt);
-                        }
-                        if arg.is_some() {
-                            return Some(Primitive::Number);
-                        }
-                        // BigInt if arg is BigInt, otherwise Number.
-                        return None;
-                    }
-                    UnaryOp::TypeOf => Some(Primitive::String),
-                    UnaryOp::Void => Some(Primitive::Undefined),
-                    UnaryOp::Delete => Some(Primitive::Boolean),
-                };
-            }
-            // BigInt if arg is BigInt, otherwise Number.
-            Expr::Update(_) => return None,
-            Expr::Bin(bin_expr) => {
-                return match bin_expr.op {
-                    BinaryOp::EqEq
-                    | BinaryOp::NotEq
-                    | BinaryOp::EqEqEq
-                    | BinaryOp::NotEqEq
-                    | BinaryOp::Lt
-                    | BinaryOp::LtEq
-                    | BinaryOp::Gt
-                    | BinaryOp::GtEq
-                    | BinaryOp::In
-                    | BinaryOp::InstanceOf => Some(Primitive::Boolean),
-
-                    BinaryOp::LogicalOr | BinaryOp::LogicalAnd => {
-                        merge_primitive_types(&bin_expr.left, &bin_expr.right, unresolved_ctxt)
-                    }
-                    BinaryOp::Add => {
-                        let left = get_primitive_type_of_expr(&bin_expr.left, unresolved_ctxt);
-                        let right = get_primitive_type_of_expr(&bin_expr.right, unresolved_ctxt);
-
-                        if left == Some(Primitive::String) || right == Some(Primitive::String) {
-                            return Some(Primitive::String);
-                        }
-
-                        if left == Some(Primitive::BigInt) && right == Some(Primitive::BigInt) {
-                            return Some(Primitive::BigInt);
-                        }
-
-                        if left.is_some()
-                            && left != Some(Primitive::BigInt)
-                            && right.is_some()
-                            && right != Some(Primitive::BigInt)
-                        {
-                            return Some(Primitive::Number);
-                        }
-
-                        // Number, BigInt, or String.
-                        return None;
-                    }
-
-                    // BigInt or Number.
-                    BinaryOp::Sub
-                    | BinaryOp::Mul
-                    | BinaryOp::Div
-                    | BinaryOp::Mod
-                    | BinaryOp::Exp
-                    | BinaryOp::BitOr
-                    | BinaryOp::BitXor
-                    | BinaryOp::BitAnd
-                    | BinaryOp::LShift
-                    | BinaryOp::RShift
-                    | BinaryOp::ZeroFillRShift => None,
-
-                    BinaryOp::NullishCoalescing => {
-                        let left = get_primitive_type_of_expr(&bin_expr.left, unresolved_ctxt);
-                        let right = get_primitive_type_of_expr(&bin_expr.right, unresolved_ctxt);
-
-                        if left == Some(Primitive::Null) || left == Some(Primitive::Undefined) {
-                            return right;
-                        }
-
-                        if left.is_some() {
-                            // Definitely not Null or Undefined.
-                            return left;
-                        }
-
-                        None
-                    }
-                };
-            }
-            Expr::Assign(assign_expr) => match assign_expr.op {
-                AssignOp::Assign => expr = &assign_expr.right,
-                AssignOp::AddAssign => {
-                    let right = get_primitive_type_of_expr(&assign_expr.right, unresolved_ctxt);
-
-                    if right == Some(Primitive::String) {
-                        return Some(Primitive::String);
-                    }
-
-                    // Number, BigInt, or String.
-                    return None;
-                }
-
-                // BigInt or Number.
-                AssignOp::SubAssign
-                | AssignOp::MulAssign
-                | AssignOp::DivAssign
-                | AssignOp::ModAssign
-                | AssignOp::ExpAssign
-                | AssignOp::BitOrAssign
-                | AssignOp::BitXorAssign
-                | AssignOp::BitAndAssign
-                | AssignOp::LShiftAssign
-                | AssignOp::RShiftAssign
-                | AssignOp::ZeroFillRShiftAssign => return None,
-
-                // The type of these expressions is either the type of the lhs
-                // or rhs, but the only valid lhs for these assign ops are
-                // identifiers/member expressions, neither of which we can
-                // determine the type of, so the type of the whole assign is
-                // effectively unknown.
-                AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign => return None,
-            },
-            Expr::Cond(cond_expr) => {
-                return merge_primitive_types(&cond_expr.cons, &cond_expr.alt, unresolved_ctxt);
-            }
-            Expr::Seq(seq_expr) => expr = seq_expr.exprs.last().unwrap(),
-            Expr::Lit(lit) => match lit {
-                Lit::Str(_) => return Some(Primitive::String),
-                Lit::Bool(_) => return Some(Primitive::Boolean),
-                Lit::Null(_) => return Some(Primitive::Null),
-                Lit::Num(_) => return Some(Primitive::Number),
-                Lit::BigInt(_) => return Some(Primitive::BigInt),
-                Lit::Regex(_) => return None,
-            },
-            Expr::Tpl(_) => return Some(Primitive::String),
-        }
-    }
-}
-
-fn merge_primitive_types(a: &Expr, b: &Expr, unresolved_ctxt: SyntaxContext) -> Option<Primitive> {
-    let a_type = get_primitive_type_of_expr(a, unresolved_ctxt);
-
-    if a_type.is_none() {
-        return None;
-    }
-
-    let b_type = get_primitive_type_of_expr(b, unresolved_ctxt);
-
-    if b_type.is_none() {
-        return None;
-    }
-
-    if a_type == b_type {
-        return a_type;
-    }
-
-    None
 }
 
 #[cfg(test)]
@@ -385,6 +176,32 @@ mod tests {
         test_strict_to_loose_equality_case("(1 in null)", BOOLEAN);
         test_strict_to_loose_equality_case("(1 instanceof null)", BOOLEAN);
 
+        // Expr::Bin - arithmetic/bitwise ops.
+        // Number LHS and RHS results in number.
+        test_strict_to_loose_equality_case("(1 - 1)", NUMBER);
+        test_strict_to_loose_equality_case("(1 * 1)", NUMBER);
+        test_strict_to_loose_equality_case("(1 / 1)", NUMBER);
+        test_strict_to_loose_equality_case("(1 % 1)", NUMBER);
+        test_strict_to_loose_equality_case("(1 ** 1)", NUMBER);
+        test_strict_to_loose_equality_case("(1 | 1)", NUMBER);
+        test_strict_to_loose_equality_case("(1 ^ 1)", NUMBER);
+        test_strict_to_loose_equality_case("(1 & 1)", NUMBER);
+        test_strict_to_loose_equality_case("(1 << 1)", NUMBER);
+        test_strict_to_loose_equality_case("(1 >> 1)", NUMBER);
+        test_strict_to_loose_equality_case("(1 >>> 1)", NUMBER);
+        // If one operand is BigInt, the result is always BigInt.
+        test_strict_to_loose_equality_case("(1n - x)", BIG_INT);
+        test_strict_to_loose_equality_case("(1n * x)", BIG_INT);
+        test_strict_to_loose_equality_case("(1n / x)", BIG_INT);
+        test_strict_to_loose_equality_case("(1n % x)", BIG_INT);
+        test_strict_to_loose_equality_case("(1n ** x)", BIG_INT);
+        test_strict_to_loose_equality_case("(1n | x)", BIG_INT);
+        test_strict_to_loose_equality_case("(1n ^ x)", BIG_INT);
+        test_strict_to_loose_equality_case("(1n & x)", BIG_INT);
+        test_strict_to_loose_equality_case("(1n << x)", BIG_INT);
+        test_strict_to_loose_equality_case("(1n >> x)", BIG_INT);
+        test_strict_to_loose_equality_case("(1n >>> x)", BIG_INT);
+
         // Expr::Bin - `||` / `&&` (merged type of both operands).
         test_strict_to_loose_equality_case("(1 || 2)", NUMBER);
         test_strict_to_loose_equality_case("(1 && 2)", NUMBER);
@@ -412,6 +229,32 @@ mod tests {
         test_strict_to_loose_equality_case("(x = 1)", NUMBER);
         // Expr::Assign - `x += y` where the rhs is a String,
         test_strict_to_loose_equality_case("(x += 'a')", STRING);
+
+        // Non-logical compound assignment ops other than `+=` are Number when
+        // RHS is Number...
+        test_strict_to_loose_equality_case("(x -= 1)", NUMBER);
+        test_strict_to_loose_equality_case("(x *= 1)", NUMBER);
+        test_strict_to_loose_equality_case("(x /= 1)", NUMBER);
+        test_strict_to_loose_equality_case("(x %= 1)", NUMBER);
+        test_strict_to_loose_equality_case("(x **= 1)", NUMBER);
+        test_strict_to_loose_equality_case("(x |= 1)", NUMBER);
+        test_strict_to_loose_equality_case("(x ^= 1)", NUMBER);
+        test_strict_to_loose_equality_case("(x &= 1)", NUMBER);
+        test_strict_to_loose_equality_case("(x <<= 1)", NUMBER);
+        test_strict_to_loose_equality_case("(x >>= 1)", NUMBER);
+        test_strict_to_loose_equality_case("(x >>>= 1)", NUMBER);
+        // ...and BigInt when RHS is BigInt.
+        test_strict_to_loose_equality_case("(x -= 1n)", BIG_INT);
+        test_strict_to_loose_equality_case("(x *= 1n)", BIG_INT);
+        test_strict_to_loose_equality_case("(x /= 1n)", BIG_INT);
+        test_strict_to_loose_equality_case("(x %= 1n)", BIG_INT);
+        test_strict_to_loose_equality_case("(x **= 1n)", BIG_INT);
+        test_strict_to_loose_equality_case("(x |= 1n)", BIG_INT);
+        test_strict_to_loose_equality_case("(x ^= 1n)", BIG_INT);
+        test_strict_to_loose_equality_case("(x &= 1n)", BIG_INT);
+        test_strict_to_loose_equality_case("(x <<= 1n)", BIG_INT);
+        test_strict_to_loose_equality_case("(x >>= 1n)", BIG_INT);
+        test_strict_to_loose_equality_case("(x >>>= 1n)", BIG_INT);
 
         // Expr::Cond - `x ? a : b` (merged type of cons/alt),
         test_strict_to_loose_equality_case("(x ? 1 : 2)", NUMBER);
@@ -480,20 +323,6 @@ mod tests {
         test_strict_to_loose_equality_non_case("(1n + 1)", NUMBER);
         test_strict_to_loose_equality_non_case("(1 + 1n)", NUMBER);
 
-        // Expr::Bin - arithmetic/bitwise ops (always indeterminate, regardless
-        // of operands).
-        test_strict_to_loose_equality_non_case("(1 - 1)", NUMBER);
-        test_strict_to_loose_equality_non_case("(1 * 1)", NUMBER);
-        test_strict_to_loose_equality_non_case("(1 / 1)", NUMBER);
-        test_strict_to_loose_equality_non_case("(1 % 1)", NUMBER);
-        test_strict_to_loose_equality_non_case("(1 ** 1)", NUMBER);
-        test_strict_to_loose_equality_non_case("(1 | 1)", NUMBER);
-        test_strict_to_loose_equality_non_case("(1 ^ 1)", NUMBER);
-        test_strict_to_loose_equality_non_case("(1 & 1)", NUMBER);
-        test_strict_to_loose_equality_non_case("(1 << 1)", NUMBER);
-        test_strict_to_loose_equality_non_case("(1 >> 1)", NUMBER);
-        test_strict_to_loose_equality_non_case("(1 >>> 1)", NUMBER);
-
         // Expr::Bin - `??` where the lhs type is not determinable.
         test_strict_to_loose_equality_non_case("(x ?? 1)", NUMBER);
         // Expr::Bin - `??` where the lhs is Null/Undefined and the rhs type is
@@ -506,19 +335,7 @@ mod tests {
         // Expr::Assign - `x += y` where the rhs is not a String.
         test_strict_to_loose_equality_non_case("(x += 1)", NUMBER);
 
-        // Expr::Assign - compound assignment ops other than `+=` (always
-        // indeterminate).
-        test_strict_to_loose_equality_non_case("(x -= 1)", NUMBER);
-        test_strict_to_loose_equality_non_case("(x *= 1)", NUMBER);
-        test_strict_to_loose_equality_non_case("(x /= 1)", NUMBER);
-        test_strict_to_loose_equality_non_case("(x %= 1)", NUMBER);
-        test_strict_to_loose_equality_non_case("(x **= 1)", NUMBER);
-        test_strict_to_loose_equality_non_case("(x |= 1)", NUMBER);
-        test_strict_to_loose_equality_non_case("(x ^= 1)", NUMBER);
-        test_strict_to_loose_equality_non_case("(x &= 1)", NUMBER);
-        test_strict_to_loose_equality_non_case("(x <<= 1)", NUMBER);
-        test_strict_to_loose_equality_non_case("(x >>= 1)", NUMBER);
-        test_strict_to_loose_equality_non_case("(x >>>= 1)", NUMBER);
+        // Logical compound assignments are always indeterminate.
         test_strict_to_loose_equality_non_case("(x &&= 1)", NUMBER);
         test_strict_to_loose_equality_non_case("(x ||= 1)", NUMBER);
         test_strict_to_loose_equality_non_case("(x ??= 1)", NUMBER);

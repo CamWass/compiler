@@ -304,8 +304,9 @@ where
         // Destructuring pattern.
 
         if !self.conditional {
-            for lhs_node in &find_pat_ids(&node.name) {
-                self.analysis.add_to_set_if_local(lhs_node, self.kill_set);
+            for lhs_node in find_pat_ids(&node.name) {
+                self.analysis
+                    .add_to_set_if_local(&lhs_node.0, self.kill_set);
             }
         }
         self.in_lhs = true;
@@ -467,8 +468,9 @@ where
                     && matches!(&**left, Pat::Array(_) | Pat::Object(_))
                     && !self.conditional
                 {
-                    for lhs_node in &find_pat_ids(left) {
-                        self.analysis.add_to_set_if_local(lhs_node, self.kill_set);
+                    for lhs_node in find_pat_ids(left) {
+                        self.analysis
+                            .add_to_set_if_local(&lhs_node.0, self.kill_set);
                     }
                 }
                 self.in_lhs = true;
