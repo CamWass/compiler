@@ -255,15 +255,29 @@ impl<'a, 'ast> IntoIterator for &'a ParentStack<'ast> {
 #[derive(Debug)]
 pub struct ExceptionHandler<'ast> {
     pub node: Node<'ast>,
-    pub parent_stack: Vec<NodeId>,
+    /// Number of ancestors in the parent_stack that `node` has, so we can later
+    /// slice and iterate over only the relevant ancestors when processing
+    /// children and not the nodes between the child and `node`.
+    ancestors_len: u32,
 }
 
 impl<'ast> ExceptionHandler<'ast> {
     pub fn new(ancestors: &ParentStack<'ast>, node: Node<'ast>) -> Self {
+        Self {
+            node,
+            ancestors_len: ancestors.len() as u32,
+        }
+    }
+
+    pub fn ancestors<'a>(
+        &self,
+        parent_stack: &'a ParentStack<'ast>,
+    ) -> impl Iterator<Item = NodeId> + 'a {
         // TODO: other function like nodes
         // We only care about try, catch, and function ancestors.
-        let parent_stack = ancestors
-            .into_iter()
+        parent_stack.0[..self.ancestors_len as usize - 1]
+            .iter()
+            .rev()
             .filter_map(|parent| match parent.node.kind {
                 NodeKind::TryStmt(_)
                 | NodeKind::Function(_)
@@ -271,9 +285,6 @@ impl<'ast> ExceptionHandler<'ast> {
                 | NodeKind::CatchClause(_) => Some(parent.node.node_id),
                 _ => None,
             })
-            .collect();
-
-        Self { node, parent_stack }
     }
 }
 

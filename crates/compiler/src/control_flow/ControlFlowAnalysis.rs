@@ -512,7 +512,7 @@ where
                 let catch = handler_node.handler.as_ref();
 
                 let mut last_jump_in_catch_block = false;
-                for &ancestor in last_jump.parent_stack.iter().rev() {
+                for ancestor in last_jump.ancestors(&self.parent_stack) {
                     if ancestor == handler_node.node_id {
                         break;
                     } else if Some(ancestor) == catch.as_ref().map(|c| c.node_id) {
