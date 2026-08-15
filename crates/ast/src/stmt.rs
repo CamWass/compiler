@@ -238,7 +238,6 @@ impl Take for VarDeclOrPat {
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
-#[allow(variant_size_differences)]
 pub enum VarDeclOrExpr {
     VarDecl(VarDecl),
 
