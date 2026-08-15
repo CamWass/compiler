@@ -513,9 +513,9 @@ where
 
                 let mut last_jump_in_catch_block = false;
                 for &ancestor in last_jump.parent_stack.iter().rev() {
-                    if ancestor.node_id == handler_node.node_id {
+                    if ancestor == handler_node.node_id {
                         break;
-                    } else if Some(ancestor.node_id) == catch.as_ref().map(|c| c.node_id) {
+                    } else if Some(ancestor) == catch.as_ref().map(|c| c.node_id) {
                         last_jump_in_catch_block = true;
                         break;
                     }

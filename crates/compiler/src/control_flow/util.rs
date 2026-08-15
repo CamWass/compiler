@@ -255,7 +255,7 @@ impl<'a, 'ast> IntoIterator for &'a ParentStack<'ast> {
 #[derive(Debug)]
 pub struct ExceptionHandler<'ast> {
     pub node: Node<'ast>,
-    pub parent_stack: Vec<Node<'ast>>,
+    pub parent_stack: Vec<NodeId>,
 }
 
 impl<'ast> ExceptionHandler<'ast> {
@@ -268,7 +268,7 @@ impl<'ast> ExceptionHandler<'ast> {
                 NodeKind::TryStmt(_)
                 | NodeKind::Function(_)
                 | NodeKind::Constructor(_)
-                | NodeKind::CatchClause(_) => Some(parent.node),
+                | NodeKind::CatchClause(_) => Some(parent.node.node_id),
                 _ => None,
             })
             .collect();
@@ -277,8 +277,8 @@ impl<'ast> ExceptionHandler<'ast> {
     }
 }
 
-impl<'ast> PartialEq<ExceptionHandler<'ast>> for ExceptionHandler<'ast> {
-    fn eq(&self, other: &ExceptionHandler<'ast>) -> bool {
+impl PartialEq<ExceptionHandler<'_>> for ExceptionHandler<'_> {
+    fn eq(&self, other: &ExceptionHandler) -> bool {
         self.node == other.node
     }
 }
