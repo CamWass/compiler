@@ -58,10 +58,7 @@ impl VisitMut<'_> for Normalizer {
         if let Pat::Expr(expr) = node {
             match *expr.take() {
                 Expr::Ident(id) => {
-                    *node = Pat::Ident(BindingIdent {
-                        node_id: NodeId::DUMMY,
-                        id,
-                    });
+                    *node = Pat::Ident(BindingIdent { id });
                 }
                 expr => {
                     *node = Pat::Expr(Box::new(expr));
@@ -76,10 +73,7 @@ impl VisitMut<'_> for Normalizer {
         match node {
             PatOrExpr::Expr(expr) => match *expr.take() {
                 Expr::Ident(id) => {
-                    *node = PatOrExpr::Pat(Box::new(Pat::Ident(BindingIdent {
-                        node_id: NodeId::DUMMY,
-                        id,
-                    })));
+                    *node = PatOrExpr::Pat(Box::new(Pat::Ident(BindingIdent { id })));
                 }
                 expr => *node = PatOrExpr::Expr(Box::new(expr)),
             },

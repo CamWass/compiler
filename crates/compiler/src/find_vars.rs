@@ -182,7 +182,7 @@ impl Visit<'_> for DestructuringFinder<'_> {
     fn visit_prop_name(&mut self, _: &PropName) {}
 
     fn visit_binding_ident(&mut self, i: &BindingIdent) {
-        self.found.push((i.to_id(), i.node_id));
+        self.found.push((i.to_id(), i.node_id()));
     }
 }
 

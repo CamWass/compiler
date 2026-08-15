@@ -175,7 +175,6 @@ fn from_id(id: &Id, program_data: &mut ast::ProgramData) -> ast::Param {
     ast::Param {
         node_id: program_data.new_id(DUMMY_SP),
         pat: ast::Pat::Ident(ast::BindingIdent {
-            node_id: program_data.new_id(DUMMY_SP),
             id: ident!(id.0.clone(), id.1, program_data.new_id(DUMMY_SP)),
         }),
     }

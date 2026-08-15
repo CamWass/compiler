@@ -33,7 +33,7 @@ impl<I: Tokens> Parser<'_, I> {
             self.emit_err(get_span!(self, ident.node_id), SyntaxError::ExpectedIdent);
         }
 
-        Ok(BindingIdent::from_ident(ident, program_data!(self)))
+        Ok(BindingIdent::from_ident(ident))
     }
 
     pub(super) fn parse_binding_pat_or_ident(&mut self) -> PResult<Pat> {
@@ -482,7 +482,7 @@ impl<I: Tokens> Parser<'_, I> {
 
                 _ => match *expr {
                     Expr::Ident(i) => {
-                        return Ok(Pat::Ident(BindingIdent::from_ident(i, program_data!(self))));
+                        return Ok(Pat::Ident(BindingIdent::from_ident(i)));
                     }
                     _ => {
                         return Ok(Pat::Expr(expr));
@@ -517,10 +517,7 @@ impl<I: Tokens> Parser<'_, I> {
                         }
                         match *expr {
                             Expr::Ident(i) => {
-                                return Ok(Pat::Ident(BindingIdent::from_ident(
-                                    i,
-                                    program_data!(self),
-                                )));
+                                return Ok(Pat::Ident(BindingIdent::from_ident(i)));
                             }
                             _ => {
                                 return Ok(Pat::Expr(expr));
@@ -581,7 +578,6 @@ impl<I: Tokens> Parser<'_, I> {
                                     let assign_pat = AssignPat {
                                         node_id: node_id_from!(self, assign_prop.node_id),
                                         left: Box::new(Pat::Ident(BindingIdent {
-                                            node_id: node_id_from!(self, assign_prop.key.node_id),
                                             id: assign_prop.key.clone_node(program_data!(self)),
                                         })),
                                         right: assign_prop.value,
@@ -611,10 +607,7 @@ impl<I: Tokens> Parser<'_, I> {
                         .collect::<PResult<_>>()?,
                 }))
             }
-            Expr::Ident(ident) => Ok(Pat::Ident(BindingIdent::from_ident(
-                ident,
-                program_data!(self),
-            ))),
+            Expr::Ident(ident) => Ok(Pat::Ident(BindingIdent::from_ident(ident))),
             Expr::Member(..) => Ok(Pat::Expr(expr)),
             Expr::Array(ArrayLit {
                 elems: mut exprs,

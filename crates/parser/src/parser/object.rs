@@ -481,7 +481,6 @@ impl<I: Tokens> ParseObject<Pat> for Parser<'_, I> {
             let assign_pat = AssignPat {
                 node_id: node_id!(self, pat_span),
                 left: Box::new(Pat::Ident(BindingIdent {
-                    node_id: node_id!(self, key_span),
                     id: key.clone_node(program_data!(self)),
                 })),
                 right: value.unwrap(),
@@ -495,7 +494,6 @@ impl<I: Tokens> ParseObject<Pat> for Parser<'_, I> {
             Ok(ObjectPatProp::KeyValue(KeyValuePatProp {
                 node_id: node_id!(self, key_span),
                 value: Box::new(Pat::Ident(BindingIdent {
-                    node_id: node_id!(self, key_span),
                     id: key.clone_node(program_data!(self)),
                 })),
                 key: PropName::Ident(key),

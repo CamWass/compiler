@@ -969,9 +969,7 @@ impl<I: Tokens> Parser<'_, I> {
         expect!(self, '[');
 
         let ident_start = self.input.cur_pos();
-        let id = self
-            .parse_ident_name()
-            .map(|i| BindingIdent::from_ident(i, program_data!(self)))?;
+        let id = self.parse_ident_name().map(BindingIdent::from_ident)?;
 
         if eat!(self, ',') {
             self.emit_err(get_span!(self, id.id.node_id), SyntaxError::TS1096);
@@ -1230,13 +1228,10 @@ impl<I: Tokens> Parser<'_, I> {
             Ok(Some(if rest {
                 Pat::Rest(RestPat {
                     node_id: node_id!(p, span!(p, start)),
-                    arg: Box::new(Pat::Ident(BindingIdent::from_ident(
-                        ident,
-                        program_data!(p),
-                    ))),
+                    arg: Box::new(Pat::Ident(BindingIdent::from_ident(ident))),
                 })
             } else {
-                Pat::Ident(BindingIdent::from_ident(ident, program_data!(p)))
+                Pat::Ident(BindingIdent::from_ident(ident))
             }))
         })
     }

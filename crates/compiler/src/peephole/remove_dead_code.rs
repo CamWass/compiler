@@ -1029,7 +1029,6 @@ impl Visitor<'_> {
                                     decls: vec![VarDeclarator {
                                         node_id: self.program_data.new_id_from(name_node_id),
                                         name: Pat::Ident(BindingIdent {
-                                            node_id: self.program_data.new_id_from(name_node_id),
                                             id: Ident {
                                                 node_id: self
                                                     .program_data

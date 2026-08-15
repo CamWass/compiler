@@ -428,7 +428,6 @@ define!({
     }
 
     pub struct BindingIdent {
-        pub node_id: NodeId,
         pub id: Ident,
     }
 

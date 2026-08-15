@@ -1,4 +1,4 @@
-use crate::{GetNodeId, NodeId, ProgramData};
+use crate::{GetNodeId, NodeId};
 use atoms::{JsWord, js_word};
 use clone_node::CloneNode;
 use common::{SyntaxContext, util::take::Take};
@@ -7,18 +7,29 @@ use node_id::GetNodeIdMacro;
 use serde::Serialize;
 
 /// Identifier used as a pattern.
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
+#[derive(Debug, PartialEq, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct BindingIdent {
-    pub node_id: NodeId,
     pub id: Ident,
 }
 
 impl BindingIdent {
-    pub fn from_ident(id: Ident, program_data: &mut ProgramData) -> Self {
-        Self {
-            node_id: program_data.new_id_from(id.node_id),
-            id,
-        }
+    pub fn from_ident(id: Ident) -> Self {
+        Self { id }
+    }
+}
+
+impl GetNodeId for BindingIdent {
+    fn node_id(&self) -> NodeId {
+        // At the time of writing, NodeIds are used to (1) store spans for each
+        // node, and (2) allow the compiler to differentiate nodes and store
+        // information about them.
+        // As a transparent wrapper, BindingIdent always has the same span as
+        // the inner Ident, and we currently don't need to store info about
+        // BindingIdents specifically (we store the info using the Ident's
+        // NodeId).
+        // Therefore, we don't give BindingIdents their own NodeId, and don't
+        // have to store spans for them.
+        self.id.node_id
     }
 }
 

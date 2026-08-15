@@ -413,7 +413,7 @@ impl<I: Tokens> Parser<'_, I> {
                 && !self.input.had_line_break_before_cur()
                 && self.input.eat(&tok!("=>"))
             {
-                let pat = Pat::Ident(BindingIdent::from_ident(id, program_data!(self)));
+                let pat = Pat::Ident(BindingIdent::from_ident(id));
                 let params = vec![Param::from_pat(pat, program_data!(self))];
                 let body = self.parse_fn_body(false, false)?;
                 let body = self.make_arrow_fn_block(body);
