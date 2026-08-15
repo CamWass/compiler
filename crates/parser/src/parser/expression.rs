@@ -1493,7 +1493,7 @@ impl<I: Tokens> Parser<'_, I> {
         Ok(TaggedTpl {
             node_id: node_id!(self, span),
             tag,
-            tpl,
+            tpl: Box::new(tpl),
         })
     }
 

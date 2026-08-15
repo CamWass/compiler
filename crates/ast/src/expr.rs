@@ -264,7 +264,7 @@ pub struct TaggedTpl {
 
     pub tag: Box<Expr>,
 
-    pub tpl: Tpl,
+    pub tpl: Box<Tpl>,
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
