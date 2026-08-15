@@ -1,4 +1,3 @@
-#![allow(clippy::vec_box)]
 use crate::{
     GetNodeId, Invalid, NodeId, Param,
     class::Class,
@@ -211,7 +210,7 @@ pub struct NewExpr {
 pub struct SeqExpr {
     pub node_id: NodeId,
 
-    pub exprs: Vec<Box<Expr>>,
+    pub exprs: Vec<Expr>,
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
@@ -254,8 +253,7 @@ pub struct AwaitExpr {
 pub struct Tpl {
     pub node_id: NodeId,
 
-    // TODO: why Vec<Box<Expr>> and not just Vec<Expr>?
-    pub exprs: Vec<Box<Expr>>,
+    pub exprs: Vec<Expr>,
 
     pub quasis: Vec<TplElement>,
 }

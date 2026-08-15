@@ -176,7 +176,7 @@ impl Visitor<'_> {
                             .elems
                             .take()
                             .into_iter()
-                            .map(|a| unwrap_as!(a, Some(ExprOrSpread::Expr(e)), e))
+                            .map(|a| *unwrap_as!(a, Some(ExprOrSpread::Expr(e)), e))
                             .collect(),
                     });
                     Keep
@@ -197,14 +197,14 @@ impl Visitor<'_> {
                                 PropName::Computed(computed) => {
                                     let remove_key = self.simplify_unused_expr(&mut computed.expr);
                                     if remove_key == Keep {
-                                        side_effects.push(computed.expr.take());
+                                        side_effects.push(computed.expr.as_mut().take());
                                     }
                                 }
                             }
 
                             let remove_value = self.simplify_unused_expr(value);
                             if remove_value == Keep {
-                                side_effects.push(value.take());
+                                side_effects.push(value.as_mut().take());
                             }
                         }
                         Prop::Getter(GetterProp { key, .. })
@@ -217,14 +217,14 @@ impl Visitor<'_> {
                             PropName::Computed(computed) => {
                                 let remove_key = self.simplify_unused_expr(&mut computed.expr);
                                 if remove_key == Keep {
-                                    side_effects.push(computed.expr.take());
+                                    side_effects.push(computed.expr.as_mut().take());
                                 }
                             }
                         },
                         Prop::Spread(spread) => {
                             let remove_arg = self.simplify_unused_expr(&mut spread.expr);
                             if remove_arg == Keep {
-                                side_effects.push(spread.expr.take());
+                                side_effects.push(spread.expr.as_mut().take());
                             }
                         }
                     }
@@ -233,7 +233,7 @@ impl Visitor<'_> {
                 if side_effects.is_empty() {
                     Remove
                 } else if side_effects.len() == 1 {
-                    *expr = *side_effects.into_iter().next().unwrap();
+                    *expr = side_effects.into_iter().next().unwrap();
                     Keep
                 } else {
                     *expr = Expr::Seq(SeqExpr {
@@ -281,7 +281,7 @@ impl Visitor<'_> {
                 } else {
                     *expr = Expr::Seq(SeqExpr {
                         node_id: self.program_data.new_id_from(bin.node_id),
-                        exprs: vec![bin.left.take(), bin.right.take()],
+                        exprs: vec![bin.left.as_mut().take(), bin.right.as_mut().take()],
                     });
                     Keep
                 }
@@ -367,7 +367,7 @@ impl Visitor<'_> {
                             .args
                             .take()
                             .into_iter()
-                            .map(|a| unwrap_as!(a, ExprOrSpread::Expr(e), e))
+                            .map(|a| *unwrap_as!(a, ExprOrSpread::Expr(e), e))
                             .collect(),
                     });
                     Keep
@@ -428,7 +428,7 @@ impl Visitor<'_> {
                         exprs: args
                             .take()
                             .into_iter()
-                            .map(|a| unwrap_as!(a, ExprOrSpread::Expr(e), e))
+                            .map(|a| *unwrap_as!(a, ExprOrSpread::Expr(e), e))
                             .collect(),
                     });
                     Keep
@@ -441,7 +441,7 @@ impl Visitor<'_> {
                 });
 
                 if seq.exprs.len() == 1 {
-                    *expr = unwrap_as!(seq.exprs.first_mut(), Some(e), e.as_mut().take());
+                    *expr = unwrap_as!(seq.exprs.first_mut(), Some(e), e.take());
                     Keep
                 } else if seq.exprs.is_empty() {
                     Remove
@@ -460,7 +460,7 @@ impl Visitor<'_> {
                 if tpl.exprs.is_empty() {
                     Remove
                 } else if tpl.exprs.len() == 1 {
-                    *expr = tpl.exprs.first_mut().unwrap().as_mut().take();
+                    *expr = tpl.exprs.first_mut().unwrap().take();
                     Keep
                 } else {
                     *expr = Expr::Seq(SeqExpr {
@@ -486,7 +486,7 @@ impl Visitor<'_> {
                 if tpl.tpl.exprs.is_empty() {
                     Remove
                 } else if tpl.tpl.exprs.len() == 1 {
-                    *expr = tpl.tpl.exprs.first_mut().unwrap().as_mut().take();
+                    *expr = tpl.tpl.exprs.first_mut().unwrap().take();
                     Keep
                 } else {
                     *expr = Expr::Seq(SeqExpr {
@@ -502,7 +502,7 @@ impl Visitor<'_> {
                 if let Some(extends) = &mut class.class.extends {
                     let remove_extends = self.simplify_unused_expr(&mut extends.super_class);
                     if remove_extends == Keep {
-                        side_effects.push(extends.super_class.take());
+                        side_effects.push(extends.super_class.as_mut().take());
                     }
                 }
 
@@ -512,7 +512,7 @@ impl Visitor<'_> {
                             if let PropName::Computed(key) = &mut class_method.key {
                                 let remove_key = self.simplify_unused_expr(&mut key.expr);
                                 if remove_key == Keep {
-                                    side_effects.push(key.expr.take());
+                                    side_effects.push(key.expr.as_mut().take());
                                 }
                             }
                         }
@@ -530,14 +530,14 @@ impl Visitor<'_> {
 
                                 let remove_value = self.simplify_unused_expr(value);
                                 if remove_value == Keep {
-                                    side_effects.push(value.take());
+                                    side_effects.push(value.as_mut().take());
                                 }
                             }
 
                             if let PropName::Computed(key) = &mut class_prop.key {
                                 let remove_key = self.simplify_unused_expr(&mut key.expr);
                                 if remove_key == Keep {
-                                    side_effects.push(key.expr.take());
+                                    side_effects.push(key.expr.as_mut().take());
                                 }
                             }
                         }
@@ -554,7 +554,7 @@ impl Visitor<'_> {
 
                                 let remove_value = self.simplify_unused_expr(value);
                                 if remove_value == Keep {
-                                    side_effects.push(value.take());
+                                    side_effects.push(value.as_mut().take());
                                 }
                             }
                         }
@@ -564,7 +564,7 @@ impl Visitor<'_> {
                 if side_effects.is_empty() {
                     Remove
                 } else if side_effects.len() == 1 {
-                    *expr = *side_effects.into_iter().next().unwrap();
+                    *expr = side_effects.into_iter().next().unwrap();
                     Keep
                 } else {
                     *expr = Expr::Seq(SeqExpr {
@@ -1272,7 +1272,7 @@ impl VisitMut<'_> for Visitor<'_> {
                 let replacement = if condition_has_side_effects {
                     Expr::Seq(SeqExpr {
                         node_id: self.program_data.new_id_from(cond.node_id),
-                        exprs: vec![cond.test, branchToKeep],
+                        exprs: vec![*cond.test, *branchToKeep],
                     })
                 } else {
                     *branchToKeep
@@ -1302,7 +1302,7 @@ impl VisitMut<'_> for Visitor<'_> {
                 });
 
                 if seq.exprs.len() == 1 {
-                    *node = seq.exprs[0].as_mut().take();
+                    *node = seq.exprs[0].take();
                 }
             }
             _ => node.visit_mut_children_with(self),

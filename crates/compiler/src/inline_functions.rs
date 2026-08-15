@@ -346,10 +346,10 @@ fn convert_statements_to_expressions(
         };
 
         expr.exprs.extend(statements.iter().map(|s| {
-            unwrap_as!(s, Stmt::Expr(ExprStmt { expr, .. }), expr).clone_node(program_data)
+            unwrap_as!(s, Stmt::Expr(ExprStmt { expr, .. }), expr.as_ref()).clone_node(program_data)
         }));
 
-        expr.exprs.push(Box::new(tail));
+        expr.exprs.push(tail);
 
         Expr::Seq(expr)
     } else {

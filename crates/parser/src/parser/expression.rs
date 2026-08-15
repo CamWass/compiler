@@ -33,10 +33,10 @@ impl<I: Tokens> Parser<'_, I> {
         let expr = self.parse_assignment_expr(assign_props)?;
 
         if self.input.is(&tok!(',')) {
-            let mut exprs = vec![expr.unwrap()];
+            let mut exprs = vec![*expr.unwrap()];
 
             while self.input.eat(&tok!(',')) {
-                exprs.push(self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap());
+                exprs.push(*self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap());
             }
 
             return Ok(Box::new(Expr::Seq(SeqExpr {
@@ -1424,7 +1424,7 @@ impl<I: Tokens> Parser<'_, I> {
                         let span = get_span!(self, e.node_id);
                         syntax_error!(self, span, SyntaxError::SpreadInParenExpr)
                     }
-                    ExprOrSpread::Expr(e) => exprs.push(e),
+                    ExprOrSpread::Expr(e) => exprs.push(*e),
                 }
             }
             debug_assert!(exprs.len() >= 2);
@@ -1462,11 +1462,7 @@ impl<I: Tokens> Parser<'_, I> {
         }
     }
 
-    #[allow(clippy::vec_box)]
-    fn parse_tpl_elements(
-        &mut self,
-        is_tagged: bool,
-    ) -> PResult<(Vec<Box<Expr>>, Vec<TplElement>)> {
+    fn parse_tpl_elements(&mut self, is_tagged: bool) -> PResult<(Vec<Expr>, Vec<TplElement>)> {
         let mut exprs = vec![];
 
         let cur_elem = self.parse_tpl_element(is_tagged)?;
@@ -1475,7 +1471,8 @@ impl<I: Tokens> Parser<'_, I> {
         while !is!(self, '`') {
             expect!(self, "${");
             exprs.push(
-                self.include_in_expr(true)
+                *self
+                    .include_in_expr(true)
                     .parse_expr(&mut AssignProps::Emit)?
                     .unwrap(),
             );

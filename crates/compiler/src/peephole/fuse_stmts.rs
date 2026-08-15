@@ -99,7 +99,7 @@ fn fuse_statements(block: &mut BlockStmt, program_data: &mut ProgramData) -> Seq
     let exprs = block
         .stmts
         .drain(..(block.stmts.len() - 1))
-        .map(|s| unwrap_as!(s, Stmt::Expr(e), e).expr)
+        .map(|s| *unwrap_as!(s, Stmt::Expr(e), e).expr)
         .collect();
     SeqExpr {
         node_id: program_data.new_id(DUMMY_SP),
@@ -154,9 +154,9 @@ fn fuse_expression_into_control_flow_statement(
     }
 }
 
-fn fuse_exprs(mut seq: SeqExpr, other: &mut Box<Expr>) {
+fn fuse_exprs(mut seq: SeqExpr, other: &mut Expr) {
     seq.exprs.push(other.take());
-    *other.as_mut() = Expr::Seq(seq);
+    *other = Expr::Seq(seq);
 }
 
 #[cfg(test)]

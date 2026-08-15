@@ -21,11 +21,11 @@ impl VisitMut<'_> for Normalizer {
             }
             // Flatten comma expressions.
             Expr::Seq(SeqExpr { mut exprs, .. }) => {
-                let need_work = exprs.iter().any(|n| matches!(**n, Expr::Seq(..)));
+                let need_work = exprs.iter().any(|n| matches!(*n, Expr::Seq(..)));
 
                 if need_work {
                     exprs = exprs.into_iter().fold(vec![], |mut v, e| {
-                        match *e {
+                        match e {
                             Expr::Seq(SeqExpr { exprs, .. }) => v.extend(exprs),
                             _ => v.push(e),
                         }

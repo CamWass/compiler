@@ -81,11 +81,11 @@ impl<I: Tokens> Parser<'_, I> {
                         .unwrap();
 
                     if parser.syntax().typescript() && is!(parser, ',') {
-                        let mut exprs = vec![expr];
+                        let mut exprs = vec![*expr];
 
                         while eat!(parser, ',') {
                             exprs.push(
-                                parser
+                                *parser
                                     .include_in_expr(true)
                                     .parse_assignment_expr(&mut AssignProps::Emit)?
                                     .unwrap(),

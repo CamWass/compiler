@@ -361,7 +361,7 @@ define!({
     }
     pub struct SeqExpr {
         pub node_id: NodeId,
-        pub exprs: Vec<Box<Expr>>,
+        pub exprs: Vec<Expr>,
     }
     pub struct ArrowExpr {
         pub node_id: NodeId,
@@ -385,7 +385,7 @@ define!({
     }
     pub struct Tpl {
         pub node_id: NodeId,
-        pub exprs: Vec<Box<Expr>>,
+        pub exprs: Vec<Expr>,
         pub quasis: Vec<TplElement>,
     }
     pub struct TaggedTpl {
