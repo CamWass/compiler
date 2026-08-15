@@ -9,6 +9,8 @@ use crate::{
     utils::unwrap_as,
 };
 
+// Note: This is more of a proof-of-concept.
+
 pub fn process(
     ast: &mut ast::Program,
     program_data: &mut ProgramData,
