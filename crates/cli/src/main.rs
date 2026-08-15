@@ -97,7 +97,16 @@ fn compile(entry_file: &str, config: Config, output_file: Option<&str>) -> Resul
         buf
     };
 
-    std::fs::write(output_file.unwrap_or("out.js"), src).context("Failed to write file")
+    let res = std::fs::write(output_file.unwrap_or("out.js"), &src).context("Failed to write file");
+
+    std::mem::forget(cm);
+    std::mem::forget(handler);
+    std::mem::forget(program_data);
+    std::mem::forget(compiler);
+    std::mem::forget(src);
+    std::mem::forget(result);
+
+    res
 }
 
 fn main() -> Result<()> {
