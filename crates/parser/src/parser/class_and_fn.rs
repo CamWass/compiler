@@ -1099,11 +1099,11 @@ impl OutputType for Box<Expr> {
         class: Class,
         parser: &mut Parser<impl Tokens>,
     ) -> Self {
-        Box::new(Expr::Class(ClassExpr {
+        Box::new(Expr::Class(Box::new(ClassExpr {
             ident,
             class,
             node_id: node_id!(parser, span),
-        }))
+        })))
     }
 }
 

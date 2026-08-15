@@ -104,8 +104,8 @@ impl<'a> Emitter<'a> {
 
         let needs_parens = match node.expr.as_ref() {
             Expr::Arrow(..) | Expr::Seq(..) => true,
-            Expr::Fn(FnExpr { ident: Some(_), .. })
-            | Expr::Class(ClassExpr { ident: Some(_), .. }) => true,
+            Expr::Fn(FnExpr { ident: Some(_), .. }) => true,
+            Expr::Class(class) if class.ident.is_some() => true,
             _ => false,
         };
 

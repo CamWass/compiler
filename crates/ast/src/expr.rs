@@ -54,9 +54,9 @@ pub enum Expr {
 
     TaggedTpl(TaggedTpl),
 
-    Arrow(ArrowExpr),
+    Arrow(Box<ArrowExpr>),
 
-    Class(ClassExpr),
+    Class(Box<ClassExpr>),
 
     Yield(YieldExpr),
 

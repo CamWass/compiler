@@ -62,9 +62,9 @@ impl<I: Tokens> Parser<'_, I> {
                 let arrow = p.parse_assignment_expr_base(&mut AssignProps::Ignore)?;
                 match &arrow {
                     MaybeParen::Expr(arrow) => match arrow.as_ref() {
-                        Expr::Arrow(ArrowExpr { node_id, .. }) => {
-                            let s = get_span!(p, *node_id);
-                            set_span!(p, *node_id, Span::new(start, s.hi,));
+                        Expr::Arrow(arrow) => {
+                            let s = get_span!(p, arrow.node_id);
+                            set_span!(p, arrow.node_id, Span::new(start, s.hi,));
                         }
                         _ => unexpected!(p, "("),
                     },
@@ -303,7 +303,7 @@ impl<I: Tokens> Parser<'_, I> {
                             p.assert_and_bump(&tok!("async"));
                             p.try_parse_ts_generic_async_arrow_fn(start)
                         }) {
-                            return Ok(Box::new(Expr::Arrow(res)).into());
+                            return Ok(Box::new(Expr::Arrow(Box::new(res))).into());
                         }
                     }
 
@@ -402,12 +402,12 @@ impl<I: Tokens> Parser<'_, I> {
                 let body = self.parse_fn_body(true, false)?;
                 let body = self.make_arrow_fn_block(body);
 
-                return Ok(Box::new(Expr::Arrow(ArrowExpr {
+                return Ok(Box::new(Expr::Arrow(Box::new(ArrowExpr {
                     node_id: node_id!(self, span!(self, start)),
                     body,
                     params,
                     is_async: true,
-                }))
+                })))
                 .into());
             } else if can_be_arrow
                 && !self.input.had_line_break_before_cur()
@@ -418,12 +418,12 @@ impl<I: Tokens> Parser<'_, I> {
                 let body = self.parse_fn_body(false, false)?;
                 let body = self.make_arrow_fn_block(body);
 
-                return Ok(Box::new(Expr::Arrow(ArrowExpr {
+                return Ok(Box::new(Expr::Arrow(Box::new(ArrowExpr {
                     node_id: node_id!(self, span!(self, start)),
                     body,
                     params,
                     is_async: false,
-                }))
+                })))
                 .into());
             } else {
                 return Ok(Box::new(Expr::Ident(id)).into());
@@ -558,7 +558,10 @@ impl<I: Tokens> Parser<'_, I> {
                         // But it might be a call with a type argument `async<T>();`
                         let async_arrow_fn = p.try_parse_ts_generic_async_arrow_fn(start)?;
                         if let Some(async_arrow_fn) = async_arrow_fn {
-                            return Ok(Some((Box::new(Expr::Arrow(async_arrow_fn)).into(), true)));
+                            return Ok(Some((
+                                Box::new(Expr::Arrow(Box::new(async_arrow_fn))).into(),
+                                true,
+                            )));
                         }
                     }
 
@@ -1067,12 +1070,12 @@ impl<I: Tokens> Parser<'_, I> {
                 let span = span!(self, start);
 
                 return Ok(vec![MaybeParenPatOrExprOrSpread::Expr(
-                    Box::new(Expr::Arrow(ArrowExpr {
+                    Box::new(Expr::Arrow(Box::new(ArrowExpr {
                         node_id: node_id!(self, span),
                         body,
                         is_async: false,
                         params,
-                    }))
+                    })))
                     .into(),
                 )]);
             }
@@ -1294,12 +1297,12 @@ impl<I: Tokens> Parser<'_, I> {
                 let body = p.parse_fn_body(async_span.is_some(), false)?;
                 let body = p.make_arrow_fn_block(body);
 
-                Ok(Some(Box::new(Expr::Arrow(ArrowExpr {
+                Ok(Some(Box::new(Expr::Arrow(Box::new(ArrowExpr {
                     node_id: node_id!(p, span!(p, expr_start)),
                     is_async: async_span.is_some(),
                     params,
                     body,
-                }))))
+                })))))
             }) {
                 return Ok(expr.into());
             }
@@ -1338,12 +1341,12 @@ impl<I: Tokens> Parser<'_, I> {
             let body: BlockStmtOrExpr = self.parse_fn_body(async_span.is_some(), false)?;
             let is_block = matches!(body, BlockStmtOrExpr::BlockStmt(_));
             let body = self.make_arrow_fn_block(body);
-            let arrow_expr = ArrowExpr {
+            let arrow_expr = Box::new(ArrowExpr {
                 node_id: node_id!(self, span!(self, expr_start)),
                 is_async: async_span.is_some(),
                 params,
                 body,
-            };
+            });
             if is_block {
                 if let Some(&Token::BinOp(..)) = self.input.cur() {
                     // ) is required
