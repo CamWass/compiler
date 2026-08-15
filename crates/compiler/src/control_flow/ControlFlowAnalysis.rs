@@ -758,7 +758,7 @@ where
 
         // We have for (init; cond; update) { body }
 
-        let init_node = node.init.as_ref().map(Node::from);
+        let init_node = node.init.as_deref().map(Node::from);
         let update_node = node.update.as_ref().map(|update| Node::from(&**update));
 
         // After initialization, we transfer to the FOR which is in charge of

@@ -169,7 +169,7 @@ pub struct DoWhileStmt {
 pub struct ForStmt {
     pub node_id: NodeId,
 
-    pub init: Option<VarDeclOrExpr>,
+    pub init: Option<Box<VarDeclOrExpr>>,
 
     pub test: Option<Box<Expr>>,
 
@@ -181,7 +181,7 @@ pub struct ForStmt {
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct ForInStmt {
     pub node_id: NodeId,
-    pub left: VarDeclOrPat,
+    pub left: Box<VarDeclOrPat>,
     pub right: Box<Expr>,
     pub body: Box<Stmt>,
 }
@@ -191,7 +191,7 @@ pub struct ForOfStmt {
     pub node_id: NodeId,
     /// for-await-of statements, e.g., `for await (const x of xs) {`
     pub is_await: bool,
-    pub left: VarDeclOrPat,
+    pub left: Box<VarDeclOrPat>,
     pub right: Box<Expr>,
     pub body: Box<Stmt>,
 }

@@ -13,16 +13,16 @@ mod module_item;
 
 enum ForHead {
     For {
-        init: Option<VarDeclOrExpr>,
+        init: Option<Box<VarDeclOrExpr>>,
         test: Option<Box<Expr>>,
         update: Option<Box<Expr>>,
     },
     ForIn {
-        left: VarDeclOrPat,
+        left: Box<VarDeclOrPat>,
         right: Box<Expr>,
     },
     ForOf {
-        left: VarDeclOrPat,
+        left: Box<VarDeclOrPat>,
         right: Box<Expr>,
     },
 }
@@ -670,7 +670,7 @@ impl<I: Tokens> Parser<'_, I> {
             }
 
             expect_exact!(self, ';');
-            return self.parse_normal_for_head(Some(VarDeclOrExpr::VarDecl(decl)));
+            return self.parse_normal_for_head(Some(Box::new(VarDeclOrExpr::VarDecl(decl))));
         }
 
         if self.input.eat(&tok!(';')) {
@@ -707,7 +707,7 @@ impl<I: Tokens> Parser<'_, I> {
         for prop in assign_props {
             self.emit_err(prop, SyntaxError::AssignProperty);
         }
-        self.parse_normal_for_head(Some(VarDeclOrExpr::Expr(init.unwrap())))
+        self.parse_normal_for_head(Some(Box::new(VarDeclOrExpr::Expr(init.unwrap()))))
     }
 
     fn parse_for_each_head(&mut self, left: VarDeclOrPat) -> PResult<ForHead> {
@@ -717,17 +717,23 @@ impl<I: Tokens> Parser<'_, I> {
                 .include_in_expr(true)
                 .parse_assignment_expr(&mut AssignProps::Emit)?
                 .unwrap();
-            Ok(ForHead::ForOf { left, right })
+            Ok(ForHead::ForOf {
+                left: Box::new(left),
+                right,
+            })
         } else {
             let right = self
                 .include_in_expr(true)
                 .parse_expr(&mut AssignProps::Emit)?
                 .unwrap();
-            Ok(ForHead::ForIn { left, right })
+            Ok(ForHead::ForIn {
+                left: Box::new(left),
+                right,
+            })
         }
     }
 
-    fn parse_normal_for_head(&mut self, init: Option<VarDeclOrExpr>) -> PResult<ForHead> {
+    fn parse_normal_for_head(&mut self, init: Option<Box<VarDeclOrExpr>>) -> PResult<ForHead> {
         let test = if self.input.eat(&tok!(';')) {
             None
         } else {

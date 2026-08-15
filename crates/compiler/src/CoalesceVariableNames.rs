@@ -368,7 +368,7 @@ impl VisitMut<'_> for CoalesceVariableNames<'_> {
     }
 
     fn visit_mut_for_stmt(&mut self, node: &mut ForStmt) {
-        if let Some(VarDeclOrExpr::VarDecl(var_decl)) = &mut node.init {
+        if let Some(VarDeclOrExpr::VarDecl(var_decl)) = node.init.as_deref_mut() {
             // TODO: this can contain multiple decls!
             if var_decl.decls.len() == 1 {
                 let decl = var_decl.decls.first_mut().unwrap();
@@ -376,20 +376,24 @@ impl VisitMut<'_> for CoalesceVariableNames<'_> {
                 if let Pat::Ident(lhs) = &mut decl.name {
                     match self.maybe_coalesce_name(&mut lhs.id) {
                         CoalesceResult::NameIsCoalesceTarget => {
-                            let var_decl =
-                                unwrap_as!(&mut node.init, Some(VarDeclOrExpr::VarDecl(d)), d);
+                            let var_decl = unwrap_as!(
+                                node.init.as_deref_mut(),
+                                Some(VarDeclOrExpr::VarDecl(d)),
+                                d
+                            );
                             let decl = var_decl.decls.pop().unwrap();
 
                             if let Some(init) = decl.init {
                                 // Replace decl with assignment e.g. `let x = 0;` to `x = 0;`.
                                 let name = unwrap_as!(decl.name, Pat::Ident(n), n);
-                                node.init =
-                                    Some(VarDeclOrExpr::Expr(Box::new(Expr::Assign(AssignExpr {
+                                node.init = Some(Box::new(VarDeclOrExpr::Expr(Box::new(
+                                    Expr::Assign(AssignExpr {
                                         node_id: self.program_data.new_id_from(decl.node_id),
                                         op: AssignOp::Assign,
                                         left: PatOrExpr::Expr(Box::new(Expr::Ident(name.id))),
                                         right: init,
-                                    }))));
+                                    }),
+                                ))));
                             } else {
                                 // Remove empty decl e.g. `var x;`.
                                 node.init = None;
@@ -410,17 +414,21 @@ impl VisitMut<'_> for CoalesceVariableNames<'_> {
                     match self.maybe_coalesce_name(lhs) {
                         CoalesceResult::NameIsCoalesceTarget => {
                             // convert `const [x] = arr` to `[x] = arr`
-                            let var_decl =
-                                unwrap_as!(&mut node.init, Some(VarDeclOrExpr::VarDecl(d)), d);
+                            let var_decl = unwrap_as!(
+                                node.init.as_deref_mut(),
+                                Some(VarDeclOrExpr::VarDecl(d)),
+                                d
+                            );
                             let decl = var_decl.decls.pop().unwrap();
 
-                            node.init =
-                                Some(VarDeclOrExpr::Expr(Box::new(Expr::Assign(AssignExpr {
+                            node.init = Some(Box::new(VarDeclOrExpr::Expr(Box::new(
+                                Expr::Assign(AssignExpr {
                                     node_id: self.program_data.new_id_from(decl.node_id),
                                     op: AssignOp::Assign,
                                     left: PatOrExpr::Pat(Box::new(decl.name)),
                                     right: decl.init.unwrap(),
-                                }))));
+                                }),
+                            ))));
                         }
                         CoalesceResult::NameIsCoalesceSource => {
                             // Convert `const` or `let` declarations to `var` declarations.

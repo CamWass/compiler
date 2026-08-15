@@ -279,7 +279,7 @@ impl VisitMut<'_> for Driver<'_> {
         node.update.visit_mut_with(self);
         node.body.visit_mut_with(self);
 
-        if let Some(VarDeclOrExpr::VarDecl(init)) = &mut node.init {
+        if let Some(VarDeclOrExpr::VarDecl(init)) = node.init.as_deref_mut() {
             // We can't optimise assignments in the variable declaration of a
             // for loop, since there's not a spot directly following the
             // variable where we can move the RHS.
@@ -295,7 +295,7 @@ impl VisitMut<'_> for Driver<'_> {
         node.right.visit_mut_children_with(self);
         node.body.visit_mut_children_with(self);
 
-        if let VarDeclOrPat::VarDecl(init) = &mut node.left {
+        if let VarDeclOrPat::VarDecl(init) = node.left.as_mut() {
             // We can't optimise assignments in the variable declaration of a
             // for loop, since there's not a spot directly following the
             // variable where we can move the RHS.
@@ -311,7 +311,7 @@ impl VisitMut<'_> for Driver<'_> {
         node.right.visit_mut_children_with(self);
         node.body.visit_mut_children_with(self);
 
-        if let VarDeclOrPat::VarDecl(init) = &mut node.left {
+        if let VarDeclOrPat::VarDecl(init) = node.left.as_mut() {
             // We can't optimise assignments in the variable declaration of a
             // for loop, since there's not a spot directly following the
             // variable where we can move the RHS.

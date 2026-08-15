@@ -248,7 +248,7 @@ where
 
     fn visit_for_in_stmt(&mut self, node: &'ast ForInStmt) {
         debug_assert!(!self.in_lhs);
-        let lhs = match &node.left {
+        let lhs = match node.left.as_ref() {
             // for (var x in y) {...}
             VarDeclOrPat::VarDecl(v) => {
                 assert!(v.decls.len() == 1);
@@ -269,7 +269,7 @@ where
     }
     fn visit_for_of_stmt(&mut self, node: &'ast ForOfStmt) {
         debug_assert!(!self.in_lhs);
-        let lhs = match &node.left {
+        let lhs = match node.left.as_ref() {
             // for (var x in y) {...}
             VarDeclOrPat::VarDecl(v) => {
                 assert!(v.decls.len() == 1);

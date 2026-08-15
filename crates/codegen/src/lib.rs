@@ -2711,7 +2711,7 @@ impl Emitter<'_> {
         let mut await_ident = false;
 
         if !node.is_await {
-            if let VarDeclOrPat::Pat(p) = &node.left {
+            if let VarDeclOrPat::Pat(p) = node.left.as_ref() {
                 match p {
                     Pat::Ident(ident) => {
                         if &ident.id.sym == "async" {

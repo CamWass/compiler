@@ -240,12 +240,12 @@ define!({
     pub struct FnDecl {
         pub node_id: NodeId,
         pub ident: Ident,
-        pub function: Function,
+        pub function: Box<Function>,
     }
     pub struct ClassDecl {
         pub node_id: NodeId,
         pub ident: Ident,
-        pub class: Class,
+        pub class: Box<Class>,
     }
     pub struct VarDecl {
         pub node_id: NodeId,
@@ -280,8 +280,8 @@ define!({
         Lit(Lit),
         Tpl(Tpl),
         TaggedTpl(TaggedTpl),
-        Arrow(ArrowExpr),
-        Class(ClassExpr),
+        Arrow(Box<ArrowExpr>),
+        Class(Box<ClassExpr>),
         Yield(YieldExpr),
         MetaProp(MetaPropExpr),
         Await(AwaitExpr),
@@ -391,7 +391,7 @@ define!({
     pub struct TaggedTpl {
         pub node_id: NodeId,
         pub tag: Box<Expr>,
-        pub tpl: Tpl,
+        pub tpl: Box<Tpl>,
     }
     pub struct TplElement {
         pub node_id: NodeId,
@@ -729,7 +729,7 @@ define!({
         If(IfStmt),
         Switch(SwitchStmt),
         Throw(ThrowStmt),
-        Try(TryStmt),
+        Try(Box<TryStmt>),
         While(WhileStmt),
         DoWhile(DoWhileStmt),
         For(ForStmt),
@@ -803,21 +803,21 @@ define!({
     }
     pub struct ForStmt {
         pub node_id: NodeId,
-        pub init: Option<VarDeclOrExpr>,
+        pub init: Option<Box<VarDeclOrExpr>>,
         pub test: Option<Box<Expr>>,
         pub update: Option<Box<Expr>>,
         pub body: Box<Stmt>,
     }
     pub struct ForInStmt {
         pub node_id: NodeId,
-        pub left: VarDeclOrPat,
+        pub left: Box<VarDeclOrPat>,
         pub right: Box<Expr>,
         pub body: Box<Stmt>,
     }
     pub struct ForOfStmt {
         pub node_id: NodeId,
         pub is_await: bool,
-        pub left: VarDeclOrPat,
+        pub left: Box<VarDeclOrPat>,
         pub right: Box<Expr>,
         pub body: Box<Stmt>,
     }

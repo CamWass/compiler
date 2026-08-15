@@ -79,11 +79,11 @@ fn is_fusable_control_statement(stmt: &Stmt) -> bool {
         // We don't want to add a new return value.
         Stmt::Return(r) => r.arg.is_some(),
         // Avoid cases where we have for(var x;_;_) { ....
-        Stmt::For(f) => !matches!(f.init, Some(VarDeclOrExpr::VarDecl(_))),
+        Stmt::For(f) => !matches!(f.init.as_deref(), Some(VarDeclOrExpr::VarDecl(_))),
         // Avoid cases where we have for(var x = foo() in a) { ....
         // TODO: make this more precise:
         // Stmt::ForIn(f) => !may_have_side_effects(&f.left),
-        Stmt::ForIn(f) => matches!(&f.left, VarDeclOrPat::Pat(Pat::Ident(_))),
+        Stmt::ForIn(f) => matches!(f.left.as_ref(), VarDeclOrPat::Pat(Pat::Ident(_))),
         Stmt::Labeled(l) => is_fusable_control_statement(&l.body),
         Stmt::Block(b) => b
             .stmts
@@ -124,15 +124,20 @@ fn fuse_expression_into_control_flow_statement(
         | Stmt::Switch(SwitchStmt {
             discriminant: expr, ..
         })
-        | Stmt::Expr(ExprStmt { expr, .. })
-        | Stmt::For(ForStmt {
-            init: Some(VarDeclOrExpr::Expr(expr)),
-            ..
-        }) => {
+        | Stmt::Expr(ExprStmt { expr, .. }) => {
             fuse_exprs(seq, expr);
         }
+        Stmt::For(ForStmt {
+            init: Some(init), ..
+        }) => {
+            if let VarDeclOrExpr::Expr(expr) = init.as_mut() {
+                fuse_exprs(seq, expr);
+            } else {
+                unreachable!()
+            }
+        }
         Stmt::For(f @ ForStmt { init: None, .. }) => {
-            f.init = Some(VarDeclOrExpr::Expr(Box::new(Expr::Seq(seq))));
+            f.init = Some(Box::new(VarDeclOrExpr::Expr(Box::new(Expr::Seq(seq)))));
         }
         Stmt::ForIn(f) => {
             fuse_exprs(seq, &mut f.right);

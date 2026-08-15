@@ -1185,7 +1185,7 @@ impl Visit<'_> for GraphVisitor<'_> {
             }) => {
                 left.visit_with(self);
 
-                let lhs = match left {
+                let lhs = match left.as_ref() {
                     VarDeclOrPat::VarDecl(lhs) => {
                         assert!(lhs.decls.len() == 1);
                         &lhs.decls[0].name

@@ -25,7 +25,7 @@ pub fn compute_fall_through(n: Node) -> Node {
         NodeKind::DoWhileStmt(d) => Node::from(d.body.as_ref()),
         NodeKind::ForStmt(f) => {
             match &f.init {
-                Some(init) => match init {
+                Some(init) => match init.as_ref() {
                     VarDeclOrExpr::Expr(expr) => Node::from(expr.as_ref()),
                     VarDeclOrExpr::VarDecl(decl) => Node::from(decl),
                 },

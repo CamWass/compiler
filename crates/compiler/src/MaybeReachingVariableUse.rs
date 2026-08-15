@@ -245,7 +245,7 @@ where
     // }
 
     fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
-        let lhs = match &node.left {
+        let lhs = match node.left.as_ref() {
             VarDeclOrPat::VarDecl(n) => &n.decls.first().unwrap().name,
             VarDeclOrPat::Pat(n) => n,
         };
@@ -265,7 +265,7 @@ where
         node.right.visit_with(self);
     }
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
-        let lhs = match &node.left {
+        let lhs = match node.left.as_ref() {
             VarDeclOrPat::VarDecl(n) => &n.decls.first().unwrap().name,
             VarDeclOrPat::Pat(n) => n,
         };
