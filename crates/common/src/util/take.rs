@@ -1,7 +1,5 @@
 use std::mem::replace;
 
-use crate::{DUMMY_SP, Span};
-
 pub trait Take: Sized {
     fn take(&mut self) -> Self {
         replace(self, Self::dummy())
@@ -41,11 +39,5 @@ where
 impl<T> Take for Vec<T> {
     fn dummy() -> Self {
         vec![]
-    }
-}
-
-impl Take for Span {
-    fn dummy() -> Self {
-        DUMMY_SP
     }
 }
