@@ -379,10 +379,6 @@ impl VisitMut<'_> for Resolver<'_> {
         });
     }
 
-    fn visit_mut_decl(&mut self, decl: &mut Decl) {
-        decl.visit_mut_children_with(self);
-    }
-
     fn visit_mut_export_default_decl(&mut self, e: &mut ExportDefaultDecl) {
         // Treat default exported functions and classes as declarations
         // even though they are parsed as expressions.
@@ -405,10 +401,6 @@ impl VisitMut<'_> for Resolver<'_> {
 
     fn visit_mut_export_default_expr(&mut self, node: &mut ExportDefaultExpr) {
         node.expr.visit_mut_with(self);
-    }
-
-    fn visit_mut_export_named_specifier(&mut self, e: &mut ExportNamedSpecifier) {
-        e.visit_mut_children_with(self);
     }
 
     fn visit_mut_expr(&mut self, expr: &mut Expr) {
@@ -556,10 +548,6 @@ impl VisitMut<'_> for Resolver<'_> {
     fn visit_mut_param(&mut self, param: &mut Param) {
         self.ident_type = IdentType::Binding;
         param.visit_mut_children_with(self);
-    }
-
-    fn visit_mut_pat(&mut self, p: &mut Pat) {
-        p.visit_mut_children_with(self);
     }
 
     fn visit_mut_assign_pat(&mut self, node: &mut AssignPat) {
@@ -753,11 +741,6 @@ impl VisitMut<'_> for Hoister<'_, '_> {
 
     #[inline]
     fn visit_mut_constructor(&mut self, _: &mut Constructor) {}
-
-    #[inline]
-    fn visit_mut_decl(&mut self, decl: &mut Decl) {
-        decl.visit_mut_children_with(self);
-    }
 
     fn visit_mut_export_default_decl(&mut self, node: &mut ExportDefaultDecl) {
         // Treat default exported functions and classes as declarations
