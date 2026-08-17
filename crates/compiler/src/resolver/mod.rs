@@ -315,8 +315,6 @@ impl VisitMut<'_> for Resolver<'_> {
     }
 
     fn visit_mut_catch_clause(&mut self, c: &mut CatchClause) {
-        // Child folder
-
         self.with_child(ScopeKind::Fn, |child| {
             child.ident_type = IdentType::Binding;
             c.param.visit_mut_with(child);
@@ -511,7 +509,6 @@ impl VisitMut<'_> for Resolver<'_> {
     fn visit_mut_method_prop(&mut self, m: &mut MethodProp) {
         m.key.visit_mut_with(self);
 
-        // Child folder
         self.with_child(ScopeKind::Fn, |child| m.function.visit_mut_with(child));
     }
 
@@ -564,11 +561,7 @@ impl VisitMut<'_> for Resolver<'_> {
     fn visit_mut_private_method(&mut self, m: &mut PrivateMethod) {
         m.key.visit_mut_with(self);
 
-        {
-            // Child folder
-
             self.with_child(ScopeKind::Fn, |child| m.function.visit_mut_with(child));
-        }
     }
 
     fn visit_mut_private_name(&mut self, _: &mut PrivateName) {}
@@ -682,7 +675,7 @@ impl VisitMut<'_> for Hoister<'_, '_> {
     ///      var a = "PASS";
     ///      try {
     ///          throw "FAIL1";
-    ///          } catch (a) {
+    ///      } catch (a) {
     ///          var a = "FAIL2";
     ///      }
     ///      console.log(a);
