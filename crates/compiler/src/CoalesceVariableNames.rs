@@ -2,7 +2,9 @@ use ast::*;
 use common::DUMMY_SP;
 use common::SyntaxContext;
 use index::bit_set::{BitMatrix, BitSet};
-use petgraph::graph::{NodeIndex, UnGraph};
+use petgraph::matrix_graph::NodeIndex;
+use petgraph::matrix_graph::UnMatrix;
+use petgraph::visit::IntoNodeReferences;
 use rustc_hash::FxHashMap;
 use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
@@ -122,7 +124,11 @@ where
         // Colour any interfering variables with different colours and any variables that can be safely
         // coalesced wih the same color.
         let coloring = GraphColouring::new(
-            interference_graph.node_weights().cloned().collect(),
+            interference_graph
+                .node_references()
+                .map(|r| r.1)
+                .cloned()
+                .collect(),
             |a, b| liveness.scope_variables[a].cmp(&liveness.scope_variables[b]),
             |node| {
                 let node_index = map[node];
@@ -508,7 +514,7 @@ impl VisitMut<'_> for CoalesceVariableNames<'_> {
 /// A simple implementation of [`SubGraph`] that calculates adjacency by iterating
 /// over a node's neighbors.
 struct SimpleSubGraph<'a> {
-    graph: &'a UnGraph<Id, ()>,
+    graph: &'a UnMatrix<Id, ()>,
     map: &'a FxHashMap<Id, NodeIndex>,
     // TODO: bitset?
     nodes: Vec<NodeIndex>,
@@ -516,12 +522,8 @@ struct SimpleSubGraph<'a> {
 
 impl SubGraph<Id> for SimpleSubGraph<'_> {
     fn is_independent_of(&self, value: &Id) -> bool {
-        for &n in &self.nodes {
-            if self.graph.neighbors(n).any(|n| &self.graph[n] == value) {
-                return false;
-            }
-        }
-        true
+        let idx = self.map[value];
+        !self.nodes.iter().any(|n| self.graph.has_edge(*n, idx))
     }
 
     fn add_node(&mut self, value: Id) {
@@ -540,9 +542,9 @@ impl SubGraph<Id> for SimpleSubGraph<'_> {
 fn compute_variable_names_interference_graph(
     cfg: &ControlFlowGraph<Node, LinearFlowState>,
     liveness: &LiveVariablesAnalysisResult,
-) -> (UnGraph<Id, ()>, FxHashMap<Id, NodeIndex>) {
+) -> (UnMatrix<Id, ()>, FxHashMap<Id, NodeIndex>) {
     let mut map = FxHashMap::default();
-    let mut interference_graph = UnGraph::default();
+    let mut interference_graph = UnMatrix::default();
 
     // First create a node for each non-escaped variable. We add these nodes in the order in which
     // they appear in the code because we want the names that appear earlier in the code to be used
@@ -620,9 +622,7 @@ fn compute_variable_names_interference_graph(
                 // because we don't want parameters to share a name.
                 let v1 = map[v1];
                 let v2 = map[v2];
-                if !interference_graph.contains_edge(v1, v2) {
-                    interference_graph.add_edge(v1, v2, ());
-                }
+                interference_graph.add_edge(v1, v2, ());
             }
         }
     }
