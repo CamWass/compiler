@@ -25,10 +25,6 @@ mod scope;
 /// variable.
 ///
 ///
-/// # Panics
-///
-/// `top_level_mark` should not be root.
-///
 /// # Example
 ///
 /// ```js
@@ -63,64 +59,21 @@ mod scope;
 ///
 /// [Mark] applied to unresolved references.
 ///
-/// A pass should accept this [Mark] if it's going to generate a refernce to
+/// A pass should accept this [Mark] if it's going to generate a reference to
 /// globals like `require`.
 ///
 /// e.g. `common_js` pass generates calls to `require`, and this should not
 /// be shadowed by a declaration named `require` in the same file.
 /// So it uses this value.
-///
-/// ## `top_level_mark`
-///
-/// [Mark] applied to top-level bindings.
-///
-/// **NOTE**: This is **not** globals. This is for top level items declared by
-/// users.
-///
-/// A pass should accept this [Mark] if it requires user-defined top-level
-/// items.
-///
-/// e.g. `jsx` pass requires to call `React` imported by the user.
-///
-/// ```js
-/// import React from 'react';
-/// ```
-///
-/// In the code above, `React` has this [Mark]. `jsx` passes need to
-/// reference this [Mark], so it accpets this.
-///
-/// This [Mark] should be used for referencing top-level bindings written by
-/// user. If you are going to create a binding, use `private_ident`
-/// instead.
-///
-/// In other words, **this [Mark] should not be used for determining if a
-/// variable is top-level.** This is simply a configuration of the `resolver`
-/// pass.
-///
-/// # FAQ
-///
-/// ## Does a pair `(JsWord, SyntaxContext)` always uniquely identifiers a
-/// variable binding?
-///
-/// Yes, but multiple variables can have the exactly same name.
-///
-/// In the code below,
-///
-/// ```js
-/// var a = 1, a = 2;
-/// ```
-///
-/// both of them have the same name, so the `(JsWord, SyntaxContext)` pair will
-/// be also identical.
-pub fn resolver<'ast>(unresolved_mark: Mark, top_level_mark: Mark) -> impl VisitMut<'ast> {
+pub fn resolver<'ast>(unresolved_mark: Mark) -> impl VisitMut<'ast> {
     assert_ne!(
         unresolved_mark,
         Mark::root(),
-        "Marker provided to resolver should not be the root mark"
+        "Mark provided to resolver should not be the root mark"
     );
 
     Resolver {
-        current: Scope::new(ScopeKind::Fn, top_level_mark, None),
+        current: Scope::new(ScopeKind::Fn, Mark::new(), None),
         ident_type: IdentType::Ref,
         config: InnerConfig { unresolved_mark },
     }

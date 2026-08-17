@@ -592,9 +592,8 @@ fn computeEscapedLocals(src: &str) -> FxHashSet<Id> {
         let mut program = Program::Script(parse_script(src));
 
         let unresolved_mark = Mark::new();
-        let top_level_mark = Mark::new();
 
-        program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark));
+        program.visit_mut_with(&mut resolver(unresolved_mark));
 
         let script = unwrap_as!(program, Program::Script(s), s);
 

@@ -37,7 +37,6 @@ pub fn bench(c: &mut Criterion) {
 
         GLOBALS.set(&Globals::new(), || {
             let unresolved_mark = Mark::new();
-            let top_level_mark = Mark::new();
 
             let mut program_data = ast::ProgramData::default();
 
@@ -61,7 +60,7 @@ pub fn bench(c: &mut Criterion) {
                 res.unwrap()
             };
 
-            program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark));
+            program.visit_mut_with(&mut resolver(unresolved_mark));
 
             let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 

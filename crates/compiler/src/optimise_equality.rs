@@ -395,9 +395,8 @@ mod tests {
             |mut program, _program_data| {
                 GLOBALS.set(&Globals::new(), || {
                     let unresolved_mark = Mark::new();
-                    let top_level_mark = Mark::new();
 
-                    program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark));
+                    program.visit_mut_with(&mut resolver(unresolved_mark));
 
                     let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 
