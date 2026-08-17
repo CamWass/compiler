@@ -6,7 +6,7 @@ use node_id::GetNodeIdMacro;
 use serde::Serialize;
 
 /// Common parts of function and method.
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct Function {
     pub node_id: NodeId,
 
@@ -28,7 +28,7 @@ impl Function {
 }
 
 bitflags! {
-    #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize)]
+    #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize)]
     pub struct FnFlags: u8 {
         const GENERATOR = 1 << 0;
         const ASYNC = 1 << 1;
@@ -47,7 +47,7 @@ impl crate::NodeEq for FnFlags {
     }
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
+#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct Param {
     pub node_id: NodeId,
     pub pat: Pat,
