@@ -1,13 +1,13 @@
 use self::expression::BlockStmtOrExpr;
 
 use super::{identifier::MaybeOptionalIdentParser, *};
-use crate::{Tokens, context::ContextFlags, error::SyntaxError};
+use crate::{context::ContextFlags, error::SyntaxError};
 use atoms::js_word;
 use expression::MaybeParen;
 use util::AssignProps;
 
 /// Parser for function expression and function declaration.
-impl<I: Tokens> Parser<'_, I> {
+impl Parser<'_> {
     pub(super) fn parse_async_fn_expr(&mut self) -> PResult<Box<Expr>> {
         let start = self.input.cur_pos();
         expect!(self, "async");
@@ -963,7 +963,7 @@ impl<I: Tokens> Parser<'_, I> {
     }
 }
 
-impl<I: Tokens> Parser<'_, I> {
+impl Parser<'_> {
     fn make_method<F>(
         &mut self,
         parse_args: F,
@@ -1024,11 +1024,11 @@ impl<I: Tokens> Parser<'_, I> {
 }
 
 trait IsInvalidClassName {
-    fn invalid_class_name(&self, parser: &Parser<impl Tokens>) -> Option<Span>;
+    fn invalid_class_name(&self, parser: &Parser) -> Option<Span>;
 }
 
 impl IsInvalidClassName for Ident {
-    fn invalid_class_name(&self, parser: &Parser<impl Tokens>) -> Option<Span> {
+    fn invalid_class_name(&self, parser: &Parser) -> Option<Span> {
         match self.sym {
             js_word!("any") => Some(get_span!(parser, self.node_id)),
             _ => None,
@@ -1036,7 +1036,7 @@ impl IsInvalidClassName for Ident {
     }
 }
 impl IsInvalidClassName for Option<Ident> {
-    fn invalid_class_name(&self, parser: &Parser<impl Tokens>) -> Option<Span> {
+    fn invalid_class_name(&self, parser: &Parser) -> Option<Span> {
         if let Some(i) = self.as_ref() {
             return i.invalid_class_name(parser);
         }
@@ -1062,18 +1062,8 @@ trait OutputType: GetNodeId {
         false
     }
 
-    fn finish_fn(
-        span: Span,
-        ident: Self::Ident,
-        f: Function,
-        parser: &mut Parser<impl Tokens>,
-    ) -> Self;
-    fn finish_class(
-        span: Span,
-        ident: Self::Ident,
-        class: Class,
-        parser: &mut Parser<impl Tokens>,
-    ) -> Self;
+    fn finish_fn(span: Span, ident: Self::Ident, f: Function, parser: &mut Parser) -> Self;
+    fn finish_class(span: Span, ident: Self::Ident, class: Class, parser: &mut Parser) -> Self;
 }
 
 impl OutputType for Box<Expr> {
@@ -1087,7 +1077,7 @@ impl OutputType for Box<Expr> {
         span: Span,
         ident: Option<Ident>,
         function: Function,
-        parser: &mut Parser<impl Tokens>,
+        parser: &mut Parser,
     ) -> Self {
         Box::new(Expr::Fn(FnExpr {
             ident,
@@ -1095,12 +1085,7 @@ impl OutputType for Box<Expr> {
             node_id: node_id!(parser, span),
         }))
     }
-    fn finish_class(
-        span: Span,
-        ident: Option<Ident>,
-        class: Class,
-        parser: &mut Parser<impl Tokens>,
-    ) -> Self {
+    fn finish_class(span: Span, ident: Option<Ident>, class: Class, parser: &mut Parser) -> Self {
         Box::new(Expr::Class(Box::new(ClassExpr {
             ident,
             class,
@@ -1116,7 +1101,7 @@ impl OutputType for ExportDefaultDecl {
         span: Span,
         ident: Option<Ident>,
         function: Function,
-        parser: &mut Parser<impl Tokens>,
+        parser: &mut Parser,
     ) -> Self {
         ExportDefaultDecl {
             decl: DefaultDecl::Fn(FnExpr {
@@ -1127,12 +1112,7 @@ impl OutputType for ExportDefaultDecl {
             node_id: node_id!(parser, span),
         }
     }
-    fn finish_class(
-        span: Span,
-        ident: Option<Ident>,
-        class: Class,
-        parser: &mut Parser<impl Tokens>,
-    ) -> Self {
+    fn finish_class(span: Span, ident: Option<Ident>, class: Class, parser: &mut Parser) -> Self {
         ExportDefaultDecl {
             decl: DefaultDecl::Class(ClassExpr {
                 ident,
@@ -1147,24 +1127,14 @@ impl OutputType for ExportDefaultDecl {
 impl OutputType for Decl {
     type Ident = Ident;
 
-    fn finish_fn(
-        span: Span,
-        ident: Ident,
-        function: Function,
-        parser: &mut Parser<impl Tokens>,
-    ) -> Self {
+    fn finish_fn(span: Span, ident: Ident, function: Function, parser: &mut Parser) -> Self {
         Decl::Fn(FnDecl {
             ident,
             function: Box::new(function),
             node_id: node_id!(parser, span),
         })
     }
-    fn finish_class(
-        span: Span,
-        ident: Ident,
-        class: Class,
-        parser: &mut Parser<impl Tokens>,
-    ) -> Self {
+    fn finish_class(span: Span, ident: Ident, class: Class, parser: &mut Parser) -> Self {
         Decl::Class(ClassDecl {
             ident,
             class: Box::new(class),
@@ -1177,7 +1147,7 @@ pub(super) trait FnBodyParser<Body> {
     fn parse_fn_body_inner(&mut self) -> PResult<Body>;
 }
 
-impl<I: Tokens> FnBodyParser<BlockStmtOrExpr> for Parser<'_, I> {
+impl FnBodyParser<BlockStmtOrExpr> for Parser<'_> {
     fn parse_fn_body_inner(&mut self) -> PResult<BlockStmtOrExpr> {
         if self.input.is(&tok!('{')) {
             self.parse_block(false).map(BlockStmtOrExpr::BlockStmt)
@@ -1189,7 +1159,7 @@ impl<I: Tokens> FnBodyParser<BlockStmtOrExpr> for Parser<'_, I> {
     }
 }
 
-impl<I: Tokens> FnBodyParser<Option<BlockStmt>> for Parser<'_, I> {
+impl FnBodyParser<Option<BlockStmt>> for Parser<'_> {
     fn parse_fn_body_inner(&mut self) -> PResult<Option<BlockStmt>> {
         // allow omitting body and allow placing `{` on next line
         if self.input.syntax().typescript() && !is!(self, '{') && eat!(self, ';') {

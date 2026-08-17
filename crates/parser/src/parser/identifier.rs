@@ -4,7 +4,7 @@ use crate::token::Keyword;
 use atoms::js_word;
 use common::SyntaxContext;
 
-impl<I: Tokens> Parser<'_, I> {
+impl Parser<'_> {
     pub(super) fn new_ident(&mut self, sym: JsWord, span: Span) -> Ident {
         Ident {
             node_id: node_id!(self, span),
@@ -147,12 +147,12 @@ pub(super) enum PrivateNameOrIdentifier {
 pub(super) trait MaybeOptionalIdentParser<Ident> {
     fn parse_maybe_opt_binding_ident(&mut self) -> PResult<Ident>;
 }
-impl<I: Tokens> MaybeOptionalIdentParser<Ident> for Parser<'_, I> {
+impl MaybeOptionalIdentParser<Ident> for Parser<'_> {
     fn parse_maybe_opt_binding_ident(&mut self) -> PResult<Ident> {
         self.parse_binding_ident().map(|i| i.id)
     }
 }
-impl<I: Tokens> MaybeOptionalIdentParser<Option<Ident>> for Parser<'_, I> {
+impl MaybeOptionalIdentParser<Option<Ident>> for Parser<'_> {
     fn parse_maybe_opt_binding_ident(&mut self) -> PResult<Option<Ident>> {
         self.parse_opt_binding_ident().map(|opt| opt.map(|i| i.id))
     }

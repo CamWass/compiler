@@ -6,7 +6,7 @@ use atoms::js_word;
 use expression::MaybeParen;
 use util::AssignProps;
 
-impl<I: Tokens> Parser<'_, I> {
+impl Parser<'_> {
     /// `tsNextTokenCanFollowModifier`
     fn ts_next_token_can_follow_modifier(&mut self) -> PResult<bool> {
         debug_assert!(self.syntax().typescript());
@@ -1865,7 +1865,7 @@ impl<I: Tokens> Parser<'_, I> {
     }
 }
 
-impl<I: Tokens> Parser<'_, I> {
+impl Parser<'_> {
     /// In no lexer context
     fn ts_in_no_context<T, F>(&mut self, op: F) -> PResult<T>
     where

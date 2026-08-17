@@ -956,7 +956,7 @@ impl<'src> Lexer<'src> {
         unsafe { *DISPATCHER.get_unchecked(byte as usize) }
     }
 
-    fn set_expr_allowed(&mut self, allow: bool) {
+    pub fn set_expr_allowed(&mut self, allow: bool) {
         self.state.is_expr_allowed = allow;
     }
 }

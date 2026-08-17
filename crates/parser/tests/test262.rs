@@ -4,7 +4,7 @@ extern crate test;
 
 use ast::*;
 use common::Normalizer;
-use parser::{PResult, Parser, lexer::Lexer};
+use parser::{PResult, Parser};
 use std::{
     env,
     fs::{File, read_dir},
@@ -336,7 +336,7 @@ fn parse_module(file_name: &Path) -> Result<Module, NormalizedOutput> {
 
 fn with_parser<F, Ret>(file_name: &Path, f: F) -> Result<Ret, StdErr>
 where
-    F: FnOnce(&mut Parser<Lexer<'_>>) -> PResult<Ret>,
+    F: FnOnce(&mut Parser) -> PResult<Ret>,
 {
     ::testing::run_test(false, |cm, handler| {
         let fm = cm

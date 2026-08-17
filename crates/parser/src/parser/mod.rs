@@ -22,17 +22,16 @@ use ast::*;
 use atoms::JsWord;
 use common::{BytePos, SourceFile, Span};
 use input::Buffer;
-pub use input::Tokens;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 /// When error occurs, error is emitted and parser returns Err(()).
 pub type PResult<T> = Result<T, Error>;
 
 /// EcmaScript parser.
-pub struct Parser<'d, I: Tokens> {
+pub struct Parser<'d> {
     /// [false] while backtracking
     emit_err: bool,
-    input: Buffer<I>,
+    input: Buffer<'d>,
     program_data: &'d mut ProgramData,
 
     labels: Vec<JsWord>,
@@ -47,18 +46,14 @@ pub struct Parser<'d, I: Tokens> {
     parenthesised_exprs: FxHashSet<NodeId>,
 }
 
-impl<'d, 'src> Parser<'d, Lexer<'src>> {
-    pub fn new(syntax: Syntax, input: &'src SourceFile, program_data: &'d mut ProgramData) -> Self {
-        Self::new_from(Lexer::new(syntax, Default::default(), input), program_data)
-    }
-}
+impl<'d> Parser<'d> {
+    pub fn new(syntax: Syntax, input: &'d SourceFile, program_data: &'d mut ProgramData) -> Self {
+        let input = Lexer::new(syntax, Default::default(), input);
 
-impl<'d, I: Tokens> Parser<'d, I> {
-    pub fn new_from(input: I, program_data: &'d mut ProgramData) -> Self {
         Parser {
             emit_err: true,
             input: Buffer::new(input),
-            program_data,
+            program_data: program_data,
 
             labels: Vec::new(),
             potential_arrow_start: None,

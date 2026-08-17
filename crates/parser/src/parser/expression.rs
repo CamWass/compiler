@@ -26,7 +26,7 @@ mod ops;
 //
 // [opp]: http://en.wikipedia.org/wiki/Operator-precedence_parser
 
-impl<I: Tokens> Parser<'_, I> {
+impl Parser<'_> {
     // https://tc39.es/ecma262/#prod-Expression
     pub(super) fn parse_expr(&mut self, assign_props: &mut AssignProps) -> PResult<MaybeParen> {
         let start = self.input.cur_pos();
@@ -1558,7 +1558,7 @@ fn word_contains_escape(span: &Span, word: &'static str) -> bool {
 }
 
 /// simple leaf methods.
-impl<I: Tokens> Parser<'_, I> {
+impl Parser<'_> {
     fn parse_yield_expr(&mut self) -> PResult<Box<Expr>> {
         let start = self.input.cur_pos();
 

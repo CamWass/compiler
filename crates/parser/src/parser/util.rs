@@ -22,24 +22,24 @@ pub enum AssignProps {
     Emit,
 }
 
-pub struct WithCtx<'d: 'p, 'p, I: Tokens> {
-    inner: &'p mut Parser<'d, I>,
+pub struct WithCtx<'d: 'p, 'p> {
+    inner: &'p mut Parser<'d>,
     orig_ctx: Context,
 }
-impl<'d: 'p, 'p, I: Tokens> Deref for WithCtx<'d, 'p, I> {
-    type Target = Parser<'d, I>;
+impl<'d: 'p, 'p> Deref for WithCtx<'d, 'p> {
+    type Target = Parser<'d>;
 
-    fn deref(&self) -> &Parser<'d, I> {
+    fn deref(&self) -> &Parser<'d> {
         self.inner
     }
 }
-impl<'d, I: Tokens> DerefMut for WithCtx<'d, '_, I> {
-    fn deref_mut(&mut self) -> &mut Parser<'d, I> {
+impl<'d> DerefMut for WithCtx<'d, '_> {
+    fn deref_mut(&mut self) -> &mut Parser<'d> {
         self.inner
     }
 }
 
-impl<I: Tokens> Drop for WithCtx<'_, '_, I> {
+impl Drop for WithCtx<'_, '_> {
     fn drop(&mut self) {
         self.inner.set_ctx(self.orig_ctx);
     }
@@ -93,7 +93,7 @@ pub(super) fn is_valid_simple_assignment_target(expr: &Expr, strict: YesMaybe) -
     }
 }
 
-impl<'d, I: Tokens> Parser<'d, I> {
+impl<'d> Parser<'d> {
     pub(super) fn assert_and_bump(&mut self, token: &Token) {
         debug_assert!(
             self.input.is(token),
@@ -108,7 +108,7 @@ impl<'d, I: Tokens> Parser<'d, I> {
     }
 
     /// Original context is restored when returned guard is dropped.
-    pub(super) fn with_ctx(&mut self, ctx: Context) -> WithCtx<'d, '_, I> {
+    pub(super) fn with_ctx(&mut self, ctx: Context) -> WithCtx<'d, '_> {
         let orig_ctx = self.ctx();
         self.set_ctx(ctx);
         WithCtx {
@@ -122,7 +122,7 @@ impl<'d, I: Tokens> Parser<'d, I> {
     }
 
     /// Original context is restored when returned guard is dropped.
-    pub(super) fn strict_mode(&mut self) -> WithCtx<'d, '_, I> {
+    pub(super) fn strict_mode(&mut self) -> WithCtx<'d, '_> {
         let ctx = Context {
             strict: YesMaybe::Yes,
             ..self.ctx()
@@ -131,7 +131,7 @@ impl<'d, I: Tokens> Parser<'d, I> {
     }
 
     /// Original context is restored when returned guard is dropped.
-    pub(super) fn in_type(&mut self) -> WithCtx<'d, '_, I> {
+    pub(super) fn in_type(&mut self) -> WithCtx<'d, '_> {
         let ctx = Context {
             flags: self.ctx().flags | ContextFlags::in_type,
             ..self.ctx()
@@ -140,7 +140,7 @@ impl<'d, I: Tokens> Parser<'d, I> {
     }
 
     /// Original context is restored when returned guard is dropped.
-    pub(super) fn include_in_expr(&mut self, include_in_expr: bool) -> WithCtx<'d, '_, I> {
+    pub(super) fn include_in_expr(&mut self, include_in_expr: bool) -> WithCtx<'d, '_> {
         let mut ctx = self.ctx();
         ctx.flags
             .set(ContextFlags::include_in_expr, include_in_expr);

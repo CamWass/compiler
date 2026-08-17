@@ -29,7 +29,7 @@ enum ForHead {
 
 pub(super) trait IsDirective {
     fn as_ref(&self) -> Option<&Stmt>;
-    fn is_use_strict(&self, parser: &Parser<impl Tokens>) -> bool {
+    fn is_use_strict(&self, parser: &Parser) -> bool {
         match self.as_ref() {
             Some(Stmt::Expr(expr)) => match expr.expr.as_ref() {
                 Expr::Lit(Lit::Str(Str { value, node_id })) => {
@@ -80,7 +80,7 @@ pub enum StmtParseCtx {
     None,
 }
 
-impl<I: Tokens> StmtLikeParser<Stmt> for Parser<'_, I> {
+impl StmtLikeParser<Stmt> for Parser<'_> {
     fn handle_import_export(&mut self, _: bool) -> PResult<Option<Stmt>> {
         let start = self.input.cur_pos();
         if self.input.syntax().dynamic_import() && is!(self, "import") {
@@ -112,7 +112,7 @@ impl<I: Tokens> StmtLikeParser<Stmt> for Parser<'_, I> {
     }
 }
 
-impl<I: Tokens> Parser<'_, I> {
+impl Parser<'_> {
     pub(super) fn parse_block_body<Type>(
         &mut self,
         allow_directives: bool,

@@ -4,7 +4,7 @@ use util::AssignProps;
 use super::*;
 use crate::token::Keyword;
 
-impl<I: Tokens> Parser<'_, I> {
+impl Parser<'_> {
     /// Name from spec: 'LogicalORExpression'
     pub(super) fn parse_bin_expr(&mut self, assign_props: &mut AssignProps) -> PResult<MaybeParen> {
         let include_in_expr = self.ctx().include_in_expr();

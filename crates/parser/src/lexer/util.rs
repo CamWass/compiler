@@ -1,8 +1,5 @@
 use super::{DISPATCHER, Dispatch, LexResult, Lexer};
-use crate::{
-    Tokens,
-    error::{Error, SyntaxError},
-};
+use crate::error::{Error, SyntaxError};
 use common::{BytePos, Pos, Span, chars::char_literals};
 
 /// See https://tc39.github.io/ecma262/#sec-line-terminators

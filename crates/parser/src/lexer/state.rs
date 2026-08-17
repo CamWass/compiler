@@ -1,6 +1,6 @@
 use super::Lexer;
 use crate::{
-    JscTarget, Syntax, Tokens,
+    JscTarget, Syntax,
     context::{Context, YesMaybe, YesNoMaybe},
     error::Error,
     token::*,
@@ -64,8 +64,8 @@ impl From<&Token> for TokenType {
     }
 }
 
-impl Tokens for Lexer<'_> {
-    fn set_ctx(&mut self, ctx: Context) {
+impl Lexer<'_> {
+    pub fn set_ctx(&mut self, ctx: Context) {
         if ctx.is_module() && !self.module_errors.borrow().is_empty() {
             let mut module_errors = self.module_errors.borrow_mut();
             self.errors.borrow_mut().append(&mut *module_errors);
@@ -79,38 +79,42 @@ impl Tokens for Lexer<'_> {
         self.ctx = ctx;
     }
 
-    fn ctx(&self) -> Context {
+    pub fn ctx(&self) -> Context {
         self.ctx
     }
 
-    fn syntax(&self) -> Syntax {
+    pub fn syntax(&self) -> Syntax {
         self.syntax
     }
-    fn target(&self) -> JscTarget {
+    pub fn target(&self) -> JscTarget {
         self.target
     }
 
-    fn set_expr_allowed(&mut self, allow: bool) {
-        self.set_expr_allowed(allow);
-    }
-
-    fn token_context(&self) -> &TokenContexts {
+    pub fn token_context(&self) -> &TokenContexts {
         &self.state.context
     }
 
-    fn set_token_context(&mut self, c: TokenContexts) {
+    pub fn set_token_context(&mut self, c: TokenContexts) {
         self.state.context = c;
     }
 
-    fn add_error(&self, error: Error) {
+    pub fn add_error(&self, error: Error) {
         self.errors.borrow_mut().push(error);
     }
 
-    fn take_errors(&mut self) -> Vec<Error> {
+    pub fn take_errors(&mut self) -> Vec<Error> {
         std::mem::take(&mut self.errors.borrow_mut())
     }
 
-    fn add_module_mode_error(&self, error: Error) {
+    /// Add an error for code which is only invalid in module mode.
+    ///
+    /// If [Context].module is true, implementers should immediately move the
+    /// error to the general error buffer.
+    /// If it is false, implementers should buffer the error until they are certain
+    /// whether they are parsing a module or not. If they are parsing a module,
+    /// the buffered strict errors should be moved to the general error buffer.
+    /// If they are parsing a script, they should discard all buffered module errors.
+    pub fn add_module_mode_error(&self, error: Error) {
         match self.ctx.module {
             YesNoMaybe::Yes => {
                 // Definitely in a module, immediately add error.
@@ -126,7 +130,16 @@ impl Tokens for Lexer<'_> {
         }
     }
 
-    fn add_strict_mode_error(&self, error: Error) {
+    /// Add an error for a strict mode violation.
+    ///
+    /// If [Context].strict is true, implementers should immediately move the
+    /// error to the general error buffer.
+    /// If it is false, implementers should buffer the error until they are certain
+    /// whether the current block of code is in strict mode or not. If they are
+    /// certain it is strict, the buffered strict errors should be moved to the
+    /// general error buffer. If they are certain it is **NOT** strict, they
+    /// should discard all buffered strict errors.
+    pub fn add_strict_mode_error(&self, error: Error) {
         match self.ctx.strict {
             YesMaybe::Yes => {
                 // Definitely in strict mode, immediately add error.
@@ -139,7 +152,8 @@ impl Tokens for Lexer<'_> {
         }
     }
 
-    fn convert_strict_mode_errors_to_module_errors(&mut self) {
+    /// Converts buffered strict mode errors into module errors.
+    pub fn convert_strict_mode_errors_to_module_errors(&mut self) {
         // Even once we have stopped parsing directives, we still can not be
         // certain of strict mode because we may later discover that we are
         // paring a module, which requires us to reinterpret the code using

@@ -1,62 +1,16 @@
 use crate::{
     JscTarget, Syntax,
     context::Context,
-    error::Error,
-    lexer::TokenContexts,
+    lexer::{Lexer, TokenContexts},
     parser::Parser,
     token::{Token, TokenAndSpan},
 };
 use common::{BytePos, DUMMY_SP, Span};
 
-/// Clone should be cheap if you are parsing typescript because typescript
-/// syntax requires backtracking.
-pub trait Tokens: Clone + Iterator<Item = TokenAndSpan> {
-    fn set_ctx(&mut self, ctx: Context);
-    fn ctx(&self) -> Context;
-    fn syntax(&self) -> Syntax;
-    fn target(&self) -> JscTarget;
-
-    fn set_expr_allowed(&mut self, allow: bool);
-    fn token_context(&self) -> &TokenContexts;
-    fn set_token_context(&mut self, _c: TokenContexts);
-
-    /// Implementers should use Rc<RefCell<Vec<Error>>>.
-    ///
-    /// It is required because parser should backtrack while parsing typescript
-    /// code.
-    fn add_error(&self, error: Error);
-
-    /// Add an error for code which is only invalid in module mode.
-    ///
-    /// If [Context].module is true, implementers should immediately move the
-    /// error to the general error buffer.
-    /// If it is false, implementers should buffer the error until they are certain
-    /// whether they are parsing a module or not. If they are parsing a module,
-    /// the buffered strict errors should be moved to the general error buffer.
-    /// If they are parsing a script, they should discard all buffered module errors.
-    fn add_module_mode_error(&self, error: Error);
-
-    /// Add an error for a strict mode violation.
-    ///
-    /// If [Context].strict is true, implementers should immediately move the
-    /// error to the general error buffer.
-    /// If it is false, implementers should buffer the error until they are certain
-    /// whether the current block of code is in strict mode or not. If they are
-    /// certain it is strict, the buffered strict errors should be moved to the
-    /// general error buffer. If they are certain it is **NOT** strict, they
-    /// should discard all buffered strict errors.
-    fn add_strict_mode_error(&self, error: Error);
-
-    /// Converts buffered strict mode errors into module errors.
-    fn convert_strict_mode_errors_to_module_errors(&mut self);
-
-    fn take_errors(&mut self) -> Vec<Error>;
-}
-
 /// This struct is responsible for managing current token and peeked token.
 #[derive(Clone)]
-pub struct Buffer<I: Tokens> {
-    iter: I,
+pub struct Buffer<'src> {
+    iter: Lexer<'src>,
     /// Span of the previous token.
     prev_span: Span,
     cur: Option<TokenAndSpan>,
@@ -64,17 +18,17 @@ pub struct Buffer<I: Tokens> {
     next: Option<TokenAndSpan>,
 }
 
-impl<I: Tokens> Parser<'_, I> {
-    pub fn input(&mut self) -> &mut I {
+impl<'d> Parser<'d> {
+    pub fn input(&mut self) -> &mut Lexer<'d> {
         &mut self.input.iter
     }
-    pub(crate) fn input_ref(&self) -> &I {
+    pub(crate) fn input_ref(&self) -> &Lexer<'d> {
         &self.input.iter
     }
 }
 
-impl<I: Tokens> Buffer<I> {
-    pub fn new(lexer: I) -> Self {
+impl<'d> Buffer<'d> {
+    pub fn new(lexer: Lexer<'d>) -> Self {
         Buffer {
             iter: lexer,
             cur: None,
