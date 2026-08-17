@@ -2,7 +2,7 @@ use std::fmt::Write;
 
 use common::{GLOBALS, Globals, Mark};
 
-use crate::resolver::resolver;
+use crate::resolver::resolve;
 
 use super::*;
 
@@ -12,7 +12,7 @@ fn test_transform(input: &str, expected: &str) {
             GLOBALS.set(&Globals::new(), || {
                 let unresolved_mark = Mark::new();
 
-                program.visit_mut_with(&mut resolver(unresolved_mark));
+                resolve(&mut program, unresolved_mark);
 
                 let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 

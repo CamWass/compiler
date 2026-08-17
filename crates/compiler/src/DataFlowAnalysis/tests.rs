@@ -7,13 +7,12 @@ use index::vec::IndexVec;
 use parser::{Parser, Syntax};
 use rustc_hash::FxHashMap;
 use std::{rc::Rc, sync::atomic::AtomicU32};
-use visit::VisitMutWith;
 
 use crate::DataFlowAnalysis::LinearFlowState;
 use crate::Id;
 use crate::LiveVariablesAnalysis::LiveVariablesAnalysis;
 use crate::control_flow::{ControlFlowAnalysis::*, ControlFlowGraph::Branch};
-use crate::resolver::resolver;
+use crate::resolver::resolve;
 use crate::{find_vars::find_vars_declared_in_fn, utils::unwrap_as};
 
 use super::*;
@@ -593,7 +592,7 @@ fn computeEscapedLocals(src: &str) -> FxHashSet<Id> {
 
         let unresolved_mark = Mark::new();
 
-        program.visit_mut_with(&mut resolver(unresolved_mark));
+        resolve(&mut program, unresolved_mark);
 
         let script = unwrap_as!(program, Program::Script(s), s);
 

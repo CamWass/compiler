@@ -100,7 +100,7 @@ fn can_change_strict_to_loose(a: &Expr, b: &Expr, unresolved_ctxt: SyntaxContext
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::resolver::resolver;
+    use crate::resolver::resolve;
     use common::{GLOBALS, Globals, Mark};
 
     #[test]
@@ -396,7 +396,7 @@ mod tests {
                 GLOBALS.set(&Globals::new(), || {
                     let unresolved_mark = Mark::new();
 
-                    program.visit_mut_with(&mut resolver(unresolved_mark));
+                    resolve(&mut program, unresolved_mark);
 
                     let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 

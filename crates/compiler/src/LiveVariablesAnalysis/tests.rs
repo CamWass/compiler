@@ -8,13 +8,13 @@ use common::{
 };
 use parser::{Parser, Syntax};
 use rustc_hash::FxHashMap;
-use visit::{Visit, VisitMutWith, VisitWith};
+use visit::{Visit, VisitWith};
 
 use crate::DataFlowAnalysis::LinearFlowState;
 use crate::Id;
 use crate::control_flow::ControlFlowAnalysis::{ControlFlowAnalysis, ControlFlowRoot};
 use crate::control_flow::node::Node;
-use crate::resolver::resolver;
+use crate::resolver::resolve;
 use crate::{find_vars::find_vars_declared_in_fn, utils::unwrap_as};
 
 use super::LiveVariablesAnalysis;
@@ -680,7 +680,7 @@ where
 
         let unresolved_mark = Mark::new();
 
-        program.visit_mut_with(&mut resolver(unresolved_mark));
+        resolve(&mut program, unresolved_mark);
 
         let script = unwrap_as!(program, Program::Script(s), s);
 

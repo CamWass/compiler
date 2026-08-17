@@ -32,11 +32,10 @@ mod utils;
 #[cfg(test)]
 mod testing;
 
-use crate::resolver::resolver;
+use crate::resolver::resolve;
 use atoms::JsWord;
 use common::{GLOBALS, Globals, Mark, SyntaxContext};
 use serde::Deserialize;
-use visit::VisitMutWith;
 
 pub type Id = (JsWord, SyntaxContext);
 
@@ -119,7 +118,7 @@ impl Compiler {
 
             let unresolved_mark = Mark::new();
 
-            ast.visit_mut_with(&mut resolver(unresolved_mark));
+            resolve(&mut ast, unresolved_mark);
 
             let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 

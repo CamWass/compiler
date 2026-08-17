@@ -9,10 +9,9 @@ use common::{
     SourceMap, SyntaxContext,
     errors::{ColorConfig, Handler},
 };
-use compiler::resolver::resolver;
+use compiler::resolver::resolve;
 use criterion::{Criterion, Throughput, black_box};
 use parser::{Parser, Syntax};
-use visit::VisitMutWith;
 
 pub fn bench(c: &mut Criterion) {
     let benches: &'static [(&'static str, &'static str, u64, usize)] = &[
@@ -60,7 +59,7 @@ pub fn bench(c: &mut Criterion) {
                 res.unwrap()
             };
 
-            program.visit_mut_with(&mut resolver(unresolved_mark));
+            resolve(&mut program, unresolved_mark);
 
             let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 

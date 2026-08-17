@@ -500,16 +500,15 @@ impl VisitMut<'_> for FnBodyReWriter<'_> {
 #[cfg(test)]
 mod tests {
     #![allow(non_snake_case)]
-    use crate::resolver::resolver;
+    use crate::resolver::resolve;
     use common::{Mark, SyntaxContext};
-    use visit::VisitMutWith;
 
     fn test_transform(input: &str, expected: &str) {
         crate::testing::test_transform(
             |mut program, program_data| {
                 let unresolved_mark = Mark::new();
 
-                program.visit_mut_with(&mut resolver(unresolved_mark));
+                resolve(&mut program, unresolved_mark);
 
                 let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
 

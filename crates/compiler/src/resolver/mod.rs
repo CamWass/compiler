@@ -65,18 +65,20 @@ mod scope;
 /// e.g. `common_js` pass generates calls to `require`, and this should not
 /// be shadowed by a declaration named `require` in the same file.
 /// So it uses this value.
-pub fn resolver<'ast>(unresolved_mark: Mark) -> impl VisitMut<'ast> {
+pub fn resolve(program: &mut Program, unresolved_mark: Mark) {
     assert_ne!(
         unresolved_mark,
         Mark::root(),
         "Mark provided to resolver should not be the root mark"
     );
 
-    Resolver {
+    let mut resolver = Resolver {
         current: Scope::new(ScopeKind::Fn, Mark::new(), None),
         ident_type: IdentType::Ref,
         unresolved_mark,
-    }
+    };
+
+    program.visit_mut_with(&mut resolver);
 }
 
 #[derive(Debug, Clone)]
