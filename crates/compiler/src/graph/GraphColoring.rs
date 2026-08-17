@@ -1,4 +1,6 @@
 use index::{newtype_index, vec::IndexVec};
+use petgraph::matrix_graph::UnMatrix;
+use petgraph::visit::IntoNodeIdentifiers;
 use rustc_hash::FxHashMap;
 use std::cmp::Ordering;
 use std::hash::Hash;
@@ -36,25 +38,26 @@ where
 
     /// `tieBreaker`: In case of a tie between two nodes of the same degree,
     /// this comparator will determine which node should be coloured first.
-    pub fn new<C, W, S, F>(mut nodes: Vec<T>, tie_breaker: C, weight: W, make_subgraph: F) -> Self
+    pub fn new<C>(graph: UnMatrix<T, ()>, tie_breaker: C) -> Self
     where
         C: Fn(&T, &T) -> Ordering,
-        W: Fn(&T) -> usize,
-        S: SubGraph<T>,
-        F: Fn() -> S,
     {
         let mut colouring = Self {
             colour_map: Default::default(),
             partitions: Default::default(),
         };
 
+        let mut nodes: Vec<_> = graph.node_identifiers().collect();
+
         colouring.colour_map.reserve(nodes.len());
 
         // Sort nodes by degree.
-        nodes.sort_unstable_by(|a, b| {
-            let result = weight(b).cmp(&weight(a));
+        nodes.sort_unstable_by(|&a, &b| {
+            let a_degree = graph.neighbors(a).count();
+            let b_degree = graph.neighbors(b).count();
+            let result = b_degree.cmp(&a_degree);
             if result.is_eq() {
-                tie_breaker(a, b)
+                tie_breaker(&graph[a], &graph[b])
             } else {
                 result
             }
@@ -64,13 +67,16 @@ where
         // with a unique colour if none of its neighbours has been assigned that
         // colour.
         let mut count = 0;
+        let mut subgraph = Vec::new();
         loop {
-            let mut subgraph = make_subgraph();
-            nodes.retain(|node| {
-                if subgraph.is_independent_of(node) {
-                    subgraph.add_node(node.clone());
+            nodes.retain(|&node| {
+                let node_is_independent_from_subgraph =
+                    !subgraph.iter().any(|n| graph.has_edge(*n, node));
+
+                if node_is_independent_from_subgraph {
+                    subgraph.push(node);
                     let colour = GraphColour::from_usize(count);
-                    colouring.colour_map.insert(node.clone(), colour);
+                    colouring.colour_map.insert(graph[node].clone(), colour);
                     if let Some(p) = colouring.partitions.get_mut(colour) {
                         p.count += 1;
                     } else {
@@ -87,6 +93,7 @@ where
                 }
             });
             count += 1;
+            subgraph.clear();
 
             if nodes.is_empty() {
                 break;
@@ -94,14 +101,6 @@ where
         }
         colouring
     }
-}
-
-pub trait SubGraph<N> {
-    /// Returns true if the node is a neighbour of any node in this SubGraph.
-    fn is_independent_of(&self, node: &N) -> bool;
-
-    /// Adds the node into this subgraph.
-    fn add_node(&mut self, value: N);
 }
 
 struct Partition<T> {

@@ -4,7 +4,6 @@ use common::SyntaxContext;
 use index::bit_set::{BitMatrix, BitSet};
 use petgraph::matrix_graph::NodeIndex;
 use petgraph::matrix_graph::UnMatrix;
-use petgraph::visit::IntoNodeReferences;
 use rustc_hash::FxHashMap;
 use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
@@ -20,7 +19,7 @@ use crate::control_flow::{
 use crate::find_vars::{
     DeclFinder, FunctionLike, VarId, find_first_lhs_ident, find_pat_ids, find_vars_declared_in_fn,
 };
-use crate::graph::GraphColoring::{GraphColouring, SubGraph};
+use crate::graph::GraphColoring::GraphColouring;
 use crate::utils::unwrap_as;
 use crate::{Id, ToId};
 
@@ -123,23 +122,9 @@ where
 
         // Colour any interfering variables with different colours and any variables that can be safely
         // coalesced wih the same color.
-        let coloring = GraphColouring::new(
-            interference_graph
-                .node_references()
-                .map(|r| r.1)
-                .cloned()
-                .collect(),
-            |a, b| liveness.scope_variables[a].cmp(&liveness.scope_variables[b]),
-            |node| {
-                let node_index = map[node];
-                interference_graph.neighbors(node_index).count()
-            },
-            || SimpleSubGraph {
-                graph: &interference_graph,
-                map: &map,
-                nodes: Vec::new(),
-            },
-        );
+        let coloring = GraphColouring::new(interference_graph, |a, b| {
+            liveness.scope_variables[a].cmp(&liveness.scope_variables[b])
+        });
 
         let mut v = CoalesceVariableNames {
             unresolved_ctxt: parent_visitor.unresolved_ctxt(),
@@ -508,26 +493,6 @@ impl VisitMut<'_> for CoalesceVariableNames<'_> {
 
     fn visit_mut_ident(&mut self, node: &mut Ident) {
         self.maybe_coalesce_name(node);
-    }
-}
-
-/// A simple implementation of [`SubGraph`] that calculates adjacency by iterating
-/// over a node's neighbors.
-struct SimpleSubGraph<'a> {
-    graph: &'a UnMatrix<Id, ()>,
-    map: &'a FxHashMap<Id, NodeIndex>,
-    // TODO: bitset?
-    nodes: Vec<NodeIndex>,
-}
-
-impl SubGraph<Id> for SimpleSubGraph<'_> {
-    fn is_independent_of(&self, value: &Id) -> bool {
-        let idx = self.map[value];
-        !self.nodes.iter().any(|n| self.graph.has_edge(*n, idx))
-    }
-
-    fn add_node(&mut self, value: Id) {
-        self.nodes.push(self.map[&value]);
     }
 }
 
