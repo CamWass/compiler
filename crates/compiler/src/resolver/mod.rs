@@ -199,91 +199,6 @@ impl Resolver<'_> {
     }
 }
 
-macro_rules! track_ident_mut {
-    () => {
-        fn visit_mut_export_specifier(&mut self, s: &mut ExportSpecifier) {
-            let old = self.ident_type;
-            self.ident_type = IdentType::Ref;
-            s.visit_mut_children_with(self);
-            self.ident_type = old;
-        }
-
-        fn visit_mut_import_specifier(&mut self, s: &mut ImportSpecifier) {
-            let old = self.ident_type;
-            self.ident_type = IdentType::Binding;
-
-            match s {
-                ImportSpecifier::Named(ImportNamedSpecifier { imported: None, .. })
-                | ImportSpecifier::Namespace(..)
-                | ImportSpecifier::Default(..) => s.visit_mut_children_with(self),
-                ImportSpecifier::Named(s) => s.local.visit_mut_with(self),
-            };
-
-            self.ident_type = old;
-        }
-
-        fn visit_mut_getter_prop(&mut self, f: &mut GetterProp) {
-            let old = self.ident_type;
-            self.ident_type = IdentType::Ref;
-            f.key.visit_mut_with(self);
-            self.ident_type = old;
-
-            f.body.visit_mut_with(self);
-        }
-
-        fn visit_mut_labeled_stmt(&mut self, s: &mut LabeledStmt) {
-            let old = self.ident_type;
-            self.ident_type = IdentType::Label;
-            s.label.visit_mut_with(self);
-            self.ident_type = old;
-
-            s.body.visit_mut_with(self);
-        }
-
-        fn visit_mut_break_stmt(&mut self, s: &mut BreakStmt) {
-            let old = self.ident_type;
-            self.ident_type = IdentType::Label;
-            s.label.visit_mut_with(self);
-            self.ident_type = old;
-        }
-
-        fn visit_mut_continue_stmt(&mut self, s: &mut ContinueStmt) {
-            let old = self.ident_type;
-            self.ident_type = IdentType::Label;
-            s.label.visit_mut_with(self);
-            self.ident_type = old;
-        }
-
-        fn visit_mut_key_value_pat_prop(&mut self, n: &mut KeyValuePatProp) {
-            n.key.visit_mut_with(self);
-            n.value.visit_mut_with(self);
-        }
-
-        fn visit_mut_class(&mut self, c: &mut Class) {
-            let old = self.ident_type;
-            self.ident_type = IdentType::Ref;
-
-            self.ident_type = IdentType::Ref;
-            if let Some(extends) = &mut c.extends {
-                extends.super_class.visit_mut_with(self);
-            }
-
-            self.ident_type = old;
-
-            c.body.visit_mut_with(self);
-        }
-
-        fn visit_mut_prop_name(&mut self, n: &mut PropName) {
-            match n {
-                PropName::Computed(c) => {
-                    c.visit_mut_with(self);
-                }
-                _ => {}
-            }
-        }
-    };
-}
-
 impl VisitMut<'_> for Resolver<'_> {
     fn visit_mut_member_expr(&mut self, n: &mut MemberExpr) {
         n.obj.visit_mut_with(self);
@@ -292,7 +207,85 @@ impl VisitMut<'_> for Resolver<'_> {
         }
     }
 
-    track_ident_mut!();
+    fn visit_mut_export_specifier(&mut self, s: &mut ExportSpecifier) {
+        let old = self.ident_type;
+        self.ident_type = IdentType::Ref;
+        s.visit_mut_children_with(self);
+        self.ident_type = old;
+    }
+
+    fn visit_mut_import_specifier(&mut self, s: &mut ImportSpecifier) {
+        let old = self.ident_type;
+        self.ident_type = IdentType::Binding;
+
+        match s {
+            ImportSpecifier::Named(ImportNamedSpecifier { imported: None, .. })
+            | ImportSpecifier::Namespace(..)
+            | ImportSpecifier::Default(..) => s.visit_mut_children_with(self),
+            ImportSpecifier::Named(s) => s.local.visit_mut_with(self),
+        };
+
+        self.ident_type = old;
+    }
+
+    fn visit_mut_getter_prop(&mut self, f: &mut GetterProp) {
+        let old = self.ident_type;
+        self.ident_type = IdentType::Ref;
+        f.key.visit_mut_with(self);
+        self.ident_type = old;
+
+        f.body.visit_mut_with(self);
+    }
+
+    fn visit_mut_labeled_stmt(&mut self, s: &mut LabeledStmt) {
+        let old = self.ident_type;
+        self.ident_type = IdentType::Label;
+        s.label.visit_mut_with(self);
+        self.ident_type = old;
+
+        s.body.visit_mut_with(self);
+    }
+
+    fn visit_mut_break_stmt(&mut self, s: &mut BreakStmt) {
+        let old = self.ident_type;
+        self.ident_type = IdentType::Label;
+        s.label.visit_mut_with(self);
+        self.ident_type = old;
+    }
+
+    fn visit_mut_continue_stmt(&mut self, s: &mut ContinueStmt) {
+        let old = self.ident_type;
+        self.ident_type = IdentType::Label;
+        s.label.visit_mut_with(self);
+        self.ident_type = old;
+    }
+
+    fn visit_mut_key_value_pat_prop(&mut self, n: &mut KeyValuePatProp) {
+        n.key.visit_mut_with(self);
+        n.value.visit_mut_with(self);
+    }
+
+    fn visit_mut_class(&mut self, c: &mut Class) {
+        let old = self.ident_type;
+
+        self.ident_type = IdentType::Ref;
+        if let Some(extends) = &mut c.extends {
+            extends.super_class.visit_mut_with(self);
+        }
+
+        self.ident_type = old;
+
+        c.body.visit_mut_with(self);
+    }
+
+    fn visit_mut_prop_name(&mut self, n: &mut PropName) {
+        match n {
+            PropName::Computed(c) => {
+                c.visit_mut_with(self);
+            }
+            _ => {}
+        }
+    }
 
     fn visit_mut_arrow_expr(&mut self, e: &mut ArrowExpr) {
         self.with_child(ScopeKind::Fn, |child| {
