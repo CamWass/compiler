@@ -15,7 +15,9 @@ use crate::control_flow::{
     ControlFlowGraph::ControlFlowGraph,
     node::Node,
 };
-use crate::find_vars::{VarId, find_first_lhs_ident, find_pat_ids, find_vars_declared_in_fn};
+use crate::find_vars::{
+    DeclFinder, FunctionLike, VarId, find_first_lhs_ident, find_pat_ids, find_vars_declared_in_fn,
+};
 use crate::graph::GraphColoring::{GreedyGraphColoring, SubGraph};
 use crate::utils::unwrap_as;
 use crate::{Id, ToId};
@@ -59,60 +61,93 @@ pub fn coalesce_variable_names(
     ast.visit_mut_with(&mut v);
 }
 
-// TODO: this is only a macro to appease the borrow checker. Ideally it would be a fn.
-macro_rules! handle_fn {
-    ($parent_visitor:ident, $function:ident) => {
-        // Skip lets and consts that have multiple variables declared in them, otherwise this produces
-        // incorrect semantics. See test case "testCapture".
-        // Skipping vars technically isn't needed for correct semantics, but works around a Safari
-        // bug for var redeclarations (https://github.com/google/closure-compiler/issues/3164)
-        let all_vars_declared_in_func = find_vars_declared_in_fn($function, true);
+trait ParentVisitor {
+    fn unresolved_ctxt(&self) -> SyntaxContext;
+    fn program_data(&mut self) -> &mut ProgramData;
+}
 
-        if MAX_VARIABLES_TO_ANALYZE > all_vars_declared_in_func.ordered_vars.len() {
-            // This fn is analysable, create new visitor to do so.
+impl ParentVisitor for CoalesceVariableNames<'_> {
+    fn unresolved_ctxt(&self) -> SyntaxContext {
+        self.unresolved_ctxt
+    }
 
-            let cfa = ControlFlowAnalysis::analyze(ControlFlowRoot::from(&*$function), false);
-            let (liveness, cfg) =
-                LiveVariablesAnalysis::new(cfa.cfg, &cfa.node_priorities, $function, all_vars_declared_in_func, $parent_visitor.unresolved_ctxt).analyze();
+    fn program_data(&mut self) -> &mut ProgramData {
+        self.program_data
+    }
+}
 
-            // The interference graph has the function's variables as its nodes and any interference
-            // between the variables as the edges. Interference between two variables means that they are
-            // alive at overlapping times, which means that their variable names cannot be coalesced.
-            let (interference_graph, map) = compute_variable_names_interference_graph(&cfg, &liveness);
+impl ParentVisitor for GlobalVisitor<'_> {
+    fn unresolved_ctxt(&self) -> SyntaxContext {
+        self.unresolved_ctxt
+    }
 
-            // Colour any interfering variables with different colours and any variables that can be safely
-            // coalesced wih the same color.
-            let mut coloring = GreedyGraphColoring::new();
-            coloring.color(
-                interference_graph.node_weights().cloned().collect(),
-                |a, b| {
-                    liveness.scope_variables[a].cmp(&liveness.scope_variables[b])
-                },
-                |node| {
-                    let node_index = map[node];
-                    let degree = interference_graph.neighbors(node_index).count();
-                    degree
-                },
-                || SimpleSubGraph {
-                    graph: &interference_graph,
-                    map: &map,
-                    nodes: Vec::new(),
-                },
-            );
+    fn program_data(&mut self) -> &mut ProgramData {
+        self.program_data
+    }
+}
 
-            let mut v = CoalesceVariableNames {
-                unresolved_ctxt: $parent_visitor.unresolved_ctxt,
-                program_data: $parent_visitor.program_data,
-                coloring,
-                map,
-                in_loop_body: false,
-            };
-            $function.visit_mut_children_with(&mut v);
-        } else {
-            // This fn is not analysable, continue traversal with parent visitor.
-            $function.visit_mut_children_with($parent_visitor);
-        }
-    };
+fn handle_fn<'c, T, V>(function: &'c mut T, parent_visitor: &'c mut V)
+where
+    T: FunctionLike
+        + VisitMutWith<'c, V>
+        + for<'ast> VisitWith<'ast, DeclFinder>
+        + VisitMutWith<'c, CoalesceVariableNames<'c>>,
+    for<'x> ControlFlowRoot<'x>: From<&'x T>,
+    V: VisitMut<'c> + ParentVisitor,
+{
+    // Skip lets and consts that have multiple variables declared in them, otherwise this produces
+    // incorrect semantics. See test case "testCapture".
+    // Skipping vars technically isn't needed for correct semantics, but works around a Safari
+    // bug for var redeclarations (https://github.com/google/closure-compiler/issues/3164)
+    let all_vars_declared_in_func = find_vars_declared_in_fn(function, true);
+
+    if MAX_VARIABLES_TO_ANALYZE > all_vars_declared_in_func.ordered_vars.len() {
+        // This fn is analysable, create new visitor to do so.
+
+        let cfa = ControlFlowAnalysis::analyze(ControlFlowRoot::from(&*function), false);
+        let (liveness, cfg) = LiveVariablesAnalysis::new(
+            cfa.cfg,
+            &cfa.node_priorities,
+            function,
+            all_vars_declared_in_func,
+            parent_visitor.unresolved_ctxt(),
+        )
+        .analyze();
+
+        // The interference graph has the function's variables as its nodes and any interference
+        // between the variables as the edges. Interference between two variables means that they are
+        // alive at overlapping times, which means that their variable names cannot be coalesced.
+        let (interference_graph, map) = compute_variable_names_interference_graph(&cfg, &liveness);
+
+        // Colour any interfering variables with different colours and any variables that can be safely
+        // coalesced wih the same color.
+        let mut coloring = GreedyGraphColoring::new();
+        coloring.color(
+            interference_graph.node_weights().cloned().collect(),
+            |a, b| liveness.scope_variables[a].cmp(&liveness.scope_variables[b]),
+            |node| {
+                let node_index = map[node];
+                interference_graph.neighbors(node_index).count()
+            },
+            || SimpleSubGraph {
+                graph: &interference_graph,
+                map: &map,
+                nodes: Vec::new(),
+            },
+        );
+
+        let mut v = CoalesceVariableNames {
+            unresolved_ctxt: parent_visitor.unresolved_ctxt(),
+            program_data: parent_visitor.program_data(),
+            coloring,
+            map,
+            in_loop_body: false,
+        };
+        function.visit_mut_children_with(&mut v);
+    } else {
+        // This fn is not analysable, continue traversal with parent visitor.
+        function.visit_mut_children_with(parent_visitor);
+    }
 }
 
 enum CoalesceResult {
@@ -345,19 +380,19 @@ impl CoalesceVariableNames<'_> {
 
 impl VisitMut<'_> for CoalesceVariableNames<'_> {
     fn visit_mut_function(&mut self, node: &mut Function) {
-        handle_fn!(self, node);
+        handle_fn(node, self);
     }
     fn visit_mut_constructor(&mut self, node: &mut Constructor) {
-        handle_fn!(self, node);
+        handle_fn(node, self);
     }
     fn visit_mut_arrow_expr(&mut self, node: &mut ArrowExpr) {
-        handle_fn!(self, node);
+        handle_fn(node, self);
     }
     fn visit_mut_getter_prop(&mut self, node: &mut GetterProp) {
-        handle_fn!(self, node);
+        handle_fn(node, self);
     }
     fn visit_mut_setter_prop(&mut self, node: &mut SetterProp) {
-        handle_fn!(self, node);
+        handle_fn(node, self);
     }
 
     // TODO: visit_mut_module_items if we change CoalesceVariableNames to operate
@@ -606,19 +641,19 @@ struct GlobalVisitor<'a> {
 
 impl VisitMut<'_> for GlobalVisitor<'_> {
     fn visit_mut_function(&mut self, node: &mut Function) {
-        handle_fn!(self, node);
+        handle_fn(node, self);
     }
     fn visit_mut_constructor(&mut self, node: &mut Constructor) {
-        handle_fn!(self, node);
+        handle_fn(node, self);
     }
     fn visit_mut_arrow_expr(&mut self, node: &mut ArrowExpr) {
-        handle_fn!(self, node);
+        handle_fn(node, self);
     }
     fn visit_mut_getter_prop(&mut self, node: &mut GetterProp) {
-        handle_fn!(self, node);
+        handle_fn(node, self);
     }
     fn visit_mut_setter_prop(&mut self, node: &mut SetterProp) {
-        handle_fn!(self, node);
+        handle_fn(node, self);
     }
 }
 
