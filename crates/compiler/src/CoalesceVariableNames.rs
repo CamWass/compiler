@@ -121,8 +121,7 @@ where
 
         // Colour any interfering variables with different colours and any variables that can be safely
         // coalesced wih the same color.
-        let mut coloring = GraphColouring::new();
-        coloring.colour(
+        let coloring = GraphColouring::new(
             interference_graph.node_weights().cloned().collect(),
             |a, b| liveness.scope_variables[a].cmp(&liveness.scope_variables[b]),
             |node| {

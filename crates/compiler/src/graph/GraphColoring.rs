@@ -18,13 +18,6 @@ impl<T> GraphColouring<T>
 where
     T: Clone + Eq + Hash,
 {
-    pub fn new() -> Self {
-        Self {
-            colour_map: Default::default(),
-            partitions: Default::default(),
-        }
-    }
-
     /// Using the colouring as partitions, finds the node that represents that
     /// partition as the super node. The first to retrieve its partition will
     /// become the super node.
@@ -43,25 +36,19 @@ where
 
     /// `tieBreaker`: In case of a tie between two nodes of the same degree,
     /// this comparator will determine which node should be coloured first.
-    ///
-    /// Returns the number of unique colours need.
-    pub fn colour<C, W, S, F>(
-        &mut self,
-        mut nodes: Vec<T>,
-        tie_breaker: C,
-        weight: W,
-        make_subgraph: F,
-    ) -> usize
+    pub fn new<C, W, S, F>(mut nodes: Vec<T>, tie_breaker: C, weight: W, make_subgraph: F) -> Self
     where
         C: Fn(&T, &T) -> Ordering,
         W: Fn(&T) -> usize,
         S: SubGraph<T>,
         F: Fn() -> S,
     {
-        debug_assert!(self.colour_map.is_empty());
-        debug_assert!(self.partitions.is_empty());
+        let mut colouring = Self {
+            colour_map: Default::default(),
+            partitions: Default::default(),
+        };
 
-        self.colour_map.reserve(nodes.len());
+        colouring.colour_map.reserve(nodes.len());
 
         // Sort nodes by degree.
         nodes.sort_unstable_by(|a, b| {
@@ -83,15 +70,15 @@ where
                 if subgraph.is_independent_of(node) {
                     subgraph.add_node(node.clone());
                     let colour = GraphColour::from_usize(count);
-                    self.colour_map.insert(node.clone(), colour);
-                    if let Some(p) = self.partitions.get_mut(colour) {
+                    colouring.colour_map.insert(node.clone(), colour);
+                    if let Some(p) = colouring.partitions.get_mut(colour) {
                         p.count += 1;
                     } else {
                         let p = Partition {
                             super_node: None,
                             count: 1,
                         };
-                        let idx = self.partitions.push(p);
+                        let idx = colouring.partitions.push(p);
                         debug_assert!(idx == colour);
                     }
                     false
@@ -105,7 +92,7 @@ where
                 break;
             }
         }
-        count
+        colouring
     }
 }
 
