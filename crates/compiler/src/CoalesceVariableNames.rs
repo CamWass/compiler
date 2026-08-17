@@ -18,7 +18,7 @@ use crate::control_flow::{
 use crate::find_vars::{
     DeclFinder, FunctionLike, VarId, find_first_lhs_ident, find_pat_ids, find_vars_declared_in_fn,
 };
-use crate::graph::GraphColoring::{GreedyGraphColoring, SubGraph};
+use crate::graph::GraphColoring::{GraphColouring, SubGraph};
 use crate::utils::unwrap_as;
 use crate::{Id, ToId};
 
@@ -36,13 +36,13 @@ mod tests;
 /// The pass operates similar to a typical register allocator found in an
 /// optimizing compiler by first computing live ranges with
 /// [LiveVariablesAnalysis] and a variable interference graph. Then it uses
-/// [graph colouring][GreedyGraphColoring] to determine which two variables can
-/// be merge together safely.
+/// [graph colouring][GraphColouring] to determine which two variables can be
+/// merge together safely.
 pub struct CoalesceVariableNames<'a> {
     // Maps a colour (represented by an integer) to a variable. If, for example,
     // the colour 5 is mapped to "foo". Then any other variables coloured with the
     // colour 5 will now use the name "foo".
-    coloring: GreedyGraphColoring<Id>,
+    coloring: GraphColouring<Id>,
     map: FxHashMap<Id, NodeIndex>,
     unresolved_ctxt: SyntaxContext,
     program_data: &'a mut ast::ProgramData,
@@ -121,8 +121,8 @@ where
 
         // Colour any interfering variables with different colours and any variables that can be safely
         // coalesced wih the same color.
-        let mut coloring = GreedyGraphColoring::new();
-        coloring.color(
+        let mut coloring = GraphColouring::new();
+        coloring.colour(
             interference_graph.node_weights().cloned().collect(),
             |a, b| liveness.scope_variables[a].cmp(&liveness.scope_variables[b]),
             |node| {
@@ -189,7 +189,7 @@ impl CoalesceVariableNames<'_> {
 
                 // The name is replaced with another - it's a target.
                 CoalesceResult::NameIsCoalesceTarget
-            } else if self.coloring.color_count(&id) > 1 {
+            } else if self.coloring.colour_count(&id) > 1 {
                 // The coalesced name is itself and will be propagated to other nodes - it's a source.
                 CoalesceResult::NameIsCoalesceSource
             } else {

@@ -3,65 +3,65 @@ use rustc_hash::FxHashMap;
 use std::cmp::Ordering;
 use std::hash::Hash;
 
-/// Annotates the graph with colors in a way that no connected node will have the
-/// same color. Nodes of the same color can then be partitioned together and be
-/// represented by a super node.
-pub struct GreedyGraphColoring<T>
+/// Assign a 'colour' to each graph node in a way that no connected nodes will
+/// have the same colour. Nodes of the same colour can then be partitioned
+/// together and be represented by a super node.
+pub struct GraphColouring<T>
 where
     T: Clone + Eq + Hash,
 {
-    color_map: FxHashMap<T, GraphColor>,
-    partitions: IndexVec<GraphColor, Partition<T>>,
+    colour_map: FxHashMap<T, GraphColour>,
+    partitions: IndexVec<GraphColour, Partition<T>>,
 }
 
-impl<T> GreedyGraphColoring<T>
+impl<T> GraphColouring<T>
 where
     T: Clone + Eq + Hash,
 {
     pub fn new() -> Self {
         Self {
-            color_map: Default::default(),
+            colour_map: Default::default(),
             partitions: Default::default(),
         }
     }
 
-    /// Using the coloring as partitions, finds the node that represents that
+    /// Using the colouring as partitions, finds the node that represents that
     /// partition as the super node. The first to retrieve its partition will
     /// become the super node.
     pub fn get_partition_super_node(&mut self, node: &T) -> &T {
-        let color = self.color_map[node];
-        self.partitions[color]
+        let colour = self.colour_map[node];
+        self.partitions[colour]
             .super_node
             .get_or_insert_with(|| node.clone())
     }
 
-    /// Returns how many nodes this nodes's color is associated with.
-    pub fn color_count(&self, node: &T) -> usize {
-        let color = self.color_map[node];
-        self.partitions[color].count
+    /// Returns how many nodes this nodes's colour is associated with.
+    pub fn colour_count(&self, node: &T) -> usize {
+        let colour = self.colour_map[node];
+        self.partitions[colour].count
     }
 
     /// `tieBreaker`: In case of a tie between two nodes of the same degree,
-    /// this comparator will determine which node should be colored first.
+    /// this comparator will determine which node should be coloured first.
     ///
-    /// Returns The number of unique colors need.
-    pub fn color<C, W, S, F>(
+    /// Returns the number of unique colours need.
+    pub fn colour<C, W, S, F>(
         &mut self,
         mut nodes: Vec<T>,
-        mut tie_breaker: C,
-        mut weight: W,
-        mut make_subgraph: F,
+        tie_breaker: C,
+        weight: W,
+        make_subgraph: F,
     ) -> usize
     where
-        C: FnMut(&T, &T) -> Ordering,
-        W: FnMut(&T) -> usize,
+        C: Fn(&T, &T) -> Ordering,
+        W: Fn(&T) -> usize,
         S: SubGraph<T>,
-        F: FnMut() -> S,
+        F: Fn() -> S,
     {
-        debug_assert!(self.color_map.is_empty());
+        debug_assert!(self.colour_map.is_empty());
         debug_assert!(self.partitions.is_empty());
 
-        self.color_map.reserve(nodes.len());
+        self.colour_map.reserve(nodes.len());
 
         // Sort nodes by degree.
         nodes.sort_unstable_by(|a, b| {
@@ -73,17 +73,18 @@ where
             }
         });
 
-        // Idea: From the highest to lowest degree, assign any uncolored node with
-        // a unique color if none of its neighbors has been assigned that color.
+        // Idea: From the highest to lowest degree, assign any uncoloured node
+        // with a unique colour if none of its neighbours has been assigned that
+        // colour.
         let mut count = 0;
         loop {
             let mut subgraph = make_subgraph();
             nodes.retain(|node| {
                 if subgraph.is_independent_of(node) {
                     subgraph.add_node(node.clone());
-                    let color = GraphColor::from_usize(count);
-                    self.color_map.insert(node.clone(), color);
-                    if let Some(p) = self.partitions.get_mut(color) {
+                    let colour = GraphColour::from_usize(count);
+                    self.colour_map.insert(node.clone(), colour);
+                    if let Some(p) = self.partitions.get_mut(colour) {
                         p.count += 1;
                     } else {
                         let p = Partition {
@@ -91,7 +92,7 @@ where
                             count: 1,
                         };
                         let idx = self.partitions.push(p);
-                        debug_assert!(idx == color);
+                        debug_assert!(idx == colour);
                     }
                     false
                 } else {
@@ -109,7 +110,7 @@ where
 }
 
 pub trait SubGraph<N> {
-    /// Returns true if the node is a neighbor of any node in this SubGraph.
+    /// Returns true if the node is a neighbour of any node in this SubGraph.
     fn is_independent_of(&self, node: &N) -> bool;
 
     /// Adds the node into this subgraph.
@@ -122,4 +123,4 @@ struct Partition<T> {
     count: usize,
 }
 
-newtype_index!(pub GraphColor);
+newtype_index!(pub GraphColour);
