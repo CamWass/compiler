@@ -75,7 +75,7 @@ pub fn resolver<'ast>(unresolved_mark: Mark) -> impl VisitMut<'ast> {
     Resolver {
         current: Scope::new(ScopeKind::Fn, Mark::new(), None),
         ident_type: IdentType::Ref,
-        config: InnerConfig { unresolved_mark },
+        unresolved_mark,
     }
 }
 
@@ -121,12 +121,6 @@ impl<'a> Scope<'a> {
 struct Resolver<'a> {
     current: Scope<'a>,
     ident_type: IdentType,
-
-    config: InnerConfig,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct InnerConfig {
     unresolved_mark: Mark,
 }
 
@@ -138,7 +132,7 @@ impl Resolver<'_> {
         let mut child = Resolver {
             current: Scope::new(kind, Mark::new(), Some(&self.current)),
             ident_type: IdentType::Ref,
-            config: self.config,
+            unresolved_mark: self.unresolved_mark,
         };
 
         op(&mut child);
@@ -503,7 +497,7 @@ impl VisitMut<'_> for Resolver<'_> {
                 if let Some(mark) = self.mark_for_ref(&i.sym) {
                     i.ctxt = i.ctxt.apply_mark(mark);
                 } else {
-                    i.ctxt = i.ctxt.apply_mark(self.config.unresolved_mark);
+                    i.ctxt = i.ctxt.apply_mark(self.unresolved_mark);
                     // Support hoisting
                     self.modify(i);
                 }
