@@ -64,16 +64,50 @@ impl From<&Token> for TokenType {
     }
 }
 
+pub struct LexerCheckpoint {
+    cur: usize,
+    ctx: Context,
+    state: State,
+}
+
 impl Lexer<'_> {
+    pub fn checkpoint(&self) -> LexerCheckpoint {
+        let Lexer {
+            cur,
+            bytes: _,
+            start_pos: _,
+            ctx,
+            state,
+            syntax: _,
+            target: _,
+            buf: _,
+            errors: _,
+            module_errors: _,
+            strict_errors: _,
+        } = self;
+
+        LexerCheckpoint {
+            cur: *cur,
+            ctx: *ctx,
+            state: state.clone(),
+        }
+    }
+
+    pub fn rewind(&mut self, checkpoint: LexerCheckpoint) {
+        let LexerCheckpoint { cur, ctx, state } = checkpoint;
+
+        self.cur = cur;
+        self.ctx = ctx;
+        self.state = state;
+    }
+
     pub fn set_ctx(&mut self, ctx: Context) {
-        if ctx.is_module() && !self.module_errors.borrow().is_empty() {
-            let mut module_errors = self.module_errors.borrow_mut();
-            self.errors.borrow_mut().append(&mut *module_errors);
+        if ctx.is_module() && !self.module_errors.is_empty() {
+            self.errors.append(&mut self.module_errors);
         }
 
-        if ctx.is_strict() && !self.strict_errors.borrow().is_empty() {
-            let mut strict_errors = self.strict_errors.borrow_mut();
-            self.errors.borrow_mut().append(&mut *strict_errors);
+        if ctx.is_strict() && !self.strict_errors.is_empty() {
+            self.errors.append(&mut self.strict_errors);
         }
 
         self.ctx = ctx;
@@ -98,12 +132,12 @@ impl Lexer<'_> {
         self.state.context = c;
     }
 
-    pub fn add_error(&self, error: Error) {
-        self.errors.borrow_mut().push(error);
+    pub fn add_error(&mut self, error: Error) {
+        self.errors.push(error);
     }
 
     pub fn take_errors(&mut self) -> Vec<Error> {
-        std::mem::take(&mut self.errors.borrow_mut())
+        std::mem::take(&mut self.errors)
     }
 
     /// Add an error for code which is only invalid in module mode.
@@ -114,20 +148,13 @@ impl Lexer<'_> {
     /// whether they are parsing a module or not. If they are parsing a module,
     /// the buffered strict errors should be moved to the general error buffer.
     /// If they are parsing a script, they should discard all buffered module errors.
-    pub fn add_module_mode_error(&self, error: Error) {
-        match self.ctx.module {
-            YesNoMaybe::Yes => {
-                // Definitely in a module, immediately add error.
-                self.add_error(error);
-            }
-            YesNoMaybe::No => {
-                // Definitely not in a module, discard error.
-            }
-            YesNoMaybe::Maybe => {
-                // Not yet sure if we are in a module, buffer error.
-                self.module_errors.borrow_mut().push(error);
-            }
-        }
+    pub fn add_module_mode_error(&mut self, error: Error) {
+        add_module_mode_error(
+            self.ctx.module,
+            &mut self.module_errors,
+            &mut self.errors,
+            error,
+        );
     }
 
     /// Add an error for a strict mode violation.
@@ -139,7 +166,7 @@ impl Lexer<'_> {
     /// certain it is strict, the buffered strict errors should be moved to the
     /// general error buffer. If they are certain it is **NOT** strict, they
     /// should discard all buffered strict errors.
-    pub fn add_strict_mode_error(&self, error: Error) {
+    pub fn add_strict_mode_error(&mut self, error: Error) {
         match self.ctx.strict {
             YesMaybe::Yes => {
                 // Definitely in strict mode, immediately add error.
@@ -147,7 +174,7 @@ impl Lexer<'_> {
             }
             YesMaybe::Maybe => {
                 // Not yet sure if we are in strict mode, buffer error.
-                self.strict_errors.borrow_mut().push(error);
+                self.strict_errors.push(error);
             }
         }
     }
@@ -163,10 +190,42 @@ impl Lexer<'_> {
         // the error to the main error buffer, depending on if we are certain
         // whether we are paring a module or not.
 
-        let mut strict_errors = self.strict_errors.borrow_mut();
+        for error in self.strict_errors.drain(..) {
+            add_module_mode_error(
+                self.ctx.module,
+                &mut self.module_errors,
+                &mut self.errors,
+                error,
+            );
+        }
+    }
+}
 
-        for error in strict_errors.drain(..) {
-            self.add_module_mode_error(error);
+/// Add an error for code which is only invalid in module mode.
+///
+/// If [Context].module is true, implementers should immediately move the
+/// error to the general error buffer.
+/// If it is false, implementers should buffer the error until they are certain
+/// whether they are parsing a module or not. If they are parsing a module,
+/// the buffered strict errors should be moved to the general error buffer.
+/// If they are parsing a script, they should discard all buffered module errors.
+pub fn add_module_mode_error(
+    in_module: YesNoMaybe,
+    module_errors: &mut Vec<Error>,
+    errors: &mut Vec<Error>,
+    error: Error,
+) {
+    match in_module {
+        YesNoMaybe::Yes => {
+            // Definitely in a module, immediately add error.
+            errors.push(error);
+        }
+        YesNoMaybe::No => {
+            // Definitely not in a module, discard error.
+        }
+        YesNoMaybe::Maybe => {
+            // Not yet sure if we are in a module, buffer error.
+            module_errors.push(error);
         }
     }
 }

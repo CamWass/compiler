@@ -12,13 +12,12 @@ use ast::{RegexFlags, op};
 use common::{BytePos, SourceFile, Span, chars::char_literals};
 use number::{NonDecRadix, Radix};
 use state::State;
-pub(crate) use state::{TokenContext, TokenContexts};
-use std::{cell::RefCell, iter::FusedIterator, rc::Rc};
+pub(crate) use state::{LexerCheckpoint, TokenContext, TokenContexts};
+use std::iter::FusedIterator;
 use util::{char_bytes, is_line_break};
 
 type LexResult<T> = Result<T, Error>;
 
-#[derive(Clone)]
 pub struct Lexer<'src> {
     /// Index of current byte in `self.bytes`.
     cur: usize,
@@ -31,9 +30,9 @@ pub struct Lexer<'src> {
     target: JscTarget,
     buf: String,
 
-    errors: Rc<RefCell<Vec<Error>>>,
-    module_errors: Rc<RefCell<Vec<Error>>>,
-    strict_errors: Rc<RefCell<Vec<Error>>>,
+    errors: Vec<Error>,
+    module_errors: Vec<Error>,
+    strict_errors: Vec<Error>,
 }
 
 impl FusedIterator for Lexer<'_> {}

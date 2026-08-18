@@ -1,14 +1,13 @@
 use crate::{
     JscTarget, Syntax,
     context::Context,
-    lexer::{Lexer, TokenContexts},
+    lexer::{Lexer, LexerCheckpoint, TokenContexts},
     parser::Parser,
     token::{Token, TokenAndSpan},
 };
 use common::{BytePos, DUMMY_SP, Span};
 
 /// This struct is responsible for managing current token and peeked token.
-#[derive(Clone)]
 pub struct Buffer<'src> {
     iter: Lexer<'src>,
     /// Span of the previous token.
@@ -22,12 +21,46 @@ impl<'d> Parser<'d> {
     pub fn input(&mut self) -> &mut Lexer<'d> {
         &mut self.input.iter
     }
-    pub(crate) fn input_ref(&self) -> &Lexer<'d> {
-        &self.input.iter
-    }
+}
+
+pub struct BufferCheckpoint {
+    lexer_cp: LexerCheckpoint,
+    prev_span: Span,
+    cur: Option<TokenAndSpan>,
+    next: Option<TokenAndSpan>,
 }
 
 impl<'d> Buffer<'d> {
+    pub fn checkpoint(&self) -> BufferCheckpoint {
+        let Buffer {
+            iter,
+            prev_span,
+            cur,
+            next,
+        } = self;
+
+        BufferCheckpoint {
+            lexer_cp: iter.checkpoint(),
+            prev_span: *prev_span,
+            cur: cur.clone(),
+            next: next.clone(),
+        }
+    }
+
+    pub fn rewind(&mut self, checkpoint: BufferCheckpoint) {
+        let BufferCheckpoint {
+            lexer_cp,
+            prev_span,
+            cur,
+            next,
+        } = checkpoint;
+
+        self.iter.rewind(lexer_cp);
+        self.prev_span = prev_span;
+        self.cur = cur;
+        self.next = next;
+    }
+
     pub fn new(lexer: Lexer<'d>) -> Self {
         Buffer {
             iter: lexer,

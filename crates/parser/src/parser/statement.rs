@@ -508,7 +508,7 @@ impl Parser<'_> {
         }
     }
 
-    fn verify_break_continue(&self, is_break: bool, label: Option<&Ident>, span: Span) {
+    fn verify_break_continue(&mut self, is_break: bool, label: Option<&Ident>, span: Span) {
         if is_break {
             if label.is_some() && !self.labels.contains(&label.unwrap().sym) {
                 self.emit_err(span, SyntaxError::TS1116);
@@ -1240,13 +1240,15 @@ impl Parser<'_> {
         };
 
         self.with_ctx(ctx).parse_with(|parser| {
-            for existing_label in &parser.labels {
-                if label.sym == *existing_label {
-                    parser.emit_err(
-                        get_span!(parser, label.node_id),
-                        SyntaxError::DuplicateLabel(label.sym.clone()),
-                    );
-                }
+            let has_existing_label = parser
+                .labels
+                .iter()
+                .any(|existing_label| label.sym == *existing_label);
+            if has_existing_label {
+                parser.emit_err(
+                    get_span!(parser, label.node_id),
+                    SyntaxError::DuplicateLabel(label.sym.clone()),
+                );
             }
             parser.labels.push(label.sym.clone());
 

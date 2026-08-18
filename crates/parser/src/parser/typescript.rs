@@ -360,7 +360,7 @@ impl Parser<'_> {
         } = &*self;
 
         let old_emit_err = *emit_err;
-        let old_input = input.clone();
+        let input_checkpoint = input.checkpoint();
 
         self.emit_err = false;
         let res = op(self);
@@ -372,7 +372,7 @@ impl Parser<'_> {
             }
             _ => {
                 self.emit_err = old_emit_err;
-                self.input = old_input;
+                self.input.rewind(input_checkpoint);
 
                 Ok(false)
             }
@@ -401,7 +401,7 @@ impl Parser<'_> {
         } = &*self;
 
         let old_emit_err = *emit_err;
-        let old_input = input.clone();
+        let input_checkpoint = input.checkpoint();
         let prev_labels_len = labels.len();
         let old_potential_arrow_start = *potential_arrow_start;
 
@@ -415,7 +415,7 @@ impl Parser<'_> {
             }
             Ok(None) | Err(..) => {
                 self.emit_err = old_emit_err;
-                self.input = old_input;
+                self.input.rewind(input_checkpoint);
                 self.labels.truncate(prev_labels_len);
                 self.potential_arrow_start = old_potential_arrow_start;
 
@@ -830,13 +830,13 @@ impl Parser<'_> {
         let old_emit_err = *emit_err;
         let prev_labels_len = labels.len();
         let old_potential_arrow_start = *potential_arrow_start;
-        let old_input = input.clone();
+        let input_checkpoint = input.checkpoint();
 
         self.emit_err = false;
         let res = op(self);
 
         self.emit_err = old_emit_err;
-        self.input = old_input;
+        self.input.rewind(input_checkpoint);
         self.labels.truncate(prev_labels_len);
         self.potential_arrow_start = old_potential_arrow_start;
 

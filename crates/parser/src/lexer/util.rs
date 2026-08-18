@@ -260,7 +260,7 @@ impl Lexer<'_> {
         let err = Error {
             error: Box::new((span, kind)),
         };
-        self.errors.borrow_mut().push(err);
+        self.errors.push(err);
     }
 
     #[cold]
