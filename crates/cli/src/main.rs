@@ -9,7 +9,7 @@ use common::{
 use compiler::Compiler;
 use config::{Config, load_config};
 use parser::{Parser, Syntax};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use std::{env, path::Path, rc::Rc};
 
 mod config;
@@ -20,7 +20,7 @@ fn create_program(
     cm: &SourceMap,
     handler: &Handler,
     program_data: &mut ast::ProgramData,
-) -> Result<ast::Program> {
+) -> Result<(ast::Program, Duration)> {
     let syntax = if filename.ends_with(".js") {
         Syntax::Es(config.ecmascript)
     } else if filename.ends_with(".ts") {
@@ -28,7 +28,7 @@ fn create_program(
         ts_config.dts = filename.ends_with(".d.ts");
         Syntax::Typescript(ts_config)
     } else {
-        panic!()
+        panic!("Unknown file type. Input file must end in .ts or .js");
     };
 
     let fm = cm
@@ -37,7 +37,11 @@ fn create_program(
 
     let mut parser = Parser::new(syntax, &fm, program_data);
 
+    let parse_start = Instant::now();
+
     let program = parser.parse_program();
+
+    let parse_duration = parse_start.elapsed();
 
     let mut error = false;
 
@@ -55,27 +59,29 @@ fn create_program(
         bail!("Failed to parse");
     }
 
-    Ok(program)
+    Ok((program, parse_duration))
 }
 
 fn compile(entry_file: &str, config: Config, output_file: Option<&str>) -> Result<()> {
+    let compile_start = Instant::now();
+
     let cm = Rc::<SourceMap>::default();
     let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
 
     let mut program_data = ast::ProgramData::default();
 
-    let program = create_program(entry_file, &config, &cm, &handler, &mut program_data)?;
+    let (program, parse_duration) =
+        create_program(entry_file, &config, &cm, &handler, &mut program_data)?;
 
     let compiler = Compiler::new();
 
-    let start = Instant::now();
+    let transform_start = Instant::now();
 
     let result = compiler.compile(program, config.passes, &mut program_data);
 
-    let elapsed = start.elapsed();
-    println!("\nCompilation took: {elapsed:.2?}");
+    let transform_duration = transform_start.elapsed();
 
-    println!("\n\n\nSuccessfully parsed");
+    let codegen_start = Instant::now();
 
     let src = {
         let mut buf = String::new();
@@ -96,6 +102,14 @@ fn compile(entry_file: &str, config: Config, output_file: Option<&str>) -> Resul
 
         buf
     };
+
+    let codegen_duration = codegen_start.elapsed();
+
+    let compile_duration = compile_start.elapsed();
+
+    println!(
+        "\nSuccessfully compiled in {compile_duration:.2?} (parse: {parse_duration:.2?}, transform: {transform_duration:.2?}, codegen: {codegen_duration:.2?})"
+    );
 
     let res = std::fs::write(output_file.unwrap_or("out.js"), &src).context("Failed to write file");
 
