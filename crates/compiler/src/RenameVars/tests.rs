@@ -424,7 +424,8 @@ fn testLetConst() {
 
     test_transform(
         "
-let zyx = 1; {
+let zyx = 1;
+{
     const xyz = 1;
     let zyx = 2;
     zyx = 3;
@@ -432,7 +433,8 @@ let zyx = 1; {
 let xyz = 'potato';
 zyx = 4;",
         "
-let a = 1; {
+let a = 1;
+{
     const c = 1;
     let b = 2;
     b = 3;
