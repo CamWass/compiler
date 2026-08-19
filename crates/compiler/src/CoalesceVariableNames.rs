@@ -624,6 +624,12 @@ impl<'a> LiveRangeChecker<'a> {
             liveness,
         };
         root.visit_with(&mut checker);
+
+        if !checker.is_assign_to_list.is_empty() {
+            let out = &checker.liveness.lattice_elements[checker.state.out];
+            checker.is_read_from_list.extend(out.live_vars());
+        }
+
         checker
     }
 
@@ -636,19 +642,15 @@ impl<'a> LiveRangeChecker<'a> {
         }
     }
 
-    fn visit(&mut self, name: NameId, is_read_from: bool, is_assigned_to: bool) {
+    fn visit_ident(&mut self, name: NameId, is_read_from: bool, is_assigned_to: bool) {
         if is_assigned_to {
             if let Some(var_id) = self.liveness.scope_variables.get(&name) {
                 self.is_assign_to_list.push(*var_id);
             }
         }
         if !self.is_assign_to_list.is_empty() {
-            for (var_id, var) in self.liveness.ordered_vars.iter_enumerated() {
-                let out = &self.liveness.lattice_elements[self.state.out];
-                let var_out_live = out.is_live(var_id);
-                if var_out_live || is_read_from && var == &name {
-                    self.is_read_from_list.push(var_id);
-                }
+            if is_read_from && let Some(var_id) = self.liveness.scope_variables.get(&name) {
+                self.is_read_from_list.push(*var_id);
             }
         }
     }
@@ -656,12 +658,12 @@ impl<'a> LiveRangeChecker<'a> {
 
 impl Visit<'_> for LiveRangeChecker<'_> {
     fn visit_ident(&mut self, node: &Ident) {
-        self.visit(node.name, true, false);
+        self.visit_ident(node.name, true, false);
     }
 
     // TODO: do we need to visit class/fn names, which aren't BindingIdents?
     fn visit_binding_ident(&mut self, node: &BindingIdent) {
-        self.visit(node.id.name, false, true);
+        self.visit_ident(node.id.name, false, true);
     }
 
     fn visit_member_expr(&mut self, node: &MemberExpr) {
@@ -687,7 +689,7 @@ impl Visit<'_> for LiveRangeChecker<'_> {
             // All assign ops except for plain assigns read from the variable as
             // well as writing.
             let is_read_from = node.op != AssignOp::Assign;
-            self.visit(lhs, is_read_from, true);
+            self.visit_ident(lhs, is_read_from, true);
         } else {
             // Evaluate the rhs of a destructuring assignment before the lhs.
             node.right.visit_with(self);
@@ -700,9 +702,9 @@ impl Visit<'_> for LiveRangeChecker<'_> {
             if node.init.is_some() {
                 node.init.visit_with(self);
                 // A var decl with an initializer assign a value to the name.\
-                self.visit(lhs.id.name, false, true);
+                self.visit_ident(lhs.id.name, false, true);
             } else {
-                self.visit(lhs.id.name, true, false);
+                self.visit_ident(lhs.id.name, true, false);
             }
         } else {
             // Evaluate the rhs of a destructuring declaration before the lhs.
