@@ -2,32 +2,30 @@ use std::collections::hash_map::Entry;
 
 use ast::*;
 use atoms::JsWord;
-use common::SyntaxContext;
 use indexmap::IndexSet;
 use rustc_hash::{FxHashMap, FxHashSet};
 use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
-use crate::{Id, ToId, name_generator::NameGenerator};
+use crate::name_generator::NameGenerator;
 
 #[cfg(test)]
 mod tests;
 
-pub fn process(ast: &mut Program, unresolved_ctxt: SyntaxContext) {
-    let (rename_map, slot_map) = analyse(ast, unresolved_ctxt);
+pub fn process(ast: &mut Program, program_data: &mut ProgramData) {
+    let (rename_map, slot_map) = analyse(ast, program_data);
 
     // Actually assign the new names.
     let mut renamer = Renamer {
         rename_map,
         slot_map,
-        unresolved_ctxt,
     };
     ast.visit_mut_with(&mut renamer);
 }
 
 fn analyse(
     ast: &Program,
-    unresolved_ctxt: SyntaxContext,
-) -> (FxHashMap<SlotId, JsWord>, FxHashMap<Id, SlotId>) {
+    program_data: &mut ProgramData,
+) -> (FxHashMap<SlotId, NameId>, FxHashMap<NameId, SlotId>) {
     let mut analyser = Analyser {
         cur_scope: ScopeId(0),
         // Global scope is hoist scope.
@@ -37,11 +35,11 @@ fn analyse(
             parent: None,
         }],
         in_var_decl: false,
-        unresolved_ctxt,
         in_decl: false,
         reference_count: FxHashMap::default(),
         unresolved_references: FxHashSet::default(),
         order_of_occurrence: IndexSet::default(),
+        program_data,
     };
     ast.visit_with(&mut analyser);
 
@@ -103,46 +101,45 @@ fn analyse(
     let mut name_gen = NameGenerator::new(analyser.unresolved_references);
     let mut rename_map = FxHashMap::with_capacity_and_hasher(slot_count, Default::default());
     for (slot, _ref_count) in slots {
-        rename_map.insert(slot, name_gen.generate_next_name());
+        let new_name =
+            ProgramData::mark_resolved(program_data.get_id_for_name(name_gen.generate_next_name()));
+        rename_map.insert(slot, new_name);
     }
 
     (rename_map, slot_map)
 }
 
-struct Analyser {
+struct Analyser<'d> {
     cur_scope: ScopeId,
     cur_hoist_scope: ScopeId,
     scopes: Vec<Scope>,
     /// Whether we are visiting the names in a `var` decl.
     in_var_decl: bool,
-    unresolved_ctxt: SyntaxContext,
     in_decl: bool,
-    reference_count: FxHashMap<Id, usize>,
+    reference_count: FxHashMap<NameId, usize>,
     unresolved_references: FxHashSet<JsWord>,
-    order_of_occurrence: IndexSet<Id>,
+    order_of_occurrence: IndexSet<NameId>,
+    program_data: &'d mut ProgramData,
 }
 
-impl Analyser {
-    /// Records a reference to an [`Id`].
-    fn handle_reference(&mut self, name: &Id) {
-        if name.1 == self.unresolved_ctxt {
-            self.unresolved_references.insert(name.0.clone());
-            return;
-        }
-        if name.1 == SyntaxContext::empty() {
-            // This isn't a variable reference.
+impl Analyser<'_> {
+    // TODO: this is probably picking up e.g. MemberExpr Idents.
+    /// Records a reference to a [`NameId`].
+    fn handle_reference(&mut self, name: NameId) {
+        if name.is_unresolved() {
+            self.unresolved_references
+                .insert(self.program_data.get_name_for_id(name).clone());
             return;
         }
         *self.reference_count.entry(name.clone()).or_default() += 1;
         self.order_of_occurrence.insert(name.clone());
     }
 
-    /// Records a declaration of an [`Id`].
-    fn handle_decl(&mut self, name: Id) {
+    /// Records a declaration of a [`NameId`].
+    fn handle_decl(&mut self, name: NameId) {
         // We only visit variable declarations, so the identifiers should all be
         // resolved.
-        debug_assert_ne!(name.1, self.unresolved_ctxt);
-        debug_assert_ne!(name.1, SyntaxContext::empty());
+        debug_assert!(!name.is_unresolved());
 
         let scope_pos = if self.in_var_decl {
             self.cur_hoist_scope
@@ -179,14 +176,14 @@ impl Analyser {
     }
 }
 
-impl Visit<'_> for Analyser {
+impl Visit<'_> for Analyser<'_> {
     fn visit_ident(&mut self, i: &Ident) {
-        self.handle_reference(&i.to_id());
+        self.handle_reference(i.name);
     }
 
     fn visit_binding_ident(&mut self, i: &BindingIdent) {
         if self.in_decl {
-            self.handle_decl(i.to_id());
+            self.handle_decl(i.id.name);
         }
         i.id.visit_with(self);
     }
@@ -228,18 +225,18 @@ impl Visit<'_> for Analyser {
     }
 
     fn visit_fn_decl(&mut self, node: &FnDecl) {
-        self.handle_decl(node.ident.to_id());
+        self.handle_decl(node.ident.name);
         node.visit_children_with(self);
     }
     fn visit_class_decl(&mut self, node: &ClassDecl) {
-        self.handle_decl(node.ident.to_id());
+        self.handle_decl(node.ident.name);
         node.visit_children_with(self);
     }
 
     fn visit_fn_expr(&mut self, node: &FnExpr) {
         self.with_scope(false, |visitor| {
             if let Some(name) = &node.ident {
-                visitor.handle_decl(name.to_id());
+                visitor.handle_decl(name.name);
             }
             node.visit_children_with(visitor);
         });
@@ -247,7 +244,7 @@ impl Visit<'_> for Analyser {
     fn visit_class_expr(&mut self, node: &ClassExpr) {
         self.with_scope(false, |visitor| {
             if let Some(name) = &node.ident {
-                visitor.handle_decl(name.to_id());
+                visitor.handle_decl(name.name);
             }
             node.visit_children_with(visitor);
         });
@@ -330,32 +327,30 @@ struct ScopeId(usize);
 #[derive(Debug)]
 struct Scope {
     parent: Option<ScopeId>,
-    names: IndexSet<Id>,
+    names: IndexSet<NameId>,
 }
 
 struct Renamer {
     /// Slot index -> new name.
-    rename_map: FxHashMap<SlotId, JsWord>,
-    slot_map: FxHashMap<Id, SlotId>,
-    unresolved_ctxt: SyntaxContext,
+    rename_map: FxHashMap<SlotId, NameId>,
+    slot_map: FxHashMap<NameId, SlotId>,
 }
 
 impl VisitMut<'_> for Renamer {
     fn visit_mut_ident(&mut self, node: &mut Ident) {
-        if node.ctxt == self.unresolved_ctxt || node.ctxt == SyntaxContext::empty() {
+        if node.name.is_unresolved() {
             // These names were skipped in the analysis and won't be renamed.
-            debug_assert!(!self.slot_map.contains_key(&node.to_id()));
+            debug_assert!(!self.slot_map.contains_key(&node.name));
             return;
         }
-        let id = node.to_id();
-        if let Some(slot) = self.slot_map.get(&id) {
+        if let Some(slot) = self.slot_map.get(&node.name) {
             let new_name = self
                 .rename_map
                 .get(slot)
                 .expect("all slots should have new names")
                 .clone();
 
-            node.sym = new_name;
+            node.name = new_name;
         }
     }
 }

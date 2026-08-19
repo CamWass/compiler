@@ -3,7 +3,6 @@ use crate::{
     context::{Context, ContextFlags, YesMaybe},
     token::{Token, Word},
 };
-use atoms::js_word;
 use common::{BytePos, Pos, Span};
 use expression::MaybeParen;
 use statement::typescript::DeclOrEmpty;
@@ -39,7 +38,7 @@ pub(super) trait IsDirective {
                         // against the directive. Any escapes will make the raw
                         // length longer.
 
-                        let string_span = parser.program_data.get_span(*node_id);
+                        let string_span = get_span!(parser, *node_id);
 
                         // -2 since string spans include the quotes.
                         let string_content_len =
@@ -434,7 +433,9 @@ impl Parser<'_> {
 
         if let MaybeParen::Expr(expr_ref) = &expr {
             if let Expr::Ident(ident) = expr_ref.as_ref() {
-                if *ident.sym == js_word!("interface") && self.input.had_line_break_before_cur() {
+                if ident.name == id_for_built_in!("interface")
+                    && self.input.had_line_break_before_cur()
+                {
                     self.emit_strict_mode_err(
                         get_span!(self, ident.node_id),
                         SyntaxError::InvalidIdentInStrict,
@@ -457,8 +458,8 @@ impl Parser<'_> {
                     }
                 }
 
-                match ident.sym {
-                    js_word!("enum") | js_word!("interface") => {
+                match ident.name {
+                    id_for_built_in!("enum") | id_for_built_in!("interface") => {
                         self.emit_strict_mode_err(
                             get_span!(self, ident.node_id),
                             SyntaxError::InvalidIdentInStrict,
@@ -468,8 +469,10 @@ impl Parser<'_> {
                 }
 
                 if self.syntax().typescript() {
-                    match ident.sym {
-                        js_word!("public") | js_word!("static") | js_word!("abstract") => {
+                    match ident.name {
+                        id_for_built_in!("public")
+                        | id_for_built_in!("static")
+                        | id_for_built_in!("abstract") => {
                             if eat!(self, "interface") {
                                 self.emit_err(get_span!(self, ident.node_id), SyntaxError::TS2427);
                                 self.parse_ts_interface_decl()?;
@@ -510,14 +513,14 @@ impl Parser<'_> {
 
     fn verify_break_continue(&mut self, is_break: bool, label: Option<&Ident>, span: Span) {
         if is_break {
-            if label.is_some() && !self.labels.contains(&label.unwrap().sym) {
+            if label.is_some() && !self.labels.contains(&label.unwrap().name) {
                 self.emit_err(span, SyntaxError::TS1116);
             } else if !self.ctx().is_break_allowed() {
                 self.emit_err(span, SyntaxError::TS1105);
             }
         } else if !self.ctx().is_continue_allowed() {
             self.emit_err(span, SyntaxError::TS1115);
-        } else if label.is_some() && !self.labels.contains(&label.unwrap().sym) {
+        } else if label.is_some() && !self.labels.contains(&label.unwrap().name) {
             self.emit_err(span, SyntaxError::TS1107);
         }
     }
@@ -1243,14 +1246,15 @@ impl Parser<'_> {
             let has_existing_label = parser
                 .labels
                 .iter()
-                .any(|existing_label| label.sym == *existing_label);
+                .any(|existing_label| label.name == *existing_label);
             if has_existing_label {
+                let name = program_data!(parser).get_name_for_id(label.name).clone();
                 parser.emit_err(
                     get_span!(parser, label.node_id),
-                    SyntaxError::DuplicateLabel(label.sym.clone()),
+                    SyntaxError::DuplicateLabel(name),
                 );
             }
-            parser.labels.push(label.sym.clone());
+            parser.labels.push(label.name);
 
             let body = Box::new(if parser.input.is(&tok!("function")) {
                 let f = parser.parse_fn_decl()?;
@@ -1270,7 +1274,7 @@ impl Parser<'_> {
             });
 
             {
-                let pos = parser.labels.iter().position(|v| v == &label.sym);
+                let pos = parser.labels.iter().position(|v| v == &label.name);
                 if let Some(pos) = pos {
                     parser.labels.remove(pos);
                 }

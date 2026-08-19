@@ -5,17 +5,15 @@ use index::vec::IndexVec;
 use rustc_hash::{FxHashMap, FxHashSet};
 use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
-use crate::{Id, ToId};
-
 // TODO: everything in this file would probably be mre clear if written with
 // walk functions rather than visitors.
 
 #[derive(Default, Debug)]
 pub struct AllVarsDeclaredInFunction {
-    pub scope_variables: FxHashMap<Id, VarId>,
-    pub ordered_vars: IndexVec<VarId, Id>,
+    pub scope_variables: FxHashMap<NameId, VarId>,
+    pub ordered_vars: IndexVec<VarId, NameId>,
     /// All variables bound in catch params e.g. `x` in `try {} catch(x) {}`
-    pub catch_vars: FxHashSet<Id>,
+    pub catch_vars: FxHashSet<NameId>,
     // TODO: bitset?
     pub params: FxHashSet<VarId>,
     // TODO: bitset?
@@ -55,11 +53,11 @@ pub struct DeclFinder {
 }
 
 impl DeclFinder {
-    fn record_var(&mut self, id: Id) {
-        let var_id = match self.vars.scope_variables.entry(id.clone()) {
+    fn record_var(&mut self, id: NameId) {
+        let var_id = match self.vars.scope_variables.entry(id) {
             Entry::Occupied(entry) => *entry.get(),
             Entry::Vacant(entry) => {
-                let var_id = self.vars.ordered_vars.push(id.clone());
+                let var_id = self.vars.ordered_vars.push(id);
                 entry.insert(var_id);
                 var_id
             }
@@ -72,8 +70,8 @@ impl DeclFinder {
         }
     }
 
-    fn record_decl_name(&mut self, name: Id) {
-        if let Entry::Vacant(entry) = self.vars.scope_variables.entry(name.clone()) {
+    fn record_decl_name(&mut self, name: NameId) {
+        if let Entry::Vacant(entry) = self.vars.scope_variables.entry(name) {
             let var_id = self.vars.ordered_vars.push(name);
             entry.insert(var_id);
             self.vars.fn_and_class_names.insert(var_id);
@@ -105,11 +103,11 @@ impl Visit<'_> for DeclFinder {
 
     // Function names are in scope.
     fn visit_fn_decl(&mut self, node: &FnDecl) {
-        self.record_decl_name(node.ident.to_id());
+        self.record_decl_name(node.ident.name);
     }
 
     fn visit_class_decl(&mut self, node: &ClassDecl) {
-        self.record_decl_name(node.ident.to_id());
+        self.record_decl_name(node.ident.name);
     }
 
     fn visit_catch_clause(&mut self, n: &CatchClause) {
@@ -130,7 +128,7 @@ impl Visit<'_> for DeclFinder {
     }
 
     fn visit_binding_ident(&mut self, node: &BindingIdent) {
-        self.record_var(node.to_id());
+        self.record_var(node.id.name);
     }
 
     fn visit_var_decl(&mut self, node: &VarDecl) {
@@ -161,11 +159,11 @@ impl Visit<'_> for DeclFinder {
 
 /// Finds all **binding** idents of variables.
 struct DestructuringFinder<'a> {
-    found: &'a mut Vec<(Id, NodeId)>,
+    found: &'a mut Vec<(NameId, NodeId)>,
 }
 
 /// Finds all **binding** idents of `node`.
-pub fn find_pat_ids(node: &Pat) -> Vec<(Id, NodeId)> {
+pub fn find_pat_ids(node: &Pat) -> Vec<(NameId, NodeId)> {
     let mut found = vec![];
 
     {
@@ -182,7 +180,7 @@ impl Visit<'_> for DestructuringFinder<'_> {
     fn visit_prop_name(&mut self, _: &PropName) {}
 
     fn visit_binding_ident(&mut self, i: &BindingIdent) {
-        self.found.push((i.to_id(), i.node_id()));
+        self.found.push((i.id.name, i.id.node_id));
     }
 }
 

@@ -1,5 +1,5 @@
 use ast::*;
-use common::{DUMMY_SP, SyntaxContext, util::take::Take};
+use common::{DUMMY_SP, util::take::Take};
 use visit::{VisitMut, VisitMutWith};
 
 use crate::{
@@ -12,17 +12,13 @@ use crate::{
     utils::unwrap_as,
 };
 
-pub fn process(ast: &mut Program, program_data: &mut ProgramData, unresolved_ctxt: SyntaxContext) {
-    let mut visitor = Visitor {
-        program_data,
-        unresolved_ctxt,
-    };
+pub fn process(ast: &mut Program, program_data: &mut ProgramData) {
+    let mut visitor = Visitor { program_data };
     ast.visit_mut_with(&mut visitor);
 }
 
 struct Visitor<'a> {
     program_data: &'a mut ProgramData,
-    unresolved_ctxt: SyntaxContext,
 }
 
 #[derive(PartialEq)]
@@ -311,9 +307,7 @@ impl Visitor<'_> {
             Expr::Call(call) => {
                 let call_may_have_side_effects = match &call.callee {
                     ExprOrSuper::Super(_) => true,
-                    ExprOrSuper::Expr(callee) => {
-                        function_call_may_have_side_effects(callee, self.unresolved_ctxt)
-                    }
+                    ExprOrSuper::Expr(callee) => function_call_may_have_side_effects(callee),
                 };
 
                 if call_may_have_side_effects {
@@ -374,8 +368,7 @@ impl Visitor<'_> {
                 }
             }
             Expr::New(new) => {
-                let constructor_may_have_side_effects =
-                    constructorCallHasSideEffects(new, self.unresolved_ctxt);
+                let constructor_may_have_side_effects = constructorCallHasSideEffects(new);
 
                 if constructor_may_have_side_effects {
                     return Keep;
@@ -471,8 +464,7 @@ impl Visitor<'_> {
                 }
             }
             Expr::TaggedTpl(tpl) => {
-                let tag_call_may_have_side_effects =
-                    function_call_may_have_side_effects(&tpl.tag, self.unresolved_ctxt);
+                let tag_call_may_have_side_effects = function_call_may_have_side_effects(&tpl.tag);
 
                 if tag_call_may_have_side_effects {
                     return Keep;
@@ -602,9 +594,7 @@ impl Visitor<'_> {
             matches!(switch.cases.last(), Some(SwitchCase { test: None, .. }));
 
         // Generally, it is unsafe to remove other cases when the default case is not the last one.
-        if (!has_default_case || default_case_is_last)
-            && areAllCaseTagsLiterals(&switch.cases, self.unresolved_ctxt)
-        {
+        if (!has_default_case || default_case_is_last) && areAllCaseTagsLiterals(&switch.cases) {
             // TODO: this comment is not accurate - empty default should have
             // been removed above. We have either no default case, or default
             // is last, so it's safe to remove other cases.
@@ -615,14 +605,10 @@ impl Visitor<'_> {
             let mut i = 0;
             while i < switch.cases.len() {
                 if let Some(test) = &switch.cases[i].test {
-                    foundMatchingCase = isFirstSwitchMatch(
-                        foundMatchingCase,
-                        &switch.discriminant,
-                        test,
-                        self.unresolved_ctxt,
-                    );
+                    foundMatchingCase =
+                        isFirstSwitchMatch(foundMatchingCase, &switch.discriminant, test);
                     if !foundMatchingCase
-                        && !expr_may_have_side_effects(test, self.unresolved_ctxt)
+                        && !expr_may_have_side_effects(test)
                         && self.isUselessCase(&switch.cases, i)
                     {
                         self.collect_vars_declared_in_switch_case(
@@ -640,17 +626,13 @@ impl Visitor<'_> {
             }
 
             // Next, optimize switches with constant condition
-            if isLiteralValue(&switch.discriminant, false, self.unresolved_ctxt) {
+            if isLiteralValue(&switch.discriminant, false) {
                 let mut found_matching_case = false;
                 // Remove cases until you find one that may match
                 while let Some(first) = switch.cases.first() {
                     if let Some(test) = &first.test {
-                        let caseMatches = evaluateComparison(
-                            BinaryOp::EqEqEq,
-                            &switch.discriminant,
-                            test,
-                            self.unresolved_ctxt,
-                        );
+                        let caseMatches =
+                            evaluateComparison(BinaryOp::EqEqEq, &switch.discriminant, test);
                         if caseMatches == Some(true) {
                             found_matching_case = true;
                             break;
@@ -856,7 +838,7 @@ impl Visitor<'_> {
                     && case
                         .test
                         .as_ref()
-                        .is_none_or(|test| !expr_may_have_side_effects(test, self.unresolved_ctxt))
+                        .is_none_or(|test| !expr_may_have_side_effects(test))
             };
 
             let num_fallthrough_cases_to_remove = other_cases.take_while(is_fallthrough).count();
@@ -914,10 +896,7 @@ impl Visitor<'_> {
             // been removed.
             assert!(case_idx == case_idx + i || !executing_case.is_default());
             if !executing_case.is_default()
-                && expr_may_have_side_effects(
-                    executing_case.test.as_ref().unwrap(),
-                    self.unresolved_ctxt,
-                )
+                && expr_may_have_side_effects(executing_case.test.as_ref().unwrap())
             {
                 // The case falls through to a case whose condition has a potential side-effect,
                 // removing the candidate case would skip that side-effect, so don't.
@@ -1033,8 +1012,7 @@ impl Visitor<'_> {
                                                 node_id: self
                                                     .program_data
                                                     .new_id_from(name_node_id),
-                                                sym: name.0,
-                                                ctxt: name.1,
+                                                name,
                                             },
                                         }),
                                         init: None,
@@ -1217,7 +1195,7 @@ impl VisitMut<'_> for Visitor<'_> {
                     if let Some(left) = left_ident
                         && let Some(right) = right_ident
                     {
-                        if left.sym == right.sym && left.ctxt == right.ctxt {
+                        if left.name == right.name {
                             // Identity assignment e.g. `a = a`.
                             *node = expr.right.as_mut().take();
                             return;
@@ -1246,7 +1224,7 @@ impl VisitMut<'_> for Visitor<'_> {
             Expr::Cond(cond) => {
                 cond.visit_mut_children_with(self);
 
-                let condition_value = get_boolean_value(&cond.test, self.unresolved_ctxt);
+                let condition_value = get_boolean_value(&cond.test);
 
                 if condition_value.is_none() {
                     // If the result nodes are equivalent, then one of the nodes can be
@@ -1267,8 +1245,7 @@ impl VisitMut<'_> for Visitor<'_> {
                     cond.alt
                 };
 
-                let condition_has_side_effects =
-                    expr_may_have_side_effects(&cond.test, self.unresolved_ctxt);
+                let condition_has_side_effects = expr_may_have_side_effects(&cond.test);
                 let replacement = if condition_has_side_effects {
                     Expr::Seq(SeqExpr {
                         node_id: self.program_data.new_id_from(cond.node_id),
@@ -1417,10 +1394,10 @@ fn isTryExit(try_stmt: &TryStmt) -> bool {
         .is_none_or(|h| isUnconditionalBlockExit(&h.body.stmts))
 }
 
-fn areAllCaseTagsLiterals(cases: &[SwitchCase], unresolved_ctxt: SyntaxContext) -> bool {
+fn areAllCaseTagsLiterals(cases: &[SwitchCase]) -> bool {
     for case in cases {
         if let Some(test) = &case.test {
-            if !isLiteralValue(test, false, unresolved_ctxt) {
+            if !isLiteralValue(test, false) {
                 return false;
             }
         } else {
@@ -1431,23 +1408,17 @@ fn areAllCaseTagsLiterals(cases: &[SwitchCase], unresolved_ctxt: SyntaxContext) 
     true
 }
 
-fn isFirstSwitchMatch(
-    foundMatchingCase: bool,
-    condition: &Expr,
-    tag: &Expr,
-    unresolved_ctxt: SyntaxContext,
-) -> bool {
+fn isFirstSwitchMatch(foundMatchingCase: bool, condition: &Expr, tag: &Expr) -> bool {
     if foundMatchingCase {
         return false;
     }
-    evaluateComparison(BinaryOp::EqEqEq, condition, tag, unresolved_ctxt) == Some(true)
+    evaluateComparison(BinaryOp::EqEqEq, condition, tag) == Some(true)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::resolver::resolve;
-    use common::{GLOBALS, Globals, Mark};
 
     #[test]
     fn test_block() {
@@ -3682,23 +3653,17 @@ class C {
     fn test_transform(input: &str, expected: &str) {
         crate::testing::test_transform(
             |mut program, program_data| {
-                GLOBALS.set(&Globals::new(), || {
-                    let unresolved_mark = Mark::new();
+                resolve(&mut program, program_data);
 
-                    resolve(&mut program, unresolved_mark);
+                crate::normalize::add_blocks_to_stmt_contexts(&mut program, program_data);
 
-                    crate::normalize::add_blocks_to_stmt_contexts(&mut program, program_data);
+                // TODO: I feel it would be cleaner to only test one
+                // iteration, and test each of the two desired steps
+                // individually e.g. test A->B and B->C rather than A->C.
+                process(&mut program, program_data);
+                process(&mut program, program_data);
 
-                    let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
-
-                    // TODO: I feel it wouldbe cleaner to only test one
-                    // iteration, and test each of the two desired steps
-                    // individually e.g. test A->B and B->C rather than A->C.
-                    process(&mut program, program_data, unresolved_ctxt);
-                    process(&mut program, program_data, unresolved_ctxt);
-
-                    program
-                })
+                program
             },
             input,
             expected,

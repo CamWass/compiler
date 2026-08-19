@@ -190,7 +190,11 @@ impl Parser<'_> {
 
     pub(super) fn parse_access_modifier(&mut self) -> PResult<bool> {
         Ok(self
-            .parse_ts_modifier(&["public", "protected", "private"])?
+            .parse_ts_modifier(&[
+                id_for_built_in!("public"),
+                id_for_built_in!("protected"),
+                id_for_built_in!("private"),
+            ])?
             .is_some())
     }
 
@@ -209,7 +213,7 @@ impl Parser<'_> {
             // Handle declare(){}
             if self.is_class_method() {
                 let key = Key::PropName(PropName::Ident(
-                    self.new_ident(js_word!("declare"), span!(self, start)),
+                    self.new_ident(id_for_built_in!("declare"), span!(self, start)),
                 ));
                 // TS optional.
                 if self.syntax().typescript() {
@@ -231,7 +235,7 @@ impl Parser<'_> {
                 // Property named `declare`
 
                 let key = Key::PropName(PropName::Ident(
-                    self.new_ident(js_word!("declare"), span!(self, start)),
+                    self.new_ident(id_for_built_in!("declare"), span!(self, start)),
                 ));
                 let is_optional = self.syntax().typescript() && eat!(self, '?');
                 return self.make_property(start, key, false, is_optional, false, false);
@@ -255,7 +259,7 @@ impl Parser<'_> {
             // Handle static(){}
             if self.is_class_method() {
                 let key = Key::PropName(PropName::Ident(
-                    self.new_ident(js_word!("static"), static_token),
+                    self.new_ident(id_for_built_in!("static"), static_token),
                 ));
                 // TS optional.
                 if self.syntax().typescript() {
@@ -277,7 +281,7 @@ impl Parser<'_> {
                 // Property named `static`
 
                 let key = Key::PropName(PropName::Ident(
-                    self.new_ident(js_word!("static"), static_token),
+                    self.new_ident(id_for_built_in!("static"), static_token),
                 ));
                 let is_optional = self.syntax().typescript() && eat!(self, '?');
                 return self.make_property(start, key, false, is_optional, declare, false);
@@ -309,12 +313,15 @@ impl Parser<'_> {
         let mut readonly = None;
         let mut modifier_span = None;
         let declare = declare_token.is_some();
-        while let Some(modifier) =
-            self.parse_ts_modifier(&["abstract", "readonly", "override", "static"])?
-        {
+        while let Some(modifier) = self.parse_ts_modifier(&[
+            id_for_built_in!("abstract"),
+            id_for_built_in!("readonly"),
+            id_for_built_in!("override"),
+            id_for_built_in!("static"),
+        ])? {
             modifier_span = Some(self.input.prev_span());
             match modifier {
-                "abstract" => {
+                id_for_built_in!("abstract") => {
                     if is_abstract {
                         self.emit_err(
                             self.input.prev_span(),
@@ -329,7 +336,7 @@ impl Parser<'_> {
                         is_abstract = true;
                     }
                 }
-                "override" => {
+                id_for_built_in!("override") => {
                     if is_override {
                         self.emit_err(
                             self.input.prev_span(),
@@ -351,7 +358,7 @@ impl Parser<'_> {
                         is_override = true;
                     }
                 }
-                "readonly" => {
+                id_for_built_in!("readonly") => {
                     let readonly_span = self.input.prev_span();
                     if readonly.is_some() {
                         self.emit_err(readonly_span, SyntaxError::TS1030(js_word!("readonly")));
@@ -359,7 +366,7 @@ impl Parser<'_> {
                         readonly = Some(readonly_span);
                     }
                 }
-                "static" => {
+                id_for_built_in!("static") => {
                     if is_override {
                         self.emit_err(
                             self.input.prev_span(),
@@ -408,7 +415,7 @@ impl Parser<'_> {
             && is_one_of!(self, '!', ':')
         {
             Key::PropName(PropName::Ident(
-                self.new_ident(js_word!("readonly"), readonly),
+                self.new_ident(id_for_built_in!("readonly"), readonly),
             ))
         } else {
             self.parse_class_prop_name()?
@@ -541,13 +548,16 @@ impl Parser<'_> {
         }
 
         if match &key {
-            Key::PropName(PropName::Ident(i)) => i.sym == js_word!("async"),
+            Key::PropName(PropName::Ident(i)) => i.name == id_for_built_in!("async"),
             _ => false,
         } && !self.input.had_line_break_before_cur()
         {
             // handle async foo(){}
 
-            if self.parse_ts_modifier(&["override"])?.is_some() {
+            if self
+                .parse_ts_modifier(&[id_for_built_in!("override")])?
+                .is_some()
+            {
                 self.emit_err(
                     self.input.prev_span(),
                     SyntaxError::TS1029(js_word!("override"), js_word!("async")),
@@ -593,7 +603,7 @@ impl Parser<'_> {
         match &key {
             // `get\n*` is an uninitialized property named 'get' followed by a generator.
             Key::PropName(PropName::Ident(i))
-                if (i.sym == js_word!("get") || i.sym == js_word!("set"))
+                if (i.name == id_for_built_in!("get") || i.name == id_for_built_in!("set"))
                     && !is_next_line_generator =>
             {
                 // handle get foo(){} / set foo(v){}
@@ -603,8 +613,8 @@ impl Parser<'_> {
                     self.emit_err(key_span, SyntaxError::GetterSetterCannotBeReadonly);
                 }
 
-                return match i.sym {
-                    js_word!("get") => self.make_method(
+                return match i.name {
+                    id_for_built_in!("get") => self.make_method(
                         |parser| {
                             let params = parser.parse_formal_params()?;
 
@@ -626,7 +636,7 @@ impl Parser<'_> {
                             kind: MethodKind::Getter,
                         },
                     ),
-                    js_word!("set") => self.make_method(
+                    id_for_built_in!("set") => self.make_method(
                         |parser| {
                             let params = parser.parse_formal_params()?;
 
@@ -1029,8 +1039,8 @@ trait IsInvalidClassName {
 
 impl IsInvalidClassName for Ident {
     fn invalid_class_name(&self, parser: &Parser) -> Option<Span> {
-        match self.sym {
-            js_word!("any") => Some(get_span!(parser, self.node_id)),
+        match self.name {
+            id_for_built_in!("any") => Some(get_span!(parser, self.node_id)),
             _ => None,
         }
     }
@@ -1173,7 +1183,7 @@ fn is_constructor(key: &Key) -> bool {
     matches!(
         *key,
         Key::PropName(PropName::Ident(Ident {
-            sym: js_word!("constructor"),
+            name: id_for_built_in!("constructor"),
             ..
         })) | Key::PropName(PropName::Str(Str {
             value: js_word!("constructor"),
@@ -1187,7 +1197,7 @@ pub(crate) fn is_not_this(param: &Param) -> bool {
         param.pat,
         Pat::Ident(BindingIdent {
             id: Ident {
-                sym: js_word!("this"),
+                name: id_for_built_in!("this"),
                 ..
             },
             ..

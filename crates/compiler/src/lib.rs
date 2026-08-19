@@ -33,27 +33,7 @@ mod utils;
 mod testing;
 
 use crate::resolver::resolve;
-use atoms::JsWord;
-use common::{GLOBALS, Globals, Mark, SyntaxContext};
 use serde::Deserialize;
-
-pub type Id = (JsWord, SyntaxContext);
-
-trait ToId {
-    fn to_id(&self) -> Id;
-}
-
-impl ToId for ::ast::Ident {
-    fn to_id(&self) -> Id {
-        (self.sym.clone(), self.ctxt)
-    }
-}
-
-impl ToId for ::ast::BindingIdent {
-    fn to_id(&self) -> Id {
-        self.id.to_id()
-    }
-}
 
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
 pub struct PassConfig {
@@ -83,25 +63,11 @@ pub struct PassConfig {
     pub collapse_variable_declarations: bool,
 }
 
-pub struct Compiler {
-    globals: Globals,
-}
+pub struct Compiler;
 
 impl Compiler {
     pub fn new() -> Self {
-        Self {
-            globals: Globals::new(),
-        }
-    }
-
-    /// Runs `op` in current compiler's context.
-    ///
-    /// Note: Other methods of `Compiler` already uses this internally.
-    pub fn run<R, F>(&self, op: F) -> R
-    where
-        F: FnOnce() -> R,
-    {
-        GLOBALS.set(&self.globals, op)
+        Self
     }
 
     pub fn compile(
@@ -110,35 +76,24 @@ impl Compiler {
         passes: PassConfig,
         program_data: &mut ::ast::ProgramData,
     ) -> ::ast::Program {
-        self.run(|| {
-            // TODO: maybe add an 'AST verifier' that checks basic invariants after
-            // each pass (e.g. that no two nodes have the same node_id).
+        // TODO: maybe add an 'AST verifier' that checks basic invariants after
+        // each pass (e.g. that no two nodes have the same node_id).
 
-            normalize::normalize(&mut ast, program_data);
+        normalize::normalize(&mut ast, program_data);
 
-            let unresolved_mark = Mark::new();
+        resolve(&mut ast, program_data);
 
-            resolve(&mut ast, unresolved_mark);
+        optimise(&mut ast, passes, program_data);
 
-            let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
+        finalise(&mut ast, passes, program_data);
 
-            optimise(&mut ast, passes, program_data, unresolved_ctxt);
-
-            finalise(&mut ast, passes, program_data, unresolved_ctxt);
-
-            ast
-        })
+        ast
     }
 }
 
-fn optimise(
-    ast: &mut ::ast::Program,
-    passes: PassConfig,
-    program_data: &mut ::ast::ProgramData,
-    unresolved_ctxt: SyntaxContext,
-) {
+fn optimise(ast: &mut ::ast::Program, passes: PassConfig, program_data: &mut ::ast::ProgramData) {
     if passes.optimize_arguments_array {
-        OptimizeArgumentsArray::OptimizeArgumentsArray::process(ast, program_data, unresolved_ctxt);
+        OptimizeArgumentsArray::OptimizeArgumentsArray::process(ast, program_data);
     }
 
     // TODO: inlineAndCollapseProperties
@@ -157,7 +112,7 @@ fn optimise(
     // TODO: crossModuleCodeMotion
     // TODO: devirtualizeMethods
     // TODO: flowSensitiveInlineVariables
-    getMainOptimizationLoop(ast, passes, program_data, unresolved_ctxt);
+    getMainOptimizationLoop(ast, passes, program_data);
 }
 
 fn getEarlyOptimizationLoopPasses(_ast: &mut ::ast::Program) {
@@ -172,7 +127,6 @@ fn getMainOptimizationLoop(
     ast: &mut ::ast::Program,
     passes: PassConfig,
     program_data: &mut ::ast::ProgramData,
-    unresolved_ctxt: SyntaxContext,
 ) {
     // TODO: inlineSimpleMethods
     // TODO: inlineProperties
@@ -181,13 +135,13 @@ fn getMainOptimizationLoop(
     // TODO: inlineFunctions
 
     if passes.inline_functions {
-        inline_functions::process(ast, program_data, unresolved_ctxt);
+        inline_functions::process(ast, program_data);
     }
 
     // TODO: inlineVariables
 
     if passes.dead_assignment_elimination {
-        dead_assignment_elimination::process(ast, program_data, unresolved_ctxt);
+        dead_assignment_elimination::process(ast, program_data);
     }
 
     // TODO: collapseObjectLiterals
@@ -196,12 +150,7 @@ fn getMainOptimizationLoop(
     // TODO: removeUnreachableCode
 }
 
-fn finalise(
-    ast: &mut ::ast::Program,
-    passes: PassConfig,
-    program_data: &mut ::ast::ProgramData,
-    unresolved_ctxt: SyntaxContext,
-) {
+fn finalise(ast: &mut ::ast::Program, passes: PassConfig, program_data: &mut ::ast::ProgramData) {
     // TODO: flowSensitiveInlineVariables
     // TODO: removeUnusedCodeOnce
     // TODO: crossModuleCodeMotion
@@ -210,18 +159,18 @@ fn finalise(
     // TODO: collapseAnonymousFunctions
 
     if passes.optimize_properties {
-        optimize_properties::process(ast, program_data, unresolved_ctxt);
+        optimize_properties::process(ast, program_data);
     }
 
     // TODO: renameProperties
     if passes.convert_to_dot_properties {
-        convert_to_dot_properties::process(ast, program_data, unresolved_ctxt);
+        convert_to_dot_properties::process(ast, program_data);
     }
     // TODO: convertToDottedProperties
     // TODO: rewriteFunctionExpressions
     // TODO: aliasStrings
     if passes.coalesce_variable_names {
-        CoalesceVariableNames::coalesce_variable_names(ast, unresolved_ctxt, program_data);
+        CoalesceVariableNames::coalesce_variable_names(ast, program_data);
     }
     // TODO: peepholeOptimizationsOnce
     // TODO: exploitAssign
@@ -233,19 +182,19 @@ fn finalise(
     denormalize::denormalize(ast);
 
     if passes.rename_vars {
-        RenameVars::process(ast, unresolved_ctxt);
+        RenameVars::process(ast, program_data);
     }
 
     if passes.rename_labels {
-        RenameLabels::process(ast);
+        RenameLabels::process(ast, program_data);
     }
 
-    late_peephole_optimisations(ast, passes, program_data, unresolved_ctxt);
+    late_peephole_optimisations(ast, passes, program_data);
     // TODO: latePeepholeOptimizations
     // TODO: optimizeToEs6
 
     if passes.optimise_equality {
-        optimise_equality::process(ast, unresolved_ctxt);
+        optimise_equality::process(ast);
     }
 }
 
@@ -253,7 +202,6 @@ fn late_peephole_optimisations(
     ast: &mut ::ast::Program,
     passes: PassConfig,
     program_data: &mut ::ast::ProgramData,
-    unresolved_ctxt: SyntaxContext,
 ) {
     //     final boolean late = true;
     //     final boolean useTypesForOptimization = options.useTypesForLocalOptimization;
@@ -265,7 +213,7 @@ fn late_peephole_optimisations(
     }
 
     if passes.remove_dead_code {
-        peephole::remove_dead_code::process(ast, program_data, unresolved_ctxt);
+        peephole::remove_dead_code::process(ast, program_data);
     }
 
     //         new PeepholeMinimizeConditions(late),

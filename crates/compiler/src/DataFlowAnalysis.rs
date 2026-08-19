@@ -2,6 +2,7 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 use std::{collections::BTreeSet, ops::Index};
 
+use ast::NameId;
 use index::newtype_index;
 use petgraph::{
     EdgeDirection,
@@ -13,7 +14,6 @@ use visit::{Visit, VisitWith};
 use crate::control_flow::ControlFlowAnalysis::NodePriority;
 use crate::control_flow::{ControlFlowGraph::*, node::CfgNode};
 use crate::find_vars::{FunctionLike, VarId};
-use crate::{Id, ToId};
 
 #[cfg(test)]
 mod tests;
@@ -411,9 +411,9 @@ impl<'p> UniqueQueue<'p> {
 /// 2. Names of named functions because in JavaScript, `function foo(){}` does not kill foo in the dataflow.
 pub fn compute_escaped<T>(
     fn_scope: &T,
-    all_vars_in_fn: &FxHashMap<Id, VarId>,
-    catch_vars: FxHashSet<Id>,
-) -> FxHashSet<Id>
+    all_vars_in_fn: &FxHashMap<NameId, VarId>,
+    catch_vars: FxHashSet<NameId>,
+) -> FxHashSet<NameId>
 where
     T: FunctionLike,
 {
@@ -429,8 +429,8 @@ where
 }
 
 struct EscapedVarFinder<'a> {
-    all_vars_in_fn: &'a FxHashMap<Id, VarId>,
-    escaped: &'a mut FxHashSet<Id>,
+    all_vars_in_fn: &'a FxHashMap<NameId, VarId>,
+    escaped: &'a mut FxHashSet<NameId>,
 }
 
 macro_rules! visit_fn {
@@ -455,15 +455,14 @@ impl Visit<'_> for EscapedVarFinder<'_> {
     visit_fn!(visit_setter_prop, SetterProp);
 }
 struct RefFinder<'a> {
-    all_vars_in_fn: &'a FxHashMap<Id, VarId>,
-    escaped: &'a mut FxHashSet<Id>,
+    all_vars_in_fn: &'a FxHashMap<NameId, VarId>,
+    escaped: &'a mut FxHashSet<NameId>,
 }
 
 impl Visit<'_> for RefFinder<'_> {
     fn visit_ident(&mut self, node: &ast::Ident) {
-        let id = node.to_id();
-        if self.all_vars_in_fn.contains_key(&id) {
-            self.escaped.insert(id);
+        if self.all_vars_in_fn.contains_key(&node.name) {
+            self.escaped.insert(node.name);
         }
     }
 }

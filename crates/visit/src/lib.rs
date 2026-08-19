@@ -2,7 +2,6 @@
 
 use ast::*;
 use atoms::JsWord;
-use common::SyntaxContext;
 use num_bigint::BigUint;
 use visit_macros::define;
 
@@ -433,8 +432,7 @@ define!({
 
     pub struct Ident {
         pub node_id: NodeId,
-        pub sym: JsWord,
-        pub ctxt: SyntaxContext,
+        pub name: NameId,
     }
 
     pub struct PrivateName {

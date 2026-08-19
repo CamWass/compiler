@@ -1,5 +1,4 @@
 use ast::*;
-use common::SyntaxContext;
 use rustc_hash::FxHashMap;
 use visit::VisitWith;
 use visit::{VisitMut, VisitMutWith};
@@ -8,7 +7,6 @@ use crate::DataFlowAnalysis::LinearFlowState;
 use crate::LiveVariablesAnalysis::LiveVariablesAnalysis;
 use crate::LiveVariablesAnalysis::LiveVariablesAnalysisResult;
 use crate::LiveVariablesAnalysis::MAX_VARIABLES_TO_ANALYZE;
-use crate::ToId;
 use crate::control_flow::ControlFlowAnalysis::ControlFlowAnalysis;
 use crate::control_flow::ControlFlowAnalysis::ControlFlowRoot;
 use crate::find_vars::DeclFinder;
@@ -26,13 +24,12 @@ use crate::utils::unwrap_as;
 //
 //
 
-pub fn process(ast: &mut Program, program_data: &mut ProgramData, unresolved_ctxt: SyntaxContext) {
+pub fn process(ast: &mut Program, program_data: &mut ProgramData) {
     // let cfa = ControlFlowAnalysis::<()>::analyze(ControlFlowRoot::from(&*ast), false);
     // cfa.cfg.print_simple_with_annotations(&program_data);
 
     let mut visitor = Driver {
         program_data,
-        unresolved_ctxt,
         function_stack: Vec::new(),
     };
     ast.visit_mut_with(&mut visitor);
@@ -126,7 +123,7 @@ impl VisitMut<'_> for DeadAssignmentElimination<'_> {
                     return;
                 };
 
-                let name = lhs.to_id();
+                let name = lhs.id.name;
                 let Some(&var) = visitor.live_variable_analysis.scope_variables.get(&name) else {
                     // Not declared in the current function.
                     return;
@@ -179,7 +176,6 @@ impl VisitMut<'_> for DeadAssignmentElimination<'_> {
 }
 
 struct Driver<'a> {
-    unresolved_ctxt: SyntaxContext,
     program_data: &'a mut ast::ProgramData,
     function_stack: Vec<FunctionData>,
 }
@@ -232,7 +228,6 @@ impl Driver<'_> {
             &cfa.node_priorities,
             node,
             all_vars_declared_in_func,
-            self.unresolved_ctxt,
         )
         .analyze();
 

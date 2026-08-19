@@ -1350,7 +1350,7 @@ where
         while !is_continue_target(
             cur,
             parents.clone(),
-            node.label.as_ref().map(|ident| &ident.sym),
+            node.label.as_ref().map(|ident| ident.name),
         ) {
             if let NodeKind::TryStmt(t) = cur.kind {
                 if let Some(finally) = &t.finalizer {
@@ -1418,7 +1418,7 @@ where
         while !is_break_target(
             cur,
             parents.clone(),
-            node.label.as_ref().map(|ident| &ident.sym),
+            node.label.as_ref().map(|ident| ident.name),
         ) {
             if let NodeKind::TryStmt(t) = cur.kind {
                 if let Some(finally) = &t.finalizer {

@@ -1,5 +1,5 @@
 use crate::token::{Keyword, Word};
-use atoms::{JsWord, js_word};
+use ast::{NameId, id_for_built_in};
 use bitflags::bitflags;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -118,14 +118,14 @@ impl Context {
             | Word::Keyword(Keyword::Delete) => true,
 
             // Future reserved word
-            Word::Ident(js_word!("enum")) => true,
+            Word::Ident(id_for_built_in!("enum")) => true,
 
-            Word::Ident(js_word!("implements"))
-            | Word::Ident(js_word!("package"))
-            | Word::Ident(js_word!("protected"))
-            | Word::Ident(js_word!("interface"))
-            | Word::Ident(js_word!("private"))
-            | Word::Ident(js_word!("public"))
+            Word::Ident(id_for_built_in!("implements"))
+            | Word::Ident(id_for_built_in!("package"))
+            | Word::Ident(id_for_built_in!("protected"))
+            | Word::Ident(id_for_built_in!("interface"))
+            | Word::Ident(id_for_built_in!("private"))
+            | Word::Ident(id_for_built_in!("public"))
                 if self.is_strict() =>
             {
                 true
@@ -135,59 +135,61 @@ impl Context {
         }
     }
 
-    pub fn is_reserved_word(self, word: &JsWord) -> bool {
-        match *word {
-            js_word!("let") => self.is_strict(),
-            js_word!("await") => self.flags.contains(ContextFlags::in_async) || self.is_strict(),
-            js_word!("yield") => {
+    pub fn is_reserved_word(self, word: NameId) -> bool {
+        match word {
+            id_for_built_in!("let") => self.is_strict(),
+            id_for_built_in!("await") => {
+                self.flags.contains(ContextFlags::in_async) || self.is_strict()
+            }
+            id_for_built_in!("yield") => {
                 self.flags.contains(ContextFlags::in_generator) || self.is_strict()
             }
 
-            js_word!("null")
-            | js_word!("true")
-            | js_word!("false")
-            | js_word!("break")
-            | js_word!("case")
-            | js_word!("catch")
-            | js_word!("continue")
-            | js_word!("debugger")
-            | js_word!("default")
-            | js_word!("do")
-            | js_word!("export")
-            | js_word!("else")
-            | js_word!("finally")
-            | js_word!("for")
-            | js_word!("function")
-            | js_word!("if")
-            | js_word!("return")
-            | js_word!("switch")
-            | js_word!("throw")
-            | js_word!("try")
-            | js_word!("var")
-            | js_word!("const")
-            | js_word!("while")
-            | js_word!("with")
-            | js_word!("new")
-            | js_word!("this")
-            | js_word!("super")
-            | js_word!("class")
-            | js_word!("extends")
-            | js_word!("import")
-            | js_word!("in")
-            | js_word!("instanceof")
-            | js_word!("typeof")
-            | js_word!("void")
-            | js_word!("delete") => true,
+            id_for_built_in!("null")
+            | id_for_built_in!("true")
+            | id_for_built_in!("false")
+            | id_for_built_in!("break")
+            | id_for_built_in!("case")
+            | id_for_built_in!("catch")
+            | id_for_built_in!("continue")
+            | id_for_built_in!("debugger")
+            | id_for_built_in!("default")
+            | id_for_built_in!("do")
+            | id_for_built_in!("export")
+            | id_for_built_in!("else")
+            | id_for_built_in!("finally")
+            | id_for_built_in!("for")
+            | id_for_built_in!("function")
+            | id_for_built_in!("if")
+            | id_for_built_in!("return")
+            | id_for_built_in!("switch")
+            | id_for_built_in!("throw")
+            | id_for_built_in!("try")
+            | id_for_built_in!("var")
+            | id_for_built_in!("const")
+            | id_for_built_in!("while")
+            | id_for_built_in!("with")
+            | id_for_built_in!("new")
+            | id_for_built_in!("this")
+            | id_for_built_in!("super")
+            | id_for_built_in!("class")
+            | id_for_built_in!("extends")
+            | id_for_built_in!("import")
+            | id_for_built_in!("in")
+            | id_for_built_in!("instanceof")
+            | id_for_built_in!("typeof")
+            | id_for_built_in!("void")
+            | id_for_built_in!("delete") => true,
 
             // Future reserved word
-            js_word!("enum") => true,
+            id_for_built_in!("enum") => true,
 
-            js_word!("implements")
-            | js_word!("package")
-            | js_word!("protected")
-            | js_word!("interface")
-            | js_word!("private")
-            | js_word!("public")
+            id_for_built_in!("implements")
+            | id_for_built_in!("package")
+            | id_for_built_in!("protected")
+            | id_for_built_in!("interface")
+            | id_for_built_in!("private")
+            | id_for_built_in!("public")
                 if self.is_strict() =>
             {
                 true

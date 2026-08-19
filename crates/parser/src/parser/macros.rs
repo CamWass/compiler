@@ -55,7 +55,7 @@ macro_rules! is {
     ($parser:expr, BindingIdent) => {{
         let ctx = $parser.ctx();
         match $parser.input.cur() {
-            Some(Word(w)) => !ctx.is_reserved_word(&w.cow()),
+            Some(Word(w)) => !ctx.is_reserved_word(w.get_name_id()),
             _ => false,
         }
     }};
@@ -63,7 +63,7 @@ macro_rules! is {
     ($parser:expr, IdentRef) => {{
         let ctx = $parser.ctx();
         match $parser.input.cur() {
-            Some(Word(w)) => !ctx.is_reserved_word(&w.cow()),
+            Some(Word(w)) => !ctx.is_reserved_word(w.get_name_id()),
             _ => false,
         }
     }};
@@ -118,7 +118,7 @@ macro_rules! peeked_is {
     ($parser:expr, IdentRef) => {{
         let ctx = $parser.ctx();
         match peek!($parser) {
-            Ok(Word(w)) => !ctx.is_reserved_word(&w.cow()),
+            Ok(Word(w)) => !ctx.is_reserved_word(w.get_name_id()),
             _ => false,
         }
     }};
@@ -296,7 +296,7 @@ macro_rules! syntax_error {
 macro_rules! node_id {
     ($parser:expr, $span:expr) => {{
         let span = $span;
-        let n = $parser.program_data.new_id(span);
+        let n = $parser.input.program_data_mut().new_id(span);
         n
     }};
 }
@@ -304,21 +304,21 @@ macro_rules! node_id {
 macro_rules! node_id_from {
     ($parser:expr, $other:expr) => {{
         let other = $other;
-        let n = $parser.program_data.new_id_from(other);
+        let n = $parser.input.program_data_mut().new_id_from(other);
         n
     }};
 }
 
 macro_rules! program_data {
     ($parser:expr) => {
-        &mut $parser.program_data
+        &mut $parser.input.program_data_mut()
     };
 }
 
 macro_rules! get_span {
     ($parser:expr, $node:expr) => {{
         let id = $node;
-        let s = $parser.program_data.get_span(id);
+        let s = $parser.input.program_data().get_span(id);
         s
     }};
 }
@@ -326,6 +326,6 @@ macro_rules! get_span {
 macro_rules! set_span {
     ($parser:expr, $node:expr, $span:expr) => {
         let id = $node;
-        $parser.program_data.set_span(id, $span);
+        $parser.input.program_data_mut().set_span(id, $span);
     };
 }

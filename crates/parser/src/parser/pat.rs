@@ -1,7 +1,6 @@
 //! 13.3.3 Destructuring Binding Patterns
 use super::{expression::MaybeParenPatOrExprOrSpread, *};
 use crate::token::AssignOpToken;
-use atoms::js_word;
 use expression::MaybeParenSpreadElement;
 use util::{AssignProps, is_valid_simple_assignment_target};
 
@@ -20,16 +19,16 @@ impl Parser<'_> {
     pub(super) fn parse_binding_ident(&mut self) -> PResult<BindingIdent> {
         // "yield" and "await" is **lexically** accepted.
         let ident = self.parse_ident(true, true)?;
-        if ident.sym == js_word!("arguments") || ident.sym == js_word!("eval") {
+        if ident.name == id_for_built_in!("arguments") || ident.name == id_for_built_in!("eval") {
             self.emit_strict_mode_err(
                 get_span!(self, ident.node_id),
                 SyntaxError::EvalAndArgumentsInStrict,
             );
         }
-        if self.ctx().in_async() && ident.sym == js_word!("await") {
+        if self.ctx().in_async() && ident.name == id_for_built_in!("await") {
             self.emit_err(get_span!(self, ident.node_id), SyntaxError::ExpectedIdent);
         }
-        if self.ctx().in_generator() && ident.sym == js_word!("yield") {
+        if self.ctx().in_generator() && ident.name == id_for_built_in!("yield") {
             self.emit_err(get_span!(self, ident.node_id), SyntaxError::ExpectedIdent);
         }
 
@@ -131,15 +130,20 @@ impl Parser<'_> {
             && matches!(
                 *cur!(self, false)?,
                 Word(Word::Ident(
-                    js_word!("public")
-                        | js_word!("protected")
-                        | js_word!("private")
-                        | js_word!("readonly")
+                    id_for_built_in!("public")
+                        | id_for_built_in!("protected")
+                        | id_for_built_in!("private")
+                        | id_for_built_in!("readonly")
                 ))
             )
             && (peeked_is!(self, IdentName) || peeked_is!(self, '{') || peeked_is!(self, '['));
         if has_modifier {
-            let _ = self.parse_ts_modifier(&["public", "protected", "private", "readonly"]);
+            let _ = self.parse_ts_modifier(&[
+                id_for_built_in!("public"),
+                id_for_built_in!("protected"),
+                id_for_built_in!("private"),
+                id_for_built_in!("readonly"),
+            ]);
         }
 
         Ok(has_modifier)
@@ -184,11 +188,8 @@ impl Parser<'_> {
                 | Pat::Rest(RestPat { node_id, .. }) => {
                     let new_type_ann = self.try_parse_ts_type_ann()?;
                     if new_type_ann.is_some() {
-                        set_span!(
-                            self,
-                            *node_id,
-                            Span::new(pat_start, self.input.prev_span().hi,)
-                        );
+                        let hi = self.input.prev_span().hi;
+                        set_span!(self, *node_id, Span::new(pat_start, hi));
                     }
                 }
                 Pat::Assign(AssignPat { node_id, .. }) => {
@@ -233,7 +234,7 @@ impl Parser<'_> {
 
     pub(super) fn parse_constructor_params(
         &mut self,
-    ) -> PResult<(Vec<Param>, Vec<(JsWord, Span)>)> {
+    ) -> PResult<(Vec<Param>, Vec<(NameId, Span)>)> {
         let mut first = true;
         let mut params = vec![];
         let mut props = vec![];
@@ -282,13 +283,15 @@ impl Parser<'_> {
     fn parse_constructor_param(
         &mut self,
         param_start: BytePos,
-    ) -> PResult<(Param, Option<JsWord>)> {
+    ) -> PResult<(Param, Option<NameId>)> {
         let (has_accessibility, is_override, readonly) = if self.input.syntax().typescript() {
             let has_accessibility = self.parse_access_modifier()?;
             (
                 has_accessibility,
-                self.parse_ts_modifier(&["override"])?.is_some(),
-                self.parse_ts_modifier(&["readonly"])?.is_some(),
+                self.parse_ts_modifier(&[id_for_built_in!("override")])?
+                    .is_some(),
+                self.parse_ts_modifier(&[id_for_built_in!("readonly")])?
+                    .is_some(),
             )
         } else {
             (false, false, false)
@@ -298,9 +301,9 @@ impl Parser<'_> {
             None
         } else {
             let prop = match &pat {
-                Pat::Ident(i) => i.id.sym.clone(),
+                Pat::Ident(i) => i.id.name,
                 Pat::Assign(a) => match a.left.as_ref() {
-                    Pat::Ident(i) => i.id.sym.clone(),
+                    Pat::Ident(i) => i.id.name,
                     _ => syntax_error!(
                         self,
                         get_span!(self, pat.node_id()),

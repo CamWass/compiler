@@ -8,5 +8,4 @@ num-bigint = { workspace = true }
 
 ast = { path = "../ast" }
 atoms = { path = "../atoms" }
-common = { path = "../common" }
 visit_macros = { path = "../visit_macros" }

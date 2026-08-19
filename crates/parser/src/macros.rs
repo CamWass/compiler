@@ -104,10 +104,10 @@ macro_rules! tok {
     };
 
     ("async") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("async")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("async")))
     };
     ("as") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("as")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("as")))
     };
     ("await") => {
         crate::token::Token::Word(crate::token::Word::Keyword(crate::token::Keyword::Await))
@@ -161,7 +161,7 @@ macro_rules! tok {
         crate::token::Token::Word(crate::token::Word::Keyword(crate::token::Keyword::For))
     };
     ("from") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("from")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("from")))
     };
     ("function") => {
         crate::token::Token::Word(crate::token::Word::Keyword(crate::token::Keyword::Function))
@@ -185,7 +185,7 @@ macro_rules! tok {
         crate::token::Token::Word(crate::token::Word::Null)
     };
     ("of") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("of")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("of")))
     };
     ("return") => {
         crate::token::Token::Word(crate::token::Word::Keyword(crate::token::Keyword::Return))
@@ -194,13 +194,13 @@ macro_rules! tok {
         crate::token::Token::Word(crate::token::Word::Keyword(crate::token::Keyword::Super))
     };
     ("static") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("static")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("static")))
     };
     ("switch") => {
         crate::token::Token::Word(crate::token::Word::Keyword(crate::token::Keyword::Switch))
     };
     ("target") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("target")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("target")))
     };
     ("this") => {
         crate::token::Token::Word(crate::token::Word::Keyword(crate::token::Keyword::This))
@@ -237,87 +237,95 @@ macro_rules! tok {
     // Typescript
     // ----------
     ("asserts") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("asserts")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("asserts")))
     };
     ("implements") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("implements")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!(
+            "implements"
+        )))
     };
     ("is") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("is")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("is")))
     };
     ("keyof") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("keyof")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("keyof")))
     };
     ("unique") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("unique")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("unique")))
     };
     ("object") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("object")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("object")))
     };
     ("global") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("global")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("global")))
     };
     ("enum") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("enum")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("enum")))
     };
     ("readonly") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("readonly")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("readonly")))
     };
     ("abstract") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("abstract")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("abstract")))
     };
     ("infer") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("infer")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("infer")))
     };
     ("any") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("any")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("any")))
     };
     ("boolean") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("boolean")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("boolean")))
     };
     ("bigint") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("bigint")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("bigint")))
     };
     ("intrinsic") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("intrinsic")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!(
+            "intrinsic"
+        )))
     };
     ("never") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("never")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("never")))
     };
     ("number") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("number")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("number")))
     };
     ("string") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("string")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("string")))
     };
     ("symbol") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("symbol")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("symbol")))
     };
     ("unknown") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("unknown")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("unknown")))
     };
     ("interface") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("interface")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!(
+            "interface"
+        )))
     };
     ("declare") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("declare")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("declare")))
     };
     ("undefined") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("undefined")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!(
+            "undefined"
+        )))
     };
     ("meta") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("meta")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("meta")))
     };
     ("type") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("type")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("type")))
     };
     ("assert") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("assert")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("assert")))
     };
     ("get") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("get")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("get")))
     };
     ("set") => {
-        crate::token::Token::Word(crate::token::Word::Ident(atoms::js_word!("set")))
+        crate::token::Token::Word(crate::token::Word::Ident(ast::id_for_built_in!("set")))
     };
 }

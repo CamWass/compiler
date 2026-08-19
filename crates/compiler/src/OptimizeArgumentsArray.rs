@@ -1,25 +1,9 @@
-use crate::{Id, ToId};
-use atoms::{JsWord, js_word};
-use common::{DUMMY_SP, SyntaxContext};
+use ast::{NameId, ProgramData, id_for_built_in};
+use atoms::JsWord;
+use common::DUMMY_SP;
 use std::collections::BTreeMap;
 use std::iter::FromIterator;
 use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
-
-/// Returns a globally unique [SyntaxContext].
-macro_rules! private_ctxt {
-    () => {{ ::common::SyntaxContext::empty().apply_mark(::common::Mark::new()) }};
-}
-
-/// Creates a new [Ident][ast::Ident] from the provided [sym][atoms::JsWord], [syntax_ctxt][common::SyntaxContext], and [NodeId][ast::NodeId].
-macro_rules! ident {
-    ($sym:expr, $syntax_ctxt:expr,  $id:expr) => {
-        ast::Ident {
-            node_id: $id,
-            sym: $sym,
-            ctxt: $syntax_ctxt,
-        }
-    };
-}
 
 /// Optimizes accesses to the `arguments` array by replacing them with references to parameters,
 /// synthesising missing parameters if possible.
@@ -34,19 +18,11 @@ macro_rules! ident {
 /// ```
 pub struct OptimizeArgumentsArray<'a> {
     program_data: &'a mut ast::ProgramData,
-    unresolved_ctxt: SyntaxContext,
 }
 
 impl<'a> OptimizeArgumentsArray<'a> {
-    pub fn process(
-        ast: &mut ast::Program,
-        program_data: &'a mut ast::ProgramData,
-        unresolved_ctxt: SyntaxContext,
-    ) {
-        let mut visitor = Self {
-            program_data,
-            unresolved_ctxt,
-        };
+    pub fn process(ast: &mut ast::Program, program_data: &'a mut ast::ProgramData) {
+        let mut visitor = Self { program_data };
 
         ast.visit_mut_with(&mut visitor);
     }
@@ -98,8 +74,7 @@ impl OptimizeArgumentsArray<'_> {
 
     fn handle_setter(&mut self, param_pat: &ast::Pat, body: &mut ast::BlockStmt) {
         if let ast::Pat::Ident(id) = param_pat {
-            let id = id.to_id();
-            self.try_replace_setter_argument(id, body);
+            self.try_replace_setter_argument(id.id.name, body);
         } else {
             // Non-ident params don't introduce names for us to bind arguments
             // accesses to, so we skip the setter and only process nested functions.
@@ -120,36 +95,25 @@ impl OptimizeArgumentsArray<'_> {
 
         // Determine the highest index that is used to make an access on `arguments`. By default, assume
         // that the value is the number of parameters to the function.
-        let highest_index =
-            FnBodyVisitor::get_highest_index(func.get_body(), highest_index, self.unresolved_ctxt);
+        let highest_index = FnBodyVisitor::get_highest_index(func.get_body(), highest_index);
         let Some(highest_index) = highest_index else {
             return;
         };
 
-        let arg_names = func.assemble_param_names(highest_index + 1);
+        let arg_names = func.assemble_param_names(highest_index + 1, self.program_data);
         self.append_new_params(&arg_names, func.get_params());
-        FnBodyReWriter::change_body(
-            func.get_body(),
-            &arg_names,
-            self.program_data,
-            self.unresolved_ctxt,
-        );
+        FnBodyReWriter::change_body(func.get_body(), &arg_names, self.program_data);
     }
 
     /// Tries to optimize all of the `arguments` accesses in this setter. Does not look at nested functions.
-    fn try_replace_setter_argument(&mut self, param: Id, setter_body: &mut ast::BlockStmt) {
-        if FnBodyVisitor::get_highest_index(setter_body, Some(0), self.unresolved_ctxt).is_none() {
+    fn try_replace_setter_argument(&mut self, param: NameId, setter_body: &mut ast::BlockStmt) {
+        if FnBodyVisitor::get_highest_index(setter_body, Some(0)).is_none() {
             // Some 'arguments' accesses were invalidating; abort.
             return;
         }
 
         let arg_names = BTreeMap::from_iter([(0, param)]);
-        FnBodyReWriter::change_body(
-            setter_body,
-            &arg_names,
-            self.program_data,
-            self.unresolved_ctxt,
-        );
+        FnBodyReWriter::change_body(setter_body, &arg_names, self.program_data);
     }
 
     /// Appends new formal parameters to the provided list based on the given set of names.
@@ -160,22 +124,25 @@ impl OptimizeArgumentsArray<'_> {
     /// `param_list` - the list of params to modify.
     fn append_new_params(
         &mut self,
-        arg_names: &BTreeMap<usize, Id>,
+        arg_names: &BTreeMap<usize, NameId>,
         param_list: &mut Vec<ast::Param>,
     ) {
         let new_params = arg_names
             .range(param_list.len()..)
-            .map(|(_, id)| from_id(id, self.program_data));
+            .map(|(_, id)| from_id(*id, self.program_data));
         param_list.extend(new_params);
     }
 }
 
-/// Creates a new param from the provided `Id`.
-fn from_id(id: &Id, program_data: &mut ast::ProgramData) -> ast::Param {
+/// Creates a new param from the provided `NameId`.
+fn from_id(id: NameId, program_data: &mut ast::ProgramData) -> ast::Param {
     ast::Param {
         node_id: program_data.new_id(DUMMY_SP),
         pat: ast::Pat::Ident(ast::BindingIdent {
-            id: ident!(id.0.clone(), id.1, program_data.new_id(DUMMY_SP)),
+            id: ast::Ident {
+                node_id: program_data.new_id(DUMMY_SP),
+                name: id,
+            },
         }),
     }
 }
@@ -188,14 +155,22 @@ trait AsFn {
     /// `max_count` if there is a rest param, since no additional params may be synthesized.
     ///
     /// `max_count` - The maximum number of argument names in the returned map.
-    fn assemble_param_names(&self, max_count: usize) -> BTreeMap<usize, Id>;
+    fn assemble_param_names(
+        &self,
+        max_count: usize,
+        program_data: &mut ast::ProgramData,
+    ) -> BTreeMap<usize, NameId>;
 
     fn get_params(&mut self) -> &mut Vec<ast::Param>;
     fn get_body(&mut self) -> &mut ast::BlockStmt;
 }
 
 impl AsFn for ast::Function {
-    fn assemble_param_names(&self, max_count: usize) -> BTreeMap<usize, Id> {
+    fn assemble_param_names(
+        &self,
+        max_count: usize,
+        program_data: &mut ast::ProgramData,
+    ) -> BTreeMap<usize, NameId> {
         let mut map = BTreeMap::new();
         let mut index = 0;
 
@@ -203,7 +178,7 @@ impl AsFn for ast::Function {
         for param in &self.params {
             match &param.pat {
                 ast::Pat::Ident(n) => {
-                    map.insert(index, n.to_id());
+                    map.insert(index, n.id.name);
                 }
                 // Array and object patterns have no names to substitute into the body.
                 ast::Pat::Array(_) | ast::Pat::Object(_) => {}
@@ -218,7 +193,10 @@ impl AsFn for ast::Function {
         }
         // ... then synthesize any additional param names.
         while index < max_count {
-            map.insert(index, (JsWord::from(format!("p{index}")), private_ctxt!()));
+            let new_name = ProgramData::mark_resolved(
+                program_data.get_id_for_name(JsWord::from(format!("p{index}"))),
+            );
+            map.insert(index, new_name);
             index += 1;
         }
 
@@ -234,7 +212,11 @@ impl AsFn for ast::Function {
 }
 
 impl AsFn for ast::Constructor {
-    fn assemble_param_names(&self, max_count: usize) -> BTreeMap<usize, Id> {
+    fn assemble_param_names(
+        &self,
+        max_count: usize,
+        program_data: &mut ast::ProgramData,
+    ) -> BTreeMap<usize, NameId> {
         let mut map = BTreeMap::new();
         let mut index = 0;
 
@@ -242,7 +224,7 @@ impl AsFn for ast::Constructor {
         for param in &self.params {
             match &param.pat {
                 ast::Pat::Ident(n) => {
-                    map.insert(index, n.to_id());
+                    map.insert(index, n.id.name);
                 }
                 // Array and object patterns have no names to substitute into the body.
                 ast::Pat::Array(_) | ast::Pat::Object(_) => {}
@@ -257,7 +239,10 @@ impl AsFn for ast::Constructor {
         }
         // ... then synthesize any additional param names.
         while index < max_count {
-            map.insert(index, (JsWord::from(format!("p{index}")), private_ctxt!()));
+            let new_name = ProgramData::mark_resolved(
+                program_data.get_id_for_name(JsWord::from(format!("p{index}"))),
+            );
+            map.insert(index, new_name);
             index += 1;
         }
 
@@ -273,7 +258,6 @@ impl AsFn for ast::Constructor {
 }
 
 pub struct FnBodyVisitor {
-    unresolved_ctxt: SyntaxContext,
     invalidated: bool,
     highest_index: Option<usize>,
 }
@@ -286,10 +270,8 @@ impl FnBodyVisitor {
     fn get_highest_index(
         func_body: &ast::BlockStmt,
         highest_index: Option<usize>,
-        unresolved_ctxt: SyntaxContext,
     ) -> Option<usize> {
         let mut visitor = Self {
-            unresolved_ctxt,
             invalidated: false,
             highest_index,
         };
@@ -322,7 +304,7 @@ impl FnBodyVisitor {
 
         if let ast::ExprOrSuper::Expr(obj) = &node.obj {
             if let ast::Expr::Ident(obj) = obj.as_ref() {
-                if obj.sym == js_word!("arguments") && obj.ctxt == self.unresolved_ctxt {
+                if obj.name == id_for_built_in!("arguments") {
                     if node.computed {
                         // TODO: numeric string literal keys e.g. arguments["1"]
                         if let ast::Expr::Lit(ast::Lit::Num(n)) = node.prop.as_ref() {
@@ -420,7 +402,7 @@ impl Visit<'_> for FnBodyVisitor {
         if self.invalidated {
             return;
         }
-        if node.sym == js_word!("arguments") && node.ctxt == self.unresolved_ctxt {
+        if node.name == id_for_built_in!("arguments") {
             self.invalidate("Usage of 'arguments' outside of valid member expr is invalid");
         }
     }
@@ -433,8 +415,7 @@ impl Visit<'_> for FnBodyVisitor {
 }
 
 struct FnBodyReWriter<'a> {
-    unresolved_ctxt: SyntaxContext,
-    arg_names: &'a BTreeMap<usize, Id>,
+    arg_names: &'a BTreeMap<usize, NameId>,
     program_data: &'a mut ast::ProgramData,
 }
 
@@ -444,12 +425,10 @@ impl<'a> FnBodyReWriter<'a> {
     /// `arg_names` - maps param index to param name, if the param with that index has a name.
     fn change_body(
         func_body: &mut ast::BlockStmt,
-        arg_names: &'a BTreeMap<usize, Id>,
+        arg_names: &'a BTreeMap<usize, NameId>,
         program_data: &'a mut ast::ProgramData,
-        unresolved_ctxt: SyntaxContext,
     ) {
         let mut visitor = Self {
-            unresolved_ctxt,
             arg_names,
             program_data,
         };
@@ -469,7 +448,7 @@ impl VisitMut<'_> for FnBodyReWriter<'_> {
         if let ast::Expr::Member(expr) = node {
             if let ast::ExprOrSuper::Expr(obj) = &expr.obj {
                 if let ast::Expr::Ident(obj) = obj.as_ref() {
-                    if obj.sym == js_word!("arguments") && obj.ctxt == self.unresolved_ctxt {
+                    if obj.name == id_for_built_in!("arguments") {
                         debug_assert!(expr.computed);
                         // TODO: numeric string literal keys e.g. arguments["1"]
                         if let ast::Expr::Lit(ast::Lit::Num(n)) = expr.prop.as_ref() {
@@ -477,12 +456,11 @@ impl VisitMut<'_> for FnBodyReWriter<'_> {
 
                             let idx = n.value.round() as i64 as usize;
 
-                            if let Some((sym, ctxt)) = self.arg_names.get(&idx) {
-                                let id = ident!(
-                                    sym.clone(),
-                                    *ctxt,
-                                    self.program_data.new_id_from(expr.node_id)
-                                );
+                            if let Some(name) = self.arg_names.get(&idx) {
+                                let id = ast::Ident {
+                                    node_id: self.program_data.new_id_from(expr.node_id),
+                                    name: *name,
+                                };
                                 *node = ast::Expr::Ident(id);
                                 return;
                             }
@@ -501,18 +479,13 @@ impl VisitMut<'_> for FnBodyReWriter<'_> {
 mod tests {
     #![allow(non_snake_case)]
     use crate::resolver::resolve;
-    use common::{Mark, SyntaxContext};
 
     fn test_transform(input: &str, expected: &str) {
         crate::testing::test_transform(
             |mut program, program_data| {
-                let unresolved_mark = Mark::new();
+                resolve(&mut program, program_data);
 
-                resolve(&mut program, unresolved_mark);
-
-                let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
-
-                super::OptimizeArgumentsArray::process(&mut program, program_data, unresolved_ctxt);
+                super::OptimizeArgumentsArray::process(&mut program, program_data);
                 program
             },
             input,

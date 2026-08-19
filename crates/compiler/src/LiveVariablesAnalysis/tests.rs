@@ -3,15 +3,13 @@ use std::rc::Rc;
 use ast::*;
 use atoms::JsWord;
 use common::{
-    FileName, GLOBALS, Globals, Mark, SourceMap, SyntaxContext,
+    FileName, SourceMap,
     errors::{ColorConfig, Handler},
 };
 use parser::{Parser, Syntax};
-use rustc_hash::FxHashMap;
 use visit::{Visit, VisitWith};
 
 use crate::DataFlowAnalysis::LinearFlowState;
-use crate::Id;
 use crate::control_flow::ControlFlowAnalysis::{ControlFlowAnalysis, ControlFlowRoot};
 use crate::control_flow::node::Node;
 use crate::resolver::resolve;
@@ -535,8 +533,8 @@ fn assert_live_before_x(src: &str, var: &str) {
 }
 
 fn assert_live_before_xasync(src: &str, var: &str, is_async: bool) {
-    with_liveness(src, is_async, |liveness, vars| {
-        let state = get_flow_state_at_x(liveness);
+    with_liveness(src, is_async, |liveness, program_data| {
+        let state = get_flow_state_at_x(liveness, program_data);
         assert!(
             state.is_some(),
             "Label X should be in the input program: `{}`",
@@ -544,7 +542,9 @@ fn assert_live_before_xasync(src: &str, var: &str, is_async: bool) {
         );
 
         let in_ = &liveness.data_flow_analysis.inner[state.unwrap().in_];
-        let var_id = var_name_to_id(var, vars).unwrap();
+        let var_id = program_data
+            .find_latest_id_for_name(&JsWord::from(var))
+            .unwrap();
         let is_live_before = in_.is_live(liveness.get_var_index(&var_id).unwrap());
 
         assert!(is_live_before, "Variable `{}` should be live before X", var);
@@ -556,8 +556,8 @@ fn assert_live_after_x(src: &str, var: &str) {
 }
 
 fn assert_live_after_xasync(src: &str, var: &str, is_async: bool) {
-    with_liveness(src, is_async, |liveness, vars| {
-        let state = get_flow_state_at_x(liveness);
+    with_liveness(src, is_async, |liveness, program_data| {
+        let state = get_flow_state_at_x(liveness, program_data);
         assert!(
             state.is_some(),
             "Label X should be in the input program: `{}`",
@@ -565,7 +565,9 @@ fn assert_live_after_xasync(src: &str, var: &str, is_async: bool) {
         );
 
         let out = &liveness.data_flow_analysis.inner[state.unwrap().out];
-        let var_id = var_name_to_id(var, vars).unwrap();
+        let var_id = program_data
+            .find_latest_id_for_name(&JsWord::from(var))
+            .unwrap();
         let is_live_after = out.is_live(liveness.get_var_index(&var_id).unwrap());
 
         assert!(is_live_after, "Variable `{}` should be live after X", var);
@@ -573,8 +575,8 @@ fn assert_live_after_xasync(src: &str, var: &str, is_async: bool) {
 }
 
 fn assert_not_live_after_x(src: &str, var: &str) {
-    with_liveness(src, false, |liveness, vars| {
-        let state = get_flow_state_at_x(liveness);
+    with_liveness(src, false, |liveness, program_data| {
+        let state = get_flow_state_at_x(liveness, program_data);
         assert!(
             state.is_some(),
             "Label X should be in the input program: `{}`",
@@ -582,7 +584,9 @@ fn assert_not_live_after_x(src: &str, var: &str) {
         );
 
         let out = &liveness.data_flow_analysis.inner[state.unwrap().out];
-        let var_id = var_name_to_id(var, vars).unwrap();
+        let var_id = program_data
+            .find_latest_id_for_name(&JsWord::from(var))
+            .unwrap();
         let is_live_after = out.is_live(liveness.get_var_index(&var_id).unwrap());
 
         assert!(
@@ -594,8 +598,8 @@ fn assert_not_live_after_x(src: &str, var: &str) {
 }
 
 fn assert_not_live_before_x(src: &str, var: &str) {
-    with_liveness(src, false, |liveness, vars| {
-        let state = get_flow_state_at_x(liveness);
+    with_liveness(src, false, |liveness, program_data| {
+        let state = get_flow_state_at_x(liveness, program_data);
         assert!(
             state.is_some(),
             "Label X should be in the input program: `{}`",
@@ -603,7 +607,9 @@ fn assert_not_live_before_x(src: &str, var: &str) {
         );
 
         let in_ = &liveness.data_flow_analysis.inner[state.unwrap().in_];
-        let var_id = var_name_to_id(var, vars).unwrap();
+        let var_id = program_data
+            .find_latest_id_for_name(&JsWord::from(var))
+            .unwrap();
         let is_live_before = in_.is_live(liveness.get_var_index(&var_id).unwrap());
 
         assert!(
@@ -615,12 +621,14 @@ fn assert_not_live_before_x(src: &str, var: &str) {
 }
 
 fn assert_live_after_decl(src: &str, var: &str) {
-    with_liveness(src, false, |liveness, vars| {
-        let state = get_flow_state_at_declaration(liveness, var);
+    with_liveness(src, false, |liveness, program_data| {
+        let state = get_flow_state_at_declaration(liveness, var, program_data);
         assert!(state.is_some(), "Variable `{}` should be declared", var);
 
         let out = &liveness.data_flow_analysis.inner[state.unwrap().out];
-        let var_id = var_name_to_id(var, vars).unwrap();
+        let var_id = program_data
+            .find_latest_id_for_name(&JsWord::from(var))
+            .unwrap();
         let is_live_after = out.is_live(liveness.get_var_index(&var_id).unwrap());
 
         assert!(
@@ -632,12 +640,14 @@ fn assert_live_after_decl(src: &str, var: &str) {
 }
 
 fn assert_not_live_after_decl(src: &str, var: &str) {
-    with_liveness(src, false, |liveness, vars| {
-        let state = get_flow_state_at_declaration(liveness, var);
+    with_liveness(src, false, |liveness, program_data| {
+        let state = get_flow_state_at_declaration(liveness, var, program_data);
         assert!(state.is_some(), "Variable `{}` should be declared", var);
 
         let out = &liveness.data_flow_analysis.inner[state.unwrap().out];
-        let var_id = var_name_to_id(var, vars).unwrap();
+        let var_id = program_data
+            .find_latest_id_for_name(&JsWord::from(var))
+            .unwrap();
         let is_live_after = out.is_live(liveness.get_var_index(&var_id).unwrap());
 
         assert!(
@@ -649,12 +659,14 @@ fn assert_not_live_after_decl(src: &str, var: &str) {
 }
 
 fn assert_not_live_before_decl(src: &str, var: &str) {
-    with_liveness(src, false, |liveness, vars| {
-        let state = get_flow_state_at_declaration(liveness, var);
+    with_liveness(src, false, |liveness, program_data| {
+        let state = get_flow_state_at_declaration(liveness, var, program_data);
         assert!(state.is_some(), "Variable `{}` should be declared", var);
 
         let in_ = &liveness.data_flow_analysis.inner[state.unwrap().in_];
-        let var_id = var_name_to_id(var, vars).unwrap();
+        let var_id = program_data
+            .find_latest_id_for_name(&JsWord::from(var))
+            .unwrap();
         let is_live_before = in_.is_live(liveness.get_var_index(&var_id).unwrap());
 
         assert!(
@@ -667,63 +679,54 @@ fn assert_not_live_before_decl(src: &str, var: &str) {
 
 fn with_liveness<F>(src: &str, is_async: bool, mut op: F)
 where
-    F: FnMut(&mut LiveVariablesAnalysis<Function>, &FxHashMap<JsWord, Id>),
+    F: FnMut(&mut LiveVariablesAnalysis<Function>, &mut ProgramData),
 {
-    GLOBALS.set(&Globals::new(), || {
-        // Set up test case
-        let src = if is_async {
-            format!("async function _FUNCTION(param1, param2 = 1, ...param3){{{src}}}")
-        } else {
-            format!("function _FUNCTION(param1, param2 = 1, ...param3){{{src}}}")
-        };
-        let mut program = Program::Script(parse_script(&src));
+    // Set up test case
+    let src = if is_async {
+        format!("async function _FUNCTION(param1, param2 = 1, ...param3){{{src}}}")
+    } else {
+        format!("function _FUNCTION(param1, param2 = 1, ...param3){{{src}}}")
+    };
+    let (script, mut program_data) = parse_script(&src);
+    let mut program = Program::Script(script);
 
-        let unresolved_mark = Mark::new();
+    resolve(&mut program, &mut program_data);
 
-        resolve(&mut program, unresolved_mark);
+    let script = unwrap_as!(program, Program::Script(s), s);
 
-        let script = unwrap_as!(program, Program::Script(s), s);
+    let function = match script.body.first() {
+        Some(Stmt::Decl(Decl::Fn(f))) => &f.function,
+        _ => unreachable!(),
+    };
 
-        let function = match script.body.first() {
-            Some(Stmt::Decl(Decl::Fn(f))) => &f.function,
-            _ => unreachable!(),
-        };
+    // Control flow graph
+    let cfa = ControlFlowAnalysis::analyze(ControlFlowRoot::Function(function), false);
 
-        // Control flow graph
-        let cfa = ControlFlowAnalysis::analyze(ControlFlowRoot::Function(function), false);
+    // All variables declared in function
+    let all_vars_declared_in_function = find_vars_declared_in_fn(function.as_ref(), false);
 
-        // All variables declared in function
-        let all_vars_declared_in_function = find_vars_declared_in_fn(function.as_ref(), false);
+    // Compute liveness of variables
+    let mut liveness = LiveVariablesAnalysis::new(
+        cfa.cfg,
+        &cfa.node_priorities,
+        function.as_ref(),
+        all_vars_declared_in_function,
+    );
+    liveness.data_flow_analysis.analyze();
 
-        let vars = all_vars_declared_in_function
-            .ordered_vars
-            .iter()
-            .map(|id| (id.0.clone(), id.clone()))
-            .collect::<FxHashMap<JsWord, Id>>();
-
-        let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
-
-        // Compute liveness of variables
-        let mut liveness = LiveVariablesAnalysis::new(
-            cfa.cfg,
-            &cfa.node_priorities,
-            function.as_ref(),
-            all_vars_declared_in_function,
-            unresolved_ctxt,
-        );
-        liveness.data_flow_analysis.analyze();
-
-        op(&mut liveness, &vars);
-    });
+    op(&mut liveness, &mut program_data);
 }
 
-fn get_flow_state_at_x(liveness: &LiveVariablesAnalysis<Function>) -> Option<LinearFlowState> {
+fn get_flow_state_at_x(
+    liveness: &LiveVariablesAnalysis<Function>,
+    program_data: &mut ProgramData,
+) -> Option<LinearFlowState> {
     let mut v = FlowStateFinder {
         liveness,
         flow_state: None,
         predicate: |stmt| {
             if let Stmt::Labeled(labeled) = stmt {
-                if &labeled.label.sym == "X" {
+                if program_data.get_name_for_id(labeled.label.name) == "X" {
                     let body = Node::from(labeled.body.as_ref());
                     return liveness
                         .data_flow_analysis
@@ -799,6 +802,7 @@ where
 fn get_flow_state_at_declaration(
     liveness: &LiveVariablesAnalysis<Function>,
     name: &str,
+    program_data: &mut ProgramData,
 ) -> Option<LinearFlowState> {
     let mut v = FlowStateFinder {
         liveness,
@@ -809,7 +813,7 @@ fn get_flow_state_at_declaration(
                 assert!(d.decls.len() == 1);
                 let decl = d.decls.first().unwrap();
                 if let Pat::Ident(n) = &decl.name {
-                    if &n.id.sym == name {
+                    if program_data.get_name_for_id(n.id.name) == name {
                         let decl = Node::from(d);
                         return liveness
                             .data_flow_analysis
@@ -833,9 +837,11 @@ fn get_flow_state_at_declaration(
 }
 
 fn assert_escaped(src: &str, name: &str) {
-    with_liveness(src, false, |liveness, vars| {
-        let var = var_name_to_id(name, vars);
-        let escaped = var.and_then(|v| liveness.data_flow_analysis.inner.escaped.get(&v));
+    with_liveness(src, false, |liveness, program_data| {
+        let var = program_data
+            .find_latest_id_for_name(&JsWord::from(name))
+            .unwrap();
+        let escaped = liveness.data_flow_analysis.inner.escaped.get(&var);
         assert!(
             escaped.is_some(),
             "Variable {} should be in the escaped local list.",
@@ -845,9 +851,11 @@ fn assert_escaped(src: &str, name: &str) {
 }
 
 fn assert_not_escaped(src: &str, name: &str) {
-    with_liveness(src, false, |liveness, vars| {
-        let var = var_name_to_id(name, vars);
-        let escaped = var.and_then(|v| liveness.data_flow_analysis.inner.escaped.get(&v));
+    with_liveness(src, false, |liveness, program_data| {
+        let var = program_data
+            .find_latest_id_for_name(&JsWord::from(name))
+            .unwrap();
+        let escaped = liveness.data_flow_analysis.inner.escaped.get(&var);
         assert!(
             escaped.is_none(),
             "Variable {} should not be in the escaped local list.",
@@ -856,7 +864,7 @@ fn assert_not_escaped(src: &str, name: &str) {
     });
 }
 
-fn parse_script(input: &str) -> Script {
+fn parse_script(input: &str) -> (Script, ProgramData) {
     let cm = Rc::<SourceMap>::default();
     let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
 
@@ -881,9 +889,5 @@ fn parse_script(input: &str) -> Script {
 
     assert!(!error, "Failed to parse");
 
-    res
-}
-
-fn var_name_to_id(var: &str, vars: &FxHashMap<JsWord, Id>) -> Option<Id> {
-    vars.get(&JsWord::from(var)).cloned()
+    (res, program_data)
 }

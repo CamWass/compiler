@@ -1,17 +1,15 @@
 use std::ops::Index;
 
 use ast::*;
-use atoms::js_word;
-use common::SyntaxContext;
 use index::{bit_set::BitSet, vec::IndexVec};
 use rustc_hash::{FxHashMap, FxHashSet};
 use visit::{Visit, VisitWith};
 
+use crate::DataFlowAnalysis::*;
 use crate::control_flow::ControlFlowAnalysis::NodePriority;
 use crate::control_flow::ControlFlowGraph::{Branch, ControlFlowGraph};
 use crate::control_flow::{ControlFlowGraph::Annotation, node::Node};
 use crate::find_vars::*;
-use crate::{DataFlowAnalysis::*, Id, ToId};
 
 #[cfg(test)]
 mod tests;
@@ -21,9 +19,9 @@ mod tests;
 pub const MAX_VARIABLES_TO_ANALYZE: usize = 100;
 
 pub struct LiveVariablesAnalysisResult {
-    pub escaped_locals: FxHashSet<Id>,
-    pub scope_variables: FxHashMap<Id, VarId>,
-    pub ordered_vars: IndexVec<VarId, Id>,
+    pub escaped_locals: FxHashSet<NameId>,
+    pub scope_variables: FxHashMap<NameId, VarId>,
+    pub ordered_vars: IndexVec<VarId, NameId>,
     pub params: FxHashSet<VarId>,
     pub fn_and_class_names: FxHashSet<VarId>,
     pub lattice_elements: IndexVec<LatticeElementId, LiveVariableLattice>,
@@ -69,10 +67,8 @@ where
         node_priorities: &'a [NodePriority],
         fn_scope: &'a T,
         all_vars_declared_in_function: AllVarsDeclaredInFunction,
-        unresolved_ctxt: SyntaxContext,
     ) -> Self {
         let inner = Inner {
-            unresolved_ctxt,
             num_vars: all_vars_declared_in_function.ordered_vars.len(),
             fn_scope,
 
@@ -113,7 +109,7 @@ where
     }
 
     #[allow(dead_code)]
-    fn get_var_index(&self, var: &Id) -> Option<VarId> {
+    fn get_var_index(&self, var: &NameId) -> Option<VarId> {
         self.data_flow_analysis.inner.get_var_index(var)
     }
 }
@@ -123,17 +119,16 @@ struct Inner<'ast, 'a, T>
 where
     T: FunctionLike,
 {
-    unresolved_ctxt: SyntaxContext,
     num_vars: usize,
     fn_scope: &'a T,
 
-    escaped: FxHashSet<Id>,
+    escaped: FxHashSet<NameId>,
     // Maps the variable name to it's position
     // in this jsScope were we to combine the function and function body scopes. The Integer
     // represents the equivalent of the variable index property within a scope
-    scope_variables: FxHashMap<Id, VarId>,
+    scope_variables: FxHashMap<NameId, VarId>,
     // obtain variables in the order in which they appear in the code
-    ordered_vars: IndexVec<VarId, Id>,
+    ordered_vars: IndexVec<VarId, NameId>,
     params: FxHashSet<VarId>,
     fn_and_class_names: FxHashSet<VarId>,
 
@@ -146,7 +141,7 @@ impl<'ast, T> Inner<'ast, '_, T>
 where
     T: FunctionLike,
 {
-    fn get_var_index(&self, var: &Id) -> Option<VarId> {
+    fn get_var_index(&self, var: &NameId) -> Option<VarId> {
         self.scope_variables.get(var).copied()
     }
 
@@ -169,7 +164,6 @@ where
         conditional: bool,
     ) {
         let mut v = GenKillComputer {
-            unresolved_ctxt: self.unresolved_ctxt,
             gen_set,
             kill_set,
             conditional,
@@ -181,7 +175,7 @@ where
         n.visit_with(&mut v);
     }
 
-    fn add_to_set_if_local(&mut self, name: &Id, set: &mut BitSet<VarId>) {
+    fn add_to_set_if_local(&mut self, name: &NameId, set: &mut BitSet<VarId>) {
         if !self.scope_variables.contains_key(name) {
             return;
         }
@@ -207,7 +201,7 @@ where
     fn mark_all_parameters_escaped(&mut self) {
         for param in self.fn_scope.params() {
             if let Pat::Ident(name) = param {
-                self.escaped.insert(name.to_id());
+                self.escaped.insert(name.id.name);
             }
         }
     }
@@ -217,7 +211,6 @@ struct GenKillComputer<'ast, 'a, 'b, T>
 where
     T: FunctionLike,
 {
-    unresolved_ctxt: SyntaxContext,
     gen_set: &'b mut BitSet<VarId>,
     kill_set: &'b mut BitSet<VarId>,
     conditional: bool,
@@ -296,7 +289,7 @@ where
                 init.visit_with(self);
                 if !self.conditional {
                     self.analysis
-                        .add_to_set_if_local(&name.to_id(), self.kill_set);
+                        .add_to_set_if_local(&name.id.name, self.kill_set);
                 }
             }
             return;
@@ -433,11 +426,10 @@ where
 
     fn visit_ident(&mut self, node: &'ast Ident) {
         if !(self.in_destructuring && self.in_lhs) {
-            if node.sym == js_word!("arguments") && node.ctxt == self.unresolved_ctxt {
+            if node.name == id_for_built_in!("arguments") {
                 self.analysis.mark_all_parameters_escaped();
             } else {
-                self.analysis
-                    .add_to_set_if_local(&node.to_id(), self.gen_set);
+                self.analysis.add_to_set_if_local(&node.name, self.gen_set);
             }
         }
     }
@@ -446,13 +438,11 @@ where
         debug_assert!(!self.in_lhs);
         let mut handle_ident_lhs = |lhs: &Ident| {
             if !self.conditional {
-                self.analysis
-                    .add_to_set_if_local(&lhs.to_id(), self.kill_set);
+                self.analysis.add_to_set_if_local(&lhs.name, self.kill_set);
             }
             if node.op != AssignOp::Assign {
                 // assignments such as a += 1 reads a.
-                self.analysis
-                    .add_to_set_if_local(&lhs.to_id(), self.gen_set);
+                self.analysis.add_to_set_if_local(&lhs.name, self.gen_set);
             }
             node.right.visit_with(self);
         };

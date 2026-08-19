@@ -168,7 +168,6 @@ fn fuse_exprs(mut seq: SeqExpr, other: &mut Expr) {
 mod tests {
     use super::*;
     use crate::resolver::resolve;
-    use common::{GLOBALS, Globals, Mark};
 
     #[test]
     fn test_nothing_to_do() {
@@ -290,15 +289,11 @@ mod tests {
     fn test_transform(input: &str, expected: &str) {
         crate::testing::test_transform(
             |mut program, program_data| {
-                GLOBALS.set(&Globals::new(), || {
-                    let unresolved_mark = Mark::new();
+                resolve(&mut program, program_data);
 
-                    resolve(&mut program, unresolved_mark);
+                process(&mut program, program_data);
 
-                    process(&mut program, program_data);
-
-                    program
-                })
+                program
             },
             input,
             expected,

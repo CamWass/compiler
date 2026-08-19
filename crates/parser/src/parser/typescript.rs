@@ -2,7 +2,6 @@ use self::expression::BlockStmtOrExpr;
 
 use super::*;
 use crate::{context::ContextFlags, lexer::TokenContexts};
-use atoms::js_word;
 use expression::MaybeParen;
 use util::AssignProps;
 
@@ -30,8 +29,8 @@ impl Parser<'_> {
     /// `tsParseModifier`
     pub(super) fn parse_ts_modifier(
         &mut self,
-        allowed_modifiers: &[&'static str],
-    ) -> PResult<Option<&'static str>> {
+        allowed_modifiers: &[NameId],
+    ) -> PResult<Option<NameId>> {
         if !self.syntax().typescript() {
             return Ok(None);
         }
@@ -42,7 +41,7 @@ impl Parser<'_> {
                 _ => return Ok(None),
             };
 
-            allowed_modifiers.iter().position(|s| **s == **modifier)
+            allowed_modifiers.iter().position(|s| *s == *modifier)
         };
 
         if let Some(pos) = pos {
@@ -151,7 +150,7 @@ impl Parser<'_> {
         // var a: void.x
         //            ^
         if let Ident {
-            sym: js_word!("void"),
+            name: id_for_built_in!("void"),
             ..
         } = init
         {
@@ -349,10 +348,10 @@ impl Parser<'_> {
         }
         let prev_emit_err = self.emit_err;
 
+        // TODO: use parser checkpoint/rewind for the TS lookaheads.
         let Parser {
             emit_err,
             input,
-            program_data: _,
             labels: _,
             potential_arrow_start: _,
             trailing_commas_after_rest: _,
@@ -393,7 +392,6 @@ impl Parser<'_> {
         let Parser {
             emit_err,
             input,
-            program_data: _,
             labels,
             potential_arrow_start,
             trailing_commas_after_rest: _,
@@ -708,19 +706,19 @@ impl Parser<'_> {
         debug_assert!(self.syntax().typescript());
 
         let id = self.parse_ident_name()?;
-        match id.sym {
-            js_word!("string")
-            | js_word!("null")
-            | js_word!("number")
-            | js_word!("object")
-            | js_word!("any")
-            | js_word!("unknown")
-            | js_word!("boolean")
-            | js_word!("bigint")
-            | js_word!("symbol")
-            | js_word!("void")
-            | js_word!("never")
-            | js_word!("intrinsic") => {
+        match id.name {
+            id_for_built_in!("string")
+            | id_for_built_in!("null")
+            | id_for_built_in!("number")
+            | id_for_built_in!("object")
+            | id_for_built_in!("any")
+            | id_for_built_in!("unknown")
+            | id_for_built_in!("boolean")
+            | id_for_built_in!("bigint")
+            | id_for_built_in!("symbol")
+            | id_for_built_in!("void")
+            | id_for_built_in!("never")
+            | id_for_built_in!("intrinsic") => {
                 self.emit_err(get_span!(self, id.node_id), SyntaxError::TS2427);
             }
             _ => {}
@@ -820,7 +818,6 @@ impl Parser<'_> {
         let Parser {
             emit_err,
             input,
-            program_data: _,
             labels,
             potential_arrow_start,
             trailing_commas_after_rest: _,
@@ -979,7 +976,8 @@ impl Parser<'_> {
 
         // Type annotation:
         self.parse_ts_type_ann(false)?;
-        set_span!(self, id.id.node_id, span!(self, ident_start));
+        let span = span!(self, ident_start);
+        set_span!(self, id.id.node_id, span);
 
         expect!(self, ']');
 
@@ -1035,7 +1033,9 @@ impl Parser<'_> {
             return self
                 .parse_ts_signature_member(SignatureParsingMode::TSConstructSignatureDeclaration);
         }
-        let readonly = self.parse_ts_modifier(&["readonly"])?.is_some();
+        let readonly = self
+            .parse_ts_modifier(&[id_for_built_in!("readonly")])?
+            .is_some();
 
         let idx = self.try_parse_ts_index_signature()?;
         if idx.is_some() {
@@ -1043,7 +1043,9 @@ impl Parser<'_> {
         }
 
         if let Some(v) = self.try_parse_ts(|p| {
-            let _ = p.parse_ts_modifier(&["readonly"])?.is_some();
+            let _ = p
+                .parse_ts_modifier(&[id_for_built_in!("readonly")])?
+                .is_some();
 
             let is_get = if eat!(p, "get") {
                 true
@@ -1560,7 +1562,7 @@ impl Parser<'_> {
             if is!(self, "infer") {
                 self.parse_ts_infer_type()
             } else {
-                self.parse_ts_modifier(&["readonly"])?;
+                self.parse_ts_modifier(&[id_for_built_in!("readonly")])?;
                 self.parse_ts_array_type_or_higher()
             }
         }
@@ -1570,9 +1572,9 @@ impl Parser<'_> {
     pub(super) fn parse_ts_expr_stmt(&mut self, expr: &Ident) -> PResult<Option<DeclOrEmpty>> {
         let start = get_span!(self, expr.node_id).lo();
 
-        match &*expr.sym {
-            "declare" => self.try_parse_ts_declare(start),
-            "global" => {
+        match expr.name {
+            id_for_built_in!("declare") => self.try_parse_ts_declare(start),
+            id_for_built_in!("global") => {
                 // `global { }` (with no `declare`) may appear inside an ambient module
                 // declaration.
                 // Would like to use tsParseAmbientExternalModuleDeclaration here, but already
@@ -1585,7 +1587,7 @@ impl Parser<'_> {
                     Ok(None)
                 }
             }
-            _ => self.parse_ts_decl(start, expr.sym.clone(), false),
+            _ => self.parse_ts_decl(start, expr.name, false),
         }
     }
 
@@ -1649,7 +1651,7 @@ impl Parser<'_> {
                 p.parse_ts_ambient_external_module_decl()?;
             } else if is!(p, IdentName) {
                 let value = match cur!(p, true)? {
-                    Token::Word(w) => w.clone().into(),
+                    Token::Word(w) => w.get_name_id(),
                     _ => unreachable!(),
                 };
                 return p.parse_ts_decl(start, value, true);
@@ -1663,7 +1665,7 @@ impl Parser<'_> {
     ///
     /// Note: this won't be called unless the keyword is allowed in
     /// `shouldParseExportDeclaration`.
-    pub(super) fn try_parse_ts_export_decl(&mut self, value: JsWord) -> Option<DeclOrEmpty> {
+    pub(super) fn try_parse_ts_export_decl(&mut self, value: NameId) -> Option<DeclOrEmpty> {
         self.try_parse_ts(|p| {
             let start = p.input.cur_pos();
             let opt = p.parse_ts_decl(start, value, true)?;
@@ -1678,11 +1680,11 @@ impl Parser<'_> {
     fn parse_ts_decl(
         &mut self,
         start: BytePos,
-        value: JsWord,
+        value: NameId,
         next: bool,
     ) -> PResult<Option<DeclOrEmpty>> {
         match value {
-            js_word!("abstract") => {
+            id_for_built_in!("abstract") => {
                 if next || (is!(self, "class") && !self.input.had_line_break_before_cur()) {
                     if next {
                         self.input.bump();
@@ -1692,7 +1694,7 @@ impl Parser<'_> {
                 }
             }
 
-            js_word!("enum") => {
+            id_for_built_in!("enum") => {
                 if next || is!(self, IdentRef) {
                     if next {
                         self.input.bump();
@@ -1702,7 +1704,7 @@ impl Parser<'_> {
                 }
             }
 
-            js_word!("interface") => {
+            id_for_built_in!("interface") => {
                 if next || (is!(self, IdentRef)) {
                     if next {
                         self.input.bump();
@@ -1712,7 +1714,7 @@ impl Parser<'_> {
                 }
             }
 
-            js_word!("module") => {
+            id_for_built_in!("module") => {
                 if next {
                     self.input.bump();
                 }
@@ -1726,7 +1728,7 @@ impl Parser<'_> {
                 }
             }
 
-            js_word!("namespace") => {
+            id_for_built_in!("namespace") => {
                 if next || is!(self, IdentRef) {
                     if next {
                         self.input.bump();
@@ -1736,7 +1738,7 @@ impl Parser<'_> {
                 }
             }
 
-            js_word!("type") => {
+            id_for_built_in!("type") => {
                 if next || is!(self, IdentRef) {
                     if next {
                         self.input.bump();

@@ -77,6 +77,7 @@ impl Tester<'_> {
     }
 }
 
+// TODO: make T take &mut Program and return nothing.
 pub fn test_transform<T>(transform: T, input: &str, expected: &str)
 where
     T: FnOnce(Program, &mut ast::ProgramData) -> Program,

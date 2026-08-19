@@ -1,14 +1,21 @@
+use std::collections::hash_map::Entry;
+
 use ast::*;
+use atoms::JsWord;
 use common::util::take::Take;
+use rustc_hash::FxHashMap;
 use visit::{VisitMut, VisitMutWith};
 
 /// Normalizes certain expressions, drops node IDs, and optionally drops spans.
-pub struct Normalizer {
+pub struct Normalizer<'d> {
     pub drop_span: bool,
     pub is_test262: bool,
+    pub other_program_data: &'d mut ProgramData,
+    pub name_map: FxHashMap<JsWord, NameId>,
+    pub fresh_program_data: ProgramData,
 }
 
-impl VisitMut<'_> for Normalizer {
+impl VisitMut<'_> for Normalizer<'_> {
     fn visit_mut_expr(&mut self, e: &mut Expr) {
         e.visit_mut_children_with(self);
 
@@ -85,17 +92,16 @@ impl VisitMut<'_> for Normalizer {
     }
 
     fn visit_mut_prop_name(&mut self, n: &mut PropName) {
-        n.visit_mut_children_with(self);
-
         if !self.is_test262 {
+            n.visit_mut_children_with(self);
             return;
         }
 
         match n {
-            PropName::Ident(Ident { sym, .. }) => {
+            PropName::Ident(Ident { name, .. }) => {
                 *n = PropName::Str(Str {
                     node_id: NodeId::DUMMY,
-                    value: sym.clone(),
+                    value: self.other_program_data.get_name_for_id(*name).clone(),
                 });
             }
             PropName::Num(num) => {
@@ -106,10 +112,33 @@ impl VisitMut<'_> for Normalizer {
             }
             _ => {}
         }
+        n.visit_mut_children_with(self);
     }
 
     fn visit_mut_node_id(&mut self, node_id: &mut NodeId) {
         *node_id = NodeId::DUMMY;
+    }
+
+    fn visit_mut_name_id(&mut self, name_id: &mut NameId) {
+        // We use the `other_program_data` (the one from the parser) to get the
+        // text of the name, then we insert that into `fresh_program_data` to
+        // get a canonical NameId.
+        // This is necessary since e.g. some test262 tests require us to treat
+        // Ident PropNames as String PropNames, but each version' AST has a
+        // different number of Idents and thus different NameIds.
+        match self
+            .name_map
+            .entry(self.other_program_data.get_name_for_id(*name_id).clone())
+        {
+            Entry::Occupied(occupied_entry) => *name_id = *occupied_entry.get(),
+            Entry::Vacant(vacant_entry) => {
+                let new_name = self
+                    .fresh_program_data
+                    .get_id_for_name(vacant_entry.key().clone());
+                vacant_entry.insert(new_name);
+                *name_id = new_name;
+            }
+        }
     }
 
     fn visit_mut_str(&mut self, s: &mut Str) {

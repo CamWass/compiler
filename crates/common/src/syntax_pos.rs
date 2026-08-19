@@ -1,4 +1,3 @@
-pub use self::hygiene::{Mark, SyntaxContext};
 use crate::rustc_data_structures::stable_hasher::StableHasher;
 use std::{
     borrow::Cow,
@@ -7,11 +6,9 @@ use std::{
     ops::{Add, Sub},
     path::PathBuf,
     rc::Rc,
-    sync::Mutex,
 };
 
 mod analyze_source_file;
-pub mod hygiene;
 
 /// Spans represent a region of code, used for error reporting. Positions in
 /// spans are *absolute* positions from the beginning of the `source_map`, not
@@ -32,24 +29,6 @@ pub const DUMMY_SP: Span = Span {
     lo: BytePos(0),
     hi: BytePos(0),
 };
-
-#[derive(Default)]
-pub struct Globals {
-    hygiene_data: Mutex<hygiene::HygieneData>,
-}
-
-impl Globals {
-    pub fn new() -> Globals {
-        Globals {
-            hygiene_data: Mutex::new(hygiene::HygieneData::new()),
-        }
-    }
-}
-
-scoped_tls::scoped_thread_local!(
-    /// Storage for span hygiene data.
-    pub static GLOBALS: Globals
-);
 
 /// Differentiates between real files and common virtual files.
 #[derive(Debug, Eq, PartialEq, Clone, Ord, PartialOrd, Hash)]

@@ -240,7 +240,7 @@ impl<I: Idx, T> IndexVec<I, T> {
     }
 
     #[inline]
-    pub fn iter_enumerated(&self) -> impl Iterator<Item = (I, &T)> {
+    pub fn iter_enumerated(&self) -> impl DoubleEndedIterator<Item = (I, &T)> {
         self.raw.iter().enumerate().map(|(i, c)| (I::new(i), c))
     }
 

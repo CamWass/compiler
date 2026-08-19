@@ -21,8 +21,7 @@ use crate::find_vars::{FunctionLike, VarId};
 use crate::name_generator::NameGenerator;
 use crate::utils::unwrap_as;
 use ast::*;
-use atoms::{JsWord, js_word};
-use common::SyntaxContext;
+use atoms::JsWord;
 use graph::{Graph, GraphEdge, SmallSet};
 use index::bit_set::{BitMatrix, BitSet, GrowableBitSet};
 use index::vec::IndexVec;
@@ -45,12 +44,8 @@ invalidate:
     params that can't be statically bound? e.g. rest params
 */
 
-pub fn process(
-    ast: &mut ast::Program,
-    program_data: &mut ProgramData,
-    unresolved_ctxt: SyntaxContext,
-) {
-    let (mut store, points_to) = analyse(ast, unresolved_ctxt);
+pub fn process(ast: &mut ast::Program, program_data: &mut ProgramData) {
+    let (mut store, points_to) = analyse(ast, program_data);
 
     let rename_map = create_renaming_map(&mut store, &points_to);
 
@@ -63,7 +58,7 @@ pub fn process(
     ast.visit_mut_with(&mut renamer);
 }
 
-fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId, JsWord> {
+fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId, NameId> {
     /*
         Idea:
         Assign properties (from different objects but with the same name) to the same
@@ -119,7 +114,7 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
         let objs = points_to.get_immutable(*pointer).unwrap_or(&unknown_set);
         let prop_map_entry = prop_map.entry(*key).or_default();
         for obj in objs {
-            if obj.is_primitive() && !is_built_in_property(obj, &store.names[key.0]) {
+            if obj.is_primitive() && !is_built_in_property(obj, key.0) {
                 // non-built in prop on primitive - ignore.
                 // Note: we don't skip Unknown as we need to track when a prop is accessed
                 // on a union with Unknown.
@@ -132,7 +127,7 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
             let id = match object.properties.entry(key.0) {
                 Entry::Occupied(entry) => *entry.get(),
                 Entry::Vacant(entry) => {
-                    let built_in = is_built_in_property(obj, &store.names[key.0]);
+                    let built_in = is_built_in_property(obj, key.0);
                     let prop_id = properties.push(Property {
                         name: key.0,
                         prop_id: properties.next_index(),
@@ -159,7 +154,7 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
             if let Some(obj) = &objects.get(&pointer) {
                 for prop in &obj.properties {
                     debug_assert!(
-                        is_built_in_property(pointer, &store.names[*prop.0]),
+                        is_built_in_property(pointer, *prop.0),
                         "primitives should only have static props"
                     );
                 }
@@ -220,7 +215,13 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
     representatives.sort_unstable_by(|a, b| {
         let result = b.references.len().cmp(&a.references.len());
         if result.is_eq() {
-            store.names[a.name].cmp(&store.names[b.name])
+            // TODO: Is this necessary? All of our collections are already
+            // deterministic, and even then we could just compare the NameIds
+            // rather than the text values.
+            store
+                .program_data
+                .get_name_for_id(a.name)
+                .cmp(&store.program_data.get_name_for_id(b.name))
         } else {
             result
         }
@@ -261,7 +262,10 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
                     None => continue,
                 };
                 debug_graph_map.entry(rep_id).or_insert_with(|| {
-                    let name = store.names[properties[prop].name].clone();
+                    let name = store
+                        .program_data
+                        .get_name_for_id(properties[prop].name)
+                        .clone();
                     debug_graph.add_node((rep_id, name))
                 });
                 continue;
@@ -272,12 +276,18 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
                 .filter_map(|p| representatives_map.get(&labeling[p.index()]));
             while let Some(&outer_node) = outer.next() {
                 let a = *debug_graph_map.entry(outer_node).or_insert_with(|| {
-                    let name = store.names[representatives[outer_node].name].clone();
+                    let name = store
+                        .program_data
+                        .get_name_for_id(representatives[outer_node].name)
+                        .clone();
                     debug_graph.add_node((outer_node, name))
                 });
                 for &inner_node in outer.clone() {
                     let b = *debug_graph_map.entry(inner_node).or_insert_with(|| {
-                        let name = store.names[representatives[inner_node].name].clone();
+                        let name = store
+                            .program_data
+                            .get_name_for_id(representatives[inner_node].name)
+                            .clone();
                         debug_graph.add_node((inner_node, name))
                     });
                     debug_graph.update_edge(a, b, ());
@@ -336,23 +346,26 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
     let mut name_gen = NameGenerator::default();
     let mut colour_map = Vec::with_capacity(cur_colour as usize);
     for _ in 0..cur_colour {
-        colour_map.push(name_gen.generate_next_name());
+        let new_name = store
+            .program_data
+            .get_id_for_name(name_gen.generate_next_name());
+        colour_map.push(new_name);
     }
 
     let mut rename_map = FxHashMap::default();
 
     for (id, representative) in representatives.into_iter_enumerated() {
         let colour = colours[id.index()];
-        let new_name = &colour_map[colour as usize];
+        let new_name = colour_map[colour as usize];
         for reference in representative.references {
-            rename_map.insert(reference, new_name.clone());
+            rename_map.insert(reference, new_name);
         }
     }
 
     rename_map
 }
 
-pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> (Store, Graph) {
+pub fn analyse<'d>(ast: &ast::Program, program_data: &'d mut ProgramData) -> (Store<'d>, Graph) {
     let mut pointers = IndexSet::default();
 
     for (id, pointer) in STATIC_POINTERS {
@@ -361,20 +374,18 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> (Store, Gr
     }
 
     let mut store = Store {
-        unresolved_ctxt,
         functions: FxHashMap::default(),
-        names: IndexSet::default(),
         vars: IndexSet::default(),
         pointers,
         references: FxHashSet::default(),
         invalid_pointers: GrowableBitSet::default(),
         concrete_pointer_bound: PointerId::MAX,
         calls: FxHashSet::default(),
+        program_data,
     };
 
     {
         let mut v = DeclFinder {
-            names: &mut store.names,
             vars: &mut store.vars,
             var_start: VarId::from_u32(0),
         };
@@ -403,25 +414,23 @@ pub fn analyse(ast: &ast::Program, unresolved_ctxt: SyntaxContext) -> (Store, Gr
     graph.compute_points_to_map(&mut store);
 
     if cfg!(debug_assertions) {
-        for p in &store.pointers {
+        for &p in &store.pointers {
             match p {
                 Pointer::ReturnValue(p) | Pointer::Arg(p, _) => {
-                    debug_assert_ne!(*p, PointerId::NULL_OR_VOID);
-                    debug_assert_ne!(*p, PointerId::BOOL);
-                    debug_assert_ne!(*p, PointerId::NUM);
-                    debug_assert_ne!(*p, PointerId::STRING);
-                    debug_assert_ne!(*p, PointerId::BIG_INT);
-                    debug_assert_ne!(*p, PointerId::REGEX);
-                    debug_assert_ne!(*p, PointerId::UNKNOWN);
+                    debug_assert_ne!(p, PointerId::NULL_OR_VOID);
+                    debug_assert_ne!(p, PointerId::BOOL);
+                    debug_assert_ne!(p, PointerId::NUM);
+                    debug_assert_ne!(p, PointerId::STRING);
+                    debug_assert_ne!(p, PointerId::BIG_INT);
+                    debug_assert_ne!(p, PointerId::REGEX);
+                    debug_assert_ne!(p, PointerId::UNKNOWN);
                 }
 
                 Pointer::Prop(obj, name) => {
-                    debug_assert_ne!(*obj, PointerId::NULL_OR_VOID);
+                    debug_assert_ne!(obj, PointerId::NULL_OR_VOID);
                     // debug_assert_ne!(*obj, PointerId::UNKNOWN);
 
-                    debug_assert!(
-                        !obj.is_primitive() || is_built_in_property(*obj, &store.names[*name])
-                    );
+                    debug_assert!(!obj.is_primitive() || is_built_in_property(obj, name));
                 }
 
                 Pointer::Var(_)
@@ -468,14 +477,14 @@ fn compute_relations(ast: &ast::Program, store: &mut Store) -> Graph {
     graph
 }
 
-struct GraphVisitor<'a> {
-    store: &'a mut Store,
+struct GraphVisitor<'d: 'a, 'a> {
+    store: &'a mut Store<'d>,
     graph: &'a mut Graph,
     cur_fn: Option<NodeId>,
     cur_this_pointer: Option<PointerId>,
 }
 
-impl GraphVisitor<'_> {
+impl GraphVisitor<'_, '_> {
     fn get_rhs(&mut self, expr: &Expr, used: bool, expr_ctxt: ExprContext) -> Vec<PointerId> {
         macro_rules! ret {
             ($val:expr) => {
@@ -515,7 +524,7 @@ impl GraphVisitor<'_> {
                 self.cur_this_pointer = Some(obj);
 
                 let is_simple_obj_lit = n.props.iter().all(|p| match p {
-                    Prop::KeyValue(p) => is_simple_prop_name(&p.key, self.store.unresolved_ctxt),
+                    Prop::KeyValue(p) => is_simple_prop_name(&p.key),
                     _ => false,
                 });
 
@@ -523,12 +532,9 @@ impl GraphVisitor<'_> {
                     for prop in &n.props {
                         match prop {
                             Prop::KeyValue(prop) => {
-                                let key = PropKey::from_prop_name(
-                                    &prop.key,
-                                    self.store.unresolved_ctxt,
-                                    &mut self.store.names,
-                                )
-                                .expect("checked above");
+                                let key =
+                                    PropKey::from_prop_name(&prop.key, self.store.program_data)
+                                        .expect("checked above");
                                 let value =
                                     self.get_rhs(&prop.value, true, ExprContext::Expression);
                                 let prop = self.get_prop_value(obj, key.0);
@@ -564,8 +570,7 @@ impl GraphVisitor<'_> {
                     .get_index(&Pointer::Fn(n.function.node_id))
                     .unwrap();
                 if let Some(name) = &n.ident {
-                    let name = Id::new(name, &mut self.store.names);
-                    let var = self.store.vars.get_index(&name).unwrap();
+                    let var = self.store.vars.get_index(&name.name).unwrap();
                     let var = self.store.pointers.insert(Pointer::Var(var));
                     self.make_subset_of(func, var);
                 }
@@ -604,12 +609,9 @@ impl GraphVisitor<'_> {
                         self.get_rhs(&n.left, false, ExprContext::Expression);
                         let obj = self.get_rhs(&n.right, true, ExprContext::Expression);
 
-                        if let Some(prop) = PropKey::from_expr(
-                            &n.left,
-                            self.store.unresolved_ctxt,
-                            true,
-                            &mut self.store.names,
-                        ) {
+                        if let Some(prop) =
+                            PropKey::from_expr(&n.left, true, self.store.program_data)
+                        {
                             for obj in &obj {
                                 self.reference_prop(*obj, prop);
                             }
@@ -674,12 +676,9 @@ impl GraphVisitor<'_> {
                         n.prop.visit_with(self);
                     }
 
-                    if let Some(prop) = PropKey::from_expr(
-                        &n.prop,
-                        self.store.unresolved_ctxt,
-                        n.computed,
-                        &mut self.store.names,
-                    ) {
+                    if let Some(prop) =
+                        PropKey::from_expr(&n.prop, n.computed, self.store.program_data)
+                    {
                         for obj in &mut obj {
                             self.reference_prop(*obj, prop);
                             *obj = self.get_prop_value(*obj, prop.0);
@@ -797,15 +796,14 @@ impl GraphVisitor<'_> {
                 self.get_rhs(&n.exprs[i], used, ExprContext::Expression)
             }
             Expr::Ident(n) => {
-                if n.ctxt == self.store.unresolved_ctxt {
-                    if n.sym == js_word!("undefined") {
+                if n.name.is_unresolved() {
+                    if n.name == id_for_built_in!("undefined") {
                         ret!(vec![PointerId::NULL_OR_VOID])
                     } else {
                         ret!(vec![PointerId::UNKNOWN])
                     }
                 } else {
-                    let name = Id::new(n, &mut self.store.names);
-                    let var = self.store.vars.get_index(&name).unwrap();
+                    let var = self.store.vars.get_index(&n.name).unwrap();
                     ret!(vec![self.store.pointers.insert(Pointer::Var(var))])
                 }
             }
@@ -935,9 +933,7 @@ impl GraphVisitor<'_> {
         match lhs {
             Pat::Object(lhs) => {
                 let has_complex_props = lhs.props.iter().any(|p| match p {
-                    ObjectPatProp::KeyValue(p) => {
-                        !is_simple_prop_name(&p.key, self.store.unresolved_ctxt)
-                    }
+                    ObjectPatProp::KeyValue(p) => !is_simple_prop_name(&p.key),
                     ObjectPatProp::Rest(_) => false,
                 });
                 if has_complex_props {
@@ -948,11 +944,9 @@ impl GraphVisitor<'_> {
                     match prop {
                         ObjectPatProp::KeyValue(prop) => {
                             prop.key.visit_with(self);
-                            let Some(key) = PropKey::from_prop_name(
-                                &prop.key,
-                                self.store.unresolved_ctxt,
-                                &mut self.store.names,
-                            ) else {
+                            let Some(key) =
+                                PropKey::from_prop_name(&prop.key, self.store.program_data)
+                            else {
                                 continue;
                             };
                             for rhs in rhs {
@@ -1023,12 +1017,10 @@ impl GraphVisitor<'_> {
     }
 
     fn get_var_id_from_ident(&mut self, ident: &Ident) -> Option<VarId> {
-        if ident.ctxt == self.store.unresolved_ctxt {
+        if ident.name.is_unresolved() {
             None
         } else {
-            let name = self.store.names.get_index(&ident.sym).unwrap();
-            let id = Id(name, ident.ctxt);
-            let id = self.store.vars.get_index(&id).unwrap();
+            let id = self.store.vars.get_index(&ident.name).unwrap();
 
             Some(id)
         }
@@ -1064,12 +1056,9 @@ impl GraphVisitor<'_> {
                     node.prop.visit_with(self);
                 }
 
-                if let Some(prop) = PropKey::from_expr(
-                    &node.prop,
-                    self.store.unresolved_ctxt,
-                    node.computed,
-                    &mut self.store.names,
-                ) {
+                if let Some(prop) =
+                    PropKey::from_expr(&node.prop, node.computed, self.store.program_data)
+                {
                     Some(
                         obj.into_iter()
                             .map(|obj| {
@@ -1103,7 +1092,7 @@ impl GraphVisitor<'_> {
         if obj == PointerId::NULL_OR_VOID {
             return PointerId::NULL_OR_VOID;
         }
-        if obj.is_primitive() && !is_built_in_property(obj, &self.store.names[prop]) {
+        if obj.is_primitive() && !is_built_in_property(obj, prop) {
             // non-built in prop on primitive - ignore.
             return PointerId::NULL_OR_VOID;
         }
@@ -1140,7 +1129,7 @@ impl GraphVisitor<'_> {
     }
 }
 
-impl Visit<'_> for GraphVisitor<'_> {
+impl Visit<'_> for GraphVisitor<'_, '_> {
     fn visit_stmt(&mut self, n: &Stmt) {
         match n {
             Stmt::With(n) => {
@@ -1210,15 +1199,13 @@ impl Visit<'_> for GraphVisitor<'_> {
     fn visit_decl(&mut self, n: &Decl) {
         match n {
             Decl::Class(class) => {
-                let name = Id::new(&class.ident, &mut self.store.names);
-                let var = self.store.vars.get_index(&name).unwrap();
+                let var = self.store.vars.get_index(&class.ident.name).unwrap();
                 let var = self.store.pointers.insert(Pointer::Var(var));
                 self.invalidate(&[var]);
                 class.visit_children_with(self);
             }
             Decl::Fn(func) => {
-                let name = Id::new(&func.ident, &mut self.store.names);
-                let var = self.store.vars.get_index(&name).unwrap();
+                let var = self.store.vars.get_index(&func.ident.name).unwrap();
                 let f = self
                     .store
                     .pointers
@@ -1392,19 +1379,18 @@ pub enum ExprContext {
 }
 
 #[derive(Debug)]
-pub struct Store {
-    unresolved_ctxt: SyntaxContext,
+pub struct Store<'d> {
     functions: FxHashMap<NodeId, StaticFunctionData>,
-    names: IndexSet<NameId, JsWord>,
-    vars: IndexSet<VarId, Id>,
+    vars: IndexSet<VarId, NameId>,
     pub pointers: IndexSet<PointerId, Pointer>,
     references: FxHashSet<(PropKey, PointerId)>,
     pub invalid_pointers: GrowableBitSet<PointerId>,
     concrete_pointer_bound: PointerId,
     pub calls: FxHashSet<(NodeId, PointerId, ExprContext)>,
+    program_data: &'d mut ProgramData,
 }
 
-impl Store {
+impl Store<'_> {
     // Invalidated the given pointer. Returns true if it was not previously invalid.
     fn invalidate(&mut self, pointer: PointerId) -> bool {
         if pointer.is_built_in() {
@@ -1453,15 +1439,14 @@ impl Store {
 }
 
 struct DeclFinder<'a> {
-    names: &'a mut IndexSet<NameId, JsWord>,
-    vars: &'a mut IndexSet<VarId, Id>,
+    vars: &'a mut IndexSet<VarId, NameId>,
 
     var_start: VarId,
 }
 
 impl DeclFinder<'_> {
     fn record_var(&mut self, ident: &Ident) {
-        let id = Id::new(ident, self.names);
+        let id = ident.name;
         // Var should not have been previously defined (unless it was within the
         // current function).
         debug_assert!(
@@ -1497,14 +1482,14 @@ impl Visit<'_> for DeclFinder<'_> {
     }
 }
 
-struct FnVisitor<'s> {
-    store: &'s mut Store,
+struct FnVisitor<'d: 's, 's> {
+    store: &'s mut Store<'d>,
     /// Whether the current function accesses the `arguments` array.
     accesses_arguments_array: bool,
     params_to_invalidate: &'s mut Vec<VarId>,
 }
 
-impl FnVisitor<'_> {
+impl FnVisitor<'_, '_> {
     fn handle_fn<T>(&mut self, node: &T, fn_expr_name: Option<&Ident>, is_arrow: bool)
     where
         T: FunctionLike + GetNodeId,
@@ -1512,7 +1497,6 @@ impl FnVisitor<'_> {
         let var_start = self.store.vars.len().try_into().unwrap();
 
         let mut v = DeclFinder {
-            names: &mut self.store.names,
             vars: &mut self.store.vars,
             var_start: VarId::from_u32(var_start),
         };
@@ -1581,17 +1565,14 @@ impl FnVisitor<'_> {
     }
 }
 
-impl<'ast> Visit<'ast> for FnVisitor<'_> {
+impl<'ast> Visit<'ast> for FnVisitor<'_, '_> {
     fn visit_object_lit(&mut self, n: &'ast ObjectLit) {
         self.store.pointers.insert(Pointer::Object(n.node_id));
         n.visit_children_with(self);
     }
 
     fn visit_ident(&mut self, node: &'ast Ident) {
-        if !self.accesses_arguments_array
-            && node.sym == js_word!("arguments")
-            && node.ctxt == self.store.unresolved_ctxt
-        {
+        if !self.accesses_arguments_array && node.name == id_for_built_in!("arguments") {
             self.accesses_arguments_array = true;
         }
     }
@@ -1654,86 +1635,86 @@ impl PointerId {
 }
 
 /// Properties that are accessible on all objects.
-pub static OBJECT_PROPERTIES: &[JsWord] = &[
-    js_word!("prototype"),
+pub static OBJECT_PROPERTIES: &[NameId] = &[
+    id_for_built_in!("prototype"),
     // From Object.prototype
     // https://tc39.es/ecma262/#sec-properties-of-the-object-prototype-object
-    js_word!("constructor"),
-    js_word!("hasOwnProperty"),
-    js_word!("isPrototypeOf"),
-    js_word!("propertyIsEnumerable"),
-    js_word!("toLocaleString"),
-    js_word!("toString"),
-    js_word!("valueOf"),
-    js_word!("__proto__"),
-    js_word!("__defineGetter__"),
-    js_word!("__defineSetter__"),
-    js_word!("__lookupGetter__"),
-    js_word!("__lookupSetter__"),
+    id_for_built_in!("constructor"),
+    id_for_built_in!("hasOwnProperty"),
+    id_for_built_in!("isPrototypeOf"),
+    id_for_built_in!("propertyIsEnumerable"),
+    id_for_built_in!("toLocaleString"),
+    id_for_built_in!("toString"),
+    id_for_built_in!("valueOf"),
+    id_for_built_in!("__proto__"),
+    id_for_built_in!("__defineGetter__"),
+    id_for_built_in!("__defineSetter__"),
+    id_for_built_in!("__lookupGetter__"),
+    id_for_built_in!("__lookupSetter__"),
 ];
 
-pub static NUM_PROPERTIES: &[JsWord] = &[
-    js_word!("toExponential"),
-    js_word!("toFixed"),
-    js_word!("toPrecision"),
+pub static NUM_PROPERTIES: &[NameId] = &[
+    id_for_built_in!("toExponential"),
+    id_for_built_in!("toFixed"),
+    id_for_built_in!("toPrecision"),
 ];
 
-pub static STRING_PROPERTIES: &[JsWord] = &[
-    js_word!("length"),
-    js_word!("at"),
-    js_word!("charAt"),
-    js_word!("charCodeAt"),
-    js_word!("codePointAt"),
-    js_word!("concat"),
-    js_word!("endsWith"),
-    js_word!("includes"),
-    js_word!("indexOf"),
-    js_word!("isWellFormed"),
-    js_word!("lastIndexOf"),
-    js_word!("localeCompare"),
-    js_word!("match"),
-    js_word!("matchAll"),
-    js_word!("normalize"),
-    js_word!("padEnd"),
-    js_word!("padStart"),
-    js_word!("repeat"),
-    js_word!("replace"),
-    js_word!("replaceAll"),
-    js_word!("search"),
-    js_word!("slice"),
-    js_word!("split"),
-    js_word!("startsWith"),
-    js_word!("substr"),
-    js_word!("substring"),
-    js_word!("toLocaleLowerCase"),
-    js_word!("toLocaleUpperCase"),
-    js_word!("toLowerCase"),
-    js_word!("toUpperCase"),
-    js_word!("toWellFormed"),
-    js_word!("trim"),
-    js_word!("trimEnd"),
-    js_word!("trimStart"),
+pub static STRING_PROPERTIES: &[NameId] = &[
+    id_for_built_in!("length"),
+    id_for_built_in!("at"),
+    id_for_built_in!("charAt"),
+    id_for_built_in!("charCodeAt"),
+    id_for_built_in!("codePointAt"),
+    id_for_built_in!("concat"),
+    id_for_built_in!("endsWith"),
+    id_for_built_in!("includes"),
+    id_for_built_in!("indexOf"),
+    id_for_built_in!("isWellFormed"),
+    id_for_built_in!("lastIndexOf"),
+    id_for_built_in!("localeCompare"),
+    id_for_built_in!("match"),
+    id_for_built_in!("matchAll"),
+    id_for_built_in!("normalize"),
+    id_for_built_in!("padEnd"),
+    id_for_built_in!("padStart"),
+    id_for_built_in!("repeat"),
+    id_for_built_in!("replace"),
+    id_for_built_in!("replaceAll"),
+    id_for_built_in!("search"),
+    id_for_built_in!("slice"),
+    id_for_built_in!("split"),
+    id_for_built_in!("startsWith"),
+    id_for_built_in!("substr"),
+    id_for_built_in!("substring"),
+    id_for_built_in!("toLocaleLowerCase"),
+    id_for_built_in!("toLocaleUpperCase"),
+    id_for_built_in!("toLowerCase"),
+    id_for_built_in!("toUpperCase"),
+    id_for_built_in!("toWellFormed"),
+    id_for_built_in!("trim"),
+    id_for_built_in!("trimEnd"),
+    id_for_built_in!("trimStart"),
 ];
 
-pub static REGEX_PROPERTIES: &[JsWord] = &[
+pub static REGEX_PROPERTIES: &[NameId] = &[
     // https://tc39.es/ecma262/#sec-properties-of-the-regexp-prototype-object
-    js_word!("exec"),
-    js_word!("dotAll"),
-    js_word!("flags"),
-    js_word!("global"),
-    js_word!("hasIndices"),
-    js_word!("ignoreCase"),
-    js_word!("multiline"),
-    js_word!("source"),
-    js_word!("sticky"),
-    js_word!("test"),
-    js_word!("unicode"),
-    js_word!("unicodeSets"),
+    id_for_built_in!("exec"),
+    id_for_built_in!("dotAll"),
+    id_for_built_in!("flags"),
+    id_for_built_in!("global"),
+    id_for_built_in!("hasIndices"),
+    id_for_built_in!("ignoreCase"),
+    id_for_built_in!("multiline"),
+    id_for_built_in!("source"),
+    id_for_built_in!("sticky"),
+    id_for_built_in!("test"),
+    id_for_built_in!("unicode"),
+    id_for_built_in!("unicodeSets"),
     // https://tc39.es/ecma262/#sec-properties-of-regexp-instances
-    js_word!("lastIndex"),
+    id_for_built_in!("lastIndex"),
 ];
 
-static BUILT_INS: &[(PointerId, &[JsWord])] = &[
+static BUILT_INS: &[(PointerId, &[NameId])] = &[
     (PointerId::BOOL, &[]),
     (PointerId::NUM, NUM_PROPERTIES),
     (PointerId::STRING, STRING_PROPERTIES),
@@ -1743,12 +1724,12 @@ static BUILT_INS: &[(PointerId, &[JsWord])] = &[
     (PointerId::UNKNOWN, &[]),
 ];
 
-fn is_built_in_property(obj: PointerId, name: &JsWord) -> bool {
+fn is_built_in_property(obj: PointerId, name: NameId) -> bool {
     if obj == PointerId::UNKNOWN || obj == PointerId::NULL_OR_VOID {
         false
     } else {
-        OBJECT_PROPERTIES.contains(name)
-            || obj.is_built_in() && BUILT_INS[obj.as_usize()].1.contains(name)
+        OBJECT_PROPERTIES.contains(&name)
+            || obj.is_built_in() && BUILT_INS[obj.as_usize()].1.contains(&name)
     }
 }
 
@@ -1762,13 +1743,13 @@ fn test_built_in_pointer_order() {
 
 struct Renamer<'a> {
     program_data: &'a mut ProgramData,
-    rename_map: FxHashMap<NodeId, JsWord>,
+    rename_map: FxHashMap<NodeId, NameId>,
 }
 
 impl VisitMut<'_> for Renamer<'_> {
     fn visit_mut_ident(&mut self, node: &mut Ident) {
         if let Some(new_name) = self.rename_map.get(&node.node_id) {
-            node.sym = new_name.clone();
+            node.name = *new_name;
         }
     }
 
@@ -1785,8 +1766,7 @@ impl VisitMut<'_> for Renamer<'_> {
             if let Some(new_name) = self.rename_map.get(&node_id_to_rename) {
                 *node = PropName::Ident(Ident {
                     node_id: self.program_data.new_id_from(node.node_id()),
-                    sym: new_name.clone(),
-                    ctxt: SyntaxContext::empty(),
+                    name: *new_name,
                 });
                 return;
             }
@@ -1799,8 +1779,7 @@ impl VisitMut<'_> for Renamer<'_> {
             if let Some(new_name) = self.rename_map.get(&node.prop.node_id()) {
                 *node.prop.as_mut() = Expr::Ident(Ident {
                     node_id: self.program_data.new_id_from(node.prop.node_id()),
-                    sym: new_name.clone(),
-                    ctxt: SyntaxContext::empty(),
+                    name: *new_name,
                 });
                 node.computed = false;
                 return;
@@ -1811,7 +1790,7 @@ impl VisitMut<'_> for Renamer<'_> {
 
     fn visit_mut_str(&mut self, node: &mut Str) {
         if let Some(new_name) = self.rename_map.get(&node.node_id) {
-            node.value = new_name.clone();
+            node.value = self.program_data.get_name_for_id(*new_name).clone();
         }
     }
 }
@@ -1820,58 +1799,55 @@ impl VisitMut<'_> for Renamer<'_> {
 struct PropKey(NameId, NodeId);
 
 impl PropKey {
-    fn from_prop_name(
-        prop: &PropName,
-        unresolved_ctxt: SyntaxContext,
-        names: &mut IndexSet<NameId, JsWord>,
-    ) -> Option<PropKey> {
+    fn from_prop_name(prop: &PropName, program_data: &mut ProgramData) -> Option<PropKey> {
         match prop {
-            PropName::Ident(p) => Some(PropKey(names.insert(p.sym.clone()), p.node_id)),
-            PropName::Str(p) => Some(PropKey(names.insert(p.value.clone()), p.node_id)),
-            PropName::Num(p) => Some(PropKey(
-                names.insert(ecma_number_to_string(p.value).into()),
+            PropName::Ident(p) => Some(PropKey(p.name, p.node_id)),
+            PropName::Str(p) => Some(PropKey(
+                program_data.get_id_for_name(p.value.clone()),
                 p.node_id,
             )),
-            PropName::Computed(p) => PropKey::from_expr(&p.expr, unresolved_ctxt, true, names),
-            PropName::BigInt(p) => {
-                Some(PropKey(names.insert(p.value.to_string().into()), p.node_id))
-            }
+            PropName::Num(p) => Some(PropKey(
+                program_data.get_id_for_name(ecma_number_to_string(p.value).into()),
+                p.node_id,
+            )),
+            PropName::Computed(p) => PropKey::from_expr(&p.expr, true, program_data),
+            PropName::BigInt(p) => Some(PropKey(
+                program_data.get_id_for_name(p.value.to_string().into()),
+                p.node_id,
+            )),
         }
     }
 
-    fn from_expr(
-        expr: &Expr,
-        unresolved_ctxt: SyntaxContext,
-        computed: bool,
-        names: &mut IndexSet<NameId, JsWord>,
-    ) -> Option<PropKey> {
+    fn from_expr(expr: &Expr, computed: bool, program_data: &mut ProgramData) -> Option<PropKey> {
         match expr {
             Expr::Ident(e) => {
-                if !computed
-                    || e.ctxt == unresolved_ctxt
-                        && (e.sym == js_word!("undefined") || e.sym == js_word!("NaN"))
-                {
-                    Some(PropKey(names.insert(e.sym.clone()), e.node_id))
+                if e.name == id_for_built_in!("undefined") || e.name == id_for_built_in!("NaN") {
+                    Some(PropKey(e.name, e.node_id))
+                } else if !computed {
+                    Some(PropKey(e.name, e.node_id))
                 } else {
                     None
                 }
             }
             Expr::Lit(e) => match e {
-                Lit::Str(e) => Some(PropKey(names.insert(e.value.clone()), e.node_id)),
+                Lit::Str(e) => Some(PropKey(
+                    program_data.get_id_for_name(e.value.clone()),
+                    e.node_id,
+                )),
                 Lit::Bool(e) => {
                     if e.value {
-                        Some(PropKey(names.insert(js_word!("true")), e.node_id))
+                        Some(PropKey(id_for_built_in!("true"), e.node_id))
                     } else {
-                        Some(PropKey(names.insert(js_word!("false")), e.node_id))
+                        Some(PropKey(id_for_built_in!("false"), e.node_id))
                     }
                 }
-                Lit::Null(e) => Some(PropKey(names.insert(js_word!("null")), e.node_id)),
+                Lit::Null(e) => Some(PropKey(id_for_built_in!("null"), e.node_id)),
                 Lit::Num(e) => Some(PropKey(
-                    names.insert(ecma_number_to_string(e.value).into()),
+                    program_data.get_id_for_name(ecma_number_to_string(e.value).into()),
                     e.node_id,
                 )),
                 Lit::BigInt(e) => Some(PropKey(
-                    names.insert(e.value.to_str_radix(10).into()),
+                    program_data.get_id_for_name(e.value.to_str_radix(10).into()),
                     e.node_id,
                 )),
                 Lit::Regex(_) => None,
@@ -1882,7 +1858,7 @@ impl PropKey {
 }
 
 /// Returns true if the string value of the [`PropName`] is statically determinable.
-fn is_simple_prop_name(prop_name: &PropName, unresolved_ctxt: SyntaxContext) -> bool {
+fn is_simple_prop_name(prop_name: &PropName) -> bool {
     match prop_name {
         PropName::Ident(_) | PropName::Str(_) | PropName::Num(_) | PropName::BigInt(_) => true,
         PropName::Computed(p) => match p.expr.as_ref() {
@@ -1891,21 +1867,9 @@ fn is_simple_prop_name(prop_name: &PropName, unresolved_ctxt: SyntaxContext) -> 
                 Lit::Regex(_) => false,
             },
             Expr::Ident(e) => {
-                e.ctxt == unresolved_ctxt
-                    && (e.sym == js_word!("undefined") || e.sym == js_word!("NaN"))
+                e.name == id_for_built_in!("undefined") || e.name == id_for_built_in!("NaN")
             }
             _ => false,
         },
-    }
-}
-
-index::newtype_index!(pub NameId);
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-struct Id(NameId, SyntaxContext);
-
-impl Id {
-    fn new(ident: &Ident, names: &mut IndexSet<NameId, JsWord>) -> Self {
-        Self(names.insert(ident.sym.clone()), ident.ctxt)
     }
 }

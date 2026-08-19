@@ -8,7 +8,7 @@ use crate::{
     error::{Error, SyntaxError},
     token::*,
 };
-use ast::{RegexFlags, op};
+use ast::{ProgramData, RegexFlags, op};
 use common::{BytePos, SourceFile, Span, chars::char_literals};
 use number::{NonDecRadix, Radix};
 use state::State;
@@ -33,6 +33,8 @@ pub struct Lexer<'src> {
     errors: Vec<Error>,
     module_errors: Vec<Error>,
     strict_errors: Vec<Error>,
+
+    pub program_data: &'src mut ProgramData,
 }
 
 impl FusedIterator for Lexer<'_> {}
@@ -92,7 +94,12 @@ impl Iterator for Lexer<'_> {
 }
 
 impl<'src> Lexer<'src> {
-    pub fn new(syntax: Syntax, target: JscTarget, input: &'src SourceFile) -> Self {
+    pub fn new(
+        syntax: Syntax,
+        target: JscTarget,
+        input: &'src SourceFile,
+        program_data: &'src mut ProgramData,
+    ) -> Self {
         Lexer {
             cur: 0,
             bytes: input.src.as_bytes(),
@@ -106,6 +113,8 @@ impl<'src> Lexer<'src> {
             module_errors: Default::default(),
             strict_errors: Default::default(),
             buf: String::with_capacity(16),
+
+            program_data,
         }
     }
 
@@ -870,7 +879,7 @@ impl<'src> Lexer<'src> {
                 }
                 first = false;
             }
-            let value = Word::from(buf.as_str());
+            let value = Word::from_str(buf.as_str(), lexer.program_data);
 
             Ok((value, has_escape))
         })
@@ -894,10 +903,12 @@ impl<'src> Lexer<'src> {
         // should know context or parser should handle this error. Our approach to this
         // problem is former one.
         if has_esc && self.ctx.is_reserved(&word) {
-            self.error(
-                start,
-                SyntaxError::EscapeInReservedWord { word: word.into() },
-            )?
+            // TODO: mark this and others as cold?
+            let word = self
+                .program_data
+                .get_name_for_id(word.get_name_id())
+                .clone();
+            self.error(start, SyntaxError::EscapeInReservedWord { word })?
         } else {
             Ok(Word(word))
         }

@@ -1,14 +1,11 @@
 pub(crate) use self::{AssignOpToken::*, BinOpToken::*, Keyword::*, Token::*};
 use crate::error::Error;
 pub(crate) use ast::AssignOp as AssignOpToken;
-use ast::{BinaryOp, RegexFlags};
+use ast::{BinaryOp, NameId, ProgramData, RegexFlags, id_for_built_in};
 use atoms::{JsWord, js_word};
 use common::Span;
 use num_bigint::BigUint;
-use std::{
-    borrow::Cow,
-    fmt::{self, Debug, Display, Formatter},
-};
+use std::fmt::{self, Debug, Formatter};
 
 #[derive(Clone, PartialEq)]
 pub enum Token {
@@ -210,7 +207,7 @@ pub struct TokenAndSpan {
     pub span: Span,
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Word {
     Keyword(Keyword),
 
@@ -218,7 +215,7 @@ pub enum Word {
     True,
     False,
 
-    Ident(JsWord),
+    Ident(NameId),
 }
 
 impl Word {
@@ -235,56 +232,8 @@ impl Word {
             _ => false,
         }
     }
-}
 
-impl From<JsWord> for Word {
-    fn from(i: JsWord) -> Self {
-        match i {
-            js_word!("null") => Word::Null,
-            js_word!("true") => Word::True,
-            js_word!("false") => Word::False,
-            js_word!("await") => Await.into(),
-            js_word!("break") => Break.into(),
-            js_word!("case") => Case.into(),
-            js_word!("catch") => Catch.into(),
-            js_word!("continue") => Continue.into(),
-            js_word!("debugger") => Debugger.into(),
-            js_word!("default") => Default_.into(),
-            js_word!("do") => Do.into(),
-            js_word!("export") => Export.into(),
-            js_word!("else") => Else.into(),
-            js_word!("finally") => Finally.into(),
-            js_word!("for") => For.into(),
-            js_word!("function") => Function.into(),
-            js_word!("if") => If.into(),
-            js_word!("return") => Return.into(),
-            js_word!("switch") => Switch.into(),
-            js_word!("throw") => Throw.into(),
-            js_word!("try") => Try.into(),
-            js_word!("var") => Var.into(),
-            js_word!("let") => Let.into(),
-            js_word!("const") => Const.into(),
-            js_word!("while") => While.into(),
-            js_word!("with") => With.into(),
-            js_word!("new") => New.into(),
-            js_word!("this") => This.into(),
-            js_word!("super") => Super.into(),
-            js_word!("class") => Class.into(),
-            js_word!("extends") => Extends.into(),
-            js_word!("import") => Import.into(),
-            js_word!("yield") => Yield.into(),
-            js_word!("in") => In.into(),
-            js_word!("instanceof") => InstanceOf.into(),
-            js_word!("typeof") => TypeOf.into(),
-            js_word!("void") => Void.into(),
-            js_word!("delete") => Delete.into(),
-            _ => Word::Ident(i),
-        }
-    }
-}
-
-impl From<&str> for Word {
-    fn from(s: &str) -> Self {
+    pub fn from_str(s: &str, program_data: &mut ProgramData) -> Self {
         match s {
             "null" => Word::Null,
             "true" => Word::True,
@@ -324,7 +273,17 @@ impl From<&str> for Word {
             "typeof" => TypeOf.into(),
             "void" => Void.into(),
             "delete" => Delete.into(),
-            _ => Word::Ident(s.into()),
+            _ => Word::Ident(program_data.get_id_for_name(JsWord::from(s))),
+        }
+    }
+
+    pub fn get_name_id(&self) -> NameId {
+        match self {
+            Word::Keyword(keyword) => keyword.get_name_id(),
+            Word::Null => id_for_built_in!("null"),
+            Word::True => id_for_built_in!("true"),
+            Word::False => id_for_built_in!("false"),
+            Word::Ident(name_id) => *name_id,
         }
     }
 }
@@ -332,83 +291,6 @@ impl From<&str> for Word {
 impl From<Keyword> for Word {
     fn from(kwd: Keyword) -> Self {
         Word::Keyword(kwd)
-    }
-}
-
-impl From<Word> for JsWord {
-    fn from(w: Word) -> Self {
-        match w {
-            Word::Keyword(k) => match k {
-                Await => js_word!("await"),
-                Break => js_word!("break"),
-                Case => js_word!("case"),
-                Catch => js_word!("catch"),
-                Continue => js_word!("continue"),
-                Debugger => js_word!("debugger"),
-                Default_ => js_word!("default"),
-                Do => js_word!("do"),
-                Else => js_word!("else"),
-
-                Finally => js_word!("finally"),
-                For => js_word!("for"),
-
-                Function => js_word!("function"),
-
-                If => js_word!("if"),
-
-                Return => js_word!("return"),
-
-                Switch => js_word!("switch"),
-
-                Throw => js_word!("throw"),
-
-                Try => js_word!("try"),
-                Var => js_word!("var"),
-                Let => js_word!("let"),
-                Const => js_word!("const"),
-                While => js_word!("while"),
-                With => js_word!("with"),
-
-                New => js_word!("new"),
-                This => js_word!("this"),
-                Super => js_word!("super"),
-
-                Class => js_word!("class"),
-
-                Extends => js_word!("extends"),
-
-                Export => js_word!("export"),
-                Import => js_word!("import"),
-
-                Yield => js_word!("yield"),
-
-                In => js_word!("in"),
-                InstanceOf => js_word!("instanceof"),
-
-                TypeOf => js_word!("typeof"),
-
-                Void => js_word!("void"),
-
-                Delete => js_word!("delete"),
-            },
-
-            Word::Null => js_word!("null"),
-            Word::True => js_word!("true"),
-            Word::False => js_word!("false"),
-
-            Word::Ident(w) => w,
-        }
-    }
-}
-
-impl Debug for Word {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        if let Word::Ident(s) = self {
-            Display::fmt(s, f)
-        } else {
-            let s: JsWord = self.clone().into();
-            Display::fmt(&s, f)
-        }
     }
 }
 
@@ -528,6 +410,46 @@ impl Keyword {
         }
     }
 
+    fn get_name_id(&self) -> NameId {
+        match self {
+            Await => id_for_built_in!("await"),
+            Break => id_for_built_in!("break"),
+            Case => id_for_built_in!("case"),
+            Catch => id_for_built_in!("catch"),
+            Continue => id_for_built_in!("continue"),
+            Debugger => id_for_built_in!("debugger"),
+            Default_ => id_for_built_in!("default"),
+            Do => id_for_built_in!("do"),
+            Else => id_for_built_in!("else"),
+            Finally => id_for_built_in!("finally"),
+            For => id_for_built_in!("for"),
+            Function => id_for_built_in!("function"),
+            If => id_for_built_in!("if"),
+            Return => id_for_built_in!("return"),
+            Switch => id_for_built_in!("switch"),
+            Throw => id_for_built_in!("throw"),
+            Try => id_for_built_in!("try"),
+            Var => id_for_built_in!("var"),
+            Let => id_for_built_in!("let"),
+            Const => id_for_built_in!("const"),
+            While => id_for_built_in!("while"),
+            With => id_for_built_in!("with"),
+            New => id_for_built_in!("new"),
+            This => id_for_built_in!("this"),
+            Super => id_for_built_in!("super"),
+            Class => id_for_built_in!("class"),
+            Extends => id_for_built_in!("extends"),
+            Export => id_for_built_in!("export"),
+            Import => id_for_built_in!("import"),
+            Yield => id_for_built_in!("yield"),
+            In => id_for_built_in!("in"),
+            InstanceOf => id_for_built_in!("instanceof"),
+            TypeOf => id_for_built_in!("typeof"),
+            Void => id_for_built_in!("void"),
+            Delete => id_for_built_in!("delete"),
+        }
+    }
+
     pub fn before_expr(&self) -> bool {
         match self {
             Await | Case | Default_ | Do | Else | Return | Throw | New | Extends | Yield | In
@@ -596,18 +518,6 @@ impl Token {
             tok!('{') | tok!('[') | Word(Word::Ident(..)) | tok!("yield") | tok!("await") => true,
 
             _ => false,
-        }
-    }
-}
-
-impl Word {
-    pub(crate) fn cow(&self) -> Cow<'_, JsWord> {
-        match self {
-            Word::Keyword(k) => Cow::Owned(k.into_js_word()),
-            Word::Ident(w) => Cow::Borrowed(w),
-            Word::False => Cow::Owned(js_word!("false")),
-            Word::True => Cow::Owned(js_word!("true")),
-            Word::Null => Cow::Owned(js_word!("null")),
         }
     }
 }

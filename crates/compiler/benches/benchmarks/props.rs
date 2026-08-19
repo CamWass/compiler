@@ -4,9 +4,8 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use common::{FileName, FilePathMapping};
-use common::{GLOBALS, Globals, Mark};
 use common::{
-    SourceMap, SyntaxContext,
+    SourceMap,
     errors::{ColorConfig, Handler},
 };
 use compiler::resolver::resolve;
@@ -34,43 +33,34 @@ pub fn bench(c: &mut Criterion) {
         let cm = Rc::new(SourceMap::new(FilePathMapping::empty()));
         let fm = cm.new_source_file(FileName::Anon, src.to_string());
 
-        GLOBALS.set(&Globals::new(), || {
-            let unresolved_mark = Mark::new();
+        let mut program_data = ast::ProgramData::default();
 
-            let mut program_data = ast::ProgramData::default();
+        let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
 
-            let handler =
-                Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
+        let mut program = {
+            let mut p = Parser::new(
+                Syntax::Typescript(Default::default()),
+                &fm,
+                &mut program_data,
+            );
+            let res = p
+                .parse_program()
+                .map_err(|e| e.into_diagnostic(&handler).emit());
 
-            let mut program = {
-                let mut p = Parser::new(
-                    Syntax::Typescript(Default::default()),
-                    &fm,
-                    &mut program_data,
-                );
-                let res = p
-                    .parse_program()
-                    .map_err(|e| e.into_diagnostic(&handler).emit());
+            for e in p.take_errors() {
+                e.into_diagnostic(&handler).emit();
+            }
 
-                for e in p.take_errors() {
-                    e.into_diagnostic(&handler).emit();
-                }
+            res.unwrap()
+        };
 
-                res.unwrap()
-            };
+        resolve(&mut program, &mut program_data);
 
-            resolve(&mut program, unresolved_mark);
-
-            let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
-
-            group.bench_with_input(*id, &program, |b, program| {
-                b.iter(|| {
-                    let r = compiler::optimize_properties::analyse(program, unresolved_ctxt);
-                    black_box(r);
-                });
+        group.bench_with_input(*id, &program, |b, program| {
+            b.iter(|| {
+                let r = compiler::optimize_properties::analyse(program, &mut program_data);
+                black_box(r);
             });
-
-            program
         });
     }
     group.finish();

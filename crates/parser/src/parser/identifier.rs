@@ -1,15 +1,12 @@
 //! 12.1 Identifiers
 use super::*;
 use crate::token::Keyword;
-use atoms::js_word;
-use common::SyntaxContext;
 
 impl Parser<'_> {
-    pub(super) fn new_ident(&mut self, sym: JsWord, span: Span) -> Ident {
+    pub(super) fn new_ident(&mut self, name: NameId, span: Span) -> Ident {
         Ident {
             node_id: node_id!(self, span),
-            sym,
-            ctxt: SyntaxContext::empty(),
+            name,
         }
     }
 
@@ -65,7 +62,7 @@ impl Parser<'_> {
             _ => syntax_error!(self, SyntaxError::ExpectedIdent),
         };
 
-        Ok(self.new_ident(w.into(), span!(self, start)))
+        Ok(self.new_ident(w.get_name_id(), span!(self, start)))
     }
 
     /// Identifier
@@ -88,18 +85,18 @@ impl Parser<'_> {
             // StringValue of IdentifierName is: "implements", "interface", "let",
             // "package", "private", "protected",  "public", "static", or "yield".
             match w {
-                Word::Ident(js_word!("enum")) => {
+                Word::Ident(id_for_built_in!("enum")) => {
                     parser.emit_err(parser.input.prev_span(), SyntaxError::InvalidIdentInStrict);
                 }
                 Word::Keyword(Keyword::Yield)
-                | Word::Ident(js_word!("static"))
-                | Word::Ident(js_word!("implements"))
-                | Word::Ident(js_word!("interface"))
-                | Word::Ident(js_word!("let"))
-                | Word::Ident(js_word!("package"))
-                | Word::Ident(js_word!("private"))
-                | Word::Ident(js_word!("protected"))
-                | Word::Ident(js_word!("public")) => {
+                | Word::Ident(id_for_built_in!("static"))
+                | Word::Ident(id_for_built_in!("implements"))
+                | Word::Ident(id_for_built_in!("interface"))
+                | Word::Ident(id_for_built_in!("let"))
+                | Word::Ident(id_for_built_in!("package"))
+                | Word::Ident(id_for_built_in!("private"))
+                | Word::Ident(id_for_built_in!("protected"))
+                | Word::Ident(id_for_built_in!("public")) => {
                     parser.emit_strict_mode_err(
                         parser.input.prev_span(),
                         SyntaxError::InvalidIdentInStrict,
@@ -115,7 +112,7 @@ impl Parser<'_> {
 
             match w {
                 Word::Keyword(Keyword::Await) if parser.input.syntax().typescript() => {
-                    Ok(js_word!("await"))
+                    Ok(id_for_built_in!("await"))
                 }
                 // It is a Syntax Error if the goal symbol of the syntactic grammar is Module
                 // and the StringValue of IdentifierName is "await".
@@ -123,12 +120,12 @@ impl Parser<'_> {
                     syntax_error!(parser, parser.input.prev_span(), SyntaxError::ExpectedIdent)
                 }
                 Word::Keyword(Keyword::This) if parser.input.syntax().typescript() => {
-                    Ok(js_word!("this"))
+                    Ok(id_for_built_in!("this"))
                 }
-                Word::Keyword(Keyword::Let) => Ok(js_word!("let")),
+                Word::Keyword(Keyword::Let) => Ok(id_for_built_in!("let")),
                 Word::Ident(ident) => Ok(ident),
-                Word::Keyword(Keyword::Yield) if incl_yield => Ok(js_word!("yield")),
-                Word::Keyword(Keyword::Await) if incl_await => Ok(js_word!("await")),
+                Word::Keyword(Keyword::Yield) if incl_yield => Ok(id_for_built_in!("yield")),
+                Word::Keyword(Keyword::Await) if incl_await => Ok(id_for_built_in!("await")),
                 Word::Keyword(..) | Word::Null | Word::True | Word::False => {
                     syntax_error!(parser, parser.input.prev_span(), SyntaxError::ExpectedIdent)
                 }

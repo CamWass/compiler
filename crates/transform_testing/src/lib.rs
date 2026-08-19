@@ -1,7 +1,7 @@
 #![deny(unused)]
 
 use ansi_term::Color;
-use ast::{Pat, *};
+use ast::*;
 use codegen::Emitter;
 use common::{FileName, SourceMap, errors::Handler, util::take::Take};
 use parser::{Parser, Syntax};

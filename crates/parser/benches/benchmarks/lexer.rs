@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use ast::ProgramData;
 use common::{FileName, FilePathMapping, SourceMap};
 use criterion::{Criterion, Throughput, black_box, criterion_group};
 use parser::lexer::Lexer;
@@ -30,7 +31,9 @@ fn bench(c: &mut Criterion) {
 
         group.bench_with_input(*id, &fm, |b, f| {
             b.iter(|| {
-                let lexer = Lexer::new(Default::default(), Default::default(), f);
+                let mut program_data = ProgramData::default();
+                let lexer =
+                    Lexer::new(Default::default(), Default::default(), f, &mut program_data);
                 for t in lexer {
                     black_box(t);
                 }

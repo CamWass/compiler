@@ -19,7 +19,6 @@ use crate::{
     token::{Token, Word},
 };
 use ast::*;
-use atoms::JsWord;
 use common::{BytePos, SourceFile, Span};
 use input::Buffer;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -32,9 +31,8 @@ pub struct Parser<'d> {
     /// [false] while backtracking
     emit_err: bool,
     input: Buffer<'d>,
-    program_data: &'d mut ProgramData,
 
-    labels: Vec<JsWord>,
+    labels: Vec<NameId>,
     /// Start position of an assignment expression.
     potential_arrow_start: Option<BytePos>,
     /// Tracks the positions of commas that directly follow spread elements in arrays.
@@ -48,12 +46,11 @@ pub struct Parser<'d> {
 
 impl<'d> Parser<'d> {
     pub fn new(syntax: Syntax, input: &'d SourceFile, program_data: &'d mut ProgramData) -> Self {
-        let input = Lexer::new(syntax, Default::default(), input);
+        let input = Lexer::new(syntax, Default::default(), input, program_data);
 
         Parser {
             emit_err: true,
             input: Buffer::new(input),
-            program_data: program_data,
 
             labels: Vec::new(),
             potential_arrow_start: None,

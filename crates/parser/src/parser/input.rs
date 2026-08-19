@@ -5,6 +5,7 @@ use crate::{
     parser::Parser,
     token::{Token, TokenAndSpan},
 };
+use ast::ProgramData;
 use common::{BytePos, DUMMY_SP, Span};
 
 /// This struct is responsible for managing current token and peeked token.
@@ -269,5 +270,12 @@ impl<'d> Buffer<'d> {
     #[inline]
     pub(crate) fn set_token_context(&mut self, c: TokenContexts) {
         self.iter.set_token_context(c);
+    }
+
+    pub(crate) fn program_data(&self) -> &ProgramData {
+        self.iter.program_data
+    }
+    pub(crate) fn program_data_mut(&mut self) -> &mut ProgramData {
+        self.iter.program_data
     }
 }

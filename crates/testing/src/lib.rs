@@ -20,9 +20,8 @@ where
 {
     let cm = Rc::new(SourceMap::new(FilePathMapping::empty()));
     let (handler, errors) = self::string_errors::new_handler(cm.clone(), treat_err_as_bug);
-    let result = common::GLOBALS.set(&common::Globals::new(), || op(cm, &handler));
 
-    match result {
+    match op(cm, &handler) {
         Ok(res) => Ok(res),
         Err(()) => Err(errors.into()),
     }

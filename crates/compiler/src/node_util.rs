@@ -1,7 +1,6 @@
 use ast::*;
 use atoms::{JsWord, js_word};
 use bitflags::bitflags;
-use common::SyntaxContext;
 use num_traits::{FromPrimitive, identities::Zero};
 
 use crate::convert::{
@@ -12,7 +11,7 @@ use crate::convert::{
 
 /// Returns the boolean value of an expression, or None if the value can't be
 /// determined by static analysis.
-pub fn get_boolean_value(expr: &Expr, unresolved_ctxt: SyntaxContext) -> Option<bool> {
+pub fn get_boolean_value(expr: &Expr) -> Option<bool> {
     match expr {
         Expr::Lit(lit) => match lit {
             Lit::Str(string) => Some(!string.is_empty()),
@@ -23,46 +22,37 @@ pub fn get_boolean_value(expr: &Expr, unresolved_ctxt: SyntaxContext) -> Option<
             Lit::Regex(_) => Some(true),
         },
         Expr::Array(_) | Expr::Object(_) | Expr::Class(_) | Expr::Fn(_) => Some(true),
-        Expr::Ident(ident) => {
-            if ident.ctxt == unresolved_ctxt {
-                match ident.sym {
-                    js_word!("undefined") | js_word!("NaN") => Some(false),
-                    js_word!("Infinity") => Some(true),
-                    _ => None,
-                }
-            } else {
-                None
-            }
-        }
+        Expr::Ident(ident) => match ident.name {
+            id_for_built_in!("undefined") | id_for_built_in!("NaN") => Some(false),
+            id_for_built_in!("Infinity") => Some(true),
+            _ => None,
+        },
         Expr::Unary(unary) => match unary.op {
             UnaryOp::Minus | UnaryOp::Plus | UnaryOp::Tilde => {
-                if let Some(numeric_value) = get_number_value(expr, unresolved_ctxt) {
+                if let Some(numeric_value) = get_number_value(expr) {
                     let isFalsey = numeric_value == 0.0 || numeric_value.is_nan();
                     Some(!isFalsey)
-                } else if let Some(bigintVal) = getBigIntValue(expr, unresolved_ctxt) {
+                } else if let Some(bigintVal) = getBigIntValue(expr) {
                     let isFalsey = bigintVal.is_zero();
                     Some(!isFalsey)
                 } else {
                     None
                 }
             }
-            UnaryOp::Bang => get_boolean_value(&unary.arg, unresolved_ctxt).map(|v| !v),
+            UnaryOp::Bang => get_boolean_value(&unary.arg).map(|v| !v),
             UnaryOp::TypeOf => Some(true),
             UnaryOp::Void => Some(false),
             UnaryOp::Delete => None,
         },
-        Expr::Seq(seq) => seq
-            .exprs
-            .last()
-            .and_then(|e| get_boolean_value(e, unresolved_ctxt)),
+        Expr::Seq(seq) => seq.exprs.last().and_then(|e| get_boolean_value(e)),
         Expr::Assign(assign) => match assign.op {
-            AssignOp::Assign => get_boolean_value(&assign.right, unresolved_ctxt),
+            AssignOp::Assign => get_boolean_value(&assign.right),
             // TODO: &&=, ||=, and ??=
             _ => None,
         },
         Expr::Cond(cond) => {
-            let consValue = get_boolean_value(&cond.cons, unresolved_ctxt);
-            let altValue = get_boolean_value(&cond.alt, unresolved_ctxt);
+            let consValue = get_boolean_value(&cond.cons);
+            let altValue = get_boolean_value(&cond.alt);
             if consValue == altValue {
                 consValue
             } else {
@@ -80,8 +70,8 @@ pub fn get_boolean_value(expr: &Expr, unresolved_ctxt: SyntaxContext) -> Option<
         }
         Expr::Bin(bin) => match bin.op {
             BinaryOp::LogicalOr => {
-                let left = get_boolean_value(&bin.left, unresolved_ctxt);
-                let right = get_boolean_value(&bin.right, unresolved_ctxt);
+                let left = get_boolean_value(&bin.left);
+                let right = get_boolean_value(&bin.right);
                 if let Some(left) = left
                     && let Some(right) = right
                 {
@@ -91,8 +81,8 @@ pub fn get_boolean_value(expr: &Expr, unresolved_ctxt: SyntaxContext) -> Option<
                 }
             }
             BinaryOp::LogicalAnd => {
-                let left = get_boolean_value(&bin.left, unresolved_ctxt);
-                let right = get_boolean_value(&bin.right, unresolved_ctxt);
+                let left = get_boolean_value(&bin.left);
+                let right = get_boolean_value(&bin.right);
                 if let Some(left) = left
                     && let Some(right) = right
                 {
@@ -102,8 +92,8 @@ pub fn get_boolean_value(expr: &Expr, unresolved_ctxt: SyntaxContext) -> Option<
                 }
             }
             BinaryOp::NullishCoalescing => {
-                let left = get_boolean_value(&bin.left, unresolved_ctxt);
-                let right = get_boolean_value(&bin.right, unresolved_ctxt);
+                let left = get_boolean_value(&bin.left);
+                let right = get_boolean_value(&bin.right);
                 if let Some(true) = left {
                     left
                 } else if left == right {
@@ -126,7 +116,7 @@ pub fn get_boolean_value(expr: &Expr, unresolved_ctxt: SyntaxContext) -> Option<
 /// Returns the value of an expression as a String, or None if it cannot be
 /// converted. When a String is returned, this function effectively emulates the
 /// `String()` JavaScript cast function.
-pub fn getStringValue(expr: &Expr, unresolved_ctxt: SyntaxContext) -> Option<JsWord> {
+pub fn getStringValue(expr: &Expr) -> Option<JsWord> {
     match expr {
         Expr::Lit(lit) => match lit {
             Lit::Str(string) => Some(string.value.clone()),
@@ -146,7 +136,7 @@ pub fn getStringValue(expr: &Expr, unresolved_ctxt: SyntaxContext) -> Option<JsW
         Expr::Unary(unary) => match unary.op {
             UnaryOp::Void => Some(js_word!("undefined")),
             UnaryOp::Bang => {
-                let arg_value = get_boolean_value(&unary.arg, unresolved_ctxt);
+                let arg_value = get_boolean_value(&unary.arg);
                 arg_value.map(|bool| {
                     if bool {
                         js_word!("false")
@@ -156,25 +146,19 @@ pub fn getStringValue(expr: &Expr, unresolved_ctxt: SyntaxContext) -> Option<JsW
                 })
             }
             UnaryOp::Minus => {
-                let arg_value = get_number_value(&unary.arg, unresolved_ctxt);
+                let arg_value = get_number_value(&unary.arg);
                 arg_value.map(|v| JsWord::from(ecma_number_to_string(-v)))
             }
             // TODO: why can we analyze Minus but not Plus or Tilde?
             UnaryOp::Plus | UnaryOp::Tilde | UnaryOp::TypeOf | UnaryOp::Delete => None,
         },
-        Expr::Ident(ident) => {
-            if ident.ctxt == unresolved_ctxt {
-                match ident.sym {
-                    js_word!("undefined") | js_word!("NaN") | js_word!("Infinity") => {
-                        Some(ident.sym.clone())
-                    }
-                    _ => None,
-                }
-            } else {
-                None
-            }
-        }
-        Expr::Array(array) => arrayToString(array, unresolved_ctxt),
+        Expr::Ident(ident) => match ident.name {
+            id_for_built_in!("undefined") => Some(js_word!("undefined")),
+            id_for_built_in!("NaN") => Some(js_word!("NaN")),
+            id_for_built_in!("Infinity") => Some(js_word!("Infinity")),
+            _ => None,
+        },
+        Expr::Array(array) => arrayToString(array),
         Expr::Object(_) => Some(JsWord::from("[object Object]")),
         // TODO: template literals, but we need the cooked values for the
         // quasis.
@@ -186,10 +170,7 @@ pub fn getStringValue(expr: &Expr, unresolved_ctxt: SyntaxContext) -> Option<JsW
 /// `Array.prototype.join`, the rules for conversion to String are different
 /// than converting each element individually. Specifically, `null` and
 /// `undefined` are converted to an empty string.
-fn getArrayElementStringValue(
-    element: &Option<ExprOrSpread>,
-    unresolved_ctxt: SyntaxContext,
-) -> Option<JsWord> {
+fn getArrayElementStringValue(element: &Option<ExprOrSpread>) -> Option<JsWord> {
     let Some(element) = element else {
         return Some(js_word!(""));
     };
@@ -199,28 +180,25 @@ fn getArrayElementStringValue(
     };
 
     if let Expr::Ident(Ident {
-        sym: js_word!("undefined"),
-        ctxt,
+        name: id_for_built_in!("undefined"),
         ..
     }) = element.as_ref()
     {
-        if *ctxt == unresolved_ctxt {
-            return Some(js_word!(""));
-        }
+        return Some(js_word!(""));
     }
 
     if matches!(element.as_ref(), Expr::Lit(Lit::Null(_))) {
         return Some(js_word!(""));
     }
 
-    getStringValue(element, unresolved_ctxt)
+    getStringValue(element)
 }
 
-fn arrayToString(array: &ArrayLit, unresolved_ctxt: SyntaxContext) -> Option<JsWord> {
+fn arrayToString(array: &ArrayLit) -> Option<JsWord> {
     let mut result = String::new();
 
     for (i, el) in array.elems.iter().enumerate() {
-        let value = getArrayElementStringValue(el, unresolved_ctxt);
+        let value = getArrayElementStringValue(el);
 
         if let Some(value) = value {
             if i != 0 {
@@ -238,15 +216,11 @@ fn arrayToString(array: &ArrayLit, unresolved_ctxt: SyntaxContext) -> Option<JsW
 /// Returns the value of am expression as a Number, or None if it cannot be
 /// converted. When it returns a number, this function effectively emulates the
 /// `Number()` JavaScript cast function.
-pub fn get_number_value(expr: &Expr, unresolved_ctxt: SyntaxContext) -> Option<f64> {
-    get_number_value_inner(expr, unresolved_ctxt, true)
+pub fn get_number_value(expr: &Expr) -> Option<f64> {
+    get_number_value_inner(expr, true)
 }
 
-fn get_number_value_inner(
-    expr: &Expr,
-    unresolved_ctxt: SyntaxContext,
-    number_conversions: bool,
-) -> Option<f64> {
+fn get_number_value_inner(expr: &Expr, number_conversions: bool) -> Option<f64> {
     match expr {
         Expr::Lit(lit) => match lit {
             Lit::Str(string) => {
@@ -276,10 +250,11 @@ fn get_number_value_inner(
             Lit::Regex(_) => None,
         },
         Expr::Unary(unary) => match unary.op {
-            UnaryOp::Minus => get_number_value_inner(&unary.arg, unresolved_ctxt, true).map(|v| -v),
-            UnaryOp::Plus => get_number_value_inner(&unary.arg, unresolved_ctxt, true),
-            UnaryOp::Tilde => get_number_value_inner(&unary.arg, unresolved_ctxt, true)
-                .map(|n| !ecma_number_to_int_32(n) as f64),
+            UnaryOp::Minus => get_number_value_inner(&unary.arg, true).map(|v| -v),
+            UnaryOp::Plus => get_number_value_inner(&unary.arg, true),
+            UnaryOp::Tilde => {
+                get_number_value_inner(&unary.arg, true).map(|n| !ecma_number_to_int_32(n) as f64)
+            }
 
             UnaryOp::Void => {
                 if number_conversions {
@@ -290,7 +265,7 @@ fn get_number_value_inner(
             }
             UnaryOp::Bang => {
                 if number_conversions {
-                    let arg_value = get_boolean_value(&unary.arg, unresolved_ctxt);
+                    let arg_value = get_boolean_value(&unary.arg);
                     match arg_value {
                         Some(true) => Some(0.0),
                         Some(false) => Some(1.0),
@@ -302,27 +277,21 @@ fn get_number_value_inner(
             }
             UnaryOp::Delete | UnaryOp::TypeOf => None,
         },
-        Expr::Ident(ident) => {
-            if ident.ctxt == unresolved_ctxt {
-                match ident.sym {
-                    js_word!("NaN") => Some(f64::NAN),
-                    js_word!("undefined") => {
-                        if number_conversions {
-                            Some(f64::NAN)
-                        } else {
-                            None
-                        }
-                    }
-                    js_word!("Infinity") => Some(f64::INFINITY),
-                    _ => None,
+        Expr::Ident(ident) => match ident.name {
+            id_for_built_in!("NaN") => Some(f64::NAN),
+            id_for_built_in!("undefined") => {
+                if number_conversions {
+                    Some(f64::NAN)
+                } else {
+                    None
                 }
-            } else {
-                None
             }
-        }
+            id_for_built_in!("Infinity") => Some(f64::INFINITY),
+            _ => None,
+        },
         Expr::Object(_) | Expr::Array(_) | Expr::Tpl(_) => {
             if number_conversions {
-                getStringValue(expr, unresolved_ctxt).map(|s| ecma_string_to_number(&s))
+                getStringValue(expr).map(|s| ecma_string_to_number(&s))
             } else {
                 None
             }
@@ -334,7 +303,7 @@ fn get_number_value_inner(
 /// Returns the value of an expression as a BigInt, or None if it cannot be
 /// converted. When it returns a BigInt, this function effectively emulates the
 /// `BigInt()` JavaScript cast function.
-pub fn getBigIntValue(expr: &Expr, unresolved_ctxt: SyntaxContext) -> Option<num_bigint::BigInt> {
+pub fn getBigIntValue(expr: &Expr) -> Option<num_bigint::BigInt> {
     match expr {
         Expr::Lit(lit) => match lit {
             Lit::Str(string) => ecma_string_to_big_int(&string.value),
@@ -352,38 +321,34 @@ pub fn getBigIntValue(expr: &Expr, unresolved_ctxt: SyntaxContext) -> Option<num
             Lit::Regex(_) => None,
         },
         Expr::Unary(unary) => match unary.op {
-            UnaryOp::Minus => getBigIntValue(&unary.arg, unresolved_ctxt).map(|v| -v),
-            UnaryOp::Bang => match get_boolean_value(expr, unresolved_ctxt) {
+            UnaryOp::Minus => getBigIntValue(&unary.arg).map(|v| -v),
+            UnaryOp::Bang => match get_boolean_value(expr) {
                 Some(true) => Some(num_bigint::BigInt::ONE),
                 Some(false) => Some(num_bigint::BigInt::ZERO),
                 None => None,
             },
-            UnaryOp::Tilde => getBigIntValue(&unary.arg, unresolved_ctxt).map(|v| !v),
+            UnaryOp::Tilde => getBigIntValue(&unary.arg).map(|v| !v),
             UnaryOp::TypeOf | UnaryOp::Plus | UnaryOp::Void | UnaryOp::Delete => None,
         },
-        Expr::Tpl(_) => {
-            getStringValue(expr, unresolved_ctxt).and_then(|s| ecma_string_to_big_int(&s))
-        }
+        Expr::Tpl(_) => getStringValue(expr).and_then(|s| ecma_string_to_big_int(&s)),
         _ => None,
     }
 }
 
 /// Returns true if calling this callee may have side-effects.
-pub fn function_call_may_have_side_effects(callee: &Expr, unresolved_ctxt: SyntaxContext) -> bool {
+pub fn function_call_may_have_side_effects(callee: &Expr) -> bool {
     if let Expr::Ident(callee) = callee {
-        if callee.ctxt == unresolved_ctxt
-            && matches!(
-                callee.sym,
-                js_word!("Object")
-                    | js_word!("Array")
-                    | js_word!("String")
-                    | js_word!("Number")
-                    | js_word!("BigInt")
-                    | js_word!("Boolean")
-                    | js_word!("RegExp")
-                    | js_word!("Error")
-            )
-        {
+        if matches!(
+            callee.name,
+            id_for_built_in!("Object")
+                | id_for_built_in!("Array")
+                | id_for_built_in!("String")
+                | id_for_built_in!("Number")
+                | id_for_built_in!("BigInt")
+                | id_for_built_in!("Boolean")
+                | id_for_built_in!("RegExp")
+                | id_for_built_in!("Error")
+        ) {
             return false;
         }
     }
@@ -405,41 +370,41 @@ pub fn function_call_may_have_side_effects(callee: &Expr, unresolved_ctxt: Synta
                 if let Expr::Ident(obj) = obj.as_ref() {
                     // TODO: lots of other built-in props we can optimise e.g.
                     // String.raw.
-                    if obj.ctxt == unresolved_ctxt && obj.sym == js_word!("Math") {
+                    if obj.name == id_for_built_in!("Math") {
                         if matches!(
-                            prop.sym.as_ref(),
-                            "abs"
-                                | "acos"
-                                | "acosh"
-                                | "asin"
-                                | "asinh"
-                                | "atan"
-                                | "atanh"
-                                | "atan2"
-                                | "cbrt"
-                                | "ceil"
-                                | "cos"
-                                | "cosh"
-                                | "exp"
-                                | "expm1"
-                                | "floor"
-                                | "hypot"
-                                | "log"
-                                | "log10"
-                                | "log1p"
-                                | "log2"
-                                | "max"
-                                | "min"
-                                | "pow"
-                                | "round"
-                                | "sign"
-                                | "sin"
-                                | "sinh"
-                                | "sqrt"
-                                | "tan"
-                                | "tanh"
-                                | "trunc"
-                                | "random"
+                            prop.name,
+                            id_for_built_in!("abs")
+                                | id_for_built_in!("acos")
+                                | id_for_built_in!("acosh")
+                                | id_for_built_in!("asin")
+                                | id_for_built_in!("asinh")
+                                | id_for_built_in!("atan")
+                                | id_for_built_in!("atanh")
+                                | id_for_built_in!("atan2")
+                                | id_for_built_in!("cbrt")
+                                | id_for_built_in!("ceil")
+                                | id_for_built_in!("cos")
+                                | id_for_built_in!("cosh")
+                                | id_for_built_in!("exp")
+                                | id_for_built_in!("expm1")
+                                | id_for_built_in!("floor")
+                                | id_for_built_in!("hypot")
+                                | id_for_built_in!("log")
+                                | id_for_built_in!("log10")
+                                | id_for_built_in!("log1p")
+                                | id_for_built_in!("log2")
+                                | id_for_built_in!("max")
+                                | id_for_built_in!("min")
+                                | id_for_built_in!("pow")
+                                | id_for_built_in!("round")
+                                | id_for_built_in!("sign")
+                                | id_for_built_in!("sin")
+                                | id_for_built_in!("sinh")
+                                | id_for_built_in!("sqrt")
+                                | id_for_built_in!("tan")
+                                | id_for_built_in!("tanh")
+                                | id_for_built_in!("trunc")
+                                | id_for_built_in!("random")
                         ) {
                             return false;
                         }
@@ -453,27 +418,25 @@ pub fn function_call_may_have_side_effects(callee: &Expr, unresolved_ctxt: Synta
 }
 
 /// Returns true if the expression may have side effects when executed.
-pub fn expr_may_have_side_effects(expr: &Expr, unresolved_ctxt: SyntaxContext) -> bool {
+pub fn expr_may_have_side_effects(expr: &Expr) -> bool {
     match expr {
         // Context switches can conceal side-effects.
         Expr::Yield(_) | Expr::Await(_) => true,
         Expr::This(_) => false,
         Expr::Array(array) => array.elems.iter().any(|el| match el {
-            Some(el) => expr_or_spread_may_have_side_effects(el, unresolved_ctxt),
+            Some(el) => expr_or_spread_may_have_side_effects(el),
             None => false,
         }),
         Expr::Object(object) => object.props.iter().any(|prop| match prop {
             Prop::KeyValue(prop) => {
-                prop_name_may_have_side_effects(&prop.key, unresolved_ctxt)
-                    || expr_may_have_side_effects(&prop.value, unresolved_ctxt)
+                prop_name_may_have_side_effects(&prop.key)
+                    || expr_may_have_side_effects(&prop.value)
             }
             Prop::Assign(_) => unreachable!(),
             Prop::Getter(GetterProp { key, .. })
             | Prop::Setter(SetterProp { key, .. })
-            | Prop::Method(MethodProp { key, .. }) => {
-                prop_name_may_have_side_effects(key, unresolved_ctxt)
-            }
-            Prop::Spread(spread) => expr_may_have_side_effects(&spread.expr, unresolved_ctxt),
+            | Prop::Method(MethodProp { key, .. }) => prop_name_may_have_side_effects(key),
+            Prop::Spread(spread) => expr_may_have_side_effects(&spread.expr),
         }),
         Expr::Fn(_) => false,
         Expr::Unary(unary) => match unary.op {
@@ -482,63 +445,49 @@ pub fn expr_may_have_side_effects(expr: &Expr, unresolved_ctxt: SyntaxContext) -
             | UnaryOp::Bang
             | UnaryOp::Tilde
             | UnaryOp::TypeOf
-            | UnaryOp::Void => expr_may_have_side_effects(&unary.arg, unresolved_ctxt),
+            | UnaryOp::Void => expr_may_have_side_effects(&unary.arg),
             UnaryOp::Delete => true,
         },
         Expr::Update(_) => true,
         Expr::Bin(bin) => {
-            expr_may_have_side_effects(&bin.left, unresolved_ctxt)
-                || expr_may_have_side_effects(&bin.right, unresolved_ctxt)
+            expr_may_have_side_effects(&bin.left) || expr_may_have_side_effects(&bin.right)
         }
-        Expr::Assign(assign) => assign_expr_may_have_side_effects(assign, unresolved_ctxt),
+        Expr::Assign(assign) => assign_expr_may_have_side_effects(assign),
         Expr::Member(member) => {
-            expr_may_have_side_effects(&member.prop, unresolved_ctxt)
-                || expr_or_super_may_have_side_effects(&member.obj, unresolved_ctxt)
+            expr_may_have_side_effects(&member.prop)
+                || expr_or_super_may_have_side_effects(&member.obj)
         }
         Expr::Cond(cond) => {
-            expr_may_have_side_effects(&cond.test, unresolved_ctxt)
-                || expr_may_have_side_effects(&cond.cons, unresolved_ctxt)
-                || expr_may_have_side_effects(&cond.alt, unresolved_ctxt)
+            expr_may_have_side_effects(&cond.test)
+                || expr_may_have_side_effects(&cond.cons)
+                || expr_may_have_side_effects(&cond.alt)
         }
         // calls to functions that have no side effects have the no
         // side effect property set.
         Expr::Call(call) => {
             (match &call.callee {
                 ExprOrSuper::Super(_) => false,
-                ExprOrSuper::Expr(callee) => {
-                    function_call_may_have_side_effects(callee, unresolved_ctxt)
-                }
+                ExprOrSuper::Expr(callee) => function_call_may_have_side_effects(callee),
             }) || {
                 call.args
                     .iter()
-                    .any(|a| expr_or_spread_may_have_side_effects(a, unresolved_ctxt))
+                    .any(|a| expr_or_spread_may_have_side_effects(a))
             }
         }
         Expr::New(new) => {
-            constructorCallHasSideEffects(new, unresolved_ctxt)
+            constructorCallHasSideEffects(new)
                 || new.args.as_ref().is_some_and(|args| {
-                    args.iter()
-                        .any(|a| expr_or_spread_may_have_side_effects(a, unresolved_ctxt))
+                    args.iter().any(|a| expr_or_spread_may_have_side_effects(a))
                 })
         }
-        Expr::Seq(seq) => seq
-            .exprs
-            .iter()
-            .any(|e| expr_may_have_side_effects(e, unresolved_ctxt)),
+        Expr::Seq(seq) => seq.exprs.iter().any(|e| expr_may_have_side_effects(e)),
         Expr::Ident(_) => false,
         Expr::Lit(_) => false,
-        Expr::Tpl(tpl) => tpl
-            .exprs
-            .iter()
-            .any(|e| expr_may_have_side_effects(e, unresolved_ctxt)),
+        Expr::Tpl(tpl) => tpl.exprs.iter().any(|e| expr_may_have_side_effects(e)),
         Expr::TaggedTpl(tpl) => {
-            function_call_may_have_side_effects(&tpl.tag, unresolved_ctxt)
-                || expr_may_have_side_effects(&tpl.tag, unresolved_ctxt)
-                || tpl
-                    .tpl
-                    .exprs
-                    .iter()
-                    .any(|e| expr_may_have_side_effects(e, unresolved_ctxt))
+            function_call_may_have_side_effects(&tpl.tag)
+                || expr_may_have_side_effects(&tpl.tag)
+                || tpl.tpl.exprs.iter().any(|e| expr_may_have_side_effects(e))
         }
         Expr::Arrow(_) => false,
         Expr::Class(class) => {
@@ -546,37 +495,36 @@ pub fn expr_may_have_side_effects(expr: &Expr, unresolved_ctxt: SyntaxContext) -
                 .class
                 .extends
                 .as_ref()
-                .is_some_and(|e| expr_may_have_side_effects(&e.super_class, unresolved_ctxt))
+                .is_some_and(|e| expr_may_have_side_effects(&e.super_class))
                 || class.class.body.iter().any(|m| match m {
                     ClassMember::Constructor(_) => false,
-                    ClassMember::Method(method) => {
-                        prop_name_may_have_side_effects(&method.key, unresolved_ctxt)
-                    }
+                    ClassMember::Method(method) => prop_name_may_have_side_effects(&method.key),
                     ClassMember::PrivateMethod(_) => false,
                     ClassMember::ClassProp(prop) => {
-                        prop_name_may_have_side_effects(&prop.key, unresolved_ctxt)
+                        prop_name_may_have_side_effects(&prop.key)
                             || (prop.is_static
-                                && prop.value.as_ref().is_some_and(|v| {
-                                    expr_may_have_side_effects(&v, unresolved_ctxt)
-                                }))
+                                && prop
+                                    .value
+                                    .as_ref()
+                                    .is_some_and(|v| expr_may_have_side_effects(&v)))
                     }
                     ClassMember::PrivateProp(prop) => {
                         prop.is_static
                             && prop
                                 .value
                                 .as_ref()
-                                .is_some_and(|v| expr_may_have_side_effects(&v, unresolved_ctxt))
+                                .is_some_and(|v| expr_may_have_side_effects(&v))
                     }
                 })
         }
         Expr::MetaProp(_) => false,
         Expr::PrivateName(_) => false,
-        Expr::OptChain(opt) => expr_may_have_side_effects(&opt.expr, unresolved_ctxt),
+        Expr::OptChain(opt) => expr_may_have_side_effects(&opt.expr),
         Expr::Invalid(_) => unreachable!(),
     }
 }
 
-fn assign_expr_may_have_side_effects(assign: &AssignExpr, unresolved_ctxt: SyntaxContext) -> bool {
+fn assign_expr_may_have_side_effects(assign: &AssignExpr) -> bool {
     // Assignments will have side effects if:
     // a) The RHS has side effects; or
     // b) The LHS has side effects; or
@@ -598,13 +546,13 @@ fn assign_expr_may_have_side_effects(assign: &AssignExpr, unresolved_ctxt: Synta
         },
     }
 
-    if expr_may_have_side_effects(&assign.right, unresolved_ctxt) {
+    if expr_may_have_side_effects(&assign.right) {
         return true;
     }
 
     let lhs_may_have_side_effects = match &assign.left {
-        PatOrExpr::Expr(lhs) => expr_may_have_side_effects(lhs, unresolved_ctxt),
-        PatOrExpr::Pat(lhs) => pat_may_have_side_effects(lhs, unresolved_ctxt),
+        PatOrExpr::Expr(lhs) => expr_may_have_side_effects(lhs),
+        PatOrExpr::Pat(lhs) => pat_may_have_side_effects(lhs),
     };
 
     if lhs_may_have_side_effects {
@@ -633,73 +581,64 @@ fn assign_expr_may_have_side_effects(assign: &AssignExpr, unresolved_ctxt: Synta
     }
 }
 
-fn pat_may_have_side_effects(pat: &Pat, unresolved_ctxt: SyntaxContext) -> bool {
+fn pat_may_have_side_effects(pat: &Pat) -> bool {
     match pat {
         Pat::Ident(_) => false,
         // Array destructuring iterates the RHS, which can have side-effects.
         Pat::Array(_) => true,
-        Pat::Rest(rest) => pat_may_have_side_effects(&rest.arg, unresolved_ctxt),
+        Pat::Rest(rest) => pat_may_have_side_effects(&rest.arg),
         Pat::Object(obj) => obj.props.iter().any(|p| match p {
             ObjectPatProp::KeyValue(key_value_pat_prop) => {
-                prop_name_may_have_side_effects(&key_value_pat_prop.key, unresolved_ctxt)
-                    || pat_may_have_side_effects(&key_value_pat_prop.value, unresolved_ctxt)
+                prop_name_may_have_side_effects(&key_value_pat_prop.key)
+                    || pat_may_have_side_effects(&key_value_pat_prop.value)
             }
-            ObjectPatProp::Rest(rest) => pat_may_have_side_effects(&rest.arg, unresolved_ctxt),
+            ObjectPatProp::Rest(rest) => pat_may_have_side_effects(&rest.arg),
         }),
         Pat::Assign(assign) => {
-            pat_may_have_side_effects(&assign.left, unresolved_ctxt)
-                || expr_may_have_side_effects(&assign.right, unresolved_ctxt)
+            pat_may_have_side_effects(&assign.left) || expr_may_have_side_effects(&assign.right)
         }
-        Pat::Expr(expr) => expr_may_have_side_effects(expr, unresolved_ctxt),
+        Pat::Expr(expr) => expr_may_have_side_effects(expr),
 
         Pat::Invalid(_) => unreachable!(),
     }
 }
 
-fn expr_or_super_may_have_side_effects(
-    expr_or_super: &ExprOrSuper,
-    unresolved_ctxt: SyntaxContext,
-) -> bool {
+fn expr_or_super_may_have_side_effects(expr_or_super: &ExprOrSuper) -> bool {
     match expr_or_super {
         ExprOrSuper::Super(_) => false,
-        ExprOrSuper::Expr(expr) => expr_may_have_side_effects(expr, unresolved_ctxt),
+        ExprOrSuper::Expr(expr) => expr_may_have_side_effects(expr),
     }
 }
 
-fn expr_or_spread_may_have_side_effects(
-    expr_or_spread: &ExprOrSpread,
-    unresolved_ctxt: SyntaxContext,
-) -> bool {
+fn expr_or_spread_may_have_side_effects(expr_or_spread: &ExprOrSpread) -> bool {
     match expr_or_spread {
         ExprOrSpread::Spread(spread) => {
-            !isPureIterable(&spread.expr)
-                || expr_may_have_side_effects(&spread.expr, unresolved_ctxt)
+            !isPureIterable(&spread.expr) || expr_may_have_side_effects(&spread.expr)
         }
-        ExprOrSpread::Expr(expr) => expr_may_have_side_effects(expr, unresolved_ctxt),
+        ExprOrSpread::Expr(expr) => expr_may_have_side_effects(expr),
     }
 }
 
-fn prop_name_may_have_side_effects(name: &PropName, unresolved_ctxt: SyntaxContext) -> bool {
+fn prop_name_may_have_side_effects(name: &PropName) -> bool {
     match name {
-        PropName::Computed(name) => expr_may_have_side_effects(&name.expr, unresolved_ctxt),
+        PropName::Computed(name) => expr_may_have_side_effects(&name.expr),
         PropName::Ident(_) | PropName::Str(_) | PropName::Num(_) | PropName::BigInt(_) => false,
     }
 }
 
 /// Do calls to this constructor have side effects?
-pub fn constructorCallHasSideEffects(new: &NewExpr, unresolved_ctxt: SyntaxContext) -> bool {
+pub fn constructorCallHasSideEffects(new: &NewExpr) -> bool {
     match new.callee.as_ref() {
         Expr::Ident(callee) => {
-            let is_pure_built_in = callee.ctxt == unresolved_ctxt
-                && matches!(
-                    callee.sym,
-                    js_word!("Array")
-                        | js_word!("Date")
-                        | js_word!("Error")
-                        | js_word!("Object")
-                        | js_word!("RegExp")
-                        | js_word!("XMLHttpRequest")
-                );
+            let is_pure_built_in = matches!(
+                callee.name,
+                id_for_built_in!("Array")
+                    | id_for_built_in!("Date")
+                    | id_for_built_in!("Error")
+                    | id_for_built_in!("Object")
+                    | id_for_built_in!("RegExp")
+                    | id_for_built_in!("XMLHttpRequest")
+            );
 
             if is_pure_built_in { false } else { true }
         }
@@ -735,21 +674,21 @@ pub fn isPureIterable(expr: &Expr) -> bool {
  *
  * @param includeFunctions If true, all function expressions will be treated as literals.
  */
-pub fn isLiteralValue(expr: &Expr, includeFunctions: bool, unresolved_ctxt: SyntaxContext) -> bool {
+pub fn isLiteralValue(expr: &Expr, includeFunctions: bool) -> bool {
     match expr {
         Expr::Array(array) => array.elems.iter().all(|el| {
             el.as_ref().is_none_or(|el| match el {
                 ExprOrSpread::Spread(_) => false,
-                ExprOrSpread::Expr(el) => isLiteralValue(el, includeFunctions, unresolved_ctxt),
+                ExprOrSpread::Expr(el) => isLiteralValue(el, includeFunctions),
             })
         }),
         Expr::Lit(Lit::Regex(_)) => true,
         Expr::Object(obj) => obj.props.iter().all(|prop| match prop {
             Prop::KeyValue(key_value_prop) => {
-                isLiteralValue(&key_value_prop.value, includeFunctions, unresolved_ctxt)
+                isLiteralValue(&key_value_prop.value, includeFunctions)
                     && match &key_value_prop.key {
                         PropName::Computed(computed) => {
-                            isLiteralValue(&computed.expr, includeFunctions, unresolved_ctxt)
+                            isLiteralValue(&computed.expr, includeFunctions)
                         }
                         PropName::Str(_)
                         | PropName::Num(_)
@@ -763,26 +702,26 @@ pub fn isLiteralValue(expr: &Expr, includeFunctions: bool, unresolved_ctxt: Synt
                 includeFunctions
                     && match key {
                         PropName::Computed(computed) => {
-                            isLiteralValue(&computed.expr, includeFunctions, unresolved_ctxt)
+                            isLiteralValue(&computed.expr, includeFunctions)
                         }
                         PropName::Ident(_) => false,
                         PropName::Str(_) | PropName::Num(_) | PropName::BigInt(_) => true,
                     }
             }
-            Prop::Spread(spread) => isLiteralValue(&spread.expr, includeFunctions, unresolved_ctxt),
+            Prop::Spread(spread) => isLiteralValue(&spread.expr, includeFunctions),
             Prop::Assign(_) => unreachable!(),
         }),
         Expr::Fn(_) => includeFunctions,
         Expr::Tpl(tpl) => tpl
             .exprs
             .iter()
-            .all(|e| isLiteralValue(e, includeFunctions, unresolved_ctxt)),
-        _ => isImmutableValue(expr, unresolved_ctxt),
+            .all(|e| isLiteralValue(e, includeFunctions)),
+        _ => isImmutableValue(expr),
     }
 }
 
 /** Returns true if this is an immutable value. */
-fn isImmutableValue(expr: &Expr, unresolved_ctxt: SyntaxContext) -> bool {
+fn isImmutableValue(expr: &Expr) -> bool {
     match expr {
         Expr::Lit(lit) => match lit {
             Lit::Str(_) | Lit::Bool(_) | Lit::Null(_) | Lit::Num(_) | Lit::BigInt(_) => true,
@@ -790,27 +729,20 @@ fn isImmutableValue(expr: &Expr, unresolved_ctxt: SyntaxContext) -> bool {
         },
         Expr::Unary(unary) => {
             match unary.op {
-                UnaryOp::Minus | UnaryOp::Bang | UnaryOp::Void => {
-                    isImmutableValue(&unary.arg, unresolved_ctxt)
-                }
+                UnaryOp::Minus | UnaryOp::Bang | UnaryOp::Void => isImmutableValue(&unary.arg),
                 // TODO: why not these ones?
                 UnaryOp::Plus | UnaryOp::Tilde | UnaryOp::TypeOf | UnaryOp::Delete => false,
             }
         }
         Expr::Ident(ident) => {
-            if ident.ctxt == unresolved_ctxt {
-                matches!(
-                    ident.sym,
-                    js_word!("undefined") | js_word!("NaN") | js_word!("Infinity")
-                )
-            } else {
-                false
-            }
+            matches!(
+                ident.name,
+                id_for_built_in!("undefined")
+                    | id_for_built_in!("NaN")
+                    | id_for_built_in!("Infinity")
+            )
         }
-        Expr::Tpl(tpl) => tpl
-            .exprs
-            .iter()
-            .all(|e| isImmutableValue(e, unresolved_ctxt)),
+        Expr::Tpl(tpl) => tpl.exprs.iter().all(|e| isImmutableValue(e)),
         _ => false,
     }
 }
@@ -873,7 +805,7 @@ impl TypeFlags {
     }
 }
 
-pub fn getKnownValueType(mut expr: &Expr, unresolved_ctxt: SyntaxContext) -> TypeFlags {
+pub fn getKnownValueType(mut expr: &Expr) -> TypeFlags {
     loop {
         match expr {
             Expr::Fn(_) | Expr::Arrow(_) | Expr::Class(_) => return TypeFlags::FUNCTION,
@@ -897,15 +829,11 @@ pub fn getKnownValueType(mut expr: &Expr, unresolved_ctxt: SyntaxContext) -> Typ
             Expr::Await(await_expr) => expr = &await_expr.arg,
 
             Expr::Ident(ident) => {
-                if ident.ctxt == unresolved_ctxt {
-                    return match ident.sym {
-                        js_word!("undefined") => TypeFlags::UNDEFINED,
-                        js_word!("NaN") | js_word!("Infinity") => TypeFlags::NUMBER,
-                        _ => TypeFlags::UNKNOWN,
-                    };
-                } else {
-                    return TypeFlags::UNKNOWN;
-                }
+                return match ident.name {
+                    id_for_built_in!("undefined") => TypeFlags::UNDEFINED,
+                    id_for_built_in!("NaN") | id_for_built_in!("Infinity") => TypeFlags::NUMBER,
+                    _ => TypeFlags::UNKNOWN,
+                };
             }
 
             Expr::Unary(unary_expr) => {
@@ -914,7 +842,7 @@ pub fn getKnownValueType(mut expr: &Expr, unresolved_ctxt: SyntaxContext) -> Typ
                     UnaryOp::Plus => TypeFlags::NUMBER,
                     UnaryOp::Bang => TypeFlags::BOOLEAN,
                     UnaryOp::Tilde | UnaryOp::Minus => {
-                        let arg = getKnownValueType(&unary_expr.arg, unresolved_ctxt);
+                        let arg = getKnownValueType(&unary_expr.arg);
                         if arg == TypeFlags::BIG_INT {
                             // Arg is definitely BigInt, so the result is
                             // definitely BigInt too.
@@ -936,7 +864,7 @@ pub fn getKnownValueType(mut expr: &Expr, unresolved_ctxt: SyntaxContext) -> Typ
             }
             // BigInt if arg is BigInt, otherwise Number.
             Expr::Update(update) => {
-                let arg = getKnownValueType(&update.arg, unresolved_ctxt);
+                let arg = getKnownValueType(&update.arg);
                 if arg == TypeFlags::BIG_INT {
                     // Arg is definitely BigInt, so the result is definitely
                     // BigInt too.
@@ -963,12 +891,11 @@ pub fn getKnownValueType(mut expr: &Expr, unresolved_ctxt: SyntaxContext) -> Typ
                     | BinaryOp::InstanceOf => TypeFlags::BOOLEAN,
 
                     BinaryOp::LogicalOr | BinaryOp::LogicalAnd => {
-                        getKnownValueType(&bin_expr.left, unresolved_ctxt)
-                            | getKnownValueType(&bin_expr.right, unresolved_ctxt)
+                        getKnownValueType(&bin_expr.left) | getKnownValueType(&bin_expr.right)
                     }
                     BinaryOp::Add => {
-                        let left = getKnownValueType(&bin_expr.left, unresolved_ctxt);
-                        let right = getKnownValueType(&bin_expr.right, unresolved_ctxt);
+                        let left = getKnownValueType(&bin_expr.left);
+                        let right = getKnownValueType(&bin_expr.right);
 
                         if left == TypeFlags::STRING || right == TypeFlags::STRING {
                             // If either operand is definitely String, then
@@ -1013,8 +940,8 @@ pub fn getKnownValueType(mut expr: &Expr, unresolved_ctxt: SyntaxContext) -> Typ
                     | BinaryOp::LShift
                     | BinaryOp::RShift
                     | BinaryOp::ZeroFillRShift => {
-                        let left = getKnownValueType(&bin_expr.left, unresolved_ctxt);
-                        let right = getKnownValueType(&bin_expr.right, unresolved_ctxt);
+                        let left = getKnownValueType(&bin_expr.left);
+                        let right = getKnownValueType(&bin_expr.right);
 
                         if left == TypeFlags::BIG_INT || right == TypeFlags::BIG_INT {
                             // If either operand is definitely BigInt, then the
@@ -1037,8 +964,8 @@ pub fn getKnownValueType(mut expr: &Expr, unresolved_ctxt: SyntaxContext) -> Typ
                     }
 
                     BinaryOp::NullishCoalescing => {
-                        let left = getKnownValueType(&bin_expr.left, unresolved_ctxt);
-                        let right = getKnownValueType(&bin_expr.right, unresolved_ctxt);
+                        let left = getKnownValueType(&bin_expr.left);
+                        let right = getKnownValueType(&bin_expr.right);
 
                         if left.is_nullish() {
                             return right;
@@ -1056,7 +983,7 @@ pub fn getKnownValueType(mut expr: &Expr, unresolved_ctxt: SyntaxContext) -> Typ
             Expr::Assign(assign_expr) => match assign_expr.op {
                 AssignOp::Assign => expr = &assign_expr.right,
                 AssignOp::AddAssign => {
-                    let right = getKnownValueType(&assign_expr.right, unresolved_ctxt);
+                    let right = getKnownValueType(&assign_expr.right);
 
                     if right == TypeFlags::STRING {
                         // `a += ""` is always a String.
@@ -1077,7 +1004,7 @@ pub fn getKnownValueType(mut expr: &Expr, unresolved_ctxt: SyntaxContext) -> Typ
                 | AssignOp::LShiftAssign
                 | AssignOp::RShiftAssign
                 | AssignOp::ZeroFillRShiftAssign => {
-                    let right = getKnownValueType(&assign_expr.right, unresolved_ctxt);
+                    let right = getKnownValueType(&assign_expr.right);
 
                     if right == TypeFlags::BIG_INT {
                         // Result is a BigInt or there's a type error if LHS is
@@ -1108,8 +1035,7 @@ pub fn getKnownValueType(mut expr: &Expr, unresolved_ctxt: SyntaxContext) -> Typ
                 }
             },
             Expr::Cond(cond) => {
-                return getKnownValueType(&cond.cons, unresolved_ctxt)
-                    | getKnownValueType(&cond.alt, unresolved_ctxt);
+                return getKnownValueType(&cond.cons) | getKnownValueType(&cond.alt);
             }
             Expr::Seq(seq_expr) => expr = seq_expr.exprs.last().unwrap(),
             Expr::Lit(lit) => match lit {

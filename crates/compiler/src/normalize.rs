@@ -1,5 +1,5 @@
 use ast::*;
-use common::{SyntaxContext, util::take::Take};
+use common::util::take::Take;
 use visit::{VisitMut, VisitMutWith};
 
 use crate::utils::unwrap_as;
@@ -77,6 +77,11 @@ impl VisitMut<'_> for NormalizeAssignShorthand<'_> {
             }
         };
 
+        debug_assert!(
+            lhs_ident.name.is_unresolved(),
+            "normalise should run before resolver"
+        );
+
         let right_id = self.program_data.new_id_from(node.node_id);
         node.right.as_mut().map_with_mut(|right| {
             Expr::Bin(BinExpr {
@@ -84,8 +89,7 @@ impl VisitMut<'_> for NormalizeAssignShorthand<'_> {
                 op,
                 left: Box::new(Expr::Ident(Ident {
                     node_id: self.program_data.new_id_from(lhs_ident.node_id),
-                    sym: lhs_ident.sym.clone(),
-                    ctxt: SyntaxContext::empty(),
+                    name: lhs_ident.name,
                 })),
                 right: Box::new(right),
             })

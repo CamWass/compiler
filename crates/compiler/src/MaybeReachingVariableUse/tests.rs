@@ -2,13 +2,12 @@ use std::rc::Rc;
 
 use ast::*;
 use common::{
-    FileName, GLOBALS, Globals, SourceMap,
+    FileName, SourceMap,
     errors::{ColorConfig, Handler},
 };
 use parser::{Parser, Syntax};
 use visit::{Visit, VisitWith};
 
-use crate::Id;
 use crate::control_flow::ControlFlowAnalysis::{ControlFlowAnalysis, ControlFlowRoot};
 use crate::{find_vars::find_vars_declared_in_fn, utils::unwrap_as};
 
@@ -253,12 +252,17 @@ fn assert_async_match(src: &str) {
 
 /** The def of `x` at D: may be used by the read of `x` at U:. */
 fn assert_match_inner(src: &str, is_async: bool) {
-    with_maybe_reaching_uses(src, is_async, |function, maybe_reaching_uses| {
-        let extracted_info = extract_def_and_uses_from_input_labels(function, "x");
-        let computed_uses = get_computed_uses(maybe_reaching_uses, &extracted_info);
-        let extracted_uses = extracted_info.extracted_uses;
-        assert!(extracted_uses.iter().all(|u| computed_uses.contains(u)));
-    });
+    with_maybe_reaching_uses(
+        src,
+        is_async,
+        |function, maybe_reaching_uses, program_data| {
+            let extracted_info =
+                extract_def_and_uses_from_input_labels(function, "x", program_data);
+            let computed_uses = get_computed_uses(maybe_reaching_uses, &extracted_info);
+            let extracted_uses = extracted_info.extracted_uses;
+            assert!(extracted_uses.iter().all(|u| computed_uses.contains(u)));
+        },
+    );
 }
 
 fn assert_not_match(src: &str) {
@@ -271,12 +275,17 @@ fn assert_not_async_match(src: &str) {
 
 /** The def of `x` at D: is not used by the read of `x` at U:. */
 fn assert_not_match_inner(src: &str, is_async: bool) {
-    with_maybe_reaching_uses(src, is_async, |function, maybe_reaching_uses| {
-        let extracted_info = extract_def_and_uses_from_input_labels(function, "x");
-        let computed_uses = get_computed_uses(maybe_reaching_uses, &extracted_info);
-        let extracted_uses = extracted_info.extracted_uses;
-        assert!(extracted_uses.iter().any(|u| !computed_uses.contains(u)));
-    });
+    with_maybe_reaching_uses(
+        src,
+        is_async,
+        |function, maybe_reaching_uses, program_data| {
+            let extracted_info =
+                extract_def_and_uses_from_input_labels(function, "x", program_data);
+            let computed_uses = get_computed_uses(maybe_reaching_uses, &extracted_info);
+            let extracted_uses = extracted_info.extracted_uses;
+            assert!(extracted_uses.iter().any(|u| !computed_uses.contains(u)));
+        },
+    );
 }
 
 /**
@@ -287,7 +296,7 @@ fn get_computed_uses(
     extracted_info: &ExtractedInfo,
 ) -> Vec<NodeId> {
     reaching_use
-        .get_uses(&extracted_info.var_id, extracted_info.extracted_def)
+        .get_uses(extracted_info.var_id, extracted_info.extracted_def)
         .cloned()
         .unwrap_or_default()
 }
@@ -298,50 +307,49 @@ fn get_computed_uses(
  */
 fn with_maybe_reaching_uses<F>(src: &str, is_async: bool, mut op: F)
 where
-    F: FnMut(&Function, &MaybeReachingResult<'_>),
+    F: FnMut(&Function, &MaybeReachingResult<'_>, &mut ProgramData),
 {
-    GLOBALS.set(&Globals::new(), || {
-        // Set up test case
-        let async_str = if is_async { "async" } else { "" };
-        let source = format!("{async_str} function _FUNCTION(param1, param2){{{src}}}");
-        let program = Program::Script(parse_script(&source));
+    // Set up test case
+    let async_str = if is_async { "async" } else { "" };
+    let source = format!("{async_str} function _FUNCTION(param1, param2){{{src}}}");
+    let (script, mut program_data) = parse_script(&source);
+    let program = Program::Script(script);
 
-        // let unresolved_mark = Mark::new();
-        // let top_level_mark = Mark::new();
+    // let unresolved_mark = Mark::new();
+    // let top_level_mark = Mark::new();
 
-        // program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark, false));
+    // program.visit_mut_with(&mut resolver(unresolved_mark, top_level_mark, false));
 
-        // let mut node_id_gen = NodeIdGen::default();
+    // let mut node_id_gen = NodeIdGen::default();
 
-        // crate::normalize_properties::normalize_properties(&mut program, &mut node_id_gen);
-        // crate::normalize::normalize(&mut program, &mut node_id_gen);
+    // crate::normalize_properties::normalize_properties(&mut program, &mut node_id_gen);
+    // crate::normalize::normalize(&mut program, &mut node_id_gen);
 
-        let script = unwrap_as!(program, Program::Script(s), s);
+    let script = unwrap_as!(program, Program::Script(s), s);
 
-        let function = match script.body.first() {
-            Some(Stmt::Decl(Decl::Fn(f))) => &f.function,
-            _ => unreachable!(),
-        };
+    let function = match script.body.first() {
+        Some(Stmt::Decl(Decl::Fn(f))) => &f.function,
+        _ => unreachable!(),
+    };
 
-        // Control flow graph
-        let cfa = ControlFlowAnalysis::analyze(ControlFlowRoot::Function(function), false);
+    // Control flow graph
+    let cfa = ControlFlowAnalysis::analyze(ControlFlowRoot::Function(function), false);
 
-        // All variables declared in function
-        let all_vars_declared_in_function = find_vars_declared_in_fn(function.as_ref(), false);
+    // All variables declared in function
+    let all_vars_declared_in_function = find_vars_declared_in_fn(function.as_ref(), false);
 
-        let result = MaybeReachingVariableUse::new(
-            cfa.cfg,
-            &cfa.node_priorities,
-            function.as_ref(),
-            all_vars_declared_in_function,
-        )
-        .analyze();
+    let result = MaybeReachingVariableUse::new(
+        cfa.cfg,
+        &cfa.node_priorities,
+        function.as_ref(),
+        all_vars_declared_in_function,
+    )
+    .analyze();
 
-        op(function, &result);
-    });
+    op(function, &result, &mut program_data);
 }
 
-fn parse_script(input: &str) -> Script {
+fn parse_script(input: &str) -> (Script, ProgramData) {
     let cm = Rc::<SourceMap>::default();
     let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
 
@@ -366,15 +374,16 @@ fn parse_script(input: &str) -> Script {
 
     assert!(!error, "Failed to parse");
 
-    res
+    (res, program_data)
 }
 
 // Run `LabelFinder` to find the `D:` and `U:` labels and save the def and uses of `x`
 fn extract_def_and_uses_from_input_labels<'ast>(
     function: &'ast Function,
     var_name: &'static str,
+    program_data: &mut ProgramData,
 ) -> ExtractedInfo<'ast> {
-    let mut extractor = InfoExtractor::new(var_name);
+    let mut extractor = InfoExtractor::new(var_name, program_data);
     function.visit_with(&mut extractor);
 
     assert!(
@@ -404,42 +413,49 @@ struct ExtractedInfo<'ast> {
     extracted_def: Node<'ast>,
     extracted_uses: Vec<NodeId>,
 
-    var_id: Id,
+    var_id: NameId,
 }
 
 /** Finds the D: and U: label and store which node they point to. */
-struct InfoExtractor<'ast> {
+struct InfoExtractor<'ast, 'd> {
     // Def and uses extracted from `D:` and `U:` labels respectively
     extracted_def: Option<Node<'ast>>,
     extracted_uses: Vec<NodeId>,
 
     var_name: &'static str,
-    var_id: Option<Id>,
+    var_id: Option<NameId>,
+
+    program_data: &'d mut ProgramData,
 }
 
-impl InfoExtractor<'_> {
-    fn new(var_name: &'static str) -> Self {
+impl<'d> InfoExtractor<'_, 'd> {
+    fn new(var_name: &'static str, program_data: &'d mut ProgramData) -> Self {
         Self {
             extracted_def: None,
             extracted_uses: Vec::new(),
             var_name,
             var_id: None,
+            program_data,
         }
     }
 }
 
-impl<'ast> Visit<'ast> for InfoExtractor<'ast> {
+impl<'ast> Visit<'ast> for InfoExtractor<'ast, '_> {
     fn visit_binding_ident(&mut self, node: &'ast BindingIdent) {
-        if &node.id.sym == self.var_name {
-            self.var_id = Some(node.id.to_id());
+        if self.program_data.get_name_for_id(node.id.name) == self.var_name {
+            self.var_id = Some(node.id.name);
         }
     }
 
     fn visit_labeled_stmt(&mut self, node: &'ast LabeledStmt) {
-        if &node.label.sym == "D" {
+        if self.program_data.get_name_for_id(node.label.name) == "D" {
             assert!(self.extracted_def == None, "Multiple D: labels in test src");
             self.extracted_def = Some(Node::from(node.body.as_ref()));
-        } else if node.label.sym.starts_with('U') {
+        } else if self
+            .program_data
+            .get_name_for_id(node.label.name)
+            .starts_with('U')
+        {
             self.extracted_uses.push(node.body.node_id());
         }
         node.body.visit_with(self);

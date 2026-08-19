@@ -1,6 +1,5 @@
 use ast::*;
-use atoms::{JsWord, js_word};
-use common::{DUMMY_SP, Span, SyntaxContext, util::take::Take};
+use common::{DUMMY_SP, Span, util::take::Take};
 use rustc_hash::FxHashMap;
 use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
@@ -11,12 +10,8 @@ use crate::{
 
 // Note: This is more of a proof-of-concept.
 
-pub fn process(
-    ast: &mut ast::Program,
-    program_data: &mut ProgramData,
-    unresolved_ctxt: SyntaxContext,
-) {
-    let (store, points_to) = analyse(ast, unresolved_ctxt);
+pub fn process(ast: &mut ast::Program, program_data: &mut ProgramData) {
+    let (store, points_to) = analyse(ast, program_data);
 
     let mut stmt_inline_map: FxHashMap<NodeId, NodeId> = FxHashMap::default();
     let mut expr_inline_map: FxHashMap<NodeId, NodeId> = FxHashMap::default();
@@ -56,7 +51,6 @@ pub fn process(
             stmt_bodies: FxHashMap::default(),
             program_data,
             functions_to_collect: &functions_to_collect,
-            unresolved_ctxt,
             references_this: false,
             references_self: false,
             current_function_name: None,
@@ -81,11 +75,10 @@ struct BodyCollector<'a> {
     expr_bodies: FxHashMap<NodeId, Expr>,
     program_data: &'a mut ProgramData,
     functions_to_collect: &'a FxHashMap<NodeId, ExprContext>,
-    unresolved_ctxt: SyntaxContext,
 
     references_this: bool,
     references_self: bool,
-    current_function_name: Option<JsWord>,
+    current_function_name: Option<NameId>,
     return_count: usize,
 }
 
@@ -121,7 +114,7 @@ impl Visit<'_> for BodyCollector<'_> {
     }
 
     fn visit_ident(&mut self, n: &Ident) {
-        if Some(&n.sym) == self.current_function_name.as_ref() {
+        if Some(&n.name) == self.current_function_name.as_ref() {
             self.references_self = true;
         }
     }
@@ -137,7 +130,7 @@ impl Visit<'_> for BodyCollector<'_> {
         let old_references_self = self.references_self;
         let old_return_count = self.return_count;
 
-        self.current_function_name = Some(n.ident.sym.clone());
+        self.current_function_name = Some(n.ident.name);
         self.references_self = false;
         self.return_count = 0;
 
@@ -178,7 +171,7 @@ impl Visit<'_> for BodyCollector<'_> {
             if n.function.body.stmts.is_empty() {
                 // Only the implicit return, which is the same as explicitly
                 // returning `undefined`.
-                let body = make_undefined(self.program_data, self.unresolved_ctxt);
+                let body = make_undefined(self.program_data);
                 self.expr_bodies.insert(n.function.node_id, body);
                 return;
             }
@@ -196,7 +189,7 @@ impl Visit<'_> for BodyCollector<'_> {
                 if let Some(Stmt::Return(last)) = n.function.body.stmts.last() {
                     let tail = match &last.arg {
                         Some(arg) => arg.as_ref().clone_node(self.program_data),
-                        None => make_undefined(self.program_data, self.unresolved_ctxt),
+                        None => make_undefined(self.program_data),
                     };
 
                     let body = convert_statements_to_expressions(
@@ -359,11 +352,10 @@ fn convert_statements_to_expressions(
     }
 }
 
-fn make_undefined(program_data: &mut ProgramData, unresolved_ctxt: SyntaxContext) -> Expr {
+fn make_undefined(program_data: &mut ProgramData) -> Expr {
     Expr::Ident(Ident {
         node_id: program_data.new_id(DUMMY_SP),
-        sym: js_word!("undefined"),
-        ctxt: unresolved_ctxt,
+        name: id_for_built_in!("undefined"),
     })
 }
 
@@ -400,8 +392,6 @@ impl VisitMut<'_> for ReturnRemover<'_> {
 mod tests {
     use super::*;
     use crate::resolver::resolve;
-    use common::{GLOBALS, Globals, Mark};
-
     #[test]
     fn test_inline_simple_return() {
         test_transform(
@@ -792,17 +782,11 @@ func();
     fn test_transform(input: &str, expected: &str) {
         crate::testing::test_transform(
             |mut program, program_data| {
-                GLOBALS.set(&Globals::new(), || {
-                    let unresolved_mark = Mark::new();
+                resolve(&mut program, program_data);
 
-                    resolve(&mut program, unresolved_mark);
+                process(&mut program, program_data);
 
-                    let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
-
-                    process(&mut program, program_data, unresolved_ctxt);
-
-                    program
-                })
+                program
             },
             input,
             expected,

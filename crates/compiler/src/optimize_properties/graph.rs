@@ -264,7 +264,7 @@ impl Graph {
 
                     if let Pointer::Prop(obj, name) = store.pointers[pointer] {
                         let obj_invalid = store.invalid_pointers.contains(obj);
-                        let is_built_in = is_built_in_property(obj, &store.names[name]);
+                        let is_built_in = is_built_in_property(obj, name);
                         if obj_invalid || is_built_in {
                             invalidated |= self.invalidate(pointer, store);
                             let changed = self.insert(node, PointerId::UNKNOWN, store);
@@ -458,7 +458,7 @@ impl Graph {
                                 continue;
                             }
                             if concrete_object.is_primitive()
-                                && !is_built_in_property(concrete_object, &store.names[name])
+                                && !is_built_in_property(concrete_object, name)
                             {
                                 // non-built in prop on primitive - ignore.
                                 continue;
@@ -719,11 +719,15 @@ impl Graph {
                             "Prop({}, ({}, '{}'))",
                             obj.as_u32(),
                             prop.as_u32(),
-                            store.names[*prop]
+                            store.program_data.get_name_for_id(*prop)
                         )
                     }
                     Pointer::Var(id) => {
-                        format!("Var({}, '{}')", id.as_u32(), store.names[store.vars[*id].0])
+                        format!(
+                            "Var({}, '{}')",
+                            id.as_u32(),
+                            store.program_data.get_name_for_id(store.vars[*id])
+                        )
                     }
                     Pointer::Object(id) => format!("Object({})", id.as_u32()),
                     Pointer::Fn(id) => format!("Fn({})", id.as_u32()),

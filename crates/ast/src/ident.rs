@@ -1,7 +1,6 @@
-use crate::{GetNodeId, NodeId};
-use atoms::{JsWord, js_word};
+use crate::{GetNodeId, NameId, NodeId};
 use clone_node::CloneNode;
-use common::{SyntaxContext, util::take::Take};
+use common::util::take::Take;
 use node_eq::NodeEq;
 use node_id::GetNodeIdMacro;
 use serde::Serialize;
@@ -37,16 +36,14 @@ impl GetNodeId for BindingIdent {
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
 pub struct Ident {
     pub node_id: NodeId,
-    pub sym: JsWord,
-    pub ctxt: SyntaxContext,
+    pub name: NameId,
 }
 
 impl Take for Ident {
     fn dummy() -> Self {
         Ident {
             node_id: NodeId::DUMMY,
-            sym: js_word!(""),
-            ctxt: SyntaxContext::empty(),
+            name: NameId::DUMMY,
         }
     }
 }

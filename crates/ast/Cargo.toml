@@ -6,6 +6,8 @@ edition = "2024"
 [dependencies]
 bitflags = { workspace = true, features = ["serde"] }
 num-bigint = { workspace = true, features = ["serde"] }
+paste = { workspace = true }
+rustc-hash = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 unicode-id-start = { workspace = true }
 

@@ -299,8 +299,8 @@ fn identity_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
                             .join(&file_name),
                     )
                     .unwrap();
-                    normalize(&mut res);
-                    res
+                    normalize(&mut res.0, &mut res.1);
+                    res.0
                 };
                 let src = p(false);
                 let expected = p(true);
@@ -313,8 +313,8 @@ fn identity_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
                             .join(&file_name),
                     )
                     .unwrap();
-                    normalize(&mut res);
-                    res
+                    normalize(&mut res.0, &mut res.1);
+                    res.0
                 };
                 let src = p(false);
                 let expected = p(true);
@@ -327,14 +327,14 @@ fn identity_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
     Ok(())
 }
 
-fn parse_script(file_name: &Path) -> Result<Script, NormalizedOutput> {
+fn parse_script(file_name: &Path) -> Result<(Script, ProgramData), NormalizedOutput> {
     with_parser(file_name, |p| p.parse_script())
 }
-fn parse_module(file_name: &Path) -> Result<Module, NormalizedOutput> {
+fn parse_module(file_name: &Path) -> Result<(Module, ProgramData), NormalizedOutput> {
     with_parser(file_name, |p| p.parse_module())
 }
 
-fn with_parser<F, Ret>(file_name: &Path, f: F) -> Result<Ret, StdErr>
+fn with_parser<F, Ret>(file_name: &Path, f: F) -> Result<(Ret, ProgramData), StdErr>
 where
     F: FnOnce(&mut Parser) -> PResult<Ret>,
 {
@@ -346,7 +346,7 @@ where
         let mut program_data = Default::default();
         let mut p = Parser::new(Default::default(), &fm, &mut program_data);
 
-        let res = f(&mut p).map_err(|e| e.into_diagnostic(handler).emit());
+        let res = f(&mut p).map_err(|e| e.into_diagnostic(handler).emit())?;
 
         for e in p.take_errors() {
             e.into_diagnostic(handler).emit();
@@ -356,7 +356,7 @@ where
             return Err(());
         }
 
-        res
+        Ok((res, program_data))
     })
 }
 
@@ -376,13 +376,16 @@ fn error() {
     test_main(&args, tests, Some(Options::new()));
 }
 
-pub fn normalize<'ast, T>(t: &'ast mut T)
+pub fn normalize<'ast, 'd, T>(t: &'ast mut T, program_data: &'d mut ProgramData)
 where
-    T: VisitMutWith<'ast, Normalizer>,
+    T: VisitMutWith<'ast, Normalizer<'d>>,
 {
     let mut n = Normalizer {
         drop_span: true,
         is_test262: true,
+        other_program_data: program_data,
+        name_map: Default::default(),
+        fresh_program_data: Default::default(),
     };
     t.visit_mut_with(&mut n);
 }

@@ -5,6 +5,10 @@
 #![deny(variant_size_differences)]
 #![deny(unused)]
 #![feature(iter_order_by)]
+// TODO:
+#![recursion_limit = "256"]
+
+use std::collections::hash_map::Entry;
 
 pub use self::{
     class::{
@@ -40,12 +44,14 @@ pub use self::{
         SwitchStmt, ThrowStmt, TryStmt, VarDeclOrExpr, VarDeclOrPat, WhileStmt, WithStmt,
     },
 };
-use atoms::JsWord;
+use atoms::{JsWord, js_word};
 use clone_node::CloneNode;
-use common::{Span, SyntaxContext};
+use common::Span;
 use index::vec::IndexVec;
 use node_eq::NodeEq;
 use node_id::GetNodeIdMacro;
+pub use paste;
+use rustc_hash::FxHashMap;
 use serde::Serialize;
 
 #[macro_use]
@@ -91,9 +97,292 @@ where
     }
 }
 
-#[derive(Debug, Default)]
+index::newtype_index!(pub NameId, Serialize);
+
+impl NameId {
+    pub const DUMMY: NameId = NameId::MAX;
+
+    pub fn is_unresolved(self) -> bool {
+        (self.0 & (1 << (u32::BITS - 1))) == 0
+    }
+}
+
+// TODO: the counting logic makes this macro produce deeply nested expressions.
+// Should probably optimise.
+macro_rules! make_built_ins {
+    ($($name:tt),* $(,)?) => {
+        make_built_ins!(@internal self; (0u32); (); (); (); $($name),*);
+    };
+
+    (
+        @internal $self:ident;
+        ($count:expr);
+        ($($arms:tt)*);
+        ($($pushes:tt)*);
+        ($($consts:tt)*);
+    ) => {
+        $crate::paste::paste! {
+            $($consts)*
+
+            #[macro_export]
+            macro_rules! id_for_built_in {
+                $($arms)*
+            }
+        }
+
+        impl ProgramData {
+            fn add_built_ins(&mut $self) {
+                $($pushes)*
+            }
+        }
+    };
+
+    (
+        @internal $self:ident;
+        ($idx:expr);
+        ($($arms:tt)*);
+        ($($pushes:tt)*);
+        ($($consts:tt)*);
+        $head:tt $(, $tail:tt)*
+    ) => {
+        make_built_ins!(
+            @internal $self;
+            ($idx + 1u32);
+            (
+                $($arms)*
+                // Use $crate::paste so consuming crates don't need `paste` in Cargo.toml
+                ($head) => {
+                    $crate::paste::paste! { $crate::[< $head _ID >] }
+                };
+            );
+            (
+                $($pushes)*
+                let id = $self.names.push(js_word!($head));
+                $self.name_to_id_map.insert(js_word!($head), id);
+            );
+            (
+                $($consts)*
+                #[allow(non_upper_case_globals)]
+                pub const [< $head _ID >]: NameId = NameId::from_u32($idx);
+            );
+            $($tail),*
+        );
+    };
+}
+
+// TODO: maybe re-order this so e.g. reserved names are in a dense range, so we
+// use simplified condition checks instead of matching.
+// Also consider lookup tables, since the built-ins fit within a u8.
+make_built_ins!(
+    "__defineGetter__",
+    "__defineSetter__",
+    "__lookupGetter__",
+    "__lookupSetter__",
+    "__proto__",
+    "abs",
+    "abstract",
+    "acos",
+    "acosh",
+    "any",
+    "arguments",
+    "Array",
+    "as",
+    "asin",
+    "asinh",
+    "assert",
+    "asserts",
+    "async",
+    "at",
+    "atan",
+    "atan2",
+    "atanh",
+    "await",
+    "bigint",
+    "BigInt",
+    "boolean",
+    "Boolean",
+    "break",
+    "case",
+    "catch",
+    "cbrt",
+    "ceil",
+    "charAt",
+    "charCodeAt",
+    "class",
+    "codePointAt",
+    "concat",
+    "const",
+    "constructor",
+    "continue",
+    "cos",
+    "cosh",
+    "Date",
+    "debugger",
+    "declare",
+    "default",
+    "delete",
+    "do",
+    "dotAll",
+    "else",
+    "endsWith",
+    "enum",
+    "Error",
+    "eval",
+    "exec",
+    "exp",
+    "expm1",
+    "export",
+    "extends",
+    "false",
+    "finally",
+    "flags",
+    "floor",
+    "for",
+    "from",
+    "function",
+    "get",
+    "global",
+    "hasIndices",
+    "hasOwnProperty",
+    "hypot",
+    "if",
+    "ignoreCase",
+    "implements",
+    "import",
+    "in",
+    "includes",
+    "indexOf",
+    "infer",
+    "Infinity",
+    "instanceof",
+    "interface",
+    "intrinsic",
+    "is",
+    "isPrototypeOf",
+    "isWellFormed",
+    "keyof",
+    "lastIndex",
+    "lastIndexOf",
+    "length",
+    "let",
+    "localeCompare",
+    "log",
+    "log10",
+    "log1p",
+    "log2",
+    "match",
+    "matchAll",
+    "Math",
+    "max",
+    "meta",
+    "min",
+    "module",
+    "multiline",
+    "namespace",
+    "NaN",
+    "never",
+    "new",
+    "normalize",
+    "null",
+    "number",
+    "Number",
+    "object",
+    "Object",
+    "of",
+    "override",
+    "package",
+    "padEnd",
+    "padStart",
+    "pow",
+    "private",
+    "propertyIsEnumerable",
+    "protected",
+    "prototype",
+    "public",
+    "random",
+    "readonly",
+    "RegExp",
+    "repeat",
+    "replace",
+    "replaceAll",
+    "return",
+    "round",
+    "search",
+    "set",
+    "sign",
+    "sin",
+    "sinh",
+    "slice",
+    "source",
+    "split",
+    "sqrt",
+    "startsWith",
+    "static",
+    "sticky",
+    "string",
+    "String",
+    "substr",
+    "substring",
+    "super",
+    "switch",
+    "symbol",
+    "tan",
+    "tanh",
+    "target",
+    "test",
+    "this",
+    "throw",
+    "toExponential",
+    "toFixed",
+    "toLocaleLowerCase",
+    "toLocaleString",
+    "toLocaleUpperCase",
+    "toLowerCase",
+    "toPrecision",
+    "toString",
+    "toUpperCase",
+    "toWellFormed",
+    "trim",
+    "trimEnd",
+    "trimStart",
+    "true",
+    "trunc",
+    "try",
+    "type",
+    "typeof",
+    "undefined",
+    "unicode",
+    "unicodeSets",
+    "unique",
+    "unknown",
+    "valueOf",
+    "var",
+    "void",
+    "while",
+    "with",
+    "XMLHttpRequest",
+    "yield",
+);
+
+#[derive(Debug)]
 pub struct ProgramData {
     spans: IndexVec<NodeId, Span>,
+    name_to_id_map: FxHashMap<JsWord, NameId>,
+    names: IndexVec<NameId, JsWord>,
+}
+
+impl Default for ProgramData {
+    fn default() -> Self {
+        let mut data = Self {
+            spans: Default::default(),
+            name_to_id_map: Default::default(),
+            names: Default::default(),
+        };
+
+        data.add_built_ins();
+
+        data
+    }
 }
 
 impl ProgramData {
@@ -112,6 +401,45 @@ impl ProgramData {
 
     pub fn set_span(&mut self, node: NodeId, span: Span) {
         self.spans[node] = span;
+    }
+
+    // TODO: maybe split ProgramData into `ParseProgramData` and
+    // `TransformProgramData` or something, so each stage of the compilation
+    // only has access to the 'correct'/idiomatic methods for interacting with
+    // names at that stage.
+
+    pub fn get_id_for_name(&mut self, name: JsWord) -> NameId {
+        match self.name_to_id_map.entry(name) {
+            Entry::Occupied(occupied_entry) => *occupied_entry.get(),
+            Entry::Vacant(vacant_entry) => {
+                let id = self.names.push(vacant_entry.key().clone());
+                vacant_entry.insert(id);
+                id
+            }
+        }
+    }
+
+    pub fn get_name_for_id(&self, id: NameId) -> &JsWord {
+        let id = NameId::from_u32(id.0 & !(1 << (u32::BITS - 1)));
+        &self.names[id]
+    }
+
+    pub fn mark_resolved(id: NameId) -> NameId {
+        NameId::from_u32(id.0 | 1 << (u32::BITS - 1))
+    }
+
+    pub fn new_resolved_name_from(&mut self, id: NameId) -> NameId {
+        Self::mark_resolved(self.names.push(self.get_name_for_id(id).clone()))
+    }
+
+    // TODO:
+    /// Only for testing - hacky
+    pub fn find_latest_id_for_name(&self, name: &JsWord) -> Option<NameId> {
+        self.names
+            .iter_enumerated()
+            .rev()
+            .find(|(_, candidate_name)| *candidate_name == name)
+            .map(|(i, _)| Self::mark_resolved(i))
     }
 }
 
@@ -181,8 +509,8 @@ macro_rules! impl_clone_node {
 impl_clone_node!(bool);
 impl_clone_node!(f64);
 impl_clone_node!(JsWord);
-impl_clone_node!(SyntaxContext);
 impl_clone_node!(num_bigint::BigUint);
+impl_clone_node!(NameId);
 
 pub trait NodeEq {
     fn eq_ignoring_node_id(&self, other: &Self) -> bool;
@@ -223,8 +551,8 @@ macro_rules! impl_eq_ignoring_node_id {
 impl_eq_ignoring_node_id!(bool);
 impl_eq_ignoring_node_id!(f64);
 impl_eq_ignoring_node_id!(JsWord);
-impl_eq_ignoring_node_id!(SyntaxContext);
 impl_eq_ignoring_node_id!(num_bigint::BigUint);
+impl_eq_ignoring_node_id!(NameId);
 
 #[cfg(test)]
 mod tests {

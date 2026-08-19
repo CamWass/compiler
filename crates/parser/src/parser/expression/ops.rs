@@ -358,7 +358,7 @@ impl Parser<'_> {
 
         if is_one_of!(self, ')', ']') && !self.ctx().in_async() {
             return Ok(Box::new(Expr::Ident(
-                self.new_ident(js_word!("await"), span!(self, start)),
+                self.new_ident(id_for_built_in!("await"), span!(self, start)),
             )));
         }
 

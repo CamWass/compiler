@@ -1879,7 +1879,9 @@ impl<'a> Emitter<'a> {
         if self.cfg.minify {
             if let PropName::Ident(key) = &node.key {
                 if let Expr::Ident(value) = node.value.as_ref() {
-                    if key.sym == value.sym {
+                    if self.program_data.get_name_for_id(key.name)
+                        == self.program_data.get_name_for_id(value.name)
+                    {
                         return self.emit_ident(key);
                     }
                 }
@@ -1973,9 +1975,9 @@ impl<'a> Emitter<'a> {
         let span = get_span!(self, ident.node_id);
         // TODO: Use write_symbol when ident is a symbol.
 
+        let name = self.program_data.get_name_for_id(ident.name);
         // TODO: span
-        self.wr
-            .write_symbol(span, &handle_invalid_unicodes(&ident.sym))
+        self.wr.write_symbol(span, &handle_invalid_unicodes(name))
     }
 
     fn emit_list<N>(
@@ -2251,7 +2253,9 @@ impl Emitter<'_> {
             if let PropName::Ident(key) = &node.key {
                 // Short hand properties e.g. `{foo:foo}` => `{foo}`
                 if let Pat::Ident(value) = node.value.as_ref() {
-                    if key.sym == value.id.sym {
+                    if self.program_data.get_name_for_id(key.name)
+                        == self.program_data.get_name_for_id(value.id.name)
+                    {
                         return self.emit_ident(key);
                     }
                 }
@@ -2259,7 +2263,9 @@ impl Emitter<'_> {
                 // Short hand assign  e.g. `{foo: foo = bar}` => `{foo = bar}`
                 if let Pat::Assign(value) = node.value.as_ref() {
                     if let Pat::Ident(lhs) = value.left.as_ref() {
-                        if lhs.id.sym == key.sym {
+                        if self.program_data.get_name_for_id(lhs.id.name)
+                            == self.program_data.get_name_for_id(key.name)
+                        {
                             self.emit_ident(key)?;
                             punct!(self, "=");
                             let old = self.ctx;
@@ -2714,13 +2720,13 @@ impl Emitter<'_> {
             if let VarDeclOrPat::Pat(p) = node.left.as_ref() {
                 match p {
                     Pat::Ident(ident) => {
-                        if &ident.id.sym == "async" {
+                        if ident.id.name == id_for_built_in!("async") {
                             await_ident = true;
                         }
                     }
                     Pat::Expr(expr) => {
                         if let Expr::Ident(ident) = expr.as_ref() {
-                            if &ident.sym == "async" {
+                            if ident.name == id_for_built_in!("async") {
                                 await_ident = true;
                             }
                         }

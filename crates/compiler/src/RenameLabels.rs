@@ -1,12 +1,17 @@
-use atoms::JsWord;
+use ast::{NameId, ProgramData};
 use common::util::take::Take;
 use rustc_hash::FxHashMap;
 use visit::{VisitMut, VisitMutWith};
 
 use crate::name_generator::NameGenerator;
 
-pub fn process(ast: &mut ast::Program) {
-    let mut visitor = RenameLabels::default();
+pub fn process(ast: &mut ast::Program, program_data: &mut ProgramData) {
+    let mut visitor = RenameLabels {
+        name_supplier: NameGenerator::default(),
+        namespace_stack: Vec::default(),
+        names: Vec::default(),
+        program_data,
+    };
     ast.visit_mut_with(&mut visitor);
 }
 
@@ -42,35 +47,35 @@ pub fn process(ast: &mut ast::Program) {
 /// references to the label name are renamed as they are encountered on the way
 /// back up. This means that whether a label is unreferenced, and can therefore
 /// be safely removed, is known when the label node is visited.
-#[derive(Default)]
-struct RenameLabels {
+struct RenameLabels<'d> {
     name_supplier: NameGenerator,
     // A stack of labels namespaces. Labels in an outer scope aren't part of an
     // inner scope, so a new namespace is created each time a scope is entered.
     namespace_stack: Vec<LabelNamespace>,
     // The list of generated names. Typically, the first name will be "a",
     // the second "b", etc.
-    names: Vec<JsWord>,
+    names: Vec<NameId>,
+    program_data: &'d mut ProgramData,
 }
 
-impl RenameLabels {
+impl RenameLabels<'_> {
     /// Returns the short name of the identified label.
     ///
     /// `id` - The id, which is the depth of the label in the current context,
     /// for which to get a short name.
-    fn get_name_for_id(&self, id: usize) -> &JsWord {
-        &self.names[id - 1]
+    fn get_name_for_id(&self, id: usize) -> NameId {
+        self.names[id - 1]
     }
 
     /// Returns the structure representing the name in the current context.
     ///
     /// `name` - The name to retrieve information about.
-    fn get_label_info(&mut self, name: &JsWord) -> Option<&mut LabelInfo> {
+    fn get_label_info(&mut self, name: NameId) -> Option<&mut LabelInfo> {
         self.namespace_stack
             .last_mut()
             .unwrap()
             .rename_map
-            .get_mut(name)
+            .get_mut(&name)
     }
 }
 
@@ -88,7 +93,7 @@ macro_rules! handle_scope {
     };
 }
 
-impl VisitMut<'_> for RenameLabels {
+impl VisitMut<'_> for RenameLabels<'_> {
     fn visit_mut_stmt(&mut self, node: &mut ast::Stmt) {
         match node {
             ast::Stmt::Labeled(labeled_stmt) => {
@@ -103,26 +108,29 @@ impl VisitMut<'_> for RenameLabels {
                     id,
                     referenced: false,
                 };
-                debug_assert!(!current.rename_map.contains_key(&name.sym));
-                current.rename_map.insert(name.sym.clone(), li);
+                debug_assert!(!current.rename_map.contains_key(&name.name));
+                current.rename_map.insert(name.name, li);
 
                 // Create a new name, if needed, for this depth.
                 if self.names.len() < current_depth {
-                    self.names.push(self.name_supplier.generate_next_name());
+                    let new_name = self
+                        .program_data
+                        .get_id_for_name(self.name_supplier.generate_next_name());
+                    self.names.push(new_name);
                 }
 
                 labeled_stmt.visit_mut_children_with(self);
 
                 let label = &mut labeled_stmt.label;
-                let name = label.sym.clone();
+                let name = label.name;
 
-                let li = self.get_label_info(&name).unwrap();
+                let li = self.get_label_info(name).unwrap();
                 // This is a label...
                 if li.referenced {
                     let new_name = self.get_name_for_id(id);
-                    if &name != new_name {
+                    if name != new_name {
                         // ... and it is used, give it the short name.
-                        label.sym = new_name.clone();
+                        label.name = new_name;
                     }
                 } else {
                     // ... and it is not referenced, just remove it.
@@ -139,16 +147,16 @@ impl VisitMut<'_> for RenameLabels {
             | ast::Stmt::Continue(ast::ContinueStmt { label, .. }) => {
                 if let Some(label) = label {
                     // This is a named break or continue;
-                    let name = label.sym.clone();
-                    let id = self.get_label_info(&name).map(|info| info.id);
+                    let name = label.name;
+                    let id = self.get_label_info(name).map(|info| info.id);
                     if let Some(id) = id {
                         let new_name = self.get_name_for_id(id);
-                        if &name != new_name {
+                        if name != new_name {
                             // Give it the short name.
-                            label.sym = new_name.clone();
+                            label.name = new_name;
                         }
                         // Mark the label as referenced so it isn't removed.
-                        self.get_label_info(&name).unwrap().referenced = true;
+                        self.get_label_info(name).unwrap().referenced = true;
                     }
                 }
             }
@@ -173,7 +181,7 @@ impl VisitMut<'_> for RenameLabels {
 
 #[derive(Default, Debug)]
 struct LabelNamespace {
-    rename_map: FxHashMap<JsWord, LabelInfo>,
+    rename_map: FxHashMap<NameId, LabelInfo>,
 }
 
 #[derive(Debug)]
@@ -186,8 +194,8 @@ struct LabelInfo {
 mod tests {
     fn test_transform(input: &str, expected: &str) {
         crate::testing::test_transform(
-            |mut program, _| {
-                super::process(&mut program);
+            |mut program, program_data| {
+                super::process(&mut program, program_data);
                 program
             },
             input,

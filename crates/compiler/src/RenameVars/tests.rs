@@ -1,23 +1,15 @@
-use common::{GLOBALS, Globals, Mark, SyntaxContext};
-
 use crate::resolver::resolve;
 
 use super::*;
 
 fn test_transform(input: &str, expected: &str) {
     crate::testing::test_transform(
-        |mut program, _| {
-            GLOBALS.set(&Globals::new(), || {
-                let unresolved_mark = Mark::new();
+        |mut program, program_data| {
+            resolve(&mut program, program_data);
 
-                resolve(&mut program, unresolved_mark);
+            process(&mut program, program_data);
 
-                let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
-
-                process(&mut program, unresolved_ctxt);
-
-                program
-            })
+            program
         },
         input,
         expected,

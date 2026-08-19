@@ -1,6 +1,5 @@
 use super::node::{Node, NodeKind};
 use ast::*;
-use atoms::JsWord;
 use rustc_hash::FxHashMap;
 use std::hash::Hash;
 use visit::{Visit, VisitWith};
@@ -149,7 +148,7 @@ pub fn may_throw_exception(n: Node) -> bool {
 pub fn is_break_target<'ast>(
     target: Node<'ast>,
     target_ancestors: impl Iterator<Item = &'ast ParentNode<'ast>> + Clone,
-    label: Option<&JsWord>,
+    label: Option<NameId>,
 ) -> bool {
     is_break_structure(target, label.is_some()) && match_label(target_ancestors, label)
 }
@@ -159,7 +158,7 @@ pub fn is_break_target<'ast>(
 pub fn is_continue_target<'ast>(
     target: Node<'ast>,
     target_ancestors: impl Iterator<Item = &'ast ParentNode<'ast>>,
-    label: Option<&JsWord>,
+    label: Option<NameId>,
 ) -> bool {
     is_loop_structure(target) && match_label(target_ancestors, label)
 }
@@ -168,7 +167,7 @@ pub fn is_continue_target<'ast>(
 /// label is null, it always returns true.
 pub fn match_label<'ast>(
     mut target_ancestors: impl Iterator<Item = &'ast ParentNode<'ast>>,
-    label: Option<&JsWord>,
+    label: Option<NameId>,
 ) -> bool {
     let mut target = target_ancestors.next().map(|parent| parent.node);
     match label {
@@ -178,7 +177,7 @@ pub fn match_label<'ast>(
                 ..
             }) = target
             {
-                if &target_label.label.sym == label {
+                if target_label.label.name == label {
                     return true;
                 }
                 target = target_ancestors.next().map(|parent| parent.node);

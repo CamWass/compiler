@@ -14,7 +14,6 @@ use crate::control_flow::ControlFlowAnalysis::NodePriority;
 use crate::control_flow::ControlFlowGraph::{Branch, ControlFlowGraph};
 use crate::control_flow::{ControlFlowGraph::Annotation, node::Node, util::MultiMap};
 use crate::find_vars::{AllVarsDeclaredInFunction, FunctionLike, VarId};
-use crate::{Id, ToId};
 
 #[cfg(test)]
 mod tests;
@@ -22,8 +21,8 @@ mod tests;
 // TODO: temp pub fields:
 #[derive(Debug)]
 pub struct MaybeReachingResult<'ast> {
-    pub scope_variables: FxHashMap<Id, VarId>,
-    pub ordered_vars: IndexVec<VarId, Id>,
+    pub scope_variables: FxHashMap<NameId, VarId>,
+    pub ordered_vars: IndexVec<VarId, NameId>,
     pub lattice_elements: IndexVec<LatticeElementId, ReachingUses>,
     pub cfg: ControlFlowGraph<Node<'ast>, LinearFlowState>,
 }
@@ -38,8 +37,8 @@ impl MaybeReachingResult<'_> {
      * @param defNode the control flow graph node that may assign a value to {@code name}
      * @return the list of upward exposed uses of the variable {@code name} at defNode.
      */
-    pub fn get_uses(&self, name: &Id, def_node: Node) -> Option<&Vec<NodeId>> {
-        if let Some(var) = self.scope_variables.get(name) {
+    pub fn get_uses(&self, name: NameId, def_node: Node) -> Option<&Vec<NodeId>> {
+        if let Some(var) = self.scope_variables.get(&name) {
             let ann = self.cfg.node_annotations.get(&def_node).unwrap();
             self.lattice_elements[ann.out].may_use_map.get(*var)
         } else {
@@ -106,13 +105,13 @@ where
     num_vars: usize,
     fn_scope: &'a T,
 
-    escaped: FxHashSet<Id>,
+    escaped: FxHashSet<NameId>,
     // Maps the variable name to it's position
     // in this jsScope were we to combine the function and function body scopes. The Integer
     // represents the equivalent of the variable index property within a scope
-    scope_variables: FxHashMap<Id, VarId>,
+    scope_variables: FxHashMap<NameId, VarId>,
     // obtain variables in the order in which they appear in the code
-    ordered_vars: IndexVec<VarId, Id>,
+    ordered_vars: IndexVec<VarId, NameId>,
     params: FxHashSet<VarId>,
     fn_and_class_names: FxHashSet<VarId>,
 
@@ -163,9 +162,8 @@ where
      * nothing if the variable name is one of the escaped variable.
      */
     fn add_to_use_if_local(&mut self, name: &Ident, node: Node<'ast>, usage: &mut ReachingUses) {
-        let id = name.to_id();
-        if let Some(var) = self.scope_variables.get(&id) {
-            if !self.escaped.contains(&id) {
+        if let Some(var) = self.scope_variables.get(&name.name) {
+            if !self.escaped.contains(&name.name) {
                 usage.may_use_map.put(*var, node.node_id);
             }
         }
@@ -176,9 +174,8 @@ where
      * nothing if the variable name is one of the escaped variable.
      */
     fn remove_from_use_if_local(&mut self, name: &Ident, usage: &mut ReachingUses) {
-        let id = name.to_id();
-        if let Some(var) = self.scope_variables.get(&id) {
-            if !self.escaped.contains(&id) {
+        if let Some(var) = self.scope_variables.get(&name.name) {
+            if !self.escaped.contains(&name.name) {
                 usage.may_use_map.remove(var);
             }
         }

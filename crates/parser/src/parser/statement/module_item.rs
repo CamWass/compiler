@@ -183,7 +183,7 @@ impl Parser<'_> {
             //
             // 'ImportedBinding'
             // 'IdentifierName' as 'ImportedBinding'
-            if self.ctx().is_reserved_word(&orig_name.sym) {
+            if self.ctx().is_reserved_word(orig_name.name) {
                 syntax_error!(
                     self,
                     get_span!(self, orig_name.node_id),
@@ -248,7 +248,7 @@ impl Parser<'_> {
 
         if self.input.syntax().typescript() && is!(self, IdentName) {
             let sym = match cur!(self, true)? {
-                Token::Word(w) => w.clone().into(),
+                Token::Word(w) => w.get_name_id(),
                 _ => unreachable!(),
             };
             if let Some(decl) = self.try_parse_ts_export_decl(sym) {
@@ -376,7 +376,8 @@ impl Parser<'_> {
             } else if self.input.syntax().export_default_from()
                 && (is!(self, "from") || (is!(self, ',') && peeked_is!(self, '{')))
             {
-                export_default = Some(self.new_ident(js_word!("default"), self.input.prev_span()));
+                export_default =
+                    Some(self.new_ident(id_for_built_in!("default"), self.input.prev_span()));
             } else {
                 let expr = self
                     .include_in_expr(true)

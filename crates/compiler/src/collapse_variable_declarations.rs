@@ -65,7 +65,6 @@ fn merge_consecutive_in_place<T, U>(
 mod tests {
     use super::*;
     use crate::resolver::resolve;
-    use common::{GLOBALS, Globals, Mark};
 
     #[test]
     fn test_collapsing() {
@@ -180,16 +179,12 @@ mod tests {
 
     fn test_transform(input: &str, expected: &str) {
         crate::testing::test_transform(
-            |mut program, _program_data| {
-                GLOBALS.set(&Globals::new(), || {
-                    let unresolved_mark = Mark::new();
+            |mut program, program_data| {
+                resolve(&mut program, program_data);
 
-                    resolve(&mut program, unresolved_mark);
+                process(&mut program);
 
-                    process(&mut program);
-
-                    program
-                })
+                program
             },
             input,
             expected,

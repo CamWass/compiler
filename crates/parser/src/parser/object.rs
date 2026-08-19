@@ -3,7 +3,6 @@
 use crate::context::ContextFlags;
 
 use super::{class_and_fn::is_not_this, util::ParseObject, *};
-use atoms::js_word;
 use util::AssignProps;
 
 impl Parser<'_> {
@@ -68,7 +67,9 @@ impl Parser<'_> {
                     _ => unreachable!(),
                 },
                 Word(..) => match parser.input.bump() {
-                    Word(w) => PropName::Ident(parser.new_ident(w.into(), span!(parser, start))),
+                    Word(w) => {
+                        PropName::Ident(parser.new_ident(w.get_name_id(), span!(parser, start)))
+                    }
                     _ => unreachable!(),
                 },
                 tok!('[') => {
@@ -226,7 +227,7 @@ impl ParseObject<Box<Expr>> for Parser<'_> {
         // `ident` from parse_prop_name is parsed as 'IdentifierName'
         // It means we should check for invalid expressions like { for, }
         if is_one_of!(self, '=', ',', '}') {
-            if self.ctx().is_reserved_word(&ident.sym) {
+            if self.ctx().is_reserved_word(ident.name) {
                 self.emit_err(
                     get_span!(self, ident.node_id),
                     SyntaxError::ReservedWordInObjShorthandOrPat,
@@ -267,18 +268,19 @@ impl ParseObject<Box<Expr>> for Parser<'_> {
         // set a(v){}
         // async a(){}
 
-        match ident.sym {
-            js_word!("get") | js_word!("set") | js_word!("async") => {
+        match ident.name {
+            id_for_built_in!("get") | id_for_built_in!("set") | id_for_built_in!("async") => {
                 if has_modifiers {
                     self.emit_err(modifiers_span, SyntaxError::TS1042);
                 }
 
-                let is_generator = ident.sym == js_word!("async") && self.input.eat(&tok!('*'));
+                let is_generator =
+                    ident.name == id_for_built_in!("async") && self.input.eat(&tok!('*'));
                 let key = self.parse_prop_name()?;
                 let key_span = get_span!(self, key.node_id());
 
-                match ident.sym {
-                    js_word!("get") => self
+                match ident.name {
+                    id_for_built_in!("get") => self
                         .parse_fn_args_body(
                             start,
                             |parser| {
@@ -308,7 +310,7 @@ impl ParseObject<Box<Expr>> for Parser<'_> {
                                 body,
                             })
                         }),
-                    js_word!("set") => self
+                    id_for_built_in!("set") => self
                         .parse_fn_args_body(
                             start,
                             |parser| {
@@ -354,7 +356,7 @@ impl ParseObject<Box<Expr>> for Parser<'_> {
                                 }),
                             })
                         }),
-                    js_word!("async") => self
+                    id_for_built_in!("async") => self
                         .parse_fn_args_body(
                             start,
                             Parser::parse_unique_formal_params,
@@ -466,7 +468,7 @@ impl ParseObject<Pat> for Parser<'_> {
                 .parse_assignment_expr(&mut AssignProps::Emit)
                 .map(Some)?
         } else {
-            if self.ctx().is_reserved_word(&key.sym) {
+            if self.ctx().is_reserved_word(key.name) {
                 self.emit_err(
                     get_span!(self, key.node_id),
                     SyntaxError::ReservedWordInObjShorthandOrPat,

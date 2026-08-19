@@ -1,7 +1,5 @@
 use std::fmt::Write;
 
-use common::{GLOBALS, Globals, Mark};
-
 use crate::resolver::resolve;
 
 use super::*;
@@ -9,17 +7,11 @@ use super::*;
 fn test_transform(input: &str, expected: &str) {
     crate::testing::test_transform(
         |mut program, program_data| {
-            GLOBALS.set(&Globals::new(), || {
-                let unresolved_mark = Mark::new();
+            resolve(&mut program, program_data);
 
-                resolve(&mut program, unresolved_mark);
+            process(&mut program, program_data);
 
-                let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
-
-                process(&mut program, program_data, unresolved_ctxt);
-
-                program
-            })
+            program
         },
         input,
         expected,
@@ -87,18 +79,21 @@ function foo(...a) {
     );
 }
 
-fn test_props(obj: &str, props: &[JsWord]) {
+fn test_props(obj: &str, props: &[NameId]) {
+    let program_data = ProgramData::default();
     // Test that built-in props are not renamed.
     let mut accesses = String::new();
     for prop in props {
-        accesses.write_fmt(format_args!("a.{prop}\n")).unwrap();
+        let name = program_data.get_name_for_id(*prop);
+        accesses.write_fmt(format_args!("a.{name}\n")).unwrap();
     }
     let input = format!("const a = {obj};\n{accesses}");
     test_same(&input);
 
     // Test that storing value in built-in prop invalidates the value.
     for prop in props {
-        test_same(&format!("const a = {obj};\n a.{prop} = {{ prop: 1 }}"));
+        let name = program_data.get_name_for_id(*prop);
+        test_same(&format!("const a = {obj};\n a.{name} = {{ prop: 1 }}"));
     }
 }
 

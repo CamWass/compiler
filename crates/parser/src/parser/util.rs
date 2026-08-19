@@ -48,8 +48,10 @@ impl Drop for WithCtx<'_, '_> {
 /// "IsValidSimpleAssignmentTarget" from spec.
 pub(super) fn is_valid_simple_assignment_target(expr: &Expr, strict: YesMaybe) -> bool {
     match expr {
-        Expr::Ident(Ident { sym, .. }) => {
-            if strict == YesMaybe::Yes && (sym == "arguments" || sym == "eval") {
+        Expr::Ident(Ident { name, .. }) => {
+            if strict == YesMaybe::Yes
+                && (*name == id_for_built_in!("arguments") || *name == id_for_built_in!("eval"))
+            {
                 return false;
             }
             true

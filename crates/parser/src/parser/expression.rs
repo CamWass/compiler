@@ -2,7 +2,6 @@ use super::{pat::PatType, util::is_valid_simple_assignment_target, *};
 use crate::{
     context::ContextFlags, parser::identifier::PrivateNameOrIdentifier, token::AssignOpToken,
 };
-use atoms::js_word;
 use common::Pos;
 use util::AssignProps;
 
@@ -164,7 +163,8 @@ impl Parser<'_> {
                     let is_eval_or_arguments = match &cond {
                         MaybeParen::Expr(cond) => match cond.as_ref() {
                             Expr::Ident(i) => {
-                                i.sym == js_word!("eval") || i.sym == js_word!("arguments")
+                                i.name == id_for_built_in!("eval")
+                                    || i.name == id_for_built_in!("arguments")
                             }
                             _ => false,
                         },
@@ -373,19 +373,19 @@ impl Parser<'_> {
         {
             // TODO(swc): Handle [Yield, Await]
             let id = self.parse_ident_name()?;
-            match id.sym {
-                //                    js_word!("eval") | js_word!("arguments") => {
+            match id.name {
+                //                    id_for_built_in!("eval") | id_for_built_in!("arguments") => {
                 //                        self.emit_err(id.span,
                 // SyntaxError::EvalAndArgumentsInStrict)
                 // }
-                js_word!("yield")
-                | js_word!("static")
-                | js_word!("implements")
-                | js_word!("let")
-                | js_word!("package")
-                | js_word!("private")
-                | js_word!("protected")
-                | js_word!("public") => {
+                id_for_built_in!("yield")
+                | id_for_built_in!("static")
+                | id_for_built_in!("implements")
+                | id_for_built_in!("let")
+                | id_for_built_in!("package")
+                | id_for_built_in!("private")
+                | id_for_built_in!("protected")
+                | id_for_built_in!("public") => {
                     self.emit_strict_mode_err(
                         self.input.prev_span(),
                         SyntaxError::InvalidIdentInStrict,
@@ -394,7 +394,7 @@ impl Parser<'_> {
                 _ => {}
             }
 
-            if can_be_arrow && id.sym == js_word!("async") && is!(self, BindingIdent) {
+            if can_be_arrow && id.name == id_for_built_in!("async") && is!(self, BindingIdent) {
                 // async a => body
                 let arg = self.parse_binding_ident().map(Pat::Ident)?;
                 let params = vec![Param::from_pat(arg, program_data!(self))];
@@ -998,11 +998,8 @@ impl Parser<'_> {
                     | Pat::Rest(RestPat { node_id, .. }) => {
                         let new_type_ann = self.try_parse_ts_type_ann()?;
                         if new_type_ann.is_some() {
-                            set_span!(
-                                self,
-                                *node_id,
-                                Span::new(pat_start, self.input.prev_span().hi,)
-                            );
+                            let hi = self.input.prev_span().hi;
+                            set_span!(self, *node_id, Span::new(pat_start, hi));
                         }
                     }
                     Pat::Expr(expr) => unreachable!("invalid pattern: Expr({:?})", expr),
@@ -1107,8 +1104,8 @@ impl Parser<'_> {
                     let span = Span::new(span_of_new.lo, span_of_target.hi);
                     let expr = Box::new(Expr::MetaProp(MetaPropExpr {
                         node_id: node_id!(self, span),
-                        meta: self.new_ident(js_word!("new"), span_of_new),
-                        prop: self.new_ident(js_word!("target"), span_of_target),
+                        meta: self.new_ident(id_for_built_in!("new"), span_of_new),
+                        prop: self.new_ident(id_for_built_in!("target"), span_of_target),
                     }))
                     .into();
 
@@ -1387,7 +1384,7 @@ impl Parser<'_> {
             return Ok(Box::new(Expr::Call(CallExpr {
                 node_id: node_id!(self, span!(self, async_span.lo())),
                 callee: ExprOrSuper::Expr(Box::new(Expr::Ident(
-                    self.new_ident(js_word!("async"), async_span),
+                    self.new_ident(id_for_built_in!("async"), async_span),
                 ))),
                 args: expr_or_spreads,
             }))
@@ -1605,7 +1602,7 @@ impl Parser<'_> {
         if let MaybeParen::Expr(expr) = &expr {
             match expr.as_ref() {
                 Expr::Ident(Ident {
-                    sym: js_word!("async"),
+                    name: id_for_built_in!("async"),
                     ..
                 }) => {
                     let span = get_span!(self, expr.node_id());
@@ -1684,7 +1681,9 @@ impl Parser<'_> {
         // We follow behaviour of tsc
         if self.input.syntax().typescript() && self.syntax().early_errors() {
             let is_eval_or_arguments = match expr {
-                Expr::Ident(i) => i.sym == js_word!("eval") || i.sym == js_word!("arguments"),
+                Expr::Ident(i) => {
+                    i.name == id_for_built_in!("eval") || i.name == id_for_built_in!("arguments")
+                }
                 _ => false,
             };
 
@@ -1728,7 +1727,7 @@ fn is_import(obj: &MaybeParenExprOrSuper) -> bool {
             MaybeParen::Expr(expr) => matches!(
                 **expr,
                 Expr::Ident(Ident {
-                    sym: js_word!("import"),
+                    name: id_for_built_in!("import"),
                     ..
                 })
             ),

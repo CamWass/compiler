@@ -1,7 +1,5 @@
 use std::fmt::Write;
 
-use common::{GLOBALS, Globals, Mark, SyntaxContext};
-
 use crate::resolver::resolve;
 
 use super::*;
@@ -9,19 +7,13 @@ use super::*;
 fn test_transform(input: &str, expected: &str) {
     crate::testing::test_transform(
         |mut program, program_data| {
-            GLOBALS.set(&Globals::new(), || {
-                let unresolved_mark = Mark::new();
+            crate::normalize::normalize(&mut program, program_data);
 
-                resolve(&mut program, unresolved_mark);
+            resolve(&mut program, program_data);
 
-                crate::normalize::normalize(&mut program, program_data);
+            coalesce_variable_names(&mut program, program_data);
 
-                let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
-
-                coalesce_variable_names(&mut program, unresolved_ctxt, program_data);
-
-                program
-            })
+            program
         },
         input,
         expected,

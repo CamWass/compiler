@@ -1,6 +1,6 @@
 use ast::*;
 use common::{
-    FileName, GLOBALS, Globals, Mark, SourceMap, SyntaxContext,
+    FileName, SourceMap,
     errors::{ColorConfig, Handler},
 };
 use index::vec::IndexVec;
@@ -9,7 +9,6 @@ use rustc_hash::FxHashMap;
 use std::{rc::Rc, sync::atomic::AtomicU32};
 
 use crate::DataFlowAnalysis::LinearFlowState;
-use crate::Id;
 use crate::LiveVariablesAnalysis::LiveVariablesAnalysis;
 use crate::control_flow::{ControlFlowAnalysis::*, ControlFlowGraph::Branch};
 use crate::resolver::resolve;
@@ -586,42 +585,36 @@ function f() {
 
 // test computeEscaped helper method that returns the liveness analysis performed by the
 // LiveVariablesAnalysis class
-fn computeEscapedLocals(src: &str) -> FxHashSet<Id> {
-    GLOBALS.set(&Globals::new(), || {
-        let mut program = Program::Script(parse_script(src));
+fn computeEscapedLocals(src: &str) -> FxHashSet<NameId> {
+    let (script, mut program_data) = parse_script(src);
+    let mut program = Program::Script(script);
 
-        let unresolved_mark = Mark::new();
+    resolve(&mut program, &mut program_data);
 
-        resolve(&mut program, unresolved_mark);
+    let script = unwrap_as!(program, Program::Script(s), s);
 
-        let script = unwrap_as!(program, Program::Script(s), s);
+    let function = match script.body.first() {
+        Some(Stmt::Decl(Decl::Fn(f))) => &f.function,
+        _ => unreachable!(),
+    };
 
-        let function = match script.body.first() {
-            Some(Stmt::Decl(Decl::Fn(f))) => &f.function,
-            _ => unreachable!(),
-        };
+    // Control flow graph
+    let cfa = ControlFlowAnalysis::analyze(ControlFlowRoot::Function(function), false);
 
-        // Control flow graph
-        let cfa = ControlFlowAnalysis::analyze(ControlFlowRoot::Function(function), false);
+    // All variables declared in function
+    let all_vars_declared_in_function = find_vars_declared_in_fn(function.as_ref(), false);
 
-        // All variables declared in function
-        let all_vars_declared_in_function = find_vars_declared_in_fn(function.as_ref(), false);
-
-        let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
-
-        // Compute liveness of variables
-        let liveness = LiveVariablesAnalysis::new(
-            cfa.cfg,
-            &cfa.node_priorities,
-            function.as_ref(),
-            all_vars_declared_in_function,
-            unresolved_ctxt,
-        );
-        liveness.analyze().0.escaped_locals
-    })
+    // Compute liveness of variables
+    let liveness = LiveVariablesAnalysis::new(
+        cfa.cfg,
+        &cfa.node_priorities,
+        function.as_ref(),
+        all_vars_declared_in_function,
+    );
+    liveness.analyze().0.escaped_locals
 }
 
-fn parse_script(input: &str) -> Script {
+fn parse_script(input: &str) -> (Script, ProgramData) {
     let cm = Rc::<SourceMap>::default();
     let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
 
@@ -646,7 +639,7 @@ fn parse_script(input: &str) -> Script {
 
     assert!(!error, "Failed to parse");
 
-    res
+    (res, program_data)
 }
 
 #[derive(Debug)]

@@ -1,19 +1,14 @@
 use ast::*;
 use atoms::js_word;
-use common::SyntaxContext;
 use visit::{VisitMut, VisitMutWith};
 
-pub fn process(ast: &mut Program, program_data: &mut ProgramData, unresolved_ctxt: SyntaxContext) {
-    let mut visitor = Visitor {
-        program_data,
-        unresolved_ctxt,
-    };
+pub fn process(ast: &mut Program, program_data: &mut ProgramData) {
+    let mut visitor = Visitor { program_data };
     ast.visit_mut_with(&mut visitor);
 }
 
 struct Visitor<'a> {
     program_data: &'a mut ProgramData,
-    unresolved_ctxt: SyntaxContext,
 }
 
 impl Visitor<'_> {
@@ -35,17 +30,14 @@ impl Visitor<'_> {
                     }
                     _ => return,
                 },
-                Expr::Ident(ident) => {
-                    if ident.ctxt == self.unresolved_ctxt
-                        && (ident.sym == js_word!("undefined")
-                            || ident.sym == js_word!("NaN")
-                            || ident.sym == js_word!("Infinity"))
-                    {
-                        (&ident.sym, computed_prop.node_id)
-                    } else {
-                        return;
+                Expr::Ident(ident) => match ident.name {
+                    id_for_built_in!("undefined") => {
+                        (&js_word!("undefined"), computed_prop.node_id)
                     }
-                }
+                    id_for_built_in!("NaN") => (&js_word!("NaN"), computed_prop.node_id),
+                    id_for_built_in!("Infinity") => (&js_word!("Infinity"), computed_prop.node_id),
+                    _ => return,
+                },
                 _ => return,
             },
             _ => return,
@@ -58,9 +50,8 @@ impl Visitor<'_> {
         }
         if is_valid_prop_ident(prop_name) {
             *prop = PropName::Ident(Ident {
-                ctxt: SyntaxContext::empty(),
                 node_id: self.program_data.new_id_from(old_node_id),
-                sym: prop_name.clone(),
+                name: self.program_data.get_id_for_name(prop_name.clone()),
             });
         }
     }
@@ -83,26 +74,20 @@ impl VisitMut<'_> for Visitor<'_> {
                 }
                 _ => return,
             },
-            Expr::Ident(ident) => {
-                if ident.ctxt == self.unresolved_ctxt
-                    && (ident.sym == js_word!("undefined")
-                        || ident.sym == js_word!("NaN")
-                        || ident.sym == js_word!("Infinity"))
-                {
-                    (&ident.sym, ident.node_id)
-                } else {
-                    return;
-                }
-            }
+            Expr::Ident(ident) => match ident.name {
+                id_for_built_in!("undefined") => (&js_word!("undefined"), ident.node_id),
+                id_for_built_in!("NaN") => (&js_word!("NaN"), ident.node_id),
+                id_for_built_in!("Infinity") => (&js_word!("Infinity"), ident.node_id),
+                _ => return,
+            },
             _ => return,
         };
 
         if is_valid_prop_ident(prop_name) {
             n.computed = false;
             *n.prop = Expr::Ident(Ident {
-                ctxt: SyntaxContext::empty(),
                 node_id: self.program_data.new_id_from(old_node_id),
-                sym: prop_name.clone(),
+                name: self.program_data.get_id_for_name(prop_name.clone()),
             });
         }
     }
@@ -143,7 +128,6 @@ pub fn is_valid_prop_ident(s: &str) -> bool {
 mod tests {
     use super::*;
     use crate::resolver::resolve;
-    use common::{GLOBALS, Globals, Mark};
 
     #[test]
     fn test_valid_computed_prop_accesses() {
@@ -438,17 +422,11 @@ class A {{
     fn test_transform(input: &str, expected: &str) {
         crate::testing::test_transform(
             |mut program, program_data| {
-                GLOBALS.set(&Globals::new(), || {
-                    let unresolved_mark = Mark::new();
+                resolve(&mut program, program_data);
 
-                    resolve(&mut program, unresolved_mark);
+                process(&mut program, program_data);
 
-                    let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
-
-                    process(&mut program, program_data, unresolved_ctxt);
-
-                    program
-                })
+                program
             },
             input,
             expected,

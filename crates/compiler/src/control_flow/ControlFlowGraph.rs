@@ -186,7 +186,10 @@ where
                         f.write_fmt(format_args!("Number({})", n.value))?;
                     }
                     NodeKind::Ident(s) => {
-                        f.write_fmt(format_args!("Ident({})", s.sym))?;
+                        f.write_fmt(format_args!(
+                            "Ident({})",
+                            self.program_data.get_name_for_id(s.name)
+                        ))?;
                     }
                     _ => {
                         f.write_str(&self.node.get_debug_string(self.program_data))?;
@@ -271,7 +274,10 @@ where
                         f.write_fmt(format_args!("Number({})", n.value))?;
                     }
                     NodeKind::Ident(s) => {
-                        f.write_fmt(format_args!("Ident({})", s.sym))?;
+                        f.write_fmt(format_args!(
+                            "Ident({})",
+                            self.program_data.get_name_for_id(s.name)
+                        ))?;
                     }
                     _ => {
                         f.write_str(&self.node.get_debug_string(self.program_data))?;

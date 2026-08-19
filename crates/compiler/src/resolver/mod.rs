@@ -1,1000 +1,404 @@
-use crate::Id;
 use ast::*;
-use atoms::JsWord;
-use common::{Mark, SyntaxContext};
-use rustc_hash::FxHashSet;
-use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
+use rustc_hash::{FxHashMap, FxHashSet};
+use visit::{VisitMut, VisitMutWith};
 
-use scope::{IdentType, ScopeKind};
+// TODO: even though it wil error at runtime, lexical declarations can be
+// accessed before declaration for the purpose of binding.
 
-mod scope;
+// TODO: get some tests.
 
-/// # When to run
-///
-/// The resolver expects 'clean' ast. You can get clean ast by parsing, or by
-/// removing all syntax context in ast nodes.
-///
-/// # What does it do
-///
-/// Firstly all scopes (fn, block) has it's own SyntaxContext.
-/// Resolver visits all identifiers in module, and look for binding identifies
-/// in the scope. Those identifiers now have the SyntaxContext of scope (fn,
-/// block). While doing so, resolver tries to resolve normal identifiers (no
-/// hygiene info) as a reference to identifier of scope. If the resolver find
-/// suitable variable, the identifier reference will have same context as the
-/// variable.
-///
-///
-/// # Example
-///
-/// ```js
-/// let a = 1;
-/// {
-///     let a = 2;
-///     use(a);
-/// }
-/// use(a)
-/// ```
-///
-/// resolver does
-///
-/// 1.  Define `a` with top level context.
-///
-/// 2.  Found a block, so visit block with a new syntax context.
-///
-/// 3. Defined `a` with syntax context of the block statement.
-///
-/// 4. Found usage of `a`, and determines that it's reference to `a` in the
-/// block. So the reference to `a` will have same syntax context as `a` in the
-/// block.
-///
-/// 5. Found usage of `a` (last line), and determines that it's a
-/// reference to top-level `a`, and change syntax context of `a` on last line to
-/// top-level syntax context.
-///
-///
-/// # Parameters
-///
-/// ## `unresolved_mark`
-///
-/// [Mark] applied to unresolved references.
-///
-/// A pass should accept this [Mark] if it's going to generate a reference to
-/// globals like `require`.
-///
-/// e.g. `common_js` pass generates calls to `require`, and this should not
-/// be shadowed by a declaration named `require` in the same file.
-/// So it uses this value.
-pub fn resolve(program: &mut Program, unresolved_mark: Mark) {
-    assert_ne!(
-        unresolved_mark,
-        Mark::root(),
-        "Mark provided to resolver should not be the root mark"
-    );
-
+pub fn resolve(program: &mut Program, program_data: &mut ProgramData) {
     let mut resolver = Resolver {
-        current: Scope::new(ScopeKind::Fn, Mark::new(), None),
-        ident_type: IdentType::Ref,
-        unresolved_mark,
+        program_data,
+        cur_scope: ScopeId(0),
+        scopes: vec![Scope {
+            names: FxHashMap::default(),
+            parent: None,
+        }],
+        in_decl: false,
+        processed_names: FxHashSet::default(),
     };
 
     program.visit_mut_with(&mut resolver);
 }
 
-#[derive(Debug, Clone)]
-struct Scope<'a> {
-    /// Parent scope of the scope
-    parent: Option<&'a Scope<'a>>,
+struct Resolver<'d> {
+    program_data: &'d mut ProgramData,
 
-    /// Kind of the scope.
-    kind: ScopeKind,
-
-    /// [Mark] of the current scope.
-    mark: Mark,
-
-    /// All declarations in the scope
-    declared_symbols: FxHashSet<JsWord>,
-}
-
-impl<'a> Scope<'a> {
-    pub fn new(kind: ScopeKind, mark: Mark, parent: Option<&'a Scope<'a>>) -> Self {
-        Scope {
-            parent,
-            kind,
-            mark,
-            declared_symbols: Default::default(),
-        }
-    }
-
-    fn is_declared(&self, symbol: &JsWord) -> bool {
-        if self.declared_symbols.contains(symbol) {
-            return true;
-        }
-
-        self.parent.is_some_and(|p| p.is_declared(symbol))
-    }
-}
-
-/// # Phases
-///
-/// ## Hoisting phase
-///
-/// ## Resolving phase
-struct Resolver<'a> {
-    current: Scope<'a>,
-    ident_type: IdentType,
-    unresolved_mark: Mark,
+    // TODO: use actual stack for scopes since we don't need to access sibling
+    // scopes.
+    cur_scope: ScopeId,
+    scopes: Vec<Scope>,
+    in_decl: bool,
+    processed_names: FxHashSet<NameId>,
 }
 
 impl Resolver<'_> {
-    fn with_child<F>(&self, kind: ScopeKind, op: F)
-    where
-        F: for<'aa> FnOnce(&mut Resolver<'aa>),
-    {
-        let mut child = Resolver {
-            current: Scope::new(kind, Mark::new(), Some(&self.current)),
-            ident_type: IdentType::Ref,
-            unresolved_mark: self.unresolved_mark,
-        };
-
-        op(&mut child);
-    }
-
-    fn visit_mut_stmt_within_child_scope(&mut self, s: &mut Stmt) {
-        self.with_child(ScopeKind::Block, |child| {
-            child.visit_mut_stmt_within_same_scope(s);
-        });
-    }
-
-    fn visit_mut_stmt_within_same_scope(&mut self, s: &mut Stmt) {
-        match s {
-            Stmt::Block(s) => {
-                s.visit_mut_children_with(self);
-            }
-            _ => s.visit_mut_with(self),
-        }
-    }
-
-    /// Returns a [Mark] for an identifier reference.
-    fn mark_for_ref(&self, sym: &JsWord) -> Option<Mark> {
-        self.mark_for_ref_inner(sym, false)
-    }
-
-    fn mark_for_ref_inner(&self, sym: &JsWord, stop_an_fn_scope: bool) -> Option<Mark> {
-        let mut mark = self.current.mark;
-        let mut scope = Some(&self.current);
-
-        while let Some(cur) = scope {
-            if cur.declared_symbols.contains(sym) {
-                if mark == Mark::root() {
-                    return None;
-                }
-                return Some(mark);
-            }
-
-            if cur.kind == ScopeKind::Fn && stop_an_fn_scope {
-                return None;
-            }
-
-            if let Some(parent) = &cur.parent {
-                mark = parent.mark;
-            }
-            scope = cur.parent;
-        }
-
-        None
-    }
-
-    /// Modifies a binding identifier.
-    fn modify(&mut self, ident: &mut Ident) {
-        if ident.ctxt != SyntaxContext::empty() {
+    fn handle_reference(&mut self, name: &mut NameId) {
+        if !name.is_unresolved() {
             return;
         }
 
-        let mark = self.current.mark;
+        let mut cur = self.cur_scope;
 
-        self.current.declared_symbols.insert(ident.sym.clone());
+        loop {
+            if let Some(new_name) = self.scopes[cur.0].names.get(&name) {
+                *name = *new_name;
+                return;
+            }
 
-        if mark != Mark::root() {
-            ident.ctxt = ident.ctxt.apply_mark(mark);
+            if let Some(parent) = self.scopes[cur.0].parent {
+                cur = parent;
+            } else {
+                return;
+            }
         }
+    }
+
+    fn handle_decl(&mut self, name: &mut NameId) {
+        if !self.scopes[self.cur_scope.0].names.contains_key(name) {
+            if self.processed_names.insert(*name) {
+                self.scopes[self.cur_scope.0]
+                    .names
+                    .insert(*name, ProgramData::mark_resolved(*name));
+            } else {
+                let new_name = self.program_data.new_resolved_name_from(*name);
+                self.scopes[self.cur_scope.0].names.insert(*name, new_name);
+            }
+        }
+
+        self.handle_reference(name);
+    }
+
+    /// Runs `op` with a new scope on the stack.
+    fn with_scope<F>(&mut self, mut op: F)
+    where
+        F: FnMut(&mut Self),
+    {
+        let next_scope_id = ScopeId(self.scopes.len());
+        let prev = self.cur_scope;
+        self.scopes.push(Scope {
+            parent: Some(prev),
+            names: FxHashMap::default(),
+        });
+        self.cur_scope = next_scope_id;
+        op(self);
+        self.cur_scope = prev;
     }
 }
 
 impl VisitMut<'_> for Resolver<'_> {
-    fn visit_mut_member_expr(&mut self, n: &mut MemberExpr) {
-        n.obj.visit_mut_with(self);
-        if n.computed {
-            n.prop.visit_mut_with(self);
-        }
-    }
-
-    fn visit_mut_export_specifier(&mut self, s: &mut ExportSpecifier) {
-        let old = self.ident_type;
-        self.ident_type = IdentType::Ref;
-        s.visit_mut_children_with(self);
-        self.ident_type = old;
-    }
-
-    fn visit_mut_import_specifier(&mut self, s: &mut ImportSpecifier) {
-        let old = self.ident_type;
-        self.ident_type = IdentType::Binding;
-
-        match s {
-            ImportSpecifier::Named(ImportNamedSpecifier { imported: None, .. })
-            | ImportSpecifier::Namespace(..)
-            | ImportSpecifier::Default(..) => s.visit_mut_children_with(self),
-            ImportSpecifier::Named(s) => s.local.visit_mut_with(self),
-        };
-
-        self.ident_type = old;
-    }
-
-    fn visit_mut_getter_prop(&mut self, f: &mut GetterProp) {
-        let old = self.ident_type;
-        self.ident_type = IdentType::Ref;
-        f.key.visit_mut_with(self);
-        self.ident_type = old;
-
-        f.body.visit_mut_with(self);
-    }
-
-    fn visit_mut_labeled_stmt(&mut self, s: &mut LabeledStmt) {
-        let old = self.ident_type;
-        self.ident_type = IdentType::Label;
-        s.label.visit_mut_with(self);
-        self.ident_type = old;
-
-        s.body.visit_mut_with(self);
-    }
-
-    fn visit_mut_break_stmt(&mut self, s: &mut BreakStmt) {
-        let old = self.ident_type;
-        self.ident_type = IdentType::Label;
-        s.label.visit_mut_with(self);
-        self.ident_type = old;
-    }
-
-    fn visit_mut_continue_stmt(&mut self, s: &mut ContinueStmt) {
-        let old = self.ident_type;
-        self.ident_type = IdentType::Label;
-        s.label.visit_mut_with(self);
-        self.ident_type = old;
-    }
-
-    fn visit_mut_key_value_pat_prop(&mut self, n: &mut KeyValuePatProp) {
-        n.key.visit_mut_with(self);
-        n.value.visit_mut_with(self);
-    }
-
-    fn visit_mut_class(&mut self, c: &mut Class) {
-        let old = self.ident_type;
-
-        self.ident_type = IdentType::Ref;
-        if let Some(extends) = &mut c.extends {
-            extends.super_class.visit_mut_with(self);
-        }
-
-        self.ident_type = old;
-
-        c.body.visit_mut_with(self);
-    }
-
-    fn visit_mut_prop_name(&mut self, n: &mut PropName) {
-        match n {
-            PropName::Computed(c) => {
-                c.visit_mut_with(self);
-            }
-            _ => {}
-        }
-    }
-
-    fn visit_mut_arrow_expr(&mut self, e: &mut ArrowExpr) {
-        self.with_child(ScopeKind::Fn, |child| {
-            let old = child.ident_type;
-            child.ident_type = IdentType::Binding;
-            e.params.visit_mut_with(child);
-            child.ident_type = old;
-
-            e.body.stmts.visit_mut_with(child);
-        });
-    }
-
     fn visit_mut_binding_ident(&mut self, i: &mut BindingIdent) {
-        let ident_type = self.ident_type;
-
-        i.id.visit_mut_with(self);
-
-        self.ident_type = ident_type;
-    }
-
-    fn visit_mut_block_stmt(&mut self, block: &mut BlockStmt) {
-        self.with_child(ScopeKind::Block, |child| {
-            block.visit_mut_children_with(child);
-        });
-    }
-
-    fn visit_mut_catch_clause(&mut self, c: &mut CatchClause) {
-        self.with_child(ScopeKind::Fn, |child| {
-            child.ident_type = IdentType::Binding;
-            c.param.visit_mut_with(child);
-            child.ident_type = IdentType::Ref;
-
-            c.body.visit_mut_children_with(child);
-        });
-    }
-
-    fn visit_mut_class_decl(&mut self, n: &mut ClassDecl) {
-        self.modify(&mut n.ident);
-
-        // Create a child scope. The class name is only accessible within the class.
-
-        self.with_child(ScopeKind::Fn, |child| {
-            child.ident_type = IdentType::Ref;
-
-            n.class.visit_mut_with(child);
-        });
-    }
-
-    fn visit_mut_class_expr(&mut self, n: &mut ClassExpr) {
-        // Create a child scope. The class name is only accessible within the class.
-
-        self.with_child(ScopeKind::Fn, |child| {
-            child.ident_type = IdentType::Binding;
-            n.ident.visit_mut_with(child);
-            child.ident_type = IdentType::Ref;
-
-            n.class.visit_mut_with(child);
-        });
-    }
-
-    fn visit_mut_class_method(&mut self, m: &mut ClassMethod) {
-        m.key.visit_mut_with(self);
-
-        self.with_child(ScopeKind::Fn, |child| m.function.visit_mut_with(child));
-    }
-
-    fn visit_mut_class_prop(&mut self, p: &mut ClassProp) {
-        if let PropName::Computed(key) = &mut p.key {
-            let old = self.ident_type;
-            self.ident_type = IdentType::Binding;
-            key.expr.visit_mut_with(self);
-            self.ident_type = old;
-        }
-
-        let old = self.ident_type;
-        self.ident_type = IdentType::Ref;
-        p.value.visit_mut_with(self);
-        self.ident_type = old;
-    }
-
-    fn visit_mut_constructor(&mut self, c: &mut Constructor) {
-        self.with_child(ScopeKind::Fn, |child| {
-            let old = child.ident_type;
-            child.ident_type = IdentType::Binding;
-            c.params.visit_mut_with(child);
-            child.ident_type = old;
-
-            c.body.visit_mut_children_with(child);
-        });
-    }
-
-    fn visit_mut_export_default_decl(&mut self, e: &mut ExportDefaultDecl) {
-        // Treat default exported functions and classes as declarations
-        // even though they are parsed as expressions.
-        match &mut e.decl {
-            DefaultDecl::Fn(f) => {
-                if f.ident.is_some() {
-                    self.with_child(ScopeKind::Fn, |child| {
-                        f.function.visit_mut_with(child);
-                    });
-                } else {
-                    f.visit_mut_with(self);
-                }
-            }
-            DefaultDecl::Class(c) => {
-                // Skip class expression visitor to treat as a declaration.
-                c.class.visit_mut_with(self);
-            }
-        }
-    }
-
-    fn visit_mut_export_default_expr(&mut self, node: &mut ExportDefaultExpr) {
-        node.expr.visit_mut_with(self);
-    }
-
-    fn visit_mut_expr(&mut self, expr: &mut Expr) {
-        let old = self.ident_type;
-        self.ident_type = IdentType::Ref;
-        expr.visit_mut_children_with(self);
-        self.ident_type = old;
-    }
-
-    fn visit_mut_fn_decl(&mut self, node: &mut FnDecl) {
-        // We don't fold this as Hoister handles this.
-
-        self.with_child(ScopeKind::Fn, |child| node.function.visit_mut_with(child));
-    }
-
-    fn visit_mut_fn_expr(&mut self, e: &mut FnExpr) {
-        self.with_child(ScopeKind::Fn, |child| {
-            if let Some(ident) = &mut e.ident {
-                child.modify(ident);
-            }
-            e.function.visit_mut_with(child);
-        });
-    }
-
-    fn visit_mut_for_in_stmt(&mut self, n: &mut ForInStmt) {
-        self.with_child(ScopeKind::Block, |child| {
-            n.left.visit_mut_with(child);
-            n.right.visit_mut_with(child);
-
-            child.visit_mut_stmt_within_child_scope(&mut n.body);
-        });
-    }
-
-    fn visit_mut_for_of_stmt(&mut self, n: &mut ForOfStmt) {
-        self.with_child(ScopeKind::Block, |child| {
-            n.left.visit_mut_with(child);
-            n.right.visit_mut_with(child);
-
-            child.visit_mut_stmt_within_child_scope(&mut n.body);
-        });
-    }
-
-    fn visit_mut_for_stmt(&mut self, n: &mut ForStmt) {
-        self.with_child(ScopeKind::Block, |child| {
-            child.ident_type = IdentType::Binding;
-            n.init.visit_mut_with(child);
-            child.ident_type = IdentType::Ref;
-            n.test.visit_mut_with(child);
-            child.ident_type = IdentType::Ref;
-            n.update.visit_mut_with(child);
-
-            child.visit_mut_stmt_within_child_scope(&mut n.body);
-        });
-    }
-
-    fn visit_mut_function(&mut self, f: &mut Function) {
-        self.ident_type = IdentType::Ref;
-
-        self.ident_type = IdentType::Binding;
-        f.params.visit_mut_with(self);
-
-        self.ident_type = IdentType::Ref;
-        // Prevent creating new scope.
-        f.body.visit_mut_children_with(self);
-    }
-
-    fn visit_mut_ident(&mut self, i: &mut Ident) {
-        if i.ctxt != SyntaxContext::empty() {
-            return;
-        }
-
-        match self.ident_type {
-            IdentType::Binding => self.modify(i),
-            IdentType::Ref => {
-                if i.ctxt != SyntaxContext::empty() {
-                    return;
-                }
-
-                if let Some(mark) = self.mark_for_ref(&i.sym) {
-                    i.ctxt = i.ctxt.apply_mark(mark);
-                } else {
-                    i.ctxt = i.ctxt.apply_mark(self.unresolved_mark);
-                    // Support hoisting
-                    self.modify(i);
-                }
-            }
-            // We currently does not touch labels
-            IdentType::Label => {}
-        }
-    }
-
-    fn visit_mut_import_decl(&mut self, n: &mut ImportDecl) {
-        // Always resolve the import declaration identifiers even if it's type only.
-        // We need to analyze these identifiers for type stripping purposes.
-        self.ident_type = IdentType::Binding;
-        n.visit_mut_children_with(self);
-    }
-
-    fn visit_mut_import_named_specifier(&mut self, s: &mut ImportNamedSpecifier) {
-        let old = self.ident_type;
-        self.ident_type = IdentType::Binding;
-        s.local.visit_mut_with(self);
-        self.ident_type = old;
-    }
-
-    fn visit_mut_method_prop(&mut self, m: &mut MethodProp) {
-        m.key.visit_mut_with(self);
-
-        self.with_child(ScopeKind::Fn, |child| m.function.visit_mut_with(child));
-    }
-
-    fn visit_mut_module_items(&mut self, stmts: &mut Vec<ModuleItem>) {
-        // Phase 1: Handle hoisting
-        {
-            let mut hoister = Hoister {
-                resolver: self,
-                kind: None,
-                in_block: false,
-                in_catch_body: false,
-                catch_param_decls: Default::default(),
-                excluded_from_catch: Default::default(),
-            };
-            stmts.visit_mut_with(&mut hoister);
-        }
-
-        // Phase 2.
-        stmts.visit_mut_children_with(self);
-    }
-
-    fn visit_mut_named_export(&mut self, e: &mut NamedExport) {
-        if e.src.is_some() {
-            return;
-        }
-
-        e.visit_mut_children_with(self);
-    }
-
-    fn visit_mut_object_lit(&mut self, o: &mut ObjectLit) {
-        self.with_child(ScopeKind::Block, |child| {
-            o.visit_mut_children_with(child);
-        });
-    }
-
-    fn visit_mut_param(&mut self, param: &mut Param) {
-        self.ident_type = IdentType::Binding;
-        param.visit_mut_children_with(self);
-    }
-
-    fn visit_mut_assign_pat(&mut self, node: &mut AssignPat) {
-        node.left.visit_mut_with(self);
-        node.right.visit_mut_with(self);
-    }
-
-    fn visit_mut_rest_pat(&mut self, node: &mut RestPat) {
-        node.arg.visit_mut_with(self);
-    }
-
-    fn visit_mut_private_method(&mut self, m: &mut PrivateMethod) {
-        m.key.visit_mut_with(self);
-
-            self.with_child(ScopeKind::Fn, |child| m.function.visit_mut_with(child));
-    }
-
-    fn visit_mut_private_name(&mut self, _: &mut PrivateName) {}
-
-    fn visit_mut_setter_prop(&mut self, n: &mut SetterProp) {
-        n.key.visit_mut_with(self);
-
-        {
-            self.with_child(ScopeKind::Fn, |child| {
-                child.ident_type = IdentType::Binding;
-                n.param.visit_mut_with(child);
-                n.body.visit_mut_with(child);
-            });
-        };
-    }
-
-    fn visit_mut_stmts(&mut self, stmts: &mut Vec<Stmt>) {
-        // Phase 1: Handle hoisting
-        {
-            let mut hoister = Hoister {
-                resolver: self,
-                kind: None,
-                in_block: false,
-                in_catch_body: false,
-                catch_param_decls: Default::default(),
-                excluded_from_catch: Default::default(),
-            };
-            stmts.visit_mut_with(&mut hoister);
-        }
-
-        // Phase 2.
-        stmts.visit_mut_children_with(self);
-    }
-
-    fn visit_mut_switch_stmt(&mut self, s: &mut SwitchStmt) {
-        s.discriminant.visit_mut_with(self);
-
-        self.with_child(ScopeKind::Block, |child| {
-            s.cases.visit_mut_with(child);
-        });
-    }
-
-    fn visit_mut_var_decl(&mut self, decl: &mut VarDecl) {
-        decl.decls.visit_mut_with(self);
-    }
-
-    fn visit_mut_var_declarator(&mut self, decl: &mut VarDeclarator) {
-        // order is important
-
-        let old_type = self.ident_type;
-        self.ident_type = IdentType::Binding;
-        decl.name.visit_mut_with(self);
-        self.ident_type = old_type;
-
-        decl.init.visit_mut_children_with(self);
-    }
-}
-
-/// The folder which handles var / function hoisting.
-struct Hoister<'a, 'b> {
-    resolver: &'a mut Resolver<'b>,
-    kind: Option<VarDeclKind>,
-    /// Hoister should not touch let / const in the block.
-    in_block: bool,
-
-    in_catch_body: bool,
-
-    excluded_from_catch: FxHashSet<JsWord>,
-    catch_param_decls: FxHashSet<JsWord>,
-}
-
-impl Hoister<'_, '_> {
-    fn add_pat_id(&mut self, id: &mut Ident) {
-        if self.in_catch_body {
-            // If we have a binding, it's different variable.
-            if self.resolver.mark_for_ref_inner(&id.sym, true).is_some()
-                && self.catch_param_decls.contains(&id.sym)
-            {
-                return;
-            }
-
-            self.excluded_from_catch.insert(id.sym.clone());
+        if self.in_decl {
+            self.handle_decl(&mut i.id.name);
         } else {
-            // Behavior is different
-            if self.catch_param_decls.contains(&id.sym)
-                && !self.excluded_from_catch.contains(&id.sym)
-            {
-                return;
-            }
-        }
-
-        self.resolver.modify(id);
-    }
-}
-
-impl VisitMut<'_> for Hoister<'_, '_> {
-    #[inline]
-    fn visit_mut_arrow_expr(&mut self, _: &mut ArrowExpr) {}
-
-    fn visit_mut_block_stmt(&mut self, n: &mut BlockStmt) {
-        let old_in_block = self.in_block;
-        self.in_block = true;
-        n.visit_mut_children_with(self);
-        self.in_block = old_in_block;
-    }
-
-    /// The code below prints "PASS"
-    ///
-    /// ```js
-    ///
-    ///      var a = "PASS";
-    ///      try {
-    ///          throw "FAIL1";
-    ///      } catch (a) {
-    ///          var a = "FAIL2";
-    ///      }
-    ///      console.log(a);
-    /// ```
-    ///
-    /// While the code below does not throw **ReferenceError** for `b`
-    ///
-    /// ```js
-    ///
-    ///      b()
-    ///      try {
-    ///      } catch (b) {
-    ///          var b;
-    ///      }
-    /// ```
-    ///
-    /// while the code below throws **ReferenceError**
-    ///
-    /// ```js
-    ///
-    ///      b()
-    ///      try {
-    ///      } catch (b) {
-    ///      }
-    /// ```
-    #[inline]
-    fn visit_mut_catch_clause(&mut self, c: &mut CatchClause) {
-        let old_exclude = self.excluded_from_catch.clone();
-        self.excluded_from_catch = Default::default();
-
-        let old_in_catch_body = self.in_catch_body;
-
-        let params: Vec<Id> = find_pat_ids(&c.param);
-
-        self.catch_param_decls
-            .extend(params.into_iter().map(|v| v.0));
-
-        self.in_catch_body = true;
-        c.body.visit_mut_with(self);
-
-        let orig = self.catch_param_decls.clone();
-
-        self.in_catch_body = false;
-        c.param.visit_mut_with(self);
-
-        self.catch_param_decls = orig;
-
-        self.in_catch_body = old_in_catch_body;
-        self.excluded_from_catch = old_exclude;
-    }
-
-    fn visit_mut_class_decl(&mut self, node: &mut ClassDecl) {
-        if self.in_block {
-            return;
-        }
-        self.resolver.modify(&mut node.ident);
-    }
-
-    #[inline]
-    fn visit_mut_constructor(&mut self, _: &mut Constructor) {}
-
-    fn visit_mut_export_default_decl(&mut self, node: &mut ExportDefaultDecl) {
-        // Treat default exported functions and classes as declarations
-        // even though they are parsed as expressions.
-        match &mut node.decl {
-            DefaultDecl::Fn(f) => {
-                if let Some(id) = &mut f.ident {
-                    self.resolver.modify(id);
-                }
-
-                f.visit_mut_with(self);
-            }
-            DefaultDecl::Class(c) => {
-                if let Some(id) = &mut c.ident {
-                    self.resolver.modify(id);
-                }
-
-                c.visit_mut_with(self);
-            }
+            self.handle_reference(&mut i.id.name);
         }
     }
 
-    #[inline]
-    fn visit_mut_expr(&mut self, _: &mut Expr) {}
+    fn visit_mut_member_expr(&mut self, node: &mut MemberExpr) {
+        node.obj.visit_mut_with(self);
+        if node.computed {
+            node.prop.visit_mut_with(self);
+        }
+    }
+
+    fn visit_mut_var_declarator(&mut self, node: &mut VarDeclarator) {
+        node.init.visit_mut_with(self);
+
+        let old = self.in_decl;
+        self.in_decl = true;
+        node.name.visit_mut_with(self);
+        self.in_decl = old;
+    }
+    fn visit_mut_param(&mut self, node: &mut Param) {
+        let old = self.in_decl;
+        self.in_decl = true;
+        node.visit_mut_children_with(self);
+        self.in_decl = old;
+    }
+
+    fn visit_mut_expr(&mut self, node: &mut Expr) {
+        let old_in_decl = self.in_decl;
+        self.in_decl = false;
+        match node {
+            Expr::Ident(ident) => {
+                self.handle_reference(&mut ident.name);
+            }
+            _ => {
+                node.visit_mut_children_with(self);
+            }
+        }
+        self.in_decl = old_in_decl;
+    }
 
     fn visit_mut_fn_decl(&mut self, node: &mut FnDecl) {
-        if self.catch_param_decls.contains(&node.ident.sym) {
-            return;
-        }
-
-        if self.in_block {
-            // If we are in nested block, and variable named `foo` is declared, we should
-            // ignore function foo while handling upper scopes.
-            if self.resolver.current.is_declared(&node.ident.sym) {
-                return;
-            }
-        }
-
-        self.resolver.modify(&mut node.ident);
-    }
-
-    #[inline]
-    fn visit_mut_function(&mut self, _: &mut Function) {}
-
-    fn visit_mut_import_default_specifier(&mut self, n: &mut ImportDefaultSpecifier) {
-        n.visit_mut_children_with(self);
-
-        self.resolver.modify(&mut n.local);
-    }
-
-    fn visit_mut_import_named_specifier(&mut self, n: &mut ImportNamedSpecifier) {
-        n.visit_mut_children_with(self);
-
-        self.resolver.modify(&mut n.local);
-    }
-
-    fn visit_mut_import_star_as_specifier(&mut self, n: &mut ImportStarAsSpecifier) {
-        n.visit_mut_children_with(self);
-
-        self.resolver.modify(&mut n.local);
-    }
-
-    #[inline]
-    fn visit_mut_param(&mut self, _: &mut Param) {}
-
-    fn visit_mut_pat(&mut self, node: &mut Pat) {
-        match node {
-            Pat::Ident(i) => {
-                self.add_pat_id(&mut i.id);
-            }
-
-            _ => node.visit_mut_children_with(self),
-        }
-    }
-
-    #[inline]
-    fn visit_mut_pat_or_expr(&mut self, _: &mut PatOrExpr) {}
-
-    #[inline]
-    fn visit_mut_setter_prop(&mut self, _: &mut SetterProp) {}
-
-    fn visit_mut_switch_stmt(&mut self, s: &mut SwitchStmt) {
-        s.discriminant.visit_mut_with(self);
-
-        let old_in_block = self.in_block;
-        self.in_block = true;
-        s.cases.visit_mut_with(self);
-        self.in_block = old_in_block;
-    }
-
-    #[inline]
-    fn visit_mut_tagged_tpl(&mut self, _: &mut TaggedTpl) {}
-
-    #[inline]
-    fn visit_mut_tpl(&mut self, _: &mut Tpl) {}
-
-    fn visit_mut_var_decl(&mut self, node: &mut VarDecl) {
-        if self.in_block {
-            match node.kind {
-                VarDeclKind::Const | VarDeclKind::Let => return,
-                VarDeclKind::Var => {}
-            }
-        }
-
-        let old_kind = self.kind;
-        self.kind = Some(node.kind);
-
         node.visit_mut_children_with(self);
-
-        self.kind = old_kind;
+    }
+    fn visit_mut_class_decl(&mut self, node: &mut ClassDecl) {
+        self.handle_decl(&mut node.ident.name);
+        node.visit_mut_children_with(self);
     }
 
-    fn visit_mut_var_decl_or_expr(&mut self, n: &mut VarDeclOrExpr) {
-        match n {
-            VarDeclOrExpr::VarDecl(VarDecl {
-                kind: VarDeclKind::Let,
-                ..
-            })
-            | VarDeclOrExpr::VarDecl(VarDecl {
-                kind: VarDeclKind::Const,
-                ..
-            }) => {}
-            _ => {
-                n.visit_mut_children_with(self);
+    fn visit_mut_fn_expr(&mut self, node: &mut FnExpr) {
+        self.with_scope(|visitor| {
+            if let Some(name) = &mut node.ident {
+                visitor.handle_decl(&mut name.name);
             }
-        }
+            node.visit_mut_children_with(visitor);
+        });
     }
-
-    fn visit_mut_var_decl_or_pat(&mut self, n: &mut VarDeclOrPat) {
-        match n {
-            VarDeclOrPat::VarDecl(VarDecl {
-                kind: VarDeclKind::Let,
-                ..
-            })
-            | VarDeclOrPat::VarDecl(VarDecl {
-                kind: VarDeclKind::Const,
-                ..
-            }) => {}
-            // Hoister should not handle lhs of for in statement below
-            //
-            // const b = [];
-            // {
-            //   let a;
-            //   for (a in b) {
-            //     console.log(a);
-            //   }
-            // }
-            VarDeclOrPat::Pat(..) => {}
-            VarDeclOrPat::VarDecl(_) => {
-                n.visit_mut_children_with(self);
+    fn visit_mut_class_expr(&mut self, node: &mut ClassExpr) {
+        self.with_scope(|visitor| {
+            if let Some(name) = &mut node.ident {
+                visitor.handle_decl(&mut name.name);
             }
-        }
+            node.visit_mut_children_with(visitor);
+        });
     }
 
-    #[inline]
-    fn visit_mut_var_declarator(&mut self, node: &mut VarDeclarator) {
-        node.name.visit_mut_with(self);
+    // For functions, we don't want to use the BlockStmt visitor since it
+    // creates a new, non-hoist scope. Instead, we want the function body and
+    // params to share the same function hoist scope. So we use
+    // visit_mut_children_with instead of visit_with.
+    fn visit_mut_function(&mut self, node: &mut Function) {
+        self.with_scope(|visitor| {
+            for stmt in &mut node.body.stmts {
+                hoist_declarations(stmt, &mut |name| {
+                    visitor.handle_decl(name);
+                });
+            }
+            node.params.visit_mut_with(visitor);
+            node.body.visit_mut_children_with(visitor);
+        });
+    }
+    fn visit_mut_constructor(&mut self, node: &mut Constructor) {
+        self.with_scope(|visitor| {
+            for stmt in &mut node.body.stmts {
+                hoist_declarations(stmt, &mut |name| {
+                    visitor.handle_decl(name);
+                });
+            }
+            node.params.visit_mut_with(visitor);
+            node.body.visit_mut_children_with(visitor);
+        });
+    }
+    fn visit_mut_arrow_expr(&mut self, node: &mut ArrowExpr) {
+        self.with_scope(|visitor| {
+            for stmt in &mut node.body.stmts {
+                hoist_declarations(stmt, &mut |name| {
+                    visitor.handle_decl(name);
+                });
+            }
+            node.params.visit_mut_with(visitor);
+            node.body.visit_mut_children_with(visitor);
+        });
+    }
+    fn visit_mut_getter_prop(&mut self, node: &mut GetterProp) {
+        self.with_scope(|visitor| {
+            for stmt in &mut node.body.stmts {
+                hoist_declarations(stmt, &mut |name| {
+                    visitor.handle_decl(name);
+                });
+            }
+            node.key.visit_mut_with(visitor);
+            node.body.visit_mut_children_with(visitor);
+        });
+    }
+    fn visit_mut_setter_prop(&mut self, node: &mut SetterProp) {
+        self.with_scope(|visitor| {
+            for stmt in &mut node.body.stmts {
+                hoist_declarations(stmt, &mut |name| {
+                    visitor.handle_decl(name);
+                });
+            }
+            node.key.visit_mut_with(visitor);
+            node.param.visit_mut_with(visitor);
+            node.body.visit_mut_children_with(visitor);
+        });
+    }
+    // A CatchClause isn't a function, but it has a param.
+    fn visit_mut_catch_clause(&mut self, node: &mut CatchClause) {
+        self.with_scope(|visitor| {
+            let old = visitor.in_decl;
+            visitor.in_decl = true;
+            node.param.visit_mut_with(visitor);
+            visitor.in_decl = old;
+            node.body.visit_mut_children_with(visitor);
+        });
     }
 
-    /// should visit var decls first, cause var decl may appear behind the
-    /// usage. this can deal with code below:
-    /// ```js
-    /// try {} catch (Ic) {
-    ///   throw Ic;
-    /// }
-    /// var Ic;
-    /// ```
-    /// the `Ic` defined by catch param and the `Ic` defined by `var Ic` are
-    /// different variables.
-    /// If we deal with the `var Ic` first, we can know
-    /// that there is already an global declaration of Ic when deal with the try
-    /// block.
-    fn visit_mut_module_items(&mut self, items: &mut Vec<ModuleItem>) {
-        let mut other_items = vec![];
+    fn visit_mut_block_stmt(&mut self, node: &mut BlockStmt) {
+        self.with_scope(|visitor| {
+            node.stmts.visit_mut_with(visitor);
+        });
+    }
 
-        for item in items {
-            match item {
-                ModuleItem::Stmt(Stmt::Decl(
-                    Decl::Var(VarDecl {
-                        kind: VarDeclKind::Var,
-                        ..
-                    })
-                    | Decl::Fn(..),
-                ))
-                | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
-                    decl:
-                        Decl::Var(VarDecl {
-                            kind: VarDeclKind::Var,
-                            ..
-                        })
-                        | Decl::Fn(..),
-                    ..
-                })) => {
-                    item.visit_mut_with(self);
-                }
-                _ => {
-                    other_items.push(item);
+    fn visit_mut_script(&mut self, node: &mut Script) {
+        self.with_scope(|visitor| {
+            for stmt in &mut node.body {
+                hoist_declarations(stmt, &mut |name| {
+                    visitor.handle_decl(name);
+                });
+            }
+            node.visit_mut_children_with(visitor);
+        });
+    }
+    fn visit_mut_module(&mut self, node: &mut Module) {
+        self.with_scope(|visitor| {
+            for stmt in &mut node.body {
+                match stmt {
+                    ModuleItem::ModuleDecl(_) => todo!(),
+                    ModuleItem::Stmt(stmt) => {
+                        hoist_declarations(stmt, &mut |name| {
+                            visitor.handle_decl(name);
+                        });
+                    }
                 }
             }
-        }
-
-        for other_item in other_items {
-            other_item.visit_mut_with(self);
-        }
-    }
-
-    /// see docs for `self.visit_mut_module_items`
-    fn visit_mut_stmts(&mut self, stmts: &mut Vec<Stmt>) {
-        let mut other_stmts = vec![];
-
-        for item in stmts {
-            match item {
-                Stmt::Decl(Decl::Var(VarDecl {
-                    kind: VarDeclKind::Var,
-                    ..
-                }))
-                | Stmt::Decl(Decl::Fn(..)) => {
-                    item.visit_mut_with(self);
-                }
-                _ => {
-                    other_stmts.push(item);
-                }
-            }
-        }
-
-        for other_stmt in other_stmts {
-            other_stmt.visit_mut_with(self);
-        }
+            node.visit_mut_children_with(visitor);
+        });
     }
 }
 
-/// Finds all **binding** idents of variables.
-struct DestructuringFinder<'a> {
-    pub found: &'a mut Vec<Id>,
+#[derive(Debug, Clone, Copy)]
+struct ScopeId(usize);
+
+#[derive(Debug)]
+struct Scope {
+    parent: Option<ScopeId>,
+    names: FxHashMap<NameId, NameId>,
 }
 
-/// Finds all **binding** idents of `node`.
-fn find_pat_ids<'ast, T>(node: &'ast T) -> Vec<Id>
-where
-    T: for<'any> VisitWith<'ast, DestructuringFinder<'any>>,
-{
-    let mut found = vec![];
+fn hoist_declarations(stmt: &mut Stmt, op: &mut impl FnMut(&mut NameId)) {
+    match stmt {
+        Stmt::Block(block) => block
+            .stmts
+            .iter_mut()
+            .for_each(|s| hoist_declarations(s, op)),
 
-    {
-        let mut v = DestructuringFinder { found: &mut found };
-        node.visit_with(&mut v);
+        Stmt::If(if_stmt) => {
+            hoist_declarations(&mut if_stmt.cons, op);
+
+            if let Some(alt) = if_stmt.alt.as_deref_mut() {
+                hoist_declarations(alt, op);
+            }
+        }
+
+        Stmt::While(WhileStmt { body, .. })
+        | Stmt::DoWhile(DoWhileStmt { body, .. })
+        | Stmt::With(WithStmt { body, .. })
+        | Stmt::Labeled(LabeledStmt { body, .. }) => hoist_declarations(body, op),
+
+        Stmt::For(ForStmt { body, init, .. }) => {
+            if let Some(init) = init {
+                if let VarDeclOrExpr::VarDecl(decl) = init.as_mut() {
+                    match decl.kind {
+                        VarDeclKind::Var => {
+                            for decl in &mut decl.decls {
+                                find_pat_ids(&mut decl.name, op);
+                            }
+                        }
+                        VarDeclKind::Let | VarDeclKind::Const => {}
+                    }
+                }
+            }
+            hoist_declarations(body, op);
+        }
+        Stmt::ForIn(ForInStmt { body, left, .. }) | Stmt::ForOf(ForOfStmt { body, left, .. }) => {
+            if let VarDeclOrPat::VarDecl(decl) = left.as_mut() {
+                match decl.kind {
+                    VarDeclKind::Var => {
+                        for decl in &mut decl.decls {
+                            find_pat_ids(&mut decl.name, op);
+                        }
+                    }
+                    VarDeclKind::Let | VarDeclKind::Const => {}
+                }
+            }
+            hoist_declarations(body, op);
+        }
+
+        Stmt::Try(try_stmt) => {
+            try_stmt
+                .block
+                .stmts
+                .iter_mut()
+                .for_each(|s| hoist_declarations(s, op));
+
+            if let Some(handler) = &mut try_stmt.handler {
+                handler
+                    .body
+                    .stmts
+                    .iter_mut()
+                    .for_each(|s| hoist_declarations(s, op));
+            }
+
+            if let Some(finalizer) = &mut try_stmt.finalizer {
+                finalizer
+                    .stmts
+                    .iter_mut()
+                    .for_each(|s| hoist_declarations(s, op));
+            }
+        }
+
+        Stmt::Switch(switch) => {
+            switch
+                .cases
+                .iter_mut()
+                .for_each(|c| c.cons.iter_mut().for_each(|s| hoist_declarations(s, op)));
+        }
+
+        Stmt::Decl(decl) => match decl {
+            Decl::Class(_) => {}
+            Decl::Fn(decl) => {
+                op(&mut decl.ident.name);
+            }
+            Decl::Var(decl) => match decl.kind {
+                VarDeclKind::Var => {
+                    for decl in &mut decl.decls {
+                        find_pat_ids(&mut decl.name, op);
+                    }
+                }
+                VarDeclKind::Let | VarDeclKind::Const => {}
+            },
+        },
+
+        Stmt::Empty(_)
+        | Stmt::Debugger(_)
+        | Stmt::Return(_)
+        | Stmt::Continue(_)
+        | Stmt::Throw(_)
+        | Stmt::Expr(_)
+        | Stmt::Break(_) => {}
     }
-
-    found
 }
 
-impl Visit<'_> for DestructuringFinder<'_> {
-    /// No-op (we don't care about expressions)
-    fn visit_expr(&mut self, _: &Expr) {}
+fn find_pat_ids(pat: &mut Pat, op: &mut impl FnMut(&mut NameId)) {
+    match pat {
+        Pat::Ident(ident) => {
+            op(&mut ident.id.name);
+        }
+        Pat::Array(array) => {
+            for el in &mut array.elems {
+                if let Some(el) = el {
+                    find_pat_ids(el, op);
+                }
+            }
+        }
+        Pat::Rest(rest) => find_pat_ids(&mut rest.arg, op),
+        Pat::Object(object) => {
+            for prop in &mut object.props {
+                match prop {
+                    ObjectPatProp::KeyValue(kv_prop) => find_pat_ids(&mut kv_prop.value, op),
+                    ObjectPatProp::Rest(rest) => find_pat_ids(&mut rest.arg, op),
+                }
+            }
+        }
+        Pat::Assign(assign) => find_pat_ids(&mut assign.left, op),
 
-    fn visit_ident(&mut self, i: &Ident) {
-        self.found.push((i.sym.clone(), i.ctxt));
+        Pat::Expr(_) => {}
+
+        Pat::Invalid(_) => unreachable!(),
     }
-
-    /// No-op (we don't care about expressions)
-    fn visit_prop_name(&mut self, _: &PropName) {}
 }

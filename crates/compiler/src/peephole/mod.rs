@@ -1,6 +1,5 @@
 use ast::Expr;
 use atoms::JsWord;
-use common::SyntaxContext;
 use num_bigint::BigInt;
 
 use crate::node_util::{
@@ -16,13 +15,13 @@ pub mod remove_dead_code;
  *
  * <p>Returns {@code null} otherwise.
  */
-pub fn getSideEffectFreeNumberValue(expr: &Expr, unresolved_ctxt: SyntaxContext) -> Option<f64> {
-    let value = get_number_value(expr, unresolved_ctxt);
+pub fn getSideEffectFreeNumberValue(expr: &Expr) -> Option<f64> {
+    let value = get_number_value(expr);
     // Calculating the number value, if any, is likely to be faster than calculating side effects,
     // and there are only a very few cases where we can compute a number value, but there could
     // also be side effects. e.g. `void doSomething()` has value NaN, regardless of the behavior
     // of `doSomething()`
-    if value.is_some() && expr_may_have_side_effects(expr, unresolved_ctxt) {
+    if value.is_some() && expr_may_have_side_effects(expr) {
         None
     } else {
         value
@@ -34,13 +33,13 @@ pub fn getSideEffectFreeNumberValue(expr: &Expr, unresolved_ctxt: SyntaxContext)
  *
  * <p>Returns {@code null} otherwise.
  */
-pub fn getSideEffectFreeBigIntValue(expr: &Expr, unresolved_ctxt: SyntaxContext) -> Option<BigInt> {
-    let value = getBigIntValue(expr, unresolved_ctxt);
+pub fn getSideEffectFreeBigIntValue(expr: &Expr) -> Option<BigInt> {
+    let value = getBigIntValue(expr);
     // Calculating the bigint value, if any, is likely to be faster than calculating side effects,
     // and there are only a very few cases where we can compute a bigint value, but there could
     // also be side effects. e.g. `void doSomething()` has value NaN, regardless of the behavior
     // of `doSomething()`
-    if value.is_some() && expr_may_have_side_effects(expr, unresolved_ctxt) {
+    if value.is_some() && expr_may_have_side_effects(expr) {
         None
     } else {
         value
@@ -53,13 +52,13 @@ pub fn getSideEffectFreeBigIntValue(expr: &Expr, unresolved_ctxt: SyntaxContext)
  * <p>This method effectively emulates the <code>String()</code> JavaScript cast function when
  * possible and the node has no side effects. Otherwise, it returns {@code null}.
  */
-pub fn getSideEffectFreeStringValue(expr: &Expr, unresolved_ctxt: SyntaxContext) -> Option<JsWord> {
-    let value = getStringValue(expr, unresolved_ctxt);
+pub fn getSideEffectFreeStringValue(expr: &Expr) -> Option<JsWord> {
+    let value = getStringValue(expr);
     // Calculating the string value, if any, is likely to be faster than calculating side effects,
     // and there are only a very few cases where we can compute a string value, but there could
     // also be side effects. e.g. `void doSomething()` has value 'undefined', regardless of the
     // behavior of `doSomething()`
-    if value.is_some() && expr_may_have_side_effects(expr, unresolved_ctxt) {
+    if value.is_some() && expr_may_have_side_effects(expr) {
         None
     } else {
         value
@@ -72,13 +71,13 @@ pub fn getSideEffectFreeStringValue(expr: &Expr, unresolved_ctxt: SyntaxContext)
  * <p>Returns {@link Tri#UNKNOWN} if the node has side effects or its value cannot be statically
  * determined.
  */
-pub fn getSideEffectFreeBooleanValue(expr: &Expr, unresolved_ctxt: SyntaxContext) -> Option<bool> {
-    let value = get_boolean_value(expr, unresolved_ctxt);
+pub fn getSideEffectFreeBooleanValue(expr: &Expr) -> Option<bool> {
+    let value = get_boolean_value(expr);
     // Calculating the boolean value, if any, is likely to be faster than calculating side effects,
     // and there are only a very few cases where we can compute a boolean value, but there could
     // also be side effects. e.g. `void doSomething()` has value `false`, regardless of the
     // behavior of `doSomething()`
-    if value.is_some() && expr_may_have_side_effects(expr, unresolved_ctxt) {
+    if value.is_some() && expr_may_have_side_effects(expr) {
         None
     } else {
         value

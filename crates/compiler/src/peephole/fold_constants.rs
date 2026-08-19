@@ -1,8 +1,6 @@
 use std::{cmp::Ordering, ops::BitXor};
 
 use ast::*;
-use atoms::js_word;
-use common::SyntaxContext;
 use num_traits::FromPrimitive;
 
 use crate::{
@@ -13,61 +11,49 @@ use crate::{
     },
 };
 
-pub fn evaluateComparison(
-    op: BinaryOp,
-    left: &Expr,
-    right: &Expr,
-    unresolved_ctxt: SyntaxContext,
-) -> Option<bool> {
+pub fn evaluateComparison(op: BinaryOp, left: &Expr, right: &Expr) -> Option<bool> {
     // Don't try to minimize side-effects here.
-    if expr_may_have_side_effects(left, unresolved_ctxt)
-        || expr_may_have_side_effects(right, unresolved_ctxt)
-    {
+    if expr_may_have_side_effects(left) || expr_may_have_side_effects(right) {
         return None;
     }
 
     match op {
         BinaryOp::EqEq => {
-            return tryAbstractEqualityComparison(left, right, unresolved_ctxt);
+            return tryAbstractEqualityComparison(left, right);
         }
         BinaryOp::NotEq => {
-            return tryAbstractEqualityComparison(left, right, unresolved_ctxt).map(|v| !v);
+            return tryAbstractEqualityComparison(left, right).map(|v| !v);
         }
         BinaryOp::EqEqEq => {
-            return tryStrictEqualityComparison(left, right, unresolved_ctxt);
+            return tryStrictEqualityComparison(left, right);
         }
         BinaryOp::NotEqEq => {
-            return tryStrictEqualityComparison(left, right, unresolved_ctxt).map(|v| !v);
+            return tryStrictEqualityComparison(left, right).map(|v| !v);
         }
         BinaryOp::Lt => {
-            return tryAbstractRelationalComparison(left, right, false, unresolved_ctxt);
+            return tryAbstractRelationalComparison(left, right, false);
         }
         BinaryOp::Gt => {
-            return tryAbstractRelationalComparison(right, left, false, unresolved_ctxt);
+            return tryAbstractRelationalComparison(right, left, false);
         }
         BinaryOp::LtEq => {
-            return tryAbstractRelationalComparison(right, left, true, unresolved_ctxt).map(|v| !v);
+            return tryAbstractRelationalComparison(right, left, true).map(|v| !v);
         }
         BinaryOp::GtEq => {
-            return tryAbstractRelationalComparison(left, right, true, unresolved_ctxt).map(|v| !v);
+            return tryAbstractRelationalComparison(left, right, true).map(|v| !v);
         }
         _ => todo!(),
     }
 }
 
 /** https://tc39.es/ecma262/#sec-abstract-relational-comparison */
-fn tryAbstractRelationalComparison(
-    left: &Expr,
-    right: &Expr,
-    willNegate: bool,
-    unresolved_ctxt: SyntaxContext,
-) -> Option<bool> {
-    let leftValueType = getKnownValueType(left, unresolved_ctxt);
-    let rightValueType = getKnownValueType(right, unresolved_ctxt);
+fn tryAbstractRelationalComparison(left: &Expr, right: &Expr, willNegate: bool) -> Option<bool> {
+    let leftValueType = getKnownValueType(left);
+    let rightValueType = getKnownValueType(right);
     // First, check for a string comparison.
     if leftValueType == TypeFlags::STRING && rightValueType == TypeFlags::STRING {
-        let lvStr = getSideEffectFreeStringValue(left, unresolved_ctxt);
-        let rvStr = getSideEffectFreeStringValue(right, unresolved_ctxt);
+        let lvStr = getSideEffectFreeStringValue(left);
+        let rvStr = getSideEffectFreeStringValue(right);
         if let Some(lvStr) = lvStr
             && let Some(rvStr) = rvStr
         {
@@ -82,8 +68,8 @@ fn tryAbstractRelationalComparison(
     }
 
     // Next, try to evaluate based on the value of the node. Try comparing as BigInts first.
-    let lvBig = getSideEffectFreeBigIntValue(left, unresolved_ctxt);
-    let rvBig = getSideEffectFreeBigIntValue(right, unresolved_ctxt);
+    let lvBig = getSideEffectFreeBigIntValue(left);
+    let rvBig = getSideEffectFreeBigIntValue(right);
     if let Some(lvBig) = &lvBig
         && let Some(rvBig) = &rvBig
     {
@@ -91,8 +77,8 @@ fn tryAbstractRelationalComparison(
     }
 
     // Then, try comparing as Numbers.
-    let lvNum = getSideEffectFreeNumberValue(left, unresolved_ctxt);
-    let rvNum = getSideEffectFreeNumberValue(right, unresolved_ctxt);
+    let lvNum = getSideEffectFreeNumberValue(left);
+    let rvNum = getSideEffectFreeNumberValue(right);
     if let Some(lvNum) = lvNum
         && let Some(rvNum) = rvNum
     {
@@ -122,7 +108,7 @@ fn tryAbstractRelationalComparison(
         && let Expr::Ident(left) = left
         && let Expr::Ident(right) = right
     {
-        if left.sym == right.sym && left.ctxt == right.ctxt {
+        if left.name == right.name {
             return Some(false);
         }
     }
@@ -162,18 +148,14 @@ fn bigintLessThanDouble(
 }
 
 /** http://www.ecma-international.org/ecma-262/6.0/#sec-abstract-equality-comparison */
-fn tryAbstractEqualityComparison(
-    left: &Expr,
-    right: &Expr,
-    unresolved_ctxt: SyntaxContext,
-) -> Option<bool> {
+fn tryAbstractEqualityComparison(left: &Expr, right: &Expr) -> Option<bool> {
     // Evaluate based on the general type.
-    let leftValueType = getKnownValueType(left, unresolved_ctxt);
-    let rightValueType = getKnownValueType(right, unresolved_ctxt);
+    let leftValueType = getKnownValueType(left);
+    let rightValueType = getKnownValueType(right);
     if leftValueType != TypeFlags::UNKNOWN && rightValueType != TypeFlags::UNKNOWN {
         // Delegate to strict equality comparison for values of the same type.
         if leftValueType == rightValueType {
-            return tryStrictEqualityComparison(left, right, unresolved_ctxt);
+            return tryStrictEqualityComparison(left, right);
         }
 
         if leftValueType.is_nullish() && rightValueType.is_nullish() {
@@ -194,19 +176,17 @@ fn tryAbstractEqualityComparison(
         }
 
         // TODO: this is horrible...
-        fn numberNode(value: f64, unresolved_ctxt: SyntaxContext) -> Expr {
+        fn numberNode(value: f64) -> Expr {
             if value.is_nan() {
                 Expr::Ident(Ident {
                     node_id: NodeId::DUMMY,
-                    sym: js_word!("NaN"),
-                    ctxt: unresolved_ctxt,
+                    name: id_for_built_in!("NaN"),
                 })
             } else {
                 let number = if value.is_infinite() {
                     Expr::Ident(Ident {
                         node_id: NodeId::DUMMY,
-                        sym: js_word!("Infinity"),
-                        ctxt: unresolved_ctxt,
+                        name: id_for_built_in!("Infinity"),
                     })
                 } else {
                     Expr::Lit(Lit::Num(Number {
@@ -229,13 +209,9 @@ fn tryAbstractEqualityComparison(
         if (leftValueType == TypeFlags::NUMBER && rightValueType == TypeFlags::STRING)
             || rightValueType == TypeFlags::BOOLEAN
         {
-            let rv = getSideEffectFreeNumberValue(right, unresolved_ctxt);
+            let rv = getSideEffectFreeNumberValue(right);
             return if let Some(rv) = rv {
-                tryAbstractEqualityComparison(
-                    left,
-                    &numberNode(rv, unresolved_ctxt),
-                    unresolved_ctxt,
-                )
+                tryAbstractEqualityComparison(left, &numberNode(rv))
             } else {
                 None
             };
@@ -243,21 +219,17 @@ fn tryAbstractEqualityComparison(
         if (leftValueType == TypeFlags::STRING && rightValueType == TypeFlags::NUMBER)
             || leftValueType == TypeFlags::BOOLEAN
         {
-            let lv = getSideEffectFreeNumberValue(left, unresolved_ctxt);
+            let lv = getSideEffectFreeNumberValue(left);
             return if let Some(lv) = lv {
-                tryAbstractEqualityComparison(
-                    &numberNode(lv, unresolved_ctxt),
-                    right,
-                    unresolved_ctxt,
-                )
+                tryAbstractEqualityComparison(&numberNode(lv), right)
             } else {
                 None
             };
         }
 
         if leftValueType == TypeFlags::BIG_INT || rightValueType == TypeFlags::BIG_INT {
-            let lv = getSideEffectFreeBigIntValue(left, unresolved_ctxt);
-            let rv = getSideEffectFreeBigIntValue(right, unresolved_ctxt);
+            let lv = getSideEffectFreeBigIntValue(left);
+            let rv = getSideEffectFreeBigIntValue(right);
             if let Some(lv) = lv
                 && let Some(rv) = rv
             {
@@ -284,14 +256,10 @@ fn tryAbstractEqualityComparison(
 }
 
 /** http://www.ecma-international.org/ecma-262/6.0/#sec-strict-equality-comparison */
-fn tryStrictEqualityComparison(
-    left: &Expr,
-    right: &Expr,
-    unresolved_ctxt: SyntaxContext,
-) -> Option<bool> {
+fn tryStrictEqualityComparison(left: &Expr, right: &Expr) -> Option<bool> {
     // First, try to evaluate based on the general type.
-    let leftValueType = getKnownValueType(left, unresolved_ctxt);
-    let rightValueType = getKnownValueType(right, unresolved_ctxt);
+    let leftValueType = getKnownValueType(left);
+    let rightValueType = getKnownValueType(right);
 
     if leftValueType != TypeFlags::UNKNOWN && rightValueType != TypeFlags::UNKNOWN {
         // Strict equality can only be true for values of the same type.
@@ -304,14 +272,14 @@ fn tryStrictEqualityComparison(
                 return Some(true);
             }
             TypeFlags::NUMBER => {
-                if isNaN(left, unresolved_ctxt) {
+                if isNaN(left) {
                     return Some(false);
                 }
-                if isNaN(right, unresolved_ctxt) {
+                if isNaN(right) {
                     return Some(false);
                 }
-                let lv = getSideEffectFreeNumberValue(left, unresolved_ctxt);
-                let rv = getSideEffectFreeNumberValue(right, unresolved_ctxt);
+                let lv = getSideEffectFreeNumberValue(left);
+                let rv = getSideEffectFreeNumberValue(right);
                 if let Some(lv) = lv
                     && let Some(rv) = rv
                 {
@@ -319,8 +287,8 @@ fn tryStrictEqualityComparison(
                 }
             }
             TypeFlags::STRING => {
-                let lv = getSideEffectFreeStringValue(left, unresolved_ctxt);
-                let rv = getSideEffectFreeStringValue(right, unresolved_ctxt);
+                let lv = getSideEffectFreeStringValue(left);
+                let rv = getSideEffectFreeStringValue(right);
                 if let Some(lv) = lv
                     && let Some(rv) = rv
                 {
@@ -334,8 +302,8 @@ fn tryStrictEqualityComparison(
                 }
             }
             TypeFlags::BOOLEAN => {
-                let lv = getSideEffectFreeBooleanValue(left, unresolved_ctxt);
-                let rv = getSideEffectFreeBooleanValue(right, unresolved_ctxt);
+                let lv = getSideEffectFreeBooleanValue(left);
+                let rv = getSideEffectFreeBooleanValue(right);
                 if let Some(lv) = lv
                     && let Some(rv) = rv
                 {
@@ -343,8 +311,8 @@ fn tryStrictEqualityComparison(
                 }
             }
             TypeFlags::BIG_INT => {
-                let lv = getSideEffectFreeBigIntValue(left, unresolved_ctxt);
-                let rv = getSideEffectFreeBigIntValue(right, unresolved_ctxt);
+                let lv = getSideEffectFreeBigIntValue(left);
+                let rv = getSideEffectFreeBigIntValue(right);
                 if let Some(lv) = lv
                     && let Some(rv) = rv
                 {
@@ -360,16 +328,16 @@ fn tryStrictEqualityComparison(
 
     // Then, try to evaluate based on the value of the node. There's only one special case:
     // Any strict equality comparison against NaN returns false.
-    if isNaN(left, unresolved_ctxt) || isNaN(right, unresolved_ctxt) {
+    if isNaN(left) || isNaN(right) {
         return Some(false);
     }
 
     None
 }
 
-fn isNaN(expr: &Expr, unresolved_ctxt: SyntaxContext) -> bool {
+fn isNaN(expr: &Expr) -> bool {
     match expr {
-        Expr::Ident(ident) => ident.ctxt == unresolved_ctxt && ident.sym == js_word!("NaN"),
+        Expr::Ident(ident) => ident.name == id_for_built_in!("NaN"),
         Expr::Bin(bin) => {
             bin.op == BinaryOp::Div
                 && matches!(
@@ -386,9 +354,8 @@ fn isNaN(expr: &Expr, unresolved_ctxt: SyntaxContext) -> bool {
                 if let ExprOrSuper::Expr(obj) = &member.obj {
                     if let Expr::Ident(obj) = obj.as_ref() {
                         if let Expr::Ident(prop) = member.prop.as_ref() {
-                            return obj.ctxt == unresolved_ctxt
-                                && obj.sym == js_word!("Number")
-                                && prop.sym == js_word!("NaN");
+                            return obj.name == id_for_built_in!("Number")
+                                && prop.name == id_for_built_in!("NaN");
                         }
                     }
                 }
@@ -416,7 +383,7 @@ fn is_equivalent_typeof_ops(left: &Expr, right: &Expr) -> bool {
         if let Expr::Ident(left_ident) = left_arg.as_ref()
             && let Expr::Ident(right_ident) = right_arg.as_ref()
         {
-            if left_ident.sym == right_ident.sym && left_ident.ctxt == right_ident.ctxt {
+            if left_ident.name == right_ident.name {
                 return true;
             }
         }

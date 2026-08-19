@@ -1,6 +1,5 @@
 use ast::*;
 use common::DUMMY_SP;
-use common::SyntaxContext;
 use index::bit_set::{BitMatrix, BitSet};
 use petgraph::matrix_graph::NodeIndex;
 use petgraph::matrix_graph::UnMatrix;
@@ -21,7 +20,6 @@ use crate::find_vars::{
 };
 use crate::graph::GraphColoring::GraphColouring;
 use crate::utils::unwrap_as;
-use crate::{Id, ToId};
 
 #[cfg(test)]
 mod tests;
@@ -43,45 +41,29 @@ pub struct CoalesceVariableNames<'a> {
     // Maps a colour (represented by an integer) to a variable. If, for example,
     // the colour 5 is mapped to "foo". Then any other variables coloured with the
     // colour 5 will now use the name "foo".
-    coloring: GraphColouring<Id>,
-    map: FxHashMap<Id, NodeIndex>,
-    unresolved_ctxt: SyntaxContext,
+    coloring: GraphColouring<NameId>,
+    map: FxHashMap<NameId, NodeIndex>,
+
     program_data: &'a mut ast::ProgramData,
     in_loop_body: bool,
 }
 
-pub fn coalesce_variable_names(
-    ast: &mut Program,
-    unresolved_ctxt: SyntaxContext,
-    program_data: &mut ast::ProgramData,
-) {
-    let mut v = GlobalVisitor {
-        unresolved_ctxt,
-        program_data,
-    };
+pub fn coalesce_variable_names(ast: &mut Program, program_data: &mut ast::ProgramData) {
+    let mut v = GlobalVisitor { program_data };
     ast.visit_mut_with(&mut v);
 }
 
 trait ParentVisitor {
-    fn unresolved_ctxt(&self) -> SyntaxContext;
     fn program_data(&mut self) -> &mut ProgramData;
 }
 
 impl ParentVisitor for CoalesceVariableNames<'_> {
-    fn unresolved_ctxt(&self) -> SyntaxContext {
-        self.unresolved_ctxt
-    }
-
     fn program_data(&mut self) -> &mut ProgramData {
         self.program_data
     }
 }
 
 impl ParentVisitor for GlobalVisitor<'_> {
-    fn unresolved_ctxt(&self) -> SyntaxContext {
-        self.unresolved_ctxt
-    }
-
     fn program_data(&mut self) -> &mut ProgramData {
         self.program_data
     }
@@ -111,7 +93,6 @@ where
             &cfa.node_priorities,
             function,
             all_vars_declared_in_func,
-            parent_visitor.unresolved_ctxt(),
         )
         .analyze();
 
@@ -127,7 +108,6 @@ where
         });
 
         let mut v = CoalesceVariableNames {
-            unresolved_ctxt: parent_visitor.unresolved_ctxt(),
             program_data: parent_visitor.program_data(),
             coloring,
             map,
@@ -168,14 +148,13 @@ enum CoalesceResult {
 
 impl CoalesceVariableNames<'_> {
     fn maybe_coalesce_name(&mut self, name: &mut Ident) -> CoalesceResult {
-        let id = name.to_id();
+        let id = name.name;
         if self.map.contains_key(&id) {
-            let coalesced_var = self.coloring.get_partition_super_node(&id);
+            let coalesced_var = *self.coloring.get_partition_super_node(&id);
 
-            if &id != coalesced_var {
+            if id != coalesced_var {
                 // Rename.
-                name.sym = coalesced_var.0.clone();
-                name.ctxt = coalesced_var.1;
+                name.name = coalesced_var;
 
                 // The name is replaced with another - it's a target.
                 CoalesceResult::NameIsCoalesceTarget
@@ -507,7 +486,7 @@ impl VisitMut<'_> for CoalesceVariableNames<'_> {
 fn compute_variable_names_interference_graph(
     cfg: &ControlFlowGraph<Node, LinearFlowState>,
     liveness: &LiveVariablesAnalysisResult,
-) -> (UnMatrix<Id, ()>, FxHashMap<Id, NodeIndex>) {
+) -> (UnMatrix<NameId, ()>, FxHashMap<NameId, NodeIndex>) {
     let mut map = FxHashMap::default();
     let mut interference_graph = UnMatrix::default();
 
@@ -599,7 +578,6 @@ fn compute_variable_names_interference_graph(
 /// functions and tries to run [`CoalesceVariableNames`] on them, without
 /// touching any global variables.
 struct GlobalVisitor<'a> {
-    unresolved_ctxt: SyntaxContext,
     program_data: &'a mut ast::ProgramData,
 }
 
@@ -660,7 +638,7 @@ impl<'a> LiveRangeChecker<'a> {
         }
     }
 
-    fn visit(&mut self, name: Id, is_read_from: bool, is_assigned_to: bool) {
+    fn visit(&mut self, name: NameId, is_read_from: bool, is_assigned_to: bool) {
         if is_assigned_to {
             if let Some(var_id) = self.liveness.scope_variables.get(&name) {
                 self.is_assign_to_list.push(*var_id);
@@ -680,21 +658,21 @@ impl<'a> LiveRangeChecker<'a> {
 
 impl Visit<'_> for LiveRangeChecker<'_> {
     fn visit_ident(&mut self, node: &Ident) {
-        self.visit(node.to_id(), true, false);
+        self.visit(node.name, true, false);
     }
 
     fn visit_binding_ident(&mut self, node: &BindingIdent) {
-        self.visit(node.to_id(), false, true);
+        self.visit(node.id.name, false, true);
     }
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
         let lhs_ident = match &node.left {
             PatOrExpr::Expr(lhs) => match lhs.as_ref() {
-                Expr::Ident(lhs) => Some(lhs.to_id()),
+                Expr::Ident(lhs) => Some(lhs.name),
                 _ => None,
             },
             PatOrExpr::Pat(lhs) => match lhs.as_ref() {
-                Pat::Ident(lhs) => Some(lhs.to_id()),
+                Pat::Ident(lhs) => Some(lhs.id.name),
                 _ => None,
             },
         };
@@ -716,9 +694,9 @@ impl Visit<'_> for LiveRangeChecker<'_> {
             if node.init.is_some() {
                 node.init.visit_with(self);
                 // A var decl with an initializer assign a value to the name.\
-                self.visit(lhs.to_id(), false, true);
+                self.visit(lhs.id.name, false, true);
             } else {
-                self.visit(lhs.to_id(), true, false);
+                self.visit(lhs.id.name, true, false);
             }
         } else {
             // Evaluate the rhs of a destructuring declaration before the lhs.

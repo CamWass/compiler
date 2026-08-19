@@ -84,6 +84,7 @@ impl Lexer<'_> {
             errors: _,
             module_errors: _,
             strict_errors: _,
+            program_data: _,
         } = self;
 
         LexerCheckpoint {

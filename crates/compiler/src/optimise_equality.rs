@@ -1,24 +1,21 @@
 use ast::*;
 use atoms::{JsWord, js_word};
-use common::SyntaxContext;
 use visit::{VisitMut, VisitMutWith};
 
 use crate::node_util::getKnownValueType;
 
-pub fn process(ast: &mut Program, unresolved_ctxt: SyntaxContext) {
-    let mut visitor = Visitor { unresolved_ctxt };
+pub fn process(ast: &mut Program) {
+    let mut visitor = Visitor;
     ast.visit_mut_with(&mut visitor);
 }
 
-struct Visitor {
-    unresolved_ctxt: SyntaxContext,
-}
+struct Visitor;
 
 impl VisitMut<'_> for Visitor {
     fn visit_mut_bin_expr(&mut self, bin_expr: &mut BinExpr) {
         bin_expr.visit_mut_children_with(self);
 
-        optimise_strict_equality(bin_expr, self.unresolved_ctxt);
+        optimise_strict_equality(bin_expr);
 
         // Note: this comes last so we can benefit from the strict->loose
         // optimisation above.
@@ -26,14 +23,14 @@ impl VisitMut<'_> for Visitor {
     }
 }
 
-fn optimise_strict_equality(bin_expr: &mut BinExpr, unresolved_ctxt: SyntaxContext) {
+fn optimise_strict_equality(bin_expr: &mut BinExpr) {
     let new_loose_op = match bin_expr.op {
         BinaryOp::EqEqEq => BinaryOp::EqEq,
         BinaryOp::NotEqEq => BinaryOp::NotEq,
         _ => return,
     };
 
-    if can_change_strict_to_loose(&bin_expr.left, &bin_expr.right, unresolved_ctxt) {
+    if can_change_strict_to_loose(&bin_expr.left, &bin_expr.right) {
         bin_expr.op = new_loose_op;
     }
 }
@@ -88,9 +85,9 @@ fn get_undefined_string(e: &mut Expr) -> Option<&mut Str> {
     }
 }
 
-fn can_change_strict_to_loose(a: &Expr, b: &Expr, unresolved_ctxt: SyntaxContext) -> bool {
-    let a_type = getKnownValueType(a, unresolved_ctxt).get_typeof_result();
-    let b_type = getKnownValueType(b, unresolved_ctxt).get_typeof_result();
+fn can_change_strict_to_loose(a: &Expr, b: &Expr) -> bool {
+    let a_type = getKnownValueType(a).get_typeof_result();
+    let b_type = getKnownValueType(b).get_typeof_result();
 
     // We can change strict to loose equality iff we can statically determine
     // the types of the lhs and rhs, and those types are the same.
@@ -101,7 +98,6 @@ fn can_change_strict_to_loose(a: &Expr, b: &Expr, unresolved_ctxt: SyntaxContext
 mod tests {
     use super::*;
     use crate::resolver::resolve;
-    use common::{GLOBALS, Globals, Mark};
 
     #[test]
     fn test_combined_optimisation() {
@@ -392,18 +388,12 @@ mod tests {
 
     fn test_transform(input: &str, expected: &str) {
         crate::testing::test_transform(
-            |mut program, _program_data| {
-                GLOBALS.set(&Globals::new(), || {
-                    let unresolved_mark = Mark::new();
+            |mut program, program_data| {
+                resolve(&mut program, program_data);
 
-                    resolve(&mut program, unresolved_mark);
+                process(&mut program);
 
-                    let unresolved_ctxt = SyntaxContext::empty().apply_mark(unresolved_mark);
-
-                    process(&mut program, unresolved_ctxt);
-
-                    program
-                })
+                program
             },
             input,
             expected,
