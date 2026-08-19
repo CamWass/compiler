@@ -545,13 +545,9 @@ fn compute_variable_names_interference_graph(
     }
 
     // Go through each variable and try to connect them.
-    for (v1_idx, v1) in ordered_variables.iter_enumerated() {
-        for (v2_idx, v2) in ordered_variables.iter_enumerated() {
-            // Skip duplicate pairs. Also avoid merging a variable with itself.
-            if v1_idx >= v2_idx {
-                continue;
-            }
-
+    let mut iter = ordered_variables.iter_enumerated();
+    while let Some((v1_idx, v1)) = iter.next() {
+        for (v2_idx, v2) in iter.clone() {
             if !interference_graph_nodes.contains(v1_idx)
                 || !interference_graph_nodes.contains(v2_idx)
             {
