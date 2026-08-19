@@ -498,7 +498,7 @@ fn compute_variable_names_interference_graph(
     // The VarIds that have a corresponding node in the interference graph.
     let mut interference_graph_nodes = BitSet::new_empty(ordered_variables.len());
 
-    // The paris of variables that interfere and should have an edge in the interference graph.
+    // The pairs of variables that interfere and should have an edge in the interference graph.
     let mut interfering_vars = BitMatrix::new(ordered_variables.len(), ordered_variables.len());
 
     for (v_index, v) in ordered_variables.iter_enumerated() {
@@ -659,8 +659,16 @@ impl Visit<'_> for LiveRangeChecker<'_> {
         self.visit(node.name, true, false);
     }
 
+    // TODO: do we need to visit class/fn names, which aren't BindingIdents?
     fn visit_binding_ident(&mut self, node: &BindingIdent) {
         self.visit(node.id.name, false, true);
+    }
+
+    fn visit_member_expr(&mut self, node: &MemberExpr) {
+        node.obj.visit_with(self);
+        if node.computed {
+            node.prop.visit_with(self);
+        }
     }
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
