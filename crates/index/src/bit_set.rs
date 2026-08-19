@@ -308,6 +308,7 @@ impl<T: Idx> fmt::Display for BitSet<T> {
     }
 }
 
+#[derive(Clone)]
 pub struct BitIter<'a, T: Idx> {
     /// A copy of the current word, but with any already-visited bits cleared.
     /// (This lets us use `trailing_zeros()` to find the next set bit.) When it

@@ -528,14 +528,16 @@ fn compute_variable_names_interference_graph(
         // means that they are alive at overlapping times, which means that their
         // variable names cannot be coalesced.
         let live_in = &liveness.lattice_elements[state.in_];
-        for i in live_in.set_bits() {
-            for j in live_in.next_set_bits(i) {
+        let mut in_live_vars = live_in.live_vars();
+        while let Some(i) = in_live_vars.next() {
+            for j in in_live_vars.clone() {
                 interfering_vars.insert(i, j);
             }
         }
         let live_out = &liveness.lattice_elements[state.out];
-        for i in live_out.set_bits() {
-            for j in live_out.next_set_bits(i) {
+        let mut out_live_vars = live_out.live_vars();
+        while let Some(i) = out_live_vars.next() {
+            for j in out_live_vars.clone() {
                 interfering_vars.insert(i, j);
             }
         }
@@ -545,9 +547,9 @@ fn compute_variable_names_interference_graph(
     }
 
     // Go through each variable and try to connect them.
-    let mut iter = ordered_variables.iter_enumerated();
-    while let Some((v1_idx, v1)) = iter.next() {
-        for (v2_idx, v2) in iter.clone() {
+    let mut ordered_variables = ordered_variables.iter_enumerated();
+    while let Some((v1_idx, v1)) = ordered_variables.next() {
+        for (v2_idx, v2) in ordered_variables.clone() {
             if !interference_graph_nodes.contains(v1_idx)
                 || !interference_graph_nodes.contains(v2_idx)
             {

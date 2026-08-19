@@ -623,15 +623,7 @@ impl LiveVariableLattice {
         self.live_set.contains(index)
     }
 
-    /// Returns the index of the first bit that is set to true that occurs
-    /// on or after the specified starting index.
-    pub fn next_set_bits(&self, from_index: VarId) -> impl Iterator<Item = VarId> + '_ {
-        // TODO: maybe add a method to BitSet that allows us to get the iter from
-        // a specific index without having to skip.
-        self.live_set.iter().skip(from_index.as_usize() + 1)
-    }
-
-    pub fn set_bits(&self) -> impl Iterator<Item = VarId> + '_ {
+    pub fn live_vars(&self) -> impl Iterator<Item = VarId> + Clone {
         self.live_set.iter()
     }
 }
