@@ -10,10 +10,8 @@ use visit::{VisitMut, VisitMutWith};
 pub fn resolve(program: &mut Program, program_data: &mut ProgramData) {
     let mut resolver = Resolver {
         program_data,
-        cur_scope: ScopeId(0),
         scopes: vec![Scope {
             names: FxHashMap::default(),
-            parent: None,
         }],
         in_decl: false,
         processed_names: FxHashSet::default(),
@@ -24,10 +22,6 @@ pub fn resolve(program: &mut Program, program_data: &mut ProgramData) {
 
 struct Resolver<'d> {
     program_data: &'d mut ProgramData,
-
-    // TODO: use actual stack for scopes since we don't need to access sibling
-    // scopes.
-    cur_scope: ScopeId,
     scopes: Vec<Scope>,
     in_decl: bool,
     processed_names: FxHashSet<NameId>,
@@ -39,31 +33,28 @@ impl Resolver<'_> {
             return;
         }
 
-        let mut cur = self.cur_scope;
-
-        loop {
-            if let Some(new_name) = self.scopes[cur.0].names.get(&name) {
+        for scope in self.scopes.iter().rev() {
+            if let Some(new_name) = scope.names.get(&name) {
                 *name = *new_name;
-                return;
-            }
-
-            if let Some(parent) = self.scopes[cur.0].parent {
-                cur = parent;
-            } else {
                 return;
             }
         }
     }
 
     fn handle_decl(&mut self, name: &mut NameId) {
-        if !self.scopes[self.cur_scope.0].names.contains_key(name) {
+        let cur_scope = &mut self
+            .scopes
+            .last_mut()
+            .expect("there's always the global scope");
+
+        if !cur_scope.names.contains_key(name) {
             if self.processed_names.insert(*name) {
-                self.scopes[self.cur_scope.0]
+                cur_scope
                     .names
                     .insert(*name, ProgramData::mark_resolved(*name));
             } else {
                 let new_name = self.program_data.new_resolved_name_from(*name);
-                self.scopes[self.cur_scope.0].names.insert(*name, new_name);
+                cur_scope.names.insert(*name, new_name);
             }
         }
 
@@ -75,15 +66,11 @@ impl Resolver<'_> {
     where
         F: FnMut(&mut Self),
     {
-        let next_scope_id = ScopeId(self.scopes.len());
-        let prev = self.cur_scope;
         self.scopes.push(Scope {
-            parent: Some(prev),
             names: FxHashMap::default(),
         });
-        self.cur_scope = next_scope_id;
         op(self);
-        self.cur_scope = prev;
+        self.scopes.pop();
     }
 }
 
@@ -261,12 +248,8 @@ impl VisitMut<'_> for Resolver<'_> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct ScopeId(usize);
-
 #[derive(Debug)]
 struct Scope {
-    parent: Option<ScopeId>,
     names: FxHashMap<NameId, NameId>,
 }
 
