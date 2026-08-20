@@ -189,6 +189,7 @@ impl Parser<'_> {
     }
 
     pub(super) fn parse_access_modifier(&mut self) -> PResult<bool> {
+        debug_assert!(self.syntax().typescript());
         Ok(self
             .parse_ts_modifier(&[
                 id_for_built_in!("public"),
@@ -313,70 +314,72 @@ impl Parser<'_> {
         let mut readonly = None;
         let mut modifier_span = None;
         let declare = declare_token.is_some();
-        while let Some(modifier) = self.parse_ts_modifier(&[
-            id_for_built_in!("abstract"),
-            id_for_built_in!("readonly"),
-            id_for_built_in!("override"),
-            id_for_built_in!("static"),
-        ])? {
-            modifier_span = Some(self.input.prev_span());
-            match modifier {
-                id_for_built_in!("abstract") => {
-                    if is_abstract {
-                        self.emit_err(
-                            self.input.prev_span(),
-                            SyntaxError::TS1030(js_word!("abstract")),
-                        );
-                    } else if is_override {
-                        self.emit_err(
-                            self.input.prev_span(),
-                            SyntaxError::TS1029(js_word!("abstract"), js_word!("override")),
-                        );
-                    } else {
-                        is_abstract = true;
+        if self.syntax().typescript() {
+            while let Some(modifier) = self.parse_ts_modifier(&[
+                id_for_built_in!("abstract"),
+                id_for_built_in!("readonly"),
+                id_for_built_in!("override"),
+                id_for_built_in!("static"),
+            ])? {
+                modifier_span = Some(self.input.prev_span());
+                match modifier {
+                    id_for_built_in!("abstract") => {
+                        if is_abstract {
+                            self.emit_err(
+                                self.input.prev_span(),
+                                SyntaxError::TS1030(js_word!("abstract")),
+                            );
+                        } else if is_override {
+                            self.emit_err(
+                                self.input.prev_span(),
+                                SyntaxError::TS1029(js_word!("abstract"), js_word!("override")),
+                            );
+                        } else {
+                            is_abstract = true;
+                        }
                     }
-                }
-                id_for_built_in!("override") => {
-                    if is_override {
-                        self.emit_err(
-                            self.input.prev_span(),
-                            SyntaxError::TS1030(js_word!("override")),
-                        );
-                    } else if readonly.is_some() {
-                        self.emit_err(
-                            self.input.prev_span(),
-                            SyntaxError::TS1029(js_word!("override"), js_word!("readonly")),
-                        );
-                    } else if declare {
-                        self.emit_err(
-                            self.input.prev_span(),
-                            SyntaxError::TS1243(js_word!("override"), js_word!("declare")),
-                        );
-                    } else if !self.ctx().has_super_class() {
-                        self.emit_err(self.input.prev_span(), SyntaxError::TS4112);
-                    } else {
-                        is_override = true;
+                    id_for_built_in!("override") => {
+                        if is_override {
+                            self.emit_err(
+                                self.input.prev_span(),
+                                SyntaxError::TS1030(js_word!("override")),
+                            );
+                        } else if readonly.is_some() {
+                            self.emit_err(
+                                self.input.prev_span(),
+                                SyntaxError::TS1029(js_word!("override"), js_word!("readonly")),
+                            );
+                        } else if declare {
+                            self.emit_err(
+                                self.input.prev_span(),
+                                SyntaxError::TS1243(js_word!("override"), js_word!("declare")),
+                            );
+                        } else if !self.ctx().has_super_class() {
+                            self.emit_err(self.input.prev_span(), SyntaxError::TS4112);
+                        } else {
+                            is_override = true;
+                        }
                     }
-                }
-                id_for_built_in!("readonly") => {
-                    let readonly_span = self.input.prev_span();
-                    if readonly.is_some() {
-                        self.emit_err(readonly_span, SyntaxError::TS1030(js_word!("readonly")));
-                    } else {
-                        readonly = Some(readonly_span);
+                    id_for_built_in!("readonly") => {
+                        let readonly_span = self.input.prev_span();
+                        if readonly.is_some() {
+                            self.emit_err(readonly_span, SyntaxError::TS1030(js_word!("readonly")));
+                        } else {
+                            readonly = Some(readonly_span);
+                        }
                     }
-                }
-                id_for_built_in!("static") => {
-                    if is_override {
-                        self.emit_err(
-                            self.input.prev_span(),
-                            SyntaxError::TS1029(js_word!("static"), js_word!("override")),
-                        );
-                    }
+                    id_for_built_in!("static") => {
+                        if is_override {
+                            self.emit_err(
+                                self.input.prev_span(),
+                                SyntaxError::TS1029(js_word!("static"), js_word!("override")),
+                            );
+                        }
 
-                    is_static = true;
+                        is_static = true;
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
         }
 
@@ -551,9 +554,10 @@ impl Parser<'_> {
         {
             // handle async foo(){}
 
-            if self
-                .parse_ts_modifier(&[id_for_built_in!("override")])?
-                .is_some()
+            if self.syntax().typescript()
+                && self
+                    .parse_ts_modifier(&[id_for_built_in!("override")])?
+                    .is_some()
             {
                 self.emit_err(
                     self.input.prev_span(),

@@ -31,9 +31,7 @@ impl Parser<'_> {
         &mut self,
         allowed_modifiers: &[NameId],
     ) -> PResult<Option<NameId>> {
-        if !self.syntax().typescript() {
-            return Ok(None);
-        }
+        debug_assert!(self.syntax().typescript());
 
         if let Token::Error(_) = self.input.cur() {
             if let Token::Error(e) = self.input.bump() {
