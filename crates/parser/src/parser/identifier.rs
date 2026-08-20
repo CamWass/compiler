@@ -11,7 +11,7 @@ impl Parser<'_> {
     }
 
     pub(super) fn parse_maybe_private_name(&mut self) -> PResult<PrivateNameOrIdentifier> {
-        let is_private = self.input.is(tok!('#'));
+        let is_private = self.is(tok!('#'));
 
         if is_private {
             self.parse_private_name()

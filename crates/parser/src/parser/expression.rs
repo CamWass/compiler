@@ -31,10 +31,10 @@ impl Parser<'_> {
         let start = self.input.cur_pos();
         let expr = self.parse_assignment_expr(assign_props)?;
 
-        if self.input.is(tok!(',')) {
+        if self.is(tok!(',')) {
             let mut exprs = vec![*expr.unwrap()];
 
-            while self.input.eat(tok!(',')) {
+            while self.eat(tok!(',')) {
                 exprs.push(*self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap());
             }
 
@@ -53,10 +53,7 @@ impl Parser<'_> {
         &mut self,
         assign_props: &mut AssignProps,
     ) -> PResult<MaybeParen> {
-        if self.input.syntax().typescript()
-            && self.input.is(tok!('<'))
-            && peeked_is!(self, IdentName)
-        {
+        if self.input.syntax().typescript() && self.is(tok!('<')) && peeked_is!(self, IdentName) {
             let res = self.try_parse_ts(|p| {
                 let start = p.input.cur_pos();
                 // Type params.
@@ -91,7 +88,7 @@ impl Parser<'_> {
         &mut self,
         assign_props: &mut AssignProps,
     ) -> PResult<MaybeParen> {
-        if self.ctx().in_generator() && self.input.is(tok!("yield")) {
+        if self.ctx().in_generator() && self.is(tok!("yield")) {
             return self.parse_yield_expr().map(From::from);
         }
 
@@ -220,7 +217,7 @@ impl Parser<'_> {
         let test = self.parse_bin_expr(assign_props)?;
         return_if_arrow!(self, potential_arrow_start, test);
 
-        if self.input.eat(tok!('?')) {
+        if self.eat(tok!('?')) {
             let ctx = Context {
                 flags: self.ctx().flags
                     | ContextFlags::in_cond_expr
@@ -277,7 +274,7 @@ impl Parser<'_> {
 
                 tok!("import") => {
                     let import = self.parse_ident_name()?;
-                    if self.input.syntax().import_meta() && self.input.is(tok!('.')) {
+                    if self.input.syntax().import_meta() && self.is(tok!('.')) {
                         return self
                             .parse_import_meta_prop(import)
                             .map(Expr::MetaProp)
@@ -289,16 +286,14 @@ impl Parser<'_> {
                 }
 
                 tok!("async") => {
-                    if self.input.peeked_is(tok!("function"))
+                    if self.peeked_is(tok!("function"))
                         && !self.input.has_linebreak_between_cur_and_peeked()
                     {
                         // handle `async function` expression
                         return self.parse_async_fn_expr().map(From::from);
                     }
 
-                    if can_be_arrow
-                        && self.input.syntax().typescript()
-                        && self.input.peeked_is(tok!('<'))
+                    if can_be_arrow && self.input.syntax().typescript() && self.peeked_is(tok!('<'))
                     {
                         // try parsing `async<T>() => {}`
                         if let Some(res) = self.try_parse_ts(|p| {
@@ -310,7 +305,7 @@ impl Parser<'_> {
                         }
                     }
 
-                    if can_be_arrow && self.input.peeked_is(tok!('(')) {
+                    if can_be_arrow && self.peeked_is(tok!('(')) {
                         expect!(self, "async");
                         let async_span = self.input.prev_span();
                         return self.parse_paren_expr_or_arrow_fn(can_be_arrow, Some(async_span));
@@ -366,11 +361,11 @@ impl Parser<'_> {
             }
         }
 
-        if self.input.is(tok!("class")) {
+        if self.is(tok!("class")) {
             return self.parse_class_expr(start).map(From::from);
         }
 
-        if self.input.is(tok!("let"))
+        if self.is(tok!("let"))
             || (self.input.syntax().typescript() && is!(self, IdentName))
             || self.is_ident_ref()
         {
@@ -414,7 +409,7 @@ impl Parser<'_> {
                 .into());
             } else if can_be_arrow
                 && !self.input.had_line_break_before_cur()
-                && self.input.eat(tok!("=>"))
+                && self.eat(tok!("=>"))
             {
                 let pat = Pat::Ident(BindingIdent::from_ident(id));
                 let params = vec![Param::from_pat(pat, program_data!(self))];
@@ -448,8 +443,8 @@ impl Parser<'_> {
         let mut elems = vec![];
         let mut trailing_comma_span = None;
 
-        while !eof!(self) && !self.input.is(tok!(']')) {
-            if self.input.is(tok!(',')) {
+        while !eof!(self) && !self.is(tok!(']')) {
+            if self.is(tok!(',')) {
                 expect!(self, ',');
                 elems.push(None);
                 continue;
@@ -460,7 +455,7 @@ impl Parser<'_> {
                 .map(MaybeParenExprOrSpread::unwrap)
                 .map(Some)?;
 
-            if self.input.is(tok!(',')) {
+            if self.is(tok!(',')) {
                 if let Some(ExprOrSpread::Spread(_)) = elem {
                     // We only care about the first trailing comma, so we
                     // will only save this one if it's the first we have
@@ -496,7 +491,7 @@ impl Parser<'_> {
 
         expect!(self, '.');
 
-        let prop = if self.input.is(tok!("meta")) {
+        let prop = if self.is(tok!("meta")) {
             self.parse_ident_name()?
         } else {
             unexpected!(self, "meta");
@@ -533,7 +528,7 @@ impl Parser<'_> {
         let start = get_span!(self, obj.node_id()).lo();
 
         if self.input.syntax().typescript() {
-            if !self.input.had_line_break_before_cur() && self.input.is(tok!('!')) {
+            if !self.input.had_line_break_before_cur() && self.is(tok!('!')) {
                 self.input.set_expr_allowed(false);
                 self.assert_and_bump(tok!('!'));
 
@@ -545,7 +540,7 @@ impl Parser<'_> {
             }
 
             // super() cannot be generic
-            if !matches!(obj, MaybeParenExprOrSuper::Super(_)) && self.input.is(tok!('<')) {
+            if !matches!(obj, MaybeParenExprOrSuper::Super(_)) && self.is(tok!('<')) {
                 // tsTryParseAndCatch is expensive, so avoid if not necessary.
                 // There are number of things we are going to "maybe" parse, like type arguments
                 // on tagged template expressions. If any of them fail, walk it back and
@@ -571,7 +566,7 @@ impl Parser<'_> {
                     // Type args.
                     p.parse_ts_type_args()?;
 
-                    if !no_call && p.input.is(tok!('(')) {
+                    if !no_call && p.is(tok!('(')) {
                         // possibleAsync always false here, because we would have handled it
                         // above. (won't be any undefined arguments)
                         let args = p.parse_args(is_import(&obj))?;
@@ -585,7 +580,7 @@ impl Parser<'_> {
                             .into(),
                             true,
                         )))
-                    } else if p.input.is(tok!('`')) {
+                    } else if p.is(tok!('`')) {
                         let tag = match &obj {
                             MaybeParenExprOrSuper::Expr(obj) => {
                                 obj.clone_node(program_data!(p)).unwrap()
@@ -607,9 +602,8 @@ impl Parser<'_> {
             }
         }
 
-        let has_question_dot_token = if self.input.is(tok!('?')) && self.input.peeked_is(tok!('.'))
-        {
-            self.input.eat(tok!('?'));
+        let has_question_dot_token = if self.is(tok!('?')) && self.peeked_is(tok!('.')) {
+            self.eat(tok!('?'));
             true
         } else {
             false
@@ -631,11 +625,11 @@ impl Parser<'_> {
 
         // $obj[name()]
         if (has_question_dot_token
-            && self.input.is(tok!('.'))
-            && self.input.peeked_is(tok!('['))
-            && self.input.eat(tok!('.'))
-            && self.input.eat(tok!('[')))
-            || self.input.eat(tok!('['))
+            && self.is(tok!('.'))
+            && self.peeked_is(tok!('['))
+            && self.eat(tok!('.'))
+            && self.eat(tok!('[')))
+            || self.eat(tok!('['))
         {
             let prop = self
                 .include_in_expr(true)
@@ -659,10 +653,10 @@ impl Parser<'_> {
         }
 
         if (has_question_dot_token
-            && self.input.is(tok!('.'))
-            && self.input.peeked_is(tok!('('))
-            && self.input.eat(tok!('.')))
-            || (!no_call && (self.input.is(tok!('('))))
+            && self.is(tok!('.'))
+            && self.peeked_is(tok!('('))
+            && self.eat(tok!('.')))
+            || (!no_call && (self.is(tok!('('))))
         {
             let args = self.parse_args(is_import(&obj))?;
             return Ok((
@@ -678,7 +672,7 @@ impl Parser<'_> {
 
         // member expression
         // $obj.name
-        if self.input.eat(tok!('.')) {
+        if self.eat(tok!('.')) {
             let prop: Box<Expr> = Box::new(self.parse_maybe_private_name().map(|e| match e {
                 PrivateNameOrIdentifier::PrivateName(p) => Expr::PrivateName(p),
                 PrivateNameOrIdentifier::Identifier(i) => Expr::Ident(i),
@@ -703,7 +697,7 @@ impl Parser<'_> {
         match obj {
             MaybeParenExprOrSuper::Expr(expr) => {
                 // MemberExpression[?Yield, ?Await] TemplateLiteral[?Yield, ?Await, +Tagged]
-                if self.input.is(tok!('`')) {
+                if self.is(tok!('`')) {
                     let tpl = self.parse_tagged_tpl(expr.unwrap())?;
                     return Ok((Box::new(Expr::TaggedTpl(tpl)).into(), true));
                 }
@@ -724,7 +718,7 @@ impl Parser<'_> {
         let start = self.input.cur_pos();
 
         // `super()` can't be handled from parse_new_expr()
-        if self.input.eat(tok!("super")) {
+        if self.eat(tok!("super")) {
             let obj = MaybeParenExprOrSuper::Super(Super {
                 node_id: node_id!(self, span!(self, start)),
             });
@@ -736,10 +730,10 @@ impl Parser<'_> {
         let callee = self.parse_new_expr(assign_props)?;
         return_if_arrow!(self, potential_arrow_start, callee);
 
-        let type_args = if self.input.syntax().typescript() && self.input.is(tok!('<')) {
+        let type_args = if self.input.syntax().typescript() && self.is(tok!('<')) {
             self.try_parse_ts(|p| {
                 p.parse_ts_type_args()?;
-                if p.input.is(tok!('(')) {
+                if p.is(tok!('(')) {
                     Ok(Some(()))
                 } else {
                     Ok(None)
@@ -758,7 +752,7 @@ impl Parser<'_> {
                     expect!(self, '(');
                 }
                 debug_assert!(
-                    !self.input.is(tok!('(')),
+                    !self.is(tok!('(')),
                     "parse_new_expr() should eat paren if it exists"
                 );
                 return Ok(callee);
@@ -767,7 +761,7 @@ impl Parser<'_> {
         // 'CallExpr' rule contains 'MemberExpr (...)',
         // and 'MemberExpr' rule contains 'new MemberExpr (...)'
 
-        if self.input.is(tok!('(')) {
+        if self.is(tok!('(')) {
             // This is parsed using production MemberExpression,
             // which is left-recursive.
             let callee = MaybeParenExprOrSuper::Expr(callee);
@@ -815,10 +809,10 @@ impl Parser<'_> {
 
         // TODO(kdy1): optimize (once we parsed a pattern, we can parse everything else
         // as a pattern instead of reparsing)
-        while !eof!(self) && !self.input.is(tok!(')')) {
+        while !eof!(self) && !self.is(tok!(')')) {
             if first {
                 // TODO: this appears to be incorrect. See: (async x => x, 1, y => y)(1);
-                if self.input.is(tok!("async")) {
+                if self.is(tok!("async")) {
                     // https://github.com/swc-project/swc/issues/410
                     self.potential_arrow_start = Some(self.input.cur_pos());
                     let expr = self.parse_assignment_expr(assign_props)?;
@@ -826,12 +820,12 @@ impl Parser<'_> {
                     return Ok(vec![MaybeParenPatOrExprOrSpread::Expr(expr)]);
                 }
             } else {
-                if current_item_has_spread && self.input.is(tok!(',')) {
+                if current_item_has_spread && self.is(tok!(',')) {
                     syntax_error!(self, SyntaxError::CommaAfterRestElement);
                 }
                 expect!(self, ',');
                 // Handle trailing comma.
-                if self.input.is(tok!(')')) {
+                if self.is(tok!(')')) {
                     break;
                 }
             }
@@ -847,10 +841,9 @@ impl Parser<'_> {
 
             let mut arg = {
                 if self.input.syntax().typescript()
-                    && (self.is_ident_ref()
-                        || (self.input.is(tok!("...")) && self.peek_is_ident_ref()))
+                    && (self.is_ident_ref() || (self.is(tok!("...")) && self.peek_is_ident_ref()))
                 {
-                    let spread_start = if self.input.eat(tok!("...")) {
+                    let spread_start = if self.eat(tok!("...")) {
                         Some(self.input.prev_span().lo)
                     } else {
                         None
@@ -891,7 +884,7 @@ impl Parser<'_> {
             }
 
             let optional = if self.input.syntax().typescript() {
-                if self.input.is(tok!('?')) {
+                if self.is(tok!('?')) {
                     if peeked_is!(self, ',')
                         || peeked_is!(self, ':')
                         || peeked_is!(self, ')')
@@ -965,7 +958,7 @@ impl Parser<'_> {
                 false
             };
 
-            if optional || (self.input.syntax().typescript() && self.input.is(tok!(':'))) {
+            if optional || (self.input.syntax().typescript() && self.is(tok!(':'))) {
                 // TODO(swc): `async(...args?: any[]) : any => {}`
                 //
                 // if self.input.syntax().typescript() && optional && arg.spread.is_some() {
@@ -1022,7 +1015,7 @@ impl Parser<'_> {
                     }
                 }
 
-                if self.input.eat(tok!('=')) {
+                if self.eat(tok!('=')) {
                     let right = self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap();
                     pat = Pat::Assign(AssignPat {
                         node_id: node_id!(self, span!(self, pat_start)),
@@ -1048,7 +1041,7 @@ impl Parser<'_> {
             }
 
             // https://github.com/swc-project/swc/issues/433
-            if first && self.input.eat(tok!("=>")) && {
+            if first && self.eat(tok!("=>")) && {
                 debug_assert_eq!(items.len(), 1);
                 match &items[0] {
                     MaybeParenPatOrExprOrSpread::Spread(MaybeParenSpreadElement {
@@ -1100,10 +1093,10 @@ impl Parser<'_> {
         assign_props: &mut AssignProps,
     ) -> PResult<MaybeParen> {
         let start = self.input.cur_pos();
-        if self.input.eat(tok!("new")) {
+        if self.eat(tok!("new")) {
             let span_of_new = span!(self, start);
-            if self.input.eat(tok!('.')) {
-                if self.input.eat(tok!("target")) {
+            if self.eat(tok!('.')) {
+                if self.eat(tok!("target")) {
                     let span_of_target = self.input.cur_span();
 
                     if word_contains_escape(&span_of_target, "target") {
@@ -1133,10 +1126,10 @@ impl Parser<'_> {
             let callee = callee.unwrap();
 
             // Type arguments.
-            if self.input.syntax().typescript() && self.input.is(tok!('<')) {
+            if self.input.syntax().typescript() && self.is(tok!('<')) {
                 self.try_parse_ts(|p| {
                     p.parse_ts_type_args()?;
-                    if !p.input.is(tok!('(')) {
+                    if !p.is(tok!('(')) {
                         // This will fail
                         expect!(p, '(');
                     }
@@ -1144,7 +1137,7 @@ impl Parser<'_> {
                 });
             }
 
-            if !is_new_expr || self.input.is(tok!('(')) {
+            if !is_new_expr || self.is(tok!('(')) {
                 // Parsed with 'MemberExpression' production.
                 let args = self.parse_args(false).map(Some)?;
 
@@ -1172,7 +1165,7 @@ impl Parser<'_> {
             .into());
         }
 
-        if self.input.eat(tok!("super")) {
+        if self.eat(tok!("super")) {
             let base = MaybeParenExprOrSuper::Super(Super {
                 node_id: node_id!(self, span!(self, start)),
             });
@@ -1201,13 +1194,13 @@ impl Parser<'_> {
         let mut first = true;
         let mut expr_or_spreads = vec![];
 
-        while !eof!(self) && !self.input.is(tok!(')')) {
+        while !eof!(self) && !self.is(tok!(')')) {
             if first {
                 first = false;
             } else {
                 expect!(self, ',');
                 // Handle trailing comma.
-                if self.input.is(tok!(')')) {
+                if self.is(tok!(')')) {
                     if is_dynamic_import {
                         syntax_error!(
                             self,
@@ -1239,7 +1232,7 @@ impl Parser<'_> {
     ) -> PResult<MaybeParenExprOrSpread> {
         let start = self.input.cur_pos();
 
-        if self.input.eat(tok!("...")) {
+        if self.eat(tok!("...")) {
             let expr = self
                 .include_in_expr(true)
                 .parse_assignment_expr(assign_props)?;
@@ -1284,7 +1277,7 @@ impl Parser<'_> {
         };
 
         // This is slow path. We handle arrow in conditional expression.
-        if self.syntax().typescript() && self.ctx().in_cond_expr() && self.input.is(tok!(':')) {
+        if self.syntax().typescript() && self.ctx().in_cond_expr() && self.is(tok!(':')) {
             // TODO: Remove clone
             let items_ref = &paren_items;
             if let Some(expr) = self.try_parse_ts(|p| {
@@ -1316,7 +1309,7 @@ impl Parser<'_> {
 
         let return_type = if !self.ctx().in_cond_expr()
             && self.input.syntax().typescript()
-            && self.input.is(tok!(':'))
+            && self.is(tok!(':'))
             && !self.ctx().in_case_cond()
         {
             Some(self.parse_ts_type_or_type_predicate_ann(tok!(':'))?)
@@ -1325,7 +1318,7 @@ impl Parser<'_> {
         };
 
         // we parse arrow function at here, to handle it efficiently.
-        if has_pattern || return_type.is_some() || self.input.is(tok!("=>")) {
+        if has_pattern || return_type.is_some() || self.is(tok!("=>")) {
             if self.input.had_line_break_before_cur() {
                 syntax_error!(
                     self,
@@ -1477,7 +1470,7 @@ impl Parser<'_> {
         let cur_elem = self.parse_tpl_element(is_tagged)?;
         let mut quasis = vec![cur_elem];
 
-        while !self.input.is(tok!('`')) {
+        while !self.is(tok!('`')) {
             expect!(self, "${");
             exprs.push(
                 *self
@@ -1580,8 +1573,7 @@ impl Parser<'_> {
         }
 
         if is!(self, ';')
-            || (!self.input.is(tok!('*'))
-                && !self.input.cur().map(Token::starts_expr).unwrap_or(true))
+            || (!self.is(tok!('*')) && !self.input.cur().map(Token::starts_expr).unwrap_or(true))
         {
             Ok(Box::new(Expr::Yield(YieldExpr {
                 node_id: node_id!(self, span!(self, start)),
@@ -1589,7 +1581,7 @@ impl Parser<'_> {
                 delegate: false,
             })))
         } else {
-            let has_star = self.input.eat(tok!('*'));
+            let has_star = self.eat(tok!('*'));
             let arg = self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap();
 
             Ok(Box::new(Expr::Yield(YieldExpr {
@@ -1636,7 +1628,7 @@ impl Parser<'_> {
                 })
             }
             Word(Word::True) | Word(Word::False) => {
-                let value = self.input.is(tok!("true"));
+                let value = self.is(tok!("true"));
                 self.input.bump();
 
                 Lit::Bool(Bool {

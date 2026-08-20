@@ -17,13 +17,13 @@ impl Parser<'_> {
         let mut props = vec![];
 
         let mut first = true;
-        while !self.input.eat(tok!('}')) {
+        while !self.eat(tok!('}')) {
             // Handle comma
             if first {
                 first = false;
             } else {
                 expect!(self, ',');
-                if self.input.eat(tok!('}')) {
+                if self.eat(tok!('}')) {
                     break;
                 }
             }
@@ -81,10 +81,10 @@ impl Parser<'_> {
                         .parse_assignment_expr(&mut AssignProps::Emit)?
                         .unwrap();
 
-                    if parser.syntax().typescript() && parser.input.is(tok!(',')) {
+                    if parser.syntax().typescript() && parser.is(tok!(',')) {
                         let mut exprs = vec![*expr];
 
-                        while parser.input.eat(tok!(',')) {
+                        while parser.eat(tok!(',')) {
                             exprs.push(
                                 *parser
                                     .include_in_expr(true)
@@ -134,7 +134,7 @@ impl ParseObject<Box<Expr>> for Parser<'_> {
         let start = self.input.cur_pos();
         // Parse as 'MethodDefinition'
 
-        if self.input.eat(tok!("...")) {
+        if self.eat(tok!("...")) {
             // spread element
 
             let expr = self
@@ -149,7 +149,7 @@ impl ParseObject<Box<Expr>> for Parser<'_> {
             }));
         }
 
-        if self.input.eat(tok!('*')) {
+        if self.eat(tok!('*')) {
             let name = self.parse_prop_name()?;
             return self
                 .parse_fn_args_body(start, Parser::parse_unique_formal_params, false, true)
@@ -170,8 +170,8 @@ impl ParseObject<Box<Expr>> for Parser<'_> {
 
         if self.input.syntax().typescript()
             && !is_one_of!(self, '(', '[', ':', ',', '?', '=', '*', IdentName, Str, Num)
-            && !(self.input.syntax().typescript() && self.input.is(tok!('<')))
-            && !(self.input.is(tok!('}')) && matches!(key, PropName::Ident(..)))
+            && !(self.input.syntax().typescript() && self.is(tok!('<')))
+            && !(self.is(tok!('}')) && matches!(key, PropName::Ident(..)))
         {
             self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
             let span = Span::new(key_start, self.input.cur_pos());
@@ -188,7 +188,7 @@ impl ParseObject<Box<Expr>> for Parser<'_> {
         // { 'a': a, }
         // { 0: 1, }
         // { a: expr, }
-        if self.input.eat(tok!(':')) {
+        if self.eat(tok!(':')) {
             let value = self
                 .include_in_expr(true)
                 .parse_assignment_expr(assign_props)?
@@ -202,9 +202,7 @@ impl ParseObject<Box<Expr>> for Parser<'_> {
         }
 
         // Handle `a(){}` (and async(){} / get(){} / set(){})
-        if (self.input.syntax().typescript() && self.input.is(tok!('<')))
-            || self.input.is(tok!('('))
-        {
+        if (self.input.syntax().typescript() && self.is(tok!('<'))) || self.is(tok!('(')) {
             return self
                 .parse_fn_args_body(start, Parser::parse_unique_formal_params, false, false)
                 .map(|function| {
@@ -222,7 +220,7 @@ impl ParseObject<Box<Expr>> for Parser<'_> {
             _ => unexpected!(self, "identifier"),
         };
 
-        if self.input.eat(tok!('?')) {
+        if self.eat(tok!('?')) {
             self.emit_err(self.input.prev_span(), SyntaxError::TS1162);
         }
 
@@ -236,7 +234,7 @@ impl ParseObject<Box<Expr>> for Parser<'_> {
                 );
             }
 
-            if self.input.eat(tok!('=')) {
+            if self.eat(tok!('=')) {
                 let value = self
                     .include_in_expr(true)
                     .parse_assignment_expr(assign_props)?
@@ -276,8 +274,7 @@ impl ParseObject<Box<Expr>> for Parser<'_> {
                     self.emit_err(modifiers_span, SyntaxError::TS1042);
                 }
 
-                let is_generator =
-                    ident.name == id_for_built_in!("async") && self.input.eat(tok!('*'));
+                let is_generator = ident.name == id_for_built_in!("async") && self.eat(tok!('*'));
                 let key = self.parse_prop_name()?;
                 let key_span = get_span!(self, key.node_id());
 
@@ -423,7 +420,7 @@ impl ParseObject<Pat> for Parser<'_> {
 
         // TS optional.
         if self.input.syntax().dts() || self.ctx().in_declare() {
-            self.input.eat(tok!('?'));
+            self.eat(tok!('?'));
         }
 
         Ok(Pat::Object(ObjectPat {
@@ -436,7 +433,7 @@ impl ParseObject<Pat> for Parser<'_> {
     fn parse_object_prop(&mut self, _assign_props: &mut AssignProps) -> PResult<Self::Prop> {
         let start = self.input.cur_pos();
 
-        if self.input.eat(tok!("...")) {
+        if self.eat(tok!("...")) {
             // spread element
 
             let arg = Box::new(self.parse_binding_pat_or_ident()?);
@@ -450,7 +447,7 @@ impl ParseObject<Pat> for Parser<'_> {
         let key_start = self.input.cur_pos();
         let key = self.parse_prop_name()?;
         let key_span = Span::new(key_start, self.input.last_pos());
-        if self.input.eat(tok!(':')) {
+        if self.eat(tok!(':')) {
             let value = Box::new(self.parse_binding_element()?);
 
             let span = Span::new(key_start, self.input.last_pos());
@@ -465,7 +462,7 @@ impl ParseObject<Pat> for Parser<'_> {
             _ => unexpected!(self, "an identifier"),
         };
 
-        let value = if self.input.eat(tok!('=')) {
+        let value = if self.eat(tok!('=')) {
             self.include_in_expr(true)
                 .parse_assignment_expr(&mut AssignProps::Emit)
                 .map(Some)?

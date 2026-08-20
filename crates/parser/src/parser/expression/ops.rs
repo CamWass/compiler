@@ -98,7 +98,7 @@ impl Parser<'_> {
         if self.input.syntax().typescript()
             && PREC_OF_IN > min_prec
             && !self.input.had_line_break_before_cur()
-            && self.input.is(tok!("as"))
+            && self.is(tok!("as"))
         {
             let expr = left;
             let node = if peeked_is!(self, "const") {
@@ -228,8 +228,8 @@ impl Parser<'_> {
     ) -> PResult<MaybeParen> {
         let start = self.input.cur_pos();
 
-        if self.input.syntax().typescript() && self.input.eat(tok!('<')) {
-            if self.input.eat(tok!("const")) {
+        if self.input.syntax().typescript() && self.eat(tok!('<')) {
+            if self.eat(tok!("const")) {
                 expect!(self, '>');
                 let expr = self.parse_unary_expr(&mut AssignProps::Emit)?;
                 return Ok(expr);
@@ -239,7 +239,7 @@ impl Parser<'_> {
         }
 
         // Parse update expression
-        if self.input.is(tok!("++")) || self.input.is(tok!("--")) {
+        if self.is(tok!("++")) || self.is(tok!("--")) {
             let op = if self.input.bump() == tok!("++") {
                 op!("++")
             } else {
@@ -311,9 +311,7 @@ impl Parser<'_> {
             .into());
         }
 
-        if (self.ctx().in_async() || self.syntax().top_level_await())
-            && self.input.is(tok!("await"))
-        {
+        if (self.ctx().in_async() || self.syntax().top_level_await()) && self.is(tok!("await")) {
             return self.parse_await_expr().map(From::from);
         }
 
@@ -354,7 +352,7 @@ impl Parser<'_> {
 
         self.assert_and_bump(tok!("await"));
 
-        if self.input.is(tok!('*')) {
+        if self.is(tok!('*')) {
             syntax_error!(self, SyntaxError::AwaitStar);
         }
 

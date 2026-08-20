@@ -6,9 +6,7 @@ use util::{AssignProps, is_valid_simple_assignment_target};
 
 impl Parser<'_> {
     pub(super) fn parse_opt_binding_ident(&mut self) -> PResult<Option<BindingIdent>> {
-        if is!(self, BindingIdent)
-            || (self.input.syntax().typescript() && self.input.is(tok!("this")))
-        {
+        if is!(self, BindingIdent) || (self.input.syntax().typescript() && self.is(tok!("this"))) {
             self.parse_binding_ident().map(Some)
         } else {
             Ok(None)
@@ -57,7 +55,7 @@ impl Parser<'_> {
         let start = self.input.cur_pos();
         let left = self.parse_binding_pat_or_ident()?;
 
-        if self.input.eat(tok!('=')) {
+        if self.eat(tok!('=')) {
             let right = self
                 .include_in_expr(true)
                 .parse_assignment_expr(&mut AssignProps::Emit)?
@@ -85,8 +83,8 @@ impl Parser<'_> {
         let mut elems = vec![];
         let mut comma = 0;
 
-        while !eof!(self) && !self.input.is(tok!(']')) {
-            if self.input.eat(tok!(',')) {
+        while !eof!(self) && !self.is(tok!(']')) {
+            if self.eat(tok!(',')) {
                 comma += 1;
                 continue;
             }
@@ -101,7 +99,7 @@ impl Parser<'_> {
             }
             let start = self.input.cur_pos();
 
-            if self.input.eat(tok!("...")) {
+            if self.eat(tok!("...")) {
                 let pat = self.parse_binding_pat_or_ident()?;
                 let pat = Pat::Rest(RestPat {
                     node_id: node_id!(self, span!(self, start)),
@@ -118,7 +116,7 @@ impl Parser<'_> {
         expect!(self, ']');
         // TS optional.
         if self.input.syntax().dts() || self.ctx().in_declare() {
-            self.input.eat(tok!('?'));
+            self.eat(tok!('?'));
         }
 
         Ok(Pat::Array(ArrayPat {
@@ -164,7 +162,7 @@ impl Parser<'_> {
         let mut opt = false;
 
         if self.input.syntax().typescript() {
-            if self.input.eat(tok!('?')) {
+            if self.eat(tok!('?')) {
                 match pat {
                     Pat::Ident(_) | Pat::Array(_) | Pat::Object(_) => {
                         opt = true;
@@ -206,7 +204,7 @@ impl Parser<'_> {
             }
         }
 
-        let pat = if self.input.eat(tok!('=')) {
+        let pat = if self.eat(tok!('=')) {
             // `=` cannot follow optional parameter.
             if opt {
                 self.emit_err(get_span!(self, pat.node_id()), SyntaxError::TS1015);
@@ -241,23 +239,23 @@ impl Parser<'_> {
         let mut params = vec![];
         let mut props = vec![];
 
-        while !eof!(self) && !self.input.is(tok!(')')) {
+        while !eof!(self) && !self.is(tok!(')')) {
             if first {
                 first = false;
             } else {
                 expect!(self, ',');
                 // Handle trailing comma.
-                if self.input.is(tok!(')')) {
+                if self.is(tok!(')')) {
                     break;
                 }
             }
 
             let param_start = self.input.cur_pos();
 
-            if self.input.eat(tok!("...")) {
+            if self.eat(tok!("...")) {
                 let pat = self.parse_binding_pat_or_ident()?;
                 // Type annotation.
-                if self.input.syntax().typescript() && self.input.is(tok!(':')) {
+                if self.input.syntax().typescript() && self.is(tok!(':')) {
                     self.parse_ts_type_ann(true)?;
                 }
 
@@ -334,7 +332,7 @@ impl Parser<'_> {
         let mut params = vec![];
         let mut seen_dot3 = false;
 
-        while !eof!(self) && !self.input.is(tok!(')')) {
+        while !eof!(self) && !self.is(tok!(')')) {
             if first {
                 first = false;
             } else {
@@ -343,23 +341,23 @@ impl Parser<'_> {
                 } else {
                     // We are handling error.
 
-                    self.input.eat(tok!(','));
+                    self.eat(tok!(','));
                 }
 
                 // Handle trailing comma.
-                if self.input.is(tok!(')')) {
+                if self.is(tok!(')')) {
                     break;
                 }
             }
 
             let param_start = self.input.cur_pos();
 
-            let pat = if self.input.eat(tok!("...")) {
+            let pat = if self.eat(tok!("...")) {
                 seen_dot3 = true;
 
                 let mut pat = self.parse_binding_pat_or_ident()?;
 
-                if self.input.eat(tok!('=')) {
+                if self.eat(tok!('=')) {
                     let right = self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap();
                     self.emit_err(get_span!(self, pat.node_id()), SyntaxError::TS1048);
                     pat = Pat::Assign(AssignPat {
@@ -370,7 +368,7 @@ impl Parser<'_> {
                 }
 
                 // Type annotation.
-                if self.input.syntax().typescript() && self.input.is(tok!(':')) {
+                if self.input.syntax().typescript() && self.is(tok!(':')) {
                     self.parse_ts_type_ann(true)?;
                 }
 
@@ -380,15 +378,15 @@ impl Parser<'_> {
                     arg: Box::new(pat),
                 });
 
-                if self.input.is(tok!(',')) {
-                    if self.input.peeked_is(tok!(')')) {
+                if self.is(tok!(',')) {
+                    if self.peeked_is(tok!(')')) {
                         syntax_error!(self, SyntaxError::CommaAfterRestElement);
                     } else {
                         syntax_error!(self, pat_span, SyntaxError::NonLastRestParam);
                     }
                 }
 
-                if self.syntax().typescript() && self.input.eat(tok!('?')) {
+                if self.syntax().typescript() && self.eat(tok!('?')) {
                     self.emit_err(self.input.prev_span(), SyntaxError::TS1047);
                 }
 

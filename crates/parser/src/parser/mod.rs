@@ -183,7 +183,7 @@ impl<'d> Parser<'d> {
         Ok(())
     }
 
-    pub fn is_ident_ref(&mut self) -> bool {
+    fn is_ident_ref(&mut self) -> bool {
         let ctxt = self.ctx();
         match self.input.cur() {
             Some(Word(w)) => !ctxt.is_reserved_word(w.get_name_id()),
@@ -200,12 +200,24 @@ impl<'d> Parser<'d> {
         }
     }
 
-    pub fn eat_ident_ref(&mut self) -> bool {
+    fn eat_ident_ref(&mut self) -> bool {
         if self.is_ident_ref() {
             self.input.bump();
             true
         } else {
             false
         }
+    }
+
+    fn is(&mut self, expected: Token) -> bool {
+        self.input.is(expected)
+    }
+
+    fn peeked_is(&mut self, expected: Token) -> bool {
+        self.input.peeked_is(expected)
+    }
+
+    fn eat(&mut self, expected: Token) -> bool {
+        self.input.eat(expected)
     }
 }
