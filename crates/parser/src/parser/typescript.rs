@@ -364,9 +364,8 @@ impl Parser<'_> {
     where
         F: FnOnce(&mut Self) -> PResult<Option<bool>>,
     {
-        if !self.syntax().typescript() {
-            return Ok(false);
-        }
+        debug_assert!(self.syntax().typescript());
+
         let prev_emit_err = self.emit_err;
 
         // TODO: use parser checkpoint/rewind for the TS lookaheads.
@@ -404,9 +403,7 @@ impl Parser<'_> {
     where
         F: FnOnce(&mut Self) -> PResult<Option<T>>,
     {
-        if !self.syntax().typescript() {
-            return None;
-        }
+        debug_assert!(self.syntax().typescript());
 
         let prev_emit_err = self.emit_err;
 
