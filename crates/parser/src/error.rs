@@ -13,8 +13,6 @@ pub struct Error {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-#[non_exhaustive]
-// TODO: order
 pub(super) enum SyntaxError {
     /// e.g. `new.\u0074arget` is not allowed
     EscapeInNewTarget,
@@ -206,7 +204,6 @@ pub(super) enum SyntaxError {
 impl SyntaxError {
     #[cold]
     #[inline(never)]
-    // TODO: sort
     pub fn msg(&self) -> Cow<'static, str> {
         match self {
             SyntaxError::EscapeInNewTarget => {

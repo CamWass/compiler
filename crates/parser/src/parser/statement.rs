@@ -923,7 +923,7 @@ impl Parser<'_> {
         self.assert_and_bump(tok!("throw"));
 
         if self.input.had_line_break_before_cur() {
-            // TODO(swc): Suggest throw arg;
+            // TODO: Suggest throw arg;
             syntax_error!(self, SyntaxError::LineBreakInThrow);
         }
 
@@ -952,7 +952,7 @@ impl Parser<'_> {
 
         if handler.is_none() && finalizer.is_none() {
             // self.raise(node.start, Errors.NoCatchOrFinally);
-            // TODO: is the babel's error message more descriptive than this:
+            // TODO: is babel's error message more descriptive than this?
             self.emit_err(Span::new(catch_start, catch_start), SyntaxError::TS1005);
         }
 

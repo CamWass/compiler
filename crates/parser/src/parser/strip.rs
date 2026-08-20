@@ -1171,7 +1171,7 @@ pub enum TsImportExportAssignConfig {
 //                     } else {
 //                         true
 //                     };
-//                     // TODO(nayeemrmn): For some reason TSC preserves `import foo = bar.baz`
+//                     // TODO: For some reason TSC preserves `import foo = bar.baz`
 //                     // when `bar.baz` is not defined, even if `foo` goes unused. We can't currently
 //                     // identify that case so we strip it anyway.
 //                     if !import.is_type_only && (has_concrete || import.is_export) {
@@ -2330,7 +2330,7 @@ pub enum TsImportExportAssignConfig {
 //                     } else {
 //                         true
 //                     };
-//                     // TODO(nayeemrmn): For some reason TSC preserves `import foo = bar.baz`
+//                     // TODO: For some reason TSC preserves `import foo = bar.baz`
 //                     // when `bar.baz` is not defined, even if `foo` goes unused. We can't currently
 //                     // identify that case so we strip it anyway.
 //                     if !import.is_type_only && (has_concrete || import.is_export) {

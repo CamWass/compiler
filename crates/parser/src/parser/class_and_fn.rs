@@ -485,7 +485,7 @@ impl Parser<'_> {
                 if self.syntax().typescript() && body.is_none() {
                     // Declare constructors cannot have assignment pattern in parameters
                     for p in &params {
-                        // TODO(swc): Search deeply for assignment pattern using a Visitor
+                        // TODO: Search deeply for assignment pattern using a Visitor
 
                         let span = match &p.pat {
                             Pat::Assign(p) => Some(get_span!(self, p.node_id())),
@@ -907,7 +907,7 @@ impl Parser<'_> {
                     if parser.syntax().typescript() {
                         // Declare functions cannot have assignment pattern in parameters
                         for param in &params {
-                            // TODO(swc): Search deeply for assignment pattern using a Visitor
+                            // TODO: Search deeply for assignment pattern using a Visitor
 
                             let span = match &param.pat {
                                 Pat::Assign(p) => Some(get_span!(parser, p.node_id)),

@@ -13,8 +13,10 @@ impl Parser<'_> {
         // Note: TypeScript's implementation is much more complicated because
         // more things are considered modifiers there.
         // This implementation only handles modifiers not handled by @babel/parser
-        // itself. And "static". TODO(swc): Would be nice to avoid lookahead.
-        // Want a hasLineBreakUpNext() method...
+        // itself. And "static".
+        // TODO: Would be nice to avoid the lookahead when calling this func.
+        // Want a hasLineBreakUpNext() method or something.
+
         self.input.bump();
         Ok(!self.input.had_line_break_before_cur()
             && !self.is(tok!('('))

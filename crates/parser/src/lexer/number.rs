@@ -111,7 +111,7 @@ impl Lexer<'_> {
                     || is_forbidden_numeric_separator_sibling(prev, radix)
                     || is_forbidden_numeric_separator_sibling(next, radix)
                 {
-                    // TODO: possible use babel's error
+                    // TODO: possibly use babel's error
                     // self.raise(self.state.pos, Errors.UnexpectedNumericSeparator);
                     self.emit_error(
                         start,
@@ -120,7 +120,7 @@ impl Lexer<'_> {
                 }
 
                 if !allow_num_separator {
-                    // TODO: possible use babel's error
+                    // TODO: possibly use babel's error
                     // self.raise(self.state.pos, Errors.NumericSeparatorInEscapeSequence);
                     self.emit_error(
                         start,
@@ -281,9 +281,6 @@ impl Lexer<'_> {
             }
 
             if starts_with_zero {
-                // TODO(swc): I guess it would be okay if I don't use -ffast-math
-                // (or something like that), but needs review.
-
                 if val == 0.0f64 {
                     // If only one zero is used, it's decimal.
                     // And if multiple zero is used, it's octal.
@@ -385,7 +382,7 @@ impl Lexer<'_> {
 
             let exp = self.read_number_no_dot(Radix::Dec)?;
             let flag = if positive { '+' } else { '-' };
-            // TODO(swc):
+            // TODO:
             val = format!("{val}e{flag}{exp}")
                 .parse()
                 .expect("failed to parse float literal");

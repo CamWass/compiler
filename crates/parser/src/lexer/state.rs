@@ -405,7 +405,7 @@ impl State {
         } else {
             match *next {
                 tok!(')') | tok!('}') => {
-                    // TODO(swc): Verify
+                    // TODO: Verify
                     if context.len() == 1 {
                         return true;
                     }

@@ -686,7 +686,7 @@ impl Parser<'_> {
                     let last = match expr {
                         // Rest
                         Some(ExprOrSpread::Spread(SpreadElement { expr, .. })) => {
-                            // TODO(swc): is BindingPat correct?
+                            // TODO: is BindingPat correct?
                             self.reparse_expr_as_pat(pat_ty.element(), expr)
                                 .map(|pat| {
                                     Pat::Rest(RestPat {
@@ -697,10 +697,10 @@ impl Parser<'_> {
                                 .map(Some)?
                         }
                         Some(ExprOrSpread::Expr(expr)) => {
-                            // TODO(swc): is BindingPat correct?
+                            // TODO: is BindingPat correct?
                             self.reparse_expr_as_pat(pat_ty.element(), expr).map(Some)?
                         }
-                        // TODO(swc): syntax error if last element is ellison and ...rest exists.
+                        // TODO: syntax error if last element is ellison and ...rest exists.
                         None => None,
                     };
                     params.push(last);

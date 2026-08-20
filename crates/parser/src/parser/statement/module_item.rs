@@ -93,7 +93,7 @@ impl Parser<'_> {
         let ctx = self.ctx();
         if matches!(self.input.cur(), Token::Word(w) if !ctx.is_reserved_word(w.get_name_id())) {
             let local = self.parse_imported_default_binding()?;
-            //TODO(swc): Better error reporting
+            //TODO: Better error reporting
             if !self.is(tok!("from")) {
                 expect!(self, ',');
             }

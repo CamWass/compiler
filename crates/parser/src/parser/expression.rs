@@ -188,7 +188,6 @@ impl Parser<'_> {
                         );
                     }
 
-                    // TODO(swc):
                     PatOrExpr::Expr(cond.unwrap())
                 };
 
@@ -197,7 +196,6 @@ impl Parser<'_> {
                 Ok(Box::new(Expr::Assign(AssignExpr {
                     node_id: node_id!(self, self.span(start)),
                     op,
-                    // TODO(swc):
                     left,
                     right,
                 }))
@@ -376,7 +374,7 @@ impl Parser<'_> {
             || (self.input.syntax().typescript() && matches!(self.input.cur(), Token::Word(_)))
             || self.is_ident_ref()
         {
-            // TODO(swc): Handle [Yield, Await]
+            // TODO: Handle [Yield, Await]
             let id = self.parse_ident_name()?;
             match id.name {
                 //                    id_for_built_in!("eval") | id_for_built_in!("arguments") => {
@@ -818,7 +816,7 @@ impl Parser<'_> {
         let mut items = vec![];
         let mut rest_span = None;
 
-        // TODO(kdy1): optimize (once we parsed a pattern, we can parse everything else
+        // TODO: optimize (once we parsed a pattern, we can parse everything else
         // as a pattern instead of reparsing)
         while !self.is(tok!(')')) {
             if first {
@@ -969,7 +967,7 @@ impl Parser<'_> {
             };
 
             if optional || (self.input.syntax().typescript() && self.is(tok!(':'))) {
-                // TODO(swc): `async(...args?: any[]) : any => {}`
+                // TODO: `async(...args?: any[]) : any => {}`
                 //
                 // if self.input.syntax().typescript() && optional && arg.spread.is_some() {
                 //     self.emit_err(self.input.prev_span(), SyntaxError::TS1047)
@@ -1413,7 +1411,7 @@ impl Parser<'_> {
             );
         }
 
-        // TODO(swc): Verify that invalid expression like {a = 1} does not exists.
+        // TODO: Verify that invalid expression like {a = 1} does not exists.
 
         // ParenthesizedExpression cannot contain spread.
         if expr_or_spreads.len() == 1 {
@@ -1609,7 +1607,7 @@ impl Parser<'_> {
         // If the length is 5 (the len of the word "async"), the ident does not
         // contain any escapes.
 
-        // TODO(swc): !this.state.containsEsc &&
+        // TODO: !this.state.containsEsc &&
 
         if let MaybeParen::Expr(expr) = &expr {
             match expr.as_ref() {
