@@ -235,7 +235,7 @@ impl Parser<'_> {
             })));
         }
 
-        match cur!(self, true) {
+        match self.input.cur() {
             tok!("break") | tok!("continue") => {
                 let is_break = self.is(tok!("break"));
                 self.input.bump();
@@ -494,7 +494,7 @@ impl Parser<'_> {
                 expr: expr.unwrap(),
             })))
         } else {
-            if let Token::BinOp(..) = *cur!(self, false) {
+            if let Token::BinOp(..) = self.input.cur() {
                 self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
                 let expr = self.parse_bin_op_recursively(expr, 0)?.unwrap();
                 return Ok(Some(Stmt::Expr(ExprStmt {

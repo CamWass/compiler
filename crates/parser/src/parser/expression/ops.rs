@@ -13,7 +13,7 @@ impl Parser<'_> {
 
         let left = match self.parse_unary_expr(assign_props) {
             Ok(v) => v,
-            Err(err) => match cur!(self, true) {
+            Err(err) => match self.input.cur() {
                 &Word(Word::Keyword(Keyword::In)) if include_in_expr => {
                     self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
 

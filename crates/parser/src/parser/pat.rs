@@ -36,7 +36,7 @@ impl Parser<'_> {
     }
 
     pub(super) fn parse_binding_pat_or_ident(&mut self) -> PResult<Pat> {
-        match *cur!(self, true) {
+        match self.input.cur() {
             tok!("yield") | Word(..) => self.parse_binding_ident().map(Pat::Ident),
             tok!('[') => self.parse_array_binding_pat(),
             tok!('{') => self.parse_object(&mut AssignProps::Ignore),
@@ -135,7 +135,7 @@ impl Parser<'_> {
     pub(super) fn eat_any_ts_modifier(&mut self) -> PResult<bool> {
         let has_modifier = self.syntax().typescript()
             && matches!(
-                *cur!(self, false),
+                self.input.cur(),
                 Word(Word::Ident(
                     id_for_built_in!("public")
                         | id_for_built_in!("protected")

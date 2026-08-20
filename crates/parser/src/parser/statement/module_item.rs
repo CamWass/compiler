@@ -129,7 +129,7 @@ impl Parser<'_> {
         let src = {
             expect!(self, "from");
             let str_start = self.input.cur_pos();
-            match *cur!(self, true) {
+            match self.input.cur() {
                 Token::Str { .. } => match self.input.bump() {
                     Token::Str { value } => Str {
                         node_id: node_id!(self, self.span(str_start)),
@@ -252,7 +252,7 @@ impl Parser<'_> {
         }
 
         if self.input.syntax().typescript() && is!(self, IdentName) {
-            let sym = match cur!(self, true) {
+            let sym = match self.input.cur() {
                 Token::Word(w) => w.get_name_id(),
                 _ => unreachable!(),
             };
@@ -592,7 +592,7 @@ impl Parser<'_> {
         expect!(self, "from");
 
         let str_start = self.input.cur_pos();
-        let src = match *cur!(self, true) {
+        let src = match self.input.cur() {
             Token::Str { .. } => match self.input.bump() {
                 Token::Str { value } => Str {
                     node_id: node_id!(self, self.span(str_start)),

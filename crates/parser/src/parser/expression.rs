@@ -105,7 +105,7 @@ impl Parser<'_> {
 
         let start = self.input.cur_pos();
 
-        self.potential_arrow_start = match *cur!(self, true) {
+        self.potential_arrow_start = match self.input.cur() {
             Word(Word::Ident(..)) | tok!('(') | tok!("yield") => Some(start),
             _ => None,
         };
@@ -154,7 +154,7 @@ impl Parser<'_> {
         assign_props: &mut AssignProps,
         mut inner_assign_props: Vec<Span>,
     ) -> PResult<MaybeParen> {
-        match *cur!(self, false) {
+        match *self.input.cur() {
             Token::AssignOp(op) => {
                 let left = if op == AssignOpToken::Assign {
                     self.reparse_expr_as_pat(PatType::AssignPat, cond.unwrap())
@@ -899,7 +899,6 @@ impl Parser<'_> {
                         || self.peeked_is(tok!('='))
                     {
                         self.assert_and_bump(tok!('?'));
-                        let _ = cur!(self, false);
                         if current_item_has_spread {
                             self.emit_err(self.input.prev_span(), SyntaxError::TS1047);
                         }
@@ -1526,7 +1525,7 @@ impl Parser<'_> {
     pub(super) fn parse_tpl_element(&mut self, is_tagged: bool) -> PResult<TplElement> {
         let start = self.input.cur_pos();
 
-        let (raw, has_invalid_escape) = match *cur!(self, true) {
+        let (raw, has_invalid_escape) = match self.input.cur() {
             Token::Template { .. } => match self.input.bump() {
                 Token::Template {
                     raw,
@@ -1629,7 +1628,7 @@ impl Parser<'_> {
     pub(super) fn parse_lit(&mut self) -> PResult<Lit> {
         let start = self.input.cur_pos();
 
-        let v = match *cur!(self, true) {
+        let v = match self.input.cur() {
             Word(Word::Null) => {
                 self.input.bump();
                 Lit::Null(Null {

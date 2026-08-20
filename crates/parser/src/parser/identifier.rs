@@ -54,7 +54,7 @@ impl Parser<'_> {
     pub(super) fn parse_ident_name(&mut self) -> PResult<Ident> {
         let start = self.input.cur_pos();
 
-        let w = match cur!(self, true) {
+        let w = match self.input.cur() {
             Word(..) => match self.input.bump() {
                 Word(w) => w,
                 _ => unreachable!(),
@@ -72,7 +72,7 @@ impl Parser<'_> {
         let start = self.input.cur_pos();
 
         let word = self.parse_with(|parser| {
-            let w = match cur!(parser, true) {
+            let w = match parser.input.cur() {
                 Word(..) => match parser.input.bump() {
                     Word(w) => w,
                     _ => unreachable!(),

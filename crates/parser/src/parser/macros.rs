@@ -1,23 +1,3 @@
-/// cur!($parser, required:bool)
-macro_rules! cur {
-    ($parser:expr, $required:expr) => {{
-        let is_err_token = match $parser.input.cur() {
-            $crate::token::Token::Error(..) => true,
-            _ => false,
-        };
-        if is_err_token {
-            match $parser.input.bump() {
-                $crate::token::Token::Error(e) => {
-                    return Err(e);
-                }
-                _ => unreachable!(),
-            }
-        }
-
-        $parser.input.cur()
-    }};
-}
-
 /// This handles automatic semicolon insertion.
 ///
 /// Returns bool.
