@@ -1255,11 +1255,8 @@ impl Parser<'_> {
         };
 
         self.with_ctx(ctx).parse_with(|parser| {
-            let has_existing_label = parser
-                .labels
-                .iter()
-                .any(|existing_label| label.name == *existing_label);
-            if has_existing_label {
+            let label_already_exists = parser.labels.contains(&label.name);
+            if label_already_exists {
                 let name = program_data!(parser).get_name_for_id(label.name).clone();
                 parser.emit_err(
                     get_span!(parser, label.node_id),

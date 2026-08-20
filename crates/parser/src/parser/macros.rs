@@ -79,7 +79,7 @@ macro_rules! node_id_from {
 
 macro_rules! program_data {
     ($parser:expr) => {
-        &mut $parser.input.program_data_mut()
+        $parser.input.program_data_mut()
     };
 }
 
