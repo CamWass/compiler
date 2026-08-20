@@ -14,7 +14,7 @@ impl Parser<'_> {
             self.eat_semi_with_asi();
 
             return Ok(ModuleItem::Stmt(Stmt::Expr(ExprStmt {
-                node_id: node_id!(self, span!(self, start)),
+                node_id: node_id!(self, self.span(start)),
                 expr,
             })));
         }
@@ -25,7 +25,7 @@ impl Parser<'_> {
             self.eat_semi_with_asi();
 
             return Ok(ModuleItem::Stmt(Stmt::Expr(ExprStmt {
-                node_id: node_id!(self, span!(self, start)),
+                node_id: node_id!(self, self.span(start)),
                 expr,
             })));
         }
@@ -57,14 +57,14 @@ impl Parser<'_> {
         if let Some(&Token::Str { .. }) = self.input.cur() {
             let src = match self.input.bump() {
                 Token::Str { value } => Str {
-                    node_id: node_id!(self, span!(self, str_start)),
+                    node_id: node_id!(self, self.span(str_start)),
                     value,
                 },
                 _ => unreachable!(),
             };
             self.expect_semi_with_asi()?;
             return Ok(ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
-                node_id: node_id!(self, span!(self, start)),
+                node_id: node_id!(self, self.span(start)),
                 src,
                 specifiers: vec![],
                 asserts: None,
@@ -107,7 +107,7 @@ impl Parser<'_> {
                 expect!(self, "as");
                 let local = self.parse_imported_binding()?;
                 specifiers.push(ImportSpecifier::Namespace(ImportStarAsSpecifier {
-                    node_id: node_id!(self, span!(self, import_spec_start)),
+                    node_id: node_id!(self, self.span(import_spec_start)),
                     local,
                 }));
             } else if self.eat(tok!('{')) {
@@ -131,7 +131,7 @@ impl Parser<'_> {
             match *cur!(self, true)? {
                 Token::Str { .. } => match self.input.bump() {
                     Token::Str { value } => Str {
-                        node_id: node_id!(self, span!(self, str_start)),
+                        node_id: node_id!(self, self.span(str_start)),
                         value,
                     },
                     _ => unreachable!(),
@@ -155,7 +155,7 @@ impl Parser<'_> {
         self.expect_semi_with_asi()?;
 
         Ok(ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
-            node_id: node_id!(self, span!(self, start)),
+            node_id: node_id!(self, self.span(start)),
             specifiers,
             src,
             asserts,
@@ -193,7 +193,7 @@ impl Parser<'_> {
 
             let local = orig_name;
             Ok(ImportSpecifier::Named(ImportNamedSpecifier {
-                node_id: node_id!(self, span!(self, start)),
+                node_id: node_id!(self, self.span(start)),
                 local,
                 imported: None,
             }))
@@ -238,7 +238,7 @@ impl Parser<'_> {
             if let Some(decl) = self.try_parse_ts_declare(after_export_start)? {
                 return match decl {
                     DeclOrEmpty::Decl(decl) => Ok(Some(ModuleDecl::ExportDecl(ExportDecl {
-                        node_id: node_id!(self, span!(self, start)),
+                        node_id: node_id!(self, self.span(start)),
                         decl,
                     }))),
                     DeclOrEmpty::Empty => Ok(None),
@@ -254,7 +254,7 @@ impl Parser<'_> {
             if let Some(decl) = self.try_parse_ts_export_decl(sym) {
                 return match decl {
                     DeclOrEmpty::Decl(decl) => Ok(Some(ModuleDecl::ExportDecl(ExportDecl {
-                        node_id: node_id!(self, span!(self, start)),
+                        node_id: node_id!(self, self.span(start)),
                         decl,
                     }))),
                     DeclOrEmpty::Empty => Ok(None),
@@ -278,7 +278,7 @@ impl Parser<'_> {
                 // self.expect_semi_with_asi()?;
                 // return Ok(TsExportAssignment {
                 //     node_id: node_id!(self),
-                //     span: span!(self, start),
+                //     span: self.span(start),
                 //     expr,
                 // }
                 // .into());
@@ -293,7 +293,7 @@ impl Parser<'_> {
                 todo!();
                 // return Ok(TsNamespaceExportDecl {
                 //     node_id: node_id!(self),
-                //     span: span!(self, start),
+                //     span: self.span(start),
                 //     id,
                 // }
                 // .into());
@@ -311,7 +311,7 @@ impl Parser<'_> {
             if self.is(tok!("from")) {
                 let (src, asserts) = self.parse_from_clause_and_semi()?;
                 return Ok(Some(ModuleDecl::ExportAll(ExportAll {
-                    node_id: node_id!(self, span!(self, start)),
+                    node_id: node_id!(self, self.span(start)),
                     src,
                     asserts,
                 })));
@@ -319,7 +319,7 @@ impl Parser<'_> {
             if self.eat(tok!("as")) {
                 let name = self.parse_ident_name()?;
                 export_ns = Some(ExportSpecifier::Namespace(ExportNamespaceSpecifier {
-                    node_id: node_id!(self, span!(self, ns_export_specifier_start)),
+                    node_id: node_id!(self, self.span(ns_export_specifier_start)),
                     name,
                 }));
             }
@@ -353,7 +353,7 @@ impl Parser<'_> {
                     //     .map(DefaultDecl::from)?;
                     // return Ok(ExportDefaultDecl {
                     //     node_id: node_id!(self),
-                    //     span: span!(self, start),
+                    //     span: self.span(start),
                     //     decl,
                     // }
                     // .into());
@@ -385,7 +385,7 @@ impl Parser<'_> {
                     .unwrap();
                 self.expect_semi_with_asi()?;
                 return Ok(Some(ModuleDecl::ExportDefaultExpr(ExportDefaultExpr {
-                    node_id: node_id!(self, span!(self, start)),
+                    node_id: node_id!(self, self.span(start)),
                     expr,
                 })));
             }
@@ -417,7 +417,7 @@ impl Parser<'_> {
             //     .map(|decl| {
             //         ModuleDecl::ExportDecl(ExportDecl {
             //             node_id: node_id!(self),
-            //             span: span!(self, start),
+            //             span: self.span(start),
             //             decl,
             //         })
             //     });
@@ -529,7 +529,7 @@ impl Parser<'_> {
                 if has_default || has_ns {
                     syntax_error!(
                         self,
-                        span!(self, start),
+                        self.span(start),
                         SyntaxError::ExportDefaultWithOutFrom
                     );
                 }
@@ -540,7 +540,7 @@ impl Parser<'_> {
                 None => (None, None),
             };
             return Ok(Some(ModuleDecl::ExportNamed(NamedExport {
-                node_id: node_id!(self, span!(self, start)),
+                node_id: node_id!(self, self.span(start)),
                 specifiers,
                 src,
                 asserts,
@@ -549,7 +549,7 @@ impl Parser<'_> {
 
         Ok(decl.map(|decl| {
             ModuleDecl::ExportDecl(ExportDecl {
-                node_id: node_id!(self, span!(self, start)),
+                node_id: node_id!(self, self.span(start)),
                 decl,
             })
         }))
@@ -567,7 +567,7 @@ impl Parser<'_> {
         };
 
         Ok(ExportNamedSpecifier {
-            node_id: node_id!(self, span!(self, start)),
+            node_id: node_id!(self, self.span(start)),
             orig,
             exported,
         })
@@ -581,7 +581,7 @@ impl Parser<'_> {
         let src = match *cur!(self, true)? {
             Token::Str { .. } => match self.input.bump() {
                 Token::Str { value } => Str {
-                    node_id: node_id!(self, span!(self, str_start)),
+                    node_id: node_id!(self, self.span(str_start)),
                     value,
                 },
                 _ => unreachable!(),

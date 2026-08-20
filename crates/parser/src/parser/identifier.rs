@@ -30,14 +30,14 @@ impl Parser<'_> {
         if self.input.cur_pos() - hash_end != BytePos(0) {
             syntax_error!(
                 self,
-                span!(self, start),
+                self.span(start),
                 SyntaxError::SpaceBetweenHashAndIdent
             );
         }
 
         let id = self.parse_ident_name()?;
         Ok(PrivateName {
-            node_id: node_id!(self, span!(self, start)),
+            node_id: node_id!(self, self.span(start)),
             id,
         })
     }
@@ -62,7 +62,7 @@ impl Parser<'_> {
             _ => syntax_error!(self, SyntaxError::ExpectedIdent),
         };
 
-        Ok(self.new_ident(w.get_name_id(), span!(self, start)))
+        Ok(self.new_ident(w.get_name_id(), self.span(start)))
     }
 
     /// Identifier
@@ -132,7 +132,7 @@ impl Parser<'_> {
             }
         })?;
 
-        Ok(self.new_ident(word, span!(self, start)))
+        Ok(self.new_ident(word, self.span(start)))
     }
 }
 

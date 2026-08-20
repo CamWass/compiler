@@ -1,18 +1,3 @@
-macro_rules! span {
-    ($parser:expr, $start:expr) => {{
-        let start: ::common::BytePos = $start;
-        let end: ::common::BytePos = $parser.input.prev_span().hi;
-
-        debug_assert!(
-            start <= end,
-            "assertion failed: (span.start <= span.end). start = {}, end = {}",
-            start.0,
-            end.0
-        );
-        ::common::Span::new(start, end)
-    }};
-}
-
 /// cur!($parser, required:bool)
 macro_rules! cur {
     ($parser:expr, $required:expr) => {{
@@ -180,21 +165,15 @@ macro_rules! return_if_arrow {
     }};
 }
 
-macro_rules! make_error {
-    ($parser:expr, $span:expr, $err:expr) => {{
-        crate::error::Error {
-            error: Box::new(($span, $err)),
-        }
-    }};
-}
-
 macro_rules! syntax_error {
     ($parser:expr, $err:expr) => {
         syntax_error!($parser, $parser.input.cur_span(), $err)
     };
 
     ($parser:expr, $span:expr, $err:expr) => {{
-        let err = make_error!($parser, $span, $err);
+        let err = crate::error::Error {
+            error: Box::new(($span, $err)),
+        };
         return Err(err.into());
     }};
 }

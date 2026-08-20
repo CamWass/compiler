@@ -346,7 +346,7 @@ impl Parser<'_> {
                 op!("--")
             };
 
-            let span = span!(self, get_span!(self, expr.node_id()).lo());
+            let span = self.span(get_span!(self, expr.node_id()).lo());
             return Ok(Box::new(Expr::Update(UpdateExpr {
                 node_id: node_id!(self, span),
                 prefix: false,
@@ -369,13 +369,13 @@ impl Parser<'_> {
 
         if (self.is(tok!(')')) || self.is(tok!(']'))) && !self.ctx().in_async() {
             return Ok(Box::new(Expr::Ident(
-                self.new_ident(id_for_built_in!("await"), span!(self, start)),
+                self.new_ident(id_for_built_in!("await"), self.span(start)),
             )));
         }
 
         let arg = self.parse_unary_expr(&mut AssignProps::Emit)?.unwrap();
         Ok(Box::new(Expr::Await(AwaitExpr {
-            node_id: node_id!(self, span!(self, start)),
+            node_id: node_id!(self, self.span(start)),
             arg,
         })))
     }

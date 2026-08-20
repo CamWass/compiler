@@ -95,7 +95,7 @@ impl Parser<'_> {
                 if parser.syntax().typescript() && parser.is(tok!('<')) {
                     parser.parse_ts_type_args()?;
                 }
-                let span = span!(parser, start);
+                let span = parser.span(start);
 
                 if parser.syntax().typescript() && parser.eat(tok!(',')) {
                     parser.eat_ts_heritage_clause(|parser, span| {
@@ -148,7 +148,7 @@ impl Parser<'_> {
 
                 if extends_clause.is_none() {
                     extends_clause = Some(ExtendsClause {
-                        node_id: node_id!(parser, span!(parser, start)),
+                        node_id: node_id!(parser, parser.span(start)),
                         super_class,
                     });
                 }
@@ -162,7 +162,7 @@ impl Parser<'_> {
             expect!(parser, '}');
             let end = parser.input.last_pos();
             Ok(T::finish_class(
-                span!(parser, start),
+                parser.span(start),
                 ident,
                 Class {
                     node_id: node_id!(parser, Span::new(class_start, end)),
@@ -213,7 +213,7 @@ impl Parser<'_> {
             // Handle declare(){}
             if self.is_class_method() {
                 let key = Key::PropName(PropName::Ident(
-                    self.new_ident(id_for_built_in!("declare"), span!(self, start)),
+                    self.new_ident(id_for_built_in!("declare"), self.span(start)),
                 ));
                 // TS optional.
                 if self.syntax().typescript() {
@@ -235,12 +235,12 @@ impl Parser<'_> {
                 // Property named `declare`
 
                 let key = Key::PropName(PropName::Ident(
-                    self.new_ident(id_for_built_in!("declare"), span!(self, start)),
+                    self.new_ident(id_for_built_in!("declare"), self.span(start)),
                 ));
                 let is_optional = self.syntax().typescript() && self.eat(tok!('?'));
                 return self.make_property(start, key, false, is_optional, false, false);
             } else {
-                Some(span!(self, start))
+                Some(self.span(start))
             }
         } else {
             None
@@ -249,7 +249,7 @@ impl Parser<'_> {
         let static_token = {
             let start = self.input.cur_pos();
             if self.eat(tok!("static")) {
-                Some(span!(self, start))
+                Some(self.span(start))
             } else {
                 None
             }
@@ -391,10 +391,10 @@ impl Parser<'_> {
             // generator method
             let key = self.parse_class_prop_name()?;
             if readonly.is_some() {
-                self.emit_err(span!(self, start), SyntaxError::ReadOnlyMethod);
+                self.emit_err(self.span(start), SyntaxError::ReadOnlyMethod);
             }
             if is_constructor(&key) {
-                self.emit_err(span!(self, start), SyntaxError::GeneratorConstructor);
+                self.emit_err(self.span(start), SyntaxError::GeneratorConstructor);
             }
 
             return self.make_method(
@@ -430,16 +430,13 @@ impl Parser<'_> {
             }
 
             if readonly.is_some() {
-                syntax_error!(self, span!(self, start), SyntaxError::ReadOnlyMethod);
+                syntax_error!(self, self.span(start), SyntaxError::ReadOnlyMethod);
             }
             let is_constructor = is_constructor(&key);
 
             if is_constructor {
                 if self.syntax().typescript() && is_override {
-                    self.emit_err(
-                        span!(self, start),
-                        SyntaxError::TS1089(js_word!("override")),
-                    );
+                    self.emit_err(self.span(start), SyntaxError::TS1089(js_word!("override")));
                 }
 
                 if self.syntax().typescript() && self.is(tok!('<')) {
@@ -449,8 +446,8 @@ impl Parser<'_> {
                         let start2 = self.input.cur_pos();
                         self.assert_and_bump(tok!('>'));
 
-                        self.emit_err(span!(self, start), SyntaxError::TS1098);
-                        self.emit_err(span!(self, start2), SyntaxError::TS1092);
+                        self.emit_err(self.span(start), SyntaxError::TS1098);
+                        self.emit_err(self.span(start2), SyntaxError::TS1092);
                     } else {
                         self.try_eat_ts_type_params(|p, span| {
                             p.emit_err(span, SyntaxError::TS1092);
@@ -523,7 +520,7 @@ impl Parser<'_> {
                 };
 
                 return Ok(Some(ClassMember::Constructor(Constructor {
-                    node_id: node_id!(self, span!(self, start)),
+                    node_id: node_id!(self, self.span(start)),
                     params,
                     body,
                 })));
@@ -574,7 +571,7 @@ impl Parser<'_> {
                 )
             }
             if readonly.is_some() {
-                syntax_error!(self, span!(self, start), SyntaxError::ReadOnlyMethod);
+                syntax_error!(self, self.span(start), SyntaxError::ReadOnlyMethod);
             }
 
             // handle async foo(){}
@@ -731,13 +728,13 @@ impl Parser<'_> {
 
             Ok(Some(match key {
                 Key::PrivateName(key) => ClassMember::PrivateProp(PrivateProp {
-                    node_id: node_id!(parser, span!(parser, start)),
+                    node_id: node_id!(parser, parser.span(start)),
                     key,
                     value,
                     is_static,
                 }),
                 Key::PropName(key) => ClassMember::ClassProp(ClassProp {
-                    node_id: node_id!(parser, span!(parser, start)),
+                    node_id: node_id!(parser, parser.span(start)),
                     key,
                     value,
                     is_static,
@@ -785,7 +782,7 @@ impl Parser<'_> {
         let is_generator = {
             if self.eat(tok!('*')) {
                 // if is_async {
-                //     syntax_error!(self, span!(self, start), SyntaxError::AsyncGenerator {});
+                //     syntax_error!(self, self.span(start), SyntaxError::AsyncGenerator {});
                 // }
                 true
             } else {
@@ -825,7 +822,7 @@ impl Parser<'_> {
 
             Ok(f.map(|f| {
                 T::finish_fn(
-                    span!(parser, start_of_output_type.unwrap_or(start)),
+                    parser.span(start_of_output_type.unwrap_or(start)),
                     ident,
                     f,
                     parser,
@@ -929,7 +926,7 @@ impl Parser<'_> {
             flags.set(FnFlags::GENERATOR, is_generator);
 
             Ok(Some(Function {
-                node_id: node_id!(parser, span!(parser, start)),
+                node_id: node_id!(parser, parser.span(start)),
                 params,
                 body,
                 flags,
@@ -1014,7 +1011,7 @@ impl Parser<'_> {
 
         Ok(Some(match key {
             Key::PrivateName(key) => ClassMember::PrivateMethod(PrivateMethod {
-                node_id: node_id!(self, span!(self, start)),
+                node_id: node_id!(self, self.span(start)),
 
                 is_static,
                 key,
@@ -1022,7 +1019,7 @@ impl Parser<'_> {
                 kind,
             }),
             Key::PropName(key) => ClassMember::Method(ClassMethod {
-                node_id: node_id!(self, span!(self, start)),
+                node_id: node_id!(self, self.span(start)),
 
                 is_static,
                 key,

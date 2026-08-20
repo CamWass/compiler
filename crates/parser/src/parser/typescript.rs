@@ -157,7 +157,7 @@ impl Parser<'_> {
         } = init
         {
             let dot_start = self.input.cur_pos();
-            let dot_span = span!(self, dot_start);
+            let dot_span = self.span(dot_start);
             self.emit_err(dot_span, SyntaxError::TS1005);
         }
         while self.eat(tok!('.')) {
@@ -194,7 +194,7 @@ impl Parser<'_> {
         }
 
         if has_modifier {
-            self.emit_err(span!(self, start), SyntaxError::TS2369);
+            self.emit_err(self.span(start), SyntaxError::TS2369);
         }
 
         Ok(())
@@ -275,7 +275,7 @@ impl Parser<'_> {
         // Default:
         self.eat_then_parse_ts_type(tok!('='))?;
 
-        Ok(span!(self, start))
+        Ok(self.span(start))
     }
 
     /// `tsParseTypeParameter`
@@ -495,7 +495,7 @@ impl Parser<'_> {
             }
             Token::Num { .. } => {
                 self.input.bump();
-                let span = span!(self, start);
+                let span = self.span(start);
 
                 // Recover from error
                 self.emit_err(span, SyntaxError::TS2452);
@@ -504,7 +504,7 @@ impl Parser<'_> {
                 self.assert_and_bump(tok!('['));
                 let _ = self.parse_expr(&mut AssignProps::Emit)?;
 
-                self.emit_err(span!(self, start), SyntaxError::TS1164);
+                self.emit_err(self.span(start), SyntaxError::TS1164);
 
                 expect!(self, ']');
             }
@@ -622,7 +622,7 @@ impl Parser<'_> {
         // False type:
         self.parse_ts_type()?;
 
-        Ok(span!(self, start))
+        Ok(self.span(start))
     }
 
     /// `tsParseNonConditionalType`
@@ -633,16 +633,16 @@ impl Parser<'_> {
 
         if self.is_ts_start_of_fn_type()? {
             self.parse_ts_fn_or_constructor_type(true)?;
-            return Ok(span!(self, start));
+            return Ok(self.span(start));
         }
         if (self.is(tok!("abstract")) && peeked_is!(self, "new")) || self.is(tok!("new")) {
             // As in `new () => Date`
             self.parse_ts_fn_or_constructor_type(false)?;
-            return Ok(span!(self, start));
+            return Ok(self.span(start));
         }
 
         self.parse_ts_union_type_or_higher()?;
-        Ok(span!(self, start))
+        Ok(self.span(start))
     }
 
     fn is_ts_start_of_fn_type(&mut self) -> PResult<bool> {
@@ -698,7 +698,7 @@ impl Parser<'_> {
             self.parse_ts_type_args()?;
         }
 
-        Ok(span!(self, start))
+        Ok(self.span(start))
     }
     /// `tsParseInterfaceDeclaration`
     pub(super) fn parse_ts_interface_decl(&mut self) -> PResult<()> {
@@ -978,7 +978,7 @@ impl Parser<'_> {
 
         // Type annotation:
         self.parse_ts_type_ann(false)?;
-        let span = span!(self, ident_start);
+        let span = self.span(ident_start);
         set_span!(self, id.id.node_id, span);
 
         expect!(self, ']');
@@ -1204,7 +1204,7 @@ impl Parser<'_> {
                     seen_optional_element = true;
                 }
                 TupleElementType::Other if seen_optional_element => {
-                    syntax_error!(p, span!(p, start), SyntaxError::TsRequiredAfterOptional)
+                    syntax_error!(p, p.span(start), SyntaxError::TsRequiredAfterOptional)
                 }
                 TupleElementType::Other => {}
             }
@@ -1231,7 +1231,7 @@ impl Parser<'_> {
 
             Ok(Some(if rest {
                 Pat::Rest(RestPat {
-                    node_id: node_id!(p, span!(p, start)),
+                    node_id: node_id!(p, p.span(start)),
                     arg: Box::new(Pat::Ident(BindingIdent::from_ident(ident))),
                 })
             } else {
@@ -1603,7 +1603,7 @@ impl Parser<'_> {
         );
 
         if self.ctx().in_declare() {
-            let span_of_declare = span!(self, start);
+            let span_of_declare = self.span(start);
             self.emit_err(span_of_declare, SyntaxError::TS1038);
         }
 
@@ -1795,7 +1795,7 @@ impl Parser<'_> {
             let body: BlockStmtOrExpr = p.parse_fn_body(true, false)?;
             let body = p.make_arrow_fn_block(body);
             Ok(Some(ArrowExpr {
-                node_id: node_id!(p, span!(p, start)),
+                node_id: node_id!(p, p.span(start)),
                 body,
                 is_async,
                 params,

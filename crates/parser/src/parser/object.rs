@@ -32,7 +32,7 @@ impl Parser<'_> {
             props.push(prop);
         }
 
-        self.make_object(span!(self, start), props)
+        self.make_object(self.span(start), props)
     }
 
     /// spec: 'PropertyName'
@@ -47,28 +47,28 @@ impl Parser<'_> {
             let v = match *cur!(parser, true)? {
                 Token::Str { .. } => match parser.input.bump() {
                     Token::Str { value } => PropName::Str(Str {
-                        node_id: node_id!(parser, span!(parser, start)),
+                        node_id: node_id!(parser, parser.span(start)),
                         value,
                     }),
                     _ => unreachable!(),
                 },
                 Token::Num { .. } => match parser.input.bump() {
                     Token::Num(value) => PropName::Num(Number {
-                        node_id: node_id!(parser, span!(parser, start)),
+                        node_id: node_id!(parser, parser.span(start)),
                         value,
                     }),
                     _ => unreachable!(),
                 },
                 Token::BigInt(_) => match parser.input.bump() {
                     Token::BigInt(value) => PropName::BigInt(BigInt {
-                        node_id: node_id!(parser, span!(parser, start)),
+                        node_id: node_id!(parser, parser.span(start)),
                         value,
                     }),
                     _ => unreachable!(),
                 },
                 Word(..) => match parser.input.bump() {
                     Word(w) => {
-                        PropName::Ident(parser.new_ident(w.get_name_id(), span!(parser, start)))
+                        PropName::Ident(parser.new_ident(w.get_name_id(), parser.span(start)))
                     }
                     _ => unreachable!(),
                 },
@@ -93,10 +93,10 @@ impl Parser<'_> {
                             );
                         }
 
-                        parser.emit_err(span!(parser, inner_start), SyntaxError::TS1171);
+                        parser.emit_err(parser.span(inner_start), SyntaxError::TS1171);
 
                         expr = Box::new(Expr::Seq(SeqExpr {
-                            node_id: node_id!(parser, span!(parser, inner_start)),
+                            node_id: node_id!(parser, parser.span(inner_start)),
                             exprs,
                         }));
                     }
@@ -104,7 +104,7 @@ impl Parser<'_> {
                     expect!(parser, ']');
 
                     PropName::Computed(ComputedPropName {
-                        node_id: node_id!(parser, span!(parser, start)),
+                        node_id: node_id!(parser, parser.span(start)),
                         expr,
                     })
                 }
@@ -188,7 +188,7 @@ impl ParseObject<Box<Expr>> for Parser<'_> {
                 node_id: node_id!(self, span),
                 key,
                 value: Box::new(Expr::Invalid(Invalid {
-                    node_id: node_id!(self, span!(self, start)),
+                    node_id: node_id!(self, self.span(start)),
                 })),
             }));
         }
@@ -313,7 +313,7 @@ impl ParseObject<Box<Expr>> for Parser<'_> {
                             }
 
                             Prop::Getter(GetterProp {
-                                node_id: node_id!(self, span!(self, start)),
+                                node_id: node_id!(self, self.span(start)),
                                 key,
                                 body,
                             })
@@ -351,7 +351,7 @@ impl ParseObject<Box<Expr>> for Parser<'_> {
                         .map(|Function { params, body, .. }| {
                             // debug_assert_eq!(params.len(), 1);
                             Prop::Setter(SetterProp {
-                                node_id: node_id!(self, span!(self, start)),
+                                node_id: node_id!(self, self.span(start)),
                                 key,
                                 body,
                                 param: params.into_iter().next().unwrap_or_else(|| {
@@ -448,7 +448,7 @@ impl ParseObject<Pat> for Parser<'_> {
             let arg = Box::new(self.parse_binding_pat_or_ident()?);
 
             return Ok(ObjectPatProp::Rest(RestPat {
-                node_id: node_id!(self, span!(self, start)),
+                node_id: node_id!(self, self.span(start)),
                 arg,
             }));
         }

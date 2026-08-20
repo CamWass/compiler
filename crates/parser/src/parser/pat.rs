@@ -62,11 +62,11 @@ impl Parser<'_> {
                 .unwrap();
 
             if self.ctx().in_declare() {
-                self.emit_err(span!(self, start), SyntaxError::TS2371);
+                self.emit_err(self.span(start), SyntaxError::TS2371);
             }
 
             return Ok(Pat::Assign(AssignPat {
-                node_id: node_id!(self, span!(self, start)),
+                node_id: node_id!(self, self.span(start)),
                 left: Box::new(left),
                 right,
             }));
@@ -102,7 +102,7 @@ impl Parser<'_> {
             if self.eat(tok!("...")) {
                 let pat = self.parse_binding_pat_or_ident()?;
                 let pat = Pat::Rest(RestPat {
-                    node_id: node_id!(self, span!(self, start)),
+                    node_id: node_id!(self, self.span(start)),
                     arg: Box::new(pat),
                 });
                 elems.push(Some(pat));
@@ -120,7 +120,7 @@ impl Parser<'_> {
         }
 
         Ok(Pat::Array(ArrayPat {
-            node_id: node_id!(self, span!(self, start)),
+            node_id: node_id!(self, self.span(start)),
             elems,
         }))
     }
@@ -212,11 +212,11 @@ impl Parser<'_> {
 
             let right = self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap();
             if self.ctx().in_declare() {
-                self.emit_err(span!(self, start), SyntaxError::TS2371);
+                self.emit_err(self.span(start), SyntaxError::TS2371);
             }
 
             Pat::Assign(AssignPat {
-                node_id: node_id!(self, span!(self, start)),
+                node_id: node_id!(self, self.span(start)),
                 left: Box::new(pat),
                 right,
             })
@@ -225,7 +225,7 @@ impl Parser<'_> {
         };
 
         if has_modifier {
-            self.emit_err(span!(self, start), SyntaxError::TS2369);
+            self.emit_err(self.span(start), SyntaxError::TS2369);
             return Ok(pat);
         }
 
@@ -260,11 +260,11 @@ impl Parser<'_> {
                 }
 
                 let pat = Pat::Rest(RestPat {
-                    node_id: node_id!(self, span!(self, param_start)),
+                    node_id: node_id!(self, self.span(param_start)),
                     arg: Box::new(pat),
                 });
                 params.push(Param {
-                    node_id: node_id!(self, span!(self, param_start)),
+                    node_id: node_id!(self, self.span(param_start)),
                     pat,
                 });
                 break;
@@ -320,7 +320,7 @@ impl Parser<'_> {
         };
         Ok((
             Param {
-                node_id: node_id!(self, span!(self, param_start)),
+                node_id: node_id!(self, self.span(param_start)),
                 pat,
             },
             prop,
@@ -361,7 +361,7 @@ impl Parser<'_> {
                     let right = self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap();
                     self.emit_err(get_span!(self, pat.node_id()), SyntaxError::TS1048);
                     pat = Pat::Assign(AssignPat {
-                        node_id: node_id!(self, span!(self, param_start)),
+                        node_id: node_id!(self, self.span(param_start)),
                         left: Box::new(pat),
                         right,
                     });
@@ -372,7 +372,7 @@ impl Parser<'_> {
                     self.parse_ts_type_ann(true)?;
                 }
 
-                let pat_span = span!(self, param_start);
+                let pat_span = self.span(param_start);
                 let pat = Pat::Rest(RestPat {
                     node_id: node_id!(self, pat_span),
                     arg: Box::new(pat),
@@ -396,7 +396,7 @@ impl Parser<'_> {
             };
 
             params.push(Param {
-                node_id: node_id!(self, span!(self, param_start)),
+                node_id: node_id!(self, self.span(param_start)),
                 pat,
             });
         }

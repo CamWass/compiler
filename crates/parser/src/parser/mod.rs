@@ -77,7 +77,7 @@ impl<'d> Parser<'d> {
         let start = self.input.cur_pos();
 
         self.parse_block_body(true, true, None).map(|body| Script {
-            node_id: node_id!(self, span!(self, start)),
+            node_id: node_id!(self, self.span(start)),
             body,
         })
     }
@@ -91,7 +91,7 @@ impl<'d> Parser<'d> {
 
         Ok(if self.ctx().is_module() {
             Program::Module(Module {
-                node_id: node_id!(self, span!(self, start)),
+                node_id: node_id!(self, self.span(start)),
                 body,
             })
         } else {
@@ -103,7 +103,7 @@ impl<'d> Parser<'d> {
                 })
                 .collect();
             Program::Script(Script {
-                node_id: node_id!(self, span!(self, start)),
+                node_id: node_id!(self, self.span(start)),
                 body,
             })
         })
@@ -121,7 +121,7 @@ impl<'d> Parser<'d> {
         let start = self.input.cur_pos();
 
         self.parse_block_body(true, true, None).map(|body| Module {
-            node_id: node_id!(self, span!(self, start)),
+            node_id: node_id!(self, self.span(start)),
             body,
         })
     }
@@ -219,5 +219,14 @@ impl<'d> Parser<'d> {
 
     fn eat(&mut self, expected: Token) -> bool {
         self.input.eat(expected)
+    }
+
+    fn span(&self, start: BytePos) -> Span {
+        let end = self.input.prev_span().hi;
+        debug_assert!(
+            start <= end,
+            "assertion failed: (span.start <= span.end). start = {start:?}, end = {end:?}",
+        );
+        Span::new(start, end)
     }
 }

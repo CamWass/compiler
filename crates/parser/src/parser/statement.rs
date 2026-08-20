@@ -88,7 +88,7 @@ impl StmtLikeParser<Stmt> for Parser<'_> {
             self.eat_semi_with_asi();
 
             return Ok(Some(Stmt::Expr(ExprStmt {
-                node_id: node_id!(self, span!(self, start)),
+                node_id: node_id!(self, self.span(start)),
                 expr,
             })));
         }
@@ -100,7 +100,7 @@ impl StmtLikeParser<Stmt> for Parser<'_> {
             self.eat_semi_with_asi();
 
             return Ok(Some(Stmt::Expr(ExprStmt {
-                node_id: node_id!(self, span!(self, start)),
+                node_id: node_id!(self, self.span(start)),
                 expr,
             })));
         }
@@ -216,7 +216,7 @@ impl Parser<'_> {
             let expr = self.parse_await_expr()?;
             self.eat_semi_with_asi();
 
-            let span = span!(self, start);
+            let span = self.span(start);
             return Ok(Some(Stmt::Expr(ExprStmt {
                 node_id: node_id!(self, span),
                 expr,
@@ -228,7 +228,7 @@ impl Parser<'_> {
             self.assert_and_bump(tok!("enum"));
             self.parse_ts_enum_decl()?;
             return Ok(Some(Stmt::Empty(EmptyStmt {
-                node_id: node_id!(self, span!(self, start)),
+                node_id: node_id!(self, self.span(start)),
             })));
         }
 
@@ -245,7 +245,7 @@ impl Parser<'_> {
                     ident
                 };
 
-                let span = span!(self, start);
+                let span = self.span(start);
 
                 self.verify_break_continue(is_break, label.as_ref(), span);
 
@@ -378,7 +378,7 @@ impl Parser<'_> {
             tok!(';') => {
                 self.input.bump();
                 return Ok(Some(Stmt::Empty(EmptyStmt {
-                    node_id: node_id!(self, span!(self, start)),
+                    node_id: node_id!(self, self.span(start)),
                 })));
             }
 
@@ -442,7 +442,7 @@ impl Parser<'_> {
                     self.eat_semi_with_asi();
 
                     return Ok(Some(Stmt::Expr(ExprStmt {
-                        node_id: node_id!(self, span!(self, start)),
+                        node_id: node_id!(self, self.span(start)),
                         expr: expr.unwrap(),
                     })));
                 }
@@ -475,7 +475,7 @@ impl Parser<'_> {
                                 self.emit_err(get_span!(self, ident.node_id), SyntaxError::TS2427);
                                 self.parse_ts_interface_decl()?;
                                 return Ok(Some(Stmt::Empty(EmptyStmt {
-                                    node_id: node_id!(self, span!(self, start)),
+                                    node_id: node_id!(self, self.span(start)),
                                 })));
                             }
                         }
@@ -487,7 +487,7 @@ impl Parser<'_> {
 
         if self.eat_semi_with_asi() {
             Ok(Some(Stmt::Expr(ExprStmt {
-                node_id: node_id!(self, span!(self, start)),
+                node_id: node_id!(self, self.span(start)),
                 expr: expr.unwrap(),
             })))
         } else {
@@ -495,7 +495,7 @@ impl Parser<'_> {
                 self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
                 let expr = self.parse_bin_op_recursively(expr, 0)?.unwrap();
                 return Ok(Some(Stmt::Expr(ExprStmt {
-                    node_id: node_id!(self, span!(self, start)),
+                    node_id: node_id!(self, self.span(start)),
                     expr,
                 })));
             }
@@ -527,7 +527,7 @@ impl Parser<'_> {
         self.input.bump();
         self.expect_semi_with_asi()?;
         Ok(Stmt::Debugger(DebuggerStmt {
-            node_id: node_id!(self, span!(self, start)),
+            node_id: node_id!(self, self.span(start)),
         }))
     }
 
@@ -562,7 +562,7 @@ impl Parser<'_> {
         self.eat(tok!(';'));
 
         Ok(Stmt::DoWhile(DoWhileStmt {
-            node_id: node_id!(self, span!(self, start)),
+            node_id: node_id!(self, self.span(start)),
             test,
             body,
         }))
@@ -581,7 +581,7 @@ impl Parser<'_> {
 
         let await_start = self.input.cur_pos();
         let await_token = if self.eat(tok!("await")) {
-            Some(span!(self, await_start))
+            Some(self.span(await_start))
         } else {
             None
         };
@@ -601,7 +601,7 @@ impl Parser<'_> {
             .parse_stmt(StmtParseCtx::Other, false)
             .map(Box::new)?;
 
-        let span = span!(self, start);
+        let span = self.span(start);
         Ok(match head {
             ForHead::For { init, test, update } => {
                 if let Some(await_token) = await_token {
@@ -774,7 +774,7 @@ impl Parser<'_> {
         if !self.eat(tok!(')')) {
             self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
 
-            let span = span!(self, start);
+            let span = self.span(start);
             return Ok(Stmt::If(IfStmt {
                 node_id: node_id!(self, span),
                 test,
@@ -801,7 +801,7 @@ impl Parser<'_> {
         };
 
         Ok(Stmt::If(IfStmt {
-            node_id: node_id!(self, span!(self, start)),
+            node_id: node_id!(self, self.span(start)),
             test,
             cons: consequent,
             alt: alternate,
@@ -829,10 +829,10 @@ impl Parser<'_> {
         self.expect_semi_with_asi()?;
 
         if !self.ctx().in_function() {
-            self.emit_err(span!(self, start), SyntaxError::ReturnNotAllowed);
+            self.emit_err(self.span(start), SyntaxError::ReturnNotAllowed);
         }
         Ok(Stmt::Return(ReturnStmt {
-            node_id: node_id!(self, span!(self, start)),
+            node_id: node_id!(self, self.span(start)),
             arg,
         }))
     }
@@ -878,7 +878,7 @@ impl Parser<'_> {
                     if let Some(previous) = span_of_previous_default {
                         syntax_error!(parser, SyntaxError::MultipleDefault { previous });
                     }
-                    span_of_previous_default = Some(span!(parser, case_start));
+                    span_of_previous_default = Some(parser.span(case_start));
 
                     None
                 };
@@ -909,7 +909,7 @@ impl Parser<'_> {
         expect!(self, '}');
 
         Ok(Stmt::Switch(SwitchStmt {
-            node_id: node_id!(self, span!(self, switch_start)),
+            node_id: node_id!(self, self.span(switch_start)),
             discriminant,
             cases,
         }))
@@ -932,7 +932,7 @@ impl Parser<'_> {
         self.expect_semi_with_asi()?;
 
         Ok(Stmt::Throw(ThrowStmt {
-            node_id: node_id!(self, span!(self, start)),
+            node_id: node_id!(self, self.span(start)),
             arg,
         }))
     }
@@ -955,7 +955,7 @@ impl Parser<'_> {
         }
 
         Ok(Stmt::Try(Box::new(TryStmt {
-            node_id: node_id!(self, span!(self, start)),
+            node_id: node_id!(self, self.span(start)),
             block,
             handler,
             finalizer,
@@ -970,7 +970,7 @@ impl Parser<'_> {
 
             self.parse_block(false)
                 .map(|body| CatchClause {
-                    node_id: node_id!(self, span!(self, start)),
+                    node_id: node_id!(self, self.span(start)),
                     param,
                     body,
                 })
@@ -1014,7 +1014,7 @@ impl Parser<'_> {
             tok!("var") => VarDeclKind::Var,
             _ => unreachable!(),
         };
-        let var_span = span!(self, start);
+        let var_span = self.span(start);
         let should_include_in = kind != VarDeclKind::Var || !for_loop;
 
         if self.syntax().typescript() && for_loop {
@@ -1040,7 +1040,7 @@ impl Parser<'_> {
                     self.emit_err(span, SyntaxError::TS1123);
 
                     return Ok(VarDecl {
-                        node_id: node_id!(self, span!(self, start)),
+                        node_id: node_id!(self, self.span(start)),
                         kind,
                         decls: vec![],
                     });
@@ -1110,7 +1110,7 @@ impl Parser<'_> {
         }
 
         Ok(VarDecl {
-            node_id: node_id!(self, span!(self, start)),
+            node_id: node_id!(self, self.span(start)),
             kind,
             decls,
         })
@@ -1146,7 +1146,7 @@ impl Parser<'_> {
                     match name {
                         Pat::Ident(..) => None,
                         _ => {
-                            syntax_error!(self, span!(self, start), SyntaxError::PatVarWithoutInit)
+                            syntax_error!(self, self.span(start), SyntaxError::PatVarWithoutInit)
                         }
                     }
                 }
@@ -1158,7 +1158,7 @@ impl Parser<'_> {
 
         Ok((
             VarDeclarator {
-                node_id: node_id!(self, span!(self, start)),
+                node_id: node_id!(self, self.span(start)),
                 name,
                 init,
             },
@@ -1185,7 +1185,7 @@ impl Parser<'_> {
             .map(Box::new)?;
 
         Ok(Stmt::While(WhileStmt {
-            node_id: node_id!(self, span!(self, start)),
+            node_id: node_id!(self, self.span(start)),
             test,
             body,
         }))
@@ -1218,7 +1218,7 @@ impl Parser<'_> {
             .map(Box::new)?;
 
         Ok(Stmt::With(WithStmt {
-            node_id: node_id!(self, span!(self, start)),
+            node_id: node_id!(self, self.span(start)),
             obj,
             body,
         }))
@@ -1235,7 +1235,7 @@ impl Parser<'_> {
 
         let stmts = self.parse_block_body(allow_directives, false, Some(tok!('}')))?;
 
-        let span = span!(self, start);
+        let span = self.span(start);
         Ok(BlockStmt {
             node_id: node_id!(self, span),
             stmts,
@@ -1287,7 +1287,7 @@ impl Parser<'_> {
             }
 
             Ok(Stmt::Labeled(LabeledStmt {
-                node_id: node_id!(parser, span!(parser, get_span!(parser, label.node_id).lo())),
+                node_id: node_id!(parser, parser.span(get_span!(parser, label.node_id).lo())),
                 label,
                 body,
             }))

@@ -39,7 +39,7 @@ impl Parser<'_> {
             }
 
             return Ok(Box::new(Expr::Seq(SeqExpr {
-                node_id: node_id!(self, span!(self, start)),
+                node_id: node_id!(self, self.span(start)),
                 exprs,
             }))
             .into());
@@ -184,7 +184,7 @@ impl Parser<'_> {
                 self.input.bump();
                 let right = self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap();
                 Ok(Box::new(Expr::Assign(AssignExpr {
-                    node_id: node_id!(self, span!(self, start)),
+                    node_id: node_id!(self, self.span(start)),
                     op,
                     // TODO(swc):
                     left,
@@ -267,7 +267,7 @@ impl Parser<'_> {
                 tok!("this") => {
                     self.input.bump();
                     return Ok(Box::new(Expr::This(ThisExpr {
-                        node_id: node_id!(self, span!(self, start)),
+                        node_id: node_id!(self, self.span(start)),
                     }))
                     .into());
                 }
@@ -339,7 +339,7 @@ impl Parser<'_> {
                 Token::Regex(..) => match self.input.bump() {
                     Token::Regex(exp, flags) => {
                         return Ok(Box::new(Expr::Lit(Lit::Regex(Regex {
-                            node_id: node_id!(self, span!(self, start)),
+                            node_id: node_id!(self, self.span(start)),
                             exp,
                             flags,
                         })))
@@ -401,7 +401,7 @@ impl Parser<'_> {
                 let body = self.make_arrow_fn_block(body);
 
                 return Ok(Box::new(Expr::Arrow(Box::new(ArrowExpr {
-                    node_id: node_id!(self, span!(self, start)),
+                    node_id: node_id!(self, self.span(start)),
                     body,
                     params,
                     is_async: true,
@@ -417,7 +417,7 @@ impl Parser<'_> {
                 let body = self.make_arrow_fn_block(body);
 
                 return Ok(Box::new(Expr::Arrow(Box::new(ArrowExpr {
-                    node_id: node_id!(self, span!(self, start)),
+                    node_id: node_id!(self, self.span(start)),
                     body,
                     params,
                     is_async: false,
@@ -474,7 +474,7 @@ impl Parser<'_> {
 
         expect!(self, ']');
 
-        let node_id = node_id!(self, span!(self, start));
+        let node_id = node_id!(self, self.span(start));
 
         if let Some(trailing_comma_span) = trailing_comma_span {
             self.trailing_commas_after_rest
@@ -573,7 +573,7 @@ impl Parser<'_> {
 
                         Ok(Some((
                             Box::new(Expr::Call(CallExpr {
-                                node_id: node_id!(p, span!(p, start)),
+                                node_id: node_id!(p, p.span(start)),
                                 callee: obj.clone_node(program_data!(p)).unwrap(),
                                 args,
                             }))
@@ -614,7 +614,7 @@ impl Parser<'_> {
             ($e:expr) => {{
                 if has_question_dot_token {
                     Expr::OptChain(OptChainExpr {
-                        node_id: node_id!(self, span!(self, start)),
+                        node_id: node_id!(self, self.span(start)),
                         expr: Box::new($e),
                     })
                 } else {
@@ -661,7 +661,7 @@ impl Parser<'_> {
             let args = self.parse_args(is_import(&obj))?;
             return Ok((
                 Box::new(wrap!(Expr::Call(CallExpr {
-                    node_id: node_id!(self, span!(self, start)),
+                    node_id: node_id!(self, self.span(start)),
                     callee: obj.unwrap(),
                     args,
                 })))
@@ -677,7 +677,7 @@ impl Parser<'_> {
                 PrivateNameOrIdentifier::PrivateName(p) => Expr::PrivateName(p),
                 PrivateNameOrIdentifier::Identifier(i) => Expr::Ident(i),
             })?);
-            let span = span!(self, get_span!(self, obj.node_id()).lo());
+            let span = self.span(get_span!(self, obj.node_id()).lo());
             debug_assert_eq!(get_span!(self, obj.node_id()).lo(), span.lo());
             debug_assert_eq!(get_span!(self, prop.node_id()).hi(), span.hi());
 
@@ -720,7 +720,7 @@ impl Parser<'_> {
         // `super()` can't be handled from parse_new_expr()
         if self.eat(tok!("super")) {
             let obj = MaybeParenExprOrSuper::Super(Super {
-                node_id: node_id!(self, span!(self, start)),
+                node_id: node_id!(self, self.span(start)),
             });
             return self.parse_subscripts(obj, false);
         }
@@ -768,7 +768,7 @@ impl Parser<'_> {
             let args = self.parse_args(is_import(&callee))?;
 
             let call_expr = Box::new(Expr::Call(CallExpr {
-                node_id: node_id!(self, span!(self, start)),
+                node_id: node_id!(self, self.span(start)),
 
                 callee: callee.unwrap(),
                 args,
@@ -985,7 +985,7 @@ impl Parser<'_> {
                     }
                     rest_span = Some(span);
                     pat = Pat::Rest(RestPat {
-                        node_id: node_id!(self, span!(self, pat_start)),
+                        node_id: node_id!(self, self.span(pat_start)),
                         arg: Box::new(pat),
                     });
                 }
@@ -1018,20 +1018,20 @@ impl Parser<'_> {
                 if self.eat(tok!('=')) {
                     let right = self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap();
                     pat = Pat::Assign(AssignPat {
-                        node_id: node_id!(self, span!(self, pat_start)),
+                        node_id: node_id!(self, self.span(pat_start)),
                         left: Box::new(pat),
                         right,
                     });
                 }
 
                 if has_modifier {
-                    self.emit_err(span!(self, modifier_start), SyntaxError::TS2369);
+                    self.emit_err(self.span(modifier_start), SyntaxError::TS2369);
                 }
 
                 items.push(MaybeParenPatOrExprOrSpread::Pat(pat));
             } else {
                 if has_modifier {
-                    self.emit_err(span!(self, modifier_start), SyntaxError::TS2369);
+                    self.emit_err(self.span(modifier_start), SyntaxError::TS2369);
                 }
 
                 items.push(match arg {
@@ -1066,7 +1066,7 @@ impl Parser<'_> {
                 let body: BlockStmtOrExpr = self.parse_fn_body(false, false)?;
                 let body = self.make_arrow_fn_block(body);
                 expect!(self, ')');
-                let span = span!(self, start);
+                let span = self.span(start);
 
                 return Ok(vec![MaybeParenPatOrExprOrSpread::Expr(
                     Box::new(Expr::Arrow(Box::new(ArrowExpr {
@@ -1094,7 +1094,7 @@ impl Parser<'_> {
     ) -> PResult<MaybeParen> {
         let start = self.input.cur_pos();
         if self.eat(tok!("new")) {
-            let span_of_new = span!(self, start);
+            let span_of_new = self.span(start);
             if self.eat(tok!('.')) {
                 if self.eat(tok!("target")) {
                     let span_of_target = self.input.cur_span();
@@ -1143,7 +1143,7 @@ impl Parser<'_> {
 
                 let new_expr = MaybeParenExprOrSuper::Expr(
                     Box::new(Expr::New(NewExpr {
-                        node_id: node_id!(self, span!(self, start)),
+                        node_id: node_id!(self, self.span(start)),
                         callee,
                         args,
                     }))
@@ -1158,7 +1158,7 @@ impl Parser<'_> {
             // Parsed with 'NewExpression' production.
 
             return Ok(Box::new(Expr::New(NewExpr {
-                node_id: node_id!(self, span!(self, start)),
+                node_id: node_id!(self, self.span(start)),
                 callee,
                 args: None,
             }))
@@ -1167,7 +1167,7 @@ impl Parser<'_> {
 
         if self.eat(tok!("super")) {
             let base = MaybeParenExprOrSuper::Super(Super {
-                node_id: node_id!(self, span!(self, start)),
+                node_id: node_id!(self, self.span(start)),
             });
             return self.parse_subscripts(base, true);
         }
@@ -1204,7 +1204,7 @@ impl Parser<'_> {
                     if is_dynamic_import {
                         syntax_error!(
                             self,
-                            span!(self, start),
+                            self.span(start),
                             SyntaxError::TrailingCommaInsideImport
                         )
                     }
@@ -1297,7 +1297,7 @@ impl Parser<'_> {
                 let body = p.make_arrow_fn_block(body);
 
                 Ok(Some(Box::new(Expr::Arrow(Box::new(ArrowExpr {
-                    node_id: node_id!(p, span!(p, expr_start)),
+                    node_id: node_id!(p, p.span(expr_start)),
                     is_async: async_span.is_some(),
                     params,
                     body,
@@ -1322,12 +1322,12 @@ impl Parser<'_> {
             if self.input.had_line_break_before_cur() {
                 syntax_error!(
                     self,
-                    span!(self, expr_start),
+                    self.span(expr_start),
                     SyntaxError::LineBreakBeforeArrow
                 );
             }
             if !can_be_arrow {
-                syntax_error!(self, span!(self, expr_start), SyntaxError::ArrowNotAllowed);
+                syntax_error!(self, self.span(expr_start), SyntaxError::ArrowNotAllowed);
             }
             expect!(self, "=>");
 
@@ -1341,7 +1341,7 @@ impl Parser<'_> {
             let is_block = matches!(body, BlockStmtOrExpr::BlockStmt(_));
             let body = self.make_arrow_fn_block(body);
             let arrow_expr = Box::new(ArrowExpr {
-                node_id: node_id!(self, span!(self, expr_start)),
+                node_id: node_id!(self, self.span(expr_start)),
                 is_async: async_span.is_some(),
                 params,
                 body,
@@ -1384,7 +1384,7 @@ impl Parser<'_> {
         if let Some(async_span) = async_span {
             // It's a call expression
             return Ok(Box::new(Expr::Call(CallExpr {
-                node_id: node_id!(self, span!(self, async_span.lo())),
+                node_id: node_id!(self, self.span(async_span.lo())),
                 callee: ExprOrSuper::Expr(Box::new(Expr::Ident(
                     self.new_ident(id_for_built_in!("async"), async_span),
                 ))),
@@ -1491,7 +1491,7 @@ impl Parser<'_> {
 
         let tpl = self.parse_tpl(true)?;
 
-        let span = span!(self, tagged_tpl_start);
+        let span = self.span(tagged_tpl_start);
         Ok(TaggedTpl {
             node_id: node_id!(self, span),
             tag,
@@ -1509,7 +1509,7 @@ impl Parser<'_> {
         expect!(self, '`');
 
         Ok(Tpl {
-            node_id: node_id!(self, span!(self, start)),
+            node_id: node_id!(self, self.span(start)),
             exprs,
             quasis,
         })
@@ -1525,7 +1525,7 @@ impl Parser<'_> {
                     has_invalid_escape,
                 } => (
                     Str {
-                        node_id: node_id!(self, span!(self, start)),
+                        node_id: node_id!(self, self.span(start)),
                         value: raw,
                     },
                     has_invalid_escape,
@@ -1536,15 +1536,11 @@ impl Parser<'_> {
         };
 
         if has_invalid_escape && (!is_tagged || self.input.target() < JscTarget::Es2018) {
-            syntax_error!(
-                self,
-                span!(self, start),
-                SyntaxError::InvalidEscapeInTemplate
-            )
+            syntax_error!(self, self.span(start), SyntaxError::InvalidEscapeInTemplate)
         }
 
         Ok(TplElement {
-            node_id: node_id!(self, span!(self, start)),
+            node_id: node_id!(self, self.span(start)),
             raw,
         })
     }
@@ -1576,7 +1572,7 @@ impl Parser<'_> {
             || (!self.is(tok!('*')) && !self.input.cur().map(Token::starts_expr).unwrap_or(true))
         {
             Ok(Box::new(Expr::Yield(YieldExpr {
-                node_id: node_id!(self, span!(self, start)),
+                node_id: node_id!(self, self.span(start)),
                 arg: None,
                 delegate: false,
             })))
@@ -1585,7 +1581,7 @@ impl Parser<'_> {
             let arg = self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap();
 
             Ok(Box::new(Expr::Yield(YieldExpr {
-                node_id: node_id!(self, span!(self, start)),
+                node_id: node_id!(self, self.span(start)),
                 arg: Some(arg),
                 delegate: has_star,
             })))
@@ -1624,7 +1620,7 @@ impl Parser<'_> {
             Word(Word::Null) => {
                 self.input.bump();
                 Lit::Null(Null {
-                    node_id: node_id!(self, span!(self, start)),
+                    node_id: node_id!(self, self.span(start)),
                 })
             }
             Word(Word::True) | Word(Word::False) => {
@@ -1632,27 +1628,27 @@ impl Parser<'_> {
                 self.input.bump();
 
                 Lit::Bool(Bool {
-                    node_id: node_id!(self, span!(self, start)),
+                    node_id: node_id!(self, self.span(start)),
                     value,
                 })
             }
             Token::Str { .. } => match self.input.bump() {
                 Token::Str { value } => Lit::Str(Str {
-                    node_id: node_id!(self, span!(self, start)),
+                    node_id: node_id!(self, self.span(start)),
                     value,
                 }),
                 _ => unreachable!(),
             },
             Token::Num { .. } => match self.input.bump() {
                 Token::Num(value) => Lit::Num(Number {
-                    node_id: node_id!(self, span!(self, start)),
+                    node_id: node_id!(self, self.span(start)),
                     value,
                 }),
                 _ => unreachable!(),
             },
             Token::BigInt(..) => match self.input.bump() {
                 Token::BigInt(value) => Lit::BigInt(BigInt {
-                    node_id: node_id!(self, span!(self, start)),
+                    node_id: node_id!(self, self.span(start)),
                     value,
                 }),
                 _ => unreachable!(),
@@ -1664,12 +1660,12 @@ impl Parser<'_> {
 
     fn parse_dynamic_import(&mut self, start: BytePos, import_ident: Ident) -> PResult<MaybeParen> {
         if !self.input.syntax().dynamic_import() {
-            syntax_error!(self, span!(self, start), SyntaxError::DynamicImport);
+            syntax_error!(self, self.span(start), SyntaxError::DynamicImport);
         }
 
         let args = self.parse_args(true)?;
         let import = Box::new(Expr::Call(CallExpr {
-            node_id: node_id!(self, span!(self, start)),
+            node_id: node_id!(self, self.span(start)),
             callee: ExprOrSuper::Expr(Box::new(Expr::Ident(import_ident))),
             args,
         }))
