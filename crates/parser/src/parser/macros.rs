@@ -65,13 +65,6 @@ macro_rules! is {
             _ => false,
         }
     }};
-
-    ($parser:expr, ';') => {{
-        match $parser.input.cur() {
-            Some(Token::Semi) | None | Some(tok!('}')) => true,
-            _ => $parser.input.had_line_break_before_cur(),
-        }
-    }};
 }
 
 macro_rules! peeked_is {

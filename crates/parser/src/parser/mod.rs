@@ -162,6 +162,14 @@ impl<'d> Parser<'d> {
     }
 
     /// Handles automatic semicolon insertion.
+    fn is_semi_with_asi(&mut self) -> bool {
+        match self.input.cur() {
+            None | Some(tok!('}') | Token::Semi) => true,
+            _ => self.input.had_line_break_before_cur(),
+        }
+    }
+
+    /// Handles automatic semicolon insertion.
     fn eat_semi_with_asi(&mut self) -> bool {
         match self.input.cur() {
             Some(Token::Semi) => {

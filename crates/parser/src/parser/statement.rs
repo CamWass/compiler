@@ -817,7 +817,7 @@ impl Parser<'_> {
         // optional arguments, we eagerly look for a semicolon or the
         // possibility to insert one.
 
-        let arg = if is!(self, ';') {
+        let arg = if self.is_semi_with_asi() {
             None
         } else {
             self.include_in_expr(true)

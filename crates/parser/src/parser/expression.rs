@@ -1353,7 +1353,7 @@ impl Parser<'_> {
                     let errored_expr =
                         self.parse_bin_op_recursively(Box::new(Expr::Arrow(arrow_expr)).into(), 0)?;
 
-                    if !is!(self, ';') {
+                    if !self.is_semi_with_asi() {
                         // ; is required
                         self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
                     }
@@ -1568,7 +1568,7 @@ impl Parser<'_> {
             syntax_error!(self, self.input.prev_span(), SyntaxError::YieldParamInGen)
         }
 
-        if is!(self, ';')
+        if self.is_semi_with_asi()
             || (!self.is(tok!('*')) && !self.input.cur().map(Token::starts_expr).unwrap_or(true))
         {
             Ok(Box::new(Expr::Yield(YieldExpr {
