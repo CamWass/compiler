@@ -98,7 +98,7 @@ impl Parser<'_> {
         if self.input.syntax().typescript()
             && PREC_OF_IN > min_prec
             && !self.input.had_line_break_before_cur()
-            && is!(self, "as")
+            && self.input.is(&tok!("as"))
         {
             let expr = left;
             let node = if peeked_is!(self, "const") {
@@ -239,7 +239,7 @@ impl Parser<'_> {
         }
 
         // Parse update expression
-        if is!(self, "++") || is!(self, "--") {
+        if self.input.is(&tok!("++")) || self.input.is(&tok!("--")) {
             let op = if self.input.bump() == tok!("++") {
                 op!("++")
             } else {
@@ -311,7 +311,9 @@ impl Parser<'_> {
             .into());
         }
 
-        if (self.ctx().in_async() || self.syntax().top_level_await()) && is!(self, "await") {
+        if (self.ctx().in_async() || self.syntax().top_level_await())
+            && self.input.is(&tok!("await"))
+        {
             return self.parse_await_expr().map(From::from);
         }
 
@@ -352,7 +354,7 @@ impl Parser<'_> {
 
         self.assert_and_bump(&tok!("await"));
 
-        if is!(self, '*') {
+        if self.input.is(&tok!('*')) {
             syntax_error!(self, SyntaxError::AwaitStar);
         }
 

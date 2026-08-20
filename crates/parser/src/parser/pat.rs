@@ -6,7 +6,9 @@ use util::{AssignProps, is_valid_simple_assignment_target};
 
 impl Parser<'_> {
     pub(super) fn parse_opt_binding_ident(&mut self) -> PResult<Option<BindingIdent>> {
-        if is!(self, BindingIdent) || (self.input.syntax().typescript() && is!(self, "this")) {
+        if is!(self, BindingIdent)
+            || (self.input.syntax().typescript() && self.input.is(&tok!("this")))
+        {
             self.parse_binding_ident().map(Some)
         } else {
             Ok(None)
@@ -368,7 +370,7 @@ impl Parser<'_> {
                 }
 
                 // Type annotation.
-                if self.input.syntax().typescript() && is!(self, ':') {
+                if self.input.syntax().typescript() && self.input.is(&tok!(':')) {
                     self.parse_ts_type_ann(true)?;
                 }
 
@@ -378,7 +380,7 @@ impl Parser<'_> {
                     arg: Box::new(pat),
                 });
 
-                if is!(self, ',') {
+                if self.input.is(&tok!(',')) {
                     if self.input.peeked_is(&tok!(')')) {
                         syntax_error!(self, SyntaxError::CommaAfterRestElement);
                     } else {

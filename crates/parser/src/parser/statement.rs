@@ -82,7 +82,7 @@ pub enum StmtParseCtx {
 impl StmtLikeParser<Stmt> for Parser<'_> {
     fn handle_import_export(&mut self, _: bool) -> PResult<Option<Stmt>> {
         let start = self.input.cur_pos();
-        if self.input.syntax().dynamic_import() && is!(self, "import") {
+        if self.input.syntax().dynamic_import() && self.input.is(&tok!("import")) {
             let expr = self.parse_expr(&mut AssignProps::Emit)?.unwrap();
 
             self.eat_semi_with_asi();
@@ -94,7 +94,7 @@ impl StmtLikeParser<Stmt> for Parser<'_> {
         }
 
         if self.input.syntax().import_meta()
-            && is!(self, "import")
+            && self.input.is(&tok!("import"))
             && self.input.peeked_is(&tok!('.'))
         {
             let expr = self.parse_expr(&mut AssignProps::Emit)?.unwrap();
@@ -191,7 +191,7 @@ impl Parser<'_> {
     {
         let start = self.input.cur_pos();
 
-        if is_one_of!(self, "import", "export") {
+        if self.input.is(&tok!("import")) || self.input.is(&tok!("export")) {
             return self.handle_import_export(top_level);
         }
 
@@ -208,7 +208,7 @@ impl Parser<'_> {
         // start with. Many are trivial to parse, some require a bit of
         // complexity.
 
-        if top_level && is!(self, "await") {
+        if top_level && self.input.is(&tok!("await")) {
             let valid = self.target() >= JscTarget::Es2017 && self.syntax().top_level_await();
 
             if !valid {
@@ -225,7 +225,10 @@ impl Parser<'_> {
             })));
         }
 
-        if self.input.syntax().typescript() && is!(self, "const") && peeked_is!(self, "enum") {
+        if self.input.syntax().typescript()
+            && self.input.is(&tok!("const"))
+            && peeked_is!(self, "enum")
+        {
             self.assert_and_bump(&tok!("const"));
             self.assert_and_bump(&tok!("enum"));
             self.parse_ts_enum_decl()?;
@@ -687,7 +690,7 @@ impl Parser<'_> {
 
         // for (a of b)
         if is_one_of!(self, "of", "in") {
-            let is_in = is!(self, "in");
+            let is_in = self.input.is(&tok!("in"));
 
             let pat = self.reparse_expr_as_pat(PatType::AssignPat, init.unwrap())?;
 
@@ -1121,7 +1124,7 @@ impl Parser<'_> {
         }
 
         // Typescript extension
-        let type_annotation = if self.input.syntax().typescript() && is!(self, ':') {
+        let type_annotation = if self.input.syntax().typescript() && self.input.is(&tok!(':')) {
             self.try_parse_ts_type_ann()?
         } else {
             None

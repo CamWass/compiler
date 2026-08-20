@@ -81,7 +81,7 @@ impl Parser<'_> {
                         .parse_assignment_expr(&mut AssignProps::Emit)?
                         .unwrap();
 
-                    if parser.syntax().typescript() && is!(parser, ',') {
+                    if parser.syntax().typescript() && parser.input.is(&tok!(',')) {
                         let mut exprs = vec![*expr];
 
                         while parser.input.eat(&tok!(',')) {
@@ -170,8 +170,8 @@ impl ParseObject<Box<Expr>> for Parser<'_> {
 
         if self.input.syntax().typescript()
             && !is_one_of!(self, '(', '[', ':', ',', '?', '=', '*', IdentName, Str, Num)
-            && !(self.input.syntax().typescript() && is!(self, '<'))
-            && !(is!(self, '}') && matches!(key, PropName::Ident(..)))
+            && !(self.input.syntax().typescript() && self.input.is(&tok!('<')))
+            && !(self.input.is(&tok!('}')) && matches!(key, PropName::Ident(..)))
         {
             self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
             let span = Span::new(key_start, self.input.cur_pos());
@@ -202,7 +202,9 @@ impl ParseObject<Box<Expr>> for Parser<'_> {
         }
 
         // Handle `a(){}` (and async(){} / get(){} / set(){})
-        if (self.input.syntax().typescript() && is!(self, '<')) || is!(self, '(') {
+        if (self.input.syntax().typescript() && self.input.is(&tok!('<')))
+            || self.input.is(&tok!('('))
+        {
             return self
                 .parse_fn_args_body(start, Parser::parse_unique_formal_params, false, false)
                 .map(|function| {

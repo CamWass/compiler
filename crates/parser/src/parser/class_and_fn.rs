@@ -87,12 +87,12 @@ impl Parser<'_> {
                 parser.try_eat_ts_type_params(|_, _| {})?;
             }
 
-            let mut extends_clause = if is!(parser, "extends") {
+            let mut extends_clause = if parser.input.is(&tok!("extends")) {
                 let start = parser.input.cur_pos();
                 parser.input.bump();
                 let super_class = parser.parse_lhs_expr(&mut AssignProps::Emit)?.unwrap();
                 // Super type params.
-                if parser.syntax().typescript() && is!(parser, '<') {
+                if parser.syntax().typescript() && parser.input.is(&tok!('<')) {
                     parser.parse_ts_type_args()?;
                 }
                 let span = span!(parser, start);
@@ -116,7 +116,7 @@ impl Parser<'_> {
                 parser.emit_err(parser.input.prev_span(), SyntaxError::TS1172);
 
                 parser.parse_lhs_expr(&mut AssignProps::Emit)?;
-                if parser.syntax().typescript() && is!(parser, '<') {
+                if parser.syntax().typescript() && parser.input.is(&tok!('<')) {
                     parser.parse_ts_type_args()?;
                 }
             };
@@ -135,14 +135,14 @@ impl Parser<'_> {
             }
 
             // Handle TS1173
-            if parser.syntax().typescript() && is!(parser, "extends") {
+            if parser.syntax().typescript() && parser.input.is(&tok!("extends")) {
                 parser.emit_err(parser.input.cur_span(), SyntaxError::TS1173);
                 let start = parser.input.cur_pos();
                 parser.input.bump();
 
                 let super_class = parser.parse_lhs_expr(&mut AssignProps::Emit)?.unwrap();
                 // Super type params.
-                if parser.syntax().typescript() && is!(parser, '<') {
+                if parser.syntax().typescript() && parser.input.is(&tok!('<')) {
                     parser.parse_ts_type_args()?;
                 }
 
@@ -176,7 +176,7 @@ impl Parser<'_> {
 
     fn parse_class_body(&mut self) -> PResult<Vec<ClassMember>> {
         let mut elems = vec![];
-        while !eof!(self) && !is!(self, '}') {
+        while !eof!(self) && !self.input.is(&tok!('}')) {
             if self.input.eat(&tok!(';')) {
                 continue;
             }
@@ -442,7 +442,7 @@ impl Parser<'_> {
                     );
                 }
 
-                if self.syntax().typescript() && is!(self, '<') {
+                if self.syntax().typescript() && self.input.is(&tok!('<')) {
                     let start = self.input.cur_pos();
                     if peeked_is!(self, '>') {
                         self.assert_and_bump(&tok!('<'));
@@ -463,7 +463,7 @@ impl Parser<'_> {
                 let (params, param_props) = self.parse_constructor_params()?;
                 expect!(self, ')');
 
-                if self.syntax().typescript() && is!(self, ':') {
+                if self.syntax().typescript() && self.input.is(&tok!(':')) {
                     let type_ann_span = self.parse_ts_type_ann(true)?;
 
                     self.emit_err(type_ann_span, SyntaxError::TS1093);
@@ -597,7 +597,8 @@ impl Parser<'_> {
             );
         }
 
-        let is_next_line_generator = self.input.had_line_break_before_cur() && is!(self, '*');
+        let is_next_line_generator =
+            self.input.had_line_break_before_cur() && self.input.is(&tok!('*'));
         let key_span = get_span!(self, key.node_id());
 
         match &key {
@@ -710,7 +711,7 @@ impl Parser<'_> {
             ..self.ctx()
         };
         self.with_ctx(ctx).parse_with(|parser| {
-            let value = if is!(parser, '=') {
+            let value = if parser.input.is(&tok!('=')) {
                 parser.assert_and_bump(&tok!('='));
                 Some(
                     parser
@@ -747,7 +748,7 @@ impl Parser<'_> {
     }
 
     fn is_class_method(&mut self) -> bool {
-        is!(self, '(') || (self.syntax().typescript() && is!(self, '<'))
+        self.input.is(&tok!('(')) || (self.syntax().typescript() && self.input.is(&tok!('<')))
     }
 
     fn is_class_property(&mut self) -> bool {
@@ -871,7 +872,7 @@ impl Parser<'_> {
             // Type params.
             if parser.syntax().typescript() {
                 parser.in_type().parse_with(|parser| {
-                    if is!(parser, '<') {
+                    if parser.input.is(&tok!('<')) {
                         parser.eat_ts_type_params(|_, _| {})?;
                     }
                     Ok(Some(()))
@@ -892,7 +893,7 @@ impl Parser<'_> {
             expect!(parser, ')');
 
             // Return type
-            if parser.syntax().typescript() && is!(parser, ':') {
+            if parser.syntax().typescript() && parser.input.is(&tok!(':')) {
                 parser
                     .parse_ts_type_or_type_predicate_ann(&tok!(':'))
                     .map(Some)?;
@@ -938,7 +939,7 @@ impl Parser<'_> {
     }
 
     fn parse_class_prop_name(&mut self) -> PResult<Key> {
-        if is!(self, '#') {
+        if self.input.is(&tok!('#')) {
             self.parse_private_name().map(Key::PrivateName)
         } else {
             self.parse_prop_name().map(Key::PropName)
@@ -949,7 +950,7 @@ impl Parser<'_> {
     where
         Self: FnBodyParser<T>,
     {
-        if self.ctx().in_declare() && self.syntax().typescript() && is!(self, '{') {
+        if self.ctx().in_declare() && self.syntax().typescript() && self.input.is(&tok!('{')) {
             //            self.emit_err(
             //                self.ctx().span_of_fn_name.expect("we are not in function"),
             //                SyntaxError::TS1183,
@@ -1172,7 +1173,10 @@ impl FnBodyParser<BlockStmtOrExpr> for Parser<'_> {
 impl FnBodyParser<Option<BlockStmt>> for Parser<'_> {
     fn parse_fn_body_inner(&mut self) -> PResult<Option<BlockStmt>> {
         // allow omitting body and allow placing `{` on next line
-        if self.input.syntax().typescript() && !is!(self, '{') && self.eat_semi_with_asi() {
+        if self.input.syntax().typescript()
+            && !self.input.is(&tok!('{'))
+            && self.eat_semi_with_asi()
+        {
             return Ok(None);
         }
         self.include_in_expr(true).parse_block(true).map(Some)
