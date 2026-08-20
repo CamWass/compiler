@@ -265,7 +265,6 @@ impl Parser<'_> {
     /// Parse a primary expression or arrow function
     #[allow(clippy::cognitive_complexity)]
     fn parse_primary_expr(&mut self, assign_props: &mut AssignProps) -> PResult<MaybeParen> {
-        let _ = self.input.cur();
         let start = self.input.cur_pos();
 
         let can_be_arrow = self
