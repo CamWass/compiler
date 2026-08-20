@@ -101,7 +101,7 @@ impl Parser<'_> {
             && self.is(tok!("as"))
         {
             let expr = left;
-            let node = if peeked_is!(self, "const") {
+            let node = if self.peeked_is(tok!("const")) {
                 self.input.bump(); // as
                 self.input.bump(); // const
                 expr

@@ -53,7 +53,10 @@ impl Parser<'_> {
         &mut self,
         assign_props: &mut AssignProps,
     ) -> PResult<MaybeParen> {
-        if self.input.syntax().typescript() && self.is(tok!('<')) && peeked_is!(self, IdentName) {
+        if self.input.syntax().typescript()
+            && self.is(tok!('<'))
+            && matches!(self.input.peek(), Some(Word(_)))
+        {
             let res = self.try_parse_ts(|p| {
                 let start = p.input.cur_pos();
                 // Type params.
@@ -882,10 +885,10 @@ impl Parser<'_> {
 
             let optional = if self.input.syntax().typescript() {
                 if self.is(tok!('?')) {
-                    if peeked_is!(self, ',')
-                        || peeked_is!(self, ':')
-                        || peeked_is!(self, ')')
-                        || peeked_is!(self, '=')
+                    if self.peeked_is(tok!(','))
+                        || self.peeked_is(tok!(':'))
+                        || self.peeked_is(tok!(')'))
+                        || self.peeked_is(tok!('='))
                     {
                         self.assert_and_bump(tok!('?'));
                         let _ = cur!(self, false);

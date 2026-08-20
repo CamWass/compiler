@@ -44,7 +44,7 @@ impl Parser<'_> {
 
         expect!(self, "import");
 
-        if self.input.syntax().typescript() && self.is_ident_ref() && peeked_is!(self, '=') {
+        if self.input.syntax().typescript() && self.is_ident_ref() && self.peeked_is(tok!('=')) {
             todo!();
             // return self
             //     .parse_ts_import_equals_decl(start, false, false)
@@ -73,12 +73,13 @@ impl Parser<'_> {
 
         let type_only = self.input.syntax().typescript()
             && self.is(tok!("type"))
-            && (peeked_is!(self, '{') || !peeked_is!(self, "from") && !peeked_is!(self, ','));
+            && (self.peeked_is(tok!('{'))
+                || !self.peeked_is(tok!("from")) && !self.peeked_is(tok!(',')));
 
         if type_only {
             self.assert_and_bump(tok!("type"));
 
-            if self.is_ident_ref() && peeked_is!(self, '=') {
+            if self.is_ident_ref() && self.peeked_is(tok!('=')) {
                 todo!();
                 // return self
                 //     .parse_ts_import_equals_decl(start, false, true)
@@ -331,7 +332,7 @@ impl Parser<'_> {
         if !type_only && export_ns.is_none() && self.eat(tok!("default")) {
             if self.input.syntax().typescript() {
                 if self.is(tok!("abstract"))
-                    && peeked_is!(self, "class")
+                    && self.peeked_is(tok!("class"))
                     && !self.input.has_linebreak_between_cur_and_peeked()
                 {
                     let class_start = self.input.cur_pos();
@@ -339,7 +340,7 @@ impl Parser<'_> {
                     let class = self.parse_default_class(start, class_start)?;
                     return Ok(Some(ModuleDecl::ExportDefaultDecl(class)));
                 }
-                if self.is(tok!("abstract")) && peeked_is!(self, "interface") {
+                if self.is(tok!("abstract")) && self.peeked_is(tok!("interface")) {
                     self.emit_err(self.input.cur_span(), SyntaxError::TS1242);
                     self.assert_and_bump(tok!("abstract"));
                 }
@@ -374,7 +375,7 @@ impl Parser<'_> {
                 let decl = self.parse_default_fn(start)?;
                 return Ok(decl.map(ModuleDecl::ExportDefaultDecl));
             } else if self.input.syntax().export_default_from()
-                && (self.is(tok!("from")) || (self.is(tok!(',')) && peeked_is!(self, '{')))
+                && (self.is(tok!("from")) || (self.is(tok!(',')) && self.peeked_is(tok!('{'))))
             {
                 export_default =
                     Some(self.new_ident(id_for_built_in!("default"), self.input.prev_span()));
@@ -405,7 +406,7 @@ impl Parser<'_> {
         } else if !type_only
             && self.input.syntax().typescript()
             && self.is(tok!("const"))
-            && peeked_is!(self, "enum")
+            && self.peeked_is(tok!("enum"))
         {
             todo!();
             // let start = self.input.cur_pos();

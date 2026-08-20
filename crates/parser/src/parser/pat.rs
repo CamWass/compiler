@@ -136,7 +136,9 @@ impl Parser<'_> {
                         | id_for_built_in!("readonly")
                 ))
             )
-            && (peeked_is!(self, IdentName) || peeked_is!(self, '{') || peeked_is!(self, '['));
+            && (matches!(self.input.peek(), Some(Word(_)))
+                || self.peeked_is(tok!('{'))
+                || self.peeked_is(tok!('[')));
         if has_modifier {
             let _ = self.parse_ts_modifier(&[
                 id_for_built_in!("public"),

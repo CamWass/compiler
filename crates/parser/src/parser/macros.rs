@@ -52,26 +52,6 @@ macro_rules! is {
     }};
 }
 
-macro_rules! peeked_is {
-    ($parser:expr, IdentName) => {{
-        match $parser.input.peek() {
-            Some(Word(..)) => true,
-            _ => false,
-        }
-    }};
-
-    ($parser:expr, ';') => {{
-        compile_error!("peeked_is!(self, ';') is invalid");
-    }};
-
-    ($parser:expr, $t:tt) => {
-        match $parser.input.peek() {
-            Some(tok!($t)) => true,
-            _ => false,
-        }
-    };
-}
-
 macro_rules! unexpected {
     ($parser:expr, $expected:literal) => {{
         let got = $parser.input.dump_cur();

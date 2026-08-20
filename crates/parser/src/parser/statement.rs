@@ -223,7 +223,10 @@ impl Parser<'_> {
             })));
         }
 
-        if self.input.syntax().typescript() && self.is(tok!("const")) && peeked_is!(self, "enum") {
+        if self.input.syntax().typescript()
+            && self.is(tok!("const"))
+            && self.peeked_is(tok!("enum"))
+        {
             self.assert_and_bump(tok!("const"));
             self.assert_and_bump(tok!("enum"));
             self.parse_ts_enum_decl()?;

@@ -319,7 +319,7 @@ impl Parser<'_> {
             }
 
             let has_type_pred_is = p.is_ident_ref()
-                && peeked_is!(p, "is")
+                && p.peeked_is(tok!("is"))
                 && !p.input.has_linebreak_between_cur_and_peeked();
             let is_type_predicate = has_type_pred_asserts || has_type_pred_is;
             if !is_type_predicate {
@@ -635,7 +635,7 @@ impl Parser<'_> {
             self.parse_ts_fn_or_constructor_type(true)?;
             return Ok(self.span(start));
         }
-        if (self.is(tok!("abstract")) && peeked_is!(self, "new")) || self.is(tok!("new")) {
+        if (self.is(tok!("abstract")) && self.peeked_is(tok!("new"))) || self.is(tok!("new")) {
             // As in `new () => Date`
             self.parse_ts_fn_or_constructor_type(false)?;
             return Ok(self.span(start));
@@ -1409,7 +1409,7 @@ impl Parser<'_> {
             | tok!("null")
             | tok!("await")
             | tok!("break") => {
-                if self.is(tok!("asserts")) && peeked_is!(self, "this") {
+                if self.is(tok!("asserts")) && self.peeked_is(tok!("this")) {
                     self.input.bump();
                     self.parse_ts_this_type_node()?;
                     return self.parse_ts_this_type_predicate();
@@ -1432,7 +1432,7 @@ impl Parser<'_> {
                         | tok!("intrinsic")
                 );
 
-                let peeked_is_dot = peeked_is!(self, '.');
+                let peeked_is_dot = self.peeked_is(tok!('.'));
 
                 if valid_kind && !peeked_is_dot {
                     self.input.bump();
@@ -1633,7 +1633,7 @@ impl Parser<'_> {
                 return Ok(Some(DeclOrEmpty::Decl(decl)));
             }
 
-            if p.is(tok!("const")) && peeked_is!(p, "enum") {
+            if p.is(tok!("const")) && p.peeked_is(tok!("enum")) {
                 p.assert_and_bump(tok!("const"));
                 let _ = cur!(p, true);
                 p.assert_and_bump(tok!("enum"));

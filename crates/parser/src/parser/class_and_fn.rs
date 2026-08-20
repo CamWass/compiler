@@ -441,7 +441,7 @@ impl Parser<'_> {
 
                 if self.syntax().typescript() && self.is(tok!('<')) {
                     let start = self.input.cur_pos();
-                    if peeked_is!(self, '>') {
+                    if self.peeked_is(tok!('>')) {
                         self.assert_and_bump(tok!('<'));
                         let start2 = self.input.cur_pos();
                         self.assert_and_bump(tok!('>'));
