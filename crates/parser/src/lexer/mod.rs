@@ -86,7 +86,6 @@ impl<'src> Lexer<'src> {
     pub fn next_token(&mut self) -> TokenAndSpan {
         let mut start = self.cur_pos();
 
-        // TODO: can we remove the closure?
         let res = (|| {
             // Skip the space after the previous token, so that the next one's
             // `start` will point to the right position.

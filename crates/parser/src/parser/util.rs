@@ -104,8 +104,6 @@ impl<'d> Parser<'d> {
             self.input.cur()
         );
 
-        let _ = self.input.cur();
-
         self.input.bump();
     }
 
