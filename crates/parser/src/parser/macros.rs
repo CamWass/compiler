@@ -70,7 +70,7 @@ macro_rules! is {
 macro_rules! peeked_is {
     ($parser:expr, IdentName) => {{
         match peek!($parser) {
-            Ok(Word(..)) => true,
+            Some(Word(..)) => true,
             _ => false,
         }
     }};
@@ -80,7 +80,7 @@ macro_rules! peeked_is {
     }};
 
     ($parser:expr, $t:tt) => {
-        match peek!($parser).ok() {
+        match peek!($parser) {
             Some(tok!($t)) => true,
             _ => false,
         }
@@ -96,17 +96,7 @@ Current token is {:?}",
             cur!($parser, false),
         );
 
-        let pos = $parser.input.cur_pos();
-        let last = Span::new(pos, pos);
-        match $parser.input.peek() {
-            Some(c) => Ok(c),
-            None => {
-                let err = crate::error::Error {
-                    error: Box::new((last, crate::error::SyntaxError::Eof)),
-                };
-                Err(err)
-            }
-        }
+        $parser.input.peek()
     }};
 }
 
