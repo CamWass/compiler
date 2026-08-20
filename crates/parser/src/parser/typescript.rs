@@ -172,7 +172,7 @@ impl Parser<'_> {
         }
         while self.eat(tok!('.')) {
             let dot_start = self.input.cur_pos();
-            if !self.is(tok!('#')) && !is!(self, IdentName) {
+            if !self.is(tok!('#')) && !matches!(self.input.cur(), Token::Word(_)) {
                 self.emit_err(Span::new(dot_start, dot_start), SyntaxError::TS1003);
                 return Ok(());
             }
@@ -1678,7 +1678,7 @@ impl Parser<'_> {
 
             if p.is(tok!("global")) {
                 p.parse_ts_ambient_external_module_decl()?;
-            } else if is!(p, IdentName) {
+            } else if matches!(p.input.cur(), Token::Word(_)) {
                 let value = match p.input.cur() {
                     Token::Word(w) => w.get_name_id(),
                     _ => unreachable!(),

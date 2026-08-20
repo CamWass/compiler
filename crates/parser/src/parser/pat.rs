@@ -6,7 +6,10 @@ use util::{AssignProps, is_valid_simple_assignment_target};
 
 impl Parser<'_> {
     pub(super) fn parse_opt_binding_ident(&mut self) -> PResult<Option<BindingIdent>> {
-        if is!(self, BindingIdent) || (self.input.syntax().typescript() && self.is(tok!("this"))) {
+        let ctx = self.ctx();
+        if matches!(self.input.cur(), Token::Word(w) if !ctx.is_reserved_word(w.get_name_id()))
+            || (self.input.syntax().typescript() && self.is(tok!("this")))
+        {
             self.parse_binding_ident().map(Some)
         } else {
             Ok(None)

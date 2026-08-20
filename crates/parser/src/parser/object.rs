@@ -176,9 +176,10 @@ impl ParseObject<Box<Expr>> for Parser<'_> {
                 || self.is(tok!('?'))
                 || self.is(tok!('='))
                 || self.is(tok!('*'))
-                || is!(self, IdentName)
-                || is!(self, Str)
-                || is!(self, Num))
+                || matches!(
+                    self.input.cur(),
+                    Token::Num(_) | Token::Str { .. } | Token::Word(_)
+                ))
             && !(self.input.syntax().typescript() && self.is(tok!('<')))
             && !(self.is(tok!('}')) && matches!(key, PropName::Ident(..)))
         {

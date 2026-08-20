@@ -1,37 +1,3 @@
-/// This handles automatic semicolon insertion.
-///
-/// Returns bool.
-macro_rules! is {
-    ($parser:expr, BindingIdent) => {{
-        let ctx = $parser.ctx();
-        match $parser.input.cur() {
-            Word(w) => !ctx.is_reserved_word(w.get_name_id()),
-            _ => false,
-        }
-    }};
-
-    ($parser:expr, IdentName) => {{
-        match $parser.input.cur() {
-            Word(..) => true,
-            _ => false,
-        }
-    }};
-
-    ($parser:expr, Str) => {{
-        match $parser.input.cur() {
-            Token::Str { .. } => true,
-            _ => false,
-        }
-    }};
-
-    ($parser:expr, Num) => {{
-        match $parser.input.cur() {
-            Token::Num { .. } => true,
-            _ => false,
-        }
-    }};
-}
-
 macro_rules! unexpected {
     ($parser:expr, $expected:literal) => {{
         let got = $parser.input.dump_cur();

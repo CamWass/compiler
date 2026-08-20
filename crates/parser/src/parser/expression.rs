@@ -373,7 +373,7 @@ impl Parser<'_> {
         }
 
         if self.is(tok!("let"))
-            || (self.input.syntax().typescript() && is!(self, IdentName))
+            || (self.input.syntax().typescript() && matches!(self.input.cur(), Token::Word(_)))
             || self.is_ident_ref()
         {
             // TODO(swc): Handle [Yield, Await]
@@ -399,7 +399,11 @@ impl Parser<'_> {
                 _ => {}
             }
 
-            if can_be_arrow && id.name == id_for_built_in!("async") && is!(self, BindingIdent) {
+            let ctx = self.ctx();
+            if can_be_arrow
+                && id.name == id_for_built_in!("async")
+                && matches!(self.input.cur(), Token::Word(w) if !ctx.is_reserved_word(w.get_name_id()))
+            {
                 // async a => body
                 let arg = self.parse_binding_ident().map(Pat::Ident)?;
                 let params = vec![Param::from_pat(arg, program_data!(self))];

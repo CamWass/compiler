@@ -90,7 +90,8 @@ impl Parser<'_> {
 
         let mut specifiers = vec![];
 
-        if is!(self, BindingIdent) {
+        let ctx = self.ctx();
+        if matches!(self.input.cur(), Token::Word(w) if !ctx.is_reserved_word(w.get_name_id())) {
             let local = self.parse_imported_default_binding()?;
             //TODO(swc): Better error reporting
             if !self.is(tok!("from")) {
@@ -251,7 +252,7 @@ impl Parser<'_> {
             }
         }
 
-        if self.input.syntax().typescript() && is!(self, IdentName) {
+        if self.input.syntax().typescript() && matches!(self.input.cur(), Token::Word(_)) {
             let sym = match self.input.cur() {
                 Token::Word(w) => w.get_name_id(),
                 _ => unreachable!(),
@@ -467,7 +468,9 @@ impl Parser<'_> {
             let default = match export_default {
                 Some(default) => Some(default),
                 None => {
-                    if self.input.syntax().export_default_from() && is!(self, IdentName) {
+                    if self.input.syntax().export_default_from()
+                        && matches!(self.input.cur(), Token::Word(_))
+                    {
                         Some(self.parse_ident(false, false)?)
                     } else {
                         None
@@ -522,7 +525,7 @@ impl Parser<'_> {
                 }));
             }
             let mut first = true;
-            while self.is(tok!(',')) || is!(self, IdentName) {
+            while self.is(tok!(',')) || matches!(self.input.cur(), Token::Word(_)) {
                 if first {
                     first = false;
                 } else if self.eat(tok!(',')) && self.is(tok!('}')) {
