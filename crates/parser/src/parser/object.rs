@@ -44,7 +44,7 @@ impl Parser<'_> {
         .parse_with(|parser| {
             let start = parser.input.cur_pos();
 
-            let v = match *cur!(parser, true)? {
+            let v = match *cur!(parser, true) {
                 Token::Str { .. } => match parser.input.bump() {
                     Token::Str { value } => PropName::Str(Str {
                         node_id: node_id!(parser, parser.span(start)),

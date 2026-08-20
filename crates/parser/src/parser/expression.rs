@@ -94,7 +94,7 @@ impl Parser<'_> {
 
         let start = self.input.cur_pos();
 
-        self.potential_arrow_start = match *cur!(self, true)? {
+        self.potential_arrow_start = match *cur!(self, true) {
             Word(Word::Ident(..)) | tok!('(') | tok!("yield") => Some(start),
             _ => None,
         };
@@ -143,8 +143,8 @@ impl Parser<'_> {
         assign_props: &mut AssignProps,
         mut inner_assign_props: Vec<Span>,
     ) -> PResult<MaybeParen> {
-        match cur!(self, false) {
-            Ok(&Token::AssignOp(op)) => {
+        match *cur!(self, false) {
+            Token::AssignOp(op) => {
                 let left = if op == AssignOpToken::Assign {
                     self.reparse_expr_as_pat(PatType::AssignPat, cond.unwrap())
                         .map(Box::new)
@@ -262,103 +262,100 @@ impl Parser<'_> {
             .map(|s| s == start)
             .unwrap_or(false);
 
-        if let Some(tok) = self.input.cur() {
-            match tok {
-                tok!("this") => {
-                    self.input.bump();
-                    return Ok(Box::new(Expr::This(ThisExpr {
+        match self.input.cur() {
+            tok!("this") => {
+                self.input.bump();
+                return Ok(Box::new(Expr::This(ThisExpr {
+                    node_id: node_id!(self, self.span(start)),
+                }))
+                .into());
+            }
+
+            tok!("import") => {
+                let import = self.parse_ident_name()?;
+                if self.input.syntax().import_meta() && self.is(tok!('.')) {
+                    return self
+                        .parse_import_meta_prop(import)
+                        .map(Expr::MetaProp)
+                        .map(Box::new)
+                        .map(From::from);
+                }
+
+                return self.parse_dynamic_import(start, import);
+            }
+
+            tok!("async") => {
+                if self.peeked_is(tok!("function"))
+                    && !self.input.has_linebreak_between_cur_and_peeked()
+                {
+                    // handle `async function` expression
+                    return self.parse_async_fn_expr().map(From::from);
+                }
+
+                if can_be_arrow && self.input.syntax().typescript() && self.peeked_is(tok!('<')) {
+                    // try parsing `async<T>() => {}`
+                    if let Some(res) = self.try_parse_ts(|p| {
+                        let start = p.input.cur_pos();
+                        p.assert_and_bump(tok!("async"));
+                        p.try_parse_ts_generic_async_arrow_fn(start)
+                    }) {
+                        return Ok(Box::new(Expr::Arrow(Box::new(res))).into());
+                    }
+                }
+
+                if can_be_arrow && self.peeked_is(tok!('(')) {
+                    expect!(self, "async");
+                    let async_span = self.input.prev_span();
+                    return self.parse_paren_expr_or_arrow_fn(can_be_arrow, Some(async_span));
+                }
+            }
+
+            tok!('[') => {
+                return self.parse_array_lit(assign_props).map(From::from);
+            }
+
+            tok!('{') => {
+                return self.parse_object::<Box<Expr>>(assign_props).map(From::from);
+            }
+
+            // Handle FunctionExpression and GeneratorExpression
+            tok!("function") => {
+                return self.parse_fn_expr().map(From::from);
+            }
+
+            // Literals
+            tok!("null")
+            | tok!("true")
+            | tok!("false")
+            | Token::Num { .. }
+            | Token::BigInt(..)
+            | Token::Str { .. } => {
+                return Ok(Box::new(Expr::Lit(self.parse_lit()?)).into());
+            }
+
+            // Regexp
+            Token::Regex(..) => match self.input.bump() {
+                Token::Regex(exp, flags) => {
+                    return Ok(Box::new(Expr::Lit(Lit::Regex(Regex {
                         node_id: node_id!(self, self.span(start)),
-                    }))
+                        exp,
+                        flags,
+                    })))
                     .into());
                 }
+                _ => unreachable!(),
+            },
 
-                tok!("import") => {
-                    let import = self.parse_ident_name()?;
-                    if self.input.syntax().import_meta() && self.is(tok!('.')) {
-                        return self
-                            .parse_import_meta_prop(import)
-                            .map(Expr::MetaProp)
-                            .map(Box::new)
-                            .map(From::from);
-                    }
-
-                    return self.parse_dynamic_import(start, import);
-                }
-
-                tok!("async") => {
-                    if self.peeked_is(tok!("function"))
-                        && !self.input.has_linebreak_between_cur_and_peeked()
-                    {
-                        // handle `async function` expression
-                        return self.parse_async_fn_expr().map(From::from);
-                    }
-
-                    if can_be_arrow && self.input.syntax().typescript() && self.peeked_is(tok!('<'))
-                    {
-                        // try parsing `async<T>() => {}`
-                        if let Some(res) = self.try_parse_ts(|p| {
-                            let start = p.input.cur_pos();
-                            p.assert_and_bump(tok!("async"));
-                            p.try_parse_ts_generic_async_arrow_fn(start)
-                        }) {
-                            return Ok(Box::new(Expr::Arrow(Box::new(res))).into());
-                        }
-                    }
-
-                    if can_be_arrow && self.peeked_is(tok!('(')) {
-                        expect!(self, "async");
-                        let async_span = self.input.prev_span();
-                        return self.parse_paren_expr_or_arrow_fn(can_be_arrow, Some(async_span));
-                    }
-                }
-
-                tok!('[') => {
-                    return self.parse_array_lit(assign_props).map(From::from);
-                }
-
-                tok!('{') => {
-                    return self.parse_object::<Box<Expr>>(assign_props).map(From::from);
-                }
-
-                // Handle FunctionExpression and GeneratorExpression
-                tok!("function") => {
-                    return self.parse_fn_expr().map(From::from);
-                }
-
-                // Literals
-                tok!("null")
-                | tok!("true")
-                | tok!("false")
-                | Token::Num { .. }
-                | Token::BigInt(..)
-                | Token::Str { .. } => {
-                    return Ok(Box::new(Expr::Lit(self.parse_lit()?)).into());
-                }
-
-                // Regexp
-                Token::Regex(..) => match self.input.bump() {
-                    Token::Regex(exp, flags) => {
-                        return Ok(Box::new(Expr::Lit(Lit::Regex(Regex {
-                            node_id: node_id!(self, self.span(start)),
-                            exp,
-                            flags,
-                        })))
-                        .into());
-                    }
-                    _ => unreachable!(),
-                },
-
-                tok!('`') => {
-                    // parse template literal
-                    return Ok(Box::new(Expr::Tpl(self.parse_tpl(false)?)).into());
-                }
-
-                tok!('(') => {
-                    return self.parse_paren_expr_or_arrow_fn(can_be_arrow, None);
-                }
-
-                _ => {}
+            tok!('`') => {
+                // parse template literal
+                return Ok(Box::new(Expr::Tpl(self.parse_tpl(false)?)).into());
             }
+
+            tok!('(') => {
+                return self.parse_paren_expr_or_arrow_fn(can_be_arrow, None);
+            }
+
+            _ => {}
         }
 
         if self.is(tok!("class")) {
@@ -443,7 +440,7 @@ impl Parser<'_> {
         let mut elems = vec![];
         let mut trailing_comma_span = None;
 
-        while !eof!(self) && !self.is(tok!(']')) {
+        while !self.is(tok!(']')) {
             if self.is(tok!(',')) {
                 expect!(self, ',');
                 elems.push(None);
@@ -809,7 +806,7 @@ impl Parser<'_> {
 
         // TODO(kdy1): optimize (once we parsed a pattern, we can parse everything else
         // as a pattern instead of reparsing)
-        while !eof!(self) && !self.is(tok!(')')) {
+        while !self.is(tok!(')')) {
             if first {
                 // TODO: this appears to be incorrect. See: (async x => x, 1, y => y)(1);
                 if self.is(tok!("async")) {
@@ -1097,7 +1094,7 @@ impl Parser<'_> {
             let span_of_new = self.span(start);
             if self.eat(tok!('.')) {
                 if self.eat(tok!("target")) {
-                    let span_of_target = self.input.cur_span();
+                    let span_of_target = self.input.prev_span();
 
                     if word_contains_escape(&span_of_target, "target") {
                         syntax_error!(self, span_of_target, SyntaxError::EscapeInNewTarget);
@@ -1194,7 +1191,7 @@ impl Parser<'_> {
         let mut first = true;
         let mut expr_or_spreads = vec![];
 
-        while !eof!(self) && !self.is(tok!(')')) {
+        while !self.is(tok!(')')) {
             if first {
                 first = false;
             } else {
@@ -1347,7 +1344,7 @@ impl Parser<'_> {
                 body,
             });
             if is_block {
-                if let Some(&Token::BinOp(..)) = self.input.cur() {
+                if let Token::BinOp(..) = self.input.cur() {
                     // ) is required
                     self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
                     let errored_expr =
@@ -1518,7 +1515,7 @@ impl Parser<'_> {
     pub(super) fn parse_tpl_element(&mut self, is_tagged: bool) -> PResult<TplElement> {
         let start = self.input.cur_pos();
 
-        let (raw, has_invalid_escape) = match *cur!(self, true)? {
+        let (raw, has_invalid_escape) = match *cur!(self, true) {
             Token::Template { .. } => match self.input.bump() {
                 Token::Template {
                     raw,
@@ -1568,9 +1565,7 @@ impl Parser<'_> {
             syntax_error!(self, self.input.prev_span(), SyntaxError::YieldParamInGen)
         }
 
-        if self.is_semi_with_asi()
-            || (!self.is(tok!('*')) && !self.input.cur().map(Token::starts_expr).unwrap_or(true))
-        {
+        if self.is_semi_with_asi() || (!self.is(tok!('*')) && !self.input.cur().starts_expr()) {
             Ok(Box::new(Expr::Yield(YieldExpr {
                 node_id: node_id!(self, self.span(start)),
                 arg: None,
@@ -1616,7 +1611,7 @@ impl Parser<'_> {
     pub(super) fn parse_lit(&mut self) -> PResult<Lit> {
         let start = self.input.cur_pos();
 
-        let v = match *cur!(self, true)? {
+        let v = match *cur!(self, true) {
             Word(Word::Null) => {
                 self.input.bump();
                 Lit::Null(Null {

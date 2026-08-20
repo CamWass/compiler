@@ -6,14 +6,14 @@ use crate::{
     token::{Token, TokenAndSpan},
 };
 use ast::ProgramData;
-use common::{BytePos, DUMMY_SP, Span};
+use common::{BytePos, Span};
 
 /// This struct is responsible for managing current token and peeked token.
 pub struct Buffer<'src> {
     iter: Lexer<'src>,
     /// Span of the previous token.
     prev_span: Span,
-    cur: Option<TokenAndSpan>,
+    pub cur: TokenAndSpan,
     /// Peeked token
     next: Option<TokenAndSpan>,
 }
@@ -27,7 +27,7 @@ impl<'d> Parser<'d> {
 pub struct BufferCheckpoint {
     lexer_cp: LexerCheckpoint,
     prev_span: Span,
-    cur: Option<TokenAndSpan>,
+    cur: TokenAndSpan,
     next: Option<TokenAndSpan>,
 }
 
@@ -63,80 +63,67 @@ impl<'d> Buffer<'d> {
     }
 
     pub fn new(lexer: Lexer<'d>) -> Self {
+        let start_pos = lexer.start_pos();
+        let prev_span = Span::new(start_pos, start_pos);
         Buffer {
             iter: lexer,
-            cur: None,
-            prev_span: DUMMY_SP,
+            cur: TokenAndSpan {
+                token: Token::Eof,
+                had_line_break: false,
+                span: prev_span,
+            },
+            prev_span,
             next: None,
         }
     }
 
     pub fn store(&mut self, token: Token) {
         debug_assert!(self.next.is_none());
-        debug_assert!(self.cur.is_none());
+        debug_assert!(self.cur.token != Token::Eof);
         let span = self.prev_span;
 
-        self.cur = Some(TokenAndSpan {
+        self.cur = TokenAndSpan {
             span,
             token,
             had_line_break: false,
-        });
-    }
-
-    #[inline]
-    fn bump_inner(&mut self) -> Option<Token> {
-        let prev = self.cur.take();
-        self.prev_span = match prev {
-            Some(TokenAndSpan { span, .. }) => span,
-            _ => self.prev_span,
         };
-
-        // If we have peeked a token, take it instead of calling lexer.next()
-        self.cur = self.next.take().or_else(|| self.iter.next());
-
-        prev.map(|it| it.token)
     }
 
     #[cold]
     #[inline(never)]
     pub fn dump_cur(&mut self) -> String {
-        match self.cur() {
-            Some(v) => format!("{v:?}"),
-            None => "<eof>".to_string(),
-        }
+        format!("{:?}", self.cur.token)
+    }
+
+    pub fn first_bump(&mut self) {
+        let first_token = self.iter.first_token();
+        self.prev_span = self.cur.span;
+        self.cur = first_token;
     }
 
     /// Returns current token.
     pub fn bump(&mut self) -> Token {
-        #[cold]
-        #[inline(never)]
-        fn invalid_state() -> ! {
-            unreachable!(
-                "Current token is `None`. Parser should not call bump() without knowing current \
-                 token"
-            )
-        }
-
-        let Some(prev) = self.cur.take() else {
-            invalid_state()
+        let next = if self.next.is_none() {
+            self.iter.next_token()
+        } else {
+            let Some(next) = self.next.take() else {
+                unreachable!();
+            };
+            next
         };
+        let prev = std::mem::replace(&mut self.cur, next);
         self.prev_span = prev.span;
-
         prev.token
-    }
-
-    pub fn knows_cur(&self) -> bool {
-        self.cur.is_some()
     }
 
     pub fn peek(&mut self) -> Option<&Token> {
         debug_assert!(
-            self.cur.is_some(),
+            self.cur.token != Token::Eof,
             "parser should not call peek() without knowing current token"
         );
 
         if self.next.is_none() {
-            self.next = self.iter.next();
+            self.next = Some(self.iter.next_token());
         }
 
         self.next.as_ref().map(|ts| &ts.token)
@@ -144,12 +131,7 @@ impl<'d> Buffer<'d> {
 
     /// Returns true on eof.
     pub fn had_line_break_before_cur(&mut self) -> bool {
-        self.cur();
-
-        self.cur
-            .as_ref()
-            .map(|it| it.had_line_break)
-            .unwrap_or_else(|| true)
+        self.cur.had_line_break
     }
 
     /// This returns true on eof.
@@ -164,21 +146,14 @@ impl<'d> Buffer<'d> {
             })
     }
 
-    /// Get current token. Returns `None` only on eof.
     #[inline]
-    pub fn cur(&mut self) -> Option<&Token> {
-        if self.cur.is_none() {
-            self.bump_inner();
-        }
-        self.cur.as_ref().map(|item| &item.token)
+    pub fn cur(&mut self) -> &Token {
+        &self.cur.token
     }
 
     #[inline]
     pub fn is(&mut self, expected: Token) -> bool {
-        match self.cur() {
-            Some(t) => expected == *t,
-            _ => false,
-        }
+        self.cur.token == expected
     }
 
     #[inline]
@@ -201,25 +176,12 @@ impl<'d> Buffer<'d> {
     /// Returns start of current token.
     #[inline]
     pub fn cur_pos(&mut self) -> BytePos {
-        let _ = self.cur();
-        self.cur
-            .as_ref()
-            .map(|item| item.span.lo)
-            .unwrap_or_else(|| {
-                // eof
-                self.last_pos()
-            })
+        self.cur.span.lo
     }
 
     #[inline]
     pub fn cur_span(&self) -> Span {
-        let data = self
-            .cur
-            .as_ref()
-            .map(|item| item.span)
-            .unwrap_or(self.prev_span);
-
-        Span::new(data.lo, data.hi)
+        self.cur.span
     }
 
     /// Returns last byte position of previous token.

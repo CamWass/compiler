@@ -2,6 +2,8 @@ mod number;
 mod state;
 mod util;
 
+use std::iter::FusedIterator;
+
 use crate::{
     JscTarget, Syntax,
     context::Context,
@@ -13,7 +15,6 @@ use common::{BytePos, SourceFile, Span, chars::char_literals};
 use number::{NonDecRadix, Radix};
 use state::State;
 pub(crate) use state::{LexerCheckpoint, TokenContext, TokenContexts};
-use std::iter::FusedIterator;
 use util::{char_bytes, is_line_break};
 
 type LexResult<T> = Result<T, Error>;
@@ -42,54 +43,12 @@ impl FusedIterator for Lexer<'_> {}
 impl Iterator for Lexer<'_> {
     type Item = TokenAndSpan;
     fn next(&mut self) -> Option<Self::Item> {
-        let mut start = self.cur_pos();
-
-        let res = (|| -> Result<Option<_>, _> {
-            // Skip the space after the previous token, so that the next one's
-            // `start` will point to the right position.
-            if self.state.can_skip_space() {
-                self.skip_space()?;
-                start = self.cur_pos();
-            };
-
-            if let Some(TokenContext::Tpl {
-                start: start_pos_of_tpl,
-            }) = self.state.context.current()
-            {
-                return self.read_tmpl_token(start_pos_of_tpl).map(Some);
-            }
-
-            if self.syntax.typescript() && self.ctx.in_type() {
-                if self.eat(b'<') {
-                    return Ok(Some(tok!('<')));
-                } else if self.eat(b'>') {
-                    return Ok(Some(tok!('>')));
-                }
-            }
-
-            self.read_token()
-        })();
-
-        let token = match res.map_err(Token::Error).map_err(Some) {
-            Ok(t) => t,
-            Err(e) => e,
-        };
-
-        if let Some(token) = &token {
-            self.state.update(start, token);
+        let next = self.next_token();
+        if next.token == Token::Eof {
+            None
+        } else {
+            Some(next)
         }
-
-        let had_line_break = self.state.had_line_break;
-        self.state.had_line_break = false;
-
-        token.map(|token| {
-            // Attach span to token.
-            TokenAndSpan {
-                token,
-                had_line_break,
-                span: self.span(start),
-            }
-        })
     }
 }
 
@@ -118,6 +77,59 @@ impl<'src> Lexer<'src> {
         }
     }
 
+    pub fn first_token(&mut self) -> TokenAndSpan {
+        self.read_token_interpreter();
+
+        self.next_token()
+    }
+
+    pub fn next_token(&mut self) -> TokenAndSpan {
+        let mut start = self.cur_pos();
+
+        // TODO: can we remove the closure?
+        let res = (|| {
+            // Skip the space after the previous token, so that the next one's
+            // `start` will point to the right position.
+            if self.state.can_skip_space() {
+                self.skip_space()?;
+                start = self.cur_pos();
+            };
+
+            if let Some(TokenContext::Tpl {
+                start: start_pos_of_tpl,
+            }) = self.state.context.current()
+            {
+                return self.read_tmpl_token(start_pos_of_tpl);
+            }
+
+            if self.syntax.typescript() && self.ctx.in_type() {
+                if self.eat(b'<') {
+                    return Ok(tok!('<'));
+                } else if self.eat(b'>') {
+                    return Ok(tok!('>'));
+                }
+            }
+
+            self.read_token()
+        })();
+
+        let token = match res.map_err(Token::Error) {
+            Ok(t) => t,
+            Err(e) => e,
+        };
+
+        self.state.update(start, &token);
+
+        let had_line_break = self.state.had_line_break;
+        self.state.had_line_break = false;
+
+        TokenAndSpan {
+            token,
+            had_line_break,
+            span: self.span(start),
+        }
+    }
+
     /// Utility method to reuse buffer.
     fn with_buf<F, Ret>(&mut self, op: F) -> LexResult<Ret>
     where
@@ -133,9 +145,9 @@ impl<'src> Lexer<'src> {
         res
     }
 
-    fn read_token(&mut self) -> LexResult<Option<Token>> {
+    fn read_token(&mut self) -> LexResult<Token> {
         let Some(b) = self.cur_byte() else {
-            return Ok(None);
+            return Ok(Token::Eof);
         };
 
         // A lookup table of `byte -> fn(l: &mut Lexer) -> Token` is slower than
@@ -156,47 +168,47 @@ impl<'src> Lexer<'src> {
             // Punctuation tokens.
             PNO => {
                 self.advance(1);
-                Ok(Some(LParen))
+                Ok(LParen)
             }
             PNC => {
                 self.advance(1);
-                Ok(Some(RParen))
+                Ok(RParen)
             }
             SEM => {
                 self.advance(1);
-                Ok(Some(Semi))
+                Ok(Semi)
             }
             COM => {
                 self.advance(1);
-                Ok(Some(Comma))
+                Ok(Comma)
             }
             BTO => {
                 self.advance(1);
-                Ok(Some(LBracket))
+                Ok(LBracket)
             }
             BTC => {
                 self.advance(1);
-                Ok(Some(RBracket))
+                Ok(RBracket)
             }
             BEO => {
                 self.advance(1);
-                Ok(Some(LBrace))
+                Ok(LBrace)
             }
             BEC => {
                 self.advance(1);
-                Ok(Some(RBrace))
+                Ok(RBrace)
             }
             COL => {
                 self.advance(1);
-                Ok(Some(Colon))
+                Ok(Colon)
             }
-            QST => Ok(Some(self.read_token_question())),
+            QST => Ok(self.read_token_question()),
             TPL => {
                 self.advance(1);
-                Ok(Some(BackQuote))
+                Ok(BackQuote)
             }
             ZER => {
-                (match self.peek_nth(1) {
+                match self.peek_nth(1) {
                     // '0x', '0X' - hex number
                     Some(b'x') | Some(b'X') => self.read_radix_number(NonDecRadix::Hex),
                     // '0o', '0O' - octal number
@@ -205,42 +217,41 @@ impl<'src> Lexer<'src> {
                     Some(b'b') | Some(b'B') => self.read_radix_number(NonDecRadix::Bin),
 
                     _ => self.read_number(false),
-                })
-                .map(Some)
+                }
             }
             // Anything else beginning with a digit is an integer, octal
             // number, or float.
-            DIG => self.read_number(false).map(Some),
+            DIG => self.read_number(false),
 
             // Quotes produce strings.
-            QOT => self.read_string(b).map(Some),
+            QOT => self.read_string(b),
 
-            SLH => self.read_token_slash().map(Some),
-            PRC | MUL => Ok(Some(self.read_token_mult_modulo(b))),
-            PIP | AMP => Ok(Some(self.read_token_pipe_amp(b))),
-            CRT => Ok(Some(self.read_token_caret())),
+            SLH => self.read_token_slash(),
+            PRC | MUL => Ok(self.read_token_mult_modulo(b)),
+            PIP | AMP => Ok(self.read_token_pipe_amp(b)),
+            CRT => Ok(self.read_token_caret()),
             PLS | MIN => self.read_token_plus_min(b),
             LSS | MOR => self.read_token_lt_gt(b),
-            EQL | EXL => Ok(Some(self.read_token_eq_excl(b))),
+            EQL | EXL => Ok(self.read_token_eq_excl(b)),
             TLD => {
                 self.advance(1);
-                Ok(Some(tok!('~')))
+                Ok(tok!('~'))
             }
             AT_ => {
                 self.advance(1);
-                Ok(Some(At))
+                Ok(At)
             }
             HAS => Ok(self.read_token_number_sign()),
             // Identifier or keyword. '\uXXXX' sequences are allowed in
             // identifiers, so '\' also dispatches to that.
-            IDT | BSL => self.read_ident_or_keyword().map(Some),
+            IDT | BSL => self.read_ident_or_keyword(),
 
             _ => {
                 let ch = self.cur_unchecked();
 
                 if ast::Ident::is_valid_start(ch) {
                     // Identifier or keyword.
-                    self.read_ident_or_keyword().map(Some)
+                    self.read_ident_or_keyword()
                 } else {
                     // unexpected character
                     self.bump();
@@ -251,37 +262,31 @@ impl<'src> Lexer<'src> {
         }
     }
 
-    fn read_token_number_sign(&mut self) -> Option<Token> {
-        debug_assert!(self.is(b'#'));
-
-        if self.is_at_start() && self.read_token_interpreter() {
-            return None;
-        }
-
+    fn read_token_number_sign(&mut self) -> Token {
         debug_assert!(self.is(b'#'));
 
         self.advance(1); // '#'
-        Some(tok!('#'))
+        tok!('#')
     }
 
-    fn read_token_dot(&mut self) -> LexResult<Option<Token>> {
+    fn read_token_dot(&mut self) -> LexResult<Token> {
         debug_assert!(self.is(b'.'));
 
         let Some(next) = self.peek_nth(1) else {
             self.advance(1); // '.'
-            return Ok(Some(tok!('.')));
+            return Ok(tok!('.'));
         };
 
         if next.is_ascii_digit() {
-            return self.read_number(true).map(Some);
+            return self.read_number(true);
         }
 
         if next == b'.' && self.peek_nth(1) == Some(b'.') {
             self.advance(3); // "..."
-            Ok(Some(tok!("...")))
+            Ok(tok!("..."))
         } else {
             self.advance(1); // "."
-            Ok(Some(tok!('.')))
+            Ok(tok!('.'))
         }
     }
 
@@ -304,9 +309,7 @@ impl<'src> Lexer<'src> {
     }
 
     fn read_token_interpreter(&mut self) -> bool {
-        debug_assert!(self.is(b'#'));
-
-        if !self.is_at_start() {
+        if !self.is(b'#') || self.peek_nth(1) != Some(b'!') {
             return false;
         }
 
@@ -398,7 +401,7 @@ impl<'src> Lexer<'src> {
         }
     }
 
-    fn read_token_plus_min(&mut self, ch: u8) -> LexResult<Option<Token>> {
+    fn read_token_plus_min(&mut self, ch: u8) -> LexResult<Token> {
         debug_assert!(ch == b'+' || ch == b'-');
         debug_assert!(self.is(ch));
 
@@ -416,24 +419,20 @@ impl<'src> Lexer<'src> {
                 self.skip_space()?;
                 self.read_token()
             } else if ch == b'+' {
-                Ok(Some(PlusPlus))
+                Ok(PlusPlus)
             } else {
-                Ok(Some(MinusMinus))
+                Ok(MinusMinus)
             }
         } else if self.eat(b'=') {
             // '+=', '-='
-            Ok(Some(AssignOp(if ch == b'+' {
-                AddAssign
-            } else {
-                SubAssign
-            })))
+            Ok(AssignOp(if ch == b'+' { AddAssign } else { SubAssign }))
         } else {
             // '+', '-'
-            Ok(Some(BinOp(if ch == b'+' { Add } else { Sub })))
+            Ok(BinOp(if ch == b'+' { Add } else { Sub }))
         }
     }
 
-    fn read_token_lt_gt(&mut self, ch: u8) -> LexResult<Option<Token>> {
+    fn read_token_lt_gt(&mut self, ch: u8) -> LexResult<Token> {
         debug_assert!(ch == b'<' || ch == b'>');
         debug_assert!(self.is(ch));
 
@@ -479,7 +478,7 @@ impl<'src> Lexer<'src> {
             BinOp(op)
         };
 
-        Ok(Some(token))
+        Ok(token)
     }
 
     fn read_token_eq_excl(&mut self, ch: u8) -> Token {

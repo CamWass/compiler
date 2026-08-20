@@ -36,7 +36,7 @@ impl Parser<'_> {
         }
 
         let pos = {
-            let modifier = match cur!(self, true)? {
+            let modifier = match cur!(self, true) {
                 Token::Word(Word::Ident(w)) => w,
                 _ => return Ok(None),
             };
@@ -128,7 +128,7 @@ impl Parser<'_> {
             //     g = 11
             // }
             if kind == ParsingContext::EnumMembers {
-                let cur = format!("{:?}", cur!(self, false).ok());
+                let cur = format!("{:?}", cur!(self, false));
                 self.emit_err(
                     self.input.cur_span(),
                     SyntaxError::Expected(Token::Comma, cur),
@@ -307,7 +307,7 @@ impl Parser<'_> {
 
         self.in_type().parse_with(|p| {
             if !p.eat(return_token.clone()) {
-                let cur = format!("{:?}", cur!(p, false).ok());
+                let cur = format!("{:?}", cur!(p, false));
                 let span = p.input.cur_span();
                 syntax_error!(p, span, SyntaxError::Expected(return_token, cur))
             }
@@ -315,7 +315,7 @@ impl Parser<'_> {
             let has_type_pred_asserts = p.is(tok!("asserts")) && p.peek_is_ident_ref();
             if has_type_pred_asserts {
                 p.assert_and_bump(tok!("asserts"));
-                cur!(p, false)?;
+                cur!(p, false);
             }
 
             let has_type_pred_is = p.is_ident_ref()
@@ -454,7 +454,7 @@ impl Parser<'_> {
 
         self.in_type().parse_with(|p| {
             if !p.eat(token) {
-                let got = format!("{:?}", cur!(p, false).ok());
+                let got = format!("{:?}", cur!(p, false));
                 syntax_error!(
                     p,
                     p.input.cur_span(),
@@ -489,7 +489,7 @@ impl Parser<'_> {
         let start = self.input.cur_pos();
         // Computed property names are grammar errors in an enum, so accept just string
         // literal or identifier.
-        match *cur!(self, true)? {
+        match *cur!(self, true) {
             Token::Str { .. } => {
                 self.parse_lit()?;
             }
@@ -571,7 +571,7 @@ impl Parser<'_> {
 
         if self.is(tok!("global")) {
             self.parse_ident_name()?;
-        } else if matches!(*cur!(self, true)?, Token::Str { .. }) {
+        } else if matches!(*cur!(self, true), Token::Str { .. }) {
             self.parse_lit()?;
         } else {
             unexpected!(self, "global or a string literal");
@@ -735,7 +735,7 @@ impl Parser<'_> {
         if self.is(tok!("extends")) {
             self.emit_err(self.input.cur_span(), SyntaxError::TS1172);
 
-            while !eof!(self) && !self.is(tok!('{')) {
+            while self.input.cur() != &Token::Eof && !self.is(tok!('{')) {
                 self.input.bump();
             }
         }
@@ -1402,7 +1402,7 @@ impl Parser<'_> {
     fn parse_ts_non_array_type(&mut self) -> PResult<()> {
         debug_assert!(self.syntax().typescript());
 
-        match *cur!(self, true)? {
+        match *cur!(self, true) {
             Token::Word(Word::Ident(..))
             | tok!("void")
             | tok!("yield")
@@ -1417,21 +1417,19 @@ impl Parser<'_> {
 
                 let valid_kind = matches!(
                     self.input.cur(),
-                    Some(
-                        tok!("void")
-                            | tok!("null")
-                            | tok!("any")
-                            | tok!("boolean")
-                            | tok!("bigint")
-                            | tok!("never")
-                            | tok!("number")
-                            | tok!("object")
-                            | tok!("string")
-                            | tok!("symbol")
-                            | tok!("unknown")
-                            | tok!("undefined")
-                            | tok!("intrinsic")
-                    )
+                    tok!("void")
+                        | tok!("null")
+                        | tok!("any")
+                        | tok!("boolean")
+                        | tok!("bigint")
+                        | tok!("never")
+                        | tok!("number")
+                        | tok!("object")
+                        | tok!("string")
+                        | tok!("symbol")
+                        | tok!("unknown")
+                        | tok!("undefined")
+                        | tok!("intrinsic")
                 );
 
                 let peeked_is_dot = peeked_is!(self, '.');
@@ -1454,7 +1452,7 @@ impl Parser<'_> {
             tok!('-') => {
                 self.input.bump();
 
-                if !matches!(*cur!(self, true)?, Token::Num { .. }) {
+                if !matches!(*cur!(self, true), Token::Num { .. }) {
                     unexpected!(self, "a numeric literal");
                 }
 
@@ -1643,10 +1641,7 @@ impl Parser<'_> {
                 p.parse_ts_enum_decl()?;
                 return Ok(Some(DeclOrEmpty::Empty));
             }
-            if matches!(
-                p.input.cur(),
-                Some(tok!("const") | tok!("var") | tok!("let"))
-            ) {
+            if matches!(p.input.cur(), tok!("const") | tok!("var") | tok!("let")) {
                 let decl = p.parse_var_stmt(false)?;
                 let mut s = get_span!(p, decl.node_id);
                 s.lo = declare_start;
@@ -1657,7 +1652,7 @@ impl Parser<'_> {
             if p.is(tok!("global")) {
                 p.parse_ts_ambient_external_module_decl()?;
             } else if is!(p, IdentName) {
-                let value = match cur!(p, true)? {
+                let value = match cur!(p, true) {
                     Token::Word(w) => w.get_name_id(),
                     _ => unreachable!(),
                 };
@@ -1726,7 +1721,7 @@ impl Parser<'_> {
                     self.input.bump();
                 }
 
-                if matches!(*cur!(self, true)?, Token::Str { .. }) {
+                if matches!(*cur!(self, true), Token::Str { .. }) {
                     self.parse_ts_ambient_external_module_decl()?;
                     return Ok(Some(DeclOrEmpty::Empty));
                 } else if next || self.is_ident_ref() {

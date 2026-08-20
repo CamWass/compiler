@@ -126,15 +126,15 @@ impl Parser<'_> {
         let mut has_strict_mode_directive = false;
 
         let mut stmts = vec![];
-        while {
-            let c = self.input.cur();
-            c != end.as_ref()
-        } {
+        let end = end.unwrap_or(Token::Eof);
+        while self.input.cur() != &end {
             let Some(stmt) = self.parse_stmt_like(StmtParseCtx::None, top_level)? else {
                 parsed_non_directive = true;
                 continue;
             };
 
+            // TODO: can we just check if the current token is a string at the
+            // start and simplify this loop?
             if allow_directives && !parsed_non_directive {
                 if stmt.is_valid_directive() {
                     if !has_strict_mode_directive && stmt.is_use_strict(self) {
@@ -154,7 +154,7 @@ impl Parser<'_> {
             stmts.push(stmt);
         }
 
-        if end.is_some() {
+        if end != Token::Eof {
             self.input.bump();
         }
 
@@ -232,7 +232,7 @@ impl Parser<'_> {
             })));
         }
 
-        match cur!(self, true)? {
+        match cur!(self, true) {
             tok!("break") | tok!("continue") => {
                 let is_break = self.is(tok!("break"));
                 self.input.bump();
@@ -491,7 +491,7 @@ impl Parser<'_> {
                 expr: expr.unwrap(),
             })))
         } else {
-            if let Token::BinOp(..) = *cur!(self, false)? {
+            if let Token::BinOp(..) = *cur!(self, false) {
                 self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
                 let expr = self.parse_bin_op_recursively(expr, 0)?.unwrap();
                 return Ok(Some(Stmt::Expr(ExprStmt {
@@ -639,12 +639,12 @@ impl Parser<'_> {
     }
 
     fn parse_for_head(&mut self) -> PResult<ForHead> {
-        if matches!(self.input.cur(), Some(tok!("const") | tok!("var")))
+        if matches!(self.input.cur(), tok!("const") | tok!("var"))
             || (self.is(tok!("let")) && matches!(peek!(self), Some(t) if t.follows_keyword_let()))
         {
             let decl = self.parse_var_stmt(true)?;
 
-            if matches!(self.input.cur(), Some(tok!("of") | tok!("in"))) {
+            if matches!(self.input.cur(), tok!("of") | tok!("in")) {
                 if decl.decls.len() > 1 {
                     for excess_decl in decl.decls.iter().skip(1) {
                         self.emit_err(
@@ -684,7 +684,7 @@ impl Parser<'_> {
             .parse_expr_or_pat(&mut assign_props)?;
 
         // for (a of b)
-        if matches!(self.input.cur(), Some(tok!("of") | tok!("in"))) {
+        if matches!(self.input.cur(), tok!("of") | tok!("in")) {
             let is_in = self.is(tok!("in"));
 
             let pat = self.reparse_expr_as_pat(PatType::AssignPat, init.unwrap())?;
@@ -854,7 +854,7 @@ impl Parser<'_> {
         };
 
         self.with_ctx(ctx).parse_with(|parser| {
-            while matches!(parser.input.cur(), Some(tok!("case") | tok!("default"))) {
+            while matches!(parser.input.cur(), tok!("case") | tok!("default")) {
                 let mut cons = vec![];
                 let is_case = parser.is(tok!("case"));
                 let case_start = parser.input.cur_pos();
@@ -884,12 +884,10 @@ impl Parser<'_> {
                 };
                 expect!(parser, ':');
 
-                while !eof!(parser)
-                    && !matches!(
-                        parser.input.cur(),
-                        Some(tok!("case") | tok!("default") | tok!('}'))
-                    )
-                {
+                while !matches!(
+                    parser.input.cur(),
+                    tok!("case") | tok!("default") | tok!('}')
+                ) {
                     if let Some(s) = parser.parse_stmt_list_item(false)? {
                         cons.push(s);
                     }
@@ -1018,7 +1016,7 @@ impl Parser<'_> {
         let should_include_in = kind != VarDeclKind::Var || !for_loop;
 
         if self.syntax().typescript() && for_loop {
-            let res = if matches!(self.input.cur(), Some(tok!("of") | tok!("in"))) {
+            let res = if matches!(self.input.cur(), tok!("of") | tok!("in")) {
                 self.ts_look_ahead(|parser| {
                     if !parser.eat(tok!("of")) && !parser.eat(tok!("in")) {
                         return Ok(false);
@@ -1071,7 +1069,7 @@ impl Parser<'_> {
             //      var a,;
             //
             // NewLine is ok
-            if self.is(tok!(';')) || eof!(self) {
+            if self.is(tok!(';')) {
                 let prev_span = self.input.prev_span();
                 let span = if prev_span == var_span {
                     Span::new(prev_span.hi, prev_span.hi)
@@ -1102,7 +1100,7 @@ impl Parser<'_> {
         // Type annotations are not allowed in for-in/for-of variable declarations.
         if for_loop
             && self.syntax().typescript()
-            && matches!(self.input.cur(), Some(tok!("of") | tok!("in")))
+            && matches!(self.input.cur(), tok!("of") | tok!("in"))
         {
             for type_ann in type_annotations {
                 self.emit_err(type_ann, SyntaxError::TS2483);
@@ -1134,7 +1132,7 @@ impl Parser<'_> {
         };
 
         //FIXME(swc): This is wrong. Should check in/of only on first loop.
-        let init = if !for_loop || !matches!(self.input.cur(), Some(tok!("of") | tok!("in"))) {
+        let init = if !for_loop || !matches!(self.input.cur(), tok!("of") | tok!("in")) {
             if self.eat(tok!('=')) {
                 Some(self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap())
             } else {

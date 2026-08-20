@@ -48,7 +48,9 @@ impl<'d> Parser<'d> {
     pub fn new(syntax: Syntax, input: &'d SourceFile, program_data: &'d mut ProgramData) -> Self {
         let input = Lexer::new(syntax, Default::default(), input, program_data);
 
-        Parser {
+        let start_pos = input.start_pos();
+
+        let mut parser = Parser {
             emit_err: true,
             input: Buffer::new(input),
 
@@ -56,7 +58,18 @@ impl<'d> Parser<'d> {
             potential_arrow_start: None,
             trailing_commas_after_rest: FxHashMap::default(),
             parenthesised_exprs: FxHashSet::default(),
+        };
+
+        // Skip shebang and initialise the parser with the first useful token.
+        parser.input.first_bump();
+
+        // This is a workaround for when the file contains only
+        // whitespace/comments.
+        if parser.input.cur.token == Token::Eof {
+            parser.input.cur.span = Span::new(start_pos, start_pos);
         }
+
+        parser
     }
 
     pub fn take_errors(&mut self) -> Vec<Error> {
@@ -164,7 +177,7 @@ impl<'d> Parser<'d> {
     /// Handles automatic semicolon insertion.
     fn is_semi_with_asi(&mut self) -> bool {
         match self.input.cur() {
-            None | Some(tok!('}') | Token::Semi) => true,
+            tok!('}') | Token::Semi | Token::Eof => true,
             _ => self.input.had_line_break_before_cur(),
         }
     }
@@ -172,11 +185,11 @@ impl<'d> Parser<'d> {
     /// Handles automatic semicolon insertion.
     fn eat_semi_with_asi(&mut self) -> bool {
         match self.input.cur() {
-            Some(Token::Semi) => {
+            Token::Semi => {
                 self.input.bump();
                 true
             }
-            None | Some(tok!('}')) => true,
+            tok!('}') | Token::Eof => true,
             _ => self.input.had_line_break_before_cur(),
         }
     }
@@ -194,7 +207,7 @@ impl<'d> Parser<'d> {
     fn is_ident_ref(&mut self) -> bool {
         let ctxt = self.ctx();
         match self.input.cur() {
-            Some(Word(w)) => !ctxt.is_reserved_word(w.get_name_id()),
+            Word(w) => !ctxt.is_reserved_word(w.get_name_id()),
             _ => false,
         }
     }

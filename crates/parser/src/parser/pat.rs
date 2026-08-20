@@ -36,7 +36,7 @@ impl Parser<'_> {
     }
 
     pub(super) fn parse_binding_pat_or_ident(&mut self) -> PResult<Pat> {
-        match *cur!(self, true)? {
+        match *cur!(self, true) {
             tok!("yield") | Word(..) => self.parse_binding_ident().map(Pat::Ident),
             tok!('[') => self.parse_array_binding_pat(),
             tok!('{') => self.parse_object(&mut AssignProps::Ignore),
@@ -83,7 +83,7 @@ impl Parser<'_> {
         let mut elems = vec![];
         let mut comma = 0;
 
-        while !eof!(self) && !self.is(tok!(']')) {
+        while !self.is(tok!(']')) {
             if self.eat(tok!(',')) {
                 comma += 1;
                 continue;
@@ -128,7 +128,7 @@ impl Parser<'_> {
     pub(super) fn eat_any_ts_modifier(&mut self) -> PResult<bool> {
         let has_modifier = self.syntax().typescript()
             && matches!(
-                *cur!(self, false)?,
+                *cur!(self, false),
                 Word(Word::Ident(
                     id_for_built_in!("public")
                         | id_for_built_in!("protected")
@@ -239,7 +239,7 @@ impl Parser<'_> {
         let mut params = vec![];
         let mut props = vec![];
 
-        while !eof!(self) && !self.is(tok!(')')) {
+        while !self.is(tok!(')')) {
             if first {
                 first = false;
             } else {
@@ -332,7 +332,7 @@ impl Parser<'_> {
         let mut params = vec![];
         let mut seen_dot3 = false;
 
-        while !eof!(self) && !self.is(tok!(')')) {
+        while !self.is(tok!(')')) {
             if first {
                 first = false;
             } else {

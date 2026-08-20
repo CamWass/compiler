@@ -125,6 +125,10 @@ impl Lexer<'_> {
         self.target
     }
 
+    pub fn start_pos(&self) -> BytePos {
+        self.start_pos
+    }
+
     pub fn token_context(&self) -> &TokenContexts {
         &self.state.context
     }

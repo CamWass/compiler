@@ -54,7 +54,7 @@ impl Parser<'_> {
 
         // Handle import 'mod.js'
         let str_start = self.input.cur_pos();
-        if let Some(&Token::Str { .. }) = self.input.cur() {
+        if let Token::Str { .. } = self.input.cur() {
             let src = match self.input.bump() {
                 Token::Str { value } => Str {
                     node_id: node_id!(self, self.span(str_start)),
@@ -112,7 +112,7 @@ impl Parser<'_> {
                 }));
             } else if self.eat(tok!('{')) {
                 let mut first = true;
-                while !eof!(self) && !self.is(tok!('}')) {
+                while !self.is(tok!('}')) {
                     if first {
                         first = false;
                     } else if self.eat(tok!(',')) && self.is(tok!('}')) {
@@ -128,7 +128,7 @@ impl Parser<'_> {
         let src = {
             expect!(self, "from");
             let str_start = self.input.cur_pos();
-            match *cur!(self, true)? {
+            match *cur!(self, true) {
                 Token::Str { .. } => match self.input.bump() {
                     Token::Str { value } => Str {
                         node_id: node_id!(self, self.span(str_start)),
@@ -165,7 +165,7 @@ impl Parser<'_> {
     /// Parse `foo`, `foo2 as bar` in `import { foo, foo2 as bar }`
     fn parse_import_specifier(&mut self) -> PResult<ImportSpecifier> {
         let start = self.input.cur_pos();
-        if let Some(&Word(..)) = self.input.cur() {
+        if let Word(..) = self.input.cur() {
             let orig_name = self.parse_ident_name()?;
 
             if self.eat(tok!("as")) {
@@ -247,7 +247,7 @@ impl Parser<'_> {
         }
 
         if self.input.syntax().typescript() && is!(self, IdentName) {
-            let sym = match cur!(self, true)? {
+            let sym = match cur!(self, true) {
                 Token::Word(w) => w.get_name_id(),
                 _ => unreachable!(),
             };
@@ -578,7 +578,7 @@ impl Parser<'_> {
         expect!(self, "from");
 
         let str_start = self.input.cur_pos();
-        let src = match *cur!(self, true)? {
+        let src = match *cur!(self, true) {
             Token::Str { .. } => match self.input.bump() {
                 Token::Str { value } => Str {
                     node_id: node_id!(self, self.span(str_start)),

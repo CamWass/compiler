@@ -1,10 +1,8 @@
 /// cur!($parser, required:bool)
 macro_rules! cur {
     ($parser:expr, $required:expr) => {{
-        let pos = $parser.input.last_pos();
-        let last = Span::new(pos, pos);
         let is_err_token = match $parser.input.cur() {
-            Some($crate::token::Token::Error(..)) => true,
+            $crate::token::Token::Error(..) => true,
             _ => false,
         };
         if is_err_token {
@@ -16,20 +14,7 @@ macro_rules! cur {
             }
         }
 
-        match $parser.input.cur() {
-            Some(c) => Ok(c),
-            None => {
-                if $required {
-                    let err = crate::error::Error {
-                        error: Box::new((last, crate::error::SyntaxError::Eof)),
-                    };
-                    return Err(err);
-                }
-                Err(crate::error::Error {
-                    error: Box::new((last, crate::error::SyntaxError::Eof)),
-                })
-            }
-        }
+        $parser.input.cur()
     }};
 }
 
@@ -40,28 +25,28 @@ macro_rules! is {
     ($parser:expr, BindingIdent) => {{
         let ctx = $parser.ctx();
         match $parser.input.cur() {
-            Some(Word(w)) => !ctx.is_reserved_word(w.get_name_id()),
+            Word(w) => !ctx.is_reserved_word(w.get_name_id()),
             _ => false,
         }
     }};
 
     ($parser:expr, IdentName) => {{
         match $parser.input.cur() {
-            Some(Word(..)) => true,
+            Word(..) => true,
             _ => false,
         }
     }};
 
     ($parser:expr, Str) => {{
         match $parser.input.cur() {
-            Some(Token::Str { .. }) => true,
+            Token::Str { .. } => true,
             _ => false,
         }
     }};
 
     ($parser:expr, Num) => {{
         match $parser.input.cur() {
-            Some(Token::Num { .. }) => true,
+            Token::Num { .. } => true,
             _ => false,
         }
     }};
@@ -90,7 +75,7 @@ macro_rules! peeked_is {
 macro_rules! peek {
     ($parser:expr) => {{
         debug_assert!(
-            $parser.input.knows_cur(),
+            $parser.input.cur() != &Token::Eof,
             "parser should not call peek() without knowing current token.
 Current token is {:?}",
             cur!($parser, false),
@@ -98,13 +83,6 @@ Current token is {:?}",
 
         $parser.input.peek()
     }};
-}
-
-/// Returns true on eof.
-macro_rules! eof {
-    ($parser:expr) => {
-        $parser.input.cur().is_none()
-    };
 }
 
 macro_rules! unexpected {

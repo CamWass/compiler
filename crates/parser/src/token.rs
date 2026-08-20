@@ -88,6 +88,8 @@ pub enum Token {
     BigInt(BigUint),
 
     Error(Error),
+
+    Eof,
 }
 
 impl Token {
@@ -559,6 +561,7 @@ impl Debug for Token {
             Num(value) => write!(f, "numeric literal ({value})")?,
             BigInt(..) => write!(f, "bigint literal")?,
             Token::Error(_) => write!(f, "<lexing error>")?,
+            Token::Eof => write!(f, "<eof>")?,
         }
 
         Ok(())

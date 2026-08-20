@@ -134,11 +134,6 @@ impl Lexer<'_> {
     }
 
     #[inline]
-    pub(super) fn is_at_start(&self) -> bool {
-        self.cur_pos() == self.start_pos
-    }
-
-    #[inline]
     pub(super) fn cur_pos(&self) -> BytePos {
         self.start_pos + BytePos::from_usize(self.cur)
     }

@@ -55,7 +55,7 @@ impl Parser<'_> {
         let start = self.input.cur_pos();
 
         let w = match cur!(self, true) {
-            Ok(&Word(..)) => match self.input.bump() {
+            Word(..) => match self.input.bump() {
                 Word(w) => w,
                 _ => unreachable!(),
             },
@@ -73,7 +73,7 @@ impl Parser<'_> {
 
         let word = self.parse_with(|parser| {
             let w = match cur!(parser, true) {
-                Ok(&Word(..)) => match parser.input.bump() {
+                Word(..) => match parser.input.bump() {
                     Word(w) => w,
                     _ => unreachable!(),
                 },

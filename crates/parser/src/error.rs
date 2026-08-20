@@ -24,7 +24,6 @@ pub(super) enum SyntaxError {
     UnexpectedLexicalDeclaration,
     DuplicateRegExpFlags,
     MalformedRegExpFlags,
-    Eof,
 
     // PrivateNameInInterface,
     InvalidSuperCall,
@@ -396,8 +395,6 @@ impl SyntaxError {
             }
             // SyntaxError::TS1110 => "type expected".into(),
             SyntaxError::TS1141 => "literal in an import type should be string literal".into(),
-
-            SyntaxError::Eof => "Unexpected eof".into(),
 
             SyntaxError::TS2703 => {
                 "The operand of a delete operator must be a property reference.".into()

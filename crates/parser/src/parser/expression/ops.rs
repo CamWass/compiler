@@ -13,7 +13,7 @@ impl Parser<'_> {
 
         let left = match self.parse_unary_expr(assign_props) {
             Ok(v) => v,
-            Err(err) => match cur!(self, true)? {
+            Err(err) => match cur!(self, true) {
                 &Word(Word::Keyword(Keyword::In)) if include_in_expr => {
                     self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
 
@@ -115,15 +115,12 @@ impl Parser<'_> {
         }
 
         let ctx = self.ctx();
-        // Return left on eof
-        let Some(word) = self.input.cur() else {
-            return Ok((left, None));
-        };
-        let op = match *word {
+        let op = match *self.input.cur() {
             Word(Word::Keyword(Keyword::In)) if ctx.include_in_expr() => op!("in"),
             Word(Word::Keyword(Keyword::InstanceOf)) => op!("instanceof"),
             Token::BinOp(op) => op.into(),
             _ => {
+                // Return left on eof.
                 return Ok((left, None));
             }
         };
@@ -263,15 +260,13 @@ impl Parser<'_> {
         // Parse unary expression
         if matches!(
             self.input.cur(),
-            Some(
-                tok!("delete")
-                    | tok!("void")
-                    | tok!("typeof")
-                    | tok!('+')
-                    | tok!('-')
-                    | tok!('~')
-                    | tok!('!')
-            )
+            tok!("delete")
+                | tok!("void")
+                | tok!("typeof")
+                | tok!('+')
+                | tok!('-')
+                | tok!('~')
+                | tok!('!')
         ) {
             let op = match self.input.bump() {
                 tok!("delete") => op!("delete"),

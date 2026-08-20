@@ -176,7 +176,7 @@ impl Parser<'_> {
 
     fn parse_class_body(&mut self) -> PResult<Vec<ClassMember>> {
         let mut elems = vec![];
-        while !eof!(self) && !self.is(tok!('}')) {
+        while !self.is(tok!('}')) {
             if self.eat(tok!(';')) {
                 continue;
             }
