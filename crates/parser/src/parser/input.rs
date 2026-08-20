@@ -174,23 +174,23 @@ impl<'d> Buffer<'d> {
     }
 
     #[inline]
-    pub fn is(&mut self, expected: &Token) -> bool {
+    pub fn is(&mut self, expected: Token) -> bool {
         match self.cur() {
-            Some(t) => *expected == *t,
+            Some(t) => expected == *t,
             _ => false,
         }
     }
 
     #[inline]
-    pub fn peeked_is(&mut self, expected: &Token) -> bool {
+    pub fn peeked_is(&mut self, expected: Token) -> bool {
         match self.peek() {
-            Some(t) => *expected == *t,
+            Some(t) => expected == *t,
             _ => false,
         }
     }
 
     #[inline]
-    pub fn eat(&mut self, expected: &Token) -> bool {
+    pub fn eat(&mut self, expected: Token) -> bool {
         let v = self.is(expected);
         if v {
             self.bump();

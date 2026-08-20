@@ -96,9 +96,9 @@ pub(super) fn is_valid_simple_assignment_target(expr: &Expr, strict: YesMaybe) -
 }
 
 impl<'d> Parser<'d> {
-    pub(super) fn assert_and_bump(&mut self, token: &Token) {
+    pub(super) fn assert_and_bump(&mut self, token: Token) {
         debug_assert!(
-            self.input.is(token),
+            self.input.is(token.clone()),
             "assertion failed: expected token {:?}, got {:?}",
             token,
             self.input.cur()

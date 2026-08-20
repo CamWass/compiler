@@ -11,7 +11,7 @@ impl Parser<'_> {
     }
 
     pub(super) fn parse_maybe_private_name(&mut self) -> PResult<PrivateNameOrIdentifier> {
-        let is_private = self.input.is(&tok!('#'));
+        let is_private = self.input.is(tok!('#'));
 
         if is_private {
             self.parse_private_name()
@@ -24,7 +24,7 @@ impl Parser<'_> {
 
     pub(super) fn parse_private_name(&mut self) -> PResult<PrivateName> {
         let start = self.input.cur_pos();
-        self.assert_and_bump(&tok!('#'));
+        self.assert_and_bump(tok!('#'));
 
         let hash_end = self.input.prev_span().hi;
         if self.input.cur_pos() - hash_end != BytePos(0) {

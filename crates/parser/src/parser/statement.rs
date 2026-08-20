@@ -82,7 +82,7 @@ pub enum StmtParseCtx {
 impl StmtLikeParser<Stmt> for Parser<'_> {
     fn handle_import_export(&mut self, _: bool) -> PResult<Option<Stmt>> {
         let start = self.input.cur_pos();
-        if self.input.syntax().dynamic_import() && self.input.is(&tok!("import")) {
+        if self.input.syntax().dynamic_import() && self.input.is(tok!("import")) {
             let expr = self.parse_expr(&mut AssignProps::Emit)?.unwrap();
 
             self.eat_semi_with_asi();
@@ -94,8 +94,8 @@ impl StmtLikeParser<Stmt> for Parser<'_> {
         }
 
         if self.input.syntax().import_meta()
-            && self.input.is(&tok!("import"))
-            && self.input.peeked_is(&tok!('.'))
+            && self.input.is(tok!("import"))
+            && self.input.peeked_is(tok!('.'))
         {
             let expr = self.parse_expr(&mut AssignProps::Emit)?.unwrap();
 
@@ -116,7 +116,7 @@ impl Parser<'_> {
         &mut self,
         allow_directives: bool,
         top_level: bool,
-        end: Option<&Token>,
+        end: Option<Token>,
     ) -> PResult<Vec<Type>>
     where
         Self: StmtLikeParser<Type>,
@@ -130,7 +130,7 @@ impl Parser<'_> {
         let mut stmts = vec![];
         while {
             let c = self.input.cur();
-            c != end
+            c != end.as_ref()
         } {
             let Some(stmt) = self.parse_stmt_like(StmtParseCtx::None, top_level)? else {
                 parsed_non_directive = true;
@@ -191,7 +191,7 @@ impl Parser<'_> {
     {
         let start = self.input.cur_pos();
 
-        if self.input.is(&tok!("import")) || self.input.is(&tok!("export")) {
+        if self.input.is(tok!("import")) || self.input.is(tok!("export")) {
             return self.handle_import_export(top_level);
         }
 
@@ -208,7 +208,7 @@ impl Parser<'_> {
         // start with. Many are trivial to parse, some require a bit of
         // complexity.
 
-        if top_level && self.input.is(&tok!("await")) {
+        if top_level && self.input.is(tok!("await")) {
             let valid = self.target() >= JscTarget::Es2017 && self.syntax().top_level_await();
 
             if !valid {
@@ -226,11 +226,11 @@ impl Parser<'_> {
         }
 
         if self.input.syntax().typescript()
-            && self.input.is(&tok!("const"))
+            && self.input.is(tok!("const"))
             && peeked_is!(self, "enum")
         {
-            self.assert_and_bump(&tok!("const"));
-            self.assert_and_bump(&tok!("enum"));
+            self.assert_and_bump(tok!("const"));
+            self.assert_and_bump(tok!("enum"));
             self.parse_ts_enum_decl()?;
             return Ok(Some(Stmt::Empty(EmptyStmt {
                 node_id: node_id!(self, span!(self, start)),
@@ -239,7 +239,7 @@ impl Parser<'_> {
 
         match cur!(self, true)? {
             tok!("break") | tok!("continue") => {
-                let is_break = self.input.is(&tok!("break"));
+                let is_break = self.input.is(tok!("break"));
                 self.input.bump();
 
                 let label = if self.eat_semi_with_asi() {
@@ -391,8 +391,8 @@ impl Parser<'_> {
         }
 
         // Handle async function foo() {}
-        if self.input.is(&tok!("async"))
-            && self.input.peeked_is(&tok!("function"))
+        if self.input.is(tok!("async"))
+            && self.input.peeked_is(tok!("function"))
             && !self.input.has_linebreak_between_cur_and_peeked()
         {
             // TODO: what's this?
@@ -424,7 +424,7 @@ impl Parser<'_> {
 
         if let MaybeParen::Expr(expr_ref) = &expr {
             if let Expr::Ident(_) = expr_ref.as_ref() {
-                if self.input.eat(&tok!(':')) {
+                if self.input.eat(tok!(':')) {
                     let ident = match *expr.unwrap() {
                         Expr::Ident(ident) => ident,
                         _ => unreachable!(),
@@ -476,7 +476,7 @@ impl Parser<'_> {
                         id_for_built_in!("public")
                         | id_for_built_in!("static")
                         | id_for_built_in!("abstract") => {
-                            if self.input.eat(&tok!("interface")) {
+                            if self.input.eat(tok!("interface")) {
                                 self.emit_err(get_span!(self, ident.node_id), SyntaxError::TS2427);
                                 self.parse_ts_interface_decl()?;
                                 return Ok(Some(Stmt::Empty(EmptyStmt {
@@ -548,7 +548,7 @@ impl Parser<'_> {
     fn parse_do_stmt(&mut self) -> PResult<Stmt> {
         let start = self.input.cur_pos();
 
-        self.assert_and_bump(&tok!("do"));
+        self.assert_and_bump(tok!("do"));
 
         let ctx = Context {
             flags: self.ctx().flags
@@ -564,7 +564,7 @@ impl Parser<'_> {
 
         expect!(self, "while");
         let test = self.parse_header_expr()?.unwrap();
-        self.input.eat(&tok!(';'));
+        self.input.eat(tok!(';'));
 
         Ok(Stmt::DoWhile(DoWhileStmt {
             node_id: node_id!(self, span!(self, start)),
@@ -582,10 +582,10 @@ impl Parser<'_> {
     fn parse_for_stmt(&mut self) -> PResult<Stmt> {
         let start = self.input.cur_pos();
 
-        self.assert_and_bump(&tok!("for"));
+        self.assert_and_bump(tok!("for"));
 
         let await_start = self.input.cur_pos();
-        let await_token = if self.input.eat(&tok!("await")) {
+        let await_token = if self.input.eat(tok!("await")) {
             Some(span!(self, await_start))
         } else {
             None
@@ -645,7 +645,7 @@ impl Parser<'_> {
 
     fn parse_for_head(&mut self) -> PResult<ForHead> {
         if is_one_of!(self, "const", "var")
-            || (self.input.is(&tok!("let")) && peek!(self)?.follows_keyword_let())
+            || (self.input.is(tok!("let")) && peek!(self)?.follows_keyword_let())
         {
             let decl = self.parse_var_stmt(true)?;
 
@@ -679,7 +679,7 @@ impl Parser<'_> {
             return self.parse_normal_for_head(Some(Box::new(VarDeclOrExpr::VarDecl(decl))));
         }
 
-        if self.input.eat(&tok!(';')) {
+        if self.input.eat(tok!(';')) {
             return self.parse_normal_for_head(None);
         }
 
@@ -690,7 +690,7 @@ impl Parser<'_> {
 
         // for (a of b)
         if is_one_of!(self, "of", "in") {
-            let is_in = self.input.is(&tok!("in"));
+            let is_in = self.input.is(tok!("in"));
 
             let pat = self.reparse_expr_as_pat(PatType::AssignPat, init.unwrap())?;
 
@@ -740,7 +740,7 @@ impl Parser<'_> {
     }
 
     fn parse_normal_for_head(&mut self, init: Option<Box<VarDeclOrExpr>>) -> PResult<ForHead> {
-        let test = if self.input.eat(&tok!(';')) {
+        let test = if self.input.eat(tok!(';')) {
             None
         } else {
             let test = self
@@ -752,7 +752,7 @@ impl Parser<'_> {
             test
         };
 
-        let update = if self.input.is(&tok!(')')) {
+        let update = if self.input.is(tok!(')')) {
             None
         } else {
             self.include_in_expr(true)
@@ -767,7 +767,7 @@ impl Parser<'_> {
     fn parse_if_stmt(&mut self) -> PResult<Stmt> {
         let start = self.input.cur_pos();
 
-        self.assert_and_bump(&tok!("if"));
+        self.assert_and_bump(tok!("if"));
 
         // TODO: let test = self.parse_header_expr()?;
 
@@ -776,7 +776,7 @@ impl Parser<'_> {
             .include_in_expr(true)
             .parse_expr(&mut AssignProps::Emit)?
             .unwrap();
-        if !self.input.eat(&tok!(')')) {
+        if !self.input.eat(tok!(')')) {
             self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
 
             let span = span!(self, start);
@@ -796,7 +796,7 @@ impl Parser<'_> {
         let consequent = self
             .parse_stmt(StmtParseCtx::IfOrLabel, false)
             .map(Box::new)?;
-        let alternate = if self.input.eat(&tok!("else")) {
+        let alternate = if self.input.eat(tok!("else")) {
             Some(
                 self.parse_stmt(StmtParseCtx::IfOrLabel, false)
                     .map(Box::new)?,
@@ -816,7 +816,7 @@ impl Parser<'_> {
     fn parse_return_stmt(&mut self) -> PResult<Stmt> {
         let start = self.input.cur_pos();
 
-        self.assert_and_bump(&tok!("return"));
+        self.assert_and_bump(tok!("return"));
 
         // In `return` (and `break`/`continue`), the keywords with
         // optional arguments, we eagerly look for a semicolon or the
@@ -845,7 +845,7 @@ impl Parser<'_> {
     fn parse_switch_stmt(&mut self) -> PResult<Stmt> {
         let switch_start = self.input.cur_pos();
 
-        self.assert_and_bump(&tok!("switch"));
+        self.assert_and_bump(tok!("switch"));
 
         let discriminant = self.parse_header_expr()?.unwrap();
         let mut cases = vec![];
@@ -861,7 +861,7 @@ impl Parser<'_> {
         self.with_ctx(ctx).parse_with(|parser| {
             while is_one_of!(parser, "case", "default") {
                 let mut cons = vec![];
-                let is_case = parser.input.is(&tok!("case"));
+                let is_case = parser.input.is(tok!("case"));
                 let case_start = parser.input.cur_pos();
 
                 parser.input.bump();
@@ -918,7 +918,7 @@ impl Parser<'_> {
     fn parse_throw_stmt(&mut self) -> PResult<Stmt> {
         let start = self.input.cur_pos();
 
-        self.assert_and_bump(&tok!("throw"));
+        self.assert_and_bump(tok!("throw"));
 
         if self.input.had_line_break_before_cur() {
             // TODO(swc): Suggest throw arg;
@@ -940,7 +940,7 @@ impl Parser<'_> {
     fn parse_try_stmt(&mut self) -> PResult<Stmt> {
         let start = self.input.cur_pos();
 
-        self.assert_and_bump(&tok!("try"));
+        self.assert_and_bump(tok!("try"));
 
         let block = self.parse_block(false)?;
 
@@ -965,7 +965,7 @@ impl Parser<'_> {
     fn parse_catch_clause(&mut self) -> PResult<Option<CatchClause>> {
         let start = self.input.cur_pos();
 
-        Ok(if self.input.eat(&tok!("catch")) {
+        Ok(if self.input.eat(tok!("catch")) {
             let param = self.parse_catch_param()?;
 
             self.parse_block(false)
@@ -981,7 +981,7 @@ impl Parser<'_> {
     }
 
     fn parse_finally_block(&mut self) -> PResult<Option<BlockStmt>> {
-        Ok(if self.input.eat(&tok!("finally")) {
+        Ok(if self.input.eat(tok!("finally")) {
             self.parse_block(false).map(Some)?
         } else {
             None
@@ -990,11 +990,11 @@ impl Parser<'_> {
 
     /// Optional since es2019
     fn parse_catch_param(&mut self) -> PResult<Option<Pat>> {
-        if self.input.eat(&tok!('(')) {
+        if self.input.eat(tok!('(')) {
             let pat = self.parse_binding_pat_or_ident()?;
 
             // Type annotation.
-            if self.syntax().typescript() && self.input.eat(&tok!(':')) {
+            if self.syntax().typescript() && self.input.eat(tok!(':')) {
                 // Type annotation.
                 self.in_type().parse_with(Parser::parse_ts_type)?;
                 // self.emit_err(ty.span(), SyntaxError::TS1196);
@@ -1020,7 +1020,7 @@ impl Parser<'_> {
         if self.syntax().typescript() && for_loop {
             let res = if is_one_of!(self, "in", "of") {
                 self.ts_look_ahead(|parser| {
-                    if !parser.input.eat(&tok!("of")) && !parser.input.eat(&tok!("in")) {
+                    if !parser.input.eat(tok!("of")) && !parser.input.eat(tok!("in")) {
                         return Ok(false);
                     }
 
@@ -1053,7 +1053,7 @@ impl Parser<'_> {
         let mut decls = vec![];
         let mut type_annotations = vec![];
         let mut first = true;
-        while first || self.input.eat(&tok!(',')) {
+        while first || self.input.eat(tok!(',')) {
             if first {
                 first = false;
             }
@@ -1071,7 +1071,7 @@ impl Parser<'_> {
             //      var a,;
             //
             // NewLine is ok
-            if self.input.is(&tok!(';')) || eof!(self) {
+            if self.input.is(tok!(';')) || eof!(self) {
                 let prev_span = self.input.prev_span();
                 let span = if prev_span == var_span {
                     Span::new(prev_span.hi, prev_span.hi)
@@ -1120,11 +1120,11 @@ impl Parser<'_> {
 
         // TS definite.
         if self.input.syntax().typescript() && matches!(name, Pat::Ident(_)) {
-            self.input.eat(&tok!('!'));
+            self.input.eat(tok!('!'));
         }
 
         // Typescript extension
-        let type_annotation = if self.input.syntax().typescript() && self.input.is(&tok!(':')) {
+        let type_annotation = if self.input.syntax().typescript() && self.input.is(tok!(':')) {
             self.try_parse_ts_type_ann()?
         } else {
             None
@@ -1132,7 +1132,7 @@ impl Parser<'_> {
 
         //FIXME(swc): This is wrong. Should check in/of only on first loop.
         let init = if !for_loop || !is_one_of!(self, "in", "of") {
-            if self.input.eat(&tok!('=')) {
+            if self.input.eat(tok!('=')) {
                 Some(self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap())
             } else {
                 // Destructuring bindings require initializers, but
@@ -1166,7 +1166,7 @@ impl Parser<'_> {
     fn parse_while_stmt(&mut self) -> PResult<Stmt> {
         let start = self.input.cur_pos();
 
-        self.assert_and_bump(&tok!("while"));
+        self.assert_and_bump(tok!("while"));
 
         let test = self.parse_header_expr()?.unwrap();
 
@@ -1201,7 +1201,7 @@ impl Parser<'_> {
 
         let start = self.input.cur_pos();
 
-        self.assert_and_bump(&tok!("with"));
+        self.assert_and_bump(tok!("with"));
 
         let obj = self.parse_header_expr()?.unwrap();
 
@@ -1230,7 +1230,7 @@ impl Parser<'_> {
 
         expect!(self, '{');
 
-        let stmts = self.parse_block_body(allow_directives, false, Some(&tok!('}')))?;
+        let stmts = self.parse_block_body(allow_directives, false, Some(tok!('}')))?;
 
         let span = span!(self, start);
         Ok(BlockStmt {
@@ -1259,7 +1259,7 @@ impl Parser<'_> {
             }
             parser.labels.push(label.name);
 
-            let body = Box::new(if parser.input.is(&tok!("function")) {
+            let body = Box::new(if parser.input.is(tok!("function")) {
                 let f = parser.parse_fn_decl()?;
                 if let Decl::Fn(f) = &f {
                     if f.function.is_generator() {

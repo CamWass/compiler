@@ -17,11 +17,11 @@ impl Parser<'_> {
         // Want a hasLineBreakUpNext() method...
         self.input.bump();
         Ok(!self.input.had_line_break_before_cur()
-            && !self.input.is(&tok!('('))
-            && !self.input.is(&tok!(')'))
-            && !self.input.is(&tok!(':'))
-            && !self.input.is(&tok!('='))
-            && !self.input.is(&tok!('?')))
+            && !self.input.is(tok!('('))
+            && !self.input.is(tok!(')'))
+            && !self.input.is(tok!(':'))
+            && !self.input.is(tok!('='))
+            && !self.input.is(tok!('?')))
     }
 
     /// Parses a modifier matching one the given modifier names.
@@ -58,14 +58,14 @@ impl Parser<'_> {
         debug_assert!(self.syntax().typescript());
 
         match kind {
-            ParsingContext::EnumMembers | ParsingContext::TypeMembers => self.input.is(&tok!('}')),
+            ParsingContext::EnumMembers | ParsingContext::TypeMembers => self.input.is(tok!('}')),
             ParsingContext::HeritageClauseElement => {
-                self.input.is(&tok!('{'))
-                    || self.input.is(&tok!("implements"))
-                    || self.input.is(&tok!("extends"))
+                self.input.is(tok!('{'))
+                    || self.input.is(tok!("implements"))
+                    || self.input.is(tok!("extends"))
             }
-            ParsingContext::TupleElementTypes => self.input.is(&tok!(']')),
-            ParsingContext::TypeParametersOrArguments => self.input.is(&tok!('>')),
+            ParsingContext::TupleElementTypes => self.input.is(tok!(']')),
+            ParsingContext::TypeParametersOrArguments => self.input.is(tok!('>')),
         }
     }
 
@@ -116,7 +116,7 @@ impl Parser<'_> {
             }
             parse_element(self)?;
 
-            if self.input.eat(&tok!(',')) {
+            if self.input.eat(tok!(',')) {
                 continue;
             }
 
@@ -130,9 +130,11 @@ impl Parser<'_> {
             //     g = 11
             // }
             if kind == ParsingContext::EnumMembers {
-                const TOKEN: &Token = &Token::Comma;
                 let cur = format!("{:?}", cur!(self, false).ok());
-                self.emit_err(self.input.cur_span(), SyntaxError::Expected(TOKEN, cur));
+                self.emit_err(
+                    self.input.cur_span(),
+                    SyntaxError::Expected(Token::Comma, cur),
+                );
                 continue;
             }
             // This will fail with an error about a missing comma
@@ -160,9 +162,9 @@ impl Parser<'_> {
             let dot_span = span!(self, dot_start);
             self.emit_err(dot_span, SyntaxError::TS1005);
         }
-        while self.input.eat(&tok!('.')) {
+        while self.input.eat(tok!('.')) {
             let dot_start = self.input.cur_pos();
-            if !self.input.is(&tok!('#')) && !is!(self, IdentName) {
+            if !self.input.is(tok!('#')) && !is!(self, IdentName) {
                 self.emit_err(Span::new(dot_start, dot_start), SyntaxError::TS1003);
                 return Ok(());
             }
@@ -189,7 +191,7 @@ impl Parser<'_> {
         self.parse_ts_entity_name(true)?;
 
         // Type parameters:
-        if !self.input.had_line_break_before_cur() && self.input.is(&tok!('<')) {
+        if !self.input.had_line_break_before_cur() && self.input.is(tok!('<')) {
             self.parse_ts_type_args()?;
         }
 
@@ -204,7 +206,7 @@ impl Parser<'_> {
     fn parse_ts_this_type_predicate(&mut self) -> PResult<()> {
         debug_assert!(self.syntax().typescript());
 
-        if self.input.eat(&tok!("is")) {
+        if self.input.eat(tok!("is")) {
             self.parse_ts_type_ann(false)?;
         }
 
@@ -222,7 +224,7 @@ impl Parser<'_> {
 
     /// `tsParseImportType`
     fn parse_ts_import_type(&mut self) -> PResult<()> {
-        self.assert_and_bump(&tok!("import"));
+        self.assert_and_bump(tok!("import"));
 
         expect!(self, '(');
 
@@ -235,12 +237,12 @@ impl Parser<'_> {
         expect!(self, ')');
 
         // Qualifier:
-        if self.input.eat(&tok!('.')) {
+        if self.input.eat(tok!('.')) {
             self.parse_ts_entity_name(false).map(Some)?;
         }
 
         // Type arguments:
-        if self.input.is(&tok!('<')) {
+        if self.input.is(tok!('<')) {
             self.parse_ts_type_args().map(Some)?;
         }
 
@@ -253,7 +255,7 @@ impl Parser<'_> {
 
         expect!(self, "typeof");
         // Expression name:
-        if self.input.is(&tok!("import")) {
+        if self.input.is(tok!("import")) {
             self.parse_ts_import_type()?;
         } else {
             self.parse_ts_entity_name(true)?;
@@ -271,9 +273,9 @@ impl Parser<'_> {
         // Name:
         self.parse_ident_name()?;
         // Constraint:
-        self.eat_then_parse_ts_type(&tok!("extends"))?;
+        self.eat_then_parse_ts_type(tok!("extends"))?;
         // Default:
-        self.eat_then_parse_ts_type(&tok!('='))?;
+        self.eat_then_parse_ts_type(tok!('='))?;
 
         Ok(span!(self, start))
     }
@@ -301,20 +303,20 @@ impl Parser<'_> {
     /// `tsParseTypeOrTypePredicateAnnotation`
     pub(super) fn parse_ts_type_or_type_predicate_ann(
         &mut self,
-        return_token: &'static Token,
+        return_token: Token,
     ) -> PResult<()> {
         debug_assert!(self.syntax().typescript());
 
         self.in_type().parse_with(|p| {
-            if !p.input.eat(return_token) {
+            if !p.input.eat(return_token.clone()) {
                 let cur = format!("{:?}", cur!(p, false).ok());
                 let span = p.input.cur_span();
                 syntax_error!(p, span, SyntaxError::Expected(return_token, cur))
             }
 
-            let has_type_pred_asserts = p.input.is(&tok!("asserts")) && p.peek_is_ident_ref();
+            let has_type_pred_asserts = p.input.is(tok!("asserts")) && p.peek_is_ident_ref();
             if has_type_pred_asserts {
-                p.assert_and_bump(&tok!("asserts"));
+                p.assert_and_bump(tok!("asserts"));
                 cur!(p, false)?;
             }
 
@@ -331,7 +333,7 @@ impl Parser<'_> {
             p.parse_ident_name()?;
             // Type annotation:
             if has_type_pred_is {
-                p.assert_and_bump(&tok!("is"));
+                p.assert_and_bump(tok!("is"));
                 p.parse_ts_type_ann(false)?;
             }
 
@@ -429,7 +431,7 @@ impl Parser<'_> {
 
         self.in_type().parse_with(|p| {
             if eat_colon {
-                p.assert_and_bump(&tok!(':'));
+                p.assert_and_bump(tok!(':'));
             }
 
             p.parse_ts_type()
@@ -437,7 +439,7 @@ impl Parser<'_> {
     }
 
     /// `tsEatThenParseType`
-    fn eat_then_parse_ts_type(&mut self, token_to_eat: &'static Token) -> PResult<Option<()>> {
+    fn eat_then_parse_ts_type(&mut self, token_to_eat: Token) -> PResult<Option<()>> {
         self.in_type().parse_with(|p| {
             if !p.input.eat(token_to_eat) {
                 return Ok(None);
@@ -449,11 +451,7 @@ impl Parser<'_> {
     }
 
     /// `tsExpectThenParseType`
-    fn expect_then_parse_ts_type(
-        &mut self,
-        token: &'static Token,
-        token_str: &'static str,
-    ) -> PResult<()> {
+    fn expect_then_parse_ts_type(&mut self, token: Token, token_str: &'static str) -> PResult<()> {
         debug_assert!(self.syntax().typescript());
 
         self.in_type().parse_with(|p| {
@@ -505,7 +503,7 @@ impl Parser<'_> {
                 self.emit_err(span, SyntaxError::TS2452);
             }
             Token::LBracket => {
-                self.assert_and_bump(&tok!('['));
+                self.assert_and_bump(tok!('['));
                 let _ = self.parse_expr(&mut AssignProps::Emit)?;
 
                 self.emit_err(span!(self, start), SyntaxError::TS1164);
@@ -518,9 +516,9 @@ impl Parser<'_> {
         }
 
         // Init:
-        if self.input.eat(&tok!('=')) {
+        if self.input.eat(tok!('=')) {
             self.parse_assignment_expr(&mut AssignProps::Emit)?;
-        } else if !(self.input.is(&tok!(',')) || self.input.is(&tok!('}'))) {
+        } else if !(self.input.is(tok!(',')) || self.input.is(tok!('}'))) {
             let start = self.input.cur_pos();
             self.input.bump();
             self.input.store(tok!(','));
@@ -549,7 +547,7 @@ impl Parser<'_> {
         expect!(self, '{');
         // Inside of a module block is considered "top-level", meaning it can have
         // imports and exports.
-        self.parse_block_body::<ModuleItem>(false, true, Some(&tok!('}')))?;
+        self.parse_block_body::<ModuleItem>(false, true, Some(tok!('}')))?;
 
         Ok(())
     }
@@ -560,7 +558,7 @@ impl Parser<'_> {
 
         self.parse_ident_name()?;
         // Body:
-        if self.input.eat(&tok!('.')) {
+        if self.input.eat(tok!('.')) {
             self.parse_ts_module_or_ns_decl()?;
         } else {
             self.parse_ts_module_block()?;
@@ -573,7 +571,7 @@ impl Parser<'_> {
     fn parse_ts_ambient_external_module_decl(&mut self) -> PResult<()> {
         debug_assert!(self.syntax().typescript());
 
-        if self.input.is(&tok!("global")) {
+        if self.input.is(tok!("global")) {
             self.parse_ident_name()?;
         } else if matches!(*cur!(self, true)?, Token::Str { .. }) {
             self.parse_lit()?;
@@ -581,7 +579,7 @@ impl Parser<'_> {
             unexpected!(self, "global or a string literal");
         };
 
-        if self.input.is(&tok!('{')) {
+        if self.input.is(tok!('{')) {
             self.parse_ts_module_block()?;
         } else {
             self.expect_semi_with_asi()?;
@@ -609,7 +607,7 @@ impl Parser<'_> {
         let start = self.input.cur_pos();
 
         let ty = self.parse_ts_non_conditional_type()?;
-        if self.input.had_line_break_before_cur() || !self.input.eat(&tok!("extends")) {
+        if self.input.had_line_break_before_cur() || !self.input.eat(tok!("extends")) {
             return Ok(ty);
         }
 
@@ -639,8 +637,8 @@ impl Parser<'_> {
             self.parse_ts_fn_or_constructor_type(true)?;
             return Ok(span!(self, start));
         }
-        if (self.input.is(&tok!("abstract")) && peeked_is!(self, "new"))
-            || self.input.is(&tok!("new"))
+        if (self.input.is(tok!("abstract")) && peeked_is!(self, "new"))
+            || self.input.is(tok!("new"))
         {
             // As in `new () => Date`
             self.parse_ts_fn_or_constructor_type(false)?;
@@ -654,11 +652,11 @@ impl Parser<'_> {
     fn is_ts_start_of_fn_type(&mut self) -> PResult<bool> {
         debug_assert!(self.syntax().typescript());
 
-        if self.input.is(&tok!('<')) {
+        if self.input.is(tok!('<')) {
             return Ok(true);
         }
 
-        Ok(self.input.is(&tok!('('))
+        Ok(self.input.is(tok!('('))
             && self.ts_look_ahead(Parser::is_ts_unambiguously_start_of_fn_type)?)
     }
 
@@ -700,7 +698,7 @@ impl Parser<'_> {
         // Expression:
         self.parse_ts_entity_name(false)?;
         // Type arguments:
-        if self.input.is(&tok!('<')) {
+        if self.input.is(tok!('<')) {
             self.parse_ts_type_args()?;
         }
 
@@ -731,17 +729,17 @@ impl Parser<'_> {
 
         self.try_eat_ts_type_params(|_, _| {})?;
 
-        if self.input.eat(&tok!("extends")) {
+        if self.input.eat(tok!("extends")) {
             self.eat_ts_heritage_clause(|_, _| {})?;
         }
 
         // Recover from
         //
         //     interface I extends A extends B {}
-        if self.input.is(&tok!("extends")) {
+        if self.input.is(tok!("extends")) {
             self.emit_err(self.input.cur_span(), SyntaxError::TS1172);
 
-            while !eof!(self) && !self.input.is(&tok!('{')) {
+            while !eof!(self) && !self.input.is(tok!('{')) {
                 self.input.bump();
             }
         }
@@ -762,7 +760,7 @@ impl Parser<'_> {
         // Type parameters:
         self.try_eat_ts_type_params(|_, _| {})?;
         // Type annotation:
-        self.expect_then_parse_ts_type(&tok!('='), "=")?;
+        self.expect_then_parse_ts_type(tok!('='), "=")?;
         self.expect_semi_with_asi()?;
         Ok(())
     }
@@ -785,7 +783,7 @@ impl Parser<'_> {
     // fn is_ts_external_module_ref(&mut self) -> PResult<bool> {
     //     debug_assert!(self.syntax().typescript());
 
-    //     Ok(self.input.is(&tok!("require") && peeked_is!(self, '('))
+    //     Ok(self.input.is(tok!("require") && peeked_is!(self, '('))
     // }
 
     // /// `tsParseModuleReference`
@@ -849,7 +847,7 @@ impl Parser<'_> {
     fn is_ts_unambiguously_start_of_fn_type(&mut self) -> PResult<bool> {
         debug_assert!(self.syntax().typescript());
 
-        self.assert_and_bump(&tok!('('));
+        self.assert_and_bump(tok!('('));
         if is_one_of!(self, ')', "...") {
             // ( )
             // ( ...
@@ -863,7 +861,7 @@ impl Parser<'_> {
                 // ( xxx =
                 return Ok(true);
             }
-            if self.input.eat(&tok!(')')) && self.input.is(&tok!("=>")) {
+            if self.input.eat(tok!(')')) && self.input.is(tok!("=>")) {
                 // ( xxx ) =>
                 return Ok(true);
             }
@@ -877,19 +875,19 @@ impl Parser<'_> {
 
         let _ = self.eat_any_ts_modifier()?;
 
-        if self.is_ident_ref() || self.input.is(&tok!("this")) {
+        if self.is_ident_ref() || self.input.is(tok!("this")) {
             self.input.bump();
             return Ok(true);
         }
 
-        if self.input.is(&tok!('{')) {
+        if self.input.is(tok!('{')) {
             let mut brace_stack_counter = 1;
             self.input.bump();
 
             while brace_stack_counter > 0 {
-                if self.input.is(&tok!('{')) {
+                if self.input.is(tok!('{')) {
                     brace_stack_counter += 1;
-                } else if self.input.is(&tok!('}')) {
+                } else if self.input.is(tok!('}')) {
                     brace_stack_counter -= 1;
                 }
                 self.input.bump();
@@ -897,14 +895,14 @@ impl Parser<'_> {
             return Ok(true);
         }
 
-        if self.input.is(&tok!('[')) {
+        if self.input.is(tok!('[')) {
             let mut bracket_stack_counter = 1;
             self.input.bump();
 
             while bracket_stack_counter > 0 {
-                if self.input.is(&tok!('[')) {
+                if self.input.is(tok!('[')) {
                     bracket_stack_counter += 1;
-                } else if self.input.is(&tok!(']')) {
+                } else if self.input.is(tok!(']')) {
                     bracket_stack_counter -= 1;
                 }
                 self.input.bump();
@@ -919,7 +917,7 @@ impl Parser<'_> {
     fn parse_ts_type_member_semicolon(&mut self) -> PResult<()> {
         debug_assert!(self.syntax().typescript());
 
-        if !self.input.eat(&tok!(',')) {
+        if !self.input.eat(tok!(',')) {
             self.expect_semi_with_asi()?;
         }
 
@@ -941,8 +939,8 @@ impl Parser<'_> {
         // Params:
         self.parse_ts_binding_list_for_signature()?;
         // Type annotation:
-        if self.input.is(&tok!(':')) {
-            self.parse_ts_type_or_type_predicate_ann(&tok!(':'))?;
+        if self.input.is(tok!(':')) {
+            self.parse_ts_type_or_type_predicate_ann(tok!(':'))?;
         }
         // -----
 
@@ -956,7 +954,7 @@ impl Parser<'_> {
         debug_assert!(self.syntax().typescript());
 
         // Note: babel's comment is wrong
-        self.assert_and_bump(&tok!('[')); // Skip '['
+        self.assert_and_bump(tok!('[')); // Skip '['
 
         // ',' is for error recovery
         Ok(self.eat_ident_ref() && is_one_of!(self, ':', ','))
@@ -964,7 +962,7 @@ impl Parser<'_> {
 
     /// `tsTryParseIndexSignature`
     pub(super) fn try_parse_ts_index_signature(&mut self) -> PResult<Option<()>> {
-        if !(self.input.is(&tok!('['))
+        if !(self.input.is(tok!('['))
             && self.ts_look_ahead(Parser::is_ts_unambiguously_index_signature)?)
         {
             return Ok(None);
@@ -975,7 +973,7 @@ impl Parser<'_> {
         let ident_start = self.input.cur_pos();
         let id = self.parse_ident_name().map(BindingIdent::from_ident)?;
 
-        if self.input.eat(&tok!(',')) {
+        if self.input.eat(tok!(',')) {
             self.emit_err(get_span!(self, id.id.node_id), SyntaxError::TS1096);
         } else {
             expect!(self, ':');
@@ -1002,7 +1000,7 @@ impl Parser<'_> {
         // Key:
         self.parse_prop_name()?;
 
-        self.input.eat(&tok!('?'));
+        self.input.eat(tok!('?'));
 
         if !readonly && is_one_of!(self, '(', '<') {
             // ----- inlined self.tsFillSignature(tt.colon, node);
@@ -1012,8 +1010,8 @@ impl Parser<'_> {
             // Parameters:
             self.parse_ts_binding_list_for_signature()?;
             // Type annotation:
-            if self.input.is(&tok!(':')) {
-                self.parse_ts_type_or_type_predicate_ann(&tok!(':'))?;
+            if self.input.is(tok!(':')) {
+                self.parse_ts_type_or_type_predicate_ann(tok!(':'))?;
             }
             // -----
 
@@ -1032,11 +1030,11 @@ impl Parser<'_> {
     fn parse_ts_type_member(&mut self) -> PResult<()> {
         debug_assert!(self.syntax().typescript());
 
-        if self.input.is(&tok!('(')) || self.input.is(&tok!('<')) {
+        if self.input.is(tok!('(')) || self.input.is(tok!('<')) {
             return self
                 .parse_ts_signature_member(SignatureParsingMode::TSCallSignatureDeclaration);
         }
-        if self.input.is(&tok!("new"))
+        if self.input.is(tok!("new"))
             && self.ts_look_ahead(Parser::is_ts_start_of_construct_signature)?
         {
             return self
@@ -1056,7 +1054,7 @@ impl Parser<'_> {
                 .parse_ts_modifier(&[id_for_built_in!("readonly")])?
                 .is_some();
 
-            let is_get = if p.input.eat(&tok!("get")) {
+            let is_get = if p.input.eat(tok!("get")) {
                 true
             } else {
                 expect!(p, "set");
@@ -1066,7 +1064,7 @@ impl Parser<'_> {
             // Key:
             p.parse_prop_name()?;
 
-            p.input.eat(&tok!('?'));
+            p.input.eat(tok!('?'));
 
             if is_get {
                 expect!(p, '(');
@@ -1101,7 +1099,7 @@ impl Parser<'_> {
 
         self.input.bump();
 
-        Ok(self.input.is(&tok!('(')) || self.input.is(&tok!('<')))
+        Ok(self.input.is(tok!('(')) || self.input.is(tok!('<')))
     }
 
     /// `tsParseTypeLiteral`
@@ -1127,13 +1125,13 @@ impl Parser<'_> {
         debug_assert!(self.syntax().typescript());
 
         self.input.bump();
-        if self.input.eat(&tok!('+')) || self.input.eat(&tok!('-')) {
-            return self.input.is(&tok!("readonly"));
+        if self.input.eat(tok!('+')) || self.input.eat(tok!('-')) {
+            return self.input.is(tok!("readonly"));
         }
-        if self.input.is(&tok!("readonly")) {
+        if self.input.is(tok!("readonly")) {
             self.input.bump();
         }
-        if !self.input.is(&tok!('[')) {
+        if !self.input.is(tok!('[')) {
             return false;
         }
         self.input.bump();
@@ -1142,7 +1140,7 @@ impl Parser<'_> {
         }
         self.input.bump();
 
-        self.input.is(&tok!("in"))
+        self.input.is(tok!("in"))
     }
 
     /// `tsParseMappedTypeParameter`
@@ -1152,7 +1150,7 @@ impl Parser<'_> {
         // Name:
         self.parse_ident_name()?;
         // Constraint
-        self.expect_then_parse_ts_type(&tok!("in"), "in")?;
+        self.expect_then_parse_ts_type(tok!("in"), "in")?;
 
         Ok(())
     }
@@ -1166,14 +1164,14 @@ impl Parser<'_> {
             self.input.bump();
             expect!(self, "readonly");
         } else {
-            self.input.eat(&tok!("readonly"));
+            self.input.eat(tok!("readonly"));
         }
 
         expect!(self, '[');
         // Type parameter:
         self.parse_ts_mapped_type_param()?;
         // Name type:
-        if self.input.eat(&tok!("as")) {
+        if self.input.eat(tok!("as")) {
             self.parse_ts_type()?;
         }
         expect!(self, ']');
@@ -1182,7 +1180,7 @@ impl Parser<'_> {
             self.input.bump();
             expect!(self, '?');
         } else {
-            self.input.eat(&tok!('?'));
+            self.input.eat(tok!('?'));
         }
 
         self.try_parse_ts_type()?;
@@ -1227,10 +1225,10 @@ impl Parser<'_> {
         self.try_parse_ts(|p| {
             let start = p.input.cur_pos();
 
-            let rest = p.input.eat(&tok!("..."));
+            let rest = p.input.eat(tok!("..."));
 
             let ident = p.parse_ident_name()?;
-            if p.input.eat(&tok!('?')) {
+            if p.input.eat(tok!('?')) {
                 let s = get_span!(p, ident.node_id).with_hi(p.input.prev_span().hi);
                 set_span!(p, ident.node_id, s);
             }
@@ -1256,7 +1254,7 @@ impl Parser<'_> {
         // Label:
         self.try_parse_ts_tuple_element_name();
 
-        if self.input.eat(&tok!("...")) {
+        if self.input.eat(tok!("...")) {
             // Type annotation:
             self.parse_ts_type()?;
             return Ok(TupleElementType::Rest);
@@ -1264,7 +1262,7 @@ impl Parser<'_> {
 
         self.parse_ts_type()?;
         // parses `TsType?`
-        if self.input.eat(&tok!('?')) {
+        if self.input.eat(tok!('?')) {
             return Ok(TupleElementType::Optional);
         }
 
@@ -1286,7 +1284,7 @@ impl Parser<'_> {
         debug_assert!(self.syntax().typescript());
 
         if !is_fn_type {
-            self.input.eat(&tok!("abstract"));
+            self.input.eat(tok!("abstract"));
             expect!(self, "new");
         }
 
@@ -1297,7 +1295,7 @@ impl Parser<'_> {
         // Parameters:
         self.parse_ts_binding_list_for_signature()?;
         // Type annotation:
-        self.parse_ts_type_or_type_predicate_ann(&tok!("=>"))?;
+        self.parse_ts_type_or_type_predicate_ann(tok!("=>"))?;
         // ----- end
 
         Ok(())
@@ -1307,7 +1305,7 @@ impl Parser<'_> {
     fn parse_ts_lit_type_node(&mut self) -> PResult<()> {
         debug_assert!(self.syntax().typescript());
 
-        if self.input.is(&tok!('`')) {
+        if self.input.is(tok!('`')) {
             self.parse_ts_tpl_lit_type()?;
         } else {
             self.parse_lit()?;
@@ -1320,7 +1318,7 @@ impl Parser<'_> {
     fn parse_ts_tpl_lit_type(&mut self) -> PResult<()> {
         debug_assert!(self.syntax().typescript());
 
-        self.assert_and_bump(&tok!('`'));
+        self.assert_and_bump(tok!('`'));
 
         self.parse_ts_tpl_type_elements()?;
 
@@ -1332,7 +1330,7 @@ impl Parser<'_> {
     fn parse_ts_tpl_type_elements(&mut self) -> PResult<()> {
         self.parse_tpl_element(false)?;
 
-        while !self.input.is(&tok!('`')) {
+        while !self.input.is(tok!('`')) {
             expect!(self, "${");
             self.parse_ts_type()?;
             expect!(self, '}');
@@ -1372,8 +1370,8 @@ impl Parser<'_> {
     ///
     /// Used for parsing return types.
     fn try_parse_ts_type_or_type_predicate_ann(&mut self) -> PResult<Option<()>> {
-        if self.input.is(&tok!(':')) {
-            self.parse_ts_type_or_type_predicate_ann(&tok!(':'))
+        if self.input.is(tok!(':')) {
+            self.parse_ts_type_or_type_predicate_ann(tok!(':'))
                 .map(Some)
         } else {
             Ok(None)
@@ -1382,7 +1380,7 @@ impl Parser<'_> {
 
     /// `tsTryParseTypeAnnotation`
     pub(super) fn try_parse_ts_type_ann(&mut self) -> PResult<Option<Span>> {
-        if self.input.is(&tok!(':')) {
+        if self.input.is(tok!(':')) {
             return self.parse_ts_type_ann(true).map(Some);
         }
 
@@ -1391,7 +1389,7 @@ impl Parser<'_> {
 
     /// `tsTryParseType`
     fn try_parse_ts_type(&mut self) -> PResult<Option<()>> {
-        self.eat_then_parse_ts_type(&tok!(':'))
+        self.eat_then_parse_ts_type(tok!(':'))
     }
 
     /// `tsTryParseTypeParameters`
@@ -1399,7 +1397,7 @@ impl Parser<'_> {
         &mut self,
         mut op: impl FnMut(&mut Self, Span),
     ) -> PResult<()> {
-        if self.input.is(&tok!('<')) {
+        if self.input.is(tok!('<')) {
             self.eat_ts_type_params(|p, span| op(p, span))?;
         }
         Ok(())
@@ -1416,7 +1414,7 @@ impl Parser<'_> {
             | tok!("null")
             | tok!("await")
             | tok!("break") => {
-                if self.input.is(&tok!("asserts")) && peeked_is!(self, "this") {
+                if self.input.is(tok!("asserts")) && peeked_is!(self, "this") {
                     self.input.bump();
                     self.parse_ts_this_type_node()?;
                     return self.parse_ts_this_type_predicate();
@@ -1475,7 +1473,7 @@ impl Parser<'_> {
             tok!("this") => {
                 // This keyword:
                 self.parse_ts_this_type_node()?;
-                if !self.input.had_line_break_before_cur() && self.input.is(&tok!("is")) {
+                if !self.input.had_line_break_before_cur() && self.input.is(tok!("is")) {
                     return self.parse_ts_this_type_predicate();
                 } else {
                     return Ok(());
@@ -1514,8 +1512,8 @@ impl Parser<'_> {
 
         self.parse_ts_non_array_type()?;
 
-        while !self.input.had_line_break_before_cur() && self.input.eat(&tok!('[')) {
-            if self.input.eat(&tok!(']')) {
+        while !self.input.had_line_break_before_cur() && self.input.eat(tok!('[')) {
+            if self.input.eat(tok!(']')) {
             } else {
                 // Index type:
                 self.parse_ts_type()?;
@@ -1555,11 +1553,11 @@ impl Parser<'_> {
     fn parse_ts_type_operator_or_higher(&mut self) -> PResult<()> {
         debug_assert!(self.syntax().typescript());
 
-        let operator = if self.input.is(&tok!("keyof")) {
+        let operator = if self.input.is(tok!("keyof")) {
             Some(TsTypeOperatorOp::KeyOf)
-        } else if self.input.is(&tok!("unique")) {
+        } else if self.input.is(tok!("unique")) {
             Some(TsTypeOperatorOp::Unique)
-        } else if self.input.is(&tok!("readonly")) {
+        } else if self.input.is(tok!("readonly")) {
             Some(TsTypeOperatorOp::ReadOnly)
         } else {
             None
@@ -1568,7 +1566,7 @@ impl Parser<'_> {
         if let Some(operator) = operator {
             self.parse_ts_type_operator(operator)
         } else {
-            if self.input.is(&tok!("infer")) {
+            if self.input.is(tok!("infer")) {
                 self.parse_ts_infer_type()
             } else {
                 self.parse_ts_modifier(&[id_for_built_in!("readonly")])?;
@@ -1588,7 +1586,7 @@ impl Parser<'_> {
                 // declaration.
                 // Would like to use tsParseAmbientExternalModuleDeclaration here, but already
                 // ran past "global".
-                if self.input.is(&tok!('{')) {
+                if self.input.is(tok!('{')) {
                     // Body:
                     self.parse_ts_module_block()?;
                     Ok(None)
@@ -1603,7 +1601,7 @@ impl Parser<'_> {
     /// `tsTryParseDeclare`
     pub(super) fn try_parse_ts_declare(&mut self, start: BytePos) -> PResult<Option<DeclOrEmpty>> {
         assert!(
-            !self.input.is(&tok!("declare")),
+            !self.input.is(tok!("declare")),
             "try_parse_ts_declare should be called after eating `declare`"
         );
 
@@ -1619,7 +1617,7 @@ impl Parser<'_> {
         };
 
         self.with_ctx(ctx).parse_with(|p| {
-            if p.input.is(&tok!("function")) {
+            if p.input.is(tok!("function")) {
                 let decl = p.parse_fn_decl_or_ts_overload_sig()?;
                 if let Some(Decl::Fn(f)) = &decl {
                     let mut s = get_span!(p, f.function.node_id);
@@ -1629,7 +1627,7 @@ impl Parser<'_> {
                 return Ok(decl.map(DeclOrEmpty::Decl));
             }
 
-            if p.input.is(&tok!("class")) {
+            if p.input.is(tok!("class")) {
                 let decl = p.parse_class_decl(start, start)?;
                 // Should always be the case.
                 if let Decl::Class(c) = &decl {
@@ -1640,10 +1638,10 @@ impl Parser<'_> {
                 return Ok(Some(DeclOrEmpty::Decl(decl)));
             }
 
-            if p.input.is(&tok!("const")) && peeked_is!(p, "enum") {
-                p.assert_and_bump(&tok!("const"));
+            if p.input.is(tok!("const")) && peeked_is!(p, "enum") {
+                p.assert_and_bump(tok!("const"));
                 let _ = cur!(p, true);
-                p.assert_and_bump(&tok!("enum"));
+                p.assert_and_bump(tok!("enum"));
 
                 p.parse_ts_enum_decl()?;
                 return Ok(Some(DeclOrEmpty::Empty));
@@ -1659,7 +1657,7 @@ impl Parser<'_> {
                 return Ok(Some(DeclOrEmpty::Decl(Decl::Var(decl))));
             }
 
-            if p.input.is(&tok!("global")) {
+            if p.input.is(tok!("global")) {
                 p.parse_ts_ambient_external_module_decl()?;
             } else if is!(p, IdentName) {
                 let value = match cur!(p, true)? {
@@ -1697,8 +1695,7 @@ impl Parser<'_> {
     ) -> PResult<Option<DeclOrEmpty>> {
         match value {
             id_for_built_in!("abstract") => {
-                if next
-                    || (self.input.is(&tok!("class")) && !self.input.had_line_break_before_cur())
+                if next || (self.input.is(tok!("class")) && !self.input.had_line_break_before_cur())
                 {
                     if next {
                         self.input.bump();
@@ -1773,7 +1770,7 @@ impl Parser<'_> {
         &mut self,
         start: BytePos,
     ) -> PResult<Option<ArrowExpr>> {
-        let res = if self.input.is(&tok!('<')) {
+        let res = if self.input.is(tok!('<')) {
             self.try_parse_ts(|p| {
                 // Type parameters:
                 p.eat_ts_type_params(|_, _| {})?;
@@ -1840,7 +1837,7 @@ impl Parser<'_> {
 
         self.parse_ts_union_or_intersection_type(
             Parser::parse_ts_type_operator_or_higher,
-            &tok!('&'),
+            tok!('&'),
         )
     }
 
@@ -1850,7 +1847,7 @@ impl Parser<'_> {
 
         self.parse_ts_union_or_intersection_type(
             Parser::parse_ts_intersection_type_or_higher,
-            &tok!('|'),
+            tok!('|'),
         )
     }
 
@@ -1858,19 +1855,19 @@ impl Parser<'_> {
     fn parse_ts_union_or_intersection_type<F>(
         &mut self,
         mut parse_constituent_type: F,
-        operator: &'static Token,
+        operator: Token,
     ) -> PResult<()>
     where
         F: FnMut(&mut Self) -> PResult<()>,
     {
         debug_assert!(self.syntax().typescript());
 
-        self.input.eat(operator);
+        self.input.eat(operator.clone());
 
         parse_constituent_type(self)?;
 
-        if self.input.is(operator) {
-            while self.input.eat(operator) {
+        if self.input.is(operator.clone()) {
+            while self.input.eat(operator.clone()) {
                 parse_constituent_type(self)?;
             }
 

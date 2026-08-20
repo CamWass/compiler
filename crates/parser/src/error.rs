@@ -90,7 +90,7 @@ pub(super) enum SyntaxError {
     },
     ReservedWordInImport,
     AssignProperty,
-    Expected(&'static Token, String),
+    Expected(Token, String),
     ExpectedSemiForExprStmt {
         expr: Span,
     },

@@ -89,7 +89,7 @@ macro_rules! is {
     }};
 
     ($parser:expr, $t:tt) => {
-        $parser.input.is(&tok!($t))
+        $parser.input.is(tok!($t))
     };
 }
 
@@ -168,13 +168,12 @@ macro_rules! unexpected {
 
 macro_rules! expect {
     ($parser:expr, $t:tt) => {{
-        const TOKEN: &Token = &tok!($t);
-        if !$parser.input.eat(TOKEN) {
+        if !$parser.input.eat(tok!($t)) {
             let cur = $parser.input.dump_cur();
             syntax_error!(
                 $parser,
                 $parser.input.cur_span(),
-                SyntaxError::Expected(TOKEN, cur)
+                SyntaxError::Expected(tok!($t), cur)
             )
         }
     }};
