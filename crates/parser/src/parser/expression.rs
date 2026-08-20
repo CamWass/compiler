@@ -95,6 +95,14 @@ impl Parser<'_> {
             return self.parse_yield_expr().map(From::from);
         }
 
+        if let Token::Error(_) = self.input.cur() {
+            if let Token::Error(e) = self.input.bump() {
+                return Err(e);
+            } else {
+                unreachable!();
+            }
+        }
+
         let start = self.input.cur_pos();
 
         self.potential_arrow_start = match *cur!(self, true) {
@@ -1532,6 +1540,13 @@ impl Parser<'_> {
                 ),
                 _ => unreachable!(),
             },
+            Token::Error(_) => {
+                if let Token::Error(e) = self.input.bump() {
+                    return Err(e);
+                } else {
+                    unreachable!();
+                }
+            }
             _ => unexpected!(self, "template token"),
         };
 
@@ -1651,6 +1666,16 @@ impl Parser<'_> {
                 }),
                 _ => unreachable!(),
             },
+            Token::Error(_) => {
+                if let Token::Error(e) = self.input.bump() {
+                    return Err(e);
+                } else {
+                    unreachable!();
+                }
+            }
+            Token::Eof => {
+                return Err(self.eof_error());
+            }
             _ => unreachable!("parse_lit should not be called"),
         };
         Ok(v)

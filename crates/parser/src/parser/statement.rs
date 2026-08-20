@@ -1098,6 +1098,10 @@ impl Parser<'_> {
 
             while !self.eat_semi_with_asi() {
                 self.input.bump();
+
+                if let Token::Error(_) = self.input.cur() {
+                    break;
+                }
             }
         }
 
@@ -1269,7 +1273,7 @@ impl Parser<'_> {
                 if let Decl::Fn(f) = &f {
                     if f.function.is_generator() {
                         syntax_error!(
-                            p,
+                            parser,
                             get_span!(parser, f.node_id),
                             SyntaxError::LabelledGenerator
                         )

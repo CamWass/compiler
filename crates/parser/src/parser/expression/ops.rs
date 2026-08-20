@@ -30,6 +30,13 @@ impl Parser<'_> {
                     }))
                     .into()
                 }
+                Token::Error(_) => {
+                    if let Token::Error(e) = self.input.bump() {
+                        return Err(e);
+                    } else {
+                        unreachable!();
+                    }
+                }
                 _ => return Err(err),
             },
         };

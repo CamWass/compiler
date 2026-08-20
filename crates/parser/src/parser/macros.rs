@@ -102,6 +102,15 @@ macro_rules! syntax_error {
         let err = crate::error::Error {
             error: Box::new(($span, $err)),
         };
+
+        if let $crate::token::Token::Error(_) = $parser.input.cur() {
+            if let $crate::token::Token::Error(e) = $parser.input.bump() {
+                $parser.emit_error(e);
+            } else {
+                unreachable!();
+            }
+        }
+
         return Err(err.into());
     }};
 }

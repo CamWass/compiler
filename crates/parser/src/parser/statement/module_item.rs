@@ -230,6 +230,10 @@ impl Parser<'_> {
         let start = self.input.cur_pos();
         self.assert_and_bump(tok!("export"));
 
+        if self.input.cur() == &Token::Eof {
+            return Err(self.eof_error());
+        }
+
         let after_export_start = self.input.cur_pos();
 
         // "export declare" is equivalent to just "export".
@@ -337,6 +341,15 @@ impl Parser<'_> {
                 {
                     let class_start = self.input.cur_pos();
                     self.assert_and_bump(tok!("abstract"));
+
+                    if let Token::Error(_) = self.input.cur() {
+                        if let Token::Error(e) = self.input.bump() {
+                            return Err(e);
+                        } else {
+                            unreachable!();
+                        }
+                    }
+
                     let class = self.parse_default_class(start, class_start)?;
                     return Ok(Some(ModuleDecl::ExportDefaultDecl(class)));
                 }

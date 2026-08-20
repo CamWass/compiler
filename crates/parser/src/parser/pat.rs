@@ -46,6 +46,13 @@ impl Parser<'_> {
             //     expect!(self, ')');
             //     Ok(pat)
             // }
+            Token::Error(_) => {
+                if let Token::Error(e) = self.input.bump() {
+                    return Err(e);
+                } else {
+                    unreachable!();
+                }
+            }
             _ => unexpected!(self, "yield, an identifier, [ or {"),
         }
     }

@@ -160,6 +160,14 @@ impl<'d> Parser<'d> {
             return;
         }
 
+        if let Token::Error(_) = self.input.cur() {
+            if let Token::Error(e) = self.input.bump() {
+                self.input().add_error(e);
+            } else {
+                unreachable!();
+            }
+        }
+
         self.input().add_error(error);
     }
 
@@ -249,5 +257,19 @@ impl<'d> Parser<'d> {
             "assertion failed: (span.start <= span.end). start = {start:?}, end = {end:?}",
         );
         Span::new(start, end)
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub fn eof_error(&mut self) -> Error {
+        debug_assert!(
+            self.input.cur() == &Token::Eof,
+            "Parser should not call eof_error() without knowing current token"
+        );
+        let pos = self.input.cur_span().hi;
+        let last = Span { lo: pos, hi: pos };
+        Error {
+            error: Box::new((last, SyntaxError::Eof)),
+        }
     }
 }

@@ -35,6 +35,18 @@ impl Parser<'_> {
             return Ok(None);
         }
 
+        if let Token::Error(_) = self.input.cur() {
+            if let Token::Error(e) = self.input.bump() {
+                return Err(e);
+            } else {
+                unreachable!();
+            }
+        }
+
+        if self.input.cur() == &Token::Eof {
+            return Err(self.eof_error());
+        }
+
         let pos = {
             let modifier = match cur!(self, true) {
                 Token::Word(Word::Ident(w)) => w,
@@ -225,6 +237,14 @@ impl Parser<'_> {
         self.assert_and_bump(tok!("import"));
 
         expect!(self, '(');
+
+        if let Token::Error(_) = self.input.cur() {
+            if let Token::Error(e) = self.input.bump() {
+                return Err(e);
+            } else {
+                unreachable!();
+            }
+        }
 
         let lit = self.parse_lit()?;
         if !matches!(lit, Lit::Str(_)) {
@@ -508,6 +528,13 @@ impl Parser<'_> {
 
                 expect!(self, ']');
             }
+            Token::Error(_) => {
+                if let Token::Error(e) = self.input.bump() {
+                    return Err(e);
+                } else {
+                    unreachable!();
+                }
+            }
             _ => {
                 self.parse_ident_name()?;
             }
@@ -516,7 +543,11 @@ impl Parser<'_> {
         // Init:
         if self.eat(tok!('=')) {
             self.parse_assignment_expr(&mut AssignProps::Emit)?;
-        } else if !(self.is(tok!(',')) || self.is(tok!('}'))) {
+        } else if self.is(tok!(',')) || self.is(tok!('}')) {
+            return Ok(());
+        } else if self.input.cur() == &Token::Eof {
+            return Err(self.eof_error());
+        } else {
             let start = self.input.cur_pos();
             self.input.bump();
             self.input.store(tok!(','));
@@ -1724,6 +1755,14 @@ impl Parser<'_> {
                 if matches!(*cur!(self, true), Token::Str { .. }) {
                     self.parse_ts_ambient_external_module_decl()?;
                     return Ok(Some(DeclOrEmpty::Empty));
+                } else if let Token::Error(_) = self.input.cur() {
+                    if let Token::Error(e) = self.input.bump() {
+                        return Err(e);
+                    } else {
+                        unreachable!();
+                    }
+                } else if self.input.cur() == &Token::Eof {
+                    return Err(self.eof_error());
                 } else if next || self.is_ident_ref() {
                     self.parse_ts_module_or_ns_decl()?;
                     return Ok(Some(DeclOrEmpty::Empty));
