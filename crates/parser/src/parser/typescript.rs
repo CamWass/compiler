@@ -1073,9 +1073,9 @@ impl Parser<'_> {
         }
 
         if let Some(v) = self.try_parse_ts(|p| {
-            let _ = p
-                .parse_ts_modifier(&[id_for_built_in!("readonly")])?
-                .is_some();
+            if readonly {
+                syntax_error!(p, SyntaxError::GetterSetterCannotBeReadonly)
+            }
 
             let is_get = if p.eat(tok!("get")) {
                 true
