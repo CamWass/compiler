@@ -87,10 +87,6 @@ macro_rules! is {
             _ => $parser.input.had_line_break_before_cur(),
         }
     }};
-
-    ($parser:expr, $t:tt) => {
-        $parser.is(tok!($t))
-    };
 }
 
 macro_rules! peeked_is {

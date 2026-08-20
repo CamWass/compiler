@@ -508,7 +508,7 @@ impl Parser<'_> {
                 }));
             }
             let mut first = true;
-            while is!(self, ',') || is!(self, IdentName) {
+            while self.is(tok!(',')) || is!(self, IdentName) {
                 if first {
                     first = false;
                 } else if self.eat(tok!(',')) && self.is(tok!('}')) {

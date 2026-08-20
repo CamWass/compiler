@@ -169,13 +169,13 @@ impl ParseObject<Box<Expr>> for Parser<'_> {
         let key = self.parse_prop_name()?;
 
         if self.input.syntax().typescript()
-            && !(is!(self, '(')
-                || is!(self, '[')
-                || is!(self, ':')
-                || is!(self, ',')
-                || is!(self, '?')
-                || is!(self, '=')
-                || is!(self, '*')
+            && !(self.is(tok!('('))
+                || self.is(tok!('['))
+                || self.is(tok!(':'))
+                || self.is(tok!(','))
+                || self.is(tok!('?'))
+                || self.is(tok!('='))
+                || self.is(tok!('*'))
                 || is!(self, IdentName)
                 || is!(self, Str)
                 || is!(self, Num))
@@ -235,7 +235,7 @@ impl ParseObject<Box<Expr>> for Parser<'_> {
 
         // `ident` from parse_prop_name is parsed as 'IdentifierName'
         // It means we should check for invalid expressions like { for, }
-        if is!(self, '=') || is!(self, ',') || is!(self, '}') {
+        if self.is(tok!('=')) || self.is(tok!(',')) || self.is(tok!('}')) {
             if self.ctx().is_reserved_word(ident.name) {
                 self.emit_err(
                     get_span!(self, ident.node_id),

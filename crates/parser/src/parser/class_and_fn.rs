@@ -751,8 +751,8 @@ impl Parser<'_> {
     }
 
     fn is_class_property(&mut self) -> bool {
-        (self.syntax().typescript() && (is!(self, '!') || is!(self, ':')))
-            || (is!(self, '=') || is!(self, ';') || is!(self, '}'))
+        (self.syntax().typescript() && (self.is(tok!('!')) || self.is(tok!(':'))))
+            || (self.is(tok!('=')) || is!(self, ';') || self.is(tok!('}')))
     }
 
     fn parse_fn<T>(

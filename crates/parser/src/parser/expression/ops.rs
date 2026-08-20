@@ -261,14 +261,18 @@ impl Parser<'_> {
         }
 
         // Parse unary expression
-        if is!(self, "delete")
-            || is!(self, "void")
-            || is!(self, "typeof")
-            || is!(self, '+')
-            || is!(self, '-')
-            || is!(self, '~')
-            || is!(self, '!')
-        {
+        if matches!(
+            self.input.cur(),
+            Some(
+                tok!("delete")
+                    | tok!("void")
+                    | tok!("typeof")
+                    | tok!('+')
+                    | tok!('-')
+                    | tok!('~')
+                    | tok!('!')
+            )
+        ) {
             let op = match self.input.bump() {
                 tok!("delete") => op!("delete"),
                 tok!("void") => op!("void"),
@@ -333,7 +337,7 @@ impl Parser<'_> {
             return Ok(expr);
         }
 
-        if is!(self, "++") || is!(self, "--") {
+        if self.is(tok!("++")) || self.is(tok!("--")) {
             self.check_assign_target(expr.inner(), false);
 
             let op = if self.input.bump() == tok!("++") {
@@ -363,7 +367,7 @@ impl Parser<'_> {
             syntax_error!(self, SyntaxError::AwaitStar);
         }
 
-        if (is!(self, ')') || is!(self, ']')) && !self.ctx().in_async() {
+        if (self.is(tok!(')')) || self.is(tok!(']'))) && !self.ctx().in_async() {
             return Ok(Box::new(Expr::Ident(
                 self.new_ident(id_for_built_in!("await"), span!(self, start)),
             )));
