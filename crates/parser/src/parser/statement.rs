@@ -640,7 +640,8 @@ impl Parser<'_> {
 
     fn parse_for_head(&mut self) -> PResult<ForHead> {
         if matches!(self.input.cur(), tok!("const") | tok!("var"))
-            || (self.is(tok!("let")) && matches!(peek!(self), Some(t) if t.follows_keyword_let()))
+            || (self.is(tok!("let"))
+                && matches!(self.input.peek(), Some(t) if t.follows_keyword_let()))
         {
             let decl = self.parse_var_stmt(true)?;
 

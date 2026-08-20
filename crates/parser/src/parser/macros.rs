@@ -54,7 +54,7 @@ macro_rules! is {
 
 macro_rules! peeked_is {
     ($parser:expr, IdentName) => {{
-        match peek!($parser) {
+        match $parser.input.peek() {
             Some(Word(..)) => true,
             _ => false,
         }
@@ -65,24 +65,11 @@ macro_rules! peeked_is {
     }};
 
     ($parser:expr, $t:tt) => {
-        match peek!($parser) {
+        match $parser.input.peek() {
             Some(tok!($t)) => true,
             _ => false,
         }
     };
-}
-
-macro_rules! peek {
-    ($parser:expr) => {{
-        debug_assert!(
-            $parser.input.cur() != &Token::Eof,
-            "parser should not call peek() without knowing current token.
-Current token is {:?}",
-            cur!($parser, false),
-        );
-
-        $parser.input.peek()
-    }};
 }
 
 macro_rules! unexpected {
