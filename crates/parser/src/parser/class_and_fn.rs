@@ -412,7 +412,7 @@ impl Parser<'_> {
         }
 
         let key = if let Some(readonly) = readonly
-            && is_one_of!(self, '!', ':')
+            && (self.is(tok!('!')) || self.is(tok!(':')))
         {
             Key::PropName(PropName::Ident(
                 self.new_ident(id_for_built_in!("readonly"), readonly),
@@ -751,8 +751,8 @@ impl Parser<'_> {
     }
 
     fn is_class_property(&mut self) -> bool {
-        (self.syntax().typescript() && is_one_of!(self, '!', ':'))
-            || is_one_of!(self, '=', ';', '}')
+        (self.syntax().typescript() && (is!(self, '!') || is!(self, ':')))
+            || (is!(self, '=') || is!(self, ';') || is!(self, '}'))
     }
 
     fn parse_fn<T>(

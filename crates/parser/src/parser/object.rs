@@ -169,7 +169,16 @@ impl ParseObject<Box<Expr>> for Parser<'_> {
         let key = self.parse_prop_name()?;
 
         if self.input.syntax().typescript()
-            && !is_one_of!(self, '(', '[', ':', ',', '?', '=', '*', IdentName, Str, Num)
+            && !(is!(self, '(')
+                || is!(self, '[')
+                || is!(self, ':')
+                || is!(self, ',')
+                || is!(self, '?')
+                || is!(self, '=')
+                || is!(self, '*')
+                || is!(self, IdentName)
+                || is!(self, Str)
+                || is!(self, Num))
             && !(self.input.syntax().typescript() && self.is(tok!('<')))
             && !(self.is(tok!('}')) && matches!(key, PropName::Ident(..)))
         {
@@ -226,7 +235,7 @@ impl ParseObject<Box<Expr>> for Parser<'_> {
 
         // `ident` from parse_prop_name is parsed as 'IdentifierName'
         // It means we should check for invalid expressions like { for, }
-        if is_one_of!(self, '=', ',', '}') {
+        if is!(self, '=') || is!(self, ',') || is!(self, '}') {
             if self.ctx().is_reserved_word(ident.name) {
                 self.emit_err(
                     get_span!(self, ident.node_id),

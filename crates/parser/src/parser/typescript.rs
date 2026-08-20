@@ -844,13 +844,13 @@ impl Parser<'_> {
         debug_assert!(self.syntax().typescript());
 
         self.assert_and_bump(tok!('('));
-        if is_one_of!(self, ')', "...") {
+        if is!(self, ')') || is!(self, "...") {
             // ( )
             // ( ...
             return Ok(true);
         }
         if self.skip_ts_parameter_start()? {
-            if is_one_of!(self, ':', ',', '?', '=') {
+            if is!(self, ':') || is!(self, ',') || is!(self, '?') || is!(self, '=') {
                 // ( xxx :
                 // ( xxx ,
                 // ( xxx ?
@@ -953,7 +953,7 @@ impl Parser<'_> {
         self.assert_and_bump(tok!('[')); // Skip '['
 
         // ',' is for error recovery
-        Ok(self.eat_ident_ref() && is_one_of!(self, ':', ','))
+        Ok(self.eat_ident_ref() && (is!(self, ':') || is!(self, ',')))
     }
 
     /// `tsTryParseIndexSignature`
@@ -998,7 +998,7 @@ impl Parser<'_> {
 
         self.eat(tok!('?'));
 
-        if !readonly && is_one_of!(self, '(', '<') {
+        if !readonly && (is!(self, '(') || is!(self, '<')) {
             // ----- inlined self.tsFillSignature(tt.colon, node);
             // Type parameters:
             self.try_eat_ts_type_params(|_, _| {})?;
@@ -1154,7 +1154,7 @@ impl Parser<'_> {
         debug_assert!(self.syntax().typescript());
 
         expect!(self, '{');
-        if is_one_of!(self, '+', '-') {
+        if is!(self, '+') || is!(self, '-') {
             self.input.bump();
             expect!(self, "readonly");
         } else {
@@ -1170,7 +1170,7 @@ impl Parser<'_> {
         }
         expect!(self, ']');
 
-        if is_one_of!(self, '+', '-') {
+        if is!(self, '+') || is!(self, '-') {
             self.input.bump();
             expect!(self, '?');
         } else {
@@ -1414,22 +1414,19 @@ impl Parser<'_> {
                     return self.parse_ts_this_type_predicate();
                 }
 
-                let valid_kind = is_one_of!(
-                    self,
-                    "void",
-                    "null",
-                    "any",
-                    "boolean",
-                    "bigint",
-                    "never",
-                    "number",
-                    "object",
-                    "string",
-                    "symbol",
-                    "unknown",
-                    "undefined",
-                    "intrinsic"
-                );
+                let valid_kind = is!(self, "void")
+                    || is!(self, "null")
+                    || is!(self, "any")
+                    || is!(self, "boolean")
+                    || is!(self, "bigint")
+                    || is!(self, "never")
+                    || is!(self, "number")
+                    || is!(self, "object")
+                    || is!(self, "string")
+                    || is!(self, "symbol")
+                    || is!(self, "unknown")
+                    || is!(self, "undefined")
+                    || is!(self, "intrinsic");
 
                 let peeked_is_dot = peeked_is!(self, '.');
 

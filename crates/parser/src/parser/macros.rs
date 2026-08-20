@@ -93,15 +93,6 @@ macro_rules! is {
     };
 }
 
-macro_rules! is_one_of {
-    ($parser:expr, $($t:tt),+) => {{
-        false
-        $(
-            || is!($parser, $t)
-        )*
-    }};
-}
-
 macro_rules! peeked_is {
     ($parser:expr, IdentName) => {{
         match peek!($parser) {
