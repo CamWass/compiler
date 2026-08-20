@@ -217,7 +217,7 @@ impl Parser<'_> {
         let test = self.parse_bin_expr(assign_props)?;
         return_if_arrow!(self, potential_arrow_start, test);
 
-        if eat!(self, '?') {
+        if self.input.eat(&tok!('?')) {
             let ctx = Context {
                 flags: self.ctx().flags
                     | ContextFlags::in_cond_expr
@@ -369,7 +369,7 @@ impl Parser<'_> {
 
         if is!(self, "let")
             || (self.input.syntax().typescript() && is!(self, IdentName))
-            || is!(self, IdentRef)
+            || self.is_ident_ref()
         {
             // TODO(swc): Handle [Yield, Await]
             let id = self.parse_ident_name()?;
@@ -839,9 +839,9 @@ impl Parser<'_> {
 
             let mut arg = {
                 if self.input.syntax().typescript()
-                    && (is!(self, IdentRef) || (is!(self, "...") && peeked_is!(self, IdentRef)))
+                    && (self.is_ident_ref() || (is!(self, "...") && self.peek_is_ident_ref()))
                 {
-                    let spread_start = if eat!(self, "...") {
+                    let spread_start = if self.input.eat(&tok!("...")) {
                         Some(self.input.prev_span().lo)
                     } else {
                         None
@@ -1013,7 +1013,7 @@ impl Parser<'_> {
                     }
                 }
 
-                if eat!(self, '=') {
+                if self.input.eat(&tok!('=')) {
                     let right = self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap();
                     pat = Pat::Assign(AssignPat {
                         node_id: node_id!(self, span!(self, pat_start)),

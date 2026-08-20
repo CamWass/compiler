@@ -114,7 +114,7 @@ impl Parser<'_> {
             }
             parse_element(self)?;
 
-            if eat!(self, ',') {
+            if self.input.eat(&tok!(',')) {
                 continue;
             }
 
@@ -158,7 +158,7 @@ impl Parser<'_> {
             let dot_span = span!(self, dot_start);
             self.emit_err(dot_span, SyntaxError::TS1005);
         }
-        while eat!(self, '.') {
+        while self.input.eat(&tok!('.')) {
             let dot_start = self.input.cur_pos();
             if !is!(self, '#') && !is!(self, IdentName) {
                 self.emit_err(Span::new(dot_start, dot_start), SyntaxError::TS1003);
@@ -202,7 +202,7 @@ impl Parser<'_> {
     fn parse_ts_this_type_predicate(&mut self) -> PResult<()> {
         debug_assert!(self.syntax().typescript());
 
-        if eat!(self, "is") {
+        if self.input.eat(&tok!("is")) {
             self.parse_ts_type_ann(false)?;
         }
 
@@ -233,7 +233,7 @@ impl Parser<'_> {
         expect!(self, ')');
 
         // Qualifier:
-        if eat!(self, '.') {
+        if self.input.eat(&tok!('.')) {
             self.parse_ts_entity_name(false).map(Some)?;
         }
 
@@ -310,13 +310,13 @@ impl Parser<'_> {
                 syntax_error!(p, span, SyntaxError::Expected(return_token, cur))
             }
 
-            let has_type_pred_asserts = is!(p, "asserts") && peeked_is!(p, IdentRef);
+            let has_type_pred_asserts = is!(p, "asserts") && p.peek_is_ident_ref();
             if has_type_pred_asserts {
                 p.assert_and_bump(&tok!("asserts"));
                 cur!(p, false)?;
             }
 
-            let has_type_pred_is = is!(p, IdentRef)
+            let has_type_pred_is = p.is_ident_ref()
                 && peeked_is!(p, "is")
                 && !p.input.has_linebreak_between_cur_and_peeked();
             let is_type_predicate = has_type_pred_asserts || has_type_pred_is;
@@ -516,12 +516,12 @@ impl Parser<'_> {
         }
 
         // Init:
-        if eat!(self, '=') {
+        if self.input.eat(&tok!('=')) {
             self.parse_assignment_expr(&mut AssignProps::Emit)?;
         } else if !(is!(self, ',') || is!(self, '}')) {
             let start = self.input.cur_pos();
             self.input.bump();
-            store!(self, ',');
+            self.input.store(tok!(','));
             self.emit_err(Span::new(start, start), SyntaxError::TS1005);
         }
 
@@ -558,7 +558,7 @@ impl Parser<'_> {
 
         self.parse_ident_name()?;
         // Body:
-        if eat!(self, '.') {
+        if self.input.eat(&tok!('.')) {
             self.parse_ts_module_or_ns_decl()?;
         } else {
             self.parse_ts_module_block()?;
@@ -582,7 +582,7 @@ impl Parser<'_> {
         if is!(self, '{') {
             self.parse_ts_module_block()?;
         } else {
-            expect!(self, ';');
+            self.expect_semi_with_asi()?;
         }
 
         Ok(())
@@ -607,7 +607,7 @@ impl Parser<'_> {
         let start = self.input.cur_pos();
 
         let ty = self.parse_ts_non_conditional_type()?;
-        if self.input.had_line_break_before_cur() || !eat!(self, "extends") {
+        if self.input.had_line_break_before_cur() || !self.input.eat(&tok!("extends")) {
             return Ok(ty);
         }
 
@@ -726,7 +726,7 @@ impl Parser<'_> {
 
         self.try_eat_ts_type_params(|_, _| {})?;
 
-        if eat!(self, "extends") {
+        if self.input.eat(&tok!("extends")) {
             self.eat_ts_heritage_clause(|_, _| {})?;
         }
 
@@ -758,7 +758,7 @@ impl Parser<'_> {
         self.try_eat_ts_type_params(|_, _| {})?;
         // Type annotation:
         self.expect_then_parse_ts_type(&tok!('='), "=")?;
-        expect!(self, ';');
+        self.expect_semi_with_asi()?;
         Ok(())
     }
 
@@ -772,7 +772,7 @@ impl Parser<'_> {
 
     //     // Module reference:
     //     self.parse_ts_module_ref()?;
-    //     expect!(self, ';');
+    //     self.expect_semi_with_asi()?;
     //     Ok(())
     // }
 
@@ -858,7 +858,7 @@ impl Parser<'_> {
                 // ( xxx =
                 return Ok(true);
             }
-            if eat!(self, ')') && is!(self, "=>") {
+            if self.input.eat(&tok!(')')) && is!(self, "=>") {
                 // ( xxx ) =>
                 return Ok(true);
             }
@@ -872,7 +872,7 @@ impl Parser<'_> {
 
         let _ = self.eat_any_ts_modifier()?;
 
-        if is_one_of!(self, IdentRef, "this") {
+        if self.is_ident_ref() || is!(self, "this") {
             self.input.bump();
             return Ok(true);
         }
@@ -914,8 +914,8 @@ impl Parser<'_> {
     fn parse_ts_type_member_semicolon(&mut self) -> PResult<()> {
         debug_assert!(self.syntax().typescript());
 
-        if !eat!(self, ',') {
-            expect!(self, ';');
+        if !self.input.eat(&tok!(',')) {
+            self.expect_semi_with_asi()?;
         }
 
         Ok(())
@@ -954,7 +954,7 @@ impl Parser<'_> {
         self.assert_and_bump(&tok!('[')); // Skip '['
 
         // ',' is for error recovery
-        Ok(eat!(self, IdentRef) && is_one_of!(self, ':', ','))
+        Ok(self.eat_ident_ref() && is_one_of!(self, ':', ','))
     }
 
     /// `tsTryParseIndexSignature`
@@ -968,7 +968,7 @@ impl Parser<'_> {
         let ident_start = self.input.cur_pos();
         let id = self.parse_ident_name().map(BindingIdent::from_ident)?;
 
-        if eat!(self, ',') {
+        if self.input.eat(&tok!(',')) {
             self.emit_err(get_span!(self, id.id.node_id), SyntaxError::TS1096);
         } else {
             expect!(self, ':');
@@ -995,7 +995,7 @@ impl Parser<'_> {
         // Key:
         self.parse_prop_name()?;
 
-        eat!(self, '?');
+        self.input.eat(&tok!('?'));
 
         if !readonly && is_one_of!(self, '(', '<') {
             // ----- inlined self.tsFillSignature(tt.colon, node);
@@ -1047,7 +1047,7 @@ impl Parser<'_> {
                 .parse_ts_modifier(&[id_for_built_in!("readonly")])?
                 .is_some();
 
-            let is_get = if eat!(p, "get") {
+            let is_get = if p.input.eat(&tok!("get")) {
                 true
             } else {
                 expect!(p, "set");
@@ -1057,7 +1057,7 @@ impl Parser<'_> {
             // Key:
             p.parse_prop_name()?;
 
-            eat!(p, '?');
+            p.input.eat(&tok!('?'));
 
             if is_get {
                 expect!(p, '(');
@@ -1118,7 +1118,7 @@ impl Parser<'_> {
         debug_assert!(self.syntax().typescript());
 
         self.input.bump();
-        if eat!(self, '+') || eat!(self, '-') {
+        if self.input.eat(&tok!('+')) || self.input.eat(&tok!('-')) {
             return is!(self, "readonly");
         }
         if is!(self, "readonly") {
@@ -1128,7 +1128,7 @@ impl Parser<'_> {
             return false;
         }
         self.input.bump();
-        if !is!(self, IdentRef) {
+        if !self.is_ident_ref() {
             return false;
         }
         self.input.bump();
@@ -1157,14 +1157,14 @@ impl Parser<'_> {
             self.input.bump();
             expect!(self, "readonly");
         } else {
-            eat!(self, "readonly");
+            self.input.eat(&tok!("readonly"));
         }
 
         expect!(self, '[');
         // Type parameter:
         self.parse_ts_mapped_type_param()?;
         // Name type:
-        if eat!(self, "as") {
+        if self.input.eat(&tok!("as")) {
             self.parse_ts_type()?;
         }
         expect!(self, ']');
@@ -1173,11 +1173,11 @@ impl Parser<'_> {
             self.input.bump();
             expect!(self, '?');
         } else {
-            eat!(self, '?');
+            self.input.eat(&tok!('?'));
         }
 
         self.try_parse_ts_type()?;
-        expect!(self, ';');
+        self.expect_semi_with_asi()?;
         expect!(self, '}');
 
         Ok(())
@@ -1218,10 +1218,10 @@ impl Parser<'_> {
         self.try_parse_ts(|p| {
             let start = p.input.cur_pos();
 
-            let rest = eat!(p, "...");
+            let rest = p.input.eat(&tok!("..."));
 
             let ident = p.parse_ident_name()?;
-            if eat!(p, '?') {
+            if p.input.eat(&tok!('?')) {
                 let s = get_span!(p, ident.node_id).with_hi(p.input.prev_span().hi);
                 set_span!(p, ident.node_id, s);
             }
@@ -1247,7 +1247,7 @@ impl Parser<'_> {
         // Label:
         self.try_parse_ts_tuple_element_name();
 
-        if eat!(self, "...") {
+        if self.input.eat(&tok!("...")) {
             // Type annotation:
             self.parse_ts_type()?;
             return Ok(TupleElementType::Rest);
@@ -1255,7 +1255,7 @@ impl Parser<'_> {
 
         self.parse_ts_type()?;
         // parses `TsType?`
-        if eat!(self, '?') {
+        if self.input.eat(&tok!('?')) {
             return Ok(TupleElementType::Optional);
         }
 
@@ -1277,7 +1277,7 @@ impl Parser<'_> {
         debug_assert!(self.syntax().typescript());
 
         if !is_fn_type {
-            eat!(self, "abstract");
+            self.input.eat(&tok!("abstract"));
             expect!(self, "new");
         }
 
@@ -1505,8 +1505,8 @@ impl Parser<'_> {
 
         self.parse_ts_non_array_type()?;
 
-        while !self.input.had_line_break_before_cur() && eat!(self, '[') {
-            if eat!(self, ']') {
+        while !self.input.had_line_break_before_cur() && self.input.eat(&tok!('[')) {
+            if self.input.eat(&tok!(']')) {
             } else {
                 // Index type:
                 self.parse_ts_type()?;
@@ -1695,7 +1695,7 @@ impl Parser<'_> {
             }
 
             id_for_built_in!("enum") => {
-                if next || is!(self, IdentRef) {
+                if next || self.is_ident_ref() {
                     if next {
                         self.input.bump();
                     }
@@ -1705,7 +1705,7 @@ impl Parser<'_> {
             }
 
             id_for_built_in!("interface") => {
-                if next || (is!(self, IdentRef)) {
+                if next || self.is_ident_ref() {
                     if next {
                         self.input.bump();
                     }
@@ -1722,14 +1722,14 @@ impl Parser<'_> {
                 if matches!(*cur!(self, true)?, Token::Str { .. }) {
                     self.parse_ts_ambient_external_module_decl()?;
                     return Ok(Some(DeclOrEmpty::Empty));
-                } else if next || is!(self, IdentRef) {
+                } else if next || self.is_ident_ref() {
                     self.parse_ts_module_or_ns_decl()?;
                     return Ok(Some(DeclOrEmpty::Empty));
                 }
             }
 
             id_for_built_in!("namespace") => {
-                if next || is!(self, IdentRef) {
+                if next || self.is_ident_ref() {
                     if next {
                         self.input.bump();
                     }
@@ -1739,7 +1739,7 @@ impl Parser<'_> {
             }
 
             id_for_built_in!("type") => {
-                if next || is!(self, IdentRef) {
+                if next || self.is_ident_ref() {
                     if next {
                         self.input.bump();
                     }

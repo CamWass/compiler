@@ -160,4 +160,52 @@ impl<'d> Parser<'d> {
         };
         self.input().add_strict_mode_error(error);
     }
+
+    /// Handles automatic semicolon insertion.
+    fn eat_semi_with_asi(&mut self) -> bool {
+        match self.input.cur() {
+            Some(Token::Semi) => {
+                self.input.bump();
+                true
+            }
+            None | Some(tok!('}')) => true,
+            _ => self.input.had_line_break_before_cur(),
+        }
+    }
+
+    /// Handles automatic semicolon insertion.
+    fn expect_semi_with_asi(&mut self) -> PResult<()> {
+        if !self.eat_semi_with_asi() {
+            let span = self.input.cur_span();
+            let cur = self.input.dump_cur();
+            syntax_error!(self, span, SyntaxError::Expected(&tok!(';'), cur))
+        }
+        Ok(())
+    }
+
+    pub fn is_ident_ref(&mut self) -> bool {
+        let ctxt = self.ctx();
+        match self.input.cur() {
+            Some(Word(w)) => !ctxt.is_reserved_word(w.get_name_id()),
+            _ => false,
+        }
+    }
+
+    fn peek_is_ident_ref(&mut self) -> bool {
+        let ctxt = self.ctx();
+
+        match self.input.peek() {
+            Some(Word(w)) => !ctxt.is_reserved_word(w.get_name_id()),
+            _ => false,
+        }
+    }
+
+    pub fn eat_ident_ref(&mut self) -> bool {
+        if self.is_ident_ref() {
+            self.input.bump();
+            true
+        } else {
+            false
+        }
+    }
 }

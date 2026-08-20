@@ -84,7 +84,7 @@ impl Parser<'_> {
                     if parser.syntax().typescript() && is!(parser, ',') {
                         let mut exprs = vec![*expr];
 
-                        while eat!(parser, ',') {
+                        while parser.input.eat(&tok!(',')) {
                             exprs.push(
                                 *parser
                                     .include_in_expr(true)

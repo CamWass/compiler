@@ -97,7 +97,7 @@ impl Parser<'_> {
                 }
                 let span = span!(parser, start);
 
-                if parser.syntax().typescript() && eat!(parser, ',') {
+                if parser.syntax().typescript() && parser.input.eat(&tok!(',')) {
                     parser.eat_ts_heritage_clause(|parser, span| {
                         parser.emit_err(span, SyntaxError::TS1174);
                     })?;
@@ -121,13 +121,13 @@ impl Parser<'_> {
                 }
             };
 
-            if parser.syntax().typescript() && eat!(parser, "implements") {
+            if parser.syntax().typescript() && parser.input.eat(&tok!("implements")) {
                 parser.eat_ts_heritage_clause(|_, _| {})?;
             }
 
             {
                 // Handle TS1175
-                if parser.syntax().typescript() && eat!(parser, "implements") {
+                if parser.syntax().typescript() && parser.input.eat(&tok!("implements")) {
                     parser.emit_err(parser.input.prev_span(), SyntaxError::TS1175);
 
                     parser.eat_ts_heritage_clause(|_, _| {})?;
@@ -200,14 +200,14 @@ impl Parser<'_> {
 
     fn parse_class_member(&mut self) -> PResult<Option<ClassMember>> {
         let start = self.input.cur_pos();
-        let declare = self.syntax().typescript() && eat!(self, "declare");
+        let declare = self.syntax().typescript() && self.input.eat(&tok!("declare"));
         let has_accessibility = if self.syntax().typescript() {
             self.parse_access_modifier()?
         } else {
             false
         };
         // Allow `private declare`.
-        let declare = declare || self.syntax().typescript() && eat!(self, "declare");
+        let declare = declare || self.syntax().typescript() && self.input.eat(&tok!("declare"));
 
         let declare_token = if declare {
             // Handle declare(){}
@@ -217,7 +217,7 @@ impl Parser<'_> {
                 ));
                 // TS optional.
                 if self.syntax().typescript() {
-                    eat!(self, '?');
+                    self.input.eat(&tok!('?'));
                 }
                 return self.make_method(
                     Parser::parse_unique_formal_params,
@@ -237,7 +237,7 @@ impl Parser<'_> {
                 let key = Key::PropName(PropName::Ident(
                     self.new_ident(id_for_built_in!("declare"), span!(self, start)),
                 ));
-                let is_optional = self.syntax().typescript() && eat!(self, '?');
+                let is_optional = self.syntax().typescript() && self.input.eat(&tok!('?'));
                 return self.make_property(start, key, false, is_optional, false, false);
             } else {
                 Some(span!(self, start))
@@ -263,7 +263,7 @@ impl Parser<'_> {
                 ));
                 // TS optional.
                 if self.syntax().typescript() {
-                    eat!(self, '?');
+                    self.input.eat(&tok!('?'));
                 }
                 return self.make_method(
                     Parser::parse_unique_formal_params,
@@ -283,7 +283,7 @@ impl Parser<'_> {
                 let key = Key::PropName(PropName::Ident(
                     self.new_ident(id_for_built_in!("static"), static_token),
                 ));
-                let is_optional = self.syntax().typescript() && eat!(self, '?');
+                let is_optional = self.syntax().typescript() && self.input.eat(&tok!('?'));
                 return self.make_property(start, key, false, is_optional, declare, false);
             } else {
                 // TODO: error if static contains escape
@@ -387,7 +387,7 @@ impl Parser<'_> {
             }
         }
 
-        if eat!(self, '*') {
+        if self.input.eat(&tok!('*')) {
             // generator method
             let key = self.parse_class_prop_name()?;
             if readonly.is_some() {
@@ -420,7 +420,7 @@ impl Parser<'_> {
         } else {
             self.parse_class_prop_name()?
         };
-        let is_optional = self.syntax().typescript() && eat!(self, '?');
+        let is_optional = self.syntax().typescript() && self.input.eat(&tok!('?'));
 
         if self.is_class_method() {
             // handle a(){} / get(){} / set(){} / async(){}
@@ -564,7 +564,7 @@ impl Parser<'_> {
                 );
             }
 
-            let is_generator = eat!(self, '*');
+            let is_generator = self.input.eat(&tok!('*'));
             let key = self.parse_class_prop_name()?;
             if is_constructor(&key) {
                 syntax_error!(
@@ -581,7 +581,7 @@ impl Parser<'_> {
 
             // TS optional.
             if !is_optional && self.syntax().typescript() {
-                eat!(self, '?');
+                self.input.eat(&tok!('?'));
             }
             return self.make_method(
                 Parser::parse_unique_formal_params,
@@ -699,7 +699,7 @@ impl Parser<'_> {
         }
         // TS definite.
         if self.syntax().typescript() && !is_optional {
-            eat!(self, '!');
+            self.input.eat(&tok!('!'));
         }
 
         // Type annotation.
@@ -721,7 +721,7 @@ impl Parser<'_> {
                 None
             };
 
-            if !eat!(parser, ';') {
+            if !parser.eat_semi_with_asi() {
                 parser.emit_err(parser.input.cur_span(), SyntaxError::TS1005);
             }
 
@@ -1172,7 +1172,7 @@ impl FnBodyParser<BlockStmtOrExpr> for Parser<'_> {
 impl FnBodyParser<Option<BlockStmt>> for Parser<'_> {
     fn parse_fn_body_inner(&mut self) -> PResult<Option<BlockStmt>> {
         // allow omitting body and allow placing `{` on next line
-        if self.input.syntax().typescript() && !is!(self, '{') && eat!(self, ';') {
+        if self.input.syntax().typescript() && !is!(self, '{') && self.eat_semi_with_asi() {
             return Ok(None);
         }
         self.include_in_expr(true).parse_block(true).map(Some)

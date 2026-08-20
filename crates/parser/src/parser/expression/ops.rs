@@ -228,8 +228,8 @@ impl Parser<'_> {
     ) -> PResult<MaybeParen> {
         let start = self.input.cur_pos();
 
-        if self.input.syntax().typescript() && eat!(self, '<') {
-            if eat!(self, "const") {
+        if self.input.syntax().typescript() && self.input.eat(&tok!('<')) {
+            if self.input.eat(&tok!("const")) {
                 expect!(self, '>');
                 let expr = self.parse_unary_expr(&mut AssignProps::Emit)?;
                 return Ok(expr);

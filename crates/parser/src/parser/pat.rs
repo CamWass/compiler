@@ -116,7 +116,7 @@ impl Parser<'_> {
         expect!(self, ']');
         // TS optional.
         if self.input.syntax().dts() || self.ctx().in_declare() {
-            eat!(self, '?');
+            self.input.eat(&tok!('?'));
         }
 
         Ok(Pat::Array(ArrayPat {
@@ -162,7 +162,7 @@ impl Parser<'_> {
         let mut opt = false;
 
         if self.input.syntax().typescript() {
-            if eat!(self, '?') {
+            if self.input.eat(&tok!('?')) {
                 match pat {
                     Pat::Ident(_) | Pat::Array(_) | Pat::Object(_) => {
                         opt = true;
@@ -386,7 +386,7 @@ impl Parser<'_> {
                     }
                 }
 
-                if self.syntax().typescript() && eat!(self, '?') {
+                if self.syntax().typescript() && self.input.eat(&tok!('?')) {
                     self.emit_err(self.input.prev_span(), SyntaxError::TS1047);
                 }
 

@@ -85,7 +85,7 @@ impl StmtLikeParser<Stmt> for Parser<'_> {
         if self.input.syntax().dynamic_import() && is!(self, "import") {
             let expr = self.parse_expr(&mut AssignProps::Emit)?.unwrap();
 
-            eat!(self, ';');
+            self.eat_semi_with_asi();
 
             return Ok(Some(Stmt::Expr(ExprStmt {
                 node_id: node_id!(self, span!(self, start)),
@@ -99,7 +99,7 @@ impl StmtLikeParser<Stmt> for Parser<'_> {
         {
             let expr = self.parse_expr(&mut AssignProps::Emit)?.unwrap();
 
-            eat!(self, ';');
+            self.eat_semi_with_asi();
 
             return Ok(Some(Stmt::Expr(ExprStmt {
                 node_id: node_id!(self, span!(self, start)),
@@ -216,7 +216,7 @@ impl Parser<'_> {
             }
 
             let expr = self.parse_await_expr()?;
-            eat!(self, ';');
+            self.eat_semi_with_asi();
 
             let span = span!(self, start);
             return Ok(Some(Stmt::Expr(ExprStmt {
@@ -239,11 +239,11 @@ impl Parser<'_> {
                 let is_break = self.input.is(&tok!("break"));
                 self.input.bump();
 
-                let label = if eat!(self, ';') {
+                let label = if self.eat_semi_with_asi() {
                     None
                 } else {
                     let ident = self.parse_label_ident().map(Some)?;
-                    expect!(self, ';');
+                    self.expect_semi_with_asi()?;
                     ident
                 };
 
@@ -441,7 +441,7 @@ impl Parser<'_> {
                         SyntaxError::InvalidIdentInStrict,
                     );
 
-                    eat!(self, ';');
+                    self.eat_semi_with_asi();
 
                     return Ok(Some(Stmt::Expr(ExprStmt {
                         node_id: node_id!(self, span!(self, start)),
@@ -473,7 +473,7 @@ impl Parser<'_> {
                         id_for_built_in!("public")
                         | id_for_built_in!("static")
                         | id_for_built_in!("abstract") => {
-                            if eat!(self, "interface") {
+                            if self.input.eat(&tok!("interface")) {
                                 self.emit_err(get_span!(self, ident.node_id), SyntaxError::TS2427);
                                 self.parse_ts_interface_decl()?;
                                 return Ok(Some(Stmt::Empty(EmptyStmt {
@@ -487,7 +487,7 @@ impl Parser<'_> {
             }
         }
 
-        if eat!(self, ';') {
+        if self.eat_semi_with_asi() {
             Ok(Some(Stmt::Expr(ExprStmt {
                 node_id: node_id!(self, span!(self, start)),
                 expr: expr.unwrap(),
@@ -527,7 +527,7 @@ impl Parser<'_> {
 
     fn parse_debugger_stmt(&mut self, start: BytePos) -> PResult<Stmt> {
         self.input.bump();
-        expect!(self, ';');
+        self.expect_semi_with_asi()?;
         Ok(Stmt::Debugger(DebuggerStmt {
             node_id: node_id!(self, span!(self, start)),
         }))
@@ -672,7 +672,7 @@ impl Parser<'_> {
                 return self.parse_for_each_head(VarDeclOrPat::VarDecl(decl));
             }
 
-            expect_exact!(self, ';');
+            expect!(self, ';');
             return self.parse_normal_for_head(Some(Box::new(VarDeclOrExpr::VarDecl(decl))));
         }
 
@@ -702,7 +702,7 @@ impl Parser<'_> {
             return self.parse_for_each_head(VarDeclOrPat::Pat(pat));
         }
 
-        expect_exact!(self, ';');
+        expect!(self, ';');
 
         let AssignProps::Buffer(assign_props) = assign_props else {
             unreachable!()
@@ -745,7 +745,7 @@ impl Parser<'_> {
                 .parse_expr(&mut AssignProps::Emit)
                 .map(MaybeParen::unwrap)
                 .map(Some)?;
-            expect_exact!(self, ';');
+            expect!(self, ';');
             test
         };
 
@@ -773,7 +773,7 @@ impl Parser<'_> {
             .include_in_expr(true)
             .parse_expr(&mut AssignProps::Emit)?
             .unwrap();
-        if !eat!(self, ')') {
+        if !self.input.eat(&tok!(')')) {
             self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
 
             let span = span!(self, start);
@@ -828,7 +828,7 @@ impl Parser<'_> {
                 .map(Some)?
         };
 
-        expect!(self, ';');
+        self.expect_semi_with_asi()?;
 
         if !self.ctx().in_function() {
             self.emit_err(span!(self, start), SyntaxError::ReturnNotAllowed);
@@ -926,7 +926,7 @@ impl Parser<'_> {
             .include_in_expr(true)
             .parse_expr(&mut AssignProps::Emit)?
             .unwrap();
-        expect!(self, ';');
+        self.expect_semi_with_asi()?;
 
         Ok(Stmt::Throw(ThrowStmt {
             node_id: node_id!(self, span!(self, start)),
@@ -987,11 +987,11 @@ impl Parser<'_> {
 
     /// Optional since es2019
     fn parse_catch_param(&mut self) -> PResult<Option<Pat>> {
-        if eat!(self, '(') {
+        if self.input.eat(&tok!('(')) {
             let pat = self.parse_binding_pat_or_ident()?;
 
             // Type annotation.
-            if self.syntax().typescript() && eat!(self, ':') {
+            if self.syntax().typescript() && self.input.eat(&tok!(':')) {
                 // Type annotation.
                 self.in_type().parse_with(Parser::parse_ts_type)?;
                 // self.emit_err(ty.span(), SyntaxError::TS1196);
@@ -1017,7 +1017,7 @@ impl Parser<'_> {
         if self.syntax().typescript() && for_loop {
             let res = if is_one_of!(self, "in", "of") {
                 self.ts_look_ahead(|parser| {
-                    if !eat!(parser, "of") && !eat!(parser, "in") {
+                    if !parser.input.eat(&tok!("of")) && !parser.input.eat(&tok!("in")) {
                         return Ok(false);
                     }
 
@@ -1086,12 +1086,12 @@ impl Parser<'_> {
             }
         }
 
-        if !for_loop && !eat!(self, ';') {
+        if !for_loop && !self.eat_semi_with_asi() {
             self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
 
             let _ = self.parse_expr(&mut AssignProps::Emit);
 
-            while !eat!(self, ';') {
+            while !self.eat_semi_with_asi() {
                 self.input.bump();
             }
         }
@@ -1117,7 +1117,7 @@ impl Parser<'_> {
 
         // TS definite.
         if self.input.syntax().typescript() && matches!(name, Pat::Ident(_)) {
-            eat!(self, '!');
+            self.input.eat(&tok!('!'));
         }
 
         // Typescript extension

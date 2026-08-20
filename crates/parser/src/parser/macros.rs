@@ -60,14 +60,6 @@ macro_rules! is {
         }
     }};
 
-    ($parser:expr, IdentRef) => {{
-        let ctx = $parser.ctx();
-        match $parser.input.cur() {
-            Some(Word(w)) => !ctx.is_reserved_word(w.get_name_id()),
-            _ => false,
-        }
-    }};
-
     ($parser:expr, IdentName) => {{
         match $parser.input.cur() {
             Some(Word(..)) => true,
@@ -89,7 +81,7 @@ macro_rules! is {
         }
     }};
 
-    ($parser:expr,';') => {{
+    ($parser:expr, ';') => {{
         match $parser.input.cur() {
             Some(Token::Semi) | None | Some(tok!('}')) => true,
             _ => $parser.input.had_line_break_before_cur(),
@@ -97,12 +89,8 @@ macro_rules! is {
     }};
 
     ($parser:expr, $t:tt) => {
-        is_exact!($parser, $t)
+        $parser.input.is(&tok!($t))
     };
-}
-
-macro_rules! is_exact {
-    ($parser:expr, $t:tt) => {{ $parser.input.is(&tok!($t)) }};
 }
 
 macro_rules! is_one_of {
@@ -115,14 +103,6 @@ macro_rules! is_one_of {
 }
 
 macro_rules! peeked_is {
-    ($parser:expr, IdentRef) => {{
-        let ctx = $parser.ctx();
-        match peek!($parser) {
-            Ok(Word(w)) => !ctx.is_reserved_word(w.get_name_id()),
-            _ => false,
-        }
-    }};
-
     ($parser:expr, IdentName) => {{
         match peek!($parser) {
             Ok(Word(..)) => true,
@@ -140,43 +120,6 @@ macro_rules! peeked_is {
             _ => false,
         }
     };
-}
-
-/// This handles automatic semicolon insertion.
-///
-/// Returns bool if token is static, and Option<Token>
-///     if token has data like string.
-macro_rules! eat {
-    ($parser:expr, ';') => {{
-        match $parser.input.cur() {
-            Some(Token::Semi) => {
-                $parser.input.bump();
-                true
-            }
-            None | Some(tok!('}')) => true,
-            _ => $parser.input.had_line_break_before_cur(),
-        }
-    }};
-
-    ($parser:expr, $t:tt) => {{
-        if is!($parser, $t) {
-            $parser.input.bump();
-            true
-        } else {
-            false
-        }
-    }};
-}
-
-macro_rules! eat_exact {
-    ($parser:expr, $t:tt) => {{
-        if is_exact!($parser, $t) {
-            $parser.input.bump();
-            true
-        } else {
-            false
-        }
-    }};
 }
 
 macro_rules! peek {
@@ -202,14 +145,6 @@ Current token is {:?}",
     }};
 }
 
-macro_rules! store {
-    ($parser:expr, $t:tt) => {{
-        const TOKEN: Token = tok!($t);
-
-        $parser.input.store(TOKEN);
-    }};
-}
-
 /// Returns true on eof.
 macro_rules! eof {
     ($parser:expr) => {
@@ -231,25 +166,10 @@ macro_rules! unexpected {
     }};
 }
 
-/// This handles automatic semicolon insertion.
 macro_rules! expect {
     ($parser:expr, $t:tt) => {{
         const TOKEN: &Token = &tok!($t);
-        if !eat!($parser, $t) {
-            let cur = $parser.input.dump_cur();
-            syntax_error!(
-                $parser,
-                $parser.input.cur_span(),
-                SyntaxError::Expected(TOKEN, cur)
-            )
-        }
-    }};
-}
-
-macro_rules! expect_exact {
-    ($parser:expr, $t:tt) => {{
-        const TOKEN: &Token = &tok!($t);
-        if !eat_exact!($parser, $t) {
+        if !$parser.input.eat(TOKEN) {
             let cur = $parser.input.dump_cur();
             syntax_error!(
                 $parser,

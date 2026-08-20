@@ -11,7 +11,7 @@ impl Parser<'_> {
         if self.input.peeked_is(&tok!('.')) {
             let expr = self.parse_expr(&mut AssignProps::Emit)?.unwrap();
 
-            eat!(self, ';');
+            self.eat_semi_with_asi();
 
             return Ok(ModuleItem::Stmt(Stmt::Expr(ExprStmt {
                 node_id: node_id!(self, span!(self, start)),
@@ -22,7 +22,7 @@ impl Parser<'_> {
         if self.input.syntax().dynamic_import() && self.input.peeked_is(&tok!('(')) {
             let expr = self.parse_expr(&mut AssignProps::Emit)?.unwrap();
 
-            eat!(self, ';');
+            self.eat_semi_with_asi();
 
             return Ok(ModuleItem::Stmt(Stmt::Expr(ExprStmt {
                 node_id: node_id!(self, span!(self, start)),
@@ -44,7 +44,7 @@ impl Parser<'_> {
 
         expect!(self, "import");
 
-        if self.input.syntax().typescript() && is!(self, IdentRef) && peeked_is!(self, '=') {
+        if self.input.syntax().typescript() && self.is_ident_ref() && peeked_is!(self, '=') {
             todo!();
             // return self
             //     .parse_ts_import_equals_decl(start, false, false)
@@ -62,7 +62,7 @@ impl Parser<'_> {
                 },
                 _ => unreachable!(),
             };
-            expect!(self, ';');
+            self.expect_semi_with_asi()?;
             return Ok(ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
                 node_id: node_id!(self, span!(self, start)),
                 src,
@@ -78,7 +78,7 @@ impl Parser<'_> {
         if type_only {
             self.assert_and_bump(&tok!("type"));
 
-            if is!(self, IdentRef) && peeked_is!(self, '=') {
+            if self.is_ident_ref() && peeked_is!(self, '=') {
                 todo!();
                 // return self
                 //     .parse_ts_import_equals_decl(start, false, true)
@@ -103,19 +103,19 @@ impl Parser<'_> {
 
         {
             let import_spec_start = self.input.cur_pos();
-            if eat!(self, '*') {
+            if self.input.eat(&tok!('*')) {
                 expect!(self, "as");
                 let local = self.parse_imported_binding()?;
                 specifiers.push(ImportSpecifier::Namespace(ImportStarAsSpecifier {
                     node_id: node_id!(self, span!(self, import_spec_start)),
                     local,
                 }));
-            } else if eat!(self, '{') {
+            } else if self.input.eat(&tok!('{')) {
                 let mut first = true;
                 while !eof!(self) && !is!(self, '}') {
                     if first {
                         first = false;
-                    } else if eat!(self, ',') && is!(self, '}') {
+                    } else if self.input.eat(&tok!(',')) && is!(self, '}') {
                         break;
                     }
 
@@ -142,7 +142,7 @@ impl Parser<'_> {
 
         let asserts = if self.input.syntax().import_assertions()
             && !self.input.had_line_break_before_cur()
-            && eat!(self, "assert")
+            && self.input.eat(&tok!("assert"))
         {
             match *self.parse_object::<Box<Expr>>(&mut AssignProps::Emit)? {
                 Expr::Object(v) => Some(v),
@@ -152,7 +152,7 @@ impl Parser<'_> {
             None
         };
 
-        expect!(self, ';');
+        self.expect_semi_with_asi()?;
 
         Ok(ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
             node_id: node_id!(self, span!(self, start)),
@@ -168,7 +168,7 @@ impl Parser<'_> {
         if let Some(&Word(..)) = self.input.cur() {
             let orig_name = self.parse_ident_name()?;
 
-            if eat!(self, "as") {
+            if self.input.eat(&tok!("as")) {
                 let local = self.parse_binding_ident()?.id;
                 let hi = get_span!(self, local.node_id).hi();
                 let span = Span::new(start, hi);
@@ -232,7 +232,7 @@ impl Parser<'_> {
         let after_export_start = self.input.cur_pos();
 
         // "export declare" is equivalent to just "export".
-        let declare = self.input.syntax().typescript() && eat!(self, "declare");
+        let declare = self.input.syntax().typescript() && self.input.eat(&tok!("declare"));
 
         if declare {
             if let Some(decl) = self.try_parse_ts_declare(after_export_start)? {
@@ -263,7 +263,7 @@ impl Parser<'_> {
         }
 
         if self.input.syntax().typescript() {
-            if eat!(self, "import") {
+            if self.input.eat(&tok!("import")) {
                 // export import A = B
                 todo!();
                 // return self
@@ -271,11 +271,11 @@ impl Parser<'_> {
                 //     .map(From::from);
             }
 
-            if eat!(self, '=') {
+            if self.input.eat(&tok!('=')) {
                 // `export = x;`
                 todo!();
                 // let expr = self.parse_expr()?;
-                // expect!(self, ';');
+                // self.expect_semi_with_asi()?;
                 // return Ok(TsExportAssignment {
                 //     node_id: node_id!(self),
                 //     span: span!(self, start),
@@ -284,12 +284,12 @@ impl Parser<'_> {
                 // .into());
             }
 
-            if eat!(self, "as") {
+            if self.input.eat(&tok!("as")) {
                 // `export as namespace A;`
                 // See `parseNamespaceExportDeclaration` in TypeScript's own parser
                 // expect!(self, "namespace");
                 // let id = self.parse_ident(false, false)?;
-                // expect!(self, ';');
+                // self.expect_semi_with_asi()?;
                 todo!();
                 // return Ok(TsNamespaceExportDecl {
                 //     node_id: node_id!(self),
@@ -304,9 +304,9 @@ impl Parser<'_> {
         let mut export_ns = None;
         let ns_export_specifier_start = self.input.cur_pos();
 
-        let type_only = self.input.syntax().typescript() && eat!(self, "type");
+        let type_only = self.input.syntax().typescript() && self.input.eat(&tok!("type"));
 
-        if eat!(self, '*') {
+        if self.input.eat(&tok!('*')) {
             has_star = true;
             if is!(self, "from") {
                 let (src, asserts) = self.parse_from_clause_and_semi()?;
@@ -316,7 +316,7 @@ impl Parser<'_> {
                     asserts,
                 })));
             }
-            if eat!(self, "as") {
+            if self.input.eat(&tok!("as")) {
                 let name = self.parse_ident_name()?;
                 export_ns = Some(ExportSpecifier::Namespace(ExportNamespaceSpecifier {
                     node_id: node_id!(self, span!(self, ns_export_specifier_start)),
@@ -328,7 +328,7 @@ impl Parser<'_> {
         // Some("default") if default is exported from 'src'
         let mut export_default = None;
 
-        if !type_only && export_ns.is_none() && eat!(self, "default") {
+        if !type_only && export_ns.is_none() && self.input.eat(&tok!("default")) {
             if self.input.syntax().typescript() {
                 if is!(self, "abstract")
                     && peeked_is!(self, "class")
@@ -383,7 +383,7 @@ impl Parser<'_> {
                     .include_in_expr(true)
                     .parse_assignment_expr(&mut AssignProps::Emit)?
                     .unwrap();
-                expect!(self, ';');
+                self.expect_semi_with_asi()?;
                 return Ok(Some(ModuleDecl::ExportDefaultExpr(ExportDefaultExpr {
                     node_id: node_id!(self, span!(self, start)),
                     expr,
@@ -511,7 +511,7 @@ impl Parser<'_> {
             while is_one_of!(self, ',', IdentName) {
                 if first {
                     first = false;
-                } else if eat!(self, ',') && is!(self, '}') {
+                } else if self.input.eat(&tok!(',')) && is!(self, '}') {
                     break;
                 }
 
@@ -525,7 +525,7 @@ impl Parser<'_> {
             let opt = if is!(self, "from") {
                 Some(self.parse_from_clause_and_semi()?)
             } else {
-                eat!(self, ';');
+                self.eat_semi_with_asi();
                 if has_default || has_ns {
                     syntax_error!(
                         self,
@@ -560,7 +560,7 @@ impl Parser<'_> {
 
         let orig = self.parse_ident_name()?;
 
-        let exported = if eat!(self, "as") {
+        let exported = if self.input.eat(&tok!("as")) {
             Some(self.parse_ident_name()?)
         } else {
             None
@@ -591,7 +591,7 @@ impl Parser<'_> {
 
         let asserts = if self.input.syntax().import_assertions()
             && !self.input.had_line_break_before_cur()
-            && eat!(self, "assert")
+            && self.input.eat(&tok!("assert"))
         {
             match *self.parse_object::<Box<Expr>>(&mut AssignProps::Emit)? {
                 Expr::Object(v) => Some(v),
@@ -600,7 +600,7 @@ impl Parser<'_> {
         } else {
             None
         };
-        expect!(self, ';');
+        self.expect_semi_with_asi()?;
         Ok((src, asserts))
     }
 }
