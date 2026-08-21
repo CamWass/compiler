@@ -31,30 +31,22 @@ impl Parser<'_> {
     /// `tsParseModifier`
     pub(super) fn parse_ts_modifier(
         &mut self,
-        allowed_modifiers: &[NameId],
-    ) -> PResult<Option<NameId>> {
+        allowed_modifiers: &[Token],
+    ) -> PResult<Option<Token>> {
         debug_assert!(self.syntax().typescript());
 
-        if let Token::Error(_) = self.input.cur() {
-            if let Token::Error(e) = self.input.bump() {
-                return Err(e);
-            } else {
-                unreachable!();
-            }
+        if let Token::Error = self.input.cur() {
+            let error = self.input.expect_error_token_and_bump();
+            return Err(error);
         }
 
-        if self.input.cur() == &Token::Eof {
+        if self.input.cur() == Token::Eof {
             return Err(self.eof_error());
         }
 
-        let pos = {
-            let modifier = match self.input.cur() {
-                Token::Word(Word::Ident(w)) => w,
-                _ => return Ok(None),
-            };
-
-            allowed_modifiers.iter().position(|s| *s == *modifier)
-        };
+        let pos = allowed_modifiers
+            .iter()
+            .position(|s| *s == self.input.cur());
 
         if let Some(pos) = pos {
             if self.try_parse_ts_bool(|p| p.ts_next_token_can_follow_modifier().map(Some))? {
@@ -174,7 +166,7 @@ impl Parser<'_> {
         }
         while self.eat(tok!('.')) {
             let dot_start = self.input.cur_pos();
-            if !self.is(tok!('#')) && !matches!(self.input.cur(), Token::Word(_)) {
+            if !self.is(tok!('#')) && !self.input.cur().is_word() {
                 self.emit_err(Span::new(dot_start, dot_start), SyntaxError::TS1003);
                 return Ok(());
             }
@@ -238,12 +230,9 @@ impl Parser<'_> {
 
         expect!(self, '(');
 
-        if let Token::Error(_) = self.input.cur() {
-            if let Token::Error(e) = self.input.bump() {
-                return Err(e);
-            } else {
-                unreachable!();
-            }
+        if let Token::Error = self.input.cur() {
+            let error = self.input.expect_error_token_and_bump();
+            return Err(error);
         }
 
         let lit = self.parse_lit()?;
@@ -326,7 +315,7 @@ impl Parser<'_> {
         debug_assert!(self.syntax().typescript());
 
         self.in_type().parse_with(|p| {
-            if !p.eat(return_token.clone()) {
+            if !p.eat(return_token) {
                 let cur = p.input.dump_cur();
                 let span = p.input.cur_span();
                 syntax_error!(p, span, SyntaxError::Expected(return_token, cur))
@@ -506,10 +495,10 @@ impl Parser<'_> {
         // Computed property names are grammar errors in an enum, so accept just string
         // literal or identifier.
         match self.input.cur() {
-            Token::Str { .. } => {
+            Token::Str => {
                 self.parse_lit()?;
             }
-            Token::Num { .. } => {
+            Token::Num => {
                 self.input.bump();
                 let span = self.span(start);
 
@@ -524,12 +513,9 @@ impl Parser<'_> {
 
                 expect!(self, ']');
             }
-            Token::Error(_) => {
-                if let Token::Error(e) = self.input.bump() {
-                    return Err(e);
-                } else {
-                    unreachable!();
-                }
+            Token::Error => {
+                let error = self.input.expect_error_token_and_bump();
+                return Err(error);
             }
             _ => {
                 self.parse_ident_name()?;
@@ -541,7 +527,7 @@ impl Parser<'_> {
             self.parse_assignment_expr(&mut AssignProps::Emit)?;
         } else if self.is(tok!(',')) || self.is(tok!('}')) {
             return Ok(());
-        } else if self.input.cur() == &Token::Eof {
+        } else if self.input.cur() == Token::Eof {
             return Err(self.eof_error());
         } else {
             let start = self.input.cur_pos();
@@ -598,7 +584,7 @@ impl Parser<'_> {
 
         if self.is(tok!("global")) {
             self.parse_ident_name()?;
-        } else if matches!(self.input.cur(), Token::Str { .. }) {
+        } else if self.input.cur() == Token::Str {
             self.parse_lit()?;
         } else {
             unexpected!(self, "global or a string literal");
@@ -762,7 +748,7 @@ impl Parser<'_> {
         if self.is(tok!("extends")) {
             self.emit_err(self.input.cur_span(), SyntaxError::TS1172);
 
-            while self.input.cur() != &Token::Eof && !self.is(tok!('{')) {
+            while self.input.cur() != Token::Eof && !self.is(tok!('{')) {
                 self.input.bump();
             }
         }
@@ -1062,9 +1048,7 @@ impl Parser<'_> {
             return self
                 .parse_ts_signature_member(SignatureParsingMode::TSConstructSignatureDeclaration);
         }
-        let readonly = self
-            .parse_ts_modifier(&[id_for_built_in!("readonly")])?
-            .is_some();
+        let readonly = self.parse_ts_modifier(&[Token::Readonly])?.is_some();
 
         let idx = self.try_parse_ts_index_signature()?;
         if idx.is_some() {
@@ -1430,7 +1414,7 @@ impl Parser<'_> {
         debug_assert!(self.syntax().typescript());
 
         match self.input.cur() {
-            Token::Word(Word::Ident(..))
+            Token::Ident
             | tok!("void")
             | tok!("yield")
             | tok!("null")
@@ -1468,18 +1452,13 @@ impl Parser<'_> {
                     return self.parse_ts_type_ref();
                 }
             }
-            Token::BigInt { .. }
-            | Token::Str { .. }
-            | Token::Num { .. }
-            | tok!("true")
-            | tok!("false")
-            | tok!('`') => {
+            Token::BigInt | Token::Str | Token::Num | tok!("true") | tok!("false") | tok!('`') => {
                 return self.parse_ts_lit_type_node();
             }
             tok!('-') => {
                 self.input.bump();
 
-                if !matches!(self.input.cur(), Token::Num { .. }) {
+                if !self.is(Token::Num) {
                     unexpected!(self, "a numeric literal");
                 }
 
@@ -1591,7 +1570,7 @@ impl Parser<'_> {
             if self.is(tok!("infer")) {
                 self.parse_ts_infer_type()
             } else {
-                self.parse_ts_modifier(&[id_for_built_in!("readonly")])?;
+                self.parse_ts_modifier(&[Token::Readonly])?;
                 self.parse_ts_array_type_or_higher()
             }
         }
@@ -1677,11 +1656,8 @@ impl Parser<'_> {
 
             if p.is(tok!("global")) {
                 p.parse_ts_ambient_external_module_decl()?;
-            } else if matches!(p.input.cur(), Token::Word(_)) {
-                let value = match p.input.cur() {
-                    Token::Word(w) => w.get_name_id(),
-                    _ => unreachable!(),
-                };
+            } else if p.input.cur().is_word() {
+                let value = p.input.expect_word_token_and_bump();
                 return p.parse_ts_decl(start, value, true);
             }
 
@@ -1747,16 +1723,13 @@ impl Parser<'_> {
                     self.input.bump();
                 }
 
-                if matches!(self.input.cur(), Token::Str { .. }) {
+                if self.is(Token::Str) {
                     self.parse_ts_ambient_external_module_decl()?;
                     return Ok(Some(DeclOrEmpty::Empty));
-                } else if let Token::Error(_) = self.input.cur() {
-                    if let Token::Error(e) = self.input.bump() {
-                        return Err(e);
-                    } else {
-                        unreachable!();
-                    }
-                } else if self.input.cur() == &Token::Eof {
+                } else if let Token::Error = self.input.cur() {
+                    let error = self.input.expect_error_token_and_bump();
+                    return Err(error);
+                } else if self.input.cur() == Token::Eof {
                     return Err(self.eof_error());
                 } else if next || self.is_ident_ref() {
                     self.parse_ts_module_or_ns_decl()?;
@@ -1887,12 +1860,12 @@ impl Parser<'_> {
     {
         debug_assert!(self.syntax().typescript());
 
-        self.eat(operator.clone());
+        self.eat(operator);
 
         parse_constituent_type(self)?;
 
-        if self.is(operator.clone()) {
-            while self.eat(operator.clone()) {
+        if self.is(operator) {
+            while self.eat(operator) {
                 parse_constituent_type(self)?;
             }
 

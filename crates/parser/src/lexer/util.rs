@@ -1,5 +1,10 @@
 use super::{DISPATCHER, Dispatch, LexResult, Lexer};
-use crate::error::{Error, SyntaxError};
+use crate::{
+    error::{Error, SyntaxError},
+    token::{Token, TokenData},
+};
+use ast::{NameId, RegexFlags};
+use atoms::JsWord;
 use common::{BytePos, Pos, Span, chars::char_literals};
 
 /// See https://tc39.github.io/ecma262/#sec-line-terminators
@@ -210,6 +215,48 @@ impl Lexer<'_> {
         } else {
             false
         }
+    }
+
+    pub fn make_num_token(&mut self, value: f64) -> Token {
+        self.state.token_data = Some(TokenData::Num(value));
+        Token::Num
+    }
+
+    pub fn make_big_int_token(&mut self, value: num_bigint::BigUint) -> Token {
+        self.state.token_data = Some(TokenData::BigInt(value));
+        Token::BigInt
+    }
+
+    pub fn make_regex_token(&mut self, content: JsWord, flags: RegexFlags) -> Token {
+        self.state.token_data = Some(TokenData::Regex(content, flags));
+        Token::Regex
+    }
+
+    pub fn make_str_token(&mut self, value: JsWord) -> Token {
+        self.state.token_data = Some(TokenData::Str { value });
+        Token::Str
+    }
+
+    pub fn make_tpl_token(&mut self, raw: JsWord, has_invalid_escape: bool) -> Token {
+        self.state.token_data = Some(TokenData::Template {
+            raw,
+            has_invalid_escape,
+        });
+        Token::Template
+    }
+
+    pub fn make_ident_token(&mut self, name: NameId) -> Token {
+        self.state.token_data = Some(TokenData::Ident(name));
+        Token::Ident
+    }
+
+    pub fn make_error_token(&mut self, error: Error) -> Token {
+        self.state.token_data = Some(TokenData::Error(error));
+        Token::Error
+    }
+
+    pub fn take_token_data(&mut self) -> Option<TokenData> {
+        self.state.token_data.take()
     }
 }
 

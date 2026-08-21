@@ -7,7 +7,7 @@ use util::{AssignProps, is_valid_simple_assignment_target};
 impl Parser<'_> {
     pub(super) fn parse_opt_binding_ident(&mut self) -> PResult<Option<BindingIdent>> {
         let ctx = self.ctx();
-        if matches!(self.input.cur(), Token::Word(w) if !ctx.is_reserved_word(w.get_name_id()))
+        if (self.input.cur().is_word() && !self.input.cur().is_reserved_word(ctx))
             || (self.input.syntax().typescript() && self.is(tok!("this")))
         {
             self.parse_binding_ident().map(Some)
@@ -40,7 +40,8 @@ impl Parser<'_> {
 
     pub(super) fn parse_binding_pat_or_ident(&mut self) -> PResult<Pat> {
         match self.input.cur() {
-            tok!("yield") | Word(..) => self.parse_binding_ident().map(Pat::Ident),
+            tok!("yield") => self.parse_binding_ident().map(Pat::Ident),
+            t if t.is_word() => self.parse_binding_ident().map(Pat::Ident),
             tok!('[') => self.parse_array_binding_pat(),
             tok!('{') => self.parse_object(&mut AssignProps::Ignore),
             // tok!('(') => {
@@ -49,12 +50,9 @@ impl Parser<'_> {
             //     expect!(self, ')');
             //     Ok(pat)
             // }
-            Token::Error(_) => {
-                if let Token::Error(e) = self.input.bump() {
-                    return Err(e);
-                } else {
-                    unreachable!();
-                }
+            Token::Error => {
+                let error = self.input.expect_error_token_and_bump();
+                return Err(error);
             }
             _ => unexpected!(self, "yield, an identifier, [ or {"),
         }
@@ -139,22 +137,17 @@ impl Parser<'_> {
         let has_modifier = self.syntax().typescript()
             && matches!(
                 self.input.cur(),
-                Word(Word::Ident(
-                    id_for_built_in!("public")
-                        | id_for_built_in!("protected")
-                        | id_for_built_in!("private")
-                        | id_for_built_in!("readonly")
-                ))
+                Token::Public | Token::Protected | Token::Private | Token::Readonly
             )
-            && (matches!(self.input.peek(), Some(Word(_)))
+            && (matches!(self.input.peek(), Some(t) if t.is_word())
                 || self.peeked_is(tok!('{'))
                 || self.peeked_is(tok!('[')));
         if has_modifier {
             let _ = self.parse_ts_modifier(&[
-                id_for_built_in!("public"),
-                id_for_built_in!("protected"),
-                id_for_built_in!("private"),
-                id_for_built_in!("readonly"),
+                Token::Public,
+                Token::Protected,
+                Token::Private,
+                Token::Readonly,
             ]);
         }
 
@@ -300,10 +293,8 @@ impl Parser<'_> {
             let has_accessibility = self.parse_access_modifier()?;
             (
                 has_accessibility,
-                self.parse_ts_modifier(&[id_for_built_in!("override")])?
-                    .is_some(),
-                self.parse_ts_modifier(&[id_for_built_in!("readonly")])?
-                    .is_some(),
+                self.parse_ts_modifier(&[Token::Override])?.is_some(),
+                self.parse_ts_modifier(&[Token::Readonly])?.is_some(),
             )
         } else {
             (false, false, false)

@@ -2,7 +2,6 @@
 use util::AssignProps;
 
 use super::*;
-use crate::token::Keyword;
 
 impl Parser<'_> {
     /// Name from spec: 'LogicalORExpression'
@@ -14,7 +13,7 @@ impl Parser<'_> {
         let left = match self.parse_unary_expr(assign_props) {
             Ok(v) => v,
             Err(err) => match self.input.cur() {
-                &Word(Word::Keyword(Keyword::In)) if include_in_expr => {
+                Token::In if include_in_expr => {
                     self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
 
                     Box::new(Expr::Invalid(Invalid {
@@ -22,7 +21,7 @@ impl Parser<'_> {
                     }))
                     .into()
                 }
-                &Word(Word::Keyword(Keyword::InstanceOf)) | &Token::BinOp(..) => {
+                Token::InstanceOf | Token::BinOp(_) => {
                     self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
 
                     Box::new(Expr::Invalid(Invalid {
@@ -30,12 +29,9 @@ impl Parser<'_> {
                     }))
                     .into()
                 }
-                Token::Error(_) => {
-                    if let Token::Error(e) = self.input.bump() {
-                        return Err(e);
-                    } else {
-                        unreachable!();
-                    }
+                Token::Error => {
+                    let error = self.input.expect_error_token_and_bump();
+                    return Err(error);
                 }
                 _ => return Err(err),
             },
@@ -122,9 +118,9 @@ impl Parser<'_> {
         }
 
         let ctx = self.ctx();
-        let op = match *self.input.cur() {
-            Word(Word::Keyword(Keyword::In)) if ctx.include_in_expr() => op!("in"),
-            Word(Word::Keyword(Keyword::InstanceOf)) => op!("instanceof"),
+        let op = match self.input.cur() {
+            Token::In if ctx.include_in_expr() => op!("in"),
+            Token::InstanceOf => op!("instanceof"),
             Token::BinOp(op) => op.into(),
             _ => {
                 // Return left on eof.

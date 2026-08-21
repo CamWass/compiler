@@ -191,9 +191,9 @@ impl Lexer<'_> {
             let b = BigUint::from_str_radix(raw, radix as _)
                 .expect("failed to parse string as a bigint");
             self.bump(); // 'n'
-            Token::BigInt(b)
+            self.make_big_int_token(b)
         } else {
-            Token::Num(value)
+            self.make_num_token(value)
         };
 
         self.ensure_not_ident()?;
@@ -277,7 +277,7 @@ impl Lexer<'_> {
                 self.bump(); // 'n'
 
                 // TODO: do we need to check ensure_not_ident()?
-                return Ok(Token::BigInt(b));
+                return Ok(self.make_big_int_token(b));
             }
 
             if starts_with_zero {
@@ -291,7 +291,9 @@ impl Lexer<'_> {
                     if start.0 != self.cur_pos().0 - 1 {
                         // `-1` is utf 8 length of `0`
 
-                        return self.make_legacy_octal(start, 0f64).map(Token::Num);
+                        return self
+                            .make_legacy_octal(start, 0f64)
+                            .map(|v| self.make_num_token(v));
                     }
                 } else {
                     // strict mode hates non-zero decimals starting with zero.
@@ -314,7 +316,9 @@ impl Lexer<'_> {
                                 .to_string()
                                 .parse()
                                 .expect("failed to parse numeric value as f64");
-                            return self.make_legacy_octal(start, val).map(Token::Num);
+                            return self
+                                .make_legacy_octal(start, val)
+                                .map(|v| self.make_num_token(v));
                         }
                     }
                 }
@@ -390,7 +394,7 @@ impl Lexer<'_> {
 
         self.ensure_not_ident()?;
 
-        Ok(Token::Num(val))
+        Ok(self.make_num_token(val))
     }
 }
 

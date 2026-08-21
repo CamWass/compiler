@@ -16,7 +16,7 @@ use crate::{
     context::{Context, YesMaybe, YesNoMaybe},
     error::{Error, SyntaxError},
     lexer::Lexer,
-    token::{Token, Word},
+    token::Token,
 };
 use ast::*;
 use common::{BytePos, SourceFile, Span};
@@ -160,12 +160,9 @@ impl<'d> Parser<'d> {
             return;
         }
 
-        if let Token::Error(_) = self.input.cur() {
-            if let Token::Error(e) = self.input.bump() {
-                self.input().add_error(e);
-            } else {
-                unreachable!();
-            }
+        if let Token::Error = self.input.cur() {
+            let error = self.input.expect_error_token_and_bump();
+            self.input().add_error(error);
         }
 
         self.input().add_error(error);
@@ -213,18 +210,15 @@ impl<'d> Parser<'d> {
     }
 
     fn is_ident_ref(&mut self) -> bool {
-        let ctxt = self.ctx();
-        match self.input.cur() {
-            Word(w) => !ctxt.is_reserved_word(w.get_name_id()),
-            _ => false,
-        }
+        let ctx = self.ctx();
+        self.input.cur().is_word() && !self.input.cur().is_reserved_word(ctx)
     }
 
     fn peek_is_ident_ref(&mut self) -> bool {
-        let ctxt = self.ctx();
+        let ctx = self.ctx();
 
         match self.input.peek() {
-            Some(Word(w)) => !ctxt.is_reserved_word(w.get_name_id()),
+            Some(t) => t.is_word() && !t.is_reserved_word(ctx),
             _ => false,
         }
     }
@@ -263,7 +257,7 @@ impl<'d> Parser<'d> {
     #[inline(never)]
     pub fn eof_error(&mut self) -> Error {
         debug_assert!(
-            self.input.cur() == &Token::Eof,
+            self.input.cur() == Token::Eof,
             "Parser should not call eof_error() without knowing current token"
         );
         let pos = self.input.cur_span().hi;

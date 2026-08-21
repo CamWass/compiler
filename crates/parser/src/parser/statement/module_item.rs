@@ -54,13 +54,11 @@ impl Parser<'_> {
 
         // Handle import 'mod.js'
         let str_start = self.input.cur_pos();
-        if let Token::Str { .. } = self.input.cur() {
-            let src = match self.input.bump() {
-                Token::Str { value } => Str {
-                    node_id: node_id!(self, self.span(str_start)),
-                    value,
-                },
-                _ => unreachable!(),
+        if let Token::Str = self.input.cur() {
+            let value = self.input.expect_str_token_and_bump();
+            let src = Str {
+                node_id: node_id!(self, self.span(str_start)),
+                value,
             };
             self.expect_semi_with_asi()?;
             return Ok(ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
@@ -91,7 +89,7 @@ impl Parser<'_> {
         let mut specifiers = vec![];
 
         let ctx = self.ctx();
-        if matches!(self.input.cur(), Token::Word(w) if !ctx.is_reserved_word(w.get_name_id())) {
+        if self.input.cur().is_word() && !self.input.cur().is_reserved_word(ctx) {
             let local = self.parse_imported_default_binding()?;
             //TODO: Better error reporting
             if !self.is(tok!("from")) {
@@ -130,15 +128,14 @@ impl Parser<'_> {
         let src = {
             expect!(self, "from");
             let str_start = self.input.cur_pos();
-            match self.input.cur() {
-                Token::Str { .. } => match self.input.bump() {
-                    Token::Str { value } => Str {
-                        node_id: node_id!(self, self.span(str_start)),
-                        value,
-                    },
-                    _ => unreachable!(),
-                },
-                _ => unexpected!(self, "a string literal"),
+            if self.input.cur() == Token::Str {
+                let value = self.input.expect_str_token_and_bump();
+                Str {
+                    node_id: node_id!(self, self.span(str_start)),
+                    value,
+                }
+            } else {
+                unexpected!(self, "a string literal")
             }
         };
 
@@ -167,7 +164,7 @@ impl Parser<'_> {
     /// Parse `foo`, `foo2 as bar` in `import { foo, foo2 as bar }`
     fn parse_import_specifier(&mut self) -> PResult<ImportSpecifier> {
         let start = self.input.cur_pos();
-        if let Word(..) = self.input.cur() {
+        if self.input.cur().is_word() {
             let orig_name = self.parse_ident_name()?;
 
             if self.eat(tok!("as")) {
@@ -231,7 +228,7 @@ impl Parser<'_> {
         let start = self.input.cur_pos();
         self.assert_and_bump(tok!("export"));
 
-        if self.input.cur() == &Token::Eof {
+        if self.input.cur() == Token::Eof {
             return Err(self.eof_error());
         }
 
@@ -252,11 +249,8 @@ impl Parser<'_> {
             }
         }
 
-        if self.input.syntax().typescript() && matches!(self.input.cur(), Token::Word(_)) {
-            let sym = match self.input.cur() {
-                Token::Word(w) => w.get_name_id(),
-                _ => unreachable!(),
-            };
+        if self.input.syntax().typescript() && self.input.cur().is_word() {
+            let sym = self.input.take_word();
             if let Some(decl) = self.try_parse_ts_export_decl(sym) {
                 return match decl {
                     DeclOrEmpty::Decl(decl) => Ok(Some(ModuleDecl::ExportDecl(ExportDecl {
@@ -343,12 +337,9 @@ impl Parser<'_> {
                     let class_start = self.input.cur_pos();
                     self.assert_and_bump(tok!("abstract"));
 
-                    if let Token::Error(_) = self.input.cur() {
-                        if let Token::Error(e) = self.input.bump() {
-                            return Err(e);
-                        } else {
-                            unreachable!();
-                        }
+                    if let Token::Error = self.input.cur() {
+                        let error = self.input.expect_error_token_and_bump();
+                        return Err(error);
                     }
 
                     let class = self.parse_default_class(start, class_start)?;
@@ -443,7 +434,7 @@ impl Parser<'_> {
                     && self
                         .input
                         .peek()
-                        .map(Token::follows_keyword_let)
+                        .map(|t| t.follows_keyword_let())
                         .unwrap_or(false))
         {
             self.parse_var_stmt(false).map(Decl::Var).map(Some)?
@@ -468,9 +459,7 @@ impl Parser<'_> {
             let default = match export_default {
                 Some(default) => Some(default),
                 None => {
-                    if self.input.syntax().export_default_from()
-                        && matches!(self.input.cur(), Token::Word(_))
-                    {
+                    if self.input.syntax().export_default_from() && self.input.cur().is_word() {
                         Some(self.parse_ident(false, false)?)
                     } else {
                         None
@@ -525,7 +514,7 @@ impl Parser<'_> {
                 }));
             }
             let mut first = true;
-            while self.is(tok!(',')) || matches!(self.input.cur(), Token::Word(_)) {
+            while self.is(tok!(',')) || self.input.cur().is_word() {
                 if first {
                     first = false;
                 } else if self.eat(tok!(',')) && self.is(tok!('}')) {
@@ -595,15 +584,14 @@ impl Parser<'_> {
         expect!(self, "from");
 
         let str_start = self.input.cur_pos();
-        let src = match self.input.cur() {
-            Token::Str { .. } => match self.input.bump() {
-                Token::Str { value } => Str {
-                    node_id: node_id!(self, self.span(str_start)),
-                    value,
-                },
-                _ => unreachable!(),
-            },
-            _ => unexpected!(self, "a string literal"),
+        let src = if self.input.cur() == Token::Str {
+            let value = self.input.expect_str_token_and_bump();
+            Str {
+                node_id: node_id!(self, self.span(str_start)),
+                value,
+            }
+        } else {
+            unexpected!(self, "a string literal")
         };
 
         let asserts = if self.input.syntax().import_assertions()

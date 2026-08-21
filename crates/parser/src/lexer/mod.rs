@@ -10,7 +10,8 @@ use crate::{
     error::{Error, SyntaxError},
     token::*,
 };
-use ast::{ProgramData, RegexFlags, op};
+use ast::{NameId, ProgramData, RegexFlags, id_for_built_in, op};
+use atoms::JsWord;
 use common::{BytePos, SourceFile, Span, chars::char_literals};
 use number::{NonDecRadix, Radix};
 use state::State;
@@ -112,12 +113,12 @@ impl<'src> Lexer<'src> {
             self.read_token()
         })();
 
-        let token = match res.map_err(Token::Error) {
+        let token = match res.map_err(|e| self.make_error_token(e)) {
             Ok(t) => t,
             Err(e) => e,
         };
 
-        self.state.update(start, &token);
+        self.state.update(start, token);
 
         let had_line_break = self.state.had_line_break;
         self.state.had_line_break = false;
@@ -149,6 +150,7 @@ impl<'src> Lexer<'src> {
             return Ok(Token::Eof);
         };
 
+        // TODO: re-evaluate:
         // A lookup table of `byte -> fn(l: &mut Lexer) -> Token` is slower than
         // this approach. The speed difference comes from the difference in
         // table size - a function pointer takes 64 (usize) bits, resulting in a
@@ -167,44 +169,44 @@ impl<'src> Lexer<'src> {
             // Punctuation tokens.
             PNO => {
                 self.advance(1);
-                Ok(LParen)
+                Ok(Token::LParen)
             }
             PNC => {
                 self.advance(1);
-                Ok(RParen)
+                Ok(Token::RParen)
             }
             SEM => {
                 self.advance(1);
-                Ok(Semi)
+                Ok(Token::Semi)
             }
             COM => {
                 self.advance(1);
-                Ok(Comma)
+                Ok(Token::Comma)
             }
             BTO => {
                 self.advance(1);
-                Ok(LBracket)
+                Ok(Token::LBracket)
             }
             BTC => {
                 self.advance(1);
-                Ok(RBracket)
+                Ok(Token::RBracket)
             }
             BEO => {
                 self.advance(1);
-                Ok(LBrace)
+                Ok(Token::LBrace)
             }
             BEC => {
                 self.advance(1);
-                Ok(RBrace)
+                Ok(Token::RBrace)
             }
             COL => {
                 self.advance(1);
-                Ok(Colon)
+                Ok(Token::Colon)
             }
             QST => Ok(self.read_token_question()),
             TPL => {
                 self.advance(1);
-                Ok(BackQuote)
+                Ok(Token::BackQuote)
             }
             ZER => {
                 match self.peek_nth(1) {
@@ -234,11 +236,11 @@ impl<'src> Lexer<'src> {
             EQL | EXL => Ok(self.read_token_eq_excl(b)),
             TLD => {
                 self.advance(1);
-                Ok(tok!('~'))
+                Ok(Token::Tilde)
             }
             AT_ => {
                 self.advance(1);
-                Ok(At)
+                Ok(Token::At)
             }
             HAS => Ok(self.read_token_number_sign()),
             // Identifier or keyword. '\uXXXX' sequences are allowed in
@@ -334,18 +336,22 @@ impl<'src> Lexer<'src> {
 
         let is_mul = ch == b'*';
         self.advance(1); // '*' or '%'
-        let mut token = if is_mul { BinOp(Mul) } else { BinOp(Mod) };
+        let mut token = if is_mul {
+            Token::BinOp(Mul)
+        } else {
+            Token::BinOp(Mod)
+        };
 
         // check for **
         if is_mul && self.eat(b'*') {
-            token = BinOp(Exp);
+            token = Token::BinOp(Exp);
         }
 
         if self.eat(b'=') {
             token = match token {
-                BinOp(Mul) => AssignOp(MulAssign),
-                BinOp(Mod) => AssignOp(ModAssign),
-                BinOp(Exp) => AssignOp(ExpAssign),
+                Token::BinOp(Mul) => Token::AssignOp(MulAssign),
+                Token::BinOp(Mod) => Token::AssignOp(ModAssign),
+                Token::BinOp(Exp) => Token::AssignOp(ExpAssign),
                 _ => unreachable!(),
             };
         }
@@ -362,7 +368,7 @@ impl<'src> Lexer<'src> {
 
         // '|=', '&='
         if self.eat(b'=') {
-            return AssignOp(match token {
+            return Token::AssignOp(match token {
                 BitAnd => BitAndAssign,
                 BitOr => BitOrAssign,
                 _ => unreachable!(),
@@ -372,21 +378,21 @@ impl<'src> Lexer<'src> {
         // '||', '&&'
         if self.eat(ch) {
             if self.eat(b'=') {
-                return AssignOp(match token {
+                return Token::AssignOp(match token {
                     BitAnd => op!("&&="),
                     BitOr => op!("||="),
                     _ => unreachable!(),
                 });
             }
 
-            return BinOp(match token {
+            return Token::BinOp(match token {
                 BitAnd => LogicalAnd,
                 BitOr => LogicalOr,
                 _ => unreachable!(),
             });
         }
 
-        BinOp(token)
+        Token::BinOp(token)
     }
 
     fn read_token_caret(&mut self) -> Token {
@@ -394,9 +400,9 @@ impl<'src> Lexer<'src> {
         // Bitwise xor
         self.advance(1); // '^'
         if self.eat(b'=') {
-            AssignOp(BitXorAssign)
+            Token::AssignOp(BitXorAssign)
         } else {
-            BinOp(BitXor)
+            Token::BinOp(BitXor)
         }
     }
 
@@ -418,16 +424,20 @@ impl<'src> Lexer<'src> {
                 self.skip_space()?;
                 self.read_token()
             } else if ch == b'+' {
-                Ok(PlusPlus)
+                Ok(Token::PlusPlus)
             } else {
-                Ok(MinusMinus)
+                Ok(Token::MinusMinus)
             }
         } else if self.eat(b'=') {
             // '+=', '-='
-            Ok(AssignOp(if ch == b'+' { AddAssign } else { SubAssign }))
+            Ok(Token::AssignOp(if ch == b'+' {
+                AddAssign
+            } else {
+                SubAssign
+            }))
         } else {
             // '+', '-'
-            Ok(BinOp(if ch == b'+' { Add } else { Sub }))
+            Ok(Token::BinOp(if ch == b'+' { Add } else { Sub }))
         }
     }
 
@@ -466,15 +476,15 @@ impl<'src> Lexer<'src> {
 
         let token = if self.eat(b'=') {
             match op {
-                Lt => BinOp(LtEq),
-                Gt => BinOp(GtEq),
-                LShift => AssignOp(LShiftAssign),
-                RShift => AssignOp(RShiftAssign),
-                ZeroFillRShift => AssignOp(ZeroFillRShiftAssign),
+                Lt => Token::BinOp(LtEq),
+                Gt => Token::BinOp(GtEq),
+                LShift => Token::AssignOp(LShiftAssign),
+                RShift => Token::AssignOp(RShiftAssign),
+                ZeroFillRShift => Token::AssignOp(ZeroFillRShiftAssign),
                 _ => unreachable!(),
             }
         } else {
-            BinOp(op)
+            Token::BinOp(op)
         };
 
         Ok(token)
@@ -492,28 +502,28 @@ impl<'src> Lexer<'src> {
             if self.eat(b'=') {
                 if ch == b'!' {
                     // '!=='
-                    BinOp(NotEqEq)
+                    Token::BinOp(NotEqEq)
                 } else {
                     // '==='
-                    BinOp(EqEqEq)
+                    Token::BinOp(EqEqEq)
                 }
             } else if ch == b'!' {
                 // '!='
-                BinOp(NotEq)
+                Token::BinOp(NotEq)
             } else {
                 // '=='
-                BinOp(EqEq)
+                Token::BinOp(EqEq)
             }
         } else if ch == b'=' && self.eat(b'>') {
             // "=>"
 
-            Arrow
+            Token::Arrow
         } else if ch == b'!' {
             // '!'
-            Bang
+            Token::Bang
         } else {
             // '='
-            AssignOp(Assign)
+            Token::AssignOp(Assign)
         }
     }
 
@@ -605,7 +615,7 @@ impl<'src> Lexer<'src> {
             self.bump();
         }
 
-        Ok(Regex(content, mods))
+        Ok(self.make_regex_token(content, mods))
     }
 
     fn read_code_point(&mut self) -> LexResult<char> {
@@ -662,9 +672,7 @@ impl<'src> Lexer<'src> {
                 match ch {
                     ch if ch == quote => {
                         lexer.advance(1); // ' or "
-                        return Ok(Token::Str {
-                            value: out.as_str().into(),
-                        });
+                        return Ok(lexer.make_str_token(out.as_str().into()));
                     }
                     b'\\' => {
                         if let Some(s) = lexer.read_escaped_char(false)? {
@@ -820,7 +828,7 @@ impl<'src> Lexer<'src> {
     }
 
     // Read an identifier.
-    fn read_word(&mut self) -> LexResult<(Word, bool)> {
+    fn read_word(&mut self) -> LexResult<(NameId, bool)> {
         debug_assert!(
             self.is(b'\\')
                 || (self.cur().is_some() && ast::Ident::is_valid_start(self.cur().unwrap()))
@@ -877,7 +885,9 @@ impl<'src> Lexer<'src> {
                 }
                 first = false;
             }
-            let value = Word::from_str(buf.as_str(), lexer.program_data);
+            let value = lexer
+                .program_data
+                .get_id_for_name(JsWord::from(buf.as_str()));
 
             Ok((value, has_escape))
         })
@@ -900,15 +910,91 @@ impl<'src> Lexer<'src> {
         // 'await' and 'yield' may have semantic of reserved word, which means lexer
         // should know context or parser should handle this error. Our approach to this
         // problem is former one.
-        if has_esc && self.ctx.is_reserved(&word) {
+        if has_esc && self.ctx.is_reserved(word) {
             // TODO: mark this and others as cold?
-            let word = self
-                .program_data
-                .get_name_for_id(word.get_name_id())
-                .clone();
+            let word = self.program_data.get_name_for_id(word).clone();
             self.error(start, SyntaxError::EscapeInReservedWord { word })?
         } else {
-            Ok(Word(word))
+            // TODO:
+            Ok(match word {
+                id_for_built_in!("await") => Token::Await,
+                id_for_built_in!("break") => Token::Break,
+                id_for_built_in!("case") => Token::Case,
+                id_for_built_in!("catch") => Token::Catch,
+                id_for_built_in!("continue") => Token::Continue,
+                id_for_built_in!("debugger") => Token::Debugger,
+                id_for_built_in!("default") => Token::Default,
+                id_for_built_in!("do") => Token::Do,
+                id_for_built_in!("else") => Token::Else,
+                id_for_built_in!("finally") => Token::Finally,
+                id_for_built_in!("for") => Token::For,
+                id_for_built_in!("function") => Token::Function,
+                id_for_built_in!("if") => Token::If,
+                id_for_built_in!("return") => Token::Return,
+                id_for_built_in!("switch") => Token::Switch,
+                id_for_built_in!("throw") => Token::Throw,
+                id_for_built_in!("try") => Token::Try,
+                id_for_built_in!("var") => Token::Var,
+                id_for_built_in!("let") => Token::Let,
+                id_for_built_in!("const") => Token::Const,
+                id_for_built_in!("while") => Token::While,
+                id_for_built_in!("with") => Token::With,
+                id_for_built_in!("new") => Token::New,
+                id_for_built_in!("this") => Token::This,
+                id_for_built_in!("super") => Token::Super,
+                id_for_built_in!("class") => Token::Class,
+                id_for_built_in!("extends") => Token::Extends,
+                id_for_built_in!("export") => Token::Export,
+                id_for_built_in!("import") => Token::Import,
+                id_for_built_in!("yield") => Token::Yield,
+                id_for_built_in!("in") => Token::In,
+                id_for_built_in!("instanceof") => Token::InstanceOf,
+                id_for_built_in!("typeof") => Token::TypeOf,
+                id_for_built_in!("void") => Token::Void,
+                id_for_built_in!("delete") => Token::Delete,
+                id_for_built_in!("null") => Token::Null,
+                id_for_built_in!("true") => Token::True,
+                id_for_built_in!("false") => Token::False,
+                id_for_built_in!("async") => Token::Async,
+                id_for_built_in!("as") => Token::As,
+                id_for_built_in!("from") => Token::From,
+                id_for_built_in!("of") => Token::Of,
+                id_for_built_in!("static") => Token::Static,
+                id_for_built_in!("target") => Token::Target,
+                id_for_built_in!("asserts") => Token::Asserts,
+                id_for_built_in!("implements") => Token::Implements,
+                id_for_built_in!("is") => Token::Is,
+                id_for_built_in!("keyof") => Token::Keyof,
+                id_for_built_in!("unique") => Token::Unique,
+                id_for_built_in!("object") => Token::Object,
+                id_for_built_in!("global") => Token::Global,
+                id_for_built_in!("enum") => Token::Enum,
+                id_for_built_in!("readonly") => Token::Readonly,
+                id_for_built_in!("abstract") => Token::Abstract,
+                id_for_built_in!("infer") => Token::Infer,
+                id_for_built_in!("any") => Token::Any,
+                id_for_built_in!("boolean") => Token::Boolean,
+                id_for_built_in!("bigint") => Token::Bigint,
+                id_for_built_in!("intrinsic") => Token::Intrinsic,
+                id_for_built_in!("never") => Token::Never,
+                id_for_built_in!("number") => Token::Number,
+                id_for_built_in!("string") => Token::String,
+                id_for_built_in!("symbol") => Token::Symbol,
+                id_for_built_in!("unknown") => Token::Unknown,
+                id_for_built_in!("interface") => Token::Interface,
+                id_for_built_in!("declare") => Token::Declare,
+                id_for_built_in!("undefined") => Token::Undefined,
+                id_for_built_in!("meta") => Token::Meta,
+                id_for_built_in!("type") => Token::Type,
+                id_for_built_in!("assert") => Token::Assert,
+                id_for_built_in!("get") => Token::Get,
+                id_for_built_in!("set") => Token::Set,
+                id_for_built_in!("public") => Token::Public,
+                id_for_built_in!("protected") => Token::Protected,
+                id_for_built_in!("private") => Token::Private,
+
+                _ => self.make_ident_token(word),
+            })
         }
     }
 
@@ -933,10 +1019,7 @@ impl<'src> Lexer<'src> {
 
                 let raw = self.slice_to_cur(start);
 
-                return Ok(Template {
-                    raw: raw.into(),
-                    has_invalid_escape,
-                });
+                return Ok(self.make_tpl_token(raw.into(), has_invalid_escape));
             }
 
             if c == b'\\' {

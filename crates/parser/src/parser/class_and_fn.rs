@@ -191,11 +191,7 @@ impl Parser<'_> {
     pub(super) fn parse_access_modifier(&mut self) -> PResult<bool> {
         debug_assert!(self.syntax().typescript());
         Ok(self
-            .parse_ts_modifier(&[
-                id_for_built_in!("public"),
-                id_for_built_in!("protected"),
-                id_for_built_in!("private"),
-            ])?
+            .parse_ts_modifier(&[Token::Public, Token::Protected, Token::Private])?
             .is_some())
     }
 
@@ -316,14 +312,14 @@ impl Parser<'_> {
         let declare = declare_token.is_some();
         if self.syntax().typescript() {
             while let Some(modifier) = self.parse_ts_modifier(&[
-                id_for_built_in!("abstract"),
-                id_for_built_in!("readonly"),
-                id_for_built_in!("override"),
-                id_for_built_in!("static"),
+                Token::Abstract,
+                Token::Readonly,
+                Token::Override,
+                Token::Static,
             ])? {
                 modifier_span = Some(self.input.prev_span());
                 match modifier {
-                    id_for_built_in!("abstract") => {
+                    Token::Abstract => {
                         if is_abstract {
                             self.emit_err(
                                 self.input.prev_span(),
@@ -338,7 +334,7 @@ impl Parser<'_> {
                             is_abstract = true;
                         }
                     }
-                    id_for_built_in!("override") => {
+                    Token::Override => {
                         if is_override {
                             self.emit_err(
                                 self.input.prev_span(),
@@ -360,7 +356,7 @@ impl Parser<'_> {
                             is_override = true;
                         }
                     }
-                    id_for_built_in!("readonly") => {
+                    Token::Readonly => {
                         let readonly_span = self.input.prev_span();
                         if readonly.is_some() {
                             self.emit_err(readonly_span, SyntaxError::TS1030(js_word!("readonly")));
@@ -368,7 +364,7 @@ impl Parser<'_> {
                             readonly = Some(readonly_span);
                         }
                     }
-                    id_for_built_in!("static") => {
+                    Token::Static => {
                         if is_override {
                             self.emit_err(
                                 self.input.prev_span(),
@@ -554,11 +550,7 @@ impl Parser<'_> {
         {
             // handle async foo(){}
 
-            if self.syntax().typescript()
-                && self
-                    .parse_ts_modifier(&[id_for_built_in!("override")])?
-                    .is_some()
-            {
+            if self.syntax().typescript() && self.parse_ts_modifier(&[Token::Override])?.is_some() {
                 self.emit_err(
                     self.input.prev_span(),
                     SyntaxError::TS1029(js_word!("override"), js_word!("async")),

@@ -55,7 +55,7 @@ impl Parser<'_> {
     ) -> PResult<MaybeParen> {
         if self.input.syntax().typescript()
             && self.is(tok!('<'))
-            && matches!(self.input.peek(), Some(Word(_)))
+            && matches!(self.input.peek(), Some(t) if t.is_word())
         {
             let res = self.try_parse_ts(|p| {
                 let start = p.input.cur_pos();
@@ -95,18 +95,15 @@ impl Parser<'_> {
             return self.parse_yield_expr().map(From::from);
         }
 
-        if let Token::Error(_) = self.input.cur() {
-            if let Token::Error(e) = self.input.bump() {
-                return Err(e);
-            } else {
-                unreachable!();
-            }
+        if let Token::Error = self.input.cur() {
+            let error = self.input.expect_error_token_and_bump();
+            return Err(error);
         }
 
         let start = self.input.cur_pos();
 
         self.potential_arrow_start = match self.input.cur() {
-            Word(Word::Ident(..)) | tok!('(') | tok!("yield") => Some(start),
+            Token::Ident | tok!('(') | tok!("yield") => Some(start),
             _ => None,
         };
 
@@ -154,7 +151,7 @@ impl Parser<'_> {
         assign_props: &mut AssignProps,
         mut inner_assign_props: Vec<Span>,
     ) -> PResult<MaybeParen> {
-        match *self.input.cur() {
+        match self.input.cur() {
             Token::AssignOp(op) => {
                 let left = if op == AssignOpToken::Assign {
                     self.reparse_expr_as_pat(PatType::AssignPat, cond.unwrap())
@@ -335,24 +332,22 @@ impl Parser<'_> {
             tok!("null")
             | tok!("true")
             | tok!("false")
-            | Token::Num { .. }
-            | Token::BigInt(..)
-            | Token::Str { .. } => {
+            | Token::Num
+            | Token::BigInt
+            | Token::Str => {
                 return Ok(Box::new(Expr::Lit(self.parse_lit()?)).into());
             }
 
             // Regexp
-            Token::Regex(..) => match self.input.bump() {
-                Token::Regex(exp, flags) => {
-                    return Ok(Box::new(Expr::Lit(Lit::Regex(Regex {
-                        node_id: node_id!(self, self.span(start)),
-                        exp,
-                        flags,
-                    })))
-                    .into());
-                }
-                _ => unreachable!(),
-            },
+            Token::Regex => {
+                let (content, flags) = self.input.expect_regex_int_token_and_bump();
+                return Ok(Box::new(Expr::Lit(Lit::Regex(Regex {
+                    node_id: node_id!(self, self.span(start)),
+                    exp: content,
+                    flags,
+                })))
+                .into());
+            }
 
             tok!('`') => {
                 // parse template literal
@@ -371,7 +366,7 @@ impl Parser<'_> {
         }
 
         if self.is(tok!("let"))
-            || (self.input.syntax().typescript() && matches!(self.input.cur(), Token::Word(_)))
+            || (self.input.syntax().typescript() && self.input.cur().is_word())
             || self.is_ident_ref()
         {
             // TODO: Handle [Yield, Await]
@@ -400,7 +395,8 @@ impl Parser<'_> {
             let ctx = self.ctx();
             if can_be_arrow
                 && id.name == id_for_built_in!("async")
-                && matches!(self.input.cur(), Token::Word(w) if !ctx.is_reserved_word(w.get_name_id()))
+                && self.input.cur().is_word()
+                && !self.input.cur().is_reserved_word(ctx)
             {
                 // async a => body
                 let arg = self.parse_binding_ident().map(Pat::Ident)?;
@@ -1527,25 +1523,20 @@ impl Parser<'_> {
         let start = self.input.cur_pos();
 
         let (raw, has_invalid_escape) = match self.input.cur() {
-            Token::Template { .. } => match self.input.bump() {
-                Token::Template {
-                    raw,
-                    has_invalid_escape,
-                } => (
+            Token::Template => {
+                let (raw, has_invalid_escape) = self.input.expect_template_token_and_bump();
+
+                (
                     Str {
                         node_id: node_id!(self, self.span(start)),
                         value: raw,
                     },
                     has_invalid_escape,
-                ),
-                _ => unreachable!(),
-            },
-            Token::Error(_) => {
-                if let Token::Error(e) = self.input.bump() {
-                    return Err(e);
-                } else {
-                    unreachable!();
-                }
+                )
+            }
+            Token::Error => {
+                let error = self.input.expect_error_token_and_bump();
+                return Err(error);
             }
             _ => unexpected!(self, "template token"),
         };
@@ -1630,13 +1621,13 @@ impl Parser<'_> {
         let start = self.input.cur_pos();
 
         let v = match self.input.cur() {
-            Word(Word::Null) => {
+            Token::Null => {
                 self.input.bump();
                 Lit::Null(Null {
                     node_id: node_id!(self, self.span(start)),
                 })
             }
-            Word(Word::True) | Word(Word::False) => {
+            Token::True | Token::False => {
                 let value = self.is(tok!("true"));
                 self.input.bump();
 
@@ -1645,33 +1636,30 @@ impl Parser<'_> {
                     value,
                 })
             }
-            Token::Str { .. } => match self.input.bump() {
-                Token::Str { value } => Lit::Str(Str {
+            Token::Str => {
+                let value = self.input.expect_str_token_and_bump();
+                Lit::Str(Str {
                     node_id: node_id!(self, self.span(start)),
                     value,
-                }),
-                _ => unreachable!(),
-            },
-            Token::Num { .. } => match self.input.bump() {
-                Token::Num(value) => Lit::Num(Number {
+                })
+            }
+            Token::Num => {
+                let value = self.input.expect_num_token_and_bump();
+                Lit::Num(Number {
                     node_id: node_id!(self, self.span(start)),
                     value,
-                }),
-                _ => unreachable!(),
-            },
-            Token::BigInt(..) => match self.input.bump() {
-                Token::BigInt(value) => Lit::BigInt(BigInt {
+                })
+            }
+            Token::BigInt => {
+                let value = self.input.expect_big_int_token_and_bump();
+                Lit::BigInt(BigInt {
                     node_id: node_id!(self, self.span(start)),
                     value,
-                }),
-                _ => unreachable!(),
-            },
-            Token::Error(_) => {
-                if let Token::Error(e) = self.input.bump() {
-                    return Err(e);
-                } else {
-                    unreachable!();
-                }
+                })
+            }
+            Token::Error => {
+                let error = self.input.expect_error_token_and_bump();
+                return Err(error);
             }
             Token::Eof => {
                 return Err(self.eof_error());

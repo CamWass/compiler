@@ -1,8 +1,5 @@
 use super::{pat::PatType, *};
-use crate::{
-    context::{Context, ContextFlags, YesMaybe},
-    token::{Token, Word},
-};
+use crate::context::{Context, ContextFlags, YesMaybe};
 use common::{BytePos, Pos, Span};
 use expression::MaybeParen;
 use statement::typescript::DeclOrEmpty;
@@ -127,7 +124,7 @@ impl Parser<'_> {
 
         let mut stmts = vec![];
         let end = end.unwrap_or(Token::Eof);
-        while self.input.cur() != &end {
+        while self.input.cur() != end {
             let Some(stmt) = self.parse_stmt_like(StmtParseCtx::None, top_level)? else {
                 parsed_non_directive = true;
                 continue;
@@ -1099,7 +1096,7 @@ impl Parser<'_> {
             while !self.eat_semi_with_asi() {
                 self.input.bump();
 
-                if let Token::Error(_) = self.input.cur() {
+                if let Token::Error = self.input.cur() {
                     break;
                 }
             }

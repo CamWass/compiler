@@ -7,63 +7,6 @@ use crate::{
 };
 use common::BytePos;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum TokenType {
-    Template,
-    Dot,
-    Colon,
-    LBrace,
-    RParen,
-    Semi,
-    BinOp(BinOpToken),
-    Keyword(Keyword),
-    Other {
-        before_expr: bool,
-        can_have_trailing_comment: bool,
-    },
-}
-impl TokenType {
-    fn before_expr(self) -> bool {
-        match self {
-            TokenType::Template | TokenType::Dot | TokenType::RParen => false,
-
-            TokenType::Colon | TokenType::LBrace | TokenType::Semi => true,
-            TokenType::BinOp(b) => b.before_expr(),
-            TokenType::Keyword(k) => k.before_expr(),
-            TokenType::Other { before_expr, .. } => before_expr,
-        }
-    }
-}
-
-impl From<&Token> for TokenType {
-    fn from(t: &Token) -> Self {
-        match *t {
-            Token::Template { .. } => TokenType::Template,
-            Token::Dot => TokenType::Dot,
-            Token::Colon => TokenType::Colon,
-            Token::LBrace => TokenType::LBrace,
-            Token::RParen => TokenType::RParen,
-            Token::Semi => TokenType::Semi,
-            Token::BinOp(op) => TokenType::BinOp(op),
-
-            Token::Word(Word::Keyword(k)) => TokenType::Keyword(k),
-            _ => TokenType::Other {
-                before_expr: t.before_expr(),
-                can_have_trailing_comment: matches!(
-                    *t,
-                    Token::Num { .. }
-                        | Token::Str { .. }
-                        | Token::Word(Word::Ident(..))
-                        | Token::DollarLBrace
-                        | Token::Regex(..)
-                        | Token::BigInt(..)
-                        | Token::RBrace
-                ),
-            },
-        }
-    }
-}
-
 pub struct LexerCheckpoint {
     cur: usize,
     ctx: Context,
@@ -273,13 +216,8 @@ pub struct TokenContexts(pub(crate) Vec<TokenContext>);
 impl TokenContexts {
     /// Returns true if following `LBrace` token is `block statement` according
     /// to  `ctx`, `prev`, `is_expr_allowed`.
-    fn is_brace_block(
-        &self,
-        prev: Option<TokenType>,
-        had_line_break: bool,
-        is_expr_allowed: bool,
-    ) -> bool {
-        if let Some(TokenType::Colon) = prev {
+    fn is_brace_block(&self, prev: Token, had_line_break: bool, is_expr_allowed: bool) -> bool {
+        if prev == Token::Colon {
             match self.current() {
                 Some(TokenContext::BraceStmt) => return true,
                 // `{ a: {} }`
@@ -299,22 +237,19 @@ impl TokenContexts {
             //          function b(){}
             //      };
             //  }
-            Some(TokenType::Keyword(Return)) | Some(TokenType::Keyword(Yield)) => {
+            Token::Return | Token::Yield => {
                 return had_line_break;
             }
 
-            Some(TokenType::Keyword(Else))
-            | Some(TokenType::Semi)
-            | None
-            | Some(TokenType::RParen) => {
+            Token::Else | Token::Semi | Token::Eof | Token::RParen => {
                 return true;
             }
 
             // If previous token was `{`
-            Some(TokenType::LBrace) => return self.current() == Some(TokenContext::BraceStmt),
+            Token::LBrace => return self.current() == Some(TokenContext::BraceStmt),
 
             // `class C<T> { ... }`
-            Some(TokenType::BinOp(Lt)) | Some(TokenType::BinOp(Gt)) => return true,
+            Token::BinOp(Lt) | Token::BinOp(Gt) => return true,
             _ => {}
         }
 
@@ -340,8 +275,10 @@ pub struct State {
     /// Whether a line break exists between previous token and new token.
     pub had_line_break: bool,
 
-    token_type: Option<TokenType>,
+    pub token_type: Token,
+    pub token_data: Option<TokenData>,
 
+    // TODO: would be nice to remove this:
     // The context stack is used to superficially track syntactic
     // context to predict whether a regular expression is allowed in a
     // given position.
@@ -353,7 +290,8 @@ impl State {
     pub fn new() -> Self {
         Self {
             had_line_break: true,
-            token_type: None,
+            token_type: Token::Eof,
+            token_data: None,
 
             context: TokenContexts(vec![TokenContext::BraceStmt]),
             is_expr_allowed: true,
@@ -369,12 +307,11 @@ impl State {
     }
 
     pub fn last_was_tpl_element(&self) -> bool {
-        matches!(self.token_type, Some(TokenType::Template))
+        self.token_type == Token::Template
     }
 
-    pub fn update(&mut self, start: BytePos, next: &Token) {
-        let prev = self.token_type.take();
-        self.token_type = Some(TokenType::from(next));
+    pub fn update(&mut self, start: BytePos, next: Token) {
+        let prev = std::mem::replace(&mut self.token_type, next);
 
         self.is_expr_allowed = Self::is_expr_allowed_on_next(
             &mut self.context,
@@ -392,18 +329,18 @@ impl State {
     fn is_expr_allowed_on_next(
         context: &mut TokenContexts,
         // syntax: Syntax,
-        prev: Option<TokenType>,
+        prev: Token,
         start: BytePos,
-        next: &Token,
+        next: Token,
         had_line_break: bool,
         is_expr_allowed: bool,
     ) -> bool {
-        let is_next_keyword = matches!(*next, Word(Word::Keyword(..)));
+        let is_next_keyword = next.is_keyword();
 
-        if is_next_keyword && prev == Some(TokenType::Dot) {
+        if is_next_keyword && prev == Token::Dot {
             false
         } else {
-            match *next {
+            match next {
                 tok!(')') | tok!('}') => {
                     // TODO: Verify
                     if context.len() == 1 {
@@ -448,25 +385,14 @@ impl State {
                     if Some(TokenContext::ParenStmt { is_for_loop: true }) == context.current() =>
                 {
                     // e.g. for (a of _) => true
-                    !prev
-                        .expect("context.current() if ParenStmt, so prev token cannot be None")
-                        .before_expr()
+                    !prev.before_expr()
                 }
 
-                Word(Word::Ident(..)) => {
+                Token::Ident => {
                     // variable declaration
                     match prev {
-                        Some(prev) => match prev {
-                            // handle automatic semicolon insertion.
-                            TokenType::Keyword(Let)
-                            | TokenType::Keyword(Const)
-                            | TokenType::Keyword(Var)
-                                if had_line_break =>
-                            {
-                                true
-                            }
-                            _ => false,
-                        },
+                        // handle automatic semicolon insertion.
+                        Token::Let | Token::Const | Token::Var if had_line_break => true,
                         _ => false,
                     }
                 }
@@ -492,11 +418,10 @@ impl State {
                     // if, for, with, while is statement
 
                     context.push(match prev {
-                        Some(TokenType::Keyword(k)) => match k {
-                            If | With | While => TokenContext::ParenStmt { is_for_loop: false },
-                            For => TokenContext::ParenStmt { is_for_loop: true },
-                            _ => TokenContext::ParenExpr,
-                        },
+                        Token::If | Token::With | Token::While => {
+                            TokenContext::ParenStmt { is_for_loop: false }
+                        }
+                        Token::For => TokenContext::ParenStmt { is_for_loop: true },
                         _ => TokenContext::ParenExpr,
                     });
                     true

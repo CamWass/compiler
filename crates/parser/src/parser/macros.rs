@@ -49,12 +49,9 @@ macro_rules! syntax_error {
             error: Box::new(($span, $err)),
         };
 
-        if let $crate::token::Token::Error(_) = $parser.input.cur() {
-            if let $crate::token::Token::Error(e) = $parser.input.bump() {
-                $parser.emit_error(e);
-            } else {
-                unreachable!();
-            }
+        if let $crate::token::Token::Error = $parser.input.cur() {
+            let error = $parser.input.expect_error_token_and_bump();
+            $parser.emit_error(error);
         }
 
         return Err(err.into());

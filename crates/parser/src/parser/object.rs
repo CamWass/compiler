@@ -45,33 +45,32 @@ impl Parser<'_> {
             let start = parser.input.cur_pos();
 
             let v = match parser.input.cur() {
-                Token::Str { .. } => match parser.input.bump() {
-                    Token::Str { value } => PropName::Str(Str {
+                Token::Str => {
+                    let value = parser.input.expect_str_token_and_bump();
+                    PropName::Str(Str {
                         node_id: node_id!(parser, parser.span(start)),
                         value,
-                    }),
-                    _ => unreachable!(),
-                },
-                Token::Num { .. } => match parser.input.bump() {
-                    Token::Num(value) => PropName::Num(Number {
+                    })
+                }
+                Token::Num => {
+                    let value = parser.input.expect_num_token_and_bump();
+                    PropName::Num(Number {
                         node_id: node_id!(parser, parser.span(start)),
                         value,
-                    }),
-                    _ => unreachable!(),
-                },
-                Token::BigInt(_) => match parser.input.bump() {
-                    Token::BigInt(value) => PropName::BigInt(BigInt {
+                    })
+                }
+                Token::BigInt => {
+                    let value = parser.input.expect_big_int_token_and_bump();
+                    PropName::BigInt(BigInt {
                         node_id: node_id!(parser, parser.span(start)),
                         value,
-                    }),
-                    _ => unreachable!(),
-                },
-                Word(..) => match parser.input.bump() {
-                    Word(w) => {
-                        PropName::Ident(parser.new_ident(w.get_name_id(), parser.span(start)))
-                    }
-                    _ => unreachable!(),
-                },
+                    })
+                }
+                t if t.is_word() => {
+                    let w = parser.input.expect_word_token_and_bump();
+
+                    PropName::Ident(parser.new_ident(w, parser.span(start)))
+                }
                 tok!('[') => {
                     parser.input.bump();
                     let inner_start = parser.input.cur_pos();
@@ -176,10 +175,8 @@ impl ParseObject<Box<Expr>> for Parser<'_> {
                 || self.is(tok!('?'))
                 || self.is(tok!('='))
                 || self.is(tok!('*'))
-                || matches!(
-                    self.input.cur(),
-                    Token::Num(_) | Token::Str { .. } | Token::Word(_)
-                ))
+                || matches!(self.input.cur(), Token::Num | Token::Str)
+                || self.input.cur().is_word())
             && !(self.input.syntax().typescript() && self.is(tok!('<')))
             && !(self.is(tok!('}')) && matches!(key, PropName::Ident(..)))
         {

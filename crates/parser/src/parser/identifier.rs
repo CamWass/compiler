@@ -1,6 +1,5 @@
 //! 12.1 Identifiers
 use super::*;
-use crate::token::Keyword;
 
 impl Parser<'_> {
     pub(super) fn new_ident(&mut self, name: NameId, span: Span) -> Ident {
@@ -54,15 +53,13 @@ impl Parser<'_> {
     pub(super) fn parse_ident_name(&mut self) -> PResult<Ident> {
         let start = self.input.cur_pos();
 
-        let w = match self.input.cur() {
-            Word(..) => match self.input.bump() {
-                Word(w) => w,
-                _ => unreachable!(),
-            },
-            _ => syntax_error!(self, SyntaxError::ExpectedIdent),
+        let w = if self.input.cur().is_word() {
+            self.input.expect_word_token_and_bump()
+        } else {
+            syntax_error!(self, SyntaxError::ExpectedIdent)
         };
 
-        Ok(self.new_ident(w.get_name_id(), self.span(start)))
+        Ok(self.new_ident(w, self.span(start)))
     }
 
     /// Identifier
@@ -71,66 +68,63 @@ impl Parser<'_> {
     pub(super) fn parse_ident(&mut self, incl_yield: bool, incl_await: bool) -> PResult<Ident> {
         let start = self.input.cur_pos();
 
-        let word = self.parse_with(|parser| {
-            let w = match parser.input.cur() {
-                Word(..) => match parser.input.bump() {
-                    Word(w) => w,
-                    _ => unreachable!(),
-                },
-                _ => syntax_error!(parser, SyntaxError::ExpectedIdent),
-            };
+        let is_keyword = self.input.cur().is_keyword();
 
-            // Spec:
-            // It is a Syntax Error if this phrase is contained in strict mode code and the
-            // StringValue of IdentifierName is: "implements", "interface", "let",
-            // "package", "private", "protected",  "public", "static", or "yield".
-            match w {
-                Word::Ident(id_for_built_in!("enum")) => {
-                    parser.emit_err(parser.input.prev_span(), SyntaxError::InvalidIdentInStrict);
-                }
-                Word::Keyword(Keyword::Yield)
-                | Word::Ident(id_for_built_in!("static"))
-                | Word::Ident(id_for_built_in!("implements"))
-                | Word::Ident(id_for_built_in!("interface"))
-                | Word::Ident(id_for_built_in!("let"))
-                | Word::Ident(id_for_built_in!("package"))
-                | Word::Ident(id_for_built_in!("private"))
-                | Word::Ident(id_for_built_in!("protected"))
-                | Word::Ident(id_for_built_in!("public")) => {
-                    parser.emit_strict_mode_err(
-                        parser.input.prev_span(),
-                        SyntaxError::InvalidIdentInStrict,
-                    );
-                }
-                _ => {}
+        let word = if self.input.cur().is_word() {
+            self.input.expect_word_token_and_bump()
+        } else {
+            syntax_error!(self, SyntaxError::ExpectedIdent)
+        };
+
+        // Spec:
+        // It is a Syntax Error if this phrase is contained in strict mode code and the
+        // StringValue of IdentifierName is: "implements", "interface", "let",
+        // "package", "private", "protected",  "public", "static", or "yield".
+        match word {
+            id_for_built_in!("enum") => {
+                self.emit_err(self.input.prev_span(), SyntaxError::InvalidIdentInStrict);
             }
-
-            // TODO:
-            // Spec:
-            // It is a Syntax Error if StringValue of IdentifierName is the same String
-            // value as the StringValue of any ReservedWord except for yield or await.
-
-            match w {
-                Word::Keyword(Keyword::Await) if parser.input.syntax().typescript() => {
-                    Ok(id_for_built_in!("await"))
-                }
-                // It is a Syntax Error if the goal symbol of the syntactic grammar is Module
-                // and the StringValue of IdentifierName is "await".
-                Word::Keyword(Keyword::Await) if parser.ctx().is_module() => {
-                    syntax_error!(parser, parser.input.prev_span(), SyntaxError::ExpectedIdent)
-                }
-                Word::Keyword(Keyword::This) if parser.input.syntax().typescript() => {
-                    Ok(id_for_built_in!("this"))
-                }
-                Word::Keyword(Keyword::Let) => Ok(id_for_built_in!("let")),
-                Word::Ident(ident) => Ok(ident),
-                Word::Keyword(Keyword::Yield) if incl_yield => Ok(id_for_built_in!("yield")),
-                Word::Keyword(Keyword::Await) if incl_await => Ok(id_for_built_in!("await")),
-                Word::Keyword(..) | Word::Null | Word::True | Word::False => {
-                    syntax_error!(parser, parser.input.prev_span(), SyntaxError::ExpectedIdent)
-                }
+            id_for_built_in!("yield")
+            | id_for_built_in!("static")
+            | id_for_built_in!("implements")
+            | id_for_built_in!("interface")
+            | id_for_built_in!("let")
+            | id_for_built_in!("package")
+            | id_for_built_in!("private")
+            | id_for_built_in!("protected")
+            | id_for_built_in!("public") => {
+                self.emit_strict_mode_err(
+                    self.input.prev_span(),
+                    SyntaxError::InvalidIdentInStrict,
+                );
             }
-        })?;
+            _ => {}
+        }
+
+        // TODO:
+        // Spec:
+        // It is a Syntax Error if StringValue of IdentifierName is the same String
+        // value as the StringValue of any ReservedWord except for yield or await.
+
+        match word {
+            id_for_built_in!("await") if self.input.syntax().typescript() => {}
+            // It is a Syntax Error if the goal symbol of the syntactic grammar is Module
+            // and the StringValue of IdentifierName is "await".
+            id_for_built_in!("await") if self.ctx().is_module() => {
+                syntax_error!(self, self.input.prev_span(), SyntaxError::ExpectedIdent)
+            }
+            id_for_built_in!("this") if self.input.syntax().typescript() => {}
+            id_for_built_in!("let") => {}
+            id_for_built_in!("yield") if incl_yield => {}
+            id_for_built_in!("await") if incl_await => {}
+            id_for_built_in!("null") | id_for_built_in!("true") | id_for_built_in!("false") => {
+                syntax_error!(self, self.input.prev_span(), SyntaxError::ExpectedIdent)
+            }
+            _ if is_keyword => {
+                syntax_error!(self, self.input.prev_span(), SyntaxError::ExpectedIdent)
+            }
+            _ => {}
+        }
 
         Ok(self.new_ident(word, self.span(start)))
     }
