@@ -84,7 +84,10 @@ where
     // bug for var redeclarations (https://github.com/google/closure-compiler/issues/3164)
     let all_vars_declared_in_func = find_vars_declared_in_fn(function, true);
 
-    if MAX_VARIABLES_TO_ANALYZE > all_vars_declared_in_func.ordered_vars.len() {
+    // Nothing to coalesce if there's zero or one candidate variable.
+    if MAX_VARIABLES_TO_ANALYZE > all_vars_declared_in_func.ordered_vars.len()
+        && all_vars_declared_in_func.ordered_vars.len() > 1
+    {
         // This fn is analysable, create new visitor to do so.
 
         let cfa = ControlFlowAnalysis::analyze(ControlFlowRoot::from(&*function), false);
