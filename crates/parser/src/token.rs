@@ -434,7 +434,7 @@ pub enum TokenData {
 
     Num(f64),
 
-    BigInt(BigUint),
+    BigInt(Box<BigUint>),
 
     Error(Error),
 }

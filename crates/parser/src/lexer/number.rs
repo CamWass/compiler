@@ -191,7 +191,7 @@ impl Lexer<'_> {
             let b = BigUint::from_str_radix(raw, radix as _)
                 .expect("failed to parse string as a bigint");
             self.bump(); // 'n'
-            self.make_big_int_token(b)
+            self.make_big_int_token(Box::new(b))
         } else {
             self.make_num_token(value)
         };
@@ -277,7 +277,7 @@ impl Lexer<'_> {
                 self.bump(); // 'n'
 
                 // TODO: do we need to check ensure_not_ident()?
-                return Ok(self.make_big_int_token(b));
+                return Ok(self.make_big_int_token(Box::new(b)));
             }
 
             if starts_with_zero {

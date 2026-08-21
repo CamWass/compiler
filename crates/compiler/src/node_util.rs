@@ -317,7 +317,7 @@ pub fn getBigIntValue(expr: &Expr) -> Option<num_bigint::BigInt> {
             Lit::Null(_) => None,
             Lit::Num(number) => num_bigint::BigInt::from_f64(number.value),
             // TODO: Remove clone
-            Lit::BigInt(big_int) => Some(num_bigint::BigInt::from(big_int.value.clone())),
+            Lit::BigInt(big_int) => Some(num_bigint::BigInt::from(big_int.value.as_ref().clone())),
             Lit::Regex(_) => None,
         },
         Expr::Unary(unary) => match unary.op {

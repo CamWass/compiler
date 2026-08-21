@@ -26,7 +26,7 @@ pub enum Lit {
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct BigInt {
     pub node_id: NodeId,
-    pub value: BigUint,
+    pub value: Box<BigUint>,
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]

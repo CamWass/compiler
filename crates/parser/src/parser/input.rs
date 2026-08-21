@@ -456,7 +456,7 @@ impl<'d> Buffer<'d> {
         ret
     }
 
-    pub fn expect_big_int_token_and_bump(&mut self) -> BigUint {
+    pub fn expect_big_int_token_and_bump(&mut self) -> Box<BigUint> {
         let ret = if let Some(TokenData::BigInt(value)) = self.iter.take_token_data() {
             value
         } else {

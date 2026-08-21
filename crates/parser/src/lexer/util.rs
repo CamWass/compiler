@@ -222,7 +222,7 @@ impl Lexer<'_> {
         Token::Num
     }
 
-    pub fn make_big_int_token(&mut self, value: num_bigint::BigUint) -> Token {
+    pub fn make_big_int_token(&mut self, value: Box<num_bigint::BigUint>) -> Token {
         self.state.token_data = Some(TokenData::BigInt(value));
         Token::BigInt
     }
