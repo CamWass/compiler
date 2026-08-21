@@ -1413,91 +1413,85 @@ impl Parser<'_> {
     fn parse_ts_non_array_type(&mut self) -> PResult<()> {
         debug_assert!(self.syntax().typescript());
 
-        match self.input.cur() {
+        let cur = self.input.cur();
+        if matches!(
+            cur,
             Token::Ident
-            | tok!("void")
-            | tok!("yield")
-            | tok!("null")
-            | tok!("await")
-            | tok!("break") => {
-                if self.is(tok!("asserts")) && self.peeked_is(tok!("this")) {
-                    self.input.bump();
-                    self.parse_ts_this_type_node()?;
-                    return self.parse_ts_this_type_predicate();
-                }
-
-                let valid_kind = matches!(
-                    self.input.cur(),
-                    tok!("void")
-                        | tok!("null")
-                        | tok!("any")
-                        | tok!("boolean")
-                        | tok!("bigint")
-                        | tok!("never")
-                        | tok!("number")
-                        | tok!("object")
-                        | tok!("string")
-                        | tok!("symbol")
-                        | tok!("unknown")
-                        | tok!("undefined")
-                        | tok!("intrinsic")
-                );
-
-                let peeked_is_dot = self.peeked_is(tok!('.'));
-
-                if valid_kind && !peeked_is_dot {
-                    self.input.bump();
-                    return Ok(());
-                } else {
-                    return self.parse_ts_type_ref();
-                }
-            }
-            Token::BigInt | Token::Str | Token::Num | tok!("true") | tok!("false") | tok!('`') => {
-                return self.parse_ts_lit_type_node();
-            }
-            tok!('-') => {
+                | tok!("void")
+                | tok!("yield")
+                | tok!("null")
+                | tok!("await")
+                | tok!("break")
+        ) || cur.is_known_ident()
+        {
+            if self.is(tok!("asserts")) && self.peeked_is(tok!("this")) {
                 self.input.bump();
+                self.parse_ts_this_type_node()?;
+                return self.parse_ts_this_type_predicate();
+            }
 
-                if !self.is(Token::Num) {
-                    unexpected!(self, "a numeric literal");
-                }
+            let valid_kind = matches!(
+                cur,
+                tok!("void")
+                    | tok!("null")
+                    | tok!("any")
+                    | tok!("boolean")
+                    | tok!("bigint")
+                    | tok!("never")
+                    | tok!("number")
+                    | tok!("object")
+                    | tok!("string")
+                    | tok!("symbol")
+                    | tok!("unknown")
+                    | tok!("undefined")
+                    | tok!("intrinsic")
+            );
 
-                self.parse_lit()?;
+            let peeked_is_dot = self.peeked_is(tok!('.'));
 
+            if valid_kind && !peeked_is_dot {
+                self.input.bump();
+                return Ok(());
+            } else {
+                return self.parse_ts_type_ref();
+            }
+        } else if matches!(
+            cur,
+            Token::BigInt | Token::Str | Token::Num | tok!("true") | tok!("false") | tok!('`')
+        ) {
+            return self.parse_ts_lit_type_node();
+        } else if cur == tok!('-') {
+            self.input.bump();
+
+            if !self.is(Token::Num) {
+                unexpected!(self, "a numeric literal");
+            }
+
+            self.parse_lit()?;
+
+            return Ok(());
+        } else if cur == tok!("import") {
+            return self.parse_ts_import_type();
+        } else if cur == tok!("this") {
+            // This keyword:
+            self.parse_ts_this_type_node()?;
+            if !self.input.had_line_break_before_cur() && self.is(tok!("is")) {
+                return self.parse_ts_this_type_predicate();
+            } else {
                 return Ok(());
             }
-
-            tok!("import") => {
-                return self.parse_ts_import_type();
-            }
-
-            tok!("this") => {
-                // This keyword:
-                self.parse_ts_this_type_node()?;
-                if !self.input.had_line_break_before_cur() && self.is(tok!("is")) {
-                    return self.parse_ts_this_type_predicate();
-                } else {
-                    return Ok(());
-                }
-            }
-            tok!("typeof") => {
-                return self.parse_ts_type_query();
-            }
-
-            tok!('{') => {
-                return if self.ts_look_ahead(|p| Ok(p.is_ts_start_of_mapped_type()))? {
-                    self.parse_ts_mapped_type()
-                } else {
-                    self.parse_ts_type_lit()
-                };
-            }
-            tok!('[') => {
-                return self.parse_ts_tuple_type();
-            }
-            tok!('(') => {
-                return self.parse_ts_parenthesized_type();
-            }
-            _ => {}
+        } else if cur == tok!("typeof") {
+            return self.parse_ts_type_query();
+        } else if cur == tok!('{') {
+            return if self.ts_look_ahead(|p| Ok(p.is_ts_start_of_mapped_type()))? {
+                self.parse_ts_mapped_type()
+            } else {
+                self.parse_ts_type_lit()
+            };
+        } else if cur == tok!('[') {
+            return self.parse_ts_tuple_type();
+        } else if cur == tok!('(') {
+            return self.parse_ts_parenthesized_type();
         }
 
         unexpected!(

@@ -340,107 +340,86 @@ impl State {
         if is_next_keyword && prev == Token::Dot {
             false
         } else {
-            match next {
-                tok!(')') | tok!('}') => {
-                    // TODO: Verify
-                    if context.len() == 1 {
-                        return true;
-                    }
-
-                    let out = context.pop().unwrap();
-
-                    // let a = function(){}
-                    if out == TokenContext::BraceStmt
-                        && context.current() == Some(TokenContext::FnExpr)
-                    {
-                        context.pop();
-                        return false;
-                    }
-
-                    // ${} in template
-                    if out == TokenContext::TplQuasi {
-                        match context.current() {
-                            Some(TokenContext::Tpl { .. }) => return false,
-                            _ => return true,
-                        }
-                    }
-
-                    // expression cannot follow expression
-                    !out.is_expr()
+            if next == tok!(')') || next == tok!('}') {
+                // TODO: Verify
+                if context.len() == 1 {
+                    return true;
                 }
 
-                tok!("function") => {
-                    // This is required to lex
-                    // `x = function(){}/42/i`
-                    if is_expr_allowed
-                        && !context.is_brace_block(prev, had_line_break, is_expr_allowed)
-                    {
-                        context.push(TokenContext::FnExpr);
-                    }
-                    false
-                }
+                let out = context.pop().unwrap();
 
-                // for (a of b) {}
-                tok!("of")
-                    if Some(TokenContext::ParenStmt { is_for_loop: true }) == context.current() =>
+                // let a = function(){}
+                if out == TokenContext::BraceStmt && context.current() == Some(TokenContext::FnExpr)
                 {
-                    // e.g. for (a of _) => true
-                    !prev.before_expr()
+                    context.pop();
+                    return false;
                 }
 
-                Token::Ident => {
-                    // variable declaration
-                    match prev {
-                        // handle automatic semicolon insertion.
-                        Token::Let | Token::Const | Token::Var if had_line_break => true,
-                        _ => false,
+                // ${} in template
+                if out == TokenContext::TplQuasi {
+                    match context.current() {
+                        Some(TokenContext::Tpl { .. }) => return false,
+                        _ => return true,
                     }
                 }
 
-                tok!('{') => {
-                    let next_ctxt = if context.is_brace_block(prev, had_line_break, is_expr_allowed)
-                    {
-                        TokenContext::BraceStmt
-                    } else {
-                        TokenContext::BraceExpr
-                    };
-                    context.push(next_ctxt);
-
-                    true
+                // expression cannot follow expression
+                !out.is_expr()
+            } else if next == tok!("function") {
+                // This is required to lex
+                // `x = function(){}/42/i`
+                if is_expr_allowed && !context.is_brace_block(prev, had_line_break, is_expr_allowed)
+                {
+                    context.push(TokenContext::FnExpr);
                 }
-
-                tok!("${") => {
-                    context.push(TokenContext::TplQuasi);
-                    true
+                false
+            } else if next == tok!("of")
+                && Some(TokenContext::ParenStmt { is_for_loop: true }) == context.current()
+            {
+                // e.g. for (a of _) => true
+                !prev.before_expr()
+            } else if next == Token::Ident || next.is_known_ident() {
+                // variable declaration
+                match prev {
+                    // handle automatic semicolon insertion.
+                    Token::Let | Token::Const | Token::Var if had_line_break => true,
+                    _ => false,
                 }
+            } else if next == tok!('{') {
+                let next_ctxt = if context.is_brace_block(prev, had_line_break, is_expr_allowed) {
+                    TokenContext::BraceStmt
+                } else {
+                    TokenContext::BraceExpr
+                };
+                context.push(next_ctxt);
 
-                tok!('(') => {
-                    // if, for, with, while is statement
+                true
+            } else if next == tok!("${") {
+                context.push(TokenContext::TplQuasi);
+                true
+            } else if next == tok!('(') {
+                // if, for, with, while is statement
 
-                    context.push(match prev {
-                        Token::If | Token::With | Token::While => {
-                            TokenContext::ParenStmt { is_for_loop: false }
-                        }
-                        Token::For => TokenContext::ParenStmt { is_for_loop: true },
-                        _ => TokenContext::ParenExpr,
-                    });
-                    true
-                }
-
-                // remains unchanged.
-                tok!("++") | tok!("--") => is_expr_allowed,
-
-                tok!('`') => {
-                    // If we are in template, ` terminates template.
-                    if let Some(TokenContext::Tpl { .. }) = context.current() {
-                        context.pop();
-                    } else {
-                        context.push(TokenContext::Tpl { start });
+                context.push(match prev {
+                    Token::If | Token::With | Token::While => {
+                        TokenContext::ParenStmt { is_for_loop: false }
                     }
-                    false
+                    Token::For => TokenContext::ParenStmt { is_for_loop: true },
+                    _ => TokenContext::ParenExpr,
+                });
+                true
+            } else if next == tok!("++") || next == tok!("--") {
+                is_expr_allowed
+            } else if next == tok!('`') {
+                // If we are in template, ` terminates template.
+                if let Some(TokenContext::Tpl { .. }) = context.current() {
+                    context.pop();
+                } else {
+                    context.push(TokenContext::Tpl { start });
                 }
-
-                _ => next.before_expr(),
+                false
+            } else {
+                next.before_expr()
             }
         }
     }

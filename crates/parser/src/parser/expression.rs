@@ -102,6 +102,7 @@ impl Parser<'_> {
 
         self.potential_arrow_start = match self.input.cur() {
             Token::Ident | tok!('(') | tok!("yield") => Some(start),
+            t if t.is_known_ident() => Some(start),
             _ => None,
         };
 
