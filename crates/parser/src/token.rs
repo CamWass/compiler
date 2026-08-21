@@ -440,7 +440,7 @@ pub enum TokenData {
 }
 
 impl Token {
-    pub fn starts_expr(&self) -> bool {
+    pub fn is_known_ident(&self) -> bool {
         match self {
             Token::Async
             | Token::As
@@ -481,10 +481,17 @@ impl Token {
             | Token::Private
             | Token::Package
             | Token::Override => true,
+            _ => false,
+        }
+    }
 
-            Token::Null | Token::True | Token::False | Token::Ident => true,
-
-            Token::Await
+    pub fn starts_expr(&self) -> bool {
+        match self {
+            Token::Ident
+            | Token::Null
+            | Token::True
+            | Token::False
+            | Token::Await
             | Token::Function
             | Token::Throw
             | Token::New
@@ -495,35 +502,10 @@ impl Token {
             | Token::Yield
             | Token::TypeOf
             | Token::Void
-            | Token::Delete => true,
-
-            Token::Break
-            | Token::Case
-            | Token::Catch
-            | Token::Continue
-            | Token::Debugger
-            | Token::Default
-            | Token::Do
-            | Token::Else
-            | Token::Finally
-            | Token::For
-            | Token::If
-            | Token::Return
-            | Token::Switch
-            | Token::Try
-            | Token::Var
-            | Token::Let
-            | Token::Const
-            | Token::While
-            | Token::With
-            | Token::Extends
-            | Token::Export
-            | Token::In
-            | Token::InstanceOf => false,
-
-            Token::Add | Token::Sub => true,
-
-            Token::Bang
+            | Token::Delete
+            | Token::Add
+            | Token::Sub
+            | Token::Bang
             | Token::LParen
             | Token::LBracket
             | Token::LBrace
@@ -536,8 +518,7 @@ impl Token {
             | Token::Regex
             | Token::Num
             | Token::BigInt => true,
-
-            _ => false,
+            _ => self.is_known_ident(),
         }
     }
 
@@ -557,72 +538,8 @@ impl Token {
             | Token::InstanceOf
             | Token::TypeOf
             | Token::Void
-            | Token::Delete => true,
-
-            Token::Break
-            | Token::Catch
-            | Token::Continue
-            | Token::Debugger
-            | Token::Finally
-            | Token::For
-            | Token::Function
-            | Token::If
-            | Token::Switch
-            | Token::Try
-            | Token::Var
-            | Token::Let
-            | Token::Const
-            | Token::While
-            | Token::With
-            | Token::This
-            | Token::Super
-            | Token::Class
-            | Token::Export
-            | Token::Import => false,
-
-            Token::Async
-            | Token::As
-            | Token::From
-            | Token::Of
-            | Token::Static
-            | Token::Target
-            | Token::Asserts
-            | Token::Implements
-            | Token::Is
-            | Token::Keyof
-            | Token::Unique
-            | Token::Object
-            | Token::Global
-            | Token::Enum
-            | Token::Readonly
-            | Token::Abstract
-            | Token::Infer
-            | Token::Any
-            | Token::Boolean
-            | Token::Bigint
-            | Token::Intrinsic
-            | Token::Never
-            | Token::Number
-            | Token::String
-            | Token::Symbol
-            | Token::Unknown
-            | Token::Interface
-            | Token::Declare
-            | Token::Undefined
-            | Token::Meta
-            | Token::Type
-            | Token::Assert
-            | Token::Get
-            | Token::Set
-            | Token::Public
-            | Token::Protected
-            | Token::Private
-            | Token::Package
-            | Token::Override => false,
-
-            Token::Null | Token::True | Token::False | Token::Ident => false,
-
-            Token::Arrow
+            | Token::Delete
+            | Token::Arrow
             | Token::DotDotDot
             | Token::Bang
             | Token::LParen
@@ -632,117 +549,19 @@ impl Token {
             | Token::Comma
             | Token::Colon
             | Token::ColonColon
-            | Token::Assign
-            | Token::AddAssign
-            | Token::SubAssign
-            | Token::MulAssign
-            | Token::DivAssign
-            | Token::ModAssign
-            | Token::LShiftAssign
-            | Token::RShiftAssign
-            | Token::ZeroFillRShiftAssign
-            | Token::BitOrAssign
-            | Token::BitXorAssign
-            | Token::BitAndAssign
-            | Token::ExpAssign
-            | Token::AndAssign
-            | Token::OrAssign
-            | Token::NullishAssign
             | Token::DollarLBrace
             | Token::QuestionMark
             | Token::PlusPlus
             | Token::MinusMinus
             | Token::Tilde => true,
-
-            t if t.as_bin_op().is_some() => true,
-
-            _ => false,
+            _ => self.as_bin_op().is_some() || self.as_assign_op().is_some(),
         }
     }
 
     pub fn is_word(&self) -> bool {
         match self {
-            Token::Await
-            | Token::Break
-            | Token::Case
-            | Token::Catch
-            | Token::Continue
-            | Token::Debugger
-            | Token::Default
-            | Token::Do
-            | Token::Else
-            | Token::Finally
-            | Token::For
-            | Token::Function
-            | Token::If
-            | Token::Return
-            | Token::Switch
-            | Token::Throw
-            | Token::Try
-            | Token::Var
-            | Token::Let
-            | Token::Const
-            | Token::While
-            | Token::With
-            | Token::New
-            | Token::This
-            | Token::Super
-            | Token::Class
-            | Token::Extends
-            | Token::Export
-            | Token::Import
-            | Token::Yield
-            | Token::In
-            | Token::InstanceOf
-            | Token::TypeOf
-            | Token::Void
-            | Token::Delete
-            | Token::Null
-            | Token::True
-            | Token::False
-            | Token::Ident => true,
-
-            Token::Async
-            | Token::As
-            | Token::From
-            | Token::Of
-            | Token::Static
-            | Token::Target
-            | Token::Asserts
-            | Token::Implements
-            | Token::Is
-            | Token::Keyof
-            | Token::Unique
-            | Token::Object
-            | Token::Global
-            | Token::Enum
-            | Token::Readonly
-            | Token::Abstract
-            | Token::Infer
-            | Token::Any
-            | Token::Boolean
-            | Token::Bigint
-            | Token::Intrinsic
-            | Token::Never
-            | Token::Number
-            | Token::String
-            | Token::Symbol
-            | Token::Unknown
-            | Token::Interface
-            | Token::Declare
-            | Token::Undefined
-            | Token::Meta
-            | Token::Type
-            | Token::Assert
-            | Token::Get
-            | Token::Set
-            | Token::Public
-            | Token::Protected
-            | Token::Private
-            | Token::Package
-            | Token::Override => true,
-
-            _ => false,
+            Token::Null | Token::True | Token::False | Token::Ident => true,
+            _ => self.is_keyword() || self.is_known_ident(),
         }
     }
 
@@ -902,6 +721,18 @@ impl Token {
     pub fn is_binary_op(&self) -> bool {
         self.as_bin_op().is_some()
     }
+
+    /// Returns true if `self` can follow keyword let.
+    ///
+    /// e.g. `let a = xx;`, `let {a:{}} = 1`
+    pub(crate) fn follows_keyword_let(&self) -> bool {
+        match self {
+            // This is required to recognize `let let` in strict mode.
+            tok!("let") => true,
+            tok!('{') | tok!('[') | Token::Ident | tok!("yield") | tok!("await") => true,
+            _ => self.is_known_ident(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -910,60 +741,4 @@ pub struct TokenAndSpan {
     /// Had a line break before this token?
     pub had_line_break: bool,
     pub span: Span,
-}
-
-impl Token {
-    /// Returns true if `self` can follow keyword let.
-    ///
-    /// e.g. `let a = xx;`, `let {a:{}} = 1`
-    pub(crate) fn follows_keyword_let(&self) -> bool {
-        match *self {
-            // This is required to recognize `let let` in strict mode.
-            tok!("let") => true,
-
-            tok!('{') | tok!('[') | Token::Ident | tok!("yield") | tok!("await") => true,
-
-            Token::Async
-            | Token::As
-            | Token::From
-            | Token::Of
-            | Token::Static
-            | Token::Target
-            | Token::Asserts
-            | Token::Implements
-            | Token::Is
-            | Token::Keyof
-            | Token::Unique
-            | Token::Object
-            | Token::Global
-            | Token::Enum
-            | Token::Readonly
-            | Token::Abstract
-            | Token::Infer
-            | Token::Any
-            | Token::Boolean
-            | Token::Bigint
-            | Token::Intrinsic
-            | Token::Never
-            | Token::Number
-            | Token::String
-            | Token::Symbol
-            | Token::Unknown
-            | Token::Interface
-            | Token::Declare
-            | Token::Undefined
-            | Token::Meta
-            | Token::Type
-            | Token::Assert
-            | Token::Get
-            | Token::Set
-            | Token::Public
-            | Token::Protected
-            | Token::Private
-            | Token::Package
-            | Token::Override => true,
-
-            _ => false,
-        }
-    }
 }
