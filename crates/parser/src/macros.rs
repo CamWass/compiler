@@ -10,16 +10,16 @@ macro_rules! tok {
     };
 
     ('&') => {
-        crate::token::Token::BinOp(crate::token::BinOpToken::BitAnd)
+        crate::token::Token::BitAnd
     };
     ('+') => {
-        crate::token::Token::BinOp(crate::token::BinOpToken::Add)
+        crate::token::Token::Add
     };
     ('-') => {
-        crate::token::Token::BinOp(crate::token::BinOpToken::Sub)
+        crate::token::Token::Sub
     };
     ("??") => {
-        crate::token::Token::BinOp(crate::token::BinOpToken::NullishCoalescing)
+        crate::token::Token::NullishCoalescing
     };
     ('~') => {
         crate::token::Token::Tilde
@@ -28,11 +28,11 @@ macro_rules! tok {
         crate::token::Token::Bang
     };
     ("??=") => {
-        crate::token::Token::AssignOp(crate::token::AssignOpToken::NullishAssign)
+        crate::token::Token::NullishAssign
     };
 
     ('|') => {
-        crate::token::Token::BinOp(crate::token::BinOpToken::BitOr)
+        crate::token::Token::BitOr
     };
 
     (',') => {
@@ -58,19 +58,19 @@ macro_rules! tok {
     };
 
     ('*') => {
-        crate::token::Token::BinOp(crate::token::BinOpToken::Mul)
+        crate::token::Token::Mul
     };
     ('/') => {
-        crate::token::Token::BinOp(crate::token::BinOpToken::Div)
+        crate::token::Token::Div
     };
     ("/=") => {
-        crate::token::Token::AssignOp(DivAssign)
+        crate::token::Token::DivAssign
     };
     ('<') => {
-        crate::token::Token::BinOp(crate::token::BinOpToken::Lt)
+        crate::token::Token::Lt
     };
     ('>') => {
-        crate::token::Token::BinOp(crate::token::BinOpToken::Gt)
+        crate::token::Token::Gt
     };
 
     ("++") => {
@@ -81,7 +81,7 @@ macro_rules! tok {
     };
 
     ('=') => {
-        crate::token::Token::AssignOp(crate::token::AssignOpToken::Assign)
+        crate::token::Token::Assign
     };
 
     ('(') => {

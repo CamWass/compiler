@@ -10,7 +10,7 @@ use crate::{
     error::{Error, SyntaxError},
     token::*,
 };
-use ast::{NameId, ProgramData, RegexFlags, id_for_built_in, op};
+use ast::{NameId, ProgramData, RegexFlags, id_for_built_in};
 use atoms::JsWord;
 use common::{BytePos, SourceFile, Span, chars::char_literals};
 use number::{NonDecRadix, Radix};
@@ -336,22 +336,18 @@ impl<'src> Lexer<'src> {
 
         let is_mul = ch == b'*';
         self.advance(1); // '*' or '%'
-        let mut token = if is_mul {
-            Token::BinOp(Mul)
-        } else {
-            Token::BinOp(Mod)
-        };
+        let mut token = if is_mul { Token::Mul } else { Token::Mod };
 
         // check for **
         if is_mul && self.eat(b'*') {
-            token = Token::BinOp(Exp);
+            token = Token::Exp;
         }
 
         if self.eat(b'=') {
             token = match token {
-                Token::BinOp(Mul) => Token::AssignOp(MulAssign),
-                Token::BinOp(Mod) => Token::AssignOp(ModAssign),
-                Token::BinOp(Exp) => Token::AssignOp(ExpAssign),
+                Token::Mul => Token::MulAssign,
+                Token::Mod => Token::ModAssign,
+                Token::Exp => Token::ExpAssign,
                 _ => unreachable!(),
             };
         }
@@ -364,35 +360,39 @@ impl<'src> Lexer<'src> {
         debug_assert!(self.is(ch));
 
         self.advance(1); // '|' or '&'
-        let token = if ch == b'&' { BitAnd } else { BitOr };
+        let token = if ch == b'&' {
+            Token::BitAnd
+        } else {
+            Token::BitOr
+        };
 
         // '|=', '&='
         if self.eat(b'=') {
-            return Token::AssignOp(match token {
-                BitAnd => BitAndAssign,
-                BitOr => BitOrAssign,
+            return match token {
+                Token::BitAnd => Token::BitAndAssign,
+                Token::BitOr => Token::BitOrAssign,
                 _ => unreachable!(),
-            });
+            };
         }
 
         // '||', '&&'
         if self.eat(ch) {
             if self.eat(b'=') {
-                return Token::AssignOp(match token {
-                    BitAnd => op!("&&="),
-                    BitOr => op!("||="),
+                return match token {
+                    Token::BitAnd => Token::AndAssign,
+                    Token::BitOr => Token::OrAssign,
                     _ => unreachable!(),
-                });
+                };
             }
 
-            return Token::BinOp(match token {
-                BitAnd => LogicalAnd,
-                BitOr => LogicalOr,
+            return match token {
+                Token::BitAnd => Token::LogicalAnd,
+                Token::BitOr => Token::LogicalOr,
                 _ => unreachable!(),
-            });
+            };
         }
 
-        Token::BinOp(token)
+        token
     }
 
     fn read_token_caret(&mut self) -> Token {
@@ -400,9 +400,9 @@ impl<'src> Lexer<'src> {
         // Bitwise xor
         self.advance(1); // '^'
         if self.eat(b'=') {
-            Token::AssignOp(BitXorAssign)
+            Token::BitXorAssign
         } else {
-            Token::BinOp(BitXor)
+            Token::BitXor
         }
     }
 
@@ -430,14 +430,14 @@ impl<'src> Lexer<'src> {
             }
         } else if self.eat(b'=') {
             // '+=', '-='
-            Ok(Token::AssignOp(if ch == b'+' {
-                AddAssign
+            Ok(if ch == b'+' {
+                Token::AddAssign
             } else {
-                SubAssign
-            }))
+                Token::SubAssign
+            })
         } else {
             // '+', '-'
-            Ok(Token::BinOp(if ch == b'+' { Add } else { Sub }))
+            Ok(if ch == b'+' { Token::Add } else { Token::Sub })
         }
     }
 
@@ -462,29 +462,33 @@ impl<'src> Lexer<'src> {
             return self.read_token();
         }
 
-        let mut op = if ch == b'<' { Lt } else { Gt };
+        let mut op = if ch == b'<' { Token::Lt } else { Token::Gt };
 
         // '<<', '>>'
         if self.eat(ch) {
-            op = if ch == b'<' { LShift } else { RShift };
+            op = if ch == b'<' {
+                Token::LShift
+            } else {
+                Token::RShift
+            };
 
             //'>>>'
             if ch == b'>' && self.eat(ch) {
-                op = ZeroFillRShift;
+                op = Token::ZeroFillRShift;
             }
         }
 
         let token = if self.eat(b'=') {
             match op {
-                Lt => Token::BinOp(LtEq),
-                Gt => Token::BinOp(GtEq),
-                LShift => Token::AssignOp(LShiftAssign),
-                RShift => Token::AssignOp(RShiftAssign),
-                ZeroFillRShift => Token::AssignOp(ZeroFillRShiftAssign),
+                Token::Lt => Token::LtEq,
+                Token::Gt => Token::GtEq,
+                Token::LShift => Token::LShiftAssign,
+                Token::RShift => Token::RShiftAssign,
+                Token::ZeroFillRShift => Token::ZeroFillRShiftAssign,
                 _ => unreachable!(),
             }
         } else {
-            Token::BinOp(op)
+            op
         };
 
         Ok(token)
@@ -502,17 +506,17 @@ impl<'src> Lexer<'src> {
             if self.eat(b'=') {
                 if ch == b'!' {
                     // '!=='
-                    Token::BinOp(NotEqEq)
+                    Token::NotEqEq
                 } else {
                     // '==='
-                    Token::BinOp(EqEqEq)
+                    Token::EqEqEq
                 }
             } else if ch == b'!' {
                 // '!='
-                Token::BinOp(NotEq)
+                Token::NotEq
             } else {
                 // '=='
-                Token::BinOp(EqEq)
+                Token::EqEq
             }
         } else if ch == b'=' && self.eat(b'>') {
             // "=>"
@@ -523,7 +527,7 @@ impl<'src> Lexer<'src> {
             Token::Bang
         } else {
             // '='
-            Token::AssignOp(Assign)
+            Token::Assign
         }
     }
 

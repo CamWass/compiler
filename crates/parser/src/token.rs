@@ -1,9 +1,8 @@
-pub(crate) use self::{AssignOpToken::*, BinOpToken::*};
 use crate::{
     context::{Context, ContextFlags},
     error::Error,
 };
-pub(crate) use ast::AssignOp as AssignOpToken;
+pub(crate) use ast::AssignOp;
 use ast::{BinaryOp, NameId, RegexFlags};
 use atoms::JsWord;
 use common::Span;
@@ -114,9 +113,67 @@ pub enum Token {
     Colon,
     /// '::'
     ColonColon,
-    // TODO: flatten to make Token 1 byte
-    BinOp(BinOpToken),
-    AssignOp(AssignOpToken),
+
+    EqEq,
+    NotEq,
+    EqEqEq,
+    NotEqEq,
+    Lt,
+    LtEq,
+    Gt,
+    GtEq,
+    LShift,
+    RShift,
+    ZeroFillRShift,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    BitOr,
+    BitXor,
+    BitAnd,
+    Exp,
+    LogicalOr,
+    LogicalAnd,
+    NullishCoalescing,
+
+    /// `=`
+    Assign,
+    /// `+=`
+    AddAssign,
+    /// `-=`
+    SubAssign,
+    /// `*=`
+    MulAssign,
+    /// `/=`
+    DivAssign,
+    /// `%=`
+    ModAssign,
+    /// `<<=`
+    LShiftAssign,
+    /// `>>=`
+    RShiftAssign,
+    /// `>>>=`
+    ZeroFillRShiftAssign,
+    /// `|=`
+    BitOrAssign,
+    /// `^=`
+    BitXorAssign,
+    /// `&=`
+    BitAndAssign,
+
+    /// `**=`
+    ExpAssign,
+
+    /// `&&=`
+    AndAssign,
+
+    /// `||=`
+    OrAssign,
+
+    /// `??=`
+    NullishAssign,
 
     /// '${'
     DollarLBrace,
@@ -228,7 +285,29 @@ impl Display for Token {
             Token::DotDotDot => "...",
             Token::PlusPlus => "++",
             Token::MinusMinus => "--",
-            Token::BinOp(b) => BinaryOp::from(*b).as_str(),
+            Token::EqEq => "==",
+            Token::NotEq => "!",
+            Token::EqEqEq => "===",
+            Token::NotEqEq => "!==",
+            Token::Lt => "<",
+            Token::LtEq => "<=",
+            Token::Gt => ">",
+            Token::GtEq => ">=",
+            Token::LShift => "<<",
+            Token::RShift => ">>",
+            Token::ZeroFillRShift => ">>>",
+            Token::Add => "+",
+            Token::Sub => "-",
+            Token::Mul => "*",
+            Token::Div => "/",
+            Token::Mod => "%",
+            Token::BitOr => "|",
+            Token::BitXor => "^",
+            Token::BitAnd => "&",
+            Token::Exp => "**",
+            Token::LogicalOr => "||",
+            Token::LogicalAnd => "&&",
+            Token::NullishCoalescing => "??",
             Token::DollarLBrace => "${",
             Token::Str => "string literal",
             Token::Num => "numeric literal",
@@ -316,7 +395,22 @@ impl Display for Token {
             Token::Target => "target",
             Token::Eof => "<eof>",
             Token::ColonColon => "::",
-            Token::AssignOp(assign_op) => assign_op.as_str(),
+            Token::Assign => "=",
+            Token::AddAssign => "+=",
+            Token::SubAssign => "-=",
+            Token::MulAssign => "*=",
+            Token::DivAssign => "/=",
+            Token::ModAssign => "%=",
+            Token::LShiftAssign => "<<=",
+            Token::RShiftAssign => ">>=",
+            Token::ZeroFillRShiftAssign => ">>>=",
+            Token::BitOrAssign => "|=",
+            Token::BitXorAssign => "^=",
+            Token::BitAndAssign => "&=",
+            Token::ExpAssign => "**=",
+            Token::AndAssign => "&&=",
+            Token::OrAssign => "||=",
+            Token::NullishAssign => "??=",
         };
         f.write_str(s)
     }
@@ -427,7 +521,7 @@ impl Token {
             | Token::In
             | Token::InstanceOf => false,
 
-            Token::BinOp(o) => o.starts_expr(),
+            Token::Add | Token::Sub => true,
 
             Token::Bang
             | Token::LParen
@@ -528,8 +622,6 @@ impl Token {
 
             Token::Null | Token::True | Token::False | Token::Ident => false,
 
-            Token::BinOp(o) => o.before_expr(),
-
             Token::Arrow
             | Token::DotDotDot
             | Token::Bang
@@ -540,12 +632,29 @@ impl Token {
             | Token::Comma
             | Token::Colon
             | Token::ColonColon
-            | Token::AssignOp(_)
+            | Token::Assign
+            | Token::AddAssign
+            | Token::SubAssign
+            | Token::MulAssign
+            | Token::DivAssign
+            | Token::ModAssign
+            | Token::LShiftAssign
+            | Token::RShiftAssign
+            | Token::ZeroFillRShiftAssign
+            | Token::BitOrAssign
+            | Token::BitXorAssign
+            | Token::BitAndAssign
+            | Token::ExpAssign
+            | Token::AndAssign
+            | Token::OrAssign
+            | Token::NullishAssign
             | Token::DollarLBrace
             | Token::QuestionMark
             | Token::PlusPlus
             | Token::MinusMinus
             | Token::Tilde => true,
+
+            t if t.as_bin_op().is_some() => true,
 
             _ => false,
         }
@@ -737,76 +846,61 @@ impl Token {
             _ => false,
         }
     }
-}
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
-pub enum BinOpToken {
-    /// `==`
-    EqEq,
-    /// `!=`
-    NotEq,
-    /// `===`
-    EqEqEq,
-    /// `!==`
-    NotEqEq,
-    /// `<`
-    Lt,
-    /// `<=`
-    LtEq,
-    /// `>`
-    Gt,
-    /// `>=`
-    GtEq,
-    /// `<<`
-    LShift,
-    /// `>>`
-    RShift,
-    /// `>>>`
-    ZeroFillRShift,
-
-    /// `+`
-    Add,
-    /// `-`
-    Sub,
-    /// `*`
-    Mul,
-    /// `/`
-    Div,
-    /// `%`
-    Mod,
-
-    /// `|`
-    BitOr,
-    /// `^`
-    BitXor,
-    /// `&`
-    BitAnd,
-
-    // /// `in`
-    // #[kind(precedence = "7")]
-    // In,
-    // /// `instanceof`
-    // #[kind(precedence = "7")]
-    // InstanceOf,
-    /// `**`
-    Exp,
-
-    /// `||`
-    LogicalOr,
-    /// `&&`
-    LogicalAnd,
-
-    /// `??`
-    NullishCoalescing,
-}
-
-impl BinOpToken {
-    pub const fn before_expr(self) -> bool {
-        true
+    pub fn as_assign_op(&self) -> Option<AssignOp> {
+        match self {
+            Token::Assign => Some(AssignOp::Assign),
+            Token::AddAssign => Some(AssignOp::AddAssign),
+            Token::SubAssign => Some(AssignOp::SubAssign),
+            Token::MulAssign => Some(AssignOp::MulAssign),
+            Token::DivAssign => Some(AssignOp::DivAssign),
+            Token::ModAssign => Some(AssignOp::ModAssign),
+            Token::LShiftAssign => Some(AssignOp::LShiftAssign),
+            Token::RShiftAssign => Some(AssignOp::RShiftAssign),
+            Token::ZeroFillRShiftAssign => Some(AssignOp::ZeroFillRShiftAssign),
+            Token::BitOrAssign => Some(AssignOp::BitOrAssign),
+            Token::BitXorAssign => Some(AssignOp::BitXorAssign),
+            Token::BitAndAssign => Some(AssignOp::BitAndAssign),
+            Token::ExpAssign => Some(AssignOp::ExpAssign),
+            Token::AndAssign => Some(AssignOp::AndAssign),
+            Token::OrAssign => Some(AssignOp::OrAssign),
+            Token::NullishAssign => Some(AssignOp::NullishAssign),
+            _ => None,
+        }
     }
 
-    fn starts_expr(&self) -> bool {
-        matches!(self, Self::Add | Self::Sub)
+    pub fn as_bin_op(&self) -> Option<BinaryOp> {
+        match self {
+            Token::EqEq => Some(BinaryOp::EqEq),
+            Token::NotEq => Some(BinaryOp::NotEq),
+            Token::EqEqEq => Some(BinaryOp::EqEqEq),
+            Token::NotEqEq => Some(BinaryOp::NotEqEq),
+            Token::Lt => Some(BinaryOp::Lt),
+            Token::LtEq => Some(BinaryOp::LtEq),
+            Token::Gt => Some(BinaryOp::Gt),
+            Token::GtEq => Some(BinaryOp::GtEq),
+            Token::LShift => Some(BinaryOp::LShift),
+            Token::RShift => Some(BinaryOp::RShift),
+            Token::ZeroFillRShift => Some(BinaryOp::ZeroFillRShift),
+            Token::Add => Some(BinaryOp::Add),
+            Token::Sub => Some(BinaryOp::Sub),
+            Token::Mul => Some(BinaryOp::Mul),
+            Token::Div => Some(BinaryOp::Div),
+            Token::Mod => Some(BinaryOp::Mod),
+            Token::BitOr => Some(BinaryOp::BitOr),
+            Token::BitXor => Some(BinaryOp::BitXor),
+            Token::BitAnd => Some(BinaryOp::BitAnd),
+            Token::Exp => Some(BinaryOp::Exp),
+            Token::LogicalOr => Some(BinaryOp::LogicalOr),
+            Token::LogicalAnd => Some(BinaryOp::LogicalAnd),
+            Token::NullishCoalescing => Some(BinaryOp::NullishCoalescing),
+
+            _ => None,
+        }
+    }
+
+    pub fn is_binary_op(&self) -> bool {
+        self.as_bin_op().is_some()
     }
 }
 
@@ -816,37 +910,6 @@ pub struct TokenAndSpan {
     /// Had a line break before this token?
     pub had_line_break: bool,
     pub span: Span,
-}
-
-impl From<BinOpToken> for BinaryOp {
-    fn from(t: BinOpToken) -> Self {
-        use self::BinaryOp::*;
-        match t {
-            BinOpToken::EqEq => EqEq,
-            BinOpToken::NotEq => NotEq,
-            BinOpToken::EqEqEq => EqEqEq,
-            BinOpToken::NotEqEq => NotEqEq,
-            BinOpToken::Lt => Lt,
-            BinOpToken::LtEq => LtEq,
-            BinOpToken::Gt => Gt,
-            BinOpToken::GtEq => GtEq,
-            BinOpToken::LShift => LShift,
-            BinOpToken::RShift => RShift,
-            BinOpToken::ZeroFillRShift => ZeroFillRShift,
-            BinOpToken::Add => Add,
-            BinOpToken::Sub => Sub,
-            BinOpToken::Mul => Mul,
-            BinOpToken::Div => Div,
-            BinOpToken::Mod => Mod,
-            BinOpToken::BitOr => BitOr,
-            BinOpToken::BitXor => BitXor,
-            BinOpToken::BitAnd => BitAnd,
-            BinOpToken::LogicalOr => LogicalOr,
-            BinOpToken::LogicalAnd => LogicalAnd,
-            BinOpToken::Exp => Exp,
-            BinOpToken::NullishCoalescing => NullishCoalescing,
-        }
-    }
 }
 
 impl Token {

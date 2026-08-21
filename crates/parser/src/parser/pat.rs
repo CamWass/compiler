@@ -1,6 +1,5 @@
 //! 13.3.3 Destructuring Binding Patterns
 use super::{expression::MaybeParenPatOrExprOrSpread, *};
-use crate::token::AssignOpToken;
 use expression::MaybeParenSpreadElement;
 use util::{AssignProps, is_valid_simple_assignment_target};
 
@@ -549,7 +548,7 @@ impl Parser<'_> {
         match *expr {
             Expr::Assign(AssignExpr {
                 node_id,
-                op: AssignOpToken::Assign,
+                op: AssignOp::Assign,
                 left,
                 right,
             }) => Ok(Pat::Assign(AssignPat {

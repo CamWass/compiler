@@ -249,7 +249,7 @@ impl TokenContexts {
             Token::LBrace => return self.current() == Some(TokenContext::BraceStmt),
 
             // `class C<T> { ... }`
-            Token::BinOp(Lt) | Token::BinOp(Gt) => return true,
+            Token::Lt | Token::Gt => return true,
             _ => {}
         }
 

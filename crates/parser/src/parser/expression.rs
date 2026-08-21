@@ -1,7 +1,5 @@
 use super::{pat::PatType, util::is_valid_simple_assignment_target, *};
-use crate::{
-    context::ContextFlags, parser::identifier::PrivateNameOrIdentifier, token::AssignOpToken,
-};
+use crate::{context::ContextFlags, parser::identifier::PrivateNameOrIdentifier};
 use common::Pos;
 use util::AssignProps;
 
@@ -151,66 +149,60 @@ impl Parser<'_> {
         assign_props: &mut AssignProps,
         mut inner_assign_props: Vec<Span>,
     ) -> PResult<MaybeParen> {
-        match self.input.cur() {
-            Token::AssignOp(op) => {
-                let left = if op == AssignOpToken::Assign {
-                    self.reparse_expr_as_pat(PatType::AssignPat, cond.unwrap())
-                        .map(Box::new)
-                        .map(PatOrExpr::Pat)?
-                } else {
-                    //It is an early Reference Error if IsValidSimpleAssignmentTarget of
-                    // LeftHandSideExpression is false.
-                    if !self.input.syntax().typescript()
-                        && !is_valid_simple_assignment_target(cond.inner(), self.ctx().strict)
-                    {
-                        self.emit_err(
-                            get_span!(self, cond.node_id()),
-                            SyntaxError::NotSimpleAssign,
-                        );
-                    }
-                    let is_eval_or_arguments = match &cond {
-                        MaybeParen::Expr(cond) => match cond.as_ref() {
-                            Expr::Ident(i) => {
-                                i.name == id_for_built_in!("eval")
-                                    || i.name == id_for_built_in!("arguments")
-                            }
-                            _ => false,
-                        },
-                        MaybeParen::Wrapped(_) => false,
-                    };
-                    if self.input.syntax().typescript() && is_eval_or_arguments {
-                        self.emit_strict_mode_err(
-                            get_span!(self, cond.node_id()),
-                            SyntaxError::TS1100,
-                        );
-                    }
-
-                    PatOrExpr::Expr(cond.unwrap())
-                };
-
-                self.input.bump();
-                let right = self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap();
-                Ok(Box::new(Expr::Assign(AssignExpr {
-                    node_id: node_id!(self, self.span(start)),
-                    op,
-                    left,
-                    right,
-                }))
-                .into())
-            }
-            _ => {
-                match assign_props {
-                    AssignProps::Buffer(buffer) => buffer.append(&mut inner_assign_props),
-                    AssignProps::Emit => {
-                        for prop in inner_assign_props {
-                            self.emit_err(prop, SyntaxError::AssignProperty);
+        if let Some(op) = self.input.cur().as_assign_op() {
+            let left = if op == AssignOp::Assign {
+                self.reparse_expr_as_pat(PatType::AssignPat, cond.unwrap())
+                    .map(Box::new)
+                    .map(PatOrExpr::Pat)?
+            } else {
+                //It is an early Reference Error if IsValidSimpleAssignmentTarget of
+                // LeftHandSideExpression is false.
+                if !self.input.syntax().typescript()
+                    && !is_valid_simple_assignment_target(cond.inner(), self.ctx().strict)
+                {
+                    self.emit_err(
+                        get_span!(self, cond.node_id()),
+                        SyntaxError::NotSimpleAssign,
+                    );
+                }
+                let is_eval_or_arguments = match &cond {
+                    MaybeParen::Expr(cond) => match cond.as_ref() {
+                        Expr::Ident(i) => {
+                            i.name == id_for_built_in!("eval")
+                                || i.name == id_for_built_in!("arguments")
                         }
-                    }
-                    AssignProps::Ignore => {}
+                        _ => false,
+                    },
+                    MaybeParen::Wrapped(_) => false,
+                };
+                if self.input.syntax().typescript() && is_eval_or_arguments {
+                    self.emit_strict_mode_err(get_span!(self, cond.node_id()), SyntaxError::TS1100);
                 }
 
-                Ok(cond)
+                PatOrExpr::Expr(cond.unwrap())
+            };
+
+            self.input.bump();
+            let right = self.parse_assignment_expr(&mut AssignProps::Emit)?.unwrap();
+            Ok(Box::new(Expr::Assign(AssignExpr {
+                node_id: node_id!(self, self.span(start)),
+                op,
+                left,
+                right,
+            }))
+            .into())
+        } else {
+            match assign_props {
+                AssignProps::Buffer(buffer) => buffer.append(&mut inner_assign_props),
+                AssignProps::Emit => {
+                    for prop in inner_assign_props {
+                        self.emit_err(prop, SyntaxError::AssignProperty);
+                    }
+                }
+                AssignProps::Ignore => {}
             }
+
+            Ok(cond)
         }
     }
 
@@ -1351,7 +1343,7 @@ impl Parser<'_> {
                 body,
             });
             if is_block {
-                if let Token::BinOp(..) = self.input.cur() {
+                if self.input.cur().is_binary_op() {
                     // ) is required
                     self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
                     let errored_expr =

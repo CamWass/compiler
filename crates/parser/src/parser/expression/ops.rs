@@ -12,29 +12,28 @@ impl Parser<'_> {
 
         let left = match self.parse_unary_expr(assign_props) {
             Ok(v) => v,
-            Err(err) => match self.input.cur() {
-                Token::In if include_in_expr => {
+            Err(err) => {
+                if self.input.cur() == Token::In && include_in_expr {
                     self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
 
                     Box::new(Expr::Invalid(Invalid {
                         node_id: node_id!(self, err.error.0),
                     }))
                     .into()
-                }
-                Token::InstanceOf | Token::BinOp(_) => {
+                } else if self.input.cur() == Token::InstanceOf || self.input.cur().is_binary_op() {
                     self.emit_err(self.input.cur_span(), SyntaxError::TS1109);
 
                     Box::new(Expr::Invalid(Invalid {
                         node_id: node_id!(self, err.error.0),
                     }))
                     .into()
-                }
-                Token::Error => {
+                } else if self.input.cur() == Token::Error {
                     let error = self.input.expect_error_token_and_bump();
                     return Err(error);
+                } else {
+                    return Err(err);
                 }
-                _ => return Err(err),
-            },
+            }
         };
 
         return_if_arrow!(self, potential_arrow_start, left);
@@ -121,7 +120,7 @@ impl Parser<'_> {
         let op = match self.input.cur() {
             Token::In if ctx.include_in_expr() => op!("in"),
             Token::InstanceOf => op!("instanceof"),
-            Token::BinOp(op) => op.into(),
+            t if t.is_binary_op() => t.as_bin_op().unwrap(),
             _ => {
                 // Return left on eof.
                 return Ok((left, None));

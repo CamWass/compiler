@@ -491,7 +491,7 @@ impl Parser<'_> {
                 expr: expr.unwrap(),
             })))
         } else {
-            if let Token::BinOp(..) = self.input.cur() {
+            if self.input.cur().is_binary_op() {
                 self.emit_err(self.input.cur_span(), SyntaxError::TS1005);
                 let expr = self.parse_bin_op_recursively(expr, 0)?.unwrap();
                 return Ok(Some(Stmt::Expr(ExprStmt {
