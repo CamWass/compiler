@@ -6,7 +6,7 @@ use crate::{
     parser::Parser,
     token::{Token, TokenAndSpan, TokenData},
 };
-use ast::{NameId, ProgramData, RegexFlags, id_for_built_in};
+use ast::{NameId, ProgramData, id_for_built_in};
 use atoms::JsWord;
 use common::{BytePos, Span};
 use num_bigint::BigUint;
@@ -484,13 +484,7 @@ impl<'d> Buffer<'d> {
         ret
     }
 
-    pub fn expect_regex_int_token_and_bump(&mut self) -> (JsWord, RegexFlags) {
-        let ret = if let Some(TokenData::Regex(content, flags)) = self.iter.take_token_data() {
-            (content, flags)
-        } else {
-            unreachable!();
-        };
-        self.bump();
-        ret
+    pub fn cur_string(&self) -> &str {
+        self.iter.slice_to_cur(self.cur_span().lo)
     }
 }

@@ -342,37 +342,15 @@ impl<'a> Emitter<'a> {
             Lit::Str(s) => self.emit_str_lit(s)?,
             Lit::BigInt(s) => self.emit_big_lit(s)?,
             Lit::Num(n) => self.emit_num_lit(n)?,
-            Lit::Regex(n) => {
-                punct!(self, "/");
-                self.wr.write_str(&n.exp)?;
-                punct!(self, "/");
-                if n.flags.contains(RegexFlags::D) {
-                    self.wr.write_str("d")?;
-                }
-                if n.flags.contains(RegexFlags::G) {
-                    self.wr.write_str("g")?;
-                }
-                if n.flags.contains(RegexFlags::I) {
-                    self.wr.write_str("i")?;
-                }
-                if n.flags.contains(RegexFlags::M) {
-                    self.wr.write_str("m")?;
-                }
-                if n.flags.contains(RegexFlags::S) {
-                    self.wr.write_str("s")?;
-                }
-                if n.flags.contains(RegexFlags::U) {
-                    self.wr.write_str("u")?;
-                }
-                if n.flags.contains(RegexFlags::V) {
-                    self.wr.write_str("v")?;
-                }
-                if n.flags.contains(RegexFlags::Y) {
-                    self.wr.write_str("y")?;
-                }
-            }
+            Lit::Regex(n) => self.emit_regex_lit(n)?,
         }
         Ok(())
+    }
+
+    fn emit_regex_lit(&mut self, node: &Regex) -> Result {
+        let span = get_span!(self, node.node_id());
+
+        self.wr.write_lit(span, &node.raw)
     }
 
     fn emit_str_lit(&mut self, node: &Str) -> Result {

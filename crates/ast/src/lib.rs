@@ -24,7 +24,7 @@ pub use self::{
     },
     function::{FnFlags, Function, Param},
     ident::{BindingIdent, Ident, PrivateName},
-    lit::{BigInt, Bool, Lit, Null, Number, Regex, RegexFlags, Str},
+    lit::{BigInt, Bool, Lit, Null, Number, Regex, Str},
     module::{Module, ModuleItem, Program, Script},
     module_decl::{
         DefaultDecl, ExportAll, ExportDecl, ExportDefaultDecl, ExportDefaultExpr,
@@ -517,6 +517,7 @@ impl_clone_node!(f64);
 impl_clone_node!(JsWord);
 impl_clone_node!(num_bigint::BigUint);
 impl_clone_node!(NameId);
+impl_clone_node!(String);
 
 pub trait NodeEq {
     fn eq_ignoring_node_id(&self, other: &Self) -> bool;
@@ -559,6 +560,7 @@ impl_eq_ignoring_node_id!(f64);
 impl_eq_ignoring_node_id!(JsWord);
 impl_eq_ignoring_node_id!(num_bigint::BigUint);
 impl_eq_ignoring_node_id!(NameId);
+impl_eq_ignoring_node_id!(String);
 
 #[cfg(test)]
 mod tests {

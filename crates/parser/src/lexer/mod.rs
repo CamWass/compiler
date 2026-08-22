@@ -10,8 +10,9 @@ use crate::{
     error::{Error, SyntaxError},
     token::*,
 };
-use ast::{NameId, ProgramData, RegexFlags, id_for_built_in};
+use ast::{NameId, ProgramData, id_for_built_in};
 use atoms::JsWord;
+use bitflags::bitflags;
 use common::{BytePos, SourceFile, Span, chars::char_literals};
 use number::{NonDecRadix, Radix};
 use state::State;
@@ -584,13 +585,9 @@ impl<'src> Lexer<'src> {
             self.error(start, SyntaxError::UnterminatedRegxp)?;
         }
 
-        let content_start = start + BytePos(1);
-
-        let content = self.slice_to_cur(content_start).into();
-
         self.advance(1); // '/'
 
-        let mut mods = RegexFlags::empty();
+        let mut flags = RegexFlags::empty();
 
         while let Some(ch) = self.cur() {
             let flag = match ch {
@@ -605,10 +602,10 @@ impl<'src> Lexer<'src> {
                 _ => None,
             };
             if let Some(flag) = flag {
-                if mods.contains(flag) {
+                if flags.contains(flag) {
                     self.error(self.cur_pos(), SyntaxError::DuplicateRegExpFlags)?;
                 } else {
-                    mods.insert(flag);
+                    flags.insert(flag);
                 }
             } else if ast::Ident::is_valid_continue(ch) || ch == '\\' {
                 self.error(self.cur_pos(), SyntaxError::MalformedRegExpFlags)?;
@@ -619,7 +616,7 @@ impl<'src> Lexer<'src> {
             self.bump();
         }
 
-        Ok(self.make_regex_token(content, mods))
+        Ok(Token::Regex)
     }
 
     fn read_code_point(&mut self) -> LexResult<char> {
@@ -1136,4 +1133,18 @@ fn pos_span(p: BytePos) -> Span {
 enum EscapeSequenceLength {
     Hex = 2,
     Unicode = 4,
+}
+
+bitflags! {
+    #[derive(Clone, Copy)]
+    pub struct RegexFlags: u8 {
+        const D = 1 << 0;
+        const G = 1 << 1;
+        const I = 1 << 2;
+        const M = 1 << 3;
+        const S = 1 << 4;
+        const U = 1 << 5;
+        const V = 1 << 6;
+        const Y = 1 << 7;
+    }
 }

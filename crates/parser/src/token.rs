@@ -3,7 +3,7 @@ use crate::{
     error::Error,
 };
 pub(crate) use ast::AssignOp;
-use ast::{BinaryOp, NameId, RegexFlags};
+use ast::{BinaryOp, NameId};
 use atoms::JsWord;
 use common::Span;
 use num_bigint::BigUint;
@@ -409,8 +409,6 @@ pub enum TokenData {
     Str {
         value: JsWord,
     },
-
-    Regex(JsWord, RegexFlags),
 
     Num(f64),
 

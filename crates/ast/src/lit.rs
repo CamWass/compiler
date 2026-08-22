@@ -1,12 +1,11 @@
-use crate::{GetNodeId, NodeId, ProgramData};
+use crate::{GetNodeId, NodeId};
 use atoms::JsWord;
-use bitflags::bitflags;
 use clone_node::CloneNode;
 use node_eq::NodeEq;
 use node_id::GetNodeIdMacro;
 use num_bigint::BigUint;
 use serde::Serialize;
-use std::fmt::{self, Display, Formatter, Write};
+use std::fmt::{self, Display, Formatter};
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub enum Lit {
@@ -57,66 +56,7 @@ pub struct Null {
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct Regex {
     pub node_id: NodeId,
-
-    pub exp: JsWord,
-
-    pub flags: RegexFlags,
-}
-
-bitflags! {
-    #[derive(Debug, PartialEq, Clone, Copy, Serialize)]
-    pub struct RegexFlags: u8 {
-        const D = 1 << 0;
-        const G = 1 << 1;
-        const I = 1 << 2;
-        const M = 1 << 3;
-        const S = 1 << 4;
-        const U = 1 << 5;
-        const V = 1 << 6;
-        const Y = 1 << 7;
-    }
-}
-
-impl Display for RegexFlags {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        if self.contains(Self::D) {
-            f.write_char('d')?;
-        }
-        if self.contains(Self::G) {
-            f.write_char('g')?;
-        }
-        if self.contains(Self::I) {
-            f.write_char('i')?;
-        }
-        if self.contains(Self::M) {
-            f.write_char('m')?;
-        }
-        if self.contains(Self::S) {
-            f.write_char('s')?;
-        }
-        if self.contains(Self::U) {
-            f.write_char('u')?;
-        }
-        if self.contains(Self::V) {
-            f.write_char('v')?;
-        }
-        if self.contains(Self::Y) {
-            f.write_char('y')?;
-        }
-        Ok(())
-    }
-}
-
-impl crate::CloneNode for RegexFlags {
-    fn clone_node(&self, _: &mut ProgramData) -> Self {
-        *self
-    }
-}
-
-impl crate::NodeEq for RegexFlags {
-    fn eq_ignoring_node_id(&self, other: &Self) -> bool {
-        self == other
-    }
+    pub raw: Box<String>,
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]

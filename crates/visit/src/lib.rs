@@ -468,8 +468,7 @@ define!({
     }
     pub struct Regex {
         pub node_id: NodeId,
-        pub exp: JsWord,
-        pub flags: RegexFlags,
+        pub raw: Box<String>,
     }
     pub struct Number {
         pub node_id: NodeId,

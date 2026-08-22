@@ -806,6 +806,10 @@ fn type_to_name(ty: &Type) -> String {
 }
 
 fn skip(ty: &Type) -> bool {
+    if let Some(ty) = extract_generic("Box", ty) {
+        return skip(ty);
+    }
+
     match ty {
         Type::Path(p) => {
             let i = &p.path.segments.last().as_ref().unwrap().ident;
@@ -825,6 +829,7 @@ fn skip(ty: &Type) -> bool {
                 || i == "isize"
                 || i == "f64"
                 || i == "f32"
+                || i == "String"
             {
                 return true;
             }

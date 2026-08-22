@@ -333,11 +333,11 @@ impl Parser<'_> {
 
             // Regexp
             Token::Regex => {
-                let (content, flags) = self.input.expect_regex_int_token_and_bump();
+                let raw = Box::new(String::from(self.input.cur_string()));
+                self.input.bump();
                 return Ok(Box::new(Expr::Lit(Lit::Regex(Regex {
                     node_id: node_id!(self, self.span(start)),
-                    exp: content,
-                    flags,
+                    raw,
                 })))
                 .into());
             }

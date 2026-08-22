@@ -3,7 +3,7 @@ use crate::{
     error::{Error, SyntaxError},
     token::{Token, TokenData},
 };
-use ast::{NameId, RegexFlags};
+use ast::NameId;
 use atoms::JsWord;
 use common::{BytePos, Pos, Span, chars::char_literals};
 
@@ -144,7 +144,7 @@ impl Lexer<'_> {
     }
 
     #[inline]
-    pub(super) fn slice_to_cur(&self, start: BytePos) -> &str {
+    pub fn slice_to_cur(&self, start: BytePos) -> &str {
         let start = (start - self.start_pos).to_usize();
         std::str::from_utf8(&self.bytes[start..self.cur]).unwrap()
     }
@@ -225,11 +225,6 @@ impl Lexer<'_> {
     pub fn make_big_int_token(&mut self, value: Box<num_bigint::BigUint>) -> Token {
         self.state.token_data = Some(TokenData::BigInt(value));
         Token::BigInt
-    }
-
-    pub fn make_regex_token(&mut self, content: JsWord, flags: RegexFlags) -> Token {
-        self.state.token_data = Some(TokenData::Regex(content, flags));
-        Token::Regex
     }
 
     pub fn make_str_token(&mut self, value: JsWord) -> Token {

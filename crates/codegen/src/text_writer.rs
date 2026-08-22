@@ -162,12 +162,6 @@ impl JsWriter<'_> {
         Ok(())
     }
 
-    pub(super) fn write_str(&mut self, s: &str) -> Result {
-        self.commit_pending_semi()?;
-        self.write(None, s)?;
-        Ok(())
-    }
-
     pub(super) fn write_symbol(&mut self, span: Span, s: &str) -> Result {
         self.commit_pending_semi()?;
         self.write(Some(span), s)?;
