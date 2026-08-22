@@ -328,6 +328,8 @@ impl<'d> Buffer<'d> {
                 Token::Public => id_for_built_in!("public"),
                 Token::Protected => id_for_built_in!("protected"),
                 Token::Private => id_for_built_in!("private"),
+                Token::Package => id_for_built_in!("package"),
+                Token::Override => id_for_built_in!("override"),
 
                 _ => unreachable!(),
             }
@@ -418,6 +420,8 @@ impl<'d> Buffer<'d> {
                 Token::Public => id_for_built_in!("public"),
                 Token::Protected => id_for_built_in!("protected"),
                 Token::Private => id_for_built_in!("private"),
+                Token::Package => id_for_built_in!("package"),
+                Token::Override => id_for_built_in!("override"),
 
                 _ => unreachable!(),
             }

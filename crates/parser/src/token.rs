@@ -10,10 +10,13 @@ use num_bigint::BigUint;
 use std::fmt::{Debug, Display};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum Token {
-    /// Spec says this might be identifier.
+    // The lexer relies on this section having the lowest discriminants (i.e.
+    // coming first in the enum) and having the same ordering as the
+    // corresponding NameIds, so converting between them is a no-op.
+    // --Start--
     Await,
-
     Break,
     Case,
     Catch,
@@ -22,54 +25,76 @@ pub enum Token {
     Default,
     Do,
     Else,
-
     Finally,
     For,
-
     Function,
-
     If,
-
     Return,
-
     Switch,
-
     Throw,
-
     Try,
     Var,
     Let,
     Const,
     While,
     With,
-
     New,
     This,
     Super,
-
     Class,
-
     Extends,
-
     Export,
     Import,
-
-    /// Spec says this might be identifier.
     Yield,
-
     In,
     InstanceOf,
-
     TypeOf,
-
     Void,
-
     Delete,
-
     Null,
     True,
     False,
 
+    Async,
+    As,
+    From,
+    Of,
+    Static,
+    Target,
+    Asserts,
+    Implements,
+    Is,
+    Keyof,
+    Unique,
+    Object,
+    Global,
+    Enum,
+    Readonly,
+    Abstract,
+    Infer,
+    Any,
+    Boolean,
+    Bigint,
+    Intrinsic,
+    Never,
+    Number,
+    String,
+    Symbol,
+    Unknown,
+    Interface,
+    Declare,
+    Undefined,
+    Meta,
+    Type,
+    Assert,
+    Get,
+    Set,
+    Public,
+    Protected,
+    Private,
+    Package,
+    Override,
+    // --End--
     Ident,
 
     /// '=>'
@@ -162,16 +187,12 @@ pub enum Token {
     BitXorAssign,
     /// `&=`
     BitAndAssign,
-
     /// `**=`
     ExpAssign,
-
     /// `&&=`
     AndAssign,
-
     /// `||=`
     OrAssign,
-
     /// `??=`
     NullishAssign,
 
@@ -200,47 +221,6 @@ pub enum Token {
     BigInt,
 
     Error,
-
-    //
-    Async,
-    As,
-    From,
-    Of,
-    Static,
-    Target,
-    Asserts,
-    Implements,
-    Is,
-    Keyof,
-    Unique,
-    Object,
-    Global,
-    Enum,
-    Readonly,
-    Abstract,
-    Infer,
-    Any,
-    Boolean,
-    Bigint,
-    Intrinsic,
-    Never,
-    Number,
-    String,
-    Symbol,
-    Unknown,
-    Interface,
-    Declare,
-    Undefined,
-    Meta,
-    Type,
-    Assert,
-    Get,
-    Set,
-    Public,
-    Protected,
-    Private,
-    Package,
-    Override,
 
     Eof,
 }
