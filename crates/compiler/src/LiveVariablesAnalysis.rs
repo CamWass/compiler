@@ -37,23 +37,12 @@ pub struct LiveVariablesAnalysisResult {
 ///
 /// Due to the possibility of inner functions and closures, certain "local" variables can escape
 /// the function. These variables will be considered as global and they can be retrieved from `escaped_locals`.
-pub struct LiveVariablesAnalysis<'ast, 'a, T>
-where
-    T: FunctionLike,
-{
-    data_flow_analysis: DataFlowAnalysis<
-        'a,
-        Node<'ast>,
-        Inner<'ast, 'a, T>,
-        LiveVariableLattice,
-        LiveVariableJoinOp,
-    >,
+pub struct LiveVariablesAnalysis<'ast, 'a> {
+    data_flow_analysis:
+        DataFlowAnalysis<'a, Node<'ast>, Inner<'ast>, LiveVariableLattice, LiveVariableJoinOp>,
 }
 
-impl<'ast, 'a, T> LiveVariablesAnalysis<'ast, 'a, T>
-where
-    T: FunctionLike,
-{
+impl<'ast, 'a> LiveVariablesAnalysis<'ast, 'a> {
     /// Live Variables Analysis using the ES6 scope creator. This analysis should only be done on
     /// function where jsScope is the function scope. If we call LiveVariablesAnalysis from the
     /// function scope of our pass, we can pass a null value for the JsScopeChild, but if we call it
@@ -62,7 +51,7 @@ where
     /// We call from the function scope when the pass requires us to traverse nodes beginning at the
     /// function parameters, and it from the function block scope when we are ignoring function
     /// parameters.
-    pub fn new(
+    pub fn new<T: FunctionLike>(
         cfg: ControlFlowGraph<Node<'ast>, LinearFlowState>,
         node_priorities: &'a [NodePriority],
         fn_scope: &'a T,
@@ -70,7 +59,16 @@ where
     ) -> Self {
         let inner = Inner {
             num_vars: all_vars_declared_in_function.ordered_vars.len(),
-            fn_scope,
+            simple_param_names: fn_scope
+                .params()
+                .filter_map(|p| {
+                    if let Pat::Ident(name) = p {
+                        Some(name.id.name)
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
 
             escaped: compute_escaped(
                 fn_scope,
@@ -115,12 +113,9 @@ where
 }
 
 #[derive(Debug)]
-struct Inner<'ast, 'a, T>
-where
-    T: FunctionLike,
-{
+struct Inner<'ast> {
     num_vars: usize,
-    fn_scope: &'a T,
+    simple_param_names: Vec<NameId>,
 
     escaped: FxHashSet<NameId>,
     // Maps the variable name to it's position
@@ -137,10 +132,7 @@ where
     cfg: ControlFlowGraph<Node<'ast>, LinearFlowState>,
 }
 
-impl<'ast, T> Inner<'ast, '_, T>
-where
-    T: FunctionLike,
-{
+impl<'ast> Inner<'ast> {
     fn get_var_index(&self, var: &NameId) -> Option<VarId> {
         self.scope_variables.get(var).copied()
     }
@@ -199,30 +191,22 @@ where
     ///
     /// See: https://tc39.github.io/ecma262/#sec-functiondeclarationinstantiation
     fn mark_all_parameters_escaped(&mut self) {
-        for param in self.fn_scope.params() {
-            if let Pat::Ident(name) = param {
-                self.escaped.insert(name.id.name);
-            }
+        for param in &self.simple_param_names {
+            self.escaped.insert(*param);
         }
     }
 }
 
-struct GenKillComputer<'ast, 'a, 'b, T>
-where
-    T: FunctionLike,
-{
-    gen_set: &'b mut BitSet<VarId>,
-    kill_set: &'b mut BitSet<VarId>,
+struct GenKillComputer<'ast, 'a> {
+    gen_set: &'a mut BitSet<VarId>,
+    kill_set: &'a mut BitSet<VarId>,
     conditional: bool,
-    analysis: &'b mut Inner<'ast, 'a, T>,
+    analysis: &'a mut Inner<'ast>,
     in_lhs: bool,
     in_destructuring: bool,
 }
 
-impl<'ast, T> Visit<'ast> for GenKillComputer<'ast, '_, '_, T>
-where
-    T: FunctionLike,
-{
+impl<'ast> Visit<'ast> for GenKillComputer<'ast, '_> {
     // TODO: this incorrectly assumes that the bodies of if/for etc are only
     // BlockStmts, but they can be any statement.
     // Also need to double check the handling of switch cases, which create CFG
@@ -502,10 +486,8 @@ where
     }
 }
 
-impl<'ast, T> DataFlowAnalysisInner<Node<'ast>, LiveVariableLattice, LiveVariableJoinOp>
-    for Inner<'ast, '_, T>
-where
-    T: FunctionLike,
+impl<'ast> DataFlowAnalysisInner<Node<'ast>, LiveVariableLattice, LiveVariableJoinOp>
+    for Inner<'ast>
 {
     fn add_lattice_element(&mut self, element: LiveVariableLattice) -> LatticeElementId {
         self.lattice_elements.push(element)
@@ -566,10 +548,7 @@ where
     }
 }
 
-impl<T> Index<LatticeElementId> for Inner<'_, '_, T>
-where
-    T: FunctionLike,
-{
+impl Index<LatticeElementId> for Inner<'_> {
     type Output = LiveVariableLattice;
 
     fn index(&self, index: LatticeElementId) -> &Self::Output {
@@ -589,11 +568,8 @@ impl LiveVariableJoinOp {
     }
 }
 
-impl<'ast, 'a, T> FlowJoiner<LiveVariableLattice, Inner<'ast, 'a, T>> for LiveVariableJoinOp
-where
-    T: FunctionLike,
-{
-    fn join_flow(&mut self, inner: &mut Inner<'ast, 'a, T>, input: LatticeElementId) {
+impl<'ast> FlowJoiner<LiveVariableLattice, Inner<'ast>> for LiveVariableJoinOp {
+    fn join_flow(&mut self, inner: &mut Inner<'ast>, input: LatticeElementId) {
         self.result
             .live_set
             .union(&inner.lattice_elements[input].live_set);

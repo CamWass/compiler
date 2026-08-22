@@ -679,7 +679,7 @@ fn assert_not_live_before_decl(src: &str, var: &str) {
 
 fn with_liveness<F>(src: &str, is_async: bool, mut op: F)
 where
-    F: FnMut(&mut LiveVariablesAnalysis<Function>, &mut ProgramData),
+    F: FnMut(&mut LiveVariablesAnalysis, &mut ProgramData),
 {
     // Set up test case
     let src = if is_async {
@@ -718,7 +718,7 @@ where
 }
 
 fn get_flow_state_at_x(
-    liveness: &LiveVariablesAnalysis<Function>,
+    liveness: &LiveVariablesAnalysis,
     program_data: &mut ProgramData,
 ) -> Option<LinearFlowState> {
     let mut v = FlowStateFinder {
@@ -753,7 +753,7 @@ where
     P: Fn(&'ast Stmt) -> Option<&'a LinearFlowState>,
 {
     #[allow(dead_code)]
-    liveness: &'a LiveVariablesAnalysis<'ast, 'a, Function>,
+    liveness: &'a LiveVariablesAnalysis<'ast, 'a>,
     flow_state: Option<&'a LinearFlowState>,
     predicate: P,
 }
@@ -800,7 +800,7 @@ where
  * syntax.
  */
 fn get_flow_state_at_declaration(
-    liveness: &LiveVariablesAnalysis<Function>,
+    liveness: &LiveVariablesAnalysis,
     name: &str,
     program_data: &mut ProgramData,
 ) -> Option<LinearFlowState> {
