@@ -288,15 +288,11 @@ impl Lexer<'_> {
     #[inline(never)]
     pub(super) fn emit_error(&mut self, start: BytePos, kind: SyntaxError) {
         let span = self.span(start);
-        self.emit_error_span(Span::new(span.lo, span.hi), kind);
-    }
 
-    #[cold]
-    #[inline(never)]
-    pub(super) fn emit_error_span(&mut self, span: Span, kind: SyntaxError) {
         let err = Error {
             error: Box::new((span, kind)),
         };
+
         self.errors.push(err);
     }
 
@@ -304,16 +300,6 @@ impl Lexer<'_> {
     #[inline(never)]
     pub(super) fn emit_strict_mode_error(&mut self, start: BytePos, kind: SyntaxError) {
         let span = self.span(start);
-        self.emit_strict_mode_error_span(Span::new(span.lo, span.hi), kind);
-    }
-
-    #[cold]
-    #[inline(never)]
-    pub(super) fn emit_strict_mode_error_span(&mut self, span: Span, kind: SyntaxError) {
-        if self.ctx.is_strict() {
-            self.emit_error_span(span, kind);
-            return;
-        }
 
         let err = Error {
             error: Box::new((span, kind)),
@@ -322,17 +308,11 @@ impl Lexer<'_> {
         self.add_strict_mode_error(err);
     }
 
+    /// Some code is valid in a strict mode script but invalid in a module.
     #[cold]
     #[inline(never)]
     pub(super) fn emit_module_mode_error(&mut self, start: BytePos, kind: SyntaxError) {
         let span = self.span(start);
-        self.emit_module_mode_error_span(Span::new(span.lo, span.hi), kind);
-    }
-
-    /// Some code is valid in a strict mode script but invalid in a module.
-    #[cold]
-    #[inline(never)]
-    pub(super) fn emit_module_mode_error_span(&mut self, span: Span, kind: SyntaxError) {
         let err = Error {
             error: Box::new((span, kind)),
         };
