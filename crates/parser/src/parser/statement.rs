@@ -137,6 +137,8 @@ impl Parser<'_> {
                     if !has_strict_mode_directive && stmt.is_use_strict(self) {
                         has_strict_mode_directive = true;
 
+                        self.input.convert_strict_mode_errors_to_standard_errors();
+
                         let ctx = Context {
                             strict: YesMaybe::Yes,
                             ..old_ctx

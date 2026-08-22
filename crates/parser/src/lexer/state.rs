@@ -46,14 +46,6 @@ impl Lexer<'_> {
     }
 
     pub fn set_ctx(&mut self, ctx: Context) {
-        if ctx.is_module() && !self.module_errors.is_empty() {
-            self.errors.append(&mut self.module_errors);
-        }
-
-        if ctx.is_strict() && !self.strict_errors.is_empty() {
-            self.errors.append(&mut self.strict_errors);
-        }
-
         self.ctx = ctx;
     }
 
@@ -145,6 +137,18 @@ impl Lexer<'_> {
                 &mut self.errors,
                 error,
             );
+        }
+    }
+
+    pub fn convert_strict_mode_errors_to_standard_errors(&mut self) {
+        if !self.strict_errors.is_empty() {
+            self.errors.append(&mut self.strict_errors);
+        }
+    }
+
+    pub fn convert_module_errors_to_standard_errors(&mut self) {
+        if !self.module_errors.is_empty() {
+            self.errors.append(&mut self.module_errors);
         }
     }
 }

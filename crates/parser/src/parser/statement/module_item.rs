@@ -34,6 +34,9 @@ impl Parser<'_> {
 
         if !self.ctx().is_module() {
             // Switch to module mode
+            self.input.convert_module_errors_to_standard_errors();
+            self.input.convert_strict_mode_errors_to_standard_errors();
+
             let ctx = Context {
                 module: YesNoMaybe::Yes,
                 strict: YesMaybe::Yes,
@@ -217,6 +220,9 @@ impl Parser<'_> {
     fn parse_export(&mut self) -> PResult<Option<ModuleDecl>> {
         if !self.ctx().is_module() {
             // Switch to module mode
+            self.input.convert_module_errors_to_standard_errors();
+            self.input.convert_strict_mode_errors_to_standard_errors();
+
             let ctx = Context {
                 module: YesNoMaybe::Yes,
                 strict: YesMaybe::Yes,

@@ -123,6 +123,12 @@ impl<'d> Parser<'d> {
     }
 
     pub fn parse_module(&mut self) -> PResult<Module> {
+        // The lexer scans the first token when the parser is created, so if
+        // that generated strict/module errors we need to convert them to
+        // standard errors before we continue parsing, since we now know we're
+        // parsing a module.
+        self.input.convert_module_errors_to_standard_errors();
+        self.input.convert_strict_mode_errors_to_standard_errors();
         let ctx = Context {
             module: YesNoMaybe::Yes,
             strict: YesMaybe::Yes,

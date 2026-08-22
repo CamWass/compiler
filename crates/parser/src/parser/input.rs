@@ -223,6 +223,14 @@ impl<'d> Buffer<'d> {
         self.iter.convert_strict_mode_errors_to_module_errors();
     }
 
+    pub(crate) fn convert_strict_mode_errors_to_standard_errors(&mut self) {
+        self.iter.convert_strict_mode_errors_to_standard_errors();
+    }
+
+    pub(crate) fn convert_module_errors_to_standard_errors(&mut self) {
+        self.iter.convert_module_errors_to_standard_errors();
+    }
+
     #[inline]
     pub(crate) fn set_expr_allowed(&mut self, allow: bool) {
         self.iter.set_expr_allowed(allow);
