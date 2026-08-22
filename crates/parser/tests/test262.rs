@@ -223,9 +223,13 @@ fn error_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
                 let path = dir.join(&file_name);
                 // Parse source
                 let _err = if module {
-                    parse_module(&path).expect_err("should fail, but parsed as")
+                    parse_module(&path)
+                        .map(|r| r.0)
+                        .expect_err("should fail, but parsed as")
                 } else {
-                    parse_script(&path).expect_err("should fail, but parsed as")
+                    parse_script(&path)
+                        .map(|r| r.0)
+                        .expect_err("should fail, but parsed as")
                 };
 
                 // if err
