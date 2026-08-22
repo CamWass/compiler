@@ -608,17 +608,7 @@ impl Parser<'_> {
 
                 return match i.name {
                     id_for_built_in!("get") => self.make_method(
-                        |parser| {
-                            let params = parser.parse_formal_params()?;
-
-                            // TODO: I think this iterates all of the params.
-                            // A short-circuting iter method might be better
-                            if params.iter().filter(|param| is_not_this(param)).count() != 0 {
-                                parser.emit_err(key_span, SyntaxError::GetterParam);
-                            }
-
-                            Ok(params)
-                        },
+                        Parser::parse_formal_params,
                         MakeMethodArgs {
                             start,
                             is_abstract,
@@ -630,24 +620,7 @@ impl Parser<'_> {
                         },
                     ),
                     id_for_built_in!("set") => self.make_method(
-                        |parser| {
-                            let params = parser.parse_formal_params()?;
-
-                            if params.iter().filter(|param| is_not_this(param)).count() != 1 {
-                                parser.emit_err(key_span, SyntaxError::SetterParam);
-                            }
-
-                            if !params.is_empty() {
-                                if let Pat::Rest(first) = &params[0].pat {
-                                    parser.emit_err(
-                                        get_span!(parser, first.node_id),
-                                        SyntaxError::RestPatInSetter,
-                                    );
-                                }
-                            }
-
-                            Ok(params)
-                        },
+                        Parser::parse_formal_params,
                         MakeMethodArgs {
                             start,
                             is_abstract,
@@ -1005,6 +978,24 @@ impl Parser<'_> {
             return Ok(None);
         };
 
+        if kind == MethodKind::Getter {
+            for param in &function.params {
+                self.emit_err(get_span!(self, param.node_id), SyntaxError::GetterParam);
+            }
+        }
+
+        if kind == MethodKind::Setter {
+            if function.params.len() != 1 {
+                self.emit_err(get_span!(self, key.node_id()), SyntaxError::SetterParam);
+            }
+
+            if !function.params.is_empty() {
+                if let Pat::Rest(first) = &function.params[0].pat {
+                    self.emit_err(get_span!(self, first.node_id), SyntaxError::RestPatInSetter);
+                }
+            }
+        }
+
         Ok(Some(match key {
             Key::PrivateName(key) => ClassMember::PrivateMethod(PrivateMethod {
                 node_id: node_id!(self, self.span(start)),
@@ -1182,19 +1173,6 @@ fn is_constructor(key: &Key) -> bool {
             value: js_word!("constructor"),
             ..
         }))
-    )
-}
-
-pub(crate) fn is_not_this(param: &Param) -> bool {
-    !matches!(
-        param.pat,
-        Pat::Ident(BindingIdent {
-            id: Ident {
-                name: id_for_built_in!("this"),
-                ..
-            },
-            ..
-        })
     )
 }
 

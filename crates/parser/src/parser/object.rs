@@ -2,7 +2,7 @@
 
 use crate::context::ContextFlags;
 
-use super::{class_and_fn::is_not_this, *};
+use super::*;
 use util::AssignProps;
 
 impl Parser<'_> {
@@ -196,23 +196,15 @@ impl Parser<'_> {
 
                 match ident.name {
                     id_for_built_in!("get") => self
-                        .parse_fn_args_body(
-                            start,
-                            |parser| {
-                                let params = parser.parse_formal_params()?;
+                        .parse_fn_args_body(start, Parser::parse_formal_params, false, false)
+                        .map(|Function { body, params, .. }| {
+                            for param in &params {
+                                self.emit_err(
+                                    get_span!(self, param.node_id),
+                                    SyntaxError::GetterParam,
+                                );
+                            }
 
-                                // TODO: I think this iterates all of the params.
-                                // A short-circuting iter method might be better
-                                if params.iter().filter(|p| is_not_this(p)).count() != 0 {
-                                    parser.emit_err(key_span, SyntaxError::GetterParam);
-                                }
-
-                                Ok(params)
-                            },
-                            false,
-                            false,
-                        )
-                        .map(|Function { body, .. }| {
                             if self.input.syntax().typescript()
                                 && self.input.target() == JscTarget::Es3
                             {
@@ -226,37 +218,30 @@ impl Parser<'_> {
                             })
                         }),
                     id_for_built_in!("set") => self
-                        .parse_fn_args_body(
-                            start,
-                            |parser| {
-                                let params = parser.parse_formal_params()?;
-
-                                if params.iter().filter(|p| is_not_this(p)).count() != 1 {
-                                    parser.emit_err(key_span, SyntaxError::SetterParam);
-                                }
-
-                                if !params.is_empty() {
-                                    if let Pat::Rest(first) = &params[0].pat {
-                                        parser.emit_err(
-                                            get_span!(parser, first.node_id),
-                                            SyntaxError::RestPatInSetter,
-                                        );
-                                    }
-                                }
-
-                                if parser.input.syntax().typescript()
-                                    && parser.input.target() == JscTarget::Es3
-                                {
-                                    parser.emit_err(key_span, SyntaxError::TS1056);
-                                }
-
-                                Ok(params)
-                            },
-                            false,
-                            false,
-                        )
+                        .parse_fn_args_body(start, Parser::parse_formal_params, false, false)
                         .map(|Function { params, body, .. }| {
-                            // debug_assert_eq!(params.len(), 1);
+                            if params.len() != 1 {
+                                self.emit_err(
+                                    get_span!(self, key.node_id()),
+                                    SyntaxError::SetterParam,
+                                );
+                            }
+
+                            if !params.is_empty() {
+                                if let Pat::Rest(first) = &params[0].pat {
+                                    self.emit_err(
+                                        get_span!(self, first.node_id),
+                                        SyntaxError::RestPatInSetter,
+                                    );
+                                }
+                            }
+
+                            if self.input.syntax().typescript()
+                                && self.input.target() == JscTarget::Es3
+                            {
+                                self.emit_err(key_span, SyntaxError::TS1056);
+                            }
+
                             Prop::Setter(SetterProp {
                                 node_id: node_id!(self, self.span(start)),
                                 key,
