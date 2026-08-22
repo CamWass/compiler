@@ -146,7 +146,7 @@ impl Parser<'_> {
             && !self.input.had_line_break_before_cur()
             && self.eat(tok!("assert"))
         {
-            match *self.parse_object::<Box<Expr>>(&mut AssignProps::Emit)? {
+            match *self.parse_object_lit(&mut AssignProps::Emit)? {
                 Expr::Object(v) => Some(v),
                 _ => unreachable!(),
             }
@@ -604,7 +604,7 @@ impl Parser<'_> {
             && !self.input.had_line_break_before_cur()
             && self.eat(tok!("assert"))
         {
-            match *self.parse_object::<Box<Expr>>(&mut AssignProps::Emit)? {
+            match *self.parse_object_lit(&mut AssignProps::Emit)? {
                 Expr::Object(v) => Some(v),
                 _ => unreachable!(),
             }

@@ -42,7 +42,7 @@ impl Parser<'_> {
             tok!("yield") => self.parse_binding_ident().map(Pat::Ident),
             t if t.is_word() => self.parse_binding_ident().map(Pat::Ident),
             tok!('[') => self.parse_array_binding_pat(),
-            tok!('{') => self.parse_object(&mut AssignProps::Ignore),
+            tok!('{') => self.parse_object_pat(),
             // tok!('(') => {
             //     bump!(self);
             //     let pat = self.parse_binding_pat_or_ident()?;

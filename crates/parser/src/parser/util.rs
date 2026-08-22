@@ -3,12 +3,6 @@ use crate::context::{Context, ContextFlags, YesMaybe};
 use common::Span;
 use std::ops::{Deref, DerefMut};
 
-pub trait ParseObject<Obj> {
-    type Prop;
-    fn make_object(&mut self, span: Span, props: Vec<Self::Prop>) -> PResult<Obj>;
-    fn parse_object_prop(&mut self, assign_props: &mut AssignProps) -> PResult<Self::Prop>;
-}
-
 pub enum AssignProps {
     /// We're parsing an expression or a pattern. Buffer locations of AssignProps so
     /// we can emit errors for them if we later realise we're parsing an expression.

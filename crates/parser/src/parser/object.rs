@@ -2,15 +2,14 @@
 
 use crate::context::ContextFlags;
 
-use super::{class_and_fn::is_not_this, util::ParseObject, *};
+use super::{class_and_fn::is_not_this, *};
 use util::AssignProps;
 
 impl Parser<'_> {
-    /// Parse a object literal or object pattern.
-    pub(super) fn parse_object<T>(&mut self, assign_props: &mut AssignProps) -> PResult<T>
-    where
-        Self: ParseObject<T>,
-    {
+    pub(super) fn parse_object_lit(
+        &mut self,
+        assign_props: &mut AssignProps,
+    ) -> PResult<Box<Expr>> {
         let start = self.input.cur_pos();
         self.assert_and_bump(tok!('{'));
 
@@ -28,108 +27,18 @@ impl Parser<'_> {
                 }
             }
 
-            let prop = self.parse_object_prop(assign_props)?;
+            let prop = self.parse_object_lit_prop(assign_props)?;
             props.push(prop);
         }
 
-        self.make_object(self.span(start), props)
-    }
-
-    /// spec: 'PropertyName'
-    pub(super) fn parse_prop_name(&mut self) -> PResult<PropName> {
-        self.with_ctx(Context {
-            flags: self.ctx().flags | ContextFlags::in_property_name,
-            ..self.ctx()
-        })
-        .parse_with(|parser| {
-            let start = parser.input.cur_pos();
-
-            let v = match parser.input.cur() {
-                Token::Str => {
-                    let value = parser.input.expect_str_token_and_bump();
-                    PropName::Str(Str {
-                        node_id: node_id!(parser, parser.span(start)),
-                        value,
-                    })
-                }
-                Token::Num => {
-                    let value = parser.input.expect_num_token_and_bump();
-                    PropName::Num(Number {
-                        node_id: node_id!(parser, parser.span(start)),
-                        value,
-                    })
-                }
-                Token::BigInt => {
-                    let value = parser.input.expect_big_int_token_and_bump();
-                    PropName::BigInt(BigInt {
-                        node_id: node_id!(parser, parser.span(start)),
-                        value,
-                    })
-                }
-                t if t.is_word() => {
-                    let w = parser.input.expect_word_token_and_bump();
-
-                    PropName::Ident(parser.new_ident(w, parser.span(start)))
-                }
-                tok!('[') => {
-                    parser.input.bump();
-                    let inner_start = parser.input.cur_pos();
-
-                    let mut expr = parser
-                        .include_in_expr(true)
-                        .parse_assignment_expr(&mut AssignProps::Emit)?
-                        .unwrap();
-
-                    if parser.syntax().typescript() && parser.is(tok!(',')) {
-                        let mut exprs = vec![*expr];
-
-                        while parser.eat(tok!(',')) {
-                            exprs.push(
-                                *parser
-                                    .include_in_expr(true)
-                                    .parse_assignment_expr(&mut AssignProps::Emit)?
-                                    .unwrap(),
-                            );
-                        }
-
-                        parser.emit_err(parser.span(inner_start), SyntaxError::TS1171);
-
-                        expr = Box::new(Expr::Seq(SeqExpr {
-                            node_id: node_id!(parser, parser.span(inner_start)),
-                            exprs,
-                        }));
-                    }
-
-                    expect!(parser, ']');
-
-                    PropName::Computed(ComputedPropName {
-                        node_id: node_id!(parser, parser.span(start)),
-                        expr,
-                    })
-                }
-                _ => unexpected!(
-                    parser,
-                    "identifier, string literal, numeric literal or [ for the computed key"
-                ),
-            };
-
-            Ok(v)
-        })
-    }
-}
-
-impl ParseObject<Box<Expr>> for Parser<'_> {
-    type Prop = Prop;
-
-    fn make_object(&mut self, span: Span, props: Vec<Self::Prop>) -> PResult<Box<Expr>> {
         Ok(Box::new(Expr::Object(ObjectLit {
-            node_id: node_id!(self, span),
+            node_id: node_id!(self, self.span(start)),
             props,
         })))
     }
 
     /// spec: 'PropertyDefinition'
-    fn parse_object_prop(&mut self, assign_props: &mut AssignProps) -> PResult<Self::Prop> {
+    fn parse_object_lit_prop(&mut self, assign_props: &mut AssignProps) -> PResult<Prop> {
         let start = self.input.cur_pos();
         // Parse as 'MethodDefinition'
 
@@ -392,12 +301,31 @@ impl ParseObject<Box<Expr>> for Parser<'_> {
             }
         }
     }
-}
 
-impl ParseObject<Pat> for Parser<'_> {
-    type Prop = ObjectPatProp;
+    pub(super) fn parse_object_pat(&mut self) -> PResult<Pat> {
+        let start = self.input.cur_pos();
+        self.assert_and_bump(tok!('{'));
 
-    fn make_object(&mut self, span: Span, props: Vec<Self::Prop>) -> PResult<Pat> {
+        let mut props = vec![];
+
+        let mut first = true;
+        while !self.eat(tok!('}')) {
+            // Handle comma
+            if first {
+                first = false;
+            } else {
+                expect!(self, ',');
+                if self.eat(tok!('}')) {
+                    break;
+                }
+            }
+
+            let prop = self.parse_object_pat_prop()?;
+            props.push(prop);
+        }
+
+        let span = self.span(start);
+
         let len = props.len();
         for (i, p) in props.iter().enumerate() {
             if i == len - 1 {
@@ -437,7 +365,7 @@ impl ParseObject<Pat> for Parser<'_> {
     }
 
     /// Production 'BindingProperty'
-    fn parse_object_prop(&mut self, _assign_props: &mut AssignProps) -> PResult<Self::Prop> {
+    fn parse_object_pat_prop(&mut self) -> PResult<ObjectPatProp> {
         let start = self.input.cur_pos();
 
         if self.eat(tok!("...")) {
@@ -507,5 +435,87 @@ impl ParseObject<Pat> for Parser<'_> {
                 key: PropName::Ident(key),
             }))
         }
+    }
+
+    /// spec: 'PropertyName'
+    pub(super) fn parse_prop_name(&mut self) -> PResult<PropName> {
+        self.with_ctx(Context {
+            flags: self.ctx().flags | ContextFlags::in_property_name,
+            ..self.ctx()
+        })
+        .parse_with(|parser| {
+            let start = parser.input.cur_pos();
+
+            let v = match parser.input.cur() {
+                Token::Str => {
+                    let value = parser.input.expect_str_token_and_bump();
+                    PropName::Str(Str {
+                        node_id: node_id!(parser, parser.span(start)),
+                        value,
+                    })
+                }
+                Token::Num => {
+                    let value = parser.input.expect_num_token_and_bump();
+                    PropName::Num(Number {
+                        node_id: node_id!(parser, parser.span(start)),
+                        value,
+                    })
+                }
+                Token::BigInt => {
+                    let value = parser.input.expect_big_int_token_and_bump();
+                    PropName::BigInt(BigInt {
+                        node_id: node_id!(parser, parser.span(start)),
+                        value,
+                    })
+                }
+                t if t.is_word() => {
+                    let w = parser.input.expect_word_token_and_bump();
+
+                    PropName::Ident(parser.new_ident(w, parser.span(start)))
+                }
+                tok!('[') => {
+                    parser.input.bump();
+                    let inner_start = parser.input.cur_pos();
+
+                    let mut expr = parser
+                        .include_in_expr(true)
+                        .parse_assignment_expr(&mut AssignProps::Emit)?
+                        .unwrap();
+
+                    if parser.syntax().typescript() && parser.is(tok!(',')) {
+                        let mut exprs = vec![*expr];
+
+                        while parser.eat(tok!(',')) {
+                            exprs.push(
+                                *parser
+                                    .include_in_expr(true)
+                                    .parse_assignment_expr(&mut AssignProps::Emit)?
+                                    .unwrap(),
+                            );
+                        }
+
+                        parser.emit_err(parser.span(inner_start), SyntaxError::TS1171);
+
+                        expr = Box::new(Expr::Seq(SeqExpr {
+                            node_id: node_id!(parser, parser.span(inner_start)),
+                            exprs,
+                        }));
+                    }
+
+                    expect!(parser, ']');
+
+                    PropName::Computed(ComputedPropName {
+                        node_id: node_id!(parser, parser.span(start)),
+                        expr,
+                    })
+                }
+                _ => unexpected!(
+                    parser,
+                    "identifier, string literal, numeric literal or [ for the computed key"
+                ),
+            };
+
+            Ok(v)
+        })
     }
 }

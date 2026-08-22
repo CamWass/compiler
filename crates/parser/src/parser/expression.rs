@@ -313,7 +313,7 @@ impl Parser<'_> {
             }
 
             tok!('{') => {
-                return self.parse_object::<Box<Expr>>(assign_props).map(From::from);
+                return self.parse_object_lit(assign_props).map(From::from);
             }
 
             // Handle FunctionExpression and GeneratorExpression
