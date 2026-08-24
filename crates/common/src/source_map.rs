@@ -500,14 +500,12 @@ impl SourceMap {
         })
     }
 
-    /// Extract the source surrounding the given `Span` using the
-    /// `extract_source` function. The extract function takes three
-    /// arguments: a string slice containing the source, an index in
-    /// the slice for the beginning of the span and an index in the slice for
-    /// the end of the span.
-    fn span_to_source<F>(&self, sp: Span, extract_source: F) -> Result<String, SpanSnippetError>
+    /// The `op` function takes three arguments: a string slice containing the
+    /// source, an index in the slice for the beginning of the span and an index
+    /// in the slice for the end of the span.
+    fn span_to_source<F, T>(&self, sp: Span, op: F) -> Result<T, SpanSnippetError>
     where
-        F: Fn(&str, usize, usize) -> String,
+        F: FnOnce(&str, usize, usize) -> T,
     {
         if sp.lo() > sp.hi() {
             return Err(SpanSnippetError::IllFormedSpan(sp));
@@ -538,85 +536,34 @@ impl SourceMap {
             }
 
             let src = &local_begin.sf.src;
-            Ok(extract_source(src, start_index, end_index))
+            Ok(op(src, start_index, end_index))
         }
     }
 
-    /// Return the source snippet as `String` corresponding to the given `Span`
-    pub fn span_to_snippet(&self, sp: Span) -> Result<String, SpanSnippetError> {
+    /// Access the source snippet corresponding to the given `Span`
+    pub fn with_span_snippet<T>(
+        &self,
+        sp: Span,
+        op: impl FnOnce(&str) -> T,
+    ) -> Result<T, SpanSnippetError> {
         self.span_to_source(sp, |src, start_index, end_index| {
-            src[start_index..end_index].to_string()
+            op(&src[start_index..end_index])
         })
-    }
-
-    pub fn span_to_margin(&self, sp: Span) -> Option<usize> {
-        match self.span_to_prev_source(sp) {
-            Err(_) => None,
-            Ok(source) => source
-                .split('\n')
-                .last()
-                .map(|last_line| last_line.len() - last_line.trim_start().len()),
-        }
-    }
-
-    /// Return the source snippet as `String` before the given `Span`
-    pub fn span_to_prev_source(&self, sp: Span) -> Result<String, SpanSnippetError> {
-        self.span_to_source(sp, |src, start_index, _| src[..start_index].to_string())
-    }
-
-    /// Return the source snippet as `String` after the given `Span`
-    pub fn span_to_next_source(&self, sp: Span) -> Result<String, SpanSnippetError> {
-        self.span_to_source(sp, |src, _, end_index| src[end_index..].to_string())
-    }
-
-    /// Extend the given `Span` to just after the previous occurrence of `c`.
-    /// Return the same span if no character could be found or if an error
-    /// occurred while retrieving the code snippet.
-    pub fn span_extend_to_prev_char(&self, sp: Span, c: char) -> Span {
-        if let Ok(prev_source) = self.span_to_prev_source(sp) {
-            let prev_source = prev_source.rsplit(c).next().unwrap_or("").trim_start();
-            if !prev_source.is_empty() && !prev_source.contains('\n') {
-                return sp.with_lo(BytePos(sp.lo().0 - prev_source.len() as u32));
-            }
-        }
-
-        sp
-    }
-
-    /// Extend the given `Span` to just after the previous occurrence of `pat`
-    /// when surrounded by whitespace. Return the same span if no character
-    /// could be found or if an error occurred while retrieving the code
-    /// snippet.
-    pub fn span_extend_to_prev_str(&self, sp: Span, pat: &str, accept_newlines: bool) -> Span {
-        // assure that the pattern is delimited, to avoid the following
-        //     fn my_fn()
-        //           ^^^^ returned span without the check
-        //     ---------- correct span
-        for ws in &[" ", "\t", "\n"] {
-            let pat = pat.to_owned() + ws;
-            if let Ok(prev_source) = self.span_to_prev_source(sp) {
-                let prev_source = prev_source.rsplit(&pat).next().unwrap_or("").trim_start();
-                if !prev_source.is_empty() && (!prev_source.contains('\n') || accept_newlines) {
-                    return sp.with_lo(BytePos(sp.lo().0 - prev_source.len() as u32));
-                }
-            }
-        }
-
-        sp
     }
 
     /// Given a `Span`, try to get a shorter span ending before the first
     /// occurrence of `c` `char`
     pub fn span_until_char(&self, sp: Span, c: char) -> Span {
-        match self.span_to_snippet(sp) {
-            Ok(snippet) => {
-                let snippet = snippet.split(c).next().unwrap_or("").trim_end();
-                if !snippet.is_empty() && !snippet.contains('\n') {
-                    sp.with_hi(BytePos(sp.lo().0 + snippet.len() as u32))
-                } else {
-                    sp
-                }
+        let res = self.with_span_snippet(sp, |snippet| {
+            let snippet = snippet.split(c).next().unwrap_or("").trim_end();
+            if !snippet.is_empty() && !snippet.contains('\n') {
+                sp.with_hi(BytePos(sp.lo().0 + snippet.len() as u32))
+            } else {
+                sp
             }
+        });
+        match res {
+            Ok(res) => res,
             _ => sp,
         }
     }
@@ -624,12 +571,13 @@ impl SourceMap {
     /// Given a `Span`, try to get a shorter span ending just after the first
     /// occurrence of `char` `c`.
     pub fn span_through_char(&self, sp: Span, c: char) -> Span {
-        if let Ok(snippet) = self.span_to_snippet(sp) {
+        self.with_span_snippet(sp, |snippet| {
             if let Some(offset) = snippet.find(c) {
                 return sp.with_hi(BytePos(sp.lo().0 + (offset + c.len_utf8()) as u32));
             }
-        }
-        sp
+            sp
+        })
+        .unwrap_or(sp)
     }
 
     /// Given a `Span`, get a new `Span` covering the first token and all its
@@ -663,7 +611,7 @@ impl SourceMap {
     where
         P: for<'r> FnMut(&'r char) -> bool,
     {
-        if let Ok(snippet) = self.span_to_snippet(sp) {
+        self.with_span_snippet(sp, |snippet| {
             let offset = snippet
                 .chars()
                 .take_while(predicate)
@@ -671,9 +619,8 @@ impl SourceMap {
                 .sum::<usize>();
 
             sp.with_hi(BytePos(sp.lo().0 + (offset as u32)))
-        } else {
-            sp
-        }
+        })
+        .unwrap_or(sp)
     }
 
     pub fn def_span(&self, sp: Span) -> Span {
@@ -911,91 +858,6 @@ impl SourceMap {
 
     pub fn count_lines(&self) -> usize {
         self.files().iter().fold(0, |a, f| a + f.count_lines())
-    }
-
-    pub fn generate_fn_name_span(&self, span: Span) -> Option<Span> {
-        let prev_span = self.span_extend_to_prev_str(span, "fn", true);
-        self.span_to_snippet(prev_span)
-            .map(|snippet| {
-                let len = snippet
-                    .find(|c: char| !c.is_alphanumeric() && c != '_')
-                    .expect("no label after fn");
-                prev_span.with_hi(BytePos(prev_span.lo().0 + len as u32))
-            })
-            .ok()
-    }
-
-    /// Take the span of a type parameter in a function signature and try to
-    /// generate a span for the function name (with generics) and a new
-    /// snippet for this span with the pointed type parameter as a new local
-    /// type parameter.
-    ///
-    /// For instance:
-    /// ```rust,ignore (pseudo-Rust)
-    /// // Given span
-    /// fn my_function(param: T)
-    /// //                    ^ Original span
-    ///
-    /// // Result
-    /// fn my_function(param: T)
-    /// // ^^^^^^^^^^^ Generated span with snippet `my_function<T>`
-    /// ```
-    ///
-    /// Attention: The method used is very fragile since it essentially
-    /// duplicates the work of the parser. If you need to use this function
-    /// or something similar, please consider updating the source_map
-    /// functions and this function to something more robust.
-    pub fn generate_local_type_param_snippet(&self, span: Span) -> Option<(Span, String)> {
-        // Try to extend the span to the previous "fn" keyword to retrieve the function
-        // signature
-        let sugg_span = self.span_extend_to_prev_str(span, "fn", false);
-        if sugg_span != span {
-            if let Ok(snippet) = self.span_to_snippet(sugg_span) {
-                // Consume the function name
-                let mut offset = snippet
-                    .find(|c: char| !c.is_alphanumeric() && c != '_')
-                    .expect("no label after fn");
-
-                // Consume the generics part of the function signature
-                let mut bracket_counter = 0;
-                let mut last_char = None;
-                for c in snippet[offset..].chars() {
-                    match c {
-                        '<' => bracket_counter += 1,
-                        '>' => bracket_counter -= 1,
-                        '(' => {
-                            if bracket_counter == 0 {
-                                break;
-                            }
-                        }
-                        _ => {}
-                    }
-                    offset += c.len_utf8();
-                    last_char = Some(c);
-                }
-
-                // Adjust the suggestion span to encompass the function name with its generics
-                let sugg_span = sugg_span.with_hi(BytePos(sugg_span.lo().0 + offset as u32));
-
-                // Prepare the new suggested snippet to append the type parameter that triggered
-                // the error in the generics of the function signature
-                let mut new_snippet = if last_char == Some('>') {
-                    format!("{}, ", &snippet[..(offset - '>'.len_utf8())])
-                } else {
-                    format!("{}<", &snippet[..offset])
-                };
-                new_snippet.push_str(
-                    &self
-                        .span_to_snippet(span)
-                        .unwrap_or_else(|_| "T".to_string()),
-                );
-                new_snippet.push('>');
-
-                return Some((sugg_span, new_snippet));
-            }
-        }
-
-        None
     }
 
     #[cfg(feature = "sourcemap")]
@@ -1330,7 +1192,10 @@ mod tests {
         let span = span_from_selection(inputtext, selection);
 
         // check that we are extracting the text we thought we were extracting
-        assert_eq!(&sm.span_to_snippet(span).unwrap(), "BB\nCCC\nDDDDD");
+        assert_eq!(
+            &sm.with_span_snippet(span, |s| s.to_string()).unwrap(),
+            "BB\nCCC\nDDDDD"
+        );
 
         // check that span_to_lines gives us the complete result with the lines/cols we
         // expected
@@ -1360,7 +1225,7 @@ mod tests {
         // Test span_to_snippet for a span ending at the end of source_file
         let sm = init_source_map();
         let span = Span::new(BytePos(12), BytePos(23));
-        let snippet = sm.span_to_snippet(span);
+        let snippet = sm.with_span_snippet(span, |s| s.to_string());
 
         assert_eq!(snippet, Ok("second line".to_string()));
     }

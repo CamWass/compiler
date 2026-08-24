@@ -2087,8 +2087,8 @@ impl<'a> Emitter<'a> {
                     if parent_node.is_dummy() {
                         false
                     } else {
-                        match self.cm.span_to_snippet(parent_node) {
-                            Ok(snippet) => {
+                        self.cm
+                            .with_span_snippet(parent_node, |snippet| {
                                 if snippet.len() < 3 {
                                     false
                                 } else {
@@ -2097,9 +2097,8 @@ impl<'a> Emitter<'a> {
                                         .trim()
                                         .ends_with(',')
                                 }
-                            }
-                            _ => false,
-                        }
+                            })
+                            .unwrap_or(false)
                     }
                 };
 
