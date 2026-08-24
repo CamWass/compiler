@@ -49,6 +49,12 @@ impl<'a> JsWriter<'a> {
         Ok(())
     }
 
+    fn raw_write_byte(&mut self, data: u8) -> Result {
+        self.wr.push(data as char);
+        self.line_pos += 1;
+        Ok(())
+    }
+
     fn write(&mut self, span: Option<Span>, data: &str) -> Result {
         if !data.is_empty() {
             if self.line_start {
@@ -68,6 +74,29 @@ impl<'a> JsWriter<'a> {
                 if !span.is_dummy() {
                     self.srcmap(span.hi());
                 }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn write_byte(&mut self, span: Option<Span>, data: u8) -> Result {
+        if self.line_start {
+            self.write_indent_string()?;
+            self.line_start = false;
+        }
+
+        if let Some(span) = span {
+            if !span.is_dummy() {
+                self.srcmap(span.lo());
+            }
+        }
+
+        self.raw_write_byte(data)?;
+
+        if let Some(span) = span {
+            if !span.is_dummy() {
+                self.srcmap(span.hi());
             }
         }
 
@@ -168,17 +197,22 @@ impl JsWriter<'_> {
         Ok(())
     }
 
-    pub(super) fn write_punct(&mut self, span: Option<Span>, s: &'static str) -> Result {
-        match s {
-            "\"" | "'" | "[" | "!" | "/" | "{" | "(" | "~" | "-" | "+" | "#" | "`" | "*" => {
-                self.commit_pending_semi()?;
-            }
-
-            _ => {
-                self.pending_semi = None;
-            }
+    pub(super) fn write_punct(&mut self, span: Option<Span>, s: Punct) -> Result {
+        if s.commit_pending_semi() {
+            self.commit_pending_semi()?;
+        } else {
+            self.pending_semi = None;
         }
-        self.write(span, s)?;
+        let byte = PUNCT_MAP[s as usize];
+        self.write_byte(span, byte)?;
+        Ok(())
+    }
+
+    pub(super) fn write_multi_byte_punct(&mut self, punct: &[Punct]) -> Result {
+        for &punct in punct {
+            let byte = PUNCT_MAP[punct as usize];
+            self.write_byte(None, byte)?;
+        }
         Ok(())
     }
 
@@ -219,3 +253,74 @@ fn compute_line_starts(s: &str) -> Vec<usize> {
     res.push(line_start);
     res
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Punct {
+    // --- Start commit_pending_semi ---
+    /// "
+    DoubleQuote,
+    /// '
+    Quote,
+    /// [
+    LBracket,
+    /// !
+    Bang,
+    /// /
+    ForwardSlash,
+    /// {
+    LBrace,
+    /// (
+    LParen,
+    /// ~
+    Tilde,
+    /// -
+    Minus,
+    /// +
+    Plus,
+    /// #
+    Hash,
+    /// `
+    BackTick,
+    /// *
+    Asterisk,
+    // --- End commit_pending_semi ---
+    /// =
+    Eq,
+    /// <
+    Lt,
+    /// }
+    RBrace,
+    /// )
+    RParen,
+    /// >
+    Gt,
+    /// ]
+    RBracket,
+    /// :
+    Colon,
+    /// .
+    Dot,
+    /// ,
+    Comma,
+    /// ?
+    QuestionMark,
+    /// ;
+    Semi,
+    /// |
+    Bar,
+    /// &
+    Ampersand,
+    /// $
+    Dollar,
+}
+
+impl Punct {
+    fn commit_pending_semi(&self) -> bool {
+        *self <= Self::Asterisk
+    }
+}
+
+const PUNCT_MAP: [u8; 27] = [
+    b'"', b'\'', b'[', b'!', b'/', b'{', b'(', b'~', b'-', b'+', b'#', b'`', b'*', b'=', b'<',
+    b'}', b')', b'>', b']', b':', b'.', b',', b'?', b';', b'|', b'&', b'$',
+];

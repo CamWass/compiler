@@ -1,6 +1,9 @@
 #![allow(non_upper_case_globals)]
 use bitflags::bitflags;
 
+use crate::text_writer::Punct;
+
+// TODO: a bunch of these are unused (were only used for TS I think).
 bitflags! {
     /// Represents the formatting rule for a list of nodes.
     #[derive(PartialEq, Eq, Copy, Clone)]
@@ -147,21 +150,21 @@ bitflags! {
 }
 
 impl ListFormat {
-    pub fn opening_bracket(self) -> &'static str {
+    pub fn opening_bracket(self) -> Punct {
         match self & ListFormat::BracketsMask {
-            ListFormat::Braces => "{",
-            ListFormat::Parenthesis => "(",
-            ListFormat::AngleBrackets => "<",
-            ListFormat::SquareBrackets => "[",
+            ListFormat::Braces => Punct::LBrace,
+            ListFormat::Parenthesis => Punct::LParen,
+            ListFormat::AngleBrackets => Punct::Lt,
+            ListFormat::SquareBrackets => Punct::LBracket,
             _ => unreachable!(),
         }
     }
-    pub fn closing_bracket(self) -> &'static str {
+    pub fn closing_bracket(self) -> Punct {
         match self & ListFormat::BracketsMask {
-            ListFormat::Braces => "}",
-            ListFormat::Parenthesis => ")",
-            ListFormat::AngleBrackets => ">",
-            ListFormat::SquareBrackets => "]",
+            ListFormat::Braces => Punct::RBrace,
+            ListFormat::Parenthesis => Punct::RParen,
+            ListFormat::AngleBrackets => Punct::Gt,
+            ListFormat::SquareBrackets => Punct::RBracket,
             _ => unreachable!(),
         }
     }

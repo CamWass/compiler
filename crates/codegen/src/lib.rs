@@ -1,5 +1,7 @@
 #![deny(unused)]
 
+use crate::text_writer::Punct;
+
 pub use self::config::Config;
 use self::{list::ListFormat, util::SourceMapperExt};
 use ast::*;
@@ -1652,8 +1654,20 @@ impl<'a> Emitter<'a> {
                 keyword!(self, node.op.as_str());
                 true
             }
-            op!(unary, "+") | op!(unary, "-") | op!("!") | op!("~") => {
-                punct!(self, node.op.as_str());
+            op!(unary, "+") => {
+                punct!(self, "+");
+                false
+            }
+            op!(unary, "-") => {
+                punct!(self, "-");
+                false
+            }
+            op!("!") => {
+                punct!(self, "!");
+                false
+            }
+            op!("~") => {
+                punct!(self, "~");
                 false
             }
         };
@@ -2401,7 +2415,7 @@ impl Emitter<'_> {
             } else {
                 Span::new(span.lo, span.lo + BytePos(1))
             };
-            punct!(self, span, "{");
+            self.wr.write_punct(Some(span), Punct::LBrace)?;
         }
 
         let old_flags = self.flags;
@@ -2422,7 +2436,7 @@ impl Emitter<'_> {
             } else {
                 Span::new(span.hi - BytePos(1), span.hi)
             };
-            punct!(self, span, "}");
+            self.wr.write_punct(Some(span), Punct::RBrace)?;
         }
         Ok(())
     }
@@ -2765,18 +2779,18 @@ impl Emitter<'_> {
     fn write_delim(&mut self, f: ListFormat) -> Result {
         match f & ListFormat::DelimitersMask {
             ListFormat::None => {}
-            ListFormat::CommaDelimited => self.wr.write_punct(None, ",")?,
+            ListFormat::CommaDelimited => self.wr.write_punct(None, Punct::Comma)?,
             ListFormat::BarDelimited => {
                 if !self.cfg.minify {
                     self.wr.write_space()?;
                 }
-                self.wr.write_punct(None, "|")?;
+                self.wr.write_punct(None, Punct::Bar)?;
             }
             ListFormat::AmpersandDelimited => {
                 if !self.cfg.minify {
                     self.wr.write_space()?;
                 }
-                self.wr.write_punct(None, "&")?;
+                self.wr.write_punct(None, Punct::Ampersand)?;
             }
             _ => unreachable!(),
         }
