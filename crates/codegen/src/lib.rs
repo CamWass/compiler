@@ -490,7 +490,7 @@ impl<'a> Emitter<'a> {
                         Expr::Fn(_) => match ctx {
                             Context::ForcedExpr | Context::FreeExpr => false,
 
-                            Context::Callee { is_new: true } => {
+                            Context::NewCallee => {
                                 // wrap_expr = true;
                                 false
                             }
@@ -529,7 +529,7 @@ impl<'a> Emitter<'a> {
                     n.test.as_ref(),
                     Expr::Object(_) | Expr::Fn(_) | Expr::Class(_)
                 ) && ctx == Context::Default;
-                if let Context::Callee { is_new: true } = ctx {
+                if ctx == Context::NewCallee {
                     punct!(self, "(");
                     self.emit_cond_expr(n, wrap_test)?;
                     punct!(self, ")");
@@ -596,7 +596,7 @@ impl<'a> Emitter<'a> {
                             Expr::Fn(_) => match ctx {
                                 Context::ForcedExpr | Context::FreeExpr => {}
 
-                                Context::Callee { is_new: true } => {
+                                Context::NewCallee => {
                                     wrap_expr = true;
                                 }
 
@@ -647,7 +647,7 @@ impl<'a> Emitter<'a> {
                 self.flags = old_flags;
             }
             Expr::Call(e) => {
-                let ctx = std::mem::replace(&mut self.ctx, Context::Callee { is_new: false });
+                let ctx = std::mem::replace(&mut self.ctx, Context::FnCallee);
                 let old_flags = self.flags;
                 self.flags.set(Flags::in_opt_chain, true);
 
@@ -709,7 +709,7 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_call_expr(&mut self, node: &CallExpr, wrap_callee: bool) -> Result {
-        let ctx = std::mem::replace(&mut self.ctx, Context::Callee { is_new: false });
+        let ctx = std::mem::replace(&mut self.ctx, Context::FnCallee);
 
         let span = get_span!(self, node.node_id);
 
@@ -776,7 +776,7 @@ impl<'a> Emitter<'a> {
                 | Expr::Lit(..)
         );
 
-        let ctx = std::mem::replace(&mut self.ctx, Context::Callee { is_new: true });
+        let ctx = std::mem::replace(&mut self.ctx, Context::NewCallee);
         if !callee_needs_parens && self.expr_starts_with_alpha_num(&node.callee)? {
             space!(self);
         } else {
@@ -849,7 +849,7 @@ impl<'a> Emitter<'a> {
                         | Expr::Class(..)
                         | Expr::Yield(..)
                         | Expr::Await(..) => true,
-                        Expr::Call(..) if self.ctx == Context::Callee { is_new: true } => true,
+                        Expr::Call(..) if self.ctx == Context::NewCallee => true,
                         Expr::OptChain(..) if !self.flags.contains(Flags::in_opt_chain) => true,
                         Expr::OptChain(..) if in_assign_lhs_member_expr => true,
                         _ => false,
@@ -3359,15 +3359,14 @@ fn will_eat_else_token(s: &Stmt) -> bool {
     }
 }
 
-#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Context {
     #[default]
     Default,
 
-    Callee {
-        is_new: bool,
-    },
+    FnCallee,
+    NewCallee,
+
     /// Always treated as expr. (But number of comma-separated expression
     /// matters)
     ///
