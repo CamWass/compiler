@@ -4,7 +4,7 @@ pub use self::config::Config;
 use self::{list::ListFormat, util::SourceMapperExt};
 use ast::*;
 use common::{BytePos, DUMMY_SP, SourceMap, Span};
-use std::{borrow::Cow, fmt::Write, io, rc::Rc};
+use std::{fmt::Write, io, rc::Rc};
 pub use text_writer::JsWriter;
 use util::{for_var_ends_with_alpha_num, prop_name_starts_with_alpha_num};
 
@@ -1951,11 +1951,8 @@ impl<'a> Emitter<'a> {
 
     fn emit_ident(&mut self, ident: &Ident) -> Result {
         let span = get_span!(self, ident.node_id);
-        // TODO: Use write_symbol when ident is a symbol.
-
         let name = self.program_data.get_name_for_id(ident.name);
-        // TODO: span
-        self.wr.write_symbol(span, &handle_invalid_unicodes(name))
+        self.wr.write_symbol(span, name)
     }
 
     fn emit_list<N>(
@@ -3225,14 +3222,6 @@ fn get_quoted_utf16(v: &str, target: EsVersion) -> String {
     } else {
         format!("\"{}\"", buf.replace('"', "\\\""))
     }
-}
-
-fn handle_invalid_unicodes(s: &str) -> Cow<'_, str> {
-    if !s.contains("\\\0") {
-        return Cow::Borrowed(s);
-    }
-
-    Cow::Owned(s.replace("\\\0", "\\"))
 }
 
 fn require_space_before_rhs(rhs: &Expr, op: BinaryOp) -> bool {
