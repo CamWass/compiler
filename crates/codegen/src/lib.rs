@@ -428,7 +428,9 @@ impl<'a> Emitter<'a> {
     fn emit_expr(&mut self, node: &Expr) -> Result {
         let ctx = self.ctx;
 
-        let in_expr_stmt_seq = self.flags.replace(Flags::in_expr_stmt_seq, false);
+        let in_expr_stmt_seq = self.flags.intersects(Flags::in_expr_stmt_seq);
+        let old_flags = self.flags;
+        self.flags.set(Flags::in_expr_stmt_seq, false);
 
         if ctx == Context::Default {
             match node {
@@ -619,7 +621,7 @@ impl<'a> Emitter<'a> {
             Expr::Invalid(n) => self.emit_invalid(n),
         }?;
 
-        self.flags.set(Flags::in_expr_stmt_seq, in_expr_stmt_seq);
+        self.flags = old_flags;
 
         self.ctx = ctx;
         Ok(())
@@ -630,7 +632,8 @@ impl<'a> Emitter<'a> {
 
         match n.expr.as_ref() {
             Expr::Member(e) => {
-                let in_opt_chain = self.flags.replace(Flags::in_opt_chain, true);
+                let old_flags = self.flags;
+                self.flags.set(Flags::in_opt_chain, true);
                 self.emit_expr_or_super(&e.obj)?;
                 punct!(self, "?.");
 
@@ -641,11 +644,12 @@ impl<'a> Emitter<'a> {
                 } else {
                     self.emit_expr(&e.prop)?;
                 }
-                self.flags.set(Flags::in_opt_chain, in_opt_chain);
+                self.flags = old_flags;
             }
             Expr::Call(e) => {
                 let ctx = std::mem::replace(&mut self.ctx, Context::Callee { is_new: false });
-                let in_opt_chain = self.flags.replace(Flags::in_opt_chain, true);
+                let old_flags = self.flags;
+                self.flags.set(Flags::in_opt_chain, true);
 
                 let wrap_callee = wrap_callee
                     || match &e.callee {
@@ -680,7 +684,7 @@ impl<'a> Emitter<'a> {
                     }
                 }
 
-                self.flags.set(Flags::in_opt_chain, in_opt_chain);
+                self.flags = old_flags;
 
                 if wrap_callee {
                     punct!(self, ")");
@@ -807,7 +811,8 @@ impl<'a> Emitter<'a> {
     fn emit_member_expr(&mut self, node: &MemberExpr) -> Result {
         let mut needs_2dots_for_property_access = false;
 
-        let in_assign_lhs_member_expr = self.flags.replace(Flags::in_assign_lhs_member_expr, false);
+        let in_assign_lhs_member_expr = self.flags.intersects(Flags::in_assign_lhs_member_expr);
+        self.flags.set(Flags::in_assign_lhs_member_expr, false);
 
         match &node.obj {
             ExprOrSuper::Expr(obj) => match obj.as_ref() {
@@ -1268,14 +1273,15 @@ impl<'a> Emitter<'a> {
 
         formatting_space!(self);
         punct!(self, "{");
-        let in_for_stmt_head = self.flags.replace(Flags::in_for_stmt_head, false);
+        let old_flags = self.flags;
+        self.flags.set(Flags::in_for_stmt_head, false);
         self.emit_list(
             get_span!(self, node.node_id),
             &node.body,
             |e: &mut Emitter, n| e.emit_class_member(n),
             ListFormat::ClassMembers,
         )?;
-        self.flags.set(Flags::in_for_stmt_head, in_for_stmt_head);
+        self.flags = old_flags;
         self.ctx = ctx;
         punct!(self, "}");
         Ok(())
@@ -1743,7 +1749,8 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_expr_or_spread(&mut self, node: &ExprOrSpread) -> Result {
-        let in_for_stmt_head = self.flags.replace(Flags::in_for_stmt_head, false);
+        let old_flags = self.flags;
+        self.flags.set(Flags::in_for_stmt_head, false);
         match node {
             ExprOrSpread::Spread(n) => self.emit_spread_element(n)?,
             ExprOrSpread::Expr(n) => {
@@ -1756,7 +1763,7 @@ impl<'a> Emitter<'a> {
                 }
             }
         }
-        self.flags.set(Flags::in_for_stmt_head, in_for_stmt_head);
+        self.flags = old_flags;
         Ok(())
     }
 
@@ -1797,7 +1804,8 @@ impl<'a> Emitter<'a> {
         }
 
         let ctx = std::mem::replace(&mut self.ctx, Context::ForcedExpr);
-        let in_for_stmt_head = self.flags.replace(Flags::in_for_stmt_head, false);
+        let old_flags = self.flags;
+        self.flags.set(Flags::in_for_stmt_head, false);
 
         self.emit_list(
             span,
@@ -1812,7 +1820,7 @@ impl<'a> Emitter<'a> {
             format,
         )?;
 
-        self.flags.set(Flags::in_for_stmt_head, in_for_stmt_head);
+        self.flags = old_flags;
         self.ctx = ctx;
 
         punct!(self, "]");
@@ -1826,14 +1834,15 @@ impl<'a> Emitter<'a> {
         if !self.cfg.minify {
             self.wr.write_line()?;
         }
-        let in_for_stmt_head = self.flags.replace(Flags::in_for_stmt_head, false);
+        let old_flags = self.flags;
+        self.flags.set(Flags::in_for_stmt_head, false);
         self.emit_list(
             span,
             &node.props,
             |e, n| e.emit_prop(n),
             ListFormat::ObjectLiteralExpressionProperties | ListFormat::CanSkipTrailingComma,
         )?;
-        self.flags.set(Flags::in_for_stmt_head, in_for_stmt_head);
+        self.flags = old_flags;
         if !self.cfg.minify {
             self.wr.write_line()?;
         }
@@ -2120,10 +2129,11 @@ impl Emitter<'_> {
     fn emit_param(&mut self, node: &Param) -> Result {
         let old = self.ctx;
         self.ctx = Context::ForcedExpr;
-        let in_for_stmt_head = self.flags.replace(Flags::in_for_stmt_head, false);
+        let old_flags = self.flags;
+        self.flags.set(Flags::in_for_stmt_head, false);
 
         self.emit_pat(&node.pat)?;
-        self.flags.set(Flags::in_for_stmt_head, in_for_stmt_head);
+        self.flags = old_flags;
         self.ctx = old;
         Ok(())
     }
@@ -2182,7 +2192,8 @@ impl Emitter<'_> {
     }
 
     fn emit_assign_pat(&mut self, node: &AssignPat) -> Result {
-        let in_for_stmt_head = self.flags.replace(Flags::in_for_stmt_head, false);
+        let old_flags = self.flags;
+        self.flags.set(Flags::in_for_stmt_head, false);
 
         self.emit_pat(&node.left)?;
         formatting_space!(self);
@@ -2191,7 +2202,7 @@ impl Emitter<'_> {
 
         self.emit_expr(&node.right)?;
 
-        self.flags.set(Flags::in_for_stmt_head, in_for_stmt_head);
+        self.flags = old_flags;
         Ok(())
     }
 
@@ -2393,7 +2404,8 @@ impl Emitter<'_> {
             punct!(self, span, "{");
         }
 
-        let in_for_stmt_head = self.flags.replace(Flags::in_for_stmt_head, false);
+        let old_flags = self.flags;
+        self.flags.set(Flags::in_for_stmt_head, false);
 
         self.emit_list(
             span,
@@ -2402,7 +2414,7 @@ impl Emitter<'_> {
             ListFormat::MultiLineBlockStatements,
         )?;
 
-        self.flags.set(Flags::in_for_stmt_head, in_for_stmt_head);
+        self.flags = old_flags;
 
         {
             let span = if span.is_dummy() {
@@ -2639,9 +2651,10 @@ impl Emitter<'_> {
         keyword!(self, "for");
         formatting_space!(self);
         punct!(self, "(");
-        let in_for_stmt_head = self.flags.replace(Flags::in_for_stmt_head, true);
+        let old_flags = self.flags;
+        self.flags.set(Flags::in_for_stmt_head, true);
         opt!(self, emit_var_decl_or_expr, node.init);
-        self.flags.set(Flags::in_for_stmt_head, in_for_stmt_head);
+        self.flags = old_flags;
         semi!(self);
         opt_leading_space!(self, emit_expr, node.test);
         semi!(self);
@@ -2655,7 +2668,8 @@ impl Emitter<'_> {
         keyword!(self, "for");
         formatting_space!(self);
         punct!(self, "(");
-        let in_for_stmt_head = self.flags.replace(Flags::in_for_stmt_head, true);
+        let old_flags = self.flags;
+        self.flags.set(Flags::in_for_stmt_head, true);
         self.emit_var_decl_or_pat(&node.left)?;
 
         if for_var_ends_with_alpha_num(&node.left) {
@@ -2673,7 +2687,7 @@ impl Emitter<'_> {
         }
         self.emit_expr(&node.right)?;
 
-        self.flags.set(Flags::in_for_stmt_head, in_for_stmt_head);
+        self.flags = old_flags;
 
         punct!(self, ")");
 
@@ -3375,15 +3389,6 @@ mod flags {
             const in_opt_chain = 1 << 1;
             const in_expr_stmt_seq = 1 << 2;
             const in_assign_lhs_member_expr = 1 << 3;
-        }
-    }
-
-    impl Flags {
-        pub(super) fn replace(&mut self, flag: Flags, value: bool) -> bool {
-            debug_assert_eq!(flag.bits().count_ones(), 1);
-            let old = (self.bits() & flag.bits()) != 0;
-            self.set(flag, value);
-            old
         }
     }
 }
