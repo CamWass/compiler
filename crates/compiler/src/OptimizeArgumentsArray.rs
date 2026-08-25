@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use std::iter::FromIterator;
 use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
-/// Optimizes accesses to the `arguments` array by replacing them with references to parameters,
-/// synthesising missing parameters if possible.
+/// Optimizes accesses to the `arguments` array by replacing them with
+/// references to parameters, synthesising missing parameters if possible.
 ///
 /// Example:
 /// ```js
@@ -31,7 +31,7 @@ impl<'a> OptimizeArgumentsArray<'a> {
 impl VisitMut<'_> for OptimizeArgumentsArray<'_> {
     fn visit_mut_function(&mut self, node: &mut ast::Function) {
         node.body.visit_mut_with(self);
-        self.try_replace_arguments(node);
+        self.try_replace_arguments(&mut node.params, &mut node.body);
     }
 
     fn visit_mut_class_method(&mut self, node: &mut ast::ClassMethod) {
@@ -49,7 +49,7 @@ impl VisitMut<'_> for OptimizeArgumentsArray<'_> {
 
     fn visit_mut_constructor(&mut self, node: &mut ast::Constructor) {
         node.body.visit_mut_with(self);
-        self.try_replace_arguments(node);
+        self.try_replace_arguments(&mut node.params, &mut node.body);
     }
 }
 
@@ -57,11 +57,11 @@ impl OptimizeArgumentsArray<'_> {
     fn handle_class_method(&mut self, func: &mut ast::Function, kind: ast::MethodKind) {
         match kind {
             ast::MethodKind::Method => {
-                self.try_replace_arguments(func);
+                self.try_replace_arguments(&mut func.params, &mut func.body);
             }
             ast::MethodKind::Getter => {
-                // It's never valid to add arguments to a getter, so we skip it and
-                // only process nested functions.
+                // It's never valid to add arguments to a getter, so we skip it
+                // and only process nested functions.
             }
             ast::MethodKind::Setter => {
                 assert!(func.params.len() == 1);
@@ -77,35 +77,37 @@ impl OptimizeArgumentsArray<'_> {
             self.try_replace_setter_argument(id.id.name, body);
         } else {
             // Non-ident params don't introduce names for us to bind arguments
-            // accesses to, so we skip the setter and only process nested functions.
+            // accesses to, so we skip the setter and only process nested
+            // functions.
         }
     }
 
-    /// Tries to optimize all of the `arguments` accesses in this function. Does not look at nested functions.
-    fn try_replace_arguments<T>(&mut self, func: &mut T)
-    where
-        T: AsFn,
-    {
-        // The number of parameters that can be accessed without using `arguments`.
-        let highest_index = if func.get_params().is_empty() {
+    /// Tries to optimize all of the `arguments` accesses in this function. Does
+    /// not look at nested functions.
+    fn try_replace_arguments(&mut self, params: &mut Vec<ast::Param>, body: &mut ast::BlockStmt) {
+        // The number of parameters that can be accessed without using
+        // `arguments`.
+        let highest_index = if params.is_empty() {
             None
         } else {
-            Some(func.get_params().len() - 1)
+            Some(params.len() - 1)
         };
 
-        // Determine the highest index that is used to make an access on `arguments`. By default, assume
-        // that the value is the number of parameters to the function.
-        let highest_index = FnBodyVisitor::get_highest_index(func.get_body(), highest_index);
+        // Determine the highest index that is used to make an access on
+        // `arguments`. By default, assume that the value is the number of
+        // parameters to the function.
+        let highest_index = FnBodyVisitor::get_highest_index(body, highest_index);
         let Some(highest_index) = highest_index else {
             return;
         };
 
-        let arg_names = func.assemble_param_names(highest_index + 1, self.program_data);
-        self.append_new_params(&arg_names, func.get_params());
-        FnBodyReWriter::change_body(func.get_body(), &arg_names, self.program_data);
+        let arg_names = assemble_param_names(params, highest_index + 1, self.program_data);
+        self.append_new_params(&arg_names, params);
+        FnBodyReWriter::change_body(body, &arg_names, self.program_data);
     }
 
-    /// Tries to optimize all of the `arguments` accesses in this setter. Does not look at nested functions.
+    /// Tries to optimize all of the `arguments` accesses in this setter. Does
+    /// not look at nested functions.
     fn try_replace_setter_argument(&mut self, param: NameId, setter_body: &mut ast::BlockStmt) {
         if FnBodyVisitor::get_highest_index(setter_body, Some(0)).is_none() {
             // Some 'arguments' accesses were invalidating; abort.
@@ -116,12 +118,13 @@ impl OptimizeArgumentsArray<'_> {
         FnBodyReWriter::change_body(setter_body, &arg_names, self.program_data);
     }
 
-    /// Appends new formal parameters to the provided list based on the given set of names.
+    /// Appends new formal parameters to the provided list based on the given
+    /// set of names.
     ///
     /// Example: function() -> function(r0, r1, r2)
     ///
-    /// `arg_names` - maps param index to param name, if the param with that index has a name.
-    /// `param_list` - the list of params to modify.
+    /// `arg_names` - maps param index to param name, if the param with that
+    /// index has a name. `param_list` - the list of params to modify.
     fn append_new_params(
         &mut self,
         arg_names: &BTreeMap<usize, NameId>,
@@ -147,110 +150,49 @@ fn from_id(id: NameId, program_data: &mut ast::TransformerProgramData) -> ast::P
     }
 }
 
-trait AsFn {
-    /// Generates a map from argument indices to parameter names.
-    ///
-    /// A map is used because the sequence may be sparse in the case that there is an
-    /// anonymous param, such as a destructuring param. There may also be fewer returned names than
-    /// `max_count` if there is a rest param, since no additional params may be synthesized.
-    ///
-    /// `max_count` - The maximum number of argument names in the returned map.
-    fn assemble_param_names(
-        &self,
-        max_count: usize,
-        program_data: &mut ast::TransformerProgramData,
-    ) -> BTreeMap<usize, NameId>;
+/// Generates a map from argument indices to parameter names.
+///
+/// A map is used because the sequence may be sparse in the case that there is
+/// an anonymous param, such as a destructuring param. There may also be fewer
+/// returned names than `max_count` if there is a rest param, since no
+/// additional params may be synthesized.
+///
+/// `max_count` - The maximum number of argument names in the returned map.
+fn assemble_param_names(
+    params: &[ast::Param],
+    max_count: usize,
+    program_data: &mut ast::TransformerProgramData,
+) -> BTreeMap<usize, NameId> {
+    let mut map = BTreeMap::new();
+    let mut index = 0;
 
-    fn get_params(&mut self) -> &mut Vec<ast::Param>;
-    fn get_body(&mut self) -> &mut ast::BlockStmt;
-}
-
-impl AsFn for ast::Function {
-    fn assemble_param_names(
-        &self,
-        max_count: usize,
-        program_data: &mut ast::TransformerProgramData,
-    ) -> BTreeMap<usize, NameId> {
-        let mut map = BTreeMap::new();
-        let mut index = 0;
-
-        // Collect all existing param names first...
-        for param in &self.params {
-            match &param.pat {
-                ast::Pat::Ident(n) => {
-                    map.insert(index, n.id.name);
-                }
-                // Array and object patterns have no names to substitute into the body.
-                ast::Pat::Array(_) | ast::Pat::Object(_) => {}
-                // `arguments` doesn't consider default values. It holds exactly the provided args.
-                ast::Pat::Assign(_) => {}
-                // Can't add params after a rest param.
-                ast::Pat::Rest(_) => return map,
-                ast::Pat::Invalid(_) | ast::Pat::Expr(_) => unreachable!(),
+    // Collect all existing param names first...
+    for param in params {
+        match &param.pat {
+            ast::Pat::Ident(n) => {
+                map.insert(index, n.id.name);
             }
-
-            index += 1;
-        }
-        // ... then synthesize any additional param names.
-        while index < max_count {
-            let new_name = program_data.new_resolved_name(JsWord::from(format!("p{index}")));
-            map.insert(index, new_name);
-            index += 1;
-        }
-
-        map
-    }
-
-    fn get_params(&mut self) -> &mut Vec<ast::Param> {
-        &mut self.params
-    }
-    fn get_body(&mut self) -> &mut ast::BlockStmt {
-        &mut self.body
-    }
-}
-
-impl AsFn for ast::Constructor {
-    fn assemble_param_names(
-        &self,
-        max_count: usize,
-        program_data: &mut ast::TransformerProgramData,
-    ) -> BTreeMap<usize, NameId> {
-        let mut map = BTreeMap::new();
-        let mut index = 0;
-
-        // Collect all existing param names first...
-        for param in &self.params {
-            match &param.pat {
-                ast::Pat::Ident(n) => {
-                    map.insert(index, n.id.name);
-                }
-                // Array and object patterns have no names to substitute into the body.
-                ast::Pat::Array(_) | ast::Pat::Object(_) => {}
-                // `arguments` doesn't consider default values. It holds exactly the provided args.
-                ast::Pat::Assign(_) => {}
-                // Can't add params after a rest param.
-                ast::Pat::Rest(_) => return map,
-                ast::Pat::Invalid(_) | ast::Pat::Expr(_) => unreachable!(),
-            }
-
-            index += 1;
-        }
-        // ... then synthesize any additional param names.
-        while index < max_count {
-            let new_name = program_data.new_resolved_name(JsWord::from(format!("p{index}")));
-            map.insert(index, new_name);
-            index += 1;
+            // Array and object patterns have no names to substitute into the
+            // body.
+            ast::Pat::Array(_) | ast::Pat::Object(_) => {}
+            // `arguments` doesn't consider default values. It holds exactly the
+            // provided args.
+            ast::Pat::Assign(_) => {}
+            // Can't add params after a rest param.
+            ast::Pat::Rest(_) => return map,
+            ast::Pat::Invalid(_) | ast::Pat::Expr(_) => unreachable!(),
         }
 
-        map
+        index += 1;
+    }
+    // ... then synthesize any additional param names.
+    while index < max_count {
+        let new_name = program_data.new_resolved_name(JsWord::from(format!("p{index}")));
+        map.insert(index, new_name);
+        index += 1;
     }
 
-    fn get_params(&mut self) -> &mut Vec<ast::Param> {
-        &mut self.params
-    }
-    fn get_body(&mut self) -> &mut ast::BlockStmt {
-        &mut self.body
-    }
+    map
 }
 
 pub struct FnBodyVisitor {
@@ -259,10 +201,12 @@ pub struct FnBodyVisitor {
 }
 
 impl FnBodyVisitor {
-    /// Iterate through all the references to `arguments` array in the function to determine the real
-    /// highest_index. Returns `None` when we should not be replacing any arguments for this scope.
+    /// Iterate through all the references to `arguments` array in the function
+    /// to determine the real highest_index. Returns `None` when we should not
+    /// be replacing any arguments for this scope.
     ///
-    /// `highest_index` - highest index that has been accessed from the `arguments` array.
+    /// `highest_index` - highest index that has been accessed from the
+    /// `arguments` array.
     fn get_highest_index(
         func_body: &ast::BlockStmt,
         highest_index: Option<usize>,
@@ -295,8 +239,8 @@ impl FnBodyVisitor {
     #[allow(clippy::needless_return)]
     fn handle_member_expr(&mut self, node: &ast::MemberExpr) -> bool {
         // Bail on anything but argument[c] access where c is a constant.
-        // TODO(closure): We might not need to bail out all the time, there might
-        // be more cases that we can cover.
+        // TODO(closure): We might not need to bail out all the time, there
+        // might be more cases that we can cover.
 
         if let ast::ExprOrSuper::Expr(obj) = &node.obj {
             if let ast::Expr::Ident(obj) = obj.as_ref() {
@@ -304,19 +248,21 @@ impl FnBodyVisitor {
                     if node.computed {
                         // TODO: numeric string literal keys e.g. arguments["1"]
                         if let ast::Expr::Lit(ast::Lit::Num(n)) = node.prop.as_ref() {
-                            // Note: The index will always be positive because negative indices are
-                            // represented as a unary op.
+                            // Note: The index will always be positive because
+                            // negative indices are represented as a unary op.
 
                             if n.value.fract() != 0.0 {
-                                // We want to bail out if someone tries to access arguments[0.5] for example
+                                // We want to bail out if someone tries to
+                                // access arguments[0.5] for example
                                 self.invalidate("Non integer key");
                                 return false;
                             }
 
                             let idx = n.value.round() as i64 as usize;
 
-                            // Replace the highest index if we see an access that has a higher index
-                            // than all the one we saw before.
+                            // Replace the highest index if we see an access
+                            // that has a higher index than all the one we saw
+                            // before.
                             if let Some(highest_index) = self.highest_index {
                                 if idx > highest_index {
                                     self.highest_index = Some(idx);
@@ -325,12 +271,14 @@ impl FnBodyVisitor {
                                 self.highest_index = Some(idx);
                             }
 
-                            // Valid; The above conditions varify that the node is composed of only leaf
-                            // nodes, so no need to visit children.
+                            // Valid; The above conditions verify that the node
+                            // is composed of only leaf nodes, so no need to
+                            // visit children.
                             return true;
                         } else {
-                            // We have something like arguments[x] where x is not a constant. That
-                            // means at least one of the access is not known.
+                            // We have something like arguments[x] where x is
+                            // not a constant. That means at least one of the
+                            // access is not known.
                             self.invalidate("Non numeric literal key");
                             return false;
                         }
@@ -376,12 +324,13 @@ impl Visit<'_> for FnBodyVisitor {
         if let ast::ExprOrSuper::Expr(callee) = &node.callee {
             if let ast::Expr::Member(callee) = callee.as_ref() {
                 let valid_access = self.handle_member_expr(callee);
-                // An otherwise valid access is invalid if used as the callee of a call expr.
-                // When we have argument[0](), replacing it with a() is semantically
-                // different if argument[0] is a function call that refers to 'this'
+                // An otherwise valid access is invalid if used as the callee of
+                // a call expr. When we have argument[0](), replacing it with
+                // a() is semantically different if argument[0] is a function
+                // call that refers to 'this'
                 if valid_access {
-                    // TODO(closure): We can consider using .call() if aliasing that
-                    // argument allows shorter alias for other arguments.
+                    // TODO(closure): We can consider using .call() if aliasing
+                    // that argument allows shorter alias for other arguments.
                     self.invalidate("Valid access, used as callee in call expr, is invalid");
                 } else {
                     node.visit_children_with(self);
@@ -418,7 +367,8 @@ struct FnBodyReWriter<'a> {
 impl<'a> FnBodyReWriter<'a> {
     /// Performs the replacement of `arguments[x]` -> `a` if `x` is known.
     ///
-    /// `arg_names` - maps param index to param name, if the param with that index has a name.
+    /// `arg_names` - maps param index to param name, if the param with that
+    /// index has a name.
     fn change_body(
         func_body: &mut ast::BlockStmt,
         arg_names: &'a BTreeMap<usize, NameId>,
@@ -585,7 +535,8 @@ const a = {
 
     #[test]
     fn testObjectSetter() {
-        // Setters can only have one param; synthesising any more would be an error.
+        // Setters can only have one param; synthesising any more would be an
+        // error.
         test_transform(
             "
 const a = {
@@ -756,7 +707,8 @@ class Foo {
 
     #[test]
     fn testClassSetter() {
-        // Setters can only have one param; synthesising any more would be an error.
+        // Setters can only have one param; synthesising any more would be an
+        // error.
         test_transform(
             "
 class Foo {
@@ -1289,13 +1241,15 @@ function f(p0) {
 
     #[test]
     fn testNoOptimizationWhenArgumentIsUsedAsFunctionCall() {
-        test_same("function f() {arguments[0]()}"); // replacing the call would change `this`
+        // Replacing the call would change `this`.
+        test_same("function f() {arguments[0]()}");
     }
 
     #[test]
     fn testNoOptimizationWhenArgumentsReassigned() {
         // TODO: can we replace the accesses before the re-assignment?
-        // replacing the post-assignment `arguments[0]` with a named parameter would be incorrect
+        // Replacing the post-assignment `arguments[0]` with a named parameter
+        // would be incorrect.
         test_same("function f() { arguments[0]; arguments = [3, 4, 5]; arguments[0]; }");
     }
 
@@ -1306,7 +1260,8 @@ function f(p0) {
 
     #[test]
     fn testUseArguments_withDefaultValue() {
-        // `arguments` doesn't consider default values. It holds exaclty the provided args.
+        // `arguments` doesn't consider default values. It holds exactly the
+        // provided args.
         test_same("function f(x = 0) { arguments[0]; }");
 
         test_transform(
@@ -1324,10 +1279,12 @@ function f(p0) {
             function f(x, ...rest) { x; }",
         );
 
-        // We could possibly do better here by referencing through `rest` instead, but the additional
-        // complexity of tracking and validating the rest parameter isn't worth it.
+        // We could possibly do better here by referencing through `rest`
+        // instead, but the additional complexity of tracking and validating the
+        // rest parameter isn't worth it.
         test_same("function f(x, ...rest) { arguments[1]; }");
-        test_same("function f(x, ...rest) { arguments[2]; }"); // Don't synthesize params after a rest.
+        // Don't synthesize params after a rest.
+        test_same("function f(x, ...rest) { arguments[2]; }");
     }
 
     #[test]
