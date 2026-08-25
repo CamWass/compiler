@@ -201,6 +201,13 @@ impl Visit<'_> for Analyser<'_> {
         i.id.visit_with(self);
     }
 
+    fn visit_member_expr(&mut self, node: &MemberExpr) {
+        node.obj.visit_with(self);
+        if node.computed {
+            node.prop.visit_with(self);
+        }
+    }
+
     fn visit_var_declarator(&mut self, node: &VarDeclarator) {
         node.init.visit_with(self);
 
