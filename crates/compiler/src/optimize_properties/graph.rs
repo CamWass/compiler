@@ -719,14 +719,14 @@ impl Graph {
                             "Prop({}, ({}, '{}'))",
                             obj.as_u32(),
                             prop.as_u32(),
-                            store.program_data.get_name_for_id(*prop)
+                            store.program_data.get_name_text(*prop)
                         )
                     }
                     Pointer::Var(id) => {
                         format!(
                             "Var({}, '{}')",
                             id.as_u32(),
-                            store.program_data.get_name_for_id(store.vars[*id])
+                            store.program_data.get_name_text(store.vars[*id])
                         )
                     }
                     Pointer::Object(id) => format!("Object({})", id.as_u32()),

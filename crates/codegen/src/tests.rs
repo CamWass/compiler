@@ -13,7 +13,7 @@ fn parse_then_emit(from: &str, cfg: Config, syntax: Syntax) -> String {
             from, src.start_pos, src.end_pos
         );
 
-        let mut program_data = ast::ProgramData::default();
+        let mut program_data = ast::ParserProgramData::default();
         let res = {
             let mut parser = Parser::new(syntax, &src, &mut program_data);
             let res = parser
@@ -26,6 +26,8 @@ fn parse_then_emit(from: &str, cfg: Config, syntax: Syntax) -> String {
 
             res?
         };
+
+        let program_data = program_data.into_codegen_program_data();
 
         let mut buf = String::new();
 

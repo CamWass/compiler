@@ -377,8 +377,8 @@ pub struct ProgramData {
     names: IndexVec<NameId, JsWord>,
 }
 
-impl Default for ProgramData {
-    fn default() -> Self {
+impl ProgramData {
+    fn new() -> Self {
         let mut data = Self {
             spans: Default::default(),
             name_to_id_map: Default::default(),
@@ -389,9 +389,7 @@ impl Default for ProgramData {
 
         data
     }
-}
 
-impl ProgramData {
     pub fn new_id(&mut self, span: Span) -> NodeId {
         self.spans.push(span)
     }
@@ -401,11 +399,11 @@ impl ProgramData {
         self.spans.push(other)
     }
 
-    pub fn get_span(&self, node: NodeId) -> Span {
+    fn get_span(&self, node: NodeId) -> Span {
         self.spans[node]
     }
 
-    pub fn set_span(&mut self, node: NodeId, span: Span) {
+    fn set_span(&mut self, node: NodeId, span: Span) {
         self.spans[node] = span;
     }
 
@@ -414,7 +412,7 @@ impl ProgramData {
     // only has access to the 'correct'/idiomatic methods for interacting with
     // names at that stage.
 
-    pub fn get_id_for_name(&mut self, name: JsWord) -> NameId {
+    fn get_id_for_name(&mut self, name: JsWord) -> NameId {
         match self.name_to_id_map.entry(name) {
             Entry::Occupied(occupied_entry) => *occupied_entry.get(),
             Entry::Vacant(vacant_entry) => {
@@ -425,27 +423,139 @@ impl ProgramData {
         }
     }
 
-    pub fn get_name_for_id(&self, id: NameId) -> &JsWord {
+    fn get_name_for_id(&self, id: NameId) -> &JsWord {
         let id = NameId::from_u32(id.0 & !(1 << (u32::BITS - 1)));
         &self.names[id]
     }
 
+    // TODO: ideally this isn't pub
     pub fn mark_resolved(id: NameId) -> NameId {
         NameId::from_u32(id.0 | 1 << (u32::BITS - 1))
     }
+}
+
+#[derive(Debug)]
+pub struct ParserProgramData(ProgramData);
+
+impl Default for ParserProgramData {
+    fn default() -> Self {
+        Self(ProgramData::new())
+    }
+}
+
+impl ParserProgramData {
+    pub fn data(&mut self) -> &mut ProgramData {
+        &mut self.0
+    }
+
+    pub fn into_transformer_program_data(self) -> TransformerProgramData {
+        TransformerProgramData(self.0)
+    }
+
+    pub fn into_codegen_program_data(self) -> CodegenProgramData {
+        CodegenProgramData(self.0)
+    }
+
+    pub fn new_id(&mut self, span: Span) -> NodeId {
+        self.0.new_id(span)
+    }
+
+    pub fn new_id_from(&mut self, other: NodeId) -> NodeId {
+        self.0.new_id_from(other)
+    }
+
+    pub fn get_span(&self, node: NodeId) -> Span {
+        self.0.get_span(node)
+    }
+
+    pub fn set_span(&mut self, node: NodeId, span: Span) {
+        self.0.set_span(node, span)
+    }
+
+    pub fn intern_name(&mut self, name: JsWord) -> NameId {
+        self.0.get_id_for_name(name)
+    }
+
+    pub fn get_name_text(&self, name: NameId) -> &JsWord {
+        self.0.get_name_for_id(name)
+    }
+}
+
+#[derive(Debug)]
+pub struct TransformerProgramData(ProgramData);
+
+impl TransformerProgramData {
+    pub fn data(&mut self) -> &mut ProgramData {
+        &mut self.0
+    }
+
+    pub fn into_codegen_program_data(self) -> CodegenProgramData {
+        CodegenProgramData(self.0)
+    }
+
+    pub fn into_testing_program_data(self) -> TestingProgramData {
+        TestingProgramData(self.0)
+    }
+
+    pub fn new_id(&mut self, span: Span) -> NodeId {
+        self.0.new_id(span)
+    }
+
+    pub fn new_id_from(&mut self, other: NodeId) -> NodeId {
+        self.0.new_id_from(other)
+    }
+
+    pub fn get_span(&self, node: NodeId) -> Span {
+        self.0.get_span(node)
+    }
+
+    pub fn intern_name(&mut self, name: JsWord) -> NameId {
+        self.0.get_id_for_name(name)
+    }
+
+    pub fn get_name_text(&self, name: NameId) -> &JsWord {
+        self.0.get_name_for_id(name)
+    }
+
+    pub fn new_resolved_name(&mut self, name: JsWord) -> NameId {
+        ProgramData::mark_resolved(self.0.names.push(name))
+    }
 
     pub fn new_resolved_name_from(&mut self, id: NameId) -> NameId {
-        Self::mark_resolved(self.names.push(self.get_name_for_id(id).clone()))
+        ProgramData::mark_resolved(self.0.names.push(self.0.get_name_for_id(id).clone()))
+    }
+}
+
+#[derive(Debug)]
+pub struct CodegenProgramData(ProgramData);
+
+impl CodegenProgramData {
+    pub fn get_span(&self, node: NodeId) -> Span {
+        self.0.get_span(node)
+    }
+
+    pub fn get_name_text(&self, name: NameId) -> &JsWord {
+        self.0.get_name_for_id(name)
+    }
+}
+
+#[derive(Debug)]
+pub struct TestingProgramData(ProgramData);
+
+impl TestingProgramData {
+    pub fn get_name_text(&self, name: NameId) -> &JsWord {
+        self.0.get_name_for_id(name)
     }
 
     // TODO:
     /// Only for testing - hacky
     pub fn find_latest_id_for_name(&self, name: &JsWord) -> Option<NameId> {
-        self.names
+        self.0
+            .names
             .iter_enumerated()
             .rev()
             .find(|(_, candidate_name)| *candidate_name == name)
-            .map(|(i, _)| Self::mark_resolved(i))
+            .map(|(i, _)| ProgramData::mark_resolved(i))
     }
 }
 

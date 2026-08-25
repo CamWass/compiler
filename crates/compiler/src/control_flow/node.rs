@@ -1,4 +1,4 @@
-use ast::{GetNodeId, NodeId, ProgramData};
+use ast::{GetNodeId, NodeId, TransformerProgramData};
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 
@@ -63,7 +63,7 @@ impl<'ast> Node<'ast> {
         self.kind.visit_with(v);
     }
 
-    pub fn get_debug_string(&self, program_data: &ProgramData) -> String {
+    pub fn get_debug_string(&self, program_data: &TransformerProgramData) -> String {
         if self.node_id == NodeId::DUMMY {
             return String::from("ImplicitReturn");
         }

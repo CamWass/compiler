@@ -6,7 +6,7 @@ use crate::utils::unwrap_as;
 
 // TODO: preserve spans?
 
-pub fn normalize(ast: &mut Program, program_data: &mut ast::ProgramData) {
+pub fn normalize(ast: &mut Program, program_data: &mut ast::TransformerProgramData) {
     // Add blocks to single-statement contexts.
     {
         let mut v = BlockCreator { program_data };
@@ -37,7 +37,7 @@ pub fn normalize(ast: &mut Program, program_data: &mut ast::ProgramData) {
 /// b = b * 2;
 /// ```
 struct NormalizeAssignShorthand<'a> {
-    program_data: &'a mut ast::ProgramData,
+    program_data: &'a mut ast::TransformerProgramData,
 }
 
 impl VisitMut<'_> for NormalizeAssignShorthand<'_> {
@@ -99,7 +99,10 @@ impl VisitMut<'_> for NormalizeAssignShorthand<'_> {
 }
 
 #[cfg(test)]
-pub fn add_blocks_to_stmt_contexts(ast: &mut Program, program_data: &mut ast::ProgramData) {
+pub fn add_blocks_to_stmt_contexts(
+    ast: &mut Program,
+    program_data: &mut ast::TransformerProgramData,
+) {
     let mut v = BlockCreator { program_data };
     ast.visit_mut_with(&mut v);
 }
@@ -118,7 +121,7 @@ pub fn add_blocks_to_stmt_contexts(ast: &mut Program, program_data: &mut ast::Pr
 /// declarations are forbidden in single-statement contexts, so placing the
 /// statement in a block is always safe.
 struct BlockCreator<'a> {
-    program_data: &'a mut ast::ProgramData,
+    program_data: &'a mut ast::TransformerProgramData,
 }
 
 impl BlockCreator<'_> {
@@ -214,7 +217,7 @@ impl VisitMut<'_> for BlockCreator<'_> {
 /// let b;
 /// ```
 struct VarSplitter<'a> {
-    program_data: &'a mut ast::ProgramData,
+    program_data: &'a mut ast::TransformerProgramData,
 }
 
 impl VisitMut<'_> for VarSplitter<'_> {

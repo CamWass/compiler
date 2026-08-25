@@ -44,7 +44,7 @@ invalidate:
     params that can't be statically bound? e.g. rest params
 */
 
-pub fn process(ast: &mut ast::Program, program_data: &mut ProgramData) {
+pub fn process(ast: &mut ast::Program, program_data: &mut TransformerProgramData) {
     let (mut store, points_to) = analyse(ast, program_data);
 
     let rename_map = create_renaming_map(&mut store, &points_to);
@@ -220,8 +220,8 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
             // rather than the text values.
             store
                 .program_data
-                .get_name_for_id(a.name)
-                .cmp(&store.program_data.get_name_for_id(b.name))
+                .get_name_text(a.name)
+                .cmp(&store.program_data.get_name_text(b.name))
         } else {
             result
         }
@@ -264,7 +264,7 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
                 debug_graph_map.entry(rep_id).or_insert_with(|| {
                     let name = store
                         .program_data
-                        .get_name_for_id(properties[prop].name)
+                        .get_name_text(properties[prop].name)
                         .clone();
                     debug_graph.add_node((rep_id, name))
                 });
@@ -278,7 +278,7 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
                 let a = *debug_graph_map.entry(outer_node).or_insert_with(|| {
                     let name = store
                         .program_data
-                        .get_name_for_id(representatives[outer_node].name)
+                        .get_name_text(representatives[outer_node].name)
                         .clone();
                     debug_graph.add_node((outer_node, name))
                 });
@@ -286,7 +286,7 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
                     let b = *debug_graph_map.entry(inner_node).or_insert_with(|| {
                         let name = store
                             .program_data
-                            .get_name_for_id(representatives[inner_node].name)
+                            .get_name_text(representatives[inner_node].name)
                             .clone();
                         debug_graph.add_node((inner_node, name))
                     });
@@ -348,7 +348,7 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
     for _ in 0..cur_colour {
         let new_name = store
             .program_data
-            .get_id_for_name(name_gen.generate_next_name());
+            .intern_name(name_gen.generate_next_name());
         colour_map.push(new_name);
     }
 
@@ -365,7 +365,10 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
     rename_map
 }
 
-pub fn analyse<'d>(ast: &ast::Program, program_data: &'d mut ProgramData) -> (Store<'d>, Graph) {
+pub fn analyse<'d>(
+    ast: &ast::Program,
+    program_data: &'d mut TransformerProgramData,
+) -> (Store<'d>, Graph) {
     let mut pointers = IndexSet::default();
 
     for (id, pointer) in STATIC_POINTERS {
@@ -1387,7 +1390,7 @@ pub struct Store<'d> {
     pub invalid_pointers: GrowableBitSet<PointerId>,
     concrete_pointer_bound: PointerId,
     pub calls: FxHashSet<(NodeId, PointerId, ExprContext)>,
-    program_data: &'d mut ProgramData,
+    program_data: &'d mut TransformerProgramData,
 }
 
 impl Store<'_> {
@@ -1742,7 +1745,7 @@ fn test_built_in_pointer_order() {
 }
 
 struct Renamer<'a> {
-    program_data: &'a mut ProgramData,
+    program_data: &'a mut TransformerProgramData,
     rename_map: FxHashMap<NodeId, NameId>,
 }
 
@@ -1790,7 +1793,7 @@ impl VisitMut<'_> for Renamer<'_> {
 
     fn visit_mut_str(&mut self, node: &mut Str) {
         if let Some(new_name) = self.rename_map.get(&node.node_id) {
-            node.value = self.program_data.get_name_for_id(*new_name).clone();
+            node.value = self.program_data.get_name_text(*new_name).clone();
         }
     }
 }
@@ -1799,26 +1802,33 @@ impl VisitMut<'_> for Renamer<'_> {
 struct PropKey(NameId, NodeId);
 
 impl PropKey {
-    fn from_prop_name(prop: &PropName, program_data: &mut ProgramData) -> Option<PropKey> {
+    fn from_prop_name(
+        prop: &PropName,
+        program_data: &mut TransformerProgramData,
+    ) -> Option<PropKey> {
         match prop {
             PropName::Ident(p) => Some(PropKey(p.name, p.node_id)),
             PropName::Str(p) => Some(PropKey(
-                program_data.get_id_for_name(p.value.clone()),
+                program_data.intern_name(p.value.clone()),
                 p.node_id,
             )),
             PropName::Num(p) => Some(PropKey(
-                program_data.get_id_for_name(ecma_number_to_string(p.value).into()),
+                program_data.intern_name(ecma_number_to_string(p.value).into()),
                 p.node_id,
             )),
             PropName::Computed(p) => PropKey::from_expr(&p.expr, true, program_data),
             PropName::BigInt(p) => Some(PropKey(
-                program_data.get_id_for_name(p.value.to_string().into()),
+                program_data.intern_name(p.value.to_string().into()),
                 p.node_id,
             )),
         }
     }
 
-    fn from_expr(expr: &Expr, computed: bool, program_data: &mut ProgramData) -> Option<PropKey> {
+    fn from_expr(
+        expr: &Expr,
+        computed: bool,
+        program_data: &mut TransformerProgramData,
+    ) -> Option<PropKey> {
         match expr {
             Expr::Ident(e) => {
                 if e.name == id_for_built_in!("undefined") || e.name == id_for_built_in!("NaN") {
@@ -1831,7 +1841,7 @@ impl PropKey {
             }
             Expr::Lit(e) => match e {
                 Lit::Str(e) => Some(PropKey(
-                    program_data.get_id_for_name(e.value.clone()),
+                    program_data.intern_name(e.value.clone()),
                     e.node_id,
                 )),
                 Lit::Bool(e) => {
@@ -1843,11 +1853,11 @@ impl PropKey {
                 }
                 Lit::Null(e) => Some(PropKey(id_for_built_in!("null"), e.node_id)),
                 Lit::Num(e) => Some(PropKey(
-                    program_data.get_id_for_name(ecma_number_to_string(e.value).into()),
+                    program_data.intern_name(ecma_number_to_string(e.value).into()),
                     e.node_id,
                 )),
                 Lit::BigInt(e) => Some(PropKey(
-                    program_data.get_id_for_name(e.value.to_str_radix(10).into()),
+                    program_data.intern_name(e.value.to_str_radix(10).into()),
                     e.node_id,
                 )),
                 Lit::Regex(_) => None,

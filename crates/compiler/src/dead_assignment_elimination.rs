@@ -24,7 +24,7 @@ use crate::utils::unwrap_as;
 //
 //
 
-pub fn process(ast: &mut Program, program_data: &mut ProgramData) {
+pub fn process(ast: &mut Program, program_data: &mut TransformerProgramData) {
     // let cfa = ControlFlowAnalysis::<()>::analyze(ControlFlowRoot::from(&*ast), false);
     // cfa.cfg.print_simple_with_annotations(&program_data);
 
@@ -36,7 +36,7 @@ pub fn process(ast: &mut Program, program_data: &mut ProgramData) {
 }
 
 struct DeadAssignmentElimination<'a> {
-    program_data: &'a mut ProgramData,
+    program_data: &'a mut TransformerProgramData,
     live_variable_analysis: LiveVariablesAnalysisResult,
     cfg_node_states: FxHashMap<NodeId, LinearFlowState>,
     current_state: LinearFlowState,
@@ -176,7 +176,7 @@ impl VisitMut<'_> for DeadAssignmentElimination<'_> {
 }
 
 struct Driver<'a> {
-    program_data: &'a mut ast::ProgramData,
+    program_data: &'a mut ast::TransformerProgramData,
     function_stack: Vec<FunctionData>,
 }
 

@@ -33,7 +33,7 @@ pub fn bench(c: &mut Criterion) {
         let cm = Rc::new(SourceMap::new(FilePathMapping::empty()));
         let fm = cm.new_source_file(FileName::Anon, src.to_string());
 
-        let mut program_data = ast::ProgramData::default();
+        let mut program_data = ast::ParserProgramData::default();
 
         let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
 
@@ -53,6 +53,8 @@ pub fn bench(c: &mut Criterion) {
 
             res.unwrap()
         };
+
+        let mut program_data = program_data.into_transformer_program_data();
 
         resolve(&mut program, &mut program_data);
 

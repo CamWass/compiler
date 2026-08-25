@@ -19,7 +19,7 @@ fn create_program(
     config: &Config,
     cm: &SourceMap,
     handler: &Handler,
-    program_data: &mut ast::ProgramData,
+    program_data: &mut ast::ParserProgramData,
 ) -> Result<(ast::Program, Duration)> {
     let syntax = if filename.ends_with(".js") {
         Syntax::Es(config.ecmascript)
@@ -68,18 +68,22 @@ fn compile(entry_file: &str, config: Config, output_file: Option<&str>) -> Resul
     let cm = Rc::<SourceMap>::default();
     let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
 
-    let mut program_data = ast::ProgramData::default();
+    let mut program_data = ast::ParserProgramData::default();
 
     let (program, parse_duration) =
         create_program(entry_file, &config, &cm, &handler, &mut program_data)?;
 
     let compiler = Compiler::new();
 
+    let mut program_data = program_data.into_transformer_program_data();
+
     let transform_start = Instant::now();
 
     let result = compiler.compile(program, config.passes, &mut program_data);
 
     let transform_duration = transform_start.elapsed();
+
+    let program_data = program_data.into_codegen_program_data();
 
     let codegen_start = Instant::now();
 

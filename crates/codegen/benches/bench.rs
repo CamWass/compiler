@@ -88,7 +88,7 @@ fn bench_emitter(b: &mut Bencher, s: &str) {
 
     let _ = ::testing::run_test(true, |cm, handler| {
         let fm = cm.new_source_file(FileName::Anon, s.into());
-        let mut program_data = ast::ProgramData::default();
+        let mut program_data = ast::ParserProgramData::default();
 
         let mut src_map_buf = vec![];
         let module = {
@@ -103,6 +103,8 @@ fn bench_emitter(b: &mut Bencher, s: &str) {
             }
             m
         };
+
+        let program_data = program_data.into_codegen_program_data();
 
         b.iter(|| {
             let mut buf = String::new();

@@ -10,7 +10,7 @@ use crate::{
     error::{Error, SyntaxError},
     token::*,
 };
-use ast::{NameId, ProgramData, id_for_built_in};
+use ast::{NameId, ParserProgramData, id_for_built_in};
 use atoms::JsWord;
 use bitflags::bitflags;
 use common::{BytePos, SourceFile, Span, chars::char_literals};
@@ -37,7 +37,7 @@ pub struct Lexer<'src> {
     module_errors: Vec<Error>,
     strict_errors: Vec<Error>,
 
-    pub program_data: &'src mut ProgramData,
+    pub program_data: &'src mut ParserProgramData,
 }
 
 impl FusedIterator for Lexer<'_> {}
@@ -59,7 +59,7 @@ impl<'src> Lexer<'src> {
         syntax: Syntax,
         target: JscTarget,
         input: &'src SourceFile,
-        program_data: &'src mut ProgramData,
+        program_data: &'src mut ParserProgramData,
     ) -> Self {
         Lexer {
             cur: 0,
@@ -886,9 +886,7 @@ impl<'src> Lexer<'src> {
                 }
                 first = false;
             }
-            let value = lexer
-                .program_data
-                .get_id_for_name(JsWord::from(buf.as_str()));
+            let value = lexer.program_data.intern_name(JsWord::from(buf.as_str()));
 
             Ok((value, has_escape))
         })
@@ -913,7 +911,7 @@ impl<'src> Lexer<'src> {
         // problem is former one.
         if has_esc && self.ctx.is_reserved(word) {
             // TODO: mark this and others as cold?
-            let word = self.program_data.get_name_for_id(word).clone();
+            let word = self.program_data.get_name_text(word).clone();
             self.error(start, SyntaxError::EscapeInReservedWord { word })?
         } else {
             if word <= id_for_built_in!("override") {

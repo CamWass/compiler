@@ -1,5 +1,5 @@
 use super::node::{CfgNode, Node, NodeKind};
-use ast::ProgramData;
+use ast::TransformerProgramData;
 use petgraph::{
     EdgeDirection::{Incoming, Outgoing},
     dot::Dot,
@@ -162,7 +162,7 @@ where
     }
 
     #[allow(dead_code, reason = "used for debugging")]
-    pub fn print_simple_with_annotations(&self, program_data: &ProgramData) {
+    pub fn print_simple_with_annotations(&self, program_data: &TransformerProgramData) {
         // Only used for custom debug impl.
         struct CustomNode<'ast, 'a, NA>
         where
@@ -170,7 +170,7 @@ where
         {
             node: Node<'ast>,
             annotation: Option<&'a NA>,
-            program_data: &'a ProgramData,
+            program_data: &'a TransformerProgramData,
         }
 
         impl<NA> fmt::Debug for CustomNode<'_, '_, NA>
@@ -188,7 +188,7 @@ where
                     NodeKind::Ident(s) => {
                         f.write_fmt(format_args!(
                             "Ident({})",
-                            self.program_data.get_name_for_id(s.name)
+                            self.program_data.get_name_text(s.name)
                         ))?;
                     }
                     _ => {
@@ -222,14 +222,17 @@ where
     /// Prints a rich representation of the control flow graph to dot format.
     /// The resulting graph contains represents the full AST of the entry node,
     /// as well as any control flow edges.
-    pub fn print_full(&self, program_data: &ProgramData) {
+    pub fn print_full(&self, program_data: &TransformerProgramData) {
         self.print_full_inner::<DefaultPrinter>(None, "cfg", program_data);
     }
     #[allow(dead_code, reason = "used for debugging")]
     /// Same as `print_full` but also prints node annotations using `printer`.
     /// If `printer` is `None`, the annotations will be printed using [`Debug`][std::fmt::Debug].
-    pub fn print_full_with_annotations<P>(&self, printer: Option<&P>, program_data: &ProgramData)
-    where
+    pub fn print_full_with_annotations<P>(
+        &self,
+        printer: Option<&P>,
+        program_data: &TransformerProgramData,
+    ) where
         P: AnnotationPrinter<NA>,
     {
         match printer {
@@ -239,13 +242,21 @@ where
     }
 
     #[allow(dead_code, reason = "used for debugging")]
-    pub fn print_full_with_annotations_name(&self, name: &str, program_data: &ProgramData) {
+    pub fn print_full_with_annotations_name(
+        &self,
+        name: &str,
+        program_data: &TransformerProgramData,
+    ) {
         self.print_full_inner::<DefaultPrinter>(Some(&DefaultPrinter), name, program_data);
     }
 
     /// If `printer` is `None`, node annotations are not printed.
-    fn print_full_inner<P>(&self, printer: Option<&P>, name: &str, program_data: &ProgramData)
-    where
+    fn print_full_inner<P>(
+        &self,
+        printer: Option<&P>,
+        name: &str,
+        program_data: &TransformerProgramData,
+    ) where
         P: AnnotationPrinter<NA>,
     {
         // Only used for custom debug impl.
@@ -257,7 +268,7 @@ where
             node: Node<'ast>,
             annotation: Option<&'a NA>,
             printer: Option<&'a P>,
-            program_data: &'a ProgramData,
+            program_data: &'a TransformerProgramData,
         }
 
         impl<NA, P> fmt::Debug for CustomNode<'_, '_, NA, P>
@@ -276,7 +287,7 @@ where
                     NodeKind::Ident(s) => {
                         f.write_fmt(format_args!(
                             "Ident({})",
-                            self.program_data.get_name_for_id(s.name)
+                            self.program_data.get_name_text(s.name)
                         ))?;
                     }
                     _ => {

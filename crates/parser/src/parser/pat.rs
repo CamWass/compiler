@@ -583,7 +583,9 @@ impl Parser<'_> {
                                     let assign_pat = AssignPat {
                                         node_id: node_id_from!(self, assign_prop.node_id),
                                         left: Box::new(Pat::Ident(BindingIdent {
-                                            id: assign_prop.key.clone_node(program_data!(self)),
+                                            id: assign_prop
+                                                .key
+                                                .clone_node(program_data!(self).data()),
                                         })),
                                         right: assign_prop.value,
                                     };

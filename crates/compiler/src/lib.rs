@@ -74,7 +74,7 @@ impl Compiler {
         &self,
         mut ast: ::ast::Program,
         passes: PassConfig,
-        program_data: &mut ::ast::ProgramData,
+        program_data: &mut ::ast::TransformerProgramData,
     ) -> ::ast::Program {
         // TODO: maybe add an 'AST verifier' that checks basic invariants after
         // each pass (e.g. that no two nodes have the same node_id).
@@ -91,7 +91,11 @@ impl Compiler {
     }
 }
 
-fn optimise(ast: &mut ::ast::Program, passes: PassConfig, program_data: &mut ::ast::ProgramData) {
+fn optimise(
+    ast: &mut ::ast::Program,
+    passes: PassConfig,
+    program_data: &mut ::ast::TransformerProgramData,
+) {
     if passes.optimize_arguments_array {
         OptimizeArgumentsArray::OptimizeArgumentsArray::process(ast, program_data);
     }
@@ -126,7 +130,7 @@ fn getEarlyOptimizationLoopPasses(_ast: &mut ::ast::Program) {
 fn getMainOptimizationLoop(
     ast: &mut ::ast::Program,
     passes: PassConfig,
-    program_data: &mut ::ast::ProgramData,
+    program_data: &mut ::ast::TransformerProgramData,
 ) {
     // TODO: inlineSimpleMethods
     // TODO: inlineProperties
@@ -150,7 +154,11 @@ fn getMainOptimizationLoop(
     // TODO: removeUnreachableCode
 }
 
-fn finalise(ast: &mut ::ast::Program, passes: PassConfig, program_data: &mut ::ast::ProgramData) {
+fn finalise(
+    ast: &mut ::ast::Program,
+    passes: PassConfig,
+    program_data: &mut ::ast::TransformerProgramData,
+) {
     // TODO: flowSensitiveInlineVariables
     // TODO: removeUnusedCodeOnce
     // TODO: crossModuleCodeMotion
@@ -201,7 +209,7 @@ fn finalise(ast: &mut ::ast::Program, passes: PassConfig, program_data: &mut ::a
 fn late_peephole_optimisations(
     ast: &mut ::ast::Program,
     passes: PassConfig,
-    program_data: &mut ::ast::ProgramData,
+    program_data: &mut ::ast::TransformerProgramData,
 ) {
     //     final boolean late = true;
     //     final boolean useTypesForOptimization = options.useTypesForLocalOptimization;

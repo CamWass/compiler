@@ -11,7 +11,7 @@ use crate::name_generator::NameGenerator;
 #[cfg(test)]
 mod tests;
 
-pub fn process(ast: &mut Program, program_data: &mut ProgramData) {
+pub fn process(ast: &mut Program, program_data: &mut TransformerProgramData) {
     let (rename_map, slot_map) = analyse(ast, program_data);
 
     // Actually assign the new names.
@@ -24,7 +24,7 @@ pub fn process(ast: &mut Program, program_data: &mut ProgramData) {
 
 fn analyse(
     ast: &Program,
-    program_data: &mut ProgramData,
+    program_data: &mut TransformerProgramData,
 ) -> (FxHashMap<SlotId, NameId>, FxHashMap<NameId, SlotId>) {
     let mut analyser = Analyser {
         cur_scope: ScopeId(0),
@@ -101,8 +101,7 @@ fn analyse(
     let mut name_gen = NameGenerator::new(analyser.unresolved_references);
     let mut rename_map = FxHashMap::with_capacity_and_hasher(slot_count, Default::default());
     for (slot, _ref_count) in slots {
-        let new_name =
-            ProgramData::mark_resolved(program_data.get_id_for_name(name_gen.generate_next_name()));
+        let new_name = program_data.new_resolved_name(name_gen.generate_next_name());
         rename_map.insert(slot, new_name);
     }
 
@@ -119,7 +118,7 @@ struct Analyser<'d> {
     reference_count: FxHashMap<NameId, usize>,
     unresolved_references: FxHashSet<JsWord>,
     order_of_occurrence: IndexSet<NameId>,
-    program_data: &'d mut ProgramData,
+    program_data: &'d mut TransformerProgramData,
 }
 
 impl Analyser<'_> {
@@ -128,7 +127,7 @@ impl Analyser<'_> {
     fn handle_reference(&mut self, name: NameId) {
         if name.is_unresolved() {
             self.unresolved_references
-                .insert(self.program_data.get_name_for_id(name).clone());
+                .insert(self.program_data.get_name_text(name).clone());
             return;
         }
         *self.reference_count.entry(name.clone()).or_default() += 1;

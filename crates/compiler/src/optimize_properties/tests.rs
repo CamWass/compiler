@@ -80,11 +80,11 @@ function foo(...a) {
 }
 
 fn test_props(obj: &str, props: &[NameId]) {
-    let program_data = ProgramData::default();
+    let program_data = ParserProgramData::default();
     // Test that built-in props are not renamed.
     let mut accesses = String::new();
     for prop in props {
-        let name = program_data.get_name_for_id(*prop);
+        let name = program_data.get_name_text(*prop);
         accesses.write_fmt(format_args!("a.{name}\n")).unwrap();
     }
     let input = format!("const a = {obj};\n{accesses}");
@@ -92,7 +92,7 @@ fn test_props(obj: &str, props: &[NameId]) {
 
     // Test that storing value in built-in prop invalidates the value.
     for prop in props {
-        let name = program_data.get_name_for_id(*prop);
+        let name = program_data.get_name_text(*prop);
         test_same(&format!("const a = {obj};\n a.{name} = {{ prop: 1 }}"));
     }
 }

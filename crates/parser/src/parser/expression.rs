@@ -393,7 +393,7 @@ impl Parser<'_> {
             {
                 // async a => body
                 let arg = self.parse_binding_ident().map(Pat::Ident)?;
-                let params = vec![Param::from_pat(arg, program_data!(self))];
+                let params = vec![Param::from_pat(arg, program_data!(self).data())];
                 expect!(self, "=>");
                 let body = self.parse_fn_body(true, false)?;
                 let body = self.make_arrow_fn_block(body);
@@ -410,7 +410,7 @@ impl Parser<'_> {
                 && self.eat(tok!("=>"))
             {
                 let pat = Pat::Ident(BindingIdent::from_ident(id));
-                let params = vec![Param::from_pat(pat, program_data!(self))];
+                let params = vec![Param::from_pat(pat, program_data!(self).data())];
                 let body = self.parse_fn_body(false, false)?;
                 let body = self.make_arrow_fn_block(body);
 
@@ -572,7 +572,7 @@ impl Parser<'_> {
                         Ok(Some((
                             Box::new(Expr::Call(CallExpr {
                                 node_id: node_id!(p, p.span(start)),
-                                callee: obj.clone_node(program_data!(p)).unwrap(),
+                                callee: obj.clone_node(program_data!(p).data()).unwrap(),
                                 args,
                             }))
                             .into(),
@@ -581,7 +581,7 @@ impl Parser<'_> {
                     } else if p.is(tok!('`')) {
                         let tag = match &obj {
                             MaybeParenExprOrSuper::Expr(obj) => {
-                                obj.clone_node(program_data!(p)).unwrap()
+                                obj.clone_node(program_data!(p).data()).unwrap()
                             }
                             MaybeParenExprOrSuper::Super(_) => unreachable!(),
                         };
@@ -1057,7 +1057,7 @@ impl Parser<'_> {
                 let params = self
                     .parse_paren_items_as_params(items)?
                     .into_iter()
-                    .map(|p| Param::from_pat(p, program_data!(self)))
+                    .map(|p| Param::from_pat(p, program_data!(self).data()))
                     .collect();
 
                 let body: BlockStmtOrExpr = self.parse_fn_body(false, false)?;
@@ -1283,11 +1283,11 @@ impl Parser<'_> {
 
                 expect!(p, "=>");
 
-                let exprs = items_ref.clone_node(program_data!(p));
+                let exprs = items_ref.clone_node(program_data!(p).data());
                 let params = p
                     .parse_paren_items_as_params(exprs)?
                     .into_iter()
-                    .map(|pat| Param::from_pat(pat, program_data!(p)))
+                    .map(|pat| Param::from_pat(pat, program_data!(p).data()))
                     .collect();
 
                 let body = p.parse_fn_body(async_span.is_some(), false)?;
@@ -1331,7 +1331,7 @@ impl Parser<'_> {
             let params = self
                 .parse_paren_items_as_params(paren_items)?
                 .into_iter()
-                .map(|p| Param::from_pat(p, program_data!(self)))
+                .map(|p| Param::from_pat(p, program_data!(self).data()))
                 .collect();
 
             let body: BlockStmtOrExpr = self.parse_fn_body(async_span.is_some(), false)?;

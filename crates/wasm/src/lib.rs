@@ -38,7 +38,7 @@ fn create_program(
     config: &Config,
     cm: &SourceMap,
     handler: &Handler,
-    program_data: &mut ast::ProgramData,
+    program_data: &mut ast::ParserProgramData,
 ) -> Result<ast::Program> {
     let syntax = if filename.ends_with(".js") {
         Syntax::Es(config.ecmascript)
@@ -120,15 +120,19 @@ fn compile(
         },
     );
 
-    let mut program_data = ast::ProgramData::default();
+    let mut program_data = ast::ParserProgramData::default();
 
     let program = create_program(entry_file, src, &config, &cm, &handler, &mut program_data)?;
 
     let input_ast_string = serde_json::to_string_pretty(&program)?;
 
+    let mut program_data = program_data.into_transformer_program_data();
+
     let compiler = Compiler::new();
 
     let result = compiler.compile(program, config.passes, &mut program_data);
+
+    let program_data = program_data.into_codegen_program_data();
 
     let mut buf = String::new();
 

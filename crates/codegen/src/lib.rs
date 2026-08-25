@@ -29,7 +29,7 @@ pub struct Emitter<'a> {
     cm: Rc<SourceMap>,
     wr: JsWriter<'a>,
 
-    program_data: &'a ProgramData,
+    program_data: &'a CodegenProgramData,
 
     ctx: Context,
     flags: Flags,
@@ -41,7 +41,7 @@ impl<'a> Emitter<'a> {
         cm: Rc<SourceMap>,
         wr: JsWriter<'a>,
 
-        program_data: &'a ProgramData,
+        program_data: &'a CodegenProgramData,
     ) -> Self {
         Self {
             cfg,
@@ -1880,8 +1880,8 @@ impl<'a> Emitter<'a> {
         if self.cfg.minify {
             if let PropName::Ident(key) = &node.key {
                 if let Expr::Ident(value) = node.value.as_ref() {
-                    if self.program_data.get_name_for_id(key.name)
-                        == self.program_data.get_name_for_id(value.name)
+                    if self.program_data.get_name_text(key.name)
+                        == self.program_data.get_name_text(value.name)
                     {
                         return self.emit_ident(key);
                     }
@@ -1974,7 +1974,7 @@ impl<'a> Emitter<'a> {
 
     fn emit_ident(&mut self, ident: &Ident) -> Result {
         let span = get_span!(self, ident.node_id);
-        let name = self.program_data.get_name_for_id(ident.name);
+        let name = self.program_data.get_name_text(ident.name);
         self.wr.write_symbol(span, name)
     }
 
@@ -2252,8 +2252,8 @@ impl Emitter<'_> {
             if let PropName::Ident(key) = &node.key {
                 // Short hand properties e.g. `{foo:foo}` => `{foo}`
                 if let Pat::Ident(value) = node.value.as_ref() {
-                    if self.program_data.get_name_for_id(key.name)
-                        == self.program_data.get_name_for_id(value.id.name)
+                    if self.program_data.get_name_text(key.name)
+                        == self.program_data.get_name_text(value.id.name)
                     {
                         return self.emit_ident(key);
                     }
@@ -2262,8 +2262,8 @@ impl Emitter<'_> {
                 // Short hand assign  e.g. `{foo: foo = bar}` => `{foo = bar}`
                 if let Pat::Assign(value) = node.value.as_ref() {
                     if let Pat::Ident(lhs) = value.left.as_ref() {
-                        if self.program_data.get_name_for_id(lhs.id.name)
-                            == self.program_data.get_name_for_id(key.name)
+                        if self.program_data.get_name_text(lhs.id.name)
+                            == self.program_data.get_name_text(key.name)
                         {
                             self.emit_ident(key)?;
                             punct!(self, "=");

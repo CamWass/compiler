@@ -2,13 +2,13 @@ use ast::*;
 use atoms::js_word;
 use visit::{VisitMut, VisitMutWith};
 
-pub fn process(ast: &mut Program, program_data: &mut ProgramData) {
+pub fn process(ast: &mut Program, program_data: &mut TransformerProgramData) {
     let mut visitor = Visitor { program_data };
     ast.visit_mut_with(&mut visitor);
 }
 
 struct Visitor<'a> {
-    program_data: &'a mut ProgramData,
+    program_data: &'a mut TransformerProgramData,
 }
 
 impl Visitor<'_> {
@@ -51,7 +51,7 @@ impl Visitor<'_> {
         if is_valid_prop_ident(prop_name) {
             *prop = PropName::Ident(Ident {
                 node_id: self.program_data.new_id_from(old_node_id),
-                name: self.program_data.get_id_for_name(prop_name.clone()),
+                name: self.program_data.intern_name(prop_name.clone()),
             });
         }
     }
@@ -87,7 +87,7 @@ impl VisitMut<'_> for Visitor<'_> {
             n.computed = false;
             *n.prop = Expr::Ident(Ident {
                 node_id: self.program_data.new_id_from(old_node_id),
-                name: self.program_data.get_id_for_name(prop_name.clone()),
+                name: self.program_data.intern_name(prop_name.clone()),
             });
         }
     }

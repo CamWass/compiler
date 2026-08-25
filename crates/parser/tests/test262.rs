@@ -331,14 +331,14 @@ fn identity_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
     Ok(())
 }
 
-fn parse_script(file_name: &Path) -> Result<(Script, ProgramData), NormalizedOutput> {
+fn parse_script(file_name: &Path) -> Result<(Script, ParserProgramData), NormalizedOutput> {
     with_parser(file_name, |p| p.parse_script())
 }
-fn parse_module(file_name: &Path) -> Result<(Module, ProgramData), NormalizedOutput> {
+fn parse_module(file_name: &Path) -> Result<(Module, ParserProgramData), NormalizedOutput> {
     with_parser(file_name, |p| p.parse_module())
 }
 
-fn with_parser<F, Ret>(file_name: &Path, f: F) -> Result<(Ret, ProgramData), StdErr>
+fn with_parser<F, Ret>(file_name: &Path, f: F) -> Result<(Ret, ParserProgramData), StdErr>
 where
     F: FnOnce(&mut Parser) -> PResult<Ret>,
 {
@@ -380,7 +380,7 @@ fn error() {
     test_main(&args, tests, Some(Options::new()));
 }
 
-pub fn normalize<'ast, 'd, T>(t: &'ast mut T, program_data: &'d mut ProgramData)
+pub fn normalize<'ast, 'd, T>(t: &'ast mut T, program_data: &'d mut ParserProgramData)
 where
     T: VisitMutWith<'ast, Normalizer<'d>>,
 {

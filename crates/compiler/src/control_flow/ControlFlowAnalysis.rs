@@ -269,7 +269,7 @@ where
     }
 
     #[allow(dead_code)]
-    pub fn print_full_graph(&self, program_data: &ProgramData) {
+    pub fn print_full_graph(&self, program_data: &TransformerProgramData) {
         self.cfg.print_full(program_data);
     }
 

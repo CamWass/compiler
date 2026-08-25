@@ -44,27 +44,27 @@ pub struct CoalesceVariableNames<'a> {
     coloring: GraphColouring<NameId>,
     map: FxHashMap<NameId, NodeIndex>,
 
-    program_data: &'a mut ast::ProgramData,
+    program_data: &'a mut ast::TransformerProgramData,
     in_loop_body: bool,
 }
 
-pub fn coalesce_variable_names(ast: &mut Program, program_data: &mut ast::ProgramData) {
+pub fn coalesce_variable_names(ast: &mut Program, program_data: &mut ast::TransformerProgramData) {
     let mut v = GlobalVisitor { program_data };
     ast.visit_mut_with(&mut v);
 }
 
 trait ParentVisitor {
-    fn program_data(&mut self) -> &mut ProgramData;
+    fn program_data(&mut self) -> &mut TransformerProgramData;
 }
 
 impl ParentVisitor for CoalesceVariableNames<'_> {
-    fn program_data(&mut self) -> &mut ProgramData {
+    fn program_data(&mut self) -> &mut TransformerProgramData {
         self.program_data
     }
 }
 
 impl ParentVisitor for GlobalVisitor<'_> {
-    fn program_data(&mut self) -> &mut ProgramData {
+    fn program_data(&mut self) -> &mut TransformerProgramData {
         self.program_data
     }
 }
@@ -579,7 +579,7 @@ fn compute_variable_names_interference_graph(
 /// functions and tries to run [`CoalesceVariableNames`] on them, without
 /// touching any global variables.
 struct GlobalVisitor<'a> {
-    program_data: &'a mut ast::ProgramData,
+    program_data: &'a mut ast::TransformerProgramData,
 }
 
 impl VisitMut<'_> for GlobalVisitor<'_> {

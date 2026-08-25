@@ -10,9 +10,9 @@ use visit::{VisitMut, VisitMutWith};
 pub struct Normalizer<'d> {
     pub drop_span: bool,
     pub is_test262: bool,
-    pub other_program_data: &'d mut ProgramData,
+    pub other_program_data: &'d mut ParserProgramData,
     pub name_map: FxHashMap<JsWord, NameId>,
-    pub fresh_program_data: ProgramData,
+    pub fresh_program_data: ParserProgramData,
 }
 
 impl VisitMut<'_> for Normalizer<'_> {
@@ -101,7 +101,7 @@ impl VisitMut<'_> for Normalizer<'_> {
             PropName::Ident(Ident { name, .. }) => {
                 *n = PropName::Str(Str {
                     node_id: NodeId::DUMMY,
-                    value: self.other_program_data.get_name_for_id(*name).clone(),
+                    value: self.other_program_data.get_name_text(*name).clone(),
                 });
             }
             PropName::Num(num) => {
@@ -128,13 +128,13 @@ impl VisitMut<'_> for Normalizer<'_> {
         // different number of Idents and thus different NameIds.
         match self
             .name_map
-            .entry(self.other_program_data.get_name_for_id(*name_id).clone())
+            .entry(self.other_program_data.get_name_text(*name_id).clone())
         {
             Entry::Occupied(occupied_entry) => *name_id = *occupied_entry.get(),
             Entry::Vacant(vacant_entry) => {
                 let new_name = self
                     .fresh_program_data
-                    .get_id_for_name(vacant_entry.key().clone());
+                    .intern_name(vacant_entry.key().clone());
                 vacant_entry.insert(new_name);
                 *name_id = new_name;
             }

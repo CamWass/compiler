@@ -1,4 +1,4 @@
-use ast::{NameId, ProgramData, id_for_built_in};
+use ast::{NameId, id_for_built_in};
 use atoms::JsWord;
 use common::DUMMY_SP;
 use std::collections::BTreeMap;
@@ -17,11 +17,11 @@ use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 /// function(a, b) { alert(a, b) }
 /// ```
 pub struct OptimizeArgumentsArray<'a> {
-    program_data: &'a mut ast::ProgramData,
+    program_data: &'a mut ast::TransformerProgramData,
 }
 
 impl<'a> OptimizeArgumentsArray<'a> {
-    pub fn process(ast: &mut ast::Program, program_data: &'a mut ast::ProgramData) {
+    pub fn process(ast: &mut ast::Program, program_data: &'a mut ast::TransformerProgramData) {
         let mut visitor = Self { program_data };
 
         ast.visit_mut_with(&mut visitor);
@@ -135,7 +135,7 @@ impl OptimizeArgumentsArray<'_> {
 }
 
 /// Creates a new param from the provided `NameId`.
-fn from_id(id: NameId, program_data: &mut ast::ProgramData) -> ast::Param {
+fn from_id(id: NameId, program_data: &mut ast::TransformerProgramData) -> ast::Param {
     ast::Param {
         node_id: program_data.new_id(DUMMY_SP),
         pat: ast::Pat::Ident(ast::BindingIdent {
@@ -158,7 +158,7 @@ trait AsFn {
     fn assemble_param_names(
         &self,
         max_count: usize,
-        program_data: &mut ast::ProgramData,
+        program_data: &mut ast::TransformerProgramData,
     ) -> BTreeMap<usize, NameId>;
 
     fn get_params(&mut self) -> &mut Vec<ast::Param>;
@@ -169,7 +169,7 @@ impl AsFn for ast::Function {
     fn assemble_param_names(
         &self,
         max_count: usize,
-        program_data: &mut ast::ProgramData,
+        program_data: &mut ast::TransformerProgramData,
     ) -> BTreeMap<usize, NameId> {
         let mut map = BTreeMap::new();
         let mut index = 0;
@@ -193,9 +193,7 @@ impl AsFn for ast::Function {
         }
         // ... then synthesize any additional param names.
         while index < max_count {
-            let new_name = ProgramData::mark_resolved(
-                program_data.get_id_for_name(JsWord::from(format!("p{index}"))),
-            );
+            let new_name = program_data.new_resolved_name(JsWord::from(format!("p{index}")));
             map.insert(index, new_name);
             index += 1;
         }
@@ -215,7 +213,7 @@ impl AsFn for ast::Constructor {
     fn assemble_param_names(
         &self,
         max_count: usize,
-        program_data: &mut ast::ProgramData,
+        program_data: &mut ast::TransformerProgramData,
     ) -> BTreeMap<usize, NameId> {
         let mut map = BTreeMap::new();
         let mut index = 0;
@@ -239,9 +237,7 @@ impl AsFn for ast::Constructor {
         }
         // ... then synthesize any additional param names.
         while index < max_count {
-            let new_name = ProgramData::mark_resolved(
-                program_data.get_id_for_name(JsWord::from(format!("p{index}"))),
-            );
+            let new_name = program_data.new_resolved_name(JsWord::from(format!("p{index}")));
             map.insert(index, new_name);
             index += 1;
         }
@@ -416,7 +412,7 @@ impl Visit<'_> for FnBodyVisitor {
 
 struct FnBodyReWriter<'a> {
     arg_names: &'a BTreeMap<usize, NameId>,
-    program_data: &'a mut ast::ProgramData,
+    program_data: &'a mut ast::TransformerProgramData,
 }
 
 impl<'a> FnBodyReWriter<'a> {
@@ -426,7 +422,7 @@ impl<'a> FnBodyReWriter<'a> {
     fn change_body(
         func_body: &mut ast::BlockStmt,
         arg_names: &'a BTreeMap<usize, NameId>,
-        program_data: &'a mut ast::ProgramData,
+        program_data: &'a mut ast::TransformerProgramData,
     ) {
         let mut visitor = Self {
             arg_names,

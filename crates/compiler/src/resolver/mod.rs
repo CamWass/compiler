@@ -7,7 +7,7 @@ use visit::{VisitMut, VisitMutWith};
 
 // TODO: get some tests.
 
-pub fn resolve(program: &mut Program, program_data: &mut ProgramData) {
+pub fn resolve(program: &mut Program, program_data: &mut TransformerProgramData) {
     let mut resolver = Resolver {
         program_data,
         scopes: vec![Scope {
@@ -21,7 +21,7 @@ pub fn resolve(program: &mut Program, program_data: &mut ProgramData) {
 }
 
 struct Resolver<'d> {
-    program_data: &'d mut ProgramData,
+    program_data: &'d mut TransformerProgramData,
     scopes: Vec<Scope>,
     in_decl: bool,
     processed_names: FxHashSet<NameId>,

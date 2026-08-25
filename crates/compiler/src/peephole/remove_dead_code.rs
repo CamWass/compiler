@@ -12,13 +12,13 @@ use crate::{
     utils::unwrap_as,
 };
 
-pub fn process(ast: &mut Program, program_data: &mut ProgramData) {
+pub fn process(ast: &mut Program, program_data: &mut TransformerProgramData) {
     let mut visitor = Visitor { program_data };
     ast.visit_mut_with(&mut visitor);
 }
 
 struct Visitor<'a> {
-    program_data: &'a mut ProgramData,
+    program_data: &'a mut TransformerProgramData,
 }
 
 #[derive(PartialEq)]

@@ -4,13 +4,13 @@ use visit::{VisitMut, VisitMutWith};
 
 use crate::utils::unwrap_as;
 
-pub fn process(ast: &mut Program, program_data: &mut ProgramData) {
+pub fn process(ast: &mut Program, program_data: &mut TransformerProgramData) {
     let mut visitor = Fuse { program_data };
     ast.visit_mut_with(&mut visitor);
 }
 
 struct Fuse<'a> {
-    program_data: &'a mut ProgramData,
+    program_data: &'a mut TransformerProgramData,
 }
 
 impl VisitMut<'_> for Fuse<'_> {
@@ -95,7 +95,7 @@ fn is_fusable_control_statement(stmt: &Stmt) -> bool {
 }
 
 /// Given a block, fuse a list of statements with comma's.
-fn fuse_statements(block: &mut BlockStmt, program_data: &mut ProgramData) -> SeqExpr {
+fn fuse_statements(block: &mut BlockStmt, program_data: &mut TransformerProgramData) -> SeqExpr {
     let exprs = block
         .stmts
         .drain(..(block.stmts.len() - 1))
@@ -110,7 +110,7 @@ fn fuse_statements(block: &mut BlockStmt, program_data: &mut ProgramData) -> Seq
 fn fuse_expression_into_control_flow_statement(
     seq: SeqExpr,
     last: &mut Stmt,
-    program_data: &mut ProgramData,
+    program_data: &mut TransformerProgramData,
 ) {
     // Now we are just left with two statements. The comma tree of the first
     // n - 1 statements (which can be used in an expression) and the last

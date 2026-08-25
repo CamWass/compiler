@@ -679,7 +679,7 @@ fn assert_not_live_before_decl(src: &str, var: &str) {
 
 fn with_liveness<F>(src: &str, is_async: bool, mut op: F)
 where
-    F: FnMut(&mut LiveVariablesAnalysis, &mut ProgramData),
+    F: FnMut(&mut LiveVariablesAnalysis, &TestingProgramData),
 {
     // Set up test case
     let src = if is_async {
@@ -714,19 +714,21 @@ where
     );
     liveness.data_flow_analysis.analyze();
 
-    op(&mut liveness, &mut program_data);
+    let program_data = program_data.into_testing_program_data();
+
+    op(&mut liveness, &program_data);
 }
 
 fn get_flow_state_at_x(
     liveness: &LiveVariablesAnalysis,
-    program_data: &mut ProgramData,
+    program_data: &TestingProgramData,
 ) -> Option<LinearFlowState> {
     let mut v = FlowStateFinder {
         liveness,
         flow_state: None,
         predicate: |stmt| {
             if let Stmt::Labeled(labeled) = stmt {
-                if program_data.get_name_for_id(labeled.label.name) == "X" {
+                if program_data.get_name_text(labeled.label.name) == "X" {
                     let body = Node::from(labeled.body.as_ref());
                     return liveness
                         .data_flow_analysis
@@ -802,7 +804,7 @@ where
 fn get_flow_state_at_declaration(
     liveness: &LiveVariablesAnalysis,
     name: &str,
-    program_data: &mut ProgramData,
+    program_data: &TestingProgramData,
 ) -> Option<LinearFlowState> {
     let mut v = FlowStateFinder {
         liveness,
@@ -813,7 +815,7 @@ fn get_flow_state_at_declaration(
                 assert!(d.decls.len() == 1);
                 let decl = d.decls.first().unwrap();
                 if let Pat::Ident(n) = &decl.name {
-                    if program_data.get_name_for_id(n.id.name) == name {
+                    if program_data.get_name_text(n.id.name) == name {
                         let decl = Node::from(d);
                         return liveness
                             .data_flow_analysis
@@ -864,7 +866,7 @@ fn assert_not_escaped(src: &str, name: &str) {
     });
 }
 
-fn parse_script(input: &str) -> (Script, ProgramData) {
+fn parse_script(input: &str) -> (Script, TransformerProgramData) {
     let cm = Rc::<SourceMap>::default();
     let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
 
@@ -888,6 +890,8 @@ fn parse_script(input: &str) -> (Script, ProgramData) {
     }
 
     assert!(!error, "Failed to parse");
+
+    let program_data = program_data.into_transformer_program_data();
 
     (res, program_data)
 }

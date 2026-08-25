@@ -307,7 +307,7 @@ fn get_computed_uses(
  */
 fn with_maybe_reaching_uses<F>(src: &str, is_async: bool, mut op: F)
 where
-    F: FnMut(&Function, &MaybeReachingResult<'_>, &mut ProgramData),
+    F: FnMut(&Function, &MaybeReachingResult<'_>, &mut TransformerProgramData),
 {
     // Set up test case
     let async_str = if is_async { "async" } else { "" };
@@ -349,7 +349,7 @@ where
     op(function, &result, &mut program_data);
 }
 
-fn parse_script(input: &str) -> (Script, ProgramData) {
+fn parse_script(input: &str) -> (Script, TransformerProgramData) {
     let cm = Rc::<SourceMap>::default();
     let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
 
@@ -374,6 +374,8 @@ fn parse_script(input: &str) -> (Script, ProgramData) {
 
     assert!(!error, "Failed to parse");
 
+    let program_data = program_data.into_transformer_program_data();
+
     (res, program_data)
 }
 
@@ -381,7 +383,7 @@ fn parse_script(input: &str) -> (Script, ProgramData) {
 fn extract_def_and_uses_from_input_labels<'ast>(
     function: &'ast Function,
     var_name: &'static str,
-    program_data: &mut ProgramData,
+    program_data: &mut TransformerProgramData,
 ) -> ExtractedInfo<'ast> {
     let mut extractor = InfoExtractor::new(var_name, program_data);
     function.visit_with(&mut extractor);
@@ -425,11 +427,11 @@ struct InfoExtractor<'ast, 'd> {
     var_name: &'static str,
     var_id: Option<NameId>,
 
-    program_data: &'d mut ProgramData,
+    program_data: &'d mut TransformerProgramData,
 }
 
 impl<'d> InfoExtractor<'_, 'd> {
-    fn new(var_name: &'static str, program_data: &'d mut ProgramData) -> Self {
+    fn new(var_name: &'static str, program_data: &'d mut TransformerProgramData) -> Self {
         Self {
             extracted_def: None,
             extracted_uses: Vec::new(),
@@ -442,18 +444,18 @@ impl<'d> InfoExtractor<'_, 'd> {
 
 impl<'ast> Visit<'ast> for InfoExtractor<'ast, '_> {
     fn visit_binding_ident(&mut self, node: &'ast BindingIdent) {
-        if self.program_data.get_name_for_id(node.id.name) == self.var_name {
+        if self.program_data.get_name_text(node.id.name) == self.var_name {
             self.var_id = Some(node.id.name);
         }
     }
 
     fn visit_labeled_stmt(&mut self, node: &'ast LabeledStmt) {
-        if self.program_data.get_name_for_id(node.label.name) == "D" {
+        if self.program_data.get_name_text(node.label.name) == "D" {
             assert!(self.extracted_def == None, "Multiple D: labels in test src");
             self.extracted_def = Some(Node::from(node.body.as_ref()));
         } else if self
             .program_data
-            .get_name_for_id(node.label.name)
+            .get_name_text(node.label.name)
             .starts_with('U')
         {
             self.extracted_uses.push(node.body.node_id());

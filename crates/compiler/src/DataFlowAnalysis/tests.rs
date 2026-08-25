@@ -586,8 +586,10 @@ function f() {
 // test computeEscaped helper method that returns the liveness analysis performed by the
 // LiveVariablesAnalysis class
 fn computeEscapedLocals(src: &str) -> FxHashSet<NameId> {
-    let (script, mut program_data) = parse_script(src);
+    let (script, program_data) = parse_script(src);
     let mut program = Program::Script(script);
+
+    let mut program_data = program_data.into_transformer_program_data();
 
     resolve(&mut program, &mut program_data);
 
@@ -614,7 +616,7 @@ fn computeEscapedLocals(src: &str) -> FxHashSet<NameId> {
     liveness.analyze().0.escaped_locals
 }
 
-fn parse_script(input: &str) -> (Script, ProgramData) {
+fn parse_script(input: &str) -> (Script, ParserProgramData) {
     let cm = Rc::<SourceMap>::default();
     let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
 

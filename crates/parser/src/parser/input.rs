@@ -6,7 +6,7 @@ use crate::{
     parser::Parser,
     token::{Token, TokenAndSpan, TokenData},
 };
-use ast::{NameId, ProgramData, id_for_built_in};
+use ast::{NameId, ParserProgramData, id_for_built_in};
 use atoms::JsWord;
 use common::{BytePos, Span};
 use num_bigint::BigUint;
@@ -245,10 +245,10 @@ impl<'d> Buffer<'d> {
         self.iter.set_token_context(c);
     }
 
-    pub(crate) fn program_data(&self) -> &ProgramData {
+    pub(crate) fn program_data(&self) -> &ParserProgramData {
         self.iter.program_data
     }
-    pub(crate) fn program_data_mut(&mut self) -> &mut ProgramData {
+    pub(crate) fn program_data_mut(&mut self) -> &mut ParserProgramData {
         self.iter.program_data
     }
 

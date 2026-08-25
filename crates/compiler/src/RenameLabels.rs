@@ -1,11 +1,11 @@
-use ast::{NameId, ProgramData};
+use ast::{NameId, TransformerProgramData};
 use common::util::take::Take;
 use rustc_hash::FxHashMap;
 use visit::{VisitMut, VisitMutWith};
 
 use crate::name_generator::NameGenerator;
 
-pub fn process(ast: &mut ast::Program, program_data: &mut ProgramData) {
+pub fn process(ast: &mut ast::Program, program_data: &mut TransformerProgramData) {
     let mut visitor = RenameLabels {
         name_supplier: NameGenerator::default(),
         namespace_stack: Vec::default(),
@@ -55,7 +55,7 @@ struct RenameLabels<'d> {
     // The list of generated names. Typically, the first name will be "a",
     // the second "b", etc.
     names: Vec<NameId>,
-    program_data: &'d mut ProgramData,
+    program_data: &'d mut TransformerProgramData,
 }
 
 impl RenameLabels<'_> {
@@ -115,7 +115,7 @@ impl VisitMut<'_> for RenameLabels<'_> {
                 if self.names.len() < current_depth {
                     let new_name = self
                         .program_data
-                        .get_id_for_name(self.name_supplier.generate_next_name());
+                        .new_resolved_name(self.name_supplier.generate_next_name());
                     self.names.push(new_name);
                 }
 

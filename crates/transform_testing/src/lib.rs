@@ -42,12 +42,12 @@ impl Tester<'_> {
         name: &str,
         syntax: Syntax,
         src: &str,
-    ) -> Result<(Module, ProgramData), ()> {
+    ) -> Result<(Module, ParserProgramData), ()> {
         let fm = self
             .cm
             .new_source_file(FileName::Real(name.into()), src.into());
 
-        let mut program_data = ast::ProgramData::default();
+        let mut program_data = ast::ParserProgramData::default();
 
         let module = {
             let mut p = Parser::new(syntax, &fm, &mut program_data);
@@ -72,14 +72,16 @@ impl Tester<'_> {
         }
     }
 
-    pub fn print(&mut self, module: &Module, program_data: &ProgramData) -> String {
+    pub fn print(&mut self, module: &Module, program_data: ParserProgramData) -> String {
+        let program_data = program_data.into_codegen_program_data();
+
         let mut buf = String::new();
 
         let mut emitter = Emitter::new(
             Default::default(),
             self.cm.clone(),
             codegen::JsWriter::new("\n", &mut buf, None),
-            program_data,
+            &program_data,
         );
 
         emitter.emit_module(module).unwrap();
@@ -167,8 +169,8 @@ pub fn test_transform<F, P>(
         }
 
         let (actual_src, expected_src) = (
-            tester.print(&actual.0, &actual.1),
-            tester.print(&expected.0, &expected.1),
+            tester.print(&actual.0, actual.1),
+            tester.print(&expected.0, expected.1),
         );
 
         if actual_src == expected_src {

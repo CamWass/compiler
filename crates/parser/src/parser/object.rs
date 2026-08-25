@@ -175,7 +175,7 @@ impl Parser<'_> {
             let span = Span::new(key_start, self.input.last_pos());
             return Ok(Prop::KeyValue(KeyValueProp {
                 node_id: node_id!(self, span),
-                value: Box::new(Expr::Ident(ident.clone_node(program_data!(self)))),
+                value: Box::new(Expr::Ident(ident.clone_node(program_data!(self).data()))),
                 key: PropName::Ident(ident),
             }));
         }
@@ -251,7 +251,7 @@ impl Parser<'_> {
                                         Pat::Invalid(Invalid {
                                             node_id: node_id!(self, key_span),
                                         }),
-                                        program_data!(self),
+                                        program_data!(self).data(),
                                     )
                                 }),
                             })
@@ -402,20 +402,20 @@ impl Parser<'_> {
             let assign_pat = AssignPat {
                 node_id: node_id!(self, pat_span),
                 left: Box::new(Pat::Ident(BindingIdent {
-                    id: key.clone_node(program_data!(self)),
+                    id: key.clone_node(program_data!(self).data()),
                 })),
                 right: value.unwrap(),
             };
             Ok(ObjectPatProp::KeyValue(KeyValuePatProp {
                 node_id: node_id!(self, pat_span),
-                key: PropName::Ident(key.clone_node(program_data!(self))),
+                key: PropName::Ident(key.clone_node(program_data!(self).data())),
                 value: Box::new(Pat::Assign(assign_pat)),
             }))
         } else {
             Ok(ObjectPatProp::KeyValue(KeyValuePatProp {
                 node_id: node_id!(self, key_span),
                 value: Box::new(Pat::Ident(BindingIdent {
-                    id: key.clone_node(program_data!(self)),
+                    id: key.clone_node(program_data!(self).data()),
                 })),
                 key: PropName::Ident(key),
             }))

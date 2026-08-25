@@ -45,7 +45,11 @@ pub struct Parser<'d> {
 }
 
 impl<'d> Parser<'d> {
-    pub fn new(syntax: Syntax, input: &'d SourceFile, program_data: &'d mut ProgramData) -> Self {
+    pub fn new(
+        syntax: Syntax,
+        input: &'d SourceFile,
+        program_data: &'d mut ParserProgramData,
+    ) -> Self {
         let input = Lexer::new(syntax, Default::default(), input, program_data);
 
         let start_pos = input.start_pos();

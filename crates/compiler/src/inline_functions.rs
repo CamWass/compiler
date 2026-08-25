@@ -10,7 +10,7 @@ use crate::{
 
 // Note: This is more of a proof-of-concept.
 
-pub fn process(ast: &mut ast::Program, program_data: &mut ProgramData) {
+pub fn process(ast: &mut ast::Program, program_data: &mut TransformerProgramData) {
     let (store, points_to) = analyse(ast, program_data);
 
     let mut stmt_inline_map: FxHashMap<NodeId, NodeId> = FxHashMap::default();
@@ -73,7 +73,7 @@ pub fn process(ast: &mut ast::Program, program_data: &mut ProgramData) {
 struct BodyCollector<'a> {
     stmt_bodies: FxHashMap<NodeId, Vec<Stmt>>,
     expr_bodies: FxHashMap<NodeId, Expr>,
-    program_data: &'a mut ProgramData,
+    program_data: &'a mut TransformerProgramData,
     functions_to_collect: &'a FxHashMap<NodeId, ExprContext>,
 
     references_this: bool,
@@ -188,7 +188,7 @@ impl Visit<'_> for BodyCollector<'_> {
             if all_but_last_are_expr {
                 if let Some(Stmt::Return(last)) = n.function.body.stmts.last() {
                     let tail = match &last.arg {
-                        Some(arg) => arg.as_ref().clone_node(self.program_data),
+                        Some(arg) => arg.as_ref().clone_node(self.program_data.data()),
                         None => make_undefined(self.program_data),
                     };
 
@@ -207,7 +207,7 @@ impl Visit<'_> for BodyCollector<'_> {
                 if let Some(Stmt::Expr(last)) = n.function.body.stmts.last() {
                     // All statements are expressions.
 
-                    let tail = last.expr.as_ref().clone_node(self.program_data);
+                    let tail = last.expr.as_ref().clone_node(self.program_data.data());
 
                     let body = convert_statements_to_expressions(
                         &n.function.body.stmts[..(n.function.body.stmts.len() - 1)],
@@ -233,7 +233,7 @@ impl Visit<'_> for BodyCollector<'_> {
                 return;
             }
 
-            let mut body = n.function.body.stmts.clone_node(self.program_data);
+            let mut body = n.function.body.stmts.clone_node(self.program_data.data());
             remove_return_stmts(&mut body, self.program_data);
 
             self.stmt_bodies.insert(n.function.node_id, body);
@@ -244,7 +244,7 @@ impl Visit<'_> for BodyCollector<'_> {
 struct Inliner<'a> {
     expr_bodies: FxHashMap<NodeId, Expr>,
     stmt_bodies: FxHashMap<NodeId, Vec<Stmt>>,
-    program_data: &'a mut ProgramData,
+    program_data: &'a mut TransformerProgramData,
     stmt_inline_map: FxHashMap<NodeId, NodeId>,
     expr_inline_map: FxHashMap<NodeId, NodeId>,
 }
@@ -330,7 +330,7 @@ impl<'ast> VisitMut<'ast> for Inliner<'_> {
 /// Panics if the statements are not all [`ExprStmt`].
 fn convert_statements_to_expressions(
     statements: &[Stmt],
-    program_data: &mut ProgramData,
+    program_data: &mut TransformerProgramData,
     block_span: Span,
     tail: Expr,
 ) -> Expr {
@@ -341,7 +341,8 @@ fn convert_statements_to_expressions(
         };
 
         expr.exprs.extend(statements.iter().map(|s| {
-            unwrap_as!(s, Stmt::Expr(ExprStmt { expr, .. }), expr.as_ref()).clone_node(program_data)
+            unwrap_as!(s, Stmt::Expr(ExprStmt { expr, .. }), expr.as_ref())
+                .clone_node(program_data.data())
         }));
 
         expr.exprs.push(tail);
@@ -352,21 +353,21 @@ fn convert_statements_to_expressions(
     }
 }
 
-fn make_undefined(program_data: &mut ProgramData) -> Expr {
+fn make_undefined(program_data: &mut TransformerProgramData) -> Expr {
     Expr::Ident(Ident {
         node_id: program_data.new_id(DUMMY_SP),
         name: id_for_built_in!("undefined"),
     })
 }
 
-fn remove_return_stmts(stmts: &mut [Stmt], program_data: &mut ProgramData) {
+fn remove_return_stmts(stmts: &mut [Stmt], program_data: &mut TransformerProgramData) {
     let mut v = ReturnRemover { program_data };
 
     stmts.iter_mut().for_each(|s| s.visit_mut_with(&mut v));
 }
 
 struct ReturnRemover<'a> {
-    program_data: &'a mut ProgramData,
+    program_data: &'a mut TransformerProgramData,
 }
 
 impl VisitMut<'_> for ReturnRemover<'_> {

@@ -29,15 +29,15 @@ impl Tester<'_> {
         tr: T,
         name: &str,
         src: &str,
-    ) -> Result<(Program, ProgramData), ()>
+    ) -> Result<(Program, TransformerProgramData), ()>
     where
-        T: FnOnce(Program, &mut ast::ProgramData) -> Program,
+        T: FnOnce(Program, &mut ast::TransformerProgramData) -> Program,
     {
         let fm = self
             .cm
             .new_source_file(FileName::Real(name.into()), src.into());
 
-        let mut program_data = ast::ProgramData::default();
+        let mut program_data = ast::ParserProgramData::default();
 
         let program = {
             let mut p = Parser::new(
@@ -56,19 +56,23 @@ impl Tester<'_> {
             res?
         };
 
+        let mut program_data = program_data.into_transformer_program_data();
+
         let program = tr(program, &mut program_data);
 
         Ok((program, program_data))
     }
 
-    fn print(&mut self, program: &Program, program_data: &ProgramData) -> String {
+    fn print(&mut self, program: &Program, program_data: TransformerProgramData) -> String {
+        let program_data = program_data.into_codegen_program_data();
+
         let mut buf = String::new();
 
         let mut emitter = Emitter::new(
             Default::default(),
             self.cm.clone(),
             JsWriter::new("\n", &mut buf, None),
-            program_data,
+            &program_data,
         );
 
         emitter.emit_program(program).unwrap();
@@ -80,7 +84,7 @@ impl Tester<'_> {
 // TODO: make T take &mut Program and return nothing.
 pub fn test_transform<T>(transform: T, input: &str, expected: &str)
 where
-    T: FnOnce(Program, &mut ast::ProgramData) -> Program,
+    T: FnOnce(Program, &mut ast::TransformerProgramData) -> Program,
 {
     Tester::run(|tester| {
         let mut expected = tester.apply_transform(|m, _| m, "output.js", expected)?;
@@ -88,8 +92,8 @@ where
         let mut actual = tester.apply_transform(transform, "input.js", input)?;
 
         let (actual_src, expected_src) = (
-            tester.print(&actual.0, &actual.1),
-            tester.print(&expected.0, &expected.1),
+            tester.print(&actual.0, actual.1),
+            tester.print(&expected.0, expected.1),
         );
 
         if actual_src == expected_src {
