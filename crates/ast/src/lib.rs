@@ -390,7 +390,7 @@ impl ProgramData {
         data
     }
 
-    pub fn new_id(&mut self, span: Span) -> NodeId {
+    fn new_id(&mut self, span: Span) -> NodeId {
         self.spans.push(span)
     }
 
@@ -406,11 +406,6 @@ impl ProgramData {
     fn set_span(&mut self, node: NodeId, span: Span) {
         self.spans[node] = span;
     }
-
-    // TODO: maybe split ProgramData into `ParseProgramData` and
-    // `TransformProgramData` or something, so each stage of the compilation
-    // only has access to the 'correct'/idiomatic methods for interacting with
-    // names at that stage.
 
     fn get_id_for_name(&mut self, name: JsWord) -> NameId {
         match self.name_to_id_map.entry(name) {
