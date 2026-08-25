@@ -7,7 +7,6 @@ use crate::{
     token::{Token, TokenAndSpan, TokenData},
 };
 use ast::{NameId, ParserProgramData, id_for_built_in};
-use atoms::JsWord;
 use common::{BytePos, Span};
 use num_bigint::BigUint;
 
@@ -448,7 +447,7 @@ impl<'d> Buffer<'d> {
         ret
     }
 
-    pub fn expect_str_token_and_bump(&mut self) -> JsWord {
+    pub fn expect_str_token_and_bump(&mut self) -> Box<String> {
         let ret = if let Some(TokenData::Str { value }) = self.iter.take_token_data() {
             value
         } else {
@@ -478,7 +477,7 @@ impl<'d> Buffer<'d> {
         ret
     }
 
-    pub fn expect_template_token_and_bump(&mut self) -> (JsWord, bool) {
+    pub fn expect_template_token_and_bump(&mut self) -> (Box<String>, bool) {
         let ret = if let Some(TokenData::Template {
             raw,
             has_invalid_escape,

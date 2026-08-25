@@ -673,7 +673,7 @@ impl<'src> Lexer<'src> {
                 match ch {
                     ch if ch == quote => {
                         lexer.advance(1); // ' or "
-                        return Ok(lexer.make_str_token(out.as_str().into()));
+                        return Ok(lexer.make_str_token(Box::new(String::from(out.as_str()))));
                     }
                     b'\\' => {
                         if let Some(s) = lexer.read_escaped_char(false)? {
@@ -1026,7 +1026,7 @@ impl<'src> Lexer<'src> {
 
                 let raw = self.slice_to_cur(start);
 
-                return Ok(self.make_tpl_token(raw.into(), has_invalid_escape));
+                return Ok(self.make_tpl_token(Box::new(String::from(raw)), has_invalid_escape));
             }
 
             if c == b'\\' {

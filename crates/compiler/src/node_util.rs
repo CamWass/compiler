@@ -119,7 +119,7 @@ pub fn get_boolean_value(expr: &Expr) -> Option<bool> {
 pub fn getStringValue(expr: &Expr) -> Option<JsWord> {
     match expr {
         Expr::Lit(lit) => match lit {
-            Lit::Str(string) => Some(string.value.clone()),
+            Lit::Str(string) => Some(JsWord::from(string.value.as_str())),
             Lit::Bool(bool) => {
                 if bool.value {
                     Some(js_word!("true"))

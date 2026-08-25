@@ -4,7 +4,6 @@ use crate::{
     token::{Token, TokenData},
 };
 use ast::NameId;
-use atoms::JsWord;
 use common::{BytePos, Pos, Span, chars::char_literals};
 
 /// See https://tc39.github.io/ecma262/#sec-line-terminators
@@ -227,12 +226,12 @@ impl Lexer<'_> {
         Token::BigInt
     }
 
-    pub fn make_str_token(&mut self, value: JsWord) -> Token {
+    pub fn make_str_token(&mut self, value: Box<String>) -> Token {
         self.state.token_data = Some(TokenData::Str { value });
         Token::Str
     }
 
-    pub fn make_tpl_token(&mut self, raw: JsWord, has_invalid_escape: bool) -> Token {
+    pub fn make_tpl_token(&mut self, raw: Box<String>, has_invalid_escape: bool) -> Token {
         self.state.token_data = Some(TokenData::Template {
             raw,
             has_invalid_escape,

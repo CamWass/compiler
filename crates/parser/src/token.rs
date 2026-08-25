@@ -4,7 +4,6 @@ use crate::{
 };
 pub(crate) use ast::AssignOp;
 use ast::{BinaryOp, NameId};
-use atoms::JsWord;
 use common::Span;
 use num_bigint::BigUint;
 use std::fmt::{Debug, Display};
@@ -401,13 +400,13 @@ pub enum TokenData {
     Ident(NameId),
 
     Template {
-        raw: JsWord,
+        raw: Box<String>,
         has_invalid_escape: bool,
     },
 
     /// String literal. Span of this token contains quote.
     Str {
-        value: JsWord,
+        value: Box<String>,
     },
 
     Num(f64),

@@ -1,7 +1,6 @@
 #![deny(unused)]
 
 use ast::*;
-use atoms::JsWord;
 use num_bigint::BigUint;
 use visit_macros::define;
 
@@ -457,7 +456,7 @@ define!({
     }
     pub struct Str {
         pub node_id: NodeId,
-        pub value: JsWord,
+        pub value: Box<String>,
     }
     pub struct Bool {
         pub node_id: NodeId,

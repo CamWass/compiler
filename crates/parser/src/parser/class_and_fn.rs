@@ -1164,16 +1164,14 @@ impl FnBodyParser<Option<BlockStmt>> for Parser<'_> {
 }
 
 fn is_constructor(key: &Key) -> bool {
-    matches!(
-        *key,
+    match key {
         Key::PropName(PropName::Ident(Ident {
             name: id_for_built_in!("constructor"),
             ..
-        })) | Key::PropName(PropName::Str(Str {
-            value: js_word!("constructor"),
-            ..
-        }))
-    )
+        })) => true,
+        Key::PropName(PropName::Str(Str { value, .. })) => value.as_str() == "constructor",
+        _ => false,
+    }
 }
 
 struct MakeMethodArgs {

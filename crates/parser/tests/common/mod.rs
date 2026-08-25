@@ -101,7 +101,9 @@ impl VisitMut<'_> for Normalizer<'_> {
             PropName::Ident(Ident { name, .. }) => {
                 *n = PropName::Str(Str {
                     node_id: NodeId::DUMMY,
-                    value: self.other_program_data.get_name_text(*name).clone(),
+                    value: Box::new(String::from(
+                        &**self.other_program_data.get_name_text(*name),
+                    )),
                 });
             }
             PropName::Num(num) => {

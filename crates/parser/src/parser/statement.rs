@@ -29,7 +29,7 @@ pub(super) trait IsDirective {
         match self.as_ref() {
             Some(Stmt::Expr(expr)) => match expr.expr.as_ref() {
                 Expr::Lit(Lit::Str(Str { value, node_id })) => {
-                    if value == "use strict" {
+                    if value.as_ref() == "use strict" {
                         // Directives can't contain escapes - we check by
                         // comparing the length of the string's raw value
                         // against the directive. Any escapes will make the raw

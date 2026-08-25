@@ -1,5 +1,4 @@
 use ast::*;
-use atoms::{JsWord, js_word};
 use visit::{VisitMut, VisitMutWith};
 
 use crate::node_util::getKnownValueType;
@@ -53,7 +52,7 @@ fn optimise_loose_equality(bin_expr: &mut BinExpr) {
             bin_expr.op = BinaryOp::Gt;
         }
 
-        undefined_string.value = JsWord::from("u");
+        undefined_string.value = Box::new(String::from("u"));
     }
 
     if is_rhs_typeof && let Some(undefined_string) = get_undefined_string(&mut bin_expr.left) {
@@ -67,7 +66,7 @@ fn optimise_loose_equality(bin_expr: &mut BinExpr) {
             bin_expr.op = BinaryOp::Lt;
         }
 
-        undefined_string.value = JsWord::from("u");
+        undefined_string.value = Box::new(String::from("u"));
     }
 }
 
@@ -80,7 +79,7 @@ fn is_typeof(e: &Expr) -> bool {
 
 fn get_undefined_string(e: &mut Expr) -> Option<&mut Str> {
     match e {
-        Expr::Lit(Lit::Str(s)) if s.value == js_word!("undefined") => Some(s),
+        Expr::Lit(Lit::Str(s)) if s.value.as_ref() == "undefined" => Some(s),
         _ => None,
     }
 }

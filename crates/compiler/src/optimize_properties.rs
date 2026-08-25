@@ -1793,7 +1793,7 @@ impl VisitMut<'_> for Renamer<'_> {
 
     fn visit_mut_str(&mut self, node: &mut Str) {
         if let Some(new_name) = self.rename_map.get(&node.node_id) {
-            node.value = self.program_data.get_name_text(*new_name).clone();
+            node.value = Box::new(String::from(&**self.program_data.get_name_text(*new_name)));
         }
     }
 }
@@ -1809,7 +1809,7 @@ impl PropKey {
         match prop {
             PropName::Ident(p) => Some(PropKey(p.name, p.node_id)),
             PropName::Str(p) => Some(PropKey(
-                program_data.intern_name(p.value.clone()),
+                program_data.intern_name(JsWord::from(p.value.as_str())),
                 p.node_id,
             )),
             PropName::Num(p) => Some(PropKey(
@@ -1841,7 +1841,7 @@ impl PropKey {
             }
             Expr::Lit(e) => match e {
                 Lit::Str(e) => Some(PropKey(
-                    program_data.intern_name(e.value.clone()),
+                    program_data.intern_name(JsWord::from(e.value.as_str())),
                     e.node_id,
                 )),
                 Lit::Bool(e) => {

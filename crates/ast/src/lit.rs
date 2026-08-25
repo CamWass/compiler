@@ -1,5 +1,4 @@
 use crate::{GetNodeId, NodeId};
-use atoms::JsWord;
 use clone_node::CloneNode;
 use node_eq::NodeEq;
 use node_id::GetNodeIdMacro;
@@ -32,7 +31,7 @@ pub struct BigInt {
 pub struct Str {
     pub node_id: NodeId,
 
-    pub value: JsWord,
+    pub value: Box<String>,
 }
 
 impl Str {

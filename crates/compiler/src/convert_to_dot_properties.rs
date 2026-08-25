@@ -1,5 +1,5 @@
 use ast::*;
-use atoms::js_word;
+use atoms::{JsWord, js_word};
 use visit::{VisitMut, VisitMutWith};
 
 pub fn process(ast: &mut Program, program_data: &mut TransformerProgramData) {
@@ -16,10 +16,12 @@ impl Visitor<'_> {
         prop.visit_mut_children_with(self);
 
         let (prop_name, old_node_id) = match &prop {
-            PropName::Str(prop_name) => (&prop_name.value, prop_name.node_id),
+            PropName::Str(prop_name) => {
+                (&JsWord::from(prop_name.value.as_str()), prop_name.node_id)
+            }
             PropName::Computed(computed_prop) => match computed_prop.expr.as_ref() {
                 Expr::Lit(lit) => match lit {
-                    Lit::Str(str) => (&str.value, computed_prop.node_id),
+                    Lit::Str(str) => (&JsWord::from(str.value.as_str()), computed_prop.node_id),
                     Lit::Null(_) => (&js_word!("null"), computed_prop.node_id),
                     Lit::Bool(bool) => {
                         if bool.value {
@@ -63,7 +65,7 @@ impl VisitMut<'_> for Visitor<'_> {
 
         let (prop_name, old_node_id) = match n.prop.as_ref() {
             Expr::Lit(lit) => match lit {
-                Lit::Str(str) => (&str.value, str.node_id),
+                Lit::Str(str) => (&JsWord::from(str.value.as_str()), str.node_id),
                 Lit::Null(null) => (&js_word!("null"), null.node_id),
                 Lit::Bool(bool) => {
                     if bool.value {
