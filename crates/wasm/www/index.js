@@ -136,6 +136,9 @@ function run() {
   } catch (e) {
     console.error(e);
     outputTextTextArea.value = e;
+    outputAstJsonTextArea.value = e;
+    inputAstJsonTextArea.value = e;
+
     outputSizeLabel.textContent = "error";
   }
 }
