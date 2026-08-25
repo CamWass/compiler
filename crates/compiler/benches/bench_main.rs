@@ -4,7 +4,11 @@ use criterion::{criterion_group, criterion_main};
 
 mod benchmarks;
 
-criterion_group!(benches, benchmarks::props::bench);
+criterion_group!(
+    benches,
+    benchmarks::props::bench,
+    benchmarks::rename_vars::bench
+);
 criterion_main! {
     benches
 }

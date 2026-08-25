@@ -1,0 +1,70 @@
+#![deny(unused_imports)]
+
+use std::rc::Rc;
+use std::time::Duration;
+
+use common::{FileName, FilePathMapping};
+use common::{
+    SourceMap,
+    errors::{ColorConfig, Handler},
+};
+use compiler::resolver::resolve;
+use criterion::{Criterion, Throughput, black_box};
+use parser::{Parser, Syntax};
+
+pub fn bench(c: &mut Criterion) {
+    let benches: &'static [(&'static str, &'static str, u64, usize)] = &[
+        (
+            "small_typescript",
+            include_str!("../files/small_typescript.js"),
+            20,
+            100,
+        ),
+        ("typescript", include_str!("../files/typescript.js"), 20, 10),
+    ];
+
+    let mut group = c.benchmark_group("rename_vars");
+    for (id, src, time, samples) in benches {
+        group
+            .measurement_time(Duration::from_secs(*time))
+            .sample_size(*samples);
+        group.throughput(Throughput::Bytes(src.len() as u64));
+
+        let cm = Rc::new(SourceMap::new(FilePathMapping::empty()));
+        let fm = cm.new_source_file(FileName::Anon, src.to_string());
+
+        let mut program_data = ast::ParserProgramData::default();
+
+        let handler = Handler::with_tty_emitter(ColorConfig::Always, true, false, Some(cm.clone()));
+
+        let mut program = {
+            let mut p = Parser::new(
+                Syntax::Typescript(Default::default()),
+                &fm,
+                &mut program_data,
+            );
+            let res = p
+                .parse_program()
+                .map_err(|e| e.into_diagnostic(&handler).emit());
+
+            for e in p.take_errors() {
+                e.into_diagnostic(&handler).emit();
+            }
+
+            res.unwrap()
+        };
+
+        let mut program_data = program_data.into_transformer_program_data();
+
+        resolve(&mut program, &mut program_data);
+
+        group.bench_function(*id, |b| {
+            b.iter(|| {
+                compiler::RenameVars::process(&mut program, &mut program_data);
+                black_box(&program);
+                black_box(&program_data);
+            });
+        });
+    }
+    group.finish();
+}

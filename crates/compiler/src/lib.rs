@@ -10,7 +10,7 @@ mod LiveVariablesAnalysis;
 mod MaybeReachingVariableUse;
 mod OptimizeArgumentsArray;
 mod RenameLabels;
-mod RenameVars;
+pub mod RenameVars;
 mod collapse_variable_declarations;
 mod control_flow;
 mod convert;
