@@ -31,7 +31,7 @@ fn analyse(
         // Global scope is hoist scope.
         cur_hoist_scope: ScopeId(0),
         scopes: vec![Scope {
-            names: IndexSet::default(),
+            names: Vec::default(),
             parent: None,
         }],
         in_var_decl: false,
@@ -45,6 +45,12 @@ fn analyse(
 
     let mut slots = FxHashMap::<SlotId, Slot>::default();
     let mut slot_map = FxHashMap::default();
+
+    // Remove duplicate declarations, which are very rare.
+    for scope in &mut analyser.scopes {
+        scope.names.sort_unstable();
+        scope.names.dedup();
+    }
 
     for scope in &analyser.scopes {
         let mut base_depth = 0;
@@ -155,7 +161,7 @@ impl Analyser<'_> {
 
         let scope = &mut self.scopes[scope_pos.0];
 
-        scope.names.insert(name);
+        scope.names.push(name);
     }
 
     /// Runs `op` with a new scope on the stack.
@@ -167,7 +173,7 @@ impl Analyser<'_> {
         let prev = self.cur_scope;
         self.scopes.push(Scope {
             parent: Some(prev),
-            names: IndexSet::default(),
+            names: Vec::default(),
         });
         self.cur_scope = next_scope_id;
         let prev_hoist_scope = self.cur_hoist_scope;
@@ -333,7 +339,14 @@ struct ScopeId(usize);
 #[derive(Debug)]
 struct Scope {
     parent: Option<ScopeId>,
-    names: IndexSet<NameId>,
+    /// Names declared in this scope, in order of declaration.
+    ///
+    /// **May contain duplicates**:
+    /// Declaring the same name multiple times in the same scope is very rare,
+    /// so rather than pay the insertion-cost of something like an IndexSet to
+    /// prevent duplicates, we do a fast push to a Vec then later perform a
+    /// sort+dedupe, which is fairly quick.
+    names: Vec<NameId>,
 }
 
 struct Renamer {
