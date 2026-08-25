@@ -58,15 +58,15 @@ fn analyse(
         let mut cur = scope;
 
         while let Some(parent) = cur.parent {
-            let parent = &analyser.scopes[parent.0];
-            base_depth += parent.names.len();
+            let parent = &analyser.scopes[parent.0 as usize];
+            base_depth += parent.names.len() as u32;
             cur = parent;
         }
 
         for (i, name) in scope.names.iter().enumerate() {
             debug_assert!(!slot_map.contains_key(name));
 
-            let slot = SlotId(base_depth + i);
+            let slot = SlotId(base_depth + i as u32);
 
             slot_map.insert(name.clone(), slot);
 
@@ -85,7 +85,8 @@ fn analyse(
                         order_of_occurrence: analyser
                             .order_of_occurrence
                             .get_index_of(name)
-                            .expect("every collected var should have order"),
+                            .expect("every collected var should have order")
+                            as u32,
                     });
                 }
             }
@@ -128,7 +129,7 @@ struct Analyser<'d> {
     /// Whether we are visiting the names in a `var` decl.
     in_var_decl: bool,
     in_decl: bool,
-    reference_count: FxHashMap<NameId, usize>,
+    reference_count: FxHashMap<NameId, u32>,
     unresolved_references: FxHashSet<JsWord>,
     order_of_occurrence: IndexSet<NameId>,
     program_data: &'d mut TransformerProgramData,
@@ -159,7 +160,7 @@ impl Analyser<'_> {
             self.cur_scope
         };
 
-        let scope = &mut self.scopes[scope_pos.0];
+        let scope = &mut self.scopes[scope_pos.0 as usize];
 
         scope.names.push(name);
     }
@@ -169,7 +170,7 @@ impl Analyser<'_> {
     where
         F: FnMut(&mut Self),
     {
-        let next_scope_id = ScopeId(self.scopes.len());
+        let next_scope_id = ScopeId(self.scopes.len() as u32);
         let prev = self.cur_scope;
         self.scopes.push(Scope {
             parent: Some(prev),
@@ -326,15 +327,15 @@ impl Visit<'_> for Analyser<'_> {
 }
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
-struct SlotId(usize);
+struct SlotId(u32);
 
 struct Slot {
-    order_of_occurrence: usize,
-    reference_count: usize,
+    order_of_occurrence: u32,
+    reference_count: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
-struct ScopeId(usize);
+struct ScopeId(u32);
 
 #[derive(Debug)]
 struct Scope {
