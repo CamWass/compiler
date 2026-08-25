@@ -1,9 +1,9 @@
-use std::collections::hash_map::Entry;
+use std::{collections::hash_map::Entry, hash::BuildHasherDefault};
 
 use ast::*;
 use atoms::JsWord;
 use indexmap::IndexSet;
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use crate::name_generator::NameGenerator;
@@ -131,7 +131,7 @@ struct Analyser<'d> {
     in_decl: bool,
     reference_count: FxHashMap<NameId, u32>,
     unresolved_references: FxHashSet<JsWord>,
-    order_of_occurrence: IndexSet<NameId>,
+    order_of_occurrence: IndexSet<NameId, BuildHasherDefault<FxHasher>>,
     program_data: &'d mut TransformerProgramData,
 }
 
