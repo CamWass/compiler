@@ -68,7 +68,7 @@ fn analyse(
 
             let slot = SlotId(base_depth + i as u32);
 
-            slot_map.insert(name.clone(), slot);
+            slot_map.insert(*name, slot);
 
             let reference_count = *analyser
                 .reference_count
@@ -144,8 +144,8 @@ impl Analyser<'_> {
                 .insert(self.program_data.get_name_text(name).clone());
             return;
         }
-        *self.reference_count.entry(name.clone()).or_default() += 1;
-        self.order_of_occurrence.insert(name.clone());
+        *self.reference_count.entry(name).or_default() += 1;
+        self.order_of_occurrence.insert(name);
     }
 
     /// Records a declaration of a [`NameId`].
@@ -374,10 +374,9 @@ impl VisitMut<'_> for Renamer {
             let new_name = self
                 .rename_map
                 .get(slot.0 as usize)
-                .expect("all slots should have new names")
-                .clone();
+                .expect("all slots should have new names");
 
-            node.name = new_name;
+            node.name = *new_name;
         }
     }
 }

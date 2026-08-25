@@ -513,8 +513,8 @@ fn compute_variable_names_interference_graph(
             continue;
         }
 
-        let node_index = interference_graph.add_node(v.clone());
-        map.insert(v.clone(), node_index);
+        let node_index = interference_graph.add_node(*v);
+        map.insert(*v, node_index);
         interference_graph_nodes.insert(v_index);
     }
 
