@@ -25,7 +25,7 @@ pub fn process(ast: &mut Program, program_data: &mut TransformerProgramData) {
 fn analyse(
     ast: &Program,
     program_data: &mut TransformerProgramData,
-) -> (FxHashMap<SlotId, NameId>, FxHashMap<NameId, SlotId>) {
+) -> (Vec<NameId>, FxHashMap<NameId, SlotId>) {
     let mut analyser = Analyser {
         cur_scope: ScopeId(0),
         // Global scope is hoist scope.
@@ -60,7 +60,7 @@ fn analyse(
         for (i, name) in scope.names.iter().enumerate() {
             debug_assert!(!slot_map.contains_key(name));
 
-            let slot = SlotId(base_depth + i + 1);
+            let slot = SlotId(base_depth + i);
 
             slot_map.insert(name.clone(), slot);
 
@@ -99,11 +99,18 @@ fn analyse(
     let slot_count = slots.len();
 
     let mut name_gen = NameGenerator::new(analyser.unresolved_references);
-    let mut rename_map = FxHashMap::with_capacity_and_hasher(slot_count, Default::default());
-    for (slot, _ref_count) in slots {
+    // Using 0 instead of NameId::DUMMY here was slightly faster during benchmarking.
+    const DUMMY_VALUE: NameId = NameId::from_u32(0);
+    let mut rename_map = vec![DUMMY_VALUE; slot_count];
+    for (slot, _) in slots {
         let new_name = program_data.new_resolved_name(name_gen.generate_next_name());
-        rename_map.insert(slot, new_name);
+        rename_map[slot.0 as usize] = new_name;
     }
+
+    debug_assert!(
+        !rename_map.iter().any(|n| *n == DUMMY_VALUE),
+        "all dummy values should have been overridden"
+    );
 
     (rename_map, slot_map)
 }
@@ -331,7 +338,7 @@ struct Scope {
 
 struct Renamer {
     /// Slot index -> new name.
-    rename_map: FxHashMap<SlotId, NameId>,
+    rename_map: Vec<NameId>,
     slot_map: FxHashMap<NameId, SlotId>,
 }
 
@@ -345,7 +352,7 @@ impl VisitMut<'_> for Renamer {
         if let Some(slot) = self.slot_map.get(&node.name) {
             let new_name = self
                 .rename_map
-                .get(slot)
+                .get(slot.0 as usize)
                 .expect("all slots should have new names")
                 .clone();
 
