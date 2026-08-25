@@ -126,7 +126,7 @@ function run() {
     const outputSize = getStringSizeInBytes(outputTextTextArea.value);
 
     const delta = Math.abs(inputSize - outputSize);
-    const percentDelta = (delta / inputSize) * 100;
+    const percentDelta = (delta / inputSize) * 100 || 0;
     const changeSymbol =
       inputSize > outputSize ? "-" : inputSize === outputSize ? "" : "+";
 
