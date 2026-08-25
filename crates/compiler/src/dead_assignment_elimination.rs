@@ -194,7 +194,9 @@ impl Driver<'_> {
         }
 
         self.function_stack.push(FunctionData::default());
-        node.params_mut().for_each(|p| p.visit_mut_with(self));
+        node.params_mut()
+            .into_iter()
+            .for_each(|p| p.visit_mut_with(self));
         node.body_mut().visit_mut_with(self);
         let function_data = self.function_stack.pop().unwrap();
 

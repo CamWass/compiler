@@ -216,44 +216,20 @@ impl<'ast> VisitMut<'ast> for FindFirstLHSIdent<'ast> {
 }
 
 pub trait FunctionLike {
-    type ParamIter<'a>: Iterator<Item = &'a Pat>
-    where
-        Self: 'a;
-    type ParamIterMut<'a>: Iterator<Item = &'a mut Pat>
-    where
-        Self: 'a;
-
-    fn params(&self) -> Self::ParamIter<'_>;
-    fn params_mut(&mut self) -> Self::ParamIterMut<'_>;
-    fn param_count(&self) -> usize;
+    fn params(&self) -> &[Param];
+    fn params_mut(&mut self) -> &mut [Param];
 
     fn body(&self) -> &BlockStmt;
     fn body_mut(&mut self) -> &mut BlockStmt;
 }
 
-fn get_pat_of_param(param: &Param) -> &Pat {
-    &param.pat
-}
-
-fn get_pat_of_param_mut(param: &mut Param) -> &mut Pat {
-    &mut param.pat
-}
-
 impl FunctionLike for Function {
-    type ParamIter<'a> = std::iter::Map<std::slice::Iter<'a, Param>, fn(&'a Param) -> &'a Pat>;
-    type ParamIterMut<'a> =
-        std::iter::Map<std::slice::IterMut<'a, Param>, fn(&'a mut Param) -> &'a mut Pat>;
-
-    fn param_count(&self) -> usize {
-        self.params.len()
+    fn params(&self) -> &[Param] {
+        &self.params
     }
 
-    fn params(&self) -> Self::ParamIter<'_> {
-        self.params.iter().map(get_pat_of_param)
-    }
-
-    fn params_mut(&mut self) -> Self::ParamIterMut<'_> {
-        self.params.iter_mut().map(get_pat_of_param_mut)
+    fn params_mut(&mut self) -> &mut [Param] {
+        &mut self.params
     }
 
     fn body(&self) -> &BlockStmt {
@@ -265,20 +241,12 @@ impl FunctionLike for Function {
     }
 }
 impl FunctionLike for Constructor {
-    type ParamIter<'a> = std::iter::Map<std::slice::Iter<'a, Param>, fn(&'a Param) -> &'a Pat>;
-    type ParamIterMut<'a> =
-        std::iter::Map<std::slice::IterMut<'a, Param>, fn(&'a mut Param) -> &'a mut Pat>;
-
-    fn param_count(&self) -> usize {
-        self.params.len()
+    fn params(&self) -> &[Param] {
+        &self.params
     }
 
-    fn params(&self) -> Self::ParamIter<'_> {
-        self.params.iter().map(get_pat_of_param)
-    }
-
-    fn params_mut(&mut self) -> Self::ParamIterMut<'_> {
-        self.params.iter_mut().map(get_pat_of_param_mut)
+    fn params_mut(&mut self) -> &mut [Param] {
+        &mut self.params
     }
 
     fn body(&self) -> &BlockStmt {
@@ -290,20 +258,12 @@ impl FunctionLike for Constructor {
     }
 }
 impl FunctionLike for ArrowExpr {
-    type ParamIter<'a> = std::iter::Map<std::slice::Iter<'a, Param>, fn(&'a Param) -> &'a Pat>;
-    type ParamIterMut<'a> =
-        std::iter::Map<std::slice::IterMut<'a, Param>, fn(&'a mut Param) -> &'a mut Pat>;
-
-    fn param_count(&self) -> usize {
-        self.params.len()
+    fn params(&self) -> &[Param] {
+        &self.params
     }
 
-    fn params(&self) -> Self::ParamIter<'_> {
-        self.params.iter().map(get_pat_of_param)
-    }
-
-    fn params_mut(&mut self) -> Self::ParamIterMut<'_> {
-        self.params.iter_mut().map(get_pat_of_param_mut)
+    fn params_mut(&mut self) -> &mut [Param] {
+        &mut self.params
     }
 
     fn body(&self) -> &BlockStmt {
@@ -315,19 +275,12 @@ impl FunctionLike for ArrowExpr {
     }
 }
 impl FunctionLike for GetterProp {
-    type ParamIter<'a> = std::iter::Empty<&'a Pat>;
-    type ParamIterMut<'a> = std::iter::Empty<&'a mut Pat>;
-
-    fn param_count(&self) -> usize {
-        0
+    fn params(&self) -> &[Param] {
+        &[]
     }
 
-    fn params(&self) -> Self::ParamIter<'_> {
-        std::iter::empty()
-    }
-
-    fn params_mut(&mut self) -> Self::ParamIterMut<'_> {
-        std::iter::empty()
+    fn params_mut(&mut self) -> &mut [Param] {
+        &mut []
     }
 
     fn body(&self) -> &BlockStmt {
@@ -339,19 +292,12 @@ impl FunctionLike for GetterProp {
     }
 }
 impl FunctionLike for SetterProp {
-    type ParamIter<'a> = std::iter::Once<&'a Pat>;
-    type ParamIterMut<'a> = std::iter::Once<&'a mut Pat>;
-
-    fn param_count(&self) -> usize {
-        1
+    fn params(&self) -> &[Param] {
+        std::slice::from_ref(&self.param)
     }
 
-    fn params(&self) -> Self::ParamIter<'_> {
-        std::iter::once(&self.param.pat)
-    }
-
-    fn params_mut(&mut self) -> Self::ParamIterMut<'_> {
-        std::iter::once(&mut self.param.pat)
+    fn params_mut(&mut self) -> &mut [Param] {
+        std::slice::from_mut(&mut self.param)
     }
 
     fn body(&self) -> &BlockStmt {

@@ -1506,8 +1506,8 @@ impl FnVisitor<'_, '_> {
 
         let mut has_rest = false;
         for param in node.params() {
-            v.visit_pat(param);
-            if matches!(param, Pat::Rest(_)) {
+            v.visit_pat(&param.pat);
+            if matches!(&param.pat, Pat::Rest(_)) {
                 has_rest = true;
             }
         }
@@ -1524,9 +1524,9 @@ impl FnVisitor<'_, '_> {
         node.body().visit_with(&mut v);
 
         let tracked_param_count = if has_rest {
-            node.param_count() - 1
+            node.params().len() - 1
         } else {
-            node.param_count()
+            node.params().len()
         };
 
         let static_data = StaticFunctionData {
@@ -1548,7 +1548,7 @@ impl FnVisitor<'_, '_> {
         }
 
         for param in node.params() {
-            self.visit_pat(param);
+            self.visit_pat(&param.pat);
         }
         node.body().visit_with(self);
 

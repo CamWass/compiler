@@ -61,8 +61,9 @@ impl<'ast, 'a> LiveVariablesAnalysis<'ast, 'a> {
             num_vars: all_vars_declared_in_function.ordered_vars.len(),
             simple_param_names: fn_scope
                 .params()
+                .into_iter()
                 .filter_map(|p| {
-                    if let Pat::Ident(name) = p {
+                    if let Pat::Ident(name) = &p.pat {
                         Some(name.id.name)
                     } else {
                         None
