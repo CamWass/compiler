@@ -201,13 +201,6 @@ impl Visit<'_> for Analyser<'_> {
         i.id.visit_with(self);
     }
 
-    fn visit_member_expr(&mut self, node: &MemberExpr) {
-        node.obj.visit_with(self);
-        if node.computed {
-            node.prop.visit_with(self);
-        }
-    }
-
     fn visit_var_declarator(&mut self, node: &VarDeclarator) {
         node.init.visit_with(self);
 
@@ -330,6 +323,30 @@ impl Visit<'_> for Analyser<'_> {
         self.with_scope(true, |visitor| {
             node.visit_children_with(visitor);
         });
+    }
+
+    // Skip idents that aren't variable references:
+
+    fn visit_member_expr(&mut self, node: &MemberExpr) {
+        node.obj.visit_with(self);
+        // Non-computed idents aren't variable references - skip.
+        if node.computed {
+            node.prop.visit_with(self);
+        }
+    }
+    fn visit_prop_name(&mut self, node: &PropName) {
+        match node {
+            PropName::Computed(prop_name) => prop_name.visit_with(self),
+            // These idents aren't variable references - skip.
+            PropName::Ident(_) => {}
+            PropName::Str(_) | PropName::Num(_) | PropName::BigInt(_) => {}
+        }
+    }
+    fn visit_continue_stmt(&mut self, _: &ContinueStmt) {}
+    fn visit_break_stmt(&mut self, _: &BreakStmt) {}
+    fn visit_labeled_stmt(&mut self, node: &LabeledStmt) {
+        node.body.visit_with(self);
+        // Skip label ident.
     }
 }
 
