@@ -21,7 +21,7 @@ fn bench(c: &mut Criterion) {
     ];
 
     let mut group = c.benchmark_group("parser");
-    group.sample_size(100);
+    group.sample_size(50);
     for Bench(id, src) in &benches {
         group.throughput(Throughput::Bytes(src.len() as u64));
 
