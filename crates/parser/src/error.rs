@@ -49,7 +49,7 @@ pub(super) enum SyntaxError {
     UnterminatedStrLit,
     ExpectedUnicodeEscape,
     EscapeInReservedWord {
-        word: JsWord,
+        word: String,
     },
     UnterminatedRegxp,
     UnterminatedTpl,

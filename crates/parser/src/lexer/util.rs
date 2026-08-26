@@ -60,7 +60,7 @@ pub mod char_bytes {
     pub const CARRIAGE_RETURN: u8 = 13;
 }
 
-impl Lexer<'_> {
+impl<'src> Lexer<'src> {
     /// Returns the remaining portion of the input as a str.
     #[inline(always)]
     fn as_str(&self) -> &str {
@@ -148,7 +148,7 @@ impl Lexer<'_> {
         std::str::from_utf8(&self.bytes[start..self.cur]).unwrap()
     }
 
-    pub(super) fn uncons_while_chars<F>(&mut self, mut pred: F) -> &str
+    pub(super) fn uncons_while_chars<F>(&mut self, mut pred: F) -> &'src str
     where
         F: FnMut(char) -> bool,
     {

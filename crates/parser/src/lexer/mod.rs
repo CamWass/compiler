@@ -2,7 +2,7 @@ mod number;
 mod state;
 mod util;
 
-use std::iter::FusedIterator;
+use std::{borrow::Cow, iter::FusedIterator};
 
 use crate::{
     JscTarget, Syntax,
@@ -10,7 +10,7 @@ use crate::{
     error::{Error, SyntaxError},
     token::*,
 };
-use ast::{NameId, ParserProgramData, id_for_built_in};
+use ast::ParserProgramData;
 use atoms::JsWord;
 use bitflags::bitflags;
 use common::{BytePos, SourceFile, Span, chars::char_literals};
@@ -829,67 +829,61 @@ impl<'src> Lexer<'src> {
     }
 
     // Read an identifier.
-    fn read_word(&mut self) -> LexResult<(NameId, bool)> {
+    fn read_word(&mut self) -> LexResult<(Cow<'src, str>, bool)> {
         debug_assert!(
             self.is(b'\\')
                 || (self.cur().is_some() && ast::Ident::is_valid_start(self.cur().unwrap()))
         );
 
-        let mut first = true;
+        let start = self.cur_pos();
 
-        self.with_buf(|lexer, buf| {
-            let mut has_escape = false;
+        let s = self.uncons_while_chars(ast::Ident::is_valid_continue);
 
-            while let Some(ch) = {
-                // Optimization
-                {
-                    let s = lexer.uncons_while_chars(ast::Ident::is_valid_continue);
-                    if !s.is_empty() {
-                        first = false;
-                    }
-                    buf.push_str(s);
-                }
+        if self.is(b'\\') {
+            self.with_buf(|lexer, buf| {
+                buf.push_str(s);
 
-                lexer.cur_byte()
-            } {
-                match ch {
+                while let Some(ch) = lexer.cur_byte() {
                     // unicode escape
-                    b'\\' => {
-                        let start = lexer.cur_pos();
+                    if ch == b'\\' {
+                        let escape_start = lexer.cur_pos();
 
                         lexer.advance(1); // '\'
 
                         if !lexer.eat(b'u') {
-                            Lexer::error_span(pos_span(start), SyntaxError::ExpectedUnicodeEscape)?;
+                            Lexer::error_span(
+                                pos_span(escape_start),
+                                SyntaxError::ExpectedUnicodeEscape,
+                            )?;
                         }
 
-                        let ch = lexer.read_unicode_escape(start)?;
+                        let ch = lexer.read_unicode_escape(escape_start)?;
 
-                        let valid = if first {
+                        let valid = if escape_start == start {
                             ast::Ident::is_valid_start(ch)
                         } else {
                             ast::Ident::is_valid_continue(ch)
                         };
 
                         if !valid {
-                            lexer.emit_error(start, SyntaxError::InvalidIdentChar);
+                            lexer.emit_error(escape_start, SyntaxError::InvalidIdentChar);
                         }
 
                         buf.push(ch);
-
-                        has_escape = true;
-                    }
-
-                    _ => {
-                        break;
+                    } else {
+                        let s = lexer.uncons_while_chars(ast::Ident::is_valid_continue);
+                        buf.push_str(s);
+                        if s.is_empty() {
+                            break;
+                        }
                     }
                 }
-                first = false;
-            }
-            let value = lexer.program_data.intern_name(JsWord::from(buf.as_str()));
 
-            Ok((value, has_escape))
-        })
+                Ok((Cow::Owned(buf.clone()), true))
+            })
+        } else {
+            Ok((Cow::Borrowed(s), false))
+        }
     }
 
     // Read an identifier or keyword token. Will check for reserved
@@ -905,103 +899,169 @@ impl<'src> Lexer<'src> {
 
         let (word, has_esc) = self.read_word()?;
 
-        // Note: ctx is stored in lexer because of this error.
-        // 'await' and 'yield' may have semantic of reserved word, which means lexer
-        // should know context or parser should handle this error. Our approach to this
-        // problem is former one.
-        if has_esc && self.ctx.is_reserved(word) {
-            // TODO: mark this and others as cold?
-            let word = self.program_data.get_name_text(word).clone();
-            self.error(start, SyntaxError::EscapeInReservedWord { word })?
-        } else {
-            if word <= id_for_built_in!("override") {
-                // The inner u32s for these NameIds have the same value as the
-                // corresponding Tokens as u8s. For example:
-                // id_for_built_in!("await").as_u32() == 0 == Token::Await as u8
-                // This should compile down to a no-op: https://rust.godbolt.org/z/EYaYqGdrj
-                Ok(match word {
-                    id_for_built_in!("await") => Token::Await,
-                    id_for_built_in!("break") => Token::Break,
-                    id_for_built_in!("case") => Token::Case,
-                    id_for_built_in!("catch") => Token::Catch,
-                    id_for_built_in!("continue") => Token::Continue,
-                    id_for_built_in!("debugger") => Token::Debugger,
-                    id_for_built_in!("default") => Token::Default,
-                    id_for_built_in!("do") => Token::Do,
-                    id_for_built_in!("else") => Token::Else,
-                    id_for_built_in!("finally") => Token::Finally,
-                    id_for_built_in!("for") => Token::For,
-                    id_for_built_in!("function") => Token::Function,
-                    id_for_built_in!("if") => Token::If,
-                    id_for_built_in!("return") => Token::Return,
-                    id_for_built_in!("switch") => Token::Switch,
-                    id_for_built_in!("throw") => Token::Throw,
-                    id_for_built_in!("try") => Token::Try,
-                    id_for_built_in!("var") => Token::Var,
-                    id_for_built_in!("let") => Token::Let,
-                    id_for_built_in!("const") => Token::Const,
-                    id_for_built_in!("while") => Token::While,
-                    id_for_built_in!("with") => Token::With,
-                    id_for_built_in!("new") => Token::New,
-                    id_for_built_in!("this") => Token::This,
-                    id_for_built_in!("super") => Token::Super,
-                    id_for_built_in!("class") => Token::Class,
-                    id_for_built_in!("extends") => Token::Extends,
-                    id_for_built_in!("export") => Token::Export,
-                    id_for_built_in!("import") => Token::Import,
-                    id_for_built_in!("yield") => Token::Yield,
-                    id_for_built_in!("in") => Token::In,
-                    id_for_built_in!("instanceof") => Token::InstanceOf,
-                    id_for_built_in!("typeof") => Token::TypeOf,
-                    id_for_built_in!("void") => Token::Void,
-                    id_for_built_in!("delete") => Token::Delete,
-                    id_for_built_in!("null") => Token::Null,
-                    id_for_built_in!("true") => Token::True,
-                    id_for_built_in!("false") => Token::False,
-                    id_for_built_in!("async") => Token::Async,
-                    id_for_built_in!("as") => Token::As,
-                    id_for_built_in!("from") => Token::From,
-                    id_for_built_in!("of") => Token::Of,
-                    id_for_built_in!("static") => Token::Static,
-                    id_for_built_in!("target") => Token::Target,
-                    id_for_built_in!("asserts") => Token::Asserts,
-                    id_for_built_in!("implements") => Token::Implements,
-                    id_for_built_in!("is") => Token::Is,
-                    id_for_built_in!("keyof") => Token::Keyof,
-                    id_for_built_in!("unique") => Token::Unique,
-                    id_for_built_in!("object") => Token::Object,
-                    id_for_built_in!("global") => Token::Global,
-                    id_for_built_in!("enum") => Token::Enum,
-                    id_for_built_in!("readonly") => Token::Readonly,
-                    id_for_built_in!("abstract") => Token::Abstract,
-                    id_for_built_in!("infer") => Token::Infer,
-                    id_for_built_in!("any") => Token::Any,
-                    id_for_built_in!("boolean") => Token::Boolean,
-                    id_for_built_in!("bigint") => Token::Bigint,
-                    id_for_built_in!("intrinsic") => Token::Intrinsic,
-                    id_for_built_in!("never") => Token::Never,
-                    id_for_built_in!("number") => Token::Number,
-                    id_for_built_in!("string") => Token::String,
-                    id_for_built_in!("symbol") => Token::Symbol,
-                    id_for_built_in!("unknown") => Token::Unknown,
-                    id_for_built_in!("interface") => Token::Interface,
-                    id_for_built_in!("declare") => Token::Declare,
-                    id_for_built_in!("undefined") => Token::Undefined,
-                    id_for_built_in!("meta") => Token::Meta,
-                    id_for_built_in!("type") => Token::Type,
-                    id_for_built_in!("assert") => Token::Assert,
-                    id_for_built_in!("get") => Token::Get,
-                    id_for_built_in!("set") => Token::Set,
-                    id_for_built_in!("public") => Token::Public,
-                    id_for_built_in!("protected") => Token::Protected,
-                    id_for_built_in!("private") => Token::Private,
-                    id_for_built_in!("package") => Token::Package,
-                    id_for_built_in!("override") => Token::Override,
-                    _ => unreachable!(),
-                })
+        let known_ident = match word.as_bytes().first().unwrap() {
+            b'a' => match word.as_ref() {
+                "await" => Some(Token::Await),
+                "async" => Some(Token::Async),
+                "as" => Some(Token::As),
+                "asserts" => Some(Token::Asserts),
+                "abstract" => Some(Token::Abstract),
+                "any" => Some(Token::Any),
+                "assert" => Some(Token::Assert),
+                _ => None,
+            },
+            b'b' => match word.as_ref() {
+                "break" => Some(Token::Break),
+                "boolean" => Some(Token::Boolean),
+                "bigint" => Some(Token::Bigint),
+                _ => None,
+            },
+            b'c' => match word.as_ref() {
+                "case" => Some(Token::Case),
+                "catch" => Some(Token::Catch),
+                "continue" => Some(Token::Continue),
+                "const" => Some(Token::Const),
+                "class" => Some(Token::Class),
+                _ => None,
+            },
+            b'd' => match word.as_ref() {
+                "debugger" => Some(Token::Debugger),
+                "default" => Some(Token::Default),
+                "do" => Some(Token::Do),
+                "delete" => Some(Token::Delete),
+                "declare" => Some(Token::Declare),
+                _ => None,
+            },
+            b'e' => match word.as_ref() {
+                "else" => Some(Token::Else),
+                "extends" => Some(Token::Extends),
+                "export" => Some(Token::Export),
+                "enum" => Some(Token::Enum),
+                _ => None,
+            },
+            b'f' => match word.as_ref() {
+                "false" => Some(Token::False),
+                "finally" => Some(Token::Finally),
+                "for" => Some(Token::For),
+                "from" => Some(Token::From),
+                "function" => Some(Token::Function),
+                _ => None,
+            },
+            b'g' => match word.as_ref() {
+                "get" => Some(Token::Get),
+                "global" => Some(Token::Global),
+                _ => None,
+            },
+            b'i' => match word.as_ref() {
+                "if" => Some(Token::If),
+                "implements" => Some(Token::Implements),
+                "import" => Some(Token::Import),
+                "in" => Some(Token::In),
+                "infer" => Some(Token::Infer),
+                "instanceof" => Some(Token::InstanceOf),
+                "interface" => Some(Token::Interface),
+                "intrinsic" => Some(Token::Intrinsic),
+                "is" => Some(Token::Is),
+                _ => None,
+            },
+            b'k' => match word.as_ref() {
+                "keyof" => Some(Token::Keyof),
+                _ => None,
+            },
+            b'l' => match word.as_ref() {
+                "let" => Some(Token::Let),
+                _ => None,
+            },
+            b'm' => match word.as_ref() {
+                "meta" => Some(Token::Meta),
+                _ => None,
+            },
+            b'n' => match word.as_ref() {
+                "never" => Some(Token::Never),
+                "new" => Some(Token::New),
+                "null" => Some(Token::Null),
+                "number" => Some(Token::Number),
+                _ => None,
+            },
+            b'o' => match word.as_ref() {
+                "object" => Some(Token::Object),
+                "of" => Some(Token::Of),
+                "override" => Some(Token::Override),
+                _ => None,
+            },
+            b'p' => match word.as_ref() {
+                "package" => Some(Token::Package),
+                "private" => Some(Token::Private),
+                "protected" => Some(Token::Protected),
+                "public" => Some(Token::Public),
+                _ => None,
+            },
+            b'r' => match word.as_ref() {
+                "readonly" => Some(Token::Readonly),
+                "return" => Some(Token::Return),
+                _ => None,
+            },
+            b's' => match word.as_ref() {
+                "set" => Some(Token::Set),
+                "static" => Some(Token::Static),
+                "string" => Some(Token::String),
+                "super" => Some(Token::Super),
+                "switch" => Some(Token::Switch),
+                "symbol" => Some(Token::Symbol),
+                _ => None,
+            },
+            b't' => match word.as_ref() {
+                "target" => Some(Token::Target),
+                "this" => Some(Token::This),
+                "throw" => Some(Token::Throw),
+                "true" => Some(Token::True),
+                "try" => Some(Token::Try),
+                "type" => Some(Token::Type),
+                "typeof" => Some(Token::TypeOf),
+                _ => None,
+            },
+            b'u' => match word.as_ref() {
+                "undefined" => Some(Token::Undefined),
+                "unique" => Some(Token::Unique),
+                "unknown" => Some(Token::Unknown),
+                _ => None,
+            },
+            b'v' => match word.as_ref() {
+                "var" => Some(Token::Var),
+                "void" => Some(Token::Void),
+                _ => None,
+            },
+            b'w' => match word.as_ref() {
+                "while" => Some(Token::While),
+                "with" => Some(Token::With),
+                _ => None,
+            },
+            b'y' => match word.as_ref() {
+                "yield" => Some(Token::Yield),
+                _ => None,
+            },
+            _ => None,
+        };
+
+        if let Some(known_ident) = known_ident {
+            // Note: ctx is stored in lexer because of this error.
+            // 'await' and 'yield' may have semantic of reserved word, which means lexer
+            // should know context or parser should handle this error. Our approach to this
+            // problem is former one.
+            if has_esc && known_ident.is_reserved_word(self.ctx) {
+                // TODO: mark this and others as cold?
+                self.error(
+                    start,
+                    SyntaxError::EscapeInReservedWord {
+                        word: word.to_string(),
+                    },
+                )?
             } else {
-                Ok(self.make_ident_token(word))
+                Ok(known_ident)
             }
+        } else {
+            let word = self.program_data.intern_name(JsWord::from(word.as_ref()));
+            Ok(self.make_ident_token(word))
         }
     }
 
