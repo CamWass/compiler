@@ -377,7 +377,7 @@ make_built_ins!(
 #[derive(Debug)]
 pub struct ProgramData {
     spans: IndexVec<NodeId, Span>,
-    names: IndexVec<NameId, String>,
+    names: IndexVec<NameId, (String, u64)>,
     // Maps NameId -> () (We store IDs as keys, look up strings from `names`)
     name_to_id: HashTable<NameId>,
     hasher: BuildHasherDefault<FxHasher>,
@@ -419,36 +419,31 @@ impl ProgramData {
         name.hash(&mut hasher);
         let name_hash = hasher.finish();
 
-        // TODO: can we use HashTable entry here instead?
         let entry = self
             .name_to_id
-            .find_entry(name_hash, |&id| self.names[id] == name);
+            .find_entry(name_hash, |&id| self.names[id].0 == name);
 
         match entry {
             Ok(occ) => *occ.get(),
             Err(absent) => {
-                let id = self.names.push(name.to_string());
-
-                let names = &self.names;
-                let hasher_builder = &self.hasher;
+                let id = self.names.push((name.to_string(), name_hash));
 
                 absent
                     .into_table()
-                    .insert_unique(name_hash, id, |&stored_id| {
-                        let mut h = hasher_builder.build_hasher();
-                        // TODO: store hashes along side strings so we don't re-hash.
-                        names[stored_id].hash(&mut h);
-                        h.finish()
-                    });
+                    .insert_unique(name_hash, id, |&stored_id| self.names[stored_id].1);
 
                 id
             }
         }
     }
 
-    fn get_name_for_id(&self, id: NameId) -> &str {
+    fn get_name_and_hash_for_id(&self, id: NameId) -> (&str, u64) {
         let id = NameId::from_u32(id.0 & !(1 << (u32::BITS - 1)));
-        &self.names[id]
+        (&self.names[id].0, self.names[id].1)
+    }
+
+    fn get_name_for_id(&self, id: NameId) -> &str {
+        self.get_name_and_hash_for_id(id).0
     }
 
     // TODO: ideally this isn't pub
@@ -541,11 +536,15 @@ impl TransformerProgramData {
     }
 
     pub fn new_resolved_name(&mut self, name: Cow<str>) -> NameId {
-        ProgramData::mark_resolved(self.0.names.push(name.to_string()))
+        let mut hasher = self.0.hasher.build_hasher();
+        name.hash(&mut hasher);
+        let name_hash = hasher.finish();
+        ProgramData::mark_resolved(self.0.names.push((name.to_string(), name_hash)))
     }
 
     pub fn new_resolved_name_from(&mut self, id: NameId) -> NameId {
-        ProgramData::mark_resolved(self.0.names.push(String::from(self.0.get_name_for_id(id))))
+        let (name, hash) = self.0.get_name_and_hash_for_id(id);
+        ProgramData::mark_resolved(self.0.names.push((String::from(name), hash)))
     }
 }
 
@@ -577,7 +576,7 @@ impl TestingProgramData {
             .names
             .iter_enumerated()
             .rev()
-            .find(|(_, candidate_name)| *candidate_name == name)
+            .find(|(_, candidate_name)| candidate_name.0 == name)
             .map(|(i, _)| ProgramData::mark_resolved(i))
     }
 }
