@@ -1,5 +1,4 @@
 use ast::{NameId, id_for_built_in};
-use atoms::JsWord;
 use common::DUMMY_SP;
 use std::collections::BTreeMap;
 use std::iter::FromIterator;
@@ -187,7 +186,7 @@ fn assemble_param_names(
     }
     // ... then synthesize any additional param names.
     while index < max_count {
-        let new_name = program_data.new_resolved_name(JsWord::from(format!("p{index}")));
+        let new_name = program_data.new_resolved_name(&format!("p{index}"));
         map.insert(index, new_name);
         index += 1;
     }

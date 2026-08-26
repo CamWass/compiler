@@ -52,6 +52,7 @@ dependencies = [
  "bitflags",
  "clone_node",
  "common",
+ "hashbrown",
  "index",
  "node_eq",
  "node_id",

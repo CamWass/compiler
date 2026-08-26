@@ -1,7 +1,6 @@
 use std::collections::hash_map::Entry;
 
 use ast::*;
-use atoms::JsWord;
 use common::util::take::Take;
 use rustc_hash::FxHashMap;
 use visit::{VisitMut, VisitMutWith};
@@ -11,7 +10,7 @@ pub struct Normalizer<'d> {
     pub drop_span: bool,
     pub is_test262: bool,
     pub other_program_data: &'d mut ParserProgramData,
-    pub name_map: FxHashMap<JsWord, NameId>,
+    pub name_map: FxHashMap<String, NameId>,
     pub fresh_program_data: ParserProgramData,
 }
 
@@ -101,9 +100,7 @@ impl VisitMut<'_> for Normalizer<'_> {
             PropName::Ident(Ident { name, .. }) => {
                 *n = PropName::Str(Str {
                     node_id: NodeId::DUMMY,
-                    value: Box::new(String::from(
-                        &**self.other_program_data.get_name_text(*name),
-                    )),
+                    value: Box::new(self.other_program_data.get_name_text(*name).to_string()),
                 });
             }
             PropName::Num(num) => {
@@ -130,13 +127,13 @@ impl VisitMut<'_> for Normalizer<'_> {
         // different number of Idents and thus different NameIds.
         match self
             .name_map
-            .entry(self.other_program_data.get_name_text(*name_id).clone())
+            .entry(self.other_program_data.get_name_text(*name_id).to_string())
         {
             Entry::Occupied(occupied_entry) => *name_id = *occupied_entry.get(),
             Entry::Vacant(vacant_entry) => {
                 let new_name = self
                     .fresh_program_data
-                    .intern_name(vacant_entry.key().clone());
+                    .intern_name(vacant_entry.key().into());
                 vacant_entry.insert(new_name);
                 *name_id = new_name;
             }

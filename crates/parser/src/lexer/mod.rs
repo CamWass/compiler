@@ -11,7 +11,6 @@ use crate::{
     token::*,
 };
 use ast::ParserProgramData;
-use atoms::JsWord;
 use bitflags::bitflags;
 use common::{BytePos, SourceFile, Span, chars::char_literals};
 use number::{NonDecRadix, Radix};
@@ -1060,7 +1059,7 @@ impl<'src> Lexer<'src> {
                 Ok(known_ident)
             }
         } else {
-            let word = self.program_data.intern_name(JsWord::from(word.as_ref()));
+            let word = self.program_data.intern_name(word);
             Ok(self.make_ident_token(word))
         }
     }

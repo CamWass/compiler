@@ -1,5 +1,6 @@
+use std::borrow::Cow;
+
 use ast::*;
-use atoms::{JsWord, js_word};
 use visit::{VisitMut, VisitMutWith};
 
 pub fn process(ast: &mut Program, program_data: &mut TransformerProgramData) {
@@ -15,29 +16,25 @@ impl Visitor<'_> {
     fn handle_prop_name(&mut self, prop: &mut PropName, is_class_prop: bool) {
         prop.visit_mut_children_with(self);
 
-        let (prop_name, old_node_id) = match &prop {
-            PropName::Str(prop_name) => {
-                (&JsWord::from(prop_name.value.as_str()), prop_name.node_id)
-            }
+        let (prop_name, old_node_id): (Cow<str>, _) = match &prop {
+            PropName::Str(prop_name) => (prop_name.value.as_str().into(), prop_name.node_id),
             PropName::Computed(computed_prop) => match computed_prop.expr.as_ref() {
                 Expr::Lit(lit) => match lit {
-                    Lit::Str(str) => (&JsWord::from(str.value.as_str()), computed_prop.node_id),
-                    Lit::Null(_) => (&js_word!("null"), computed_prop.node_id),
+                    Lit::Str(str) => (str.value.as_str().into(), computed_prop.node_id),
+                    Lit::Null(_) => ("null".into(), computed_prop.node_id),
                     Lit::Bool(bool) => {
                         if bool.value {
-                            (&js_word!("true"), computed_prop.node_id)
+                            ("true".into(), computed_prop.node_id)
                         } else {
-                            (&js_word!("false"), computed_prop.node_id)
+                            ("false".into(), computed_prop.node_id)
                         }
                     }
                     _ => return,
                 },
                 Expr::Ident(ident) => match ident.name {
-                    id_for_built_in!("undefined") => {
-                        (&js_word!("undefined"), computed_prop.node_id)
-                    }
-                    id_for_built_in!("NaN") => (&js_word!("NaN"), computed_prop.node_id),
-                    id_for_built_in!("Infinity") => (&js_word!("Infinity"), computed_prop.node_id),
+                    id_for_built_in!("undefined") => ("undefined".into(), computed_prop.node_id),
+                    id_for_built_in!("NaN") => ("NaN".into(), computed_prop.node_id),
+                    id_for_built_in!("Infinity") => ("Infinity".into(), computed_prop.node_id),
                     _ => return,
                 },
                 _ => return,
@@ -47,13 +44,13 @@ impl Visitor<'_> {
 
         // ['constructor']() and constructor() define different things in
         // classes, so we can't substitute them.
-        if is_class_prop && prop_name == &js_word!("constructor") {
+        if is_class_prop && prop_name == "constructor" {
             return;
         }
-        if is_valid_prop_ident(prop_name) {
+        if is_valid_prop_ident(&prop_name) {
             *prop = PropName::Ident(Ident {
                 node_id: self.program_data.new_id_from(old_node_id),
-                name: self.program_data.intern_name(prop_name.clone()),
+                name: self.program_data.intern_name(prop_name),
             });
         }
     }
@@ -63,33 +60,33 @@ impl VisitMut<'_> for Visitor<'_> {
     fn visit_mut_member_expr(&mut self, n: &mut MemberExpr) {
         n.visit_mut_children_with(self);
 
-        let (prop_name, old_node_id) = match n.prop.as_ref() {
+        let (prop_name, old_node_id): (Cow<str>, _) = match n.prop.as_ref() {
             Expr::Lit(lit) => match lit {
-                Lit::Str(str) => (&JsWord::from(str.value.as_str()), str.node_id),
-                Lit::Null(null) => (&js_word!("null"), null.node_id),
+                Lit::Str(str) => (str.value.as_str().into(), str.node_id),
+                Lit::Null(null) => ("null".into(), null.node_id),
                 Lit::Bool(bool) => {
                     if bool.value {
-                        (&js_word!("true"), bool.node_id)
+                        ("true".into(), bool.node_id)
                     } else {
-                        (&js_word!("false"), bool.node_id)
+                        ("false".into(), bool.node_id)
                     }
                 }
                 _ => return,
             },
             Expr::Ident(ident) => match ident.name {
-                id_for_built_in!("undefined") => (&js_word!("undefined"), ident.node_id),
-                id_for_built_in!("NaN") => (&js_word!("NaN"), ident.node_id),
-                id_for_built_in!("Infinity") => (&js_word!("Infinity"), ident.node_id),
+                id_for_built_in!("undefined") => ("undefined".into(), ident.node_id),
+                id_for_built_in!("NaN") => ("NaN".into(), ident.node_id),
+                id_for_built_in!("Infinity") => ("Infinity".into(), ident.node_id),
                 _ => return,
             },
             _ => return,
         };
 
-        if is_valid_prop_ident(prop_name) {
+        if is_valid_prop_ident(&prop_name) {
             n.computed = false;
             *n.prop = Expr::Ident(Ident {
                 node_id: self.program_data.new_id_from(old_node_id),
-                name: self.program_data.intern_name(prop_name.clone()),
+                name: self.program_data.intern_name(prop_name),
             });
         }
     }

@@ -21,7 +21,6 @@ use crate::find_vars::{FunctionLikeNode, VarId};
 use crate::name_generator::NameGenerator;
 use crate::utils::unwrap_as;
 use ast::*;
-use atoms::JsWord;
 use graph::{Graph, GraphEdge, SmallSet};
 use index::bit_set::{BitMatrix, BitSet, GrowableBitSet};
 use index::vec::IndexVec;
@@ -251,7 +250,7 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
     }
 
     if cfg!(debug_assertions) && OUTPUT_PROP_GRAPH {
-        let mut debug_graph: UnGraph<(RepId, JsWord), ()> = UnGraph::default();
+        let mut debug_graph: UnGraph<(RepId, String), ()> = UnGraph::default();
         let mut debug_graph_map = FxHashMap::default();
 
         for obj in objects.values() {
@@ -265,7 +264,7 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
                     let name = store
                         .program_data
                         .get_name_text(properties[prop].name)
-                        .clone();
+                        .to_string();
                     debug_graph.add_node((rep_id, name))
                 });
                 continue;
@@ -279,7 +278,7 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
                     let name = store
                         .program_data
                         .get_name_text(representatives[outer_node].name)
-                        .clone();
+                        .to_string();
                     debug_graph.add_node((outer_node, name))
                 });
                 for &inner_node in outer.clone() {
@@ -287,7 +286,7 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
                         let name = store
                             .program_data
                             .get_name_text(representatives[inner_node].name)
-                            .clone();
+                            .to_string();
                         debug_graph.add_node((inner_node, name))
                     });
                     debug_graph.update_edge(a, b, ());
@@ -348,7 +347,7 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
     for _ in 0..cur_colour {
         let new_name = store
             .program_data
-            .intern_name(name_gen.generate_next_name());
+            .intern_name(name_gen.generate_next_name().into());
         colour_map.push(new_name);
     }
 
@@ -1804,7 +1803,7 @@ impl VisitMut<'_> for Renamer<'_> {
 
     fn visit_mut_str(&mut self, node: &mut Str) {
         if let Some(new_name) = self.rename_map.get(&node.node_id) {
-            node.value = Box::new(String::from(&**self.program_data.get_name_text(*new_name)));
+            node.value = Box::new(self.program_data.get_name_text(*new_name).to_string());
         }
     }
 }
@@ -1820,7 +1819,7 @@ impl PropKey {
         match prop {
             PropName::Ident(p) => Some(PropKey(p.name, p.node_id)),
             PropName::Str(p) => Some(PropKey(
-                program_data.intern_name(JsWord::from(p.value.as_str())),
+                program_data.intern_name(p.value.as_str().into()),
                 p.node_id,
             )),
             PropName::Num(p) => Some(PropKey(
@@ -1852,7 +1851,7 @@ impl PropKey {
             }
             Expr::Lit(e) => match e {
                 Lit::Str(e) => Some(PropKey(
-                    program_data.intern_name(JsWord::from(e.value.as_str())),
+                    program_data.intern_name(e.value.as_str().into()),
                     e.node_id,
                 )),
                 Lit::Bool(e) => {

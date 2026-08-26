@@ -1,4 +1,3 @@
-use atoms::JsWord;
 use rustc_hash::FxHashSet;
 
 // TODO: each generator usually generates a small set of names - we could
@@ -17,47 +16,48 @@ static NON_FIRST_CHAR: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW
 
 #[derive(Default)]
 pub struct NameGenerator {
-    reserved_names: FxHashSet<JsWord>,
+    reserved_names: FxHashSet<String>,
     name_count: usize,
+    buffer: String,
 }
 
 impl NameGenerator {
-    pub fn new(reserved_names: FxHashSet<JsWord>) -> Self {
+    pub fn new(reserved_names: FxHashSet<String>) -> Self {
         Self {
             reserved_names,
             name_count: 0,
+            buffer: String::new(),
         }
     }
 
     /// Generates the next short name.
-    pub fn generate_next_name(&mut self) -> JsWord {
+    pub fn generate_next_name(&mut self) -> &str {
         loop {
-            let mut name = String::new();
+            self.buffer.clear();
+
             let mut i = self.name_count;
 
             {
                 let pos = i % FIRST_CHAR.len();
-                name.push(FIRST_CHAR.as_bytes()[pos] as char);
+                self.buffer.push(FIRST_CHAR.as_bytes()[pos] as char);
                 i /= FIRST_CHAR.len();
             }
 
             while i > 0 {
                 i -= 1;
                 let pos = i % NON_FIRST_CHAR.len();
-                name.push(NON_FIRST_CHAR.as_bytes()[pos] as char);
+                self.buffer.push(NON_FIRST_CHAR.as_bytes()[pos] as char);
                 i /= NON_FIRST_CHAR.len();
             }
 
             self.name_count += 1;
 
-            if is_reserved(&name) {
+            if is_reserved(&self.buffer) {
                 continue;
             }
 
-            let name = JsWord::from(name);
-
-            if !self.reserved_names.contains(&name) {
-                return name;
+            if !self.reserved_names.contains(&self.buffer) {
+                return &self.buffer;
             }
         }
     }
@@ -139,7 +139,7 @@ fn is_reserved(name: &str) -> bool {
 fn test_collision_with_past_names() {
     let mut generator = NameGenerator::default();
     let names = (0..1_000_000)
-        .map(|_| generator.generate_next_name())
+        .map(|_| generator.generate_next_name().to_string())
         .collect::<FxHashSet<_>>();
     assert_eq!(names.len(), 1_000_000);
 }
@@ -148,12 +148,12 @@ fn test_collision_with_past_names() {
 fn test_no_reserved_keywords() {
     let mut generator = NameGenerator::default();
     let names = (0..1_000_000)
-        .map(|_| generator.generate_next_name())
+        .map(|_| generator.generate_next_name().to_string())
         .collect::<FxHashSet<_>>();
 
     for keyword in RESERVED_STRINGS {
         assert!(
-            !names.contains(&JsWord::from(keyword)),
+            !names.contains(keyword),
             "Generated reserved word: '{keyword}'"
         );
     }

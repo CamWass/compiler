@@ -1,5 +1,6 @@
+use std::borrow::Cow;
+
 use ast::Expr;
-use atoms::JsWord;
 use num_bigint::BigInt;
 
 use crate::node_util::{
@@ -52,7 +53,7 @@ pub fn getSideEffectFreeBigIntValue(expr: &Expr) -> Option<BigInt> {
  * <p>This method effectively emulates the <code>String()</code> JavaScript cast function when
  * possible and the node has no side effects. Otherwise, it returns {@code null}.
  */
-pub fn getSideEffectFreeStringValue(expr: &Expr) -> Option<JsWord> {
+pub fn getSideEffectFreeStringValue(expr: &Expr) -> Option<Cow<'_, str>> {
     let value = getStringValue(expr);
     // Calculating the string value, if any, is likely to be faster than calculating side effects,
     // and there are only a very few cases where we can compute a string value, but there could

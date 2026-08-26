@@ -8,7 +8,10 @@
 // TODO:
 #![recursion_limit = "256"]
 
-use std::collections::hash_map::Entry;
+use std::{
+    borrow::Cow,
+    hash::{BuildHasher, BuildHasherDefault, Hash, Hasher},
+};
 
 pub use self::{
     class::{
@@ -44,14 +47,15 @@ pub use self::{
         SwitchStmt, ThrowStmt, TryStmt, VarDeclOrExpr, VarDeclOrPat, WhileStmt, WithStmt,
     },
 };
-use atoms::{JsWord, js_word};
+use atoms::JsWord;
 use clone_node::CloneNode;
 use common::Span;
+use hashbrown::HashTable;
 use index::vec::IndexVec;
 use node_eq::NodeEq;
 use node_id::GetNodeIdMacro;
 pub use paste;
-use rustc_hash::FxHashMap;
+use rustc_hash::FxHasher;
 use serde::Serialize;
 
 #[macro_use]
@@ -157,8 +161,9 @@ macro_rules! make_built_ins {
             );
             (
                 $($pushes)*
-                let id = $self.names.push(js_word!($head));
-                $self.name_to_id_map.insert(js_word!($head), id);
+                // TODO: possible to optimise since there are no existing
+                // entries, but might not be worth it.
+                $self.get_id_for_name($head.into());
             );
             (
                 $($consts)*
@@ -373,16 +378,21 @@ make_built_ins!(
 #[derive(Debug)]
 pub struct ProgramData {
     spans: IndexVec<NodeId, Span>,
-    name_to_id_map: FxHashMap<JsWord, NameId>,
-    names: IndexVec<NameId, JsWord>,
+    names: IndexVec<NameId, String>,
+    // Maps NameId -> () (We store IDs as keys, look up strings from `names`)
+    name_to_id: HashTable<NameId>,
+    hasher: BuildHasherDefault<FxHasher>,
 }
+
+// TODO: audit string related methods - we can use Cow in more places.
 
 impl ProgramData {
     fn new() -> Self {
         let mut data = Self {
             spans: Default::default(),
-            name_to_id_map: Default::default(),
             names: Default::default(),
+            name_to_id: Default::default(),
+            hasher: Default::default(),
         };
 
         data.add_built_ins();
@@ -407,18 +417,39 @@ impl ProgramData {
         self.spans[node] = span;
     }
 
-    fn get_id_for_name(&mut self, name: JsWord) -> NameId {
-        match self.name_to_id_map.entry(name) {
-            Entry::Occupied(occupied_entry) => *occupied_entry.get(),
-            Entry::Vacant(vacant_entry) => {
-                let id = self.names.push(vacant_entry.key().clone());
-                vacant_entry.insert(id);
+    fn get_id_for_name(&mut self, name: Cow<str>) -> NameId {
+        let mut hasher = self.hasher.build_hasher();
+        name.hash(&mut hasher);
+        let name_hash = hasher.finish();
+
+        // TODO: can we use HashTable entry here instead?
+        let entry = self
+            .name_to_id
+            .find_entry(name_hash, |&id| self.names[id] == name);
+
+        match entry {
+            Ok(occ) => *occ.get(),
+            Err(absent) => {
+                let id = self.names.push(name.to_string());
+
+                let names = &self.names;
+                let hasher_builder = &self.hasher;
+
+                absent
+                    .into_table()
+                    .insert_unique(name_hash, id, |&stored_id| {
+                        let mut h = hasher_builder.build_hasher();
+                        // TODO: store hashes along side strings so we don't re-hash.
+                        names[stored_id].hash(&mut h);
+                        h.finish()
+                    });
+
                 id
             }
         }
     }
 
-    fn get_name_for_id(&self, id: NameId) -> &JsWord {
+    fn get_name_for_id(&self, id: NameId) -> &str {
         let id = NameId::from_u32(id.0 & !(1 << (u32::BITS - 1)));
         &self.names[id]
     }
@@ -467,11 +498,11 @@ impl ParserProgramData {
         self.0.set_span(node, span)
     }
 
-    pub fn intern_name(&mut self, name: JsWord) -> NameId {
+    pub fn intern_name(&mut self, name: Cow<str>) -> NameId {
         self.0.get_id_for_name(name)
     }
 
-    pub fn get_name_text(&self, name: NameId) -> &JsWord {
+    pub fn get_name_text(&self, name: NameId) -> &str {
         self.0.get_name_for_id(name)
     }
 }
@@ -504,20 +535,20 @@ impl TransformerProgramData {
         self.0.get_span(node)
     }
 
-    pub fn intern_name(&mut self, name: JsWord) -> NameId {
+    pub fn intern_name(&mut self, name: Cow<str>) -> NameId {
         self.0.get_id_for_name(name)
     }
 
-    pub fn get_name_text(&self, name: NameId) -> &JsWord {
+    pub fn get_name_text(&self, name: NameId) -> &str {
         self.0.get_name_for_id(name)
     }
 
-    pub fn new_resolved_name(&mut self, name: JsWord) -> NameId {
-        ProgramData::mark_resolved(self.0.names.push(name))
+    pub fn new_resolved_name(&mut self, name: &str) -> NameId {
+        ProgramData::mark_resolved(self.0.names.push(String::from(name)))
     }
 
     pub fn new_resolved_name_from(&mut self, id: NameId) -> NameId {
-        ProgramData::mark_resolved(self.0.names.push(self.0.get_name_for_id(id).clone()))
+        ProgramData::mark_resolved(self.0.names.push(String::from(self.0.get_name_for_id(id))))
     }
 }
 
@@ -529,7 +560,7 @@ impl CodegenProgramData {
         self.0.get_span(node)
     }
 
-    pub fn get_name_text(&self, name: NameId) -> &JsWord {
+    pub fn get_name_text(&self, name: NameId) -> &str {
         self.0.get_name_for_id(name)
     }
 }
@@ -538,13 +569,13 @@ impl CodegenProgramData {
 pub struct TestingProgramData(ProgramData);
 
 impl TestingProgramData {
-    pub fn get_name_text(&self, name: NameId) -> &JsWord {
+    pub fn get_name_text(&self, name: NameId) -> &str {
         self.0.get_name_for_id(name)
     }
 
     // TODO:
     /// Only for testing - hacky
-    pub fn find_latest_id_for_name(&self, name: &JsWord) -> Option<NameId> {
+    pub fn find_latest_id_for_name(&self, name: &str) -> Option<NameId> {
         self.0
             .names
             .iter_enumerated()

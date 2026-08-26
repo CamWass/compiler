@@ -1256,7 +1256,7 @@ impl Parser<'_> {
         self.with_ctx(ctx).parse_with(|parser| {
             let label_already_exists = parser.labels.contains(&label.name);
             if label_already_exists {
-                let name = program_data!(parser).get_name_text(label.name).clone();
+                let name = program_data!(parser).get_name_text(label.name).to_string();
                 parser.emit_err(
                     get_span!(parser, label.node_id),
                     SyntaxError::DuplicateLabel(name),

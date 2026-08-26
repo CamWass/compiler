@@ -1,5 +1,6 @@
+use std::borrow::Cow;
+
 use ast::*;
-use atoms::{JsWord, js_word};
 use bitflags::bitflags;
 use num_traits::{FromPrimitive, identities::Zero};
 
@@ -116,50 +117,44 @@ pub fn get_boolean_value(expr: &Expr) -> Option<bool> {
 /// Returns the value of an expression as a String, or None if it cannot be
 /// converted. When a String is returned, this function effectively emulates the
 /// `String()` JavaScript cast function.
-pub fn getStringValue(expr: &Expr) -> Option<JsWord> {
+pub fn getStringValue(expr: &Expr) -> Option<Cow<'_, str>> {
     match expr {
         Expr::Lit(lit) => match lit {
-            Lit::Str(string) => Some(JsWord::from(string.value.as_str())),
+            Lit::Str(string) => Some(string.value.as_str().into()),
             Lit::Bool(bool) => {
                 if bool.value {
-                    Some(js_word!("true"))
+                    Some("true".into())
                 } else {
-                    Some(js_word!("false"))
+                    Some("false".into())
                 }
             }
-            Lit::Null(_) => Some(js_word!("null")),
-            Lit::Num(number) => Some(JsWord::from(ecma_number_to_string(number.value))),
-            Lit::BigInt(big_int) => Some(JsWord::from(big_int.value.to_string())),
+            Lit::Null(_) => Some("null".into()),
+            Lit::Num(number) => Some(ecma_number_to_string(number.value).into()),
+            Lit::BigInt(big_int) => Some(big_int.value.to_string().into()),
             // TODO: String(regex).
             Lit::Regex(_) => None,
         },
         Expr::Unary(unary) => match unary.op {
-            UnaryOp::Void => Some(js_word!("undefined")),
+            UnaryOp::Void => Some("undefined".into()),
             UnaryOp::Bang => {
                 let arg_value = get_boolean_value(&unary.arg);
-                arg_value.map(|bool| {
-                    if bool {
-                        js_word!("false")
-                    } else {
-                        js_word!("true")
-                    }
-                })
+                arg_value.map(|bool| if bool { "false".into() } else { "true".into() })
             }
             UnaryOp::Minus => {
                 let arg_value = get_number_value(&unary.arg);
-                arg_value.map(|v| JsWord::from(ecma_number_to_string(-v)))
+                arg_value.map(|v| ecma_number_to_string(-v).into())
             }
             // TODO: why can we analyze Minus but not Plus or Tilde?
             UnaryOp::Plus | UnaryOp::Tilde | UnaryOp::TypeOf | UnaryOp::Delete => None,
         },
         Expr::Ident(ident) => match ident.name {
-            id_for_built_in!("undefined") => Some(js_word!("undefined")),
-            id_for_built_in!("NaN") => Some(js_word!("NaN")),
-            id_for_built_in!("Infinity") => Some(js_word!("Infinity")),
+            id_for_built_in!("undefined") => Some("undefined".into()),
+            id_for_built_in!("NaN") => Some("NaN".into()),
+            id_for_built_in!("Infinity") => Some("Infinity".into()),
             _ => None,
         },
-        Expr::Array(array) => arrayToString(array),
-        Expr::Object(_) => Some(JsWord::from("[object Object]")),
+        Expr::Array(array) => arrayToString(array).map(|s| s.into()),
+        Expr::Object(_) => Some("[object Object]".into()),
         // TODO: template literals, but we need the cooked values for the
         // quasis.
         _ => None,
@@ -170,9 +165,9 @@ pub fn getStringValue(expr: &Expr) -> Option<JsWord> {
 /// `Array.prototype.join`, the rules for conversion to String are different
 /// than converting each element individually. Specifically, `null` and
 /// `undefined` are converted to an empty string.
-fn getArrayElementStringValue(element: &Option<ExprOrSpread>) -> Option<JsWord> {
+fn getArrayElementStringValue(element: &Option<ExprOrSpread>) -> Option<Cow<'_, str>> {
     let Some(element) = element else {
-        return Some(js_word!(""));
+        return Some("".into());
     };
 
     let ExprOrSpread::Expr(element) = element else {
@@ -184,17 +179,17 @@ fn getArrayElementStringValue(element: &Option<ExprOrSpread>) -> Option<JsWord> 
         ..
     }) = element.as_ref()
     {
-        return Some(js_word!(""));
+        return Some("".into());
     }
 
     if matches!(element.as_ref(), Expr::Lit(Lit::Null(_))) {
-        return Some(js_word!(""));
+        return Some("".into());
     }
 
     getStringValue(element)
 }
 
-fn arrayToString(array: &ArrayLit) -> Option<JsWord> {
+fn arrayToString(array: &ArrayLit) -> Option<String> {
     let mut result = String::new();
 
     for (i, el) in array.elems.iter().enumerate() {
@@ -210,7 +205,7 @@ fn arrayToString(array: &ArrayLit) -> Option<JsWord> {
         }
     }
 
-    Some(JsWord::from(result))
+    Some(result)
 }
 
 /// Returns the value of am expression as a Number, or None if it cannot be

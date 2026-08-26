@@ -111,7 +111,7 @@ pub(super) enum SyntaxError {
     InvalidExpr,
     NotSimpleAssign,
     ExpectedIdent,
-    DuplicateLabel(JsWord),
+    DuplicateLabel(String),
     // AsyncGenerator,
     NonTopLevelImportExport,
     ImportExportInScript,

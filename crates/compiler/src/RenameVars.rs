@@ -1,7 +1,6 @@
 use std::{collections::hash_map::Entry, hash::BuildHasherDefault};
 
 use ast::*;
-use atoms::JsWord;
 use indexmap::IndexSet;
 use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
@@ -130,7 +129,7 @@ struct Analyser<'d> {
     in_var_decl: bool,
     in_decl: bool,
     reference_count: FxHashMap<NameId, u32>,
-    unresolved_references: FxHashSet<JsWord>,
+    unresolved_references: FxHashSet<String>,
     order_of_occurrence: IndexSet<NameId, BuildHasherDefault<FxHasher>>,
     program_data: &'d mut TransformerProgramData,
 }
@@ -141,7 +140,7 @@ impl Analyser<'_> {
     fn handle_reference(&mut self, name: NameId) {
         if name.is_unresolved() {
             self.unresolved_references
-                .insert(self.program_data.get_name_text(name).clone());
+                .insert(self.program_data.get_name_text(name).to_string());
             return;
         }
         *self.reference_count.entry(name).or_default() += 1;
