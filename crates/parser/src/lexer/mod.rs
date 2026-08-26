@@ -838,12 +838,7 @@ impl<'src> Lexer<'src> {
 
         let s = self.uncons_while_byte(ast::Ident::is_valid_ascii_continue);
 
-        if self.is(b'\\')
-            || self
-                .cur()
-                .map(ast::Ident::is_valid_continue)
-                .unwrap_or(false)
-        {
+        if self.is(b'\\') || self.cur().is_some_and(|c| !c.is_ascii()) {
             self.with_buf(|lexer, buf| {
                 buf.push_str(s);
 
