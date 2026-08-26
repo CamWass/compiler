@@ -174,7 +174,7 @@ impl<'src> Lexer<'src> {
         ret
     }
 
-    pub(super) fn uncons_while_byte<F>(&mut self, mut pred: F) -> &str
+    pub(super) fn uncons_while_byte<F>(&mut self, mut pred: F) -> &'src str
     where
         F: FnMut(u8) -> bool,
     {

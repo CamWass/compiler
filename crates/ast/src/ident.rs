@@ -93,14 +93,18 @@ impl Ident {
 
     #[inline]
     pub fn is_valid_ascii_continue(c: u8) -> bool {
-        debug_assert!(c.is_ascii());
         // This contains `$` (36)
-        const ASCII_CONTINUE: Align64<[bool; 128]> = Align64([
+        const ASCII_CONTINUE: Align64<[bool; 256]> = Align64([
             F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
             F, F, F, F, F, F, F, T, F, F, F, F, F, F, F, F, F, F, F, T, T, T, T, T, T, T, T, T, T,
             F, F, F, F, F, F, F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T,
             T, T, T, T, F, F, F, F, T, F, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T, T,
-            T, T, T, T, T, T, T, F, F, F, F, F,
+            T, T, T, T, T, T, T, F, F, F, F, F, //
+            F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+            F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+            F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+            F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F, F,
+            F, F, F, F, F, F, F, F, F, F, F, F,
         ]);
         ASCII_CONTINUE.0[c as usize]
     }
