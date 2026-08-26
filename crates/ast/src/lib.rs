@@ -47,7 +47,6 @@ pub use self::{
         SwitchStmt, ThrowStmt, TryStmt, VarDeclOrExpr, VarDeclOrPat, WhileStmt, WithStmt,
     },
 };
-use atoms::JsWord;
 use clone_node::CloneNode;
 use common::Span;
 use hashbrown::HashTable;
@@ -650,7 +649,6 @@ macro_rules! impl_clone_node {
 
 impl_clone_node!(bool);
 impl_clone_node!(f64);
-impl_clone_node!(JsWord);
 impl_clone_node!(num_bigint::BigUint);
 impl_clone_node!(NameId);
 impl_clone_node!(String);
@@ -693,7 +691,6 @@ macro_rules! impl_eq_ignoring_node_id {
 
 impl_eq_ignoring_node_id!(bool);
 impl_eq_ignoring_node_id!(f64);
-impl_eq_ignoring_node_id!(JsWord);
 impl_eq_ignoring_node_id!(num_bigint::BigUint);
 impl_eq_ignoring_node_id!(NameId);
 impl_eq_ignoring_node_id!(String);

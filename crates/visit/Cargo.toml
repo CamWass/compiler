@@ -7,5 +7,4 @@ version = "0.1.0"
 num-bigint = { workspace = true }
 
 ast = { path = "../ast" }
-atoms = { path = "../atoms" }
 visit_macros = { path = "../visit_macros" }

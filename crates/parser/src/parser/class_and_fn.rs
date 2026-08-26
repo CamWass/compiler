@@ -2,7 +2,6 @@ use self::expression::BlockStmtOrExpr;
 
 use super::{identifier::MaybeOptionalIdentParser, *};
 use crate::{context::ContextFlags, error::SyntaxError};
-use atoms::js_word;
 use expression::MaybeParen;
 use util::AssignProps;
 
@@ -321,14 +320,11 @@ impl Parser<'_> {
                 match modifier {
                     Token::Abstract => {
                         if is_abstract {
-                            self.emit_err(
-                                self.input.prev_span(),
-                                SyntaxError::TS1030(js_word!("abstract")),
-                            );
+                            self.emit_err(self.input.prev_span(), SyntaxError::TS1030("abstract"));
                         } else if is_override {
                             self.emit_err(
                                 self.input.prev_span(),
-                                SyntaxError::TS1029(js_word!("abstract"), js_word!("override")),
+                                SyntaxError::TS1029("abstract", "override"),
                             );
                         } else {
                             is_abstract = true;
@@ -336,19 +332,16 @@ impl Parser<'_> {
                     }
                     Token::Override => {
                         if is_override {
-                            self.emit_err(
-                                self.input.prev_span(),
-                                SyntaxError::TS1030(js_word!("override")),
-                            );
+                            self.emit_err(self.input.prev_span(), SyntaxError::TS1030("override"));
                         } else if readonly.is_some() {
                             self.emit_err(
                                 self.input.prev_span(),
-                                SyntaxError::TS1029(js_word!("override"), js_word!("readonly")),
+                                SyntaxError::TS1029("override", "readonly"),
                             );
                         } else if declare {
                             self.emit_err(
                                 self.input.prev_span(),
-                                SyntaxError::TS1243(js_word!("override"), js_word!("declare")),
+                                SyntaxError::TS1243("override", "declare"),
                             );
                         } else if !self.ctx().has_super_class() {
                             self.emit_err(self.input.prev_span(), SyntaxError::TS4112);
@@ -359,7 +352,7 @@ impl Parser<'_> {
                     Token::Readonly => {
                         let readonly_span = self.input.prev_span();
                         if readonly.is_some() {
-                            self.emit_err(readonly_span, SyntaxError::TS1030(js_word!("readonly")));
+                            self.emit_err(readonly_span, SyntaxError::TS1030("readonly"));
                         } else {
                             readonly = Some(readonly_span);
                         }
@@ -368,7 +361,7 @@ impl Parser<'_> {
                         if is_override {
                             self.emit_err(
                                 self.input.prev_span(),
-                                SyntaxError::TS1029(js_word!("static"), js_word!("override")),
+                                SyntaxError::TS1029("static", "override"),
                             );
                         }
 
@@ -435,7 +428,7 @@ impl Parser<'_> {
 
             if is_constructor {
                 if self.syntax().typescript() && is_override {
-                    self.emit_err(self.span(start), SyntaxError::TS1089(js_word!("override")));
+                    self.emit_err(self.span(start), SyntaxError::TS1089("override"));
                 }
 
                 if self.syntax().typescript() && self.is(tok!('<')) {
@@ -496,7 +489,7 @@ impl Parser<'_> {
 
                 if self.syntax().typescript() {
                     if let Some(static_token) = static_token {
-                        self.emit_err(static_token, SyntaxError::TS1089(js_word!("static")));
+                        self.emit_err(static_token, SyntaxError::TS1089("static"));
                     }
                 }
 
@@ -553,7 +546,7 @@ impl Parser<'_> {
             if self.syntax().typescript() && self.parse_ts_modifier(&[Token::Override])?.is_some() {
                 self.emit_err(
                     self.input.prev_span(),
-                    SyntaxError::TS1029(js_word!("override"), js_word!("async")),
+                    SyntaxError::TS1029("override", "async"),
                 );
             }
 

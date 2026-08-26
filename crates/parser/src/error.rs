@@ -1,5 +1,4 @@
 use crate::token::Token;
-use atoms::JsWord;
 use common::{
     Span,
     errors::{DiagnosticBuilder, Handler},
@@ -151,8 +150,8 @@ pub(super) enum SyntaxError {
     TS1009,
     // TS1014,
     TS1015,
-    TS1029(JsWord, JsWord),
-    TS1030(JsWord),
+    TS1029(&'static str, &'static str),
+    TS1030(&'static str),
     TS1031,
     TS1038,
     TS1042,
@@ -160,7 +159,7 @@ pub(super) enum SyntaxError {
     TS1048,
     TS1056,
     TS1085,
-    TS1089(JsWord),
+    TS1089(&'static str),
     TS1092,
     TS1096,
     TS1098,
@@ -186,7 +185,7 @@ pub(super) enum SyntaxError {
     TS1093,
     // TS1196,
     TS1242,
-    TS1243(JsWord, JsWord),
+    TS1243(&'static str, &'static str),
     TS2369,
     TS2371,
     TS2406,

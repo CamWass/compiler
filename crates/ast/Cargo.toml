@@ -12,7 +12,6 @@ rustc-hash = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 unicode-id-start = { workspace = true }
 
-atoms = { path = "../atoms" }
 clone_node = { path = "../clone_node" }
 common = { path = "../common" }
 index = { path = "../index" }
