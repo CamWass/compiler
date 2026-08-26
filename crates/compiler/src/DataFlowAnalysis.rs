@@ -13,7 +13,7 @@ use visit::{Visit, VisitWith};
 
 use crate::control_flow::ControlFlowAnalysis::NodePriority;
 use crate::control_flow::{ControlFlowGraph::*, node::CfgNode};
-use crate::find_vars::{FunctionLike, VarId};
+use crate::find_vars::{FunctionLikeNode, VarId};
 
 #[cfg(test)]
 mod tests;
@@ -409,14 +409,11 @@ impl<'p> UniqueQueue<'p> {
 ///
 /// 1. Exported variables as they can be needed after the script terminates.
 /// 2. Names of named functions because in JavaScript, `function foo(){}` does not kill foo in the dataflow.
-pub fn compute_escaped<T>(
-    fn_scope: &T,
+pub fn compute_escaped(
+    fn_scope: FunctionLikeNode,
     all_vars_in_fn: &FxHashMap<NameId, VarId>,
     catch_vars: FxHashSet<NameId>,
-) -> FxHashSet<NameId>
-where
-    T: FunctionLike,
-{
+) -> FxHashSet<NameId> {
     // TODO (simranarora) catch variables should not be considered escaped in ES6. Getting rid of
     // the catch check is causing breakages however
     let mut escaped = catch_vars;
@@ -424,7 +421,7 @@ where
         all_vars_in_fn,
         escaped: &mut escaped,
     };
-    fn_scope.body().visit_with(&mut v);
+    fn_scope.body.visit_with(&mut v);
     escaped
 }
 

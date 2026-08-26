@@ -604,13 +604,13 @@ fn computeEscapedLocals(src: &str) -> FxHashSet<NameId> {
     let cfa = ControlFlowAnalysis::analyze(ControlFlowRoot::Function(function), false);
 
     // All variables declared in function
-    let all_vars_declared_in_function = find_vars_declared_in_fn(function.as_ref(), false);
+    let all_vars_declared_in_function = find_vars_declared_in_fn(function.as_ref().into(), false);
 
     // Compute liveness of variables
     let liveness = LiveVariablesAnalysis::new(
         cfa.cfg,
         &cfa.node_priorities,
-        function.as_ref(),
+        function.as_ref().into(),
         all_vars_declared_in_function,
     );
     liveness.analyze().0.escaped_locals

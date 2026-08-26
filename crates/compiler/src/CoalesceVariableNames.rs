@@ -16,7 +16,7 @@ use crate::control_flow::{
     node::Node,
 };
 use crate::find_vars::{
-    DeclFinder, FunctionLike, VarId, find_first_lhs_ident, find_pat_ids, find_vars_declared_in_fn,
+    FunctionLike, VarId, find_first_lhs_ident, find_pat_ids, find_vars_declared_in_fn,
 };
 use crate::graph::GraphColoring::GraphColouring;
 use crate::utils::unwrap_as;
@@ -71,10 +71,7 @@ impl ParentVisitor for GlobalVisitor<'_> {
 
 fn handle_fn<'c, T, V>(function: &'c mut T, parent_visitor: &'c mut V)
 where
-    T: FunctionLike
-        + VisitMutWith<'c, V>
-        + for<'ast> VisitWith<'ast, DeclFinder>
-        + VisitMutWith<'c, CoalesceVariableNames<'c>>,
+    T: FunctionLike + VisitMutWith<'c, V> + VisitMutWith<'c, CoalesceVariableNames<'c>>,
     for<'x> ControlFlowRoot<'x>: From<&'x T>,
     V: VisitMut<'c> + ParentVisitor,
 {
@@ -82,7 +79,7 @@ where
     // incorrect semantics. See test case "testCapture".
     // Skipping vars technically isn't needed for correct semantics, but works around a Safari
     // bug for var redeclarations (https://github.com/google/closure-compiler/issues/3164)
-    let all_vars_declared_in_func = find_vars_declared_in_fn(function, true);
+    let all_vars_declared_in_func = find_vars_declared_in_fn((&*function).into(), true);
 
     // Nothing to coalesce if there's zero or one candidate variable.
     if MAX_VARIABLES_TO_ANALYZE > all_vars_declared_in_func.ordered_vars.len()
@@ -94,7 +91,7 @@ where
         let (liveness, cfg) = LiveVariablesAnalysis::new(
             cfa.cfg,
             &cfa.node_priorities,
-            function,
+            (&*function).into(),
             all_vars_declared_in_func,
         )
         .analyze();

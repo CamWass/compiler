@@ -1,4 +1,4 @@
-use crate::find_vars::FunctionLike;
+use crate::find_vars::FunctionLikeNode;
 
 use super::ControlFlowGraph::{Annotation, Branch, ControlFlowGraph};
 use super::node::{CfgNode, Node, NodeKind};
@@ -330,13 +330,9 @@ where
     }
 
     /// Handles functions/constructors/etc
-    fn handle_function_like<T>(&mut self, node: &'ast T)
-    where
-        T: FunctionLike,
-        &'ast T: Into<Node<'ast>>,
-    {
-        let body = node.body();
-        let node = node.into();
+    fn handle_function_like(&mut self, func: FunctionLikeNode<'ast>, node: Node<'ast>) {
+        let body = func.body;
+        let node = node;
         self.prioritize_node(node);
 
         if self.should_traverse_functions || node == self.cfg.entry {
@@ -1134,19 +1130,19 @@ where
     }
 
     fn visit_function(&mut self, node: &'ast Function) {
-        self.handle_function_like(node);
+        self.handle_function_like(node.into(), Node::from(node));
     }
     fn visit_constructor(&mut self, node: &'ast Constructor) {
-        self.handle_function_like(node);
+        self.handle_function_like(node.into(), Node::from(node));
     }
     fn visit_arrow_expr(&mut self, node: &'ast ArrowExpr) {
-        self.handle_function_like(node);
+        self.handle_function_like(node.into(), Node::from(node));
     }
     fn visit_getter_prop(&mut self, node: &'ast GetterProp) {
-        self.handle_function_like(node);
+        self.handle_function_like(node.into(), Node::from(node));
     }
     fn visit_setter_prop(&mut self, node: &'ast SetterProp) {
-        self.handle_function_like(node);
+        self.handle_function_like(node.into(), Node::from(node));
     }
 
     fn visit_class(&mut self, _: &'ast Class) {

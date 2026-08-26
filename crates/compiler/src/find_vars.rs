@@ -20,6 +20,8 @@ pub struct AllVarsDeclaredInFunction {
     pub fn_and_class_names: FxHashSet<VarId>,
 }
 
+/// Note: this doesn't handle the function's identifier, only its params and body.
+///
 /// `skip_multi_decl_destructuring` - Whether to skip collecting bindings from
 /// var decls with destructuring patterns that declare multiple names. e.g.
 /// ```js
@@ -28,24 +30,22 @@ pub struct AllVarsDeclaredInFunction {
 /// const {c, d} = o; // Multiple bindings; optionally skipped
 /// const e = 1, f = 2; // Multiple bindings; optionally skipped
 /// ```
-pub fn find_vars_declared_in_fn<'ast, T>(
-    function: &'ast T,
+pub fn find_vars_declared_in_fn(
+    function: FunctionLikeNode,
     skip_multi_decl_destructuring: bool,
-) -> AllVarsDeclaredInFunction
-where
-    T: FunctionLike + VisitWith<'ast, DeclFinder>,
-{
+) -> AllVarsDeclaredInFunction {
     let mut v = DeclFinder {
         vars: AllVarsDeclaredInFunction::default(),
         in_catch_binding: false,
         in_param: false,
         skip_multi_decl_destructuring,
     };
-    function.visit_children_with(&mut v);
+    function.params.iter().for_each(|p| p.visit_with(&mut v));
+    function.body.visit_with(&mut v);
     v.vars
 }
 
-pub struct DeclFinder {
+struct DeclFinder {
     vars: AllVarsDeclaredInFunction,
     in_catch_binding: bool,
     in_param: bool,
@@ -211,6 +211,21 @@ impl<'ast> VisitMut<'ast> for FindFirstLHSIdent<'ast> {
     fn visit_mut_binding_ident(&mut self, i: &'ast mut BindingIdent) {
         if self.found.is_none() {
             self.found = Some(&mut i.id);
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct FunctionLikeNode<'a> {
+    pub params: &'a [Param],
+    pub body: &'a BlockStmt,
+}
+
+impl<'a, T: FunctionLike> From<&'a T> for FunctionLikeNode<'a> {
+    fn from(value: &'a T) -> Self {
+        FunctionLikeNode {
+            params: value.params(),
+            body: value.body(),
         }
     }
 }

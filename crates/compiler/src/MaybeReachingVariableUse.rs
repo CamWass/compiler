@@ -13,7 +13,7 @@ use crate::DataFlowAnalysis::*;
 use crate::control_flow::ControlFlowAnalysis::NodePriority;
 use crate::control_flow::ControlFlowGraph::{Branch, ControlFlowGraph};
 use crate::control_flow::{ControlFlowGraph::Annotation, node::Node, util::MultiMap};
-use crate::find_vars::{AllVarsDeclaredInFunction, FunctionLike, VarId};
+use crate::find_vars::{AllVarsDeclaredInFunction, FunctionLikeNode, VarId};
 
 #[cfg(test)]
 mod tests;
@@ -47,22 +47,16 @@ impl MaybeReachingResult<'_> {
     }
 }
 
-pub struct MaybeReachingVariableUse<'ast, 'a, T>
-where
-    T: FunctionLike,
-{
+pub struct MaybeReachingVariableUse<'ast, 'a> {
     data_flow_analysis:
-        DataFlowAnalysis<'a, Node<'ast>, Inner<'ast, 'a, T>, ReachingUses, ReachingUsesJoinOp>,
+        DataFlowAnalysis<'a, Node<'ast>, Inner<'ast, 'a>, ReachingUses, ReachingUsesJoinOp>,
 }
 
-impl<'ast, 'a, T> MaybeReachingVariableUse<'ast, 'a, T>
-where
-    T: FunctionLike,
-{
+impl<'ast, 'a> MaybeReachingVariableUse<'ast, 'a> {
     pub fn new(
         cfg: ControlFlowGraph<Node<'ast>, LinearFlowState>,
         node_priorities: &'a [NodePriority],
-        fn_scope: &'a T,
+        fn_scope: FunctionLikeNode<'a>,
         all_vars_declared_in_function: AllVarsDeclaredInFunction,
     ) -> Self {
         let inner = Inner {
@@ -98,12 +92,9 @@ where
     }
 }
 
-struct Inner<'ast, 'a, T>
-where
-    T: FunctionLike,
-{
+struct Inner<'ast, 'a> {
     num_vars: usize,
-    fn_scope: &'a T,
+    fn_scope: FunctionLikeNode<'a>,
 
     escaped: FxHashSet<NameId>,
     // Maps the variable name to it's position
@@ -119,10 +110,7 @@ where
     cfg: ControlFlowGraph<Node<'ast>, LinearFlowState>,
 }
 
-impl<'ast, T> Inner<'ast, '_, T>
-where
-    T: FunctionLike,
-{
+impl<'ast> Inner<'ast, '_> {
     fn has_exception_handler(&self, cfg_node: Node<'ast>) -> bool {
         self.cfg
             .graph
@@ -182,22 +170,16 @@ where
     }
 }
 
-struct ReachingUseFinder<'ast, 'a, 'b, T>
-where
-    T: FunctionLike,
-{
+struct ReachingUseFinder<'ast, 'a, 'b> {
     output: &'b mut ReachingUses,
     conditional: bool,
-    analysis: &'b mut Inner<'ast, 'a, T>,
+    analysis: &'b mut Inner<'ast, 'a>,
     cfg_node: Node<'ast>,
     in_lhs: bool,
     in_destructuring: bool,
 }
 
-impl<T> Visit<'_> for ReachingUseFinder<'_, '_, '_, T>
-where
-    T: FunctionLike,
-{
+impl Visit<'_> for ReachingUseFinder<'_, '_, '_> {
     // TODO: this incorrectly assumes that the bodies of if/for etc are only
     // BlockStmts, but they can be any statement.
     // Also need to double check the handling of switch cases, which create CFG
@@ -832,11 +814,7 @@ where
     }
 }
 
-impl<'ast, T> DataFlowAnalysisInner<Node<'ast>, ReachingUses, ReachingUsesJoinOp>
-    for Inner<'ast, '_, T>
-where
-    T: FunctionLike,
-{
+impl<'ast> DataFlowAnalysisInner<Node<'ast>, ReachingUses, ReachingUsesJoinOp> for Inner<'ast, '_> {
     fn add_lattice_element(&mut self, element: ReachingUses) -> LatticeElementId {
         self.lattice_elements.push(element)
     }
@@ -893,10 +871,7 @@ where
     }
 }
 
-impl<T> Index<LatticeElementId> for Inner<'_, '_, T>
-where
-    T: FunctionLike,
-{
+impl Index<LatticeElementId> for Inner<'_, '_> {
     type Output = ReachingUses;
 
     fn index(&self, index: LatticeElementId) -> &Self::Output {
@@ -971,11 +946,8 @@ struct ReachingUsesJoinOp {
     result: ReachingUses,
 }
 
-impl<'ast, 'a, T> FlowJoiner<ReachingUses, Inner<'ast, 'a, T>> for ReachingUsesJoinOp
-where
-    T: FunctionLike,
-{
-    fn join_flow(&mut self, inner: &mut Inner<'ast, 'a, T>, input: LatticeElementId) {
+impl<'ast, 'a> FlowJoiner<ReachingUses, Inner<'ast, 'a>> for ReachingUsesJoinOp {
+    fn join_flow(&mut self, inner: &mut Inner<'ast, 'a>, input: LatticeElementId) {
         for (k, v) in inner.lattice_elements[input].may_use_map.iter() {
             for v in v {
                 self.result.may_use_map.put(*k, *v);

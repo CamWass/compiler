@@ -1,6 +1,5 @@
 use ast::*;
 use rustc_hash::FxHashMap;
-use visit::VisitWith;
 use visit::{VisitMut, VisitMutWith};
 
 use crate::DataFlowAnalysis::LinearFlowState;
@@ -9,7 +8,6 @@ use crate::LiveVariablesAnalysis::LiveVariablesAnalysisResult;
 use crate::LiveVariablesAnalysis::MAX_VARIABLES_TO_ANALYZE;
 use crate::control_flow::ControlFlowAnalysis::ControlFlowAnalysis;
 use crate::control_flow::ControlFlowAnalysis::ControlFlowRoot;
-use crate::find_vars::DeclFinder;
 use crate::find_vars::FunctionLike;
 use crate::find_vars::VarId;
 use crate::find_vars::find_vars_declared_in_fn;
@@ -183,10 +181,7 @@ struct Driver<'a> {
 impl Driver<'_> {
     fn handle_fn<T>(&mut self, node: &mut T)
     where
-        T: FunctionLike
-            + GetNodeId
-            + for<'b> VisitWith<'b, DeclFinder>
-            + for<'b> VisitMutWith<'b, DeadAssignmentElimination<'b>>,
+        T: FunctionLike + GetNodeId + for<'b> VisitMutWith<'b, DeadAssignmentElimination<'b>>,
         for<'b> ControlFlowRoot<'b>: From<&'b T>,
     {
         if let Some(function_data) = self.function_stack.last_mut() {
@@ -218,7 +213,7 @@ impl Driver<'_> {
 
         let node_id = node.node_id();
 
-        let all_vars_declared_in_func = find_vars_declared_in_fn(&*node, false);
+        let all_vars_declared_in_func = find_vars_declared_in_fn((&*node).into(), false);
 
         if all_vars_declared_in_func.ordered_vars.len() > MAX_VARIABLES_TO_ANALYZE {
             return;
@@ -228,7 +223,7 @@ impl Driver<'_> {
         let (liveness, cfg) = LiveVariablesAnalysis::new(
             cfa.cfg,
             &cfa.node_priorities,
-            node,
+            (&*node).into(),
             all_vars_declared_in_func,
         )
         .analyze();

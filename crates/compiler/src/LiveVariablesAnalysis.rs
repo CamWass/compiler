@@ -51,16 +51,16 @@ impl<'ast, 'a> LiveVariablesAnalysis<'ast, 'a> {
     /// We call from the function scope when the pass requires us to traverse nodes beginning at the
     /// function parameters, and it from the function block scope when we are ignoring function
     /// parameters.
-    pub fn new<T: FunctionLike>(
+    pub fn new(
         cfg: ControlFlowGraph<Node<'ast>, LinearFlowState>,
         node_priorities: &'a [NodePriority],
-        fn_scope: &'a T,
+        fn_scope: FunctionLikeNode,
         all_vars_declared_in_function: AllVarsDeclaredInFunction,
     ) -> Self {
         let inner = Inner {
             num_vars: all_vars_declared_in_function.ordered_vars.len(),
             simple_param_names: fn_scope
-                .params()
+                .params
                 .into_iter()
                 .filter_map(|p| {
                     if let Pat::Ident(name) = &p.pat {

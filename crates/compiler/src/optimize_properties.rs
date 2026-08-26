@@ -17,7 +17,7 @@ use std::collections::hash_map::Entry;
 use std::convert::TryInto;
 
 use crate::convert::ecma_number_to_string;
-use crate::find_vars::{FunctionLike, VarId};
+use crate::find_vars::{FunctionLikeNode, VarId};
 use crate::name_generator::NameGenerator;
 use crate::utils::unwrap_as;
 use ast::*;
@@ -1493,10 +1493,13 @@ struct FnVisitor<'d: 's, 's> {
 }
 
 impl FnVisitor<'_, '_> {
-    fn handle_fn<T>(&mut self, node: &T, fn_expr_name: Option<&Ident>, is_arrow: bool)
-    where
-        T: FunctionLike + GetNodeId,
-    {
+    fn handle_fn(
+        &mut self,
+        node: FunctionLikeNode,
+        node_id: NodeId,
+        fn_expr_name: Option<&Ident>,
+        is_arrow: bool,
+    ) {
         let var_start = self.store.vars.len().try_into().unwrap();
 
         let mut v = DeclFinder {
@@ -1505,7 +1508,7 @@ impl FnVisitor<'_, '_> {
         };
 
         let mut has_rest = false;
-        for param in node.params() {
+        for param in node.params {
             v.visit_pat(&param.pat);
             if matches!(&param.pat, Pat::Rest(_)) {
                 has_rest = true;
@@ -1521,19 +1524,17 @@ impl FnVisitor<'_, '_> {
             v.record_var(fn_expr_name);
         }
 
-        node.body().visit_with(&mut v);
+        node.body.visit_with(&mut v);
 
         let tracked_param_count = if has_rest {
-            node.params().len() - 1
+            node.params.len() - 1
         } else {
-            node.params().len()
+            node.params.len()
         };
 
         let static_data = StaticFunctionData {
             tracked_param_count: tracked_param_count.try_into().expect("> u16::MAX params"),
         };
-
-        let node_id = node.node_id();
 
         self.store.pointers.insert(Pointer::Fn(node_id));
 
@@ -1547,10 +1548,10 @@ impl FnVisitor<'_, '_> {
             self.accesses_arguments_array = false;
         }
 
-        for param in node.params() {
+        for param in node.params {
             self.visit_pat(&param.pat);
         }
-        node.body().visit_with(self);
+        node.body.visit_with(self);
 
         if self.accesses_arguments_array && !is_arrow {
             // Invalidate parameters for functions that access the arguments array.
@@ -1581,25 +1582,35 @@ impl<'ast> Visit<'ast> for FnVisitor<'_, '_> {
     }
 
     fn visit_fn_decl(&mut self, node: &'ast FnDecl) {
-        self.handle_fn(node.function.as_ref(), None, false);
+        self.handle_fn(
+            node.function.as_ref().into(),
+            node.function.node_id,
+            None,
+            false,
+        );
     }
     fn visit_fn_expr(&mut self, node: &'ast FnExpr) {
-        self.handle_fn(node.function.as_ref(), node.ident.as_ref(), false);
+        self.handle_fn(
+            node.function.as_ref().into(),
+            node.function.node_id,
+            node.ident.as_ref(),
+            false,
+        );
     }
     fn visit_function(&mut self, node: &'ast Function) {
-        self.handle_fn(node, None, false);
+        self.handle_fn(node.into(), node.node_id, None, false);
     }
     fn visit_constructor(&mut self, node: &'ast Constructor) {
-        self.handle_fn(node, None, false);
+        self.handle_fn(node.into(), node.node_id, None, false);
     }
     fn visit_arrow_expr(&mut self, node: &'ast ArrowExpr) {
-        self.handle_fn(node, None, true);
+        self.handle_fn(node.into(), node.node_id, None, true);
     }
     fn visit_getter_prop(&mut self, node: &'ast GetterProp) {
-        self.handle_fn(node, None, false);
+        self.handle_fn(node.into(), node.node_id, None, false);
     }
     fn visit_setter_prop(&mut self, node: &'ast SetterProp) {
-        self.handle_fn(node, None, false);
+        self.handle_fn(node.into(), node.node_id, None, false);
     }
 }
 
