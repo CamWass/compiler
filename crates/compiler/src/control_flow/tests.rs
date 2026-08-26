@@ -2587,15 +2587,15 @@ fn assert_node_order(src: &str, expected: &[Token]) {
         .map(|(n, p)| (cfg.graph[NodeIndex::from(n as u32)], *p))
         .collect::<Vec<_>>();
     actual.sort_unstable_by_key(|(_, p)| *p);
-    let mut actual = actual.into_iter().map(|(n, _)| n).collect::<Vec<_>>();
+    let mut actual = actual
+        .into_iter()
+        .map(|(n, _)| Token::from(n))
+        .collect::<Vec<_>>();
 
     // Implicit return must always be last
-    assert!(actual.pop().unwrap().is_implicit_return());
+    assert!(actual.pop().unwrap() == Token::ImplicitReturn);
 
-    let eq = actual
-        .iter()
-        .copied()
-        .eq_by(expected.iter().copied(), |n, t| Token::from(n) == t);
+    let eq = actual.iter().eq(expected.iter());
     assert!(
         eq,
         "Expected order: {:#?}, actual order: {:#?}",

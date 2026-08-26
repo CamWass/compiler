@@ -1,4 +1,3 @@
-#![cfg_attr(test, feature(iter_order_by))]
 #![deny(unused_imports)]
 #![deny(unused)]
 // TODO:
