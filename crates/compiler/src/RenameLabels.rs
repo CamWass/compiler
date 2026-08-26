@@ -115,7 +115,7 @@ impl VisitMut<'_> for RenameLabels<'_> {
                 if self.names.len() < current_depth {
                     let new_name = self
                         .program_data
-                        .new_resolved_name(self.name_supplier.generate_next_name());
+                        .new_resolved_name(self.name_supplier.generate_next_name().into());
                     self.names.push(new_name);
                 }
 

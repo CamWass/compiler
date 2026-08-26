@@ -186,7 +186,7 @@ fn assemble_param_names(
     }
     // ... then synthesize any additional param names.
     while index < max_count {
-        let new_name = program_data.new_resolved_name(&format!("p{index}"));
+        let new_name = program_data.new_resolved_name(format!("p{index}").into());
         map.insert(index, new_name);
         index += 1;
     }

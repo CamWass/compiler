@@ -383,8 +383,6 @@ pub struct ProgramData {
     hasher: BuildHasherDefault<FxHasher>,
 }
 
-// TODO: audit string related methods - we can use Cow in more places.
-
 impl ProgramData {
     fn new() -> Self {
         let mut data = Self {
@@ -542,8 +540,8 @@ impl TransformerProgramData {
         self.0.get_name_for_id(name)
     }
 
-    pub fn new_resolved_name(&mut self, name: &str) -> NameId {
-        ProgramData::mark_resolved(self.0.names.push(String::from(name)))
+    pub fn new_resolved_name(&mut self, name: Cow<str>) -> NameId {
+        ProgramData::mark_resolved(self.0.names.push(name.to_string()))
     }
 
     pub fn new_resolved_name_from(&mut self, id: NameId) -> NameId {

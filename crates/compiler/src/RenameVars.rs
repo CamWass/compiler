@@ -109,7 +109,7 @@ fn analyse(
     const DUMMY_VALUE: NameId = NameId::from_u32(0);
     let mut rename_map = vec![DUMMY_VALUE; slot_count];
     for (slot, _) in slots {
-        let new_name = program_data.new_resolved_name(name_gen.generate_next_name());
+        let new_name = program_data.new_resolved_name(name_gen.generate_next_name().into());
         rename_map[slot.0 as usize] = new_name;
     }
 
