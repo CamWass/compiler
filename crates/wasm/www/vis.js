@@ -107,7 +107,6 @@ export class CFGDisplay {
     }
 
     if (cfgText) {
-      console.log(cfgText)
       const cfg = viz.renderSVGElement(cfgText);
 
       this.#svg = cfg;
