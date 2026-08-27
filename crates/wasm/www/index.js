@@ -5,6 +5,29 @@ const source = await fetch(new URL("out.js", import.meta.url)).then((r) =>
 );
 
 const INPUTS = {
+  blank: {
+    label: "Empty",
+    config: `{
+  "pretty_print": true,
+  "passes": {
+    "optimize_arguments_array": false,
+    "rename_vars": false,
+    "rename_labels": false,
+    "coalesce_variable_names": false,
+    "optimize_properties": false,
+    "fuse_stmts": false,
+    "optimise_equality": false,
+    "remove_dead_code": false,
+    "collapse_variable_declarations": false
+  },
+  "ecmascript": {
+    "dynamicImport": true,
+    "importMeta": true,
+    "topLevelAwait": true
+  }
+}`,
+    input: "",
+  },
   properties: {
     label: "Property optimisation",
     config: `{
