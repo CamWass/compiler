@@ -714,7 +714,11 @@ fn get_flow_state_at_x(
         predicate: |stmt| {
             if let Stmt::Labeled(labeled) = stmt {
                 if program_data.get_name_text(labeled.label.name) == "X" {
-                    let body = Node::from(labeled.body.as_ref());
+                    let body = match labeled.body.as_ref() {
+                        Stmt::Block(b) if b.stmts.len() == 1 => b.stmts.first().unwrap(),
+                        _ => labeled.body.as_ref(),
+                    };
+                    let body = Node::from(body);
                     return liveness
                         .data_flow_analysis
                         .inner

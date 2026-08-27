@@ -53,18 +53,6 @@ mod tests {
     }
 
     #[test]
-    fn blocks_are_preserved_in_single_statement_contexts() {
-        assert_pretty(
-            "
-if (true) { foo; }
-",
-            "if (true) {
-    foo;
-}",
-        );
-    }
-
-    #[test]
     fn while_statement() {
         assert_min("while (true) foo;", "while(true)foo");
         assert_min("while (true) { foo; }", "while(true)foo");

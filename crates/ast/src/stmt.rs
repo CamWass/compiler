@@ -89,7 +89,7 @@ pub struct DebuggerStmt {
 pub struct WithStmt {
     pub node_id: NodeId,
     pub obj: Box<Expr>,
-    pub body: Box<Stmt>,
+    pub body: Box<BlockStmt>,
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
@@ -122,9 +122,9 @@ pub struct IfStmt {
     pub node_id: NodeId,
     pub test: Box<Expr>,
 
-    pub cons: Box<Stmt>,
+    pub cons: Box<BlockStmt>,
 
-    pub alt: Option<Box<Stmt>>,
+    pub alt: Option<Box<BlockStmt>>,
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
@@ -148,21 +148,21 @@ pub struct TryStmt {
 
     pub handler: Option<CatchClause>,
 
-    pub finalizer: Option<BlockStmt>,
+    pub finalizer: Option<Box<BlockStmt>>,
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct WhileStmt {
     pub node_id: NodeId,
     pub test: Box<Expr>,
-    pub body: Box<Stmt>,
+    pub body: Box<BlockStmt>,
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct DoWhileStmt {
     pub node_id: NodeId,
     pub test: Box<Expr>,
-    pub body: Box<Stmt>,
+    pub body: Box<BlockStmt>,
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
@@ -175,7 +175,7 @@ pub struct ForStmt {
 
     pub update: Option<Box<Expr>>,
 
-    pub body: Box<Stmt>,
+    pub body: Box<BlockStmt>,
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
@@ -183,7 +183,7 @@ pub struct ForInStmt {
     pub node_id: NodeId,
     pub left: Box<VarDeclOrPat>,
     pub right: Box<Expr>,
-    pub body: Box<Stmt>,
+    pub body: Box<BlockStmt>,
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
@@ -193,7 +193,7 @@ pub struct ForOfStmt {
     pub is_await: bool,
     pub left: Box<VarDeclOrPat>,
     pub right: Box<Expr>,
-    pub body: Box<Stmt>,
+    pub body: Box<BlockStmt>,
 }
 
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]

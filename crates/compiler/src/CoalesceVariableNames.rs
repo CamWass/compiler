@@ -171,19 +171,19 @@ impl CoalesceVariableNames<'_> {
         }
     }
 
-    fn visit_loop_body(&mut self, body: &mut Stmt) {
-        match body {
-            Stmt::Block(b) => {
-                let old = self.in_loop_body;
-                self.in_loop_body = true;
-                self.handle_stmt_list(&mut b.stmts);
-                self.in_loop_body = old;
-            }
-            _ => unreachable!(),
-        }
+    fn visit_loop_body(&mut self, body: &mut BlockStmt) {
+        let old = self.in_loop_body;
+        self.in_loop_body = true;
+        self.handle_stmt_list(&mut body.stmts);
+        self.in_loop_body = old;
     }
 
-    fn handle_enhanced_for(&mut self, left: &mut VarDeclOrPat, right: &mut Expr, body: &mut Stmt) {
+    fn handle_enhanced_for(
+        &mut self,
+        left: &mut VarDeclOrPat,
+        right: &mut Expr,
+        body: &mut BlockStmt,
+    ) {
         if let VarDeclOrPat::VarDecl(var_decl) = left {
             assert!(var_decl.decls.len() == 1);
             let decl = var_decl.decls.first_mut().unwrap();
@@ -236,7 +236,7 @@ impl CoalesceVariableNames<'_> {
     }
 
     /// For while and do-while loops.
-    fn handle_simple_loop(&mut self, test: &mut Expr, body: &mut Stmt) {
+    fn handle_simple_loop(&mut self, test: &mut Expr, body: &mut BlockStmt) {
         test.visit_mut_with(self);
         self.visit_loop_body(body);
     }

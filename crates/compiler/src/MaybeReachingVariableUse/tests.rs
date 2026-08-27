@@ -450,15 +450,19 @@ impl<'ast> Visit<'ast> for InfoExtractor<'ast, '_> {
     }
 
     fn visit_labeled_stmt(&mut self, node: &'ast LabeledStmt) {
+        let body = match node.body.as_ref() {
+            Stmt::Block(b) if b.stmts.len() == 1 => b.stmts.first().unwrap(),
+            _ => node.body.as_ref(),
+        };
         if self.program_data.get_name_text(node.label.name) == "D" {
             assert!(self.extracted_def == None, "Multiple D: labels in test src");
-            self.extracted_def = Some(Node::from(node.body.as_ref()));
+            self.extracted_def = Some(Node::from(body));
         } else if self
             .program_data
             .get_name_text(node.label.name)
             .starts_with('U')
         {
-            self.extracted_uses.push(node.body.node_id());
+            self.extracted_uses.push(body.node_id());
         }
         node.body.visit_with(self);
     }

@@ -747,7 +747,7 @@ define!({
     pub struct WithStmt {
         pub node_id: NodeId,
         pub obj: Box<Expr>,
-        pub body: Box<Stmt>,
+        pub body: Box<BlockStmt>,
     }
     pub struct ReturnStmt {
         pub node_id: NodeId,
@@ -769,8 +769,8 @@ define!({
     pub struct IfStmt {
         pub node_id: NodeId,
         pub test: Box<Expr>,
-        pub cons: Box<Stmt>,
-        pub alt: Option<Box<Stmt>>,
+        pub cons: Box<BlockStmt>,
+        pub alt: Option<Box<BlockStmt>>,
     }
     pub struct SwitchStmt {
         pub node_id: NodeId,
@@ -785,37 +785,37 @@ define!({
         pub node_id: NodeId,
         pub block: BlockStmt,
         pub handler: Option<CatchClause>,
-        pub finalizer: Option<BlockStmt>,
+        pub finalizer: Option<Box<BlockStmt>>,
     }
     pub struct WhileStmt {
         pub node_id: NodeId,
         pub test: Box<Expr>,
-        pub body: Box<Stmt>,
+        pub body: Box<BlockStmt>,
     }
     pub struct DoWhileStmt {
         pub node_id: NodeId,
         pub test: Box<Expr>,
-        pub body: Box<Stmt>,
+        pub body: Box<BlockStmt>,
     }
     pub struct ForStmt {
         pub node_id: NodeId,
         pub init: Option<Box<VarDeclOrExpr>>,
         pub test: Option<Box<Expr>>,
         pub update: Option<Box<Expr>>,
-        pub body: Box<Stmt>,
+        pub body: Box<BlockStmt>,
     }
     pub struct ForInStmt {
         pub node_id: NodeId,
         pub left: Box<VarDeclOrPat>,
         pub right: Box<Expr>,
-        pub body: Box<Stmt>,
+        pub body: Box<BlockStmt>,
     }
     pub struct ForOfStmt {
         pub node_id: NodeId,
         pub is_await: bool,
         pub left: Box<VarDeclOrPat>,
         pub right: Box<Expr>,
-        pub body: Box<Stmt>,
+        pub body: Box<BlockStmt>,
     }
     pub struct SwitchCase {
         pub node_id: NodeId,

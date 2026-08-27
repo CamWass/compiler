@@ -323,7 +323,7 @@ const C = {
 
     #[test]
     fn testRenameInFunction() {
-        test_transform("function x(){ Foo:a(); }", "function x(){ a(); }");
+        test_transform("function x(){ Foo: { a(); } }", "function x(){ { a(); } }");
 
         test_transform(
             "function x(){ Foo:{ a(); break Foo; } }",
@@ -365,9 +365,9 @@ function x() {
     #[test]
     fn testRenameForArrowFunction() {
         //remove label that is not referenced
-        test_transform("() => { Foo:a(); } ", "() => {     a(); }");
+        test_transform("() => { Foo: { a(); } } ", "() => { { a(); } }");
 
-        test_transform("Foo:() => { a(); }", "    () => { a(); }");
+        test_transform("Foo:{ () => { a(); } }", "{ () => { a(); } }");
 
         //label is referenced
         test_transform(
@@ -400,7 +400,7 @@ for (let x of [1, 2, 3]) {
     fn testRenameGlobals() {
         test_transform("Foo:{a();}", "{a();}");
         test_transform("Foo:{a(); break Foo;}", "a:{a(); break a;}");
-        test_transform("Foo:{Goo:a(); break Foo;}", "a:{a(); break a;}");
+        test_transform("Foo:{Goo: { a(); } break Foo;}", "a:{ { a(); } break a;}");
         test_transform(
             "Foo:{Goo:while(1){a(); continue Goo; break Foo;}}",
             "a:{b:while(1){a(); continue b;break a;}}",

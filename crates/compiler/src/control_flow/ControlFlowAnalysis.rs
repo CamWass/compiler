@@ -299,7 +299,8 @@ where
 
         self.prioritize_node(for_node);
 
-        self.parent_stack.push_with_child(for_node, body.as_ref());
+        self.parent_stack
+            .push_with_child(for_node, Node::from(&**body));
         // Skip for-loop-head, only traverse the body.
         body.visit_with(self);
         self.parent_stack.pop();
@@ -519,7 +520,7 @@ where
 
                 // No catch but a FINALLY, or lastJump is inside the catch block.
                 if catch.is_none() || last_jump_in_catch_block {
-                    let finally = Node::from(handler_node.finalizer.as_ref().unwrap());
+                    let finally = Node::from(handler_node.finalizer.as_deref().unwrap());
 
                     if last_jump == &cfg_node {
                         self.cfg
@@ -616,7 +617,7 @@ where
                     if try_stmt.block.node_id == node.node_id {
                         if let Some(finally) = &try_stmt.finalizer {
                             // and have FINALLY block.
-                            return compute_fall_through(Node::from(finally));
+                            return compute_fall_through(Node::from(&**finally));
                         } else {
                             // and have no FINALLY.
                             // Control is transferred up the AST to the parent's follow
@@ -629,7 +630,7 @@ where
                     } else if try_stmt.handler.as_ref().map(Node::from) == Some(node) {
                         if let Some(finally) = &try_stmt.finalizer {
                             // and have FINALLY block.
-                            return compute_fall_through(Node::from(finally));
+                            return compute_fall_through(Node::from(&**finally));
                         } else {
                             // Control is transferred up the AST to the parent's follow
                             // node.
@@ -638,7 +639,7 @@ where
                         }
 
                     // If we are coming out of the FINALLY block...
-                    } else if try_stmt.finalizer.as_ref().map(Node::from) == Some(node) {
+                    } else if try_stmt.finalizer.as_deref().map(Node::from) == Some(node) {
                         if let Some(nodes) = self.finally_map.get(parent.node) {
                             for finally_node in nodes {
                                 self.cfg
@@ -743,7 +744,8 @@ where
     fn visit_for_stmt(&mut self, node: &'ast ForStmt) {
         let for_node = Node::from(node);
         self.prioritize_node(for_node);
-        self.parent_stack.push_with_child(for_node, &node.body);
+        self.parent_stack
+            .push_with_child(for_node, Node::from(&*node.body));
         // Skip for-loop-head, only traverse the body.
         node.body.visit_with(self);
         self.parent_stack.pop();
@@ -817,7 +819,8 @@ where
         let do_while_node = Node::from(node);
         self.prioritize_node(do_while_node);
 
-        self.parent_stack.push_with_child(do_while_node, &node.body);
+        self.parent_stack
+            .push_with_child(do_while_node, Node::from(&*node.body));
         // Skip test expression, only traverse the body.
         node.body.visit_with(self);
         self.parent_stack.pop();
@@ -854,12 +857,13 @@ where
         self.prioritize_node(test_node);
         let then_node = Node::from(&*node.cons);
 
-        self.parent_stack.push_with_child(if_node, &node.cons);
+        self.parent_stack
+            .push_with_child(if_node, Node::from(&*node.cons));
         // Skip test expression, only traverse the bodies.
         node.cons.visit_with(self);
         self.parent_stack.pop();
         self.parent_stack
-            .push_with_optional_child(if_node, node.alt.as_deref());
+            .push_with_optional_child(if_node, node.alt.as_deref().map(Node::from));
         node.alt.visit_with(self);
         self.parent_stack.pop();
 
@@ -886,7 +890,8 @@ where
         let while_node = Node::from(node);
         self.prioritize_node(while_node);
 
-        self.parent_stack.push_with_child(while_node, &node.body);
+        self.parent_stack
+            .push_with_child(while_node, Node::from(&*node.body));
         // Skip test expression, only traverse the body.
         node.body.visit_with(self);
         self.parent_stack.pop();
@@ -919,7 +924,8 @@ where
     fn visit_with_stmt(&mut self, node: &'ast WithStmt) {
         let with_node = Node::from(node);
         self.prioritize_node(with_node);
-        self.parent_stack.push_with_child(with_node, &node.body);
+        self.parent_stack
+            .push_with_child(with_node, Node::from(&*node.body));
         // Only traverse the body.
         node.body.visit_with(self);
         self.parent_stack.pop();
@@ -1123,7 +1129,8 @@ where
     fn visit_labeled_stmt(&mut self, node: &'ast LabeledStmt) {
         let label_node = Node::from(node);
         self.prioritize_node(label_node);
-        self.parent_stack.push_with_child(label_node, &node.body);
+        self.parent_stack
+            .push_with_child(label_node, Node::from(&*node.body));
         // Skip label, only traverse the body.
         node.body.visit_with(self);
         self.parent_stack.pop();
@@ -1350,7 +1357,7 @@ where
         ) {
             if let NodeKind::TryStmt(t) = cur.kind {
                 if let Some(finally) = &t.finalizer {
-                    let finally_node = Node::from(finally);
+                    let finally_node = Node::from(&**finally);
                     if Some(finally_node) != previous {
                         if last_jump == continue_node {
                             self.cfg
@@ -1418,7 +1425,7 @@ where
         ) {
             if let NodeKind::TryStmt(t) = cur.kind {
                 if let Some(finally) = &t.finalizer {
-                    let finally_node = Node::from(finally);
+                    let finally_node = Node::from(&**finally);
                     if Some(finally_node) != previous {
                         let to = compute_fall_through(finally_node);
                         if last_jump == break_node {
@@ -1465,7 +1472,7 @@ where
             match cur_handler.node.kind {
                 NodeKind::TryStmt(t) => {
                     if let Some(finally) = &t.finalizer {
-                        let finally_node = Node::from(finally);
+                        let finally_node = Node::from(&**finally);
                         match last_jump {
                             Some(last_jump) => {
                                 self.finally_map

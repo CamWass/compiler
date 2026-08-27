@@ -2336,38 +2336,54 @@ impl Emitter<'_> {
         Ok(())
     }
 
+    /// Emits a statement in a single-statement context.
+    fn emit_single_stmt_ctx_block(
+        &mut self,
+        block: &BlockStmt,
+        needs_space_if_alpha_num: bool,
+        if_cons: bool,
+    ) -> Result {
+        if block.stmts.is_empty() {
+            semi!(self);
+            return Ok(());
+        } else if let Some(replacement) =
+            get_single_stmt_ctx_block_replacement(block, self.cfg.minify, if_cons)
+        {
+            if needs_space_if_alpha_num && self.stmt_starts_with_alpha_num(replacement)? {
+                space!(self);
+            } else {
+                formatting_space!(self);
+            }
+
+            return self.emit_stmt(replacement, false);
+        }
+
+        formatting_space!(self);
+
+        let old = self.ctx;
+        self.ctx = Context::FreeExpr;
+        self.emit_block_stmt(block)?;
+        self.ctx = old;
+        Ok(())
+    }
+
     /// Emits a statement in a single-statement context
     fn emit_single_stmt(
         &mut self,
-        mut stmt: &Stmt,
+        stmt: &Stmt,
         needs_space_if_alpha_num: bool,
         if_cons: bool,
     ) -> Result {
         if let Stmt::Block(block) = stmt {
-            if block.stmts.is_empty() {
-                semi!(self);
-                return Ok(());
-            } else if block.stmts.len() == 1 && self.cfg.minify {
-                let first_stmt = &block.stmts[0];
-                let is_class = matches!(first_stmt, Stmt::Decl(Decl::Class(_)));
-                let is_lexical_var = matches!(
-                    first_stmt,
-                    Stmt::Decl(Decl::Var(VarDecl {
-                        kind: VarDeclKind::Const | VarDeclKind::Let,
-                        ..
-                    }))
-                );
-                if !is_class && !is_lexical_var && !(if_cons && will_eat_else_token(stmt)) {
-                    stmt = first_stmt;
-                }
-            }
-        }
-        if needs_space_if_alpha_num && self.stmt_starts_with_alpha_num(stmt)? {
-            space!(self);
+            self.emit_single_stmt_ctx_block(block, needs_space_if_alpha_num, if_cons)
         } else {
-            formatting_space!(self);
+            if needs_space_if_alpha_num && self.stmt_starts_with_alpha_num(stmt)? {
+                space!(self);
+            } else {
+                formatting_space!(self);
+            }
+            self.emit_stmt(stmt, false)
         }
-        self.emit_stmt(stmt, false)
     }
 
     fn emit_expr_stmt(&mut self, e: &ExprStmt) -> Result {
@@ -2460,7 +2476,7 @@ impl Emitter<'_> {
         self.emit_expr(&node.obj)?;
         punct!(self, ")");
 
-        self.emit_single_stmt(&node.body, false, false)
+        self.emit_single_stmt_ctx_block(&node.body, false, false)
     }
 
     fn emit_return_stmt(&mut self, node: &ReturnStmt) -> Result {
@@ -2520,16 +2536,12 @@ impl Emitter<'_> {
         self.emit_expr(&node.test)?;
         punct!(self, ")");
 
-        let is_cons_block = matches!(*node.cons, Stmt::Block(..));
-
-        self.emit_single_stmt(&node.cons, false, true)?;
+        self.emit_single_stmt_ctx_block(&node.cons, false, true)?;
 
         if let Some(alt) = &node.alt {
-            if is_cons_block {
-                formatting_space!(self);
-            }
+            formatting_space!(self);
             keyword!(self, "else");
-            self.emit_single_stmt(alt, true, false)?;
+            self.emit_single_stmt_ctx_block(alt, true, false)?;
         }
         Ok(())
     }
@@ -2643,12 +2655,12 @@ impl Emitter<'_> {
         self.emit_expr(&node.test)?;
         punct!(self, ")");
 
-        self.emit_single_stmt(&node.body, false, false)
+        self.emit_single_stmt_ctx_block(&node.body, false, false)
     }
 
     fn emit_do_while_stmt(&mut self, node: &DoWhileStmt) -> Result {
         keyword!(self, "do");
-        self.emit_single_stmt(&node.body, true, false)?;
+        self.emit_single_stmt_ctx_block(&node.body, true, false)?;
 
         keyword!(self, "while");
 
@@ -2674,7 +2686,7 @@ impl Emitter<'_> {
         opt_leading_space!(self, emit_expr, node.update);
         punct!(self, ")");
 
-        self.emit_single_stmt(&node.body, false, false)
+        self.emit_single_stmt_ctx_block(&node.body, false, false)
     }
 
     fn emit_for_in_stmt(&mut self, node: &ForInStmt) -> Result {
@@ -2704,7 +2716,7 @@ impl Emitter<'_> {
 
         punct!(self, ")");
 
-        self.emit_single_stmt(&node.body, false, false)
+        self.emit_single_stmt_ctx_block(&node.body, false, false)
     }
 
     fn emit_for_of_stmt(&mut self, node: &ForOfStmt) -> Result {
@@ -2770,7 +2782,7 @@ impl Emitter<'_> {
         }
 
         punct!(self, ")");
-        self.emit_single_stmt(&node.body, false, false)
+        self.emit_single_stmt_ctx_block(&node.body, false, false)
     }
 }
 
@@ -3353,20 +3365,82 @@ fn invalid_pat() -> ! {
     unimplemented!("emit Pat::Invalid")
 }
 
-fn will_eat_else_token(s: &Stmt) -> bool {
+// TODO: this exists for tests to undo the automatic block insertion that the
+// parser performs.
+#[cfg(not(test))]
+const ALWAYS_REPLACE_SINGLE_STMT_BLOCKS: bool = false;
+#[cfg(test)]
+const ALWAYS_REPLACE_SINGLE_STMT_BLOCKS: bool = true;
+
+fn get_single_stmt_ctx_block_replacement(
+    block: &BlockStmt,
+    minify: bool,
+    if_cons: bool,
+) -> Option<&Stmt> {
+    if block.stmts.len() == 1 && (minify || ALWAYS_REPLACE_SINGLE_STMT_BLOCKS) {
+        let first_stmt = &block.stmts[0];
+
+        if let Stmt::Block(inner_block) = first_stmt {
+            return get_single_stmt_ctx_block_replacement(inner_block, minify, if_cons);
+        }
+
+        let is_class = matches!(first_stmt, Stmt::Decl(Decl::Class(_)));
+        let is_lexical_var = matches!(
+            first_stmt,
+            Stmt::Decl(Decl::Var(VarDecl {
+                kind: VarDeclKind::Const | VarDeclKind::Let,
+                ..
+            }))
+        );
+        if !is_class && !is_lexical_var && !(if_cons && will_eat_else_token(first_stmt, minify)) {
+            return Some(first_stmt);
+        }
+    }
+
+    None
+}
+
+// TODO: tests
+fn will_eat_else_token(s: &Stmt, minify: bool) -> bool {
     match s {
         Stmt::If(s) => match &s.alt {
-            Some(alt) => will_eat_else_token(alt),
+            Some(alt) => {
+                if let Some(replacement) = get_single_stmt_ctx_block_replacement(alt, minify, false)
+                {
+                    will_eat_else_token(replacement, minify)
+                } else {
+                    false
+                }
+            }
             None => true,
         },
         // Ends with `}`.
         Stmt::Block(..) => false,
 
-        Stmt::Labeled(s) => will_eat_else_token(&s.body),
-        Stmt::While(s) => will_eat_else_token(&s.body),
-        Stmt::For(s) => will_eat_else_token(&s.body),
-        Stmt::ForIn(s) => will_eat_else_token(&s.body),
-        Stmt::ForOf(s) => will_eat_else_token(&s.body),
+        Stmt::Labeled(s) => {
+            if let Stmt::Block(body) = s.body.as_ref() {
+                if let Some(replacement) =
+                    get_single_stmt_ctx_block_replacement(body, minify, false)
+                {
+                    will_eat_else_token(replacement, minify)
+                } else {
+                    false
+                }
+            } else {
+                will_eat_else_token(&s.body, minify)
+            }
+        }
+
+        Stmt::While(WhileStmt { body, .. })
+        | Stmt::For(ForStmt { body, .. })
+        | Stmt::ForIn(ForInStmt { body, .. })
+        | Stmt::ForOf(ForOfStmt { body, .. }) => {
+            if let Some(replacement) = get_single_stmt_ctx_block_replacement(body, minify, false) {
+                will_eat_else_token(replacement, minify)
+            } else {
+                false
+            }
+        }
 
         _ => false,
     }

@@ -554,10 +554,8 @@ impl Parser<'_> {
             ..self.ctx()
         };
 
-        let body = self
-            .with_ctx(ctx)
-            .parse_stmt(StmtParseCtx::Other, false)
-            .map(Box::new)?;
+        let body = self.with_ctx(ctx).parse_stmt(StmtParseCtx::Other, false)?;
+        let body = Box::new(self.ensure_block_stmt(body));
 
         expect!(self, "while");
         let test = self.parse_header_expr()?.unwrap();
@@ -598,10 +596,8 @@ impl Parser<'_> {
                 | ContextFlags::is_continue_allowed,
             ..self.ctx()
         };
-        let body = self
-            .with_ctx(ctx)
-            .parse_stmt(StmtParseCtx::Other, false)
-            .map(Box::new)?;
+        let body = self.with_ctx(ctx).parse_stmt(StmtParseCtx::Other, false)?;
+        let body = Box::new(self.ensure_block_stmt(body));
 
         let span = self.span(start);
         Ok(match head {
@@ -781,24 +777,20 @@ impl Parser<'_> {
             return Ok(Stmt::If(IfStmt {
                 node_id: node_id!(self, span),
                 test,
-                cons: Box::new(Stmt::Expr(ExprStmt {
+                cons: Box::new(BlockStmt {
                     node_id: node_id!(self, span),
-                    expr: Box::new(Expr::Invalid(Invalid {
-                        node_id: node_id!(self, span),
-                    })),
-                })),
+                    stmts: Vec::new(),
+                }),
                 alt: Default::default(),
             }));
         }
 
-        let consequent = self
-            .parse_stmt(StmtParseCtx::IfOrLabel, false)
-            .map(Box::new)?;
+        let consequent = self.parse_stmt(StmtParseCtx::IfOrLabel, false)?;
+        let consequent = Box::new(self.ensure_block_stmt(consequent));
+
         let alternate = if self.eat(tok!("else")) {
-            Some(
-                self.parse_stmt(StmtParseCtx::IfOrLabel, false)
-                    .map(Box::new)?,
-            )
+            let alternate = self.parse_stmt(StmtParseCtx::IfOrLabel, false)?;
+            Some(Box::new(self.ensure_block_stmt(alternate)))
         } else {
             None
         };
@@ -947,7 +939,7 @@ impl Parser<'_> {
 
         let catch_start = self.input.cur_pos();
         let handler = self.parse_catch_clause()?;
-        let finalizer = self.parse_finally_block()?;
+        let finalizer = self.parse_finally_block()?.map(Box::new);
 
         if handler.is_none() && finalizer.is_none() {
             // self.raise(node.start, Errors.NoCatchOrFinally);
@@ -1184,10 +1176,8 @@ impl Parser<'_> {
                 | ContextFlags::is_continue_allowed,
             ..self.ctx()
         };
-        let body = self
-            .with_ctx(ctx)
-            .parse_stmt(StmtParseCtx::Other, false)
-            .map(Box::new)?;
+        let body = self.with_ctx(ctx).parse_stmt(StmtParseCtx::Other, false)?;
+        let body = Box::new(self.ensure_block_stmt(body));
 
         Ok(Stmt::While(WhileStmt {
             node_id: node_id!(self, self.span(start)),
@@ -1217,10 +1207,8 @@ impl Parser<'_> {
             flags: self.ctx().flags | ContextFlags::in_function,
             ..self.ctx()
         };
-        let body = self
-            .with_ctx(ctx)
-            .parse_stmt(StmtParseCtx::Other, false)
-            .map(Box::new)?;
+        let body = self.with_ctx(ctx).parse_stmt(StmtParseCtx::Other, false)?;
+        let body = Box::new(self.ensure_block_stmt(body));
 
         Ok(Stmt::With(WithStmt {
             node_id: node_id!(self, self.span(start)),
@@ -1264,7 +1252,7 @@ impl Parser<'_> {
             }
             parser.labels.push(label.name);
 
-            let body = Box::new(if parser.is(tok!("function")) {
+            let body = if parser.is(tok!("function")) {
                 let f = parser.parse_fn_decl()?;
                 if let Decl::Fn(f) = &f {
                     if f.function.is_generator() {
@@ -1279,7 +1267,7 @@ impl Parser<'_> {
                 Stmt::Decl(f)
             } else {
                 parser.parse_stmt(StmtParseCtx::IfOrLabel, false)?
-            });
+            };
 
             {
                 let pos = parser.labels.iter().position(|v| v == &label.name);
@@ -1288,11 +1276,66 @@ impl Parser<'_> {
                 }
             }
 
+            let body = if matches!(
+                body,
+                Stmt::Labeled(_)
+                    | Stmt::Block(_)
+                    | Stmt::For(_)
+                    | Stmt::ForIn(_)
+                    | Stmt::ForOf(_)
+                    | Stmt::While(_)
+                    | Stmt::DoWhile(_)
+            ) {
+                // Loop labels must remain in place as named continues are not
+                // allowed for labelled blocks. E.g. is is invalid to change:
+                //
+                // foo: for (a in b) {
+                //   continue foo;
+                // }
+                //
+                // into:
+                //
+                // foo: {
+                //   for (a in b) {
+                //     continue foo;
+                //   }
+                // }
+                Box::new(body)
+            } else {
+                Box::new(Stmt::Block(parser.ensure_block_stmt(body)))
+            };
+
             Ok(Stmt::Labeled(LabeledStmt {
                 node_id: node_id!(parser, parser.span(get_span!(parser, label.node_id).lo())),
                 label,
                 body,
             }))
         })
+    }
+
+    /// If the statement is not a [`BlockStmt`], it is replaced with a
+    /// [`BlockStmt`] containing the statement as its only child. E.g.
+    /// ```js
+    /// for (;;) foo();
+    /// ```
+    /// to
+    /// ```js
+    /// for (;;) {foo();}
+    /// ```
+    /// We don't have to worry about block scoping because lexical
+    /// (block-scoped) declarations are forbidden in single-statement contexts,
+    /// so placing the statement in a block is always safe.
+    fn ensure_block_stmt(&mut self, stmt: Stmt) -> BlockStmt {
+        match stmt {
+            Stmt::Block(block) => block,
+            Stmt::Empty(_) => BlockStmt {
+                node_id: node_id!(self, get_span!(self, stmt.node_id())),
+                stmts: Vec::new(),
+            },
+            _ => BlockStmt {
+                node_id: node_id!(self, get_span!(self, stmt.node_id())),
+                stmts: vec![stmt],
+            },
+        }
     }
 }

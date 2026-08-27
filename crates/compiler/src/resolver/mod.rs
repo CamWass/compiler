@@ -279,17 +279,25 @@ fn hoist_declarations(stmt: &mut Stmt, op: &mut impl FnMut(&mut NameId)) {
             .for_each(|s| hoist_declarations(s, op)),
 
         Stmt::If(if_stmt) => {
-            hoist_declarations(&mut if_stmt.cons, op);
+            if_stmt
+                .cons
+                .stmts
+                .iter_mut()
+                .for_each(|s| hoist_declarations(s, op));
 
             if let Some(alt) = if_stmt.alt.as_deref_mut() {
-                hoist_declarations(alt, op);
+                alt.stmts.iter_mut().for_each(|s| hoist_declarations(s, op))
             }
         }
 
+        Stmt::Labeled(LabeledStmt { body, .. }) => hoist_declarations(body, op),
+
         Stmt::While(WhileStmt { body, .. })
         | Stmt::DoWhile(DoWhileStmt { body, .. })
-        | Stmt::With(WithStmt { body, .. })
-        | Stmt::Labeled(LabeledStmt { body, .. }) => hoist_declarations(body, op),
+        | Stmt::With(WithStmt { body, .. }) => body
+            .stmts
+            .iter_mut()
+            .for_each(|s| hoist_declarations(s, op)),
 
         Stmt::For(ForStmt { body, init, .. }) => {
             if let Some(init) = init {
@@ -304,7 +312,9 @@ fn hoist_declarations(stmt: &mut Stmt, op: &mut impl FnMut(&mut NameId)) {
                     }
                 }
             }
-            hoist_declarations(body, op);
+            body.stmts
+                .iter_mut()
+                .for_each(|s| hoist_declarations(s, op));
         }
         Stmt::ForIn(ForInStmt { body, left, .. }) | Stmt::ForOf(ForOfStmt { body, left, .. }) => {
             if let VarDeclOrPat::VarDecl(decl) = left.as_mut() {
@@ -317,7 +327,9 @@ fn hoist_declarations(stmt: &mut Stmt, op: &mut impl FnMut(&mut NameId)) {
                     VarDeclKind::Let | VarDeclKind::Const => {}
                 }
             }
-            hoist_declarations(body, op);
+            body.stmts
+                .iter_mut()
+                .for_each(|s| hoist_declarations(s, op));
         }
 
         Stmt::Try(try_stmt) => {

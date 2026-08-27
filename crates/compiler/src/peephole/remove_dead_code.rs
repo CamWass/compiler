@@ -753,11 +753,11 @@ impl Visitor<'_> {
 
                 Stmt::Block(block_stmt) => block_stmt.stmts.iter().any(contains_unlabelled_break),
                 Stmt::If(if_stmt) => {
-                    contains_unlabelled_break(&if_stmt.cons)
+                    if_stmt.cons.stmts.iter().any(contains_unlabelled_break)
                         || if_stmt
                             .alt
                             .as_ref()
-                            .is_some_and(|s| contains_unlabelled_break(s))
+                            .is_some_and(|s| s.stmts.iter().any(contains_unlabelled_break))
                 }
 
                 // Any unlabelled break in an inner switch or loop corresponds
@@ -780,9 +780,11 @@ impl Visitor<'_> {
                         })
                 }
 
-                Stmt::With(WithStmt { body, .. }) | Stmt::Labeled(LabeledStmt { body, .. }) => {
-                    contains_unlabelled_break(body)
+                Stmt::With(WithStmt { body, .. }) => {
+                    body.stmts.iter().any(contains_unlabelled_break)
                 }
+
+                Stmt::Labeled(LabeledStmt { body, .. }) => contains_unlabelled_break(body),
 
                 Stmt::Empty(_)
                 | Stmt::Debugger(_)
@@ -952,9 +954,10 @@ impl Visitor<'_> {
             | Stmt::For(ForStmt { body, .. })
             | Stmt::ForIn(ForInStmt { body, .. })
             | Stmt::ForOf(ForOfStmt { body, .. })
-            | Stmt::With(WithStmt { body, .. })
-            | Stmt::Labeled(LabeledStmt { body, .. }) => {
-                self.collect_vars_declared_in_stmt(body, extracted_vars);
+            | Stmt::With(WithStmt { body, .. }) => {
+                for stmt in &body.stmts {
+                    self.collect_vars_declared_in_stmt(stmt, extracted_vars);
+                }
             }
 
             Stmt::Block(block_stmt) => {
@@ -962,10 +965,19 @@ impl Visitor<'_> {
                     self.collect_vars_declared_in_stmt(stmt, extracted_vars);
                 }
             }
+
+            Stmt::Labeled(LabeledStmt { body, .. }) => {
+                self.collect_vars_declared_in_stmt(body, extracted_vars);
+            }
+
             Stmt::If(if_stmt) => {
-                self.collect_vars_declared_in_stmt(&if_stmt.cons, extracted_vars);
+                for stmt in &if_stmt.cons.stmts {
+                    self.collect_vars_declared_in_stmt(stmt, extracted_vars);
+                }
                 if let Some(alt) = &if_stmt.alt {
-                    self.collect_vars_declared_in_stmt(alt, extracted_vars);
+                    for stmt in &alt.stmts {
+                        self.collect_vars_declared_in_stmt(stmt, extracted_vars);
+                    }
                 }
             }
 

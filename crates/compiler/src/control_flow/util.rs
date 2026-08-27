@@ -213,10 +213,10 @@ impl<'ast> ParentStack<'ast> {
         });
     }
 
-    pub fn push_with_child(&mut self, parent: Node<'ast>, child: &'ast Stmt) {
+    pub fn push_with_child(&mut self, parent: Node<'ast>, child: Node<'ast>) {
         self.0.push(ParentNode {
             node: parent,
-            children: vec![Node::from(child)],
+            children: vec![child],
         });
     }
 
@@ -228,10 +228,10 @@ impl<'ast> ParentStack<'ast> {
         });
     }
 
-    pub fn push_with_optional_child(&mut self, parent: Node<'ast>, child: Option<&'ast Stmt>) {
+    pub fn push_with_optional_child(&mut self, parent: Node<'ast>, child: Option<Node<'ast>>) {
         let children = match child {
-            Some(child_stmt) => {
-                vec![Node::from(child_stmt)]
+            Some(child) => {
+                vec![child]
             }
             None => Vec::new(),
         };

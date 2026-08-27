@@ -7,11 +7,6 @@ use crate::utils::unwrap_as;
 // TODO: preserve spans?
 
 pub fn normalize(ast: &mut Program, program_data: &mut ast::TransformerProgramData) {
-    // Add blocks to single-statement contexts.
-    {
-        let mut v = BlockCreator { program_data };
-        ast.visit_mut_with(&mut v);
-    }
     // Split var decls.
     {
         let mut v = VarSplitter { program_data };
@@ -95,105 +90,6 @@ impl VisitMut<'_> for NormalizeAssignShorthand<'_> {
             })
         });
         node.op = AssignOp::Assign;
-    }
-}
-
-/// Visits statements that are in single-statement contexts (e.g. for loop body).
-/// If the statement is not a [`BlockStmt`], it is replaced with a [`BlockStmt`]
-/// containing the statement as its only child. E.g.
-/// ```js
-/// for (;;) foo();
-/// ```
-/// to
-/// ```js
-/// for (;;) {foo();}
-/// ```
-/// We don't have to worry about block scoping because lexical (block-scoped)
-/// declarations are forbidden in single-statement contexts, so placing the
-/// statement in a block is always safe.
-struct BlockCreator<'a> {
-    program_data: &'a mut ast::TransformerProgramData,
-}
-
-impl BlockCreator<'_> {
-    fn handle_single_stmt(&mut self, stmt: &mut Stmt) {
-        if !matches!(stmt, Stmt::Block(_)) {
-            self.create_block_from_stmt(stmt);
-        }
-    }
-
-    fn create_block_from_stmt(&mut self, stmt: &mut Stmt) {
-        let node_id = self.program_data.new_id_from(stmt.node_id());
-        let stmts = if matches!(stmt, Stmt::Empty(_)) {
-            vec![]
-        } else {
-            vec![stmt.take()]
-        };
-        *stmt = Stmt::Block(BlockStmt { node_id, stmts })
-    }
-}
-
-impl VisitMut<'_> for BlockCreator<'_> {
-    fn visit_mut_with_stmt(&mut self, node: &mut WithStmt) {
-        node.visit_mut_children_with(self);
-        self.handle_single_stmt(node.body.as_mut());
-    }
-    fn visit_mut_labeled_stmt(&mut self, node: &mut LabeledStmt) {
-        node.body.visit_mut_with(self);
-
-        // Loop labels must remain in place as named continues are not allowed
-        // for labelled blocks. E.g. is is invalid to change:
-        //
-        // foo: for (a in b) {
-        //   continue foo;
-        // }
-        //
-        // into:
-        //
-        // foo: {
-        //   for (a in b) {
-        //     continue foo;
-        //   }
-        // }
-        if !matches!(
-            node.body.as_ref(),
-            Stmt::Labeled(_)
-                | Stmt::Block(_)
-                | Stmt::For(_)
-                | Stmt::ForIn(_)
-                | Stmt::ForOf(_)
-                | Stmt::While(_)
-                | Stmt::DoWhile(_)
-        ) {
-            self.create_block_from_stmt(&mut node.body);
-        }
-    }
-    fn visit_mut_if_stmt(&mut self, node: &mut IfStmt) {
-        node.visit_mut_children_with(self);
-        self.handle_single_stmt(node.cons.as_mut());
-        if let Some(alt) = &mut node.alt {
-            self.handle_single_stmt(alt.as_mut());
-        }
-    }
-    fn visit_mut_while_stmt(&mut self, node: &mut WhileStmt) {
-        node.visit_mut_children_with(self);
-        self.handle_single_stmt(node.body.as_mut());
-    }
-    fn visit_mut_do_while_stmt(&mut self, node: &mut DoWhileStmt) {
-        node.visit_mut_children_with(self);
-        self.handle_single_stmt(node.body.as_mut());
-    }
-    fn visit_mut_for_stmt(&mut self, node: &mut ForStmt) {
-        node.visit_mut_children_with(self);
-        self.handle_single_stmt(node.body.as_mut());
-    }
-    fn visit_mut_for_in_stmt(&mut self, node: &mut ForInStmt) {
-        node.visit_mut_children_with(self);
-        self.handle_single_stmt(node.body.as_mut());
-    }
-    fn visit_mut_for_of_stmt(&mut self, node: &mut ForOfStmt) {
-        node.visit_mut_children_with(self);
-        self.handle_single_stmt(node.body.as_mut());
     }
 }
 
