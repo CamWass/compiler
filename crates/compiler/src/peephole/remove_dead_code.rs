@@ -2328,10 +2328,12 @@ outer: {
     fn testOptimizeSwitch2() {
         test_transform(
             "
-outer: switch (2) {
-    case 2:
-        f();
-        break outer;
+outer: {
+    switch (2) {
+        case 2:
+            f();
+            break outer;
+    }
 }",
             "outer: {f(); break outer;}",
         );
@@ -2593,14 +2595,16 @@ switch ('hasDefaultCase') {
 
         test_transform(
             "
-l: switch ('hasDefaultCase') {
-    case 'foo':
-        foo();
-        break;
-    default:
-        if (a) { break l; }
-        bar();
-        break;
+l: {
+    switch ('hasDefaultCase') {
+        case 'foo':
+            foo();
+            break;
+        default:
+            if (a) { break l; }
+            bar();
+            break;
+    }
 }",
             "l:{ if (a) { break l; } bar(); }",
         );
@@ -2626,15 +2630,16 @@ switch ('hasDefaultCase') {
 
         test_transform(
             "
-loop:
-for (;;) {
-    switch (a()) {
-    default:
-        bar();
-        break loop;
+loop: {
+    for (;;) {
+        switch (a()) {
+        default:
+            bar();
+            break loop;
+        }
     }
 }",
-            "loop: for (;;) { a(); bar(); break loop; }",
+            "loop: { for (;;) { a(); bar(); break loop; } }",
         );
     }
 
@@ -3654,8 +3659,6 @@ class C {
         crate::testing::test_transform(
             |mut program, program_data| {
                 resolve(&mut program, program_data);
-
-                crate::normalize::add_blocks_to_stmt_contexts(&mut program, program_data);
 
                 // TODO: I feel it would be cleaner to only test one
                 // iteration, and test each of the two desired steps

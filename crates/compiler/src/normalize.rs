@@ -98,15 +98,6 @@ impl VisitMut<'_> for NormalizeAssignShorthand<'_> {
     }
 }
 
-#[cfg(test)]
-pub fn add_blocks_to_stmt_contexts(
-    ast: &mut Program,
-    program_data: &mut ast::TransformerProgramData,
-) {
-    let mut v = BlockCreator { program_data };
-    ast.visit_mut_with(&mut v);
-}
-
 /// Visits statements that are in single-statement contexts (e.g. for loop body).
 /// If the statement is not a [`BlockStmt`], it is replaced with a [`BlockStmt`]
 /// containing the statement as its only child. E.g.
