@@ -220,6 +220,7 @@ impl<'ast> ParentStack<'ast> {
         });
     }
 
+    // TODO: replace with push_with_child
     pub fn push_with_child_node(&mut self, parent: Node<'ast>, child: Node<'ast>) {
         self.0.push(ParentNode {
             node: parent,
