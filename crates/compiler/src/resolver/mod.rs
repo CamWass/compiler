@@ -13,6 +13,7 @@ pub fn resolve(program: &mut Program, program_data: &mut TransformerProgramData)
         scopes: vec![Scope {
             names: FxHashMap::default(),
         }],
+        in_var_decl: false,
         in_decl: false,
         processed_names: FxHashSet::default(),
     };
@@ -23,6 +24,8 @@ pub fn resolve(program: &mut Program, program_data: &mut TransformerProgramData)
 struct Resolver<'d> {
     program_data: &'d mut TransformerProgramData,
     scopes: Vec<Scope>,
+    /// Whether we are visiting the names in a `var` decl.
+    in_var_decl: bool,
     in_decl: bool,
     processed_names: FxHashSet<NameId>,
 }
@@ -42,7 +45,7 @@ impl Resolver<'_> {
     }
 
     fn handle_decl(&mut self, name: &mut NameId) {
-        let cur_scope = &mut self
+        let cur_scope = self
             .scopes
             .last_mut()
             .expect("there's always the global scope");
@@ -76,7 +79,7 @@ impl Resolver<'_> {
 
 impl VisitMut<'_> for Resolver<'_> {
     fn visit_mut_binding_ident(&mut self, i: &mut BindingIdent) {
-        if self.in_decl {
+        if self.in_decl && !self.in_var_decl {
             self.handle_decl(&mut i.id.name);
         } else {
             self.handle_reference(&mut i.id.name);
@@ -87,6 +90,17 @@ impl VisitMut<'_> for Resolver<'_> {
         node.obj.visit_mut_with(self);
         if node.computed {
             node.prop.visit_mut_with(self);
+        }
+    }
+
+    fn visit_mut_var_decl(&mut self, node: &mut VarDecl) {
+        if node.kind == VarDeclKind::Var {
+            let old = self.in_var_decl;
+            self.in_var_decl = true;
+            node.decls.visit_mut_with(self);
+            self.in_var_decl = old;
+        } else {
+            node.decls.visit_mut_with(self);
         }
     }
 
@@ -108,6 +122,8 @@ impl VisitMut<'_> for Resolver<'_> {
     fn visit_mut_expr(&mut self, node: &mut Expr) {
         let old_in_decl = self.in_decl;
         self.in_decl = false;
+        let old_in_var_decl = self.in_var_decl;
+        self.in_var_decl = false;
         match node {
             Expr::Ident(ident) => {
                 self.handle_reference(&mut ident.name);
@@ -116,15 +132,17 @@ impl VisitMut<'_> for Resolver<'_> {
                 node.visit_mut_children_with(self);
             }
         }
+        self.in_var_decl = old_in_var_decl;
         self.in_decl = old_in_decl;
     }
 
     fn visit_mut_fn_decl(&mut self, node: &mut FnDecl) {
-        node.visit_mut_children_with(self);
+        // Skip ident - already handled when hoisting.
+        node.function.visit_mut_with(self);
     }
     fn visit_mut_class_decl(&mut self, node: &mut ClassDecl) {
         self.handle_decl(&mut node.ident.name);
-        node.visit_mut_children_with(self);
+        node.class.visit_mut_with(self);
     }
 
     fn visit_mut_fn_expr(&mut self, node: &mut FnExpr) {
