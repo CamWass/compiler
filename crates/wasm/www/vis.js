@@ -122,6 +122,8 @@ export class CFGDisplay {
       this.#container.removeChild(this.#container.firstElementChild);
     }
 
-    this.#container.textContent = "Error";
+    const errorText = document.createElement("span");
+    errorText.textContent = "Error";
+    this.#container.appendChild(errorText);
   }
 }
