@@ -4,7 +4,6 @@ use ast::*;
 use codegen::{Emitter, text_writer::JsWriter};
 use common::{FileName, SourceMap, errors::Handler};
 use parser::{Parser, Syntax};
-use visit::{VisitMut, VisitMutWith};
 
 struct Tester<'a> {
     cm: Rc<SourceMap>,
@@ -87,9 +86,9 @@ where
     T: FnOnce(Program, &mut ast::TransformerProgramData) -> Program,
 {
     Tester::run(|tester| {
-        let mut expected = tester.apply_transform(|m, _| m, "output.js", expected)?;
+        let expected = tester.apply_transform(|m, _| m, "output.js", expected)?;
 
-        let mut actual = tester.apply_transform(transform, "input.js", input)?;
+        let actual = tester.apply_transform(transform, "input.js", input)?;
 
         let (actual_src, expected_src) = (
             tester.print(&actual.0, actual.1),
@@ -100,10 +99,7 @@ where
             return Ok(());
         }
 
-        actual.0.visit_mut_with(&mut DropNodeId);
-        expected.0.visit_mut_with(&mut DropNodeId);
-
-        if actual.0 == expected.0 {
+        if actual.0.eq_ignoring_node_id(&expected.0) {
             return Ok(());
         }
 
@@ -120,11 +116,4 @@ where
 
         Err(())
     });
-}
-
-struct DropNodeId;
-impl VisitMut<'_> for DropNodeId {
-    fn visit_mut_node_id(&mut self, span: &mut NodeId) {
-        *span = NodeId::DUMMY;
-    }
 }
