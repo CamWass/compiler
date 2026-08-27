@@ -6,13 +6,12 @@
   </head>
 
   <body>
-    <select id="example-select">
-      <option value="">Select an example...</option>
-    </select>
-
     <div id="main-content">
       <div class="config-container">
         <div style="position: sticky; top: 1rem">
+          <select id="example-select" style="margin-bottom: 0.2rem">
+            <option value="">Select an example...</option>
+          </select>
           <p>Config</p>
           <div style="position: relative">
             <textarea id="config"></textarea>
@@ -24,7 +23,7 @@
         <div class="panel">
           <p>Input (<span id="input-size"></span>)</p>
           <div class="input-container">
-            <div id="input-tab-group-buttons"></div>
+            <div id="input-tab-group-buttons" class="tab-group-buttons"></div>
             <textarea id="input-text"></textarea>
             <textarea id="input-ast-json" style="display: none"></textarea>
           </div>
@@ -32,7 +31,7 @@
         <div class="panel">
           <p>Output (<span id="output-size"></span>)</p>
           <div class="input-container">
-            <div id="output-tab-group-buttons"></div>
+            <div id="output-tab-group-buttons" class="tab-group-buttons"></div>
             <textarea id="output-text" disabled></textarea>
             <textarea
               id="output-ast-json"

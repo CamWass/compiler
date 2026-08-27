@@ -57,3 +57,23 @@ body {
 #config {
   min-height: 300px;
 }
+
+.tab-group-buttons button {
+  border: none;
+  padding: 0.5rem;
+  color: rgb(115, 114, 114);
+  background: none;
+  cursor: pointer;
+}
+
+.tab-group-buttons button.active {
+  color: black;
+  cursor: default;
+  border-bottom: 2px solid blue;
+}
+
+.tab-group-buttons button:not(.active):hover {
+  background: rgb(241, 241, 241);
+  border-bottom: 2px solid rgb(241, 241, 241);
+  color: black;
+}
