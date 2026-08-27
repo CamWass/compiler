@@ -246,7 +246,25 @@ pub fn print_control_flow_graph(
 ) -> Option<String> {
     let cfg = ControlFlowAnalysis::<()>::analyze(ControlFlowRoot::from(program), true).cfg;
     if cfg.graph.node_count() <= 200 {
-        Some(cfg.print_full(program_data))
+        let mut dot = cfg.print_full(program_data);
+
+        // Remove edge labels. These just make the graph harder to read (worse
+        // edge layout and visual clutter). The edge colours already
+        // differentiate the edges.
+        dot = dot
+            .replace("[label=\"Unconditional\", ", "[")
+            .replace("[label=\"False\", ", "[")
+            .replace("[label=\"True\", ", "[")
+            .replace("[label=\"Exception\", ", "[");
+
+        // Change AST edges from black to light grey to make the control flow
+        // edges more prominent.
+        dot = dot.replace(
+            "[ label = \"\" ]",
+            "[label = \"\", color=\"lightgrey\", fontcolor=\"lightgrey\"]",
+        );
+
+        Some(dot)
     } else {
         None
     }

@@ -2,11 +2,42 @@ import { instance } from "./node_modules/@viz-js/viz/dist/viz.js";
 
 const viz = await instance();
 
+const CFG_COLOUR_KEY = {
+  Unconditional: "purple",
+  False: "orange",
+  True: "green",
+  Exception: "red",
+  "Ast structure":"lightgrey"
+};
+
 export class CFGDisplay {
   #container;
   #svg;
 
   constructor(container) {
+    const keyContainer = document.createElement("div");
+    keyContainer.classList = "cfg-key-container";
+    container.appendChild(keyContainer);
+
+          const keyTitle = document.createElement("p");
+      keyTitle.textContent = "Edge colour key:";
+      keyContainer.appendChild(keyTitle);
+
+    for (const [name, colour] of Object.entries(CFG_COLOUR_KEY)) {
+      const colourContainer = document.createElement("div");
+      colourContainer.classList = "cfg-key-colour-container";
+      keyContainer.appendChild(colourContainer);
+
+      const colourEl = document.createElement("div");
+      colourEl.classList = "cfg-key-colour";
+      colourEl.style.backgroundColor = colour;
+      colourContainer.appendChild(colourEl);
+
+      const text = document.createElement("span");
+      text.textContent = name;
+      colourContainer.appendChild(text);
+    }
+
     const svgContainer = document.createElement("div");
     svgContainer.classList = "svg-container";
     container.appendChild(svgContainer);
@@ -76,6 +107,7 @@ export class CFGDisplay {
     }
 
     if (cfgText) {
+      console.log(cfgText)
       const cfg = viz.renderSVGElement(cfgText);
 
       this.#svg = cfg;
