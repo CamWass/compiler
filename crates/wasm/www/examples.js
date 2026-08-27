@@ -26,6 +26,44 @@ export const INPUTS = {
 }`,
     input: "",
   },
+  blank: {
+    label: "Control flow",
+    config: `{
+  "pretty_print": true,
+  "passes": {
+    "optimize_arguments_array": false,
+    "rename_vars": false,
+    "rename_labels": false,
+    "coalesce_variable_names": false,
+    "optimize_properties": false,
+    "fuse_stmts": false,
+    "optimise_equality": false,
+    "remove_dead_code": false,
+    "collapse_variable_declarations": false
+  },
+  "ecmascript": {
+    "dynamicImport": true,
+    "importMeta": true,
+    "topLevelAwait": true
+  }
+}`,
+    input: `try {
+    for (let i = 0; i < array.length; i++) {
+        func1();
+
+        if (someCondition) {
+            func3();
+            continue;
+        }
+
+        func4();
+    }
+} catch {
+    handleError();
+} finally {
+    func5();
+}`,
+  },
   properties: {
     label: "Property optimisation",
     config: `{
