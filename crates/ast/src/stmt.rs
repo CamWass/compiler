@@ -19,6 +19,15 @@ pub struct BlockStmt {
     pub stmts: Vec<Stmt>,
 }
 
+impl Take for BlockStmt {
+    fn dummy() -> Self {
+        Self {
+            node_id: NodeId::DUMMY,
+            stmts: Vec::new(),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub enum Stmt {
     Block(BlockStmt),

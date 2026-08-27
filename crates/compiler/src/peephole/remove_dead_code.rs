@@ -5,7 +5,7 @@ use visit::{VisitMut, VisitMutWith};
 use crate::{
     find_vars::find_pat_ids,
     node_util::{
-        constructorCallHasSideEffects, expr_may_have_side_effects,
+        block_may_have_side_effects, constructorCallHasSideEffects, expr_may_have_side_effects,
         function_call_may_have_side_effects, get_boolean_value, isLiteralValue, isPureIterable,
     },
     peephole::fold_constants::evaluateComparison,
@@ -29,7 +29,7 @@ enum OptimiseExprResult {
     Remove,
 }
 
-enum OptimiseSwitchResult {
+enum OptimiseStmtResult {
     Keep(Vec<Stmt>),
     Replace(Vec<Stmt>),
 }
@@ -582,7 +582,7 @@ impl Visitor<'_> {
 
     /// Simplifies the switch statement in-place, returning whether the
     /// whole statement can be removed.
-    fn simplify_switch_stmt(&mut self, stmt: &mut Stmt) -> OptimiseSwitchResult {
+    fn simplify_switch_stmt(&mut self, stmt: &mut Stmt) -> OptimiseStmtResult {
         let switch = unwrap_as!(stmt, Stmt::Switch(s), s);
 
         let mut extracted_vars = Vec::new();
@@ -707,7 +707,7 @@ impl Visitor<'_> {
         &mut self,
         stmt: &mut Stmt,
         extracted_vars: Vec<Stmt>,
-    ) -> OptimiseSwitchResult {
+    ) -> OptimiseStmtResult {
         let switch = unwrap_as!(stmt, Stmt::Switch(s), s);
 
         let has_no_cases = switch.cases.is_empty();
@@ -721,7 +721,7 @@ impl Visitor<'_> {
                 expr: switch.discriminant.take(),
             });
 
-            OptimiseSwitchResult::Keep(extracted_vars)
+            OptimiseStmtResult::Keep(extracted_vars)
         } else if has_only_default_case {
             match switch.discriminant.as_ref() {
                 // Before removing switch, we must preserve the switch condition if it is a call
@@ -733,7 +733,7 @@ impl Visitor<'_> {
                 _ => self.tryRemoveSwitchWithSingleCase(stmt, false, extracted_vars),
             }
         } else {
-            OptimiseSwitchResult::Keep(extracted_vars)
+            OptimiseStmtResult::Keep(extracted_vars)
         }
     }
 
@@ -742,7 +742,7 @@ impl Visitor<'_> {
         stmt: &mut Stmt,
         shouldHoistCondition: bool,
         extracted_vars: Vec<Stmt>,
-    ) -> OptimiseSwitchResult {
+    ) -> OptimiseStmtResult {
         let switch = unwrap_as!(stmt, Stmt::Switch(s), s);
 
         let case = switch.cases.first_mut().unwrap();
@@ -803,7 +803,7 @@ impl Visitor<'_> {
 
         // Back off if the switch contains statements like "if (a) { break; }"
         if case.cons.iter().any(contains_unlabelled_break) {
-            return OptimiseSwitchResult::Keep(extracted_vars);
+            return OptimiseStmtResult::Keep(extracted_vars);
         }
 
         let mut replacement = extracted_vars;
@@ -820,7 +820,7 @@ impl Visitor<'_> {
             );
         }
 
-        OptimiseSwitchResult::Replace(replacement)
+        OptimiseStmtResult::Replace(replacement)
     }
 
     fn tryOptimizeDefaultCase(&mut self, switch: &mut SwitchStmt, extracted_vars: &mut Vec<Stmt>) {
@@ -947,6 +947,16 @@ impl Visitor<'_> {
         }
     }
 
+    fn collect_vars_declared_in_block(
+        &mut self,
+        block: &BlockStmt,
+        extracted_vars: &mut Vec<Stmt>,
+    ) {
+        for stmt in &block.stmts {
+            self.collect_vars_declared_in_stmt(stmt, extracted_vars);
+        }
+    }
+
     fn collect_vars_declared_in_stmt(&mut self, stmt: &Stmt, extracted_vars: &mut Vec<Stmt>) {
         match stmt {
             Stmt::While(WhileStmt { body, .. })
@@ -1045,6 +1055,106 @@ impl Visitor<'_> {
             | Stmt::Break(_) => {}
         }
     }
+
+    fn simplify_if_stmt(&mut self, stmt: &mut Stmt) -> OptimiseStmtResult {
+        let if_stmt = unwrap_as!(stmt, Stmt::If(s), s);
+
+        // if (x) { .. } else { } --> if (x) { ... }
+        if let Some(alt) = &if_stmt.alt
+            && !block_may_have_side_effects(alt)
+        {
+            if_stmt.alt = None;
+        }
+
+        // if (x) { } else { ... } --> if (!x) { ... }
+        if !block_may_have_side_effects(&if_stmt.cons) && if_stmt.alt.is_some() {
+            let test = if_stmt.test.take();
+
+            *if_stmt.test = Expr::Unary(UnaryExpr {
+                node_id: self.program_data.new_id_from(test.node_id()),
+                op: UnaryOp::Bang,
+                arg: test,
+            });
+
+            if_stmt.cons = std::mem::take(&mut if_stmt.alt).unwrap();
+        }
+
+        // `if (x()) { }` or `if (x?.()) { }`
+        if !block_may_have_side_effects(&if_stmt.cons) && if_stmt.alt.is_none() {
+            if expr_may_have_side_effects(&if_stmt.test) {
+                // `x()` or `x?.()` has side effects, just leave the condition on its own.
+                *stmt = Stmt::Expr(ExprStmt {
+                    node_id: self.program_data.new_id_from(if_stmt.test.node_id()),
+                    expr: if_stmt.test.take(),
+                });
+                return OptimiseStmtResult::Keep(Vec::new());
+            } else {
+                // `x()` or `x?.()` has no side effects, the whole tree is useless now.
+                return OptimiseStmtResult::Replace(Vec::new());
+            }
+        }
+
+        let Some(condValue) = get_boolean_value(&if_stmt.test) else {
+            // We can't remove branches otherwise!
+            return OptimiseStmtResult::Keep(Vec::new());
+        };
+
+        if expr_may_have_side_effects(&if_stmt.test) {
+            // Transform "if (a = 2) {x =2}" into "if (true) {a=2;x=2}"
+
+            let newCond = Box::new(Expr::Lit(Lit::Bool(Bool {
+                node_id: self.program_data.new_id_from(if_stmt.test.node_id()),
+                value: condValue,
+            })));
+            let oldCond = std::mem::replace(&mut if_stmt.test, newCond);
+
+            let condExpr = Stmt::Expr(ExprStmt {
+                node_id: self.program_data.new_id_from(if_stmt.test.node_id()),
+                expr: oldCond,
+            });
+
+            if condValue {
+                if_stmt.cons.as_mut().stmts.insert(0, condExpr);
+            } else {
+                match &mut if_stmt.alt {
+                    Some(alt) => {
+                        alt.as_mut().stmts.insert(0, condExpr);
+                    }
+                    None => {
+                        if_stmt.alt = Some(Box::new(BlockStmt {
+                            node_id: self.program_data.new_id_from(condExpr.node_id()),
+                            stmts: vec![condExpr],
+                        }));
+                    }
+                }
+            };
+        }
+
+        let mut extracted_vars = Vec::new();
+
+        if let Some(alt) = &mut if_stmt.alt {
+            // Replace "if (true) { X } else { Y }" with X, or
+            // replace "if (false) { X } else { Y }" with Y.
+            if condValue {
+                self.collect_vars_declared_in_block(alt, &mut extracted_vars);
+                *stmt = Stmt::Block(if_stmt.cons.as_mut().take());
+            } else {
+                self.collect_vars_declared_in_block(&if_stmt.cons, &mut extracted_vars);
+                *stmt = Stmt::Block(alt.as_mut().take());
+            }
+            return OptimiseStmtResult::Keep(extracted_vars);
+        } else {
+            if condValue {
+                // Replace "if (true) { X }" with "X".
+                *stmt = Stmt::Block(if_stmt.cons.as_mut().take());
+                return OptimiseStmtResult::Keep(extracted_vars);
+            } else {
+                // Remove "if (false) { X }" completely.
+                self.collect_vars_declared_in_block(&if_stmt.cons, &mut extracted_vars);
+                return OptimiseStmtResult::Replace(extracted_vars);
+            }
+        }
+    }
 }
 
 impl VisitMut<'_> for Visitor<'_> {
@@ -1087,7 +1197,7 @@ impl VisitMut<'_> for Visitor<'_> {
                 let result = self.simplify_switch_stmt(&mut stmts[i]);
 
                 match result {
-                    OptimiseSwitchResult::Keep(new_stmts) => {
+                    OptimiseStmtResult::Keep(new_stmts) => {
                         let num_new_stmts = new_stmts.len();
                         stmts.splice(i..i, new_stmts);
 
@@ -1095,7 +1205,35 @@ impl VisitMut<'_> for Visitor<'_> {
                         i += num_new_stmts + 1;
                         continue;
                     }
-                    OptimiseSwitchResult::Replace(replacements) => {
+                    OptimiseStmtResult::Replace(replacements) => {
+                        let num_replacements = replacements.len();
+                        stmts.splice(i..=i, replacements);
+
+                        if num_replacements > 0 {
+                            // Skip over the new stmts.
+                            i += num_replacements;
+                            continue;
+                        } else {
+                            i += 1;
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            if let Stmt::If(_) = &mut stmts[i] {
+                let result = self.simplify_if_stmt(&mut stmts[i]);
+
+                match result {
+                    OptimiseStmtResult::Keep(new_stmts) => {
+                        let num_new_stmts = new_stmts.len();
+                        stmts.splice(i..i, new_stmts);
+
+                        // Skip over current and new stmts.
+                        i += num_new_stmts + 1;
+                        continue;
+                    }
+                    OptimiseStmtResult::Replace(replacements) => {
                         let num_replacements = replacements.len();
                         stmts.splice(i..=i, replacements);
 
@@ -1154,7 +1292,7 @@ impl VisitMut<'_> for Visitor<'_> {
                 let result = self.simplify_switch_stmt(stmt);
 
                 match result {
-                    OptimiseSwitchResult::Keep(new_stmts) => {
+                    OptimiseStmtResult::Keep(new_stmts) => {
                         let num_new_stmts = new_stmts.len();
                         items.splice(i..i, new_stmts.into_iter().map(ModuleItem::Stmt));
 
@@ -1162,7 +1300,35 @@ impl VisitMut<'_> for Visitor<'_> {
                         i += num_new_stmts + 1;
                         continue;
                     }
-                    OptimiseSwitchResult::Replace(replacements) => {
+                    OptimiseStmtResult::Replace(replacements) => {
+                        let num_replacements = replacements.len();
+                        items.splice(i..=i, replacements.into_iter().map(ModuleItem::Stmt));
+
+                        if num_replacements > 0 {
+                            // Skip over the new stmts.
+                            i += num_replacements;
+                            continue;
+                        } else {
+                            i += 1;
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            if let ModuleItem::Stmt(stmt @ Stmt::If(_)) = &mut items[i] {
+                let result = self.simplify_if_stmt(stmt);
+
+                match result {
+                    OptimiseStmtResult::Keep(new_stmts) => {
+                        let num_new_stmts = new_stmts.len();
+                        items.splice(i..i, new_stmts.into_iter().map(ModuleItem::Stmt));
+
+                        // Skip over current and new stmts.
+                        i += num_new_stmts + 1;
+                        continue;
+                    }
+                    OptimiseStmtResult::Replace(replacements) => {
                         let num_replacements = replacements.len();
                         items.splice(i..=i, replacements.into_iter().map(ModuleItem::Stmt));
 
@@ -1487,29 +1653,29 @@ mod tests {
     //     test_same("a:b: break a;");
     //   }
 
-    //   #[test]
-    //   fn  testFoldBlock() {
-    //     test_transform("{if(false)foo(); {bar()}}", "bar()");
-    //     test_transform("{if(false)if(false)if(false)foo(); {bar()}}", "bar()");
+    #[test]
+    fn testFoldBlock() {
+        test_transform("{if(false)foo(); {bar()}}", "bar()");
+        test_transform("{if(false)if(false)if(false)foo(); {bar()}}", "bar()");
 
-    //     test_transform("{'hi'}", "");
-    //     test_transform("{x==3}", "");
-    //     test_transform("{`hello ${foo}`}", "");
-    //     test_transform("{ (function(){x++}) }", "");
-    //     test_same("function f(){return;}");
-    //     test_transform("function f(){return 3;}", "function f(){return 3}");
-    //     test_same("function f(){if(x)return; x=3; return; }");
-    //     test_transform("{x=3;;;y=2;;;}", "x=3;y=2");
+        test_transform("{'hi'}", "");
+        test_transform("{x==3}", "");
+        test_transform("{`hello ${foo}`}", "");
+        test_transform("{ (function(){x++}) }", "");
+        test_same("function f(){return;}");
+        test_transform("function f(){return 3;}", "function f(){return 3}");
+        test_same("function f(){if(x)return; x=3; return; }");
+        test_transform("{x=3;;;y=2;;;}", "x=3;y=2");
 
-    //     // Cases to test for empty block.
-    //     test_transform("while(x()){x}", "while(x());");
-    //     test_transform("while(x()){x()}", "while(x())x()");
-    //     test_transform("for(x=0;x<100;x++){x}", "for(x=0;x<100;x++);");
-    //     test_transform("for(x in y){x}", "for(x in y);");
-    //     test_transform("for (x of y) {x}", "for(x of y);");
-    //     test_same("for (let x = 1; x <10; x++ ) {}");
-    //     test_same("for (var x = 1; x <10; x++ ) {}");
-    //   }
+        // Cases to test for empty block.
+        // test_transform("while(x()){x}", "while(x());");
+        // test_transform("while(x()){x()}", "while(x())x()");
+        // test_transform("for(x=0;x<100;x++){x}", "for(x=0;x<100;x++);");
+        // test_transform("for(x in y){x}", "for(x in y);");
+        // test_transform("for (x of y) {x}", "for(x of y);");
+        // test_same("for (let x = 1; x <10; x++ ) {}");
+        // test_same("for (var x = 1; x <10; x++ ) {}");
+    }
 
     //   #[test]
     //   fn  testFoldBlockWithDeclaration_notNormalized() {
@@ -1542,28 +1708,38 @@ mod tests {
     //     test_transform("{label: var x; let y;}", "label: var x; let y;");
     //   }
 
-    //   /** Try to remove spurious blocks with multiple children */
-    //   #[test]
-    //   fn  testFoldBlocksWithManyChildren() {
-    //     test_transform("function f() { if (false) {} }", "function f(){}");
-    //     test_transform("function f() { { if (false) {} if (true) {} {} } }", "function f(){}");
-    //     test_transform(
-    //         "{var x; var y; var z; class Foo { constructor() { var a; { var b; } } } }",
-    //         "var x;var y;var z;class Foo { constructor() { var a;var b} }");
-    //     test_transform("{var x; var y; var z; { { var a; { var b; } } } }", "var x;var y;var z; var a;var b");
-    //   }
+    // Try to remove spurious blocks with multiple children
+    #[test]
+    fn testFoldBlocksWithManyChildren() {
+        test_transform("function f() { if (false) {} }", "function f(){}");
+        test_transform(
+            "function f() { { if (false) {} if (true) {} {} } }",
+            "function f(){}",
+        );
+        test_transform(
+            "{var x; var y; var z; class Foo { constructor() { var a; { var b; } } } }",
+            "var x;var y;var z;class Foo { constructor() { var a;var b} }",
+        );
+        test_transform(
+            "{var x; var y; var z; { { var a; { var b; } } } }",
+            "var x;var y;var z; var a;var b",
+        );
+    }
 
-    //   #[test]
-    //   fn  testIf() {
-    //     test_transform("if (1){ x=1; } else { x = 2;}", "x=1");
-    //     test_transform("if (false){ x = 1; } else { x = 2; }", "x=2");
-    //     test_transform("if (undefined){ x = 1; } else { x = 2; }", "x=2");
-    //     test_transform("if (null){ x = 1; } else { x = 2; }", "x=2");
-    //     test_transform("if (void 0){ x = 1; } else { x = 2; }", "x=2");
-    //     test_transform("if (void foo()){ x = 1; } else { x = 2; }", "foo();x=2");
-    //     test_transform("if (false){ x = 1; } else if (true) { x = 3; } else { x = 2; }", "x=3");
-    //     test_transform("if (x){ x = 1; } else if (false) { x = 3; }", "if(x)x=1");
-    //   }
+    #[test]
+    fn testIf() {
+        test_transform("if (1){ x=1; } else { x = 2;}", "x=1");
+        test_transform("if (false){ x = 1; } else { x = 2; }", "x=2");
+        test_transform("if (undefined){ x = 1; } else { x = 2; }", "x=2");
+        test_transform("if (null){ x = 1; } else { x = 2; }", "x=2");
+        test_transform("if (void 0){ x = 1; } else { x = 2; }", "x=2");
+        test_transform("if (void foo()){ x = 1; } else { x = 2; }", "foo();x=2");
+        test_transform(
+            "if (false){ x = 1; } else if (true) { x = 3; } else { x = 2; }",
+            "x=3",
+        );
+        test_transform("if (x){ x = 1; } else if (false) { x = 3; }", "if(x)x=1");
+    }
 
     #[test]
     fn test_conditional_expression() {
@@ -1630,26 +1806,26 @@ mod tests {
         );
     }
 
-    //   #[test]
-    //   fn  testConstantConditionWithSideEffect1() {
-    //     test_transform("if (b=true) x=1;", "b=true;x=1");
-    //     test_transform("if (b=/ab/) x=1;", "b=/ab/;x=1");
-    //     test_transform("if (b=/ab/){ x=1; } else { x=2; }", "b=/ab/;x=1");
-    //     test_transform("var b;b=/ab/;if(b)x=1;", "var b;b=/ab/;x=1");
-    //     test_same("var b;b=f();if(b)x=1;");
-    //     test_transform("var b=/ab/;if(b)x=1;", "var b=/ab/;x=1");
-    //     test_same("var b=f();if(b)x=1;");
-    //     test_same("b=b++;if(b)x=b;");
-    //     test_transform("(b=0,b=1);if(b)x=b;", "b=0,b=1;if(b)x=b;");
-    //     test_transform("b=1;if(foo,b)x=b;", "b=1;x=b;");
-    //     test_same("b=1;if(foo=1,b)x=b;");
-    //   }
+    #[test]
+    fn testConstantConditionWithSideEffect1() {
+        test_transform("if (b=true) x=1;", "b=true;x=1");
+        test_transform("if (b=/ab/) x=1;", "b=/ab/;x=1");
+        test_transform("if (b=/ab/){ x=1; } else { x=2; }", "b=/ab/;x=1");
+        // test_transform("var b;b=/ab/;if(b)x=1;", "var b;b=/ab/;x=1");
+        // test_same("var b;b=f();if(b)x=1;");
+        // test_transform("var b=/ab/;if(b)x=1;", "var b=/ab/;x=1");
+        // test_same("var b=f();if(b)x=1;");
+        // test_same("b=b++;if(b)x=b;");
+        // test_transform("(b=0,b=1);if(b)x=b;", "b=0,b=1;if(b)x=b;");
+        // test_transform("b=1;if(foo,b)x=b;", "b=1;x=b;");
+        // test_same("b=1;if(foo=1,b)x=b;");
+    }
 
     #[test]
     fn testConstantConditionWithSideEffect2() {
         test_transform("(b=true)?x=1:x=2;", "b=true,x=1");
         test_transform("(b=false)?x=1:x=2;", "b=false,x=2");
-        // test_transform("if (b=/ab/) x=1;", "b=/ab/;x=1");
+        test_transform("if (b=/ab/) x=1;", "b=/ab/;x=1");
         // test_transform("var b;b=/ab/;(b)?x=1:x=2;", "var b;b=/ab/;x=1");
         // test_same("var b;b=f();(b)?x=1:x=2;");
         // test_transform("var b=/ab/;(b)?x=1:x=2;", "var b=/ab/;x=1");
@@ -1670,22 +1846,22 @@ mod tests {
     //     test_same("b = fn(); b ?? (x = 1)");
     //   }
 
-    //   #[test]
-    //   fn  testVarLifting() {
-    //     test_transform("if(true)var a", "var a");
-    //     test_transform("if(false)var a", "var a");
+    #[test]
+    fn testVarLifting() {
+        test_transform("if(true)var a", "var a");
+        test_transform("if(false)var a", "var a");
 
-    //     // More var lifting tests in PeepholeIntegrationTests
-    //   }
+        // More var lifting tests in PeepholeIntegrationTests
+    }
 
-    //   #[test]
-    //   fn  testLetConstLifting() {
-    //     test_transform("if(true) {const x = 1}", "const x = 1;");
-    //     test_transform("if(false) {const x = 1}", "");
-    //     test_transform("if(true) {let x}", "let x;");
-    //     test_transform("if(false) {let x}", "");
-    //     test_transform("if(false) {const x = 1;  function f() { return x; }}", "");
-    //   }
+    #[test]
+    fn testLetConstLifting() {
+        test_transform("if(true) {const x = 1}", "const x = 1;");
+        test_transform("if(false) {const x = 1}", "");
+        test_transform("if(true) {let x}", "let x;");
+        test_transform("if(false) {let x}", "");
+        test_transform("if(false) {const x = 1;  function f() { return x; }}", "");
+    }
 
     //   #[test]
     //   fn  testLetConstLifting_removePartOfBlock() {
@@ -1873,8 +2049,8 @@ mod tests {
 
     #[test]
     fn testFoldConstantCommaExpressions() {
-        // test_transform("if (true, false) {foo()}", "");
-        // test_transform("if (false, true) {foo()}", "foo()");
+        test_transform("if (true, false) {foo()}", "");
+        test_transform("if (false, true) {foo()}", "foo()");
         test_transform("true, foo()", "foo()");
         test_transform("true, foo?.()", "foo?.()");
         test_transform("(1 + 2 + ''), foo()", "foo()");
@@ -2916,10 +3092,10 @@ loop: {
         test_same("function f(){throw 10}");
     }
 
-    //   #[test]
-    //   fn  testRedundantIfRemoved() {
-    //     test_transform("if(x()) 1", "x()");
-    //   }
+    #[test]
+    fn testRedundantIfRemoved() {
+        test_transform("if(x()) 1", "x()");
+    }
 
     //   #[test]
     //   fn  testRemoveInControlStructure3() {

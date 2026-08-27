@@ -330,6 +330,94 @@ pub fn getBigIntValue(expr: &Expr) -> Option<num_bigint::BigInt> {
     }
 }
 
+/// Returns true if the block may have side effects when executed.
+pub fn block_may_have_side_effects(block: &BlockStmt) -> bool {
+    block.stmts.iter().any(stmt_may_have_side_effects)
+}
+
+/// Returns true if the statement may have side effects when executed.
+pub fn stmt_may_have_side_effects(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Block(block) => block.stmts.iter().any(stmt_may_have_side_effects),
+
+        Stmt::Expr(expr) => expr_may_have_side_effects(&expr.expr),
+
+        Stmt::If(if_stmt) => {
+            expr_may_have_side_effects(&if_stmt.test)
+                || if_stmt.cons.stmts.iter().any(stmt_may_have_side_effects)
+                || if_stmt
+                    .alt
+                    .as_ref()
+                    .is_some_and(|alt| alt.stmts.iter().any(stmt_may_have_side_effects))
+        }
+
+        Stmt::Try(try_stmt) => {
+            try_stmt.block.stmts.iter().any(stmt_may_have_side_effects)
+                || try_stmt.handler.as_ref().is_some_and(|handler| {
+                    handler.body.stmts.iter().any(stmt_may_have_side_effects)
+                })
+                || try_stmt
+                    .finalizer
+                    .as_ref()
+                    .is_some_and(|finalizer| finalizer.stmts.iter().any(stmt_may_have_side_effects))
+        }
+
+        Stmt::While(WhileStmt { body, test, .. })
+        | Stmt::DoWhile(DoWhileStmt { body, test, .. }) => {
+            expr_may_have_side_effects(test) || body.stmts.iter().any(stmt_may_have_side_effects)
+        }
+
+        Stmt::Labeled(labelled) => stmt_may_have_side_effects(&labelled.body),
+
+        Stmt::Switch(switch_stmt) => {
+            expr_may_have_side_effects(&switch_stmt.discriminant)
+                || switch_stmt.cases.iter().any(|case| {
+                    case.test.as_deref().is_some_and(expr_may_have_side_effects)
+                        || case.cons.iter().any(stmt_may_have_side_effects)
+                })
+        }
+
+        Stmt::For(for_stmt) => {
+            match for_stmt.init.as_deref() {
+                Some(VarDeclOrExpr::VarDecl(_)) => return true,
+                Some(VarDeclOrExpr::Expr(expr)) => {
+                    if expr_may_have_side_effects(expr) {
+                        return true;
+                    }
+                }
+                None => {}
+            }
+
+            for_stmt
+                .test
+                .as_deref()
+                .is_some_and(expr_may_have_side_effects)
+                || for_stmt
+                    .update
+                    .as_deref()
+                    .is_some_and(expr_may_have_side_effects)
+                || for_stmt.body.stmts.iter().any(stmt_may_have_side_effects)
+        }
+
+        Stmt::Decl(_) => true,
+
+        Stmt::Return(_) | Stmt::Break(_) | Stmt::Continue(_) => true,
+        Stmt::Debugger(_) => true,
+        // Throw is a side-effect by definition.
+        Stmt::Throw(_) => true,
+        // Enhanced for loops are almost always side-effectful; it's not worth
+        // checking them further. Particularly, they represent a kind of
+        // assignment op.
+        Stmt::ForIn(_) => true,
+        Stmt::ForOf(_) => true,
+        // The with statement itself doesn't have side-effects, but is not worth
+        // analysing.
+        Stmt::With(_) => true,
+
+        Stmt::Empty(_) => false,
+    }
+}
+
 /// Returns true if calling this callee may have side-effects.
 pub fn function_call_may_have_side_effects(callee: &Expr) -> bool {
     if let Expr::Ident(callee) = callee {
