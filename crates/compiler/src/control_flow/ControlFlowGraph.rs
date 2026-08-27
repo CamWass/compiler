@@ -143,8 +143,6 @@ where
     }
 }
 
-const CFG_DOT_FILE_NAME: &str = "cfg.dot";
-
 impl<NA> ControlFlowGraph<Node<'_>, NA>
 where
     NA: Annotation,
@@ -152,17 +150,17 @@ where
     /// Prints a simple representation of the control flow graph to dot format.
     /// The resulting graph contains only the nodes and edges from the control
     /// flow graph.
-    pub fn print_simple(&self) {
+    pub fn print_simple(&self) -> String {
         let graph = self.graph.map(|_, n| n.kind, |_, e| *e);
         let mut dot = format!("{:?}", Dot::with_config(&graph, &[]));
 
         dot = recolour_graph(dot, self.graph.node_count());
 
-        std::fs::write(CFG_DOT_FILE_NAME, dot).expect("Failed to output control flow graph");
+        dot
     }
 
     #[allow(dead_code, reason = "used for debugging")]
-    pub fn print_simple_with_annotations(&self, program_data: &TransformerProgramData) {
+    pub fn print_simple_with_annotations(&self, program_data: &TransformerProgramData) -> String {
         // Only used for custom debug impl.
         struct CustomNode<'ast, 'a, NA>
         where
@@ -216,15 +214,16 @@ where
 
         dot = recolour_graph(dot, graph.node_count());
 
-        std::fs::write(CFG_DOT_FILE_NAME, dot).expect("Failed to output control flow graph");
+        dot
     }
 
     /// Prints a rich representation of the control flow graph to dot format.
     /// The resulting graph contains represents the full AST of the entry node,
     /// as well as any control flow edges.
-    pub fn print_full(&self, program_data: &TransformerProgramData) {
-        self.print_full_inner::<DefaultPrinter>(None, "cfg", program_data);
+    pub fn print_full(&self, program_data: &TransformerProgramData) -> String {
+        self.print_full_inner::<DefaultPrinter>(None, program_data)
     }
+
     #[allow(dead_code, reason = "used for debugging")]
     /// Same as `print_full` but also prints node annotations using `printer`.
     /// If `printer` is `None`, the annotations will be printed using [`Debug`][std::fmt::Debug].
@@ -232,31 +231,23 @@ where
         &self,
         printer: Option<&P>,
         program_data: &TransformerProgramData,
-    ) where
+    ) -> String
+    where
         P: AnnotationPrinter<NA>,
     {
         match printer {
-            Some(p) => self.print_full_inner(Some(p), "cfg", program_data),
-            None => self.print_full_inner(Some(&DefaultPrinter), "cfg", program_data),
+            Some(p) => self.print_full_inner(Some(p), program_data),
+            None => self.print_full_inner(Some(&DefaultPrinter), program_data),
         }
-    }
-
-    #[allow(dead_code, reason = "used for debugging")]
-    pub fn print_full_with_annotations_name(
-        &self,
-        name: &str,
-        program_data: &TransformerProgramData,
-    ) {
-        self.print_full_inner::<DefaultPrinter>(Some(&DefaultPrinter), name, program_data);
     }
 
     /// If `printer` is `None`, node annotations are not printed.
     fn print_full_inner<P>(
         &self,
         printer: Option<&P>,
-        name: &str,
         program_data: &TransformerProgramData,
-    ) where
+    ) -> String
+    where
         P: AnnotationPrinter<NA>,
     {
         // Only used for custom debug impl.
@@ -345,10 +336,7 @@ where
 
         dot = recolour_graph(dot, graph.node_count());
 
-        std::fs::create_dir_all("cfg").expect("failed to create cfg dir");
-
-        std::fs::write(format!("cfg/{name}.dot"), dot)
-            .expect("Failed to output control flow graph");
+        dot
     }
 }
 
@@ -389,4 +377,12 @@ where
     fn index(&self, index: NodeIndex) -> &Self::Output {
         &self.graph[index]
     }
+}
+
+#[allow(dead_code, reason = "used for debugging")]
+pub fn write_cfg_to_file(cfg: String, name: Option<&str>) {
+    let name = name.unwrap_or("cfg");
+    std::fs::create_dir_all("cfg").expect("failed to create cfg dir");
+
+    std::fs::write(format!("cfg/{name}.dot"), cfg).expect("Failed to output control flow graph");
 }

@@ -31,7 +31,11 @@ mod utils;
 #[cfg(test)]
 mod testing;
 
-use crate::resolver::resolve;
+use crate::{
+    control_flow::ControlFlowAnalysis::{ControlFlowAnalysis, ControlFlowRoot},
+    resolver::resolve,
+};
+use ast::Program;
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
@@ -229,4 +233,21 @@ fn late_peephole_optimisations(
     //         new PeepholeFoldConstants(late, useTypesForOptimization),
     //         new PeepholeReorderConstantExpression());
     //   })
+}
+
+/// Renders the full CFG to a string in GraphViz DOT format, including the CFGs
+/// of each inner function.
+///
+/// Returns `None` if the graph contains too many nodes for the resulting DOT
+/// graph to be rendered in a reasonable amount of time.
+pub fn print_control_flow_graph(
+    program: &Program,
+    program_data: &::ast::TransformerProgramData,
+) -> Option<String> {
+    let cfg = ControlFlowAnalysis::<()>::analyze(ControlFlowRoot::from(program), true).cfg;
+    if cfg.graph.node_count() <= 200 {
+        Some(cfg.print_full(program_data))
+    } else {
+        None
+    }
 }

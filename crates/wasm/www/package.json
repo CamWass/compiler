@@ -3,6 +3,9 @@
     "watch": "rollup index.js --file out.js --format esm --no-treeshake --watch"
   },
   "devDependencies": {
-    "rollup": "^4.62.4"
+    "rollup": "4.62.4"
+  },
+  "dependencies": {
+    "@viz-js/viz": "3.29.0"
   }
 }

@@ -1,5 +1,6 @@
 import { TabGroup } from "./tabs.js";
 import { INPUTS } from "./examples.js";
+import { CFGDisplay } from "./vis.js";
 import init, { process } from "./wasm/wasm.js";
 
 const inputTabGroup = new TabGroup({
@@ -19,6 +20,17 @@ const inputTabGroup = new TabGroup({
       },
       updateError(error) {
         this.contentContainer.value = error;
+      },
+    },
+    {
+      label: "CFG",
+      contentContainer: document.getElementById("input-cfg"),
+      renderer: new CFGDisplay(document.getElementById("input-cfg")),
+      updateSuccess(result) {
+        this.renderer.updateSuccess(result.input_cfg);
+      },
+      updateError() {
+        this.renderer.updateError();
       },
     },
   ],
@@ -44,6 +56,17 @@ const outputTabGroup = new TabGroup({
       },
       updateError(error) {
         this.contentContainer.value = error;
+      },
+    },
+    {
+      label: "CFG",
+      contentContainer: document.getElementById("output-cfg"),
+      renderer: new CFGDisplay(document.getElementById("output-cfg")),
+      updateSuccess(result) {
+        this.renderer.updateSuccess(result.output_cfg);
+      },
+      updateError() {
+        this.renderer.updateError();
       },
     },
   ],

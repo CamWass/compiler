@@ -6,7 +6,7 @@ use common::{
     FileName, SourceMap,
     errors::{EmitterWriter, Handler, HandlerFlags},
 };
-use compiler::Compiler;
+use compiler::{Compiler, print_control_flow_graph};
 use parser::{Parser, Syntax};
 use std::{
     io::{self, Write},
@@ -92,6 +92,8 @@ struct CompileOutput {
     output: String,
     output_ast: String,
     input_ast: String,
+    output_cfg: String,
+    input_cfg: String,
 }
 
 fn compile(
@@ -128,9 +130,13 @@ fn compile(
 
     let mut program_data = program_data.into_transformer_program_data();
 
+    let input_cfg = print_control_flow_graph(&program, &program_data);
+
     let compiler = Compiler::new();
 
     let result = compiler.compile(program, config.passes, &mut program_data);
+
+    let output_cfg = print_control_flow_graph(&result, &program_data);
 
     let program_data = program_data.into_codegen_program_data();
 
@@ -156,6 +162,8 @@ fn compile(
         output: buf,
         output_ast: output_ast_string,
         input_ast: input_ast_string,
+        output_cfg: output_cfg.unwrap_or_default(),
+        input_cfg: input_cfg.unwrap_or_default(),
     })
 }
 

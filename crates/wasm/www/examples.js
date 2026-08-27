@@ -87,7 +87,7 @@ result.prop3;
     "rename_vars": true,
     "rename_labels": true,
     "coalesce_variable_names": true,
-    "optimize_properties": true,
+    "optimize_properties": false,
     "fuse_stmts": true,
     "optimise_equality": true,
     "remove_dead_code": true,
