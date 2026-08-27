@@ -72,9 +72,9 @@ impl VisitMut<'_> for NormalizeAssignShorthand<'_> {
             // Not shorthand.
             AssignOp::Assign => return,
 
-            AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign => {
-                todo!("normalize logical assign")
-            }
+            AssignOp::AndAssign => BinaryOp::LogicalAnd,
+            AssignOp::OrAssign => BinaryOp::LogicalOr,
+            AssignOp::NullishAssign => BinaryOp::NullishCoalescing,
         };
 
         debug_assert!(
