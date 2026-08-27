@@ -1,121 +1,58 @@
+import { TabGroup } from "./tabs.js";
+import { INPUTS } from "./examples.js";
 import init, { process } from "./wasm/wasm.js";
 
-const source = await fetch(new URL("out.js", import.meta.url)).then((r) =>
-  r.text(),
-);
-
-const INPUTS = {
-  blank: {
-    label: "Empty",
-    config: `{
-  "pretty_print": true,
-  "passes": {
-    "optimize_arguments_array": false,
-    "rename_vars": false,
-    "rename_labels": false,
-    "coalesce_variable_names": false,
-    "optimize_properties": false,
-    "fuse_stmts": false,
-    "optimise_equality": false,
-    "remove_dead_code": false,
-    "collapse_variable_declarations": false
-  },
-  "ecmascript": {
-    "dynamicImport": true,
-    "importMeta": true,
-    "topLevelAwait": true
-  }
-}`,
-    input: "",
-  },
-  properties: {
-    label: "Property optimisation",
-    config: `{
-  "pretty_print": true,
-  "passes": {
-    "optimize_arguments_array": false,
-    "rename_vars": false,
-    "rename_labels": false,
-    "coalesce_variable_names": false,
-    "optimize_properties": true,
-    "fuse_stmts": false,
-    "optimise_equality": false,
-    "remove_dead_code": false,
-    "collapse_variable_declarations": false
-  },
-  "ecmascript": {
-    "dynamicImport": true,
-    "importMeta": true,
-    "topLevelAwait": true
-  }
-}`,
-    input: `function addInner(a) {
-    a.inner = { zCommon: 1, prop3: 3 };
-    return a;
-}
-
-function getInner(a) {
-    if (!("inner" in a)) {
-        return addInner(a).inner;
-    } else {
-        return a.inner;
-    }
-}
-
-function foo() {
-    let obj = { inner: { zCommon: 1, prop2: 2 } };
-    if (Math.random() > 0.5) {
-        return obj;
-    }
-    const inner = getInner(obj);
-    inner.zCommon++;
-    return inner;
-}
-
-const result = foo();
-const inner = result.inner;
-
-inner.zCommon; inner.zCommon; inner.zCommon;
-inner.prop3;
-result.prop3;
-`,
-  },
-  website: {
-    label: "This website's source code",
-    config: `{
-  "pretty_print": false,
-  "passes": {
-    "optimize_arguments_array": true,
-    "rename_vars": true,
-    "rename_labels": true,
-    "coalesce_variable_names": true,
-    "optimize_properties": true,
-    "fuse_stmts": true,
-    "optimise_equality": true,
-    "remove_dead_code": true,
-    "collapse_variable_declarations": true
-  },
-  "ecmascript": {
-    "dynamicImport": true,
-    "importMeta": true,
-    "topLevelAwait": true
-  }
-}`,
-    input: source,
-  },
-};
+const inputTabGroup = new TabGroup({
+  buttonContainer: document.getElementById("input-tab-group-buttons"),
+  tabs: [
+    {
+      label: "Text",
+      contentContainer: document.getElementById("input-text"),
+      updateSuccess() {},
+      updateError() {},
+    },
+    {
+      label: "AST",
+      contentContainer: document.getElementById("input-ast-json"),
+      updateSuccess(result) {
+        this.contentContainer.value = result.input_ast;
+      },
+      updateError(error) {
+        this.contentContainer.value = error;
+      },
+    },
+  ],
+});
+const outputTabGroup = new TabGroup({
+  buttonContainer: document.getElementById("output-tab-group-buttons"),
+  tabs: [
+    {
+      label: "Text",
+      contentContainer: document.getElementById("output-text"),
+      updateSuccess(result) {
+        this.contentContainer.value = result.output;
+      },
+      updateError(error) {
+        this.contentContainer.value = error;
+      },
+    },
+    {
+      label: "AST",
+      contentContainer: document.getElementById("output-ast-json"),
+      updateSuccess(result) {
+        this.contentContainer.value = result.output_ast;
+      },
+      updateError(error) {
+        this.contentContainer.value = error;
+      },
+    },
+  ],
+});
 
 const exampleSelect = document.getElementById("example-select");
 
 const inputTextTextArea = document.getElementById("input-text");
-const inputAstJsonTextArea = document.getElementById("input-ast-json");
-const viewInputTextButton = document.getElementById("view-input-text-button");
-const viewInputAstButton = document.getElementById("view-input-ast-button");
-
 const outputTextTextArea = document.getElementById("output-text");
-const outputAstJsonTextArea = document.getElementById("output-ast-json");
-const viewOutputTextButton = document.getElementById("view-output-text-button");
-const viewOutputAstButton = document.getElementById("view-output-ast-button");
 
 const configTextArea = document.getElementById("config");
 
@@ -142,9 +79,8 @@ function run() {
 
   try {
     const result = process(inputTextTextArea.value, configTextArea.value);
-    outputTextTextArea.value = result.output;
-    outputAstJsonTextArea.value = result.output_ast;
-    inputAstJsonTextArea.value = result.input_ast;
+    inputTabGroup.updateSuccess(result);
+    outputTabGroup.updateSuccess(result);
 
     const outputSize = getStringSizeInBytes(outputTextTextArea.value);
 
@@ -158,9 +94,8 @@ function run() {
     )}%`;
   } catch (e) {
     console.error(e);
-    outputTextTextArea.value = e;
-    outputAstJsonTextArea.value = e;
-    inputAstJsonTextArea.value = e;
+    inputTabGroup.updateError(e);
+    outputTabGroup.updateError(e);
 
     outputSizeLabel.textContent = "error";
   }
@@ -185,24 +120,6 @@ exampleSelect.addEventListener("input", (e) => {
 });
 
 run();
-
-viewInputTextButton.addEventListener("click", () => {
-  inputAstJsonTextArea.style.display = "none";
-  inputTextTextArea.style.display = "initial";
-});
-viewInputAstButton.addEventListener("click", () => {
-  inputTextTextArea.style.display = "none";
-  inputAstJsonTextArea.style.display = "initial";
-});
-
-viewOutputTextButton.addEventListener("click", () => {
-  outputAstJsonTextArea.style.display = "none";
-  outputTextTextArea.style.display = "initial";
-});
-viewOutputAstButton.addEventListener("click", () => {
-  outputTextTextArea.style.display = "none";
-  outputAstJsonTextArea.style.display = "initial";
-});
 
 function getStringSizeInBytes(string) {
   return new Blob([string]).size;
