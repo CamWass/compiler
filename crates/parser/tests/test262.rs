@@ -308,7 +308,7 @@ fn identity_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
                 };
                 let src = p(false);
                 let expected = p(true);
-                assert_eq!(src, expected);
+                assert!(src.eq_ignoring_node_id(&expected));
             } else {
                 let p = |explicit| {
                     let mut res = parse_script(
@@ -322,7 +322,7 @@ fn identity_tests(tests: &mut Vec<TestDescAndFn>) -> Result<(), io::Error> {
                 };
                 let src = p(false);
                 let expected = p(true);
-                assert_eq!(src, expected);
+                assert!(src.eq_ignoring_node_id(&expected));
             }
             Ok(())
         });

@@ -6,14 +6,14 @@ use node_eq::NodeEq;
 use node_id::GetNodeIdMacro;
 use serde::Serialize;
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub enum Decl {
     Class(ClassDecl),
     Fn(FnDecl),
     Var(VarDecl),
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct FnDecl {
     pub node_id: NodeId,
 
@@ -21,7 +21,7 @@ pub struct FnDecl {
     pub function: Box<Function>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct ClassDecl {
     pub node_id: NodeId,
 
@@ -29,7 +29,7 @@ pub struct ClassDecl {
     pub class: Box<Class>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct VarDecl {
     pub node_id: NodeId,
 
@@ -65,7 +65,7 @@ impl std::fmt::Debug for VarDeclKind {
     }
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct VarDeclarator {
     pub node_id: NodeId,
 

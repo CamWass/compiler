@@ -582,12 +582,12 @@ impl TestingProgramData {
 }
 
 /// Represents a invalid node.
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct Invalid {
     pub node_id: NodeId,
 }
 
-#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Default)]
 pub enum EsVersion {
     Es3,
     Es5,

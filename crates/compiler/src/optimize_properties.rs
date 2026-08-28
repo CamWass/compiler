@@ -942,7 +942,7 @@ impl GraphVisitor<'_, '_> {
                     self.invalidate(rhs);
                 }
 
-                for prop in &lhs.props {
+                for (i, prop) in lhs.props.iter().enumerate() {
                     match prop {
                         ObjectPatProp::KeyValue(prop) => {
                             prop.key.visit_with(self);
@@ -963,7 +963,7 @@ impl GraphVisitor<'_, '_> {
                             self.visit_destructuring(&prop.value, &new_rhs);
                         }
                         ObjectPatProp::Rest(rest) => {
-                            debug_assert!(lhs.props.last().unwrap() == prop);
+                            debug_assert!(i == lhs.props.len() - 1);
 
                             // TODO: throw error, don't panic.
                             // The argument of an object pattern's rest element must be an identifier.

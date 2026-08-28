@@ -4,27 +4,27 @@ use node_eq::NodeEq;
 use node_id::GetNodeIdMacro;
 use serde::Serialize;
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub enum Program {
     Module(Module),
     Script(Script),
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct Module {
     pub node_id: NodeId,
 
     pub body: Vec<ModuleItem>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct Script {
     pub node_id: NodeId,
 
     pub body: Vec<Stmt>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub enum ModuleItem {
     ModuleDecl(ModuleDecl),
     Stmt(Stmt),

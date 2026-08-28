@@ -5,7 +5,7 @@ use node_eq::NodeEq;
 use node_id::GetNodeIdMacro;
 use serde::Serialize;
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub enum Pat {
     Ident(BindingIdent),
 
@@ -31,21 +31,21 @@ impl Take for Pat {
     }
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct ArrayPat {
     pub node_id: NodeId,
 
     pub elems: Vec<Option<Pat>>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct ObjectPat {
     pub node_id: NodeId,
 
     pub props: Vec<ObjectPatProp>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct AssignPat {
     pub node_id: NodeId,
 
@@ -55,21 +55,21 @@ pub struct AssignPat {
 }
 
 /// EsTree `RestElement`
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct RestPat {
     pub node_id: NodeId,
 
     pub arg: Box<Pat>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub enum ObjectPatProp {
     KeyValue(KeyValuePatProp),
     Rest(RestPat),
 }
 
 /// `{key: value}`
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct KeyValuePatProp {
     pub node_id: NodeId,
     pub key: PropName,

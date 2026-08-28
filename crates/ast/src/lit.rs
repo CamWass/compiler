@@ -6,7 +6,7 @@ use num_bigint::BigUint;
 use serde::Serialize;
 use std::fmt::{self, Display, Formatter};
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub enum Lit {
     Str(Str),
 
@@ -21,13 +21,13 @@ pub enum Lit {
     Regex(Regex),
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct BigInt {
     pub node_id: NodeId,
     pub value: Box<BigUint>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct Str {
     pub node_id: NodeId,
 
@@ -41,24 +41,24 @@ impl Str {
     }
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct Bool {
     pub node_id: NodeId,
     pub value: bool,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct Null {
     pub node_id: NodeId,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct Regex {
     pub node_id: NodeId,
     pub raw: Box<String>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct Number {
     pub node_id: NodeId,
     pub value: f64,

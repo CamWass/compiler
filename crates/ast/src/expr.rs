@@ -15,7 +15,7 @@ use node_eq::NodeEq;
 use node_id::GetNodeIdMacro;
 use serde::Serialize;
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub enum Expr {
     This(ThisExpr),
 
@@ -79,13 +79,13 @@ impl Take for Expr {
     }
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct ThisExpr {
     pub node_id: NodeId,
 }
 
 /// Array literal.
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct ArrayLit {
     pub node_id: NodeId,
 
@@ -93,20 +93,20 @@ pub struct ArrayLit {
 }
 
 /// Object literal.
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct ObjectLit {
     pub node_id: NodeId,
 
     pub props: Vec<Prop>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct SpreadElement {
     pub node_id: NodeId,
     pub expr: Box<Expr>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct UnaryExpr {
     pub node_id: NodeId,
 
@@ -115,7 +115,7 @@ pub struct UnaryExpr {
     pub arg: Box<Expr>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct UpdateExpr {
     pub node_id: NodeId,
 
@@ -126,7 +126,7 @@ pub struct UpdateExpr {
     pub arg: Box<Expr>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct BinExpr {
     pub node_id: NodeId,
 
@@ -138,7 +138,7 @@ pub struct BinExpr {
 }
 
 /// Function expression.
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct FnExpr {
     pub node_id: NodeId,
 
@@ -147,7 +147,7 @@ pub struct FnExpr {
 }
 
 /// Class expression.
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct ClassExpr {
     pub node_id: NodeId,
 
@@ -155,7 +155,7 @@ pub struct ClassExpr {
     pub class: Class,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct AssignExpr {
     pub node_id: NodeId,
 
@@ -166,7 +166,7 @@ pub struct AssignExpr {
     pub right: Box<Expr>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct MemberExpr {
     pub node_id: NodeId,
 
@@ -177,7 +177,7 @@ pub struct MemberExpr {
     pub computed: bool,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct CondExpr {
     pub node_id: NodeId,
 
@@ -188,7 +188,7 @@ pub struct CondExpr {
     pub alt: Box<Expr>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct CallExpr {
     pub node_id: NodeId,
 
@@ -197,7 +197,7 @@ pub struct CallExpr {
     pub args: Vec<ExprOrSpread>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct NewExpr {
     pub node_id: NodeId,
 
@@ -206,14 +206,14 @@ pub struct NewExpr {
     pub args: Option<Vec<ExprOrSpread>>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct SeqExpr {
     pub node_id: NodeId,
 
     pub exprs: Vec<Expr>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct ArrowExpr {
     pub node_id: NodeId,
 
@@ -224,7 +224,7 @@ pub struct ArrowExpr {
     pub is_async: bool,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct YieldExpr {
     pub node_id: NodeId,
 
@@ -233,7 +233,7 @@ pub struct YieldExpr {
     pub delegate: bool,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct MetaPropExpr {
     pub node_id: NodeId,
 
@@ -242,14 +242,14 @@ pub struct MetaPropExpr {
     pub prop: Ident,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct AwaitExpr {
     pub node_id: NodeId,
 
     pub arg: Box<Expr>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct Tpl {
     pub node_id: NodeId,
 
@@ -258,7 +258,7 @@ pub struct Tpl {
     pub quasis: Vec<TplElement>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct TaggedTpl {
     pub node_id: NodeId,
 
@@ -267,32 +267,32 @@ pub struct TaggedTpl {
     pub tpl: Box<Tpl>,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct TplElement {
     pub node_id: NodeId,
     pub raw: Str,
 }
 
 #[allow(variant_size_differences)]
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub enum ExprOrSuper {
     Super(Super),
 
     Expr(Box<Expr>),
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct Super {
     pub node_id: NodeId,
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub enum ExprOrSpread {
     Spread(SpreadElement),
     Expr(Box<Expr>),
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub enum PatOrExpr {
     Expr(Box<Expr>),
     Pat(Box<Pat>),
@@ -316,7 +316,7 @@ impl From<Str> for Expr {
     }
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct OptChainExpr {
     pub node_id: NodeId,
     pub expr: Box<Expr>,

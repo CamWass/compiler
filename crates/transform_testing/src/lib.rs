@@ -164,7 +164,7 @@ pub fn test_transform<F, P>(
         //     _ => {}
         // }
 
-        if actual.0 == expected.0 {
+        if actual.0.eq_ignoring_node_id(&expected.0) {
             return Ok(());
         }
 

@@ -6,7 +6,7 @@ use node_id::GetNodeIdMacro;
 use serde::Serialize;
 
 /// Identifier used as a pattern.
-#[derive(Debug, PartialEq, CloneNode, NodeEq, Serialize, Eq, Hash)]
+#[derive(Debug, CloneNode, NodeEq, Serialize)]
 pub struct BindingIdent {
     pub id: Ident,
 }
@@ -33,7 +33,7 @@ impl GetNodeId for BindingIdent {
 }
 
 /// Ident.
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct Ident {
     pub node_id: NodeId,
     pub name: NameId,
@@ -121,7 +121,7 @@ impl Ident {
     }
 }
 
-#[derive(Debug, PartialEq, GetNodeIdMacro, CloneNode, NodeEq, Serialize, Eq, Hash)]
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct PrivateName {
     pub node_id: NodeId,
     pub id: Ident,
