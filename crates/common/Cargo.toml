@@ -8,7 +8,6 @@ tty-emitter = ["atty", "termcolor"]
 
 [dependencies]
 atty = { workspace = true, optional = true }
-cfg-if = { workspace = true }
 scoped-tls = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 sourcemap = { workspace = true, optional = true }

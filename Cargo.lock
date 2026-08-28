@@ -210,7 +210,6 @@ name = "common"
 version = "0.1.0"
 dependencies = [
  "atty",
- "cfg-if",
  "scoped-tls",
  "serde",
  "sourcemap",
