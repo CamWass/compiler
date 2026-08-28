@@ -3,11 +3,10 @@ use bitflags::bitflags;
 
 use crate::text_writer::Punct;
 
-// TODO: a bunch of these are unused (were only used for TS I think).
 bitflags! {
     /// Represents the formatting rule for a list of nodes.
     #[derive(PartialEq, Eq, Copy, Clone)]
-    pub struct ListFormat: u32 {
+    pub struct ListFormat: u16 {
         /// Default value.
         const None = 0;
 
@@ -20,69 +19,47 @@ bitflags! {
         const PreserveLines = 1 << 1;
         const LinesMask = Self::SingleLine.bits() | Self::MultiLine.bits() | Self::PreserveLines.bits();
         // Delimiters
-        /// There is no delimiter between list items (default).
-        const NotDelimited = 0;
-        /// Each list item is space-and-bar (" |") delimited.
-        const BarDelimited = 1 << 2;
-        /// Each list item is space-and-ampersand (" &") delimited.
-        const AmpersandDelimited = 1 << 3;
         /// Each list item is comma (",") delimited.
-        const CommaDelimited = 1 << 4;
-        const DelimitersMask = Self::BarDelimited.bits() | Self::AmpersandDelimited.bits() | Self::CommaDelimited.bits();
+        const CommaDelimited = 1 << 2;
+        const DelimitersMask = Self::CommaDelimited.bits();
 
         /// Write a trailing comma (",") if present.
-        const AllowTrailingComma = 1 << 5;
+        const AllowTrailingComma = 1 << 3;
 
         // Whitespace
         /// The list should be indented.
-        const Indented = 1 << 6;
+        const Indented = 1 << 4;
         /// Inserts a space after the opening brace and before the closing
         /// brace.
-        const SpaceBetweenBraces = 1 << 7;
+        const SpaceBetweenBraces = 1 << 5;
         /// Inserts a space between each sibling node.
-        const SpaceBetweenSiblings = 1 << 8;
+        const SpaceBetweenSiblings = 1 << 6;
 
         // Brackets/Braces
         /// The list is surrounded by "{" and "}".
-        const Braces = 1 << 9;
+        const Braces = 1 << 7;
         /// The list is surrounded by "(" and ")".
-        const Parenthesis = 1 << 10;
-        /// The list is surrounded by "<" and ">".
-        const AngleBrackets = 1 << 11;
+        const Parenthesis = 1 << 8;
         /// The list is surrounded by "[" and "]".
-        const SquareBrackets = 1 << 12;
-        const BracketsMask = Self::Braces.bits() | Self::Parenthesis.bits() | Self::AngleBrackets.bits() | Self::SquareBrackets.bits();
+        const SquareBrackets = 1 << 9;
+        const BracketsMask = Self::Braces.bits() | Self::Parenthesis.bits() | Self::SquareBrackets.bits();
 
         /// Do not emit brackets if the list is undefined.
-        const OptionalIfUndefined = 1 << 13;
+        const OptionalIfUndefined = 1 << 10;
         /// Do not emit brackets if the list is empty.
-        const OptionalIfEmpty = 1 << 14;
-        const Optional = Self::OptionalIfUndefined.bits() | Self::OptionalIfEmpty.bits();
+        const OptionalIfEmpty = 1 << 11;
 
         // Others
-        /// Prefer adding a LineTerminator between synthesized nodes.
-        const PreferNewLine = 1 << 15;
         /// Do not emit a trailing NewLine for a MultiLine list.
-        const NoTrailingNewLine = 1 << 16;
+        const NoTrailingNewLine = 1 << 12;
         /// If the literal is empty, do not add spaces between braces.
-        const NoSpaceIfEmpty = 1 << 17;
-        const SingleElement = 1 << 18;
-        const ForceTrailingComma = 1 << 19;
+        const NoSpaceIfEmpty = 1 << 13;
+        const ForceTrailingComma = 1 << 14;
 
         // Optimisation.
-        const CanSkipTrailingComma = 1 << 21;
+        const CanSkipTrailingComma = 1 << 15;
 
         // Precomputed Formats
-        const Modifiers = Self::SingleLine.bits() | Self::SpaceBetweenSiblings.bits();
-        const HeritageClauses = Self::SingleLine.bits() | Self::SpaceBetweenSiblings.bits();
-        const SingleLineTypeLiteralMembers = Self::SingleLine.bits()
-            | Self::SpaceBetweenBraces.bits()
-            | Self::SpaceBetweenSiblings.bits()
-            | Self::Indented.bits();
-        const MultiLineTypeLiteralMembers = Self::MultiLine.bits() | Self::Indented.bits();
-        const TupleTypeElements = Self::CommaDelimited.bits() | Self::SpaceBetweenSiblings.bits() | Self::SingleLine.bits() | Self::Indented.bits();
-        const UnionTypeConstituents = Self::BarDelimited.bits() | Self::SpaceBetweenSiblings.bits() | Self::SingleLine.bits();
-        const IntersectionTypeConstituents = Self::AmpersandDelimited.bits() | Self::SpaceBetweenSiblings.bits() | Self::SingleLine.bits();
         const ObjectBindingPatternElements = Self::SingleLine.bits()
             | Self::SpaceBetweenBraces.bits()
             | Self::CommaDelimited.bits()
@@ -111,16 +88,9 @@ bitflags! {
             | Self::SingleLine.bits()
             | Self::Parenthesis.bits()
             | Self::OptionalIfUndefined.bits();
-        const TemplateExpressionSpans = Self::SingleLine.bits();
-        const SingleLineBlockStatements = Self::SpaceBetweenBraces.bits() | Self::SpaceBetweenSiblings.bits() | Self::SingleLine.bits();
         const MultiLineBlockStatements = Self::Indented.bits() | Self::MultiLine.bits();
         const VariableDeclarationList = Self::CommaDelimited.bits() | Self::SpaceBetweenSiblings.bits() | Self::SingleLine.bits();
-        const SingleLineFunctionBodyStatements = Self::SingleLine.bits() | Self::SpaceBetweenSiblings.bits() | Self::SpaceBetweenBraces.bits();
-        const MultiLineFunctionBodyStatements = Self::MultiLine.bits();
-        const ClassHeritageClauses = Self::SingleLine.bits() | Self::SpaceBetweenSiblings.bits();
         const ClassMembers = Self::Indented.bits() | Self::MultiLine.bits();
-        const InterfaceMembers = Self::Indented.bits() | Self::MultiLine.bits();
-        const EnumMembers = Self::CommaDelimited.bits() | Self::Indented.bits() | Self::MultiLine.bits();
         const CaseBlockClauses = Self::Indented.bits() | Self::MultiLine.bits();
         const NamedImportsOrExportsElements = Self::CommaDelimited.bits()
             | Self::SpaceBetweenSiblings.bits()
@@ -128,24 +98,7 @@ bitflags! {
             | Self::SingleLine.bits()
             | Self::SpaceBetweenBraces.bits();
         const CaseOrDefaultClauseStatements = Self::Indented.bits() | Self::MultiLine.bits() | Self::NoTrailingNewLine.bits() | Self::OptionalIfEmpty.bits();
-        const HeritageClauseTypes = Self::CommaDelimited.bits() | Self::SpaceBetweenSiblings.bits() | Self::SingleLine.bits();
-        const SourceFileStatements = Self::MultiLine.bits() | Self::NoTrailingNewLine.bits();
-        const TypeArguments = Self::CommaDelimited.bits()
-            | Self::SpaceBetweenSiblings.bits()
-            | Self::SingleLine.bits()
-            | Self::AngleBrackets.bits()
-            | Self::Optional.bits();
-        const TypeParameters = Self::CommaDelimited.bits()
-            | Self::SpaceBetweenSiblings.bits()
-            | Self::SingleLine.bits()
-            | Self::AngleBrackets.bits()
-            | Self::Optional.bits();
         const Parameters = Self::CommaDelimited.bits() | Self::SpaceBetweenSiblings.bits() | Self::SingleLine.bits() | Self::Parenthesis.bits();
-        const IndexSignatureParameters = Self::CommaDelimited.bits()
-            | Self::SpaceBetweenSiblings.bits()
-            | Self::SingleLine.bits()
-            | Self::Indented.bits()
-            | Self::SquareBrackets.bits();
     }
 }
 
@@ -154,7 +107,6 @@ impl ListFormat {
         match self & ListFormat::BracketsMask {
             ListFormat::Braces => Punct::LBrace,
             ListFormat::Parenthesis => Punct::LParen,
-            ListFormat::AngleBrackets => Punct::Lt,
             ListFormat::SquareBrackets => Punct::LBracket,
             _ => unreachable!(),
         }
@@ -163,7 +115,6 @@ impl ListFormat {
         match self & ListFormat::BracketsMask {
             ListFormat::Braces => Punct::RBrace,
             ListFormat::Parenthesis => Punct::RParen,
-            ListFormat::AngleBrackets => Punct::Gt,
             ListFormat::SquareBrackets => Punct::RBracket,
             _ => unreachable!(),
         }

@@ -21,10 +21,6 @@ pub trait SourceMapperExt {
             return true;
         }
 
-        if format.contains(ListFormat::PreserveLines) {
-            return format.contains(ListFormat::PreferNewLine);
-        }
-
         false
     }
 
@@ -42,11 +38,8 @@ pub trait SourceMapperExt {
             if children.is_empty() {
                 return !self.is_on_same_line(parent_node.lo(), parent_node.hi());
             }
-
-            format.contains(ListFormat::PreferNewLine)
-        } else {
-            false
         }
+        false
     }
 
     fn should_write_closing_line_terminator<N>(
@@ -63,11 +56,8 @@ pub trait SourceMapperExt {
             if children.is_empty() {
                 return !self.is_on_same_line(parent_node.lo(), parent_node.hi());
             }
-
-            format.contains(ListFormat::PreferNewLine)
-        } else {
-            false
         }
+        false
     }
 }
 impl SourceMapperExt for dyn SourceMapper {

@@ -2788,25 +2788,11 @@ impl Emitter<'_> {
 
 impl Emitter<'_> {
     fn write_delim(&mut self, f: ListFormat) -> Result {
-        match f & ListFormat::DelimitersMask {
-            ListFormat::None => {}
-            ListFormat::CommaDelimited => self.wr.write_punct(None, Punct::Comma)?,
-            ListFormat::BarDelimited => {
-                if !self.cfg.minify {
-                    self.wr.write_space()?;
-                }
-                self.wr.write_punct(None, Punct::Bar)?;
-            }
-            ListFormat::AmpersandDelimited => {
-                if !self.cfg.minify {
-                    self.wr.write_space()?;
-                }
-                self.wr.write_punct(None, Punct::Ampersand)?;
-            }
-            _ => unreachable!(),
+        if f.intersects(ListFormat::CommaDelimited) {
+            self.wr.write_punct(None, Punct::Comma)
+        } else {
+            Ok(())
         }
-
-        Ok(())
     }
 
     fn emit_var_decl_or_expr(&mut self, node: &VarDeclOrExpr) -> Result {
