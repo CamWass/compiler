@@ -1,6 +1,5 @@
 use bitflags::bitflags;
 use common::chars::char_literals;
-use lexical::NumberFormatBuilder;
 use num_bigint::BigInt;
 use num_traits::Num;
 
@@ -22,21 +21,103 @@ pub fn ecma_string_to_number(string: &str) -> f64 {
     parse_num(string, flags, 0.0)
 }
 
-/// Converts a number to a string, according to the ECMAScript spec.
+/// Converts a number to a decimal string according to the ECMAScript spec.
 ///
 /// See spec:
 /// - [7.1.17 ToString][https://tc39.es/ecma262/#sec-tostring]
 /// - [6.1.6.1.20 Number::toString][https://tc39.es/ecma262/#sec-numeric-types-number-tostring]
-pub fn ecma_number_to_string(v: f64) -> String {
-    const FORMAT: u128 = NumberFormatBuilder::new()
-        .required_exponent_sign(true)
-        .build();
-    let options = lexical::WriteFloatOptions::builder()
-        .trim_floats(true)
-        .inf_string(Some(b"Infinity"))
-        .build()
-        .unwrap();
-    lexical::to_string_with_options::<_, FORMAT>(v, &options)
+pub fn ecma_number_to_string(x: f64) -> String {
+    // 1. If x is NaN, return "NaN".
+    if x.is_nan() {
+        return "NaN".to_string();
+    }
+
+    // 2. If x is +0 or -0, return "0".
+    if x == 0.0 {
+        return "0".to_string();
+    }
+
+    // 3. If x < 0, return "-" + ToString(-x).
+    if x < 0.0 {
+        return format!("-{}", ecma_number_to_string(-x));
+    }
+
+    // 4. If x is +Infinity, return "Infinity".
+    if x.is_infinite() {
+        return "Infinity".to_string();
+    }
+
+    // x is finite, positive, and non-zero from here on.
+
+    // 5. Let n, k, and s be integers such that k ≥ 1,
+    //    10^(k-1) ≤ s < 10^k, s * 10^(n-k) = x, and k is as small
+    //    as possible.
+    //
+    // `{:e}` (no explicit precision) computes the shortest round-trip decimal
+    // digits in the form:
+    //     x = d.ddd...eEXP [1]
+    // where the mantissa has k digits (one before the decimal point and k-1
+    // after it). The spec uses:
+    //     x = s * 10^(n-k) [2]
+    // where s is the k digits of our mantissa, so:
+    //     s = d.ddd...*10^(k-1) [3]
+    // (k-1 to move the decimal point to the right past the k-1 digits).
+    // Substituting [3] into [2] gives:
+    //     x = d.ddd...*10^(k-1) * 10^(n-k) = d.ddd...*10^(n-1) [4]
+    // Finally, comparing [1] and [4], we have:
+    //     x = `d.ddd...eEXP` = d.ddd...*10^(n-1)
+    // so EXP = n-1 and n = EXP+1
+    let sci = format!("{:e}", x);
+    let (mantissa, exp_str) = sci.split_once('e').unwrap();
+    let exp: i64 = exp_str.parse().unwrap();
+
+    let s: String = mantissa.chars().filter(|&c| c != '.').collect();
+    let k = s.len() as i64;
+    let n = exp + 1;
+
+    // 6. If radix ≠ 10 or n is in the inclusive interval from -5 to 21, then:
+    if -5 <= n && n <= 21 {
+        // 6a. If n ≥ k, return s followed by n - k occurrences of "0".
+        if n >= k {
+            return format!("{s}{}", "0".repeat((n - k) as usize));
+        }
+
+        // 6b. If n > 0, return the first n digits of s, followed by ".",
+        //     followed by the remaining k - n digits of s.
+        if 0 < n {
+            let (int_part, frac_part) = s.split_at(n as usize);
+            return format!("{int_part}.{frac_part}");
+        }
+
+        // 6c. Assert n <= 0.
+        // 6d. Return "0.", followed by -n occurrences of "0", followed by s.
+        return format!("0.{}{s}", "0".repeat((-n) as usize));
+    }
+
+    // 7. NOTE: In this case, the input will be represented using scientific E
+    // notation, such as 1.2e+3.
+    // 8. Assert radix is 10.
+
+    let exponent_sign = if n < 0 {
+        // 9a. If n < 0, then let exponentSign be "-".
+        "-"
+    } else {
+        // 10a. Else, let exponentSign be "+".
+        "+"
+    };
+
+    // 11. If k = 1, then:
+    if k == 1 {
+        // 11a. Return the digit s, followed by "e", followed by exponentSign,
+        // followed by abs(n-1).
+        return format!("{s}e{exponent_sign}{}", (n - 1).abs());
+    }
+
+    // 12. Return the most significant digit of s, followed by ".", followed by
+    // the remaining k-1 digits of s, followed by "e", followed by,
+    // exponentSign, followed by abs(n-1).
+    let (first, rest) = s.split_at(1);
+    format!("{first}.{rest}e{exponent_sign}{}", (n - 1).abs())
 }
 
 // TODO: tests, doc comment
@@ -614,15 +695,15 @@ mod tests {
 
     #[test]
     fn convert_number_to_string() {
-        assert_eq!("123", ecma_number_to_string(123_f64));
-        assert_eq!("-123", ecma_number_to_string(-123_f64));
+        assert_eq!(ecma_number_to_string(123_f64), "123");
+        assert_eq!(ecma_number_to_string(-123_f64), "-123");
 
-        assert_eq!("61453", ecma_number_to_string(f64::from(0xF00D)));
+        assert_eq!(ecma_number_to_string(f64::from(0xF00D)), "61453");
 
-        assert_eq!("NaN", ecma_number_to_string(f64::NAN));
+        assert_eq!(ecma_number_to_string(f64::NAN), "NaN");
 
-        assert_eq!("Infinity", ecma_number_to_string(f64::INFINITY));
-        assert_eq!("-Infinity", ecma_number_to_string(f64::NEG_INFINITY));
+        assert_eq!(ecma_number_to_string(f64::INFINITY), "Infinity");
+        assert_eq!(ecma_number_to_string(f64::NEG_INFINITY), "-Infinity");
 
         assert_eq!(ecma_number_to_string(0.0), "0");
         assert_eq!(ecma_number_to_string(f64::from(i32::MIN)), "-2147483648");
@@ -632,6 +713,58 @@ mod tests {
         assert_eq!(ecma_number_to_string(-0.0), "0");
         assert_eq!(ecma_number_to_string(1.1), "1.1");
         assert_eq!(ecma_number_to_string(0.1), "0.1");
+
+        assert_eq!(ecma_number_to_string(100.0), "100");
+        assert_eq!(ecma_number_to_string(123.456), "123.456");
+        assert_eq!(ecma_number_to_string(0.0001), "0.0001");
+        assert_eq!(ecma_number_to_string(1e-6), "0.000001");
+        assert_eq!(ecma_number_to_string(1e-7), "1e-7");
+        assert_eq!(ecma_number_to_string(1e21), "1e+21");
+        assert_eq!(ecma_number_to_string(-42.5), "-42.5");
+        assert_eq!(ecma_number_to_string(5.0), "5");
+
+        assert_eq!(ecma_number_to_string(1.234e30), "1.234e+30");
+        assert_eq!(ecma_number_to_string(1.234e-10), "1.234e-10");
+
+        // n=21
+        assert_eq!(ecma_number_to_string(1e20), "100000000000000000000");
+        // n=21
+        assert_eq!(
+            ecma_number_to_string(123456789012345680000.0),
+            "123456789012345680000"
+        );
+        // n=22
+        assert_eq!(
+            ecma_number_to_string(1234567890123456800000.0),
+            "1.2345678901234568e+21"
+        );
+
+        // Negative output in exponential form.
+        assert_eq!(ecma_number_to_string(-1e21), "-1e+21");
+        assert_eq!(ecma_number_to_string(-1e-7), "-1e-7");
+
+        // Sanity check.
+        assert_eq!(ecma_number_to_string(0.1 + 0.2), "0.30000000000000004");
+        assert_eq!(ecma_number_to_string(1.0 / 3.0), "0.3333333333333333");
+
+        assert_eq!(ecma_number_to_string(f64::MAX), "1.7976931348623157e+308");
+        assert_eq!(
+            ecma_number_to_string(f64::MIN_POSITIVE),
+            "2.2250738585072014e-308"
+        );
+        // Smallest positive subnormal.
+        assert_eq!(ecma_number_to_string(5e-324), "5e-324");
+
+        // 2^53 - 1
+        assert_eq!(
+            ecma_number_to_string(9007199254740991.0),
+            "9007199254740991"
+        );
+        // 2^53
+        assert_eq!(
+            ecma_number_to_string(9007199254740992.0),
+            "9007199254740992"
+        );
     }
 
     macro_rules! eq {
