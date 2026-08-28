@@ -11,21 +11,17 @@ impl Parser<'_> {
         let start = self.input.cur_pos();
         expect!(self, "async");
 
-        let (span, ident, f) = self
-            .parse_fn_or_ts_overload_sig(None, Some(start), true, true)?
-            .expect("Error already handled for overload sig");
-
-        Ok(Box::new(Expr::Fn(FnExpr {
-            ident,
-            function: Box::new(f),
-            node_id: node_id!(self, span),
-        })))
+        self.parse_fn_expr_inner(Some(start))
     }
 
     /// Parse function expression
     pub(super) fn parse_fn_expr(&mut self) -> PResult<Box<Expr>> {
+        self.parse_fn_expr_inner(None)
+    }
+
+    fn parse_fn_expr_inner(&mut self, start_of_async: Option<BytePos>) -> PResult<Box<Expr>> {
         let (span, ident, f) = self
-            .parse_fn_or_ts_overload_sig(None, None, true, true)?
+            .parse_fn_or_ts_overload_sig(None, start_of_async, true, true)?
             .expect("Error already handled for overload sig");
 
         Ok(Box::new(Expr::Fn(FnExpr {
@@ -80,24 +76,22 @@ impl Parser<'_> {
     ) -> PResult<Option<ExportDefaultDecl>> {
         let start_of_async = self.input.cur_pos();
         expect!(self, "async");
-        self.parse_fn_or_ts_overload_sig(Some(start), Some(start_of_async), false, true)
-            .map(|res| {
-                res.map(|(span, ident, f)| ExportDefaultDecl {
-                    decl: DefaultDecl::Fn(FnExpr {
-                        ident,
-                        function: Box::new(f),
-                        node_id: node_id!(self, span),
-                    }),
-                    node_id: node_id!(self, span),
-                })
-            })
+        self.parse_default_fn_inner(start, Some(start_of_async))
     }
 
     pub(super) fn parse_default_fn(
         &mut self,
         start: BytePos,
     ) -> PResult<Option<ExportDefaultDecl>> {
-        self.parse_fn_or_ts_overload_sig(Some(start), None, false, true)
+        self.parse_default_fn_inner(start, None)
+    }
+
+    fn parse_default_fn_inner(
+        &mut self,
+        start: BytePos,
+        start_of_async: Option<BytePos>,
+    ) -> PResult<Option<ExportDefaultDecl>> {
+        self.parse_fn_or_ts_overload_sig(Some(start), start_of_async, false, true)
             .map(|res| {
                 res.map(|(span, ident, f)| ExportDefaultDecl {
                     decl: DefaultDecl::Fn(FnExpr {
