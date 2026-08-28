@@ -210,7 +210,6 @@ name = "common"
 version = "0.1.0"
 dependencies = [
  "atty",
- "scoped-tls",
  "serde",
  "sourcemap",
  "termcolor",
@@ -827,12 +826,6 @@ checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
 dependencies = [
  "winapi-util",
 ]
-
-[[package]]
-name = "scoped-tls"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1cf6437eb19a8f4a6cc0f7dca544973b0b78843adbfeb3683d1a94a0024a294"
 
 [[package]]
 name = "semver"
