@@ -4,7 +4,7 @@ use expression::MaybeParenSpreadElement;
 use util::{AssignProps, is_valid_simple_assignment_target};
 
 impl Parser<'_> {
-    pub(super) fn parse_opt_binding_ident(&mut self) -> PResult<Option<BindingIdent>> {
+    pub(super) fn parse_opt_binding_ident(&mut self) -> PResult<Option<Ident>> {
         let ctx = self.ctx();
         if (self.input.cur().is_word() && !self.input.cur().is_reserved_word(ctx))
             || (self.input.syntax().typescript() && self.is(tok!("this")))
@@ -18,7 +18,7 @@ impl Parser<'_> {
     /// babel: `parseBindingIdentifier`
     ///
     /// spec: `BindingIdentifier`
-    pub(super) fn parse_binding_ident(&mut self) -> PResult<BindingIdent> {
+    pub(super) fn parse_binding_ident(&mut self) -> PResult<Ident> {
         // "yield" and "await" is **lexically** accepted.
         let ident = self.parse_ident(true, true)?;
         if ident.name == id_for_built_in!("arguments") || ident.name == id_for_built_in!("eval") {
@@ -34,13 +34,17 @@ impl Parser<'_> {
             self.emit_err(get_span!(self, ident.node_id), SyntaxError::ExpectedIdent);
         }
 
-        Ok(BindingIdent::from_ident(ident))
+        Ok(ident)
     }
 
     pub(super) fn parse_binding_pat_or_ident(&mut self) -> PResult<Pat> {
         match self.input.cur() {
-            tok!("yield") => self.parse_binding_ident().map(Pat::Ident),
-            t if t.is_word() => self.parse_binding_ident().map(Pat::Ident),
+            tok!("yield") => self
+                .parse_binding_ident()
+                .map(|i| Pat::Ident(BindingIdent::from_ident(i))),
+            t if t.is_word() => self
+                .parse_binding_ident()
+                .map(|i| Pat::Ident(BindingIdent::from_ident(i))),
             tok!('[') => self.parse_array_binding_pat(),
             tok!('{') => self.parse_object_pat(),
             // tok!('(') => {

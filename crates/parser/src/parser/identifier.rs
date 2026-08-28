@@ -134,17 +134,3 @@ pub(super) enum PrivateNameOrIdentifier {
     PrivateName(PrivateName),
     Identifier(Ident),
 }
-
-pub(super) trait MaybeOptionalIdentParser<Ident> {
-    fn parse_maybe_opt_binding_ident(&mut self) -> PResult<Ident>;
-}
-impl MaybeOptionalIdentParser<Ident> for Parser<'_> {
-    fn parse_maybe_opt_binding_ident(&mut self) -> PResult<Ident> {
-        self.parse_binding_ident().map(|i| i.id)
-    }
-}
-impl MaybeOptionalIdentParser<Option<Ident>> for Parser<'_> {
-    fn parse_maybe_opt_binding_ident(&mut self) -> PResult<Option<Ident>> {
-        self.parse_opt_binding_ident().map(|opt| opt.map(|i| i.id))
-    }
-}

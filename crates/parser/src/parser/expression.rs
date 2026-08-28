@@ -392,7 +392,9 @@ impl Parser<'_> {
                 && !self.input.cur().is_reserved_word(ctx)
             {
                 // async a => body
-                let arg = self.parse_binding_ident().map(Pat::Ident)?;
+                let arg = self
+                    .parse_binding_ident()
+                    .map(|i| Pat::Ident(BindingIdent::from_ident(i)))?;
                 let params = vec![Param::from_pat(arg, program_data!(self).data())];
                 expect!(self, "=>");
                 let body = self.parse_fn_body(true, false)?;

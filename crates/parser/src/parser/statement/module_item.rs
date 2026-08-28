@@ -171,7 +171,7 @@ impl Parser<'_> {
             let orig_name = self.parse_ident_name()?;
 
             if self.eat(tok!("as")) {
-                let local = self.parse_binding_ident()?.id;
+                let local = self.parse_binding_ident()?;
                 let hi = get_span!(self, local.node_id).hi();
                 let span = Span::new(start, hi);
                 return Ok(ImportSpecifier::Named(ImportNamedSpecifier {
@@ -213,7 +213,7 @@ impl Parser<'_> {
             flags: self.ctx().flags & !ContextFlags::in_async & !ContextFlags::in_generator,
             ..self.ctx()
         };
-        Ok(self.with_ctx(ctx).parse_binding_ident()?.id)
+        Ok(self.with_ctx(ctx).parse_binding_ident()?)
     }
 
     #[allow(clippy::cognitive_complexity)]

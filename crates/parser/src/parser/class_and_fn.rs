@@ -1,6 +1,6 @@
 use self::expression::BlockStmtOrExpr;
 
-use super::{identifier::MaybeOptionalIdentParser, *};
+use super::*;
 use crate::{context::ContextFlags, error::SyntaxError};
 use expression::MaybeParen;
 use util::AssignProps;
@@ -10,26 +10,68 @@ impl Parser<'_> {
     pub(super) fn parse_async_fn_expr(&mut self) -> PResult<Box<Expr>> {
         let start = self.input.cur_pos();
         expect!(self, "async");
-        self.parse_fn(None, Some(start))
+
+        let (span, ident, f) = self
+            .parse_fn_or_ts_overload_sig(None, Some(start), true, true)?
+            .expect("Error already handled for overload sig");
+
+        Ok(Box::new(Expr::Fn(FnExpr {
+            ident,
+            function: Box::new(f),
+            node_id: node_id!(self, span),
+        })))
     }
 
     /// Parse function expression
     pub(super) fn parse_fn_expr(&mut self) -> PResult<Box<Expr>> {
-        self.parse_fn(None, None)
+        let (span, ident, f) = self
+            .parse_fn_or_ts_overload_sig(None, None, true, true)?
+            .expect("Error already handled for overload sig");
+
+        Ok(Box::new(Expr::Fn(FnExpr {
+            ident,
+            function: Box::new(f),
+            node_id: node_id!(self, span),
+        })))
     }
 
     pub(super) fn parse_async_fn_decl(&mut self) -> PResult<Option<Decl>> {
         let start = self.input.cur_pos();
         expect!(self, "async");
-        self.parse_fn_or_ts_overload_sig(None, Some(start))
+        self.parse_fn_or_ts_overload_sig(None, Some(start), false, false)
+            .map(|res| {
+                res.map(|(span, ident, f)| {
+                    Decl::Fn(FnDecl {
+                        ident: ident.unwrap(),
+                        function: Box::new(f),
+                        node_id: node_id!(self, span),
+                    })
+                })
+            })
     }
 
     pub(super) fn parse_fn_decl(&mut self) -> PResult<Decl> {
-        self.parse_fn(None, None)
+        let (span, ident, f) = self
+            .parse_fn_or_ts_overload_sig(None, None, false, false)?
+            .expect("Error already handled for overload sig");
+        Ok(Decl::Fn(FnDecl {
+            ident: ident.unwrap(),
+            function: Box::new(f),
+            node_id: node_id!(self, span),
+        }))
     }
 
     pub(super) fn parse_fn_decl_or_ts_overload_sig(&mut self) -> PResult<Option<Decl>> {
-        self.parse_fn_or_ts_overload_sig(None, None)
+        self.parse_fn_or_ts_overload_sig(None, None, false, false)
+            .map(|res| {
+                res.map(|(span, ident, f)| {
+                    Decl::Fn(FnDecl {
+                        ident: ident.unwrap(),
+                        function: Box::new(f),
+                        node_id: node_id!(self, span),
+                    })
+                })
+            })
     }
 
     pub(super) fn parse_default_async_fn(
@@ -38,14 +80,34 @@ impl Parser<'_> {
     ) -> PResult<Option<ExportDefaultDecl>> {
         let start_of_async = self.input.cur_pos();
         expect!(self, "async");
-        self.parse_fn_or_ts_overload_sig(Some(start), Some(start_of_async))
+        self.parse_fn_or_ts_overload_sig(Some(start), Some(start_of_async), false, true)
+            .map(|res| {
+                res.map(|(span, ident, f)| ExportDefaultDecl {
+                    decl: DefaultDecl::Fn(FnExpr {
+                        ident,
+                        function: Box::new(f),
+                        node_id: node_id!(self, span),
+                    }),
+                    node_id: node_id!(self, span),
+                })
+            })
     }
 
     pub(super) fn parse_default_fn(
         &mut self,
         start: BytePos,
     ) -> PResult<Option<ExportDefaultDecl>> {
-        self.parse_fn_or_ts_overload_sig(Some(start), None)
+        self.parse_fn_or_ts_overload_sig(Some(start), None, false, true)
+            .map(|res| {
+                res.map(|(span, ident, f)| ExportDefaultDecl {
+                    decl: DefaultDecl::Fn(FnExpr {
+                        ident,
+                        function: Box::new(f),
+                        node_id: node_id!(self, span),
+                    }),
+                    node_id: node_id!(self, span),
+                })
+            })
     }
 
     pub(super) fn parse_class_decl(
@@ -53,11 +115,21 @@ impl Parser<'_> {
         start: BytePos,
         class_start: BytePos,
     ) -> PResult<Decl> {
-        self.parse_class(start, class_start)
+        let (span, ident, class) = self.parse_class(start, class_start, false)?;
+        Ok(Decl::Class(ClassDecl {
+            ident: ident.unwrap(),
+            class: Box::new(class),
+            node_id: node_id!(self, span),
+        }))
     }
 
     pub(super) fn parse_class_expr(&mut self, start: BytePos) -> PResult<Box<Expr>> {
-        self.parse_class(start, start)
+        let (span, ident, class) = self.parse_class(start, start, true)?;
+        Ok(Box::new(Expr::Class(Box::new(ClassExpr {
+            ident,
+            class,
+            node_id: node_id!(self, span),
+        }))))
     }
 
     pub(super) fn parse_default_class(
@@ -65,20 +137,36 @@ impl Parser<'_> {
         start: BytePos,
         class_start: BytePos,
     ) -> PResult<ExportDefaultDecl> {
-        self.parse_class(start, class_start)
+        let (span, ident, class) = self.parse_class(start, class_start, true)?;
+        Ok(ExportDefaultDecl {
+            decl: DefaultDecl::Class(ClassExpr {
+                ident,
+                class,
+                node_id: node_id!(self, span),
+            }),
+            node_id: node_id!(self, span),
+        })
     }
 
-    fn parse_class<T>(&mut self, start: BytePos, class_start: BytePos) -> PResult<T>
-    where
-        T: OutputType,
-        Self: MaybeOptionalIdentParser<T::Ident>,
-    {
+    fn parse_class(
+        &mut self,
+        start: BytePos,
+        class_start: BytePos,
+        name_is_optional: bool,
+    ) -> PResult<(Span, Option<Ident>, Class)> {
         self.strict_mode().parse_with(|parser| {
             expect!(parser, "class");
 
-            let ident = parser.parse_maybe_opt_binding_ident()?;
-            if let Some(span) = ident.invalid_class_name(parser) {
-                parser.emit_err(span, SyntaxError::TS2414);
+            let ident = if name_is_optional {
+                parser.parse_opt_binding_ident()?
+            } else {
+                Some(parser.parse_binding_ident()?)
+            };
+
+            if let Some(i) = &ident {
+                if i.name == id_for_built_in!("any") {
+                    parser.emit_err(get_span!(parser, (&i).node_id), SyntaxError::TS2414);
+                }
             }
 
             // Type params.
@@ -160,7 +248,7 @@ impl Parser<'_> {
             let body = parser.with_ctx(ctx).parse_class_body()?;
             expect!(parser, '}');
             let end = parser.input.last_pos();
-            Ok(T::finish_class(
+            Ok((
                 parser.span(start),
                 ident,
                 Class {
@@ -168,7 +256,6 @@ impl Parser<'_> {
                     extends: extends_clause,
                     body,
                 },
-                parser,
             ))
         })
     }
@@ -714,29 +801,13 @@ impl Parser<'_> {
             || (self.is(tok!('=')) || self.is_semi_with_asi() || self.is(tok!('}')))
     }
 
-    fn parse_fn<T>(
+    fn parse_fn_or_ts_overload_sig(
         &mut self,
         start_of_output_type: Option<BytePos>,
         start_of_async: Option<BytePos>,
-    ) -> PResult<T>
-    where
-        T: OutputType,
-        Self: MaybeOptionalIdentParser<T::Ident>,
-    {
-        Ok(self
-            .parse_fn_or_ts_overload_sig(start_of_output_type, start_of_async)?
-            .expect("Error already handled for overload sig"))
-    }
-
-    fn parse_fn_or_ts_overload_sig<T>(
-        &mut self,
-        start_of_output_type: Option<BytePos>,
-        start_of_async: Option<BytePos>,
-    ) -> PResult<Option<T>>
-    where
-        T: OutputType,
-        Self: MaybeOptionalIdentParser<T::Ident>,
-    {
+        is_fn_expr: bool,
+        name_is_optional: bool,
+    ) -> PResult<Option<(Span, Option<Ident>, Function)>> {
         let start = start_of_async.unwrap_or_else(|| self.input.cur_pos());
         self.assert_and_bump(tok!("function"));
         let is_async = start_of_async.is_some();
@@ -756,13 +827,31 @@ impl Parser<'_> {
         ctx.flags.set(ContextFlags::in_async, is_async);
         ctx.flags.set(ContextFlags::in_generator, is_generator);
 
-        let ident = if T::is_fn_expr() {
+        // From babel..
+        //
+        // When parsing function expression, the binding identifier is parsed
+        // according to the rules inside the function.
+        // e.g. (function* yield() {}) is invalid because "yield" is disallowed
+        // in generators.
+        // This isn't the case with function declarations: function* yield() {}
+        // is valid because yield is parsed as if it was outside the generator.
+        // Therefore, this.state.inGenerator is set before or after parsing the
+        // function id according to the "isStatement" parameter.
+        let ident = if is_fn_expr {
             let mut ctx = ctx;
             ctx.flags.set(ContextFlags::in_generator, is_generator);
-            self.with_ctx(ctx).parse_maybe_opt_binding_ident()?
+            if name_is_optional {
+                self.with_ctx(ctx).parse_opt_binding_ident()?
+            } else {
+                Some(self.with_ctx(ctx).parse_binding_ident()?)
+            }
         } else {
             // function declaration does not change context for `BindingIdentifier`.
-            self.parse_maybe_opt_binding_ident()?
+            if name_is_optional {
+                self.parse_opt_binding_ident()?
+            } else {
+                Some(self.parse_binding_ident()?)
+            }
         };
 
         self.with_ctx(ctx).parse_with(|parser| {
@@ -782,14 +871,7 @@ impl Parser<'_> {
 
             // let body = p.parse_fn_body(is_async, is_generator)?;
 
-            Ok(f.map(|f| {
-                T::finish_fn(
-                    parser.span(start_of_output_type.unwrap_or(start)),
-                    ident,
-                    f,
-                    parser,
-                )
-            }))
+            Ok(f.map(|f| (parser.span(start_of_output_type.unwrap_or(start)), ident, f)))
         })
     }
 
@@ -1007,126 +1089,6 @@ impl Parser<'_> {
                 kind,
             }),
         }))
-    }
-}
-
-trait IsInvalidClassName {
-    fn invalid_class_name(&self, parser: &Parser) -> Option<Span>;
-}
-
-impl IsInvalidClassName for Ident {
-    fn invalid_class_name(&self, parser: &Parser) -> Option<Span> {
-        match self.name {
-            id_for_built_in!("any") => Some(get_span!(parser, self.node_id)),
-            _ => None,
-        }
-    }
-}
-impl IsInvalidClassName for Option<Ident> {
-    fn invalid_class_name(&self, parser: &Parser) -> Option<Span> {
-        if let Some(i) = self.as_ref() {
-            return i.invalid_class_name(parser);
-        }
-
-        None
-    }
-}
-
-trait OutputType: GetNodeId {
-    type Ident: IsInvalidClassName;
-
-    /// From babel..
-    ///
-    /// When parsing function expression, the binding identifier is parsed
-    /// according to the rules inside the function.
-    /// e.g. (function* yield() {}) is invalid because "yield" is disallowed in
-    /// generators.
-    /// This isn't the case with function declarations: function* yield() {} is
-    /// valid because yield is parsed as if it was outside the generator.
-    /// Therefore, this.state.inGenerator is set before or after parsing the
-    /// function id according to the "isStatement" parameter.
-    fn is_fn_expr() -> bool {
-        false
-    }
-
-    fn finish_fn(span: Span, ident: Self::Ident, f: Function, parser: &mut Parser) -> Self;
-    fn finish_class(span: Span, ident: Self::Ident, class: Class, parser: &mut Parser) -> Self;
-}
-
-impl OutputType for Box<Expr> {
-    type Ident = Option<Ident>;
-
-    fn is_fn_expr() -> bool {
-        true
-    }
-
-    fn finish_fn(
-        span: Span,
-        ident: Option<Ident>,
-        function: Function,
-        parser: &mut Parser,
-    ) -> Self {
-        Box::new(Expr::Fn(FnExpr {
-            ident,
-            function: Box::new(function),
-            node_id: node_id!(parser, span),
-        }))
-    }
-    fn finish_class(span: Span, ident: Option<Ident>, class: Class, parser: &mut Parser) -> Self {
-        Box::new(Expr::Class(Box::new(ClassExpr {
-            ident,
-            class,
-            node_id: node_id!(parser, span),
-        })))
-    }
-}
-
-impl OutputType for ExportDefaultDecl {
-    type Ident = Option<Ident>;
-
-    fn finish_fn(
-        span: Span,
-        ident: Option<Ident>,
-        function: Function,
-        parser: &mut Parser,
-    ) -> Self {
-        ExportDefaultDecl {
-            decl: DefaultDecl::Fn(FnExpr {
-                ident,
-                function: Box::new(function),
-                node_id: node_id!(parser, span),
-            }),
-            node_id: node_id!(parser, span),
-        }
-    }
-    fn finish_class(span: Span, ident: Option<Ident>, class: Class, parser: &mut Parser) -> Self {
-        ExportDefaultDecl {
-            decl: DefaultDecl::Class(ClassExpr {
-                ident,
-                class,
-                node_id: node_id!(parser, span),
-            }),
-            node_id: node_id!(parser, span),
-        }
-    }
-}
-
-impl OutputType for Decl {
-    type Ident = Ident;
-
-    fn finish_fn(span: Span, ident: Ident, function: Function, parser: &mut Parser) -> Self {
-        Decl::Fn(FnDecl {
-            ident,
-            function: Box::new(function),
-            node_id: node_id!(parser, span),
-        })
-    }
-    fn finish_class(span: Span, ident: Ident, class: Class, parser: &mut Parser) -> Self {
-        Decl::Class(ClassDecl {
-            ident,
-            class: Box::new(class),
-            node_id: node_id!(parser, span),
-        })
     }
 }
 
