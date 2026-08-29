@@ -26,7 +26,7 @@ export const INPUTS = {
 }`,
     input: "",
   },
-  blank: {
+  cfg: {
     label: "Control flow",
     config: `{
   "pretty_print": true,
