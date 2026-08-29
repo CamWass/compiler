@@ -220,14 +220,6 @@ impl<'ast> ParentStack<'ast> {
         });
     }
 
-    // TODO: replace with push_with_child
-    pub fn push_with_child_node(&mut self, parent: Node<'ast>, child: Node<'ast>) {
-        self.0.push(ParentNode {
-            node: parent,
-            children: vec![child],
-        });
-    }
-
     pub fn push_with_optional_child(&mut self, parent: Node<'ast>, child: Option<Node<'ast>>) {
         let children = match child {
             Some(child) => {
@@ -248,7 +240,7 @@ impl<'a, 'ast> IntoIterator for &'a ParentStack<'ast> {
     type IntoIter = std::slice::Iter<'a, ParentNode<'ast>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.as_slice().iter()
+        self.0.iter()
     }
 }
 

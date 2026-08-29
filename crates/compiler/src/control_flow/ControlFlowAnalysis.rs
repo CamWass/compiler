@@ -342,7 +342,7 @@ where
             self.exception_handler
                 .push(ExceptionHandler::new(&self.parent_stack, node));
 
-            self.parent_stack.push_with_child_node(node, body_node);
+            self.parent_stack.push_with_child(node, body_node);
             // Only traverse the body.
             body.visit_with(self);
             self.parent_stack.pop();
@@ -1116,7 +1116,7 @@ where
         self.prioritize_node(catch_node);
 
         self.parent_stack
-            .push_with_child_node(catch_node, Node::from(&node.body));
+            .push_with_child(catch_node, Node::from(&node.body));
 
         // Skip exception binding, only traverse the body.
         node.body.visit_with(self);
@@ -1162,7 +1162,7 @@ where
         self.exception_handler
             .push(ExceptionHandler::new(&self.parent_stack, try_node));
         self.parent_stack
-            .push_with_child_node(try_node, Node::from(&node.block));
+            .push_with_child(try_node, Node::from(&node.block));
 
         node.block.visit_with(self);
 
