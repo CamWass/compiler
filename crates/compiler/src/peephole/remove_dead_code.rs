@@ -1155,6 +1155,81 @@ impl Visitor<'_> {
             }
         }
     }
+
+    fn simplify_try_stmt(&mut self, stmt: &mut Stmt) -> OptimiseStmtResult {
+        let try_stmt = unwrap_as!(stmt, Stmt::Try(s), s);
+
+        match &mut try_stmt.tail {
+            TryStmtTail::Catch(catch) => {
+                if try_stmt.block.stmts.is_empty() {
+                    if catch.body.stmts.is_empty() {
+                        // try {} catch {}
+                        return OptimiseStmtResult::Replace(Vec::new());
+                    } else {
+                        // try {} catch { something }
+                        let mut extracted_vars = Vec::new();
+                        self.collect_vars_declared_in_block(&catch.body, &mut extracted_vars);
+                        return OptimiseStmtResult::Replace(extracted_vars);
+                    }
+                } else {
+                    return OptimiseStmtResult::Keep(Vec::new());
+                }
+            }
+            TryStmtTail::Finally(finally) => {
+                if try_stmt.block.stmts.is_empty() {
+                    if finally.stmts.is_empty() {
+                        // try {} finally {}
+                        return OptimiseStmtResult::Replace(Vec::new());
+                    } else {
+                        // try {} finally { something }
+                        *stmt = Stmt::Block(finally.as_mut().take());
+                        return OptimiseStmtResult::Keep(Vec::new());
+                    }
+                } else {
+                    if finally.stmts.is_empty() {
+                        // try { something } finally {}
+                        *stmt = Stmt::Block(try_stmt.block.take());
+                    }
+                    return OptimiseStmtResult::Keep(Vec::new());
+                }
+            }
+            TryStmtTail::CatchFinally(catch, finally) => {
+                // try { something } catch {} finally {}
+                if try_stmt.block.stmts.is_empty() {
+                    if finally.stmts.is_empty() {
+                        if !catch.body.stmts.is_empty() {
+                            // try {} catch { something } finally {}
+                            let mut extracted_vars = Vec::new();
+                            self.collect_vars_declared_in_block(&catch.body, &mut extracted_vars);
+                            return OptimiseStmtResult::Replace(extracted_vars);
+                        } else {
+                            // try {} catch {} finally {}
+                            return OptimiseStmtResult::Replace(Vec::new());
+                        }
+                    } else {
+                        if !catch.body.stmts.is_empty() {
+                            // try {} catch { something } finally { something }
+                            let mut extracted_vars = Vec::new();
+                            self.collect_vars_declared_in_block(&catch.body, &mut extracted_vars);
+                            *stmt = Stmt::Block(finally.as_mut().take());
+                            return OptimiseStmtResult::Keep(extracted_vars);
+                        } else {
+                            // try {} catch {} finally { something }
+                            *stmt = Stmt::Block(finally.as_mut().take());
+                            return OptimiseStmtResult::Keep(Vec::new());
+                        }
+                    }
+                } else {
+                    if finally.stmts.is_empty() {
+                        // try { something } catch {} finally {}
+                        // try { something } catch { something } finally {}
+                        try_stmt.tail = TryStmtTail::Catch(catch.take());
+                    }
+                    return OptimiseStmtResult::Keep(Vec::new());
+                }
+            }
+        }
+    }
 }
 
 impl VisitMut<'_> for Visitor<'_> {
@@ -1280,6 +1355,34 @@ impl VisitMut<'_> for Visitor<'_> {
 
                 i += 1;
                 continue;
+            }
+
+            if let Stmt::Try(_) = &mut stmts[i] {
+                let result = self.simplify_try_stmt(&mut stmts[i]);
+
+                match result {
+                    OptimiseStmtResult::Keep(new_stmts) => {
+                        let num_new_stmts = new_stmts.len();
+                        stmts.splice(i..i, new_stmts);
+
+                        // Skip over current and new stmts.
+                        i += num_new_stmts + 1;
+                        continue;
+                    }
+                    OptimiseStmtResult::Replace(replacements) => {
+                        let num_replacements = replacements.len();
+                        stmts.splice(i..=i, replacements);
+
+                        if num_replacements > 0 {
+                            // Skip over the new stmts.
+                            i += num_replacements;
+                            continue;
+                        } else {
+                            i += 1;
+                            continue;
+                        }
+                    }
+                }
             }
 
             i += 1;
@@ -1409,6 +1512,35 @@ impl VisitMut<'_> for Visitor<'_> {
                 i += 1;
                 continue;
             }
+
+            if let ModuleItem::Stmt(stmt @ Stmt::Try(_)) = &mut items[i] {
+                let result = self.simplify_try_stmt(stmt);
+
+                match result {
+                    OptimiseStmtResult::Keep(new_stmts) => {
+                        let num_new_stmts = new_stmts.len();
+                        items.splice(i..i, new_stmts.into_iter().map(ModuleItem::Stmt));
+
+                        // Skip over current and new stmts.
+                        i += num_new_stmts + 1;
+                        continue;
+                    }
+                    OptimiseStmtResult::Replace(replacements) => {
+                        let num_replacements = replacements.len();
+                        items.splice(i..=i, replacements.into_iter().map(ModuleItem::Stmt));
+
+                        if num_replacements > 0 {
+                            // Skip over the new stmts.
+                            i += num_replacements;
+                            continue;
+                        } else {
+                            i += 1;
+                            continue;
+                        }
+                    }
+                }
+            }
+
             i += 1;
         }
     }
@@ -3348,7 +3480,7 @@ loop: {
 
     #[test]
     fn testFoldAssign() {
-        // test_transform("x=x", "");
+        test_transform("x=x", "");
         test_same("x=xy");
         test_same("x=x + 1");
         test_same("x.a=x.a");
@@ -3356,24 +3488,29 @@ loop: {
         test_transform("y=1 + (x=x)", "y=1 + x");
     }
 
-    //   #[test]
-    //   fn  testTryCatchFinally() {
-    //     test_same("try {foo()} catch (e) {bar()}");
-    //     test_same("try { try {foo()} catch (e) {bar()}} catch (x) {bar()}");
-    //     test_transform("try {var x = 1} finally {}", "var x = 1;");
-    //     test_same("try {var x = 1} finally {x()}");
-    //     test_transform( //
-    //         "function f() { return; try{ var x = 1; }finally{} }", "function f() { var x; return; }");
-    //     test_transform("try {} finally {x()}", "x()");
-    //     test_transform("try {} catch (e) { bar()} finally {x()}", "x()");
-    //     test_transform("try {} catch (e) { bar()}", "");
-    //     test_transform("try {} catch (e) { var a = 0; } finally {x()}", "var a; x()");
-    //     test_transform("try {} catch (e) {}", "");
-    //     test_transform("try {} finally {}", "");
-    //     test_transform("try {} catch (e) {} finally {}", "");
-    //     test_transform("L1:try {} catch (e) {} finally {}", "");
-    //     test_transform("L2:L1:try {} catch (e) {} finally {}", "");
-    //   }
+    #[test]
+    fn testTryCatchFinally() {
+        test_same("try {foo()} catch (e) {bar()}");
+        test_same("try { try {foo()} catch (e) {bar()}} catch (x) {bar()}");
+        test_transform("try {var x = 1} finally {}", "var x = 1;");
+        test_same("try {var x = 1} finally {x()}");
+        // test_transform(
+        //     "function f() { return; try{ var x = 1; }finally{} }",
+        //     "function f() { var x; return; }",
+        // );
+        test_transform("try {} finally {x()}", "x()");
+        test_transform("try {} catch (e) { bar()} finally {x()}", "x()");
+        test_transform("try {} catch (e) { bar()}", "");
+        test_transform(
+            "try {} catch (e) { var a = 0; } finally {x()}",
+            "var a; x()",
+        );
+        test_transform("try {} catch (e) {}", "");
+        test_transform("try {} finally {}", "");
+        test_transform("try {} catch (e) {} finally {}", "");
+        // test_transform("L1:try {} catch (e) {} finally {}", "");
+        // test_transform("L2:L1:try {} catch (e) {} finally {}", "");
+    }
 
     #[test]
     fn testObjectLiteral() {

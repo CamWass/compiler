@@ -272,6 +272,16 @@ pub struct CatchClause {
     pub body: BlockStmt,
 }
 
+impl Take for CatchClause {
+    fn dummy() -> Self {
+        Self {
+            node_id: NodeId::DUMMY,
+            param: None,
+            body: BlockStmt::dummy(),
+        }
+    }
+}
+
 #[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub enum VarDeclOrPat {
     VarDecl(VarDecl),
