@@ -1660,6 +1660,85 @@ impl VisitMut<'_> for Visitor<'_> {
             _ => node.visit_mut_children_with(self),
         }
     }
+
+    fn visit_mut_object_pat(&mut self, node: &mut ObjectPat) {
+        node.visit_mut_children_with(self);
+
+        let has_rest_prop = node
+            .props
+            .iter()
+            .any(|p| matches!(p, ObjectPatProp::Rest(_)));
+
+        if has_rest_prop {
+            return;
+        }
+
+        node.props.retain(|prop| {
+            let ObjectPatProp::KeyValue(prop) = prop else {
+                unreachable!();
+            };
+
+            // TODO: we can check or side effects here and continue if the key
+            // is side-effect free.
+            if matches!(prop.key, PropName::Computed(_)) {
+                // Don't remove computed properties, since they might have side
+                // effects.
+                return true;
+            }
+
+            if isRemovableDestructuringTarget(&prop.value) {
+                // e.g. `const {f: {}} = obj;`
+                return false;
+            }
+
+            true
+        });
+    }
+
+    fn visit_mut_array_pat(&mut self, node: &mut ArrayPat) {
+        node.visit_mut_children_with(self);
+
+        // Remove trailing empty patterns and array/object patterns with no
+        // children.
+        // We can only remove patterns if they're trailing - removing
+        // non-trailing elements changes the order that the other elements
+        // are assigned in.
+        let number_to_remove = node
+            .elems
+            .iter()
+            .rev()
+            .take_while(|element| {
+                if let Some(element) = element {
+                    isRemovableDestructuringTarget(element)
+                } else {
+                    true
+                }
+            })
+            .count();
+
+        node.elems.truncate(node.elems.len() - number_to_remove);
+    }
+}
+
+fn isRemovableDestructuringTarget(pat: &Pat) -> bool {
+    let mut target = pat;
+    let mut default_value = None;
+
+    if let Pat::Assign(assign) = pat {
+        target = &assign.left;
+        default_value = Some(&assign.right)
+    }
+
+    match target {
+        Pat::Array(array_pat) if !array_pat.elems.is_empty() => return false,
+        Pat::Object(object_pat) if !object_pat.props.is_empty() => return false,
+        Pat::Ident(_) | Pat::Rest(_) | Pat::Assign(_) | Pat::Invalid(_) | Pat::Expr(_) => {
+            return false;
+        }
+        _ => {}
+    }
+
+    default_value.is_none_or(|v| !expr_may_have_side_effects(v))
 }
 
 /**
@@ -3578,39 +3657,40 @@ loop: {
         test_same("for ({} of foo()) {}");
     }
 
-    //   #[test]
-    //   fn  testEmptySlotInArrayPatternRemoved() {
-    //     test_transform("[,,] = foo();", "foo()");
-    //     test_transform("[a,b,,] = foo();", "[a,b] = foo();");
-    //     test_transform("[a,[],b,[],[]] = foo();", "[a,[],b] = foo();");
-    //     test_transform("[a,{},b,{},{}] = foo();", "[a,{},b] = foo();");
-    //     test_transform("function f([,,,]) {}", "function f([]) {}");
-    //     test_same("[[], [], [], ...rest] = foo()");
-    //   }
+    #[test]
+    fn testEmptySlotInArrayPatternRemoved() {
+        test_transform("[,,] = foo();", "foo()");
+        test_transform("[a,b,,] = foo();", "[a,b] = foo();");
+        test_transform("[a,[],b,[],[]] = foo();", "[a,[],b] = foo();");
+        test_transform("[a,{},b,{},{}] = foo();", "[a,{},b] = foo();");
+        test_transform("function f([,,,]) {}", "function f([]) {}");
+        test_same("[[], [], [], ...rest] = foo()");
+    }
 
-    //   #[test]
-    //   fn  testEmptySlotInArrayPatternWithDefaultValueMaybeRemoved() {
-    //     test_transform("[a,[] = 0] = [];", "[a] = [];");
-    //     test_same("[a,[] = foo()] = [];");
-    //   }
+    #[test]
+    fn testEmptySlotInArrayPatternWithDefaultValueMaybeRemoved() {
+        test_transform("[a,[] = 0] = [];", "[a] = [];");
+        test_same("[a,[] = foo()] = [];");
+    }
 
-    //   #[test]
-    //   fn  testEmptyKeyInObjectPatternRemoved() {
-    //     test_transform("const {f: {}} = {};", "");
-    //     test_transform("const {f: []} = {};", "");
-    //     test_transform("const {f: {}, g} = {};", "const {g} = {};");
-    //     test_transform("const {f: [], g} = {};", "const {g} = {};");
-    //     test_same("const {[foo()]: {}} = {};");
-    //   }
+    #[test]
+    fn testEmptyKeyInObjectPatternRemoved() {
+        test_transform("const {f: {}} = {};", "");
+        test_transform("const {f: []} = {};", "");
+        test_transform("const {f: {}, g} = {};", "const {g} = {};");
+        test_transform("const {f: [], g} = {};", "const {g} = {};");
+        test_same("const {[foo()]: {}} = {};");
+    }
 
-    //   #[test]
-    //   fn  testEmptyKeyInObjectPatternWithDefaultValueMaybeRemoved() {
-    //     test_transform("const {f: {} = 0} = {};", "");
-    //     // In theory the following case could be reduced to `foo()`, but that gets more complicated to
-    //     // implement for object patterns with multiple keys with side effects.
-    //     // Instead the pass backs off for any default with a possible side effect
-    //     test_same("const {f: {} = foo()} = {};");
-    //   }
+    #[test]
+    fn testEmptyKeyInObjectPatternWithDefaultValueMaybeRemoved() {
+        test_transform("const {f: {} = 0} = {};", "");
+        // In theory the following case could be reduced to `foo()`, but that
+        // gets more complicated to implement for object patterns with multiple
+        // keys with side effects. Instead the pass backs off for any default
+        // with a possible side effect
+        test_same("const {f: {} = foo()} = {};");
+    }
 
     #[test]
     fn testEmptyKeyInObjectPatternNotRemovedWithObjectRest() {
