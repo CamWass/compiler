@@ -4,6 +4,8 @@ use ast::*;
 use codegen::{Emitter, text_writer::JsWriter};
 use common::{FileName, SourceMap, errors::Handler};
 use parser::{Parser, Syntax};
+use rustc_hash::FxHashSet;
+use visit::{Visit, VisitWith};
 
 struct Tester<'a> {
     cm: Rc<SourceMap>,
@@ -86,8 +88,10 @@ where
 {
     Tester::run(|tester| {
         let expected = tester.apply_transform(|_, _| {}, "output.js", expected)?;
-
         let actual = tester.apply_transform(transform, "input.js", input)?;
+
+        expected.0.visit_with(&mut Validator::default());
+        actual.0.visit_with(&mut Validator::default());
 
         let (actual_src, expected_src) = (
             tester.print(&actual.0, actual.1),
@@ -115,4 +119,23 @@ where
 
         Err(())
     });
+}
+
+#[derive(Default)]
+struct Validator {
+    node_ids: FxHashSet<NodeId>,
+}
+
+impl Visit<'_> for Validator {
+    fn visit_node_id(&mut self, node_id: &NodeId) {
+        assert!(*node_id != NodeId::DUMMY);
+
+        if !self.node_ids.insert(*node_id) {
+            panic!("Duplicate node ID {:?} has already been seen", node_id);
+        }
+    }
+
+    fn visit_name_id(&mut self, name: &NameId) {
+        assert!(*name != NameId::DUMMY);
+    }
 }
