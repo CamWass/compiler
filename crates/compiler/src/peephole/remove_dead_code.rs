@@ -1657,6 +1657,47 @@ impl VisitMut<'_> for Visitor<'_> {
                     *node = seq.exprs[0].take();
                 }
             }
+            Expr::OptChain(opt_chain) => {
+                opt_chain.visit_mut_children_with(self);
+
+                let obj_or_callee = match opt_chain.expr.as_mut() {
+                    Expr::Member(member) => Some(&mut member.obj),
+                    Expr::Call(call) => Some(&mut call.callee),
+                    _ => None,
+                };
+
+                let Some(ExprOrSuper::Expr(obj_or_callee)) = obj_or_callee else {
+                    return;
+                };
+
+                let expr_is_null_or_undefined = match obj_or_callee.as_ref() {
+                    Expr::Ident(i) => i.name == id_for_built_in!("undefined"),
+                    Expr::Lit(Lit::Null(_)) => true,
+                    Expr::Unary(unary) => unary.op == UnaryOp::Void,
+                    _ => false,
+                };
+
+                if !expr_is_null_or_undefined {
+                    return;
+                }
+
+                if expr_may_have_side_effects(obj_or_callee) {
+                    // Simplify `(void sideEffectFunction())?.()` to
+                    // `(void sideEffectFunction())`.
+                    *node = obj_or_callee.as_mut().take();
+                } else {
+                    // Simplify `(void 0)?.()`, `(null)?.()`, `(void 0)?.x`, and
+                    // `null?.x` to `void 0`.
+                    *node = Expr::Unary(UnaryExpr {
+                        node_id: self.program_data.new_id(DUMMY_SP),
+                        op: UnaryOp::Void,
+                        arg: Box::new(Expr::Lit(Lit::Num(Number {
+                            node_id: self.program_data.new_id(DUMMY_SP),
+                            value: 0.0,
+                        }))),
+                    });
+                }
+            }
             _ => node.visit_mut_children_with(self),
         }
     }
@@ -4030,31 +4071,31 @@ class C {
     //         ");
     //   }
 
-    // #[test]
-    // fn testRemoveUnreachableOptionalChainingCall() {
-    //     test_transform("(null)?.();", "");
-    //     test_transform("(void 0)?.();", "");
-    //     test_transform("(undefined)?.();", "");
-    //     test_transform("(void 0)?.(0)", "");
-    //     test_transform("(void 0)?.(function f() {})", "");
-    //     test_transform("(null)?.x;", "");
-    //     test_transform("(void 0)?.x;", "");
-    //     test_transform("(null)?.['x'];", "");
-    //     test_transform("(void 0)?.['x'];", "");
-    //     test_transform("(null)?.[x];", "");
-    //     test_transform("(void 0)?.[x];", "");
-    //     // arguments with unknown side effects are also removed
-    //     test_transform("(void 0)?.(f(), g())", "");
+    #[test]
+    fn testRemoveUnreachableOptionalChainingCall() {
+        test_transform("(null)?.();", "");
+        test_transform("(void 0)?.();", "");
+        test_transform("(undefined)?.();", "");
+        test_transform("(void 0)?.(0)", "");
+        test_transform("(void 0)?.(function f() {})", "");
+        test_transform("(null)?.x;", "");
+        test_transform("(void 0)?.x;", "");
+        test_transform("(null)?.['x'];", "");
+        test_transform("(void 0)?.['x'];", "");
+        test_transform("(null)?.[x];", "");
+        test_transform("(void 0)?.[x];", "");
+        // arguments with unknown side effects are also removed
+        test_transform("(void 0)?.(f(), g())", "");
 
-    //     // void arguments with unknown side effects are preserved
-    //     test_transform("(void f())?.();", "f();");
-    //     test_transform("g((void f())?.());", "g(void f());");
+        // void arguments with unknown side effects are preserved
+        test_transform("(void f())?.();", "f();");
+        test_transform("g((void f())?.());", "g(void f());");
 
-    //     test_same("(f(), null)?.()");
-    //     test_same("f?.()");
-    //     test_transform("a?.x;", "");
-    //     test_transform("a?.['x'];", "");
-    // }
+        test_same("(f(), null)?.()");
+        test_same("f?.()");
+        test_transform("a?.x;", "");
+        test_transform("a?.['x'];", "");
+    }
 
     #[test]
     fn testRemoveUnusedVoid() {
