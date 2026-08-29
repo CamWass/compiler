@@ -506,7 +506,7 @@ where
                     _ => unreachable!(),
                 };
 
-                let catch = handler_node.handler.as_ref();
+                let catch = handler_node.get_catch();
 
                 let mut last_jump_in_catch_block = false;
                 for ancestor in last_jump.ancestors(&self.parent_stack) {
@@ -520,7 +520,7 @@ where
 
                 // No catch but a FINALLY, or lastJump is inside the catch block.
                 if catch.is_none() || last_jump_in_catch_block {
-                    let finally = Node::from(handler_node.finalizer.as_deref().unwrap());
+                    let finally = Node::from(handler_node.get_finally().unwrap());
 
                     if last_jump == &cfg_node {
                         self.cfg
@@ -615,9 +615,9 @@ where
                 NodeKind::TryStmt(try_stmt) => {
                     // If we are coming out of the TRY block...
                     if try_stmt.block.node_id == node.node_id {
-                        if let Some(finally) = &try_stmt.finalizer {
+                        if let Some(finally) = try_stmt.get_finally() {
                             // and have FINALLY block.
-                            return compute_fall_through(Node::from(&**finally));
+                            return compute_fall_through(Node::from(finally));
                         } else {
                             // and have no FINALLY.
                             // Control is transferred up the AST to the parent's follow
@@ -627,10 +627,10 @@ where
                         }
 
                     // CATCH block.
-                    } else if try_stmt.handler.as_ref().map(Node::from) == Some(node) {
-                        if let Some(finally) = &try_stmt.finalizer {
+                    } else if try_stmt.get_catch().map(Node::from) == Some(node) {
+                        if let Some(finally) = try_stmt.get_finally() {
                             // and have FINALLY block.
-                            return compute_fall_through(Node::from(&**finally));
+                            return compute_fall_through(Node::from(finally));
                         } else {
                             // Control is transferred up the AST to the parent's follow
                             // node.
@@ -639,7 +639,7 @@ where
                         }
 
                     // If we are coming out of the FINALLY block...
-                    } else if try_stmt.finalizer.as_deref().map(Node::from) == Some(node) {
+                    } else if try_stmt.get_finally().map(Node::from) == Some(node) {
                         if let Some(nodes) = self.finally_map.get(parent.node) {
                             for finally_node in nodes {
                                 self.cfg
@@ -1172,7 +1172,7 @@ where
 
         node.block.visit_with(self);
 
-        if node.finalizer.is_none() {
+        if node.get_finally().is_none() {
             // When we are done with the TRY block and there is no FINALLY block, then no more exceptions
             // can be handled at this TRY statement, so it can be taken out of the
             // stack.
@@ -1182,11 +1182,11 @@ where
             self.exception_handler.pop();
         }
 
-        if let Some(catch) = &node.handler {
+        if let Some(catch) = node.get_catch() {
             catch.visit_with(self);
         }
 
-        if let Some(finally) = &node.finalizer {
+        if let Some(finally) = node.get_finally() {
             // When we are done with both the TRY and CATCH block, then no more exceptions
             // can be handled at this TRY statement, so it can be taken out of the
             // stack.
@@ -1362,8 +1362,8 @@ where
             node.label.as_ref().map(|ident| ident.name),
         ) {
             if let NodeKind::TryStmt(t) = cur.kind {
-                if let Some(finally) = &t.finalizer {
-                    let finally_node = Node::from(&**finally);
+                if let Some(finally) = t.get_finally() {
+                    let finally_node = Node::from(finally);
                     if Some(finally_node) != previous {
                         if last_jump == continue_node {
                             self.cfg
@@ -1430,8 +1430,8 @@ where
             node.label.as_ref().map(|ident| ident.name),
         ) {
             if let NodeKind::TryStmt(t) = cur.kind {
-                if let Some(finally) = &t.finalizer {
-                    let finally_node = Node::from(&**finally);
+                if let Some(finally) = t.get_finally() {
+                    let finally_node = Node::from(finally);
                     if Some(finally_node) != previous {
                         let to = compute_fall_through(finally_node);
                         if last_jump == break_node {
@@ -1477,8 +1477,8 @@ where
         for cur_handler in self.exception_handler.iter().rev() {
             match cur_handler.node.kind {
                 NodeKind::TryStmt(t) => {
-                    if let Some(finally) = &t.finalizer {
-                        let finally_node = Node::from(&**finally);
+                    if let Some(finally) = t.get_finally() {
+                        let finally_node = Node::from(finally);
                         match last_jump {
                             Some(last_jump) => {
                                 self.finally_map

@@ -781,8 +781,12 @@ impl Visit<'_> for ReachingUseFinder<'_, '_, '_> {
     // }
 
     fn visit_try_stmt(&mut self, node: &TryStmt) {
-        node.finalizer.visit_with(self);
-        node.handler.visit_with(self);
+        if let Some(finally) = node.get_finally() {
+            finally.visit_with(self);
+        }
+        if let Some(catch) = node.get_catch() {
+            catch.visit_with(self);
+        }
         node.block.visit_with(self);
     }
 

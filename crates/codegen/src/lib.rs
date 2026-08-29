@@ -2634,12 +2634,12 @@ impl Emitter<'_> {
         formatting_space!(self);
         self.emit_block_stmt(&node.block)?;
 
-        if let Some(catch) = &node.handler {
+        if let Some(catch) = node.get_catch() {
             formatting_space!(self);
             self.emit_catch_clause(catch)?;
         }
 
-        if let Some(finally) = &node.finalizer {
+        if let Some(finally) = node.get_finally() {
             formatting_space!(self);
             keyword!(self, "finally");
             formatting_space!(self);

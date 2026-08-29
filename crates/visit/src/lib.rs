@@ -784,8 +784,12 @@ define!({
     pub struct TryStmt {
         pub node_id: NodeId,
         pub block: BlockStmt,
-        pub handler: Option<CatchClause>,
-        pub finalizer: Option<Box<BlockStmt>>,
+        pub tail: TryStmtTail,
+    }
+    pub enum TryStmtTail {
+        Catch(CatchClause),
+        Finally(Box<BlockStmt>),
+        CatchFinally(CatchClause, Box<BlockStmt>),
     }
     pub struct WhileStmt {
         pub node_id: NodeId,

@@ -772,10 +772,10 @@ impl Visitor<'_> {
 
                 Stmt::Try(try_stmt) => {
                     try_stmt.block.stmts.iter().any(contains_unlabelled_break)
-                        || try_stmt.handler.as_ref().is_some_and(|catch| {
+                        || try_stmt.get_catch().is_some_and(|catch| {
                             catch.body.stmts.iter().any(contains_unlabelled_break)
                         })
-                        || try_stmt.finalizer.as_ref().is_some_and(|finalizer| {
+                        || try_stmt.get_finally().is_some_and(|finalizer| {
                             finalizer.stmts.iter().any(contains_unlabelled_break)
                         })
                 }
@@ -1004,13 +1004,13 @@ impl Visitor<'_> {
                     self.collect_vars_declared_in_stmt(stmt, extracted_vars);
                 }
 
-                if let Some(handler) = &try_stmt.handler {
+                if let Some(handler) = try_stmt.get_catch() {
                     for stmt in &handler.body.stmts {
                         self.collect_vars_declared_in_stmt(stmt, extracted_vars);
                     }
                 }
 
-                if let Some(finalizer) = &try_stmt.finalizer {
+                if let Some(finalizer) = try_stmt.get_finally() {
                     for stmt in &finalizer.stmts {
                         self.collect_vars_declared_in_stmt(stmt, extracted_vars);
                     }
@@ -1619,8 +1619,8 @@ fn isTryExit(try_stmt: &TryStmt) -> bool {
     // TODO: You can have try..finally right? i.e a try with two children.
     // finally - regardless of the behavior of the other blocks,
     // an exit from the finally with guarantee that behavior.
-    if try_stmt.handler.is_some()
-        && let Some(finalizer) = &try_stmt.finalizer
+    if try_stmt.get_catch().is_some()
+        && let Some(finalizer) = try_stmt.get_finally()
     {
         if isUnconditionalBlockExit(&finalizer.stmts) {
             return true;
@@ -1632,8 +1632,7 @@ fn isTryExit(try_stmt: &TryStmt) -> bool {
     }
     // catch
     try_stmt
-        .handler
-        .as_ref()
+        .get_catch()
         .is_none_or(|h| isUnconditionalBlockExit(&h.body.stmts))
 }
 

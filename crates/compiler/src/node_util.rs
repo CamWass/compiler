@@ -353,12 +353,11 @@ pub fn stmt_may_have_side_effects(stmt: &Stmt) -> bool {
 
         Stmt::Try(try_stmt) => {
             try_stmt.block.stmts.iter().any(stmt_may_have_side_effects)
-                || try_stmt.handler.as_ref().is_some_and(|handler| {
+                || try_stmt.get_catch().is_some_and(|handler| {
                     handler.body.stmts.iter().any(stmt_may_have_side_effects)
                 })
                 || try_stmt
-                    .finalizer
-                    .as_ref()
+                    .get_finally()
                     .is_some_and(|finalizer| finalizer.stmts.iter().any(stmt_may_have_side_effects))
         }
 

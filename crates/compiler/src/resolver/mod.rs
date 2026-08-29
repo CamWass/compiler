@@ -339,7 +339,7 @@ fn hoist_declarations(stmt: &mut Stmt, op: &mut impl FnMut(&mut NameId)) {
                 .iter_mut()
                 .for_each(|s| hoist_declarations(s, op));
 
-            if let Some(handler) = &mut try_stmt.handler {
+            if let Some(handler) = try_stmt.get_catch_mut() {
                 handler
                     .body
                     .stmts
@@ -347,7 +347,7 @@ fn hoist_declarations(stmt: &mut Stmt, op: &mut impl FnMut(&mut NameId)) {
                     .for_each(|s| hoist_declarations(s, op));
             }
 
-            if let Some(finalizer) = &mut try_stmt.finalizer {
+            if let Some(finalizer) = try_stmt.get_finally_mut() {
                 finalizer
                     .stmts
                     .iter_mut()

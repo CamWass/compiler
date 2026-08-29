@@ -44,7 +44,8 @@ pub use self::{
     stmt::{
         BlockStmt, BreakStmt, CatchClause, ContinueStmt, DebuggerStmt, DoWhileStmt, EmptyStmt,
         ExprStmt, ForInStmt, ForOfStmt, ForStmt, IfStmt, LabeledStmt, ReturnStmt, Stmt, SwitchCase,
-        SwitchStmt, ThrowStmt, TryStmt, VarDeclOrExpr, VarDeclOrPat, WhileStmt, WithStmt,
+        SwitchStmt, ThrowStmt, TryStmt, TryStmtTail, VarDeclOrExpr, VarDeclOrPat, WhileStmt,
+        WithStmt,
     },
 };
 use clone_node::CloneNode;

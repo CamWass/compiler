@@ -941,17 +941,31 @@ impl Parser<'_> {
         let handler = self.parse_catch_clause()?;
         let finalizer = self.parse_finally_block()?.map(Box::new);
 
-        if handler.is_none() && finalizer.is_none() {
-            // self.raise(node.start, Errors.NoCatchOrFinally);
-            // TODO: is babel's error message more descriptive than this?
-            self.emit_err(Span::new(catch_start, catch_start), SyntaxError::TS1005);
-        }
+        let tail = match (handler, finalizer) {
+            (None, None) => {
+                let catch_span = Span::new(catch_start, catch_start);
+                // self.raise(node.start, Errors.NoCatchOrFinally);
+                // TODO: is babel's error message more descriptive than this?
+                self.emit_err(catch_span, SyntaxError::TS1005);
+
+                TryStmtTail::Catch(CatchClause {
+                    node_id: program_data!(self).new_id(catch_span),
+                    param: None,
+                    body: BlockStmt {
+                        node_id: program_data!(self).new_id(catch_span),
+                        stmts: Vec::new(),
+                    },
+                })
+            }
+            (None, Some(finally)) => TryStmtTail::Finally(finally),
+            (Some(catch), None) => TryStmtTail::Catch(catch),
+            (Some(catch), Some(finally)) => TryStmtTail::CatchFinally(catch, finally),
+        };
 
         Ok(Stmt::Try(Box::new(TryStmt {
             node_id: node_id!(self, self.span(start)),
             block,
-            handler,
-            finalizer,
+            tail,
         })))
     }
 

@@ -155,9 +155,48 @@ pub struct TryStmt {
 
     pub block: BlockStmt,
 
-    pub handler: Option<CatchClause>,
+    pub tail: TryStmtTail,
+}
 
-    pub finalizer: Option<Box<BlockStmt>>,
+impl TryStmt {
+    pub fn get_catch(&self) -> Option<&CatchClause> {
+        match &self.tail {
+            TryStmtTail::Catch(catch) => Some(catch),
+            TryStmtTail::CatchFinally(catch, _) => Some(catch),
+            TryStmtTail::Finally(_) => None,
+        }
+    }
+
+    pub fn get_finally(&self) -> Option<&BlockStmt> {
+        match &self.tail {
+            TryStmtTail::CatchFinally(_, finally) => Some(finally),
+            TryStmtTail::Finally(finally) => Some(finally),
+            TryStmtTail::Catch(_) => None,
+        }
+    }
+
+    pub fn get_catch_mut(&mut self) -> Option<&mut CatchClause> {
+        match &mut self.tail {
+            TryStmtTail::Catch(catch) => Some(catch),
+            TryStmtTail::CatchFinally(catch, _) => Some(catch),
+            TryStmtTail::Finally(_) => None,
+        }
+    }
+
+    pub fn get_finally_mut(&mut self) -> Option<&mut BlockStmt> {
+        match &mut self.tail {
+            TryStmtTail::CatchFinally(_, finally) => Some(finally),
+            TryStmtTail::Finally(finally) => Some(finally),
+            TryStmtTail::Catch(_) => None,
+        }
+    }
+}
+
+#[derive(Debug, CloneNode, NodeEq, Serialize)]
+pub enum TryStmtTail {
+    Catch(CatchClause),
+    Finally(Box<BlockStmt>),
+    CatchFinally(CatchClause, Box<BlockStmt>),
 }
 
 #[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
