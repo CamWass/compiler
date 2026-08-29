@@ -414,8 +414,8 @@ pub fn compute_escaped(
     all_vars_in_fn: &FxHashMap<NameId, VarId>,
     catch_vars: FxHashSet<NameId>,
 ) -> FxHashSet<NameId> {
-    // TODO (simranarora) catch variables should not be considered escaped in ES6. Getting rid of
-    // the catch check is causing breakages however
+    // TODO catch variables should not be considered escaped in ES6. Getting rid
+    // of the catch check is causing breakages however.
     let mut escaped = catch_vars;
     let mut v = EscapedVarFinder {
         all_vars_in_fn,

@@ -4,8 +4,6 @@ use visit::{VisitMut, VisitMutWith};
 
 use crate::utils::unwrap_as;
 
-// TODO: preserve spans?
-
 pub fn normalize(ast: &mut Program, program_data: &mut ast::TransformerProgramData) {
     // Split var decls.
     {
@@ -168,53 +166,6 @@ impl VisitMut<'_> for VarSplitter<'_> {
         }
     }
 }
-
-// // TODO: doc comment
-// struct DuplicateDeclRemover<'a> {
-//     node_id_gen: &'a mut ast::NodeIdGen,
-// }
-
-// macro_rules! handle_scope {
-//     ([$([$name:ident, $N:ident]$(,)?)*]) => {
-//         $(
-//             #[inline]
-//             fn $name(&mut self, n: &mut ast::$N) {
-//                 // Start a new namespace for label names.
-//                 self.namespace_stack.push(LabelNamespace::default());
-//                 n.visit_mut_children_with(self);
-//                 self.namespace_stack.pop();
-//             }
-//         )*
-//     };
-// }
-
-// // TODO:
-// // remove empty decls that follow another decl
-
-// impl VisitMut<'_> for DuplicateDeclRemover<'_> {
-//     noop_visit_mut_type!();
-
-//     fn visit_mut_stmts(&mut self, stmts: &mut Vec<Stmt>) {
-//         stmts.retain_mut(f)
-//     }
-
-//     // Note:
-//     // Program is not a function; it creates the initial/global scope.
-//     // ClassMethod, PrivateMethod, and MethodProp are handled by their Function child.
-//     handle_scope!([
-//         [visit_mut_program, Program],
-//         [visit_mut_function, Function],
-//         [visit_mut_constructor, Constructor],
-//         [visit_mut_setter_prop, SetterProp],
-//         [visit_mut_getter_prop, GetterProp],
-//         [visit_mut_arrow_expr, ArrowExpr],
-//     ]);
-// }
-
-// // TODO: doc comment
-// struct VarAnalyser {
-//     vars: FxHashMap<Id, Vec<NodeId>>,
-// }
 
 // TODO: tests
 

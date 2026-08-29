@@ -21,7 +21,7 @@ use super::*;
  * that all the uses with label starting with `U:` is a may be reaching use of the definition label
  * at `D:`.
  */
-// TODO(rishipal): Consider classifying these tests based on the position of `D` and `U` in input.
+// TODO: Consider classifying these tests based on the position of `D` and `U` in input.
 
 // Illustrates that the label D needn't correspond to a definition of `x` in these tests, but is
 // symbolic of any program point at which we want to check the use U is upward exposed (reachable)
@@ -68,7 +68,7 @@ fn testLoops() {
 
 // This test shows that MaybeReachingVariableUseTest does not use data flow(values) in
 // conditionals but relies only on static CFG edges to find whether a use reaches a def.
-// TODO(rishipal): Make Control flow analysis smarter about short circuiting and update this test.
+// TODO: Make Control flow analysis smarter about short circuiting and update this test.
 #[test]
 fn testShortCircuiting_usesOnlyCFGEdges() {
     // Even though `(x=1)` will never execute at runtime in the following cases, it is conditionally
@@ -154,7 +154,7 @@ fn testAssignmentInExpressions() {
 fn testHook() {
     assert_match("var x=0; D:foo() ? x=1 : bar(); U:x");
     assert_match("var x=0; D:foo() ? x=1 : x=2; U:x");
-    // TODO(rishipal): Fix this test. The U should not be reachable to D as D is obscured by redef.
+    // TODO: Fix this test. The U should not be reachable to D as D is obscured by redef.
     assert_match("D: var x=0; foo() ? x=1 : x=2; U:x");
 }
 
@@ -170,7 +170,7 @@ fn testAssignmentOps() {
 fn testInc() {
     assert_match("D: var x = 0; U:x++");
     assert_match("var x = 0; D:x++; U:x");
-    // TODO(rishipal): Fix this test. The U should not be reachable to D as D is obscured by redef.
+    // TODO: Fix this test. The U should not be reachable to D as D is obscured by redef.
     assert_match("D: var x = 0; x++; U:x");
 }
 
@@ -224,7 +224,7 @@ D: var x = 1;
 try { x=2; U: var y = foo() + x; } catch (e) {} ",
     );
 
-    // TODO(rishipal): Fix this test. The U should not be reachable to D as D is obscured by redef.
+    // TODO: Fix this test. The U should not be reachable to D as D is obscured by redef.
     assert_match(
         "
 D: var x = 1;

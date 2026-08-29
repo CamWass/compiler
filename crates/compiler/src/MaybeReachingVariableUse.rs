@@ -18,13 +18,12 @@ use crate::find_vars::{AllVarsDeclaredInFunction, FunctionLikeNode, VarId};
 #[cfg(test)]
 mod tests;
 
-// TODO: temp pub fields:
 #[derive(Debug)]
 pub struct MaybeReachingResult<'ast> {
-    pub scope_variables: FxHashMap<NameId, VarId>,
-    pub ordered_vars: IndexVec<VarId, NameId>,
-    pub lattice_elements: IndexVec<LatticeElementId, ReachingUses>,
-    pub cfg: ControlFlowGraph<Node<'ast>, LinearFlowState>,
+    scope_variables: FxHashMap<NameId, VarId>,
+    ordered_vars: IndexVec<VarId, NameId>,
+    lattice_elements: IndexVec<LatticeElementId, ReachingUses>,
+    cfg: ControlFlowGraph<Node<'ast>, LinearFlowState>,
 }
 
 impl MaybeReachingResult<'_> {

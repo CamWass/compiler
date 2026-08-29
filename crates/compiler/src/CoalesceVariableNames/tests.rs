@@ -1214,7 +1214,7 @@ fn testLetWhileLoops() {
 
 #[test]
 fn testLetForLoops() {
-    // TODO (simranarora) We should get rid of declaration hoisting from the normalize pass.
+    // TODO: We should get rid of declaration hoisting from the normalize pass.
     // Right now, because of declaration hoisting, this following test reads the expected code as:
     // var x = 1; for ( ; x < 10; x++) { let y = 2; x + y } x = 3
     in_function(

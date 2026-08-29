@@ -1951,7 +1951,6 @@ impl<'a> Emitter<'a> {
         }
 
         self.emit_prop_name(&node.key)?;
-        // TODO
         self.emit_fn_trailing(&node.function)
     }
 

@@ -15,8 +15,6 @@ pub fn process(ast: &mut ast::Program, program_data: &mut TransformerProgramData
     ast.visit_mut_with(&mut visitor);
 }
 
-// TODO: change the span ctxt when changing the sym
-
 /// RenameLabels renames all the labels so that they have short names, to reduce
 /// code size and also to obfuscate the code.
 ///
