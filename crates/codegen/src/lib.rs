@@ -359,6 +359,7 @@ impl<'a> Emitter<'a> {
         self.wr.commit_pending_semi()?;
 
         let target = self.cfg.target;
+        // TODO: would be great to not call this for all strings.
         let value = get_quoted_utf16(&node.value, target);
         self.wr.write_str_lit(DUMMY_SP, &value)
     }
