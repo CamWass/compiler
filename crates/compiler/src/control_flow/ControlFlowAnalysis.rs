@@ -664,11 +664,17 @@ where
                 "Needle should be present in haystack"
             );
 
-            let next_sibling = parent
+            let index_of_node_in_children = parent
                 .children
                 .iter()
-                .advance_while(|&&child| child != node)
-                // Skip function declarations because control doesn't get passed into it.
+                .position(|child| *child == node)
+                .unwrap();
+            let next_siblings = &parent.children[index_of_node_in_children + 1..];
+
+            // Skip function declarations because control doesn't get passed
+            // into them.
+            let next_sibling = next_siblings
+                .iter()
                 .find(|sibling| !matches!(sibling.kind, NodeKind::FnDecl(_)));
 
             if let Some(next_sibling) = next_sibling {
