@@ -34,3 +34,4 @@ unicode-id-start = "1.4.0"
 [profile.release]
 codegen-units = 1
 lto = true
+panic = "abort"
