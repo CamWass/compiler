@@ -427,10 +427,10 @@ mod tests {
 
     fn test_transform(input: &str, expected: &str) {
         crate::testing::test_transform(
-            |mut program, program_data| {
-                resolve(&mut program, program_data);
+            |program, program_data| {
+                resolve(program, program_data);
 
-                super::OptimizeArgumentsArray::process(&mut program, program_data);
+                super::OptimizeArgumentsArray::process(program, program_data);
             },
             input,
             expected,

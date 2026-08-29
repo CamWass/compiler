@@ -179,10 +179,10 @@ mod tests {
 
     fn test_transform(input: &str, expected: &str) {
         crate::testing::test_transform(
-            |mut program, program_data| {
-                resolve(&mut program, program_data);
+            |program, program_data| {
+                resolve(program, program_data);
 
-                process(&mut program);
+                process(program);
             },
             input,
             expected,

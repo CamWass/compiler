@@ -3908,18 +3908,16 @@ class C {
     //         "function f() { switch(x) { default: return; case 1: return 5;}}");
     //   }
 
-    // TODO: here and else where, we don't need &mut program any more - it's
-    // already a mut ref now.
     fn test_transform(input: &str, expected: &str) {
         crate::testing::test_transform(
-            |mut program, program_data| {
-                resolve(&mut program, program_data);
+            |program, program_data| {
+                resolve(program, program_data);
 
                 // TODO: I feel it would be cleaner to only test one
                 // iteration, and test each of the two desired steps
                 // individually e.g. test A->B and B->C rather than A->C.
-                process(&mut program, program_data);
-                process(&mut program, program_data);
+                process(program, program_data);
+                process(program, program_data);
             },
             input,
             expected,

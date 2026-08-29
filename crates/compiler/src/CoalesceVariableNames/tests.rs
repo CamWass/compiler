@@ -6,12 +6,12 @@ use super::*;
 
 fn test_transform(input: &str, expected: &str) {
     crate::testing::test_transform(
-        |mut program, program_data| {
-            crate::normalize::normalize(&mut program, program_data);
+        |program, program_data| {
+            crate::normalize::normalize(program, program_data);
 
-            resolve(&mut program, program_data);
+            resolve(program, program_data);
 
-            coalesce_variable_names(&mut program, program_data);
+            coalesce_variable_names(program, program_data);
         },
         input,
         expected,

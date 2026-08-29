@@ -6,10 +6,10 @@ use super::*;
 
 fn test_transform(input: &str, expected: &str) {
     crate::testing::test_transform(
-        |mut program, program_data| {
-            resolve(&mut program, program_data);
+        |program, program_data| {
+            resolve(program, program_data);
 
-            process(&mut program, program_data);
+            process(program, program_data);
         },
         input,
         expected,
