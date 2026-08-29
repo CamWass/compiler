@@ -1249,6 +1249,39 @@ impl VisitMut<'_> for Visitor<'_> {
                 }
             }
 
+            if let Stmt::Decl(Decl::Var(var)) = &mut stmts[i] {
+                if var.decls.len() != 1 {
+                    // This should only happen in tests - when running normally,
+                    // the Normalize pass splits var decls so they only have one
+                    // decl each
+                    i += 1;
+                    continue;
+                }
+                let decl = &mut var.decls[0];
+
+                let is_left_empty_destructuring = match &decl.name {
+                    Pat::Array(left) => left.elems.is_empty(),
+                    Pat::Object(left) => left.props.is_empty(),
+                    _ => false,
+                };
+
+                if is_left_empty_destructuring {
+                    if let Some(rhs) = decl.init.take() {
+                        stmts[i] = Stmt::Expr(ExprStmt {
+                            node_id: self.program_data.new_id_from(rhs.node_id()),
+                            expr: rhs,
+                        });
+                    } else {
+                        // No RHS - just remove the var decl.
+                        stmts.remove(i);
+                        continue;
+                    }
+                }
+
+                i += 1;
+                continue;
+            }
+
             i += 1;
         }
     }
@@ -1344,6 +1377,38 @@ impl VisitMut<'_> for Visitor<'_> {
                 }
             }
 
+            if let ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) = &mut items[i] {
+                if var.decls.len() != 1 {
+                    // This should only happen in tests - when running normally,
+                    // the Normalize pass splits var decls so they only have one
+                    // decl each
+                    i += 1;
+                    continue;
+                }
+                let decl = &mut var.decls[0];
+
+                let is_left_empty_destructuring = match &decl.name {
+                    Pat::Array(left) => left.elems.is_empty(),
+                    Pat::Object(left) => left.props.is_empty(),
+                    _ => false,
+                };
+
+                if is_left_empty_destructuring {
+                    if let Some(rhs) = decl.init.take() {
+                        items[i] = ModuleItem::Stmt(Stmt::Expr(ExprStmt {
+                            node_id: self.program_data.new_id_from(rhs.node_id()),
+                            expr: rhs,
+                        }));
+                    } else {
+                        // No RHS - just remove the var decl.
+                        items.remove(i);
+                        continue;
+                    }
+                }
+
+                i += 1;
+                continue;
+            }
             i += 1;
         }
     }
@@ -3346,22 +3411,22 @@ loop: {
         test_same("async function f() { await some.thing(); }");
     }
 
-    //   #[test]
-    //   fn  testEmptyPatternInDeclarationRemoved() {
-    //     test_transform("var [] = [];", "");
-    //     test_transform("let [] = [];", "");
-    //     test_transform("const [] = [];", "");
-    //     test_transform("var {} = [];", "");
-    //     test_transform("var [] = foo();", "foo()");
-    //   }
+    #[test]
+    fn testEmptyPatternInDeclarationRemoved() {
+        test_transform("var [] = [];", "");
+        test_transform("let [] = [];", "");
+        test_transform("const [] = [];", "");
+        test_transform("var {} = [];", "");
+        test_transform("var [] = foo();", "foo()");
+    }
 
-    //   #[test]
-    //   fn  testEmptyArrayPatternInAssignRemoved() {
-    //     test_transform("({} = {});", "");
-    //     test_transform("({} = foo());", "foo()");
-    //     test_transform("[] = [];", "");
-    //     test_transform("[] = foo();", "foo()");
-    //   }
+    #[test]
+    fn testEmptyArrayPatternInAssignRemoved() {
+        test_transform("({} = {});", "");
+        test_transform("({} = foo());", "foo()");
+        test_transform("[] = [];", "");
+        test_transform("[] = foo();", "foo()");
+    }
 
     #[test]
     fn testEmptyPatternInParamsNotRemoved() {
@@ -3843,6 +3908,8 @@ class C {
     //         "function f() { switch(x) { default: return; case 1: return 5;}}");
     //   }
 
+    // TODO: here and else where, we don't need &mut program any more - it's
+    // already a mut ref now.
     fn test_transform(input: &str, expected: &str) {
         crate::testing::test_transform(
             |mut program, program_data| {
