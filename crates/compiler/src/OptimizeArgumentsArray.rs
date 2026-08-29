@@ -431,7 +431,6 @@ mod tests {
                 resolve(&mut program, program_data);
 
                 super::OptimizeArgumentsArray::process(&mut program, program_data);
-                program
             },
             input,
             expected,

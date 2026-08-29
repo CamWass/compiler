@@ -183,8 +183,6 @@ mod tests {
                 resolve(&mut program, program_data);
 
                 process(&mut program);
-
-                program
             },
             input,
             expected,

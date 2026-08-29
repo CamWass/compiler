@@ -8,8 +8,6 @@ fn test_transform(input: &str, expected: &str) {
             resolve(&mut program, program_data);
 
             process(&mut program, program_data);
-
-            program
         },
         input,
         expected,

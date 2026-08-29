@@ -3853,8 +3853,6 @@ class C {
                 // individually e.g. test A->B and B->C rather than A->C.
                 process(&mut program, program_data);
                 process(&mut program, program_data);
-
-                program
             },
             input,
             expected,

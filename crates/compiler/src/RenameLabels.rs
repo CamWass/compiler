@@ -194,7 +194,6 @@ mod tests {
         crate::testing::test_transform(
             |mut program, program_data| {
                 super::process(&mut program, program_data);
-                program
             },
             input,
             expected,

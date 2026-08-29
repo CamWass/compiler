@@ -30,15 +30,15 @@ impl Tester<'_> {
         src: &str,
     ) -> Result<(Program, TransformerProgramData), ()>
     where
-        T: FnOnce(Program, &mut ast::TransformerProgramData) -> Program,
+        T: FnOnce(&mut Program, &mut TransformerProgramData),
     {
         let fm = self
             .cm
             .new_source_file(FileName::Real(name.into()), src.into());
 
-        let mut program_data = ast::ParserProgramData::default();
+        let mut program_data = ParserProgramData::default();
 
-        let program = {
+        let mut program = {
             let mut p = Parser::new(
                 Syntax::Typescript(Default::default()),
                 &fm,
@@ -57,7 +57,7 @@ impl Tester<'_> {
 
         let mut program_data = program_data.into_transformer_program_data();
 
-        let program = tr(program, &mut program_data);
+        tr(&mut program, &mut program_data);
 
         Ok((program, program_data))
     }
@@ -80,13 +80,12 @@ impl Tester<'_> {
     }
 }
 
-// TODO: make T take &mut Program and return nothing.
 pub fn test_transform<T>(transform: T, input: &str, expected: &str)
 where
-    T: FnOnce(Program, &mut ast::TransformerProgramData) -> Program,
+    T: FnOnce(&mut Program, &mut TransformerProgramData),
 {
     Tester::run(|tester| {
-        let expected = tester.apply_transform(|m, _| m, "output.js", expected)?;
+        let expected = tester.apply_transform(|_, _| {}, "output.js", expected)?;
 
         let actual = tester.apply_transform(transform, "input.js", input)?;
 
