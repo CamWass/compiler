@@ -1718,6 +1718,39 @@ impl VisitMut<'_> for Visitor<'_> {
 
         node.elems.truncate(node.elems.len() - number_to_remove);
     }
+
+    fn visit_mut_pat(&mut self, node: &mut Pat) {
+        node.visit_mut_children_with(self);
+
+        if let Pat::Assign(assign) = node {
+            let mut remove_default_value = false;
+
+            // If the default is `undefined` always remove the value
+            if matches!(
+                assign.right.as_ref(),
+                Expr::Ident(Ident {
+                    name: id_for_built_in!("undefined"),
+                    ..
+                })
+            ) {
+                remove_default_value = true;
+            }
+
+            // If the `void` application is pure, remove the value
+            if let Expr::Unary(UnaryExpr {
+                op: UnaryOp::Void,
+                arg,
+                ..
+            }) = assign.right.as_ref()
+            {
+                remove_default_value = !expr_may_have_side_effects(arg);
+            }
+
+            if remove_default_value {
+                *node = assign.left.as_mut().take();
+            }
+        }
+    }
 }
 
 fn isRemovableDestructuringTarget(pat: &Pat) -> bool {
@@ -3698,31 +3731,34 @@ loop: {
         test_same("const {f: [], ...g} = foo()");
     }
 
-    //   #[test]
-    //   fn  testUndefinedDefaultParameterRemoved() {
-    //     test_transform(
-    //         "function f(x=undefined,y) {  }", //
-    //         "function f(x,y)             {  }");
-    //     test_transform(
-    //         "function f(x,y=undefined,z) {  }", //
-    //         "function f(x,y          ,z) {  }");
-    //     test_transform(
-    //         "function f(x=undefined,y=undefined,z=undefined) {  }", //
-    //         "function f(x,          y,          z)           {  }");
-    //   }
+    #[test]
+    fn testUndefinedDefaultParameterRemoved() {
+        test_transform(
+            "function f(x=undefined,y) {  }",
+            "function f(x,y)             {  }",
+        );
+        test_transform(
+            "function f(x,y=undefined,z) {  }",
+            "function f(x,y          ,z) {  }",
+        );
+        test_transform(
+            "function f(x=undefined,y=undefined,z=undefined) {  }",
+            "function f(x,          y,          z)           {  }",
+        );
+    }
 
-    //   #[test]
-    //   fn  testPureVoidDefaultParameterRemoved() {
-    //     test_transform(
-    //         "function f(x = void 0) {  }", //
-    //         "function f(x         ) {  }");
-    //     test_transform(
-    //         "function f(x = void \"XD\") {  }", //
-    //         "function f(x              ) {  }");
-    //     test_transform(
-    //         "function f(x = void f()) {  }", //
-    //         "function f(x)            {  }");
-    //   }
+    #[test]
+    fn testPureVoidDefaultParameterRemoved() {
+        test_transform("function f(x = void 0) {  }", "function f(x         ) {  }");
+        test_transform(
+            "function f(x = void \"XD\") {  }",
+            "function f(x              ) {  }",
+        );
+        // test_transform(
+        //     "function f(x = void f()) {  }",
+        //     "function f(x)            {  }",
+        // );
+    }
 
     #[test]
     fn testNoDefaultParameterNotRemoved() {
@@ -3737,35 +3773,35 @@ loop: {
         test_same("function f(x = void f()) { alert(x); }");
     }
 
-    //   #[test]
-    //   fn  testDestructuringUndefinedDefaultParameter() {
-    //     test_transform(
-    //         "function f({a=undefined,b=1,c}) {  }", //
-    //         "function f({a          ,b=1,c}) {  }");
-    //     test_transform(
-    //         "function f({a={},b=0}=undefined) {  }", //
-    //         "function f({a={},b=0}) {  }");
-    //     test_transform(
-    //         "function f({a=undefined,b=0}) {  }", //
-    //         "function f({a,b=0}) {  }");
-    //     test_transform(
-    //         " function f({a: {b = undefined}}) {  }", //
-    //         " function f({a: {b}}) {  }");
-    //     test_same("function f({a,b}) {  }");
-    //     test_same("function f({a=0, b=1}) {  }");
-    //     test_same("function f({a=0,b=0}={}) {  }");
-    //     test_same("function f({a={},b=0}={}) {  }");
-    //   }
+    #[test]
+    fn testDestructuringUndefinedDefaultParameter() {
+        test_transform(
+            "function f({a=undefined,b=1,c}) {  }",
+            "function f({a          ,b=1,c}) {  }",
+        );
+        test_transform(
+            "function f({a={},b=0}=undefined) {  }",
+            "function f({a={},b=0}) {  }",
+        );
+        test_transform(
+            "function f({a=undefined,b=0}) {  }",
+            "function f({a,b=0}) {  }",
+        );
+        test_transform(
+            " function f({a: {b = undefined}}) {  }",
+            " function f({a: {b}}) {  }",
+        );
+        test_same("function f({a,b}) {  }");
+        test_same("function f({a=0, b=1}) {  }");
+        test_same("function f({a=0,b=0}={}) {  }");
+        test_same("function f({a={},b=0}={}) {  }");
+    }
 
-    //   #[test]
-    //   fn  testUndefinedDefaultObjectPatterns() {
-    //     test_transform(
-    //         "const {a = undefined} = obj;", //
-    //         "const {a} = obj;");
-    //     test_transform(
-    //         "const {a = void 0} = obj;", //
-    //         "const {a} = obj;");
-    //   }
+    #[test]
+    fn testUndefinedDefaultObjectPatterns() {
+        test_transform("const {a = undefined} = obj;", "const {a} = obj;");
+        test_transform("const {a = void 0} = obj;", "const {a} = obj;");
+    }
 
     //   #[test]
     //   fn  testDoNotRemoveGetterOnlyAccess() {
