@@ -1215,21 +1215,7 @@ impl Visitor<'_> {
         let mut replacements = Vec::new();
         self.collect_vars_declared_in_block(&for_stmt.body, &mut replacements);
 
-        if !expr_may_have_side_effects(test) {
-            // TODO: handle labelled for loops.
-            // Remove the entire loop and any associated labels.
-            //   while (parent.isLabel()) {
-            //     n = parent;
-            //     parent = parent.getParent();
-            //   }
-        } else {
-            // TODO: handle labelled for loops.
-            //   if (parent.isLabel()) {
-            //     Node block = IR.block();
-            //     block.srcrefIfMissing(statement);
-            //     block.addChildToFront(statement);
-            //     statement = block;
-            //   }
+        if expr_may_have_side_effects(test) {
             replacements.push(Stmt::Expr(ExprStmt {
                 node_id: self.program_data.new_id_from(test.node_id()),
                 expr: test.take(),
@@ -1245,7 +1231,6 @@ impl Visitor<'_> {
         // Remove DOs that always evaluate to false. This leaves the statements
         // that were in the loop in a BLOCK node. The block will be removed in a
         // later pass, if possible.
-        // TODO: labelled do_while: n.getParent().isLabel() ||
         if get_boolean_value(&do_while_stmt.test) == Some(false)
             && !block_contains_unlabelled_break_or_continue(&do_while_stmt.body)
         {
@@ -1275,6 +1260,53 @@ impl Visitor<'_> {
         }
 
         OptimiseStmtResult::Keep(Vec::new())
+    }
+
+    fn simplify_labelled_stmt(&mut self, stmt: &mut Stmt) -> OptimiseStmtResult {
+        let labelled_stmt = unwrap_as!(stmt, Stmt::Labeled(s), s);
+
+        if let Stmt::Block(block) = labelled_stmt.body.as_ref() {
+            if block.stmts.is_empty() {
+                return OptimiseStmtResult::Replace(Vec::new());
+            }
+        }
+
+        let body = if let Stmt::Block(body) = labelled_stmt.body.as_mut()
+            && body.stmts.len() == 1
+        {
+            &mut body.stmts[0]
+        } else {
+            labelled_stmt.body.as_mut()
+        };
+
+        if let Stmt::Break(break_stmt) = body
+            && break_stmt.label.as_ref().map(|i| i.name) == Some(labelled_stmt.label.name)
+        {
+            return OptimiseStmtResult::Replace(Vec::new());
+        }
+
+        match body {
+            Stmt::Labeled(_) => {
+                return self.simplify_labelled_stmt(body);
+            }
+            Stmt::Expr(expr) => {
+                let result = self.simplify_unused_expr(&mut expr.expr);
+                match result {
+                    OptimiseExprResult::Keep => {
+                        return OptimiseStmtResult::Keep(Vec::new());
+                    }
+                    OptimiseExprResult::Remove => {
+                        return OptimiseStmtResult::Replace(Vec::new());
+                    }
+                }
+            }
+            Stmt::For(_) => {
+                return self.simplify_for_stmt(body);
+            }
+            _ => {
+                return OptimiseStmtResult::Keep(Vec::new());
+            }
+        }
     }
 }
 
@@ -1323,6 +1355,7 @@ impl VisitMut<'_> for Visitor<'_> {
                 Stmt::Try(_) => Some(self.simplify_try_stmt(&mut stmts[i])),
                 Stmt::For(_) => Some(self.simplify_for_stmt(&mut stmts[i])),
                 Stmt::DoWhile(_) => Some(self.simplify_do_while_stmt(&mut stmts[i])),
+                Stmt::Labeled(_) => Some(self.simplify_labelled_stmt(&mut stmts[i])),
                 _ => None,
             };
 
@@ -1430,6 +1463,7 @@ impl VisitMut<'_> for Visitor<'_> {
                     Stmt::Try(_) => Some(self.simplify_try_stmt(stmt)),
                     Stmt::For(_) => Some(self.simplify_for_stmt(stmt)),
                     Stmt::DoWhile(_) => Some(self.simplify_do_while_stmt(stmt)),
+                    Stmt::Labeled(_) => Some(self.simplify_labelled_stmt(stmt)),
                     _ => None,
                 };
 
@@ -2042,29 +2076,25 @@ mod tests {
         );
     }
 
-    //       #[test]
-    //   fn  testRemoveNoOpLabelledStatement() {
-    //     test_transform("a: break a;", "");
-    //     test_transform("a: { break a; }", "");
+    #[test]
+    fn testRemoveNoOpLabelledStatement() {
+        test_transform("a: break a;", "");
+        test_transform("a: { break a; }", "");
 
-    //     test_transform( //
-    //         "a: { break a; console.log('unreachable'); }", //
-    //         "");
-    //     test_transform( //
-    //         "a: { break a; var x = 1; } x = 2;", //
-    //         "var x; x = 2;");
+        // test_transform("a: { break a; console.log('unreachable'); }", "");
+        // test_transform("a: { break a; var x = 1; } x = 2;", "var x; x = 2;");
 
-    //     test_same("b: { var x = 1; } x = 2;");
-    //     test_same("a: b: { var x = 1; } x = 2;");
-    //   }
+        test_same("b: { var x = 1; } x = 2;");
+        test_same("a: b: { var x = 1; } x = 2;");
+    }
 
-    //   #[test]
-    //   fn  testRemoveUselessLabelWithFollowingBreak() {
-    //     test_transform("a:b: break b;", "");
-    //     // Note: the break is only removed if the parent
-    //     // is the break target.
-    //     test_same("a:b: break a;");
-    //   }
+    #[test]
+    fn testRemoveUselessLabelWithFollowingBreak() {
+        test_transform("a:b: break b;", "");
+        // Note: the break is only removed if the parent
+        // is the break target.
+        test_same("a:b: break a;");
+    }
 
     #[test]
     fn testFoldBlock() {
@@ -2399,7 +2429,7 @@ mod tests {
         // Make sure it plays nice with minimizing
         test_transform("for(;false;) { foo(); continue }", "");
 
-        // test_transform("l1:for(;false;) {  }", "");
+        test_transform("l1:for(;false;) {  }", "");
     }
 
     #[test]
@@ -3031,32 +3061,32 @@ let x = 2
         );
     }
 
-    //     #[test]
-    //     fn testOptimizeSwitchWithLabelledBreak() {
-    //         test_transform(
-    //             "
-    // function f() {
-    //     label:
-    //     switch('x') {
-    //         case 'x': break label;
-    //         case 'y': throw f;
-    //     }
-    // }",
-    //             "function f() { }",
-    //         );
+    #[test]
+    fn testOptimizeSwitchWithLabelledBreak() {
+        test_transform(
+            "
+function f() {
+    label:
+    switch('x') {
+        case 'x': break label;
+        case 'y': throw f;
+    }
+}",
+            "function f() { }",
+        );
 
-    //         test_transform(
-    //             "
-    // function f() {
-    //     label:
-    //     switch('x') {
-    //         case 'x': break label;
-    //         default: throw f;
-    //     }
-    // }",
-    //             "function f() { }",
-    //         );
-    //     }
+        test_transform(
+            "
+function f() {
+    label:
+    switch('x') {
+        case 'x': break label;
+        default: throw f;
+    }
+}",
+            "function f() { }",
+        );
+    }
 
     #[test]
     fn testOptimizeSwitchWithReturn() {
@@ -3610,15 +3640,15 @@ loop: {
         test_same("1 && foo(a() ? b() : 1 + c())");
     }
 
-    //   #[test]
-    //   fn  testRemoveFromLabel1() {
-    //     test_transform("LBL: void 0", "");
-    //   }
+    #[test]
+    fn testRemoveFromLabel1() {
+        test_transform("LBL: void 0", "");
+    }
 
-    //   #[test]
-    //   fn  testRemoveFromLabel2() {
-    //     test_transform("LBL: foo() + 1 + bar()", "LBL: foo(),bar()");
-    //   }
+    #[test]
+    fn testRemoveFromLabel2() {
+        test_transform("LBL: foo() + 1 + bar()", "LBL: foo(),bar()");
+    }
 
     #[test]
     fn testCall() {
@@ -3712,8 +3742,8 @@ loop: {
         test_transform("try {} catch (e) {}", "");
         test_transform("try {} finally {}", "");
         test_transform("try {} catch (e) {} finally {}", "");
-        // test_transform("L1:try {} catch (e) {} finally {}", "");
-        // test_transform("L2:L1:try {} catch (e) {} finally {}", "");
+        test_transform("L1:try {} catch (e) {} finally {}", "");
+        test_transform("L2:L1:try {} catch (e) {} finally {}", "");
     }
 
     #[test]
@@ -3960,12 +3990,12 @@ loop: {
     //         ");
     //   }
 
-    //   #[test]
-    //   fn  testFoldLabelledEmptyBlock() {
-    //     test_transform("a:{}", "");
-    //     test_transform("a:b:{}", "");
-    //     test_transform("a:b:c:{}", "");
-    //   }
+    #[test]
+    fn testFoldLabelledEmptyBlock() {
+        test_transform("a:{}", "");
+        test_transform("a:b:{}", "");
+        test_transform("a:b:c:{}", "");
+    }
 
     //   #[test]
     //   fn  testRetainSetterOnlyAccess() {
