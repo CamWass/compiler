@@ -1317,60 +1317,38 @@ impl VisitMut<'_> for Visitor<'_> {
                 }
             }
 
-            if let Stmt::Switch(_) = &mut stmts[i] {
-                let result = self.simplify_switch_stmt(&mut stmts[i]);
+            let stmt_optimisation_result = match &stmts[i] {
+                Stmt::Switch(_) => Some(self.simplify_switch_stmt(&mut stmts[i])),
+                Stmt::If(_) => Some(self.simplify_if_stmt(&mut stmts[i])),
+                Stmt::Try(_) => Some(self.simplify_try_stmt(&mut stmts[i])),
+                Stmt::For(_) => Some(self.simplify_for_stmt(&mut stmts[i])),
+                Stmt::DoWhile(_) => Some(self.simplify_do_while_stmt(&mut stmts[i])),
+                _ => None,
+            };
 
-                match result {
-                    OptimiseStmtResult::Keep(new_stmts) => {
-                        let num_new_stmts = new_stmts.len();
-                        stmts.splice(i..i, new_stmts);
+            match stmt_optimisation_result {
+                Some(OptimiseStmtResult::Keep(new_stmts)) => {
+                    let num_new_stmts = new_stmts.len();
+                    stmts.splice(i..i, new_stmts);
 
-                        // Skip over current and new stmts.
-                        i += num_new_stmts + 1;
+                    // Skip over current and new stmts.
+                    i += num_new_stmts + 1;
+                    continue;
+                }
+                Some(OptimiseStmtResult::Replace(replacements)) => {
+                    let num_replacements = replacements.len();
+                    stmts.splice(i..=i, replacements);
+
+                    if num_replacements > 0 {
+                        // Skip over the new stmts.
+                        i += num_replacements;
+                        continue;
+                    } else {
+                        i += 1;
                         continue;
                     }
-                    OptimiseStmtResult::Replace(replacements) => {
-                        let num_replacements = replacements.len();
-                        stmts.splice(i..=i, replacements);
-
-                        if num_replacements > 0 {
-                            // Skip over the new stmts.
-                            i += num_replacements;
-                            continue;
-                        } else {
-                            i += 1;
-                            continue;
-                        }
-                    }
                 }
-            }
-
-            if let Stmt::If(_) = &mut stmts[i] {
-                let result = self.simplify_if_stmt(&mut stmts[i]);
-
-                match result {
-                    OptimiseStmtResult::Keep(new_stmts) => {
-                        let num_new_stmts = new_stmts.len();
-                        stmts.splice(i..i, new_stmts);
-
-                        // Skip over current and new stmts.
-                        i += num_new_stmts + 1;
-                        continue;
-                    }
-                    OptimiseStmtResult::Replace(replacements) => {
-                        let num_replacements = replacements.len();
-                        stmts.splice(i..=i, replacements);
-
-                        if num_replacements > 0 {
-                            // Skip over the new stmts.
-                            i += num_replacements;
-                            continue;
-                        } else {
-                            i += 1;
-                            continue;
-                        }
-                    }
-                }
+                None => {}
             }
 
             if let Stmt::Decl(Decl::Var(var)) = &mut stmts[i] {
@@ -1404,90 +1382,6 @@ impl VisitMut<'_> for Visitor<'_> {
 
                 i += 1;
                 continue;
-            }
-
-            if let Stmt::Try(_) = &mut stmts[i] {
-                let result = self.simplify_try_stmt(&mut stmts[i]);
-
-                match result {
-                    OptimiseStmtResult::Keep(new_stmts) => {
-                        let num_new_stmts = new_stmts.len();
-                        stmts.splice(i..i, new_stmts);
-
-                        // Skip over current and new stmts.
-                        i += num_new_stmts + 1;
-                        continue;
-                    }
-                    OptimiseStmtResult::Replace(replacements) => {
-                        let num_replacements = replacements.len();
-                        stmts.splice(i..=i, replacements);
-
-                        if num_replacements > 0 {
-                            // Skip over the new stmts.
-                            i += num_replacements;
-                            continue;
-                        } else {
-                            i += 1;
-                            continue;
-                        }
-                    }
-                }
-            }
-
-            if let Stmt::For(_) = &mut stmts[i] {
-                let result = self.simplify_for_stmt(&mut stmts[i]);
-
-                match result {
-                    OptimiseStmtResult::Keep(new_stmts) => {
-                        let num_new_stmts = new_stmts.len();
-                        stmts.splice(i..i, new_stmts);
-
-                        // Skip over current and new stmts.
-                        i += num_new_stmts + 1;
-                        continue;
-                    }
-                    OptimiseStmtResult::Replace(replacements) => {
-                        let num_replacements = replacements.len();
-                        stmts.splice(i..=i, replacements);
-
-                        if num_replacements > 0 {
-                            // Skip over the new stmts.
-                            i += num_replacements;
-                            continue;
-                        } else {
-                            i += 1;
-                            continue;
-                        }
-                    }
-                }
-            }
-
-            if let Stmt::DoWhile(_) = &mut stmts[i] {
-                let result = self.simplify_do_while_stmt(&mut stmts[i]);
-
-                match result {
-                    OptimiseStmtResult::Keep(new_stmts) => {
-                        let num_new_stmts = new_stmts.len();
-                        stmts.splice(i..i, new_stmts);
-
-                        // Skip over current and new stmts.
-                        i += num_new_stmts + 1;
-                        continue;
-                    }
-                    OptimiseStmtResult::Replace(replacements) => {
-                        let num_replacements = replacements.len();
-                        stmts.splice(i..=i, replacements);
-
-                        if num_replacements > 0 {
-                            // Skip over the new stmts.
-                            i += num_replacements;
-                            continue;
-                        } else {
-                            i += 1;
-                            continue;
-                        }
-                    }
-                }
             }
 
             i += 1;
@@ -1529,11 +1423,18 @@ impl VisitMut<'_> for Visitor<'_> {
                 }
             }
 
-            if let ModuleItem::Stmt(stmt @ Stmt::Switch(_)) = &mut items[i] {
-                let result = self.simplify_switch_stmt(stmt);
+            if let ModuleItem::Stmt(stmt) = &mut items[i] {
+                let stmt_optimisation_result = match stmt {
+                    Stmt::Switch(_) => Some(self.simplify_switch_stmt(stmt)),
+                    Stmt::If(_) => Some(self.simplify_if_stmt(stmt)),
+                    Stmt::Try(_) => Some(self.simplify_try_stmt(stmt)),
+                    Stmt::For(_) => Some(self.simplify_for_stmt(stmt)),
+                    Stmt::DoWhile(_) => Some(self.simplify_do_while_stmt(stmt)),
+                    _ => None,
+                };
 
-                match result {
-                    OptimiseStmtResult::Keep(new_stmts) => {
+                match stmt_optimisation_result {
+                    Some(OptimiseStmtResult::Keep(new_stmts)) => {
                         let num_new_stmts = new_stmts.len();
                         items.splice(i..i, new_stmts.into_iter().map(ModuleItem::Stmt));
 
@@ -1541,7 +1442,7 @@ impl VisitMut<'_> for Visitor<'_> {
                         i += num_new_stmts + 1;
                         continue;
                     }
-                    OptimiseStmtResult::Replace(replacements) => {
+                    Some(OptimiseStmtResult::Replace(replacements)) => {
                         let num_replacements = replacements.len();
                         items.splice(i..=i, replacements.into_iter().map(ModuleItem::Stmt));
 
@@ -1554,34 +1455,7 @@ impl VisitMut<'_> for Visitor<'_> {
                             continue;
                         }
                     }
-                }
-            }
-
-            if let ModuleItem::Stmt(stmt @ Stmt::If(_)) = &mut items[i] {
-                let result = self.simplify_if_stmt(stmt);
-
-                match result {
-                    OptimiseStmtResult::Keep(new_stmts) => {
-                        let num_new_stmts = new_stmts.len();
-                        items.splice(i..i, new_stmts.into_iter().map(ModuleItem::Stmt));
-
-                        // Skip over current and new stmts.
-                        i += num_new_stmts + 1;
-                        continue;
-                    }
-                    OptimiseStmtResult::Replace(replacements) => {
-                        let num_replacements = replacements.len();
-                        items.splice(i..=i, replacements.into_iter().map(ModuleItem::Stmt));
-
-                        if num_replacements > 0 {
-                            // Skip over the new stmts.
-                            i += num_replacements;
-                            continue;
-                        } else {
-                            i += 1;
-                            continue;
-                        }
-                    }
+                    None => {}
                 }
             }
 
@@ -1616,90 +1490,6 @@ impl VisitMut<'_> for Visitor<'_> {
 
                 i += 1;
                 continue;
-            }
-
-            if let ModuleItem::Stmt(stmt @ Stmt::Try(_)) = &mut items[i] {
-                let result = self.simplify_try_stmt(stmt);
-
-                match result {
-                    OptimiseStmtResult::Keep(new_stmts) => {
-                        let num_new_stmts = new_stmts.len();
-                        items.splice(i..i, new_stmts.into_iter().map(ModuleItem::Stmt));
-
-                        // Skip over current and new stmts.
-                        i += num_new_stmts + 1;
-                        continue;
-                    }
-                    OptimiseStmtResult::Replace(replacements) => {
-                        let num_replacements = replacements.len();
-                        items.splice(i..=i, replacements.into_iter().map(ModuleItem::Stmt));
-
-                        if num_replacements > 0 {
-                            // Skip over the new stmts.
-                            i += num_replacements;
-                            continue;
-                        } else {
-                            i += 1;
-                            continue;
-                        }
-                    }
-                }
-            }
-
-            if let ModuleItem::Stmt(stmt @ Stmt::For(_)) = &mut items[i] {
-                let result = self.simplify_for_stmt(stmt);
-
-                match result {
-                    OptimiseStmtResult::Keep(new_stmts) => {
-                        let num_new_stmts = new_stmts.len();
-                        items.splice(i..i, new_stmts.into_iter().map(ModuleItem::Stmt));
-
-                        // Skip over current and new stmts.
-                        i += num_new_stmts + 1;
-                        continue;
-                    }
-                    OptimiseStmtResult::Replace(replacements) => {
-                        let num_replacements = replacements.len();
-                        items.splice(i..=i, replacements.into_iter().map(ModuleItem::Stmt));
-
-                        if num_replacements > 0 {
-                            // Skip over the new stmts.
-                            i += num_replacements;
-                            continue;
-                        } else {
-                            i += 1;
-                            continue;
-                        }
-                    }
-                }
-            }
-
-            if let ModuleItem::Stmt(stmt @ Stmt::DoWhile(_)) = &mut items[i] {
-                let result = self.simplify_do_while_stmt(stmt);
-
-                match result {
-                    OptimiseStmtResult::Keep(new_stmts) => {
-                        let num_new_stmts = new_stmts.len();
-                        items.splice(i..i, new_stmts.into_iter().map(ModuleItem::Stmt));
-
-                        // Skip over current and new stmts.
-                        i += num_new_stmts + 1;
-                        continue;
-                    }
-                    OptimiseStmtResult::Replace(replacements) => {
-                        let num_replacements = replacements.len();
-                        items.splice(i..=i, replacements.into_iter().map(ModuleItem::Stmt));
-
-                        if num_replacements > 0 {
-                            // Skip over the new stmts.
-                            i += num_replacements;
-                            continue;
-                        } else {
-                            i += 1;
-                            continue;
-                        }
-                    }
-                }
             }
 
             i += 1;
