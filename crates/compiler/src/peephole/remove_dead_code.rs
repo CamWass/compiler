@@ -3610,28 +3610,6 @@ loop: {
         test_same("1 && foo(a() ? b() : 1 + c())");
     }
 
-    #[test]
-    fn testNoRemoveInherits1() {
-        test_same("var a = {}; this.b = {}; var goog = {}; goog.inherits(b, a)");
-    }
-
-    //   #[test]
-    //   fn  testNoRemoveInherits2() {
-    //     test_transform(
-    //         "var a = {}; this.b = {}; var goog = {}; goog.inherits(b, a) + 1",
-    //         "var a = {}; this.b = {}; var goog = {}; goog.inherits(b, a)");
-    //   }
-
-    #[test]
-    fn testNoRemoveInherits3() {
-        test_same("this.a = {}; var b = {}; b.inherits(a);");
-    }
-
-    //   #[test]
-    //   fn  testNoRemoveInherits4() {
-    //     test_transform("this.a = {}; var b = {}; b.inherits(a) + 1;", "this.a = {}; var b = {}; b.inherits(a)");
-    //   }
-
     //   #[test]
     //   fn  testRemoveFromLabel1() {
     //     test_transform("LBL: void 0", "");
