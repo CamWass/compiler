@@ -8,7 +8,7 @@ use crate::{
         block_may_have_side_effects, constructorCallHasSideEffects, expr_may_have_side_effects,
         function_call_may_have_side_effects, get_boolean_value, isLiteralValue, isPureIterable,
     },
-    peephole::fold_constants::evaluateComparison,
+    peephole::{fold_constants::evaluateComparison, getSideEffectFreeBooleanValue},
     utils::unwrap_as,
 };
 
@@ -1230,6 +1230,63 @@ impl Visitor<'_> {
             }
         }
     }
+
+    fn simplify_for_stmt(&mut self, stmt: &mut Stmt) -> OptimiseStmtResult {
+        let for_stmt = unwrap_as!(stmt, Stmt::For(s), s);
+
+        if let Some(test) = for_stmt.test.as_deref() {
+            if getSideEffectFreeBooleanValue(test) == Some(true) {
+                for_stmt.test = None;
+            }
+        }
+
+        if let Some(update) = for_stmt.update.as_deref_mut() {
+            let remove = self.simplify_unused_expr(update);
+
+            if remove == OptimiseExprResult::Remove {
+                for_stmt.update = None;
+            }
+        }
+
+        // There is an initializer skip it
+        if for_stmt.init.is_some() {
+            return OptimiseStmtResult::Keep(Vec::new());
+        }
+
+        let Some(test) = for_stmt.test.as_mut() else {
+            return OptimiseStmtResult::Keep(Vec::new());
+        };
+
+        if get_boolean_value(test) != Some(false) {
+            return OptimiseStmtResult::Keep(Vec::new());
+        }
+
+        let mut replacements = Vec::new();
+        self.collect_vars_declared_in_block(&for_stmt.body, &mut replacements);
+
+        if !expr_may_have_side_effects(test) {
+            // TODO: handle labelled for loops.
+            // Remove the entire loop and any associated labels.
+            //   while (parent.isLabel()) {
+            //     n = parent;
+            //     parent = parent.getParent();
+            //   }
+        } else {
+            // TODO: handle labelled for loops.
+            //   if (parent.isLabel()) {
+            //     Node block = IR.block();
+            //     block.srcrefIfMissing(statement);
+            //     block.addChildToFront(statement);
+            //     statement = block;
+            //   }
+            replacements.push(Stmt::Expr(ExprStmt {
+                node_id: self.program_data.new_id_from(test.node_id()),
+                expr: test.take(),
+            }));
+        }
+
+        return OptimiseStmtResult::Replace(replacements);
+    }
 }
 
 impl VisitMut<'_> for Visitor<'_> {
@@ -1359,6 +1416,34 @@ impl VisitMut<'_> for Visitor<'_> {
 
             if let Stmt::Try(_) = &mut stmts[i] {
                 let result = self.simplify_try_stmt(&mut stmts[i]);
+
+                match result {
+                    OptimiseStmtResult::Keep(new_stmts) => {
+                        let num_new_stmts = new_stmts.len();
+                        stmts.splice(i..i, new_stmts);
+
+                        // Skip over current and new stmts.
+                        i += num_new_stmts + 1;
+                        continue;
+                    }
+                    OptimiseStmtResult::Replace(replacements) => {
+                        let num_replacements = replacements.len();
+                        stmts.splice(i..=i, replacements);
+
+                        if num_replacements > 0 {
+                            // Skip over the new stmts.
+                            i += num_replacements;
+                            continue;
+                        } else {
+                            i += 1;
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            if let Stmt::For(_) = &mut stmts[i] {
+                let result = self.simplify_for_stmt(&mut stmts[i]);
 
                 match result {
                     OptimiseStmtResult::Keep(new_stmts) => {
@@ -1515,6 +1600,34 @@ impl VisitMut<'_> for Visitor<'_> {
 
             if let ModuleItem::Stmt(stmt @ Stmt::Try(_)) = &mut items[i] {
                 let result = self.simplify_try_stmt(stmt);
+
+                match result {
+                    OptimiseStmtResult::Keep(new_stmts) => {
+                        let num_new_stmts = new_stmts.len();
+                        items.splice(i..i, new_stmts.into_iter().map(ModuleItem::Stmt));
+
+                        // Skip over current and new stmts.
+                        i += num_new_stmts + 1;
+                        continue;
+                    }
+                    OptimiseStmtResult::Replace(replacements) => {
+                        let num_replacements = replacements.len();
+                        items.splice(i..=i, replacements.into_iter().map(ModuleItem::Stmt));
+
+                        if num_replacements > 0 {
+                            // Skip over the new stmts.
+                            i += num_replacements;
+                            continue;
+                        } else {
+                            i += 1;
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            if let ModuleItem::Stmt(stmt @ Stmt::For(_)) = &mut items[i] {
+                let result = self.simplify_for_stmt(stmt);
 
                 match result {
                     OptimiseStmtResult::Keep(new_stmts) => {
@@ -1789,6 +1902,18 @@ impl VisitMut<'_> for Visitor<'_> {
 
             if remove_default_value {
                 *node = assign.left.as_mut().take();
+            }
+        }
+    }
+
+    fn visit_mut_opt_var_decl_or_expr(&mut self, node: &mut Option<Box<VarDeclOrExpr>>) {
+        node.visit_mut_children_with(self);
+
+        if let Some(VarDeclOrExpr::Expr(expr)) = node.as_deref_mut() {
+            let remove = self.simplify_unused_expr(expr);
+
+            if remove == OptimiseExprResult::Remove {
+                *node = None;
             }
         }
     }
@@ -2321,22 +2446,22 @@ mod tests {
     //         ");
     //   }
 
-    //   #[test]
-    //   fn  testFoldUselessFor() {
-    //     test_transform("for(;false;) { foo() }", "");
-    //     test_transform("for(;void 0;) { foo() }", "");
-    //     test_transform("for(;undefined;) { foo() }", "");
-    //     test_transform("for(;true;) foo() ", "for(;;) foo() ");
-    //     test_same("for(;;) foo()");
-    //     test_transform("for(;false;) { var a = 0; }", "var a");
-    //     test_transform("for(;false;) { const a = 0; }", "");
-    //     test_transform("for(;false;) { let a = 0; }", "");
+    #[test]
+    fn testFoldUselessFor() {
+        test_transform("for(;false;) { foo() }", "");
+        test_transform("for(;void 0;) { foo() }", "");
+        test_transform("for(;undefined;) { foo() }", "");
+        test_transform("for(;true;) foo() ", "for(;;) foo() ");
+        test_same("for(;;) foo()");
+        test_transform("for(;false;) { var a = 0; }", "var a");
+        test_transform("for(;false;) { const a = 0; }", "");
+        test_transform("for(;false;) { let a = 0; }", "");
 
-    //     // Make sure it plays nice with minimizing
-    //     test_transform("for(;false;) { foo(); continue }", "");
+        // Make sure it plays nice with minimizing
+        test_transform("for(;false;) { foo(); continue }", "");
 
-    //     test_transform("l1:for(;false;) {  }", "");
-    //   }
+        // test_transform("l1:for(;false;) {  }", "");
+    }
 
     //   #[test]
     //   fn  testFoldUselessDo() {
@@ -2374,16 +2499,16 @@ mod tests {
     //     test_transform("do { } while(true);", "for (;;);");
     //   }
 
-    //   #[test]
-    //   fn  testMinimizeLoop_withConstantCondition_vanillaFor() {
-    //     test_transform("for(;true;) foo()", "for(;;) foo()");
-    //     test_transform("for(;0;) foo()", "");
-    //     test_transform("for(;0.0;) foo()", "");
-    //     test_transform("for(;NaN;) foo()", "");
-    //     test_transform("for(;null;) foo()", "");
-    //     test_transform("for(;undefined;) foo()", "");
-    //     test_transform("for(;'';) foo()", "");
-    //   }
+    #[test]
+    fn testMinimizeLoop_withConstantCondition_vanillaFor() {
+        test_transform("for(;true;) foo()", "for(;;) foo()");
+        test_transform("for(;0;) foo()", "");
+        test_transform("for(;0.0;) foo()", "");
+        test_transform("for(;NaN;) foo()", "");
+        test_transform("for(;null;) foo()", "");
+        test_transform("for(;undefined;) foo()", "");
+        test_transform("for(;'';) foo()", "");
+    }
 
     //   #[test]
     //   fn  testMinimizeLoop_withConstantCondition_doWhile() {
@@ -2455,9 +2580,9 @@ mod tests {
         test_transform("f(),true", "f()");
         test_transform("f() + g()", "f(),g()");
 
-        // test_transform("for(;;+f()){}", "for(;;f()){}");
-        // test_transform("for(+f();;g()){}", "for(f();;g()){}");
-        // test_transform("for(;;Math.random(f(),g(),h())){}", "for(;;f(),g(),h()){}");
+        test_transform("for(;;+f()){}", "for(;;f()){}");
+        test_transform("for(+f();;g()){}", "for(f();;g()){}");
+        test_transform("for(;;Math.random(f(),g(),h())){}", "for(;;f(),g(),h()){}");
 
         // The optimization cascades into conditional expressions:
         test_transform("g() && +f()", "g() && f()");
@@ -3446,10 +3571,10 @@ loop: {
         test_transform("if(x()) 1", "x()");
     }
 
-    //   #[test]
-    //   fn  testRemoveInControlStructure3() {
-    //     test_transform("for(1;2;3) 4", "for(;;);");
-    //   }
+    #[test]
+    fn testRemoveInControlStructure3() {
+        test_transform("for(1;2;3) 4", "for(;;);");
+    }
 
     #[test]
     fn testShortCircuit1() {
