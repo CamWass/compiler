@@ -1,5 +1,6 @@
 use ast::*;
 use common::{DUMMY_SP, util::take::Take};
+use rustc_hash::FxHashMap;
 use visit::{VisitMut, VisitMutWith};
 
 use crate::{
@@ -7,18 +8,36 @@ use crate::{
     node_util::{
         block_may_have_side_effects, constructorCallHasSideEffects, expr_may_have_side_effects,
         function_call_may_have_side_effects, get_boolean_value, isLiteralValue, isPureIterable,
+        stmt_may_have_side_effects,
     },
     peephole::{fold_constants::evaluateComparison, getSideEffectFreeBooleanValue},
     utils::unwrap_as,
 };
 
 pub fn process(ast: &mut Program, program_data: &mut TransformerProgramData) {
-    let mut visitor = Visitor { program_data };
+    let mut visitor = Visitor {
+        program_data,
+        hoisted_vars: FxHashMap::default(),
+    };
     ast.visit_mut_with(&mut visitor);
 }
 
 struct Visitor<'a> {
     program_data: &'a mut TransformerProgramData,
+    /// Names of var decls from within the current hoist scope that have had
+    /// their declarations removed and need to be redeclared at the top of the
+    /// hoist scope.
+    ///
+    /// For example, in:
+    /// ```js
+    /// function f() { return; var a = 1; }
+    /// ```
+    /// the declaration for `a` will be removed, but we need to ensure it's
+    /// still declared so any references to it are still valid. Therefore, we
+    /// record `a` and the node ID of the removed decl (to maintain the span)
+    /// and will later re-declare it at the top of `f` once we've finished
+    /// visiting the function.
+    hoisted_vars: FxHashMap<NameId, NodeId>,
 }
 
 #[derive(PartialEq)]
@@ -30,7 +49,7 @@ enum OptimiseExprResult {
 }
 
 enum OptimiseStmtResult {
-    Keep(Vec<Stmt>),
+    Keep,
     Replace(Vec<Stmt>),
 }
 
@@ -585,9 +604,7 @@ impl Visitor<'_> {
     fn simplify_switch_stmt(&mut self, stmt: &mut Stmt) -> OptimiseStmtResult {
         let switch = unwrap_as!(stmt, Stmt::Switch(s), s);
 
-        let mut extracted_vars = Vec::new();
-
-        self.tryOptimizeDefaultCase(switch, &mut extracted_vars);
+        self.tryOptimizeDefaultCase(switch);
 
         let has_default_case = switch.cases.iter().any(SwitchCase::is_default);
         let default_case_is_last =
@@ -611,10 +628,7 @@ impl Visitor<'_> {
                         && !expr_may_have_side_effects(test)
                         && self.isUselessCase(&switch.cases, i)
                     {
-                        self.collect_vars_declared_in_switch_case(
-                            &switch.cases[i],
-                            &mut extracted_vars,
-                        );
+                        self.collect_vars_declared_in_switch_case(&switch.cases[i]);
                         switch.cases.remove(i);
                         continue;
                     }
@@ -642,10 +656,7 @@ impl Visitor<'_> {
 
                         // Case definitely doesn't match - remove.
 
-                        self.collect_vars_declared_in_switch_case(
-                            &switch.cases[0],
-                            &mut extracted_vars,
-                        );
+                        self.collect_vars_declared_in_switch_case(&switch.cases[0]);
                         switch.cases.remove(0);
                         continue;
                     } else {
@@ -675,7 +686,7 @@ impl Visitor<'_> {
 
                             // Remove the fallthrough case labels
                             matching.cons.append(&mut cur.cons);
-                            self.collect_vars_declared_in_switch_case(cur, &mut extracted_vars);
+                            self.collect_vars_declared_in_switch_case(cur);
                             switch.cases.remove(i);
                         } else {
                             i += 1;
@@ -688,26 +699,22 @@ impl Visitor<'_> {
 
                     // Remove any remaining cases
                     for case in switch.cases.drain(i..) {
-                        self.collect_vars_declared_in_switch_case(&case, &mut extracted_vars);
+                        self.collect_vars_declared_in_switch_case(&case);
                     }
 
                     // If there is one case left, we may be able to fold it
                     if switch.cases.len() == 1 {
-                        return self.tryRemoveSwitchWithSingleCase(stmt, false, extracted_vars);
+                        return self.tryRemoveSwitchWithSingleCase(stmt, false);
                     }
                 }
             }
         }
 
         // Last, try to remove the entire switch if possible
-        self.tryRemoveSwitch(stmt, extracted_vars)
+        self.tryRemoveSwitch(stmt)
     }
 
-    fn tryRemoveSwitch(
-        &mut self,
-        stmt: &mut Stmt,
-        extracted_vars: Vec<Stmt>,
-    ) -> OptimiseStmtResult {
+    fn tryRemoveSwitch(&mut self, stmt: &mut Stmt) -> OptimiseStmtResult {
         let switch = unwrap_as!(stmt, Stmt::Switch(s), s);
 
         let has_no_cases = switch.cases.is_empty();
@@ -721,19 +728,19 @@ impl Visitor<'_> {
                 expr: switch.discriminant.take(),
             });
 
-            OptimiseStmtResult::Keep(extracted_vars)
+            OptimiseStmtResult::Keep
         } else if has_only_default_case {
             match switch.discriminant.as_ref() {
                 // Before removing switch, we must preserve the switch condition if it is a call
-                Expr::Call(_) => self.tryRemoveSwitchWithSingleCase(stmt, true, extracted_vars),
+                Expr::Call(_) => self.tryRemoveSwitchWithSingleCase(stmt, true),
                 Expr::OptChain(opt) if matches!(opt.expr.as_ref(), Expr::Call(_)) => {
-                    self.tryRemoveSwitchWithSingleCase(stmt, true, extracted_vars)
+                    self.tryRemoveSwitchWithSingleCase(stmt, true)
                 }
 
-                _ => self.tryRemoveSwitchWithSingleCase(stmt, false, extracted_vars),
+                _ => self.tryRemoveSwitchWithSingleCase(stmt, false),
             }
         } else {
-            OptimiseStmtResult::Keep(extracted_vars)
+            OptimiseStmtResult::Keep
         }
     }
 
@@ -741,7 +748,6 @@ impl Visitor<'_> {
         &mut self,
         stmt: &mut Stmt,
         shouldHoistCondition: bool,
-        extracted_vars: Vec<Stmt>,
     ) -> OptimiseStmtResult {
         let switch = unwrap_as!(stmt, Stmt::Switch(s), s);
 
@@ -754,10 +760,10 @@ impl Visitor<'_> {
 
         // Back off if the switch contains statements like "if (a) { break; }"
         if case.cons.iter().any(contains_unlabelled_break) {
-            return OptimiseStmtResult::Keep(extracted_vars);
+            return OptimiseStmtResult::Keep;
         }
 
-        let mut replacement = extracted_vars;
+        let mut replacement = Vec::new();
 
         replacement.append(&mut case.cons);
 
@@ -774,7 +780,7 @@ impl Visitor<'_> {
         OptimiseStmtResult::Replace(replacement)
     }
 
-    fn tryOptimizeDefaultCase(&mut self, switch: &mut SwitchStmt, extracted_vars: &mut Vec<Stmt>) {
+    fn tryOptimizeDefaultCase(&mut self, switch: &mut SwitchStmt) {
         let Some(last) = switch.cases.last() else {
             return;
         };
@@ -811,10 +817,7 @@ impl Visitor<'_> {
         // Remove the default case if we can
         if let Some(default_index) = default_index {
             if self.isUselessCase(&switch.cases, default_index) {
-                self.collect_vars_declared_in_switch_case(
-                    &switch.cases[default_index],
-                    extracted_vars,
-                );
+                self.collect_vars_declared_in_switch_case(&switch.cases[default_index]);
                 switch.cases.remove(default_index);
             }
         }
@@ -888,27 +891,19 @@ impl Visitor<'_> {
         true
     }
 
-    fn collect_vars_declared_in_switch_case(
-        &mut self,
-        case: &SwitchCase,
-        extracted_vars: &mut Vec<Stmt>,
-    ) {
+    fn collect_vars_declared_in_switch_case(&mut self, case: &SwitchCase) {
         for stmt in &case.cons {
-            self.collect_vars_declared_in_stmt(stmt, extracted_vars);
+            self.collect_vars_declared_in_stmt(stmt);
         }
     }
 
-    fn collect_vars_declared_in_block(
-        &mut self,
-        block: &BlockStmt,
-        extracted_vars: &mut Vec<Stmt>,
-    ) {
+    fn collect_vars_declared_in_block(&mut self, block: &BlockStmt) {
         for stmt in &block.stmts {
-            self.collect_vars_declared_in_stmt(stmt, extracted_vars);
+            self.collect_vars_declared_in_stmt(stmt);
         }
     }
 
-    fn collect_vars_declared_in_stmt(&mut self, stmt: &Stmt, extracted_vars: &mut Vec<Stmt>) {
+    fn collect_vars_declared_in_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::While(WhileStmt { body, .. })
             | Stmt::DoWhile(DoWhileStmt { body, .. })
@@ -917,27 +912,27 @@ impl Visitor<'_> {
             | Stmt::ForOf(ForOfStmt { body, .. })
             | Stmt::With(WithStmt { body, .. }) => {
                 for stmt in &body.stmts {
-                    self.collect_vars_declared_in_stmt(stmt, extracted_vars);
+                    self.collect_vars_declared_in_stmt(stmt);
                 }
             }
 
             Stmt::Block(block_stmt) => {
                 for stmt in &block_stmt.stmts {
-                    self.collect_vars_declared_in_stmt(stmt, extracted_vars);
+                    self.collect_vars_declared_in_stmt(stmt);
                 }
             }
 
             Stmt::Labeled(LabeledStmt { body, .. }) => {
-                self.collect_vars_declared_in_stmt(body, extracted_vars);
+                self.collect_vars_declared_in_stmt(body);
             }
 
             Stmt::If(if_stmt) => {
                 for stmt in &if_stmt.cons.stmts {
-                    self.collect_vars_declared_in_stmt(stmt, extracted_vars);
+                    self.collect_vars_declared_in_stmt(stmt);
                 }
                 if let Some(alt) = &if_stmt.alt {
                     for stmt in &alt.stmts {
-                        self.collect_vars_declared_in_stmt(stmt, extracted_vars);
+                        self.collect_vars_declared_in_stmt(stmt);
                     }
                 }
             }
@@ -945,25 +940,25 @@ impl Visitor<'_> {
             Stmt::Switch(switch) => {
                 for case in &switch.cases {
                     for stmt in &case.cons {
-                        self.collect_vars_declared_in_stmt(stmt, extracted_vars);
+                        self.collect_vars_declared_in_stmt(stmt);
                     }
                 }
             }
 
             Stmt::Try(try_stmt) => {
                 for stmt in &try_stmt.block.stmts {
-                    self.collect_vars_declared_in_stmt(stmt, extracted_vars);
+                    self.collect_vars_declared_in_stmt(stmt);
                 }
 
                 if let Some(handler) = try_stmt.get_catch() {
                     for stmt in &handler.body.stmts {
-                        self.collect_vars_declared_in_stmt(stmt, extracted_vars);
+                        self.collect_vars_declared_in_stmt(stmt);
                     }
                 }
 
                 if let Some(finalizer) = try_stmt.get_finally() {
                     for stmt in &finalizer.stmts {
-                        self.collect_vars_declared_in_stmt(stmt, extracted_vars);
+                        self.collect_vars_declared_in_stmt(stmt);
                     }
                 }
             }
@@ -974,24 +969,7 @@ impl Visitor<'_> {
                     if var_decl.kind == VarDeclKind::Var {
                         for decl in &var_decl.decls {
                             let names = find_pat_ids(&decl.name);
-                            extracted_vars.extend(names.into_iter().map(|(name, name_node_id)| {
-                                Stmt::Decl(Decl::Var(VarDecl {
-                                    node_id: self.program_data.new_id_from(name_node_id),
-                                    kind: VarDeclKind::Var,
-                                    decls: vec![VarDeclarator {
-                                        node_id: self.program_data.new_id_from(name_node_id),
-                                        name: Pat::Ident(BindingIdent {
-                                            id: Ident {
-                                                node_id: self
-                                                    .program_data
-                                                    .new_id_from(name_node_id),
-                                                name,
-                                            },
-                                        }),
-                                        init: None,
-                                    }],
-                                }))
-                            }));
+                            self.hoisted_vars.extend(names.into_iter());
                         }
                     }
                 }
@@ -1038,7 +1016,7 @@ impl Visitor<'_> {
                     node_id: self.program_data.new_id_from(if_stmt.test.node_id()),
                     expr: if_stmt.test.take(),
                 });
-                return OptimiseStmtResult::Keep(Vec::new());
+                return OptimiseStmtResult::Keep;
             } else {
                 // `x()` or `x?.()` has no side effects, the whole tree is useless now.
                 return OptimiseStmtResult::Replace(Vec::new());
@@ -1047,7 +1025,7 @@ impl Visitor<'_> {
 
         let Some(condValue) = get_boolean_value(&if_stmt.test) else {
             // We can't remove branches otherwise!
-            return OptimiseStmtResult::Keep(Vec::new());
+            return OptimiseStmtResult::Keep;
         };
 
         if expr_may_have_side_effects(&if_stmt.test) {
@@ -1081,28 +1059,26 @@ impl Visitor<'_> {
             };
         }
 
-        let mut extracted_vars = Vec::new();
-
         if let Some(alt) = &mut if_stmt.alt {
             // Replace "if (true) { X } else { Y }" with X, or
             // replace "if (false) { X } else { Y }" with Y.
             if condValue {
-                self.collect_vars_declared_in_block(alt, &mut extracted_vars);
+                self.collect_vars_declared_in_block(alt);
                 *stmt = Stmt::Block(if_stmt.cons.as_mut().take());
             } else {
-                self.collect_vars_declared_in_block(&if_stmt.cons, &mut extracted_vars);
+                self.collect_vars_declared_in_block(&if_stmt.cons);
                 *stmt = Stmt::Block(alt.as_mut().take());
             }
-            return OptimiseStmtResult::Keep(extracted_vars);
+            return OptimiseStmtResult::Keep;
         } else {
             if condValue {
                 // Replace "if (true) { X }" with "X".
                 *stmt = Stmt::Block(if_stmt.cons.as_mut().take());
-                return OptimiseStmtResult::Keep(extracted_vars);
+                return OptimiseStmtResult::Keep;
             } else {
                 // Remove "if (false) { X }" completely.
-                self.collect_vars_declared_in_block(&if_stmt.cons, &mut extracted_vars);
-                return OptimiseStmtResult::Replace(extracted_vars);
+                self.collect_vars_declared_in_block(&if_stmt.cons);
+                return OptimiseStmtResult::Replace(Vec::new());
             }
         }
     }
@@ -1118,12 +1094,11 @@ impl Visitor<'_> {
                         return OptimiseStmtResult::Replace(Vec::new());
                     } else {
                         // try {} catch { something }
-                        let mut extracted_vars = Vec::new();
-                        self.collect_vars_declared_in_block(&catch.body, &mut extracted_vars);
-                        return OptimiseStmtResult::Replace(extracted_vars);
+                        self.collect_vars_declared_in_block(&catch.body);
+                        return OptimiseStmtResult::Replace(Vec::new());
                     }
                 } else {
-                    return OptimiseStmtResult::Keep(Vec::new());
+                    return OptimiseStmtResult::Keep;
                 }
             }
             TryStmtTail::Finally(finally) => {
@@ -1134,14 +1109,14 @@ impl Visitor<'_> {
                     } else {
                         // try {} finally { something }
                         *stmt = Stmt::Block(finally.as_mut().take());
-                        return OptimiseStmtResult::Keep(Vec::new());
+                        return OptimiseStmtResult::Keep;
                     }
                 } else {
                     if finally.stmts.is_empty() {
                         // try { something } finally {}
                         *stmt = Stmt::Block(try_stmt.block.take());
                     }
-                    return OptimiseStmtResult::Keep(Vec::new());
+                    return OptimiseStmtResult::Keep;
                 }
             }
             TryStmtTail::CatchFinally(catch, finally) => {
@@ -1150,9 +1125,8 @@ impl Visitor<'_> {
                     if finally.stmts.is_empty() {
                         if !catch.body.stmts.is_empty() {
                             // try {} catch { something } finally {}
-                            let mut extracted_vars = Vec::new();
-                            self.collect_vars_declared_in_block(&catch.body, &mut extracted_vars);
-                            return OptimiseStmtResult::Replace(extracted_vars);
+                            self.collect_vars_declared_in_block(&catch.body);
+                            return OptimiseStmtResult::Replace(Vec::new());
                         } else {
                             // try {} catch {} finally {}
                             return OptimiseStmtResult::Replace(Vec::new());
@@ -1160,14 +1134,13 @@ impl Visitor<'_> {
                     } else {
                         if !catch.body.stmts.is_empty() {
                             // try {} catch { something } finally { something }
-                            let mut extracted_vars = Vec::new();
-                            self.collect_vars_declared_in_block(&catch.body, &mut extracted_vars);
+                            self.collect_vars_declared_in_block(&catch.body);
                             *stmt = Stmt::Block(finally.as_mut().take());
-                            return OptimiseStmtResult::Keep(extracted_vars);
+                            return OptimiseStmtResult::Keep;
                         } else {
                             // try {} catch {} finally { something }
                             *stmt = Stmt::Block(finally.as_mut().take());
-                            return OptimiseStmtResult::Keep(Vec::new());
+                            return OptimiseStmtResult::Keep;
                         }
                     }
                 } else {
@@ -1176,7 +1149,7 @@ impl Visitor<'_> {
                         // try { something } catch { something } finally {}
                         try_stmt.tail = TryStmtTail::Catch(catch.take());
                     }
-                    return OptimiseStmtResult::Keep(Vec::new());
+                    return OptimiseStmtResult::Keep;
                 }
             }
         }
@@ -1191,6 +1164,14 @@ impl Visitor<'_> {
             }
         }
 
+        if let Some(VarDeclOrExpr::Expr(init)) = for_stmt.init.as_deref_mut() {
+            let remove = self.simplify_unused_expr(init);
+
+            if remove == OptimiseExprResult::Remove {
+                for_stmt.init = None;
+            }
+        }
+
         if let Some(update) = for_stmt.update.as_deref_mut() {
             let remove = self.simplify_unused_expr(update);
 
@@ -1201,28 +1182,28 @@ impl Visitor<'_> {
 
         // There is an initializer skip it
         if for_stmt.init.is_some() {
-            return OptimiseStmtResult::Keep(Vec::new());
+            return OptimiseStmtResult::Keep;
         }
 
         let Some(test) = for_stmt.test.as_mut() else {
-            return OptimiseStmtResult::Keep(Vec::new());
+            return OptimiseStmtResult::Keep;
         };
 
         if get_boolean_value(test) != Some(false) {
-            return OptimiseStmtResult::Keep(Vec::new());
+            return OptimiseStmtResult::Keep;
         }
 
-        let mut replacements = Vec::new();
-        self.collect_vars_declared_in_block(&for_stmt.body, &mut replacements);
+        self.collect_vars_declared_in_block(&for_stmt.body);
 
         if expr_may_have_side_effects(test) {
-            replacements.push(Stmt::Expr(ExprStmt {
+            *stmt = Stmt::Expr(ExprStmt {
                 node_id: self.program_data.new_id_from(test.node_id()),
                 expr: test.take(),
-            }));
+            });
+            OptimiseStmtResult::Keep
+        } else {
+            OptimiseStmtResult::Replace(Vec::new())
         }
-
-        return OptimiseStmtResult::Replace(replacements);
     }
 
     fn simplify_do_while_stmt(&mut self, stmt: &mut Stmt) -> OptimiseStmtResult {
@@ -1243,7 +1224,7 @@ impl Visitor<'_> {
 
             *stmt = Stmt::Block(do_while_stmt.body.as_mut().take());
 
-            return OptimiseStmtResult::Keep(Vec::new());
+            return OptimiseStmtResult::Keep;
         }
 
         // TODO: is this necessary? Does CFA actually struggle with do-whiles?
@@ -1259,7 +1240,7 @@ impl Visitor<'_> {
             });
         }
 
-        OptimiseStmtResult::Keep(Vec::new())
+        OptimiseStmtResult::Keep
     }
 
     fn simplify_labelled_stmt(&mut self, stmt: &mut Stmt) -> OptimiseStmtResult {
@@ -1293,7 +1274,7 @@ impl Visitor<'_> {
                 let result = self.simplify_unused_expr(&mut expr.expr);
                 match result {
                     OptimiseExprResult::Keep => {
-                        return OptimiseStmtResult::Keep(Vec::new());
+                        return OptimiseStmtResult::Keep;
                     }
                     OptimiseExprResult::Remove => {
                         return OptimiseStmtResult::Replace(Vec::new());
@@ -1304,13 +1285,238 @@ impl Visitor<'_> {
                 return self.simplify_for_stmt(body);
             }
             _ => {
-                return OptimiseStmtResult::Keep(Vec::new());
+                return OptimiseStmtResult::Keep;
             }
         }
+    }
+
+    /// Returns a fresh var declaration statement for each var decl that was
+    /// removed in the current hoist scope.
+    ///
+    /// For example, in:
+    /// ```js
+    /// function f() { return; var a = 1; var b = 2; }
+    /// ```
+    /// this function will return `var a` and `var b`.
+    fn get_hoisted_var_decls(&mut self) -> impl Iterator<Item = Stmt> {
+        self.hoisted_vars.iter().map(|(&name, &name_node_id)| {
+            Stmt::Decl(Decl::Var(VarDecl {
+                node_id: self.program_data.new_id_from(name_node_id),
+                kind: VarDeclKind::Var,
+                decls: vec![VarDeclarator {
+                    node_id: self.program_data.new_id_from(name_node_id),
+                    name: Pat::Ident(BindingIdent {
+                        id: Ident {
+                            node_id: self.program_data.new_id_from(name_node_id),
+                            name,
+                        },
+                    }),
+                    init: None,
+                }],
+            }))
+        })
+    }
+
+    fn simplify_stmts(&mut self, stmts: &mut Vec<Stmt>) {
+        let mut new_stmts = Vec::new();
+
+        let mut old_stmts = stmts.take().into_iter();
+
+        while let Some(stmt) = old_stmts.next() {
+            if !stmt_may_have_side_effects(&stmt) {
+                continue;
+            }
+
+            let is_exit = isExit(&stmt);
+
+            new_stmts.push(stmt);
+
+            if is_exit {
+                break;
+            }
+        }
+
+        let mut stmts_after_exit = old_stmts;
+
+        while let Some(stmt) = stmts_after_exit.next() {
+            if matches!(stmt, Stmt::Decl(Decl::Fn(_))) {
+                // Don't remove function declarations as they are
+                // hoisted.
+                new_stmts.push(stmt);
+                continue;
+            }
+
+            if matches!(stmt, Stmt::Decl(Decl::Class(_))) {
+                // Keep block-scoped declarations - they may be
+                // referenced by hoisted functions.
+                new_stmts.push(stmt);
+                continue;
+            }
+
+            if let Stmt::Decl(Decl::Var(var)) = &stmt {
+                if let VarDeclKind::Let | VarDeclKind::Const = var.kind {
+                    // Keep block-scoped declarations - they may be
+                    // referenced by hoisted functions.
+                    for decl in &var.decls {
+                        let names = find_pat_ids(&decl.name);
+                        new_stmts.extend(names.into_iter().map(|(name, name_node_id)| {
+                            Stmt::Decl(Decl::Var(VarDecl {
+                                node_id: self.program_data.new_id_from(name_node_id),
+                                kind: VarDeclKind::Let,
+                                decls: vec![VarDeclarator {
+                                    node_id: self.program_data.new_id_from(name_node_id),
+                                    name: Pat::Ident(BindingIdent {
+                                        id: Ident {
+                                            node_id: self.program_data.new_id_from(name_node_id),
+                                            name,
+                                        },
+                                    }),
+                                    init: None,
+                                }],
+                            }))
+                        }));
+                    }
+                }
+            }
+
+            // Drop non-declaration stmts following the exit.
+
+            self.collect_vars_declared_in_stmt(&stmt);
+        }
+
+        *stmts = new_stmts;
+    }
+
+    fn simplify_module_items(&mut self, items: &mut Vec<ModuleItem>) {
+        let mut new_items = Vec::new();
+
+        let mut old_items = items.take().into_iter();
+
+        while let Some(item) = old_items.next() {
+            let ModuleItem::Stmt(stmt) = &item else {
+                new_items.push(item);
+                continue;
+            };
+
+            if !stmt_may_have_side_effects(stmt) {
+                continue;
+            }
+
+            let is_exit = isExit(stmt);
+
+            new_items.push(item);
+
+            if is_exit {
+                break;
+            }
+        }
+
+        let mut items_after_exit = old_items;
+
+        while let Some(item) = items_after_exit.next() {
+            let ModuleItem::Stmt(stmt) = &item else {
+                new_items.push(item);
+                continue;
+            };
+
+            if matches!(stmt, Stmt::Decl(Decl::Fn(_))) {
+                // Don't remove function declarations as they are
+                // hoisted.
+                new_items.push(item);
+                continue;
+            }
+
+            if matches!(stmt, Stmt::Decl(Decl::Class(_))) {
+                // Keep block-scoped declarations - they may be
+                // referenced by hoisted functions.
+                new_items.push(item);
+                continue;
+            }
+
+            if let Stmt::Decl(Decl::Var(var)) = &stmt {
+                match var.kind {
+                    VarDeclKind::Var => {
+                        self.collect_vars_declared_in_stmt(&stmt);
+                    }
+                    VarDeclKind::Let | VarDeclKind::Const => {
+                        // Keep block-scoped declarations - they may be
+                        // referenced by hoisted functions.
+                        for decl in &var.decls {
+                            let names = find_pat_ids(&decl.name);
+                            new_items.extend(names.into_iter().map(|(name, name_node_id)| {
+                                ModuleItem::Stmt(Stmt::Decl(Decl::Var(VarDecl {
+                                    node_id: self.program_data.new_id_from(name_node_id),
+                                    kind: VarDeclKind::Let,
+                                    decls: vec![VarDeclarator {
+                                        node_id: self.program_data.new_id_from(name_node_id),
+                                        name: Pat::Ident(BindingIdent {
+                                            id: Ident {
+                                                node_id: self
+                                                    .program_data
+                                                    .new_id_from(name_node_id),
+                                                name,
+                                            },
+                                        }),
+                                        init: None,
+                                    }],
+                                })))
+                            }));
+                        }
+                    }
+                }
+
+                continue;
+            }
+
+            // Drop non-declaration items following the exit.
+        }
+
+        *items = new_items;
     }
 }
 
 impl VisitMut<'_> for Visitor<'_> {
+    fn visit_mut_script(&mut self, node: &mut Script) {
+        node.visit_mut_children_with(self);
+        node.body.splice(0..0, self.get_hoisted_var_decls());
+    }
+    fn visit_mut_module(&mut self, node: &mut Module) {
+        node.visit_mut_children_with(self);
+        node.body
+            .splice(0..0, self.get_hoisted_var_decls().map(ModuleItem::Stmt));
+    }
+
+    fn visit_mut_function(&mut self, node: &mut Function) {
+        let old = std::mem::take(&mut self.hoisted_vars);
+        node.visit_mut_children_with(self);
+        node.body.stmts.splice(0..0, self.get_hoisted_var_decls());
+        self.hoisted_vars = old;
+    }
+    fn visit_mut_constructor(&mut self, node: &mut Constructor) {
+        let old = std::mem::take(&mut self.hoisted_vars);
+        node.visit_mut_children_with(self);
+        node.body.stmts.splice(0..0, self.get_hoisted_var_decls());
+        self.hoisted_vars = old;
+    }
+    fn visit_mut_arrow_expr(&mut self, node: &mut ArrowExpr) {
+        let old = std::mem::take(&mut self.hoisted_vars);
+        node.visit_mut_children_with(self);
+        node.body.stmts.splice(0..0, self.get_hoisted_var_decls());
+        self.hoisted_vars = old;
+    }
+    fn visit_mut_getter_prop(&mut self, node: &mut GetterProp) {
+        let old = std::mem::take(&mut self.hoisted_vars);
+        node.visit_mut_children_with(self);
+        node.body.stmts.splice(0..0, self.get_hoisted_var_decls());
+        self.hoisted_vars = old;
+    }
+    fn visit_mut_setter_prop(&mut self, node: &mut SetterProp) {
+        let old = std::mem::take(&mut self.hoisted_vars);
+        node.visit_mut_children_with(self);
+        node.body.stmts.splice(0..0, self.get_hoisted_var_decls());
+        self.hoisted_vars = old;
+    }
+
     fn visit_mut_stmts(&mut self, stmts: &mut Vec<Stmt>) {
         let mut i = 0;
         // TODO: it might be faster to iterate back-to-front here, or
@@ -1360,12 +1566,8 @@ impl VisitMut<'_> for Visitor<'_> {
             };
 
             match stmt_optimisation_result {
-                Some(OptimiseStmtResult::Keep(new_stmts)) => {
-                    let num_new_stmts = new_stmts.len();
-                    stmts.splice(i..i, new_stmts);
-
-                    // Skip over current and new stmts.
-                    i += num_new_stmts + 1;
+                Some(OptimiseStmtResult::Keep) => {
+                    i += 1;
                     continue;
                 }
                 Some(OptimiseStmtResult::Replace(replacements)) => {
@@ -1419,6 +1621,8 @@ impl VisitMut<'_> for Visitor<'_> {
 
             i += 1;
         }
+
+        self.simplify_stmts(stmts);
     }
 
     fn visit_mut_module_items(&mut self, items: &mut Vec<ModuleItem>) {
@@ -1468,12 +1672,8 @@ impl VisitMut<'_> for Visitor<'_> {
                 };
 
                 match stmt_optimisation_result {
-                    Some(OptimiseStmtResult::Keep(new_stmts)) => {
-                        let num_new_stmts = new_stmts.len();
-                        items.splice(i..i, new_stmts.into_iter().map(ModuleItem::Stmt));
-
-                        // Skip over current and new stmts.
-                        i += num_new_stmts + 1;
+                    Some(OptimiseStmtResult::Keep) => {
+                        i += 1;
                         continue;
                     }
                     Some(OptimiseStmtResult::Replace(replacements)) => {
@@ -1528,6 +1728,8 @@ impl VisitMut<'_> for Visitor<'_> {
 
             i += 1;
         }
+
+        self.simplify_module_items(items);
     }
 
     fn visit_mut_expr(&mut self, node: &mut Expr) {
@@ -1777,18 +1979,6 @@ impl VisitMut<'_> for Visitor<'_> {
             }
         }
     }
-
-    fn visit_mut_opt_var_decl_or_expr(&mut self, node: &mut Option<Box<VarDeclOrExpr>>) {
-        node.visit_mut_children_with(self);
-
-        if let Some(VarDeclOrExpr::Expr(expr)) = node.as_deref_mut() {
-            let remove = self.simplify_unused_expr(expr);
-
-            if remove == OptimiseExprResult::Remove {
-                *node = None;
-            }
-        }
-    }
 }
 
 fn isRemovableDestructuringTarget(pat: &Pat) -> bool {
@@ -1888,22 +2078,20 @@ fn isSwitchExit(switch: &SwitchStmt) -> bool {
         }
 
         let is_last_case = i == switch.cases.len() - 1;
-        if (case.cons.is_empty() || is_last_case) && !isUnconditionalBlockExit(&case.cons) {
+        if (!case.cons.is_empty() || is_last_case) && !isUnconditionalBlockExit(&case.cons) {
             return false;
         }
     }
 
+    // TODO: This matches closure, but is it correct?
     hasDefaultCase
 }
 
 /** Return true if the try..catch always "exits" (return, throw, etc). */
 fn isTryExit(try_stmt: &TryStmt) -> bool {
-    // TODO: You can have try..finally right? i.e a try with two children.
     // finally - regardless of the behavior of the other blocks,
-    // an exit from the finally with guarantee that behavior.
-    if try_stmt.get_catch().is_some()
-        && let Some(finalizer) = try_stmt.get_finally()
-    {
+    // an exit from the finally will guarantee that behavior.
+    if let Some(finalizer) = try_stmt.get_finally() {
         if isUnconditionalBlockExit(&finalizer.stmts) {
             return true;
         }
@@ -2081,8 +2269,8 @@ mod tests {
         test_transform("a: break a;", "");
         test_transform("a: { break a; }", "");
 
-        // test_transform("a: { break a; console.log('unreachable'); }", "");
-        // test_transform("a: { break a; var x = 1; } x = 2;", "var x; x = 2;");
+        test_transform("a: { break a; console.log('unreachable'); }", "");
+        test_transform("a: { break a; var x = 1; } x = 2;", "var x; x = 2;");
 
         test_same("b: { var x = 1; } x = 2;");
         test_same("a: b: { var x = 1; } x = 2;");
@@ -2111,45 +2299,28 @@ mod tests {
         test_transform("{x=3;;;y=2;;;}", "x=3;y=2");
 
         // Cases to test for empty block.
-        // test_transform("while(x()){x}", "while(x());");
-        // test_transform("while(x()){x()}", "while(x())x()");
-        // test_transform("for(x=0;x<100;x++){x}", "for(x=0;x<100;x++);");
-        // test_transform("for(x in y){x}", "for(x in y);");
-        // test_transform("for (x of y) {x}", "for(x of y);");
-        // test_same("for (let x = 1; x <10; x++ ) {}");
-        // test_same("for (var x = 1; x <10; x++ ) {}");
+        test_transform("while(x()){x}", "while(x());");
+        test_transform("while(x()){x()}", "while(x())x()");
+        test_transform("for(x=0;x<100;x++){x}", "for(x=0;x<100;x++);");
+        test_transform("for(x in y){x}", "for(x in y);");
+        test_transform("for (x of y) {x}", "for(x of y);");
+        test_same("for (let x = 1; x <10; x++ ) {}");
+        test_same("for (var x = 1; x <10; x++ ) {}");
     }
 
-    //   #[test]
-    //   fn  testFoldBlockWithDeclaration_notNormalized() {
-    //     disableNormalize();
-    //     disableComputeSideEffects();
-
-    //     test_same("{let x}");
-    //     test_same("function f() {let x}");
-    //     test_same("{const x = 1}");
-    //     test_same("{x = 2; y = 4; let z;}");
-    //     test_transform("{'hi'; let x;}", "{let x}");
-    //     test_transform("{x = 4; {let y}}", "x = 4; {let y}");
-    //     test_same("{class C {}} {class C {}}");
-    //     test_transform("{label: var x}", "label: var x");
-    //     // `{label: let x}` is a syntax error
-    //     test_same("{label: var x; let y;}");
-    //   }
-
-    //   #[test]
-    //   fn  testFoldBlockWithDeclaration_normalized() {
-    //     test_transform("{let x}", "let x");
-    //     test_same("function f() {let x}");
-    //     test_transform("{const x = 1}", "const x = 1;");
-    //     test_transform("{x = 2; y = 4; let z;}", "x = 2; y = 4; let z;");
-    //     test_transform("{'hi'; let x;}", "let x;");
-    //     test_transform("{x = 4; {let y}}", "x = 4; let y;");
-    //     test_transform("{class C {}} {class C {}}", "class C {} class C$jscomp$1 {}");
-    //     test_transform("{label: var x}", "label: var x");
-    //     // `{label: let x}` is a syntax error
-    //     test_transform("{label: var x; let y;}", "label: var x; let y;");
-    //   }
+    #[test]
+    fn testFoldBlockWithDeclaration() {
+        test_transform("{let x}", "let x");
+        test_same("function f() {let x}");
+        test_transform("{const x = 1}", "const x = 1;");
+        test_transform("{x = 2; y = 4; let z;}", "x = 2; y = 4; let z;");
+        test_transform("{'hi'; let x;}", "let x;");
+        test_transform("{x = 4; {let y}}", "x = 4; let y;");
+        test_transform("{class C {}} {class C {}}", "class C {} class C {}");
+        test_transform("{label: var x}", "label: var x");
+        // `{label: let x}` is a syntax error
+        test_transform("{label: var x; let y;}", "label: var x; let y;");
+    }
 
     // Try to remove spurious blocks with multiple children
     #[test]
@@ -2460,10 +2631,10 @@ mod tests {
             "do { foo(); continue } while(0)",
         );
 
-        // test_transform(
-        //     "l1: { do { x = 1; break l1; } while (0); x = 2; }",
-        //     "l1: { x = 1; break l1; }",
-        // );
+        test_transform(
+            "l1: { do { x = 1; break l1; } while (0); x = 2; }",
+            "l1: { x = 1; break l1; }",
+        );
 
         test_transform("do { x = 1; } while (x = 0);", "x = 1; x = 0;");
         test_transform(
@@ -2600,7 +2771,7 @@ mod tests {
             "switch(a){default: var b; break; case 1: var c; break;}",
             "var b; var c;",
         );
-        test_transform("var x=1; switch(x) { case 1: var y; }", "var x=1; var y;");
+        test_transform("var x=1; switch(x) { case 1: var y; }", "var y; var x=1;");
 
         // Can't remove cases if a default exists and is not the last case.
         test_same("function f() {switch(a){default: return; case 1: break;}}");
@@ -2777,13 +2948,6 @@ switch (0) {
 }",
             "foo();",
         );
-        //         test_same(
-        //             "
-        // switch ('\\v') {
-        //     case '\\u000B':
-        //         foo();
-        // }",
-        //         );
         test_transform(
             "
 switch ('empty') {
@@ -3207,18 +3371,18 @@ switch (x) {
 }",
         );
 
-        //         test_transform(
-        //             "
-        // switch ('hasDefaultCase') {
-        //     case 'foo':
-        //         foo();
-        //         break;
-        //     default:
-        //         if (true) { break; }
-        //         bar();
-        // }",
-        //             "",
-        //         );
+        test_transform(
+            "
+switch ('hasDefaultCase') {
+    case 'foo':
+        foo();
+        break;
+    default:
+        if (true) { break; }
+        bar();
+}",
+            "",
+        );
 
         test_transform(
             "
@@ -3283,13 +3447,13 @@ loop: {
         );
     }
 
-    // #[test]
-    // fn testTreatSwitchAsExit() {
-    //     test_transform(
-    //         "a: {switch(x){ case 1: case 2: break a; default: foo(); break a;} bar(); }",
-    //         "a: {switch(x){ case 1: case 2: break a; default: foo(); break a;} }",
-    //     );
-    // }
+    #[test]
+    fn testTreatSwitchAsExit() {
+        test_transform(
+            "a: {switch(x){ case 1: case 2: break a; default: foo(); break a;} bar(); }",
+            "a: {switch(x){ case 1: case 2: break a; default: foo(); break a;} }",
+        );
+    }
 
     #[test]
     fn testDontTreatSwitchAsExit() {
@@ -3308,20 +3472,23 @@ loop: {
         test_same("a: {switch(x){ case 1: if (y) { break; } break a; default: break a;} bar(); }");
     }
 
-    //   #[test]
-    //   fn  testTreatTryAsExit() {
-    //     test_transform(
-    //         "a: {try { foo(); break a; } catch (e) { foo(); break a; } bar(); }",
-    //         "a: {try { foo(); break a; } catch (e) { foo(); break a; } }");
+    #[test]
+    fn testTreatTryAsExit() {
+        test_transform(
+            "a: {try { foo(); break a; } catch (e) { foo(); break a; } bar(); }",
+            "a: {try { foo(); break a; } catch (e) { foo(); break a; } }",
+        );
 
-    //     test_transform(
-    //         "a: {try { foo(); } finally { foo(); break a; } bar(); }",
-    //         "a: {try { foo(); } finally { foo(); break a; } }");
+        test_transform(
+            "a: {try { foo(); } finally { foo(); break a; } bar(); }",
+            "a: {try { foo(); } finally { foo(); break a; } }",
+        );
 
-    //     test_transform(
-    //         "a: {try { foo(); break a; } finally { foo(); } bar(); }",
-    //         "a: {try { foo(); break a; } finally { foo(); } }");
-    //   }
+        test_transform(
+            "a: {try { foo(); break a; } finally { foo(); } bar(); }",
+            "a: {try { foo(); break a; } finally { foo(); } }",
+        );
+    }
 
     #[test]
     fn testDontTreatTryAsExit() {
@@ -3728,10 +3895,10 @@ loop: {
         test_same("try { try {foo()} catch (e) {bar()}} catch (x) {bar()}");
         test_transform("try {var x = 1} finally {}", "var x = 1;");
         test_same("try {var x = 1} finally {x()}");
-        // test_transform(
-        //     "function f() { return; try{ var x = 1; }finally{} }",
-        //     "function f() { var x; return; }",
-        // );
+        test_transform(
+            "function f() { return; try{ var x = 1; }finally{} }",
+            "function f() { var x; return; }",
+        );
         test_transform("try {} finally {x()}", "x()");
         test_transform("try {} catch (e) { bar()} finally {x()}", "x()");
         test_transform("try {} catch (e) { bar()}", "");
@@ -4191,96 +4358,86 @@ class C {
         test_transform("void use(() => void foo());", "use(() => void foo());");
     }
 
-    //   private void testInFn(String js, String expected) {
-    //     String pre = "function f() {";
-    //     String post = "}";
-    //     test(pre + js + post, pre + expected + post);
-    //   }
+    #[test]
+    fn testRemoveDeadStatements1() {
+        test_transform("throw 1; x;", "throw 1;");
+        test_transform("throw 1; alert(1)", "throw 1;");
+        test_transform("throw 1; var x = 1", "var x; throw 1;");
+    }
 
-    //   private void testInLoop(String js, String expected) {
-    //     testInLoop(js, "", expected);
-    //   }
+    #[test]
+    fn testRemoveDeadStatements2() {
+        test_transform("function f() { return; x; }", "function f() { return; }");
+        test_transform(
+            "function f() { return; alert(1) }",
+            "function f() { return; }",
+        );
+        test_transform(
+            "function f() { return; var x = 1 }",
+            "function f() { var x; return; }",
+        );
+    }
 
-    //   private void testInLoop(String js, String expectedBeforeLoop, String expected) {
-    //     String pre = "for (;;) {";
-    //     String post = "}";
-    //     test(pre + js + post, expectedBeforeLoop + pre + expected + post);
-    //   }
+    #[test]
+    fn testRemoveDeadStatements3() {
+        test_transform("for (;;) { break; x; }", "for (;;) { break; }");
+        test_transform("for (;;) { break; alert(1) }", "for (;;) { break; }");
+        test_transform(
+            "for (;;) { break; var x = 1 }",
+            "var x; for (;;) { break; }",
+        );
+    }
 
-    //   #[test]
-    //   fn  testRemoveDeadStatements1() {
-    //     test("throw 1; x;", "throw 1;");
-    //     test("throw 1; alert(1)", "throw 1;");
-    //     test("throw 1; var x = 1", "var x; throw 1;");
-    //   }
+    #[test]
+    fn testRemoveDeadStatements4() {
+        test_transform("for (;;) { continue; x; }", "for (;;) { continue; }");
+        test_transform("for (;;) { continue; alert(1) }", "for (;;) { continue; }");
+        test_transform(
+            "for (;;) { continue; var x = 1 }",
+            "var x; for (;;) { continue; }",
+        );
+    }
 
-    //   #[test]
-    //   fn  testRemoveDeadStatements2() {
-    //     testInFn("return; x;", "return;");
-    //     testInFn("return; alert(1)", "return;");
-    //     testInFn("return; var x = 1", "var x; return;");
-    //   }
+    #[test]
+    fn testRemovalRequiresRedeclaration() {
+        test_transform("while(1) { break; var x = 1}", "var x; while(1) { break }");
+        test_transform(
+            "while(1) { break; var x=1; var y=1 }",
+            "var x; var y; while(1) { break }",
+        );
+        test_transform(
+            "while(1) { break; var [x, [[[y]]]] = [];}",
+            "var x; var y; while(1) { break }",
+        );
+    }
 
-    //   #[test]
-    //   fn  testRemoveDeadStatements3() {
-    //     testInLoop("break; x;", "break;");
-    //     testInLoop("break; alert(1)", "break;");
-    //     testInLoop("break; var x = 1", "var x;", "break;");
-    //   }
+    #[test]
+    fn testRemoveDo() {
+        test_transform(
+            "do { print(1); break } while(1)",
+            "do { print(1); break } while(1)",
+        );
+        test_transform(
+            "while(1) { break; do { print(1); break } while(1) }",
+            "while(1) { break; }",
+        );
+    }
 
-    //   #[test]
-    //   fn  testRemoveDeadStatements4() {
-    //     testInLoop("continue; x;", "continue;");
-    //     testInLoop("continue; alert(1)", "continue;");
-    //     testInLoop("continue; var x = 1", "var x;", "continue;");
-    //   }
-
-    //   #[test]
-    //   fn  testRemovalRequiresRedeclaration() {
-    //     test( //
-    //         "while(1) { break; var x = 1}", //
-    //         "var x; for(;;) { break }");
-    //     test( //
-    //         "while(1) { break; var x=1; var y=1 }", //
-    //         "var y; var x; for(;;) { break }");
-    //     test( //
-    //         "while(1) { break; var [x, [[[y]]]] = [];}", //
-    //         "var y; var x; for(;;) { break }");
-    //   }
-
-    //   #[test]
-    //   fn  testRemovalRequiresRedeclaration_normalizeDisabled() {
-    //     disableNormalize();
-    //     disableComputeSideEffects();
-    //     test( //
-    //         "while(1) { break; var x = 1}", //
-    //         "var x; while (1) { break; }");
-    //     test( //
-    //         "while(1) { break; var x=1; var y=1 }", //
-    //         "var y; var x; while (1) { break; }");
-    //     test( //
-    //         "while(1) { break; var [x, [[[y]]]] = [];}", //
-    //         "var y; var x; while (1) { break; }");
-    //   }
-
-    //   #[test]
-    //   fn  testRemoveDo() {
-    //     test("do { print(1); break } while(1)", "do { print(1); break } while(1)");
-    //     test("while(1) { break; do { print(1); break } while(1) }", "for (;;) { break; }");
-    //   }
-
-    //   #[test]
-    //   fn  testSwitchCase() {
-    //     test(
-    //         "function f() { switch(x) { case 1: break; default: return 5; foo()}}",
-    //         "function f() { switch(x) { case 1: break; default: return 5;}}");
-    //     test(
-    //         "function f() { switch(x) { default: return; case 1: foo(); bar()}}",
-    //         "function f() { switch(x) { default: return; case 1: foo(); bar()}}");
-    //     test(
-    //         "function f() { switch(x) { default: return; case 1: return 5;bar()}}",
-    //         "function f() { switch(x) { default: return; case 1: return 5;}}");
-    //   }
+    #[test]
+    fn testSwitchCase() {
+        test_transform(
+            "function f() { switch(x) { case 1: break; default: return 5; foo()}}",
+            "function f() { switch(x) { case 1: break; default: return 5;}}",
+        );
+        test_transform(
+            "function f() { switch(x) { default: return; case 1: foo(); bar()}}",
+            "function f() { switch(x) { default: return; case 1: foo(); bar()}}",
+        );
+        test_transform(
+            "function f() { switch(x) { default: return; case 1: return 5;bar()}}",
+            "function f() { switch(x) { default: return; case 1: return 5;}}",
+        );
+    }
 
     fn test_transform(input: &str, expected: &str) {
         crate::testing::test_transform(

@@ -376,27 +376,7 @@ pub fn stmt_may_have_side_effects(stmt: &Stmt) -> bool {
                 })
         }
 
-        Stmt::For(for_stmt) => {
-            match for_stmt.init.as_deref() {
-                Some(VarDeclOrExpr::VarDecl(_)) => return true,
-                Some(VarDeclOrExpr::Expr(expr)) => {
-                    if expr_may_have_side_effects(expr) {
-                        return true;
-                    }
-                }
-                None => {}
-            }
-
-            for_stmt
-                .test
-                .as_deref()
-                .is_some_and(expr_may_have_side_effects)
-                || for_stmt
-                    .update
-                    .as_deref()
-                    .is_some_and(expr_may_have_side_effects)
-                || for_stmt.body.stmts.iter().any(stmt_may_have_side_effects)
-        }
+        Stmt::For(_) => true,
 
         Stmt::Decl(_) => true,
 
