@@ -747,55 +747,6 @@ impl Visitor<'_> {
 
         let case = switch.cases.first_mut().unwrap();
 
-        fn contains_unlabelled_break(stmt: &Stmt) -> bool {
-            match stmt {
-                Stmt::Break(break_stmt) => matches!(break_stmt, BreakStmt { label: None, .. }),
-
-                Stmt::Block(block_stmt) => block_stmt.stmts.iter().any(contains_unlabelled_break),
-                Stmt::If(if_stmt) => {
-                    if_stmt.cons.stmts.iter().any(contains_unlabelled_break)
-                        || if_stmt
-                            .alt
-                            .as_ref()
-                            .is_some_and(|s| s.stmts.iter().any(contains_unlabelled_break))
-                }
-
-                // Any unlabelled break in an inner switch or loop corresponds
-                // to that inner construct, not the outer switch that we're
-                // scanning.
-                Stmt::Switch(_)
-                | Stmt::While(_)
-                | Stmt::DoWhile(_)
-                | Stmt::For(_)
-                | Stmt::ForIn(_)
-                | Stmt::ForOf(_) => false,
-
-                Stmt::Try(try_stmt) => {
-                    try_stmt.block.stmts.iter().any(contains_unlabelled_break)
-                        || try_stmt.get_catch().is_some_and(|catch| {
-                            catch.body.stmts.iter().any(contains_unlabelled_break)
-                        })
-                        || try_stmt.get_finally().is_some_and(|finalizer| {
-                            finalizer.stmts.iter().any(contains_unlabelled_break)
-                        })
-                }
-
-                Stmt::With(WithStmt { body, .. }) => {
-                    body.stmts.iter().any(contains_unlabelled_break)
-                }
-
-                Stmt::Labeled(LabeledStmt { body, .. }) => contains_unlabelled_break(body),
-
-                Stmt::Empty(_)
-                | Stmt::Debugger(_)
-                | Stmt::Return(_)
-                | Stmt::Continue(_)
-                | Stmt::Throw(_)
-                | Stmt::Decl(_)
-                | Stmt::Expr(_) => false,
-            }
-        }
-
         // If the last statement in the case is an unlabelled break, remove it.
         if let Some(Stmt::Break(BreakStmt { label: None, .. })) = case.cons.last() {
             case.cons.pop();
@@ -1287,11 +1238,52 @@ impl Visitor<'_> {
 
         return OptimiseStmtResult::Replace(replacements);
     }
+
+    fn simplify_do_while_stmt(&mut self, stmt: &mut Stmt) -> OptimiseStmtResult {
+        let do_while_stmt = unwrap_as!(stmt, Stmt::DoWhile(s), s);
+
+        // Remove DOs that always evaluate to false. This leaves the statements
+        // that were in the loop in a BLOCK node. The block will be removed in a
+        // later pass, if possible.
+        // TODO: labelled do_while: n.getParent().isLabel() ||
+        if get_boolean_value(&do_while_stmt.test) == Some(false)
+            && !block_contains_unlabelled_break_or_continue(&do_while_stmt.body)
+        {
+            if expr_may_have_side_effects(&do_while_stmt.test) {
+                do_while_stmt.body.stmts.push(Stmt::Expr(ExprStmt {
+                    node_id: self.program_data.new_id_from(do_while_stmt.test.node_id()),
+                    expr: do_while_stmt.test.take(),
+                }));
+            }
+
+            *stmt = Stmt::Block(do_while_stmt.body.as_mut().take());
+
+            return OptimiseStmtResult::Keep(Vec::new());
+        }
+
+        // TODO: is this necessary? Does CFA actually struggle with do-whiles?
+        // Removes DOs that have empty bodies into FORs, which are much easier
+        // for the CFA to analyze. */
+        if do_while_stmt.body.stmts.is_empty() {
+            *stmt = Stmt::For(ForStmt {
+                node_id: self.program_data.new_id_from(do_while_stmt.node_id),
+                init: None,
+                test: Some(do_while_stmt.test.take()),
+                update: None,
+                body: do_while_stmt.body.take(),
+            });
+        }
+
+        OptimiseStmtResult::Keep(Vec::new())
+    }
 }
 
 impl VisitMut<'_> for Visitor<'_> {
     fn visit_mut_stmts(&mut self, stmts: &mut Vec<Stmt>) {
         let mut i = 0;
+        // TODO: it might be faster to iterate back-to-front here, or
+        // simpler/faster to allocate a new vec and copy element over, since
+        // we're removing and inserting elements.
         while i < stmts.len() {
             stmts[i].visit_mut_with(self);
 
@@ -1444,6 +1436,34 @@ impl VisitMut<'_> for Visitor<'_> {
 
             if let Stmt::For(_) = &mut stmts[i] {
                 let result = self.simplify_for_stmt(&mut stmts[i]);
+
+                match result {
+                    OptimiseStmtResult::Keep(new_stmts) => {
+                        let num_new_stmts = new_stmts.len();
+                        stmts.splice(i..i, new_stmts);
+
+                        // Skip over current and new stmts.
+                        i += num_new_stmts + 1;
+                        continue;
+                    }
+                    OptimiseStmtResult::Replace(replacements) => {
+                        let num_replacements = replacements.len();
+                        stmts.splice(i..=i, replacements);
+
+                        if num_replacements > 0 {
+                            // Skip over the new stmts.
+                            i += num_replacements;
+                            continue;
+                        } else {
+                            i += 1;
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            if let Stmt::DoWhile(_) = &mut stmts[i] {
+                let result = self.simplify_do_while_stmt(&mut stmts[i]);
 
                 match result {
                     OptimiseStmtResult::Keep(new_stmts) => {
@@ -1628,6 +1648,34 @@ impl VisitMut<'_> for Visitor<'_> {
 
             if let ModuleItem::Stmt(stmt @ Stmt::For(_)) = &mut items[i] {
                 let result = self.simplify_for_stmt(stmt);
+
+                match result {
+                    OptimiseStmtResult::Keep(new_stmts) => {
+                        let num_new_stmts = new_stmts.len();
+                        items.splice(i..i, new_stmts.into_iter().map(ModuleItem::Stmt));
+
+                        // Skip over current and new stmts.
+                        i += num_new_stmts + 1;
+                        continue;
+                    }
+                    OptimiseStmtResult::Replace(replacements) => {
+                        let num_replacements = replacements.len();
+                        items.splice(i..=i, replacements.into_iter().map(ModuleItem::Stmt));
+
+                        if num_replacements > 0 {
+                            // Skip over the new stmts.
+                            i += num_replacements;
+                            continue;
+                        } else {
+                            i += 1;
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            if let ModuleItem::Stmt(stmt @ Stmt::DoWhile(_)) = &mut items[i] {
+                let result = self.simplify_do_while_stmt(stmt);
 
                 match result {
                     OptimiseStmtResult::Keep(new_stmts) => {
@@ -2067,6 +2115,107 @@ fn isFirstSwitchMatch(foundMatchingCase: bool, condition: &Expr, tag: &Expr) -> 
     evaluateComparison(BinaryOp::EqEqEq, condition, tag) == Some(true)
 }
 
+fn contains_unlabelled_break(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Break(break_stmt) => matches!(break_stmt, BreakStmt { label: None, .. }),
+
+        Stmt::Block(block_stmt) => block_stmt.stmts.iter().any(contains_unlabelled_break),
+        Stmt::If(if_stmt) => {
+            if_stmt.cons.stmts.iter().any(contains_unlabelled_break)
+                || if_stmt
+                    .alt
+                    .as_ref()
+                    .is_some_and(|s| s.stmts.iter().any(contains_unlabelled_break))
+        }
+
+        // Any unlabelled break in an inner switch or loop corresponds
+        // to that inner construct, not the outer switch that we're
+        // scanning.
+        Stmt::Switch(_)
+        | Stmt::While(_)
+        | Stmt::DoWhile(_)
+        | Stmt::For(_)
+        | Stmt::ForIn(_)
+        | Stmt::ForOf(_) => false,
+
+        Stmt::Try(try_stmt) => {
+            try_stmt.block.stmts.iter().any(contains_unlabelled_break)
+                || try_stmt
+                    .get_catch()
+                    .is_some_and(|catch| catch.body.stmts.iter().any(contains_unlabelled_break))
+                || try_stmt
+                    .get_finally()
+                    .is_some_and(|finalizer| finalizer.stmts.iter().any(contains_unlabelled_break))
+        }
+
+        Stmt::With(WithStmt { body, .. }) => body.stmts.iter().any(contains_unlabelled_break),
+
+        Stmt::Labeled(LabeledStmt { body, .. }) => contains_unlabelled_break(body),
+
+        Stmt::Empty(_)
+        | Stmt::Debugger(_)
+        | Stmt::Return(_)
+        | Stmt::Continue(_)
+        | Stmt::Throw(_)
+        | Stmt::Decl(_)
+        | Stmt::Expr(_) => false,
+    }
+}
+
+fn contains_unlabelled_break_or_continue(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Break(break_stmt) => matches!(break_stmt, BreakStmt { label: None, .. }),
+        Stmt::Continue(continue_stmt) => matches!(continue_stmt, ContinueStmt { label: None, .. }),
+
+        Stmt::Block(block_stmt) => block_stmt.stmts.iter().any(contains_unlabelled_break),
+        Stmt::If(if_stmt) => {
+            if_stmt.cons.stmts.iter().any(contains_unlabelled_break)
+                || if_stmt
+                    .alt
+                    .as_ref()
+                    .is_some_and(|s| s.stmts.iter().any(contains_unlabelled_break))
+        }
+
+        // Any unlabelled break in an inner switch or loop corresponds
+        // to that inner construct, not the outer switch that we're
+        // scanning.
+        Stmt::Switch(_)
+        | Stmt::While(_)
+        | Stmt::DoWhile(_)
+        | Stmt::For(_)
+        | Stmt::ForIn(_)
+        | Stmt::ForOf(_) => false,
+
+        Stmt::Try(try_stmt) => {
+            try_stmt.block.stmts.iter().any(contains_unlabelled_break)
+                || try_stmt
+                    .get_catch()
+                    .is_some_and(|catch| catch.body.stmts.iter().any(contains_unlabelled_break))
+                || try_stmt
+                    .get_finally()
+                    .is_some_and(|finalizer| finalizer.stmts.iter().any(contains_unlabelled_break))
+        }
+
+        Stmt::With(WithStmt { body, .. }) => body.stmts.iter().any(contains_unlabelled_break),
+
+        Stmt::Labeled(LabeledStmt { body, .. }) => contains_unlabelled_break(body),
+
+        Stmt::Empty(_)
+        | Stmt::Debugger(_)
+        | Stmt::Return(_)
+        | Stmt::Throw(_)
+        | Stmt::Decl(_)
+        | Stmt::Expr(_) => false,
+    }
+}
+
+fn block_contains_unlabelled_break_or_continue(block: &BlockStmt) -> bool {
+    block
+        .stmts
+        .iter()
+        .any(contains_unlabelled_break_or_continue)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2463,41 +2612,50 @@ mod tests {
         // test_transform("l1:for(;false;) {  }", "");
     }
 
-    //   #[test]
-    //   fn  testFoldUselessDo() {
-    //     test_transform("do { foo() } while(false);", "foo()");
-    //     test_transform("do { foo() } while(void 0);", "foo()");
-    //     test_transform("do { foo() } while(undefined);", "foo()");
-    //     test_same("do { foo() } while(true);");
-    //     test_transform("do { var a = 0; } while(false);", "var a=0");
+    #[test]
+    fn testFoldUselessDo() {
+        test_transform("do { foo() } while(false);", "foo()");
+        test_transform("do { foo() } while(void 0);", "foo()");
+        test_transform("do { foo() } while(undefined);", "foo()");
+        test_same("do { foo() } while(true);");
+        test_transform("do { var a = 0; } while(false);", "var a=0");
 
-    //     test_transform("do { var a = 0; } while(!{a:foo()});", "var a=0;foo()");
+        test_transform("do { var a = 0; } while(!{a:foo()});", "var a=0;foo()");
 
-    //     // Can't fold with break or continues.
-    //     test_same("do { foo(); continue; } while(0)");
-    //     test_same("do { try { foo() } catch (e) { break; } } while (0);");
-    //     test_same("do { foo(); break; } while(0)");
-    //     test_transform("do { for (;;) {foo(); continue;} } while(0)", "for (;;) {foo(); continue;}");
-    //     test_same("l1: do { for (;;) { foo() } } while(0)");
-    //     test_transform("do { switch (1) { default: foo(); break} } while(0)", "foo();");
-    //     test_transform(
-    //         "do { switch (1) { default: foo(); continue} } while(0)",
-    //         "do { foo(); continue } while(0)");
+        // Can't fold with break or continues.
+        test_same("do { foo(); continue; } while(0)");
+        test_same("do { try { foo() } catch (e) { break; } } while (0);");
+        test_same("do { foo(); break; } while(0)");
+        test_transform(
+            "do { for (;;) {foo(); continue;} } while(0)",
+            "for (;;) {foo(); continue;}",
+        );
+        test_same("l1: do { for (;;) { foo() } } while(0)");
+        test_transform(
+            "do { switch (1) { default: foo(); break} } while(0)",
+            "foo();",
+        );
+        test_transform(
+            "do { switch (1) { default: foo(); continue} } while(0)",
+            "do { foo(); continue } while(0)",
+        );
 
-    //     test_transform(
-    //         "l1: { do { x = 1; break l1; } while (0); x = 2; }", //
-    //         "l1: { x = 1; break l1; }");
+        // test_transform(
+        //     "l1: { do { x = 1; break l1; } while (0); x = 2; }",
+        //     "l1: { x = 1; break l1; }",
+        // );
 
-    //     test_transform("do { x = 1; } while (x = 0);", "x = 1; x = 0;");
-    //     test_transform(
-    //         "let x = 1; (function() { do { let x = 2; } while (x = 10, false); })();",
-    //         "let x = 1; (function() { let x$jscomp$1 = 2; x = 10 })();");
-    //   }
+        test_transform("do { x = 1; } while (x = 0);", "x = 1; x = 0;");
+        test_transform(
+            "let x = 1; (function() { do { let x = 2; } while (x = 10, false); })();",
+            "let x = 1; (function() { let x = 2; x = 10 })();",
+        );
+    }
 
-    //   #[test]
-    //   fn  testFoldEmptyDo() {
-    //     test_transform("do { } while(true);", "for (;;);");
-    //   }
+    #[test]
+    fn testFoldEmptyDo() {
+        test_transform("do { } while(true);", "for (;;);");
+    }
 
     #[test]
     fn testMinimizeLoop_withConstantCondition_vanillaFor() {
@@ -2510,16 +2668,16 @@ mod tests {
         test_transform("for(;'';) foo()", "");
     }
 
-    //   #[test]
-    //   fn  testMinimizeLoop_withConstantCondition_doWhile() {
-    //     test_transform("do { foo(); } while (true)", "do { foo(); } while (true);");
-    //     test_transform("do { foo(); } while (0)", "foo();");
-    //     test_transform("do { foo(); } while (0.0)", "foo();");
-    //     test_transform("do { foo(); } while (NaN)", "foo();");
-    //     test_transform("do { foo(); } while (null)", "foo();");
-    //     test_transform("do { foo(); } while (undefined)", "foo();");
-    //     test_transform("do { foo(); } while ('')", "foo();");
-    //   }
+    #[test]
+    fn testMinimizeLoop_withConstantCondition_doWhile() {
+        test_transform("do { foo(); } while (true)", "do { foo(); } while (true);");
+        test_transform("do { foo(); } while (0)", "foo();");
+        test_transform("do { foo(); } while (0.0)", "foo();");
+        test_transform("do { foo(); } while (NaN)", "foo();");
+        test_transform("do { foo(); } while (null)", "foo();");
+        test_transform("do { foo(); } while (undefined)", "foo();");
+        test_transform("do { foo(); } while ('')", "foo();");
+    }
 
     #[test]
     fn testFoldConstantCommaExpressions() {
