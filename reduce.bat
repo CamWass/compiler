@@ -1,1 +1,0 @@
-npx jsdelta --quick --no-fixpoint tsc.js predicate.js
