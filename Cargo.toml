@@ -3,7 +3,6 @@ members = ["crates/*"]
 resolver = "1"
 
 [workspace.dependencies]
-ansi_term = "0.12.1"
 anyhow = "1.0.86"
 arrayvec = "0.7"
 atty = "0.2"
