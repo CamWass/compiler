@@ -107,7 +107,7 @@ fn optimise(
 
     // TODO: inferConsts
 
-    // TODO: earlyInlineVariables
+    // TODO: InlineVariables
     // TODO: PeepholeRemoveDeadCode
 
     // TODO: removeUnusedCodeOnce
@@ -127,7 +127,6 @@ fn getEarlyOptimizationLoopPasses(_ast: &mut ::ast::Program) {
     // TODO: collapseObjectLiterals
     // TODO: removeUnusedCode
     // TODO: peepholeOptimizations
-    // TODO: removeUnreachableCode
 }
 
 fn getMainOptimizationLoop(
@@ -154,7 +153,6 @@ fn getMainOptimizationLoop(
     // TODO: collapseObjectLiterals
     // TODO: removeUnusedCode
     // TODO: peepholeOptimizations
-    // TODO: removeUnreachableCode
 }
 
 fn finalise(
@@ -173,13 +171,10 @@ fn finalise(
         optimize_properties::process(ast, program_data);
     }
 
-    // TODO: renameProperties
     if passes.convert_to_dot_properties {
         convert_to_dot_properties::process(ast, program_data);
     }
-    // TODO: convertToDottedProperties
-    // TODO: rewriteFunctionExpressions
-    // TODO: aliasStrings
+
     if passes.coalesce_variable_names {
         CoalesceVariableNames::coalesce_variable_names(ast, program_data);
     }
@@ -201,9 +196,8 @@ fn finalise(
     }
 
     late_peephole_optimisations(ast, passes, program_data);
-    // TODO: latePeepholeOptimizations
-    // TODO: optimizeToEs6
 
+    // TODO: is this the best spot for this pass?
     if passes.optimise_equality {
         optimise_equality::process(ast);
     }
@@ -231,7 +225,6 @@ fn late_peephole_optimisations(
     //         new PeepholeSubstituteAlternateSyntax(late),
     //         new PeepholeReplaceKnownMethods(late, useTypesForOptimization),
     //         new PeepholeFoldConstants(late, useTypesForOptimization),
-    //         new PeepholeReorderConstantExpression());
     //   })
 }
 
