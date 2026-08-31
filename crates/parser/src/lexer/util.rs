@@ -4,43 +4,10 @@ use crate::{
     token::{Token, TokenData},
 };
 use ast::NameId;
-use common::{BytePos, Pos, Span, chars::char_literals};
-
-/// See https://tc39.github.io/ecma262/#sec-line-terminators
-pub fn is_line_break(ch: char) -> bool {
-    matches!(
-        ch,
-        char_literals::LINE_FEED
-            | char_literals::CARRIAGE_RETURN
-            | char_literals::LINE_SEPARATOR
-            | char_literals::PARAGRAPH_SEPARATOR
-    )
-}
-
-// Checks if the char is a whitespace char that spans multiple utf8 bytes.
-// https://tc39.github.io/ecma262/#sec-white-space
-pub fn is_multi_byte_whitespace(ch: char) -> bool {
-    matches!(
-        ch,
-        char_literals::NON_BREAKING_SPACE
-            | char_literals::OGHAM_SPACE_MARK
-            | char_literals::EN_QUAD
-            | char_literals::EM_QUAD
-            | char_literals::EN_SPACE
-            | char_literals::EM_SPACE
-            | char_literals::THREE_PER_EM_SPACE
-            | char_literals::FOUR_PER_EM_SPACE
-            | char_literals::SIX_PER_EM_SPACE
-            | char_literals::FIGURE_SPACE
-            | char_literals::PUNCTUATION_SPACE
-            | char_literals::THIN_SPACE
-            | char_literals::HAIR_SPACE
-            | char_literals::NARROW_NO_BREAK_SPACE
-            | char_literals::MEDIUM_MATHEMATICAL_SPACE
-            | char_literals::IDEOGRAPHIC_SPACE
-            | char_literals::ZERO_WIDTH_NO_BREAK_SPACE
-    )
-}
+use common::{
+    BytePos, Pos, Span,
+    chars::{char_literals, is_js_line_break, is_js_multi_byte_whitespace},
+};
 
 // Checks if the byte is the first utf8 byte of a unicode whitespace char.
 // Used for short circuiting whitespace checks.
@@ -334,7 +301,7 @@ impl Lexer<'_> {
                 return Ok(());
             }
 
-            if is_line_break(ch) {
+            if is_js_line_break(ch) {
                 self.state.had_line_break = true;
             }
 
@@ -349,7 +316,7 @@ impl Lexer<'_> {
 
         while let Some(ch) = self.cur() {
             self.bump();
-            if is_line_break(ch) {
+            if is_js_line_break(ch) {
                 self.state.had_line_break = true;
                 break;
             }
@@ -388,7 +355,7 @@ impl Lexer<'_> {
                         {
                             self.state.had_line_break = true;
                             self.cur += ch.len_utf8();
-                        } else if is_multi_byte_whitespace(ch) {
+                        } else if is_js_multi_byte_whitespace(ch) {
                             self.cur += ch.len_utf8();
                         } else {
                             return Ok(());

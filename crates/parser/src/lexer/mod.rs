@@ -12,11 +12,14 @@ use crate::{
 };
 use ast::ParserProgramData;
 use bitflags::bitflags;
-use common::{BytePos, SourceFile, Span, chars::char_literals};
+use common::{
+    BytePos, SourceFile, Span,
+    chars::{char_literals, is_js_line_break},
+};
 use number::{NonDecRadix, Radix};
 use state::State;
 pub(crate) use state::{LexerCheckpoint, TokenContext, TokenContexts};
-use util::{char_bytes, is_line_break};
+use util::char_bytes;
 
 type LexResult<T> = Result<T, Error>;
 
@@ -318,7 +321,7 @@ impl<'src> Lexer<'src> {
         self.advance(1); // '#'
         if self.eat(b'!') {
             while let Some(ch) = self.cur() {
-                if is_line_break(ch) {
+                if is_js_line_break(ch) {
                     return true;
                 } else {
                     self.bump();
@@ -559,7 +562,7 @@ impl<'src> Lexer<'src> {
         let mut in_class = false;
 
         while let Some(ch) = self.cur() {
-            if is_line_break(ch) {
+            if is_js_line_break(ch) {
                 // Regex literal cannot span multiple lines
                 self.error(start, SyntaxError::UnterminatedRegxp)?;
             }
@@ -1092,7 +1095,7 @@ impl<'src> Lexer<'src> {
                 if self.read_escaped_char(true).is_err() {
                     has_invalid_escape = true;
                 };
-            } else if is_line_break(self.cur_unchecked()) {
+            } else if is_js_line_break(self.cur_unchecked()) {
                 self.state.had_line_break = true;
                 if c == b'\r' && self.peek_nth(1) == Some(b'\n') {
                     self.advance(2); // '\r\n'

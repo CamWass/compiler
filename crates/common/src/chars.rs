@@ -28,3 +28,67 @@ pub mod char_literals {
     pub const IDEOGRAPHIC_SPACE: char = '\u{3000}';
     pub const ZERO_WIDTH_NO_BREAK_SPACE: char = '\u{feff}';
 }
+
+/// See https://tc39.github.io/ecma262/#sec-line-terminators
+pub fn is_js_line_break(ch: char) -> bool {
+    matches!(
+        ch,
+        char_literals::LINE_FEED
+            | char_literals::CARRIAGE_RETURN
+            | char_literals::LINE_SEPARATOR
+            | char_literals::PARAGRAPH_SEPARATOR
+    )
+}
+
+// Checks if the char is a whitespace char that spans multiple utf8 bytes.
+// https://tc39.github.io/ecma262/#sec-white-space
+pub fn is_js_multi_byte_whitespace(ch: char) -> bool {
+    matches!(
+        ch,
+        char_literals::NON_BREAKING_SPACE
+            | char_literals::OGHAM_SPACE_MARK
+            | char_literals::EN_QUAD
+            | char_literals::EM_QUAD
+            | char_literals::EN_SPACE
+            | char_literals::EM_SPACE
+            | char_literals::THREE_PER_EM_SPACE
+            | char_literals::FOUR_PER_EM_SPACE
+            | char_literals::SIX_PER_EM_SPACE
+            | char_literals::FIGURE_SPACE
+            | char_literals::PUNCTUATION_SPACE
+            | char_literals::THIN_SPACE
+            | char_literals::HAIR_SPACE
+            | char_literals::NARROW_NO_BREAK_SPACE
+            | char_literals::MEDIUM_MATHEMATICAL_SPACE
+            | char_literals::IDEOGRAPHIC_SPACE
+            | char_literals::ZERO_WIDTH_NO_BREAK_SPACE
+    )
+}
+
+// https://tc39.github.io/ecma262/#sec-white-space
+pub fn is_js_whitespace(ch: char) -> bool {
+    matches!(
+        ch,
+        char_literals::CHARACTER_TABULATION
+            | char_literals::LINE_TABULATION
+            | char_literals::FORM_FEED
+            | char_literals::SPACE
+            | char_literals::NON_BREAKING_SPACE
+            | char_literals::OGHAM_SPACE_MARK
+            | char_literals::EN_QUAD
+            | char_literals::EM_QUAD
+            | char_literals::EN_SPACE
+            | char_literals::EM_SPACE
+            | char_literals::THREE_PER_EM_SPACE
+            | char_literals::FOUR_PER_EM_SPACE
+            | char_literals::SIX_PER_EM_SPACE
+            | char_literals::FIGURE_SPACE
+            | char_literals::PUNCTUATION_SPACE
+            | char_literals::THIN_SPACE
+            | char_literals::HAIR_SPACE
+            | char_literals::NARROW_NO_BREAK_SPACE
+            | char_literals::MEDIUM_MATHEMATICAL_SPACE
+            | char_literals::IDEOGRAPHIC_SPACE
+            | char_literals::ZERO_WIDTH_NO_BREAK_SPACE
+    )
+}
