@@ -100,7 +100,7 @@ fn optimise(
     program_data: &mut ::ast::TransformerProgramData,
 ) {
     if passes.optimize_arguments_array {
-        OptimizeArgumentsArray::OptimizeArgumentsArray::process(ast, program_data);
+        OptimizeArgumentsArray::process(ast, program_data);
     }
 
     // TODO: inlineAndCollapseProperties

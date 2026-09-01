@@ -1,7 +1,6 @@
-use ast::{NameId, id_for_built_in};
+use ast::{BlockStmt, NameId, NodeId, id_for_built_in};
 use common::DUMMY_SP;
-use std::collections::BTreeMap;
-use std::iter::FromIterator;
+use rustc_hash::FxHashMap;
 use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 /// Optimizes accesses to the `arguments` array by replacing them with
@@ -15,124 +14,22 @@ use visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 /// ```js
 /// function(a, b) { alert(a, b) }
 /// ```
-pub struct OptimizeArgumentsArray<'a> {
-    program_data: &'a mut ast::TransformerProgramData,
-}
+pub fn process(ast: &mut ast::Program, program_data: &mut ast::TransformerProgramData) {
+    let mut analyser = Analyser {
+        cur_fn: None,
+        highest_indices: FxHashMap::default(),
+    };
 
-impl<'a> OptimizeArgumentsArray<'a> {
-    pub fn process(ast: &mut ast::Program, program_data: &'a mut ast::TransformerProgramData) {
-        let mut visitor = Self { program_data };
+    ast.visit_with(&mut analyser);
 
-        ast.visit_mut_with(&mut visitor);
-    }
-}
-
-impl VisitMut<'_> for OptimizeArgumentsArray<'_> {
-    fn visit_mut_function(&mut self, node: &mut ast::Function) {
-        node.body.visit_mut_with(self);
-        self.try_replace_arguments(&mut node.params, &mut node.body);
-    }
-
-    fn visit_mut_class_method(&mut self, node: &mut ast::ClassMethod) {
-        self.handle_class_method(&mut node.function, node.kind);
-    }
-
-    fn visit_mut_private_method(&mut self, node: &mut ast::PrivateMethod) {
-        self.handle_class_method(&mut node.function, node.kind);
-    }
-
-    fn visit_mut_setter_prop(&mut self, node: &mut ast::SetterProp) {
-        self.handle_setter(&node.param.pat, &mut node.body);
-        node.body.visit_mut_with(self);
-    }
-
-    fn visit_mut_constructor(&mut self, node: &mut ast::Constructor) {
-        node.body.visit_mut_with(self);
-        self.try_replace_arguments(&mut node.params, &mut node.body);
-    }
-}
-
-impl OptimizeArgumentsArray<'_> {
-    fn handle_class_method(&mut self, func: &mut ast::Function, kind: ast::MethodKind) {
-        match kind {
-            ast::MethodKind::Method => {
-                self.try_replace_arguments(&mut func.params, &mut func.body);
-            }
-            ast::MethodKind::Getter => {
-                // It's never valid to add arguments to a getter, so we skip it
-                // and only process nested functions.
-            }
-            ast::MethodKind::Setter => {
-                assert!(func.params.len() == 1);
-                let param = func.params.first().unwrap();
-                self.handle_setter(&param.pat, &mut func.body);
-            }
-        }
-        func.body.visit_mut_with(self);
-    }
-
-    fn handle_setter(&mut self, param_pat: &ast::Pat, body: &mut ast::BlockStmt) {
-        if let ast::Pat::Ident(id) = param_pat {
-            self.try_replace_setter_argument(id.id.name, body);
-        } else {
-            // Non-ident params don't introduce names for us to bind arguments
-            // accesses to, so we skip the setter and only process nested
-            // functions.
-        }
-    }
-
-    /// Tries to optimize all of the `arguments` accesses in this function. Does
-    /// not look at nested functions.
-    fn try_replace_arguments(&mut self, params: &mut Vec<ast::Param>, body: &mut ast::BlockStmt) {
-        // The number of parameters that can be accessed without using
-        // `arguments`.
-        let highest_index = if params.is_empty() {
-            None
-        } else {
-            Some(params.len() - 1)
+    if !analyser.highest_indices.is_empty() {
+        let mut rewriter = ReWriter {
+            program_data,
+            highest_indices: analyser.highest_indices,
+            current_rewrite_map: None,
         };
 
-        // Determine the highest index that is used to make an access on
-        // `arguments`. By default, assume that the value is the number of
-        // parameters to the function.
-        let highest_index = FnBodyVisitor::get_highest_index(body, highest_index);
-        let Some(highest_index) = highest_index else {
-            return;
-        };
-
-        let arg_names = assemble_param_names(params, highest_index + 1, self.program_data);
-        self.append_new_params(&arg_names, params);
-        FnBodyReWriter::change_body(body, &arg_names, self.program_data);
-    }
-
-    /// Tries to optimize all of the `arguments` accesses in this setter. Does
-    /// not look at nested functions.
-    fn try_replace_setter_argument(&mut self, param: NameId, setter_body: &mut ast::BlockStmt) {
-        if FnBodyVisitor::get_highest_index(setter_body, Some(0)).is_none() {
-            // Some 'arguments' accesses were invalidating; abort.
-            return;
-        }
-
-        let arg_names = BTreeMap::from_iter([(0, param)]);
-        FnBodyReWriter::change_body(setter_body, &arg_names, self.program_data);
-    }
-
-    /// Appends new formal parameters to the provided list based on the given
-    /// set of names.
-    ///
-    /// Example: function() -> function(r0, r1, r2)
-    ///
-    /// `arg_names` - maps param index to param name, if the param with that
-    /// index has a name. `param_list` - the list of params to modify.
-    fn append_new_params(
-        &mut self,
-        arg_names: &BTreeMap<usize, NameId>,
-        param_list: &mut Vec<ast::Param>,
-    ) {
-        let new_params = arg_names
-            .range(param_list.len()..)
-            .map(|(_, id)| from_id(*id, self.program_data));
-        param_list.extend(new_params);
+        ast.visit_mut_with(&mut rewriter);
     }
 }
 
@@ -151,32 +48,37 @@ fn from_id(id: NameId, program_data: &mut ast::TransformerProgramData) -> ast::P
 
 /// Generates a map from argument indices to parameter names.
 ///
-/// A map is used because the sequence may be sparse in the case that there is
-/// an anonymous param, such as a destructuring param. There may also be fewer
-/// returned names than `max_count` if there is a rest param, since no
-/// additional params may be synthesized.
+/// The map is sparse in the case that there is an anonymous param, such as a
+/// destructuring param. There may also be fewer returned names than required by
+/// `highest_observed_index` if there is a rest param, since no additional
+/// params may be synthesized.
 ///
-/// `max_count` - The maximum number of argument names in the returned map.
+/// `highest_observed_index` - The highest `arguments` index used in the
+/// function.
 fn assemble_param_names(
-    params: &[ast::Param],
-    max_count: usize,
+    params: &mut Vec<ast::Param>,
+    highest_observed_index: u32,
     program_data: &mut ast::TransformerProgramData,
-) -> BTreeMap<usize, NameId> {
-    let mut map = BTreeMap::new();
-    let mut index = 0;
+) -> Vec<Option<NameId>> {
+    let mut map = Vec::new();
+    let mut index: u32 = 0;
 
     // Collect all existing param names first...
-    for param in params {
+    for param in params.iter() {
         match &param.pat {
             ast::Pat::Ident(n) => {
-                map.insert(index, n.id.name);
+                map.push(Some(n.id.name));
             }
             // Array and object patterns have no names to substitute into the
             // body.
-            ast::Pat::Array(_) | ast::Pat::Object(_) => {}
+            ast::Pat::Array(_) | ast::Pat::Object(_) => {
+                map.push(None);
+            }
             // `arguments` doesn't consider default values. It holds exactly the
             // provided args.
-            ast::Pat::Assign(_) => {}
+            ast::Pat::Assign(_) => {
+                map.push(None);
+            }
             // Can't add params after a rest param.
             ast::Pat::Rest(_) => return map,
             ast::Pat::Invalid(_) | ast::Pat::Expr(_) => unreachable!(),
@@ -185,141 +87,151 @@ fn assemble_param_names(
         index += 1;
     }
     // ... then synthesize any additional param names.
-    while index < max_count {
+    while index < highest_observed_index + 1 {
         let new_name = program_data.new_resolved_name(format!("p{index}").into());
-        map.insert(index, new_name);
+        map.push(Some(new_name));
+        params.push(from_id(new_name, program_data));
         index += 1;
     }
 
     map
 }
 
-pub struct FnBodyVisitor {
+#[derive(Default, Clone, Copy)]
+struct FnInfo {
     invalidated: bool,
-    highest_index: Option<usize>,
+    highest_index: Option<u32>,
 }
 
-impl FnBodyVisitor {
-    /// Iterate through all the references to `arguments` array in the function
-    /// to determine the real highest_index. Returns `None` when we should not
-    /// be replacing any arguments for this scope.
-    ///
-    /// `highest_index` - highest index that has been accessed from the
-    /// `arguments` array.
-    fn get_highest_index(
-        func_body: &ast::BlockStmt,
-        highest_index: Option<usize>,
-    ) -> Option<usize> {
-        let mut visitor = Self {
-            invalidated: false,
-            highest_index,
-        };
+struct Analyser {
+    cur_fn: Option<FnInfo>,
+    highest_indices: FxHashMap<NodeId, u32>,
+}
 
-        func_body.visit_with(&mut visitor);
-
-        if visitor.invalidated {
-            None
-        } else {
-            visitor.highest_index
-        }
-    }
-
+impl Analyser {
     fn invalidate(&mut self, _reason: &'static str) {
-        self.invalidated = true;
+        if let Some(cur_fn) = &mut self.cur_fn {
+            cur_fn.invalidated = true;
+        }
 
         const PRINT: bool = false && cfg!(debug_assertions);
 
         if PRINT {
-            println!("FnBodyVisitor: invalidating because: {_reason}");
+            println!("Invalidating because: {_reason}");
         }
     }
 
     /// Returns true if the member expr was a valid arguments access.
-    #[allow(clippy::needless_return)]
     fn handle_member_expr(&mut self, node: &ast::MemberExpr) -> bool {
         // Bail on anything but argument[c] access where c is a constant.
-        // TODO(closure): We might not need to bail out all the time, there
-        // might be more cases that we can cover.
 
-        if let ast::ExprOrSuper::Expr(obj) = &node.obj {
-            if let ast::Expr::Ident(obj) = obj.as_ref() {
-                if obj.name == id_for_built_in!("arguments") {
-                    if node.computed {
-                        // TODO: numeric string literal keys e.g. arguments["1"]
-                        if let ast::Expr::Lit(ast::Lit::Num(n)) = node.prop.as_ref() {
-                            // Note: The index will always be positive because
-                            // negative indices are represented as a unary op.
+        if let Some(cur_fn) = &mut self.cur_fn {
+            if let ast::ExprOrSuper::Expr(obj) = &node.obj {
+                if let ast::Expr::Ident(obj) = obj.as_ref() {
+                    if obj.name == id_for_built_in!("arguments") {
+                        if node.computed {
+                            if let ast::Expr::Lit(ast::Lit::Num(n)) = node.prop.as_ref() {
+                                // Note: The index will always be positive because
+                                // negative indices are represented as a unary op.
 
-                            if n.value.fract() != 0.0 {
-                                // We want to bail out if someone tries to
-                                // access arguments[0.5] for example
-                                self.invalidate("Non integer key");
-                                return false;
-                            }
-
-                            let idx = n.value.round() as i64 as usize;
-
-                            // Replace the highest index if we see an access
-                            // that has a higher index than all the one we saw
-                            // before.
-                            if let Some(highest_index) = self.highest_index {
-                                if idx > highest_index {
-                                    self.highest_index = Some(idx);
+                                if n.value.fract() != 0.0 {
+                                    // We want to bail out if someone tries to
+                                    // access arguments[0.5] for example
+                                    self.invalidate("Non integer key");
+                                    return false;
                                 }
-                            } else {
-                                self.highest_index = Some(idx);
-                            }
 
-                            // Valid; The above conditions verify that the node
-                            // is composed of only leaf nodes, so no need to
-                            // visit children.
-                            return true;
+                                let idx = n.value.round() as i64 as u32;
+
+                                // Replace the highest index if we see an access
+                                // that has a higher index than all the one we saw
+                                // before.
+                                if let Some(highest_index) = cur_fn.highest_index {
+                                    if idx > highest_index {
+                                        cur_fn.highest_index = Some(idx);
+                                    }
+                                } else {
+                                    cur_fn.highest_index = Some(idx);
+                                }
+
+                                // Valid; The above conditions verify that the node
+                                // is composed of only leaf nodes, so no need to
+                                // visit children.
+                                return true;
+                            } else {
+                                // We have something like arguments[x] where x is
+                                // not a constant. That means at least one of the
+                                // access is not known.
+                                self.invalidate("Non numeric literal key");
+                            }
                         } else {
-                            // We have something like arguments[x] where x is
-                            // not a constant. That means at least one of the
-                            // access is not known.
-                            self.invalidate("Non numeric literal key");
+                            self.invalidate("Non-computed access to 'arguments' object");
                             return false;
                         }
-                    } else {
-                        self.invalidate("Non-computed access to 'arguments' object");
-                        return false;
                     }
-                } else {
-                    node.visit_children_with(self);
-                    return false;
                 }
-            } else {
-                node.visit_children_with(self);
-                return false;
             }
-        } else {
-            node.visit_children_with(self);
-            return false;
         }
+
+        node.visit_children_with(self);
+        false
     }
 }
 
-impl Visit<'_> for FnBodyVisitor {
-    // Don't visit nested functions.
-    fn visit_function(&mut self, _: &ast::Function) {}
-    fn visit_getter_prop(&mut self, _: &ast::GetterProp) {}
-    fn visit_setter_prop(&mut self, _: &ast::SetterProp) {}
-    fn visit_constructor(&mut self, _: &ast::Constructor) {}
+impl Visit<'_> for Analyser {
+    fn visit_function(&mut self, node: &ast::Function) {
+        node.params.visit_with(self);
+        let prev = self.cur_fn;
+        self.cur_fn = Some(FnInfo::default());
+        node.body.visit_children_with(self);
+        let cur_fn = self.cur_fn.unwrap();
+        if !cur_fn.invalidated
+            && let Some(highest_index) = cur_fn.highest_index
+        {
+            self.highest_indices.insert(node.node_id, highest_index);
+        }
+        self.cur_fn = prev;
+    }
+    fn visit_getter_prop(&mut self, node: &ast::GetterProp) {
+        node.key.visit_with(self);
+        let prev = self.cur_fn;
+        self.cur_fn = Some(FnInfo::default());
+        node.body.visit_children_with(self);
+        self.cur_fn = prev;
+    }
+    fn visit_setter_prop(&mut self, node: &ast::SetterProp) {
+        node.param.visit_with(self);
+        node.key.visit_with(self);
+        let prev = self.cur_fn;
+        self.cur_fn = Some(FnInfo::default());
+        node.body.visit_children_with(self);
+        let cur_fn = self.cur_fn.unwrap();
+        if !cur_fn.invalidated
+            && let Some(highest_index) = cur_fn.highest_index
+        {
+            self.highest_indices.insert(node.node_id, highest_index);
+        }
+        self.cur_fn = prev;
+    }
+    fn visit_constructor(&mut self, node: &ast::Constructor) {
+        node.params.visit_with(self);
+        let prev = self.cur_fn;
+        self.cur_fn = Some(FnInfo::default());
+        node.body.visit_children_with(self);
+        let cur_fn = self.cur_fn.unwrap();
+        if !cur_fn.invalidated
+            && let Some(highest_index) = cur_fn.highest_index
+        {
+            self.highest_indices.insert(node.node_id, highest_index);
+        }
+        self.cur_fn = prev;
+    }
 
     fn visit_member_expr(&mut self, node: &ast::MemberExpr) {
-        if self.invalidated {
-            return;
-        }
-
         self.handle_member_expr(node);
     }
 
     fn visit_call_expr(&mut self, node: &ast::CallExpr) {
-        if self.invalidated {
-            return;
-        }
-
         if let ast::ExprOrSuper::Expr(callee) = &node.callee {
             if let ast::Expr::Member(callee) = callee.as_ref() {
                 let valid_access = self.handle_member_expr(callee);
@@ -328,66 +240,118 @@ impl Visit<'_> for FnBodyVisitor {
                 // a() is semantically different if argument[0] is a function
                 // call that refers to 'this'
                 if valid_access {
-                    // TODO(closure): We can consider using .call() if aliasing
-                    // that argument allows shorter alias for other arguments.
                     self.invalidate("Valid access, used as callee in call expr, is invalid");
-                } else {
-                    node.visit_children_with(self);
                 }
-            } else {
-                node.visit_children_with(self);
             }
-        } else {
-            node.visit_children_with(self);
         }
+
+        node.visit_children_with(self);
     }
 
     fn visit_ident(&mut self, node: &ast::Ident) {
-        if self.invalidated {
-            return;
-        }
         if node.name == id_for_built_in!("arguments") {
             self.invalidate("Usage of 'arguments' outside of valid member expr is invalid");
         }
     }
+}
 
-    fn visit_stmt(&mut self, node: &ast::Stmt) {
-        if !self.invalidated {
-            node.visit_children_with(self);
+struct ReWriter<'a> {
+    program_data: &'a mut ast::TransformerProgramData,
+    highest_indices: FxHashMap<NodeId, u32>,
+    current_rewrite_map: Option<Vec<Option<NameId>>>,
+}
+
+impl ReWriter<'_> {
+    fn handle_class_method(&mut self, func: &mut ast::Function, kind: ast::MethodKind) {
+        match kind {
+            ast::MethodKind::Method => {
+                self.handle_function(func.node_id, &mut func.params, &mut func.body);
+            }
+            ast::MethodKind::Getter => {
+                // It's never valid to add arguments to a getter, so we skip it
+                // and only process nested functions.
+                let old = self.current_rewrite_map.take();
+                self.current_rewrite_map = None;
+                func.body.visit_mut_with(self);
+                self.current_rewrite_map = old;
+            }
+            ast::MethodKind::Setter => {
+                assert!(func.params.len() == 1);
+                let param = func.params.first().unwrap();
+                self.handle_setter(func.node_id, &param.pat, &mut func.body);
+            }
         }
     }
-}
 
-struct FnBodyReWriter<'a> {
-    arg_names: &'a BTreeMap<usize, NameId>,
-    program_data: &'a mut ast::TransformerProgramData,
-}
-
-impl<'a> FnBodyReWriter<'a> {
-    /// Performs the replacement of `arguments[x]` -> `a` if `x` is known.
-    ///
-    /// `arg_names` - maps param index to param name, if the param with that
-    /// index has a name.
-    fn change_body(
-        func_body: &mut ast::BlockStmt,
-        arg_names: &'a BTreeMap<usize, NameId>,
-        program_data: &'a mut ast::TransformerProgramData,
-    ) {
-        let mut visitor = Self {
-            arg_names,
-            program_data,
+    fn handle_setter(&mut self, fn_node_id: NodeId, param_pat: &ast::Pat, body: &mut BlockStmt) {
+        let old = self.current_rewrite_map.take();
+        self.current_rewrite_map = if let ast::Pat::Ident(id) = param_pat {
+            if self.highest_indices.get(&fn_node_id).is_none() {
+                // Some 'arguments' accesses were invalidating; abort.
+                None
+            } else {
+                Some(vec![Some(id.id.name)])
+            }
+        } else {
+            // Non-ident params don't introduce names for us to bind arguments
+            // accesses to, so we skip the setter and only process nested
+            // functions.
+            None
         };
+        body.visit_mut_with(self);
+        self.current_rewrite_map = old;
+    }
 
-        func_body.visit_mut_with(&mut visitor);
+    fn handle_function(
+        &mut self,
+        fn_node_id: NodeId,
+        params: &mut Vec<ast::Param>,
+        body: &mut BlockStmt,
+    ) {
+        params.visit_mut_with(self);
+        let old = self.current_rewrite_map.take();
+        self.current_rewrite_map =
+            self.highest_indices
+                .get(&fn_node_id)
+                .map(|highest_observed_index| {
+                    assemble_param_names(params, *highest_observed_index, self.program_data)
+                });
+        body.visit_mut_with(self);
+        self.current_rewrite_map = old;
     }
 }
 
-impl VisitMut<'_> for FnBodyReWriter<'_> {
-    // Don't visit nested functions.
-    fn visit_mut_function(&mut self, _: &mut ast::Function) {}
-    fn visit_mut_getter_prop(&mut self, _: &mut ast::GetterProp) {}
-    fn visit_mut_setter_prop(&mut self, _: &mut ast::SetterProp) {}
-    fn visit_mut_constructor(&mut self, _: &mut ast::Constructor) {}
+impl VisitMut<'_> for ReWriter<'_> {
+    fn visit_mut_function(&mut self, node: &mut ast::Function) {
+        self.handle_function(node.node_id, &mut node.params, &mut node.body);
+    }
+
+    fn visit_mut_class_method(&mut self, node: &mut ast::ClassMethod) {
+        node.key.visit_mut_with(self);
+        self.handle_class_method(&mut node.function, node.kind);
+    }
+
+    fn visit_mut_private_method(&mut self, node: &mut ast::PrivateMethod) {
+        self.handle_class_method(&mut node.function, node.kind);
+    }
+
+    fn visit_mut_setter_prop(&mut self, node: &mut ast::SetterProp) {
+        node.key.visit_mut_with(self);
+        node.param.visit_mut_with(self);
+        self.handle_setter(node.node_id, &node.param.pat, &mut node.body);
+    }
+
+    fn visit_mut_getter_prop(&mut self, node: &mut ast::GetterProp) {
+        node.key.visit_mut_with(self);
+        let old = self.current_rewrite_map.take();
+        self.current_rewrite_map = None;
+        node.body.visit_mut_with(self);
+        self.current_rewrite_map = old;
+    }
+
+    fn visit_mut_constructor(&mut self, node: &mut ast::Constructor) {
+        self.handle_function(node.node_id, &mut node.params, &mut node.body);
+    }
 
     fn visit_mut_expr(&mut self, node: &mut ast::Expr) {
         if let ast::Expr::Member(expr) = node {
@@ -401,13 +365,15 @@ impl VisitMut<'_> for FnBodyReWriter<'_> {
 
                             let idx = n.value.round() as i64 as usize;
 
-                            if let Some(name) = self.arg_names.get(&idx) {
-                                let id = ast::Ident {
-                                    node_id: self.program_data.new_id_from(expr.node_id),
-                                    name: *name,
-                                };
-                                *node = ast::Expr::Ident(id);
-                                return;
+                            if let Some(rewrite_map) = &self.current_rewrite_map {
+                                if let Some(Some(name)) = rewrite_map.get(idx) {
+                                    let id = ast::Ident {
+                                        node_id: self.program_data.new_id_from(expr.node_id),
+                                        name: *name,
+                                    };
+                                    *node = ast::Expr::Ident(id);
+                                    return;
+                                }
                             }
                         } else {
                             unreachable!("checked by FnBodyVisitor");
@@ -430,7 +396,7 @@ mod tests {
             |program, program_data| {
                 resolve(program, program_data);
 
-                super::OptimizeArgumentsArray::process(program, program_data);
+                super::process(program, program_data);
             },
             input,
             expected,
