@@ -4,36 +4,30 @@ use visit::{VisitMut, VisitMutWith};
 
 use crate::utils::unwrap_as;
 
-pub fn normalize(ast: &mut Program, program_data: &mut ast::TransformerProgramData) {
-    // Split var decls.
-    {
-        let mut v = VarSplitter { program_data };
-        ast.visit_mut_with(&mut v);
-    }
-    // Normalize shorthand assignments.
-    {
-        let mut v = NormalizeAssignShorthand { program_data };
-        ast.visit_mut_with(&mut v);
-    }
+pub fn normalise(ast: &mut Program, program_data: &mut ast::TransformerProgramData) {
+    let mut v = Normaliser { program_data };
+    ast.visit_mut_with(&mut v);
 }
 
-// TODO: how useful is this if it can't simplify all shorthand assigns? Would
-// it be better to just make passes handle shorthand, as many already do?
-/// Converts shorthand assignments to plain assignments with a binary expr. E.g.
-/// ```js
-/// a += 1;
-/// b *= 2;
-/// ```
-/// to
-/// ```js
-/// a = a + 1;
-/// b = b * 2;
-/// ```
-struct NormalizeAssignShorthand<'a> {
+struct Normaliser<'a> {
     program_data: &'a mut ast::TransformerProgramData,
 }
 
-impl VisitMut<'_> for NormalizeAssignShorthand<'_> {
+impl VisitMut<'_> for Normaliser<'_> {
+    // TODO: how useful is this if it can't simplify all shorthand assigns?
+    // Would it be better to just make passes handle shorthand, as many already
+    // do?
+    // Converts shorthand assignments to plain assignments with a binary expr.
+    // E.g.
+    // ```js
+    // a += 1;
+    // b *= 2;
+    // ```
+    // to
+    // ```js
+    // a = a + 1;
+    // b = b * 2;
+    // ```
     fn visit_mut_assign_expr(&mut self, node: &mut AssignExpr) {
         node.visit_mut_children_with(self);
 
@@ -89,26 +83,21 @@ impl VisitMut<'_> for NormalizeAssignShorthand<'_> {
         });
         node.op = AssignOp::Assign;
     }
-}
 
-/// Splits var decl statements with multiple declarations into separate statements.
-/// E.g.
-/// ```js
-/// let a, b;
-/// ```
-/// to
-/// ```js
-/// let a;
-/// let b;
-/// ```
-struct VarSplitter<'a> {
-    program_data: &'a mut ast::TransformerProgramData,
-}
+    // Split var decl statements with multiple declarations into separate
+    // statements.
+    // E.g.
+    // ```js
+    // let a, b;
+    // ```
+    // to
+    // ```js
+    // let a;
+    // let b;
+    // ```
 
-impl VisitMut<'_> for VarSplitter<'_> {
     // Handle statement lists: If a var stmt has multiple declarations, we replace
     // it with a new stmt for each declaration. E.g. `let a, b;` -> `let a; let b`;
-
     fn visit_mut_stmts(&mut self, stmts: &mut Vec<Stmt>) {
         let mut i = 0;
         while i < stmts.len() {

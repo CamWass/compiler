@@ -21,7 +21,7 @@ mod graph;
 mod inline_functions;
 mod name_generator;
 mod node_util;
-mod normalize;
+mod normalise;
 mod optimise_equality;
 pub mod optimize_properties;
 mod peephole;
@@ -82,7 +82,7 @@ impl Compiler {
         // TODO: maybe add an 'AST verifier' that checks basic invariants after
         // each pass (e.g. that no two nodes have the same node_id).
 
-        normalize::normalize(&mut ast, program_data);
+        normalise::normalise(&mut ast, program_data);
 
         resolve(&mut ast, program_data);
 

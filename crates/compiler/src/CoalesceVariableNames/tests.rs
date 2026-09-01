@@ -7,7 +7,7 @@ use super::*;
 fn test_transform(input: &str, expected: &str) {
     crate::testing::test_transform(
         |program, program_data| {
-            crate::normalize::normalize(program, program_data);
+            crate::normalise::normalise(program, program_data);
 
             resolve(program, program_data);
 
