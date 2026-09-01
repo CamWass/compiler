@@ -8,7 +8,6 @@ export const INPUTS = {
     config: `{
   "pretty_print": true,
   "passes": {
-    "optimize_arguments_array": false,
     "rename_vars": false,
     "rename_labels": false,
     "coalesce_variable_names": false,
@@ -31,7 +30,6 @@ export const INPUTS = {
     config: `{
   "pretty_print": true,
   "passes": {
-    "optimize_arguments_array": false,
     "rename_vars": false,
     "rename_labels": false,
     "coalesce_variable_names": false,
@@ -69,7 +67,6 @@ export const INPUTS = {
     config: `{
   "pretty_print": true,
   "passes": {
-    "optimize_arguments_array": false,
     "rename_vars": false,
     "rename_labels": false,
     "coalesce_variable_names": false,
@@ -121,7 +118,6 @@ result.prop3;
     config: `{
   "pretty_print": false,
   "passes": {
-    "optimize_arguments_array": true,
     "rename_vars": true,
     "rename_labels": true,
     "coalesce_variable_names": true,

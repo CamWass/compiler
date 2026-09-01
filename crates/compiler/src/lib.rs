@@ -7,7 +7,6 @@ mod CoalesceVariableNames;
 mod DataFlowAnalysis;
 mod LiveVariablesAnalysis;
 mod MaybeReachingVariableUse;
-mod OptimizeArgumentsArray;
 mod RenameLabels;
 pub mod RenameVars;
 mod collapse_variable_declarations;
@@ -40,8 +39,6 @@ use serde::Deserialize;
 
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
 pub struct PassConfig {
-    #[serde(default)]
-    pub optimize_arguments_array: bool,
     #[serde(default)]
     pub coalesce_variable_names: bool,
     #[serde(default)]
@@ -99,10 +96,6 @@ fn optimise(
     passes: PassConfig,
     program_data: &mut ::ast::TransformerProgramData,
 ) {
-    if passes.optimize_arguments_array {
-        OptimizeArgumentsArray::process(ast, program_data);
-    }
-
     // TODO: inlineAndCollapseProperties
 
     // TODO: inferConsts
