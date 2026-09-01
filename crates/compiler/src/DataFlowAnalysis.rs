@@ -420,25 +420,27 @@ pub fn compute_escaped(
     let mut v = EscapedVarFinder {
         all_vars_in_fn,
         escaped: &mut escaped,
+        in_nested_fn_body: false,
     };
     fn_scope.body.visit_with(&mut v);
     escaped
 }
 
+// TODO: I don't think this implementation is correct.
 struct EscapedVarFinder<'a> {
     all_vars_in_fn: &'a FxHashMap<NameId, VarId>,
     escaped: &'a mut FxHashSet<NameId>,
+    in_nested_fn_body: bool,
 }
 
 macro_rules! visit_fn {
     ($f:ident, $t:ident) => {
         fn $f(&mut self, node: &ast::$t) {
-            let mut v = RefFinder {
-                all_vars_in_fn: self.all_vars_in_fn,
-                escaped: self.escaped,
-            };
+            let old = self.in_nested_fn_body;
+            self.in_nested_fn_body = true;
             // TODO: I think the function's params can also access vars from parent scope (e.g. in default values).
-            node.body.visit_children_with(&mut v);
+            node.body.visit_children_with(self);
+            self.in_nested_fn_body = old;
         }
     };
 }
@@ -450,16 +452,17 @@ impl Visit<'_> for EscapedVarFinder<'_> {
     visit_fn!(visit_arrow_expr, ArrowExpr);
     visit_fn!(visit_getter_prop, GetterProp);
     visit_fn!(visit_setter_prop, SetterProp);
-}
-struct RefFinder<'a> {
-    all_vars_in_fn: &'a FxHashMap<NameId, VarId>,
-    escaped: &'a mut FxHashSet<NameId>,
-}
 
-impl Visit<'_> for RefFinder<'_> {
     fn visit_ident(&mut self, node: &ast::Ident) {
-        if self.all_vars_in_fn.contains_key(&node.name) {
+        if self.in_nested_fn_body && self.all_vars_in_fn.contains_key(&node.name) {
             self.escaped.insert(node.name);
+        }
+    }
+
+    fn visit_member_expr(&mut self, node: &ast::MemberExpr) {
+        node.obj.visit_with(self);
+        if node.computed {
+            node.prop.visit_with(self);
         }
     }
 }
