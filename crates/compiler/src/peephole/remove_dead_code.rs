@@ -1733,10 +1733,10 @@ impl VisitMut<'_> for Visitor<'_> {
     }
 
     fn visit_mut_expr(&mut self, node: &mut Expr) {
+        node.visit_mut_children_with(self);
+
         match node {
             Expr::Assign(expr) => {
-                expr.visit_mut_children_with(self);
-
                 if expr.op == AssignOp::Assign {
                     let left_ident = match &expr.left {
                         PatOrExpr::Expr(left) => match left.as_ref() {
@@ -1784,8 +1784,6 @@ impl VisitMut<'_> for Visitor<'_> {
                 }
             }
             Expr::Cond(cond) => {
-                cond.visit_mut_children_with(self);
-
                 let condition_value = get_boolean_value(&cond.test);
 
                 if condition_value.is_none() {
@@ -1820,8 +1818,6 @@ impl VisitMut<'_> for Visitor<'_> {
                 *node = replacement;
             }
             Expr::Seq(seq) => {
-                seq.visit_mut_children_with(self);
-
                 let mut i = 0;
                 let last_idx = seq.exprs.len() - 1;
                 seq.exprs.retain_mut(|expr| {
@@ -1845,8 +1841,6 @@ impl VisitMut<'_> for Visitor<'_> {
                 }
             }
             Expr::OptChain(opt_chain) => {
-                opt_chain.visit_mut_children_with(self);
-
                 let obj_or_callee = match opt_chain.expr.as_mut() {
                     Expr::Member(member) => Some(&mut member.obj),
                     Expr::Call(call) => Some(&mut call.callee),
@@ -1885,7 +1879,7 @@ impl VisitMut<'_> for Visitor<'_> {
                     });
                 }
             }
-            _ => node.visit_mut_children_with(self),
+            _ => {}
         }
     }
 
