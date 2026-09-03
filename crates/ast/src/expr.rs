@@ -273,7 +273,6 @@ pub struct TplElement {
     pub raw: Str,
 }
 
-#[allow(variant_size_differences)]
 #[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub enum ExprOrSuper {
     Super(Super),
