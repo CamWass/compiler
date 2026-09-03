@@ -3,7 +3,7 @@ use crate::{
     error::Error,
 };
 pub(crate) use ast::AssignOp;
-use ast::{BinaryOp, NameId};
+use ast::{BinaryOp, NameId, TplString};
 use common::Span;
 use num_bigint::BigUint;
 use std::fmt::{Debug, Display};
@@ -399,10 +399,7 @@ impl Display for Token {
 pub enum TokenData {
     Ident(NameId),
 
-    Template {
-        raw: Box<String>,
-        has_invalid_escape: bool,
-    },
+    Template(TplString),
 
     /// String literal. Span of this token contains quote.
     Str {

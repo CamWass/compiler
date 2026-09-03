@@ -3,7 +3,7 @@ use crate::{
     error::{Error, SyntaxError},
     token::{Token, TokenData},
 };
-use ast::NameId;
+use ast::{NameId, TplString};
 use common::{
     BytePos, Pos, Span,
     chars::{char_literals, is_js_line_break, is_js_multi_byte_whitespace},
@@ -198,11 +198,8 @@ impl<'src> Lexer<'src> {
         Token::Str
     }
 
-    pub fn make_tpl_token(&mut self, raw: Box<String>, has_invalid_escape: bool) -> Token {
-        self.state.token_data = Some(TokenData::Template {
-            raw,
-            has_invalid_escape,
-        });
+    pub fn make_tpl_token(&mut self, value: TplString) -> Token {
+        self.state.token_data = Some(TokenData::Template(value));
         Token::Template
     }
 

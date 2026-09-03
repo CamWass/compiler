@@ -23,7 +23,7 @@ pub use self::{
         ArrayLit, ArrowExpr, AssignExpr, AwaitExpr, BinExpr, CallExpr, ClassExpr, CondExpr, Expr,
         ExprOrSpread, ExprOrSuper, FnExpr, MemberExpr, MetaPropExpr, NewExpr, ObjectLit,
         OptChainExpr, PatOrExpr, SeqExpr, SpreadElement, Super, TaggedTpl, ThisExpr, Tpl,
-        TplElement, UnaryExpr, UpdateExpr, YieldExpr,
+        TplElement, TplString, UnaryExpr, UpdateExpr, YieldExpr,
     },
     function::{FnFlags, Function, Param},
     ident::{BindingIdent, Ident, PrivateName},

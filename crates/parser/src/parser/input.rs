@@ -6,7 +6,7 @@ use crate::{
     parser::Parser,
     token::{Token, TokenAndSpan, TokenData},
 };
-use ast::{NameId, ParserProgramData, id_for_built_in};
+use ast::{NameId, ParserProgramData, TplString, id_for_built_in};
 use common::{BytePos, Span};
 use num_bigint::BigUint;
 
@@ -477,13 +477,9 @@ impl<'d> Buffer<'d> {
         ret
     }
 
-    pub fn expect_template_token_and_bump(&mut self) -> (Box<String>, bool) {
-        let ret = if let Some(TokenData::Template {
-            raw,
-            has_invalid_escape,
-        }) = self.iter.take_token_data()
-        {
-            (raw, has_invalid_escape)
+    pub fn expect_template_token_and_bump(&mut self) -> TplString {
+        let ret = if let Some(TokenData::Template(value)) = self.iter.take_token_data() {
+            value
         } else {
             unreachable!();
         };

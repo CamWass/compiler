@@ -270,7 +270,28 @@ pub struct TaggedTpl {
 #[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct TplElement {
     pub node_id: NodeId,
-    pub raw: Str,
+    pub value: TplString,
+}
+
+#[derive(Debug, CloneNode, NodeEq, Serialize, Clone, PartialEq)]
+pub enum TplString {
+    Cooked(Box<String>),
+    /// Only used when the raw value contains invalid unicode escapes, which are
+    /// only possible in tagged template in ES2017 and later.
+    Raw(Box<String>),
+}
+
+impl TplString {
+    pub fn has_invalid_escape(&self) -> bool {
+        matches!(self, TplString::Raw(_))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        match &self {
+            TplString::Cooked(s) => s.is_empty(),
+            TplString::Raw(s) => s.is_empty(),
+        }
+    }
 }
 
 #[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]

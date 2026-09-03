@@ -1517,18 +1517,8 @@ impl Parser<'_> {
     pub(super) fn parse_tpl_element(&mut self, is_tagged: bool) -> PResult<TplElement> {
         let start = self.input.cur_pos();
 
-        let (raw, has_invalid_escape) = match self.input.cur() {
-            Token::Template => {
-                let (raw, has_invalid_escape) = self.input.expect_template_token_and_bump();
-
-                (
-                    Str {
-                        node_id: node_id!(self, self.span(start)),
-                        value: raw,
-                    },
-                    has_invalid_escape,
-                )
-            }
+        let value = match self.input.cur() {
+            Token::Template => self.input.expect_template_token_and_bump(),
             Token::Error => {
                 let error = self.input.expect_error_token_and_bump();
                 return Err(error);
@@ -1536,13 +1526,13 @@ impl Parser<'_> {
             _ => unexpected!(self, "template token"),
         };
 
-        if has_invalid_escape && (!is_tagged || self.input.target() < JscTarget::Es2018) {
+        if value.has_invalid_escape() && (!is_tagged || self.input.target() < JscTarget::Es2018) {
             syntax_error!(self, self.span(start), SyntaxError::InvalidEscapeInTemplate)
         }
 
         Ok(TplElement {
             node_id: node_id!(self, self.span(start)),
-            raw,
+            value,
         })
     }
 }

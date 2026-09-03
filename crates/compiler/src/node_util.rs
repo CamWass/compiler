@@ -62,9 +62,9 @@ pub fn get_boolean_value(expr: &Expr) -> Option<bool> {
             }
         }
         Expr::Tpl(tpl) => {
-            if tpl.exprs.is_empty() && tpl.quasis.iter().all(|q| q.raw.is_empty()) {
+            if tpl.exprs.is_empty() && tpl.quasis.iter().all(|q| q.value.is_empty()) {
                 Some(false)
-            } else if tpl.quasis.iter().any(|q| !q.raw.is_empty()) {
+            } else if tpl.quasis.iter().any(|q| !q.value.is_empty()) {
                 Some(true)
             } else {
                 None

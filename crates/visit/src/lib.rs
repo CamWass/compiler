@@ -223,7 +223,11 @@ define!({
     }
     pub struct TplElement {
         pub node_id: NodeId,
-        pub raw: Str,
+        pub value: TplString,
+    }
+    pub enum TplString {
+        Cooked(Box<String>),
+        Raw(Box<String>),
     }
     pub enum ExprOrSuper {
         Super(Super),

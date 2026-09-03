@@ -249,8 +249,7 @@ fn issue_546() {
 fn issue_637() {
     test_from_to(
         r"`\
-`;", r"`\
-`;",
+`;", r"``;",
     );
 }
 
@@ -302,13 +301,13 @@ fn tpl_2() {
 fn tpl_escape_1() {
     test_from_to(
         "`${parent.path}\x00${request}`",
-        "`${parent.path}\x00${request}`;",
+        "`${parent.path}\\0${request}`;",
     );
 }
 
 #[test]
 fn tpl_escape_2() {
-    test_from_to("`${arg}\0`", "`${arg}\0`;");
+    test_from_to("`${arg}\0`", "`${arg}\\0`;");
 }
 
 #[test]
@@ -354,12 +353,10 @@ fn tpl_escape_6() {
 
 #[test]
 fn issue_915_1() {
-    test_identical(r"relResolveCacheIdentifier = `${parent.path}\x00${request}`;");
-}
-
-#[test]
-fn issue_915_2() {
-    test_identical(r"relResolveCacheIdentifier = `${parent.path}\x00${request}`;");
+    test_from_to(
+        r"relResolveCacheIdentifier = `${parent.path}\x00${request}`;",
+        r"relResolveCacheIdentifier = `${parent.path}\0${request}`;",
+    );
 }
 
 #[test]

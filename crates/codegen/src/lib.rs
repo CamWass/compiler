@@ -1643,10 +1643,12 @@ impl<'a> Emitter<'a> {
     }
 
     fn emit_quasi(&mut self, node: &TplElement) -> Result {
-        self.wr.write_str_lit(
-            get_span!(self, node.node_id),
-            &unescape_tpl_lit(&node.raw.value),
-        )
+        let value = match &node.value {
+            TplString::Cooked(cooked) => &escape_tpl_string(cooked),
+            TplString::Raw(raw) => &unescape_tpl_lit(raw),
+        };
+
+        self.wr.write_str_lit(get_span!(self, node.node_id), value)
     }
 
     fn emit_unary_expr(&mut self, node: &UnaryExpr) -> Result {
@@ -3060,6 +3062,50 @@ fn unescape_tpl_lit(s: &str) -> String {
     }
 
     result
+}
+
+fn escape_tpl_string(s: &str) -> String {
+    let mut buf = String::with_capacity(s.len());
+
+    for c in s.chars() {
+        match c {
+            '\x00' => buf.push_str("\\0"),
+            '\u{0008}' => buf.push_str("\\b"),
+            '\u{000c}' => buf.push_str("\\f"),
+            '\n' => buf.push_str("\\n"),
+            '\r' => buf.push_str("\\r"),
+            '\u{000b}' => buf.push_str("\\v"),
+            '\t' => buf.push('\t'),
+            '\\' => buf.push_str("\\\\"),
+            '`' => buf.push_str("\\`"),
+            '\x01'..='\x0f' => {
+                let _ = write!(buf, "\\x0{:x}", c as u8);
+            }
+            '\x10'..='\x1f' => {
+                let _ = write!(buf, "\\x{:x}", c as u8);
+            }
+            '\x20'..='\x7e' => {
+                buf.push(c);
+            }
+            '\u{7f}'..='\u{ff}' => {
+                buf.push(c);
+            }
+            '\u{2028}' => {
+                buf.push_str("\\u2028");
+            }
+            '\u{2029}' => {
+                buf.push_str("\\u2029");
+            }
+            '\u{FEFF}' => {
+                buf.push_str("\\uFEFF");
+            }
+            _ => {
+                buf.push(c);
+            }
+        }
+    }
+
+    buf
 }
 
 fn get_quoted_utf16(v: &str, target: EsVersion) -> String {

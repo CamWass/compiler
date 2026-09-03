@@ -10,7 +10,7 @@ use crate::{
     error::{Error, SyntaxError},
     token::*,
 };
-use ast::ParserProgramData;
+use ast::{ParserProgramData, TplString};
 use bitflags::bitflags;
 use common::{
     BytePos, SourceFile, Span,
@@ -1072,7 +1072,7 @@ impl<'src> Lexer<'src> {
     fn read_tmpl_token(&mut self, start_of_tpl: BytePos) -> LexResult<Token> {
         let start = self.cur_pos();
 
-        let mut has_invalid_escape = false;
+        let mut cooked = Some(String::new());
 
         while let Some(c) = self.cur_byte() {
             if c == b'`' || (c == b'$' && self.peek_nth(1) == Some(b'{')) {
@@ -1086,24 +1086,49 @@ impl<'src> Lexer<'src> {
                     return Ok(tok!('`'));
                 }
 
-                let raw = self.slice_to_cur(start);
+                if let Some(cooked) = cooked {
+                    return Ok(self.make_tpl_token(TplString::Cooked(Box::new(cooked))));
+                } else {
+                    let raw = self.slice_to_cur(start);
 
-                return Ok(self.make_tpl_token(Box::new(String::from(raw)), has_invalid_escape));
+                    return Ok(self.make_tpl_token(TplString::Raw(Box::new(String::from(raw)))));
+                }
             }
 
             if c == b'\\' {
-                if self.read_escaped_char(true).is_err() {
-                    has_invalid_escape = true;
-                };
+                match self.read_escaped_char(true) {
+                    Ok(ch) => {
+                        if let Some(cooked) = &mut cooked
+                            && let Some(ch) = ch
+                        {
+                            cooked.push(ch)
+                        }
+                    }
+                    Err(_) => {
+                        // Invalid escape; fallback to storing raw value.
+                        if cooked.is_some() {
+                            cooked = None;
+                        }
+                    }
+                }
             } else if is_js_line_break(self.cur_unchecked()) {
                 self.state.had_line_break = true;
                 if c == b'\r' && self.peek_nth(1) == Some(b'\n') {
                     self.advance(2); // '\r\n'
+                    if let Some(cooked) = &mut cooked {
+                        cooked.push_str("\r\n");
+                    }
                 } else {
-                    self.bump();
+                    let ch = self.next_char();
+                    if let Some(cooked) = &mut cooked {
+                        cooked.push(ch);
+                    }
                 }
             } else {
-                self.bump();
+                let ch = self.next_char();
+                if let Some(cooked) = &mut cooked {
+                    cooked.push(ch);
+                }
             }
         }
 
