@@ -8,7 +8,7 @@ use crate::{
     node_util::{
         block_may_have_side_effects, constructorCallHasSideEffects, expr_may_have_side_effects,
         function_call_may_have_side_effects, get_boolean_value, isLiteralValue, isPureIterable,
-        stmt_may_have_side_effects,
+        new_void_zero, stmt_may_have_side_effects,
     },
     peephole::{fold_constants::evaluateComparison, getSideEffectFreeBooleanValue},
     utils::unwrap_as,
@@ -1869,14 +1869,7 @@ impl VisitMut<'_> for Visitor<'_> {
                 } else {
                     // Simplify `(void 0)?.()`, `(null)?.()`, `(void 0)?.x`, and
                     // `null?.x` to `void 0`.
-                    *node = Expr::Unary(UnaryExpr {
-                        node_id: self.program_data.new_id(DUMMY_SP),
-                        op: UnaryOp::Void,
-                        arg: Box::new(Expr::Lit(Lit::Num(Number {
-                            node_id: self.program_data.new_id(DUMMY_SP),
-                            value: 0.0,
-                        }))),
-                    });
+                    *node = new_void_zero(self.program_data, None);
                 }
             }
             _ => {}

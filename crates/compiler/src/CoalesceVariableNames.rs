@@ -1,5 +1,4 @@
 use ast::*;
-use common::DUMMY_SP;
 use index::bit_set::{BitMatrix, BitSet};
 use petgraph::matrix_graph::NodeIndex;
 use petgraph::matrix_graph::UnMatrix;
@@ -19,6 +18,7 @@ use crate::find_vars::{
     FunctionLike, VarId, find_first_lhs_ident, find_pat_ids, find_vars_declared_in_fn,
 };
 use crate::graph::GraphColoring::GraphColouring;
+use crate::node_util::new_void_zero;
 use crate::utils::unwrap_as;
 
 #[cfg(test)]
@@ -290,14 +290,7 @@ impl CoalesceVariableNames<'_> {
                                 // const x = 1; // constant requires an initializer
                                 // let {x, y} = obj; // destructuring requires an initializer
                                 // let [x, y] = iterable; // destructuring requires an initializer
-                                decl.init = Some(Box::new(Expr::Unary(UnaryExpr {
-                                    node_id: self.program_data.new_id(DUMMY_SP),
-                                    op: UnaryOp::Void,
-                                    arg: Box::new(Expr::Lit(Lit::Num(Number {
-                                        node_id: self.program_data.new_id(DUMMY_SP),
-                                        value: 0.0,
-                                    }))),
-                                })));
+                                decl.init = Some(Box::new(new_void_zero(self.program_data, None)));
                             }
 
                             var_decl.kind = VarDeclKind::Var;

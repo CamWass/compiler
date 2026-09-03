@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use ast::*;
 use bitflags::bitflags;
+use common::DUMMY_SP;
 use num_traits::{FromPrimitive, identities::Zero};
 
 use crate::convert::{
@@ -1111,4 +1112,23 @@ pub fn getKnownValueType(mut expr: &Expr) -> TypeFlags {
             Expr::Tpl(_) => return TypeFlags::STRING,
         }
     }
+}
+
+pub fn new_void_zero(
+    program_data: &mut TransformerProgramData,
+    source_node_id: Option<NodeId>,
+) -> Expr {
+    let mut mk_id = || {
+        source_node_id
+            .map(|id| program_data.new_id_from(id))
+            .unwrap_or_else(|| program_data.new_id(DUMMY_SP))
+    };
+    Expr::Unary(UnaryExpr {
+        node_id: mk_id(),
+        op: UnaryOp::Void,
+        arg: Box::new(Expr::Lit(Lit::Num(Number {
+            node_id: mk_id(),
+            value: 0.0,
+        }))),
+    })
 }
