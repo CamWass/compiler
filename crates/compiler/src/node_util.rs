@@ -156,8 +156,26 @@ pub fn getStringValue(expr: &Expr) -> Option<Cow<'_, str>> {
         },
         Expr::Array(array) => arrayToString(array).map(|s| s.into()),
         Expr::Object(_) => Some("[object Object]".into()),
-        // TODO: template literals, but we need the cooked values for the
-        // quasis.
+        Expr::Tpl(tpl) => {
+            let mut result = String::new();
+            for i in 0..tpl.quasis.len() {
+                if let TplString::Cooked(v) = &tpl.quasis[i].value {
+                    result.push_str(v);
+                } else {
+                    return None;
+                }
+
+                if let Some(expr) = tpl.exprs.get(i) {
+                    if let Some(string) = getStringValue(expr) {
+                        result.push_str(&string);
+                    } else {
+                        return None;
+                    }
+                }
+            }
+
+            Some(result.into())
+        }
         _ => None,
     }
 }
