@@ -609,20 +609,6 @@ impl Parser<'_> {
             false
         };
 
-        /// Wrap with optional chaining
-        macro_rules! wrap {
-            ($e:expr) => {{
-                if has_question_dot_token {
-                    Expr::OptChain(OptChainExpr {
-                        node_id: node_id!(self, self.span(start)),
-                        expr: Box::new($e),
-                    })
-                } else {
-                    $e
-                }
-            }};
-        }
-
         // $obj[name()]
         if (has_question_dot_token
             && self.is(tok!('.'))
@@ -640,16 +626,22 @@ impl Parser<'_> {
             let span = Span::new(obj_span_lo, self.input.last_pos());
             debug_assert_eq!(obj_span_lo, span.lo());
 
-            return Ok((
-                Box::new(wrap!(Expr::Member(MemberExpr {
-                    node_id: node_id!(self, span),
-                    obj: obj.unwrap(),
-                    prop,
-                    computed: true,
-                })))
-                .into(),
-                true,
-            ));
+            let base = Expr::Member(MemberExpr {
+                node_id: node_id!(self, span),
+                obj: obj.unwrap(),
+                prop,
+                computed: true,
+            });
+            let expr = if has_question_dot_token {
+                Expr::OptChain(OptChainExpr {
+                    node_id: node_id!(self, self.span(start)),
+                    expr: Box::new(base),
+                })
+            } else {
+                base
+            };
+
+            return Ok((Box::new(expr).into(), true));
         }
 
         if (has_question_dot_token
@@ -659,15 +651,20 @@ impl Parser<'_> {
             || (!no_call && (self.is(tok!('('))))
         {
             let args = self.parse_args(is_import(&obj))?;
-            return Ok((
-                Box::new(wrap!(Expr::Call(CallExpr {
+            let base = Expr::Call(CallExpr {
+                node_id: node_id!(self, self.span(start)),
+                callee: obj.unwrap(),
+                args,
+            });
+            let expr = if has_question_dot_token {
+                Expr::OptChain(OptChainExpr {
                     node_id: node_id!(self, self.span(start)),
-                    callee: obj.unwrap(),
-                    args,
-                })))
-                .into(),
-                true,
-            ));
+                    expr: Box::new(base),
+                })
+            } else {
+                base
+            };
+            return Ok((Box::new(expr).into(), true));
         }
 
         // member expression
@@ -681,17 +678,23 @@ impl Parser<'_> {
             debug_assert_eq!(get_span!(self, obj.node_id()).lo(), span.lo());
             debug_assert_eq!(get_span!(self, prop.node_id()).hi(), span.hi());
 
-            return Ok((
-                Box::new(wrap!(Expr::Member(MemberExpr {
-                    node_id: node_id!(self, span),
-                    obj: obj.unwrap(),
+            let base = Expr::Member(MemberExpr {
+                node_id: node_id!(self, span),
+                obj: obj.unwrap(),
 
-                    prop,
-                    computed: false,
-                })))
-                .into(),
-                true,
-            ));
+                prop,
+                computed: false,
+            });
+            let expr = if has_question_dot_token {
+                Expr::OptChain(OptChainExpr {
+                    node_id: node_id!(self, self.span(start)),
+                    expr: Box::new(base),
+                })
+            } else {
+                base
+            };
+
+            return Ok((Box::new(expr).into(), true));
         }
 
         match obj {
