@@ -339,5 +339,11 @@ impl From<Str> for Expr {
 #[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct OptChainExpr {
     pub node_id: NodeId,
-    pub expr: Box<Expr>,
+    pub base: Box<OptChainBase>,
+}
+
+#[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
+pub enum OptChainBase {
+    Call(CallExpr),
+    Member(MemberExpr),
 }

@@ -669,29 +669,7 @@ impl GraphVisitor<'_, '_> {
                 };
                 self.record_assignment(lhs, &n.right, n.op)
             }
-            Expr::Member(n) => match &n.obj {
-                ExprOrSuper::Super(_) => todo!(),
-                ExprOrSuper::Expr(obj) => {
-                    let mut obj = self.get_rhs(obj, true, ExprContext::Expression);
-
-                    if n.computed {
-                        n.prop.visit_with(self);
-                    }
-
-                    if let Some(prop) =
-                        PropKey::from_expr(&n.prop, n.computed, self.store.program_data)
-                    {
-                        for obj in &mut obj {
-                            self.reference_prop(*obj, prop);
-                            *obj = self.get_prop_value(*obj, prop.0);
-                        }
-                        ret!(obj)
-                    } else {
-                        self.invalidate(&obj);
-                        ret!(vec![PointerId::UNKNOWN])
-                    }
-                }
-            },
+            Expr::Member(n) => self.get_rhs_of_member_expr(n, used),
             Expr::Cond(n) => {
                 n.test.visit_with(self);
                 let mut cons = self.get_rhs(&n.cons, used, ExprContext::Expression);
@@ -699,78 +677,7 @@ impl GraphVisitor<'_, '_> {
                 cons.append(&mut alt);
                 ret!(cons)
             }
-            Expr::Call(n) => match &n.callee {
-                ExprOrSuper::Super(_) => todo!(),
-                ExprOrSuper::Expr(callee) => {
-                    let mut callee = self.get_rhs(callee, true, ExprContext::Expression);
-
-                    if callee.len() == 1 {
-                        self.record_single_callee_call(callee[0], n.node_id, expr_ctxt);
-                    }
-
-                    let args = n
-                        .args
-                        .iter()
-                        .map(|arg| match arg {
-                            ExprOrSpread::Spread(arg) => {
-                                self.get_rhs(&arg.expr, true, ExprContext::Expression)
-                            }
-                            ExprOrSpread::Expr(arg) => {
-                                self.get_rhs(arg, true, ExprContext::Expression)
-                            }
-                        })
-                        .collect::<Vec<_>>();
-
-                    if n.args.iter().any(|a| matches!(a, ExprOrSpread::Spread(_))) {
-                        for arg in args {
-                            self.invalidate(&arg);
-                        }
-                        // TODO: this is too conservative; ideally we'd just record that each
-                        // callee is called with unknown parameters and let that info propagate.
-                        // However, we don't yet know what we're calling, so we just invalidate
-                        // the callees, which will cause their params to be invalidated too.
-                        self.invalidate(&callee);
-                        return ret!(vec![PointerId::UNKNOWN]);
-                    }
-
-                    for &callee in &callee {
-                        if callee == PointerId::UNKNOWN {
-                            for arg in &args {
-                                self.invalidate(arg);
-                            }
-                            continue;
-                        }
-                        if !self.store.is_callable_pointer(callee) {
-                            continue;
-                        }
-                        for (i, arg_values) in args.iter().enumerate() {
-                            let index = i.try_into().expect("< u16::MAX params");
-                            let arg_pointer =
-                                self.store.pointers.insert(Pointer::Arg(callee, index));
-                            for value in arg_values {
-                                self.make_subset_of(*value, arg_pointer);
-                                self.graph.add_initial_edge(
-                                    callee,
-                                    arg_pointer,
-                                    GraphEdge::Arg(index),
-                                    self.store,
-                                );
-                            }
-                        }
-                    }
-                    for callee in &mut callee {
-                        if *callee == PointerId::UNKNOWN {
-                            continue;
-                        }
-                        if self.store.is_callable_pointer(*callee) {
-                            *callee = self.get_return_value(*callee);
-                        } else {
-                            *callee = PointerId::NULL_OR_VOID;
-                        }
-                    }
-                    ret!(callee)
-                }
-            },
+            Expr::Call(n) => self.get_rhs_of_call_expr(n, used, expr_ctxt),
             Expr::New(n) => {
                 let callee = self.get_rhs(&n.callee, true, ExprContext::Expression);
                 self.invalidate(&callee);
@@ -861,14 +768,18 @@ impl GraphVisitor<'_, '_> {
                 ret!(vec![PointerId::UNKNOWN])
             }
             Expr::PrivateName(_) => todo!(),
-            Expr::OptChain(opt_chain) => match opt_chain.expr.as_ref() {
-                Expr::Member(_) | Expr::Call(_) => {
-                    // Note: optional chaining can short circuit and also return undefined,
-                    // but that does not impact our analysis, so we ignore it.
-                    self.get_rhs(&opt_chain.expr, used, ExprContext::Expression)
+            Expr::OptChain(opt_chain) => {
+                // Note: optional chaining can short circuit and also return undefined,
+                // but that does not impact our analysis, so we ignore it.
+                match opt_chain.base.as_ref() {
+                    OptChainBase::Call(call_expr) => {
+                        self.get_rhs_of_call_expr(call_expr, used, ExprContext::Expression)
+                    }
+                    OptChainBase::Member(member_expr) => {
+                        self.get_rhs_of_member_expr(member_expr, used)
+                    }
                 }
-                _ => unreachable!("invalid optional chain expr"),
-            },
+            }
 
             Expr::Invalid(_) => unreachable!(),
         }
@@ -889,6 +800,120 @@ impl GraphVisitor<'_, '_> {
         } else {
             // Unknown/invalid assignment target.
             self.invalidate(rhs);
+        }
+    }
+
+    fn get_rhs_of_member_expr(&mut self, n: &MemberExpr, used: bool) -> Vec<PointerId> {
+        macro_rules! ret {
+            ($val:expr) => {
+                if used { $val } else { Vec::new() }
+            };
+        }
+
+        match &n.obj {
+            ExprOrSuper::Super(_) => todo!(),
+            ExprOrSuper::Expr(obj) => {
+                let mut obj = self.get_rhs(obj, true, ExprContext::Expression);
+
+                if n.computed {
+                    n.prop.visit_with(self);
+                }
+
+                if let Some(prop) = PropKey::from_expr(&n.prop, n.computed, self.store.program_data)
+                {
+                    for obj in &mut obj {
+                        self.reference_prop(*obj, prop);
+                        *obj = self.get_prop_value(*obj, prop.0);
+                    }
+                    ret!(obj)
+                } else {
+                    self.invalidate(&obj);
+                    ret!(vec![PointerId::UNKNOWN])
+                }
+            }
+        }
+    }
+
+    fn get_rhs_of_call_expr(
+        &mut self,
+        n: &CallExpr,
+        used: bool,
+        expr_ctxt: ExprContext,
+    ) -> Vec<PointerId> {
+        macro_rules! ret {
+            ($val:expr) => {
+                if used { $val } else { Vec::new() }
+            };
+        }
+
+        match &n.callee {
+            ExprOrSuper::Super(_) => todo!(),
+            ExprOrSuper::Expr(callee) => {
+                let mut callee = self.get_rhs(callee, true, ExprContext::Expression);
+
+                if callee.len() == 1 {
+                    self.record_single_callee_call(callee[0], n.node_id, expr_ctxt);
+                }
+
+                let args = n
+                    .args
+                    .iter()
+                    .map(|arg| match arg {
+                        ExprOrSpread::Spread(arg) => {
+                            self.get_rhs(&arg.expr, true, ExprContext::Expression)
+                        }
+                        ExprOrSpread::Expr(arg) => self.get_rhs(arg, true, ExprContext::Expression),
+                    })
+                    .collect::<Vec<_>>();
+
+                if n.args.iter().any(|a| matches!(a, ExprOrSpread::Spread(_))) {
+                    for arg in args {
+                        self.invalidate(&arg);
+                    }
+                    // TODO: this is too conservative; ideally we'd just record that each
+                    // callee is called with unknown parameters and let that info propagate.
+                    // However, we don't yet know what we're calling, so we just invalidate
+                    // the callees, which will cause their params to be invalidated too.
+                    self.invalidate(&callee);
+                    return ret!(vec![PointerId::UNKNOWN]);
+                }
+
+                for &callee in &callee {
+                    if callee == PointerId::UNKNOWN {
+                        for arg in &args {
+                            self.invalidate(arg);
+                        }
+                        continue;
+                    }
+                    if !self.store.is_callable_pointer(callee) {
+                        continue;
+                    }
+                    for (i, arg_values) in args.iter().enumerate() {
+                        let index = i.try_into().expect("< u16::MAX params");
+                        let arg_pointer = self.store.pointers.insert(Pointer::Arg(callee, index));
+                        for value in arg_values {
+                            self.make_subset_of(*value, arg_pointer);
+                            self.graph.add_initial_edge(
+                                callee,
+                                arg_pointer,
+                                GraphEdge::Arg(index),
+                                self.store,
+                            );
+                        }
+                    }
+                }
+                for callee in &mut callee {
+                    if *callee == PointerId::UNKNOWN {
+                        continue;
+                    }
+                    if self.store.is_callable_pointer(*callee) {
+                        *callee = self.get_return_value(*callee);
+                    } else {
+                        *callee = PointerId::NULL_OR_VOID;
+                    }
+                }
+                ret!(callee)
+            }
         }
     }
 

@@ -436,9 +436,9 @@ pub fn function_call_may_have_side_effects(callee: &Expr) -> bool {
 
     let member = match callee {
         Expr::Member(m) => Some(m),
-        Expr::OptChain(opt) => match opt.expr.as_ref() {
-            Expr::Member(m) => Some(m),
-            _ => None,
+        Expr::OptChain(opt) => match opt.base.as_ref() {
+            OptChainBase::Member(m) => Some(m),
+            OptChainBase::Call(_) => None,
         },
         _ => None,
     };
@@ -600,7 +600,26 @@ pub fn expr_may_have_side_effects(expr: &Expr) -> bool {
         }
         Expr::MetaProp(_) => false,
         Expr::PrivateName(_) => false,
-        Expr::OptChain(opt) => expr_may_have_side_effects(&opt.expr),
+        Expr::OptChain(opt) => {
+            match opt.base.as_ref() {
+                OptChainBase::Member(member) => {
+                    expr_may_have_side_effects(&member.prop)
+                        || expr_or_super_may_have_side_effects(&member.obj)
+                }
+                // calls to functions that have no side effects have the no
+                // side effect property set.
+                OptChainBase::Call(call) => {
+                    (match &call.callee {
+                        ExprOrSuper::Super(_) => false,
+                        ExprOrSuper::Expr(callee) => function_call_may_have_side_effects(callee),
+                    }) || {
+                        call.args
+                            .iter()
+                            .any(|a| expr_or_spread_may_have_side_effects(a))
+                    }
+                }
+            }
+        }
         Expr::Invalid(_) => unreachable!(),
     }
 }

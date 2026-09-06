@@ -78,9 +78,7 @@ pub(super) fn is_valid_simple_assignment_target(expr: &Expr, strict: YesMaybe) -
         // MemberExpression is valid assignment target
         Expr::PrivateName(..) => false,
 
-        Expr::OptChain(OptChainExpr { expr, .. }) => {
-            is_valid_simple_assignment_target(expr, strict)
-        }
+        Expr::OptChain(..) => false,
 
         Expr::Invalid(..) => false,
     }

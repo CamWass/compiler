@@ -302,89 +302,12 @@ impl Visitor<'_> {
                 }
             }
             Expr::Assign(_) => Keep,
-            Expr::Member(member) => {
-                let remove_prop = self.simplify_unused_expr(&mut member.prop);
-
-                let remove_obj = match &mut member.obj {
-                    ExprOrSuper::Super(_) => Remove,
-                    ExprOrSuper::Expr(expr) => self.simplify_unused_expr(expr),
-                };
-
-                if remove_obj == Keep && remove_prop == Remove {
-                    *expr = unwrap_as!(&mut member.obj, ExprOrSuper::Expr(e), e.as_mut().take());
-                    Keep
-                } else if remove_obj == Remove && remove_prop == Keep {
-                    *expr = member.prop.as_mut().take();
-                    Keep
-                } else if remove_obj == Remove && remove_prop == Remove {
-                    Remove
-                } else {
-                    Keep
-                }
+            Expr::Member(_) => {
+                self.simplify_unused_member_expr(expr, |e| unwrap_as!(e, Expr::Member(m), m))
             }
 
-            Expr::Call(call) => {
-                let call_may_have_side_effects = match &call.callee {
-                    ExprOrSuper::Super(_) => true,
-                    ExprOrSuper::Expr(callee) => function_call_may_have_side_effects(callee),
-                };
-
-                if call_may_have_side_effects {
-                    return Keep;
-                }
-
-                call.args.retain_mut(|el| match el {
-                    ExprOrSpread::Spread(spread) => {
-                        if isPureIterable(&spread.expr) {
-                            let remove_expr = self.simplify_unused_expr(&mut spread.expr);
-                            if remove_expr == Remove { false } else { true }
-                        } else {
-                            true
-                        }
-                    }
-                    ExprOrSpread::Expr(expr) => {
-                        let remove_expr = self.simplify_unused_expr(expr);
-                        if remove_expr == Remove { false } else { true }
-                    }
-                });
-
-                if call.args.is_empty() {
-                    return Remove;
-                }
-
-                let has_spreads = call
-                    .args
-                    .iter()
-                    .any(|a| matches!(a, ExprOrSpread::Spread(_)));
-
-                if has_spreads {
-                    *expr = Expr::Array(ArrayLit {
-                        node_id: self.program_data.new_id_from(call.node_id),
-                        elems: call.args.take().into_iter().map(Some).collect(),
-                    });
-
-                    return Keep;
-                }
-
-                if call.args.len() == 1 {
-                    *expr = unwrap_as!(
-                        call.args.first_mut(),
-                        Some(ExprOrSpread::Expr(e)),
-                        e.as_mut().take()
-                    );
-                    Keep
-                } else {
-                    *expr = Expr::Seq(SeqExpr {
-                        node_id: self.program_data.new_id(DUMMY_SP),
-                        exprs: call
-                            .args
-                            .take()
-                            .into_iter()
-                            .map(|a| *unwrap_as!(a, ExprOrSpread::Expr(e), e))
-                            .collect(),
-                    });
-                    Keep
-                }
+            Expr::Call(_) => {
+                self.simplify_unused_call_expr(expr, |e| unwrap_as!(e, Expr::Call(c), c))
             }
             Expr::New(new) => {
                 let constructor_may_have_side_effects = constructorCallHasSideEffects(new);
@@ -589,13 +512,120 @@ impl Visitor<'_> {
             Expr::MetaProp(_) => Remove,
             Expr::Await(_) => Keep,
             Expr::PrivateName(_) => Remove,
-            Expr::OptChain(opt) => {
-                let remove_expr = self.simplify_unused_expr(&mut opt.expr);
-                if remove_expr == Remove { Remove } else { Keep }
-            }
+            Expr::OptChain(opt) => match opt.base.as_ref() {
+                OptChainBase::Call(_) => self.simplify_unused_call_expr(expr, |e| {
+                    let opt = unwrap_as!(e, Expr::OptChain(o), o);
+                    unwrap_as!(opt.base.as_mut(), OptChainBase::Call(c), c)
+                }),
+                OptChainBase::Member(_) => self.simplify_unused_member_expr(expr, |e| {
+                    let opt = unwrap_as!(e, Expr::OptChain(o), o);
+                    unwrap_as!(opt.base.as_mut(), OptChainBase::Member(m), m)
+                }),
+            },
 
             Expr::Fn(_) | Expr::Arrow(_) | Expr::Cond(_) => unreachable!("handled above"),
             Expr::Invalid(_) => unreachable!(),
+        }
+    }
+
+    fn simplify_unused_call_expr(
+        &mut self,
+        expr: &mut Expr,
+        unwrap_as_call: impl Fn(&mut Expr) -> &mut CallExpr,
+    ) -> OptimiseExprResult {
+        use OptimiseExprResult::*;
+
+        let call = unwrap_as_call(expr);
+
+        let call_may_have_side_effects = match &call.callee {
+            ExprOrSuper::Super(_) => true,
+            ExprOrSuper::Expr(callee) => function_call_may_have_side_effects(callee),
+        };
+
+        if call_may_have_side_effects {
+            return Keep;
+        }
+
+        call.args.retain_mut(|el| match el {
+            ExprOrSpread::Spread(spread) => {
+                if isPureIterable(&spread.expr) {
+                    let remove_expr = self.simplify_unused_expr(&mut spread.expr);
+                    if remove_expr == Remove { false } else { true }
+                } else {
+                    true
+                }
+            }
+            ExprOrSpread::Expr(expr) => {
+                let remove_expr = self.simplify_unused_expr(expr);
+                if remove_expr == Remove { false } else { true }
+            }
+        });
+
+        if call.args.is_empty() {
+            return Remove;
+        }
+
+        let has_spreads = call
+            .args
+            .iter()
+            .any(|a| matches!(a, ExprOrSpread::Spread(_)));
+
+        if has_spreads {
+            *expr = Expr::Array(ArrayLit {
+                node_id: self.program_data.new_id_from(call.node_id),
+                elems: call.args.take().into_iter().map(Some).collect(),
+            });
+
+            return Keep;
+        }
+
+        if call.args.len() == 1 {
+            *expr = unwrap_as!(
+                call.args.first_mut(),
+                Some(ExprOrSpread::Expr(e)),
+                e.as_mut().take()
+            );
+            Keep
+        } else {
+            *expr = Expr::Seq(SeqExpr {
+                node_id: self.program_data.new_id(DUMMY_SP),
+                exprs: call
+                    .args
+                    .take()
+                    .into_iter()
+                    .map(|a| *unwrap_as!(a, ExprOrSpread::Expr(e), e))
+                    .collect(),
+            });
+            Keep
+        }
+    }
+
+    fn simplify_unused_member_expr(
+        &mut self,
+        expr: &mut Expr,
+        unwrap_as_member: impl Fn(&mut Expr) -> &mut MemberExpr,
+    ) -> OptimiseExprResult {
+        use OptimiseExprResult::*;
+
+        let member = unwrap_as_member(expr);
+
+        let remove_prop = self.simplify_unused_expr(&mut member.prop);
+
+        let remove_obj = match &mut member.obj {
+            ExprOrSuper::Super(_) => Remove,
+            ExprOrSuper::Expr(expr) => self.simplify_unused_expr(expr),
+        };
+
+        if remove_obj == Keep && remove_prop == Remove {
+            *expr = unwrap_as!(&mut member.obj, ExprOrSuper::Expr(e), e.as_mut().take());
+            Keep
+        } else if remove_obj == Remove && remove_prop == Keep {
+            *expr = member.prop.as_mut().take();
+            Keep
+        } else if remove_obj == Remove && remove_prop == Remove {
+            Remove
+        } else {
+            Keep
         }
     }
 
@@ -733,7 +763,7 @@ impl Visitor<'_> {
             match switch.discriminant.as_ref() {
                 // Before removing switch, we must preserve the switch condition if it is a call
                 Expr::Call(_) => self.tryRemoveSwitchWithSingleCase(stmt, true),
-                Expr::OptChain(opt) if matches!(opt.expr.as_ref(), Expr::Call(_)) => {
+                Expr::OptChain(opt) if matches!(opt.base.as_ref(), OptChainBase::Call(_)) => {
                     self.tryRemoveSwitchWithSingleCase(stmt, true)
                 }
 
@@ -1841,10 +1871,9 @@ impl VisitMut<'_> for Visitor<'_> {
                 }
             }
             Expr::OptChain(opt_chain) => {
-                let obj_or_callee = match opt_chain.expr.as_mut() {
-                    Expr::Member(member) => Some(&mut member.obj),
-                    Expr::Call(call) => Some(&mut call.callee),
-                    _ => None,
+                let obj_or_callee = match opt_chain.base.as_mut() {
+                    OptChainBase::Member(member) => Some(&mut member.obj),
+                    OptChainBase::Call(call) => Some(&mut call.callee),
                 };
 
                 let Some(ExprOrSuper::Expr(obj_or_callee)) = obj_or_callee else {

@@ -590,7 +590,7 @@ impl<'a> Emitter<'a> {
             Expr::OptChain(n) => {
                 let mut wrap_expr = false;
                 let mut wrap_callee = false;
-                if let Expr::Call(base) = n.expr.as_ref() {
+                if let OptChainBase::Call(base) = n.base.as_ref() {
                     match &base.callee {
                         ExprOrSuper::Expr(callee) => match callee.as_ref() {
                             Expr::Seq(_) | Expr::Arrow(_) | Expr::Await(_) | Expr::Assign(_) => {
@@ -633,8 +633,8 @@ impl<'a> Emitter<'a> {
     fn emit_opt_chain(&mut self, n: &OptChainExpr, wrap_callee: bool) -> Result {
         let span = get_span!(self, n.node_id);
 
-        match n.expr.as_ref() {
-            Expr::Member(e) => {
+        match n.base.as_ref() {
+            OptChainBase::Member(e) => {
                 let old_flags = self.flags;
                 self.flags.set(Flags::in_opt_chain, true);
                 self.emit_expr_or_super(&e.obj)?;
@@ -649,7 +649,7 @@ impl<'a> Emitter<'a> {
                 }
                 self.flags = old_flags;
             }
-            Expr::Call(e) => {
+            OptChainBase::Call(e) => {
                 let ctx = std::mem::replace(&mut self.ctx, Context::FnCallee);
                 let old_flags = self.flags;
                 self.flags.set(Flags::in_opt_chain, true);
@@ -700,7 +700,6 @@ impl<'a> Emitter<'a> {
                 punct!(self, ")");
                 self.ctx = ctx;
             }
-            _ => {}
         }
         Ok(())
     }

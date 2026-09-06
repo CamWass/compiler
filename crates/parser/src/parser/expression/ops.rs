@@ -303,7 +303,7 @@ impl Parser<'_> {
                 if self.input.syntax().typescript() && op == op!("delete") {
                     match arg.as_ref() {
                         Expr::Member(..) => {}
-                        Expr::OptChain(e) if matches!(&*e.expr, Expr::Member(..)) => {}
+                        Expr::OptChain(e) if matches!(&*e.base, OptChainBase::Member(..)) => {}
                         _ => self.emit_err(get_span!(self, arg.node_id()), SyntaxError::TS2703),
                     }
                 }

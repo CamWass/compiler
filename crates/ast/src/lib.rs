@@ -22,8 +22,8 @@ pub use self::{
     expr::{
         ArrayLit, ArrowExpr, AssignExpr, AwaitExpr, BinExpr, CallExpr, ClassExpr, CondExpr, Expr,
         ExprOrSpread, ExprOrSuper, FnExpr, MemberExpr, MetaPropExpr, NewExpr, ObjectLit,
-        OptChainExpr, PatOrExpr, SeqExpr, SpreadElement, Super, TaggedTpl, ThisExpr, Tpl,
-        TplElement, TplString, UnaryExpr, UpdateExpr, YieldExpr,
+        OptChainBase, OptChainExpr, PatOrExpr, SeqExpr, SpreadElement, Super, TaggedTpl, ThisExpr,
+        Tpl, TplElement, TplString, UnaryExpr, UpdateExpr, YieldExpr,
     },
     function::{FnFlags, Function, Param},
     ident::{BindingIdent, Ident, PrivateName},

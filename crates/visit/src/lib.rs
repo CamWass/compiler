@@ -246,7 +246,11 @@ define!({
     }
     pub struct OptChainExpr {
         pub node_id: NodeId,
-        pub expr: Box<Expr>,
+        pub base: Box<OptChainBase>,
+    }
+    pub enum OptChainBase {
+        Call(CallExpr),
+        Member(MemberExpr),
     }
     pub struct Function {
         pub node_id: NodeId,

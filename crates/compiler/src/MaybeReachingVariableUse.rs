@@ -279,15 +279,15 @@ impl Visit<'_> for ReachingUseFinder<'_, '_, '_> {
     }
 
     fn visit_opt_chain_expr(&mut self, node: &OptChainExpr) {
-        match node.expr.as_ref() {
-            Expr::Member(n) => {
+        match node.base.as_ref() {
+            OptChainBase::Member(n) => {
                 let old = self.conditional;
                 self.conditional = true;
                 n.prop.visit_with(self);
                 self.conditional = old;
                 n.obj.visit_with(self);
             }
-            Expr::Call(n) => {
+            OptChainBase::Call(n) => {
                 // As args are evaluated in AST order, we traverse in reverse AST order for backward
                 // dataflow analysis.
                 let old = self.conditional;
@@ -298,7 +298,6 @@ impl Visit<'_> for ReachingUseFinder<'_, '_, '_> {
                 self.conditional = old;
                 n.callee.visit_with(self);
             }
-            _ => unreachable!(),
         }
     }
 

@@ -312,8 +312,8 @@ impl<'ast> Visit<'ast> for GenKillComputer<'ast, '_> {
 
     fn visit_opt_chain_expr(&mut self, node: &'ast OptChainExpr) {
         debug_assert!(!self.in_lhs);
-        match node.expr.as_ref() {
-            Expr::Member(e) => {
+        match node.base.as_ref() {
+            OptChainBase::Member(e) => {
                 e.obj.visit_with(self);
                 // RHS may short circuit.
                 let old_cond = self.conditional;
@@ -321,7 +321,7 @@ impl<'ast> Visit<'ast> for GenKillComputer<'ast, '_> {
                 e.prop.visit_with(self);
                 self.conditional = old_cond;
             }
-            Expr::Call(e) => {
+            OptChainBase::Call(e) => {
                 e.callee.visit_with(self);
                 // Unlike an optionally chained member expr, an optionally chained
                 // call expr can have multiple children on rhs (arguments) which
@@ -331,7 +331,6 @@ impl<'ast> Visit<'ast> for GenKillComputer<'ast, '_> {
                 e.args.visit_with(self);
                 self.conditional = old_cond;
             }
-            _ => unreachable!(),
         }
     }
 
