@@ -209,10 +209,13 @@ impl SyntaxError {
                 "Class cannot appear in a single-statement context".into()
             }
             SyntaxError::SloppyFunction => {
-                "In non-strict mode code, functions can only be declared at top level, inside a block, or as the body of an if statement".into()
+                "In non-strict mode code, functions can only be declared at top level, \
+                inside a block, or as the body of an if statement"
+                    .into()
             }
             SyntaxError::StrictFunction => {
-                "In strict mode code, functions can only be declared at top level or inside a block".into()
+                "In strict mode code, functions can only be declared at top level or inside a block"
+                    .into()
             }
             SyntaxError::UnexpectedLexicalDeclaration => {
                 "Lexical declaration cannot appear in a single-statement context".into()
@@ -281,7 +284,9 @@ impl SyntaxError {
             SyntaxError::LineBreakBeforeArrow => {
                 "Unexpected line break between arrow head and arrow".into()
             }
-            SyntaxError::Unexpected { got, expected } => format!("Unexpected token `{got}`. Expected {expected}").into(),
+            SyntaxError::Unexpected { got, expected } => {
+                format!("Unexpected token `{got}`. Expected {expected}").into()
+            }
 
             SyntaxError::ReservedWordInImport => "cannot import as reserved word".into(),
             SyntaxError::AssignProperty => "assignment property is invalid syntax".into(),
@@ -427,10 +432,9 @@ impl SyntaxError {
             SyntaxError::TS1085 => "Legacy octal literals are not available when targeting \
                                     ECMAScript 5 and higher"
                 .into(),
-            SyntaxError::TS1089(word) => format!(
-                "'{word}' modifier cannot appear on a constructor declaration"
-            )
-            .into(),
+            SyntaxError::TS1089(word) => {
+                format!("'{word}' modifier cannot appear on a constructor declaration").into()
+            }
             SyntaxError::TS1092 => {
                 "Type parameters cannot appear on a constructor declaration".into()
             }
@@ -472,10 +476,9 @@ impl SyntaxError {
             SyntaxError::TS1242 => {
                 "`abstract` modifier can only appear on a class or method declaration".into()
             }
-            SyntaxError::TS1243(left, right) => format!(
-                "'{left}' modifier cannot be used with '{right}' modifier."
-            )
-            .into(),
+            SyntaxError::TS1243(left, right) => {
+                format!("'{left}' modifier cannot be used with '{right}' modifier.").into()
+            }
             SyntaxError::TS2369 => {
                 "A parameter property is only allowed in a constructor implementation".into()
             }
