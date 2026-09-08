@@ -311,16 +311,8 @@ where
         }
     }
 
-    pub fn remove(&mut self, key: &K) {
-        self.0.remove(key);
-    }
-
     pub fn get(&self, key: K) -> Option<&Vec<V>> {
         self.0.get(&key)
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (&K, &Vec<V>)> {
-        self.0.iter()
     }
 }
 
