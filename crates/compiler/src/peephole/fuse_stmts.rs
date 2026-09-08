@@ -155,7 +155,7 @@ fn fuse_expression_into_control_flow_statement(
                 }));
             }
         }
-        _ => unreachable!("{:?}", last),
+        _ => unreachable!(),
     }
 }
 

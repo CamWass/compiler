@@ -1066,7 +1066,6 @@ impl GraphVisitor<'_, '_> {
                 }
                 Pat::Expr(e) => e.as_ref(),
                 _ => {
-                    dbg!(node);
                     unreachable!();
                 }
             },

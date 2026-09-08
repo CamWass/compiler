@@ -133,20 +133,13 @@ impl Parser<'_> {
         self.input.bump();
 
         if let MaybeParen::Expr(left) = &left {
-            if let Expr::Unary(UnaryExpr { node_id, .. }) = left.as_ref() {
+            if let Expr::Unary(_) = left.as_ref() {
                 if op == op!("**") {
                     // Correct implementation would be returning Ok(left) and
                     // returning "unexpected token '**'" on next.
                     // But it's not useful error message.
 
-                    syntax_error!(
-                        self,
-                        SyntaxError::UnaryInExp {
-                            // FIXME: Use display
-                            left: format!("{left:?}"),
-                            left_span: get_span!(self, *node_id),
-                        }
-                    )
+                    syntax_error!(self, SyntaxError::UnaryInExp)
                 }
             }
         }

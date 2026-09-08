@@ -1006,7 +1006,7 @@ impl Parser<'_> {
                             set_span!(self, *node_id, Span::new(pat_start, hi));
                         }
                     }
-                    Pat::Expr(expr) => unreachable!("invalid pattern: Expr({:?})", expr),
+                    Pat::Expr(_) => unreachable!("invalid pattern: Expr"),
                     Pat::Invalid(..) => {
                         // We don't have to panic here.
                         // See: https://github.com/swc-project/swc/issues/1170

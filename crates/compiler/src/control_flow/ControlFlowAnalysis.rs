@@ -150,7 +150,7 @@ where
             debug_assert!(
                 cfa.ast_position.contains_key(&node.node_id),
                 "node should have ast position {:#?}",
-                node
+                node.node_id
             );
         }
         debug_assert_eq!(cfa.ast_position.len(), cfa.ast_position_counter as usize);
@@ -256,7 +256,7 @@ where
         debug_assert!(
             !self.ast_position.contains_key(&node.node_id),
             "node has already been prioritized {:#?}",
-            node
+            node.node_id
         );
         self.ast_position
             .insert(node.node_id, self.ast_position_counter);

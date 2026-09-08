@@ -73,10 +73,7 @@ pub(super) enum SyntaxError {
     InvalidIdentInStrict,
     /// 'eval' and 'arguments' are invalid identifier in strict mode.
     EvalAndArgumentsInStrict,
-    UnaryInExp {
-        left: String,
-        left_span: Span,
-    },
+    UnaryInExp,
     LineBreakInThrow,
     LineBreakBeforeArrow,
 
@@ -279,7 +276,7 @@ impl SyntaxError {
             SyntaxError::EvalAndArgumentsInStrict => "'eval' and 'arguments' cannot be used as a \
                                                       binding identifier in strict mode"
                 .into(),
-            SyntaxError::UnaryInExp { .. } => "** cannot be applied to unary expression".into(),
+            SyntaxError::UnaryInExp => "** cannot be applied to unary expression".into(),
             SyntaxError::LineBreakInThrow => "LineBreak cannot follow 'throw'".into(),
             SyntaxError::LineBreakBeforeArrow => {
                 "Unexpected line break between arrow head and arrow".into()

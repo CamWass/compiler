@@ -95,8 +95,10 @@ where
     /// again. Each step will perform a computation at one node until no extra computation will modify
     /// any existing output state any more.
     pub fn analyze(&mut self) {
-        self.analyze_inner()
-            .expect("Dataflow analysis appears to diverge");
+        match self.analyze_inner() {
+            Ok(_) => {}
+            Err(_) => panic!("Dataflow analysis appears to diverge"),
+        }
     }
 
     // TODO: analyze is split into two because tests need to verify that divergence

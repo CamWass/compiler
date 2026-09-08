@@ -208,7 +208,7 @@ impl Parser<'_> {
                     }
                 }
                 Pat::Invalid(..) => {}
-                Pat::Expr(_) => unreachable!("invalid syntax: Pat: {:?}", pat),
+                Pat::Expr(_) => unreachable!("unexpected expr pat",),
             }
         }
 
