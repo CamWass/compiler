@@ -8,12 +8,11 @@ default = []
 
 [dependencies]
 bitflags = { workspace = true }
-num-bigint = { workspace = true }
-num-traits = { workspace = true }
 rustc-hash = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 
 ast = { path = "../ast" }
+big_int = { path = "../big_int" }
 common = { path = "../common" }
 
 [dev-dependencies]

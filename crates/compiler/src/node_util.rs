@@ -1,9 +1,9 @@
 use std::borrow::Cow;
 
 use ast::*;
+use big_int::BigIntValue;
 use bitflags::bitflags;
 use common::DUMMY_SP;
-use num_traits::{FromPrimitive, identities::Zero};
 
 use crate::convert::{
     ecma_number_to_int_32, ecma_number_to_string, ecma_string_to_big_int, ecma_string_to_number,
@@ -131,7 +131,7 @@ pub fn getStringValue(expr: &Expr) -> Option<Cow<'_, str>> {
             }
             Lit::Null(_) => Some("null".into()),
             Lit::Num(number) => Some(ecma_number_to_string(number.value).into()),
-            Lit::BigInt(big_int) => Some(big_int.value.to_string().into()),
+            Lit::BigInt(big_int) => Some(big_int.value.as_str().into()),
             // TODO: String(regex).
             Lit::Regex(_) => None,
         },
@@ -317,28 +317,30 @@ fn get_number_value_inner(expr: &Expr, number_conversions: bool) -> Option<f64> 
 /// Returns the value of an expression as a BigInt, or None if it cannot be
 /// converted. When it returns a BigInt, this function effectively emulates the
 /// `BigInt()` JavaScript cast function.
-pub fn getBigIntValue(expr: &Expr) -> Option<num_bigint::BigInt> {
+pub fn getBigIntValue(expr: &Expr) -> Option<BigIntValue> {
     match expr {
         Expr::Lit(lit) => match lit {
             Lit::Str(string) => ecma_string_to_big_int(&string.value),
             Lit::Bool(bool) => {
                 if bool.value {
-                    Some(num_bigint::BigInt::ONE)
+                    Some(BigIntValue::one())
                 } else {
-                    Some(num_bigint::BigInt::ZERO)
+                    Some(BigIntValue::zero())
                 }
             }
             Lit::Null(_) => None,
-            Lit::Num(number) => num_bigint::BigInt::from_f64(number.value),
+            Lit::Num(number) => BigIntValue::from_f64(number.value),
             // TODO: Remove clone
-            Lit::BigInt(big_int) => Some(num_bigint::BigInt::from(big_int.value.as_ref().clone())),
+            Lit::BigInt(big_int) => {
+                Some(BigIntValue::from_big_unint(big_int.value.as_ref().clone()))
+            }
             Lit::Regex(_) => None,
         },
         Expr::Unary(unary) => match unary.op {
             UnaryOp::Minus => getBigIntValue(&unary.arg).map(|v| -v),
             UnaryOp::Bang => match get_boolean_value(expr) {
-                Some(true) => Some(num_bigint::BigInt::ONE),
-                Some(false) => Some(num_bigint::BigInt::ZERO),
+                Some(true) => Some(BigIntValue::one()),
+                Some(false) => Some(BigIntValue::zero()),
                 None => None,
             },
             UnaryOp::Tilde => getBigIntValue(&unary.arg).map(|v| !v),

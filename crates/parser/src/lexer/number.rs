@@ -5,9 +5,8 @@
 
 use super::{LexResult, Lexer, pos_span};
 use crate::{JscTarget, error::SyntaxError, token::Token};
+use big_int::BigUintValue;
 use common::BytePos;
-use num_bigint::BigUint;
-use num_traits::Num as _;
 use std::{fmt::Write, iter::FusedIterator};
 
 fn is_forbidden_numeric_separator_sibling(b: Option<u8>, radix: Radix) -> bool {
@@ -188,8 +187,7 @@ impl Lexer<'_> {
 
         let tok = if self.is(b'n') {
             let raw = self.slice_to_cur(raw_start);
-            let b = BigUint::from_str_radix(raw, radix as _)
-                .expect("failed to parse string as a bigint");
+            let b = BigUintValue::from_str_radix(raw, radix as _);
             self.bump(); // 'n'
             self.make_big_int_token(Box::new(b))
         } else {
@@ -272,8 +270,7 @@ impl Lexer<'_> {
 
             if self.is(b'n') {
                 let raw = self.slice_to_cur(start);
-                let b =
-                    BigUint::from_str_radix(raw, 10).expect("failed to parse string as a bigint");
+                let b = BigUintValue::from_str_radix(raw, 10);
                 self.bump(); // 'n'
 
                 // TODO: do we need to check ensure_not_ident()?

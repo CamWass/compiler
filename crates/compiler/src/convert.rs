@@ -1,6 +1,5 @@
+use big_int::{BigIntSign, BigIntValue, BigUintValue};
 use common::chars::{is_js_line_break, is_js_whitespace};
-use num_bigint::BigInt;
-use num_traits::Num;
 
 /// Converts a string to a number, according to the ECMAScript spec.
 ///
@@ -178,22 +177,25 @@ pub fn ecma_number_to_string(x: f64) -> String {
 /// https://tc39.es/ecma262/multipage/numbers-and-dates.html#sec-bigint-constructor-number-value
 /// https://tc39.es/ecma262/multipage/abstract-operations.html#sec-tobigint
 /// https://tc39.es/ecma262/multipage/abstract-operations.html#sec-stringtobigint
-pub fn ecma_string_to_big_int(string: &str) -> Option<BigInt> {
+pub fn ecma_string_to_big_int(string: &str) -> Option<BigIntValue> {
     let trimmed = string.trim_matches(|c| is_js_line_break(c) || is_js_whitespace(c));
 
     if trimmed.is_empty() {
-        return Some(BigInt::ZERO);
+        return Some(BigIntValue::zero());
     }
 
-    // The String -> BigInt parsing used by the JS BigInt constructor is much
-    // more strict than num_bigint::BigInt's parsing (e.g. numerical separators
-    // aren't allowed), so we validate the string before passing it to
-    // BigInt::from_str_radix.
+    // TODO: reject leading zeros and duplicate separators.
 
     if matches!(trimmed.as_bytes().first(), Some(b'-' | b'+')) {
         let digits = &trimmed[1..];
         if digits.as_bytes().iter().all(|b| b.is_ascii_digit()) {
-            return BigInt::from_str_radix(trimmed, 10).ok();
+            let data = BigUintValue::from_str_radix(digits, 10);
+            let sign = if trimmed.as_bytes().first() == Some(&b'-') {
+                BigIntSign::Minus
+            } else {
+                BigIntSign::Plus
+            };
+            return Some(BigIntValue::from_big_unint_and_sign(data, sign));
         }
 
         return None;
@@ -202,7 +204,9 @@ pub fn ecma_string_to_big_int(string: &str) -> Option<BigInt> {
     if matches!(trimmed.as_bytes(), [b'0', b'x' | b'X', ..]) {
         let digits = &trimmed[2..];
         if digits.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) {
-            return BigInt::from_str_radix(digits, 16).ok();
+            return Some(BigIntValue::from_big_unint(BigUintValue::from_str_radix(
+                digits, 16,
+            )));
         }
 
         return None;
@@ -211,7 +215,9 @@ pub fn ecma_string_to_big_int(string: &str) -> Option<BigInt> {
     if matches!(trimmed.as_bytes(), [b'0', b'o' | b'O', ..]) {
         let digits = &trimmed[2..];
         if digits.as_bytes().iter().all(|b| matches!(b, b'0'..=b'7')) {
-            return BigInt::from_str_radix(digits, 8).ok();
+            return Some(BigIntValue::from_big_unint(BigUintValue::from_str_radix(
+                digits, 8,
+            )));
         }
 
         return None;
@@ -220,14 +226,18 @@ pub fn ecma_string_to_big_int(string: &str) -> Option<BigInt> {
     if matches!(trimmed.as_bytes(), [b'0', b'b' | b'B', ..]) {
         let digits = &trimmed[2..];
         if digits.as_bytes().iter().all(|b| matches!(b, b'0' | b'1')) {
-            return BigInt::from_str_radix(digits, 2).ok();
+            return Some(BigIntValue::from_big_unint(BigUintValue::from_str_radix(
+                digits, 2,
+            )));
         }
 
         return None;
     }
 
     if trimmed.as_bytes().iter().all(|b| b.is_ascii_digit()) {
-        return BigInt::from_str_radix(trimmed, 10).ok();
+        return Some(BigIntValue::from_big_unint(BigUintValue::from_str_radix(
+            trimmed, 10,
+        )));
     }
 
     None
@@ -295,7 +305,14 @@ mod tests {
                 white_space_string(),
                 white_space_string()
             )),
-            Some(BigInt::from(12345))
+            Some(BigIntValue::from_u64(12345))
+        );
+
+        assert!(ecma_string_to_big_int("0").is_some_and(|v| v.is_zero()));
+        assert!(ecma_string_to_big_int("-0").is_some_and(|v| v.is_zero()));
+        assert_eq!(
+            ecma_string_to_big_int("0"),
+            Some(BigIntValue::from_big_unint(BigUintValue::zero()))
         );
     }
 

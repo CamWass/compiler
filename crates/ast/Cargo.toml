@@ -6,12 +6,12 @@ edition = "2024"
 [dependencies]
 bitflags = { workspace = true, features = ["serde"] }
 hashbrown = { workspace = true, features = ["inline-more"] }
-num-bigint = { workspace = true, features = ["serde"] }
 paste = { workspace = true }
 rustc-hash = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 unicode-id-start = { workspace = true }
 
+big_int = { path = "../big_int" }
 clone_node = { path = "../clone_node" }
 common = { path = "../common" }
 index = { path = "../index" }

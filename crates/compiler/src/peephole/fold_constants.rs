@@ -1,7 +1,7 @@
 use std::{cmp::Ordering, ops::BitXor};
 
 use ast::*;
-use num_traits::FromPrimitive;
+use big_int::BigIntValue;
 
 use crate::{
     node_util::{TypeFlags, expr_may_have_side_effects, getKnownValueType},
@@ -116,9 +116,9 @@ fn tryAbstractRelationalComparison(left: &Expr, right: &Expr, willNegate: bool) 
     return None;
 }
 
-// TODO: the bitxors arne't that readable.
+// TODO: the bitxors aren't that readable.
 fn bigintLessThanDouble(
-    bigint: &num_bigint::BigInt,
+    bigint: &BigIntValue,
     number: f64,
     invert: bool,
     willNegate: bool,
@@ -134,7 +134,7 @@ fn bigintLessThanDouble(
     }
 
     // long can hold all values within [-2^53, 2^53]
-    let numberAsBigInt = num_bigint::BigInt::from_f64(number)?;
+    let numberAsBigInt = BigIntValue::from_f64(number)?;
     let negativeMeansBigintSmaller = bigint.cmp(&numberAsBigInt);
     if negativeMeansBigintSmaller == Ordering::Less {
         return Some(true.bitxor(invert));

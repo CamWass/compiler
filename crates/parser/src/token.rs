@@ -4,8 +4,8 @@ use crate::{
 };
 pub(crate) use ast::AssignOp;
 use ast::{BinaryOp, NameId, TplString};
+use big_int::BigUintValue;
 use common::Span;
-use num_bigint::BigUint;
 use std::fmt::{Debug, Display};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -408,7 +408,7 @@ pub enum TokenData {
 
     Num(f64),
 
-    BigInt(Box<BigUint>),
+    BigInt(Box<BigUintValue>),
 
     Error(Error),
 }

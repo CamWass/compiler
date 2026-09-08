@@ -1,7 +1,6 @@
 #![deny(unused)]
 
 use ast::*;
-use num_bigint::BigUint;
 use visit_macros::define;
 
 define!({
@@ -290,7 +289,7 @@ define!({
     }
     pub struct BigInt {
         pub node_id: NodeId,
-        pub value: BigUint,
+        pub value: BigUintValue,
     }
     pub struct Str {
         pub node_id: NodeId,

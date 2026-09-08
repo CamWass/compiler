@@ -830,6 +830,7 @@ fn skip(ty: &Type) -> bool {
                 || i == "f64"
                 || i == "f32"
                 || i == "String"
+                || i == "BigUintValue"
             {
                 return true;
             }

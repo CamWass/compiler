@@ -7,8 +7,8 @@ use crate::{
     token::{Token, TokenAndSpan, TokenData},
 };
 use ast::{NameId, ParserProgramData, TplString, id_for_built_in};
+use big_int::BigUintValue;
 use common::{BytePos, Span};
-use num_bigint::BigUint;
 
 /// This struct is responsible for managing current token and peeked token.
 pub struct Buffer<'src> {
@@ -467,7 +467,7 @@ impl<'d> Buffer<'d> {
         ret
     }
 
-    pub fn expect_big_int_token_and_bump(&mut self) -> Box<BigUint> {
+    pub fn expect_big_int_token_and_bump(&mut self) -> Box<BigUintValue> {
         let ret = if let Some(TokenData::BigInt(value)) = self.iter.take_token_data() {
             value
         } else {

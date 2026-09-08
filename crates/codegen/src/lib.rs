@@ -412,7 +412,7 @@ impl<'a> Emitter<'a> {
     fn emit_big_lit(&mut self, v: &BigInt) -> Result {
         let span = get_span!(self, v.node_id);
 
-        self.wr.write_lit(span, &v.value.to_string())?;
+        self.wr.write_lit(span, v.value.as_str())?;
         self.wr.write_lit(span, "n")
     }
 

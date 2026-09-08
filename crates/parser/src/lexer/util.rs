@@ -8,6 +8,7 @@ use common::{
     BytePos, Pos, Span,
     chars::{char_literals, is_js_line_break, is_js_multi_byte_whitespace},
 };
+use big_int::BigUintValue;
 
 // Checks if the byte is the first utf8 byte of a unicode whitespace char.
 // Used for short circuiting whitespace checks.
@@ -188,7 +189,7 @@ impl<'src> Lexer<'src> {
         Token::Num
     }
 
-    pub fn make_big_int_token(&mut self, value: Box<num_bigint::BigUint>) -> Token {
+    pub fn make_big_int_token(&mut self, value: Box<BigUintValue>) -> Token {
         self.state.token_data = Some(TokenData::BigInt(value));
         Token::BigInt
     }

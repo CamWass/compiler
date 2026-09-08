@@ -1852,7 +1852,7 @@ impl PropKey {
             )),
             PropName::Computed(p) => PropKey::from_expr(&p.expr, true, program_data),
             PropName::BigInt(p) => Some(PropKey(
-                program_data.intern_name(p.value.to_string().into()),
+                program_data.intern_name(p.value.as_str().into()),
                 p.node_id,
             )),
         }
@@ -1891,7 +1891,7 @@ impl PropKey {
                     e.node_id,
                 )),
                 Lit::BigInt(e) => Some(PropKey(
-                    program_data.intern_name(e.value.to_str_radix(10).into()),
+                    program_data.intern_name(e.value.as_str().into()),
                     e.node_id,
                 )),
                 Lit::Regex(_) => None,

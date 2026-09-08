@@ -1,8 +1,8 @@
 use crate::{GetNodeId, NodeId};
+use big_int::BigUintValue;
 use clone_node::CloneNode;
 use node_eq::NodeEq;
 use node_id::GetNodeIdMacro;
-use num_bigint::BigUint;
 use serde::Serialize;
 use std::fmt::{self, Display, Formatter};
 
@@ -24,7 +24,7 @@ pub enum Lit {
 #[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]
 pub struct BigInt {
     pub node_id: NodeId,
-    pub value: Box<BigUint>,
+    pub value: Box<BigUintValue>,
 }
 
 #[derive(Debug, GetNodeIdMacro, CloneNode, NodeEq, Serialize)]

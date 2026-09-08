@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use ast::Expr;
-use num_bigint::BigInt;
+use big_int::BigIntValue;
 
 use crate::node_util::{
     expr_may_have_side_effects, get_boolean_value, get_number_value, getBigIntValue, getStringValue,
@@ -34,7 +34,7 @@ pub fn getSideEffectFreeNumberValue(expr: &Expr) -> Option<f64> {
  *
  * <p>Returns {@code null} otherwise.
  */
-pub fn getSideEffectFreeBigIntValue(expr: &Expr) -> Option<BigInt> {
+pub fn getSideEffectFreeBigIntValue(expr: &Expr) -> Option<BigIntValue> {
     let value = getBigIntValue(expr);
     // Calculating the bigint value, if any, is likely to be faster than calculating side effects,
     // and there are only a very few cases where we can compute a bigint value, but there could
