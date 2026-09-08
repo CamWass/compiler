@@ -6,7 +6,6 @@
 mod CoalesceVariableNames;
 mod DataFlowAnalysis;
 mod LiveVariablesAnalysis;
-mod MaybeReachingVariableUse;
 mod RenameLabels;
 pub mod RenameVars;
 mod collapse_variable_declarations;
