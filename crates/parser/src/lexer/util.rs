@@ -4,11 +4,11 @@ use crate::{
     token::{Token, TokenData},
 };
 use ast::{NameId, TplString};
+use big_int::BigUintValue;
 use common::{
     BytePos, Pos, Span,
     chars::{char_literals, is_js_line_break, is_js_multi_byte_whitespace},
 };
-use big_int::BigUintValue;
 
 // Checks if the byte is the first utf8 byte of a unicode whitespace char.
 // Used for short circuiting whitespace checks.
@@ -367,5 +367,9 @@ impl Lexer<'_> {
         }
 
         Ok(())
+    }
+
+    pub fn has_errors(&self) -> bool {
+        !self.errors.is_empty()
     }
 }

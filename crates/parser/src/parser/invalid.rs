@@ -15,6 +15,11 @@ use super::*;
 
 impl<'d> Parser<'d> {
     fn create_invalid_ident(&mut self) -> Ident {
+        // We should always emit an error before we create an invalid node;
+        // If the parser has no errors, then compilation will continue and the
+        // invalid node will escape the parse stage.
+        debug_assert!(self.input.has_errors());
+
         Ident {
             node_id: node_id!(self, DUMMY_SP),
             name: INVALID_IDENT_NAME,

@@ -490,4 +490,8 @@ impl<'d> Buffer<'d> {
     pub fn cur_string(&self) -> &str {
         self.iter.slice_to_cur(self.cur_span().lo)
     }
+
+    pub fn has_errors(&self) -> bool {
+        self.iter.has_errors()
+    }
 }
