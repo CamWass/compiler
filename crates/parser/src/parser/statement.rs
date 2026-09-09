@@ -767,7 +767,7 @@ impl Parser<'_> {
                     node_id: node_id!(self, span),
                     stmts: Vec::new(),
                 }),
-                alt: Default::default(),
+                alt: None,
             }));
         }
 

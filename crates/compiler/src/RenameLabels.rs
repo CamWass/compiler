@@ -132,8 +132,8 @@ impl VisitMut<'_> for RenameLabels<'_> {
                     }
                 } else {
                     // ... and it is not referenced, just remove it.
-                    *node = labeled_stmt.body.as_mut().take()
-                };
+                    *node = labeled_stmt.body.as_mut().take();
+                }
                 // Remove the label from the current stack of labels.
                 self.namespace_stack
                     .last_mut()

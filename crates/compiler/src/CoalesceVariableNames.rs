@@ -185,7 +185,7 @@ impl CoalesceVariableNames<'_> {
         body: &mut BlockStmt,
     ) {
         if let VarDeclOrAssignTarget::VarDecl(var_decl) = left {
-            assert!(var_decl.decls.len() == 1);
+            assert_eq!(var_decl.decls.len(), 1);
             let decl = var_decl.decls.first_mut().unwrap();
             debug_assert!(decl.init.is_none());
 
@@ -254,7 +254,7 @@ impl CoalesceVariableNames<'_> {
         stmts.retain_mut(|stmt| match stmt {
             Stmt::Decl(Decl::Var(var_decl)) => {
                 // TODO: THIS IS NOT TRUE ATM - we don't yet normalize like closure does.
-                assert!(var_decl.decls.len() == 1);
+                assert_eq!(var_decl.decls.len(), 1);
                 let decl = var_decl.decls.first_mut().unwrap();
 
                 if let BindingPatOrIdent::Ident(lhs) = &mut decl.name {

@@ -321,6 +321,6 @@ where
     K: Eq + Hash,
 {
     fn default() -> Self {
-        Self(Default::default())
+        Self(FxHashMap::default())
     }
 }

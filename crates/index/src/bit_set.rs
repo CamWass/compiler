@@ -184,7 +184,7 @@ impl<T: Idx> BitSet<T> {
     ///
     /// This is an optimization for union of a hybrid bitset.
     fn reverse_union_sparse(&mut self, sparse: &SparseBitSet<T>) -> bool {
-        assert!(sparse.domain_size == self.domain_size);
+        assert_eq!(sparse.domain_size, self.domain_size);
         self.clear_excess_bits();
 
         let mut not_already = false;
@@ -292,7 +292,7 @@ impl<T: Idx> fmt::Display for BitSet<T> {
                 assert!(mask <= 0xFF);
                 let byte = word & mask;
 
-                f.write_fmt(format_args!("{}{:02x}", sep, byte))?;
+                f.write_fmt(format_args!("{sep}{byte:02x}"))?;
 
                 if remain <= 8 {
                     break;
@@ -538,7 +538,7 @@ impl<T: Idx> HybridBitSet<T> {
         if let (HybridBitSet::Dense(self_dense), HybridBitSet::Dense(other_dense)) = (self, other) {
             self_dense.superset(other_dense)
         } else {
-            assert!(self.domain_size() == other.domain_size());
+            assert_eq!(self.domain_size(), other.domain_size());
             other.iter().all(|elem| self.contains(elem))
         }
     }
@@ -842,8 +842,7 @@ impl<R: Idx, C: Idx> BitMatrix<R, C> {
         BitMatrix {
             num_rows,
             num_columns,
-            words: iter::repeat(row.words())
-                .take(num_rows)
+            words: iter::repeat_n(row.words(), num_rows)
                 .flatten()
                 .copied()
                 .collect(),

@@ -43,8 +43,8 @@ where
         C: Fn(&T, &T) -> Ordering,
     {
         let mut colouring = Self {
-            colour_map: Default::default(),
-            partitions: Default::default(),
+            colour_map: FxHashMap::default(),
+            partitions: IndexVec::default(),
         };
 
         let mut nodes: Vec<_> = graph.node_identifiers().collect();

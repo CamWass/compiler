@@ -37,7 +37,7 @@ impl Resolver<'_> {
         }
 
         for scope in self.scopes.iter().rev() {
-            if let Some(new_name) = scope.names.get(&name) {
+            if let Some(new_name) = scope.names.get(name) {
                 *name = *new_name;
                 return;
             }
@@ -286,7 +286,7 @@ fn hoist_declarations(stmt: &mut Stmt, op: &mut impl FnMut(&mut NameId)) {
                 .for_each(|s| hoist_declarations(s, op));
 
             if let Some(alt) = if_stmt.alt.as_deref_mut() {
-                alt.stmts.iter_mut().for_each(|s| hoist_declarations(s, op))
+                alt.stmts.iter_mut().for_each(|s| hoist_declarations(s, op));
             }
         }
 

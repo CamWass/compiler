@@ -134,6 +134,6 @@ fn main() -> Result<()> {
     let config_file = Path::new("config.json");
     let config = load_config(config_file)?;
 
-    let output_file = args.get(2).map(|s| s.as_str());
+    let output_file = args.get(2).map(String::as_str);
     compile(entry_file, config, output_file)
 }

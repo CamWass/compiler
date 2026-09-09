@@ -333,7 +333,6 @@ where
     /// Handles functions/constructors/etc
     fn handle_function_like(&mut self, func: FunctionLikeNode<'ast>, node: Node<'ast>) {
         let body = func.body;
-        let node = node;
         self.prioritize_node(node);
 
         if self.should_traverse_functions || node == self.cfg.entry {

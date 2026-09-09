@@ -46,7 +46,7 @@ pub fn get_boolean_value(expr: &Expr) -> Option<bool> {
             UnaryOp::Void => Some(false),
             UnaryOp::Delete => None,
         },
-        Expr::Seq(seq) => seq.exprs.last().and_then(|e| get_boolean_value(e)),
+        Expr::Seq(seq) => seq.exprs.last().and_then(get_boolean_value),
         Expr::Assign(assign) => match assign.op {
             AssignOp::Assign => get_boolean_value(&assign.right),
             // TODO: &&=, ||=, and ??=
@@ -154,7 +154,7 @@ pub fn getStringValue(expr: &Expr) -> Option<Cow<'_, str>> {
             id_for_built_in!("Infinity") => Some("Infinity".into()),
             _ => None,
         },
-        Expr::Array(array) => arrayToString(array).map(|s| s.into()),
+        Expr::Array(array) => arrayToString(array).map(Cow::Owned),
         Expr::Object(_) => Some("[object Object]".into()),
         Expr::Tpl(tpl) => {
             let mut result = String::new();
@@ -551,26 +551,23 @@ pub fn expr_may_have_side_effects(expr: &Expr) -> bool {
             (match &call.callee {
                 ExprOrSuper::Super(_) => false,
                 ExprOrSuper::Expr(callee) => function_call_may_have_side_effects(callee),
-            }) || {
-                call.args
-                    .iter()
-                    .any(|a| expr_or_spread_may_have_side_effects(a))
-            }
+            }) || call.args.iter().any(expr_or_spread_may_have_side_effects)
         }
         Expr::New(new) => {
             constructorCallHasSideEffects(new)
-                || new.args.as_ref().is_some_and(|args| {
-                    args.iter().any(|a| expr_or_spread_may_have_side_effects(a))
-                })
+                || new
+                    .args
+                    .as_ref()
+                    .is_some_and(|args| args.iter().any(expr_or_spread_may_have_side_effects))
         }
-        Expr::Seq(seq) => seq.exprs.iter().any(|e| expr_may_have_side_effects(e)),
+        Expr::Seq(seq) => seq.exprs.iter().any(expr_may_have_side_effects),
         Expr::Ident(_) => false,
         Expr::Lit(_) => false,
-        Expr::Tpl(tpl) => tpl.exprs.iter().any(|e| expr_may_have_side_effects(e)),
+        Expr::Tpl(tpl) => tpl.exprs.iter().any(expr_may_have_side_effects),
         Expr::TaggedTpl(tpl) => {
             function_call_may_have_side_effects(&tpl.tag)
                 || expr_may_have_side_effects(&tpl.tag)
-                || tpl.tpl.exprs.iter().any(|e| expr_may_have_side_effects(e))
+                || tpl.tpl.exprs.iter().any(expr_may_have_side_effects)
         }
         Expr::Arrow(_) => false,
         Expr::Class(class) => {
@@ -589,14 +586,14 @@ pub fn expr_may_have_side_effects(expr: &Expr) -> bool {
                                 && prop
                                     .value
                                     .as_ref()
-                                    .is_some_and(|v| expr_may_have_side_effects(&v)))
+                                    .is_some_and(|v| expr_may_have_side_effects(v)))
                     }
                     ClassMember::PrivateProp(prop) => {
                         prop.is_static
                             && prop
                                 .value
                                 .as_ref()
-                                .is_some_and(|v| expr_may_have_side_effects(&v))
+                                .is_some_and(|v| expr_may_have_side_effects(v))
                     }
                 })
         }
@@ -614,11 +611,7 @@ pub fn expr_may_have_side_effects(expr: &Expr) -> bool {
                     (match &call.callee {
                         ExprOrSuper::Super(_) => false,
                         ExprOrSuper::Expr(callee) => function_call_may_have_side_effects(callee),
-                    }) || {
-                        call.args
-                            .iter()
-                            .any(|a| expr_or_spread_may_have_side_effects(a))
-                    }
+                    }) || call.args.iter().any(expr_or_spread_may_have_side_effects)
                 }
             }
         }
@@ -797,7 +790,7 @@ fn isImmutableValue(expr: &Expr) -> bool {
                     | id_for_built_in!("Infinity")
             )
         }
-        Expr::Tpl(tpl) => tpl.exprs.iter().all(|e| isImmutableValue(e)),
+        Expr::Tpl(tpl) => tpl.exprs.iter().all(isImmutableValue),
         _ => false,
     }
 }

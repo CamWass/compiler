@@ -1968,7 +1968,7 @@ impl<'a> Emitter<'a> {
         &mut self,
         parent_node: Span,
         children: &[N],
-        emit_child: impl Fn(&mut Emitter, &N) -> Result,
+        emit_child: impl Fn(&mut Self, &N) -> Result,
         format: ListFormat,
     ) -> Result {
         self.emit_list_with_extra_item(
@@ -1985,9 +1985,9 @@ impl<'a> Emitter<'a> {
         &mut self,
         parent_node: Span,
         children: &[N],
-        emit_child: impl Fn(&mut Emitter, &N) -> Result,
+        emit_child: impl Fn(&mut Self, &N) -> Result,
         extra: Option<&E>,
-        emit_extra: impl Fn(&mut Emitter, &E) -> Result,
+        emit_extra: impl Fn(&mut Self, &E) -> Result,
         format: ListFormat,
     ) -> Result {
         let is_empty = children.is_empty() && extra.is_none();
@@ -2739,7 +2739,7 @@ impl Emitter<'_> {
         self.emit_list(
             span,
             &node.cases,
-            |e, n| e.emit_switch_case(n),
+            Emitter::emit_switch_case,
             ListFormat::CaseBlockClauses,
         )?;
         punct!(self, "}");

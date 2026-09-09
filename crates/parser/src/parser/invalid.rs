@@ -13,7 +13,7 @@ use common::DUMMY_SP;
 
 use super::*;
 
-impl<'d> Parser<'d> {
+impl Parser<'_> {
     fn create_invalid_ident(&mut self) -> Ident {
         // We should always emit an error before we create an invalid node;
         // If the parser has no errors, then compilation will continue and the

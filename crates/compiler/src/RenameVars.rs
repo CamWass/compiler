@@ -80,7 +80,7 @@ fn analyse(
                 }
                 Entry::Vacant(vacant_entry) => {
                     vacant_entry.insert(Slot {
-                        reference_count: reference_count,
+                        reference_count,
                         order_of_occurrence: analyser
                             .order_of_occurrence
                             .get_index_of(name)
@@ -114,7 +114,7 @@ fn analyse(
     }
 
     debug_assert!(
-        !rename_map.iter().any(|n| *n == DUMMY_VALUE),
+        !rename_map.contains(&DUMMY_VALUE),
         "all dummy values should have been overridden"
     );
 

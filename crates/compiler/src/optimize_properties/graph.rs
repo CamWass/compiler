@@ -226,10 +226,9 @@ impl Graph {
                     let node = self.get_graph_node_id(pointer);
 
                     if let Pointer::Arg(callee, _) = store.pointers[pointer] {
-                        let unknown_callee = self
-                            .get(callee)
-                            .map(|concrete_callees| concrete_callees.contains(PointerId::UNKNOWN))
-                            .unwrap_or(false);
+                        let unknown_callee = self.get(callee).is_some_and(|concrete_callees| {
+                            concrete_callees.contains(PointerId::UNKNOWN)
+                        });
 
                         if unknown_callee {
                             if let Some(concrete_values) = self.get(node).cloned() {
@@ -359,7 +358,7 @@ impl Graph {
             // Check that concrete pointers don't have any outgoing subset edges.
             for p in store.concrete_pointers() {
                 if let Some(node) = pointer_to_node(&self.graph_map, p) {
-                    debug_assert!(self.graph.edges_directed(node, Incoming).count() == 0);
+                    debug_assert_eq!(self.graph.edges_directed(node, Incoming).count(), 0);
                     let subset_edges = self
                         .graph
                         .edges_directed(node, Outgoing)
@@ -794,7 +793,7 @@ pub(super) enum GraphEdge {
 
 impl Display for GraphEdge {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("{:?}", self))
+        f.write_fmt(format_args!("{self:?}"))
     }
 }
 

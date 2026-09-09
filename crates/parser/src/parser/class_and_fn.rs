@@ -159,7 +159,7 @@ impl Parser<'_> {
 
             if let Some(i) = &ident {
                 if i.name == id_for_built_in!("any") {
-                    parser.emit_err(get_span!(parser, (&i).node_id), SyntaxError::TS2414);
+                    parser.emit_err(get_span!(parser, i.node_id), SyntaxError::TS2414);
                 }
             }
 

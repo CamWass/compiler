@@ -7,7 +7,7 @@ use util::AssignProps;
 
 impl Parser<'_> {
     /// `tsNextTokenCanFollowModifier`
-    fn ts_next_token_can_follow_modifier(&mut self) -> PResult<bool> {
+    fn ts_next_token_can_follow_modifier(&mut self) -> bool {
         debug_assert!(self.syntax().typescript());
 
         // Note: TypeScript's implementation is much more complicated because
@@ -18,12 +18,12 @@ impl Parser<'_> {
         // Want a hasLineBreakUpNext() method or something.
 
         self.input.bump();
-        Ok(!self.input.had_line_break_before_cur()
+        !self.input.had_line_break_before_cur()
             && !self.is(tok!('('))
             && !self.is(tok!(')'))
             && !self.is(tok!(':'))
             && !self.is(tok!('='))
-            && !self.is(tok!('?')))
+            && !self.is(tok!('?'))
     }
 
     /// Parses a modifier matching one the given modifier names.
@@ -49,7 +49,7 @@ impl Parser<'_> {
             .position(|s| *s == self.input.cur());
 
         if let Some(pos) = pos {
-            if self.try_parse_ts_bool(|p| p.ts_next_token_can_follow_modifier().map(Some))? {
+            if self.try_parse_ts_bool(|p| Ok(Some(p.ts_next_token_can_follow_modifier())))? {
                 return Ok(Some(allowed_modifiers[pos]));
             }
         }
@@ -588,7 +588,7 @@ impl Parser<'_> {
             self.parse_lit()?;
         } else {
             unexpected!(self, "global or a string literal");
-        };
+        }
 
         if self.is(tok!('{')) {
             self.parse_ts_module_block()?;

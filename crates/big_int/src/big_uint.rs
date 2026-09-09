@@ -64,7 +64,7 @@ impl BigUintValue {
             let mut carry = digit_val;
 
             // Multiply existing base-10 value by radix and add incoming digit.
-            for digit in digits.iter_mut() {
+            for digit in &mut digits {
                 let val = (*digit - b'0') as u32 * radix + carry;
                 *digit = b'0' + (val % 10) as u8;
                 carry = val / 10;
@@ -157,7 +157,7 @@ impl BigUintValue {
 
         if exponent >= 0 {
             // Exponent >= 0: Append `exponent` zeros to binary mantissa, then convert
-            let mut bin = format!("{:b}", mantissa);
+            let mut bin = format!("{mantissa:b}");
             bin.reserve(exponent as usize);
             for _ in 0..exponent {
                 bin.push('0');

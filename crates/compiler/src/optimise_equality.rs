@@ -52,7 +52,7 @@ fn optimise_loose_equality(bin_expr: &mut BinExpr) {
             bin_expr.op = BinaryOp::Gt;
         }
 
-        undefined_string.value = Box::new(String::from("u"));
+        *undefined_string.value = String::from("u");
     }
 
     if is_rhs_typeof && let Some(undefined_string) = get_undefined_string(&mut bin_expr.left) {
@@ -66,7 +66,7 @@ fn optimise_loose_equality(bin_expr: &mut BinExpr) {
             bin_expr.op = BinaryOp::Lt;
         }
 
-        undefined_string.value = Box::new(String::from("u"));
+        *undefined_string.value = String::from("u");
     }
 }
 

@@ -219,7 +219,7 @@ fn create_renaming_map(store: &mut Store, points_to: &Graph) -> FxHashMap<NodeId
             store
                 .program_data
                 .get_name_text(a.name)
-                .cmp(&store.program_data.get_name_text(b.name))
+                .cmp(store.program_data.get_name_text(b.name))
         } else {
             result
         }
@@ -1261,7 +1261,7 @@ impl Visit<'_> for GraphVisitor<'_, '_> {
 
                 let lhs = match left.as_ref() {
                     VarDeclOrAssignTarget::VarDecl(lhs) => {
-                        assert!(lhs.decls.len() == 1);
+                        assert_eq!(lhs.decls.len(), 1);
                         DestructuringTarget::from(&lhs.decls[0].name)
                     }
                     VarDeclOrAssignTarget::AssignTarget(lhs) => DestructuringTarget::from(lhs),
@@ -1956,7 +1956,7 @@ impl VisitMut<'_> for Renamer<'_> {
 
     fn visit_mut_str(&mut self, node: &mut Str) {
         if let Some(new_name) = self.rename_map.get(&node.node_id) {
-            node.value = Box::new(self.program_data.get_name_text(*new_name).to_string());
+            *node.value = self.program_data.get_name_text(*new_name).to_string();
         }
     }
 }

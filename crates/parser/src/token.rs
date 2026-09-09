@@ -415,48 +415,48 @@ pub enum TokenData {
 
 impl Token {
     pub fn is_known_ident(&self) -> bool {
-        match self {
+        matches!(
+            self,
             Token::Async
-            | Token::As
-            | Token::From
-            | Token::Of
-            | Token::Static
-            | Token::Target
-            | Token::Asserts
-            | Token::Implements
-            | Token::Is
-            | Token::Keyof
-            | Token::Unique
-            | Token::Object
-            | Token::Global
-            | Token::Enum
-            | Token::Readonly
-            | Token::Abstract
-            | Token::Infer
-            | Token::Any
-            | Token::Boolean
-            | Token::Bigint
-            | Token::Intrinsic
-            | Token::Never
-            | Token::Number
-            | Token::String
-            | Token::Symbol
-            | Token::Unknown
-            | Token::Interface
-            | Token::Declare
-            | Token::Undefined
-            | Token::Meta
-            | Token::Type
-            | Token::Assert
-            | Token::Get
-            | Token::Set
-            | Token::Public
-            | Token::Protected
-            | Token::Private
-            | Token::Package
-            | Token::Override => true,
-            _ => false,
-        }
+                | Token::As
+                | Token::From
+                | Token::Of
+                | Token::Static
+                | Token::Target
+                | Token::Asserts
+                | Token::Implements
+                | Token::Is
+                | Token::Keyof
+                | Token::Unique
+                | Token::Object
+                | Token::Global
+                | Token::Enum
+                | Token::Readonly
+                | Token::Abstract
+                | Token::Infer
+                | Token::Any
+                | Token::Boolean
+                | Token::Bigint
+                | Token::Intrinsic
+                | Token::Never
+                | Token::Number
+                | Token::String
+                | Token::Symbol
+                | Token::Unknown
+                | Token::Interface
+                | Token::Declare
+                | Token::Undefined
+                | Token::Meta
+                | Token::Type
+                | Token::Assert
+                | Token::Get
+                | Token::Set
+                | Token::Public
+                | Token::Protected
+                | Token::Private
+                | Token::Package
+                | Token::Override
+        )
     }
 
     pub fn starts_expr(&self) -> bool {
@@ -540,44 +540,44 @@ impl Token {
     }
 
     pub fn is_keyword(&self) -> bool {
-        match self {
+        matches!(
+            self,
             Token::Await
-            | Token::Break
-            | Token::Case
-            | Token::Catch
-            | Token::Continue
-            | Token::Debugger
-            | Token::Default
-            | Token::Do
-            | Token::Else
-            | Token::Finally
-            | Token::For
-            | Token::Function
-            | Token::If
-            | Token::Return
-            | Token::Switch
-            | Token::Throw
-            | Token::Try
-            | Token::Var
-            | Token::Let
-            | Token::Const
-            | Token::While
-            | Token::With
-            | Token::New
-            | Token::This
-            | Token::Super
-            | Token::Class
-            | Token::Extends
-            | Token::Export
-            | Token::Import
-            | Token::Yield
-            | Token::In
-            | Token::InstanceOf
-            | Token::TypeOf
-            | Token::Void
-            | Token::Delete => true,
-            _ => false,
-        }
+                | Token::Break
+                | Token::Case
+                | Token::Catch
+                | Token::Continue
+                | Token::Debugger
+                | Token::Default
+                | Token::Do
+                | Token::Else
+                | Token::Finally
+                | Token::For
+                | Token::Function
+                | Token::If
+                | Token::Return
+                | Token::Switch
+                | Token::Throw
+                | Token::Try
+                | Token::Var
+                | Token::Let
+                | Token::Const
+                | Token::While
+                | Token::With
+                | Token::New
+                | Token::This
+                | Token::Super
+                | Token::Class
+                | Token::Extends
+                | Token::Export
+                | Token::Import
+                | Token::Yield
+                | Token::In
+                | Token::InstanceOf
+                | Token::TypeOf
+                | Token::Void
+                | Token::Delete
+        )
     }
 
     pub fn is_reserved_word(self, ctx: Context) -> bool {

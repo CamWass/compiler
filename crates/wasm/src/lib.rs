@@ -183,14 +183,14 @@ pub fn load_config(content: &str) -> Result<Config> {
         ))
     }
 
-    serde_json::from_str::<Config>(&content).map_err(convert_json_err)
+    serde_json::from_str::<Config>(content).map_err(convert_json_err)
 }
 
 #[wasm_bindgen]
 pub fn process(input: &str, config: &str) -> Result<JsValue, JsError> {
     console_error_panic_hook::set_once();
 
-    let error_buffer: BufferedError = Default::default();
+    let error_buffer = BufferedError::default();
 
     let res = compile("input_file.js", input, config, &error_buffer).map_err(|e| {
         let buffered_errors = String::from_utf8_lossy(&error_buffer.0.read().unwrap()).into_owned();

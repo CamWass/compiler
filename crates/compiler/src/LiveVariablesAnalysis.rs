@@ -61,7 +61,7 @@ impl<'ast, 'a> LiveVariablesAnalysis<'ast, 'a> {
             num_vars: all_vars_declared_in_function.ordered_vars.len(),
             simple_param_names: fn_scope
                 .params
-                .into_iter()
+                .iter()
                 .filter_map(|p| {
                     if let BindingElement {
                         target: BindingPatOrIdent::Ident(name),
@@ -113,7 +113,7 @@ impl<'ast, 'a> LiveVariablesAnalysis<'ast, 'a> {
     }
 
     #[allow(dead_code)]
-    fn get_var_index(&self, var: &NameId) -> Option<VarId> {
+    fn get_var_index(&self, var: NameId) -> Option<VarId> {
         self.data_flow_analysis.inner.get_var_index(var)
     }
 }
@@ -139,8 +139,8 @@ struct Inner<'ast> {
 }
 
 impl<'ast> Inner<'ast> {
-    fn get_var_index(&self, var: &NameId) -> Option<VarId> {
-        self.scope_variables.get(var).copied()
+    fn get_var_index(&self, var: NameId) -> Option<VarId> {
+        self.scope_variables.get(&var).copied()
     }
 
     /// Computes the GEN and KILL set.
@@ -173,12 +173,12 @@ impl<'ast> Inner<'ast> {
         n.visit_with(&mut v);
     }
 
-    fn add_to_set_if_local(&mut self, name: &NameId, set: &mut BitSet<VarId>) {
-        if !self.scope_variables.contains_key(name) {
+    fn add_to_set_if_local(&mut self, name: NameId, set: &mut BitSet<VarId>) {
+        if !self.scope_variables.contains_key(&name) {
             return;
         }
 
-        if !self.escaped.contains(name) {
+        if !self.escaped.contains(&name) {
             set.insert(self.get_var_index(name).unwrap());
         }
     }
@@ -239,7 +239,7 @@ impl<'ast> Visit<'ast> for GenKillComputer<'ast, '_> {
         match node.left.as_ref() {
             // for (var x in y) {...}
             VarDeclOrAssignTarget::VarDecl(var_decl) => {
-                assert!(var_decl.decls.len() == 1);
+                assert_eq!(var_decl.decls.len(), 1);
                 var_decl.decls.first().unwrap().name.visit_with(self);
             }
             // for (x in y) {...}
@@ -262,7 +262,7 @@ impl<'ast> Visit<'ast> for GenKillComputer<'ast, '_> {
         match node.left.as_ref() {
             // for (var x of y) {...}
             VarDeclOrAssignTarget::VarDecl(var_decl) => {
-                assert!(var_decl.decls.len() == 1);
+                assert_eq!(var_decl.decls.len(), 1);
                 var_decl.decls.first().unwrap().name.visit_with(self);
             }
             // for (x of y) {...}
@@ -283,7 +283,7 @@ impl<'ast> Visit<'ast> for GenKillComputer<'ast, '_> {
                 init.visit_with(self);
                 if !self.conditional {
                     self.analysis
-                        .add_to_set_if_local(&name.id.name, self.kill_set);
+                        .add_to_set_if_local(name.id.name, self.kill_set);
                 }
             }
             return;
@@ -292,8 +292,7 @@ impl<'ast> Visit<'ast> for GenKillComputer<'ast, '_> {
 
         if !self.conditional {
             for lhs_node in find_pat_ids(&node.name) {
-                self.analysis
-                    .add_to_set_if_local(&lhs_node.0, self.kill_set);
+                self.analysis.add_to_set_if_local(lhs_node.0, self.kill_set);
             }
         }
         self.in_lhs = true;
@@ -442,7 +441,7 @@ impl<'ast> Visit<'ast> for GenKillComputer<'ast, '_> {
             if node.name == id_for_built_in!("arguments") {
                 self.analysis.mark_all_parameters_escaped();
             } else {
-                self.analysis.add_to_set_if_local(&node.name, self.gen_set);
+                self.analysis.add_to_set_if_local(node.name, self.gen_set);
             }
         }
     }
@@ -452,12 +451,11 @@ impl<'ast> Visit<'ast> for GenKillComputer<'ast, '_> {
         if let AssignTarget::Simple(SimpleAssignTarget::Ident(lhs)) = node.left.as_ref() {
             if !self.conditional {
                 self.analysis
-                    .add_to_set_if_local(&lhs.id.name, self.kill_set);
+                    .add_to_set_if_local(lhs.id.name, self.kill_set);
             }
             if node.op != AssignOp::Assign {
                 // assignments such as a += 1 reads a.
-                self.analysis
-                    .add_to_set_if_local(&lhs.id.name, self.gen_set);
+                self.analysis.add_to_set_if_local(lhs.id.name, self.gen_set);
             }
             node.right.visit_with(self);
             return;
@@ -468,8 +466,7 @@ impl<'ast> Visit<'ast> for GenKillComputer<'ast, '_> {
             && !self.conditional
         {
             for lhs_node in find_assign_target_ids(&node.left) {
-                self.analysis
-                    .add_to_set_if_local(&lhs_node.0, self.kill_set);
+                self.analysis.add_to_set_if_local(lhs_node.0, self.kill_set);
             }
         }
         self.in_lhs = true;

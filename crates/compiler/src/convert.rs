@@ -120,7 +120,7 @@ pub fn ecma_number_to_string(x: f64) -> String {
     // Finally, comparing [1] and [4], we have:
     //     x = `d.ddd...eEXP` = d.ddd...*10^(n-1)
     // so EXP = n-1 and n = EXP+1
-    let sci = format!("{:e}", x);
+    let sci = format!("{x:e}");
     let (mantissa, exp_str) = sci.split_once('e').unwrap();
     let exp: i64 = exp_str.parse().unwrap();
 
@@ -188,7 +188,7 @@ pub fn ecma_string_to_big_int(string: &str) -> Option<BigIntValue> {
 
     if matches!(trimmed.as_bytes().first(), Some(b'-' | b'+')) {
         let digits = &trimmed[1..];
-        if digits.as_bytes().iter().all(|b| b.is_ascii_digit()) {
+        if digits.as_bytes().iter().all(u8::is_ascii_digit) {
             let data = BigUintValue::from_str_radix(digits, 10);
             let sign = if trimmed.as_bytes().first() == Some(&b'-') {
                 BigIntSign::Minus
@@ -203,7 +203,7 @@ pub fn ecma_string_to_big_int(string: &str) -> Option<BigIntValue> {
 
     if matches!(trimmed.as_bytes(), [b'0', b'x' | b'X', ..]) {
         let digits = &trimmed[2..];
-        if digits.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) {
+        if digits.as_bytes().iter().all(u8::is_ascii_hexdigit) {
             return Some(BigIntValue::from_big_unint(BigUintValue::from_str_radix(
                 digits, 16,
             )));
@@ -234,7 +234,7 @@ pub fn ecma_string_to_big_int(string: &str) -> Option<BigIntValue> {
         return None;
     }
 
-    if trimmed.as_bytes().iter().all(|b| b.is_ascii_digit()) {
+    if trimmed.as_bytes().iter().all(u8::is_ascii_digit) {
         return Some(BigIntValue::from_big_unint(BigUintValue::from_str_radix(
             trimmed, 10,
         )));

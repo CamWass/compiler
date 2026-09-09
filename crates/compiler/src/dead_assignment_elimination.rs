@@ -77,7 +77,7 @@ impl VisitMut<'_> for DeadAssignmentElimination<'_> {
     fn visit_mut_stmt(&mut self, node: &mut Stmt) {
         self.with_control_flow_node(node.node_id(), |visitor| {
             node.visit_mut_children_with(visitor);
-        })
+        });
     }
 
     // TODO: handle entering other control flow nodes
@@ -190,7 +190,7 @@ impl Driver<'_> {
 
         self.function_stack.push(FunctionData::default());
         node.params_mut()
-            .into_iter()
+            .iter_mut()
             .for_each(|p| p.visit_mut_with(self));
         if let Some(rest_param) = node.rest_param_mut() {
             rest_param.visit_mut_with(self);

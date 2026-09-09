@@ -542,7 +542,7 @@ fn assert_live_before_xasync(src: &str, var: &str, is_async: bool) {
 
         let in_ = &liveness.data_flow_analysis.inner[state.unwrap().in_];
         let var_id = program_data.find_latest_id_for_name(var).unwrap();
-        let is_live_before = in_.is_live(liveness.get_var_index(&var_id).unwrap());
+        let is_live_before = in_.is_live(liveness.get_var_index(var_id).unwrap());
 
         assert!(is_live_before, "Variable `{}` should be live before X", var);
     });
@@ -563,7 +563,7 @@ fn assert_live_after_xasync(src: &str, var: &str, is_async: bool) {
 
         let out = &liveness.data_flow_analysis.inner[state.unwrap().out];
         let var_id = program_data.find_latest_id_for_name(var).unwrap();
-        let is_live_after = out.is_live(liveness.get_var_index(&var_id).unwrap());
+        let is_live_after = out.is_live(liveness.get_var_index(var_id).unwrap());
 
         assert!(is_live_after, "Variable `{}` should be live after X", var);
     });
@@ -580,7 +580,7 @@ fn assert_not_live_after_x(src: &str, var: &str) {
 
         let out = &liveness.data_flow_analysis.inner[state.unwrap().out];
         let var_id = program_data.find_latest_id_for_name(var).unwrap();
-        let is_live_after = out.is_live(liveness.get_var_index(&var_id).unwrap());
+        let is_live_after = out.is_live(liveness.get_var_index(var_id).unwrap());
 
         assert!(
             !is_live_after,
@@ -601,7 +601,7 @@ fn assert_not_live_before_x(src: &str, var: &str) {
 
         let in_ = &liveness.data_flow_analysis.inner[state.unwrap().in_];
         let var_id = program_data.find_latest_id_for_name(var).unwrap();
-        let is_live_before = in_.is_live(liveness.get_var_index(&var_id).unwrap());
+        let is_live_before = in_.is_live(liveness.get_var_index(var_id).unwrap());
 
         assert!(
             !is_live_before,
@@ -618,7 +618,7 @@ fn assert_live_after_decl(src: &str, var: &str) {
 
         let out = &liveness.data_flow_analysis.inner[state.unwrap().out];
         let var_id = program_data.find_latest_id_for_name(var).unwrap();
-        let is_live_after = out.is_live(liveness.get_var_index(&var_id).unwrap());
+        let is_live_after = out.is_live(liveness.get_var_index(var_id).unwrap());
 
         assert!(
             is_live_after,
@@ -635,7 +635,7 @@ fn assert_not_live_after_decl(src: &str, var: &str) {
 
         let out = &liveness.data_flow_analysis.inner[state.unwrap().out];
         let var_id = program_data.find_latest_id_for_name(var).unwrap();
-        let is_live_after = out.is_live(liveness.get_var_index(&var_id).unwrap());
+        let is_live_after = out.is_live(liveness.get_var_index(var_id).unwrap());
 
         assert!(
             !is_live_after,
@@ -652,7 +652,7 @@ fn assert_not_live_before_decl(src: &str, var: &str) {
 
         let in_ = &liveness.data_flow_analysis.inner[state.unwrap().in_];
         let var_id = program_data.find_latest_id_for_name(var).unwrap();
-        let is_live_before = in_.is_live(liveness.get_var_index(&var_id).unwrap());
+        let is_live_before = in_.is_live(liveness.get_var_index(var_id).unwrap());
 
         assert!(
             !is_live_before,

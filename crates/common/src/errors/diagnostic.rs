@@ -60,7 +60,7 @@ impl DiagnosticStyledString {
     }
 
     pub fn content(&self) -> String {
-        self.0.iter().map(|x| x.content()).collect::<String>()
+        self.0.iter().map(StringPart::content).collect::<String>()
     }
 }
 
@@ -153,18 +153,18 @@ impl Diagnostic {
         expected_extra: &dyn fmt::Display,
         found_extra: &dyn fmt::Display,
     ) -> &mut Self {
-        let mut msg: Vec<_> = vec![(format!("expected {} `", label), Style::NoStyle)];
+        let mut msg: Vec<_> = vec![(format!("expected {label} `"), Style::NoStyle)];
         msg.extend(expected.0.iter().map(|x| match x {
             StringPart::Normal(s) => (s.to_owned(), Style::NoStyle),
             StringPart::Highlighted(s) => (s.to_owned(), Style::Highlight),
         }));
-        msg.push((format!("`{}\n", expected_extra), Style::NoStyle));
-        msg.push((format!("   found {} `", label), Style::NoStyle));
+        msg.push((format!("`{expected_extra}\n"), Style::NoStyle));
+        msg.push((format!("   found {label} `"), Style::NoStyle));
         msg.extend(found.0.iter().map(|x| match x {
             StringPart::Normal(s) => (s.to_owned(), Style::NoStyle),
             StringPart::Highlighted(s) => (s.to_owned(), Style::Highlight),
         }));
-        msg.push((format!("`{}", found_extra), Style::NoStyle));
+        msg.push((format!("`{found_extra}"), Style::NoStyle));
 
         // For now, just attach these as notes
         self.highlighted_note(msg);
@@ -173,7 +173,7 @@ impl Diagnostic {
 
     pub fn note_trait_signature(&mut self, name: String, signature: String) -> &mut Self {
         self.highlighted_note(vec![
-            (format!("`{}` from trait: `", name), Style::NoStyle),
+            (format!("`{name}` from trait: `"), Style::NoStyle),
             (signature, Style::Highlight),
             ("`".to_string(), Style::NoStyle),
         ]);
@@ -409,7 +409,7 @@ impl Diagnostic {
     pub fn copy_details_not_message(&mut self, from: &Diagnostic) {
         self.span = from.span.clone();
         self.code = from.code.clone();
-        self.children.extend(from.children.iter().cloned())
+        self.children.extend(from.children.iter().cloned());
     }
 
     /// Convenience function for internal use, clients should use one of the

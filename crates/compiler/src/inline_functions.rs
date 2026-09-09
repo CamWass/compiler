@@ -126,7 +126,7 @@ impl Visit<'_> for BodyCollector<'_> {
     }
 
     fn visit_fn_decl(&mut self, n: &FnDecl) {
-        let old_fn_name = self.current_function_name.clone();
+        let old_fn_name = self.current_function_name;
         let old_references_self = self.references_self;
         let old_return_count = self.return_count;
 
@@ -277,7 +277,7 @@ impl<'ast> VisitMut<'ast> for Inliner<'_> {
                         stmts: body,
                     });
                 }
-            };
+            }
         }
     }
 
@@ -310,7 +310,7 @@ impl<'ast> VisitMut<'ast> for Inliner<'_> {
 
                         stmts.splice(i..=i, body);
                     }
-                };
+                }
             }
         }
     }

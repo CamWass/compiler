@@ -88,11 +88,7 @@ fn is_fusable_control_statement(stmt: &Stmt) -> bool {
             VarDeclOrAssignTarget::AssignTarget(AssignTarget::Simple(SimpleAssignTarget::Ident(_)))
         ),
         Stmt::Labeled(l) => is_fusable_control_statement(&l.body),
-        Stmt::Block(b) => b
-            .stmts
-            .first()
-            .map(is_fusable_control_statement)
-            .unwrap_or_default(),
+        Stmt::Block(b) => b.stmts.first().is_some_and(is_fusable_control_statement),
         _ => false,
     }
 }

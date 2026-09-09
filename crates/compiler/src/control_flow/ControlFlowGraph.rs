@@ -52,7 +52,7 @@ where
             entry_index,
             graph,
             map,
-            node_annotations: Default::default(),
+            node_annotations: FxHashMap::default(),
         }
     }
 

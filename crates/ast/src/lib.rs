@@ -10,7 +10,7 @@
 
 use std::{
     borrow::Cow,
-    hash::{BuildHasher, BuildHasherDefault, Hash, Hasher},
+    hash::{BuildHasher, BuildHasherDefault, Hash},
 };
 
 pub use self::{
@@ -403,10 +403,10 @@ pub struct ProgramData {
 impl ProgramData {
     fn new() -> Self {
         let mut data = Self {
-            spans: Default::default(),
-            names: Default::default(),
-            name_to_id: Default::default(),
-            hasher: Default::default(),
+            spans: IndexVec::default(),
+            names: IndexVec::default(),
+            name_to_id: HashTable::default(),
+            hasher: BuildHasherDefault::default(),
         };
 
         data.add_built_ins();
@@ -432,9 +432,7 @@ impl ProgramData {
     }
 
     fn get_id_for_name(&mut self, name: Cow<str>) -> NameId {
-        let mut hasher = self.hasher.build_hasher();
-        name.hash(&mut hasher);
-        let name_hash = hasher.finish();
+        let name_hash = self.hasher.hash_one(&name);
 
         let entry = self
             .name_to_id
@@ -504,7 +502,7 @@ impl ParserProgramData {
     }
 
     pub fn set_span(&mut self, node: NodeId, span: Span) {
-        self.0.set_span(node, span)
+        self.0.set_span(node, span);
     }
 
     pub fn intern_name(&mut self, name: Cow<str>) -> NameId {
@@ -553,9 +551,7 @@ impl TransformerProgramData {
     }
 
     pub fn new_resolved_name(&mut self, name: Cow<str>) -> NameId {
-        let mut hasher = self.0.hasher.build_hasher();
-        name.hash(&mut hasher);
-        let name_hash = hasher.finish();
+        let name_hash = self.0.hasher.hash_one(&name);
         ProgramData::mark_resolved(self.0.names.push((name.to_string(), name_hash)))
     }
 
@@ -677,13 +673,12 @@ impl<T: NodeEq> NodeEq for Option<T> {
 }
 impl<T: NodeEq> NodeEq for Vec<T> {
     fn eq_ignoring_node_id(&self, other: &Self) -> bool {
-        self.iter()
-            .eq_by(other.iter(), |a, b| a.eq_ignoring_node_id(b))
+        self.iter().eq_by(other.iter(), NodeEq::eq_ignoring_node_id)
     }
 }
 impl<T: NodeEq> NodeEq for Box<T> {
     fn eq_ignoring_node_id(&self, other: &Self) -> bool {
-        self.as_ref().eq_ignoring_node_id(&other)
+        self.as_ref().eq_ignoring_node_id(other)
     }
 }
 

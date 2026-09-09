@@ -213,7 +213,7 @@ impl Parser<'_> {
             flags: self.ctx().flags & !ContextFlags::in_async & !ContextFlags::in_generator,
             ..self.ctx()
         };
-        Ok(self.with_ctx(ctx).parse_binding_ident()?)
+        self.with_ctx(ctx).parse_binding_ident()
     }
 
     #[allow(clippy::cognitive_complexity)]
@@ -437,11 +437,7 @@ impl Parser<'_> {
             && (self.is(tok!("var"))
                 || self.is(tok!("const"))
                 || (self.is(tok!("let")))
-                    && self
-                        .input
-                        .peek()
-                        .map(|t| t.follows_keyword_let())
-                        .unwrap_or(false))
+                    && self.input.peek().is_some_and(|t| t.follows_keyword_let()))
         {
             self.parse_var_stmt(false).map(Decl::Var).map(Some)?
         } else {

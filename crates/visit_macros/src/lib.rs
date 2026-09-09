@@ -103,7 +103,7 @@ fn gather_types(stmts: &[Stmt]) -> Vec<Type> {
 
     // Remove `Box`
     types.retain(|ty| extract_generic("Box", ty).is_none());
-    types.sort_by_cached_key(|ty| method_name_suffix(ty));
+    types.sort_by_cached_key(method_name_suffix);
     types.dedup_by_key(|ty| method_name_suffix(ty));
 
     types
@@ -329,12 +329,12 @@ fn make_arm_from_struct(mode: Mode, path: &Path, variant: &Fields, is_enum: bool
             },
             pat: if skip(ty) {
                 Box::new(Pat::Wild(PatWild {
-                    attrs: Default::default(),
+                    attrs: Vec::default(),
                     underscore_token: Underscore::default(),
                 }))
             } else {
                 Box::new(Pat::Ident(PatIdent {
-                    attrs: Default::default(),
+                    attrs: Vec::default(),
                     by_ref: None,
                     mutability: None,
                     ident: binding_ident,

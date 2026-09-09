@@ -134,8 +134,8 @@ where
 impl<K> Default for GrowableUnionFind<K> {
     fn default() -> Self {
         Self {
-            parent: Default::default(),
-            rank: Default::default(),
+            parent: Vec::new(),
+            rank: Vec::new(),
         }
     }
 }

@@ -679,7 +679,7 @@ impl Visitor<'_> {
                         if caseMatches == Some(true) {
                             found_matching_case = true;
                             break;
-                        } else if caseMatches == None {
+                        } else if caseMatches.is_none() {
                             break;
                         }
 
@@ -998,7 +998,7 @@ impl Visitor<'_> {
                     if var_decl.kind == VarDeclKind::Var {
                         for decl in &var_decl.decls {
                             let names = find_pat_ids(&decl.name);
-                            self.hoisted_vars.extend(names.into_iter());
+                            self.hoisted_vars.extend(names);
                         }
                     }
                 }
@@ -1085,7 +1085,7 @@ impl Visitor<'_> {
                         }));
                     }
                 }
-            };
+            }
         }
 
         if let Some(alt) = &mut if_stmt.alt {
@@ -1465,7 +1465,7 @@ impl Visitor<'_> {
             if let Stmt::Decl(Decl::Var(var)) = &stmt {
                 match var.kind {
                     VarDeclKind::Var => {
-                        self.collect_vars_declared_in_stmt(&stmt);
+                        self.collect_vars_declared_in_stmt(stmt);
                     }
                     VarDeclKind::Let | VarDeclKind::Const => {
                         // Keep block-scoped declarations - they may be
@@ -1628,7 +1628,7 @@ impl VisitMut<'_> for Visitor<'_> {
                 let is_left_empty_destructuring = match &decl.name {
                     BindingPatOrIdent::Array(left) => left.elems.is_empty() && left.rest.is_none(),
                     BindingPatOrIdent::Object(left) => left.props.is_empty() && left.rest.is_none(),
-                    _ => false,
+                    BindingPatOrIdent::Ident(_) => false,
                 };
 
                 if is_left_empty_destructuring {
@@ -1735,7 +1735,7 @@ impl VisitMut<'_> for Visitor<'_> {
                 let is_left_empty_destructuring = match &decl.name {
                     BindingPatOrIdent::Array(left) => left.elems.is_empty() && left.rest.is_none(),
                     BindingPatOrIdent::Object(left) => left.props.is_empty() && left.rest.is_none(),
-                    _ => false,
+                    BindingPatOrIdent::Ident(_) => false,
                 };
 
                 if is_left_empty_destructuring {
@@ -2155,7 +2155,7 @@ fn isUnconditionalBlockExit(block: &[Stmt]) -> bool {
         }
     }
 
-    return true;
+    true
 }
 
 /** Return true if the switch always "exits" (return, throw, etc). */

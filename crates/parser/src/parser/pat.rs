@@ -109,7 +109,7 @@ impl Parser<'_> {
                 let pat = self.parse_binding_pat_or_ident()?;
                 rest = Some(BindingRestElement {
                     node_id: node_id!(self, self.span(start)),
-                    arg: Box::new(pat.into()),
+                    arg: Box::new(pat),
                 });
                 // Trailing comma isn't allowed
                 break;
@@ -517,7 +517,7 @@ impl Parser<'_> {
                         self.emit_err(
                             get_span!(self, spread.node_id),
                             SyntaxError::NonLastRestParam,
-                        )
+                        );
                     }
                 }
                 Some(ExprOrSpread::Expr(expr)) => {
@@ -545,7 +545,7 @@ impl Parser<'_> {
                     rest = Some(AssignmentRest {
                         node_id: node_id_from!(self, pat.node_id()),
                         arg: Box::new(pat),
-                    })
+                    });
                 }
                 Some(ExprOrSpread::Expr(expr)) => {
                     params.push(Some(self.reparse_expr_as_assignment_element(expr)));
@@ -932,7 +932,7 @@ impl Parser<'_> {
                         self.emit_err(
                             get_span!(self, spread.node_id),
                             SyntaxError::NonLastRestParam,
-                        )
+                        );
                     }
                 }
                 Some(ExprOrSpread::Expr(expr)) => {
@@ -960,10 +960,10 @@ impl Parser<'_> {
                     rest = Some(BindingRestElement {
                         node_id: node_id_from!(self, pat.node_id()),
                         arg: Box::new(pat),
-                    })
+                    });
                 }
                 Some(ExprOrSpread::Expr(expr)) => {
-                    params.push(Some(self.reparse_expr_as_binding_element(expr)))
+                    params.push(Some(self.reparse_expr_as_binding_element(expr)));
                 }
                 // TODO: syntax error if last element is ellison and ...rest exists.
                 None => {}
@@ -1064,11 +1064,11 @@ impl Parser<'_> {
                 });
             }
             MaybeParenPatOrExprOrSpread::Expr(expr) => {
-                params.push(self.reparse_expr_as_binding_element(expr.unwrap()))
+                params.push(self.reparse_expr_as_binding_element(expr.unwrap()));
             }
             MaybeParenPatOrExprOrSpread::BindingElement(pat) => params.push(pat),
             MaybeParenPatOrExprOrSpread::BindingRestElement(binding_rest_element) => {
-                rest = Some(binding_rest_element)
+                rest = Some(binding_rest_element);
             }
         }
 

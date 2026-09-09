@@ -32,7 +32,7 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 .map(|v| {
                     let pat = match &v.fields {
                         Fields::Unnamed(f) => {
-                            assert!(f.unnamed.len() == 1);
+                            assert_eq!(f.unnamed.len(), 1);
                             let path = &v.ident;
                             Box::new(parse_quote!(Self::#path(field)))
                         }
@@ -43,12 +43,12 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
                     Arm {
                         body,
-                        attrs: Default::default(),
+                        attrs: Vec::default(),
                         pat: Pat::Reference(PatReference {
                             and_token: Default::default(),
                             mutability: None,
                             pat,
-                            attrs: Default::default(),
+                            attrs: Vec::default(),
                         }),
                         guard: None,
                         fat_arrow_token: Default::default(),
@@ -58,7 +58,7 @@ pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 .collect();
 
             let body = Expr::Match(ExprMatch {
-                attrs: Default::default(),
+                attrs: Vec::default(),
                 match_token: Default::default(),
                 brace_token: Default::default(),
                 expr: Box::new(parse_quote!(&self)),
